@@ -83,6 +83,17 @@
  *             `GET /studio/tools` came to be a real guest route in neither
  *             table. `aai-server` may not import guest source, so this reads
  *             both trees as text.
+ *   rule 13 — No import in a template escapes its own template directory. A
+ *             template SHIPS: `aai init` copies `templates/<name>/` and nothing
+ *             above it comes along, so the import resolves here and in nothing a
+ *             user runs.
+ *   rule 14 — No fixture directory that no code file resolves a path to. The
+ *             pinned RPC fixtures in `aai-server` outlived their only reader by
+ *             five commits, with a README telling the next reader never to delete
+ *             them and a `turbo.json` comment citing them by name as a reason the
+ *             test task must hash JSON. A reference has to RESOLVE rather than
+ *             match the name — the string that made the dead directory look read
+ *             belonged to a different package's sibling.
  *
  * Baselines for rules with pre-existing violations live in
  * `guard-invariants-baseline.json`. Counts there may only SHRINK. `--update`
@@ -104,6 +115,7 @@ import {
   scanTemplateEscapingImports,
   scanUndeclaredGuestRoutes,
   scanUnpinnedActions,
+  scanUnreadFixtureDirs,
 } from "./guard-invariants-scanners.mjs";
 
 const BASELINE_PATH = new URL("guard-invariants-baseline.json", import.meta.url);
@@ -242,6 +254,24 @@ const ABSOLUTE_RULES = [
       "  ---\n" +
       "A plan with no issue is an unowned parallel backlog; a plan with no date\n" +
       "cannot be told from a stale one.",
+  },
+  {
+    id: 14,
+    label: "fixture directory nothing reads",
+    scan: scanUnreadFixtureDirs,
+    remedy:
+      "Delete it, or add the test that reads it.\n\n" +
+      "`packages/aai-server/` held a pinned RPC fixture set — with a README\n" +
+      'instructing the reader to "never delete" a committed fixture — for five\n' +
+      "commits after its only reader (`sandbox-compat.test.ts`) was deleted in\n" +
+      "30914c9b. Nothing noticed, and the `turbo.json` comment justifying that\n" +
+      "task's cache inputs cited it BY NAME as a reason tests need to hash JSON,\n" +
+      "so the repo was hashing a fixture set no test read.\n\n" +
+      "A reference has to RESOLVE, not just match the name: the surviving\n" +
+      "`aai/sdk/compat-fixtures/` is reached as\n" +
+      "`join(import.meta.dirname, …)` from its own sibling, and that string is why\n" +
+      "a name-only scan called the dead directory read. A cross-package reader\n" +
+      "counts — aai-cli's e2e suite reads aai-ui's fixtures.",
   },
   {
     id: 13,

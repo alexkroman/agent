@@ -69,6 +69,16 @@ export type TransportSessionOpts = {
   agent: string;
   client: ClientSink;
   skipGreeting?: boolean;
+  /**
+   * True when this connection presented an existing session id (`?sessionId=`),
+   * so the session continues rather than begins.
+   *
+   * A different question from `skipGreeting`, which is about what the CALLER has
+   * already heard: this decides whether the server reads its own event stream
+   * back to restore the conversation. Defaults to false, so a direct
+   * `runtime.createSession()` caller gets a fresh session.
+   */
+  resumed?: boolean;
 };
 
 /** Arguments to one `buildTransport` call (one per session). */

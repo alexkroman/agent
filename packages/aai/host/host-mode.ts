@@ -22,7 +22,7 @@ import {
   WS_OPEN,
 } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
-import type { ClientEvent, HostConfig } from "../sdk/protocol.ts";
+import type { HostConfig, SessionEventBody } from "../sdk/protocol.ts";
 import { HostConfigMessageSchema } from "../sdk/protocol.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
@@ -33,6 +33,7 @@ import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { usesAssemblyS2s } from "./runtime-transport.ts";
+import { stampSessionEvent } from "./session-event-stream.ts";
 import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
 /**
@@ -199,13 +200,27 @@ export type StartHostSessionOptions = {
   allowHost?: boolean | undefined;
 };
 
-function sendEvent(ws: SessionWebSocket, event: ClientEvent, log: Logger): void {
-  safeSend(ws, JSON.stringify(event), log);
+/**
+ * Send one event straight down the socket, stamping its envelope here.
+ *
+ * The two callers are the frames host mode has NO SESSION EMITTER for, and they
+ * are different kinds of exception:
+ *
+ * - A handshake rejection is sent before any session is built, so there is
+ *   nothing to record it in. Correct as-is.
+ * - A relayed `tool.called` is a KNOWN GAP: the relay executor is constructed as
+ *   the runtime's `executeTool`, i.e. before `createSession` builds the emitter,
+ *   so a host-mode relay session's tool calls do not reach its retained stream
+ *   (and never reached the audio pacer either). Host mode is the eval-harness
+ *   path; closing it means late-binding the emitter into the relay.
+ */
+function sendEvent(ws: SessionWebSocket, event: SessionEventBody, log: Logger): void {
+  safeSend(ws, JSON.stringify(stampSessionEvent(event)), log);
 }
 
 function rejectHandshake(ws: SessionWebSocket, log: Logger, message: string): void {
   log.warn("host-mode handshake rejected", { message });
-  sendEvent(ws, { type: "error", code: "protocol", message }, log);
+  sendEvent(ws, { type: "error.reported", code: "protocol", message }, log);
   // Give the frame a tick to flush before closing.
   setTimeout(() => {
     try {

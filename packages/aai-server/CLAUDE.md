@@ -446,7 +446,7 @@ column ends up holding a jsonb **string**. See the long note in
 `workspace-store.ts` for the two failures that came out of it (every metadata
 stamp raising `cannot delete from scalar`, and the orphan-preview sweep
 deleting live previews because `doc->>'previewSlug'` reads NULL out of a
-string), and `jsonb-encoding.integration.test.ts` for the guard. The reason it
+string), and `jsonb-encoding.scenario.test.ts` for the guard. The reason it
 survived so long is worth keeping: **the in-memory stores cannot represent the
 bug.** They hold JS objects, so the encoding has no analogue in them, and every
 unit test passed against a shape production never had. Anything that reaches
@@ -472,7 +472,7 @@ not empty: 21 stale counters superseded by `agents.version`, recorded in that
 migration's header rather than discovered afterwards).
 
 **Drift detection cannot be static** — it is a fact about a database, not the
-repo — so the guard is `schema-drift.integration.test.ts`, gated on
+repo — so the guard is `schema-drift.scenario.test.ts`, gated on
 `AAI_TEST_PG_URL` and read-only, asserting every table in `aai_platform` is
 declared by a migration. Point it at whatever database you want the claim to
 hold for; `supabase db diff --linked --schema aai_platform` is the ad-hoc

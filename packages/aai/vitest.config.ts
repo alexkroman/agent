@@ -10,12 +10,12 @@ export default defineConfig({
     // package.json name).
     name: "aai",
     include: ["**/*.test.ts"],
-    // Integration-tier membership is a naming convention, not a filename
-    // list: `*.integration.test.ts` is excluded here and selected by
-    // `test:integration`. The three named files this used to also exclude
-    // (pentest, run-code-sandbox, integration.test.ts) had all been deleted,
-    // and nothing noticed — which is the failure mode a convention avoids.
-    exclude: ["**/*.integration.test.ts", "node_modules", "dist"],
+    // Slow-tier membership is a naming convention, not a filename list: both
+    // infixes are excluded here and each is selected by its own script
+    // (`test:integration`, `test:scenario`). The three named files this used to
+    // also exclude (pentest, run-code-sandbox, integration.test.ts) had all been
+    // deleted, and nothing noticed — which is the failure mode a convention avoids.
+    exclude: ["**/*.integration.test.ts", "**/*.scenario.test.ts", "node_modules", "dist"],
     setupFiles: ["./sdk/_test-matchers.ts"],
     coverage: {
       // `contracts/` is neither production source nor test infrastructure: the

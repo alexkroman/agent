@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * WebSocket integration tests.
+ * WebSocket scenario tests — a real port, so the scenario tier rather than the
+ * in-memory integration one.
  *
  * Starts a real Node HTTP server with native WebSocket upgrade,
  * connects a real WebSocket client, and verifies the full protocol
@@ -9,10 +10,11 @@
  */
 import http from "node:http";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
-import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
+import type { ClientSink, ReadyConfig, SessionEvent } from "@alexkroman1/aai/protocol";
 import {
   type SessionCore,
   type SessionWebSocket,
+  stampSessionEvent,
   wireSessionSocket,
 } from "@alexkroman1/aai/runtime";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
@@ -20,18 +22,40 @@ import { WebSocketServer } from "ws";
 
 // ── Stub helpers ──────────────────────────────────────────────────────────
 
-function makeStubCore(overrides: Partial<SessionCore> = {}): SessionCore {
+/**
+ * A stub session that really ANNOUNCES itself.
+ *
+ * `configure` may not be an inert `vi.fn()`, and that is the one thing about this
+ * stub worth stating. The handshake used to be a JSON literal `wireSessionSocket`
+ * wrote straight to the socket, so a do-nothing stub still produced a first
+ * frame; it is an EVENT now (`session.configured`, stamped and recorded in the
+ * retained stream), which means the SESSION sends it. Left inert, every test here
+ * hangs waiting for a frame nothing emits — seven of them did, for 120s each,
+ * with the timeout naming the test rather than the stub.
+ *
+ * It stamps through the real `stampSessionEvent`, so the envelope this harness
+ * puts on the wire is the one the wire schema requires rather than a
+ * hand-written imitation of it.
+ */
+function makeStubCore(
+  sessionId = "stub",
+  client?: ClientSink,
+  overrides: Partial<SessionCore> = {},
+): SessionCore {
   return {
-    id: "stub",
+    id: sessionId,
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     announce: vi.fn(() => true),
+    configure: vi.fn((config: ReadyConfig) => {
+      client?.event(stampSessionEvent({ type: "session.configured", ...config, sessionId }));
+    }),
     onAudio: vi.fn(),
     onAudioReady: vi.fn(),
     onCancel: vi.fn(),
     onPlaybackProgress: vi.fn(),
     onReset: vi.fn(),
-    onHistory: vi.fn(),
+    restoreHistory: vi.fn(),
     onToolResult: vi.fn(),
     onReplyStarted: vi.fn(),
     onReplyDone: vi.fn(),
@@ -60,16 +84,20 @@ const READY_CONFIG: ReadyConfig = {
 
 type SessionCapture = { session: SessionCore; sessionId: string };
 
+/** Same shape as `wireSessionSocket`'s own `createSession`, so a test's override
+ *  receives the id and the sink the real thing would. */
+type SessionFactory = (sessionId: string, client: ClientSink) => SessionCore;
+
 function startTestServer(): Promise<{
   port: number;
   server: http.Server;
   captures: SessionCapture[];
-  makeSession: (factory?: () => SessionCore) => void;
+  makeSession: (factory?: SessionFactory) => void;
   close: () => void;
 }> {
   return new Promise((resolve) => {
     const captures: SessionCapture[] = [];
-    let sessionFactory: () => SessionCore = makeStubCore;
+    let sessionFactory: SessionFactory = makeStubCore;
 
     const server = http.createServer((_req, res) => {
       res.writeHead(404);
@@ -83,8 +111,10 @@ function startTestServer(): Promise<{
         const sessions = createOwnedMap<string, SessionCore>();
         wireSessionSocket(ws as unknown as SessionWebSocket, {
           sessions,
-          createSession: (sid, _client) => {
-            const session = sessionFactory();
+          createSession: (sid, client) => {
+            // The session gets its own id and its own sink, because `configure`
+            // now emits through the sink rather than the handler writing JSON.
+            const session = sessionFactory(sid, client);
             captures.push({ session, sessionId: sid });
             return session;
           },
@@ -99,7 +129,7 @@ function startTestServer(): Promise<{
         port: addr.port,
         server,
         captures,
-        makeSession: (factory?: () => SessionCore) => {
+        makeSession: (factory?: SessionFactory) => {
           if (factory) sessionFactory = factory;
         },
         close: () => {
@@ -116,17 +146,17 @@ function startTestServer(): Promise<{
  */
 function connect(port: number): Promise<{
   ws: WebSocket;
-  config: ServerMessage;
-  messages: ServerMessage[];
+  config: SessionEvent;
+  messages: SessionEvent[];
 }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/websocket`);
-    const messages: ServerMessage[] = [];
+    const messages: SessionEvent[] = [];
 
     ws.addEventListener("message", (event: MessageEvent) => {
       try {
         const data = typeof event.data === "string" ? event.data : String(event.data);
-        const msg = JSON.parse(data) as ServerMessage;
+        const msg = JSON.parse(data) as SessionEvent;
         messages.push(msg);
         if (messages.length === 1) {
           resolve({ ws, config: msg, messages });
@@ -171,13 +201,16 @@ describe("WebSocket server integration", () => {
     ctx.captures.length = 0;
   });
 
-  test("server sends config as first message on connect", async () => {
+  test("server sends session.configured as first message on connect", async () => {
     const { ws, config } = await connect(ctx.port);
     expect(config).toMatchObject({
-      type: "config",
+      type: "session.configured",
       audioFormat: "pcm16",
       sampleRate: 16_000,
     });
+    // The envelope is part of the frame now, not decoration: a reader keys on
+    // `meta.id`, so an event without one is not a session event at all.
+    expect(config.meta?.id).toBeTruthy();
     expect((config as Record<string, unknown>).sessionId).toBeTruthy();
     ws.close();
     await waitForClose(ws);
@@ -257,7 +290,9 @@ describe("WebSocket server integration", () => {
   });
 
   test("session start failure does not crash server", async () => {
-    ctx.makeSession(() => makeStubCore({ start: vi.fn(() => Promise.reject(new Error("fail"))) }));
+    ctx.makeSession((sid, client) =>
+      makeStubCore(sid, client, { start: vi.fn(() => Promise.reject(new Error("fail"))) }),
+    );
     const ws = new WebSocket(`ws://127.0.0.1:${ctx.port}/agent/websocket`);
     await new Promise<void>((resolve) => {
       ws.addEventListener("open", () => resolve());

@@ -14,7 +14,7 @@
  *   `AAI_TEST_PG_URL` prints a normal green run with those files reporting
  *   skipped tests, so the ONLY tier that can see a driver-level bug is the one
  *   nobody notices not running. That is not a hypothetical failure mode: the
- *   bug `jsonb-encoding.integration.test.ts` exists for — a jsonb value written
+ *   bug `jsonb-encoding.scenario.test.ts` exists for — a jsonb value written
  *   through both `::jsonb` and `JSON.stringify`, so it round-trips
  *   double-encoded — is invisible to every in-memory fake, because a fake holds
  *   JS values and cannot be more strict than the driver beneath it.

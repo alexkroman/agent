@@ -22,7 +22,7 @@ const toolCallStep = [
 
 function toolCallEmits(client: ReturnType<typeof makeClientSink>) {
   return (client.event as ReturnType<typeof vi.fn>).mock.calls.filter(
-    ([e]) => (e as { type: string }).type === "tool_call",
+    ([e]) => (e as { type: string }).type === "tool.called",
   );
 }
 
@@ -68,7 +68,9 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
     stt.last()?.fireFinal("Look it up.");
     await vi.waitFor(
       () => {
-        expect(client.event).toHaveBeenCalledWith(expect.objectContaining({ type: "reply_done" }));
+        expect(client.event).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "reply.completed" }),
+        );
       },
       { timeout: 4000 },
     );
@@ -104,7 +106,9 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
     stt.last()?.fireFinal("Look it up.");
     await vi.waitFor(
       () => {
-        expect(client.event).toHaveBeenCalledWith(expect.objectContaining({ type: "reply_done" }));
+        expect(client.event).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "reply.completed" }),
+        );
       },
       { timeout: 4000 },
     );
@@ -113,6 +117,6 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
 
     const emits = toolCallEmits(client);
     expect(emits).toHaveLength(1);
-    expect(emits[0]?.[0]).toMatchObject({ type: "tool_call", toolCallId: "tc-1" });
+    expect(emits[0]?.[0]).toMatchObject({ type: "tool.called", toolCallId: "tc-1" });
   });
 });

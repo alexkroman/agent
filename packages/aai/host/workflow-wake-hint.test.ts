@@ -8,7 +8,7 @@
  * counting a permanently-failed job as claimable. The last of those is the one
  * claim a fake cannot check — whether the SQL really excludes it — so it is
  * asserted against a real Postgres in
- * `aai-server/workflow-wake.integration.test.ts`, which owns both ends of this
+ * `aai-server/workflow-wake.scenario.test.ts`, which owns both ends of this
  * contract.
  */
 

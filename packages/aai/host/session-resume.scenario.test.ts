@@ -3,7 +3,7 @@
  * A session survives a severed connection — the disconnect contract, over a real
  * socket that is really cut.
  *
- * Integration tier because the whole point is that nothing here is simulated: a
+ * Scenario tier because the whole point is that nothing here is simulated: a
  * real `createServer`, a real WebSocket upgrade, a real TCP relay, and a
  * `destroy()` that produces the abrupt drop a load-balancer timeout or a changed
  * network produces. A test that called `ws.close()` would prove the opposite of

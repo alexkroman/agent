@@ -138,7 +138,7 @@ describe("initAudioCapture races", () => {
 
     // Greeting audio and its audio_done arrive before init completes.
     lastSocket?.simulateMessage(new Uint8Array([1, 2, 3, 4]).buffer);
-    lastSocket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    lastSocket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
 
     // Init completes with a done() the test resolves later — the replayed
     // greeting drain is now in flight.
@@ -148,7 +148,9 @@ describe("initAudioCapture races", () => {
     await vi.waitFor(() => expect(core.getSnapshot().recording).toBe(true));
 
     // Barge-in mid-greeting commits a user turn: state moves to "thinking".
-    lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "wait" }));
+    lastSocket?.simulateMessage(
+      JSON.stringify({ type: "user-transcript.committed", text: "wait" }),
+    );
     expect(core.getSnapshot().state).toBe("thinking");
 
     // The stale greeting drain resolving late must not flip state back.

@@ -7,7 +7,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger, sleep } from "./_test-utils.ts";
-import { defaultConfig, openSocket, parseFirstFrame } from "./_ws-handler-test-utils.ts";
+import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
@@ -32,20 +32,25 @@ describe("wireSessionSocket resume", () => {
     expect(sessions.has("old-session-abc")).toBeTruthy();
   });
 
-  test("CONFIG frame contains resumed session ID as sessionId", () => {
+  test("the resumed id is the session's id, so its announcement carries it", () => {
     const ws = openSocket();
+    let capturedId: string | undefined;
 
     wireSessionSocket(ws, {
       sessions: createOwnedMap(),
-      createSession: () => makeMockCore(),
+      createSession: (sid) => {
+        capturedId = sid;
+        return makeMockCore();
+      },
       readyConfig: defaultConfig,
       logger: silentLogger,
       resumeFrom: "resume-id-123",
     });
 
-    const msg = parseFirstFrame(ws);
-    expect(msg.type).toBe("config");
-    expect(msg.sessionId).toBe("resume-id-123");
+    // `session.configured` carries `sessionId: opts.id` (see `SessionCore.configure`),
+    // so asserting the id the session was BUILT with is the same claim without
+    // reaching through a mock core to the socket.
+    expect(capturedId).toBe("resume-id-123");
   });
 
   test("old session's delayed stop does not evict a resumed session with the same id", async () => {

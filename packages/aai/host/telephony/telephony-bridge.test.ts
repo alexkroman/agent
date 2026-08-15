@@ -121,7 +121,7 @@ describe("createTelephonyBridge", () => {
     connect(fixture);
     fixture.socket.sent.length = 0;
 
-    fixture.bridge.send(JSON.stringify({ type: "cancelled" }));
+    fixture.bridge.send(JSON.stringify({ type: "reply.cancelled" }));
     expect(fixture.socket.sentJson()).toEqual([{ event: "clear", streamSid: "MZ0" }]);
   });
 
@@ -135,12 +135,12 @@ describe("createTelephonyBridge", () => {
   });
 
   test.each([
-    ["agent_transcript", { type: "agent_transcript", text: "hello" }],
-    ["user_transcript", { type: "user_transcript", text: "hi" }],
-    ["tool_call", { type: "tool_call", toolCallId: "1", toolName: "x", args: {} }],
-    ["reply_done", { type: "reply_done" }],
-    ["audio_done", { type: "audio_done" }],
-    ["agent_state", { type: "agent_state", state: {} }],
+    ["agent_transcript", { type: "agent-transcript.updated", text: "hello" }],
+    ["user_transcript", { type: "user-transcript.committed", text: "hi" }],
+    ["tool_call", { type: "tool.called", toolCallId: "1", toolName: "x", args: {} }],
+    ["reply_done", { type: "reply.completed" }],
+    ["audio_done", { type: "audio.completed" }],
+    ["agent_state", { type: "state.updated", state: {} }],
   ])("sends the carrier nothing for a %s event", (_label, event) => {
     const fixture = setup();
     connect(fixture);
@@ -244,7 +244,7 @@ describe("createTelephonyBridge", () => {
     );
     fixture.socket.sent.length = 0;
 
-    fixture.bridge.send(JSON.stringify({ type: "cancelled" }));
+    fixture.bridge.send(JSON.stringify({ type: "reply.cancelled" }));
     expect(fixture.socket.sentJson()).toEqual([{ event: "clear" }]);
   });
 

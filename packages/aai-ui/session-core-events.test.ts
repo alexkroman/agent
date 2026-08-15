@@ -69,8 +69,8 @@ describe("session-core server events", () => {
   describe("custom events", () => {
     it("appends in arrival order with a monotonic id", () => {
       const socket = connect();
-      send(socket, { type: "custom_event", event: "order.placed", data: { total: 12 } });
-      send(socket, { type: "custom_event", event: "order.shipped", data: null });
+      send(socket, { type: "custom.emitted", event: "order.placed", data: { total: 12 } });
+      send(socket, { type: "custom.emitted", event: "order.shipped", data: null });
 
       expect(core.getSnapshot().customEvents).toEqual([
         { id: 1, event: "order.placed", data: { total: 12 } },
@@ -85,14 +85,14 @@ describe("session-core server events", () => {
       // alone, which is why the surviving ids are asserted too.
       const socket = connect();
       for (let i = 1; i <= MAX_CUSTOM_EVENTS; i += 1) {
-        send(socket, { type: "custom_event", event: `e${i}`, data: i });
+        send(socket, { type: "custom.emitted", event: `e${i}`, data: i });
       }
       const full = core.getSnapshot().customEvents;
       expect(full).toHaveLength(MAX_CUSTOM_EVENTS);
       expect(full.at(0)?.data).toBe(1);
       expect(full.at(-1)?.data).toBe(MAX_CUSTOM_EVENTS);
 
-      send(socket, { type: "custom_event", event: "one-more", data: "last" });
+      send(socket, { type: "custom.emitted", event: "one-more", data: "last" });
       const capped = core.getSnapshot().customEvents;
       expect(capped).toHaveLength(MAX_CUSTOM_EVENTS);
       // The oldest is gone, the rest slid down by one, the newest is last.
@@ -106,10 +106,10 @@ describe("session-core server events", () => {
       // compares by reference, so an in-place push is an invisible update.
       const socket = connect();
       for (let i = 1; i <= MAX_CUSTOM_EVENTS; i += 1) {
-        send(socket, { type: "custom_event", event: `e${i}`, data: i });
+        send(socket, { type: "custom.emitted", event: `e${i}`, data: i });
       }
       const before = core.getSnapshot().customEvents;
-      send(socket, { type: "custom_event", event: "one-more", data: "last" });
+      send(socket, { type: "custom.emitted", event: "one-more", data: "last" });
 
       expect(before).toHaveLength(MAX_CUSTOM_EVENTS);
       expect(before.at(-1)?.data).toBe(MAX_CUSTOM_EVENTS);
@@ -122,10 +122,10 @@ describe("session-core server events", () => {
       // Only the newest value is meaningful — this is the agent's current
       // state, not a log of them.
       const socket = connect();
-      send(socket, { type: "agent_state", state: { step: "looking-up" } });
+      send(socket, { type: "state.updated", state: { step: "looking-up" } });
       expect(core.getSnapshot().agentState).toEqual({ step: "looking-up" });
 
-      send(socket, { type: "agent_state", state: { step: "answering" } });
+      send(socket, { type: "state.updated", state: { step: "answering" } });
       expect(core.getSnapshot().agentState).toEqual({ step: "answering" });
     });
   });
@@ -133,10 +133,10 @@ describe("session-core server events", () => {
   describe("agent transcript commit", () => {
     it("moves spoken text into the conversation on reply_done", () => {
       const socket = connect();
-      send(socket, { type: "agent_transcript", text: "Hello there" });
+      send(socket, { type: "agent-transcript.updated", text: "Hello there" });
       expect(core.getSnapshot().agentTranscript).toBe("Hello there");
 
-      send(socket, { type: "reply_done" });
+      send(socket, { type: "reply.completed" });
       const snap = core.getSnapshot();
       expect(snap.agentTranscript).toBeNull();
       expect(snap.messages).toMatchObject([{ role: "assistant", content: "Hello there" }]);
@@ -147,8 +147,8 @@ describe("session-core server events", () => {
       // An empty string is not a message: appending it would put a blank
       // assistant bubble in the transcript for a turn that said nothing.
       const socket = connect();
-      send(socket, { type: "agent_transcript", text: "" });
-      send(socket, { type: "reply_done" });
+      send(socket, { type: "agent-transcript.updated", text: "" });
+      send(socket, { type: "reply.completed" });
 
       const snap = core.getSnapshot();
       expect(snap.messages).toEqual([]);
@@ -159,8 +159,8 @@ describe("session-core server events", () => {
       // The caller heard that much; dropping it would leave the transcript
       // claiming the agent never spoke.
       const socket = connect();
-      send(socket, { type: "agent_transcript", text: "Let me check th" });
-      send(socket, { type: "cancelled" });
+      send(socket, { type: "agent-transcript.updated", text: "Let me check th" });
+      send(socket, { type: "reply.cancelled" });
 
       const snap = core.getSnapshot();
       expect(snap.messages).toMatchObject([{ role: "assistant", content: "Let me check th" }]);
@@ -173,7 +173,12 @@ describe("session-core server events", () => {
     it("logs the agent error with a prefix that names it", () => {
       const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "error", code: "llm", message: "provider timeout", fatal: false });
+      send(socket, {
+        type: "error.reported",
+        code: "llm",
+        message: "provider timeout",
+        fatal: false,
+      });
 
       expect(spy).toHaveBeenCalledWith("Agent error:", "provider timeout");
     });
@@ -181,12 +186,17 @@ describe("session-core server events", () => {
     it("clears a lingering non-fatal banner on the next event", () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "error", code: "llm", message: "one turn failed", fatal: false });
+      send(socket, {
+        type: "error.reported",
+        code: "llm",
+        message: "one turn failed",
+        fatal: false,
+      });
       expect(core.getSnapshot().error).toEqual({ code: "llm", message: "one turn failed" });
       // The session kept running, so any later activity clears the banner.
       expect(core.getSnapshot().state).not.toBe("error");
 
-      send(socket, { type: "speech_started" });
+      send(socket, { type: "speech.started" });
       expect(core.getSnapshot().error).toBeNull();
     });
 
@@ -195,10 +205,15 @@ describe("session-core server events", () => {
       // evidence that the first one is over.
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "error", code: "internal", message: "session over", fatal: true });
+      send(socket, {
+        type: "error.reported",
+        code: "internal",
+        message: "session over",
+        fatal: true,
+      });
       expect(core.getSnapshot().state).toBe("error");
 
-      send(socket, { type: "error", code: "llm", message: "and another", fatal: false });
+      send(socket, { type: "error.reported", code: "llm", message: "and another", fatal: false });
       expect(core.getSnapshot().state).toBe("error");
     });
 
@@ -207,10 +222,15 @@ describe("session-core server events", () => {
       // survived, so later activity clears the banner.
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "error", code: "audio", message: "worklet failed", fatal: false });
+      send(socket, {
+        type: "error.reported",
+        code: "audio",
+        message: "worklet failed",
+        fatal: false,
+      });
       expect(core.getSnapshot().error?.code).toBe("audio");
 
-      send(socket, { type: "speech_started" });
+      send(socket, { type: "speech.started" });
       expect(core.getSnapshot().error).toBeNull();
     });
 
@@ -222,13 +242,13 @@ describe("session-core server events", () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const socket = connect();
       send(socket, {
-        type: "error",
+        type: "error.reported",
         code: "tts",
         message: "Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the agent env.",
       });
-      send(socket, { type: "cancelled" });
-      send(socket, { type: "reply_done" });
-      send(socket, { type: "speech_started" });
+      send(socket, { type: "reply.cancelled" });
+      send(socket, { type: "reply.completed" });
+      send(socket, { type: "speech.started" });
       const snap = core.getSnapshot();
       expect(snap.state).toBe("error");
       expect(snap.error?.message).toContain("CARTESIA_API_KEY");
@@ -237,7 +257,7 @@ describe("session-core server events", () => {
 
   describe("tool calls", () => {
     const toolCall = (id: string, name: string) => ({
-      type: "tool_call",
+      type: "tool.called",
       toolCallId: id,
       toolName: name,
       args: { q: id },
@@ -248,7 +268,7 @@ describe("session-core server events", () => {
       send(socket, toolCall("call-a", "search"));
       send(socket, toolCall("call-b", "lookup"));
 
-      send(socket, { type: "tool_call_done", toolCallId: "call-b", result: "b-result" });
+      send(socket, { type: "tool.completed", toolCallId: "call-b", result: "b-result" });
 
       const [first, second] = core.getSnapshot().toolCalls;
       expect(first).toMatchObject({ callId: "call-a", status: "pending" });
@@ -261,7 +281,7 @@ describe("session-core server events", () => {
       const socket = connect();
       for (const id of ["call-a", "call-b", "call-c"]) send(socket, toolCall(id, "t"));
 
-      send(socket, { type: "tool_call_done", toolCallId: "call-b", result: "b" });
+      send(socket, { type: "tool.completed", toolCallId: "call-b", result: "b" });
 
       const statuses = core.getSnapshot().toolCalls.map((tc) => tc.status);
       expect(statuses).toEqual(["pending", "done", "pending"]);
@@ -272,7 +292,7 @@ describe("session-core server events", () => {
       send(socket, toolCall("call-a", "search"));
       const before = core.getSnapshot().toolCalls;
 
-      send(socket, { type: "tool_call_done", toolCallId: "never-seen", result: "x" });
+      send(socket, { type: "tool.completed", toolCallId: "never-seen", result: "x" });
 
       // Same array instance: an unknown id is not a state change, and
       // replacing the array re-renders every consumer that depends on it.
@@ -307,7 +327,7 @@ describe("session-core server events", () => {
       // all, where the "unrecognised type" comment implies it would.
       const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "agent_transcript", text: 42 });
+      send(socket, { type: "agent-transcript.updated", text: 42 });
 
       expect(spy).not.toHaveBeenCalled();
       expect(core.getSnapshot().agentTranscript).toBeNull();
@@ -316,7 +336,7 @@ describe("session-core server events", () => {
     it("drops a non-string, non-binary frame with a warning", () => {
       const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "agent_transcript", text: "kept" });
+      send(socket, { type: "agent-transcript.updated", text: "kept" });
       socket.simulateMessage("not json at all");
 
       expect(spy).toHaveBeenCalledWith("session-core: invalid JSON; dropping");
@@ -342,7 +362,12 @@ describe("session-core server events", () => {
       // audio must still reach the speaker.
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "error", code: "llm", message: "one turn failed", fatal: false });
+      send(socket, {
+        type: "error.reported",
+        code: "llm",
+        message: "one turn failed",
+        fatal: false,
+      });
 
       socket.simulateMessage(chunk());
       expect(core.getSnapshot().state).toBe("speaking");
@@ -351,7 +376,7 @@ describe("session-core server events", () => {
     it("ignores a straggler chunk on an errored session", () => {
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "error", code: "internal", message: "over", fatal: true });
+      send(socket, { type: "error.reported", code: "internal", message: "over", fatal: true });
 
       socket.simulateMessage(chunk());
       expect(core.getSnapshot().state).toBe("error");
@@ -362,7 +387,7 @@ describe("session-core server events", () => {
       // the error still set; a late chunk must not flip that to "speaking".
       vi.spyOn(console, "error").mockImplementation(() => undefined);
       const socket = connect();
-      send(socket, { type: "error", code: "internal", message: "over", fatal: true });
+      send(socket, { type: "error.reported", code: "internal", message: "over", fatal: true });
       socket.simulateClose(1011);
 
       socket.simulateMessage(chunk());
@@ -390,7 +415,7 @@ describe("session-core server events", () => {
       const listener = vi.fn();
       const unsubscribe = core.subscribe(listener);
 
-      send(socket, { type: "speech_stopped" });
+      send(socket, { type: "speech.stopped" });
 
       expect(listener).not.toHaveBeenCalled();
       unsubscribe();
@@ -421,10 +446,10 @@ describe("session-core server events", () => {
       // finishing normally must not, or captions for speech the user is still
       // producing vanish mid-utterance.
       const socket = connect();
-      send(socket, { type: "user_transcript_partial", text: "and another thi" });
-      send(socket, { type: "agent_transcript", text: "Sure." });
+      send(socket, { type: "user-transcript.updated", text: "and another thi" });
+      send(socket, { type: "agent-transcript.updated", text: "Sure." });
 
-      send(socket, { type: "reply_done" });
+      send(socket, { type: "reply.completed" });
 
       const snap = core.getSnapshot();
       expect(snap.userTranscript).toBe("and another thi");

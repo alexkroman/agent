@@ -116,7 +116,7 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     // The workflow trio. Inert rather than absent: an agent with no
     // `workflows/` directory is the case every spec in these files uses, and
     // the real implementations would resolve a DevKit world just to answer
-    // "there is nothing to serve". `dev-workflow.integration.test.ts` covers
+    // "there is nothing to serve". `dev-workflow.scenario.test.ts` covers
     // the wired-up path against real bundles.
     configureWorkflowWorld: vi.fn(() => "local"),
     createWorkflowSurface: vi.fn(async () => undefined),

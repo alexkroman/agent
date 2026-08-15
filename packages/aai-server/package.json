@@ -8,8 +8,8 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test:integration": "VITEST_INCLUDE=**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "check:integration": "pnpm run test:integration",
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "check:scenario": "pnpm run test:scenario",
     "predeploy:modal": "node ../../scripts/ensure-guest-harness.mjs",
     "deploy:modal": "modal deploy modal_deploy.py"
   },

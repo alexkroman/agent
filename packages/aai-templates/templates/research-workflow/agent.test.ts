@@ -16,7 +16,7 @@
  * no bundler in the path, a `"use step"` function is an ordinary async function,
  * so its prompt handling, its parsing and its `FatalError` guards are all
  * testable — while durability, suspension and replay are not. The body itself is
- * not driven here for that reason; `aai-cli`'s `dev-workflow.integration.test.ts`
+ * not driven here for that reason; `aai-cli`'s `dev-workflow.scenario.test.ts`
  * builds a project and runs one.
  */
 

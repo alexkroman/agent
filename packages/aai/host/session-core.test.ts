@@ -1,10 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
-import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
+import type { ClientSink, SessionEvent } from "../sdk/protocol.ts";
 import { DEFAULT_SYSTEM_PROMPT, type Message } from "../sdk/types.ts";
-import { flush } from "./_test-utils.ts";
+import { flush, makeEmitter } from "./_test-utils.ts";
 import type { SessionCore, SessionCoreOptions } from "./session-core.ts";
 import { createSessionCore } from "./session-core.ts";
+import type { SessionEventStream } from "./session-event-stream.ts";
 import type { Transport } from "./transports/types.ts";
 
 // `playAudioDone` / `start` / `stop` are plain `vi.fn()`s like every other
@@ -12,12 +13,12 @@ import type { Transport } from "./transports/types.ts";
 // `let audioDoneCount = 0` + getter + `readonly` field triple (and the same
 // for starts/stops) was 18 lines of bookkeeping duplicating `mock.calls`.
 function makeSink(): {
-  events: ClientEvent[];
+  events: SessionEvent[];
   audioChunks: Uint8Array[];
   closeReasons: (string | undefined)[];
   sink: ClientSink;
 } {
-  const events: ClientEvent[] = [];
+  const events: SessionEvent[] = [];
   const audioChunks: Uint8Array[] = [];
   const closeReasons: (string | undefined)[] = [];
   return {
@@ -32,7 +33,6 @@ function makeSink(): {
       playAudioChunk: (chunk) => {
         audioChunks.push(chunk);
       },
-      playAudioDone: vi.fn(),
       close: (reason) => {
         closeReasons.push(reason);
       },
@@ -58,19 +58,28 @@ function makeCore(overrides: Partial<SessionCoreOptions> = {}): {
   core: SessionCore;
   sink: ReturnType<typeof makeSink>;
   transport: ReturnType<typeof makeTransport>;
+  stream: SessionEventStream;
 } {
   const sink = makeSink();
   const transport = makeTransport();
+  // Over the client a spec actually passed, not `sink.sink` — an override that
+  // wraps the sink (the idle-ordering spec below) has to see the events.
+  const client = overrides.client ?? sink.sink;
+  // A real emitter over a real stream — see `makeEmitter`'s doc for why the seam
+  // is not stubbed. `stream` comes back so a spec can assert on what was
+  // RECORDED, which is a different question from what the sink saw.
+  const { emitter, stream } = makeEmitter(client, { sessionId: "s-test" });
   const core = createSessionCore({
     id: "s-test",
     agent: "test-agent",
-    client: sink.sink,
+    client,
+    emitter,
     agentConfig: makeAgentConfig(),
     executeTool: vi.fn(async () => "ok"),
     transport,
     ...overrides,
   });
-  return { core, sink, transport };
+  return { core, sink, transport, stream };
 }
 
 describe("createSessionCore — lifecycle", () => {
@@ -107,6 +116,7 @@ describe("createSessionCore — lifecycle", () => {
       id: "s-test",
       agent: "test-agent",
       client: sink.sink,
+      emitter: makeEmitter(sink.sink, { sessionId: "s-test" }).emitter,
       agentConfig: makeAgentConfig(),
       executeTool,
       transport,
@@ -132,7 +142,7 @@ describe("createSessionCore — lifecycle", () => {
       await core.stop();
       core.onAudio(new Uint8Array([1]));
       vi.advanceTimersByTime(5000);
-      expect(sink.events.some((e) => e.type === "idle_timeout")).toBe(false);
+      expect(sink.events.some((e) => e.type === "session.timed-out")).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -182,7 +192,7 @@ describe("createSessionCore — client inbound", () => {
     await core.start();
     core.onCancel();
     expect(transport.cancelReply).toHaveBeenCalledOnce();
-    expect(sink.events.some((e) => e.type === "cancelled")).toBe(true);
+    expect(sink.events.some((e) => e.type === "reply.cancelled")).toBe(true);
   });
   test("onCancel aborts an in-flight tool's signal", async () => {
     // A user cancel must stop the tool's actual work — without the abort the
@@ -219,11 +229,11 @@ describe("createSessionCore — client inbound", () => {
       expect(transport.sendToolResult).toHaveBeenCalledWith("c1", "late result");
     });
   });
-  test("onReset emits reset", async () => {
+  test("onReset emits session.reset", async () => {
     const { core, sink } = makeCore();
     await core.start();
     core.onReset();
-    expect(sink.events.some((e) => e.type === "reset")).toBe(true);
+    expect(sink.events.some((e) => e.type === "session.reset")).toBe(true);
   });
 });
 
@@ -239,18 +249,21 @@ describe("createSessionCore — transport inbound (basic)", () => {
     const { core, sink } = makeCore();
     await core.start();
     core.onUserTranscript("hello");
-    expect(sink.events.some((e) => e.type === "user_transcript")).toBe(true);
+    expect(sink.events.some((e) => e.type === "user-transcript.committed")).toBe(true);
   });
 });
 
 describe("createSessionCore — reply dedup", () => {
-  test("first reply_done emits reply_done + audio_done", async () => {
+  test("first reply.done emits reply.completed + audio.completed", async () => {
     const { core, sink } = makeCore();
     await core.start();
     core.onReplyStarted("r1");
     core.onReplyDone();
-    expect(sink.events.some((e) => e.type === "reply_done")).toBe(true);
-    expect(sink.sink.playAudioDone).toHaveBeenCalled();
+    expect(sink.events.some((e) => e.type === "reply.completed")).toBe(true);
+    // `audio.completed` is an EVENT now, not a `playAudioDone()` on the sink —
+    // which is what put it in the retained stream. The sink is what keeps it
+    // behind held audio, by type.
+    expect(sink.events.some((e) => e.type === "audio.completed")).toBe(true);
   });
   test("duplicate reply_done is dropped", async () => {
     const { core, sink } = makeCore();
@@ -258,7 +271,7 @@ describe("createSessionCore — reply dedup", () => {
     core.onReplyStarted("r1");
     core.onReplyDone();
     core.onReplyDone();
-    const dones = sink.events.filter((e) => e.type === "reply_done");
+    const dones = sink.events.filter((e) => e.type === "reply.completed");
     expect(dones).toHaveLength(1);
   });
   test("onCancelled clears currentReplyId so subsequent replyDone is dropped", async () => {
@@ -267,7 +280,7 @@ describe("createSessionCore — reply dedup", () => {
     core.onReplyStarted("r1");
     core.onCancelled();
     core.onReplyDone();
-    expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(0);
+    expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
   });
 });
 
@@ -283,7 +296,7 @@ describe("createSessionCore — tool call pending results", () => {
     await vi.waitFor(() =>
       expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "tool-output"),
     );
-    expect(sink.events.some((e) => e.type === "tool_call_done")).toBe(true);
+    expect(sink.events.some((e) => e.type === "tool.completed")).toBe(true);
   });
 
   test("a barged-in reply's late tool result is not forwarded to the next reply", async () => {
@@ -399,13 +412,13 @@ describe("createSessionCore — duplicate reply.done in multi-hop turns", () => 
     await flush();
     await flush();
     await flush();
-    expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(0);
+    expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
 
     // The real continuation arrives and ends the turn exactly once.
     core.onAgentTranscript("answer", false);
     core.onReplyDone();
     await vi.waitFor(() =>
-      expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(1),
+      expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(1),
     );
   });
 
@@ -419,18 +432,18 @@ describe("createSessionCore — duplicate reply.done in multi-hop turns", () => 
     await flush();
     core.onReplyDone();
     await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("c1", "out"));
-    expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(0);
+    expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
 
     core.onToolCall("c2", "t", {}); // continuation hop
     await flush();
     core.onReplyDone();
     await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("c2", "out"));
-    expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(0);
+    expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
 
     core.onAgentTranscript("final answer", false);
     core.onReplyDone();
     await vi.waitFor(() =>
-      expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(1),
+      expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(1),
     );
   });
 });
@@ -443,9 +456,9 @@ describe("createSessionCore — idle timeout", () => {
         agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
-      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(0);
+      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(0);
       vi.advanceTimersByTime(1001);
-      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -467,7 +480,7 @@ describe("createSessionCore — idle timeout", () => {
         core.onAudio(new Uint8Array(640));
         vi.advanceTimersByTime(20);
       }
-      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -493,9 +506,9 @@ describe("createSessionCore — idle timeout", () => {
       vi.advanceTimersByTime(800);
       act(core);
       vi.advanceTimersByTime(800);
-      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(0);
+      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(0);
       vi.advanceTimersByTime(300);
-      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -512,13 +525,13 @@ describe("createSessionCore — idle timeout", () => {
       });
       await core.start();
       vi.advanceTimersByTime(1001);
-      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "session.timed-out")).toHaveLength(1);
       expect(sink.closeReasons).toEqual(["idle timeout"]);
     } finally {
       vi.useRealTimers();
     }
   });
-  test("emits idle_timeout before closing, so the client learns why", async () => {
+  test("emits session.timed-out before closing, so the client learns why", async () => {
     vi.useFakeTimers();
     try {
       const order: string[] = [];
@@ -540,10 +553,43 @@ describe("createSessionCore — idle timeout", () => {
       });
       await core.start();
       vi.advanceTimersByTime(1001);
-      expect(order).toEqual(["event:idle_timeout", "close"]);
+      expect(order).toEqual(["event:session.timed-out", "close"]);
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("createSessionCore — the handshake", () => {
+  // `wireSessionSocket` decides WHEN to announce (zero RTT, before start); the
+  // frame's contents are this module's, so they are asserted here. It used to be
+  // a JSON literal written straight to the socket by the handler, which is what
+  // kept the handshake out of the event stream.
+  test("configure emits session.configured with the negotiated rates and the session id", () => {
+    const { core, sink } = makeCore();
+
+    core.configure({ audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 });
+
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        type: "session.configured",
+        audioFormat: "pcm16",
+        sampleRate: 16_000,
+        ttsSampleRate: 24_000,
+        // What a client reconnects with (`?sessionId=`) and reads the stream by.
+        sessionId: "s-test",
+      }),
+    );
+  });
+
+  test("the handshake is RECORDED in the session's stream, like any other event", async () => {
+    const { core, stream } = makeCore();
+
+    core.configure({ audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 });
+
+    const page = await stream.read("s-test", 0);
+    expect(page.events.map((e) => e.type)).toEqual(["session.configured"]);
+    expect(page.tail).toBe(1);
   });
 });
 
@@ -553,12 +599,12 @@ describe("createSessionCore — history", () => {
   // view the agent's own tools get. Asserting through that seam is what makes
   // "appends" and "pushes" claims rather than a sequence of calls that merely
   // did not throw.
-  test("onHistory appends and onUserTranscript pushes user messages", async () => {
+  test("restoreHistory appends and onUserTranscript pushes user messages", async () => {
     const executeTool = vi.fn<ExecuteTool>(async () => "ok");
     const { core } = makeCore({ executeTool });
     await core.start();
 
-    core.onHistory([{ role: "user", content: "prior" }]);
+    core.restoreHistory([{ role: "user", content: "prior" }]);
     core.onUserTranscript("now");
 
     core.onReplyStarted("r1");
@@ -574,7 +620,7 @@ describe("createSessionCore — history", () => {
     const executeTool = vi.fn<ExecuteTool>(async () => "ok");
     const { core } = makeCore({ executeTool });
     await core.start();
-    core.onHistory([{ role: "user", content: "prior" }]);
+    core.restoreHistory([{ role: "user", content: "prior" }]);
 
     core.onReset();
 
@@ -599,11 +645,15 @@ describe("createSessionCore — error logging", () => {
       code: "stt",
       message: "socket closed 1000",
     });
-    expect(sink.events).toContainEqual({
-      type: "error",
-      code: "stt",
-      message: "socket closed 1000",
-    });
+    // `objectContaining`, because every event carries an envelope now and this
+    // spec is about the error, not the id it was stamped with.
+    expect(sink.events).toContainEqual(
+      expect.objectContaining({
+        type: "error.reported",
+        code: "stt",
+        message: "socket closed 1000",
+      }),
+    );
   });
 
   test("a non-fatal error stays at debug level", () => {

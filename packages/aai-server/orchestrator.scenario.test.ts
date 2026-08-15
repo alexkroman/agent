@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Integration tests for the orchestrator HTTP layer.
+ * Scenario tests for the orchestrator HTTP layer — a real HTTP server on a real
+ * port, which is what puts them in that tier rather than the in-memory one.
  *
  * Uses real `createBundleStore` + the in-memory blob storage (not the mock)
  * to verify that deployed agent bundles are correctly served by the

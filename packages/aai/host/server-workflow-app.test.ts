@@ -84,11 +84,13 @@ describe("a workflow app's server", () => {
       ws.on("error", reject);
     });
     const closed = new Promise<number>((resolve) => ws.on("close", resolve));
-    expect(JSON.parse(message)).toEqual({
-      type: "error",
-      code: "protocol",
-      message: expect.stringContaining("static page"),
-    });
+    expect(JSON.parse(message)).toEqual(
+      expect.objectContaining({
+        type: "error.reported",
+        code: "protocol",
+        message: expect.stringContaining("static page"),
+      }),
+    );
     expect(await closed).toBe(1008);
   });
 

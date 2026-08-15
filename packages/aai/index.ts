@@ -79,6 +79,21 @@ export * from "./sdk/providers/s2s/assemblyai.ts";
  * `sdk/schema.ts` for the signatures that reference them.
  */
 export type { InferSchemaOutput, ToolInputSchema } from "./sdk/schema.ts";
+/**
+ * The types an `agent({ events })` handler is written against.
+ *
+ * On the root by the barrel's own membership test — an `agent.ts` NAMES these the
+ * moment a handler is extracted from the literal into a function of its own, which
+ * is the first thing an author does once one grows past a line. `SessionEvent`
+ * itself is not here: it is the wire union and lives on
+ * `@alexkroman1/aai/protocol`, so a handler that needs to name one imports it
+ * there, exactly as a client does.
+ */
+export type {
+  SessionEventContext,
+  SessionEventHandler,
+  SessionEventHandlers,
+} from "./sdk/session-events.ts";
 // Session state's typed seam — next to `agent()`/`tool()` because it is how a
 // multi-file agent reads and writes its own state, not an optional utility.
 export * from "./sdk/session-slot.ts";

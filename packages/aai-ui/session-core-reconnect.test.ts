@@ -97,7 +97,7 @@ describe("session-core automatic reconnection (partysocket)", () => {
     await vi.advanceTimersByTimeAsync(0);
     const socket = created[0];
     socket?.simulateOpen();
-    socket?.simulateMessage(JSON.stringify({ type: "idle_timeout" }));
+    socket?.simulateMessage(JSON.stringify({ type: "session.timed-out" }));
     socket?.simulateClose();
 
     expect(core.getSnapshot().state).toBe("disconnected");

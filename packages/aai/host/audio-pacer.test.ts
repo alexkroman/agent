@@ -20,11 +20,16 @@ function makePacer(leadMs = 1000) {
   const dones: number[] = [];
   const pacer = createAudioPacer({
     sendAudio: (chunk) => audio.push(chunk.byteLength),
-    sendDone: () => dones.push(Date.now()),
     sampleRate: SAMPLE_RATE,
     leadMs,
   });
-  return { pacer, audio, dones };
+  // `pushDone` is gone: the turn's `audio.completed` is an ordinary event now, so
+  // the sink queues it through `pushAfterAudio` like any other end-of-turn frame.
+  // Same ordering under test, one less way to enqueue one.
+  const pushDone = () => {
+    pacer.pushAfterAudio(() => dones.push(Date.now()));
+  };
+  return { pacer, audio, dones, pushDone };
 }
 
 /** Push `count` 100ms chunks. */
@@ -85,9 +90,9 @@ describe("createAudioPacer", () => {
   });
 
   test("keeps audio_done behind the audio it follows", () => {
-    const { pacer, audio, dones } = makePacer();
+    const { pacer, audio, dones, pushDone } = makePacer();
     pushChunks(pacer, 15);
-    pacer.pushDone();
+    pushDone();
 
     // audio_done arriving before the tail would make the client's worklet
     // treat the turn as finished and drop the rest of the reply.
@@ -118,26 +123,26 @@ describe("createAudioPacer", () => {
   test("an unpaced client gets every frame as it arrives", () => {
     // A programmatic client meters playback itself; holding audio to the wall
     // clock starves it instead of protecting it.
-    const { pacer, audio, dones } = makePacer(UNPACED_AUDIO_LEAD_MS);
+    const { pacer, audio, dones, pushDone } = makePacer(UNPACED_AUDIO_LEAD_MS);
     pushChunks(pacer, 50); // 5s of audio against a 1s real-time lead
-    pacer.pushDone();
+    pushDone();
     expect(audio).toHaveLength(50);
     expect(dones).toHaveLength(1);
     pacer.stop();
   });
 
   test("sends audio_done immediately when nothing is queued behind it", () => {
-    const { pacer, dones } = makePacer();
+    const { pacer, dones, pushDone } = makePacer();
     pushChunks(pacer, 2);
-    pacer.pushDone();
+    pushDone();
     expect(dones).toHaveLength(1);
     pacer.stop();
   });
 
   test("clear drops held audio and a pending done", () => {
-    const { pacer, audio, dones } = makePacer();
+    const { pacer, audio, dones, pushDone } = makePacer();
     pushChunks(pacer, 15);
-    pacer.pushDone();
+    pushDone();
     const sentBeforeClear = audio.length;
 
     // Barge-in: the client discards its own buffer, so held audio for the

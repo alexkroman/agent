@@ -179,7 +179,7 @@ export function createTelephonyBridge(
     }
     // The caller interrupted, or the conversation was reset. Both mean the
     // audio the carrier is still holding is dead — see CarrierCodec.clear.
-    if (type === "cancelled" || type === "reset") sendToCarrier(carrier.clear(streamId));
+    if (type === "reply.cancelled" || type === "reset") sendToCarrier(carrier.clear(streamId));
     // Everything else is for a screen: transcripts, tool calls, agent state,
     // reply/turn boundaries. A phone has none, and the audio already carries
     // the conversation.

@@ -25,11 +25,13 @@ import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
 import { serveStatic } from "./server-static.ts";
+import { declineSocket } from "./session-decline.ts";
+import { createSessionEventsApi, SESSION_EVENTS_TOKEN_ENV } from "./session-events-api.ts";
 import { handleTelephonyUpgrade } from "./telephony/telephony-server.ts";
 import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "./workflow-api.ts";
 import { answerHandlerFailure, sendJson } from "./workflow-api-http.ts";
 import { installWorkflowSupport } from "./workflow-install.ts";
-import { asSessionWebSocket, safeSend } from "./ws-handler.ts";
+import { asSessionWebSocket } from "./ws-handler.ts";
 
 /**
  * The session-facing slice of a runtime — all {@link createServer} needs.
@@ -41,7 +43,10 @@ import { asSessionWebSocket, safeSend } from "./ws-handler.ts";
  * this — the workflow API then answers 404, which is the truthful reply for a
  * runtime that offers no client.
  */
-export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows">;
+export type SessionRuntime = Pick<
+  AgentRuntime,
+  "startSession" | "shutdown" | "workflows" | "sessionEvents"
+>;
 
 /** Configuration for {@link createServer}. */
 /**
@@ -174,28 +179,9 @@ export type AgentServer = {
  */
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
-/**
- * A {@link SessionRuntime} that turns every session away with a protocol error
- * and closes, instead of accepting a socket it cannot answer.
- *
- * For a server whose `/websocket` has no agent behind it — `createHostServer`,
- * which serves only `?host=1` sessions. The guest harness hand-rolls the same
- * shape for its drain refusal; this is here so the third one does not get
- * written by hand too.
- *
- * A refusal must SAY something: closing a bare socket leaves the client
- * reconnecting against a server that will never answer, with nothing in the
- * frame log explaining why.
- */
-export function decliningRuntime(message: string, logger: Logger = consoleLogger): SessionRuntime {
-  return {
-    startSession(ws) {
-      safeSend(ws, JSON.stringify({ type: "error", code: "protocol", message }), logger);
-      ws.close?.(1008);
-    },
-    shutdown: () => Promise.resolve(),
-  };
-}
+// A socket this server will not serve is turned away with a REASON — see
+// `session-decline.ts`, which owns the three refusal paths.
+export { decliningRuntime } from "./session-decline.ts";
 
 /**
  * How often shutdown re-drops idle keep-alive connections — see `close()`.
@@ -261,6 +247,20 @@ export function createServer(options: ServerOptions): AgentServer {
     logger,
   });
 
+  /**
+   * The session event stream's read surface (`/session-events/:id`).
+   *
+   * Mounted beside the workflow API and for the same reason: every front door —
+   * `aai dev`, a self-hosted `createServer`, a deployed guest — serves it
+   * identically, so a feature developed locally cannot 404 once deployed. Same
+   * lazy getter, for the same lazy-runtime reason.
+   */
+  const sessionEventsApi = createSessionEventsApi({
+    stream: () => runtime.sessionEvents,
+    ...omitUndefined({ token: env?.[SESSION_EVENTS_TOKEN_ENV] }),
+    logger,
+  });
+
   // Pre-connection client config: how the default client should talk to
   // this agent (see sdk/client-config.ts).
   function sendClientConfig(res: http.ServerResponse): void {
@@ -319,6 +319,7 @@ export function createServer(options: ServerOptions): AgentServer {
     // the guest's manage surface) and before static serving, so a client asset
     // named `workflows` can never shadow the API.
     if (workflowApi(req, res, url, method)) return;
+    if (sessionEventsApi(req, res, url, method)) return;
     handleRequest(req, res, url, method).catch((err: unknown) => {
       // A rejection here would otherwise be an unhandled rejection that can
       // take down the process; answer 500 when possible, else drop the socket.
@@ -355,19 +356,12 @@ export function createServer(options: ServerOptions): AgentServer {
       // `client()` into a `page: "static"` app needs to read.
       logger.warn(`WS upgrade ${url} rejected: this agent serves a static page`);
       wss.handleUpgrade(req, socket, head, (ws) => {
-        const session = asSessionWebSocket(ws);
-        safeSend(
-          session,
-          JSON.stringify({
-            type: "error",
-            code: "protocol",
-            message:
-              "this agent serves a static page, not voice sessions — " +
-              "mount it with page() and talk to it over the workflow API",
-          }),
+        declineSocket(
+          ws,
+          "this agent serves a static page, not voice sessions — " +
+            "mount it with page() and talk to it over the workflow API",
           logger,
         );
-        ws.close(1008);
       });
       return;
     }
@@ -399,16 +393,7 @@ export function createServer(options: ServerOptions): AgentServer {
       }
       if (wantsHost) {
         logger.warn(`WS upgrade ${url} rejected: host mode unavailable`);
-        safeSend(
-          session,
-          JSON.stringify({
-            type: "error",
-            code: "protocol",
-            message: "host mode is not enabled on this server",
-          }),
-          logger,
-        );
-        ws.close(1008);
+        declineSocket(ws, "host mode is not enabled on this server", logger);
         return;
       }
 

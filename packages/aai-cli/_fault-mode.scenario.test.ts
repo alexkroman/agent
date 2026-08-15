@@ -2,7 +2,7 @@
 /**
  * Specs for fault mode.
  *
- * Integration tier because it spawns real child processes, binds real sockets
+ * Scenario tier because it spawns real child processes, binds real sockets
  * and hard-kills them — the three things it exists to do.
  *
  * The server under supervision is a FAKE, not `aai dev`, and it needs no seam to

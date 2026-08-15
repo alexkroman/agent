@@ -6,7 +6,7 @@
  * This exists because the two halves of the resume contract were each covered
  * and never together. `ws-handler-resume.test.ts` drives the real machinery
  * (id reuse, a delayed stop not evicting a resumed session, the superseded-session
- * eviction) against a MOCKED socket; `session-resume.integration.test.ts` drives a
+ * eviction) against a MOCKED socket; `session-resume.scenario.test.ts` drives a
  * really-severed socket against a FAKE runtime. A defect needing both to be real
  * would slip through both, so this is the configuration neither covers: a real
  * `createRuntime`, a real `createServer`, a real WebSocket, and
@@ -207,12 +207,12 @@ describe("ctx.state across a severed connection (real runtime)", () => {
   test("state written before the drop is PUSHED to the resumed socket", async () => {
     harness = await serve();
     const first = await connect(harness.proxy);
-    const config = await first.waitFor("config");
+    const config = await first.waitFor("session.configured");
     const sessionId = config.sessionId;
     expect(sessionId).toBeTruthy();
 
     await addItem(harness, "widget", "call-1");
-    const beforeDrop = await first.waitFor("agent_state");
+    const beforeDrop = await first.waitFor("state.updated");
     expect(beforeDrop.state).toEqual({ items: ["widget"] });
 
     const closed = first.closed();
@@ -222,9 +222,9 @@ describe("ctx.state across a severed connection (real runtime)", () => {
     // The reconnect. `pushStateSnapshot` is what has to fire here: the new socket
     // has never seen this state, and no further tool call is made.
     const second = await connect(harness.proxy, `?sessionId=${sessionId}`);
-    const resumed = await second.waitFor("agent_state");
+    const resumed = await second.waitFor("state.updated");
     expect(resumed.state).toEqual({ items: ["widget"] });
-    const resumedConfig = await second.waitFor("config");
+    const resumedConfig = await second.waitFor("session.configured");
     expect(resumedConfig.sessionId).toBe(sessionId);
     second.ws.close();
   });
@@ -236,21 +236,21 @@ describe("ctx.state across a severed connection (real runtime)", () => {
     // and fail this one.
     harness = await serve();
     const first = await connect(harness.proxy);
-    const { sessionId } = await first.waitFor("config");
+    const { sessionId } = await first.waitFor("session.configured");
     await addItem(harness, "first", "call-1");
-    await first.waitFor("agent_state");
+    await first.waitFor("state.updated");
 
     const closed = first.closed();
     harness.proxy.severAll();
     await closed;
 
     const second = await connect(harness.proxy, `?sessionId=${sessionId}`);
-    await second.waitFor("agent_state");
+    await second.waitFor("state.updated");
     await addItem(harness, "second", "call-2");
 
-    const after = await second.waitFor("agent_state", 5000);
+    const after = await second.waitFor("state.updated", 5000);
     void after;
-    const states = second.frames.filter((frame) => frame.type === "agent_state");
+    const states = second.frames.filter((frame) => frame.type === "state.updated");
     expect(states.at(-1)?.state).toEqual({ items: ["first", "second"] });
     second.ws.close();
   });
@@ -261,37 +261,37 @@ describe("ctx.state across a severed connection (real runtime)", () => {
     // caller's state to the next.
     harness = await serve();
     const first = await connect(harness.proxy);
-    await first.waitFor("config");
+    await first.waitFor("session.configured");
     await addItem(harness, "widget", "call-1");
-    await first.waitFor("agent_state");
+    await first.waitFor("state.updated");
 
     const closed = first.closed();
     harness.proxy.severAll();
     await closed;
 
     const second = await connect(harness.proxy);
-    await second.waitFor("config");
+    await second.waitFor("session.configured");
     // Long enough that a snapshot would have arrived if one were coming.
     await new Promise((resolve) => setTimeout(resolve, 200));
-    expect(second.frames.filter((frame) => frame.type === "agent_state")).toHaveLength(0);
+    expect(second.frames.filter((frame) => frame.type === "state.updated")).toHaveLength(0);
     second.ws.close();
   });
 
   test("surviving three severs keeps one accumulating state", async () => {
     harness = await serve();
     let client = await connect(harness.proxy);
-    const { sessionId } = await client.waitFor("config");
+    const { sessionId } = await client.waitFor("session.configured");
 
     for (const [index, item] of ["one", "two", "three"].entries()) {
       await addItem(harness, item, `call-${index}`);
-      await client.waitFor("agent_state");
+      await client.waitFor("state.updated");
       const closed = client.closed();
       harness.proxy.severAll();
       await closed;
       client = await connect(harness.proxy, `?sessionId=${sessionId}`);
     }
 
-    const snapshot = await client.waitFor("agent_state");
+    const snapshot = await client.waitFor("state.updated");
     expect(snapshot.state).toEqual({ items: ["one", "two", "three"] });
     expect(harness.proxy.severed()).toBe(3);
     client.ws.close();

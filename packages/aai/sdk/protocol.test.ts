@@ -6,14 +6,15 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./constants.ts";
-import type { ClientEvent, ServerMessage } from "./protocol.ts";
+import type { ServerMessage, SessionEvent } from "./protocol.ts";
 import {
   buildReadyConfig,
   CLIENT_MESSAGE_TYPES,
-  ClientEventSchema,
   ClientMessageSchema,
+  EVENT_ID_PREFIX,
   lenientParse,
   SessionErrorCodeSchema,
+  SessionEventSchema,
 } from "./protocol.ts";
 
 describe("protocol constants", () => {
@@ -51,29 +52,29 @@ describe("SessionErrorCodeSchema", () => {
   });
 });
 
-describe("ClientEventSchema", () => {
-  test("accepts speech_started", () => {
-    expect({ type: "speech_started" }).toBeValidClientEvent();
+describe("SessionEventSchema", () => {
+  test("accepts speech.started", () => {
+    expect({ type: "speech.started" }).toBeValidSessionEvent();
   });
 
-  test("accepts user_transcript", () => {
-    expect({ type: "user_transcript", text: "hello world" }).toBeValidClientEvent();
+  test("accepts user-transcript.committed", () => {
+    expect({ type: "user-transcript.committed", text: "hello world" }).toBeValidSessionEvent();
   });
 
   test("accepts error event", () => {
     expect({
-      type: "error",
+      type: "error.reported",
       code: "internal",
       message: "something went wrong",
-    }).toBeValidClientEvent();
+    }).toBeValidSessionEvent();
   });
 
   test("rejects unknown type", () => {
-    expect({ type: "unknown_event_type" }).not.toBeValidClientEvent();
+    expect({ type: "unknown_event_type" }).not.toBeValidSessionEvent();
   });
 });
 
-describe("ClientMessageSchema", () => {
+describe("SessionCommandSchema", () => {
   test("accepts audio_ready", () => {
     const result = ClientMessageSchema.safeParse({ type: "audio_ready" });
     expect(result.success).toBe(true);
@@ -89,11 +90,8 @@ describe("ClientMessageSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  test("accepts history with messages", () => {
-    const result = ClientMessageSchema.safeParse({
-      type: "history",
-      messages: [{ role: "user", content: "hello" }],
-    });
+  test("accepts playback_progress", () => {
+    const result = ClientMessageSchema.safeParse({ type: "playback_progress", bufferedMs: 250 });
     expect(result.success).toBe(true);
   });
 
@@ -128,31 +126,32 @@ describe("property: lenientParse", () => {
   test("never throws on arbitrary input", () => {
     fc.assert(
       fc.property(fc.anything(), (input) => {
-        const result = lenientParse(ClientEventSchema, input);
+        const result = lenientParse(SessionEventSchema, input);
         expect(result).toHaveProperty("ok");
       }),
     );
   });
 
-  test("valid ClientEvents round-trip through parse", () => {
-    const speechStartedArb = fc.constant({ type: "speech_started" as const });
-
-    const userTranscriptArb = fc.record({
-      type: fc.constant("user_transcript" as const),
-      text: fc.string(),
+  test("valid session events round-trip through parse", () => {
+    // The envelope is generated too, rather than fixed: it is REQUIRED now, so a
+    // generator that always supplied a good one would never exercise the field
+    // that every reader keys on.
+    const metaArb = fc.record({
+      id: fc.string({ minLength: 1 }).map((tail) => `${EVENT_ID_PREFIX}${tail}`),
+      at: fc.nat(),
     });
-
-    const errorEventArb = fc.record({
-      type: fc.constant("error" as const),
-      code: fc.constantFrom(...ERROR_CODES),
-      message: fc.string(),
-    });
-
-    const clientEventArb = fc.oneof(speechStartedArb, userTranscriptArb, errorEventArb);
-
+    const bodyArb = fc.oneof(
+      fc.constant({ type: "speech.started" as const }),
+      fc.record({ type: fc.constant("user-transcript.committed" as const), text: fc.string() }),
+      fc.record({
+        type: fc.constant("error.reported" as const),
+        code: fc.constantFrom(...ERROR_CODES),
+        message: fc.string(),
+      }),
+    );
     fc.assert(
-      fc.property(clientEventArb, (event) => {
-        const result = lenientParse(ClientEventSchema, event);
+      fc.property(bodyArb, metaArb, (body, meta) => {
+        const result = lenientParse(SessionEventSchema, { ...body, meta });
         expect(result.ok).toBe(true);
       }),
     );
@@ -163,7 +162,7 @@ describe("property: lenientParse", () => {
 
     fc.assert(
       fc.property(noTypeArb, (obj) => {
-        const result = lenientParse(ClientEventSchema, obj);
+        const result = lenientParse(SessionEventSchema, obj);
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.malformed).toBe(true);
@@ -197,21 +196,21 @@ describe("property: lenientParse", () => {
 });
 
 describe("protocol type contracts", () => {
-  test("ClientEvent narrows on user_transcript discriminant", () => {
-    type UserTranscript = Extract<ClientEvent, { type: "user_transcript" }>;
+  test("SessionEvent narrows on user-transcript.committed", () => {
+    type UserTranscript = Extract<SessionEvent, { type: "user-transcript.committed" }>;
     expectTypeOf<UserTranscript>().toHaveProperty("text");
     expectTypeOf<UserTranscript["text"]>().toBeString();
   });
 
-  test("ClientEvent narrows on tool_call discriminant", () => {
-    type ToolCall = Extract<ClientEvent, { type: "tool_call" }>;
+  test("SessionEvent narrows on tool.called", () => {
+    type ToolCall = Extract<SessionEvent, { type: "tool.called" }>;
     expectTypeOf<ToolCall>().toHaveProperty("toolCallId");
     expectTypeOf<ToolCall>().toHaveProperty("toolName");
     expectTypeOf<ToolCall>().toHaveProperty("args");
   });
 
-  test("ClientEvent narrows on error discriminant", () => {
-    type ErrorEvent = Extract<ClientEvent, { type: "error" }>;
+  test("SessionEvent narrows on error.reported", () => {
+    type ErrorEvent = Extract<SessionEvent, { type: "error.reported" }>;
     expectTypeOf<ErrorEvent>().toHaveProperty("code");
     expectTypeOf<ErrorEvent>().toHaveProperty("message");
   });

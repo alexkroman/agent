@@ -60,14 +60,11 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
     const client: ClientSink = {
       open: true,
       event: (e) => {
-        if (e.type === "user_transcript") userTranscripts.push(e.text);
-        else if (e.type === "reply_done") replyDone = true;
+        if (e.type === "user-transcript.committed") userTranscripts.push(e.text);
+        else if (e.type === "reply.completed") replyDone = true;
       },
       playAudioChunk: (chunk) => {
         audioOut.push(chunk);
-      },
-      playAudioDone: () => {
-        /* no-op */
       },
     };
 

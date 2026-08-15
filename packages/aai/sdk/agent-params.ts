@@ -303,6 +303,9 @@ export type WorkflowAppOnlyField =
   | "tools"
   | "builtinTools"
   | "syncState"
+  // Session events, for the same reason `syncState` is here: there is no session
+  // to observe. A workflow app's own narration is `report()` from a step.
+  | "events"
   | "idleTimeoutMs"
   | "voice";
 

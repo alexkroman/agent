@@ -28,6 +28,7 @@ import {
   detachedCli,
   dir,
   installDeps,
+  isRegistryProxyFailure,
   startRegistry,
   waitForExit,
   waitForHealth,
@@ -85,25 +86,6 @@ afterAll(async () => {
 });
 
 // --- Pack + build: representative templates ---
-
-/**
- * Network/proxy failure shapes from the mock registry's npmjs passthrough
- * (verdaccio maps a failed upstream fetch to a plain 404, so
- * ERR_PNPM_FETCH_* on a THIRD-PARTY package counts). A fetch failure naming
- * our own scope is never a proxy flake — those packages live in verdaccio's
- * local storage, so failing to resolve one means the published packages are
- * actually broken.
- */
-function isRegistryProxyFailure(err: unknown): boolean {
-  const msg =
-    err instanceof Error
-      ? `${err.message}\n${(err as { stderr?: string }).stderr ?? ""}\n${(err as { stdout?: string }).stdout ?? ""}`
-      : String(err);
-  if (/@alexkroman1/i.test(msg) && /404|Not Found|ERR_PNPM_FETCH/i.test(msg)) return false;
-  return /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|407|502|503|504|ERR_PNPM_FETCH|fetch failed|network/i.test(
-    msg,
-  );
-}
 
 describe("pack + build: template workflows", () => {
   test.concurrent.for(templates)("template %s", async (template, ctx) => {
@@ -240,7 +222,7 @@ describe("aai dev: a scaffolded workflow template", () => {
   /**
    * The question this answers is "can a user `aai init` a workflow template and
    * `aai dev` it", and nothing else in the repo can: the in-tree integration
-   * test (`dev-workflow.integration.test.ts`) drives the same code against a
+   * test (`dev-workflow.scenario.test.ts`) drives the same code against a
    * fixture that resolves `workflow` from this workspace, and the `npm start`
    * leg above runs `server.mjs`, which has no bundler and builds no workflows.
    * Only here is the project scaffolded, installed from the published manifest,
@@ -366,23 +348,37 @@ async function setupEventInjector(browser: Browser, port: number) {
   // audio error can overwrite test-driven state transitions.
   await page.locator('[data-state="error"]').waitFor({ timeout: 10_000 });
 
-  /** Inject a server->client event via the captured WebSocket. */
+  /**
+   * Inject a server->client event via the captured WebSocket.
+   *
+   * `meta` is STAMPED here rather than written into the fixtures, because that
+   * is where it comes from in production: the server mints an event id when it
+   * writes the event (`evt_` + a ULID) and the client only validates the
+   * prefix. Freezing forty invented ids into six JSON files would read as data
+   * the assertions care about, and none of them do — while a fixture that
+   * omits `meta` is rejected by `ServerMessageSchema` before any handler runs,
+   * which is the shape of the failure this replaced.
+   */
+  let injected = 0;
   const inject = (msg: Record<string, unknown>) =>
-    page.evaluate((json) => {
-      const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
-      ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
-    }, msg);
+    page.evaluate(
+      (json) => {
+        const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
+        ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
+      },
+      { meta: { id: `evt_e2e${++injected}`, at: Date.now() }, ...msg },
+    );
 
   /** Replay a fixture file (from aai-ui/fixtures/). */
   const replayFixture = async (fixtureName: string) => {
     const fixturePath = path.resolve(dir, "../aai-ui/fixtures", fixtureName);
     const messages = JSON.parse(fs.readFileSync(fixturePath, "utf-8")) as Record<string, unknown>[];
     for (const msg of messages) {
-      // Skip config frames: the test server already sent one on connect, and
-      // re-injecting a config re-runs initAudioCapture, whose async failure
+      // Skip the handshake frame: the test server already sent one on connect,
+      // and re-injecting one re-runs initAudioCapture, whose async failure
       // (headless Chromium has no microphone) races later fixture events and
       // can overwrite state they set — e.g. the error-recovery banner.
-      if (msg.type === "config") continue;
+      if (msg.type === "session.configured") continue;
       await inject(msg);
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -441,7 +437,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
          // Echo the id the client asked to resume, so a redial that carries one
          // is answered as the SAME session rather than a fresh one.
          const asked = new URL(req.url, "http://localhost").searchParams.get("sessionId");
-         ws.send(JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: asked || "resumed-e2e-7" }));
+         ws.send(JSON.stringify({ type: "session.configured", meta: { id: "evt_e2ehandshake", at: Date.now() }, audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: asked || "resumed-e2e-7" }));
        });
        s.listen(0, () => console.log("PORT:" + s.address().port));`,
       ],
@@ -501,7 +497,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
       () => {
         const found = frames.some((f) => {
           try {
-            return JSON.parse(f).type === "config";
+            return JSON.parse(f).type === "session.configured";
           } catch {
             return false;
           }
@@ -646,7 +642,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     await page.getByText("A day on Venus is longer than its year.").waitFor();
 
     // Inject a reset event as if the server acknowledged the reset
-    await inject({ type: "reset" });
+    await inject({ type: "session.reset" });
 
     // Messages should be cleared — the assistant message should no longer be visible
     await page
@@ -659,13 +655,13 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("thinking state: user message appears after user_transcript", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "What is the meaning of life?" });
+    await inject({ type: "user-transcript.committed", text: "What is the meaning of life?" });
     await page.getByText("What is the meaning of life?").waitFor();
 
     // State indicator should show "thinking"
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "42." });
+    await inject({ type: "agent-transcript.updated", text: "42." });
     await page.getByText("42.").waitFor();
 
     await page.close();
@@ -674,11 +670,11 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("state transitions: thinking → listening after reply_done", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "Hello" });
+    await inject({ type: "user-transcript.committed", text: "Hello" });
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "Hi there!" });
-    await inject({ type: "reply_done" });
+    await inject({ type: "agent-transcript.updated", text: "Hi there!" });
+    await inject({ type: "reply.completed" });
     await page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 });
 
     await page.close();
@@ -688,7 +684,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
     // Inject an error event
-    await inject({ type: "error", code: "internal", message: "Connection lost" });
+    await inject({ type: "error.reported", code: "internal", message: "Connection lost" });
 
     // Error banner should appear with the message
     await page.getByText("Connection lost").waitFor({ timeout: 30_000 });

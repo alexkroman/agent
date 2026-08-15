@@ -27,8 +27,9 @@ import { errorDetail, errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
+import { stampSessionEvent } from "./session-event-stream.ts";
 import { createClientSink } from "./ws-client-sink.ts";
-import { type SessionWebSocket, safeSend } from "./ws-frames.ts";
+import type { SessionWebSocket } from "./ws-frames.ts";
 
 export { asSessionWebSocket, type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
@@ -128,9 +129,6 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
     case "playback_progress":
       session.onPlaybackProgress(result.data.bufferedMs);
       break;
-    case "history":
-      session.onHistory(result.data.messages);
-      break;
     case "tool_result":
       session.onToolResult(result.data.toolCallId, result.data.result, result.data.error);
       break;
@@ -144,9 +142,14 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
  * frames for control messages and raw PCM16 binary frames for audio.
  *
  * Connection flow:
- * 1. WebSocket opens → server sends JSON CONFIG frame with sampleRate, ttsSampleRate, sessionId
+ * 1. WebSocket opens → server sends `session.configured` with sampleRate,
+ *    ttsSampleRate and sessionId
  * 2. Client sets up audio → sends JSON AUDIO_READY frame
- * 3. If reconnecting → client sends JSON HISTORY frame with prior messages
+ *
+ * There is no third step any more. A reconnecting client used to send a HISTORY
+ * frame with the messages it still held, which made it the authority on the
+ * agent's memory; the server restores the conversation from its own retained
+ * event stream (see `runtime-session-stream.ts`).
  *
  * @internal
  */
@@ -248,7 +251,9 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
    * dead session, stuck "connecting" forever with no signal to retry.
    */
   function failClientAndClose(client: ClientSink, message: string): void {
-    client.event({ type: "error", code: "internal", message });
+    // Stamped here rather than emitted: this is the path where the session could
+    // not be BUILT, so there is no emitter and nothing to record the event in.
+    client.event(stampSessionEvent({ type: "error.reported", code: "internal", message }));
     try {
       ws.close?.(WS_CLOSE_INTERNAL, "session start failed");
     } catch (err) {
@@ -328,20 +333,11 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       });
     }
 
-    // Send config immediately — zero RTT. Include sessionId so the
-    // client can reconnect with ?sessionId=<id> to resume a persisted session.
-    safeSend(
-      ws,
-      JSON.stringify({
-        type: "config",
-        audioFormat: opts.readyConfig.audioFormat,
-        sampleRate: opts.readyConfig.sampleRate,
-        ttsSampleRate: opts.readyConfig.ttsSampleRate,
-        // Present (false) only for text-only agents — see ReadyConfigSchema.
-        sessionId,
-      }),
-      log,
-    );
+    // Announce the session immediately — zero RTT. The frame carries the session
+    // id, so the client can reconnect with ?sessionId=<id> to resume; the session
+    // owns the send because the frame is an ordinary recorded event now (see
+    // `SessionCore.configure`).
+    session.configure(opts.readyConfig);
 
     const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
     const startWithTimeout = pTimeout(session.start(), {

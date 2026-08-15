@@ -8,7 +8,7 @@
 
 import { isDeepStrictEqual } from "node:util";
 import { expect } from "vitest";
-import { ClientEventSchema } from "./protocol.ts";
+import { EVENT_ID_PREFIX, SessionEventSchema } from "./protocol.ts";
 
 type MatcherResult = { pass: boolean; message: () => string };
 
@@ -18,18 +18,30 @@ function fieldsSuffix(fields?: Record<string, unknown>): string {
   return fields ? ` with fields ${JSON.stringify(fields)}` : "";
 }
 
-function toBeValidClientEvent(received: unknown): MatcherResult {
-  const result = ClientEventSchema.safeParse(received);
+/**
+ * A spec asserts on an event BODY — the shape emitting code writes — so the
+ * matcher supplies the envelope the wire schema requires. Hand-writing a `meta`
+ * per assertion would be noise, and a fake id per assertion would invite reading
+ * one as meaningful.
+ */
+function withStubMeta(received: unknown): unknown {
+  if (typeof received !== "object" || received === null) return received;
+  if ("meta" in received) return received;
+  return { ...received, meta: { id: `${EVENT_ID_PREFIX}TEST`, at: 0 } };
+}
+
+function toBeValidSessionEvent(received: unknown): MatcherResult {
+  const result = SessionEventSchema.safeParse(withStubMeta(received));
   if (result.success) {
     return {
       pass: true,
-      message: () => "expected value NOT to be a valid ClientEvent, but it parsed successfully",
+      message: () => "expected value NOT to be a valid session event, but it parsed successfully",
     };
   }
   const issues = result.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
   return {
     pass: false,
-    message: () => `expected value to be a valid ClientEvent\n\nZod errors:\n${issues}`,
+    message: () => `expected value to be a valid session event\n\nZod errors:\n${issues}`,
   };
 }
 
@@ -67,17 +79,17 @@ function toContainEvent(
 }
 
 expect.extend({
-  toBeValidClientEvent,
+  toBeValidSessionEvent,
   toContainEvent,
 });
 
 declare module "vitest" {
   interface Assertion<T> {
-    toBeValidClientEvent(): void;
+    toBeValidSessionEvent(): void;
     toContainEvent(type: string, fields?: Record<string, unknown>): void;
   }
   interface AsymmetricMatchersContaining {
-    toBeValidClientEvent(): void;
+    toBeValidSessionEvent(): void;
     toContainEvent(type: string, fields?: Record<string, unknown>): void;
   }
 }

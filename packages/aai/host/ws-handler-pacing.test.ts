@@ -10,6 +10,7 @@ import type { ClientSink } from "../sdk/protocol.ts";
 import type { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
+import { stampSessionEvent } from "./session-event-stream.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 /**
@@ -62,19 +63,19 @@ describe("wireSessionSocket audio pacing", () => {
     }
   });
 
-  test("audio_done waits for the audio it follows", () => {
+  test("audio.completed waits for the audio it follows", () => {
     vi.useFakeTimers();
     try {
       const { ws, client } = pacedSink();
       for (let i = 0; i < 20; i++) client.playAudioChunk(CHUNK());
-      client.playAudioDone();
+      client.event(stampSessionEvent({ type: "audio.completed" }));
 
-      // Arriving early, audio_done would end the turn client-side and the
+      // Arriving early, audio.completed would end the turn client-side and the
       // tail of the reply would never be spoken.
-      expect(jsonTypes(ws)).not.toContain("audio_done");
+      expect(jsonTypes(ws)).not.toContain("audio.completed");
 
       vi.advanceTimersByTime(2000);
-      expect(jsonTypes(ws)).toContain("audio_done");
+      expect(jsonTypes(ws)).toContain("audio.completed");
     } finally {
       vi.useRealTimers();
     }
@@ -89,7 +90,7 @@ describe("wireSessionSocket audio pacing", () => {
 
       // The client flushes its own buffer on this event, so held audio must
       // not follow it down the socket.
-      client.event({ type: "cancelled" });
+      client.event(stampSessionEvent({ type: "reply.cancelled" }));
       vi.advanceTimersByTime(5000);
 
       expect(binaryFrames(ws)).toHaveLength(sentBeforeCancel);

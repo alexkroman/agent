@@ -26,20 +26,23 @@ export default defineConfig({
     // actually wrong. (Sized when auth still paid argon2id derivations;
     // ownership digests are cheap now, but the contention headroom stays.)
     testTimeout: 20_000,
-    // Integration-tier membership is the `.integration.` infix, not a
-    // hand-kept filename list — `test:integration` selects the same glob, so a
-    // new integration test needs no edit in either place. The list this
-    // replaces had gone stale, naming files that no longer existed.
+    // Slow-tier membership is the `.integration.` / `.scenario.` INFIX, not a
+    // hand-kept filename list — each script selects the same glob, so a new slow
+    // test needs no edit in either place. The list this replaces had gone stale,
+    // naming files that no longer existed. Every slow suite this package owns is
+    // now a SCENARIO one (a real Postgres, a real WebSocket server, a real
+    // bundler), so `check:integration` is deliberately absent here.
     //
     // `agent-server-integration.test.ts` deliberately keeps the un-infixed
     // name and stays in THIS tier, despite booting a real harness subprocess
-    // (which is why the 20s timeout above exists). It is the only test
-    // exercising subprocess-sandbox.ts / warm-harness.ts / sandbox-vm.ts, so
-    // moving it to the integration tier drops this package's measured line
-    // coverage from ~92% to 88.74% and trips the 89% floor below. It is the
-    // same deliberate exception as aai-cli's `integration.test.ts`: the name
+    // (which is why the 20s timeout above exists) — by the membership rule it is
+    // a scenario test. It is the only test exercising subprocess-sandbox.ts /
+    // warm-harness.ts / sandbox-vm.ts, so promoting it drops this package's
+    // measured line coverage from ~92% to 88.74% and trips the 89% floor below.
+    // Moving it means restoring that coverage first, not lowering the floor. It is
+    // the same deliberate exception as aai-cli's `integration.test.ts`: the name
     // says integration, the tier is unit, and only the infix decides.
-    exclude: ["**/*.integration.test.ts", "node_modules", "dist"],
+    exclude: ["**/*.integration.test.ts", "**/*.scenario.test.ts", "node_modules", "dist"],
     coverage: {
       exclude: [...sharedCoverageExclude],
       // Ratchet: floors only move up (functions eased 88→85 once, when the

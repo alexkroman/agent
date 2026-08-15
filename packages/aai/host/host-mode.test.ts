@@ -3,10 +3,10 @@
 import { describe, expect, test, vi } from "vitest";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
-import type { ClientEvent } from "../sdk/protocol.ts";
+import type { SessionEvent } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { makeConfig, makeLogger, silentLogger } from "./_test-utils.ts";
+import { makeConfig, makeEmitter, makeLogger, silentLogger } from "./_test-utils.ts";
 import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import {
   buildHostAgent,
@@ -341,7 +341,10 @@ describe("startHostSession (deferred host handshake)", () => {
       expect(createRuntime).not.toHaveBeenCalled();
       const err = ws
         .sentJson()
-        .find((e): e is Extract<ClientEvent, { type: "error" }> => e.type === "error");
+        .find(
+          (e): e is Extract<SessionEvent, { type: "error.reported" }> =>
+            e.type === "error.reported",
+        );
       expect(err?.code).toBe("protocol");
       // Names both offending fields and what to send instead.
       expect(err?.message).toContain("sampleRate=8000");
@@ -419,7 +422,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
     expect(createRuntime).not.toHaveBeenCalled();
     expect(ws.sentJson()).toContainEqual(
-      expect.objectContaining({ type: "error", code: "protocol" }),
+      expect.objectContaining({ type: "error.reported", code: "protocol" }),
     );
   });
 
@@ -478,7 +481,7 @@ describe("startHostSession (deferred host handshake)", () => {
     expect(createRuntime).not.toHaveBeenCalled();
     expect(ws.sentJson()).toContainEqual(
       expect.objectContaining({
-        type: "error",
+        type: "error.reported",
         code: "protocol",
         message: expect.stringContaining("DATABASE_URL"),
       }),
@@ -528,7 +531,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
     await vi.waitFor(() => {
       expect(ws.sentJson()).toContainEqual(
-        expect.objectContaining({ type: "error", code: "protocol" }),
+        expect.objectContaining({ type: "error.reported", code: "protocol" }),
       );
     });
     expect(createRuntime).not.toHaveBeenCalled();
@@ -590,7 +593,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
     expect(createRuntime).not.toHaveBeenCalled();
     expect(ws.sentJson()).toContainEqual(
-      expect.objectContaining({ type: "error", code: "protocol" }),
+      expect.objectContaining({ type: "error.reported", code: "protocol" }),
     );
   });
 
@@ -614,6 +617,7 @@ describe("startHostSession (deferred host handshake)", () => {
           id: "s1",
           agent: "host",
           client,
+          emitter: makeEmitter(client, { sessionId: "s1" }).emitter,
           agentConfig: makeConfig(),
           executeTool: relay.executeTool,
           transport,
@@ -633,9 +637,9 @@ describe("startHostSession (deferred host handshake)", () => {
     core.onReplyStarted("r1");
     core.onToolCall("call-1", "lookup", { q: 1 });
 
-    const toolCalls = ws.sentJson().filter((m) => m.type === "tool_call");
+    const toolCalls = ws.sentJson().filter((m) => m.type === "tool.called");
     expect(toolCalls).toEqual([
-      { type: "tool_call", toolCallId: "call-1", toolName: "lookup", args: { q: 1 } },
+      { type: "tool.called", toolCallId: "call-1", toolName: "lookup", args: { q: 1 } },
     ]);
 
     // Client answers over the wire; dispatch → onToolResult → relay resolves.
@@ -645,7 +649,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
     await vi.waitFor(() => {
       expect(ws.sentJson()).toContainEqual(
-        expect.objectContaining({ type: "tool_call_done", toolCallId: "call-1", result: "sunny" }),
+        expect.objectContaining({ type: "tool.completed", toolCallId: "call-1", result: "sunny" }),
       );
     });
   });

@@ -223,7 +223,7 @@ It used to demonstrate the batch shape instead: a run that parked on
 mechanism, and it was demonstrated against a STUB provider that called its own
 webhook back inside the submit step — i.e. the template's whole subject was
 simulated. No template covers `createWebhook()` today — `aai-cli`'s
-`dev-workflow.integration.test.ts` does, against a real world and a real HTTP
+`dev-workflow.scenario.test.ts` does, against a real world and a real HTTP
 delivery, which is the only tier that ever could — and a template that simulates
 its own subject is worse than one that leaves the mechanism to the tier that can
 actually exercise it.
@@ -286,7 +286,7 @@ Note what makes passing a step to a helper legal at all — the WDK transform
 rewrites a step's DECLARATION into a dispatcher rather than rewriting call
 sites, so a `"use step"` function handed to another module as a callback still
 dispatches a real step. That is a claim about the transform, so it is tested
-against a real one: `aai-cli`'s `dev-workflow.integration.test.ts` fans a
+against a real one: `aai-cli`'s `dev-workflow.scenario.test.ts` fans a
 fixture flow out through `mapInBatches` with steps that settle in reverse issue
 order.
 

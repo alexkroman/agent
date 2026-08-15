@@ -87,6 +87,7 @@ export const SESSION_KEEPALIVE_INTERVAL_MS = 15_000;
 export const SESSION_RESUME_GRACE_MS = 120_000;
 /** Cap on one slot's stored value; `host/session-state-store.ts` says why 1 MiB. @internal */
 export const MAX_SESSION_STATE_BYTES = 1_048_576;
+
 /** @internal */
 export const FETCH_TIMEOUT_MS = 15_000;
 

@@ -17,8 +17,30 @@
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 
+/**
+ * The response members a JSON reply touches, named rather than taken whole.
+ *
+ * A `ServerResponse` has ~65 members and these two functions use four, so a spec
+ * asked for the real type has no honest option but `{} as http.ServerResponse` —
+ * and a cast stops reporting the moment the shape it stands in for changes, which
+ * is the opposite of what the spec is there for. Same reasoning as `EventSink` in
+ * `workflow-api-events.ts`.
+ *
+ * **Declared by hand rather than `Pick`ed from node's type**, which was tried
+ * first: `writeHead` and `destroy` are typed as returning `this`, so a `Pick`
+ * carries that constraint and NOTHING but a real `ServerResponse` satisfies it —
+ * the seam would name four members and still be uninhabitable by a double. The
+ * returns are `unknown` because no caller here reads them.
+ */
+export type JsonResponse = {
+  writeHead(status: number, headers?: Record<string, string>): unknown;
+  end(body?: string): unknown;
+  readonly headersSent: boolean;
+  destroy(): unknown;
+};
+
 /** Write a JSON body and end the response. */
-export function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+export function sendJson(res: JsonResponse, status: number, body: unknown): void {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
 }
@@ -38,7 +60,7 @@ export function sendJson(res: http.ServerResponse, status: number, body: unknown
  * function would be the unhandled rejection it exists to prevent.
  */
 export function answerHandlerFailure(
-  res: http.ServerResponse,
+  res: JsonResponse,
   logger: { error: (message: string, meta?: Record<string, unknown>) => void },
   message: string,
   error: string,

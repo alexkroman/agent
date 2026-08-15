@@ -77,7 +77,7 @@
         "**/*.test.ts",
         "_test-utils.ts"
       ],
-      // `workflow` needs no entry here any more: `dev-workflow.integration.test.ts`
+      // `workflow` needs no entry here any more: `dev-workflow.scenario.test.ts`
       // imports `workflow/api` for real, to start a run against the dev server it
       // just booted. It was ignored while the only use was a fixture project
       // symlinking this package's node_modules so the DevKit resolved THERE.

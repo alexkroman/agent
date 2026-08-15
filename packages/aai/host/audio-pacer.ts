@@ -58,8 +58,6 @@ export const UNPACED_AUDIO_LEAD_MS = Number.POSITIVE_INFINITY;
 export type AudioPacerOptions = {
   /** Deliver one audio frame to the client. */
   sendAudio: (chunk: Uint8Array) => void;
-  /** Deliver the turn's `audio_done` frame. */
-  sendDone: () => void;
   /** Sample rate of the relayed PCM16, used to convert bytes to duration. */
   sampleRate: number;
   /**
@@ -74,12 +72,11 @@ export type AudioPacerOptions = {
 export type PacedAudioSink = {
   /** Queue one audio frame, sending now if the lead allows. */
   push(chunk: Uint8Array): void;
-  /** Queue the turn's `audio_done`, ordered behind any held audio. */
-  pushDone(): void;
   /**
    * Queue a non-audio send behind any held audio — for a frame that closes out
    * the reply the held audio belongs to (see the module doc). Everything else
-   * (`cancelled`, `error`, `user_transcript`, a relayed `tool_call`) must go out
+   * (`reply.cancelled`, `error.reported`, a committed user transcript, a relayed
+   * `tool.called`) must go out
    * immediately; delaying those by the lead would delay the conversation.
    */
   pushAfterAudio(send: () => void): void;
@@ -94,7 +91,7 @@ type QueueItem =
   | { kind: "frame"; send: () => void };
 
 export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
-  const { sendAudio, sendDone, sampleRate } = opts;
+  const { sendAudio, sampleRate } = opts;
   const leadMs = opts.leadMs ?? CLIENT_AUDIO_LEAD_MS;
   const msPerByte = 1000 / (sampleRate * BYTES_PER_SAMPLE);
 
@@ -177,10 +174,6 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
     push(chunk) {
       if (chunk.byteLength === 0) return;
       enqueue({ kind: "audio", chunk, durationMs: chunk.byteLength * msPerByte });
-    },
-
-    pushDone() {
-      enqueue({ kind: "frame", send: sendDone });
     },
 
     pushAfterAudio(send) {

@@ -1,36 +1,46 @@
 [
   {
-    "type": "config",
+    "type": "session.configured",
     "audioFormat": "pcm16",
     "sampleRate": 16000,
     "ttsSampleRate": 24000,
     "sessionId": "sess_fixture_003"
   },
-  { "type": "agent_transcript", "text": "Ask me about the weather!" },
-  { "type": "reply_done" },
-
-  { "type": "speech_started" },
-  { "type": "speech_stopped" },
   {
-    "type": "user_transcript",
+    "type": "agent-transcript.committed",
+    "text": "Ask me about the weather!"
+  },
+  {
+    "type": "reply.completed"
+  },
+  {
+    "type": "speech.started"
+  },
+  {
+    "type": "speech.stopped"
+  },
+  {
+    "type": "user-transcript.committed",
     "text": "What is the weather like in San Francisco?"
   },
-
   {
-    "type": "tool_call",
+    "type": "tool.called",
     "toolCallId": "tc_001",
     "toolName": "get_weather",
-    "args": { "city": "San Francisco" }
+    "args": {
+      "city": "San Francisco"
+    }
   },
   {
-    "type": "tool_call_done",
+    "type": "tool.completed",
     "toolCallId": "tc_001",
-    "result": "{\"city\":\"San Francisco\",\"temperature\":\"72°F\",\"condition\":\"sunny\"}"
+    "result": "{\"city\":\"San Francisco\",\"temperature\":\"72\u00b0F\",\"condition\":\"sunny\"}"
   },
-
   {
-    "type": "agent_transcript",
-    "text": "The weather in San Francisco is sunny at 72°F."
+    "type": "agent-transcript.committed",
+    "text": "The weather in San Francisco is sunny at 72\u00b0F."
   },
-  { "type": "reply_done" }
+  {
+    "type": "reply.completed"
+  }
 ]

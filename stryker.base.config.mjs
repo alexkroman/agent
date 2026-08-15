@@ -1,4 +1,19 @@
-/** Shared Stryker config. Import and spread in per-scope configs. */
+/**
+ * Shared Stryker config. Import and spread in per-scope configs.
+ *
+ * **This is a manual DIAGNOSTIC, not a tier and not a gate**, and `inPlace` below
+ * is why it can never be one: Stryker mutates the real working tree and restores
+ * it from `.stryker-tmp/backup-*` afterwards, so a check that edits the tree it is
+ * checking cannot be a pre-push hook, cannot share a CI checkout, and cannot run
+ * beside vitest. One scope survives (`stryker.sdk.config.mjs`, `pnpm
+ * test:mutate:sdk`); read the score off the HTML report.
+ *
+ * `incremental` is right for that audience and wrong for any other:
+ * `.gitignore` carries `.stryker-incremental*.json`, so the state never leaves the
+ * machine. It makes a developer's re-run cheap and could not warm a CI run —
+ * committing it would mean a multi-megabyte JSON churning on every source edit,
+ * and caching it would mean a score printed for code the run never mutated.
+ */
 export const base = {
   plugins: ["@stryker-mutator/vitest-runner"],
   testRunner: "vitest",

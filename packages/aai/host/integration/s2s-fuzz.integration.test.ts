@@ -57,7 +57,7 @@
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { S2S_MAX_RESUME_ATTEMPTS } from "../../sdk/constants.ts";
-import type { ClientEvent } from "../../sdk/protocol.ts";
+import type { SessionEvent } from "../../sdk/protocol.ts";
 import type { Cmd } from "./_s2s-fuzz-commands.ts";
 import { createHarness, drain, type Harness } from "./_s2s-fuzz-harness.ts";
 import type { CallRecord } from "./_s2s-fuzz-model.ts";
@@ -89,7 +89,7 @@ function hit(cov: Coverage, key: string): void {
   cov[key] = (cov[key] ?? 0) + 1;
 }
 
-function eventCount(h: Harness, type: ClientEvent["type"]): number {
+function eventCount(h: Harness, type: SessionEvent["type"]): number {
   return h.events.filter((e) => e.type === type).length;
 }
 
@@ -179,7 +179,9 @@ function checkSocketFrames(h: Harness): string[] {
 /** Retirement is final, and reconnecting is bounded. */
 function checkRetirement(h: Harness): string[] {
   const problems: string[] = [];
-  const fatal = h.events.filter((e) => e.type === "error" && e.code === "connection").length;
+  const fatal = h.events.filter(
+    (e) => e.type === "error.reported" && e.code === "connection",
+  ).length;
   if (fatal > 1) {
     problems.push(`${fatal} fatal connection errors for one session — the latch failed`);
   }
@@ -201,7 +203,7 @@ function checkRetirement(h: Harness): string[] {
   }
   // Each reply that landed is real progress, which resets the resume budget by
   // design (see `startResume`) — so the bound has to grow with them.
-  const bound = 1 + S2S_MAX_RESUME_ATTEMPTS + eventCount(h, "reply_done") + h.link.calls.size;
+  const bound = 1 + S2S_MAX_RESUME_ATTEMPTS + eventCount(h, "reply.completed") + h.link.calls.size;
   if (h.link.sockets.length > bound) {
     problems.push(`${h.link.sockets.length} sockets opened (bound ${bound}) — resume is looping`);
   }

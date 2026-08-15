@@ -142,12 +142,14 @@ function applyStep(run: Run, step: ReconnectStep, index: number): void {
     socket.simulateMessage(makeConfig(16_000, 24_000, "sess-fuzz"));
   } else if (step.kind === "userTurn" && socket) {
     run.log.push("user turn");
-    socket.simulateMessage(JSON.stringify({ type: "user_transcript", text: `hi ${index}` }));
-    socket.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "hello" }));
-    socket.simulateMessage(JSON.stringify({ type: "reply_done" }));
+    socket.simulateMessage(
+      JSON.stringify({ type: "user-transcript.committed", text: `hi ${index}` }),
+    );
+    socket.simulateMessage(JSON.stringify({ type: "agent-transcript.updated", text: "hello" }));
+    socket.simulateMessage(JSON.stringify({ type: "reply.completed" }));
   } else if (step.kind === "idleTimeout" && socket) {
     run.log.push("idle_timeout (server retires)");
-    socket.simulateMessage(JSON.stringify({ type: "idle_timeout" }));
+    socket.simulateMessage(JSON.stringify({ type: "session.timed-out" }));
     run.retiredByServer = true;
   } else if (step.kind === "close" && socket) {
     run.log.push("close");

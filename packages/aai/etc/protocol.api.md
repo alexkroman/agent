@@ -24,9 +24,6 @@ export function buildReadyConfig(s2sConfig: {
 export const CLIENT_CONFIG_PATH = "client-config";
 
 // @public
-export const CLIENT_MESSAGE_TYPES: ReadonlySet<string>;
-
-// @public
 export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 
 // @public
@@ -41,65 +38,7 @@ export const ClientConfigResponseSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export type ClientEvent = z.infer<typeof ClientEventSchema>;
-
-// @public
-export const ClientEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
-    type: z.ZodLiteral<"speech_started">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech_stopped">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user_transcript">;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user_transcript_partial">;
-    text: z.ZodString;
-    eotConfidence: z.ZodOptional<z.ZodNumber>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent_transcript">;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool_call">;
-    toolCallId: z.ZodString;
-    toolName: z.ZodString;
-    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool_call_done">;
-    toolCallId: z.ZodString;
-    result: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply_done">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"cancelled">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reset">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"idle_timeout">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"error">;
-    code: z.ZodEnum<{
-        audio: "audio";
-        connection: "connection";
-        internal: "internal";
-        llm: "llm";
-        protocol: "protocol";
-        stt: "stt";
-        tool: "tool";
-        tts: "tts";
-    }>;
-    message: z.ZodString;
-    fatal: z.ZodOptional<z.ZodBoolean>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"custom_event">;
-    event: z.ZodString;
-    data: z.ZodUnknown;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent_state">;
-    state: z.ZodUnknown;
-}, z.core.$strip>], "type">;
-
-// @public
-export type ClientMessage = z.infer<typeof ClientMessageSchema>;
+export type ClientMessage = SessionCommand;
 
 // @public
 export const ClientMessageSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
@@ -112,15 +51,6 @@ export const ClientMessageSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"playback_progress">;
     bufferedMs: z.ZodNumber;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"history">;
-    messages: z.ZodArray<z.ZodObject<{
-        role: z.ZodEnum<{
-            assistant: "assistant";
-            user: "user";
-        }>;
-        content: z.ZodString;
-    }, z.core.$strip>>;
-}, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"tool_result">;
     toolCallId: z.ZodString;
     result: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
@@ -130,11 +60,16 @@ export const ClientMessageSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 // @public
 export interface ClientSink {
     close?(reason?: string): void;
-    event(e: ClientEvent): void;
+    event(e: SessionEvent): void;
     readonly open: boolean;
     playAudioChunk(chunk: Uint8Array): void;
-    playAudioDone(): void;
 }
+
+// @public
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+// @public
+export const EVENT_ID_PREFIX = "evt_";
 
 // @public
 export type HostConfig = z.infer<typeof HostConfigSchema>;
@@ -200,50 +135,113 @@ export const ReadyConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export type ServerMessage = z.infer<typeof ServerMessageSchema>;
+export type ServerMessage = SessionEvent;
 
 // @public
 export const ServerMessageSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
-    type: z.ZodLiteral<"config">;
+    type: z.ZodLiteral<"session.configured">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
     audioFormat: z.ZodString;
     sampleRate: z.ZodNumber;
     ttsSampleRate: z.ZodNumber;
     sessionId: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"audio_done">;
+    type: z.ZodLiteral<"audio.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech_started">;
+    type: z.ZodLiteral<"speech.started">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech_stopped">;
+    type: z.ZodLiteral<"speech.stopped">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user_transcript">;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user_transcript_partial">;
+    type: z.ZodLiteral<"user-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
     text: z.ZodString;
     eotConfidence: z.ZodOptional<z.ZodNumber>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent_transcript">;
+    type: z.ZodLiteral<"user-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
     text: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool_call">;
+    type: z.ZodLiteral<"agent-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool.called">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
     toolCallId: z.ZodString;
     toolName: z.ZodString;
     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool_call_done">;
+    type: z.ZodLiteral<"tool.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
     toolCallId: z.ZodString;
     result: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply_done">;
+    type: z.ZodLiteral<"reply.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"cancelled">;
+    type: z.ZodLiteral<"reply.cancelled">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reset">;
+    type: z.ZodLiteral<"session.reset">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"idle_timeout">;
+    type: z.ZodLiteral<"session.timed-out">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"error">;
+    type: z.ZodLiteral<"error.reported">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
     code: z.ZodEnum<{
         audio: "audio";
         connection: "connection";
@@ -257,12 +255,48 @@ export const ServerMessageSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     message: z.ZodString;
     fatal: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"custom_event">;
+    type: z.ZodLiteral<"custom.emitted">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
     event: z.ZodString;
     data: z.ZodUnknown;
 }, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent_state">;
+    type: z.ZodLiteral<"state.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
     state: z.ZodUnknown;
+}, z.core.$strip>], "type">;
+
+// @public
+const SESSION_COMMAND_TYPES: ReadonlySet<string>;
+export { SESSION_COMMAND_TYPES as CLIENT_MESSAGE_TYPES }
+export { SESSION_COMMAND_TYPES }
+
+// @public
+export const SESSION_EVENT_TYPES: ReadonlySet<string>;
+
+// @public
+export type SessionCommand = z.infer<typeof SessionCommandSchema>;
+
+// @public
+export const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"audio_ready">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"cancel">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reset">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"playback_progress">;
+    bufferedMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool_result">;
+    toolCallId: z.ZodString;
+    result: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+    error: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>], "type">;
 
 // @public
@@ -279,6 +313,155 @@ export const SessionErrorCodeSchema: z.ZodEnum<{
     tool: "tool";
     tts: "tts";
 }>;
+
+// @public
+export type SessionEvent = z.infer<typeof SessionEventSchema>;
+
+// @public
+export type SessionEventBody = DistributiveOmit<SessionEvent, "meta">;
+
+// @public
+export type SessionEventMeta = z.infer<typeof SessionEventMetaSchema>;
+
+// @public
+export const SessionEventMetaSchema: z.ZodObject<{
+    id: z.ZodString;
+    at: z.ZodNumber;
+}, z.core.$strip>;
+
+// @public
+export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"session.configured">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    audioFormat: z.ZodString;
+    sampleRate: z.ZodNumber;
+    ttsSampleRate: z.ZodNumber;
+    sessionId: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"audio.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"speech.started">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"speech.stopped">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+    eotConfidence: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool.called">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    toolCallId: z.ZodString;
+    toolName: z.ZodString;
+    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    toolCallId: z.ZodString;
+    result: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reply.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reply.cancelled">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session.reset">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session.timed-out">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"error.reported">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    code: z.ZodEnum<{
+        audio: "audio";
+        connection: "connection";
+        internal: "internal";
+        llm: "llm";
+        protocol: "protocol";
+        stt: "stt";
+        tool: "tool";
+        tts: "tts";
+    }>;
+    message: z.ZodString;
+    fatal: z.ZodOptional<z.ZodBoolean>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"custom.emitted">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    event: z.ZodString;
+    data: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"state.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    state: z.ZodUnknown;
+}, z.core.$strip>], "type">;
 
 // (No @packageDocumentation comment for this package)
 

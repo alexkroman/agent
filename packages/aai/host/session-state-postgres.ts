@@ -101,6 +101,45 @@ do update set value = excluded.value, updated_at = now()`;
 const DISCARD_SQL = `delete from ${SESSION_STATE_TABLE} where session_id = $1`;
 
 /**
+ * The session EVENT log's table — the second contract both ends derive from, for
+ * the same reason as {@link SESSION_STATE_TABLE} and swept by the same job.
+ *
+ * @internal
+ */
+export const SESSION_EVENT_TABLE = "aai_session_events";
+
+/**
+ * `(session_id, event_index)` is the primary key, which is what makes a retried flush
+ * idempotent: `on conflict do nothing` turns a re-append of an index already
+ * stored into the no-op the backend contract promises. The index is assigned
+ * above this module, so the database never invents one — a `serial` here would
+ * hand out positions the live session had already told a client about.
+ *
+ * `jsonb` for the same reason the slot table uses it: the column rejects
+ * anything that is not JSON at write time, which is the one check the process
+ * above cannot fake.
+ */
+const CREATE_EVENT_TABLE_SQL = `create table if not exists ${SESSION_EVENT_TABLE} (
+  session_id text not null,
+  event_index bigint not null,
+  event jsonb not null,
+  created_at timestamptz not null default now(),
+  primary key (session_id, event_index)
+)`;
+
+const APPEND_EVENTS_SQL = `insert into ${SESSION_EVENT_TABLE} (session_id, event_index, event)
+select $1, s.event_index::bigint, s.event::jsonb
+from unnest($2::bigint[], $3::text[]) as s(event_index, event)
+on conflict (session_id, event_index) do nothing`;
+
+const READ_EVENTS_SQL = `select event_index, event::text as event from ${SESSION_EVENT_TABLE}
+where session_id = $1 and event_index >= $2 order by event_index limit $3`;
+
+const COUNT_EVENTS_SQL = `select count(*)::int as count from ${SESSION_EVENT_TABLE} where session_id = $1`;
+
+const DISCARD_EVENTS_SQL = `delete from ${SESSION_EVENT_TABLE} where session_id = $1`;
+
+/**
  * Session state stored in the app's own Postgres schema.
  *
  * @internal
@@ -113,6 +152,12 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
    * recoverable without a redeploy. Same reasoning as the wake hint's.
    */
   const ensureTable = ensureOnce(() => db.query(CREATE_TABLE_SQL).then(() => undefined));
+  /**
+   * A SECOND memo, not one DDL call creating both tables: an agent that never
+   * resumes and never streams still pays the slot table, and an event append
+   * must not be able to fail because the slot table's DDL is what raced.
+   */
+  const ensureEventTable = ensureOnce(() => db.query(CREATE_EVENT_TABLE_SQL).then(() => undefined));
 
   return {
     name: "postgres",
@@ -131,7 +176,33 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
     },
     async discard(sessionId) {
       await ensureTable();
+      await ensureEventTable();
+      // Both, in one call, because one session's durable footprint is both
+      // tables — see the backend type's doc.
       await db.query(DISCARD_SQL, [sessionId]);
+      await db.query(DISCARD_EVENTS_SQL, [sessionId]);
+    },
+    async appendEvents(sessionId, pending) {
+      await ensureEventTable();
+      await db.query(APPEND_EVENTS_SQL, [
+        sessionId,
+        pending.map((event) => event.index),
+        pending.map((event) => event.json),
+      ]);
+    },
+    async readEvents(sessionId, startIndex, limit) {
+      await ensureEventTable();
+      const rows = await db.query<{ event_index: number; event: string }>(READ_EVENTS_SQL, [
+        sessionId,
+        startIndex,
+        limit,
+      ]);
+      return rows.map((row) => ({ index: Number(row.event_index), json: row.event }));
+    },
+    async countEvents(sessionId) {
+      await ensureEventTable();
+      const rows = await db.query<{ count: number }>(COUNT_EVENTS_SQL, [sessionId]);
+      return rows[0]?.count ?? 0;
     },
   };
 }

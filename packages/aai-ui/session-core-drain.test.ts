@@ -59,7 +59,7 @@ describe("late playback drain vs teardown", () => {
     // Agent speaks: one audio chunk (creates the playback node) then audio_done,
     // so the core is awaiting the worklet's drain.
     socket?.simulateMessage(new Uint8Array([1, 2, 3, 4]));
-    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    socket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
     await flush();
     expect(core.getSnapshot().state).toBe("speaking");
 
@@ -80,7 +80,7 @@ describe("late playback drain vs teardown", () => {
     socket?.simulateMessage(makeConfig());
     await flush();
     socket?.simulateMessage(new Uint8Array([1, 2, 3, 4]));
-    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    socket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
     await flush();
 
     core.end();
@@ -96,11 +96,13 @@ describe("late playback drain vs teardown", () => {
     socket?.simulateMessage(makeConfig());
     await flush();
     socket?.simulateMessage(new Uint8Array([1, 2, 3, 4]));
-    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    socket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
     await flush();
 
     vi.spyOn(console, "error").mockImplementation(noop);
-    socket?.simulateMessage(JSON.stringify({ type: "error", code: "llm", message: "boom" }));
+    socket?.simulateMessage(
+      JSON.stringify({ type: "error.reported", code: "llm", message: "boom" }),
+    );
     expect(core.getSnapshot().state).toBe("error");
     await flush(2000);
     expect(core.getSnapshot().state).toBe("error");
@@ -114,7 +116,7 @@ describe("late playback drain vs teardown", () => {
     await flush();
     // Turn 1: chunk + audio_done → awaiting drain.
     socket?.simulateMessage(new Uint8Array([1, 2, 3, 4]));
-    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    socket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
     await flush();
     const play = findWorkletNode(audio.workletNodes(), "playback-processor");
 
@@ -123,7 +125,7 @@ describe("late playback drain vs teardown", () => {
     await flush();
     expect(core.getSnapshot().state).toBe("listening");
     socket?.simulateMessage(new Uint8Array([5, 6, 7, 8]));
-    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    socket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
     await flush();
     expect(core.getSnapshot().state).toBe("speaking");
 
@@ -142,7 +144,7 @@ describe("late playback drain vs teardown", () => {
     socket?.simulateMessage(makeConfig());
     await flush();
     socket?.simulateMessage(new Uint8Array([1, 2, 3, 4]));
-    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    socket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
     await flush();
     expect(core.getSnapshot().state).toBe("speaking");
 
@@ -161,7 +163,7 @@ describe("late playback drain vs teardown", () => {
     core.start();
     socket?.simulateOpen();
     // No config frame, so audio init has not run and voiceIO is absent.
-    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    socket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
 
     expect(core.getSnapshot().state).toBe("listening");
   });

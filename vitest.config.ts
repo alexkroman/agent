@@ -42,26 +42,19 @@ export default defineConfig({
         // CLI entry point can't be unit tested.
         "packages/aai-cli/cli.ts",
       ],
-      // Ratchet: these floors only move UP. When a coverage run shows actuals
-      // comfortably above a floor, raise the floor to ~2-3 points below the
-      // actual so regressions fail fast but routine refactors don't flap.
+      // There are deliberately NO thresholds here. The floors that gate a PR are
+      // the PER-PACKAGE ones: `pnpm test:coverage` is `turbo run test:coverage`,
+      // which fans out to each package's own config, and CI runs `pnpm --filter
+      // ./packages/<pkg> test:coverage` per matrix entry. Nothing in the repo or
+      // in CI ever evaluates this file, so a `thresholds` block here was a
+      // ratchet no process could move and no PR could trip — kept on the argument
+      // that it was "the only floor that sees the repo as one program", which is a
+      // view nobody's pipeline takes, and sitting ~4 points under an actual
+      // nobody had measured.
       //
-      // These are the WHOLE-REPO floors, and the only thing that runs one is a
-      // direct `pnpm vitest run --coverage` at the root. `pnpm test:coverage`
-      // is `turbo run test:coverage`, which fans out to each package's own
-      // config, and CI runs `pnpm --filter ./packages/<pkg> test:coverage` per
-      // matrix entry — so the PER-PACKAGE floors are what actually gates a PR.
-      // Keep both: this one is the only floor that sees the repo as one
-      // program, and it was sitting ~4 points under a number nothing measured.
-      //
-      // Actuals (2026-08, `pnpm vitest run --coverage`, 4508 tests):
-      // lines 92.25, functions 88.75, branches 84.05, statements 90.27.
-      thresholds: {
-        lines: 90,
-        functions: 86,
-        branches: 81,
-        statements: 88,
-      },
+      // The measurement was the informative half, so it stays. Actuals (2026-08,
+      // `pnpm vitest run --coverage`, 4508 tests): lines 92.25, functions 88.75,
+      // branches 84.05, statements 90.27.
     },
     projects: [
       // Every package's own vitest.config.ts — the single definition of each

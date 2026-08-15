@@ -39,78 +39,20 @@ exports[`manifest schema shapes > ToolSchemaSchema shape 1`] = `
 ]
 `;
 
-exports[`protocol schema shapes > ClientEventSchema option shapes 1`] = `
-{
-  "agent_state": [
-    "state",
-    "type",
-  ],
-  "agent_transcript": [
-    "text",
-    "type",
-  ],
-  "cancelled": [
-    "type",
-  ],
-  "custom_event": [
-    "data",
-    "event",
-    "type",
-  ],
-  "error": [
-    "code",
-    "fatal",
-    "message",
-    "type",
-  ],
-  "idle_timeout": [
-    "type",
-  ],
-  "reply_done": [
-    "type",
-  ],
-  "reset": [
-    "type",
-  ],
-  "speech_started": [
-    "type",
-  ],
-  "speech_stopped": [
-    "type",
-  ],
-  "tool_call": [
-    "args",
-    "toolCallId",
-    "toolName",
-    "type",
-  ],
-  "tool_call_done": [
-    "result",
-    "toolCallId",
-    "type",
-  ],
-  "user_transcript": [
-    "text",
-    "type",
-  ],
-  "user_transcript_partial": [
-    "eotConfidence",
-    "text",
-    "type",
-  ],
-}
+exports[`protocol schema shapes > ReadyConfigSchema shape 1`] = `
+[
+  "audioFormat",
+  "sampleRate",
+  "ttsSampleRate",
+]
 `;
 
-exports[`protocol schema shapes > ClientMessageSchema option shapes 1`] = `
+exports[`protocol schema shapes > SessionCommandSchema option shapes 1`] = `
 {
   "audio_ready": [
     "type",
   ],
   "cancel": [
-    "type",
-  ],
-  "history": [
-    "messages",
     "type",
   ],
   "playback_progress": [
@@ -129,80 +71,93 @@ exports[`protocol schema shapes > ClientMessageSchema option shapes 1`] = `
 }
 `;
 
-exports[`protocol schema shapes > ReadyConfigSchema shape 1`] = `
-[
-  "audioFormat",
-  "sampleRate",
-  "ttsSampleRate",
-]
-`;
-
-exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
+exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
 {
-  "agent_state": [
-    "state",
-    "type",
-  ],
-  "agent_transcript": [
+  "agent-transcript.committed": [
+    "meta",
     "text",
     "type",
   ],
-  "audio_done": [
+  "agent-transcript.updated": [
+    "meta",
+    "text",
     "type",
   ],
-  "cancelled": [
+  "audio.completed": [
+    "meta",
     "type",
   ],
-  "config": [
+  "custom.emitted": [
+    "data",
+    "event",
+    "meta",
+    "type",
+  ],
+  "error.reported": [
+    "code",
+    "fatal",
+    "message",
+    "meta",
+    "type",
+  ],
+  "reply.cancelled": [
+    "meta",
+    "type",
+  ],
+  "reply.completed": [
+    "meta",
+    "type",
+  ],
+  "session.configured": [
     "audioFormat",
+    "meta",
     "sampleRate",
     "sessionId",
     "ttsSampleRate",
     "type",
   ],
-  "custom_event": [
-    "data",
-    "event",
+  "session.reset": [
+    "meta",
     "type",
   ],
-  "error": [
-    "code",
-    "fatal",
-    "message",
+  "session.timed-out": [
+    "meta",
     "type",
   ],
-  "idle_timeout": [
+  "speech.started": [
+    "meta",
     "type",
   ],
-  "reply_done": [
+  "speech.stopped": [
+    "meta",
     "type",
   ],
-  "reset": [
+  "state.updated": [
+    "meta",
+    "state",
     "type",
   ],
-  "speech_started": [
-    "type",
-  ],
-  "speech_stopped": [
-    "type",
-  ],
-  "tool_call": [
+  "tool.called": [
     "args",
+    "meta",
     "toolCallId",
     "toolName",
     "type",
   ],
-  "tool_call_done": [
+  "tool.completed": [
+    "meta",
     "result",
     "toolCallId",
     "type",
   ],
-  "user_transcript": [
+  "user-transcript.committed": [
+    "meta",
     "text",
     "type",
   ],
-  "user_transcript_partial": [
+  "user-transcript.updated": [
     "eotConfidence",
+    "meta",
     "text",
     "type",
   ],

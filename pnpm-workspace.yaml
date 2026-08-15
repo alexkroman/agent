@@ -134,6 +134,7 @@ catalog:
   tailwindcss: ^4.3.3
   tsdown: ^0.22.14
   typescript: ^7.0.2
+  ulid: ^3.0.2
   use-stick-to-bottom: ^1.1.6
   vite: ^8.2.1
   vitest: ^4.1.10

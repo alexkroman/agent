@@ -66,12 +66,29 @@ import { errorMessage } from "../sdk/utils.ts";
 import type { StateSyncSession } from "./_state-sync.ts";
 import type { Logger } from "./runtime-config.ts";
 
+/** One retained session event: its index in the session's log, and its JSON. */
+export type StoredSessionEvent = {
+  /** Position in this session's log, from 0. The stream's only cursor. */
+  index: number;
+  /** The serialized {@link SessionEvent}, envelope included. */
+  json: string;
+};
+
 /**
- * Where a session's slot values are kept between processes.
+ * Where a session's durable things are kept between processes — its slot values
+ * AND its event log.
  *
  * Values cross this boundary as SERIALIZED JSON, deliberately: the cache above
  * it holds objects, and a backend that took objects could not be told apart
  * from the cache when the encoding is what breaks.
+ *
+ * **Two consumers, one backend, and that is the design rather than an
+ * accident.** The event stream needs exactly what slot state needs — Postgres
+ * when the app has a database, memory otherwise, reclaimed when the session is
+ * — so it is a second consumer of THIS interface instead of a second store with
+ * its own selection rule, its own sweep and its own answer to "is this agent
+ * durable". One `discard` reclaims both, which is what stops a swept session
+ * leaving half of itself behind.
  *
  * @internal
  */
@@ -84,8 +101,31 @@ export type SessionStateBackend = {
   load(sessionId: string): Promise<Map<string, string>>;
   /** Store these slots' values. Called with only the ones that changed. */
   commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
-  /** Reclaim everything stored for `sessionId`. */
+  /** Reclaim everything stored for `sessionId` — slots and events alike. */
   discard(sessionId: string): Promise<void>;
+  /**
+   * Append these events at the indices they already carry.
+   *
+   * Indices are assigned by the log ABOVE this, synchronously, so a backend
+   * never invents one — which is what lets a client be told its position before
+   * the write lands. Appending an index that is already stored is a no-op
+   * rather than an error: a retried flush after a partial failure must not be
+   * the thing that breaks a call.
+   */
+  appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
+  /** Events from `startIndex` (inclusive), in index order, at most `limit`. */
+  readEvents(
+    sessionId: string,
+    startIndex: number,
+    limit: number,
+  ): Promise<readonly StoredSessionEvent[]>;
+  /**
+   * How many events are stored for `sessionId` — i.e. the next free index.
+   *
+   * Read on hydrate so a session resuming onto a REPLACEMENT process continues
+   * its log rather than restarting at 0 and overwriting its own history.
+   */
+  countEvents(sessionId: string): Promise<number>;
 };
 
 /** The runtime's view of the store. */
@@ -148,6 +188,8 @@ type SessionEntry = {
  */
 export function createMemoryStateBackend(): SessionStateBackend {
   const sessions = new Map<string, Map<string, string>>();
+  /** One session's event log, keyed by index — sparse-tolerant, like the rows. */
+  const events = new Map<string, Map<number, string>>();
   return {
     name: "memory",
     durable: false,
@@ -160,8 +202,31 @@ export function createMemoryStateBackend(): SessionStateBackend {
     },
     discard: (sessionId) => {
       sessions.delete(sessionId);
+      events.delete(sessionId);
       return Promise.resolve();
     },
+    appendEvents: (sessionId, pending) => {
+      const log = events.get(sessionId) ?? new Map<number, string>();
+      for (const event of pending) log.set(event.index, event.json);
+      events.set(sessionId, log);
+      return Promise.resolve();
+    },
+    readEvents: (sessionId, startIndex, limit) => {
+      const log = events.get(sessionId);
+      if (!log) return Promise.resolve([]);
+      const out: StoredSessionEvent[] = [];
+      // By index rather than by insertion order: the Postgres backend answers
+      // `order by index`, and a memory backend that answered otherwise would
+      // stop being a valid test double for it.
+      for (const index of [...log.keys()].sort((a, b) => a - b)) {
+        if (index < startIndex) continue;
+        if (out.length >= limit) break;
+        const json = log.get(index);
+        if (json !== undefined) out.push({ index, json });
+      }
+      return Promise.resolve(out);
+    },
+    countEvents: (sessionId) => Promise.resolve(events.get(sessionId)?.size ?? 0),
   };
 }
 

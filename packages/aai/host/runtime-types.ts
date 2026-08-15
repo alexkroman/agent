@@ -16,6 +16,7 @@ import type { WorkflowClient } from "../sdk/workflow.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
+import type { SessionEventStream } from "./session-event-stream.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
@@ -62,6 +63,17 @@ export type AgentRuntime = {
    * pretending to a surface the agent does not have.
    */
   readonly workflows?: WorkflowClient | undefined;
+  /**
+   * This runtime's session event stream — what {@link createServer} serves
+   * `/session-events/:id` from, and what a resuming session reads its
+   * conversation back out of.
+   *
+   * Optional because the platform sandbox runtime does not hold one: there, the
+   * GUEST's own runtime owns the stream, and this facade only forwards sessions
+   * to it. A server without one answers 503 rather than pretending to a record
+   * it does not keep.
+   */
+  readonly sessionEvents?: SessionEventStream | undefined;
 };
 
 /**

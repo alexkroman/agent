@@ -77,7 +77,7 @@ describe("createHostServer", () => {
     // credential-less caller can get on a server that holds no key either.
     expect(frames).toContainEqual(
       expect.objectContaining({
-        type: "error",
+        type: "error.reported",
         code: "protocol",
         message: expect.stringContaining("ASSEMBLYAI_API_KEY"),
       }),
@@ -98,7 +98,7 @@ describe("createHostServer", () => {
 
     expect(frames).toContainEqual(
       expect.objectContaining({
-        type: "error",
+        type: "error.reported",
         code: "protocol",
         message: expect.stringContaining("?host=1"),
       }),
@@ -113,7 +113,7 @@ describe("createHostServer", () => {
 
     expect(frames).toContainEqual(
       expect.objectContaining({
-        type: "error",
+        type: "error.reported",
         code: "protocol",
         message: expect.stringContaining("DATABASE_URL"),
       }),

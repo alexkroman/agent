@@ -52,7 +52,7 @@
  * make a per-cluster executor worth writing.
  */
 
-import { SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
+import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
 
 /**
  * How long a row outlives the last write to it.
@@ -65,7 +65,7 @@ import { SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
 const RETENTION = "2 days";
 
 /**
- * One delete per app schema that has the table, each in its own plpgsql block.
+ * One delete per (app schema, table) pair, each in its own plpgsql block.
  *
  * The per-tenant `begin ... exception` is this file's equivalent of the wake
  * read's SAVEPOINT, and for the same reason: the table is TENANT-OWNED, so a
@@ -74,6 +74,24 @@ const RETENTION = "2 days";
  * two halves of the identifier rule — a schema name is never interpolated raw,
  * and only the provisioned shape is ever considered.
  *
+ * ## BOTH tables, and they age by different columns
+ *
+ * A session's durable footprint is its slot values AND its retained event log
+ * (`session-state-store.ts` is one store with two consumers), so a sweep
+ * reclaiming one would leave the other growing without bound in a schema
+ * `appDatabaseUsage` reports to the AUTHOR as their own database usage.
+ *
+ * The timestamp differs because the write pattern does, which is worth stating
+ * rather than looking like an inconsistency: a slot row is UPSERTED, so
+ * `updated_at` is maintained and is genuinely the last write to it, while an
+ * event row is append-only and never rewritten, so `created_at` is the only time
+ * it has. Both are therefore "when this row last meant anything".
+ *
+ * Kept as ONE statement, iterating a `values` list: pg_cron takes a single
+ * command, and the per-pair exception block gives the same blast radius a
+ * statement per table would — a tenant whose event table is wedged still has its
+ * slot rows reclaimed.
+ *
  * @internal
  */
 export const SWEEP_SESSION_STATE = `do $$
@@ -81,17 +99,20 @@ declare
   target record;
 begin
   for target in
-    select table_schema from information_schema.tables
-    where table_name = '${SESSION_STATE_TABLE}'
-      and table_type = 'BASE TABLE'
-      and table_schema ~ '^app_[a-f0-9]{16}$'
+    select t.table_schema, swept.tbl, swept.col
+    from (values ('${SESSION_STATE_TABLE}', 'updated_at'), ('${SESSION_EVENT_TABLE}', 'created_at'))
+      as swept(tbl, col)
+    join information_schema.tables t
+      on t.table_name = swept.tbl
+     and t.table_type = 'BASE TABLE'
+     and t.table_schema ~ '^app_[a-f0-9]{16}$'
   loop
     begin
       execute format(
-        'delete from %I.%I where updated_at < now() - interval ''${RETENTION}''',
-        target.table_schema, '${SESSION_STATE_TABLE}');
+        'delete from %I.%I where %I < now() - interval ''${RETENTION}''',
+        target.table_schema, target.tbl, target.col);
     exception when others then
-      raise warning 'session-state sweep: % failed: %', target.table_schema, sqlerrm;
+      raise warning 'session-state sweep: %.% failed: %', target.table_schema, target.tbl, sqlerrm;
     end;
   end loop;
 end $$`;

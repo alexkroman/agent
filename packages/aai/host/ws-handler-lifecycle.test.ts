@@ -11,6 +11,7 @@ import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
+import { stampSessionEvent } from "./session-event-stream.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 describe("wireSessionSocket lifecycle", () => {
@@ -187,7 +188,7 @@ describe("wireSessionSocket lifecycle", () => {
     expect(binaryFrames[0]).toBe(chunk);
   });
 
-  test("ClientSink.playAudioDone sends audio_done JSON text frame", () => {
+  test("an audio.completed event goes out as a JSON text frame", () => {
     let capturedClient!: ClientSink;
     const ws = openSocket();
 
@@ -201,12 +202,12 @@ describe("wireSessionSocket lifecycle", () => {
       logger: silentLogger,
     });
 
-    capturedClient.playAudioDone();
+    capturedClient.event(stampSessionEvent({ type: "audio.completed" }));
 
     const textFrames = (ws.sent as unknown[])
       .filter((d): d is string => typeof d === "string")
       .map((s) => JSON.parse(s));
-    expect(textFrames.find((m) => m.type === "audio_done")).toBeDefined();
+    expect(textFrames.find((m) => m.type === "audio.completed")).toBeDefined();
   });
 
   test("playAudioChunk closes a stalled client once the socket buffer exceeds the cap", async () => {
@@ -293,9 +294,11 @@ describe("wireSessionSocket lifecycle", () => {
     // end of every session, and an escaping throw from the sink takes out
     // whatever transport callback was writing. Stated as an assertion rather
     // than left to the test merely not failing.
-    expect(() => capturedClient.event({ type: "speech_started" })).not.toThrow();
+    expect(() => capturedClient.event(stampSessionEvent({ type: "speech.started" }))).not.toThrow();
     expect(() => capturedClient.playAudioChunk(new Uint8Array([1]))).not.toThrow();
-    capturedClient.playAudioDone();
+    expect(() =>
+      capturedClient.event(stampSessionEvent({ type: "audio.completed" })),
+    ).not.toThrow();
   });
 
   test("close during start() does not double-stop or throw", async () => {
@@ -357,7 +360,7 @@ describe("wireSessionSocket lifecycle", () => {
     // Without this the client, which already got `config`, streams audio into a
     // dead session forever with no retry signal.
     await vi.waitFor(() => {
-      expect(textFrames(ws).some((f) => f.type === "error")).toBe(true);
+      expect(textFrames(ws).some((f) => f.type === "error.reported")).toBe(true);
     });
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
   });
@@ -379,7 +382,7 @@ describe("wireSessionSocket lifecycle", () => {
       }),
     ).not.toThrow();
 
-    expect(textFrames(ws).some((f) => f.type === "error")).toBe(true);
+    expect(textFrames(ws).some((f) => f.type === "error.reported")).toBe(true);
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
     expect(sessions.size).toBe(0);
   });

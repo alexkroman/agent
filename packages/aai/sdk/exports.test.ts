@@ -1,10 +1,24 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Export surface snapshot tests for every aai subpath export.
+ * Two claims about every aai subpath export that no static report can make.
  *
- * These tests catch accidental export additions or removals. If a snapshot
- * breaks, it signals a potentially breaking API change that should be
- * reviewed and documented with a changeset.
+ * It used to snapshot each barrel's key list as well, and that half is gone:
+ * `API-EXPORTS.json` records the same names for all 15 subpaths (measured — every
+ * runtime name was already covered, with zero gaps), the `etc/*.api.md` reports
+ * record their signatures, and the capability epochs classify a break. Three pins
+ * on one surface is worse than one, because the weakest is the copy that gets
+ * updated when they disagree — and a test whose whole content is "the surface is
+ * what it was" trains everyone to reach for `-u`.
+ *
+ * What is left is what those gates cannot see:
+ *
+ * - **The `_`-prefix RULE.** `check:api-report` is a staleness gate: it fails when
+ *   the committed report disagrees with the tree and says nothing about content,
+ *   so it would silently RECORD a leaked `_internals` the first time one was
+ *   committed. This is the only thing standing between the repo and a second one.
+ * - **The cold import.** Each case loads a whole subpath barrel, so a circular
+ *   import that leaves a name `undefined` at load time fails here. A report
+ *   derived from `dist/*.d.ts` cannot see that at all.
  */
 import { describe, expect, test } from "vitest";
 
@@ -18,11 +32,10 @@ const IMPORT_TIMEOUT_MS = 30_000;
 /**
  * Every published subpath, paired with a loader.
  *
- * A table rather than ten copy-pasted tests, so adding a subpath export is
- * one line here instead of another duplicated body — the doc comment above
- * says "all ten", and this is what keeps that claim self-maintaining. The
- * loaders stay literal `import()` calls (not a computed specifier) so each
- * one remains statically resolvable.
+ * A table rather than 15 copy-pasted tests, so adding a subpath export is one
+ * line here instead of another duplicated body. The loaders stay literal
+ * `import()` calls (not a computed specifier) so each one remains statically
+ * resolvable.
  */
 const SUBPATH_IMPORTS: ReadonlyArray<readonly [label: string, load: () => Promise<object>]> = [
   ["@alexkroman1/aai main", () => import("@alexkroman1/aai")],
@@ -48,15 +61,11 @@ const SUBPATH_IMPORTS: ReadonlyArray<readonly [label: string, load: () => Promis
 ];
 
 describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {
-  test.each(SUBPATH_IMPORTS)("%s export", async (_label, load) => {
-    expect(Object.keys(await load()).sort()).toMatchSnapshot();
-  });
-
-  // A RULE alongside the snapshots, because a snapshot absorbs whatever it is
-  // shown the next time someone runs `-u`. `_internals` (s2s-transport's
-  // connectS2s spy seam) rode the runtime barrel this way: a mutable object a
-  // test patches, published as a process-wide behaviour switch on
-  // `@alexkroman1/aai/runtime`, and the snapshot simply recorded it as normal.
+  // A RULE rather than a record, because a record absorbs whatever it is shown.
+  // `_internals` (s2s-transport's connectS2s spy seam) rode the runtime barrel
+  // this way: a mutable object a test patches, published as a process-wide
+  // behaviour switch on `@alexkroman1/aai/runtime`, and the export snapshot that
+  // used to live here simply recorded it as normal.
   test.each(SUBPATH_IMPORTS)("%s exports no underscore-prefixed name", async (_label, load) => {
     const leaked = Object.keys(await load()).filter((name) => name.startsWith("_"));
     expect(leaked, "`_`-prefixed names are package-internal — import the module directly").toEqual(
