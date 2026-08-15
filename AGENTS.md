@@ -82,10 +82,7 @@ if its `$GITHUB_ENV` export ever broke.
   in `turbo.json` — undeclared, strict env mode would strip it and the
   enforcement would silently do nothing.
 - **`AAI_REQUIRE_REGISTRY` is the same shape one tier up**, in `check:e2e`'s
-  `env` for the same reason: it turns the e2e suite's "excuse a failed install as
-  a registry-proxy flake" predicate off, and CI sets it so the guess is not
-  trusted where egress is real. See `isRegistryProxyFailure` in
-  `aai-cli/e2e.test.ts`.
+  `env` for the same reason — see `packages/aai-cli/CLAUDE.md`.
 
 Note vitest EXECUTES a `describe.skip` callback (it has to, to enumerate what
 it is skipping), so read `pgUrl()` inside a hook or a test, never at the top of
@@ -1589,33 +1586,12 @@ about Windows.
 
 #### The e2e suite is pnpm-only in CI
 
-`aai init` scaffolds a project that the e2e suite then installs from a mock
-registry, so the install step can in principle run under any package
-manager. CI used to fan that out (`pm: [pnpm, npm, yarn]` × 2 OSes = 6
-jobs); it now runs pnpm alone.
-
-The npm/yarn legs were paying for themselves in flakes rather than bugs:
-each one is a full cold install of the published tarballs on a shared
-runner, they tripped over resolver-specific quirks unrelated to our code
-(hence `--no-lockfile`, `--no-strict-peer-dependencies`,
-`NPM_CONFIG_MINIMUM_RELEASE_AGE=0`), and the repo itself is pnpm-only, so
-the thing they guarded — "our published `exports` maps resolve under a
-non-pnpm resolver" — is better served by `publint` + `attw`, which run on
-every build and check the package metadata directly.
-
-The `AAI_TEST_PM` switch in `_e2e-test-utils.ts` stays, so an npm or yarn
-install is one env var away when reproducing a user report:
-
-```sh
-AAI_TEST_PM=npm pnpm test:e2e
-```
-
-That line only works because `AAI_TEST_PM` is declared in the `check:e2e`
-task's `env` — under turbo's strict env mode it was stripped before the task
-started, so the documented command ran pnpm and said nothing (see "strict env
-mode" above).
-
-Treat those two branches as a debugging tool, not covered ground.
+Why the npm and yarn legs were retired, and how to reproduce a user report under
+one anyway (`AAI_TEST_PM=npm pnpm test:e2e`), is in
+`packages/aai-cli/CLAUDE.md` — the package owning `e2e.test.ts` and
+`_e2e-test-utils.ts`. The repo-wide half is why that command works at all:
+`AAI_TEST_PM` sits in the `check:e2e` task's **`env`**, because strict env mode
+strips an undeclared variable silently (see "strict env mode" above).
 
 #### Property tests run on fast-check
 
