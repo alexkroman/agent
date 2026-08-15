@@ -13,6 +13,7 @@ import { createMemoryChatStore } from "aai-server/chat-store";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
 import { fakeGuest, makeBroker, PROJECT, SCOPE } from "./_studio-session-test-utils.ts";
+import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 import { createStudioSessionBroker } from "./studio-session-broker.ts";
 import { createWorkspace } from "./studio-workspace.ts";
 
@@ -58,6 +59,7 @@ describe("studio publish (workspace/deploy)", () => {
         throw new Error("guest WebSocket not dialable after 30000ms");
       }) as never,
       harnessPath: "/fake/harness.mjs",
+      previewQueue: createMemoryPreviewQueue(),
     });
 
     const outcome = await broker.deployWorkspace(

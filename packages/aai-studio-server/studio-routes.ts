@@ -123,10 +123,12 @@ export type StudioRouteOptions = {
   sessionRegistry?: StudioSessionRegistry;
   replicaId?: string;
   /**
-   * Durable preview-deploy queue (studio-preview-queue.ts). Injected in
-   * production (pgmq); the broker's in-memory default covers dev and tests.
+   * Durable preview-deploy queue (studio-preview-queue.ts): pgmq in production,
+   * `createMemoryPreviewQueue()` in a single process. REQUIRED all the way from
+   * the composition root — see the note on `StudioSessionBrokerOptions
+   * .previewQueue` for the second decision point this replaced.
    */
-  previewQueue?: PreviewQueue;
+  previewQueue: PreviewQueue;
 };
 
 function validateProject(name: string | undefined): string {
@@ -135,7 +137,7 @@ function validateProject(name: string | undefined): string {
   return parsed.data;
 }
 
-export function createStudioRoutes(options: StudioRouteOptions = {}): {
+export function createStudioRoutes(options: StudioRouteOptions): {
   routes: Hono<StudioHonoEnv>;
   /**
    * Tear down the broker's per-project sandboxes. A no-op when no session
@@ -160,7 +162,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       chats: c.env.chats,
       ...(options.sessionRegistry && { registry: options.sessionRegistry }),
       ...(options.replicaId && { replicaId: options.replicaId }),
-      ...(options.previewQueue && { previewQueue: options.previewQueue }),
+      previewQueue: options.previewQueue,
       // Runs after any successful deploy, on both paths — see
       // studio-deploy-hooks.ts.
       afterDeploy,

@@ -94,7 +94,25 @@ type Window = { count: number; resetAt: number };
 export type RateLimitVerdict = { ok: true } | { ok: false; retryAfterSeconds: number };
 
 export type RateLimiter = {
-  /** Count one request against `key`; refuse once the window's limit is hit. */
+  /**
+   * Count one request against `key`; refuse once the window's limit is hit.
+   *
+   * **`now` is a TEST SEAM the Postgres implementation deliberately ignores**,
+   * and the signature has always read as though both honoured it. The durable
+   * limiter computes its window from the DATABASE's `now()` on purpose — the
+   * whole reason the limit is a row is that replicas must not compare their own
+   * clocks against each other's, and honouring a caller-supplied instant would
+   * hand one replica's skew the power to reopen a window. So it is `check(key)`
+   * there, silently dropping the argument.
+   *
+   * Found by the conformance table (`store-conformance.ts`), which is the point
+   * of running one case list over both arms: `check(key, t0 + windowMs + 500)`
+   * starts a fresh window in memory and is refused against Postgres. Nothing had
+   * ever passed `now` to the pg limiter, so the divergence was invisible.
+   * Production callers pass no `now` at all — it is only ever supplied by a test
+   * — so this is a documentation fix rather than a behaviour change, and a
+   * conformance case may not depend on it.
+   */
   check(key: string, now?: number): Promise<RateLimitVerdict>;
 };
 

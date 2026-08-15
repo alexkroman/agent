@@ -14,6 +14,7 @@ import { isStudioPath } from "aai-server/studio-paths";
 import { createTestOrchestrator, type TestFetch } from "aai-server/test-utils";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
+import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 
 /** Combined-mode harness: agent orchestrator + studio app in one fetch. */
 type CombinedOverrides = Partial<OrchestratorOpts> & {
@@ -50,7 +51,10 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     ...(overrides.studioSessionRegistry && {
       studioSessionRegistry: overrides.studioSessionRegistry,
     }),
-    ...(overrides.previewQueue && { previewQueue: overrides.previewQueue }),
+    // A test harness IS a composition root, so it makes the choice the real one
+    // makes: one process, so an in-memory queue — explicitly, never by a
+    // downstream `??`.
+    previewQueue: overrides.previewQueue ?? createMemoryPreviewQueue(),
     ...(overrides.replicaId && { replicaId: overrides.replicaId }),
   });
   const fetch: TestFetch = async (input, init) => {

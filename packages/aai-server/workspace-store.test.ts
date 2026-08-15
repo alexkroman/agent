@@ -1,21 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
-// WorkspaceStore: SQL shapes of the Postgres implementation (via a fake
-// SqlExec backed by a Map), and behavioral parity between the pg and memory
-// stores — versions included, so dev/tests cannot drift from production.
+// WorkspaceStore: the CONTRACT over the memory arm (shared with the stack arm —
+// see store-conformance.ts), the memory arm's own no-aliasing property, and the
+// STATEMENTS the Postgres implementation issues, recorded through a fake SqlExec.
 
 import { describe, expect, test } from "vitest";
+import { workspaceStoreConformance } from "./store-conformance-cases.ts";
 import {
   createDispatchingSql,
   createRecordingSql,
   refusingDdl,
   type SqlHandler,
 } from "./test-utils.ts";
-import {
-  createMemoryWorkspaceStore,
-  createPgWorkspaceStore,
-  WorkspaceConflictError,
-  type WorkspaceStore,
-} from "./workspace-store.ts";
+import { createMemoryWorkspaceStore, createPgWorkspaceStore } from "./workspace-store.ts";
 
 /**
  * Fake SqlExec implementing the store's five statements over a Map, keeping
@@ -89,121 +85,23 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
   ]);
 }
 
-// ── Behavioral parity: both implementations must agree ─────────────────────
+// ── The CONTRACT, over the arm that runs everywhere ─────────────────────────
+//
+// One case list, in `store-conformance.ts`, shared with the stack arm in
+// `store-conformance.scenario.test.ts`. The memory arm is unconditional and so
+// keeps covering this module on every machine; the stack arm adds the semantics
+// a JS value cannot hold.
+//
+// The arm this REPLACED was labelled `postgres` and was `createFakeSql()` — a
+// hand-written JS reimplementation of this store's own SQL, i.e. a third
+// implementation of the contract, and the one a reader trusts most because of
+// its label. It could not represent the `::text::jsonb` double-encode that broke
+// every metadata stamp in production. It is not gone: it is a RECORDER, and what
+// it uniquely asserts (the statements this store issues, and the DDL it must
+// never issue) is the subject of `createPgWorkspaceStore SQL` below.
 
-const implementations: [string, () => WorkspaceStore][] = [
-  ["memory", () => createMemoryWorkspaceStore()],
-  ["postgres (fake SqlExec)", () => createPgWorkspaceStore(createFakeSql().sql)],
-];
-
-describe.each(implementations)("WorkspaceStore parity: %s", (_name, make) => {
-  test("get returns null for a missing row", async () => {
-    expect(await make().get("s", "ghost")).toBeNull();
-  });
-
-  test("create + get round-trips the doc at version 1", async () => {
-    const store = make();
-    expect(await store.put("s", "p", { files: { "a.ts": "1" } }, null)).toBe(1);
-    expect(await store.get("s", "p")).toEqual({ doc: { files: { "a.ts": "1" } }, version: 1 });
-  });
-
-  test("creating an existing row conflicts and leaves it untouched", async () => {
-    const store = make();
-    await store.put("s", "p", { v: "winner" }, null);
-    await expect(store.put("s", "p", { v: "loser" }, null)).rejects.toThrow(WorkspaceConflictError);
-    expect(await store.get("s", "p")).toEqual({ doc: { v: "winner" }, version: 1 });
-  });
-
-  test("a versioned update bumps the version", async () => {
-    const store = make();
-    await store.put("s", "p", { v: 1 }, null);
-    expect(await store.put("s", "p", { v: 2 }, 1)).toBe(2);
-    expect(await store.get("s", "p")).toEqual({ doc: { v: 2 }, version: 2 });
-  });
-
-  test("an update against a stale version conflicts without writing", async () => {
-    const store = make();
-    await store.put("s", "p", { v: 1 }, null);
-    await store.put("s", "p", { v: 2 }, 1);
-    await expect(store.put("s", "p", { v: "stale" }, 1)).rejects.toThrow(WorkspaceConflictError);
-    expect(await store.get("s", "p")).toEqual({ doc: { v: 2 }, version: 2 });
-  });
-
-  test("an update against a missing row conflicts (never creates)", async () => {
-    const store = make();
-    await expect(store.put("s", "ghost", { v: 1 }, 1)).rejects.toThrow(WorkspaceConflictError);
-    expect(await store.get("s", "ghost")).toBeNull();
-  });
-
-  test("delete removes the row and is idempotent", async () => {
-    const store = make();
-    await store.put("s", "p", { v: 1 }, null);
-    await store.delete("s", "p");
-    expect(await store.get("s", "p")).toBeNull();
-    await store.delete("s", "p"); // no throw
-  });
-
-  test("patch merges named keys and leaves every other one alone", async () => {
-    const store = make();
-    await store.put("s", "p", { files: { "a.ts": "1" }, deployedSlug: "old" }, null);
-    const patched = await store.patch("s", "p", { set: { deployedSlug: "new" } });
-    // The file map is untouched WITHOUT having been read or rewritten — the
-    // whole reason this operation exists.
-    expect(patched).toEqual({
-      doc: { files: { "a.ts": "1" }, deployedSlug: "new" },
-      version: 2,
-    });
-  });
-
-  test("patch removes keys, and a key in both set and remove is set", async () => {
-    const store = make();
-    await store.put("s", "p", { files: {}, previewHash: "h", previewError: "boom" }, null);
-    const patched = await store.patch("s", "p", {
-      set: { previewHash: "fresh" },
-      remove: ["previewError", "previewHash"],
-    });
-    // Removals apply first, then the merge — so naming a key in both is a
-    // SET in either implementation, never an accidental delete.
-    expect(patched?.doc).toEqual({ files: {}, previewHash: "fresh" });
-  });
-
-  test("patch bumps the version — it is what drives the change stream", async () => {
-    const store = make();
-    await store.put("s", "p", { files: {} }, null);
-    expect((await store.patch("s", "p", { set: { a: 1 } }))?.version).toBe(2);
-    expect((await store.patch("s", "p", { set: { b: 2 } }))?.version).toBe(3);
-    // And it takes no expected version, so two stamps of different fields
-    // both land — where the versioned put made one of them retry.
-    expect((await store.get("s", "p"))?.doc).toEqual({ files: {}, a: 1, b: 2 });
-  });
-
-  test("patch of a missing row resolves null and never creates one", async () => {
-    const store = make();
-    expect(await store.patch("s", "ghost", { set: { a: 1 } })).toBeNull();
-    expect(await store.get("s", "ghost")).toBeNull();
-  });
-
-  test("patch cannot clobber a write that landed after it was composed", async () => {
-    // The concurrency property the versioned read-modify-write could only get
-    // by DETECTING the race and retrying: a patch carries no files, so a file
-    // write landing between composing the stamp and applying it survives.
-    const store = make();
-    await store.put("s", "p", { files: { "a.ts": "before" } }, null);
-    const stamp = { set: { deployedSlug: "x" } };
-    await store.put("s", "p", { files: { "a.ts": "after" } }, 1);
-    const patched = await store.patch("s", "p", stamp);
-    expect(patched?.doc).toEqual({ files: { "a.ts": "after" }, deployedSlug: "x" });
-  });
-
-  test("list is scoped and sorted", async () => {
-    const store = make();
-    await store.put("s1", "beta", {}, null);
-    await store.put("s1", "alpha", {}, null);
-    await store.put("s2", "other", {}, null);
-    expect(await store.list("s1")).toEqual(["alpha", "beta"]);
-    expect(await store.list("s2")).toEqual(["other"]);
-    expect(await store.list("s3")).toEqual([]);
-  });
+describe("WorkspaceStore conformance: memory", () => {
+  workspaceStoreConformance(() => createMemoryWorkspaceStore());
 });
 
 test("memory store never shares mutable state with callers", async () => {

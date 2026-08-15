@@ -34,18 +34,19 @@
  * ## Running it
  *
  * ```sh
- * supabase start                     # applies supabase/migrations on init
- * supabase status -o env             # the values below
- *
- * AAI_TEST_PG_URL='postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
- * AAI_TEST_SUPABASE_URL='http://127.0.0.1:54321' \
- * AAI_TEST_SUPABASE_SERVICE_KEY='<SERVICE_ROLE_KEY>' \
- * AAI_TEST_SUPABASE_ANON_KEY='<ANON_KEY>' \
- *   pnpm --filter aai-server test:integration
+ * supabase start          # applies supabase/migrations on init
+ * pnpm test:pg            # resolves the stack and runs the tier against it
  * ```
  *
- * Skips without those, like every other test in this tier. The anon key is
- * optional and only gates the negative control.
+ * That is the whole of it now, and it was not: this suite's gate is a
+ * conjunction over the Supabase trio, its header documented those as values a
+ * human pastes out of `supabase status -o env`, and NOTHING in the repo resolved
+ * them — `with-test-pg.mjs` probed 54322, named it "Supabase local stack" in the
+ * line it printed, and exported the database URL alone. So the only test of
+ * walrus anywhere skipped on the one machine in the world running walrus, and
+ * CI could not cover for it either. `pnpm test:pg` shells out to that command
+ * now and sets `AAI_REQUIRE_STACK`, so a dropped variable is red rather than
+ * green. The anon key stays optional and gates only the negative control.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -53,19 +54,16 @@ import path from "node:path";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
-import { PG_URL, pgUrl } from "./_pg-test-utils.ts";
+import { describeWithStack, pgUrl, stackEnv } from "./_pg-test-utils.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createRealtimePlatformEvents } from "./realtime-events.ts";
 
-const SB_URL = process.env.AAI_TEST_SUPABASE_URL;
-const SB_SERVICE_KEY = process.env.AAI_TEST_SUPABASE_SERVICE_KEY;
-const SB_ANON_KEY = process.env.AAI_TEST_SUPABASE_ANON_KEY;
-
-// A CONJUNCTION, so it reads `PG_URL` rather than using `describeWithPg`: this
-// suite needs the whole local Supabase stack, not only a database. The import
-// still carries the loud skip and the AAI_REQUIRE_PG check for the PG half.
-const describeIfStack = PG_URL && SB_URL && SB_SERVICE_KEY ? describe : describe.skip;
-const describeIfAnon = SB_ANON_KEY ? describe : describe.skip;
+// `describeWithStack` IS the conjunction — database plus `AAI_TEST_SUPABASE_URL`
+// plus `_SERVICE_KEY` — and it is now resolved by `pnpm test:pg` rather than
+// pasted by hand out of `supabase status -o env`. This suite spelled that gate
+// itself for as long as nothing in the repo resolved the three values together,
+// which is why the only test of walrus anywhere ran on no machine at all.
+const describeIfAnon = process.env.AAI_TEST_SUPABASE_ANON_KEY ? describe : describe.skip;
 
 /** Realtime join + first frame, locally. Generous: the tier retries twice. */
 const DELIVERY = { timeout: 15_000, interval: 50 } as const;
@@ -92,7 +90,7 @@ function rlsTables(): string[] {
   return [...new Set(tables)].sort();
 }
 
-describeIfStack("the platform change stream survives RLS being enabled", () => {
+describeWithStack("the platform change stream survives RLS being enabled", () => {
   let db: CloseableDb;
   /** Every events client a test opened, closed in afterEach. */
   const opened: PlatformEvents[] = [];
@@ -106,18 +104,28 @@ describeIfStack("the platform change stream survives RLS being enabled", () => {
   const nextId = (): string => `rls-it-${process.pid}-${Date.now()}-${unique++}`;
 
   function events(key: string): PlatformEvents {
-    const client = createRealtimePlatformEvents({ url: SB_URL as string, key });
+    const client = createRealtimePlatformEvents({ url: stackEnv().url, key });
     opened.push(client);
     return client;
   }
 
+  /** The anon key, read only inside `describeIfAnon`'s one test. */
+  function anonKey(): string {
+    const key = stackEnv().anonKey;
+    if (!key) throw new Error("anonKey() read outside describeIfAnon");
+    return key;
+  }
+
   async function insertAgent(slug: string): Promise<void> {
     slugs.push(slug);
+    // No `config` column: `20260810030000_drop_agents_config.sql` dropped it (see
+    // "The platform stores no agent config"). This insert named it — undetectably,
+    // because the suite ran nowhere; the migrated stack rejects it outright.
     await db.query(
       `insert into aai_platform.agents
-         (slug, credential_hashes, config, worker_hash, client_files, version)
-       values ($1, $2::jsonb, $3::jsonb, $4, $5::jsonb, $6)`,
-      [slug, "[]", JSON.stringify({ name: slug }), "wh-1", "{}", 1],
+         (slug, credential_hashes, worker_hash, client_files, version)
+       values ($1, $2::text::jsonb, $3, $4::text::jsonb, $5)`,
+      [slug, "[]", "wh-1", "{}", 1],
     );
   }
 
@@ -227,7 +235,7 @@ describeIfStack("the platform change stream survives RLS being enabled", () => {
   test("walrus still delivers agents changes to the service-role subscriber", async () => {
     const slug = nextId();
     const seen = vi.fn<(slug: string) => void>();
-    events(SB_SERVICE_KEY as string).watchAgents(seen);
+    events(stackEnv().serviceKey).watchAgents(seen);
 
     await insertAgent(slug);
     // The agents channel does not fire its watchers on SUBSCRIBED (only the
@@ -248,7 +256,7 @@ describeIfStack("the platform change stream survives RLS being enabled", () => {
     const scope = nextId();
     const project = "demo";
     const changed = vi.fn();
-    events(SB_SERVICE_KEY as string).watchWorkspace(scope, project, changed);
+    events(stackEnv().serviceKey).watchWorkspace(scope, project, changed);
 
     // A successful join fires the watchers by design (the join gap is
     // undeliverable, so every join owes a re-read). That makes the first call
@@ -266,7 +274,7 @@ describeIfStack("the platform change stream survives RLS being enabled", () => {
   test("the scope-filtered projects channel delivers too", async () => {
     const scope = nextId();
     const changed = vi.fn();
-    events(SB_SERVICE_KEY as string).watchScopeProjects(scope, changed);
+    events(stackEnv().serviceKey).watchScopeProjects(scope, changed);
 
     await vi.waitFor(() => expect(changed).toHaveBeenCalled(), DELIVERY);
     const afterJoin = changed.mock.calls.length;
@@ -298,8 +306,8 @@ describeIfStack("the platform change stream survives RLS being enabled", () => {
       const slug = nextId();
       const anonSaw = vi.fn<(slug: string) => void>();
       const serviceSaw = vi.fn<(slug: string) => void>();
-      events(SB_ANON_KEY as string).watchAgents(anonSaw);
-      events(SB_SERVICE_KEY as string).watchAgents(serviceSaw);
+      events(anonKey()).watchAgents(anonSaw);
+      events(stackEnv().serviceKey).watchAgents(serviceSaw);
 
       await insertAgent(slug);
       // Delivery to service_role is the window: it proves the write really was
