@@ -46,7 +46,7 @@
  * Remove each repair once the gateway emits conformant frames.
  */
 
-import { safeJsonParse } from "../../sdk/utils.ts";
+import { isRecord, safeJsonParse } from "../../sdk/utils.ts";
 
 /** Structural `fetch`, kept loose so it satisfies the AI SDK's option type. */
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -75,7 +75,7 @@ function defaultGenerateId(): string {
 type Wire = Record<string, unknown>;
 
 function asWire(value: unknown): Wire | null {
-  return typeof value === "object" && value !== null ? (value as Wire) : null;
+  return isRecord(value) ? value : null;
 }
 
 /**

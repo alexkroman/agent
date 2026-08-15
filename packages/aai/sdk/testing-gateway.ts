@@ -17,6 +17,8 @@
  * or an explicit `vi.unstubAllGlobals()`.
  */
 
+import { isRecord } from "./utils.ts";
+
 /** One request a {@link StubGateway} answered. */
 export interface StubGatewayCall {
   /** The endpoint the call went to, so a spec can assert the gateway URL. */
@@ -127,7 +129,7 @@ export function stubGateway(
 function decodeBody(body: RequestInit["body"]): Record<string, unknown> {
   if (typeof body !== "string") return {};
   const parsed: unknown = JSON.parse(body);
-  return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  return isRecord(parsed) ? parsed : {};
 }
 
 /** The chat messages the request carried, with anything malformed dropped. */

@@ -24,6 +24,7 @@
  */
 
 import type { GenerateFn, GenerateOptions } from "./generate.ts";
+import { isRecord } from "./utils.ts";
 
 /** One `ctx.generate` call, as recorded by {@link stubGenerate}. */
 export interface StubGenerateCall {
@@ -143,7 +144,7 @@ export function stubGenerate(
 function isRouteTable(
   script: Readonly<Record<string, StubGenerateRoute>> | StubGenerateRoute,
 ): script is Readonly<Record<string, StubGenerateRoute>> {
-  return typeof script === "object" && script !== null && !("object" in script);
+  return isRecord(script) && !("object" in script);
 }
 
 /** The `{ text, object }` shape both `GenerateFn` overloads are satisfied by. */

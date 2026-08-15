@@ -23,6 +23,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import { safeFetch } from "@alexkroman1/aai/runtime";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { WORKSPACE_DEPENDENCIES } from "./studio-project-shape.ts";
@@ -107,10 +108,10 @@ async function npmTool(dir: string, verb: "install" | "uninstall", spec: string)
  * `dependencies` wins a (malformed) duplicate, matching npm's own precedence.
  */
 function declaredSpecs(manifest: unknown): Record<string, string> {
-  const m = (manifest ?? {}) as Record<string, unknown>;
+  const m = isRecord(manifest) ? manifest : {};
   const pick = (key: string): Record<string, string> => {
     const value = m[key];
-    return value && typeof value === "object" ? (value as Record<string, string>) : {};
+    return isRecord(value) ? (value as Record<string, string>) : {};
   };
   return { ...pick("devDependencies"), ...pick("dependencies") };
 }

@@ -5847,6 +5847,9 @@ export function errorMessage(err: unknown): string;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @public
+export function isRecord(value: unknown): value is Record<string, unknown>;
+
 // @internal
 export function isTextAssetPath(assetPath: string): boolean;
 

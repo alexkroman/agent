@@ -39,7 +39,7 @@
  */
 
 import { WS_OPEN } from "../../sdk/constants.ts";
-import { safeJsonParse } from "../../sdk/utils.ts";
+import { isRecord, safeJsonParse } from "../../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import { bytesToPcm16 } from "../_pcm.ts";
 import type { Logger } from "../runtime-config.ts";
@@ -164,14 +164,11 @@ export function createTelephonyBridge(
 
   /** Session → carrier: a protocol text frame. */
   function handleSessionEvent(text: string): void {
-    const parsed = safeJsonParse(text);
-    const message = typeof parsed === "object" && parsed !== null ? parsed : null;
-    const type = (message as { type?: unknown } | null)?.type;
+    const message = safeJsonParse(text);
+    if (!isRecord(message)) return;
+    const type = message.type;
     if (type === "config") {
-      const { sampleRate, ttsSampleRate } = message as {
-        sampleRate?: unknown;
-        ttsSampleRate?: unknown;
-      };
+      const { sampleRate, ttsSampleRate } = message;
       if (typeof sampleRate === "number" && typeof ttsSampleRate === "number") {
         configure(sampleRate, ttsSampleRate);
       }

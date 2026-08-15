@@ -565,6 +565,7 @@
     "createKeyedLock",
     "errorDetail",
     "errorMessage",
+    "isRecord",
     "isTextAssetPath",
     "isToolFailure",
     "isTransientStatus",

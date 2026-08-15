@@ -53,7 +53,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
-import { createKeyedLock, KeyedLockTimeoutError, withLock } from "@alexkroman1/aai/utils";
+import { createKeyedLock, isRecord, KeyedLockTimeoutError, withLock } from "@alexkroman1/aai/utils";
 import { NPM_TIMEOUT_MS, runNpm } from "./studio-spawn.ts";
 
 /**
@@ -90,8 +90,8 @@ export type WorkspaceDependencyOptions = {
 
 /** A manifest's `dependencies` as a plain record — `{}` for any other shape. */
 function dependenciesOf(manifest: unknown): Record<string, string> {
-  const declared = (manifest as { dependencies?: unknown } | null)?.dependencies;
-  return declared && typeof declared === "object" ? (declared as Record<string, string>) : {};
+  const declared = isRecord(manifest) ? manifest.dependencies : undefined;
+  return isRecord(declared) ? (declared as Record<string, string>) : {};
 }
 
 /**

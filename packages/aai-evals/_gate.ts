@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { describe } from "vitest";
 
 /**
@@ -32,10 +33,7 @@ function resolveKey(): string | undefined {
   try {
     const cfg = path.join(homedir(), ".config", "aai", "config.json");
     const parsed: unknown = JSON.parse(readFileSync(cfg, "utf-8"));
-    const key =
-      typeof parsed === "object" && parsed !== null && "apiKey" in parsed
-        ? (parsed as { apiKey?: unknown }).apiKey
-        : undefined;
+    const key = isRecord(parsed) ? parsed.apiKey : undefined;
     return typeof key === "string" && key !== "" ? key : undefined;
   } catch {
     return undefined;

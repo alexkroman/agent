@@ -72,13 +72,43 @@ export {
   uploadInfo,
 } from "./step-uploads.ts";
 
+/**
+ * Whether a value is a non-null, non-array object, narrowed to
+ * `Record<string, unknown>` so its fields can be read without a second cast.
+ *
+ * The narrowing is the point. `typeof value === "object" && value !== null` is
+ * three tokens anyone can write, which is exactly why it was written twelve
+ * times here — and it narrows to `object`, on which every field read is an
+ * error, so each site paid for it again with a cast
+ * (`(value as { kind?: unknown }).kind`). A cast is not a check: it says
+ * nothing about the value and stops reporting when the shape moves.
+ *
+ * Arrays are excluded because every caller is reading a NAMED field — `.type`,
+ * `.error`, `.kind`, `.then` — none of which an array has. For "any non-null
+ * object, arrays included", write the two comparisons inline; that case has one
+ * site in this repo and does not want a name.
+ *
+ * @example
+ * ```ts
+ * import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
+ *
+ * function readStatus(body: string): string | undefined {
+ *   const parsed = safeJsonParse(body);
+ *   if (!isRecord(parsed)) return undefined;
+ *   return typeof parsed.status === "string" ? parsed.status : undefined;
+ * }
+ * ```
+ *
+ * @public
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
-  if (typeof err === "object" && err !== null && "message" in err) {
-    const msg = (err as { message?: unknown }).message;
-    if (typeof msg === "string") return msg;
-  }
+  if (isRecord(err) && typeof err.message === "string") return err.message;
   return String(err);
 }
 
@@ -170,12 +200,7 @@ export function toolFailure(message: string): ToolFailure {
  * @public
  */
 export function isToolFailure(value: unknown): value is ToolFailure {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "error" in value &&
-    typeof value.error === "string"
-  );
+  return isRecord(value) && typeof value.error === "string";
 }
 
 /**
@@ -225,8 +250,8 @@ const ERROR_BODY_PREVIEW_CHARS = 200;
 export async function responseErrorMessage(res: Response, label?: string): Promise<string> {
   const text = await res.text().catch(() => "");
   const body = safeJsonParse(text);
-  if (typeof body === "object" && body !== null && "error" in body) {
-    const { error } = body as { error?: unknown };
+  if (isRecord(body)) {
+    const { error } = body;
     // An empty sentence is not a diagnostic — fall through to the status,
     // which at least says what happened.
     if (typeof error === "string" && error !== "") return error;
@@ -297,9 +322,7 @@ export function capToolResult(result: string): string {
  * @internal
  */
 export function toArgsRecord(input: unknown): Record<string, unknown> {
-  return typeof input === "object" && input !== null && !Array.isArray(input)
-    ? (input as Record<string, unknown>)
-    : {};
+  return isRecord(input) ? input : {};
 }
 
 /** Text-based client asset extensions safe to carry as a UTF-8 string. */

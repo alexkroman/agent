@@ -21,7 +21,7 @@
 
 import { MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import type { StateProjection } from "../sdk/session-state.ts";
-import { errorMessage } from "../sdk/utils.ts";
+import { errorMessage, isRecord } from "../sdk/utils.ts";
 
 /** Why nothing was pushed, when nothing was. */
 export type StateSyncSkip =
@@ -55,11 +55,6 @@ export type StateSyncSession = {
 };
 
 export type StateSync = (session: StateSyncSession, options?: StateSyncOptions) => StateSyncResult;
-
-/** Is this something the merge can be built out of? */
-function isMergeable(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Build the per-runtime sync decision for an agent's `syncState` projections.
@@ -110,7 +105,7 @@ function project(projections: readonly StateProjection[], session: StateSyncSess
   const merged: Record<string, unknown> = {};
   for (const projection of projections) {
     const value = projection(session.read(projection.key));
-    if (!isMergeable(value)) {
+    if (!isRecord(value)) {
       throw new Error(
         `the projection for the "${projection.key}" slot returned ${
           value === null ? "null" : typeof value
