@@ -19,7 +19,7 @@ import { getRun, resumeHook, start } from "workflow/api";
 import { HookNotFoundError, WorkflowRunNotFoundError } from "workflow/errors";
 import { getWorld } from "workflow/runtime";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
-import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-client.ts";
+import type { WdkAdapter, WdkRunRecord, WdkStreamOptions } from "./workflow-wdk-types.ts";
 
 /**
  * One WDK run record as ours.

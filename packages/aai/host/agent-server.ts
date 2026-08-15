@@ -61,6 +61,18 @@ export interface AgentServerOptions extends PassthroughServerOptions {
   clientDir?: string;
   /** SQL handle exposed to tool code as `ctx.db` — see `RuntimeOptions.db`. */
   db?: Db | undefined;
+  /**
+   * Where this server is reachable from outside — see `RuntimeOptions.publicUrl`.
+   * `ctx.workflows.publicWebhookUrl()` is the only reader; without it, it throws.
+   *
+   * Declared HERE and not on {@link PassthroughServerOptions}, although the two
+   * other front doors share that bag. The bag exists so a hook added to it reaches
+   * both wrappers, and this is not that shape: `createServer` builds no workflow
+   * client (its runtime is handed in), and `createHostServer`'s sessions run
+   * caller-supplied agents, which declare no workflows. On either it would be a
+   * field that quietly does nothing.
+   */
+  publicUrl?: string | undefined;
 }
 
 /**
@@ -92,11 +104,11 @@ export interface AgentServerOptions extends PassthroughServerOptions {
  * @public
  */
 export function createAgentServer(options: AgentServerOptions): AgentServer {
-  const { agent, env, providerEnv, clientDir, db, logger, upgrade, request } = options;
+  const { agent, env, providerEnv, clientDir, db, publicUrl, logger, upgrade, request } = options;
   const runtime = createRuntime({
     agent,
     env,
-    ...omitUndefined({ providerEnv, db, logger }),
+    ...omitUndefined({ providerEnv, db, publicUrl, logger }),
   });
   return createServer({
     runtime,

@@ -139,6 +139,7 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     db?: Db | undefined;
     env: AgentEnv;
     providerEnv?: ProviderEnv | undefined;
+    publicUrl?: string | undefined;
 }
 
 // @public
@@ -771,6 +772,7 @@ export type RuntimeOptions = {
     db?: Db | undefined;
     createWebSocket?: CreateS2sWebSocket | undefined;
     createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
+    publicUrl?: string | undefined;
     logger?: Logger | undefined;
     s2sConfig?: S2SConfig | undefined;
     sessionStartTimeoutMs?: number | undefined;
@@ -1684,6 +1686,7 @@ type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };
 
@@ -1692,6 +1695,7 @@ export type WorkflowClientOptions = {
     workflows: Readonly<Record<string, WorkflowDef>>;
     keys: WorkflowKeyStore;
     wdk: WdkAdapter;
+    publicUrl?: string | undefined;
     logger: Logger;
 };
 

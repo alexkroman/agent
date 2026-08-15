@@ -85,6 +85,7 @@ function makeClient(
     workflows?: Record<string, WorkflowDef>;
     wdk?: Partial<WdkAdapter>;
     keys?: WorkflowKeyStore;
+    publicUrl?: string;
   } = {},
 ) {
   const wdk = makeAdapter(over.wdk);
@@ -93,6 +94,7 @@ function makeClient(
     workflows: over.workflows ?? { digest, bare },
     keys,
     wdk,
+    publicUrl: over.publicUrl,
     logger: silentLogger,
   });
   return { client, wdk, keys };
@@ -470,5 +472,58 @@ describe("listing declared workflows", () => {
     expect(() => client.listing()).not.toThrow();
     expect(client.listing()[0]?.inputSchema).toBeUndefined();
     expect(silentLogger.warn).toHaveBeenCalled();
+  });
+});
+
+describe("minting a public webhook URL", () => {
+  test("composes the agent's public base URL with the DevKit's webhook route", () => {
+    const { client } = makeClient({ publicUrl: "https://aai.example/digest-desk" });
+    expect(client.publicWebhookUrl("approval:sess-1")).toBe(
+      "https://aai.example/digest-desk/.well-known/workflow/v1/webhook/approval%3Asess-1",
+    );
+  });
+
+  test("encodes the token, because the route is ONE segment", () => {
+    // `webhookToken` refuses a token containing a slash, so an unencoded one
+    // would mint a URL nothing routes — and the two ends derive the path from
+    // the same constant precisely so they cannot disagree about that.
+    const { client } = makeClient({ publicUrl: "https://aai.example/x" });
+    expect(client.publicWebhookUrl("a/b")).toBe(
+      "https://aai.example/x/.well-known/workflow/v1/webhook/a%2Fb",
+    );
+  });
+
+  test("tolerates a trailing slash on the configured base", () => {
+    // The value arrives from a boot env var, a container's PUBLIC_URL, or an
+    // author's own string — a copied-in origin ending in `/` is the ordinary
+    // shape of all three, and doubling the slash would 404.
+    const { client } = makeClient({ publicUrl: "https://aai.example/x/ " });
+    expect(client.publicWebhookUrl("t")).toBe(
+      "https://aai.example/x/.well-known/workflow/v1/webhook/t",
+    );
+  });
+
+  test("THROWS naming the option when no public URL is configured", () => {
+    // The whole point of the method: a localhost URL handed to a payment
+    // provider is the same bug with the failure moved days into the future and
+    // onto somebody else's server.
+    const { client } = makeClient();
+    expect(() => client.publicWebhookUrl("t")).toThrow(/does not know its own public URL/);
+    expect(() => client.publicWebhookUrl("t")).toThrow(/AAI_PUBLIC_ORIGIN/);
+  });
+
+  test("a blank public URL is unconfigured, not a relative base", () => {
+    // An exec env built from a template can carry an empty string, and
+    // `""` would mint `/.well-known/…` — a relative URL nothing can call back on.
+    const { client } = makeClient({ publicUrl: "   " });
+    expect(() => client.publicWebhookUrl("t")).toThrow(/does not know its own public URL/);
+  });
+
+  test("an empty token is refused", () => {
+    // `webhookToken` reads an empty trailing segment as "not a webhook path", so
+    // a URL minted from one is unanswerable. This one IS the model's business —
+    // a tool derived a token from something absent.
+    const { client } = makeClient({ publicUrl: "https://aai.example/x" });
+    expect(() => client.publicWebhookUrl("")).toThrow(/token cannot be empty/);
   });
 });

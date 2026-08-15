@@ -68,6 +68,70 @@ export function resolvePublicOrigin(req: Request, env: NodeJS.ProcessEnv = proce
 }
 
 /**
+ * The last origin this replica RESOLVED for a real request.
+ *
+ * Derived config, not state: losing it costs one re-observation, no request
+ * reads it, and nothing coordinates on it — so it does not breach the
+ * stateless-server rule (see the platform guide). It exists because a SPAWN
+ * needs the public origin and three of the four spawn paths hold no request:
+ * the blue-green handover fires off the agents-row change stream, the durable-run
+ * wake sweep fires off a timer, and the peer route answers before either. The
+ * broker's own request is the only one that could carry it, and baking a
+ * per-request value would be a fiction anyway — there is ONE sandbox per slug
+ * fleet-wide, so whichever request happened to spawn the guest decides for every
+ * later caller regardless.
+ */
+let observedOrigin: string | undefined;
+
+/**
+ * Record the origin of a request being served, and return it.
+ *
+ * Called from the shared platform middleware, so both surfaces feed it and no
+ * route has to remember. `AAI_PUBLIC_ORIGIN` still wins wherever the value is
+ * read, so an operator who sets it never depends on what was observed.
+ */
+export function rememberPublicOrigin(req: Request, env: NodeJS.ProcessEnv = process.env): string {
+  const origin = resolvePublicOrigin(req, env);
+  observedOrigin = origin;
+  return origin;
+}
+
+/**
+ * Forget the observed origin. Tests only — module state outlives
+ * `restoreMocks`/`unstubEnvs`, so a spec asserting the unobserved case has to
+ * be able to get back to it.
+ *
+ * @internal
+ */
+export function forgetObservedPublicOrigin(): void {
+  observedOrigin = undefined;
+}
+
+/**
+ * The public base URL of ONE agent — the origin plus its slug — or `undefined`
+ * when this replica cannot name an origin yet.
+ *
+ * This is what `AAI_PUBLIC_BASE_URL` carries into a guest, and it is the only
+ * thing a durable webhook URL can be built from: `getWorkflowMetadata().url` is
+ * the guest's own `http://localhost:<port>`, and the sandbox that minted it is
+ * gone by the time a payment provider calls back (see "Durable workflows" in
+ * this package's guide).
+ *
+ * `undefined` rather than a guess. The SDK then has no `publicUrl` and
+ * `ctx.workflows.webhookUrl()` THROWS naming the option, which is the whole
+ * point: a `localhost` URL handed to a third party fails weeks later, at them,
+ * with nothing here to look at.
+ */
+export function agentPublicBaseUrl(
+  slug: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const configured = env.AAI_PUBLIC_ORIGIN?.trim().replace(/\/+$/, "");
+  const origin = configured || observedOrigin;
+  return origin ? `${origin}/${slug}` : undefined;
+}
+
+/**
  * The public origin split into the two `X-Forwarded-*` values a downstream
  * service needs, so a proxy forwards what the CLIENT saw rather than the
  * cleartext hop it received.

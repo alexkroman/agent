@@ -374,7 +374,21 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     // the platform (only what `.env` / `aai secret put` declares) and so can't
     // come to depend on a host-level variable that won't exist there.
     const providerEnv = withHostCredentialFallback(env);
-    const runtime = createRuntime({ agent: agentDef, env, providerEnv, logger: devLogger });
+    const runtime = createRuntime({
+      agent: agentDef,
+      env,
+      providerEnv,
+      logger: devLogger,
+      // What `ctx.workflows.publicWebhookUrl(token)` mints from. The BACKEND
+      // port, not the port the developer opens: with a `client.tsx` Vite owns
+      // that one and proxies only the browser-facing surface, and the DevKit's
+      // `/.well-known/workflow/v1/*` routes are deliberately not in that table
+      // (a queue callback is dialled on loopback, never by a page) — so a URL
+      // naming the Vite port would 404 on delivery. `PUBLIC_URL` overrides for
+      // the case that actually needs one: a tunnel, when a real third party has
+      // to reach a webhook on this machine.
+      publicUrl: process.env.PUBLIC_URL?.trim() || `http://localhost:${backendPort}`,
+    });
     return createServer({
       runtime,
       name: agentDef.name,

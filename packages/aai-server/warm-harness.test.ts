@@ -8,9 +8,10 @@
  */
 
 import type { AddressInfo } from "node:net";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import { sleep } from "./_sleep.ts";
+import { forgetObservedPublicOrigin, rememberPublicOrigin } from "./public-origin.ts";
 import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
@@ -92,12 +93,21 @@ describe("dialGuest", () => {
 
 describe("agentBootEnv", () => {
   const boot = {
+    slug: "digest-desk",
     token: "tok",
     port: 8080,
     bundle: { path: "/b/bundle.mjs" },
     bundleSha256: "abc",
     envPath: "/b/env.json",
   };
+
+  // The observed origin is module state on `public-origin.ts` and outlives
+  // `restoreMocks`, so a spec asserting the UNOBSERVED case has to get back to
+  // it — and one that did not clear it would pass on whatever an earlier file
+  // happened to leave behind.
+  beforeEach(() => {
+    forgetObservedPublicOrigin();
+  });
 
   it("names the boot artifacts the guest reads", () => {
     expect(agentBootEnv(boot, {})).toEqual({
@@ -137,5 +147,32 @@ describe("agentBootEnv", () => {
     expect(agentBootEnv(boot, { AAI_GUEST_IDLE_EXIT_MS: "  " })).not.toHaveProperty(
       "AAI_GUEST_IDLE_EXIT_MS",
     );
+  });
+
+  // The one key whose consumer is the BUNDLE's SDK rather than the harness: it
+  // becomes `createRuntime`'s `publicUrl`, and `ctx.workflows.publicWebhookUrl`
+  // is what reads it. The slug is part of the value because the platform serves
+  // every agent under `/:slug`.
+  it("carries the agent's public base URL, origin plus slug", () => {
+    expect(agentBootEnv(boot, { AAI_PUBLIC_ORIGIN: "https://aai.example" })).toMatchObject({
+      AAI_PUBLIC_BASE_URL: "https://aai.example/digest-desk",
+    });
+  });
+
+  // Omitted rather than empty: a present-and-useless key is the shape a
+  // `publicUrl: ""` bug takes, and minting `/.well-known/…` — a relative URL
+  // nothing can call back on — is worse than throwing.
+  it("omits the public base URL when this replica can name no origin", () => {
+    expect(agentBootEnv(boot, {})).not.toHaveProperty("AAI_PUBLIC_BASE_URL");
+  });
+
+  // No request reaches a wake sweep or a blue-green handover, so the observed
+  // origin is what those spawns have; this is the path that makes the feature
+  // work on a deployment that never set AAI_PUBLIC_ORIGIN.
+  it("falls back to the origin a request was last served on", () => {
+    rememberPublicOrigin(new Request("https://agents.test/digest-desk/client-config"), {});
+    expect(agentBootEnv(boot, {})).toMatchObject({
+      AAI_PUBLIC_BASE_URL: "https://agents.test/digest-desk",
+    });
   });
 });

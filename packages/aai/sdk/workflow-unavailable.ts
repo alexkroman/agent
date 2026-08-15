@@ -66,6 +66,11 @@ export function rejectingWorkflows(message: string): WorkflowClient {
   const reject = (): Promise<never> => Promise.reject(new Error(message));
   // `listing` cannot reject — it is synchronous — and an empty list is the
   // truthful answer for every case this factory covers.
+  //
+  // `publicWebhookUrl` is synchronous TOO and gets the opposite treatment,
+  // because there is no truthful empty answer: a URL is either the one a third
+  // party can reach or it is a lie, so it throws the same message the async
+  // methods reject with.
   return {
     start: reject,
     get: reject,
@@ -76,6 +81,28 @@ export function rejectingWorkflows(message: string): WorkflowClient {
     signal: reject,
     stream: reject,
     streamTail: reject,
+    publicWebhookUrl: () => {
+      throw new Error(message);
+    },
     listing: () => [],
   };
 }
+
+/**
+ * What `publicWebhookUrl` throws when the deployment never told the SDK its own
+ * public URL.
+ *
+ * One message for both halves of the same configuration, because a tool author
+ * cannot tell them apart and the fix is one line either way: `publicUrl` on
+ * `createAgentServer`/`createRuntime` for a self-hosted server (which
+ * `server.mjs` reads from `PUBLIC_URL`), and `AAI_PUBLIC_ORIGIN` on the platform
+ * — the only thing that makes the brokered origin deterministic when a replica
+ * has served no request yet.
+ *
+ * @internal
+ */
+export const PUBLIC_URL_UNCONFIGURED_MESSAGE =
+  "This agent does not know its own public URL, so a webhook URL cannot be minted. " +
+  "Set `publicUrl` on createAgentServer/createRuntime (server.mjs reads PUBLIC_URL), " +
+  "or set AAI_PUBLIC_ORIGIN on the platform. `hook.url` from the Workflow DevKit is " +
+  "the GUEST's own origin and is not reachable from outside the sandbox.";

@@ -125,6 +125,7 @@ export async function spawnModalAgentServer(
         stderr: "pipe",
         env: {
           ...agentBootEnv({
+            slug: opts.slug,
             token,
             port: GUEST_PORT,
             bundle:

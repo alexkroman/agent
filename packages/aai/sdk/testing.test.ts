@@ -153,6 +153,7 @@ describe("createStubWorkflows", () => {
       "find",
       "get",
       "listing",
+      "publicWebhookUrl",
       "recent",
       "signal",
       "start",
@@ -160,5 +161,13 @@ describe("createStubWorkflows", () => {
       "streamTail",
       "wakeUp",
     ]);
+  });
+
+  test("publicWebhookUrl THROWS rather than answering an empty string", () => {
+    // The other synchronous method, and it gets the opposite treatment from
+    // `listing` above: there is no truthful empty answer for a URL, so a stub
+    // that has not been given one must say so rather than hand back something a
+    // test would then assert about.
+    expect(() => createStubWorkflows().publicWebhookUrl("t")).toThrow(/not stubbed/);
   });
 });
