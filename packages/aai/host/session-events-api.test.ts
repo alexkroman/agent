@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
+import { requestPath } from "../sdk/request-url.ts";
 import { silentLogger } from "./_test-utils.ts";
 import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
 import {
@@ -71,12 +72,7 @@ async function call(
   const res = makeRes();
   // `createServer` strips the query before dispatching, and passes the full URL
   // on the request — so the helper models both halves rather than one.
-  const claimed = api(
-    makeReq(url, opts.bearer),
-    res,
-    url.split("?")[0] ?? url,
-    opts.method ?? "GET",
-  );
+  const claimed = api(makeReq(url, opts.bearer), res, requestPath(url), opts.method ?? "GET");
   // The handler claims synchronously and answers from a promise. `waitUntil`
   // rather than `waitFor(() => expect(...))`: an assertion outside a `test()`
   // body is what `noMisplacedAssertion` exists to catch, and this is a helper.

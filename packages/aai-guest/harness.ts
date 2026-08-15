@@ -68,7 +68,7 @@
 
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
-import { formatSchemaIssues } from "@alexkroman1/aai/internal";
+import { formatSchemaIssues, requestPath } from "@alexkroman1/aai/internal";
 import { createServer } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
@@ -306,7 +306,7 @@ function main(): void {
       handleSessionInitRequest(state, token, req, res, url, method) ||
       handleStudioRequest(state.studio, studioDeps, req, res, url, method),
     upgrade: (req, socket, head) => {
-      const pathname = (req.url ?? "/").split("?")[0];
+      const pathname = requestPath(req.url);
       if (pathname !== "/ws") return false;
 
       // The control channel: the tunnel URL is public — an upgrade without

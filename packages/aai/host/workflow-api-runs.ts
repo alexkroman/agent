@@ -13,6 +13,7 @@
  */
 
 import type http from "node:http";
+import { requestQuery } from "../sdk/request-url.ts";
 import { clampWorkflowWait, isTerminal } from "../sdk/workflow.ts";
 import { WorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -140,7 +141,7 @@ export async function readRun(
   engine: WorkflowApiEngine,
   runId: string,
 ): Promise<void> {
-  const wait = Number(new URLSearchParams((req.url ?? "").split("?")[1] ?? "").get("wait"));
+  const wait = Number(requestQuery(req.url).get("wait"));
   const run = runId
     ? await (clampWorkflowWait(wait) > 0 ? waitForRun(engine, runId, wait, res) : engine.get(runId))
     : undefined;
@@ -205,7 +206,7 @@ export async function findRuns(
   res: http.ServerResponse,
   engine: WorkflowApiEngine,
 ): Promise<void> {
-  const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
+  const params = requestQuery(req.url);
   const workflow = params.get("workflow");
   const key = params.get("key");
   if (!workflow) {

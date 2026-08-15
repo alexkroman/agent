@@ -10,6 +10,7 @@
 
 import { createServer } from "node:http";
 import { describe, expect, test, vi } from "vitest";
+import { requestPath } from "../sdk/request-url.ts";
 import {
   createWorkflowSurface,
   handleWorkflowRequest,
@@ -188,7 +189,7 @@ async function serving(
   surface: WorkflowSurface | null | undefined,
 ): Promise<{ url: string; close: () => Promise<void> }> {
   const server = createServer((req, res) => {
-    const url = (req.url ?? "/").split("?")[0] ?? "/";
+    const url = requestPath(req.url);
     if (!handleWorkflowRequest(surface, req, res, url, req.method ?? "GET")) {
       res.writeHead(404);
       res.end("unclaimed");

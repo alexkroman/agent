@@ -32,6 +32,7 @@
  */
 
 import type http from "node:http";
+import { requestQuery } from "../sdk/request-url.ts";
 import type { UploadInfo } from "../sdk/step-uploads.ts";
 import { UPLOAD_CHUNK_BYTES } from "../sdk/upload-constants.ts";
 import { WORKFLOW_API_PREFIX } from "../sdk/workflow-api-client.ts";
@@ -62,7 +63,7 @@ export async function createUpload(
   store: UploadStore,
   logger: Logger,
 ): Promise<void> {
-  const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
+  const params = requestQuery(req.url);
   const type = req.headers["content-type"];
   try {
     const info = await store.create(

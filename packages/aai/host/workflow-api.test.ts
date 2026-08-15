@@ -17,6 +17,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
+import { requestPath } from "../sdk/request-url.ts";
 import type { WorkflowClient } from "../sdk/workflow.ts";
 import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
@@ -86,7 +87,7 @@ async function serve(opts: {
     logger,
   });
   const server = http.createServer((req, res) => {
-    const url = (req.url ?? "/").split("?")[0] ?? "/";
+    const url = requestPath(req.url);
     if (api(req, res, url, req.method ?? "GET")) return;
     res.writeHead(404).end();
   });

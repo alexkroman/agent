@@ -1,5 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { requestQuery } from "./request-url.ts";
+
 /**
  * Shape a resumable session id must have to be honored.
  *
@@ -28,10 +30,7 @@ export function parseWsUpgradeParams(rawUrl: string): {
   resumeFrom?: string;
   skipGreeting: boolean;
 } {
-  // Slice from the first "?" (not split[1]) so a query value that itself
-  // contains a literal "?" isn't truncated.
-  const qIndex = rawUrl.indexOf("?");
-  const params = new URLSearchParams(qIndex === -1 ? "" : rawUrl.slice(qIndex + 1));
+  const params = requestQuery(rawUrl);
   // Treat an empty `?sessionId=` as absent: a defined-but-empty id is not a
   // resumable session, and it would also silently suppress the greeting.
   const raw = params.get("sessionId") || undefined;

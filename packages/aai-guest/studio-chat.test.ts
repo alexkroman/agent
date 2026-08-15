@@ -6,6 +6,7 @@
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
+import { requestPath } from "@alexkroman1/aai/internal";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { handleHostResponse, setHostSend } from "./harness-rpc.ts";
@@ -122,7 +123,7 @@ async function serve(
   deps: StudioChatDeps,
 ): Promise<{ url: string; close: () => Promise<void> }> {
   const server = http.createServer((req, res) => {
-    const url = req.url?.split("?")[0] ?? "/";
+    const url = requestPath(req.url);
     if (!handleStudioRequest(session, deps, req, res, url, req.method ?? "GET")) {
       res.writeHead(404).end();
     }

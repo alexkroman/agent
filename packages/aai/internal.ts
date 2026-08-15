@@ -55,6 +55,7 @@ export {
 export { AGENT_CSP, WS_OPEN } from "./sdk/constants.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
+export { requestPath, requestQuery } from "./sdk/request-url.ts";
 export { formatSchemaIssues } from "./sdk/schema.ts";
 // The unavailable-workflows trio. Here rather than on the root barrel because all
 // three are `@internal`: their readers are the tool executor, the two

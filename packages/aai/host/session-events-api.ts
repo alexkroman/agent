@@ -41,6 +41,7 @@
  * caller holding one id must not be able to walk the space.
  */
 
+import { requestPath, requestQuery } from "../sdk/request-url.ts";
 import { SESSION_EVENT_READ_LIMIT } from "../sdk/session-event-constants.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -152,7 +153,7 @@ export function createSessionEventsApi(
     // hands this handler a path with the query already removed — but the id is
     // the LAST path segment, so a caller that passed the raw URL would put
     // `?startIndex=1` inside the session id and read a log that does not exist.
-    const path = url.split("?")[0] ?? url;
+    const path = requestPath(url);
     const sessionId = decodeURIComponent(path.slice(`${SESSION_EVENTS_PATH}/`.length));
     if (sessionId.length === 0) {
       sendJson(res, 404, { error: "No session id" });
@@ -163,7 +164,7 @@ export function createSessionEventsApi(
       sendJson(res, 503, { error: "This agent's runtime is not available" });
       return;
     }
-    const query = new URL(req.url ?? "/", "http://localhost").searchParams;
+    const query = requestQuery(req.url);
     const startIndex = resolveStartIndex(query.get("startIndex"), stream.tail(sessionId));
     const page = await stream.read(sessionId, startIndex, SESSION_EVENT_READ_LIMIT);
     // `durable: false` is an ANSWER, not a footnote: on the memory tier a read

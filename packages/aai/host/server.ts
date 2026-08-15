@@ -17,6 +17,7 @@ import { WebSocketServer } from "ws";
 import { buildClientConfig, CLIENT_CONFIG_PATH } from "../sdk/client-config.ts";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
+import { requestPath, requestQuery } from "../sdk/request-url.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
@@ -303,7 +304,7 @@ export function createServer(options: ServerOptions): AgentServer {
   }
 
   const httpServer = http.createServer((req, res) => {
-    const url = req.url?.split("?")[0] ?? "/";
+    const url = requestPath(req.url);
     const method = req.method ?? "GET";
 
     res.setHeader("Content-Security-Policy", AGENT_CSP);
@@ -339,7 +340,7 @@ export function createServer(options: ServerOptions): AgentServer {
 
     if (options.upgrade?.(req, socket, head)) return;
 
-    const url = req.url?.split("?")[0] ?? "";
+    const url = requestPath(req.url);
     // A static agent declares no STT/LLM/TTS, so a carrier stream has nothing to
     // talk to — the default follows the declaration rather than making every
     // workflow app remember to switch it off. An explicit `telephony: true`
@@ -372,8 +373,7 @@ export function createServer(options: ServerOptions): AgentServer {
       return;
     }
 
-    const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
-    const wantsHost = params.has("host");
+    const wantsHost = requestQuery(req.url).has("host");
 
     wss.handleUpgrade(req, socket, head, (ws) => {
       const startOpts = parseWsUpgradeParams(req.url ?? "");

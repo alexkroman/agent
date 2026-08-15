@@ -414,7 +414,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Thirteen numbered rules, each printing WHY the invariant exists and what to use
+  Sixteen numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -437,6 +437,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 14 | no fixture directory nothing reads | delete it, or add the reader |
   | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
   | 17 | no `typeof x === "object" && x !== null` | `isRecord()` |
+  | 18 | no `req.url.split("?")` | `requestPath()` / `requestQuery()` |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
@@ -449,8 +450,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   `"undefined"`; `{ mode: 0o700 }` sets a different value from the one it
   tests), the CLI test setup's env scrub, one hand-rolled owned-map in
   `studio-sse.ts`, the two `/tmp` literals that name a path inside the Linux
-  sandbox rather than on this machine, and one record guard over a declared
-  union.
+  sandbox rather than on this machine, one record guard over a declared
+  union, and one `.split("?")` that cuts a Vite module id rather than a
+  request target.
 
   **Two of these rules found real bugs on the day they were written**, which is
   the argument for the whole gate. Rule 2 caught two `omitUndefined`
