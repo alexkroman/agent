@@ -55,6 +55,10 @@ const ON_NAME = "on[A-Z][A-Za-z0-9]*";
 const TYPEOF_OBJECT = `typeof ${MEMBER} === "object"`;
 /** `X !== null`, the other half. */
 const NOT_NULL = `${MEMBER} !== null`;
+/** A literal `"?"` argument, escaped for ERE. */
+const QUERY_ARG = '\\("\\?"\\)';
+/** A `.split("?")` call — hand-cutting a request target into path and query. */
+const SPLIT_ON_QUERY = `\\.split${QUERY_ARG}`;
 /** Line start plus indentation: where a property or method is DECLARED. */
 const AT_LINE_START = "^ *";
 /**
@@ -310,5 +314,35 @@ export const LINE_RULES = [
       "(`sdk/standard-schema.ts`, narrowing a declared union, and it may not\n" +
       "import `sdk/utils.ts` anyway: `/utils` re-exports `stepGenerateJson`,\n" +
       "which imports standard-schema, so the edge would be a cycle).",
+  },
+  {
+    id: 18,
+    key: "rule18_splitOnQuestionMark",
+    label: "hand-split request target",
+    // The CALL, not the indexing, so both halves are caught with one pattern —
+    // `[0]` (the path) and `[1]` (the query) were each open-coded, and the
+    // second is the one that is wrong.
+    re: `${SPLIT_ON_QUERY}`,
+    paths: SOURCE_PATHSPECS,
+    skipComments: true,
+    remedy:
+      "Use requestPath or requestQuery from @alexkroman1/aai/internal.\n" +
+      "\n" +
+      "Taking index 1 of the split keeps only the segment BETWEEN the first\n" +
+      "and second question mark, so a query value carrying a literal one is\n" +
+      "silently truncated — a namespace of `a?b` reads as `a`. That was the\n" +
+      "spelling at five of the six query sites in this repo, against two\n" +
+      "other spellings that got it right, one of which carried a comment\n" +
+      "explaining the hazard that nothing else could see.\n" +
+      "\n" +
+      "The path half has the mirror-image problem. A split never returns an\n" +
+      "empty array, so index 0 is always a string and the fallback after it\n" +
+      "is dead code that exists to satisfy `noUncheckedIndexedAccess`. Four\n" +
+      "different dead fallbacks were in the tree, which left a reader to work\n" +
+      "out which one was load-bearing.\n" +
+      "\n" +
+      "Splitting a string that is NOT a request target is legitimate and\n" +
+      "baselined: `aai-cli/workflow-bundler.ts` strips a Vite module id's query\n" +
+      "suffix, where there is no request and no path to answer with.",
   },
 ];

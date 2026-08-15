@@ -249,6 +249,24 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
       '  return typeof root === "object" ? root.types : undefined;',
     ],
   },
+  rule18_splitOnQuestionMark: {
+    matches: [
+      // Both halves — the truncating query cut and the path cut with its dead
+      // fallback — and the parenthesised receiver, which is how three of the
+      // path sites were written.
+      '    const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");',
+      '    const url = req.url?.split("?")[0] ?? "/";',
+      '    const url = (req.url ?? "/").split("?")[0] ?? "/";',
+    ],
+    ignores: [
+      "    const params = requestQuery(req.url);",
+      "    const url = requestPath(req.url);",
+      // Splitting on something else entirely. The rule is about the "?" cut,
+      // not about `split`, so neither of these may be swept in.
+      '    const [name] = header.split(";");',
+      '    const segments = pathname.split("/");',
+    ],
+  },
 };
 
 describe("guard-invariants gate", () => {

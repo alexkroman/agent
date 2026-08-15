@@ -23,6 +23,7 @@
 import type http from "node:http";
 import type { Duplex } from "node:stream";
 import type { WebSocketServer } from "ws";
+import { requestPath, requestQuery } from "../../sdk/request-url.ts";
 import type { Logger } from "../runtime-config.ts";
 import type { SessionRuntime } from "../server.ts";
 import { asSessionWebSocket, type SessionWebSocket } from "../ws-frames.ts";
@@ -94,13 +95,13 @@ export function handleTelephonyUpgrade(opts: {
   logger: Logger;
   enabled: boolean;
 }): boolean {
-  const rawUrl = opts.req.url ?? "";
-  if ((rawUrl.split("?")[0] ?? "") !== TELEPHONY_PATH) return false;
+  const rawUrl = opts.req.url;
+  if (requestPath(rawUrl) !== TELEPHONY_PATH) return false;
   if (!opts.enabled) {
     refuse(opts.socket, "404 Not Found", opts.logger, "telephony is disabled on this server");
     return true;
   }
-  const requested = new URLSearchParams(rawUrl.split("?")[1] ?? "").get(CARRIER_PARAM);
+  const requested = requestQuery(rawUrl).get(CARRIER_PARAM);
   const carrier = carrierByName(requested);
   if (carrier === null) {
     // Deliberately not a fallback to the default: serving one carrier's

@@ -16,6 +16,7 @@ import fs from "node:fs";
 import type http from "node:http";
 import path from "node:path";
 import { lookup as mimeLookup } from "mime-types";
+import { requestPath } from "../sdk/request-url.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -48,7 +49,7 @@ export async function serveStatic(
   res: http.ServerResponse,
   logger: Logger,
 ): Promise<boolean> {
-  const url = req.url?.split("?")[0] ?? "/";
+  const url = requestPath(req.url);
   // Percent-decode so assets with spaces or non-ASCII names resolve (browsers
   // request them encoded). A malformed escape throws URIError — treat it as
   // not-found rather than crashing the request. Decoding happens BEFORE the

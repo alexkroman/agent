@@ -27,6 +27,7 @@
 
 import { readFile, rm } from "node:fs/promises";
 import type http from "node:http";
+import { requestQuery } from "@alexkroman1/aai/internal";
 import {
   configureWorkflowWorld,
   consoleLogger,
@@ -131,7 +132,7 @@ export type ManageDeps = {
  * JSON parsing. Absent/malformed reads as "drain until empty".
  */
 function drainDeadlineMs(req: http.IncomingMessage): number | undefined {
-  const raw = new URLSearchParams((req.url ?? "").split("?")[1] ?? "").get("deadlineMs");
+  const raw = requestQuery(req.url).get("deadlineMs");
   const ms = raw === null ? Number.NaN : Number(raw);
   return Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }

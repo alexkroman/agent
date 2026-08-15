@@ -23,6 +23,7 @@
  * bundles. Host mode remains an `aai dev` feature.)
  */
 
+import { requestPath, requestQuery } from "@alexkroman1/aai/internal";
 import { answerUpgrade } from "./_upgrade-reply.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
@@ -67,11 +68,8 @@ async function answerRedirectUpgrade(
   const extraHeaders: string[] = [];
   if (sessionUrl) {
     const location = new URL(sessionUrl);
-    const qIdx = rawUrl.indexOf("?");
-    if (qIdx !== -1) {
-      for (const [k, v] of new URLSearchParams(rawUrl.slice(qIdx + 1))) {
-        location.searchParams.set(k, v);
-      }
+    for (const [k, v] of requestQuery(rawUrl)) {
+      location.searchParams.set(k, v);
     }
     extraHeaders.push(`Location: ${location}`);
   }
@@ -92,7 +90,7 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     socket: import("node:stream").Duplex,
   ): Promise<void> {
     const rawUrl = req.url ?? "";
-    const pathOnly = rawUrl.split("?")[0] ?? "";
+    const pathOnly = requestPath(rawUrl);
     const slugMatch = pathOnly.match(SLUG_WS_RE);
     if (!slugMatch) {
       // No other upgrade consumer exists on this server: an unmatched

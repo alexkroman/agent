@@ -117,6 +117,12 @@ export const PLAYBACK_REFILL_MS = 200;
 // @internal
 export function rejectingWorkflows(message: string): WorkflowClient;
 
+// @internal
+export function requestPath(rawUrl: string | undefined): string;
+
+// @internal
+export function requestQuery(rawUrl: string | undefined): URLSearchParams;
+
 // @public
 interface StandardSchemaIssue {
     // (undocumented)

@@ -136,7 +136,9 @@
     "createOwnedMap",
     "formatSchemaIssues",
     "parseWsUpgradeParams",
-    "rejectingWorkflows"
+    "rejectingWorkflows",
+    "requestPath",
+    "requestQuery"
   ],
   "@alexkroman1/aai/llm": [
     "ANTHROPIC_API_KEY_ENV",

@@ -15,6 +15,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { requestPath } from "../sdk/request-url.ts";
 import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
 import { createWorkflowApi } from "./workflow-api.ts";
 import { parseRange } from "./workflow-api-uploads.ts";
@@ -42,7 +43,7 @@ async function serve(opts: { uploads?: UploadStore | undefined } = {}): Promise<
   const uploads = "uploads" in opts ? opts.uploads : memoryStore();
   const api = createWorkflowApi({ engine, uploads, logger });
   const server = http.createServer((req, res) => {
-    const url = (req.url ?? "/").split("?")[0] ?? "/";
+    const url = requestPath(req.url);
     if (api(req, res, url, req.method ?? "GET")) return;
     res.writeHead(404).end();
   });

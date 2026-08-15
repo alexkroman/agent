@@ -26,6 +26,7 @@
  */
 
 import { isTerminal, type WorkflowRunSnapshot } from "../sdk/workflow.ts";
+import { SSE_HEADERS, sseFrame } from "./workflow-api-http.ts";
 
 /** How often a live stream re-reads the run it is watching. */
 export const RUN_EVENT_POLL_MS = 1000;
@@ -97,18 +98,11 @@ export function streamRunEvents(
   // is nothing to tell it, and any state change always changes them.
   let last: string | undefined;
 
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    // Proxies that buffer would defeat the point; this is the conventional
-    // opt-out and is inert where it is not understood.
-    "X-Accel-Buffering": "no",
-  });
+  res.writeHead(200, SSE_HEADERS);
 
   const send = (event: string, data: unknown): void => {
     if (closed) return;
-    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    res.write(sseFrame(event, data));
   };
 
   const finish = (): void => {

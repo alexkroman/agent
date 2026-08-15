@@ -20,9 +20,10 @@
  */
 
 import type http from "node:http";
+import { requestQuery } from "../sdk/request-url.ts";
 import { isTerminal, type StreamOptions } from "../sdk/workflow.ts";
 import type { RunReader } from "./workflow-api-events.ts";
-import { sendJson } from "./workflow-api-http.ts";
+import { SSE_HEADERS, sendJson, sseFrame } from "./workflow-api-http.ts";
 
 /** What this route needs of the client: the run, its stream, and the stream's end. */
 export type StreamReader = RunReader & {
@@ -70,7 +71,7 @@ export async function streamRunOutput(
     sendJson(res, 404, { error: `No workflow run with id ${runId}` });
     return;
   }
-  const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
+  const params = requestQuery(req.url);
   const namespace = params.get("namespace");
   const startIndexParam = params.get("startIndex");
   const startIndex = startIndexParam === null ? undefined : Number(startIndexParam);
@@ -126,14 +127,7 @@ async function pipeChunksAsSse(
   stream: ReadableStream<unknown>,
   end: { runId: string; budget: number; complete: boolean },
 ): Promise<void> {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    // Proxies that buffer would defeat the point; the conventional opt-out, and
-    // inert where it is not understood.
-    "X-Accel-Buffering": "no",
-  });
+  res.writeHead(200, SSE_HEADERS);
   const reader = stream.getReader();
   let gone = false;
   const onClose = (): void => {
@@ -151,11 +145,10 @@ async function pipeChunksAsSse(
     for (let emitted = 0; emitted < end.budget; emitted += 1) {
       const { done, value } = await reader.read();
       if (done || gone) break;
-      res.write(`event: chunk\ndata: ${JSON.stringify(value ?? null)}\n\n`);
+      res.write(sseFrame("chunk", value ?? null));
     }
     if (!gone) {
-      const payload = { runId: end.runId, complete: end.complete };
-      res.write(`event: done\ndata: ${JSON.stringify(payload)}\n\n`);
+      res.write(sseFrame("done", { runId: end.runId, complete: end.complete }));
     }
   } finally {
     res.off("close", onClose);

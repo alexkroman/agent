@@ -46,6 +46,36 @@ export function sendJson(res: JsonResponse, status: number, body: unknown): void
 }
 
 /**
+ * The headers every SSE response on this surface opens with.
+ *
+ * `X-Accel-Buffering` is the one that is not obvious: a proxy that buffers
+ * defeats the point of streaming at all, and this is the conventional opt-out —
+ * inert where it is not understood.
+ *
+ * Declared once because the two routes that stream (`workflow-api-events.ts`,
+ * `workflow-api-stream.ts`) had byte-identical copies, and a header block that
+ * exists twice is one a proxy fix reaches half of.
+ */
+export const SSE_HEADERS: Readonly<Record<string, string>> = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
+};
+
+/**
+ * One server-sent event, encoded.
+ *
+ * The trailing BLANK LINE is what dispatches the event — a frame written
+ * without it sits in the client's parser until the next one arrives, so the
+ * stream silently runs one event behind. That is the detail worth having in one
+ * place rather than in the three template literals this replaces.
+ */
+export function sseFrame(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+/**
  * Answer a request whose handler rejected: log the cause, then 500 if the
  * response can still carry one, else drop the socket.
  *
