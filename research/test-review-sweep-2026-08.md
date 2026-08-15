@@ -2,13 +2,17 @@
 issue: TODO
 status: proposed
 last_updated: "2026-08-15"
+
 ---
 
-# Every test in the repo, reviewed — 121 correctness findings, 109 cleanups
+# Every test, and the machinery that gates them — 150 findings, 133 cleanups
 
 A combined correctness (`/code-review`) and quality (`/simplify`) pass over
-**every test file in the repository**: 482 files, ~106,000 lines across the nine
-workspace packages. Nothing was edited — this document is the whole deliverable.
+**every test file in the repository** (482 files, ~106,000 lines across the nine
+workspace packages), and then over **the gates, configs and helpers that decide
+whether those tests mean anything** (~99 files, ~12,800 lines). Part I is the
+tests; Part II is the machinery. Nothing was edited — this document is the whole
+deliverable.
 
 This is the direct sequel to `code-review-sweep-2026-08.md`, which covered every
 **non-test** source file (869 files, ~118,000 lines) and whose findings landed
@@ -21,7 +25,7 @@ would we find out if it stopped being right?"**
 
 Same argument the source sweep made, and it applies more sharply here. A guide
 says what to do in code that exists and is loaded into an agent's context on
-every task; 230 findings about code that is about to change is exactly the
+every task; 283 findings about code that is about to change is exactly the
 content that took the root guide to 233,000 characters. When a finding here is
 fixed, the *rule* it establishes belongs in the owning package's `CLAUDE.md` as
 a few lines, and this doc keeps the argument. Its `status` should move to
@@ -326,7 +330,8 @@ callback that never runs" class unguarded.
 
 ## Three corrections to AGENTS.md itself
 
-Found by the sweep, in the file that specifies the sweep's own criteria.
+Found by the sweep, in the file that specifies the sweep's own criteria. Part II
+adds a fourth and a fifth.
 
 1. **`AGENTS.md:9` names an enforcing test that does not exist.** The sentence
    "never paste content into `CLAUDE.md` (`agents-md-shim.test.ts` fails if you
@@ -353,6 +358,10 @@ file. It costs nothing in coverage — a `.tsx` test that forgets the pragma fai
 loudly on `document is not defined`, never silently.
 
 ## Recommended order of work
+
+**Superseded by "Revised order of work" at the end of Part II** — two CI-level
+defects found there outrank everything here and cost minutes to fix. This list
+remains the right order for the test findings themselves.
 
 1. **`ssrf-redirects.test.ts`** (finding 1) — a security guard covered by
    nothing, one file, ~20 lines.
@@ -1926,3 +1935,345 @@ This is the clearance half, and for gate specs it is worth as much as a finding.
   `{ … } as unknown as ToolContext` across all 39 files — the published
   `createToolContext`/`stubGenerate`/`stubGateway`/`toolOf`/`runTool`/`withDiscoveredTools`
   seam is used everywhere it applies.
+
+---
+
+## Part II — the machinery that runs and gates the tests
+
+Part I reviewed `packages/**/*.test.ts` and stopped there, which left the more
+important half unexamined: **the gates, configs and helpers that decide whether
+those 6,002 tests mean anything.** Three more reviewers covered it — 12,800
+lines across the ratchet scripts, the build/release/harness scripts, and the
+vitest configs plus every shared test helper — with a standing instruction to
+verify empirically rather than by reading: run every pattern through
+`git grep -E` exactly as the script does, run `git ls-files` on every pathspec,
+and confirm turbo `inputs` by A/B-ing a `--dry=json` hash.
+
+| Slice | Files | Lines | Correctness | Quality |
+| --- | --- | --- | --- | --- |
+| Ratchet and gate scripts + baselines | 16 | 3,395 | 11 | 5 |
+| Build, release and harness scripts | 23 | 4,594 | 8 | 10 |
+| Vitest configs, shared helpers, task wiring | ~60 | ~4,800 | 10 | 9 |
+| **Total** | **~99** | **~12,800** | **29** | **24** |
+
+It found the two most severe defects in the whole sweep. Both are cases where a
+green result means nothing, and neither is visible in a diff.
+
+### M1. The single required CI check goes green when the build fails
+
+`.github/workflows/check.yml:386-399`. The comment above it reads "Single gate
+job for branch protection — add only `ci` as a required check", so this is *the*
+check protecting the default branch.
+
+- All five real jobs declare `needs: setup` (`:50`, `:147`, `:185`, `:283`,
+  `:346`).
+- `setup` runs `pnpm install --frozen-lockfile` and `turbo run build`.
+- The `ci` job's own `needs` list (`:389`) **omits `setup`**.
+- The result loop accepts `"skipped"` as a pass (`:395`), under `if: always()`.
+
+So a broken lockfile or a failing build fails `setup`, GitHub reports all five
+downstream jobs as `skipped`, the loop accepts every one, and the job prints
+**"All CI jobs passed"** and exits 0. Verified against the workflow: **no
+downstream job carries an `if:` condition of any kind**, so `skipped` can only
+ever mean "a dependency failed" — accepting it buys nothing and costs the entire
+workflow. The four `aai-templates` specs that read `check.yml` only assert that
+gate *strings* appear in it; none looks at the gate job.
+
+Fix is two lines: add `setup` to `needs`, and drop `"skipped"` from the accepted
+results.
+
+### M2. A NUL byte hides a shipped file from every ratchet — again
+
+`packages/aai/host/workflow-keys.ts:79` writes its separator as a **raw NUL
+byte**:
+
+```text
+const compositeKey = (workflow, key) => `${workflow}<NUL>${key}`
+```
+
+`git grep` classifies the file as binary and skips it, so it is exempt from all
+11 `guard-invariants` line rules and all 7 `check-escape-hatches` patterns.
+Verified three ways: the file holds 161 NUL bytes; `git grep -lI` over the
+guard's own corpus does not list it; and `git grep -nIE 'workflow'` against a
+file whose name and body are full of the word returns **0 lines**.
+
+AGENTS.md records this exact failure already — "`host/workflow-notify.ts` held a
+raw NUL byte, which makes a file BINARY to `git grep` — so it was silently
+exempt from all nineteen rules and from `check:hatches`" — and the response was
+to fix the one byte and add **no detector**. It has recurred in a different
+file, which is the argument for the detector.
+
+The corpus floor cannot catch it *by design*: the file is present in
+`git ls-files`, and is invisible only to `grep`. Nothing compares the two lists.
+Two cheap fixes, and both are worth doing: spell the separator ` `
+(byte-identical behaviour, restores the file to text), and have
+`assertScanCorpus` diff `git ls-files` against `git grep -lI -e '.'`, failing on
+any difference that is not a known binary extension. The full diff today is 9
+files: 6 `.woff2`, 2 `.ico`, and this one.
+
+### M3. `aai-evals` is in no CI job, so its suites are gated by nothing
+
+`.github/workflows/check.yml:152` lists eight packages in the test matrix.
+`grep -c aai-evals .github/workflows/check.yml` returns **0**. The package has
+seven test files and declares
+`thresholds: { lines: 95, functions: 94, branches: 88, statements: 95 }`.
+
+`scripts/check.sh` runs `turbo run test:coverage` unfiltered, so these pass
+locally and are invisible in CI — the exact "green locally, red in CI" asymmetry
+that AGENTS.md added `test:coverage` to `check.sh` to eliminate, running in the
+opposite direction. Because the `ci` gate needs only the eight matrix legs, a PR
+that breaks `aai-evals` unit tests is fully green.
+
+This is **not** the documented eval-tier exemption: that is scoped to
+`check:eval` (`packages/aai-evals/CLAUDE.md:99`), which is separately and
+deliberately absent. The unit suites are ordinary tests.
+
+### M4. `with-test-pg.mjs` exits 0 when the Supabase stack cannot be resolved
+
+`scripts/with-test-pg.mjs:206`, `:211-225`, `:247`. `AAI_REQUIRE_STACK` is
+exported only when `resolveStack()` succeeded; every failure path — no CLI,
+stack down, unparsable `supabase status -o env` output — prints two lines and
+lets the run continue. Demonstrated: with a bogus stack, the child process saw
+`REQUIRE_PG=1 REQUIRE_STACK=undefined` and the script exited 0.
+
+`check.yml:376-381` claims the opposite in its own comment — "so a variable that
+stops arriving is a red job rather than a green one with the only arm for the
+platform stores silently absent" — but the `platform-stack` job's only
+enforcement *is* this script. With `AAI_REQUIRE_STACK` unset,
+`_pg-test-utils.ts:146` turns `describeWithStack` into `describe.skip`, so
+`supabase start` succeeding while `supabase status -o env` changes shape yields
+a green job in which **`realtime-rls.scenario.test.ts` — the only walrus/RLS
+leak test in the repository, and the file Part I flags as gating its own
+negative control — never runs at all.**
+
+Fix: a `--require-stack` flag that exits 1 when a stack was expected, passed by
+the platform-stack job.
+
+### M5. The `as any` budget is 100% phantom â the hatch gate has no comment filter
+
+`scripts/check-escape-hatches.mjs:80-117`, `:193`. The script's header spends 25
+lines on precisely this hazard ("these patterns are plain substrings with no
+notion of code versus prose") and fixes it **for markdown only**.
+`guard-invariants` solved the general case — `LINE_RULES` carries a per-rule
+`skipComments` flag and passes a filter into the shared engine — and
+`check-escape-hatches` calls the same `scanGroups` with no filter at all.
+
+Measured: of 119 counted hatches, 25 sit on comment-only lines. Twenty-one of
+those are correct (a `biome-ignore` *is* a comment). But **all four cast-pattern
+hits on comment lines are prose**, and two of them are the entire `as any`
+budget — `agent-tools.ts:35` and `agent-tools.test.ts:94`. Demonstrated on the
+real gate: replacing that JSDoc sentence with a genuine
+`export const smuggled = (globalThis as any).x;` leaves the run reporting
+`as any allowed=2 now=2 … every file within its baseline ✓`.
+
+So the repo's claim that it holds "3 `as any` (all three of which are prose in
+comments, not casts)" is right about the prose and wrong about the protection: a
+real cast can move into that budget without the gate noticing. Fix is a
+per-pattern `skipComments: true` on the two cast patterns only.
+
+### M6. Both baseline ratchets count matching LINES, not occurrences
+
+`scripts/_ratchet.mjs:106`, `:176`. `grepMatches` runs `git grep -nIE` without
+`-o`, and `scanGroups` increments once per returned row — i.e. per matching
+*line*. Both baseline files describe themselves as recording "how many
+**occurrences** each file is allowed".
+
+Demonstrated on the real gate: three `as unknown as` casts on one line report
+`found 1`; the same three on three lines report `found 3`. It is honest today —
+measured 94 lines against 94 occurrences — so this is a structural undercount
+rather than a live one. **Any file already at its budget can absorb further
+hatches by appending them to the line that bought the budget**, and rule 16 is
+affected identically. Fix: `-o` for the counting pass; the report already
+carries `file:line`, so nothing is lost.
+
+### M7. Rule 12 scans `aai-guest`, but most routes live in `aai/host`
+
+`scripts/guard-invariants-scanners.mjs:192-204`. The rule exists because, per
+AGENTS.md, the `GUEST_ROUTES` drift "has landed twice". Measured: the scan finds
+**8** route literals in `packages/aai-guest`, while `GUEST_ROUTES` declares
+**15**. The other seven — `/health`, `/websocket`, `/phone`, `/client-config`,
+`/workflows`, `/session-events`, `/.well-known/workflow/v1/*` — are implemented
+in `packages/aai/host/server.ts`, `host/telephony/telephony-server.ts`,
+`host/session-events-api.ts`, `host/workflow-serve.ts` and
+`sdk/workflow-api-client.ts`, all of which the guest bundles.
+
+That is where the guest's HTTP surface actually grows, and it is entirely
+outside the rule's pathspec: adding `if (url === "/metrics")` to
+`host/server.ts` is served by every guest and invisible to the rule written to
+catch exactly that.
+
+### M8. Five more gates can report success over an empty or degenerate scan
+
+Part I found four; the machinery review found five more, all the same shape.
+
+- **`check-gateway-models.mjs:36-48`** has **no floor at all** — its `[^}]*`
+  entry parser cannot cross a nested `}`, so one reformatted entry drops both
+  the committed and the generated map to zero, the diff is empty, and it prints
+  `catalog current — 0 advertised, 0 usable ✓`. The regression it exists to
+  catch is a model silently removed from the gateway, which its own closing line
+  says "reaches users as a retried 500, not a clear error".
+- **`scripts/artifact-size-report.mjs:289`** does not floor
+  `publishablePackages()`, though `_fs.mjs:103` documents that the caller is
+  expected to ("an empty list means the scan stopped matching") and
+  `api-report.mjs:310` does. Verified twice, including a hand-built degenerate
+  report through `artifact-size-budget.mjs`: "no regressions ✓", exit 0.
+- **`guard-invariants` rule 13** (`scanners.mjs:282`) discovers 175 template
+  files with no floor — a new member of the already-reported rule 1/7/10 family,
+  and the largest. `git ls-files` exits **0** on a pathspec that matches
+  nothing, where `git grep` exits 1, which is why this half is silent and the
+  grep half is not.
+- **Rule 11** has a *third* corpus (`SOURCE_PATHSPECS` plus two exclusions,
+  1,027 files) that neither `assertScanCorpus` call covers. It is the
+  Windows-portability rule — the one whose regressions are invisible on every
+  machine that runs CI.
+- **`check-doc-examples.mjs:183`**'s floor is `MIN_EXAMPLES = 45` against a
+  measured **98** examples today; the comment beside it still says "49 at the
+  time of writing". More than half the corpus can stop being discovered while
+  the gate prints `all N doc examples compile ✓`. Its `extractFences` separately
+  drops blocks silently on an unclosed fence (demonstrated: a 2-example document
+  with one backtick missing extracts 1).
+
+`check-claude-md`, `check-publish-names` and `check-publish-protocols` floor at
+`length === 0`, which only catches total failure — the real, stable numbers are
+12 and 3.
+
+### M9. The Postgres gate throws at import time in the *unit* tier
+
+`packages/aai-server/_pg-test-utils.ts:58-67`, re-exported by
+`packages/aai-server/test-utils.ts:39`. The gate's module body warns or throws
+at load — deliberately, so a skipped scenario file fails loudly. But
+`test-utils.ts` re-exports from it, and **49 unit test files** import
+`test-utils`.
+
+Proven: `vitest run auth.test.ts` prints the "real-Postgres suite not run"
+banner on files containing no such suite, and
+`AAI_REQUIRE_PG=1 vitest run auth.test.ts` **fails 2 of 3 files** with a message
+about a database those files never touch. Turbo's strict env mode hides it under
+`turbo run test`, so it surfaces only through the documented shortcuts — i.e.
+exactly where a developer working on the platform arm has the variable exported.
+Fix: move the gate out of the module body into
+`describeWithPg`/`describeWithStack`; the "it fails the FILE" intent survives,
+because the file that calls the gate is the file that fails.
+
+### M10. Three turbo `inputs` gaps, each verified by hash A/B
+
+The documented method — capture `--dry=json` hash, touch the file, capture
+again; an identical hash is the bug — found three live cases:
+
+- **`aai-server#test` does not hash its own `globalSetup`.**
+  `packages/aai-server/vitest.config.ts:19` declares
+  `scripts/ensure-guest-harness.mjs`; `inputs` globs resolve relative to the
+  package and it is in neither `inputs` nor `globalDependencies`. Hash
+  `795e731fbf0bde81` before and after editing that script — byte-identical,
+  while `aai-templates#test:coverage` (which declares `$TURBO_ROOT$/scripts/**`)
+  moved. So a change to the harness verify logic replays a cached green run.
+- **`check:e2e` does not hash `vitest.shared.ts`** (`turbo.json:266-278`),
+  though the e2e run imports `sharedConfig` through the slow config. The other
+  four test tasks all declare it. Hash `f0b03dbaec637bfe` before and after.
+- **`check:e2e` omits `VITEST_POOL` from `env`**, so
+  `VITEST_POOL=forks pnpm test:e2e` is stripped silently — the same class as the
+  `AAI_TEST_PM` bug the adjacent comment documents.
+
+### M11. Four dead script chains, invisible to knip by configuration
+
+`knip.json:44` declares `"scripts/**/*.{mjs,ts}"` as **`entry`** — so every file
+in `scripts/` is an entry point by declaration, and the repo's one "what is
+unused" tool can never report a dead script. Reachable from nothing:
+
+- `gen-gateway-models.mjs` (no `package.json` script exists for it) and its only
+  consumer `_api-key.mjs`; its verifier `check:gateway-models` is in
+  `package.json` and in no pipeline at all.
+- `starter-eval/builtins.mjs` and `starter-eval/tsconfig-ab.mjs`, which both
+  read a `run.json` produced by `scripts/starter-eval/run.mjs` — a file that was
+  deleted, as `builtins.mjs`'s own header line 22 says.
+- (Adjacent: `scripts/aai-dev.sh`, referenced by nothing, duplicating
+  `pnpm aai`.)
+
+This is the documented dead-config family — `.size-limit.json` referenced by
+nothing, an `ls-lint` config no pipeline ran, a `.turbo` path that never matched
+`cacheDir`, six mutation scopes no guide mentioned. Narrow the knip glob to what
+pipelines actually invoke so the exception becomes a reviewable line.
+
+### M12. `unstubGlobals` belongs in the shared config
+
+`vitest.shared.ts:17-26` sets `restoreMocks` and `unstubEnvs` and not
+`unstubGlobals`, and nothing anywhere sets it. Measured: **41 files call
+`vi.stubGlobal`; 22 hand-roll `vi.unstubAllGlobals()`; 19 clean up not at all.**
+Proven with a scratch spec spreading `sharedConfig.test`: test A's stub is still
+visible in test B and the suite passes.
+
+The refutation pass clears the one risk — no file anywhere stubs a global inside
+`beforeAll` — so per-test restoration breaks nothing. Adding it deletes 22
+hand-rolled calls and closes 19 leaks, by exactly the argument the file already
+makes for `unstubEnvs`.
+
+### What Part II clears
+
+As in Part I, the checked-and-cleared list is worth as much as the findings, and
+several long-standing worries turned out to be fixed or unfounded:
+
+- **The baseline `--update` contract holds.** Verified by construction: a new
+  hatch is refused and the file is left byte-identical; a deleted file's entry
+  is removed; a rename is lowered on one side and refused on the other. The
+  corpus floor covers the `--update` path too (renaming `packages/` made it exit
+  1 at 41 files).
+- **POSIX-ERE portability is clean.** No rule uses `\b`, `\d`, `\s`, `\w`, a
+  lookaround, or a non-greedy quantifier — every escape is standard ERE. The
+  `\b` disaster has not been re-introduced.
+- **Multi-line escapes are confined to rules 3, 4 and 19.** A multi-line probe
+  over the full corpus for rules 2, 8, 9, 17 and 18 found zero escapes; Biome's
+  trailing-operator formatting is why.
+- **All nine package vitest configs spread `sharedConfig.test`**, none
+  re-declares an inherited option, and **no `retry` exists anywhere** — not in
+  the slow config, not per-package, not per-test.
+- **A zero-match slow-tier run fails** (exit 1, "No test files found"), so the
+  property AGENTS.md relies on holds.
+- **CI's caches now sit with their producers** — `.tsbuildinfo` is a
+  restore-and-save cache in the typecheck job, `.turbo` is the parent of
+  `cacheDir`, and the matrix runs `test:coverage` rather than `test`. All three
+  previously-documented bugs are fixed.
+- **`.test-d.ts` files are genuinely gated** by `turbo run typecheck` — all four
+  are inside their package program.
+- **Every gate in the ratchet slice is wired into both `check.sh` and
+  `check.yml`** — the two `check:*` lists were extracted and diffed: identical,
+  24 entries each.
+- **`check-doc-examples`' scratch directory cannot pollute the other gates**
+  (`.gitignore:45-46`, verified with `git check-ignore`), and
+  `check-template-types` cannot report success over an empty program (`tsc`
+  exits non-zero on "No inputs were found").
+
+### Two more corrections to AGENTS.md
+
+Beyond the three in Part I, a fourth and a fifth:
+
+1. **The `aai-ui` row of the vitest table is wrong in the opposite direction to
+   the `aai-studio-client` row.** `AGENTS.md:1364` records `aai-ui` as
+   **jsdom**; its config declares no `environment` at all, so 22 of 42 files opt
+   in by pragma and 20 run in node. `_jsdom-setup.ts` guards on
+   `typeof globalThis.Element !== "undefined"`, which is what makes the mismatch
+   invisible. Fix one side or the other — but the table is what an agent reads
+   before adding a test.
+2. **Several counts in the guides have drifted from the tree**: "22
+   capabilities" / "20 published entry points" against a measured 25 and 23;
+   "`harness.mjs` — 13 MB" against 17.6 MB; "the guide is 78k characters"
+   against 105,795; "the six files under `scripts/starter-eval/`" against 3;
+   "(49 at the time of writing)" against 98. The gate floors keep the *specs*
+   from rotting, so this is prose-only — but the drift is uniformly in the
+   direction of understating how much the gates now cover.
+
+### Revised order of work
+
+M1 and M3 are CI configuration and cost minutes; M2 is one character plus a
+detector. They come before everything in Part I:
+
+1. **M1** — the required check accepts a failed build. Two lines.
+2. **M3** — put `aai-evals` in the CI test matrix. One line.
+3. **M2** — respell the NUL byte as ` `, and add the `git ls-files` vs
+   `git grep -lI` diff to `assertScanCorpus` so the third occurrence fails
+   loudly.
+4. **M4** — `--require-stack`, so the only RLS leak test cannot silently vanish.
+5. **Part I finding 1** — the SSRF redirect tests that make zero fetch calls.
+6. **M5 + Part I finding 4** — the hatch gate's comment filter and the missing
+   `as never` pattern are one change to one file; do them together, then
+   `--update` the baseline.
+7. Everything else, per package.
