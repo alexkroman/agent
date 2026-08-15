@@ -13,6 +13,7 @@ import { secureHeaders } from "hono/secure-headers";
 import type { HonoEnv } from "./context.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import type { PlatformEvents } from "./platform-events.ts";
+import { rememberPublicOrigin } from "./public-origin.ts";
 
 export function applyPlatformMiddleware<E extends HonoEnv>(
   // Generic over the env so a service that ADDS bindings (the studio's
@@ -36,6 +37,16 @@ export function applyPlatformMiddleware<E extends HonoEnv>(
       maxAge: 86_400,
     }),
   );
+  // Record the origin this replica is reached on, for the code paths that need
+  // it and hold no request: a guest spawn bakes the agent's public base URL into
+  // its boot env, and three of the four spawn paths (blue-green handover, the
+  // durable-run wake sweep, the peer route) are not serving one. Here rather
+  // than in a route because it must not be a thing a route can forget, and
+  // because both surfaces feed the same answer. See `rememberPublicOrigin`.
+  app.use("*", async (c, next) => {
+    rememberPublicOrigin(c.req.raw);
+    await next();
+  });
   app.use(
     "*",
     secureHeaders({

@@ -637,6 +637,38 @@ this guide is at its cap and the author-facing half lives there.
 `AgentParams`. Same `AgentDef`, refusing the fields a workflow app cannot use;
 that guide's `workflowApp()` section owns the argument.
 
+## A callback URL comes from `publicWebhookUrl`, never from `hook.url`
+
+`createWebhook()` sets `hook.url`, and it is **guest-local**: the DevKit composes
+it from `getWorkflowMetadata().url`, which is `http://localhost:<port>` off the
+running process (its only other branch is `https://$VERCEL_URL`). Deployed, that
+names the inside of a sandbox which has self-exited by the time a payment
+provider calls back. So the SDK mints its own:
+`ctx.workflows.publicWebhookUrl(token)` — `RuntimeOptions.publicUrl` plus the
+same `WORKFLOW_WEBHOOK_PREFIX` the guest's own router parses, so the URL handed
+out and the path that answers it cannot drift.
+
+Three properties are load-bearing:
+
+- **`publicUrl` is an OPTION, never sniffed.** Each deployment supplies it — the
+  platform bakes `AAI_PUBLIC_BASE_URL` into the guest's exec env and the harness
+  passes it through, `server.mjs` reads `PUBLIC_URL`, `aai dev` passes its own
+  BACKEND origin (Vite proxies the browser surface and not the DevKit's
+  `/.well-known/` routes, so the port a developer opens would 404 a delivery).
+  Reading an `AAI_*` variable here would make the SDK depend on the vocabulary of
+  one of its three deployments.
+- **Unconfigured THROWS**, naming the option. A `localhost` URL would be the
+  same bug with the failure moved days later and onto somebody else's server.
+- **It takes the token, because a hook's token is the caller's.** Derive it in one
+  exported helper the body and the tool both import — the rule {@link signal}
+  already states. `createWebhook()`'s own token is random and body-side only,
+  so a URL that has to be minted from a TOOL wants `createHook({ token })`.
+
+Not yet closed: a `"use workflow"` BODY, and a step it hands `hook.token` to,
+have no `ToolContext` and so no way to reach `publicUrl` — a run that must EMAIL
+its own callback URL still composes it from a value the author supplies.
+`stepEnv`'s `Symbol.for` slot is the shape that would close it.
+
 ## A run can tell the caller it finished
 
 `start(def, input, { key, notify })` makes the session that started a run take an

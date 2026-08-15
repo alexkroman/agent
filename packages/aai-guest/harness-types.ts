@@ -91,12 +91,26 @@ export type GuestRuntime = {
 /**
  * The bundle's `__aaiCreateRuntime` export. The harness↔bundle contract,
  * kept deliberately tiny so it can stay stable across SDK versions:
- * `{ env, db?, runCode? }` in, `{ startSession, shutdown }` out.
+ * `{ env, db?, runCode?, publicUrl? }` in, `{ startSession, shutdown }` out.
+ *
+ * Everything here is a CAPABILITY OR A FACT THE HARNESS ALONE HOLDS — that is
+ * the membership rule, and what keeps the tininess a principle rather than a
+ * number. `runCode` is the executor only a sandbox has; `publicUrl` is the URL
+ * only the spawner knows, since a guest's own origin is a loopback port behind a
+ * tunnel that changes on every respawn. Provider resolution, tool dispatch and
+ * session state stay out, on the bundle's SDK's version.
+ *
+ * Additive-only, and every field OPTIONAL for the same reason: a bundle built
+ * against an older SDK ignores what it does not read, and a bundle built against
+ * a newer one receiving nothing degrades rather than failing boot (an absent
+ * `publicUrl` makes `ctx.workflows.publicWebhookUrl` throw, which is the designed
+ * answer). `GUEST_CONTRACT_VERSION` records each addition.
  */
 export type CreateGuestRuntime = (opts: {
   env: Record<string, string>;
   db?: DbAdapter;
   runCode?: (code: string) => Promise<string | { error: string }>;
+  publicUrl?: string;
 }) => GuestRuntime;
 
 // ---- JSON-RPC 2.0 message shapes --------------------------------------------

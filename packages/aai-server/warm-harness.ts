@@ -21,6 +21,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { WebSocket } from "ws";
 import { sleep } from "./_sleep.ts";
 import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest-routes.ts";
+import { agentPublicBaseUrl } from "./public-origin.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
@@ -256,9 +257,23 @@ export function startGuestLogging(proc: GuestProcLike, label: string): void {
  * it is quickest to observe. Forwarding it here is an explicit boot
  * parameter, not env inheritance, so that rule still holds. The guest owns
  * the parse (an unusable value falls back to its default).
+ *
+ * `AAI_PUBLIC_BASE_URL` is the newest key and the first whose consumer is the
+ * BUNDLE'S SDK rather than the harness: the harness hands it straight through as
+ * `createRuntime`'s `publicUrl`, and `ctx.workflows.publicWebhookUrl` is what
+ * reads it. It is derived HERE — the one place both backends share — for the
+ * reason the doc's first line gives, and from {@link agentPublicBaseUrl} rather
+ * than from the brokering request, because three of the four spawn paths hold no
+ * request at all. Absent when this replica can name no origin; the SDK's own
+ * throw is then the report.
  */
 export function agentBootEnv(
   opts: {
+    /**
+     * The agent being spawned. Only `AAI_PUBLIC_BASE_URL` reads it — the guest
+     * never learns its own slug otherwise, and does not need to.
+     */
+    slug: string;
     token: string;
     port: number;
     /**
@@ -275,6 +290,7 @@ export function agentBootEnv(
   serverEnv: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
   const idleExitMs = serverEnv.AAI_GUEST_IDLE_EXIT_MS?.trim();
+  const publicBaseUrl = agentPublicBaseUrl(opts.slug, serverEnv);
   return {
     AAI_GUEST_MODE: "agent",
     AAI_GUEST_TOKEN: opts.token,
@@ -285,6 +301,11 @@ export function agentBootEnv(
     AAI_BUNDLE_SHA256: opts.bundleSha256,
     AAI_AGENT_ENV_PATH: opts.envPath,
     ...(idleExitMs ? { AAI_GUEST_IDLE_EXIT_MS: idleExitMs } : {}),
+    // OMITTED rather than set empty when there is no origin to name: the guest
+    // trims and drops a blank anyway, but a key that is present and useless is
+    // the shape a `publicUrl: ""` bug takes, and a URL a third party cannot
+    // reach must not be minted from one.
+    ...(publicBaseUrl ? { AAI_PUBLIC_BASE_URL: publicBaseUrl } : {}),
   };
 }
 

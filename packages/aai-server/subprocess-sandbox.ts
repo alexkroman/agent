@@ -296,6 +296,7 @@ export async function spawnSubprocessAgentServer(
       harnessPath: opts.harnessPath,
       memoryLimitMiB: limits.memoryLimitMiB,
       extraEnv: agentBootEnv({
+        slug: opts.slug,
         token,
         port,
         bundle: opts.worker.kind === "url" ? { url: opts.worker.url } : { path: bundlePath },

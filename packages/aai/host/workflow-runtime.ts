@@ -46,6 +46,12 @@ import { wdkAdapter } from "./workflow-wdk.ts";
 export function buildWorkflowClient(
   agent: Pick<AgentDef, "workflows">,
   db: Db | undefined,
+  /**
+   * This deployment's own public base URL, or undefined when nothing told it —
+   * see `RuntimeOptions.publicUrl`. Only `publicWebhookUrl` reads it, and only
+   * to throw when it is absent.
+   */
+  publicUrl: string | undefined,
   logger: Logger,
 ): WorkflowClient | undefined {
   const workflows = agent.workflows;
@@ -56,11 +62,21 @@ export function buildWorkflowClient(
     // restart, so it belongs in the one line an operator reads at boot rather
     // than being inferred from whether storage happens to be on.
     keyStore: db ? "postgres" : "memory",
+    // Reported at boot for the same reason the key store is: whether a run can
+    // hand out a reachable callback URL is a property of the DEPLOYMENT, and the
+    // alternative to one boot line is discovering it from a throw inside a tool
+    // weeks later. The URL itself, not a boolean — a wrong origin is the other
+    // half of the failure and a boolean cannot show it.
+    publicUrl: publicUrl ?? "(unset — publicWebhookUrl will throw)",
   });
   return createWorkflowClient({
     workflows,
     keys: resolveKeyStore(db),
     wdk: wdkAdapter(),
+    // Declared `string | undefined` rather than optional on the options type, so
+    // the absent case passes straight through — no `omitUndefined`, and no
+    // spread-ternary for rule 2 to catch.
+    publicUrl,
     logger,
   });
 }

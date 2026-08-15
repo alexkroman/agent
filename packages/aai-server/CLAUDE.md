@@ -177,11 +177,10 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   same header and is right to: it wants what the browser saw, which is the
   opposite end of the same list
 - `_semaphore.ts` — counting semaphore with a bounded wait. Caps how many
-  deploy bodies buffer at once (`DEPLOY_BODY_CONCURRENCY`): the size caps
-  bound ONE request, and peak memory was arrival rate times ~164 MB against a
-  2048 MiB container — a number the caller picks. Measured: 28 KB on the wire
-  inflates to ~164 MB of RSS, so 24 concurrent cost ~812 MB ungated and
-  ~333 MB gated, the gated figure being flat in N rather than smaller
+  deploy bodies buffer at once (`DEPLOY_BODY_CONCURRENCY`): the size caps bound
+  ONE request, so peak memory was arrival rate times a number the CALLER picks.
+  `constants.ts` carries the measurement and the container budget it is sized
+  against
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
 - `bundle-store.ts` — deploy persistence (blob reads AND writes retry
@@ -229,38 +228,20 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   sentinel and retries failures, so conflating them makes a live deploy read
   as absent.
 
-  **Uploads carry a one-year `cacheControl`, and it is inert on purpose.**
-  Nothing reads a blob through a cache today — every read is either an
-  authenticated `download()` (which Supabase's CDN will not cache) or a
-  per-call signed URL (fresh token, fresh cache key). It is set anyway because
-  Storage stamps the directive at UPLOAD time and never revisits it: left at
-  storage-js's 3600 default, every blob already written would carry the wrong
-  one on the day anything IS served through the CDN, and fixing it then means
-  re-uploading the bucket. A year is correct by construction rather than as a
-  guess — the key is the content hash, the same reasoning that lets the asset
-  routes serve `immutable`.
+  **Uploads carry a one-year `cacheControl`, and it is inert on purpose** —
+  correct by construction rather than as a guess, because the key is a content
+  hash. The comment on `cacheControl` in `blob-storage.ts` carries why setting an
+  inert directive now is what avoids re-uploading the bucket later.
 
   **`SUPABASE_SERVICE_ROLE_KEY` must be a SECRET key (`sb_secret_…`), and boot
-  refuses a publishable one** (`assertServiceRoleKey` in `_boot.ts`, called
-  once from `buildServiceConfig` — the only caller of both consumers, so the
-  guard cannot be half-applied). A publishable key authenticates fine and then
-  carries `anon` authority, which breaks both things that share the variable,
-  neither of them legibly. **Storage**: a `blobs/<sha256>` write dies on
-  `storage.objects` RLS with `new row violates row-level security policy`,
-  reading as a broken bucket policy rather than a wrong key — and the
-  `SUPABASE_S3_*` path this replaced went through Supabase's S3 gateway, which
-  bypasses RLS entirely, so the same wrong key was INERT until deploys stopped
-  using it. **Realtime** is worse: nothing surfaces at all. Filter columns are
-  validated against the subscriber's role and the platform schema grants
-  `select` to `service_role` only, so every filtered subscribe fails
-  server-side with `invalid column for filter` and realtime-js retries the
-  join forever — the service boots healthy and merely stops invalidating
-  resident sandboxes on redeploy and stops pushing studio SSE. Only the two
-  definitely-wrong forms throw (the `sb_publishable_` prefix, and a legacy JWT
-  whose `role` claim is `anon`); anything unrecognizable is left to Supabase,
-  which rejects it with a better message than a shape check can. Note
-  `SUPABASE_PUBLISHABLE_KEY` (browser sign-in, `supabase-auth.ts`) is a
-  separate setting and stays publishable.
+  refuses an anon-authority one** — `assertServiceRoleKey` in `_boot.ts`, called
+  once from `buildServiceConfig` (the only caller of both consumers, so the guard
+  cannot be half-applied). **Its doc comment carries the argument**: what a
+  publishable key does to Storage, the worse thing it does to Realtime, and why
+  only the two definitely-wrong forms throw. Read it there rather than here — it
+  was duplicated in both places, and this guide is the copy at a size cap. Note
+  `SUPABASE_PUBLISHABLE_KEY` (browser sign-in, `supabase-auth.ts`) is a separate
+  setting and stays publishable.
 
   Agent env lives in Supabase Vault through the injected `SecretStore`.
 
@@ -299,15 +280,12 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `deprovisionAppDatabase`, `openAppDb`).
 
   **Deprovision follows the app's stored LOCATOR, never a recomputed
-  placement.** Placement is `hash(slug) % targets.length`, so changing
-  `APP_DB_URLS` re-shuffles every existing app and the `url` in its
-  `app-db:<slug>` meta is the only record that survives it. Recomputing —
-  which this used to do, reasoned as "same deterministic placement" — issues
-  both `if exists` drops against a cluster that never hosted the app (silent
-  no-ops) while the caller deletes the secret holding the real schema's only
-  credential: tenant data left unreachable, nothing raised. Both call sites
-  read the meta BEFORE it is swept; with no meta every target is swept, since
-  a slug-derived drop where the app never lived is a real no-op.
+  placement**, and so does `usage`: changing `APP_DB_URLS` re-shuffles every
+  existing app, so the `url` in its `app-db:<slug>` meta is the only record of
+  where it lives. `AppDatabases.deprovision`'s own doc comment carries what
+  recomputing costs — silent no-op drops beside a deleted credential, i.e. tenant
+  data left unreachable with nothing raised — and why a meta-less sweep of every
+  cluster is safe. Read it there.
 
   **The per-tenant caps differ in strength, and only two are controls.**
   `connection limit` is superuser-only to raise and `temp_file_limit` is
@@ -1642,14 +1620,34 @@ beside it, so nothing is newly reachable; the body is capped
 (`MAX_WEBHOOK_BODY_BYTES`) before it is buffered, since the route is public
 and boots sandboxes.
 
-**One gap this deliberately leaves open.** The URL the DevKit MINTS still
-names the guest's own origin — `getWorkflowMetadata().url` is
-`http://localhost:<port>` off the running process, and its only override is
-Vercel's, which also switches on a replay watchdog that calls `process.exit(1)`
-inside what is also a voice guest. So an author composes the durable URL from
-the hook's `token` plus their agent's public origin; this route is what answers
-it. (The other gap this section used to name — a parked run that nothing ever
-boots the guest for — is what the wake sweep below closes.)
+**The URL the DevKit MINTS is still guest-local, and the SDK mints the public
+one.** `createWebhook()` sets `hook.url` from `getWorkflowMetadata().url`, which
+is `http://localhost:<port>` off the running process — verified in the installed
+`@workflow/core`, whose only other branch is `https://$VERCEL_URL`, and that one
+also switches on a replay watchdog calling `process.exit(1)` inside what is also
+a voice guest. So `hook.url` names the inside of a container that will not exist
+when the payment provider calls back. The platform therefore CARRIES its own
+answer into the guest: `agentBootEnv` sets **`AAI_PUBLIC_BASE_URL`** (the public
+origin plus the slug — `agentPublicBaseUrl` in `public-origin.ts`), the harness
+passes it to the bundle's runtime as `publicUrl`, and
+`ctx.workflows.publicWebhookUrl(token)` composes the URL this route answers from
+the same `WORKFLOW_WEBHOOK_PREFIX` constant. `WORKFLOW_LOCAL_BASE_URL` is
+untouched and could not have helped: it steers QUEUE dispatch and never reaches
+`hook.url`, and repointing it would 404 the `guest-internal` `flow`/`step`
+callbacks. (The other gap this section used to name — a parked run that nothing
+ever boots the guest for — is what the wake sweep below closes.)
+
+**The value is baked at spawn and there is ONE sandbox per slug fleet-wide, so a
+platform reachable on more than one public origin serves every session from
+whichever origin happened to spawn the guest** — set `AAI_PUBLIC_ORIGIN` on any
+deployment with two live origins, which is already the way to take that choice
+away from callers. A per-request mechanism would buy nothing: a URL handed to a
+payment provider has to outlive the request that minted it anyway. With nothing
+configured, the origin is the one the replica last SERVED a request on
+(`rememberPublicOrigin`, wired into `app-middleware.ts` — the spawn paths that
+matter hold no request: the blue-green handover fires off the change stream, the
+wake sweep off a timer). With neither, the key is omitted and the SDK throws
+naming the option, which is the designed answer.
 
 ### Waking a run whose sandbox is gone — `workflow-wake.ts`
 
