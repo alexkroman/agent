@@ -4,6 +4,8 @@
  * request dispatch, runtime laziness, and upgrade auth pieces.
  */
 
+import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
 import { bearerToken } from "./harness-auth.ts";
@@ -16,7 +18,7 @@ import {
 } from "./harness-bundle.ts";
 import { rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";
 import type { AgentDef, JsonRpcMessage } from "./harness-types.ts";
-import { executeTool } from "./trial.ts";
+import { executeTool, runCode } from "./trial.ts";
 
 let sent: JsonRpcMessage[];
 
@@ -167,6 +169,26 @@ describe("executeTool (one-shot trial)", () => {
     expect(res.error).toBe("nope");
   });
 
+  // The wedge: an async IIFE runs synchronously to its first `await`, and code
+  // with no `await` never yields — so the in-thread timer that was supposed to
+  // stop it could not be reached to fire, and the guest burned to Modal's
+  // lifetime cap with `/health` unanswered.
+  test("run_code terminates code that never yields, instead of wedging the guest", async () => {
+    const started = Date.now();
+    const res = await runCode("while (true) {}", 250);
+    expect(res).toMatchObject({ error: expect.stringContaining("timed out") });
+    // A promise race would have "returned" here too — and left the loop running.
+    // The proof that the thread is gone is that the next call still answers.
+    expect(await runCode("console.log('still alive')", 5000)).toBe("still alive");
+    expect(Date.now() - started).toBeLessThan(4000);
+  });
+
+  test("run_code output survives the hop back from the worker", async () => {
+    expect(await runCode("console.log({ a: 1 }); console.error('and stderr')")).toBe(
+      "[object Object]\nand stderr",
+    );
+  });
+
   test("ctx.db throws storage guidance when storage is disabled", async () => {
     const agent = makeAgent({
       tools: {
@@ -280,6 +302,34 @@ describe("loadBundle", () => {
     expect(shutdown).toHaveBeenCalledOnce();
     // The next session builds a fresh runtime from the NEW bundle.
     expect(state.runtime).toBeNull();
+  });
+
+  // Each load wrote ~8 MB into tmpdir under a unique name and nothing ever
+  // removed it, while the tool description tells the coding agent to run
+  // `test_agent` after every meaningful change — in a sandbox that lives for
+  // hours.
+  test("the temp module a bundle is imported from does not survive the import", async () => {
+    const bundles = async () =>
+      (await readdir(tmpdir())).filter((f) => f.startsWith(`aai-bundle-${process.pid}-`));
+    const before = (await bundles()).length;
+    const state = makeState();
+    await loadBundle(state, {
+      code: `${FAKE_RUNTIME_EXPORT}
+        export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };`,
+      env: {},
+    });
+    expect(state.agent).not.toBeNull();
+    expect((await bundles()).length).toBe(before);
+  });
+
+  test("a failed load leaves no temp module behind either", async () => {
+    const bundles = async () =>
+      (await readdir(tmpdir())).filter((f) => f.startsWith(`aai-bundle-${process.pid}-`));
+    const before = (await bundles()).length;
+    await expect(
+      loadBundle(makeState(), { code: "this is not valid javascript ===", env: {} }),
+    ).rejects.toThrow();
+    expect((await bundles()).length).toBe(before);
   });
 
   test("a bundle without __aaiCreateRuntime is rejected at load", async () => {

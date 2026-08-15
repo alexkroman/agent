@@ -94,15 +94,22 @@ export const DEFAULT_COMPACTION: CompactionOptions = {
   keepLeading: 1,
 };
 
-/** Would this message list be compacted? Exposed for tests and logging. */
+/**
+ * Would this message list be compacted? Exposed for tests and logging.
+ *
+ * `estimate` is threaded rather than recomputed because {@link estimateTokens}
+ * stringifies every non-string message content and the list it walks is the
+ * WHOLE conversation — measured at roughly 240 KB of `JSON.stringify` per pass
+ * in a long repair loop. The caller in `studio-chat.ts` asks this question and
+ * then hands the same list to {@link compactMessages}, which asked it again:
+ * three full passes per STEP, two of them over identical input.
+ */
 export function needsCompaction(
   messages: readonly ModelMessage[],
   opts: CompactionOptions = DEFAULT_COMPACTION,
+  estimate: number = estimateTokens(messages),
 ): boolean {
-  return (
-    estimateTokens(messages) > opts.budgetTokens &&
-    messages.length > opts.keepLeading + opts.keepRecent + 1
-  );
+  return estimate > opts.budgetTokens && messages.length > opts.keepLeading + opts.keepRecent + 1;
 }
 
 /** Plain text of a message, for the summarizer's input. */
@@ -135,13 +142,19 @@ function turnBoundary(messages: readonly ModelMessage[], index: number, step: 1 
  * Returns the messages unchanged when compaction is unnecessary or the summary
  * call fails — losing the middle to a failed summarizer would be worse than a
  * long context.
+ *
+ * `estimate` is the caller's already-computed token estimate for `messages`;
+ * see {@link needsCompaction}. The check AFTER tier 1 re-estimates on purpose —
+ * it is a different list, and its whole job is to find out how much tier 1 took
+ * off.
  */
 export async function compactMessages(
   model: LanguageModel,
   messages: readonly ModelMessage[],
   opts: CompactionOptions = DEFAULT_COMPACTION,
+  estimate: number = estimateTokens(messages),
 ): Promise<ModelMessage[]> {
-  if (!needsCompaction(messages, opts)) return [...messages];
+  if (!needsCompaction(messages, opts, estimate)) return [...messages];
 
   // Tier 1: drop the tool call/result payloads older than the recent window —
   // the tsc dumps and build logs this loop accumulates. Deterministic, free,

@@ -228,6 +228,20 @@ describe("workspace channels", () => {
     expect(channels).toHaveLength(2);
   });
 
+  test("no (scope, project) pair can forge another's TOPIC either", () => {
+    // The pool key went through `projectKey` while the topic was built with a
+    // `:` both halves may contain — so these two pairs produced two pool
+    // entries and ONE topic. The subscription monitor is keyed on the topic, so
+    // the second `track` clobbered the first's state and either `untrack`
+    // dropped what was left: a stalled channel invisible to `/health`.
+    const { client, channels } = fakeClient();
+    const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
+    events.watchWorkspace("a:b", "c", vi.fn());
+    events.watchWorkspace("a", "b:c", vi.fn());
+    expect(channels).toHaveLength(2);
+    expect(channels[0]?.topic).not.toBe(channels[1]?.topic);
+  });
+
   test("no (scope, project) pair can forge another's pool key", () => {
     // The pool keyed on `ws:${scope} ${project}` — a SPACE — while the
     // separator's whole argument (see projectKey in platform-events.ts) is

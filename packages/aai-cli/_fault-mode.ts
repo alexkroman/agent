@@ -282,6 +282,15 @@ export type SupervisedDevServerOptions = {
   args?: readonly string[];
   /** Defaults to `resolveFaultProfile()`. Pass one to drive the mode from a test. */
   profile?: FaultProfile | undefined;
+  /**
+   * How long a restarted server has to answer `/health`. Defaults to
+   * {@link HEALTH_TIMEOUT_MS}.
+   *
+   * A test seam, and one worth having: the ONLY way to exercise "the server did
+   * not survive a kill this mode inflicted" is to let that wait expire, and at
+   * the shipped 60s that is a minute of wall clock per assertion.
+   */
+  healthTimeoutMs?: number | undefined;
 };
 
 /**
@@ -306,6 +315,15 @@ export async function startSupervisedDevServer(
   let stopped = false;
   /** Serializes kills: two triggers in one chunk must not race each other. */
   let cycle: Promise<void> = Promise.resolve();
+  /**
+   * The first restart that never came back, held so it can be REPORTED.
+   *
+   * A rejection has to be taken off `cycle` the moment it is created (see
+   * {@link fire}) — but taking it off and dropping it would hide the one
+   * failure this mode exists to produce, so it is kept here and re-raised by
+   * `awaitSettled` / warned about by `stop`.
+   */
+  let restartFailure: unknown;
 
   const spawnOnce = async (): Promise<void> => {
     const next = spawn(
@@ -327,7 +345,7 @@ export async function startSupervisedDevServer(
         }
       });
     }
-    await waitForHealth(`${url}/health`, next, HEALTH_TIMEOUT_MS);
+    await waitForHealth(`${url}/health`, next, opts.healthTimeoutMs ?? HEALTH_TIMEOUT_MS);
     healthy += 1;
     fire(tracker.onHealthy(healthy));
   };
@@ -341,7 +359,18 @@ export async function startSupervisedDevServer(
    */
   const fire = (point: FaultPoint | undefined): void => {
     if (point === undefined || stopped) return;
-    cycle = cycle.then(() => recycle(point));
+    // The handler is attached HERE rather than in `stop()`. `cycle.then(...)`
+    // mints a promise whose rejection — a replacement that never answered
+    // `/health` — has no handler for as long as it takes the suite to reach
+    // teardown, which is seconds; Node reports that as an unhandledRejection,
+    // failing whichever test happened to be running and naming the wrong
+    // thing. Recorded instead, which is what `stop`'s comment always intended:
+    // reported rather than swallowed, on the channel that names it.
+    cycle = cycle
+      .then(() => recycle(point))
+      .catch((err: unknown) => {
+        restartFailure ??= err;
+      });
   };
 
   /** SIGKILL, hold, bring it back. */
@@ -400,6 +429,14 @@ export async function startSupervisedDevServer(
       // `cycle` is the queue those kills run on, so awaiting it is what makes
       // "settled" include the replacement being healthy again.
       await cycle;
+      // `cycle` no longer rejects (see `fire`), so the failure is re-raised
+      // here — a caller awaiting "the faults are done and the server is back"
+      // must not be told yes when it never came back.
+      if (restartFailure !== undefined) {
+        throw new Error(`a restart never became healthy: ${errorMessage(restartFailure)}`, {
+          cause: restartFailure,
+        });
+      }
     },
     assertPlanConsumed: () => {
       const missed = shortfall();
@@ -414,14 +451,18 @@ export async function startSupervisedDevServer(
       // wrong thing.
       if (points.length > 0 && tracker.firedCount() === 0)
         console.warn(`aai fault mode: ${shortfall()}`);
-      // A cycle that rejected — a replacement that never answered `/health` —
+      // A restart that failed — a replacement that never answered `/health` —
       // must not stop teardown, since the process still has to be reaped. It is
       // REPORTED rather than swallowed: it means the server did not survive a
-      // kill this mode inflicted, which is a finding, and an empty catch here
-      // would hide the one failure the mode exists to produce.
-      await cycle.catch((err: unknown) => {
-        console.warn(`aai fault mode: a restart never became healthy: ${errorMessage(err)}`);
-      });
+      // kill this mode inflicted, which is a finding, and silence here would
+      // hide the one failure the mode exists to produce. The rejection itself
+      // was taken off `cycle` when it happened — see `fire`.
+      await cycle;
+      if (restartFailure !== undefined) {
+        console.warn(
+          `aai fault mode: a restart never became healthy: ${errorMessage(restartFailure)}`,
+        );
+      }
       const dying = child;
       child = undefined;
       dying?.kill();

@@ -36,8 +36,8 @@
  * ## The correlation key is what makes the second call possible
  *
  * `start()` hands back a `runId`, and the obvious place for a tool to keep it is
- * `ctx.state` — which is swept shortly after the caller hangs up. So the run
- * outlives the session and the only handle to it does not. Passing
+ * a `sessionSlot` — which is swept shortly after the caller hangs up. So the
+ * run outlives the session and the only handle to it does not. Passing
  * `{ key: ctx.sessionId }` puts the run in an index the agent can search later
  * with `find`, without maintaining its own table.
  *

@@ -23,6 +23,7 @@ import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
 import { WorkflowRequestError } from "./_workflow-request-error.ts";
 import { createWorkflowApi, MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api.ts";
+import type { UploadStore } from "./workflow-uploads.ts";
 
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
@@ -80,10 +81,11 @@ type Harness = {
 async function serve(opts: {
   engine: () => WorkflowClient | undefined;
   token?: string;
+  uploads?: UploadStore;
 }): Promise<Harness> {
   const api = createWorkflowApi({
     engine: opts.engine,
-    ...omitUndefined({ token: opts.token }),
+    ...omitUndefined({ token: opts.token, uploads: opts.uploads }),
     logger,
   });
   const server = http.createServer((req, res) => {
@@ -154,6 +156,39 @@ describe("routing", () => {
     harness = await serve({ engine: () => fakeClient({ get }) });
     await fetch(`${harness.url}/workflows/runs/${encodeURIComponent("a/b")}`);
     expect(get).toHaveBeenCalledWith("a/b");
+  });
+
+  test.each([
+    ["GET", "/workflows/runs/%"],
+    ["GET", "/workflows/runs/%/events"],
+    ["GET", "/workflows/runs/%zz/stream"],
+    ["POST", "/workflows/runs/%C0%80/wake"],
+    ["DELETE", "/workflows/runs/%A"],
+  ])("%s %s is a 400, not a 500", async (method, path) => {
+    // A path segment that will not percent-decode is the CALLER's mistake, and
+    // the module doc's rule is "400, never 500". Before `decodePathSegment` the
+    // URIError escaped `runId` into the router's catch — which reports "the agent
+    // is broken", the one thing this could not be.
+    const get = vi.fn(async () => run());
+    harness = await serve({ engine: () => fakeClient({ get }) });
+    const res = await fetch(`${harness.url}${path}`, { method });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "Malformed run id" });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  test("a malformed upload id is a 400 rather than reaching the store", async () => {
+    const info = vi.fn(() => Promise.resolve(undefined));
+    const uploads: UploadStore = {
+      info,
+      read: () => Promise.resolve(new Uint8Array()),
+      create: () => Promise.resolve({ id: "upl_1", name: "", type: "", size: 0 }),
+    };
+    harness = await serve({ engine: () => fakeClient(), uploads });
+    const res = await fetch(`${harness.url}/workflows/uploads/%`);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "Malformed upload id" });
+    expect(info).not.toHaveBeenCalled();
   });
 });
 

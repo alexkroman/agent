@@ -10,13 +10,18 @@
 
 import path from "node:path";
 import { slugifyName } from "@alexkroman1/aai/slugify";
-import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, VALID_SLUG_RE } from "@alexkroman1/aai/utils";
+import {
+  isRecord,
+  MAX_SLUG_LENGTH,
+  PREVIEW_SLUG_SUFFIX,
+  VALID_SLUG_RE,
+} from "@alexkroman1/aai/utils";
 import {
   isLocalOnlyFile,
   snapshotWorkspaceFiles,
   type WorkspaceSnapshot,
 } from "@alexkroman1/aai/workspace-files";
-import { apiRequest } from "./_api-client.ts";
+import { apiRequest, checkedResponse, isStringArray } from "./_api-client.ts";
 
 /**
  * Snapshot the local project into a workspace file map.
@@ -71,10 +76,22 @@ export type StudioProject = {
 };
 
 export function listStudioProjects(serverUrl: string, apiKey: string): Promise<string[]> {
-  return apiRequest<{ projects: string[] }>(`${serverUrl}/studio/projects`, {
+  return apiRequest(`${serverUrl}/studio/projects`, {
     apiKey,
     action: "list",
-  }).then((res) => res.projects);
+    // Checked rather than cast: a 200 without `projects` made `aai list` die on
+    // `undefined is not iterable` — and `notFoundHint` calls this on an
+    // ALREADY-failing path, where a raw TypeError replaces the 404 the user
+    // needs to see. See `checkedResponse`.
+  }).then(
+    (res) =>
+      checkedResponse(
+        res,
+        (value): value is { projects: string[] } =>
+          isRecord(value) && isStringArray(value.projects),
+        `the studio project list at ${serverUrl}`,
+      ).projects,
+  );
 }
 
 /** Fetch a project, or null when it doesn't exist (the push existence probe). */

@@ -58,7 +58,7 @@ describe("createStepFetch", () => {
 
   test("builds ONE dispatcher per server, so a fan-out's batches share a warm pool", async () => {
     agentOptions.length = 0;
-    const fetchFn = createStepFetch();
+    const fetchFn = createStepFetch().fetch;
     await fetchFn("https://example.test/a");
     await fetchFn("https://example.test/b");
     expect(agentOptions).toHaveLength(1);
@@ -66,7 +66,7 @@ describe("createStepFetch", () => {
 
   test("attaches that dispatcher to every request", async () => {
     requests.length = 0;
-    const fetchFn = createStepFetch();
+    const fetchFn = createStepFetch().fetch;
     await fetchFn("https://example.test/x");
     expect(requests[0]?.init.dispatcher).toBeDefined();
   });
@@ -75,7 +75,7 @@ describe("createStepFetch", () => {
     requests.length = 0;
     const signal = new AbortController().signal;
     const body = new Uint8Array([1, 2, 3]);
-    await createStepFetch()("https://example.test/x", {
+    await createStepFetch().fetch("https://example.test/x", {
       method: "POST",
       headers: { Authorization: "k" },
       body,
@@ -94,13 +94,13 @@ describe("createStepFetch", () => {
   test("COPIES the caller's headers, so the request cannot mutate them", async () => {
     requests.length = 0;
     const headers = { Authorization: "k" };
-    await createStepFetch()("https://example.test/x", { headers });
+    await createStepFetch().fetch("https://example.test/x", { headers });
     expect(requests[0]?.init.headers).not.toBe(headers);
   });
 
   test("omits an absent field rather than sending it as undefined", async () => {
     requests.length = 0;
-    await createStepFetch()("https://example.test/x");
+    await createStepFetch().fetch("https://example.test/x");
     // `exactOptionalPropertyTypes` is about the type; this is about the wire —
     // `{ method: undefined }` is not the same request as one with no method.
     expect(Object.keys(requests[0]?.init ?? {})).toEqual(["dispatcher"]);

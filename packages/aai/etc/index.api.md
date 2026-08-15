@@ -462,6 +462,11 @@ export type Db = {
 };
 
 // @public
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer E)[] ? readonly DeepReadonly<E>[] : T extends object ? {
+    readonly [K in keyof T]: DeepReadonly<T[K]>;
+} : T;
+
+// @public
 export const DEFAULT_BUILTIN_TOOLS: readonly [];
 
 // @public
@@ -857,12 +862,12 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 export interface SessionSlot<K extends string, T> {
     create(): T;
     readonly durable: boolean;
-    get(ctx: ToolContext): Readonly<T>;
+    get(ctx: ToolContext): DeepReadonly<T>;
     readonly key: K;
-    projection<V>(project: (value: Readonly<T>) => V): StateProjection<V>;
-    reset(ctx: ToolContext): Readonly<T>;
-    set(ctx: ToolContext, value: T): Readonly<T>;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, Readonly<T>, R>): ToolDef<P>;
+    projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
+    reset(ctx: ToolContext): DeepReadonly<T>;
+    set(ctx: ToolContext, value: T): DeepReadonly<T>;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P>;
     update<R>(ctx: ToolContext, mutate: (draft: T) => R): R;
     updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R>): ToolDef<P>;
 }

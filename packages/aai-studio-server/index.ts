@@ -38,6 +38,8 @@ import {
   CHAT_IP_RATE_LIMIT,
   CHAT_RATE_LIMIT,
   createPgRateLimiter,
+  PREVIEW_WAKE_IP_RATE_LIMIT,
+  PREVIEW_WAKE_RATE_LIMIT,
   PROJECT_CREATE_IP_RATE_LIMIT,
   PROJECT_CREATE_RATE_LIMIT,
   type StudioRateLimiters,
@@ -60,6 +62,14 @@ function buildRateLimiters(base: ServiceConfig): StudioRateLimiters | undefined 
     projectCreateIp: createPgRateLimiter(base.sql, {
       name: "studio-project-create-ip",
       ...PROJECT_CREATE_IP_RATE_LIMIT,
+    }),
+    previewWake: createPgRateLimiter(base.sql, {
+      name: "studio-preview-wake",
+      ...PREVIEW_WAKE_RATE_LIMIT,
+    }),
+    previewWakeIp: createPgRateLimiter(base.sql, {
+      name: "studio-preview-wake-ip",
+      ...PREVIEW_WAKE_IP_RATE_LIMIT,
     }),
   };
 }

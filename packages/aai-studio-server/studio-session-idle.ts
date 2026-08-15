@@ -35,6 +35,11 @@ export type SessionReaper = {
  * Idle eviction: chat turns run browser→guest, so the host's only view of
  * activity is broker calls and the guest's end-of-turn RPCs (both touch
  * `lastUsed`). Losing a live-but-quiet sandbox costs one re-broker.
+ *
+ * The one thing that is NOT merely a re-broker is evicting a sandbox with
+ * host-driven work inside it — a Publish or an auto preview deploy, which can
+ * legitimately run longer than the idle window — so the sweep consults
+ * `entry.inFlight` as well as the clock (see `SessionEntry.inFlight`).
  */
 export function createSessionReaper(deps: {
   sessions: SessionMap;
@@ -79,10 +84,18 @@ export function createSessionReaper(deps: {
    * number for exactly this comparison (see STUDIO_SESSION_IDLE_MS).
    */
   async function sweepIfIdle(entry: SessionEntry): Promise<void> {
-    if (sweeping.has(entry)) return;
+    // Work running INSIDE the sandbox is not idleness, and `lastUsed` cannot
+    // see it: a deploy touches when it returns, and its deadline outlives the
+    // idle window by design (see SessionEntry.inFlight). Checked before the
+    // registry read as well as before the teardown, so a sweep never starts
+    // for a busy sandbox at all.
+    if (entry.inFlight > 0 || sweeping.has(entry)) return;
     sweeping.add(entry);
     try {
       if (await fleet.heldByUs(entry.scope, entry.project)) return;
+      // Re-read after the registry round trip: a Publish can begin while that
+      // read is outstanding, and this is the last point before the terminate.
+      if (entry.inFlight > 0) return;
       await disposeEntry(entry);
     } finally {
       // By identity, so this releases only our own mark. The entry is gone

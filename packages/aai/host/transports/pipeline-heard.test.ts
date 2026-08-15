@@ -109,6 +109,39 @@ describe("createHeardTracker — the heard position", () => {
     expect(heard.heard().text).toBe("Hello there");
   });
 
+  test("text still queued for synthesis is not counted as heard", () => {
+    // THE over-keeping bias this module exists to remove. `spoken` is
+    // everything handed to TTS; `audioMs` is only what came back. An LLM
+    // streaming far ahead of the voice makes their ratio an impossible speech
+    // rate, and the old estimate believed it — reporting a whole reply as heard
+    // while the caller was six seconds behind, writing the unheard remainder
+    // into history as delivered and anchoring the resume prompt past it.
+    const { heard, clock } = setup();
+    heard.startReply();
+    // 300 characters handed over at once; five seconds of audio has come back.
+    heard.onText("word ".repeat(60), true);
+    heard.onAudio(chunk(5000));
+    clock.advance(5000);
+    // At ~15 characters a second, five seconds is ~75 characters. The estimate
+    // may not claim the whole reply, and must stay near what a voice can say.
+    expect(heard.heard().chars).toBeLessThan(100);
+    expect(heard.heard().chars).toBeGreaterThan(50);
+  });
+
+  test("a reply whose audio is complete is still tracked by its own rate", () => {
+    // The other side of the clamp: once synthesis has finished, the observed
+    // ratio IS the speech rate, and a deliberately slow voice must not be
+    // credited with the ceiling's faster one.
+    const { heard, clock } = setup();
+    heard.startReply();
+    heard.onText("Hello there friend", true); // 18 chars
+    heard.onAudio(chunk(4000)); // ~4.5 chars/s: a very slow voice
+    clock.advance(2000);
+    // Half the audio played, so half the text — not the 36 characters a
+    // ceiling-rate estimate would claim, and not the whole reply.
+    expect(heard.heard().text).toBe("Hello");
+  });
+
   test("a word the provider renamed degrades to the estimate rather than to nothing", () => {
     const { heard, clock } = setup();
     heard.startReply();
@@ -130,8 +163,12 @@ describe("createHeardTracker — what may be recorded", () => {
     heard.onText("Sure, ", true);
     heard.onText("One moment. ", false); // dead-air cover
     heard.onText("here it is.", true);
-    heard.onAudio(chunk(1000));
-    clock.advance(860);
+    // 29 characters over two seconds — a natural pace. A shorter chunk would
+    // put the fixture above any real speech rate, where the estimate clamps
+    // (see MAX_SPEECH_CHARS_PER_MS) and this spec would be measuring that
+    // instead of the filler split it is about.
+    heard.onAudio(chunk(2000));
+    clock.advance(1720);
     const at = heard.heard();
     // The caller heard through "here it", filler included...
     expect(at.chars).toBe(25);

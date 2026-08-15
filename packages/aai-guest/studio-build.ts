@@ -25,12 +25,13 @@
  * the normal node_modules walk-up, exactly as in a user project.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { annotateDiagnostics, type ExportResolver } from "./studio-diagnostics.ts";
 import {
   ensureWorkspaceDependencies,
@@ -174,7 +175,7 @@ export async function buildWorkspaceDir(
     return {
       buildError: withDependencyWarning(
         depWarning,
-        annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)),
+        await annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)),
       ),
     };
   }
@@ -190,10 +191,10 @@ export async function buildWorkspaceDir(
     const clientFiles = want.client
       ? await tc.buildClient(dir, { configFile: false, plugins: tc.clientPlugins() })
       : undefined;
-    return {
-      ...(worker !== undefined && { worker }),
-      ...(clientFiles !== undefined && { clientFiles }),
-    };
+    // `omitUndefined`, not `...(x !== undefined && { x })`: the `&&` spelling is
+    // the same idiom with the key written twice, and `guard-invariants` rule 2
+    // cannot see it.
+    return omitUndefined({ worker, clientFiles });
   } catch (err) {
     return { buildError: withDependencyWarning(depWarning, formatBuildFailure(err, dir)) };
   }
@@ -223,7 +224,10 @@ export async function typecheckWorkspaceDir(
   const typed = await typecheckProject(dir);
   return typed.ok
     ? typed
-    : { ok: false, output: annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)) };
+    : {
+        ok: false,
+        output: await annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)),
+      };
 }
 
 let buildSeq = 0;
@@ -311,13 +315,16 @@ function exportedNamesFromDts(dts: string): string[] {
  * diagnostic goes out unannotated.
  */
 function moduleExports(dir: string): ExportResolver {
-  return (specifier) => {
+  return async (specifier) => {
     try {
+      // `createRequire().resolve` has no async form and stays sync; both READS
+      // are async, because this runs in the process that also paces live voice
+      // audio and a `.d.ts` is not a small file.
       const require = createRequire(path.join(dir, "package.json"));
       const pkgPath = require.resolve(`${specifier}/package.json`);
-      const entry = typesEntry(JSON.parse(readFileSync(pkgPath, "utf-8")));
+      const entry = typesEntry(JSON.parse(await readFile(pkgPath, "utf-8")));
       if (!entry) return [];
-      return exportedNamesFromDts(readFileSync(path.join(path.dirname(pkgPath), entry), "utf-8"));
+      return exportedNamesFromDts(await readFile(path.join(path.dirname(pkgPath), entry), "utf-8"));
     } catch {
       // Unresolvable module: the diagnostic goes out unannotated.
       return [];

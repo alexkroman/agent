@@ -37,6 +37,8 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { safeJsonParse } from "@alexkroman1/aai";
+import { isRecord } from "@alexkroman1/aai/utils";
 
 /** Bare specifier of the SDK whose exports map this module reads. */
 export const SDK_PACKAGE = "@alexkroman1/aai";
@@ -85,8 +87,13 @@ function readSubpaths(from: string): string[] {
   const pkgPath = findSdkPackageJson(from);
   if (pkgPath === undefined) return [];
   try {
-    const exports: unknown = JSON.parse(readFileSync(pkgPath, "utf8")).exports;
-    if (typeof exports !== "object" || exports === null) return [];
+    // `safeJsonParse` + `isRecord` rather than a bare parse and a field read
+    // off `any`: the read is inside a `try` for the FILE (a race with an
+    // install, a permission), and malformed JSON is a different answer from an
+    // unreadable file only in that the guard has to state it.
+    const manifest = safeJsonParse(readFileSync(pkgPath, "utf8"));
+    const exports = isRecord(manifest) ? manifest.exports : undefined;
+    if (!isRecord(exports)) return [];
     return Object.keys(exports)
       .filter((key) => key === "." || key.startsWith("./"))
       .map((key) => (key === "." ? "" : key.slice(2)))

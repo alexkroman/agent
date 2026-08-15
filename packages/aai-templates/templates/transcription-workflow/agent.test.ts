@@ -31,6 +31,8 @@ import {
 } from "./workflows/transcribe.ts";
 import {
   blockAlign,
+  bytesPerSecond,
+  MAX_BYTES_PER_SECOND,
   MAX_SEGMENT_BYTES,
   MAX_SEGMENT_SECONDS,
   parseWav,
@@ -214,6 +216,43 @@ describe("parseWav", () => {
     const head = wavFile(MONO_16K, 320_000);
     new DataView(head.buffer).setUint16(20, 0xff_fe, true);
     expect(() => parseWav(head, 44 + 320_000)).toThrow(/linear PCM/);
+  });
+
+  // The two rates below are why the guard is in `parseWav` and not in
+  // `planSegments`: both make that loop spin on pure CPU with no `await` in it,
+  // so neither `AbortSignal.timeout` nor a step's retry budget can interrupt
+  // one — and this is the workflow app that takes an arbitrary uploaded file
+  // over a public form.
+
+  test("refuses a WAV declaring a sample rate of 0, which would hang the cut", () => {
+    // `bytesPerSecond` is 0, so `stride` is 0, so `start += stride` never
+    // advances and the loop pushes a Segment per iteration until it runs out of
+    // memory.
+    const head = wavFile({ ...MONO_16K, sampleRate: 0 }, 320_000);
+    expect(() => parseWav(head, 44 + 320_000)).toThrow(UnsupportedRecordingError);
+    expect(() => parseWav(head, 44 + 320_000)).toThrow(/sample rate of 0/);
+  });
+
+  test("refuses a rate so high the overlap alone exceeds the request cap", () => {
+    // The same hang from the other end: the overlap is subtracted from
+    // MAX_SEGMENT_BYTES, so past MAX_BYTES_PER_SECOND the stride goes NEGATIVE
+    // and the loop walks backwards. `sampleRate` is a uint32, so a header can
+    // ask for this.
+    const perSecond = MAX_BYTES_PER_SECOND + blockAlign(MONO_16K);
+    const head = wavFile(
+      { ...MONO_16K, sampleRate: Math.ceil(perSecond / blockAlign(MONO_16K)) },
+      320_000,
+    );
+    expect(() => parseWav(head, 44 + 320_000)).toThrow(/bytes a second/);
+  });
+
+  test("48 kHz 24-bit stereo — the realistic ceiling — is nowhere near the bound", () => {
+    // The guard has to refuse the pathological headers without refusing any
+    // recording a person would actually upload.
+    const studio = { sampleRate: 48_000, channels: 2, bitsPerSample: 24 };
+    expect(bytesPerSecond(studio)).toBeLessThan(MAX_BYTES_PER_SECOND);
+    const head = wavFile(studio, 4_000_000);
+    expect(parseWav(head, 44 + 4_000_000).sampleRate).toBe(48_000);
   });
 });
 

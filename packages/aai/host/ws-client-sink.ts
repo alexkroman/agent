@@ -61,14 +61,19 @@ export function createClientSink(
       // Both events tell the client to drop its playback buffer, so whatever
       // this turn still has queued here is dead audio.
       if (e.type === "reply.cancelled" || e.type === "session.reset") pacer.clear();
-      const send = (): void => safeSend(ws, JSON.stringify(e), log);
       // Both of these close out the turn the held audio belongs to, so neither
       // may overtake it — see the pacer's ordering rules. `audio.completed` is
       // the stronger case: the playback worklet takes it as "this is all there
       // is", so an early one truncates the reply. Every other event is
-      // conversation-critical and goes out now.
-      if (e.type === "reply.completed" || e.type === "audio.completed") pacer.pushAfterAudio(send);
-      else send();
+      // conversation-critical and goes out now — and pays no closure for the
+      // privilege: only a DEFERRED send needs something to defer with, and this
+      // runs per event on a live call.
+      if (e.type === "reply.completed" || e.type === "audio.completed") {
+        const frame = JSON.stringify(e);
+        pacer.pushAfterAudio(() => safeSend(ws, frame, log));
+        return;
+      }
+      safeSend(ws, JSON.stringify(e), log);
     },
     playAudioChunk(chunk) {
       const buffered = ws.bufferedAmount;

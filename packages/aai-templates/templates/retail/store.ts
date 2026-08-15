@@ -161,6 +161,18 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
   /**
    * Handed the store as its second argument, and SYNCHRONOUS.
    *
+   * **Declare it BEFORE `summary` in the object literal.** TS infers this
+   * wrapper's generic `R` from `execute`'s return type and processes an object
+   * literal's properties in SOURCE ORDER, so with `summary` written first its
+   * `result` parameter has nothing to infer from and silently falls back to
+   * `unknown` — every `isToolFailure(result) ? … : result.order_id` in the
+   * fifteen tool files then stops compiling, or worse, stops meaning anything.
+   * It lives here rather than in each tool file because it is a property of
+   * this type: the same four lines were pasted into eight of the fifteen and
+   * pointed at from five more, which is a rule maintained in fourteen places.
+   *
+   * ---
+   *
    * **The draft is passed in rather than re-read**, which is the one change the
    * durable store forced on this template. The body used to open with
    * `retailSlot.get(ctx)`; under the draft write model that returns the value as

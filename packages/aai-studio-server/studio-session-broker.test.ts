@@ -461,11 +461,15 @@ describe("cross-replica studio sessions", () => {
     return { broker, spawn };
   }
 
-  async function sharedFleet() {
+  async function sharedFleet(leaseMs?: number) {
     const workspaces = createMemoryWorkspaceStore();
     const chats = createMemoryChatStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    return { workspaces, chats, registry: createMemoryStudioSessionRegistry() };
+    return {
+      workspaces,
+      chats,
+      registry: createMemoryStudioSessionRegistry(leaseMs === undefined ? {} : { leaseMs }),
+    };
   }
 
   test("a second replica adopts the first's sandbox instead of spawning", async () => {
@@ -539,6 +543,53 @@ describe("cross-replica studio sessions", () => {
       sandboxToken: "sandbox-token",
       owner: "replica-a",
     });
+  });
+
+  /**
+   * The reported bug: `reuseSession` moved `lastUsed` and touched nothing on
+   * the fleet, so a user reloading every few minutes without completing a turn
+   * kept the sandbox locally fresh while `expires_at` ran out under it. The
+   * next broker call landing on a PEER read `sessions` miss → `fleet.adopt` →
+   * `registry.get` null → cold path → `spawnNamed` → Modal refuses the
+   * duplicate name → null → **404 "Project not found"** for a live project.
+   *
+   * Asserted as EXPIRY rather than as a `touch` call count: the invariant is
+   * that the row outlives a lease window a reuse spans, which is what a peer
+   * actually reads.
+   */
+  test("reusing a sandbox refreshes the fleet lease", async () => {
+    vi.useFakeTimers();
+    try {
+      const lease = 10_000;
+      const shared = await sharedFleet(lease);
+      const a = await makeReplica("replica-a", [fakeGuest("wss://guest-a.example:443")], shared);
+      const first = await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+      // Two reloads, each well inside the lease but together well past it.
+      vi.advanceTimersByTime(lease * 0.7);
+      await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
+      vi.advanceTimersByTime(lease * 0.7);
+
+      // The row is what a peer reads. Untouched, it expired one reload ago.
+      expect(await shared.registry.get(SCOPE, PROJECT)).toMatchObject({ owner: "replica-a" });
+
+      const adopt = vi.fn(async () => ({
+        url: "https://guest-a.example/studio/chat",
+        token: first?.token as string,
+      }));
+      const b = await makeReplica(
+        "replica-b",
+        [fakeGuest("wss://guest-b.example:443")],
+        shared,
+        adopt,
+      );
+      expect(await b.broker.ensureSession(SCOPE, PROJECT, "caller-key")).toEqual(first);
+      expect(adopt).toHaveBeenCalled();
+      // The failure this prevents: a cold spawn under a name Modal refuses.
+      expect(b.spawn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("disposing releases the row so the next broker call spawns fresh", async () => {

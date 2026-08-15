@@ -23,6 +23,10 @@
  * memory-bounded — `DEPLOY_BODY_CONCURRENCY` exists because the deploy path
  * buffers — and passing `c.req.raw.body` straight to `fetch` keeps peak memory
  * per request at one chunk instead of one payload.
+ *
+ * The broker→URL→header-filter→bounded-fetch sequence itself is
+ * `guest-forward.ts`, shared with the other two guest proxies; the header
+ * ALLOW-LISTS it applies are documented there.
  */
 
 import { createMiddleware } from "hono/factory";
@@ -30,6 +34,12 @@ import { HTTPException } from "hono/http-exception";
 import { clientIp } from "./client-ip.ts";
 import { WORKFLOW_PROXY_TIMEOUT_MS } from "./constants.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
+import {
+  forwardToGuest,
+  GUEST_API_REQUEST_HEADERS,
+  GUEST_API_RESPONSE_HEADERS,
+  pickHeaders,
+} from "./guest-forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
 import { registerLiveStream } from "./live-streams.ts";
 import {
@@ -40,45 +50,6 @@ import {
 } from "./rate-limit.ts";
 import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrlOrThrow } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
-
-/**
- * Request headers forwarded to the guest.
- *
- * An allowlist rather than a copy of the incoming set. `Authorization` is the
- * only one that carries authority — the guest's own gate is
- * `AAI_WORKFLOW_API_TOKEN` — `Content-Type` is what makes the JSON body parse,
- * and `Accept` is what distinguishes an event-stream request. `Range` is what
- * makes `GET /workflows/uploads/:id` mean anything through this hop: dropped, a
- * caller asking for 64 KB of a 200 MB recording is answered with the whole
- * thing, correctly and uselessly. Everything else is
- * either this hop's business (`Host`, `X-Forwarded-*`, `Connection`) or the
- * browser's (`Cookie`, `Origin`), and forwarding those would make the guest's
- * view of the caller a description of the platform instead.
- */
-const FORWARDED_REQUEST_HEADERS = ["authorization", "content-type", "accept", "range"] as const;
-
-/**
- * Response headers forwarded back.
- *
- * Every route answers JSON, an event stream or an uploaded file's bytes, so this
- * is `Content-Type` plus
- * the length when the guest declared one, plus the two headers that keep a
- * stream unbuffered end to end. `Content-Encoding` and `Transfer-Encoding` are
- * deliberately absent: `fetch` has already decoded the body we are re-emitting,
- * so echoing them would describe bytes that no longer exist.
- */
-const FORWARDED_RESPONSE_HEADERS = [
-  "content-type",
-  "content-length",
-  "cache-control",
-  "x-accel-buffering",
-  // The `Range` half's answer. Without `Content-Range` a 206 is a partial body
-  // a client cannot place, and without `Accept-Ranges` a client that probes
-  // first never asks for a range at all.
-  "content-range",
-  "accept-ranges",
-  "content-disposition",
-] as const;
 
 /** The 503 the forward answers with — the broker's own sentence, not a second one. */
 function unavailable(cause?: unknown): HTTPException {
@@ -113,16 +84,6 @@ function guestTarget(requestUrl: string, slug: string, guestOrigin: string): URL
   return new URL(`${GUEST_ROUTES.workflows}${suffix}${incoming.search}`, guestOrigin);
 }
 
-/** Copy an allowlisted subset of `from` into a fresh `Headers`. */
-function pickHeaders(from: Headers, names: readonly string[]): Headers {
-  const picked = new Headers();
-  for (const name of names) {
-    const value = from.get(name);
-    if (value !== null) picked.set(name, value);
-  }
-  return picked;
-}
-
 /**
  * Build the workflow-API proxy handler.
  *
@@ -138,36 +99,31 @@ export function createAgentWorkflowsHandler(
     const target = guestTarget(c.req.url, slug, await brokerGuestOrigin(slug, broker));
     const body = request.method === "GET" || request.method === "HEAD" ? null : request.body;
 
-    // **The timeout bounds the RESPONSE HEADERS, not the body**, and that is the
-    // whole reason this is a controller and a timer rather than
-    // `AbortSignal.timeout`. One route on this surface is legitimately endless:
-    // `GET /runs/:id/events` holds a stream open for minutes. A signal that
-    // stayed armed would abort it mid-body, which is precisely the truncated
-    // chunked response `live-streams.ts` exists to prevent — and it would do so
-    // on a healthy agent, at a fixed interval, looking like a network fault.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), WORKFLOW_PROXY_TIMEOUT_MS);
     let guestResponse: Response;
     try {
-      guestResponse = await fetchFn(target, {
+      guestResponse = await forwardToGuest({
+        fetchFn,
+        url: target,
         method: request.method,
-        headers: pickHeaders(request.headers, FORWARDED_REQUEST_HEADERS),
-        // `duplex: "half"` is REQUIRED whenever the body is a stream — undici
-        // rejects the request outright rather than buffering it, which is the
-        // trade we want but not one it may assume.
-        ...(body ? { body, duplex: "half" } : {}),
-        signal: controller.signal,
+        headers: pickHeaders(request.headers, GUEST_API_REQUEST_HEADERS),
+        body,
+        timeoutMs: WORKFLOW_PROXY_TIMEOUT_MS,
+        // The deadline bounds the RESPONSE HEADERS, not the body: one route on
+        // this surface is legitimately endless — `GET /runs/:id/events` holds a
+        // stream open for minutes — and a still-armed signal would abort it
+        // mid-body, which is precisely the truncated chunked response
+        // `live-streams.ts` exists to prevent, on a healthy agent, at a fixed
+        // interval, looking like a network fault.
+        bound: "headers",
       });
     } catch (cause) {
       // The sandbox was ready a moment ago, so an unreachable guest is one that
       // went away between the broker and the forward — the same retryable
       // condition as a still-booting one, not a platform 500.
       throw unavailable(cause);
-    } finally {
-      clearTimeout(timer);
     }
 
-    const headers = pickHeaders(guestResponse.headers, FORWARDED_RESPONSE_HEADERS);
+    const headers = pickHeaders(guestResponse.headers, GUEST_API_RESPONSE_HEADERS);
     // A run-events stream is long-lived and terminates HERE, at this replica, so
     // it owes `live-streams.ts` a registration: without one, `server.close()`
     // waits it out and `process.exit` then DESTROYS the socket, cutting a

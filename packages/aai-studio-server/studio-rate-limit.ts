@@ -23,6 +23,18 @@ import { CLIENT_IP_RATE_LIMIT_WINDOW_MS, type RateLimiter } from "aai-server/rat
 export const CHAT_RATE_LIMIT = { limit: 30, windowMs: 5 * 60_000 } as const;
 /** `POST /studio/projects` — each request writes a new workspace document. */
 export const PROJECT_CREATE_RATE_LIMIT = { limit: 60, windowMs: 60 * 60_000 } as const;
+/**
+ * `POST /studio/projects/:project/preview/wake` — a workspace read plus a
+ * broker call that can spawn a sandbox.
+ *
+ * It ran unmetered for a while, justified by the per-project throttle in the
+ * route. That throttle is a fixed-size `TtlCache` (an LRU), so a caller
+ * cycling more distinct project names than it holds evicts entries faster than
+ * they expire and every request is a fresh one — the exact traffic a throttle
+ * cannot bound and a limiter can. Generous against the honest client, which
+ * sends one per missing preview.
+ */
+export const PREVIEW_WAKE_RATE_LIMIT = { limit: 60, windowMs: 5 * 60_000 } as const;
 
 /**
  * The same two routes, metered by CLIENT IP instead of scope.
@@ -39,14 +51,20 @@ export const PROJECT_CREATE_IP_RATE_LIMIT = {
   limit: 120,
   windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
 } as const;
+export const PREVIEW_WAKE_IP_RATE_LIMIT = {
+  limit: 180,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
 
 /** The studio's limiters, injectable per app. */
 export type StudioRateLimiters = {
   chat: RateLimiter;
   projectCreate: RateLimiter;
-  /** Per-IP companions to the two above. */
+  previewWake?: RateLimiter;
+  /** Per-IP companions to the three above. */
   chatIp?: RateLimiter;
   projectCreateIp?: RateLimiter;
+  previewWakeIp?: RateLimiter;
 };
 
 export type { RateLimiter, RateLimitVerdict } from "aai-server/rate-limit";

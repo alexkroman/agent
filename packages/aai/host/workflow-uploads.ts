@@ -147,16 +147,17 @@ async function* chunked(
   if (heldBytes > 0) yield concat(held, heldBytes);
 }
 
-/** One buffer from several. */
+/**
+ * One buffer from several.
+ *
+ * `Buffer.concat` does the copy — it is the native one, and this is the upload
+ * hot path (a chunk per megabyte, in and out). The one thing it does NOT do is
+ * skip the copy for a single part that is already the right length, which here
+ * is the ordinary case: `chunked` yields whole `UPLOAD_CHUNK_BYTES` pieces.
+ */
 function concat(parts: readonly Uint8Array[], size: number): Uint8Array {
   if (parts.length === 1 && parts[0]?.length === size) return parts[0];
-  const out = new Uint8Array(size);
-  let at = 0;
-  for (const part of parts) {
-    out.set(part, at);
-    at += part.length;
-  }
-  return out;
+  return Buffer.concat(parts, size);
 }
 
 /**

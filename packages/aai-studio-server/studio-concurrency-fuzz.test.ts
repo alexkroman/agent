@@ -35,6 +35,10 @@
  *   matches its files. False = the Preview pane sits on "Updating preview…"
  *   forever with a finished workspace behind it, which is the exact failure the
  *   queue replaced an in-process dirty bit to prevent.
+ * - **A settled `previewError` is a state the pipeline can LEAVE.** Convergence
+ *   used to count any stamped error as settled and walk past it, which made
+ *   this harness blind to a banner over already-deployed files — the failure
+ *   an undo leaves behind, and one nothing but another deploy could clear.
  * - **No concurrent deploy per project.** Two deploys of one project race to
  *   stamp the workspace, and the loser's hash can be the older snapshot.
  * - **Archive only past the attempt cap.** Archiving early drops work silently;
@@ -84,9 +88,17 @@ const outcomeArb: fc.Arbitrary<DeployOutcome> = fc.oneof(
   { weight: 15, arbitrary: fc.constant("throw" as const) },
 );
 
+/**
+ * File contents an edit may write. A SMALL pool rather than a per-op unique
+ * string, so an edit CAN restore a content the project already held — an undo,
+ * which the per-op `// v${index}` string made unrepresentable. Not enough on
+ * its own to reach the stale-banner state (see the invariant that names it).
+ */
+const CONTENTS = ["// v0", "// v1", "// v2"];
+
 /** One operation against the preview pipeline. */
 type PreviewOp =
-  | { kind: "edit"; project: number }
+  | { kind: "edit"; project: number; content: number }
   | { kind: "drain" }
   | { kind: "advanceClock" }
   | { kind: "advanceScheduler" };
@@ -97,6 +109,7 @@ const previewOpArb: fc.Arbitrary<PreviewOp> = fc.oneof(
     arbitrary: fc.record({
       kind: fc.constant("edit" as const),
       project: fc.nat({ max: PROJECTS.length - 1 }),
+      content: fc.nat({ max: CONTENTS.length - 1 }),
     }),
   },
   { weight: 35, arbitrary: fc.record({ kind: fc.constant("drain" as const) }) },
@@ -153,7 +166,7 @@ async function runPreviewPipeline(
   const problems: string[] = [];
   const store = createMemoryWorkspaceStore();
   for (const project of PROJECTS) {
-    await store.put(SCOPE, project, { files: { "agent.ts": "// v0" }, updatedAt: 0 }, null);
+    await store.put(SCOPE, project, { files: { "agent.ts": CONTENTS[0] }, updatedAt: 0 }, null);
   }
 
   // A virtual clock: a job whose deploy THREW is left unacked on purpose and
@@ -201,14 +214,15 @@ async function runPreviewPipeline(
 
   const pending: Promise<unknown>[] = [];
   const edited = new Set<string>();
-  for (const [op, action] of ops.entries()) {
+  for (const action of ops) {
     if (action.kind === "edit") {
       const project = PROJECTS[action.project] as string;
       edited.add(project);
+      const content = CONTENTS[action.content] as string;
       pending.push(
         mutateWorkspace(store, SCOPE, project, (current) => ({
           ...current,
-          files: { ...current.files, "agent.ts": `// v${op}` },
+          files: { ...current.files, "agent.ts": content },
         })).then(() => {
           deployer.schedule(SCOPE, project, {
             serverUrl: "https://platform.example",
@@ -256,6 +270,10 @@ async function runPreviewPipeline(
  * ends the job — a stamped `previewError` (a build failure is deterministic,
  * so retrying would only rewrite the same banner) or an archive at the attempt
  * cap (the crash-loop escape hatch). Anything else is lost work.
+ *
+ * Plus the second half of what "settled" may mean, which this check was
+ * missing: an error stamped over files that are ALREADY deployed is not a
+ * settled failure, it is a permanent banner. See the invariant below.
  */
 async function checkPreviewOutcome(
   store: ReturnType<typeof createMemoryWorkspaceStore>,
@@ -269,13 +287,32 @@ async function checkPreviewOutcome(
       problems.push(`${project} vanished`);
       continue;
     }
-    const settled =
-      Boolean(workspace.previewError) || queue.archived.some((job) => job.job.project === project);
+    const archived = queue.archived.some((job) => job.job.project === project);
+    const settled = Boolean(workspace.previewError) || archived;
     if (workspace.previewHash !== currentFilesHash(workspace) && !settled) {
       problems.push(
         `${project} never converged — stamped ${String(workspace.previewHash).slice(0, 8)}, files ${currentFilesHash(workspace).slice(0, 8)}`,
       );
     }
+    // A `previewError` is only SETTLED while the files it names are still
+    // undeployed. Once the workspace is back at the deployed hash the deploy
+    // no-ops, so the stamp is a banner nothing will ever clear — the state
+    // this check used to read as "settled" and walk past, which is exactly why
+    // the harness could not see that bug. (Archived is exempt: no job is left
+    // to run, a different failure with its own invariant above.)
+    //
+    // MEASURED UNREACHABLE by this walk — reaching it needs a deploy to SETTLE
+    // mid-phase, then a failure, then an edit back to exactly that content, and
+    // the scheduler holds most deploys until the quiesce (0 hits in 5 runs of
+    // 100 against the unfixed code). So the boundary has its own targeted
+    // property below, the same shape as the archive cap, and this line covers
+    // the interleavings that do reach it rather than pretending to be the gate.
+    if (
+      workspace.previewError &&
+      workspace.previewHash === currentFilesHash(workspace) &&
+      !archived
+    )
+      problems.push(`${project} kept a previewError over its deployed files`);
   }
   for (const job of queue.archived) {
     if (job.attempts <= PREVIEW_JOB_MAX_ATTEMPTS) {
@@ -568,6 +605,80 @@ function runLiveStreamRegistry(ops: readonly RegistryOp[]): string[] {
   if (liveStreamCount() !== 0) problems.push(`leaked ${liveStreamCount()}`);
   return problems;
 }
+
+/**
+ * The stale-banner boundary, which the walk above cannot reach (see the
+ * invariant in `checkPreviewOutcome`): a build failure stamps `previewError`
+ * while `previewHash` still names the last GOOD deploy, then the user UNDOES
+ * the bad edit — so the files hash back to the stamp and the queued deploy has
+ * nothing to do. Whatever the interleaving, the banner must end up gone: it
+ * names code no longer in the workspace, and no later edit clears it either
+ * (every one that hashes back here re-confirms it). Its own property for the
+ * reason the attempt cap has one — five specific steps a 40-op walk never
+ * produces.
+ */
+test("preview queue: an undo clears the banner its failed edit left", async () => {
+  await fc.assert(
+    fc.asyncProperty(fc.scheduler(), fc.integer({ min: 1, max: 3 }), async (s, extraJobs) => {
+      const store = createMemoryWorkspaceStore();
+      await store.put(SCOPE, "alpha-a1b2c3", { files: { "a.ts": "// v0" }, updatedAt: 0 }, null);
+      const queue = createMemoryPreviewQueue();
+      let ok = true;
+      const deployer = createPreviewDeployer({
+        workspaces: store,
+        deployWorkspace: (async () => {
+          await s.schedule(Promise.resolve(), "deploy");
+          return ok ? { ok: true, slug: "alpha-a1b2c3-preview" } : { ok: false, output: "boom" };
+        }) as never,
+        queue,
+        pollMs: 0,
+      });
+      const target = { serverUrl: "https://platform.example", apiKey: "caller-key" };
+      const edit = async (content: string): Promise<void> => {
+        await mutateWorkspace(store, SCOPE, "alpha-a1b2c3", (current) => ({
+          ...current,
+          files: { ...current.files, "a.ts": content },
+        }));
+        deployer.schedule(SCOPE, "alpha-a1b2c3", target);
+      };
+      /** Run every job the edits queued, whatever order the scheduler picks. */
+      const drain = async (): Promise<void> => {
+        await s.waitFor(deployer.drainOnce());
+        await s.waitIdle();
+      };
+
+      // A good deploy, so `previewHash` names content the workspace can be
+      // put back to. Asserted, because an unstamped hash would make the rest
+      // of this property describe a state it never reached.
+      await edit("// good");
+      await drain();
+      const deployedHash = (await getWorkspace(store, SCOPE, "alpha-a1b2c3"))?.previewHash;
+      expect(deployedHash, "the setup deploy never stamped").toBeDefined();
+
+      // A bad edit that fails its build: the banner appears, and the stamp
+      // still names the good deploy.
+      ok = false;
+      await edit("// broken");
+      await drain();
+      const failed = await getWorkspace(store, SCOPE, "alpha-a1b2c3");
+      expect(failed?.previewError, "the failing build never stamped").toBeDefined();
+      expect(failed?.previewHash).toBe(deployedHash);
+
+      // The undo, plus however many duplicate jobs the burst enqueued. Every
+      // one of them finds a workspace that hashes to the stamp, so not one
+      // of them deploys — clearing the banner is the whole job.
+      ok = true;
+      for (let i = 0; i < extraJobs; i += 1) await edit("// good");
+      for (let i = 0; i < extraJobs + 1; i += 1) await drain();
+      deployer.dispose();
+
+      const workspace = await getWorkspace(store, SCOPE, "alpha-a1b2c3");
+      expect(workspace?.previewError, "the banner outlived the edit it described").toBeUndefined();
+      expect(workspace?.previewHash).toBe(currentFilesHash(workspace as never));
+    }),
+    { numRuns: 40 },
+  );
+}, 120_000);
 
 test("live-stream registry: end-once, self-end after shutdown, never leak", () => {
   fc.assert(

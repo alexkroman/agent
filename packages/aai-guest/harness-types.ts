@@ -113,6 +113,23 @@ export type CreateGuestRuntime = (opts: {
   publicUrl?: string;
 }) => GuestRuntime;
 
+/**
+ * What the studio coding agent borrows from the harness itself: the two
+ * capabilities `test_agent` is built out of, and the only two the harness hands
+ * down to the tool layer.
+ *
+ * One declaration because it is ONE pair travelling one route —
+ * `handleStudioRequest` → `createStudioAgent` → `createStudioTools` — and it had
+ * been written out at all three, each with its own JSDoc, so a change to either
+ * signature had three places to land and two places to be forgotten.
+ */
+export type HarnessBundleAccess = {
+  /** The harness's own bundle loader (`loadBundle`). */
+  loadBundle: (code: string) => Promise<{ config?: unknown }>;
+  /** The harness's one-shot trial executor (`executeTool`). */
+  executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
+};
+
 // ---- JSON-RPC 2.0 message shapes --------------------------------------------
 
 export type JsonRpcRequest = {

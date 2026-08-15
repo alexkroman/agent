@@ -34,7 +34,11 @@ vi.mock("@clack/prompts", () => ({
 
 // Mock apiRequest to return controlled parsed responses.
 const mockApiRequest = vi.fn();
-vi.mock("./_api-client.ts", () => ({
+// Only `apiRequest` is faked. The response GUARDS (`checkedResponse`,
+// `isStringArray`) stay real — they are part of what these specs exercise, and
+// a factory that omitted them would make every guarded call site undefined.
+vi.mock("./_api-client.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./_api-client.ts")>()),
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
   HINT_NOT_DEPLOYED: "not-deployed-hint",
 }));
@@ -216,5 +220,26 @@ describe("storage commands with explicit server", () => {
     await executeStorageDisable("/tmp", { server: "https://custom-server.com", force: true });
 
     expect(getServerInfo).toHaveBeenCalledWith("/tmp", "https://custom-server.com");
+  });
+});
+
+describe("a response that is not the storage route's", () => {
+  // `apiRequest<T>` is a CAST — nothing verified the body — so a 200 from an
+  // intercepting proxy or a mismatched server reported `enabled: undefined`,
+  // which reads as "disabled" to a human and returns a non-boolean to a
+  // script. Checked now, and the failure names the server. See
+  // `checkedResponse` in `_api-client.ts`.
+  test.each([
+    ["a body with no `enabled`", { ok: true }],
+    ["a non-boolean `enabled`", { enabled: "yes" }],
+    ["an HTML page", "<!doctype html>"],
+    ["null", null],
+  ])("%s is refused rather than reported as disabled", async (_label, body) => {
+    mockApiRequest.mockResolvedValue(body);
+
+    await expect(executeStorageStatus("/tmp", undefined)).rejects.toThrow(
+      /Unexpected response from the storage route for test-agent/,
+    );
+    expect(mockLog.info).not.toHaveBeenCalled();
   });
 });

@@ -189,6 +189,21 @@ type TrackDispatch = (dispatch: () => Promise<void>) => void;
  */
 export const projectKey = (scope: string, project: string) => `${scope}\u0000${project}`;
 
+/**
+ * The inverse of {@link projectKey}: `[scope, project]`.
+ *
+ * Exists so a consumer that has to READ a composite back (the memory stores'
+ * `list`) does it by splitting on the one separator rather than by prefix-
+ * matching, which is the operation that leaked across scopes while the memory
+ * workspace store spelled its key with a `/`. A string with no separator —
+ * which `projectKey` cannot produce — reads as an empty scope, so a caller
+ * comparing a real scope never matches one.
+ */
+export function splitProjectKey(key: string): [scope: string, project: string] {
+  const at = key.indexOf("\u0000");
+  return at === -1 ? ["", key] : [key.slice(0, at), key.slice(at + 1)];
+}
+
 /** A keyed set of watchers with add/remove/fire — the emitter's one shape. */
 function createWatcherMap<A extends unknown[]>(track: TrackDispatch) {
   const watchers = new Map<string, Set<Watcher<A>>>();

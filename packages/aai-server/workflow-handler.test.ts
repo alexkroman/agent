@@ -18,7 +18,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
 import { endLiveStreams, resetLiveStreams } from "./live-streams.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { createTestOrchestrator, deployAgent, type TestFetch } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({ mockSpawnAgentServer: vi.fn() }));
@@ -62,7 +62,7 @@ async function residentHarness(guestFetch?: typeof globalThis.fetch) {
   const slots = createSlotCache();
   const harness = await createTestOrchestrator({ slots, ...(guestFetch && { guestFetch }) });
   await deployAgent(harness.fetch, "my-agent");
-  slots.claim("my-agent", {
+  setSlot(slots, {
     slug: "my-agent",
     sandbox: makeFakeSandbox(),
     version: (await harness.store.getAgentVersion("my-agent")) ?? 1,

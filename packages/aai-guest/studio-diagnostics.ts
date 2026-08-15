@@ -108,19 +108,26 @@ const CODE_RE = /error (TS\d+):/g;
 /** `Module '"@alexkroman1/aai"' has no exported member 'Foo'.` */
 const MODULE_RE = /Module '"([^"]+)"' has no exported member|'"([^"]+)"' has no exported member/g;
 
-/** Resolves a specifier's exported names; an empty array means "unknown". */
-export type ExportResolver = (specifier: string) => readonly string[];
+/**
+ * Resolves a specifier's exported names; an empty array means "unknown".
+ *
+ * ASYNC, because the only implementation reads a `package.json` and a `.d.ts`
+ * off disk and this whole path runs in the process that is also pacing live
+ * voice audio — a synchronous read there stalls the event loop for every
+ * session on the sandbox, not just the write being diagnosed.
+ */
+export type ExportResolver = (specifier: string) => Promise<readonly string[]>;
 
 /**
  * A wrong import name is answerable exactly, so answer it rather than
  * hinting: the agent guessed, and the real list ends the guessing.
  */
-function exportHints(output: string, resolveExports: ExportResolver): string[] {
+async function exportHints(output: string, resolveExports: ExportResolver): Promise<string[]> {
   const out: string[] = [];
   for (const m of output.matchAll(MODULE_RE)) {
     const specifier = m[1] ?? m[2];
     if (!specifier) continue;
-    const names = resolveExports(specifier);
+    const names = await resolveExports(specifier);
     if (names.length > 0) out.push(`Exports of "${specifier}": ${[...names].sort().join(", ")}`);
   }
   return out;
@@ -132,7 +139,10 @@ function exportHints(output: string, resolveExports: ExportResolver): string[] {
  * `resolveExports` is injected so the caller decides how a specifier is
  * resolved (and so this stays testable without a real node_modules).
  */
-export function annotateDiagnostics(output: string, resolveExports?: ExportResolver): string {
+export async function annotateDiagnostics(
+  output: string,
+  resolveExports?: ExportResolver,
+): Promise<string> {
   const all = [...output.matchAll(CODE_RE)].flatMap((m) => (m[1] ? [m[1]] : []));
   if (all.length === 0) return output;
   const counts = new Map<string, number>();
@@ -157,7 +167,7 @@ export function annotateDiagnostics(output: string, resolveExports?: ExportResol
   }
 
   if ([...codes].some((c) => EXPORT_CODES.has(c)) && resolveExports) {
-    hints.push(...exportHints(output, resolveExports));
+    hints.push(...(await exportHints(output, resolveExports)));
   }
 
   return hints.length === 0 ? output : `${output}\n\nHints:\n- ${hints.join("\n- ")}`;

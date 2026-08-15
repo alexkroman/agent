@@ -38,7 +38,7 @@ import {
   type StreamPart,
   type StreamPartHandler,
 } from "./pipeline-stream-parts.ts";
-import type { EmitError, TransportCallbacks } from "./types.ts";
+import type { EmitError, SendTtsText, TransportCallbacks } from "./types.ts";
 
 /** Parameters for {@link consumeLlmStream}, threading session state explicitly. */
 export interface ConsumeLlmStreamParams {
@@ -62,7 +62,7 @@ export interface ConsumeLlmStreamParams {
    * Forwards text to the active TTS session (no-op if none). `record: false`
    * marks dead-air filler: audible, but never part of the record.
    */
-  sendTtsText: (text: string, opts: { record: boolean }) => void;
+  sendTtsText: SendTtsText;
   /** Dead-air cover window (ms); 0 disables — see {@link StreamPartHandlerDeps}. */
   deadAirCoverMs?: number | undefined;
   /** Is the caller speaking right now? Suppresses filler — see StreamPartHandlerDeps. */
@@ -84,6 +84,14 @@ export interface ConsumeLlmStreamParams {
    * turn's `[interrupted]` marker carries only the unpersisted tail.
    */
   onStepPersisted?: (() => void) | undefined;
+  /**
+   * The adopted run was abandoned and the turn is starting from the top. This
+   * module resets its own copies; `onDelta` has been appending to a string the
+   * CALLER owns, and left standing the abandoned preamble sits in front of the
+   * restarted text and is committed to history twice. See the late-poison
+   * restart in {@link consumeLlmStream}.
+   */
+  onRestart?: (() => void) | undefined;
   /**
    * A speculative stream, already running against this exact request, to drain
    * instead of launching a new one — see `pipeline-speculation.ts`. Present
@@ -219,19 +227,16 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
       collected.push(...step.response.messages);
       req.onStep?.(step.response.messages);
     },
-    // Every `error` part is delivered to `onError` and to `fullStream`
-    // alike, so the handler below is what reports the failure — at error
-    // level, with its HTTP diagnostics (see `llmErrorDetails`). Claiming
-    // this callback is still mandatory: the SDK's default is
-    // `console.error(error)`, which spends ~100 log lines on the same
-    // event (three nested stack traces plus the entire request body, one
-    // console depth level away from the conversation itself). On a host
-    // with a bounded log buffer that evicts every other line — which is
-    // how a gateway 500 became the only thing visible in production logs.
-    //
-    // It now covers SPECULATIVE streams too, where the wall of output would be
-    // worse still: a provider failure on a turn that never existed would evict
-    // the logs of the turn that did.
+    // Every `error` part is delivered to `onError` and to `fullStream` alike, so
+    // the handler below is what reports the failure — at error level, with its
+    // HTTP diagnostics (see `llmErrorDetails`). Claiming this callback is still
+    // mandatory: the SDK's default is `console.error(error)`, which spends ~100
+    // log lines on the same event (three nested stack traces plus the entire
+    // request body, one console depth level away from the conversation itself).
+    // On a host with a bounded log buffer that evicts every other line — which
+    // is how a gateway 500 became the only thing visible in production logs, and
+    // it now covers SPECULATIVE streams too, where a provider failure on a turn
+    // that never existed would evict the logs of the turn that did.
     onError: ({ error }) => {
       req.log.debug("streamText onError", { error: errorMessage(error), sid: req.sid });
     },
@@ -287,6 +292,7 @@ export type TurnLlmRunner = (
   onDelta: (delta: string) => void,
   onStepPersisted?: () => void,
   adopted?: AdoptedLlmStream | undefined,
+  onRestart?: () => void,
 ) => Promise<LlmStreamResult>;
 
 /**
@@ -296,7 +302,7 @@ export type TurnLlmRunner = (
  */
 export type TurnLlmRunnerDeps = Omit<
   ConsumeLlmStreamParams,
-  "repairToolCall" | "signal" | "onDelta" | "onStepPersisted" | "adopted"
+  "repairToolCall" | "signal" | "onDelta" | "onStepPersisted" | "adopted" | "onRestart"
 >;
 
 /**
@@ -311,7 +317,7 @@ export type TurnLlmRunnerDeps = Omit<
  * mutates it in place (push/splice), so the reference stays current.
  */
 export function createTurnLlmRunner(deps: TurnLlmRunnerDeps): TurnLlmRunner {
-  return (signal, onDelta, onStepPersisted, adopted) =>
+  return (signal, onDelta, onStepPersisted, adopted, onRestart) =>
     consumeLlmStream({
       ...deps,
       // Built per turn so the repair holds THIS turn's signal. Reading the
@@ -323,6 +329,7 @@ export function createTurnLlmRunner(deps: TurnLlmRunnerDeps): TurnLlmRunner {
       onDelta,
       onStepPersisted,
       adopted,
+      onRestart,
     });
 }
 
@@ -349,6 +356,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     signal,
     onDelta,
     onStepPersisted,
+    onRestart,
     adopted,
   } = params;
   // Batch word-granularity deltas into fewer TTS provider sends; the
@@ -433,6 +441,10 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         // and must not splice into the retry, and `firstSent` has to re-arm so
         // the restarted run's first chunk still goes out immediately.
         ttsText = createTtsTextCoalescer(sendTtsText);
+        // And the CALLER's accumulation, which this module cannot reach: what
+        // the abandoned run put through `onDelta` is about to be said again, and
+        // recording it twice is worse than the audio duplication noted below.
+        onRestart?.();
         log.info("Pipeline speculation poisoned after adoption; restarting turn", {
           sid,
           // True only when the model spoke BEFORE calling a tool, which the

@@ -1,4 +1,3 @@
-import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { Incident, IncidentType, Severity } from "../shared.ts";
 import { calculateTriageScore, createIncident, dispatchSlot } from "../shared.ts";
@@ -117,33 +116,31 @@ const scenarios = {
 type ScenarioName = keyof typeof scenarios;
 const SCENARIO_NAMES = Object.keys(scenarios) as [ScenarioName, ...ScenarioName[]];
 
-export default tool({
+export default dispatchSlot.updateTool({
   description: "Run a training scenario that creates simulated incidents for dispatch practice.",
   inputSchema: z.object({
     scenario: z.enum(SCENARIO_NAMES).describe("Scenario type to simulate"),
   }),
-  async execute(args, ctx) {
-    return dispatchSlot.update(ctx, (state) => {
-      const s = scenarios[args.scenario];
+  execute(args, state) {
+    const s = scenarios[args.scenario];
 
-      const created: string[] = [];
-      for (const scenarioInc of s.incidents) {
-        const fullInc = createIncident(state, {
-          ...scenarioInc,
-          callerName: "Scenario",
-          callerPhone: "N/A",
-          triageScore: calculateTriageScore(scenarioInc.severity, scenarioInc.type, 0, 0),
-          timeline: [{ time: Date.now(), event: `SCENARIO: ${scenarioInc.description}` }],
-        });
-        created.push(fullInc.id);
-      }
+    const created: string[] = [];
+    for (const scenarioInc of s.incidents) {
+      const fullInc = createIncident(state, {
+        ...scenarioInc,
+        callerName: "Scenario",
+        callerPhone: "N/A",
+        triageScore: calculateTriageScore(scenarioInc.severity, scenarioInc.type, 0, 0),
+        timeline: [{ time: Date.now(), event: `SCENARIO: ${scenarioInc.description}` }],
+      });
+      created.push(fullInc.id);
+    }
 
-      return {
-        scenario: args.scenario,
-        narrative: s.narrative,
-        incidentsCreated: created,
-        message: `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
-      };
-    });
+    return {
+      scenario: args.scenario,
+      narrative: s.narrative,
+      incidentsCreated: created,
+      message: `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
+    };
   },
 });

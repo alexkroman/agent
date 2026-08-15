@@ -13,6 +13,7 @@
  */
 
 import type http from "node:http";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { requestQuery } from "../sdk/request-url.ts";
 import { clampWorkflowWait, isTerminal } from "../sdk/workflow.ts";
 import { WorkflowRequestError } from "./_workflow-request-error.ts";
@@ -110,7 +111,7 @@ export async function startRun(
   ctx.logger.info("Workflow run started", {
     workflow,
     runId,
-    ...(key === undefined ? {} : { key }),
+    ...omitUndefined({ key }),
   });
   // 202 and the id alone: the run is durable, and deliberately not finished —
   // that is the whole point of the mechanism (see `WorkflowClient.start`).

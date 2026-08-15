@@ -325,7 +325,7 @@ export function createSessionStateStore(opts: {
 }): SessionStateStore;
 
 // @internal
-export function createStepFetch(): StepFetch;
+export function createStepFetch(): StepFetchHandle;
 
 // @internal
 export function createStepReporter(logger: Logger): StepReporter;
@@ -533,7 +533,7 @@ export function installWorkflowSupport(opts: {
     env?: Record<string, string> | undefined;
     dataDir?: string | undefined;
     logger: Logger;
-}): UploadStore;
+}): WorkflowSupport;
 
 // @internal
 export function isDebugEnv(value: string | undefined): boolean;
@@ -1268,6 +1268,12 @@ export type StateSyncSession = {
 // @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
 
+// @internal
+type StepFetchHandle = {
+    fetch: StepFetch;
+    close(): Promise<void>;
+};
+
 // @public
 type StepFetchInit = {
     method?: string | undefined;
@@ -1747,6 +1753,12 @@ type WorkflowSummary = {
     description?: string;
     inputSchema?: unknown;
     uploads?: readonly string[];
+};
+
+// @internal
+type WorkflowSupport = {
+    uploads: UploadStore;
+    close(): Promise<void>;
 };
 
 // @internal

@@ -26,7 +26,14 @@ export type FakeGuest = {
   disposed: () => boolean;
 };
 
-export function fakeGuest(guestOrigin = "wss://tunnel.example:443"): FakeGuest {
+export function fakeGuest(
+  guestOrigin = "wss://tunnel.example:443",
+  /**
+   * Hold `workspace/deploy` open until this resolves — a build in flight, for
+   * the specs that assert what may happen to a sandbox WHILE one is running.
+   */
+  holdDeploy?: Promise<void>,
+): FakeGuest {
   const requests: FakeGuest["requests"] = [];
   const handlers = new Map<string, (params: unknown) => unknown>();
   let disposed = false;
@@ -35,6 +42,8 @@ export function fakeGuest(guestOrigin = "wss://tunnel.example:443"): FakeGuest {
       if (disposed) throw new Error("Connection disposed");
       requests.push({ method, params });
       if (method === "workspace/deploy") {
+        if (holdDeploy !== undefined) await holdDeploy;
+        if (disposed) throw new Error("Connection disposed");
         return {
           ok: true,
           slug: "proj",

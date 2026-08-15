@@ -351,7 +351,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       (event: MessageEvent) => {
         const config = handleMessage(event.data);
         if (!config) return;
-        handshake.disarm();
+        handshake.succeeded();
         onServerConfig(config);
       },
       { signal: sig },

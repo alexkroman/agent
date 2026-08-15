@@ -19,13 +19,16 @@ export default defineConfig({
     coverage: {
       // The pane components are browser-heavy (CodeMirror, useChat
       // streaming, the live iframe) and only their extracted logic
-      // (toBlocks, useFileDraft, the 401 wiring) is tested here — so they
-      // are excluded from the *floors*, which govern the fully
-      // node-testable modules. The behavior tests still run either way.
+      // (toBlocks, the buffer rules in file-drafts.ts, the notify dispatch,
+      // the 401 wiring) is tested here — so they are excluded from the
+      // *floors*, which govern the fully node-testable modules. The behavior
+      // tests still run either way.
       exclude: [
         ...sharedCoverageExclude,
         "src/main.tsx",
         "src/app.tsx",
+        "src/project-view.tsx",
+        "src/gates.tsx",
         "src/chat.tsx",
         "src/code-view.tsx",
         "src/preview.tsx",
@@ -33,7 +36,7 @@ export default defineConfig({
       ],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      // Actuals (2026-08): lines 98.86, functions 96.64, branches 95.08, statements 97.42.
+      // Actuals (2026-08): lines 98.96, functions 98.13, branches 94.53, statements 98.04.
       thresholds: { lines: 96, functions: 94, branches: 93, statements: 95 },
     },
   },

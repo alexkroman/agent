@@ -726,8 +726,7 @@ interface ExchangeResult {
   order_id: string;
   status: string;
   price_difference: number;
-  exchange_items: string[];
-  exchange_new_items: string[];
+  exchanges: { item_id: string; new_item_id: string; price_difference: number }[];
   message: string;
 }
 
@@ -847,11 +846,52 @@ describe("exchange_delivered_order_items", () => {
     )) as ExchangeResult | ToolFailure;
     if (isToolFailure(result)) throw new Error(result.error);
     expect(result.price_difference).toBe(3.45);
+    expect(result.exchanges).toEqual([
+      { item_id: "7292993796", new_item_id: "3909406921", price_difference: 3.45 },
+    ]);
     const order = retailSlot.get(ctx).store.orders["#W4316152"];
     expect(order?.status).toBe("exchange requested");
     expect(order?.exchange_items).toEqual(["7292993796"]);
     expect(order?.exchange_new_items).toEqual(["3909406921"]);
     expect(order?.exchange_price_difference).toBe(3.45);
+  });
+
+  test("the ANSWER pairs by position even where the stored fields sort separately", async () => {
+    // `#W5866402` is the case that makes the difference visible: the two
+    // requested replacements sort into the OTHER order, so the two stored lists
+    // — tau2's `sorted(item_ids)` / `sorted(new_item_ids)`, kept for fidelity
+    // with its expected end states — read as espresso→sneaker if anything
+    // treats them as a pairing. `planItemSwap` priced this positionally, so the
+    // result has to report the pairing that was priced, not the one the sort
+    // produced.
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = (await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W5866402",
+        item_ids: ["6242772310", "9727387530"],
+        new_item_ids: ["7407838442", "2509076505"],
+        payment_method_id: "paypal_8049766",
+      },
+      ctx,
+    )) as ExchangeResult | ToolFailure;
+    if (isToolFailure(result)) throw new Error(result.error);
+
+    expect(result.exchanges).toEqual([
+      { item_id: "6242772310", new_item_id: "7407838442", price_difference: 85.88 },
+      { item_id: "9727387530", new_item_id: "2509076505", price_difference: -18.25 },
+    ]);
+    // The per-line differences add up to the quoted total — which is what makes
+    // the answer internally consistent rather than two numbers side by side.
+    expect(result.exchanges.reduce((sum, one) => sum + one.price_difference, 0)).toBeCloseTo(
+      result.price_difference,
+      5,
+    );
+
+    // The stored fields keep tau2's shape: two sorted SETS, and the second one
+    // really is in the other order.
+    const order = retailSlot.get(ctx).store.orders["#W5866402"];
+    expect(order?.exchange_items).toEqual(["6242772310", "9727387530"]);
+    expect(order?.exchange_new_items).toEqual(["2509076505", "7407838442"]);
   });
 
   test("does NOT move the gift-card balance — it is a request, not a settlement", async () => {

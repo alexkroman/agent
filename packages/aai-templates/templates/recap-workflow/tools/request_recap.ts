@@ -23,8 +23,8 @@ export default tool({
       recap,
       { url: url ?? SAMPLE_RECORDING, requestedBy: ctx.sessionId },
       {
-        // The durable handle. A `runId` kept in `ctx.state` would be swept
-        // shortly after the caller hangs up, while the run outlives the
+        // The durable handle. A `runId` kept in a `sessionSlot` would be
+        // swept shortly after the caller hangs up, while the run outlives the
         // call — so the key is what a later turn (or a later call) finds it
         // by. `ctx.sessionId` keys THIS call; a real desk keys on the
         // caller's number, and nothing else changes.

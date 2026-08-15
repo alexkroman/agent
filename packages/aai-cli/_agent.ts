@@ -142,25 +142,37 @@ export async function resolveDeployTarget(cwd: string, explicitServer?: string) 
   return { config, serverUrl, apiKey };
 }
 
-/** Like resolveDeployTarget, but requires an existing deployment (project config). */
-export async function getServerInfo(cwd: string, explicitServer?: string) {
-  const { config, serverUrl, apiKey } = await resolveDeployTarget(cwd, explicitServer);
-  // A pulled-but-never-published project has a config without a slug — for
-  // slug-scoped commands (secret, storage, delete) that is the same as
-  // never deployed.
+/**
+ * The deployed slug a slug-scoped command needs, or the sentence naming
+ * `aai publish`.
+ *
+ * A pulled-but-never-published project has a config without a slug — for
+ * slug-scoped commands (secret, storage, delete) that is the same as never
+ * deployed. Exported so a command that has ALREADY resolved the target
+ * (`aai delete`) can demand the slug without resolving it a second time; one
+ * sentence, one place.
+ *
+ * The slug's SHAPE was already enforced by `resolveDeployTarget`, for every
+ * command rather than only the slug-scoped ones — see `assertValidConfigSlug`.
+ * Deliberately not re-checked here: two copies of that guard is what let
+ * `publish` ship without one.
+ */
+export function requireDeployedSlug(config: { slug?: string | undefined } | null): string {
   if (!config?.slug) {
     throw new Error("This project has no deployed agent — run `aai publish` first");
   }
-  // The slug's shape was already enforced by resolveDeployTarget above, for
-  // every command rather than only the slug-scoped ones — see
-  // `assertValidConfigSlug`. Deliberately not re-checked here: two copies of
-  // this guard is what let `publish` ship without one.
+  return config.slug;
+}
+
+/** Like resolveDeployTarget, but requires an existing deployment (project config). */
+export async function getServerInfo(cwd: string, explicitServer?: string) {
+  const { config, serverUrl, apiKey } = await resolveDeployTarget(cwd, explicitServer);
   return {
     serverUrl,
-    slug: config.slug,
+    slug: requireDeployedSlug(config),
     apiKey,
     // Set when this directory is linked to a studio project. Secrets route
     // by it — see `secretRequest`.
-    studioProject: config.studioProject,
+    studioProject: config?.studioProject,
   };
 }

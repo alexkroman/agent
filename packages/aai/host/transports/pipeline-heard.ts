@@ -29,6 +29,12 @@
  * unification of the two would get exactly this wrong; same shape as the note
  * in `pipeline-turn-outcome.ts`.
  *
+ * **The estimate's own bias was the first thing to get this wrong**, and it is
+ * worth knowing before touching `heardChars`: dividing the text handed to TTS
+ * by the audio that came back reads as a speech rate and is not one, because
+ * the two cover different amounts of the reply. See
+ * {@link MAX_SPEECH_CHARS_PER_MS}.
+ *
  * **The clock inside is SESSION-scoped, the rest is REPLY-scoped.**
  * `startReply()` deliberately does not touch it: it tracks audio the client is
  * still playing out, which outlives the server-side turn that produced it (that
@@ -111,6 +117,39 @@ function createPlaybackClock(sampleRateHz: number, now: () => number): PlaybackC
     },
   };
 }
+
+/**
+ * Ceiling on how fast synthesized speech can deliver characters, in characters
+ * per millisecond of audio.
+ *
+ * `spoken.length / audioMs` is NOT a speech rate, and treating it as one is
+ * what this constant exists to stop. `spoken` is every character handed to the
+ * TTS provider; `audioMs` is only the audio that has come BACK, i.e. the prefix
+ * already synthesized. Text runs ahead of synthesis by however far the LLM is
+ * ahead of the voice, so the ratio is inflated by exactly that gap — widest
+ * mid-reply, which is when a barge-in happens — and the estimate then reads
+ * text nobody has spoken yet as heard. Worked through: an LLM streaming ~200
+ * chars/s against a provider synthesizing at 1x hands over a 300-character
+ * reply inside 1.5s, so five seconds in the ratio claims all 300 characters
+ * against the ~75 the caller has actually heard.
+ *
+ * No causal bound fixes that. "Characters submitted before this audio position
+ * arrived" is sound and useless here: the gap is PROPORTIONAL rather than
+ * additive, so in steady state that watermark carries the same inflation. The
+ * rate has to come from the audio, and absent word timings the only thing that
+ * knows it is the language — English narration runs 150–190 words per minute at
+ * ~5.7 characters per word including the space, i.e. 14–18 characters a second.
+ *
+ * So the ceiling sits at the top of that band and the estimate takes the MIN of
+ * it and the observed ratio: a voice slower than the ceiling is still tracked
+ * by its own audio (which is the exact answer once a reply is fully
+ * synthesized), and only a ratio no real voice could produce is clamped. What
+ * is left over-counts by at most the width of the band — an absolute
+ * {@link HEARD_AUDIO_LAG_MS} of ear-lag is subtracted on top, which is ~12
+ * characters at this rate and covers that residual for any prefix worth
+ * recording.
+ */
+const MAX_SPEECH_CHARS_PER_MS = 18 / 1000;
 
 /** Lowercased alphanumeric projection of one character, or `undefined`. */
 function normChar(c: string | undefined): string | undefined {
@@ -326,7 +365,12 @@ export function createHeardTracker(opts: {
    */
   function heardChars(ms: number): number {
     if (audioMs <= 0) return 0;
-    const proportional = snapToWord(spoken, Math.round((spoken.length * ms) / audioMs));
+    // The MIN is the correction — see MAX_SPEECH_CHARS_PER_MS. `spoken.length /
+    // audioMs` is the rate at which text was handed over, not the rate at which
+    // it is spoken, and the two differ by however much of the reply has not
+    // been synthesized yet.
+    const charsPerMs = Math.min(spoken.length / audioMs, MAX_SPEECH_CHARS_PER_MS);
+    const proportional = snapToWord(spoken, Math.round(charsPerMs * ms));
     if (words.length === 0) return proportional;
     const last = lastHeardWord(words, ms);
     if (last < 0) return 0;
@@ -337,36 +381,33 @@ export function createHeardTracker(opts: {
     return last === words.length - 1 ? Math.max(end, proportional) : end;
   }
 
-  /** Recordable characters inside the first `chars` characters of `spoken`. */
-  function recordableChars(chars: number): number {
+  /**
+   * The recordable text inside the first `chars` characters of `spoken`, and
+   * its length.
+   *
+   * One walk, not two: the count is `text.length` by construction — the record
+   * is a concatenation of whole slices — so computing them separately was the
+   * same span walk written twice, run twice per read, with two chances to
+   * disagree about which characters a partially-heard span contributes.
+   */
+  function recordable(chars: number): { text: string; length: number } {
     let seen = 0;
-    let recordable = 0;
+    let text = "";
     for (const span of spans) {
       if (seen >= chars) break;
-      if (span.record) recordable += Math.min(span.len, chars - seen);
+      if (span.record) text += spoken.slice(seen, seen + Math.min(span.len, chars - seen));
       seen += span.len;
     }
-    return recordable;
-  }
-
-  /** Recordable text inside the first `chars` characters of `spoken`. */
-  function recordableText(chars: number): string {
-    let seen = 0;
-    let out = "";
-    for (const span of spans) {
-      if (seen >= chars) break;
-      if (span.record) out += spoken.slice(seen, seen + Math.min(span.len, chars - seen));
-      seen += span.len;
-    }
-    return out;
+    return { text, length: text.length };
   }
 
   function position(): HeardPosition & { unheardMs: number } {
     const chars = heardChars(heardMs());
+    const record = recordable(chars);
     return {
       chars,
-      recordableChars: recordableChars(chars),
-      text: recordableText(chars),
+      recordableChars: record.length,
+      text: record.text,
       unheardMs: clock.remainingMs(),
     };
   }

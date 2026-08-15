@@ -99,6 +99,38 @@ describe("createResampler", () => {
     expect(second).toHaveLength(160);
   });
 
+  test("the fused decimator reproduces filter-then-interpolate sample for sample", () => {
+    // These numbers were produced by the implementation this one replaced — a
+    // 63-tap FIR run over every input sample, then a linear interpolator that
+    // stepped over two outputs in three. The one-pass decimator evaluates the
+    // filter only where an output reads it, which is a rearrangement of the
+    // same arithmetic rather than a new filter, so the samples must be
+    // IDENTICAL and not merely close. Two chunks, because the second one is
+    // what proves the carried history and phase agree too.
+    const resampler = createResampler(24_000, 8000);
+    const chunk = (phase: number): Int16Array =>
+      Int16Array.from({ length: 24 }, (_, i) =>
+        Math.round(
+          12_000 * Math.sin((2 * Math.PI * 440 * (i + phase)) / 24_000) +
+            7000 * Math.sin((2 * Math.PI * 5200 * (i + phase)) / 24_000),
+        ),
+      );
+    expect([...resampler.process(chunk(0))]).toEqual([0, -4, 2, -2, 15, -41, 92, -155]);
+    expect([...resampler.process(chunk(24))]).toEqual([
+      243, -350, 482, 2708, 4881, 8846, 10_893, 11_972,
+    ]);
+  });
+
+  test("a non-integer ratio still decimates, with the fractional phase kept", () => {
+    // 22.05 kHz is not a rate this bridge negotiates today, but the phase is
+    // fractional there and that is the branch where the right-hand neighbour
+    // carries real weight — the one the integer path never evaluates.
+    const resampler = createResampler(22_050, 8000);
+    const output = resampler.process(sine(1000, 22_050, 2205));
+    const steady = output.subarray(100);
+    expect(toneAmplitude(steady, 1000, 8000)).toBeGreaterThan(18_000);
+  });
+
   test("does not overflow PCM16 on a full-scale input", () => {
     // The windowed sinc overshoots on transients, so the interpolator's clamp
     // is what stops a loud passage from wrapping to the opposite polarity.

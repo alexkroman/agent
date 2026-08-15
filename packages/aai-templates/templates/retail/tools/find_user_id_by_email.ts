@@ -13,10 +13,6 @@ export default retailTool({
     email: z.string().max(200).describe("The customer's email, e.g. 'something@example.com'"),
   }),
   requiresAuth: false,
-  // `execute` must come before `summary` in this object literal: TS infers the
-  // wrapper's generic `R` from `execute`'s return type, and processes object
-  // literal properties in source order — with `summary` first, `result` in its
-  // signature can't be inferred and silently falls back to `unknown`.
   execute: (args, state) => {
     const target = args.email.trim().toLowerCase();
     const match = Object.values(state.store.users).find(

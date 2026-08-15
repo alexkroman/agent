@@ -63,6 +63,49 @@ with a different error: plain `ERR_PNPM_NO_MATCHING_VERSION` and a
 is client-side (`pnpm cache delete "@alexkroman1/*"`), not ours — the quarantine
 error always names the constraint or carries a `published by <date>` clause.
 
+## Declare a stateful tool THROUGH the slot, and a read helper as `DeepReadonly`
+
+Two rules that a sweep found broken in five templates at once, both of which are
+now compile errors rather than advice.
+
+**A tool that touches session state is `slot.tool` or `slot.updateTool`, never
+a `tool()` that opens with `slot.get(ctx)`.** The declaration is what makes
+"does this write?" visible, and what makes the wrong answer a compile error
+instead of a `TypeError` on the first call. Three shipped tools had it wrong and
+none of them could ever have worked: `infocom-adventure`'s `game_state_take` and
+`game_state_flag` were declared `slot.tool` while pushing to `inventory` and
+writing into `flags`, and `solo-rpg`'s `oracle` assigned `game.chaosFactor`
+under a comment claiming `gameSlot.get` returned "the live state object", which
+described the removed `ctx.state` bag. Nothing in the repo executed any of them
+(`infocom-adventure` had no spec at all; `agent.test.ts` never reached
+`oracle`), which is the other half of the lesson — a template's spec is what
+makes its exemplar code true.
+
+The mixed case is real and has one answer: a tool where only ONE branch writes
+stays an ordinary `tool()` and calls `slot.update` inside that branch —
+`oracle`'s `chaos_check` is the worked example. `updateTool` would open a
+mutation window on the four branches that store nothing, and its body must be
+synchronous, which `tool()` bodies routinely are not.
+
+**A pure helper over slot state takes `DeepReadonly<T>`, and each template
+aliases that once.** `slot.get` and `slot.tool` hand out a DEEP readonly value
+matching what `freezeStorable` really does, and TypeScript does not ignore
+readonly on ARRAYS — so `readonly string[]` stops satisfying `string[]` and the
+widening propagates into every projection, view and summary helper the template
+declares. `FrozenDispatchState`, `FrozenTripState`, `FrozenPlanState`,
+`FrozenRetailState`, `FrozenSupportState`, `FrozenGameState` and
+`FrozenOrderState` are that alias, one per template, each with the same note:
+a mutable value still satisfies it, so an `updateTool` draft passes unchanged,
+while a helper that WOULD have mutated stops compiling. Two shapes to copy when
+the widening gets awkward — `dispatch-center`'s `findIncident` is GENERIC over
+the incident's own type so one lookup serves the draft and the frozen value
+alike, and `resourceBrief` COPIES the array it puts in a fresh result object
+rather than aliasing a frozen one.
+
+The client half is the same rule one hop out: `solo-rpg` renders
+`DeepReadonly<GameState>` because that is what `gameSlot.projection((g) => g)`
+produces, and a client only ever renders what the server pushed.
+
 ## The templates are where SDK primitives get their worked example
 
 `template-api-coverage.test.ts` already enforces the direction "every public
@@ -77,7 +120,7 @@ once, and the templates are now their reference use:
 | `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` projects the identity (`(game) => game`), and five clients call the same projection with nothing to derive their pre-first-tool-call frame |
 | `slot.update` (the synchronous draft) | `dispatch-center` (every mutating tool, plus an `after` hook that prunes and recalculates the alert level), `plan-and-execute` (`work_next_step` CLAIMS its step inside one window, then awaits outside it — the shape to copy when a body needs a model call) |
 | `slot.updateTool` (the mutating half) | `retail` — every one of its fifteen tools, through `retailTool`, which is what a per-agent wrapper on top of it looks like: the wrapper owns the auth gate and the activity log, and passes the DRAFT to the tool body rather than letting it re-read the slot |
-| `slot.tool` (the reading half) | `pizza-ordering` (`view_order`), `travel-concierge` (`lookup_booking`), `infocom-adventure` — and choosing wrong is loud, since what a read is handed is frozen |
+| `slot.tool` (the reading half) | `pizza-ordering` (`view_order`), `travel-concierge` (`lookup_booking`), `infocom-adventure`, `solo-rpg` (`check_state`, and `save_game` — an async body is fine, only `updateTool` must be synchronous), `dispatch-center` (`incident_get`, `ops_dashboard`, `resources_get_available`) — and choosing wrong is loud, since what a read is handed is frozen |
 | `ctx.generate` with a `schema` | `support-line` (five graders and a rewriter over one binary-score schema), `plan-and-execute` (planner, executor and replanner). `travel-concierge` deliberately uses none — its specialists are prompts, not models |
 | `ToolFailure` / `isToolFailure` | `retail` (~40 sites, failures propagating through `store.ts` helpers), `dispatch-center` (six) |
 | `pushCapped` | `dispatch-center` (incident timeline), `retail` (activity feed), `solo-rpg` (session log), `infocom-adventure` (command history) |

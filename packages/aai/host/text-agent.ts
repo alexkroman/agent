@@ -57,7 +57,6 @@ import {
   type ToolSet,
 } from "ai";
 import { agentToolsToSchemas } from "../sdk/_internal-types.ts";
-import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import { DEFAULT_MAX_STEPS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
@@ -73,7 +72,7 @@ import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { mergeBuiltinSurface } from "./runtime-tools.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 import { createToolCallRepair } from "./tool-call-repair.ts";
-import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
+import { createToolDispatcher, executeToolCall } from "./tool-executor.ts";
 import { forceFinalAnswer } from "./transports/pipeline-llm-stream.ts";
 
 /**
@@ -174,6 +173,11 @@ export interface TextAgent {
    * The agent's tools as the AI SDK sees them — its own plus its enabled
    * builtins, each bound to the shared executor. Exposed because a caller
    * rendering a tool console needs the names it will see in the stream.
+   *
+   * These declarations belong to NO turn: {@link TextAgent.stream} builds its
+   * own set bound to that turn's messages, so `ctx.messages` cannot be handed a
+   * conversation from a concurrent turn. A tool invoked through this copy reads
+   * an empty `ctx.messages`.
    */
   readonly tools: ToolSet;
   /** This conversation's id — `ctx.sessionId` for every tool call. */
@@ -269,50 +273,62 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
    */
   const slots = createDetachedSlotStore();
 
-  /**
-   * The turn's messages, as `ctx.messages` sees them. Bound by reference and
-   * replaced per turn: `toVercelTools` reads it at call time, so a tool
-   * always sees the conversation the turn it belongs to was started from.
-   */
-  let turnMessages: readonly Message[] = [];
-
-  const executeTool: ExecuteTool = async (name, args, sid, messages, callOpts) => {
-    const tool = allTools[name];
-    if (!tool) return serializeToolFailure(`Unknown tool: ${name}`);
-    return executeToolCall(name, args, {
+  const executeTool = createToolDispatcher(allTools, (tool, call) =>
+    executeToolCall(call.name, call.args, {
       tool,
       env,
       slots,
-      sessionId: sid ?? sessionId,
+      // The agent's own id when the caller named none: one text agent is one
+      // conversation, which is what makes its slots mean the same thing here as
+      // in a session.
+      sessionId: call.sessionId || sessionId,
       db: opts.db,
       workflows: opts.workflows,
-      messages,
+      messages: call.messages,
       generate,
       logger,
-      signal: callOpts?.signal,
+      signal: call.options?.signal,
       timeoutMs: opts.toolTimeoutMs,
-    });
-  };
+    }),
+  );
 
-  const tools: ToolSet = toVercelTools(builtins.schemas, {
-    executeTool,
-    sessionId,
-    messages: () => turnMessages,
-  });
+  /**
+   * The tool set for ONE turn, closing over that turn's own messages.
+   *
+   * Per turn rather than per agent, and this is the correctness half rather than
+   * a style choice. `ctx.messages` used to read a single instance-scoped `let`
+   * that `stream()` overwrote — so two overlapping `stream()` calls (a chat
+   * surface answering two tabs, a caller racing a retry against a slow turn) gave
+   * turn 1's in-flight tool call turn 2's conversation, silently, and the
+   * comment on that variable claimed the opposite outright. A turn's tools are
+   * built with a value, so there is nothing left to overwrite.
+   */
+  const toolsFor = (messages: readonly Message[]): ToolSet =>
+    toVercelTools(builtins.schemas, { executeTool, sessionId, messages: () => messages });
+
+  /**
+   * The declarations a caller renders, bound to NO turn.
+   *
+   * `TextAgent.tools` exists so a caller can name the tools it will see in the
+   * stream; it is not the set a turn runs on, which `stream()` builds from that
+   * turn's messages. A tool invoked through this copy reads an empty
+   * `ctx.messages` — correct, since it belongs to no conversation.
+   */
+  const tools = toolsFor([]);
 
   return {
     model,
     tools,
     sessionId,
     stream(turn: TextTurnOptions): TextTurnResult {
-      turnMessages = toContextMessages(turn.messages);
+      const turnTools = toolsFor(toContextMessages(turn.messages));
       const maxSteps = turn.maxSteps ?? agent.maxSteps ?? DEFAULT_MAX_STEPS;
       const forceFinal = forceFinalAnswer(maxSteps, logger, sessionId);
       return streamText({
         model,
         system: turn.system ?? agent.systemPrompt,
         messages: turn.messages,
-        tools,
+        tools: turnTools,
         toolChoice: turn.toolChoice ?? agent.toolChoice ?? "auto",
         // `maxSteps` bounds TOOL-CALLING steps; the budget is one larger so
         // the forced answer step has somewhere to run. Caller conditions are

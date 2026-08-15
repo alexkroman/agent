@@ -104,6 +104,21 @@ describe("repairOpenAiStream", () => {
     expect(parsed.usage).toMatchObject({ total_tokens: 4597 });
   });
 
+  it.each([
+    ['{"usage":{"total_tokens":1},"choices": null}', "one space"],
+    ['{"usage":{"total_tokens":1},"choices" : null}', "space either side"],
+    ['{"usage":{"total_tokens":1},"choices":\tnull}', "a tab"],
+  ])("repairs a null choices spelled with %s (%s)", async (usageOnly) => {
+    // The compact-only probe was justified by "JSON.stringify never puts
+    // whitespace after a colon" — a claim about OUR serializer, when these are
+    // the GATEWAY's bytes. Any encoder that pretty-prints, or a proxy that
+    // re-serializes, spells the same defect with a space, and a miss is not a
+    // degradation: it is the exact "Type validation failed" this module exists
+    // to prevent, fired after the reply has already streamed.
+    const payloads = await repaired(sse(usageOnly));
+    expect((JSON.parse(payloads[0] ?? "{}") as { choices: unknown }).choices).toEqual([]);
+  });
+
   it("leaves a missing choices key alone", async () => {
     // Only an explicit null is repaired; absent stays absent.
     const payloads = await repaired(sse(JSON.stringify({ id: "x", usage: { total_tokens: 1 } })));

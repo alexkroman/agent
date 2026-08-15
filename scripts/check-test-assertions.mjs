@@ -37,7 +37,22 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+import { repoRoot } from "./_fs.mjs";
+
+const ROOT = repoRoot(import.meta.url);
+
+/**
+ * Floors, because this gate's entire success output is a COUNT.
+ *
+ * "all 0 test(s) across 0 file(s) assert something ✓" is the exact shape of a
+ * healthy run, so a glob that stopped matching or a parser that stopped
+ * recognising `test(` would print a checkmark over nothing — which is the
+ * failure this gate exists to catch, arriving in the gate itself. ~470 files and
+ * ~5,800 tests today; the floors sit well under both so ordinary churn never
+ * trips them, and any plausible breakage lands at zero.
+ */
+const MIN_TEST_FILES = 200;
+const MIN_TESTS_SCANNED = 2000;
 
 /**
  * Calls that count as asserting. `expectTypeOf` is included because the
@@ -227,6 +242,14 @@ const files = execFileSync(
   // they came from are already in the list.
   .filter((f) => !(f.includes("/dist/") || f.includes("node_modules/")));
 
+if (files.length < MIN_TEST_FILES) {
+  console.error(
+    `check-test-assertions: found ${files.length} test file(s), below the floor of ` +
+      `${MIN_TEST_FILES} — is the glob still right?`,
+  );
+  process.exit(1);
+}
+
 const offenders = [];
 let scanned = 0;
 
@@ -260,6 +283,19 @@ if (offenders.length > 0) {
   console.error(
     '\nAssert the claim in the test\'s name. If the claim really is "does not throw",\n' +
       "say so: expect(fn).not.toThrow() / await expect(p).resolves.toBeUndefined().",
+  );
+  process.exit(1);
+}
+
+if (scanned < MIN_TESTS_SCANNED) {
+  console.error(
+    `check-test-assertions: parsed ${scanned} test(s) out of ${files.length} file(s), below the ` +
+      `floor of ${MIN_TESTS_SCANNED}.\n\n` +
+      "The files were found, so this is the parser: the opener regex or the\n" +
+      "comment/string masker has stopped recognising the shape a test is\n" +
+      "written in, and a gate whose success output is a count reports that as\n" +
+      "a clean run. Its spec is\n" +
+      "packages/aai-templates/test-assertion-gate.test.ts.",
   );
   process.exit(1);
 }

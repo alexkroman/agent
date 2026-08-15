@@ -155,6 +155,18 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
    * page never sees a stale tree. Resolves `null` when there is no live
    * sandbox to reuse (absent, or dead and now disposed) — the caller then
    * takes the cold path.
+   *
+   * **A reuse REFRESHES THE FLEET LEASE, exactly as the other two rungs do.**
+   * The registry row's `expires_at` is what tells every replica this project
+   * has a live sandbox (`studio-session-registry.ts`: "LIVENESS is the lease,
+   * refreshed by any replica that brokers the project"), and only `lastUsed`
+   * used to move here — so a user reloading every few minutes without
+   * completing a turn kept the sandbox locally fresh while the row expired
+   * under it. The next broker call landing on a PEER then read: `sessions`
+   * miss → `fleet.adopt` → `registry.get` null → cold path → `spawnNamed` →
+   * Modal refuses the duplicate name → null → **404 "Project not found" for a
+   * project that plainly exists**. The cold path claims and `adopt` touches;
+   * this rung is the one that has to say so itself.
    */
   async function reuseSession(
     key: string,
@@ -176,6 +188,9 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
       );
       if (token === null) return null;
       existing.lastUsed = Date.now();
+      // Fire-and-forget, like every other touch: a lost one costs at most one
+      // spawn, and blocking the broker response on the registry would not.
+      fleet.touch(scope, project);
       if (preview) existing.previewTarget = { ...preview, apiKey };
       return { url: existing.url, token };
     } catch (err) {
@@ -275,6 +290,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
         project,
         lastUsed: Date.now(),
         chatToken: token,
+        inFlight: 0,
         ...(preview ? { previewTarget: { ...preview, apiKey } } : {}),
         release: () => false,
       };

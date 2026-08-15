@@ -127,7 +127,7 @@ export function buildHarnessSpawn(params: HarnessSpawnParams): {
       AAI_GUEST_HOST: "127.0.0.1",
       // The only inherited variable. A container image ships a PATH and tool
       // code may shell out; everything else is withheld (see module doc).
-      ...(process.env.PATH === undefined ? {} : { PATH: process.env.PATH }),
+      ...omitUndefined({ PATH: process.env.PATH }),
       ...params.extraEnv,
     },
     // Not the server's cwd: a neutral directory mirrors the container's, and

@@ -172,6 +172,33 @@ describe("GET /workflows/uploads/:id", () => {
     await res.arrayBuffer();
   });
 
+  test("a filename with a control character still downloads", async () => {
+    // The uploader owns that string. `\x01` is not a response-splitting risk, so
+    // the old CR/LF/quote strip let it through — and Node rejects EVERY control
+    // character in a header value, so `res.writeHead` threw `ERR_INVALID_CHAR`
+    // and this upload was a 500 on every read, permanently, with the bytes fine
+    // in the store the whole time.
+    const base = await serve();
+    const stored = await upload(base, new Uint8Array([1]), { name: "a\u0001b.wav" });
+    const res = await fetch(`${base}${stored.url}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain('filename="ab.wav"');
+    // The real name survives on the half that can carry it.
+    expect(res.headers.get("content-disposition")).toContain("filename*=UTF-8''a%01b.wav");
+    await res.arrayBuffer();
+  });
+
+  test("a non-ASCII filename rides on filename* rather than breaking the header", async () => {
+    const base = await serve();
+    const stored = await upload(base, new Uint8Array([1]), { name: "café.wav" });
+    const res = await fetch(`${base}${stored.url}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain(
+      `filename*=UTF-8''${encodeURIComponent("café.wav")}`,
+    );
+    await res.arrayBuffer();
+  });
+
   test("answers 416 for a window outside the file", async () => {
     const base = await serve();
     const stored = await upload(base, new Uint8Array([1, 2, 3]));

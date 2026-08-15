@@ -15,8 +15,9 @@
 
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { resolveDeployTarget } from "./_agent.ts";
-import { apiRequest } from "./_api-client.ts";
+import { apiRequest, checkedResponse } from "./_api-client.ts";
 import { updateProjectConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { resolveServerEnv } from "./_server-common.ts";
@@ -296,18 +297,18 @@ export async function executePublish(opts: {
   if (pushed.slug) await syncEnvSecrets(opts.cwd, serverUrl, apiKey, project);
 
   log.step(`Publishing ${project} (builds in the project's sandbox)…`);
-  const result = await publishStudioProject(serverUrl, apiKey, project);
   // Wire data, so it is checked rather than trusted. A 200 whose body lacks
   // `slug`/`output` — an intercepting proxy, a mismatched server — used to
   // surface as a bare `Cannot read properties of undefined (reading 'trim')`,
-  // and the missing slug was then written into .aai/project.json.
-  if (typeof result?.slug !== "string" || typeof result?.output !== "string") {
-    throw new CliError(
-      "bad_publish_response",
-      `Unexpected response from the publish route at ${serverUrl}.`,
-      "Check that --server points at an aai platform server, then try again.",
-    );
-  }
+  // and the missing slug was then written into .aai/project.json. This is the
+  // incident `checkedResponse` is named after; the other four response shapes
+  // now go through the same helper.
+  const result = checkedResponse(
+    await publishStudioProject(serverUrl, apiKey, project),
+    (value): value is { slug: string; output: string } =>
+      isRecord(value) && typeof value.slug === "string" && typeof value.output === "string",
+    `the publish route at ${serverUrl}`,
+  );
   if (result.output.trim()) log.message(result.output.trim());
 
   await updateProjectConfig(opts.cwd, { serverUrl, slug: result.slug });

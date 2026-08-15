@@ -43,8 +43,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 9,
-    "supported": [8, 9],
+    "current": 10,
+    "supported": [8, 9, 10],
     "dropped": {
       "1": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
       "2": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",

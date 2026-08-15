@@ -44,7 +44,7 @@ import {
   type ToolSet,
 } from "ai";
 import { jsonrepair } from "jsonrepair";
-import { errorMessage } from "../sdk/utils.ts";
+import { errorMessage, isRecord } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /** What {@link parseToolInput} returns for an object with no fields. */
@@ -119,7 +119,7 @@ async function repairToolInput(text: string): Promise<string | null> {
 async function parseToolInput(candidate: string): Promise<string | null> {
   const { value, state } = await parsePartialJson(candidate);
   if (state !== "successful-parse" && state !== "repaired-parse") return null;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  if (!isRecord(value)) return null;
   return JSON.stringify(value);
 }
 

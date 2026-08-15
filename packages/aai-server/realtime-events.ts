@@ -230,6 +230,34 @@ function createSubscriptionMonitor() {
  * their row exactly as they do for a change event. That makes the join gap and
  * a reconnect outage cost a redundant read instead of a silently stale client.
  */
+/**
+ * One project's pool KEY and its Realtime TOPIC, derived together.
+ *
+ * They must be injective in the same way, and only one of them was. The key
+ * already went through `projectKey` (NUL-separated, so no pair can spell
+ * another's); the topic was `aai:<kind>:${scope}:${project}`, where `:` is a
+ * character both halves may hold — so `("a:b", "c")` and `("a", "b:c")` produced
+ * TWO pool entries and ONE topic. Two channels then existed under one name, and
+ * the subscription monitor is keyed on the TOPIC (`track`/`untrack`/`health`),
+ * so the second `track` overwrote the first's `ChannelState` and either
+ * `untrack` deleted whatever was left — a stalled channel silently invisible to
+ * `/health`, which is the exact failure the monitor exists to make loud.
+ *
+ * The topic percent-encodes each half rather than carrying the NUL: it crosses
+ * the wire as a channel name, and `encodeURIComponent` escapes `:` (to `%3A`),
+ * which is all injectivity needs here.
+ */
+function projectChannel(
+  kind: "workspace" | "chat",
+  scope: string,
+  project: string,
+): { key: string; topic: string } {
+  return {
+    key: `${kind}:${projectKey(scope, project)}`,
+    topic: `aai:${kind}:${encodeURIComponent(scope)}:${encodeURIComponent(project)}`,
+  };
+}
+
 function createChannelPool(
   client: RealtimeClientLike,
   monitor: ReturnType<typeof createSubscriptionMonitor>,
@@ -363,9 +391,10 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
     },
 
     watchWorkspace(scope, project, onChange): Unwatch {
+      const { key, topic } = projectChannel("workspace", scope, project);
       return pool.watch(
-        `ws:${projectKey(scope, project)}`,
-        `aai:workspace:${scope}:${project}`,
+        key,
+        topic,
         {
           event: "*",
           schema: "aai_platform",
@@ -378,9 +407,10 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
     },
 
     watchChat(scope, project, onChange): Unwatch {
+      const { key, topic } = projectChannel("chat", scope, project);
       return pool.watch(
-        `chat:${projectKey(scope, project)}`,
-        `aai:chat:${scope}:${project}`,
+        key,
+        topic,
         {
           event: "*",
           schema: "aai_platform",

@@ -3,7 +3,8 @@
 // studio app under a QueryClientProvider. Also the `aai login` approval:
 // a `?cli-link=<code>` open stashes the code per-tab and strips the URL
 // (cli-link.ts — it must not ride the OAuth redirect), then renders a
-// link-the-CLI gate once signed in + onboarded.
+// link-the-CLI gate once signed in + onboarded. The gate screens themselves
+// live in gates.tsx; this file is the composition root.
 //
 // The browser's bearer is a SESSION token (Supabase in production, the dev
 // token locally — see auth.tsx), never an AssemblyAI key. The key is the
@@ -31,13 +32,14 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tan
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { api } from "./api.ts";
-import { ApiError, errorText, isTransientError } from "./api-error.ts";
+import { isTransientError } from "./api-error.ts";
 import { App } from "./app.tsx";
 import { useStudioAuth } from "./auth.tsx";
-import { clearCliLinkCode, consumeCliLinkCode, linkConfirmationCode } from "./cli-link.ts";
-import { GateCard, GateProblem, gateProblem, queryFailure } from "./gate-card.tsx";
+import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
+import { clearCliLinkCode, consumeCliLinkCode } from "./cli-link.ts";
+import { GateCard, GateProblem, gateProblem } from "./gate-card.tsx";
+import { CliLinkGate, KeyGate, SignInGate } from "./gates.tsx";
 import { queryKeys } from "./query-keys.ts";
-import { isEnterSubmit } from "./send-button.tsx";
 import { installStaleBuildRecovery } from "./stale-build.ts";
 import "./styles.css";
 
@@ -57,239 +59,6 @@ const queryClient = new QueryClient();
  * anything, and the user is already being told the server is busy.
  */
 const ACCOUNT_MAX_RETRIES = 2;
-
-function SignInGate({
-  mode,
-  onSignIn,
-}: {
-  mode: "supabase" | "dev";
-  onSignIn: (email?: string) => Promise<void>;
-}) {
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async () => {
-    const email = draft.trim();
-    if (busy || (mode === "dev" && !email)) return;
-    setBusy(true);
-    setError(null);
-    try {
-      // In supabase mode this navigates to GitHub — the page unloads, so
-      // `busy` only ever resets on failure.
-      await onSignIn(mode === "dev" ? email : undefined);
-    } catch (err) {
-      setError(errorText(err) ?? "Sign-in failed");
-      setBusy(false);
-      return;
-    }
-    if (mode === "dev") setBusy(false);
-  };
-
-  return (
-    <GateCard>
-      <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-        Build your first voice agent
-      </h1>
-      <p className="m-0 text-[15px] leading-[21px] text-muted">
-        {mode === "dev"
-          ? "Local dev mode: enter any email to sign in."
-          : "Describe a voice agent and AssemblyAI Build writes and tests it — you publish when it's ready. Sign in with GitHub to start."}
-      </p>
-      {mode === "dev" && (
-        <input
-          className="field h-10"
-          type="email"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (isEnterSubmit(e)) void submit();
-          }}
-          placeholder="you@example.com"
-          spellCheck={false}
-        />
-      )}
-      {error && <p className="m-0 text-[13px] text-err">{error}</p>}
-      <button
-        type="button"
-        className="btn btn-primary h-10 self-start px-5"
-        disabled={busy}
-        onClick={() => void submit()}
-      >
-        {signInLabel(busy, mode)}
-      </button>
-    </GateCard>
-  );
-}
-
-function signInLabel(busy: boolean, mode: "supabase" | "dev"): string {
-  if (busy) return "Signing in…";
-  return mode === "dev" ? "Sign in" : "Continue with GitHub";
-}
-
-/**
- * The mandatory onboarding step after sign-in: the studio cannot run
- * without the user's own AssemblyAI API key (it is the credential every
- * agent's LLM/STT/TTS runs on — the platform holds none). Stored
- * server-side against the account; this tab never sees it again.
- */
-function KeyGate({
-  bearer,
-  email,
-  onSaved,
-}: {
-  bearer: string;
-  email?: string | undefined;
-  onSaved: () => void;
-}) {
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async () => {
-    const key = draft.trim();
-    if (!key || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.putAccountKey(bearer, key);
-      onSaved();
-    } catch (err) {
-      setError(errorText(err) ?? "Could not save the key");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <GateCard>
-      <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-        Connect your AssemblyAI account
-      </h1>
-      <p className="m-0 text-[15px] leading-[21px] text-muted">
-        {email ? `Signed in as ${email}. ` : ""}AssemblyAI Build runs every agent on your own
-        AssemblyAI API key — get one from{" "}
-        <a
-          href="https://www.assemblyai.com/dashboard"
-          target="_blank"
-          rel="noreferrer"
-          className="underline"
-        >
-          your dashboard
-        </a>
-        . It's stored securely with your account; you only do this once.
-      </p>
-      <input
-        className="field h-10"
-        type="password"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (isEnterSubmit(e)) void submit();
-        }}
-        placeholder="AssemblyAI API key"
-        spellCheck={false}
-      />
-      {error && <p className="m-0 text-[13px] text-err">{error}</p>}
-      <button
-        type="button"
-        className="btn btn-primary h-10 self-start px-5"
-        disabled={busy}
-        onClick={() => void submit()}
-      >
-        {busy ? "Saving…" : "Open AssemblyAI Build"}
-      </button>
-    </GateCard>
-  );
-}
-
-/**
- * Approve (or dismiss) an `aai login` handshake: the terminal that opened
- * this tab minted the code and is polling the server for the grant. Runs
- * only after sign-in AND key onboarding, so approval always has a key to
- * grant — the CLI never participates in account setup.
- */
-function CliLinkGate({
-  bearer,
-  code,
-  email,
-  onDone,
-}: {
-  bearer: string;
-  code: string;
-  email?: string | undefined;
-  onDone: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [linked, setLinked] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const approve = async () => {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.approveCliLink(bearer, code);
-      setLinked(true);
-    } catch (err) {
-      setError(errorText(err) ?? "Could not link the CLI");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (linked) {
-    return (
-      <GateCard>
-        <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-          Terminal linked
-        </h1>
-        <p className="m-0 text-[15px] leading-[21px] text-muted">
-          You can return to the terminal — the CLI now uses this account's API key.
-        </p>
-        <button
-          type="button"
-          className="btn btn-primary h-10 self-start px-5"
-          onClick={() => onDone()}
-        >
-          Open AssemblyAI Build
-        </button>
-      </GateCard>
-    );
-  }
-
-  return (
-    <GateCard>
-      <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-        Link the AAI CLI to this account?
-      </h1>
-      <p className="m-0 text-[15px] leading-[21px] text-muted">
-        {email ? `Signed in as ${email}. ` : ""}A terminal running <code>aai login</code> opened
-        this page and will receive this account's AssemblyAI API key.
-      </p>
-      <p className="m-0 rounded border border-line bg-cream px-4 py-2.5 text-center font-mono text-[18px] tracking-[0.15em]">
-        {linkConfirmationCode(code)}
-      </p>
-      <p className="m-0 text-[15px] leading-[21px] text-muted">
-        That terminal shows this same code. Only continue if it matches — if you didn't just run{" "}
-        <code>aai login</code> yourself, close this page.
-      </p>
-      {error && <p className="m-0 text-[13px] text-err">{error}</p>}
-      <div className="flex gap-2.5">
-        <button
-          type="button"
-          className="btn btn-primary h-10 px-5"
-          disabled={busy}
-          onClick={() => void approve()}
-        >
-          {busy ? "Linking…" : "Link CLI"}
-        </button>
-        <button type="button" className="btn h-10 px-5" disabled={busy} onClick={() => onDone()}>
-          Not now
-        </button>
-      </div>
-    </GateCard>
-  );
-}
 
 /** Signed in: require the stored AssemblyAI key before the app mounts. */
 function AccountGate({
@@ -312,21 +81,27 @@ function AccountGate({
     retry: (count, err) => count < ACCOUNT_MAX_RETRIES && isTransientError(err),
   });
 
-  const failure = queryFailure(account);
+  // The server rejected this bearer. Refresh rather than sign out: this query
+  // refetches on window focus, and an access token that expired while the tab
+  // sat in the background is REFRESHABLE — signing out here raced supabase-js's
+  // own focus refresh and dropped the user out of a session that was still
+  // good. Run from an EFFECT, not the render body: `void refreshAuth(); return
+  // null;` in render fired twice under StrictMode, and against a server that
+  // will 401 a refreshable token (a different Supabase project, a JWT-secret
+  // mismatch, clock skew) it had no terminal state at all — either an unbounded
+  // refresh+refetch loop behind a blank screen, or a permanent blank once
+  // gotrue's reuse interval started handing back the same token. The attempt
+  // cap in `useAuthRecovery` is that terminal state, and it ends in the sign-in
+  // gate rather than in nothing.
+  const rejection = authRejection(account.error, account.failureReason);
+  useAuthRecovery(rejection, refreshAuth, { onExhausted: onSignOut });
 
-  if (failure instanceof ApiError && failure.status === 401) {
-    // The server rejected this bearer. Refresh rather than sign out: this
-    // query refetches on window focus, and an access token that expired while
-    // the tab sat in the background is REFRESHABLE — signing out here raced
-    // supabase-js's own focus refresh and dropped the user out of a session
-    // that was still good. `refreshAuth` signs out on its own if the refresh
-    // token is dead too, so the sign-in gate is still the end state.
-    void refreshAuth();
-    return null;
-  }
-  // Nothing to show the user yet: either still loading, or loading is not
-  // going to happen and the card says so (see `gateProblem`).
   if (!account.data) {
+    // A rejection being worked on is a wait that SAYS something, rather than
+    // the blank page a bare `return null` left behind.
+    if (rejection != null) return <GateCard>Signing you back in…</GateCard>;
+    // Nothing to show the user yet: either still loading, or loading is not
+    // going to happen and the card says so (see `gateProblem`).
     const problem = gateProblem(account, "Could not load your account");
     return problem ? <GateProblem {...problem} /> : <GateCard>Loading…</GateCard>;
   }

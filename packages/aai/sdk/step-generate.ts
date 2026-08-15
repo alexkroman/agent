@@ -39,15 +39,14 @@ import {
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
 } from "./providers/llm/assemblyai.ts";
+import { previewBody } from "./response-body.ts";
+import { safeJsonParse } from "./safe-json-parse.ts";
 import { requireStepEnv } from "./step-env.ts";
 import { stepFetch } from "./step-fetch.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
 
 /** A model call's deadline. `fetch` has none, and a hung step never ends. */
 const DEFAULT_TIMEOUT_MS = 60_000;
-
-/** How much of a failure body is worth quoting back. */
-const MAX_ERROR_BODY_CHARS = 200;
 
 /** Options for {@link stepGenerate}. */
 export type StepGenerateOptions = {
@@ -159,8 +158,11 @@ export class StepGenerateError extends Error {
  *   {@link StepGenerateError} with `retryable: true`, because it is a real and
  *   transient thing a gateway does and a step returning `""` would file a blank
  *   report and report success.
- * @throws {StepGenerateError} On any non-2xx, on an empty completion, and on a
- *   missing API key (`retryable: false` — three more attempts find the same gap).
+ * @throws {StepGenerateError} On EVERY failure of this call, which is the point
+ *   of the class: a non-2xx, an empty completion, a reply that is not JSON, a
+ *   request that never got an answer (a reset, a DNS failure, this call's own
+ *   deadline), and a missing API key. Only the last is `retryable: false` —
+ *   three more attempts find the same gap.
  * @public
  */
 export async function stepGenerate(
@@ -174,7 +176,7 @@ export async function stepGenerate(
   // `StepTransportError` naming its cause, where `fetch` raises
   // `TypeError: fetch failed` — indistinguishable from a bad gateway URL. See
   // `sdk/step-fetch.ts`.
-  const response = await stepFetch(`${base}/chat/completions`, {
+  const response = await gatewayFetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
       // The gateway is OpenAI-compatible, so the key is a BEARER here — unlike
@@ -206,7 +208,7 @@ export async function stepGenerate(
   });
   if (!response.ok) throw await gatewayFailure(response);
 
-  const body = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+  const body = await gatewayCompletion(response);
   const content = body.choices?.[0]?.message?.content?.trim();
   if (!content) {
     throw new StepGenerateError("The gateway returned an empty completion.", {
@@ -215,6 +217,56 @@ export async function stepGenerate(
     });
   }
   return content;
+}
+
+/**
+ * {@link stepFetch}, with its transport failure re-reported as this module's
+ * own error class.
+ *
+ * **The deadline this function sets is the reason.** `stepFetch` catches
+ * everything the request throws — including our own `AbortSignal.timeout` — and
+ * rethrows a `StepTransportError`, so `stepGenerate`'s single most advertised
+ * failure mode escaped as a class the documented `catch` does not recognise:
+ * `err instanceof StepGenerateError && !err.retryable` is what two templates
+ * copy verbatim, and `toStepError` classifies anything else by falling through
+ * to "no verdict available". A timeout has a verdict — the far side was slow,
+ * not wrong — so it is `retryable: true`, and the transport error stays as the
+ * `cause` because its message carries the whole code chain (`ECONNRESET`,
+ * `UND_ERR_SOCKET`, `TimeoutError`) that identifies which failure it was.
+ */
+async function gatewayFetch(url: string, init: Parameters<typeof stepFetch>[1]): Promise<Response> {
+  try {
+    return await stepFetch(url, init);
+  } catch (err: unknown) {
+    throw new StepGenerateError(
+      `LLM gateway request failed: ${err instanceof Error ? err.message : String(err)}`,
+      { retryable: true, cause: err },
+    );
+  }
+}
+
+/**
+ * The completion envelope, or this module's error rather than a bare
+ * `SyntaxError`.
+ *
+ * A 200 does not promise JSON: a proxy, a CDN or a saturated gateway answers
+ * HTML with any status it likes, and `response.json()` rejects with a
+ * `SyntaxError` naming neither the gateway nor the status. Retryable, on the
+ * same reasoning as an empty completion — it is a real and transient thing an
+ * intermediary does.
+ */
+async function gatewayCompletion(
+  response: Response,
+): Promise<{ choices?: { message?: { content?: string } }[] }> {
+  const text = await response.text().catch(() => "");
+  const parsed = safeJsonParse(text);
+  if (parsed === undefined) {
+    throw new StepGenerateError(`The gateway's reply was not JSON: ${previewBody(text)}`, {
+      status: response.status,
+      retryable: true,
+    });
+  }
+  return parsed as { choices?: { message?: { content?: string } }[] };
 }
 
 /** The key, or the one failure a retry cannot fix. */
@@ -238,7 +290,7 @@ function apiKey(name: string): string {
  * not "no".
  */
 async function gatewayFailure(response: Response): Promise<StepGenerateError> {
-  const body = (await response.text().catch(() => "")).slice(0, MAX_ERROR_BODY_CHARS);
+  const body = previewBody(await response.text().catch(() => ""));
   const status = response.status;
   return new StepGenerateError(`LLM gateway failed: HTTP ${status}${body ? ` — ${body}` : ""}`, {
     status,

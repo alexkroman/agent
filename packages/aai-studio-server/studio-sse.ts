@@ -8,7 +8,7 @@
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import { registerLiveStream } from "aai-server/live-streams";
 import type { SSEStreamingApi } from "hono/streaming";
-import { resolveProjectKind } from "./studio-project-kind.ts";
+import { type ProjectKind, resolveProjectKind } from "./studio-project-kind.ts";
 import {
   currentFilesHash,
   hasPreviewChanges,
@@ -20,21 +20,46 @@ import {
 const SSE_HEARTBEAT_MS = 25_000;
 
 /**
- * The project's client-facing state — files, deploy metadata, and the auto
- * preview deploy's state: slug + a version token the client keys the
- * Preview iframe by (changes on every successful preview), stale = an edit
- * hasn't reached the preview yet, and the last failed preview's CLI output
- * for the banner. One builder for `GET /projects/:project` AND its SSE
- * events stream, so the pushed shape can never drift from the fetched one.
- * Staleness flags are computed here so the client never hashes files.
+ * The project's client-facing state, as a NAMED shape.
  *
- * `sourceHash` is the files' content hash — the fast-forward token `aai
- * pull` records and `aai push` sends back as `baseHash`. The files hash
- * rather than the row version: metadata stamps (preview/Publish) bump the
- * version without touching a file, and a pusher only cares whether the
- * FILES moved under it.
+ * It was `Record<string, unknown>`, which is the wrong type for a payload two
+ * external consumers parse: the studio client renders every field, and `aai
+ * pull` reads `sourceHash` as its fast-forward token. A record says nothing
+ * about either, so renaming a field is a compile-clean change here and a
+ * runtime break there.
+ *
+ * The optional fields are `?: T | undefined` because they are built by
+ * conditional spreads under `exactOptionalPropertyTypes` — the same reason
+ * `WorkspaceStamp` spells them that way.
  */
-export function projectPayload(workspace: StudioWorkspace): Record<string, unknown> {
+export type ProjectPayload = {
+  files: Record<string, string>;
+  /**
+   * The files' content hash — the fast-forward token `aai pull` records and
+   * `aai push` sends back as `baseHash`. The files hash rather than the row
+   * version: metadata stamps (preview/Publish) bump the version without
+   * touching a file, and a pusher only cares whether the FILES moved.
+   */
+  sourceHash: string;
+  kind: ProjectKind;
+  deployedSlug?: string | undefined;
+  /** Edits that have not been published (production staleness). */
+  unpublished: boolean;
+  previewSlug?: string | undefined;
+  /** Version token the client keys the Preview iframe by. */
+  previewVersion?: string | undefined;
+  /** An edit has not reached the preview yet. */
+  previewStale: boolean;
+  /** CLI output of the last failed preview deploy, for the pane's banner. */
+  previewError?: string | undefined;
+};
+
+/**
+ * Build it: one builder for `GET /projects/:project` AND its SSE events
+ * stream, so the pushed shape can never drift from the fetched one. Staleness
+ * flags are computed here so the client never hashes files.
+ */
+export function projectPayload(workspace: StudioWorkspace): ProjectPayload {
   return {
     files: workspace.files,
     sourceHash: currentFilesHash(workspace),

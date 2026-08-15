@@ -10,7 +10,7 @@
  */
 
 import type { RefObject } from "react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export function useDismissablePanel(opts: {
   open: boolean;
@@ -20,16 +20,24 @@ export function useDismissablePanel(opts: {
   toggleAttr: string;
 }): void {
   const { open, onClose, panel, toggleAttr } = opts;
+  // `onClose` is read through a ref rather than depended on, because every
+  // caller passes an inline arrow: with it in the dependency list the effect
+  // tore down and re-installed both window listeners on EVERY render of the
+  // component holding the panel — which for the top bar's two dropdowns is
+  // every SSE push into the studio's live queries, for as long as a panel is
+  // open. The listeners only ever call the latest one, which is what a ref is.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Element | null;
       if (panel.current?.contains(target as Node)) return;
       if (target?.closest?.(`[${toggleAttr}]`)) return;
-      onClose();
+      onCloseRef.current();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onPointerDown);
@@ -37,5 +45,5 @@ export function useDismissablePanel(opts: {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [open, onClose, panel, toggleAttr]);
+  }, [open, panel, toggleAttr]);
 }

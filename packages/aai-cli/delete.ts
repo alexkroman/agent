@@ -1,22 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { getServerInfo, resolveDeployTarget } from "./_agent.ts";
-import { apiRequest, HINT_NOT_DEPLOYED } from "./_api-client.ts";
+import { requireDeployedSlug, resolveDeployTarget } from "./_agent.ts";
+import { type ApiTestSeam, apiRequest, apiTestSeam, HINT_NOT_DEPLOYED } from "./_api-client.ts";
 import { writeProjectConfig } from "./_config.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 
-export type DeleteOpts = {
+export type DeleteOpts = ApiTestSeam & {
   url: string;
   slug: string;
   apiKey: string;
-  /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
-  fetch?: typeof globalThis.fetch;
-  /**
-   * Delay between retries in ms (default 300, see `_api-client.ts`). Tests
-   * pass 0 so retry-path assertions don't sleep real wall-clock time.
-   */
-  retryDelay?: number;
 };
 
 export async function runDelete(opts: DeleteOpts): Promise<void> {
@@ -25,8 +18,7 @@ export async function runDelete(opts: DeleteOpts): Promise<void> {
     apiKey: opts.apiKey,
     action: "delete",
     hints: { 404: HINT_NOT_DEPLOYED },
-    ...(opts.fetch ? { fetch: opts.fetch } : {}),
-    ...(opts.retryDelay === undefined ? {} : { retryDelay: opts.retryDelay }),
+    ...apiTestSeam(opts),
   });
 }
 
@@ -68,7 +60,12 @@ export async function executeDelete(opts: {
     return ok({ project, ...(config.slug ? { slug: config.slug } : {}) });
   }
 
-  const { slug } = await getServerInfo(cwd, opts.server);
+  // `requireDeployedSlug(config)`, not a second `getServerInfo` — that call
+  // re-ran `resolveDeployTarget`, i.e. a second project-config read, a second
+  // global-config read, a second `ensureApiKey`, and (with `--server`) a second
+  // `approveServer`, which takes the cross-process config lock. Everything it
+  // would have returned is already in scope.
+  const slug = requireDeployedSlug(config);
   log.step(`Deleting ${slug}`);
   await runDelete({ url: serverUrl, slug, apiKey });
   log.success(`Deleted ${serverUrl}/${slug}`);

@@ -20,13 +20,12 @@
  */
 
 import { join } from "node:path";
-import type { Db } from "../sdk/db.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { publishStepFetch } from "../sdk/step-fetch.ts";
 import { publishStepReporter } from "../sdk/step-report.ts";
 import { publishUploadReader } from "../sdk/step-uploads.ts";
 import { MAX_UPLOAD_BYTES_ENV } from "../sdk/upload-constants.ts";
-import { createPostgresDb } from "./postgres-db.ts";
+import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { createStepReporter } from "./workflow-report.ts";
@@ -44,7 +43,32 @@ export const UPLOAD_DIR_NAME = join(".workflow-data", "uploads");
 const UPLOAD_DB_POOL = 2;
 
 /**
- * Build the upload store for one server and publish both step slots.
+ * What one server's workflow support OWNS, so it can give it back.
+ *
+ * The `close` half is the whole reason this is an object rather than the store
+ * on its own. `aai dev` re-runs `createServer` on every file save and
+ * `AgentServer.close()` closed the runtime and the sockets and nothing else, so
+ * each rebuild stranded a Postgres pool (2 connections, against a documented
+ * 4-connection limit — two saves that touched uploads exhausted it) and an
+ * undici keep-alive pool. `runtime.ts` fixed exactly this shape for `ownedDb`,
+ * with a comment naming the same cause; the same rule applies here, and for the
+ * same reason it is stated as OWNERSHIP: what this call opened is what it
+ * closes, and a caller-injected handle would stay the caller's.
+ *
+ * Not exported from `/runtime`: `createServer` is the only caller and takes it
+ * by inference.
+ *
+ * @internal
+ */
+type WorkflowSupport = {
+  /** Where uploaded files go — what `createWorkflowApi` mounts. */
+  uploads: UploadStore;
+  /** Release the pools this call opened. Never rejects. */
+  close(): Promise<void>;
+};
+
+/**
+ * Build the upload store for one server and publish all three step slots.
  *
  * `DATABASE_URL` in the env picks the Postgres backend, which is the only
  * durable one — an upload in a container's filesystem is gone by the time a
@@ -64,13 +88,13 @@ export function installWorkflowSupport(opts: {
   env?: Record<string, string> | undefined;
   dataDir?: string | undefined;
   logger: Logger;
-}): UploadStore {
+}): WorkflowSupport {
   // A pool of its own rather than the runtime's `ctx.db`: the runtime is built
   // lazily and may not exist yet (see the module doc), and `createPostgresDb`
   // connects on first query, so an agent that never uploads anything pays
   // nothing for holding this handle.
   const databaseUrl = opts.env?.DATABASE_URL;
-  const db: Db | undefined = databaseUrl
+  const db: CloseableDb | undefined = databaseUrl
     ? createPostgresDb({ url: databaseUrl, max: UPLOAD_DB_POOL })
     : undefined;
   const store = createUploadStore({
@@ -88,8 +112,17 @@ export function installWorkflowSupport(opts: {
   // `stepFetch` degrades to `globalThis.fetch`, which WORKS and speaks HTTP/2 —
   // so a fan-out that lost this line would collect stream resets rather than an
   // error naming the gap. See `sdk/step-fetch.ts`.
-  publishStepFetch(createStepFetch());
-  return store;
+  const stepFetch = createStepFetch();
+  publishStepFetch(stepFetch.fetch);
+  return {
+    uploads: store,
+    async close(): Promise<void> {
+      // Settled rather than awaited in sequence, and never rejecting: this runs
+      // inside `AgentServer.close()`, where one pool refusing to drain must not
+      // leave the other one open — nor turn an orderly shutdown into a throw.
+      await Promise.allSettled([db?.close(), stepFetch.close()]);
+    },
+  };
 }
 
 /** A byte count out of an env value, or `undefined` for anything unusable. */

@@ -40,6 +40,22 @@ export type SessionEntry = {
    * sync without auto-previewing.
    */
   previewTarget?: PreviewTarget;
+  /**
+   * How many host-driven operations are running INSIDE this sandbox right now
+   * — Publish and the auto preview deploy, both of which send one
+   * `workspace/deploy` and wait (studio-session-publish.ts).
+   *
+   * The idle sweeper reads it, because `lastUsed` cannot answer the question
+   * during a long call: a deploy touches only when it RETURNS, and its
+   * deadline (`WORKSPACE_DEPLOY_TIMEOUT_MS`, 330s) deliberately exceeds the
+   * idle window (`STUDIO_SESSION_IDLE_MS`, 300s). A 200s cold build started
+   * at T+120s was therefore swept mid-build: the sandbox was terminated under
+   * its own `aai deploy`, the whole build re-ran from scratch, and the
+   * browser's chat URL was dead. Held by `LiveSession.hold` (the publisher's
+   * view of this entry) rather than refreshed on a timer, so the sandbox is
+   * protected for exactly as long as the work runs and not one tick longer.
+   */
+  inFlight: number;
   /** This claim's release on the `sessions` owned map (see `disposeEntry`). */
   release: () => boolean;
 };

@@ -30,6 +30,13 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // so the worklet-global sampleRate is authoritative; the option exists
     // for the node-less test harness.
     const rate = opts.sampleRate ?? sampleRate;
+    // Kept, because every derived quantity below reads it and \`bufferedMs\` in
+    // process() is the one that used to read the worklet global instead. Those
+    // agree in production (the option is unset, so \`rate\` IS \`sampleRate\`) and
+    // diverge only in the node-less harness — which is the one place a spec
+    // could ever assert on the reported backlog, so the divergence made the
+    // number untestable rather than wrong.
+    this.rate = rate;
     // Fill target for the start of a turn. If 'done' arrives first (short
     // utterance), start immediately instead of waiting for audio that is
     // never coming.
@@ -277,7 +284,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     if (this.sinceReportSamples >= this.reportIntervalSamples) {
       this.sinceReportSamples = 0;
       if (avail > 0) {
-        this.port.postMessage({ event: 'progress', bufferedMs: (avail / sampleRate) * 1000 });
+        this.port.postMessage({ event: 'progress', bufferedMs: (avail / this.rate) * 1000 });
       }
     }
 

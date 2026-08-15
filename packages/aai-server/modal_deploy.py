@@ -44,7 +44,21 @@ Required Modal Secret named ``aai-server`` with (at least):
 - ``SUPABASE_SERVICE_ROLE_KEY`` — with ``SUPABASE_URL``, the Supabase
   Realtime change streams (sandbox invalidation, studio preview push) AND
   Storage reads/writes of deploy artifacts
+- ``AAI_PUBLIC_ORIGIN`` — the origin browsers reach this deployment on
+  (``https://<host>``, no trailing slash). Required for DURABLE WORKFLOW
+  webhooks and nothing else: it is what ``ctx.workflows.publicWebhookUrl()``
+  mints, and in production it is the only source for that value. The origin is
+  deliberately NOT learned from a request — ``Host``/``x-forwarded-host`` are
+  the caller's to write and this middleware runs before any auth, so one
+  unauthenticated request would otherwise decide the callback URL baked into
+  the next sandbox this replica spawns, for any tenant (see
+  ``rememberPublicOrigin``). Unset, an agent asking for a durable URL gets a
+  throw naming the option; every other route is unaffected
 - optional: ``ASSEMBLYAI_API_KEY``
+- optional: ``AAI_ALLOWED_ORIGINS`` — comma-separated cross-origin callers to
+  allow, or ``*``. Unset rejects every cross-origin request, which is right
+  here: both surfaces are same-origin by construction and an agent's browser
+  client is served by the agent's own origin
 
 """
 

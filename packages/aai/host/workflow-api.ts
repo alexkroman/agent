@@ -85,14 +85,10 @@ import type http from "node:http";
 import { errorMessage } from "../sdk/utils.ts";
 import { WORKFLOW_API_PREFIX } from "../sdk/workflow-api-client.ts";
 import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
+import { decodePathSegment } from "./_path-decode.ts";
 import type { Logger } from "./runtime-config.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
-import {
-  answerHandlerFailure,
-  BodyTooLargeError,
-  bearerMatches,
-  sendJson,
-} from "./workflow-api-http.ts";
+import { BodyTooLargeError, bearerMatches, claimUnder, sendJson } from "./workflow-api-http.ts";
 import {
   cancelRun,
   findRuns,
@@ -200,6 +196,24 @@ function requireUploads(res: http.ServerResponse, ctx: RouteContext): UploadStor
   return undefined;
 }
 
+/** Prefix every `/runs/:id` route matches under. */
+const RUNS_PREFIX = `${WORKFLOW_API_PREFIX}/runs/`;
+
+/**
+ * The run id in this path, or `undefined` having ALREADY answered 400.
+ *
+ * A path segment is percent-decoded, and `decodeURIComponent` throws on a
+ * malformed escape — so `GET /workflows/runs/%` used to reach the router's catch
+ * and answer 500 for what is plainly a bad request. See `_path-decode.ts`: none
+ * of the five decode sites in this package may throw, and each answers the way
+ * its own route answers a request it cannot parse.
+ */
+function runIdOr400(res: http.ServerResponse, url: string, suffix = ""): string | undefined {
+  const id = decodePathSegment(url.slice(RUNS_PREFIX.length, suffix ? -suffix.length : undefined));
+  if (id === undefined) sendJson(res, 400, { error: "Malformed run id" });
+  return id;
+}
+
 /**
  * The routes, as a table rather than an if/else chain.
  *
@@ -210,92 +224,103 @@ function requireUploads(res: http.ServerResponse, ctx: RouteContext): UploadStor
  * **Order is load-bearing** wherever a longer path starts with a shorter one:
  * `/runs/<id>/events` begins with the `/runs/` prefix, so a bare `/runs/:id`
  * rule listed first would read `"<id>/events"` as a run id and answer 404 for a
- * run that exists.
+ * run that exists. That ordering is a property of the TABLE, which is why the
+ * table is a module constant built once rather than a per-instance array: every
+ * entry closes over nothing, and rebuilding ten route objects per
+ * `createWorkflowApi` (and re-scanning a fresh array per request) bought
+ * nothing.
  */
-function buildRoutes(): Route[] {
-  const runsPrefix = `${WORKFLOW_API_PREFIX}/runs/`;
-  const runId = (url: string, suffix = ""): string =>
-    decodeURIComponent(url.slice(runsPrefix.length, suffix ? -suffix.length : undefined));
-  return [
-    {
-      method: "GET",
-      matches: (url) => url === WORKFLOW_API_PREFIX,
-      run: (_req, res, ctx) => sendJson(res, 200, { workflows: ctx.engine.listing() }),
+const ROUTES: readonly Route[] = [
+  {
+    method: "GET",
+    matches: (url) => url === WORKFLOW_API_PREFIX,
+    run: (_req, res, ctx) => sendJson(res, 200, { workflows: ctx.engine.listing() }),
+  },
+  {
+    method: "POST",
+    matches: (url) => url === `${WORKFLOW_API_PREFIX}/runs`,
+    run: (req, res, ctx) => startRun(req, res, ctx),
+  },
+  // Before the `/runs` rules only for readability — `/uploads` shares no
+  // prefix with them, so nothing here depends on the order.
+  {
+    method: "POST",
+    matches: (url) => url === UPLOADS_PATH,
+    run: async (req, res, ctx) => {
+      const store = requireUploads(res, ctx);
+      if (store) await createUpload(req, res, store, ctx.logger);
     },
-    {
-      method: "POST",
-      matches: (url) => url === `${WORKFLOW_API_PREFIX}/runs`,
-      run: (req, res, ctx) => startRun(req, res, ctx),
+  },
+  {
+    method: "GET",
+    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`),
+    run: async (req, res, ctx, url) => {
+      const store = requireUploads(res, ctx);
+      if (!store) return;
+      const id = decodePathSegment(url.slice(UPLOADS_PATH.length + 1));
+      if (id === undefined) {
+        sendJson(res, 400, { error: "Malformed upload id" });
+        return;
+      }
+      await readUploadRoute(req, res, store, id);
     },
-    // Before the `/runs` rules only for readability — `/uploads` shares no
-    // prefix with them, so nothing here depends on the order.
-    {
-      method: "POST",
-      matches: (url) => url === UPLOADS_PATH,
-      run: async (req, res, ctx) => {
-        const store = requireUploads(res, ctx);
-        if (store) await createUpload(req, res, store, ctx.logger);
-      },
+  },
+  // Before the `/runs/:id` prefix matches below, and distinct from them: the
+  // collection path carries no id, so it cannot be confused with a run whose
+  // id is the empty string.
+  {
+    method: "GET",
+    matches: (url) => url === `${WORKFLOW_API_PREFIX}/runs`,
+    run: (req, res, ctx) => findRuns(req, res, ctx.engine),
+  },
+  {
+    method: "GET",
+    matches: (url) => url.startsWith(RUNS_PREFIX) && url.endsWith("/events"),
+    run: (_req, res, ctx, url) => {
+      const id = runIdOr400(res, url, "/events");
+      if (id !== undefined) streamRunEvents(res, ctx.engine, id);
     },
-    {
-      method: "GET",
-      matches: (url) => url.startsWith(`${UPLOADS_PATH}/`),
-      run: async (req, res, ctx, url) => {
-        const store = requireUploads(res, ctx);
-        if (store) {
-          await readUploadRoute(
-            req,
-            res,
-            store,
-            decodeURIComponent(url.slice(UPLOADS_PATH.length + 1)),
-          );
-        }
-      },
+  },
+  // Same rule as `/events` above: a longer path that starts with the `/runs/`
+  // prefix has to be listed before the bare `/runs/:id` rule, or its whole
+  // suffix is read as part of the run id and the answer is a 404 for a run
+  // that exists.
+  {
+    method: "GET",
+    matches: (url) => url.startsWith(RUNS_PREFIX) && url.endsWith("/stream"),
+    run: (req, res, ctx, url) => {
+      const id = runIdOr400(res, url, "/stream");
+      if (id !== undefined) return streamRunOutput(req, res, ctx.engine, id);
     },
-    // Before the `/runs/:id` prefix matches below, and distinct from them: the
-    // collection path carries no id, so it cannot be confused with a run whose
-    // id is the empty string.
-    {
-      method: "GET",
-      matches: (url) => url === `${WORKFLOW_API_PREFIX}/runs`,
-      run: (req, res, ctx) => findRuns(req, res, ctx.engine),
+  },
+  {
+    method: "GET",
+    matches: (url) => url.startsWith(RUNS_PREFIX),
+    run: (req, res, ctx, url) => {
+      const id = runIdOr400(res, url);
+      if (id !== undefined) return readRun(req, res, ctx.engine, id);
     },
-    {
-      method: "GET",
-      matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/events"),
-      run: (_req, res, ctx, url) => {
-        streamRunEvents(res, ctx.engine, runId(url, "/events"));
-      },
+  },
+  // The POST collection route is an exact match on `/runs`, so this cannot be
+  // confused with it — but it still has to precede nothing, since it is the
+  // only POST under the `/runs/` prefix.
+  {
+    method: "POST",
+    matches: (url) => url.startsWith(RUNS_PREFIX) && url.endsWith("/wake"),
+    run: (_req, res, ctx, url) => {
+      const id = runIdOr400(res, url, "/wake");
+      if (id !== undefined) return wakeRun(res, ctx, id);
     },
-    // Same rule as `/events` above: a longer path that starts with the `/runs/`
-    // prefix has to be listed before the bare `/runs/:id` rule, or its whole
-    // suffix is read as part of the run id and the answer is a 404 for a run
-    // that exists.
-    {
-      method: "GET",
-      matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/stream"),
-      run: (req, res, ctx, url) => streamRunOutput(req, res, ctx.engine, runId(url, "/stream")),
+  },
+  {
+    method: "DELETE",
+    matches: (url) => url.startsWith(RUNS_PREFIX),
+    run: (_req, res, ctx, url) => {
+      const id = runIdOr400(res, url);
+      if (id !== undefined) return cancelRun(res, ctx, id);
     },
-    {
-      method: "GET",
-      matches: (url) => url.startsWith(runsPrefix),
-      run: (req, res, ctx, url) => readRun(req, res, ctx.engine, runId(url)),
-    },
-    // The POST collection route is an exact match on `/runs`, so this cannot be
-    // confused with it — but it still has to precede nothing, since it is the
-    // only POST under the `/runs/` prefix.
-    {
-      method: "POST",
-      matches: (url) => url.startsWith(runsPrefix) && url.endsWith("/wake"),
-      run: (_req, res, ctx, url) => wakeRun(res, ctx, runId(url, "/wake")),
-    },
-    {
-      method: "DELETE",
-      matches: (url) => url.startsWith(runsPrefix),
-      run: (_req, res, ctx, url) => cancelRun(res, ctx, runId(url)),
-    },
-  ];
-}
+  },
+];
 
 /**
  * Create the workflow API request handler.
@@ -312,7 +337,6 @@ export function createWorkflowApi(
   opts: WorkflowApiOptions,
 ): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
   const { engine: resolveEngine, token, logger, uploads } = opts;
-  const routes = buildRoutes();
 
   async function route(
     req: http.IncomingMessage,
@@ -344,7 +368,7 @@ export function createWorkflowApi(
       sendJson(res, 404, { error: WORKFLOWS_UNAVAILABLE_MESSAGE });
       return;
     }
-    const matched = routes.find((r) => r.method === method && r.matches(url));
+    const matched = ROUTES.find((r) => r.method === method && r.matches(url));
     if (!matched) {
       sendJson(res, 404, { error: "Not found" });
       return;
@@ -352,19 +376,21 @@ export function createWorkflowApi(
     await matched.run(req, res, { engine, uploads, logger }, url);
   }
 
-  return (req, res, url, method) => {
-    if (url !== WORKFLOW_API_PREFIX && !url.startsWith(`${WORKFLOW_API_PREFIX}/`)) return false;
-    route(req, res, url, method).catch((err: unknown) => {
-      // 413 rather than 400 or 500: the request was well-formed and too big, and
-      // a caller has to tell "this input is too large" apart from "the agent is
-      // broken". Mapped HERE rather than in the route that reads a body, so a
-      // second body-reading route cannot forget it.
-      if (err instanceof BodyTooLargeError && !res.headersSent) {
-        sendJson(res, 413, { error: err.message });
-        return;
-      }
-      answerHandlerFailure(res, logger, "Workflow API request failed", errorMessage(err));
-    });
-    return true;
-  };
+  return claimUnder<http.IncomingMessage, http.ServerResponse>({
+    // The bare prefix IS a route here (it lists the declared workflows), unlike
+    // `/session-events`, which is why `claimUnder` takes a predicate.
+    claims: (url) => url === WORKFLOW_API_PREFIX || url.startsWith(`${WORKFLOW_API_PREFIX}/`),
+    route,
+    logger,
+    label: "Workflow API request failed",
+    // 413 rather than 400 or 500: the request was well-formed and too big, and
+    // a caller has to tell "this input is too large" apart from "the agent is
+    // broken". Mapped HERE rather than in the route that reads a body, so a
+    // second body-reading route cannot forget it.
+    onError: (err, res) => {
+      if (!(err instanceof BodyTooLargeError) || res.headersSent) return false;
+      sendJson(res, 413, { error: err.message });
+      return true;
+    },
+  });
 }

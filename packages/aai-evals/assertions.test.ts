@@ -257,6 +257,66 @@ describe("turn scoping", () => {
     expect(rec.checks[0]?.detail).toContain("only 1 completed turn");
   });
 
+  test("an out-of-range turn fails its NEGATIVE assertions too", () => {
+    // The half that used to pass vacuously, and the reason the guide's claim
+    // above was only true of the first call: every negative assertion holds over
+    // an empty event list, so a three-call chain on a turn that never happened
+    // recorded one failure and two passes and scored 75%.
+    const rec = recorder();
+    const scope = eventScope(rec, toolTurn()).turn(3);
+    scope.noErrors();
+    scope.usedNoTools();
+    scope.notCalledTool("cancel_order");
+    scope.notEvent("error.reported");
+    scope.maxToolCalls(0);
+    scope.saidNothingAbout("refund");
+    expect(rec.held()).toEqual([]);
+    expect(rec.failed()).toHaveLength(7); // the turn(3) record plus all six
+    expect(rec.checks.at(-1)?.detail).toContain("only 1 turn");
+  });
+
+  test("EVERY arm of a nonexistent turn fails — not just the six above", () => {
+    // The arms are the whole surface, so covering a subset reproduces the
+    // original defect one method along: an assertion left holding over the
+    // empty list still turns a chain on a turn that never happened into a
+    // partial pass. This drives all fourteen and both counters, so a newly
+    // added arm that forgets to fail shows up here rather than in a score.
+    const rec = recorder();
+    const scope = eventScope(rec, toolTurn()).turn(9);
+    scope.succeeded();
+    scope.calledTool("cancel_order");
+    scope.notCalledTool("cancel_order");
+    scope.toolOrder(["a", "b"]);
+    scope.usedNoTools();
+    scope.maxToolCalls(0);
+    scope.saidSomething("refund");
+    scope.saidNothingAbout("refund");
+    scope.noErrors();
+    scope.event("error.reported");
+    scope.notEvent("error.reported");
+    scope.eventOrder(["reply.completed", "audio.completed"]);
+    // The predicate must never RUN: an absent turn has nothing to satisfy, so
+    // reaching it would mean the arm was evaluating rather than failing.
+    scope.eventsSatisfy("anything at all", () => {
+      throw new Error("the predicate of an absent turn must not be evaluated");
+    });
+    expect(rec.held()).toEqual([]);
+    // The turn(9) record plus one per arm — nothing passed, nothing was skipped.
+    expect(rec.failed()).toHaveLength(14);
+    // An absent turn has no events and no sub-turns, and says so as data
+    // rather than by failing: these are reads, not assertions.
+    expect(scope.turns()).toBe(0);
+    expect(scope.events).toEqual([]);
+    expect(scope.toolCalls).toEqual([]);
+    expect(scope.said).toEqual([]);
+  });
+
+  test("a turn OF a nonexistent turn is nonexistent too", () => {
+    const rec = recorder();
+    eventScope(rec, toolTurn()).turn(3).turn(0).usedNoTools();
+    expect(rec.held()).toEqual([]);
+  });
+
   test("a reply still in flight is not a turn", () => {
     const rec = recorder();
     expect(eventScope(rec, [heard("hello"), called("c1", "x")]).turns()).toBe(0);

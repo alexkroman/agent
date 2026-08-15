@@ -20,24 +20,16 @@
 import { convert } from "html-to-text";
 import { z } from "zod";
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
-import {
-  FETCH_TIMEOUT_MS,
-  HTML_ACCEPT,
-  MAX_HTML_BYTES,
-  MAX_JSON_BYTES,
-  MAX_PAGE_CHARS,
-  TOOL_USER_AGENT,
-} from "../sdk/constants.ts";
+import { HTML_ACCEPT, MAX_HTML_BYTES, MAX_JSON_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { safeJsonParse } from "../sdk/utils.ts";
 import { calculate } from "./_calculate.ts";
+import { fetchCappedText } from "./_fetch-capped.ts";
 import { createRunCode, type RunCodeExecutor } from "./builtin-run-code.ts";
 import { createGetPageDesign } from "./page-design.ts";
 import { readNotes, writeNote } from "./session-notes.ts";
 import { builtinFetch } from "./ssrf.ts";
 import { createWebSearch } from "./web-search.ts";
-
-const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
 const htmlToText = (html: string): string => convert(html, { wordwrap: false });
 
@@ -63,15 +55,18 @@ function createVisitWebpage(
     inputSchema: visitWebpageParams,
     async execute(args, _ctx) {
       const { url } = args;
-      const resp = await fetchFn(url, {
-        headers: { "User-Agent": TOOL_USER_AGENT, Accept: HTML_ACCEPT },
-        signal: fetchSignal(),
+      // Bounded at the READ — see `_fetch-capped.ts`. A page past the budget is
+      // still worth the part we have, so the surplus is dropped silently and the
+      // caller-facing truncation flag stays the MAX_PAGE_CHARS one below.
+      const page = await fetchCappedText(url, {
+        fetch: fetchFn,
+        accept: HTML_ACCEPT,
+        maxBytes: MAX_HTML_BYTES,
       });
-      if (!resp.ok) {
-        return { error: `Failed to fetch: ${resp.status} ${resp.statusText}`, url };
+      if (!page.ok) {
+        return { error: `Failed to fetch: ${page.error}`, url };
       }
-      const html = await resp.text();
-      const text = htmlToText(html.slice(0, MAX_HTML_BYTES));
+      const text = htmlToText(page.text);
       const truncated = text.length > MAX_PAGE_CHARS;
       return {
         url,
@@ -130,20 +125,18 @@ function createFetchJson(
     inputSchema: fetchJsonParams,
     async execute(args, _ctx) {
       const { url, headers } = args;
-      const safeHeaders = sanitizeHeaders(headers);
-      const resp = await fetchFn(url, {
-        ...(safeHeaders && { headers: safeHeaders }),
-        signal: fetchSignal(),
+      // The URL is prompt-injectable, so the cap has to bound what is READ:
+      // `fetchCappedText` stops the body stream at MAX_JSON_BYTES rather than
+      // buffering it whole and measuring afterwards. A clipped JSON document is
+      // not parseable, so a body that hit the budget is refused outright.
+      const body = await fetchCappedText(url, {
+        fetch: fetchFn,
+        maxBytes: MAX_JSON_BYTES,
+        headers: sanitizeHeaders(headers),
       });
-      if (!resp.ok) return { error: `HTTP ${resp.status} ${resp.statusText}`, url };
-      // Cap the body — a prompt-injected URL could otherwise make resp.json()
-      // buffer an unbounded response (visit_webpage slices to MAX_HTML_BYTES).
-      const max = MAX_JSON_BYTES;
-      const declared = Number(resp.headers.get("content-length"));
-      if (Number.isFinite(declared) && declared > max) return { error: "Response too large", url };
-      const body = await resp.text();
-      if (body.length > max) return { error: "Response too large", url };
-      const parsed = safeJsonParse(body);
+      if (!body.ok) return { error: `HTTP ${body.error}`, url };
+      if (body.truncated) return { error: "Response too large", url };
+      const parsed = safeJsonParse(body.text);
       return parsed === undefined ? { error: "Response was not valid JSON", url } : parsed;
     },
   };
@@ -277,13 +270,28 @@ export type BuiltinToolOptions = {
 export type ToolDefRecord = Record<string, ToolDef>;
 
 /**
+ * Builtins built from the in-sandbox executor the guest harness supplies —
+ * a third record of the same shape rather than a name compared by hand, which
+ * is what made `run_code` the one builtin whose lookup needed a cast.
+ */
+const SANDBOX_BUILTINS: Record<
+  string,
+  (runCode?: RunCodeExecutor) => ToolDef & { guidance?: string }
+> = {
+  run_code: createRunCode,
+};
+
+/**
  * Builtins that execute untrusted code and must ONLY run inside the guest
  * sandbox (Modal/Deno), never on the host. The runtime's sandbox-mode
  * dispatcher consults this to delegate them over RPC like custom tools.
  *
+ * DERIVED from the record above: the two would otherwise be one hand-kept list
+ * each, and a sandbox builtin missing from this set runs on the host.
+ *
  * @internal
  */
-export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string> = new Set(["run_code"]);
+export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string> = new Set(Object.keys(SANDBOX_BUILTINS));
 
 /**
  * Builtins whose definition depends on the injected `fetch` (the platform
@@ -314,14 +322,25 @@ const STATIC_BUILTINS: Record<string, ToolDef & { guidance?: string }> = {
 /**
  * Resolve one builtin tool by name; `undefined` for unknown names.
  *
+ * **Membership is `Object.hasOwn`, not a truthy index.** These records are
+ * object literals, so a plain `RECORD[name]` walks `Object.prototype` and
+ * `resolveAllBuiltins(["constructor"])` reached `Object` — invoked as a factory,
+ * it returns an object, which was then declared as a tool with no `execute`.
+ * `["toString"]` was worse: it returned a STRING, and `agentToolsToSchemas`
+ * crashes on `"parameters" in def` for a primitive. Only the untyped
+ * `/runtime` API can pass such a name (the deploy schema is a `z.enum`), which
+ * is why it stayed reachable.
+ *
  * @internal
  */
 export function resolveBuiltin(
   name: string,
   opts?: BuiltinToolOptions,
 ): (ToolDef & { guidance?: string }) | undefined {
-  if (name === "run_code") return createRunCode(opts?.runCode) as ToolDef & { guidance?: string };
-  return FETCH_BUILTINS[name]?.(opts?.fetch) ?? STATIC_BUILTINS[name];
+  if (Object.hasOwn(SANDBOX_BUILTINS, name)) return SANDBOX_BUILTINS[name]?.(opts?.runCode);
+  if (Object.hasOwn(FETCH_BUILTINS, name)) return FETCH_BUILTINS[name]?.(opts?.fetch);
+  if (Object.hasOwn(STATIC_BUILTINS, name)) return STATIC_BUILTINS[name];
+  return undefined;
 }
 
 /** Resolved builtins with defs, schemas, and guidance computed in a single pass. */

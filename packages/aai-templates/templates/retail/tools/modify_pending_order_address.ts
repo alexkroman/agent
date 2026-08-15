@@ -16,10 +16,6 @@ export default retailTool({
       .describe("Order id such as '#W0000000', or a spoken reference to one of their orders"),
     ...AddressFields,
   }),
-  // `execute` before `summary`: TS infers the wrapper's generic `R` from
-  // `execute`'s return type, and processes object literal properties in
-  // source order — with `summary` first, `result` in its signature can't be
-  // inferred and silently falls back to `unknown`.
   execute: (args, state) => {
     const order = resolveOrder(state, args.order_id);
     if (isToolFailure(order)) return order;

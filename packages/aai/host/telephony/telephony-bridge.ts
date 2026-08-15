@@ -176,7 +176,12 @@ export function createTelephonyBridge(
     }
     // The caller interrupted, or the conversation was reset. Both mean the
     // audio the carrier is still holding is dead — see CarrierCodec.clear.
-    if (type === "reply.cancelled" || type === "reset") sendToCarrier(carrier.clear(streamId));
+    // The reset event is `session.reset` on the wire, not `reset`: this branch
+    // spent its life testing a type no runtime emits, so a `reset` command left
+    // the carrier playing out a conversation the session had already discarded.
+    // `ws-client-sink.ts` clears the pacer on exactly this pair.
+    if (type === "reply.cancelled" || type === "session.reset")
+      sendToCarrier(carrier.clear(streamId));
     // Everything else is for a screen: transcripts, tool calls, agent state,
     // reply/turn boundaries. A phone has none, and the audio already carries
     // the conversation.

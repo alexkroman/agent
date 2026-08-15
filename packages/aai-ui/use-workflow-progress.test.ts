@@ -165,13 +165,35 @@ describe("useWorkflowProgress", () => {
     await waitFor(() => expect(result.current.progress).toEqual(["log for wrun_2"]));
   });
 
-  test("namespace and startIndex reach the URL, negative index included", async () => {
+  test("namespace and a positive startIndex reach the URL", async () => {
     fetchMock.mockImplementation(async () => sse(chunks([])));
-    renderHook(() => useWorkflowProgress("wrun_1", { namespace: "logs", startIndex: -3 }));
+    renderHook(() => useWorkflowProgress("wrun_1", { namespace: "logs", startIndex: 4 }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(call()[0]).toContain("namespace=logs");
-    expect(call()[0]).toContain("startIndex=-3");
+    expect(call()[0]).toContain("startIndex=4");
+  });
+
+  test("a negative startIndex is resolved HERE, so a re-open cannot duplicate", async () => {
+    // "the last N" names no position a later read can resume from — the tail it
+    // counts back from moves. Carried, the re-open asked from 0 and dropped
+    // `seen` chunks off the FRONT, which is a different set entirely: lines the
+    // caller never asked for, followed by the ones it already had, in that
+    // order. So the first read is issued from 0 and trimmed to the window, and
+    // every read after it is the ordinary absolute case.
+    fetchMock
+      .mockImplementationOnce(async () => sse(chunks(["a", "b", "c", "d", "e"], false)))
+      .mockImplementationOnce(async () => sse(chunks(["f"], true)));
+    const { result } = renderHook(() =>
+      useWorkflowProgress("wrun_1", { startIndex: -2, intervalMs: 1 }),
+    );
+
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+    expect(result.current.progress).toEqual(["d", "e", "f"]);
+    // The window is applied by the reader, so the route sees no negative index…
+    expect(call(0)[0]).toBe("http://localhost:3000/workflows/runs/wrun_1/stream");
+    // …and the re-open resumes from an absolute position past the whole log.
+    expect(call(1)[0]).toContain("startIndex=5");
   });
 
   test("options the caller left out put nothing on the query string", async () => {

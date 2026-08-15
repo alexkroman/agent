@@ -14,7 +14,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { createTestOrchestrator, deployAgent, type TestFetch } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({
@@ -67,7 +67,7 @@ async function residentHarness(guestFetch?: typeof globalThis.fetch) {
     ...(guestFetch && { guestFetch }),
   });
   await deployAgent(harness.fetch, "my-agent");
-  slots.claim("my-agent", {
+  setSlot(slots, {
     slug: "my-agent",
     sandbox: makeFakeSandbox(),
     version: (await harness.store.getAgentVersion("my-agent")) ?? 1,
@@ -155,6 +155,35 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
     expect(guest.calls[0]?.url).toContain("tunnel.test");
   });
 
+  test("nor this hop's CREDENTIALS, which are not part of the message", async () => {
+    // The forward was a deny-list of hop-by-hop names only, so `Cookie` (a
+    // credential for THIS origin — agent pages and the studio are served from
+    // it), `Authorization` (a platform bearer) and `X-Forwarded-*` all reached
+    // tenant code. They describe the caller to US; the run receives the
+    // SENDER'S message, which is why the rest still passes through unfiltered
+    // (see the Stripe-Signature spec above).
+    const guest = recordingGuest();
+    const harness = await residentHarness(guest.fetchFn);
+
+    await post(harness.fetch, WEBHOOK_PATH, {
+      headers: {
+        Cookie: "sb-access-token=super-secret",
+        Authorization: "Bearer platform-api-key",
+        "X-Forwarded-For": "203.0.113.7",
+        "X-Forwarded-Host": "aai.example",
+        "X-Custom-Provider-Header": "kept",
+      },
+      body: "hi",
+    });
+
+    const [call] = guest.calls;
+    expect(call?.headers.get("cookie")).toBeNull();
+    expect(call?.headers.get("authorization")).toBeNull();
+    expect(call?.headers.get("x-forwarded-for")).toBeNull();
+    expect(call?.headers.get("x-forwarded-host")).toBeNull();
+    expect(call?.headers.get("x-custom-provider-header")).toBe("kept");
+  });
+
   test("re-encodes a token so the guest still sees ONE path segment", async () => {
     // The guest rejects an embedded `/` before decoding (`webhookToken`), so a
     // token carrying one has to stay percent-encoded across the hop.
@@ -217,7 +246,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
     const slots = createSlotCache();
     const harness = await createTestOrchestrator({ slots, guestFetch: guest.fetchFn });
     await deployAgent(harness.fetch, "my-agent");
-    slots.claim("my-agent", {
+    setSlot(slots, {
       slug: "my-agent",
       sandbox: makeFakeSandbox({
         guestOrigin: vi.fn(() => new Promise<string>(() => undefined)),

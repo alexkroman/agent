@@ -135,7 +135,19 @@ on conflict (session_id, event_index) do nothing`;
 const READ_EVENTS_SQL = `select event_index, event::text as event from ${SESSION_EVENT_TABLE}
 where session_id = $1 and event_index >= $2 order by event_index limit $3`;
 
-const COUNT_EVENTS_SQL = `select count(*)::int as count from ${SESSION_EVENT_TABLE} where session_id = $1`;
+/**
+ * The NEXT FREE INDEX, which is `max + 1` and deliberately not `count(*)`.
+ *
+ * The two agree only for a log that is dense from zero, and this one need not be:
+ * an event past `MAX_SESSION_EVENTS` advances the position without ever being
+ * stored, and a flush that failed while later ones succeeded leaves a hole. Both
+ * make `count(*)` SMALLER than the highest index written — so a session resuming
+ * onto a replacement process continued at a position it had already used, its
+ * `tail` went backwards (which the store's contract says must never happen), and
+ * `on conflict do nothing` silently discarded every re-used index.
+ */
+const NEXT_EVENT_INDEX_SQL = `select coalesce(max(event_index) + 1, 0)::int as count
+from ${SESSION_EVENT_TABLE} where session_id = $1`;
 
 const DISCARD_EVENTS_SQL = `delete from ${SESSION_EVENT_TABLE} where session_id = $1`;
 
@@ -201,7 +213,7 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
     },
     async countEvents(sessionId) {
       await ensureEventTable();
-      const rows = await db.query<{ count: number }>(COUNT_EVENTS_SQL, [sessionId]);
+      const rows = await db.query<{ count: number }>(NEXT_EVENT_INDEX_SQL, [sessionId]);
       return rows[0]?.count ?? 0;
     },
   };

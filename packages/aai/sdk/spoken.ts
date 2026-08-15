@@ -66,6 +66,17 @@ const ORDINALS: Readonly<Record<string, number>> = {
 };
 
 /**
+ * {@link ORDINALS} as compiled word-boundary patterns, in declaration order.
+ *
+ * Built ONCE at module load. `new RegExp(...)` inside the loop compiled all
+ * thirteen on every call, and this is on the tool path — `resolveOne` consults
+ * it for every candidate list a voice agent resolves.
+ */
+const ORDINAL_PATTERNS: readonly (readonly [RegExp, number])[] = Object.entries(ORDINALS).map(
+  ([word, index]) => [new RegExp(`\\b${word}\\b`), index] as const,
+);
+
+/**
  * The position an utterance names, as an index, or `undefined` if it names none.
  *
  * `-1` means the LAST candidate, following `Array.prototype.at` — which is also
@@ -93,8 +104,8 @@ const ORDINALS: Readonly<Record<string, number>> = {
  */
 export function spokenOrdinal(spoken: string): number | undefined {
   const text = spoken.toLowerCase();
-  for (const [word, index] of Object.entries(ORDINALS)) {
-    if (new RegExp(`\\b${word}\\b`).test(text)) return index;
+  for (const [pattern, index] of ORDINAL_PATTERNS) {
+    if (pattern.test(text)) return index;
   }
   return undefined;
 }
@@ -173,7 +184,12 @@ export function resolveOne<T>(
   const index = spokenOrdinal(spoken);
   if (index !== undefined) {
     const picked = candidates.at(index);
-    if (!picked) {
+    // `=== undefined`, never `!picked`: `at` reports "no such position" with
+    // `undefined` and nothing else, so a truthiness test additionally rejects a
+    // candidate that is legitimately falsy — `resolveOne<0 | 5>` could not
+    // return `0`, and an empty-string candidate could never be picked at all.
+    // The other two picks in this function already read it this way.
+    if (picked === undefined) {
       return toolFailure(
         `There is no such ${label} — there ${count(candidates.length, label)}: ${list(candidates, opts.describe)}.`,
       );

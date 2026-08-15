@@ -61,6 +61,7 @@
 
 import type { LanguageModelMiddleware } from "ai";
 import type { JSONSchema7 } from "json-schema";
+import { isRecord } from "../../sdk/utils.ts";
 
 /** Keywords the gateway's Gemini path rejects outright, with a 500. */
 const UNSUPPORTED = new Set(["$schema", "propertyNames"]);
@@ -77,7 +78,7 @@ function prune(value: unknown): unknown {
     const items = value.map(prune);
     return items.some((item, i) => item !== value[i]) ? items : value;
   }
-  if (typeof value !== "object" || value === null) return value;
+  if (!isRecord(value)) return value;
   const out: Record<string, unknown> = {};
   let changed = false;
   for (const [key, child] of Object.entries(value)) {

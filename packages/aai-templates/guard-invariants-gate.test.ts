@@ -33,6 +33,20 @@
 
 import { describe, expect, test } from "vitest";
 
+/**
+ * The shared ratchet ENGINE both baseline gates run on.
+ *
+ * Separate from `script` because this spec scrapes gate source: when the two
+ * ratchets converged onto one engine, the `--update` refuse-to-raise assertion
+ * stopped finding its string here and failed naming a mechanism that had only
+ * MOVED. See the twin note in `escape-hatch-scope.test.ts`.
+ */
+const engine = import.meta.glob("../../scripts/_ratchet.mjs", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+})["../../scripts/_ratchet.mjs"];
+
 const script = import.meta.glob("../../scripts/guard-invariants.mjs", {
   query: "?raw",
   import: "default",
@@ -156,8 +170,26 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
     matches: [
       "    ...(body !== undefined ? { body } : {}),",
       "      ...(params.port !== undefined ? { AAI_GUEST_PORT: String(params.port) } : {}),",
+      // All three spellings of one idiom. The rule shipped seeing only the
+      // first, which is why it scored 8 raw hits against 45: the inverted
+      // ternary and the `&&` form are the same conditional spread written by
+      // authors who reached for a different operator, and both were invisible.
+      // A pattern that sees one spelling of three reports a healthy count and
+      // grades a fifth of the tree.
+      "    ...(opts.name === undefined ? {} : { name: opts.name }),",
+      "      ...(limits.cpu !== undefined && { cpu: limits.cpu }),",
+      "    ...(opts.extraAppDbClusters !== undefined && {",
     ],
-    ignores: ["    ...omitUndefined({ body }),", "    ...(flag ? { a: 1 } : { a: 2 }),"],
+    ignores: [
+      "    ...omitUndefined({ body }),",
+      "    ...(flag ? { a: 1 } : { a: 2 }),",
+      // Both are real lines, and both must stay spared for the same reason:
+      // `omitUndefined` cannot express them. The first spreads an ARRAY, which
+      // has no key to omit; the second tests a compound condition rather than
+      // mere presence, so the guard is not the value.
+      '        ...(opts.system === undefined ? [] : [{ role: "system", content: opts.system }]),',
+      "    ...(opts.languages !== undefined && opts.languages.length > 0",
+    ],
   },
   rule3_raceTimeout: {
     matches: [
@@ -241,9 +273,23 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
       '  return typeof value === "object" && value !== null && !Array.isArray(value);',
       '  if (body !== null && typeof body === "object") {',
       '    const ok = typeof opts.input === "object" && opts.input !== null;',
+      // The NEGATED DISJUNCTION, in both operand orders — and this is the form
+      // the codebase actually writes, because the idiom appears as an early
+      // return in a guard clause rather than as a boolean. The positive-only
+      // pattern graded 8 lines while 28 of these went unseen: a 20:1 miss that
+      // reported a clean ✓. Whichever polarity a rule is written in, the other
+      // one is where the code lives.
+      '  if (typeof value !== "object" || value === null) return null;',
+      '  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {',
     ],
     ignores: [
       "  if (!isRecord(body)) return undefined;",
+      // Each half ALONE is not this idiom and must stay spared — a bare
+      // `typeof x !== "object"` is a type test, and a bare `x === null` is a
+      // null check. Only the conjunction (or its negated disjunction) is the
+      // duck-typing guard `isRecord` replaces.
+      '  if (typeof value !== "object") return null;',
+      "  if (value === null) return null;",
       // Ordinary narrowing of a union the compiler ALREADY knows, which is why
       // the `!== null` half is in the pattern. Both are real lines: the first is
       // `server.address()`'s `AddressInfo | string | null`, the second a
@@ -391,7 +437,13 @@ describe("guard-invariants gate", () => {
     // Same contract as the escape-hatch ratchet: without this, every failure
     // would have a one-command bypass and the reviewable diff that gates a
     // deliberate increase would never be produced.
-    expect(script).toContain("refusing to RAISE");
+    expect(engine).toContain("refusing to RAISE");
+  });
+
+  test("the gate still runs on the shared ratchet engine", () => {
+    // The assertion above now reads `_ratchet.mjs`, so alone it would pass for
+    // a gate that had stopped using the engine — checking a file nothing runs.
+    expect(script).toContain("_ratchet.mjs");
   });
 
   describe("rule 12 — undeclared guest routes", () => {

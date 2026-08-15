@@ -2,8 +2,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { type ArgsDef, type CommandDef, runCommand as runCittyCommand } from "citty";
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { CliError, ok } from "./_output.ts";
+import { CliError, fail, ok } from "./_output.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 const logMock = vi.hoisted(() => ({
@@ -17,9 +18,8 @@ const logMock = vi.hoisted(() => ({
 const silenceOutput = vi.hoisted(() => vi.fn());
 vi.mock("./_ui.ts", () => ({ log: logMock, silenceOutput }));
 
-const { findUnknownFlags, runCommand, setup, sharedArgs, unknownFlagsForArgv } = await import(
-  "./_cli-common.ts"
-);
+const { defineExec, findUnknownFlags, runCommand, setup, sharedArgs, unknownFlagsForArgv } =
+  await import("./_cli-common.ts");
 
 describe("findUnknownFlags", () => {
   const argsDef = {
@@ -198,6 +198,50 @@ describe("runCommand", () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
+  test("human mode: a RETURNED failure logs the message AND the hint, exits 1", async () => {
+    // The convergence this module's doc promises used to hold only for the
+    // `catch` arm: a body that RETURNED `fail(...)` fell straight through to
+    // the JSON check and `process.exit(1)`, so nine subcommands — `aai test`
+    // with no runner binary, all four `aai workflow` verbs against a booting
+    // sandbox, `aai secret put` with an empty value, `aai storage disable`
+    // without `--force` — exited 1 with an EMPTY terminal.
+    await runCommand({ json: false }, async () =>
+      fail("confirmation_required", "That would drop your data", "Re-run with --force"),
+    );
+    expect(logMock.error).toHaveBeenCalledWith("That would drop your data");
+    expect(logMock.info).toHaveBeenCalledWith("Re-run with --force");
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  test("human mode: a returned failure with no hint logs only the message", async () => {
+    await runCommand({ json: false }, async () => fail("test_failed", "Tests failed"));
+    expect(logMock.error).toHaveBeenCalledWith("Tests failed");
+    expect(logMock.info).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  test("human mode: a returned failure is NOT written to stdout", async () => {
+    // The other half of the contract: exactly one result line belongs to JSON
+    // mode, and a human terminal must not get a JSON blob beside the sentence.
+    await runCommand({ json: false }, async () => fail("nope", "No"));
+    expect(stdoutSpy).not.toHaveBeenCalled();
+  });
+
+  test("json mode: a returned failure is the result line, and nothing is logged", async () => {
+    await runCommand({ json: true }, async () => fail("no_input", "No value provided", "Pipe it"));
+    const written = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    expect(JSON.parse(written.trim())).toEqual({
+      ok: false,
+      code: "no_input",
+      error: "No value provided",
+      hint: "Pipe it",
+    });
+    // `log` is silenced in JSON mode anyway; asserting it keeps the emitter
+    // from growing a second, unsilenced write path.
+    expect(logMock.error).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
   test("json mode: a failure becomes a machine-readable line and exit 1", async () => {
     await runCommand({ json: true }, async () => {
       throw new CliError("no_input", "Nothing here", "Pipe something in");
@@ -216,5 +260,114 @@ describe("runCommand", () => {
 describe("sharedArgs", () => {
   test("declares the flags every platform command shares", () => {
     expect(Object.keys(sharedArgs).sort()).toEqual(["json", "server", "yes"]);
+  });
+});
+
+describe("defineExec", () => {
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    vi.spyOn(process.stdout, "write").mockImplementation((_chunk, cb?: unknown) => {
+      if (typeof cb === "function") (cb as () => void)();
+      return true;
+    });
+  });
+
+  /**
+   * Run a defined command through citty itself, so the argv → `args` parse is
+   * the real one rather than a hand-built context.
+   */
+  const invoke = async <T extends ArgsDef>(
+    cmd: CommandDef<T>,
+    rawArgs: string[] = [],
+  ): Promise<void> => {
+    await runCittyCommand(cmd, { rawArgs });
+  };
+
+  test('cwd: "agent" refuses a directory with no agent.ts, through the one emitter', async () => {
+    // The policy is the whole reason this wrapper exists: `aai test` shipped
+    // without it and reported a green skipped suite in an empty directory.
+    await withTempDir(async (dir) => {
+      vi.stubEnv("INIT_CWD", dir);
+      const body = vi.fn();
+      const cmd = defineExec({
+        meta: { name: "needs-agent" },
+        args: { json: sharedArgs.json },
+        cwd: "agent",
+        run: body,
+      });
+
+      await invoke(cmd, ["--json=false"]);
+
+      expect(body).not.toHaveBeenCalled();
+      // The refusal converges on the same emitter as everything else rather
+      // than escaping the command as an unhandled rejection.
+      expect(logMock.error).toHaveBeenCalledWith(expect.stringContaining("No agent.ts found"));
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+  });
+
+  test('cwd: "agent" hands the body the directory once agent.ts is there', async () => {
+    await withTempDir(async (dir) => {
+      vi.stubEnv("INIT_CWD", dir);
+      await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
+      const body = vi.fn().mockResolvedValue(ok({}));
+      const cmd = defineExec({
+        meta: { name: "needs-agent" },
+        args: { json: sharedArgs.json },
+        cwd: "agent",
+        run: body,
+      });
+
+      await invoke(cmd, ["--json=false"]);
+
+      expect(body).toHaveBeenCalledWith(expect.objectContaining({ cwd: dir, mode: "human" }));
+    });
+  });
+
+  test('cwd: "any" runs in a directory with no agent.ts', async () => {
+    await withTempDir(async (dir) => {
+      vi.stubEnv("INIT_CWD", dir);
+      const body = vi.fn().mockResolvedValue(ok({}));
+      const cmd = defineExec({
+        meta: { name: "anywhere" },
+        args: { json: sharedArgs.json },
+        cwd: "any",
+        run: body,
+      });
+
+      await invoke(cmd, ["--json=false"]);
+
+      expect(body).toHaveBeenCalledWith(expect.objectContaining({ cwd: dir }));
+      expect(exitSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  test('cwd: "none" hands the body no directory at all', async () => {
+    const body = vi.fn().mockResolvedValue(ok({}));
+    const cmd = defineExec({
+      meta: { name: "rootless" },
+      args: { json: sharedArgs.json },
+      cwd: "none",
+      run: body,
+    });
+
+    await invoke(cmd, ["--json=false"]);
+
+    expect(body).toHaveBeenCalledWith(expect.objectContaining({ cwd: undefined }));
+  });
+
+  test("the body's mode follows --json, and a returned failure still exits 1", async () => {
+    const cmd = defineExec({
+      meta: { name: "jsonful" },
+      args: { json: sharedArgs.json },
+      cwd: "none",
+      run: async ({ mode }) => fail("nope", `mode=${mode}`),
+    });
+
+    await invoke(cmd, ["--json"]);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });

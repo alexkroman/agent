@@ -3,6 +3,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
+import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
 import { openSoniox } from "./soniox.ts";
 
 interface FakeWSInstance {
@@ -28,16 +29,20 @@ const { latest, FakeWS } = vi.hoisted(() => {
   class FakeWSImpl implements FakeWSInstance {
     static OPEN = 1;
     static CLOSED = 3;
+    /** When true, new sockets black-hole: no "open", no "error" — ever. */
+    static neverOpen = false;
     readyState = 0;
     sent: Array<string | Uint8Array> = [];
     private listeners = new Map<string, Listener[]>();
     options: { perMessageDeflate?: boolean } | undefined;
     constructor(_url: string, opts?: { perMessageDeflate?: boolean }) {
       this.options = opts;
-      setImmediate(() => {
-        this.readyState = 1;
-        this.emit("open");
-      });
+      if (!FakeWSImpl.neverOpen) {
+        setImmediate(() => {
+          this.readyState = 1;
+          this.emit("open");
+        });
+      }
       latestRef.ws = this;
     }
     on(ev: string, fn: Listener): void {
@@ -94,6 +99,10 @@ interface OpenSessionOpts {
   model?: string;
 }
 
+function openOpener(signal: AbortSignal): Promise<unknown> {
+  return openSoniox({}).open({ sampleRate: 16_000, apiKey: "test-key", signal });
+}
+
 async function openSession(opts: OpenSessionOpts = {}): Promise<{
   session: import("../../../sdk/providers.ts").SttSession;
   ws: FakeWSInstance;
@@ -140,6 +149,45 @@ describe("Soniox real-time STT adapter", () => {
     await expect(
       opener.open({ sampleRate: 16_000, apiKey: "", signal: controller.signal }),
     ).rejects.toMatchObject({ code: "stt_auth_failed" });
+  });
+
+  test("an initial connect that black-holes fails the open instead of hanging forever", async () => {
+    // A dropped SYN or a stalled proxy emits neither "open" nor "error". With
+    // no deadline `waitForOpen` never settled, so `providers.open()` never
+    // resolved: the ws-handler rejected the SESSION at its own timeout without
+    // cancelling this connect, leaving the socket held by a pending listener
+    // with no owner.
+    FakeWS.neverOpen = true;
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const openPromise = openOpener(controller.signal);
+      // Assert on the rejection BEFORE advancing: the timer settles the promise
+      // inside `advanceTimersByTimeAsync`, and a rejection with no handler yet
+      // attached is an unhandled rejection the runner reports.
+      const rejected = expect(openPromise).rejects.toMatchObject({ code: "stt_connect_failed" });
+      await vi.advanceTimersByTimeAsync(WS_OPEN_TIMEOUT_MS + 1);
+      await rejected;
+      expect(latest.ws?.readyState).toBe(3);
+    } finally {
+      vi.useRealTimers();
+      FakeWS.neverOpen = false;
+    }
+  });
+
+  test("an abort during the connect abandons the socket rather than waiting it out", async () => {
+    // `closeOnAbort` is registered only AFTER the connect resolves, so before
+    // this the session's own hang-up could not reach a socket still connecting.
+    FakeWS.neverOpen = true;
+    try {
+      const controller = new AbortController();
+      const openPromise = openOpener(controller.signal);
+      controller.abort();
+      await expect(openPromise).rejects.toMatchObject({ code: "stt_connect_failed" });
+      expect(latest.ws?.readyState).toBe(3);
+    } finally {
+      FakeWS.neverOpen = false;
+    }
   });
 
   test("first frame sent is the JSON config with api_key, model, audio_format, sample_rate", async () => {
@@ -281,6 +329,58 @@ describe("Soniox real-time STT adapter", () => {
     expect(errors[0]?.message).toContain("service unavailable");
     await session.close();
   });
+
+  test.each([
+    ["a non-array tokens field", { tokens: 5 }],
+    ["an object tokens field", { tokens: { text: "hi" } }],
+    ["a tokens string", { tokens: "hello" }],
+  ])("%s is dropped, never thrown out of the message handler", async (_label, payload) => {
+    // `tokens.length === 0` is FALSE for a truthy non-array (`undefined === 0`),
+    // so the frame reached `for (const tok of tokens)` and threw "not iterable"
+    // straight out of `ws.on("message")` — an uncaughtException that takes down
+    // a multi-tenant host rather than one session. The parse layer's contract is
+    // drop, never throw; the S2S wire parse states the same rule.
+    const { session, ws } = await openSession();
+    const events: unknown[] = [];
+    session.on("partial", () => events.push("partial"));
+    session.on("final", () => events.push("final"));
+
+    expect(() => ws._fire("message", frame(payload))).not.toThrow();
+
+    await flush();
+    expect(events).toEqual([]);
+    await session.close();
+  });
+
+  test("an error_code alongside a malformed tokens field is still surfaced", async () => {
+    // Dropping the bad field, not the whole frame: the error is the useful half.
+    const { session, ws } = await openSession();
+    const errors: string[] = [];
+    session.on("error", (e) => errors.push(e.message));
+
+    ws._fire("message", frame({ error_code: 429, error_message: "slow down", tokens: 7 }));
+
+    await flush();
+    expect(errors[0]).toContain("429");
+    await session.close();
+  });
+
+  test.each([["[1,2,3]"], ['"a string"'], ["null"], ["42"]])(
+    "a non-object JSON frame (%s) is ignored",
+    async (body) => {
+      const { session, ws } = await openSession();
+      const events: unknown[] = [];
+      session.on("partial", () => events.push("partial"));
+      session.on("final", () => events.push("final"));
+      session.on("error", () => events.push("error"));
+
+      expect(() => ws._fire("message", Buffer.from(body))).not.toThrow();
+
+      await flush();
+      expect(events).toEqual([]);
+      await session.close();
+    },
+  );
 
   test("garbage (non-JSON) frames are ignored", async () => {
     const { session, ws } = await openSession();

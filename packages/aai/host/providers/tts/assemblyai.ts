@@ -113,14 +113,13 @@ import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
+import { createGuardedWs, dropSocket as dropSocketShared, openGuardedWs } from "../_socket.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
-  connectOrThrow,
-  createGuardedWs,
   createTtsSessionShell,
-  dropSocket as dropSocketShared,
   requireApiKey,
+  type SessionShell,
   waitForOpen,
 } from "../_utils.ts";
 import { splitSegment } from "./assemblyai-segment.ts";
@@ -145,8 +144,15 @@ interface AssemblyAITtsMessage {
   warning?: string;
 }
 
-/** `(code): reason`, with a fallback so a detail-less frame still reads. */
-function errorDetail(msg: AssemblyAITtsMessage): string {
+/**
+ * `(code): reason`, with a fallback so a detail-less frame still reads.
+ *
+ * Named for the FRAME rather than `errorDetail`, which is the repo-wide helper
+ * in `sdk/utils.ts` (a `cause`/`detail` reader over an unknown throwable) and
+ * is in scope everywhere — one name meaning two things in one file is how the
+ * wrong one gets imported.
+ */
+function formatErrorFrame(msg: AssemblyAITtsMessage): string {
   const reason = msg.error?.trim() ? msg.error : "unknown";
   return `(${msg.error_code ?? ""}): ${reason}`;
 }
@@ -185,12 +191,16 @@ function buildUrl(
 /**
  * Handle one server frame. Extracted to keep `open()` under the cognitive
  * complexity limit; turn state is threaded through the callbacks.
+ *
+ * Emits through `shell`, never the raw emitter: this runs inside a socket
+ * 'message' handler, where a throw from a downstream listener escapes into
+ * Node's EventEmitter as an uncaughtException — taking down a multi-tenant host
+ * rather than one session.
  */
 function handleMessage(
   raw: WebSocket.Data,
-  emitter: Emitter<TtsEvents>,
+  shell: SessionShell<TtsEvents>,
   onSynthesisComplete: (ack: SynthesisAck) => void,
-  streamError: (message: string) => void,
   onWords: (msg: AssemblyAITtsMessage) => void,
 ): void {
   const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
@@ -202,7 +212,7 @@ function handleMessage(
     case "Audio": {
       if (typeof msg.audio === "string") {
         const pcm = bytesToPcm16(base64ToUint8(msg.audio));
-        if (pcm.length > 0) emitter.emit("audio", pcm);
+        if (pcm.length > 0) shell.emit("audio", pcm);
       }
       // Older servers flag the final frame; the live one uses FlushDone.
       if (msg.is_final) onSynthesisComplete("is_final");
@@ -216,7 +226,7 @@ function handleMessage(
       onWords(msg);
       return;
     case "Error":
-      streamError(`AssemblyAI TTS ${errorDetail(msg)}`);
+      shell.streamError(`AssemblyAI TTS ${formatErrorFrame(msg)}`);
       return;
     default:
       // Begin is consumed by the handshake below; Warning is informational.
@@ -240,29 +250,26 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       // than on a cancel-triggered reconnect mid-conversation.
       const url = buildUrl(opts, sampleRate, connectError);
 
+      // Raw key, not `Bearer` — see the module doc.
+      const createSocket = (): WebSocket =>
+        new WebSocket(url, {
+          headers: { Authorization: apiKey },
+          ...PROVIDER_WS_OPTIONS,
+        });
+      // The guard listener protects against a late socket error with zero
+      // listeners crashing the process; the RECONNECT path builds its socket
+      // this way and opens it itself, because it must not block `cancel()`.
       const connect = (): WebSocket =>
-        // Raw key, not `Bearer` — see the module doc. The guard listener
-        // protects against a late socket error with zero listeners crashing
-        // the process.
-        createGuardedWs(
-          () =>
-            new WebSocket(url, {
-              headers: { Authorization: apiKey },
-              ...PROVIDER_WS_OPTIONS,
-            }),
-          connectError,
-          "AssemblyAI TTS",
-        );
+        createGuardedWs(createSocket, connectError, "AssemblyAI TTS");
 
-      let ws = connect();
-      try {
-        await connectOrThrow("AssemblyAI TTS", connectError, () => waitForOpen(ws));
-      } catch (err) {
-        // Failed connect: close the socket before rethrowing so it can't
-        // linger half-open (late errors land in the guard listener).
-        dropSocketShared(ws);
-        throw err;
-      }
+      // Bounded and abort-wired: an upgrade that black-holes must not leave
+      // `open()` pending with a socket nobody owns — see `openGuardedWs`.
+      let ws = await openGuardedWs({
+        create: createSocket,
+        label: "AssemblyAI TTS",
+        makeConnectError: connectError,
+        signal: openOpts.signal,
+      });
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
       // Non-null while a post-cancel replacement socket is connecting: frames
@@ -290,7 +297,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         // The turn is over, so text still held here belongs to nothing. Keeping
         // it would splice it into the next turn's first segment.
         buffered = "";
-        emitter.emit("done");
+        shell.emit("done");
       });
 
       const onSynthesisComplete = (ack: SynthesisAck): void => turn.onAck(ack);
@@ -302,13 +309,13 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const onWords = (msg: AssemblyAITtsMessage): void => {
         if (!turn.inFlight()) return;
         const words = timeline.rebase(readWordBoundaries(msg));
-        if (words.length > 0) emitter.emit("words", words);
+        if (words.length > 0) shell.emit("words", words);
       };
 
       const attach = (socket: WebSocket): void => {
         socket.on("message", (raw: WebSocket.Data) => {
           if (shell.isClosed()) return;
-          handleMessage(raw, emitter, onSynthesisComplete, shell.streamError, onWords);
+          handleMessage(raw, shell, onSynthesisComplete, onWords);
         });
         socket.on("error", (err: Error) => shell.onSocketError(err));
         socket.on("close", (code: number) => {
@@ -346,7 +353,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         // nothing upstream bounding it, and a black-holed connect (no `open`,
         // no `error`) would leave `queued` non-null forever — every later
         // turn's frames queue "successfully" while nothing reaches the wire.
-        void waitForOpen(next, TTS_RECONNECT_TIMEOUT_MS).then(
+        void waitForOpen(next, { timeoutMs: TTS_RECONNECT_TIMEOUT_MS }).then(
           () => {
             // Superseded (closed, or cancelled again) — not the live socket.
             if (shell.isClosed() || ws !== next) return;
@@ -440,9 +447,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           reconnect();
         },
 
-        on(event, fn) {
-          return emitter.on(event, fn);
-        },
+        on: shell.on,
 
         close: shell.close,
 

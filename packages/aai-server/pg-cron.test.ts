@@ -1,9 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
-import type { SqlExec } from "./secret-store.ts";
+import { AGENT_ENV_SECRET_PREFIX, APP_DB_SECRET_PREFIX, type SqlExec } from "./secret-store.ts";
 
 /** Capture every statement; `scheduled` is what `cron.job` already holds. */
 function captureSql(scheduled: string[] = []) {
@@ -96,6 +97,24 @@ test("the orphan-preview sweep only reaps unreferenced, aged preview slugs", () 
   // The slug's Vault secrets go with the row.
   expect(command).toContain("'agent-env:' || target.slug");
   expect(command).toContain("'app-db:' || target.slug");
+});
+
+test("the sweep's suffix and Vault prefixes come from the constants, not literals", () => {
+  // These three strings are spelled in SQL that no type-checker relates to the
+  // writers, and the guide names PREVIEW_SLUG_SUFFIX's consumers explicitly
+  // "because a disagreement is silent data loss" — a sweep whose prefix has
+  // drifted deletes nothing and says nothing. Asserting against the CONSTANTS
+  // rather than the strings is what makes this a link instead of a second copy.
+  const command = platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews")?.command;
+  expect(command).toContain(`like '%${PREVIEW_SLUG_SUFFIX}'`);
+  expect(command).toContain(`'${AGENT_ENV_SECRET_PREFIX}' || target.slug`);
+  expect(command).toContain(`'${APP_DB_SECRET_PREFIX}' || target.slug`);
+  expect(command).toContain(`'${APP_DB_SECRET_PREFIX}' || d.slug`);
+  // ...and the interpolation is only safe while the values carry no quote and
+  // no LIKE wildcard, which the module asserts at import.
+  for (const value of [PREVIEW_SLUG_SUFFIX, AGENT_ENV_SECRET_PREFIX, APP_DB_SECRET_PREFIX]) {
+    expect(value).not.toMatch(/['%_\\]/);
+  }
 });
 
 test("the orphan-preview sweep deprovisions the app database like the delete route", () => {

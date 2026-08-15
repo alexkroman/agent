@@ -127,6 +127,49 @@ because `log.warn` is silenced in JSON mode and JSON mode is auto-detected on
 a pipe — a scripted push otherwise reported plain success while having
 replaced the workspace with a truncated tree.
 
+**Every leaf command is a `defineExec({ cwd, args, meta, run })`**
+(`_cli-common.ts`), and the `cwd` field is the reason the wrapper exists. All
+twenty-four command bodies were the same four lines written longhand — `async
+run({ args })`, `runCommand(args, async (mode) => …)`, a cwd resolution, a lazy
+`await import` — and in the middle of that boilerplate each one DECIDED its
+working-directory policy, which is the one part that is not boilerplate and the
+part that has been wrong in production: `aai test` shipped calling `setup()`
+bare instead of `setup({ agent: true })`, so in a directory with no `agent.ts`
+it found no test file, reported `{ passed: true, skipped: true }` and exited 0
+— indistinguishable in CI from a passing suite. The policy is now a required
+field with three values: `"agent"` (refuses a directory with no `agent.ts`),
+`"any"` (the working directory, whatever is in it), `"none"` (no policy — the
+body gets `cwd: undefined`, typed, so it cannot read one it never asked for).
+Forgetting is unrepresentable; the alternative spelling is a policy name that
+does not exist. The lazy `await import` of the executor stays in each body —
+that is what keeps a subcommand's dependencies off every other invocation's
+startup path. Group commands (`secret`, `storage`, `workflow`) are plain
+citty `defineCommand`s: meta plus subcommands, no body and so no policy.
+
+**A returned `fail(...)` and a thrown error converge on ONE emitter, and the
+emitter branches on the RESULT rather than on which arm produced it.** For a
+long time only `runCommand`'s `catch` printed anything, so a body that RETURNED
+a failure fell straight through to the JSON check and `process.exit(1)`: in
+human mode, exit 1 with an empty terminal. Nine paths — `aai test` with no
+runner binary on PATH (message *and* hint discarded), all four `aai workflow`
+verbs against a booting sandbox (the agent's own sentence plus `HINT_BROKER`),
+`aai secret put` with an empty value, `aai storage disable` without `--force` —
+were silent, while the module's own doc comment asserted the opposite. Keep new
+emission keyed on `result.ok`, never on the code path.
+
+**A 2xx body is CHECKED, not cast** (`checkedResponse`, `_api-client.ts`).
+`apiRequest<T>` is a cast and nothing verifies it, so a 200 from something that
+is not our server — an intercepting proxy, a captive portal, a mismatched or
+half-deployed backend — flows on as a fully-typed object whose fields are
+`undefined`. The incident: a deploy response without `slug` printed `Deployed
+https://server/undefined` and wrote `slug: undefined` into `.aai/project.json`,
+where `JSON.stringify` DROPS it — so the next deploy saw no slug, minted a fresh
+one, and orphaned the running agent. `aai publish` grew a hand-written guard for
+exactly that and the other four response shapes did not; they all go through the
+one helper now (deploy, the studio project list, storage, the secret list). The
+predicate is the caller's, because the shape is; the helper owns only the
+failure, whose code (`bad_response`) and hint are the same wherever it fires.
+
 **A LONG-RUNNING command's diagnostics go through `notify` (`_ui.ts`), not
 `log`.** `silenceOutput()` no-ops every `log` method so JSON mode's contract —
 exactly one result line on stdout — holds. That is right for a
@@ -142,7 +185,10 @@ empty, stdout one line, old version still served). `notify` keeps the styled
 clack output in human mode and writes a plain line to STDERR once silenced, so
 the stdout contract survives while a human tailing the log still sees the
 failure. Any new post-startup output in a long-running command owes the same
-treatment.
+treatment — `resolveAgentEnv`'s three credential warnings ("missing provider
+credential", "resolved from your shell, not .env", "missing requiredEnv key")
+were the ones that had not been converted, so under `aai dev > dev.log` the
+first session failed auth with nothing anywhere saying why.
 
 **`aai dev`'s restart state machine lives in `_dev-restart.ts`, behind
 injected `build`/`listen`/`close` operations.** It is the subtlest part of the
@@ -160,6 +206,16 @@ restart/teardown logic in `_dev-restart.ts` and spec it there
 (`_dev-restart.test.ts`, no mocks); `_dev-server-restart.test.ts` is for
 WIRING only — that a chokidar event reaches the supervisor and that teardown
 closes the watcher with the server.
+
+**The "at most one rebuild, one trailing re-run" half is
+`createCoalescingRunner`, not a local flag pump.** It had been re-derived here
+as a `restarting` flag, a `pendingRestart` flag and a `do/while`; coalescing is
+right for the same reason it is right in the SDK (a rebuild reads the files as
+they are WHEN IT RUNS, so N queued rebuilds do the trailing one's work N times).
+What is genuinely local is the BOOT window — a change saved during the initial
+build has no in-flight promise to coalesce against, so it is a separate flag
+released by `adopt`, and `restartOnce` returns early once `closed` so a trailing
+rebuild queued before teardown does not build after it.
 
 One rule the split made visible and is worth keeping: **reporting success sits
 outside the `listen` try/catch.** Inside it, a notifier that throws — stderr
@@ -500,7 +556,17 @@ throwing — failing a login on a stuck lockfile is worse than the lost update),
 a **stale** lock is broken (a process killed mid-update must not send every later
 write down the unlocked path forever), and it must **never nest** (re-entry
 self-deadlocks until the timeout; `executeLogin` calls `approveServer` and the
-key update in sequence, not nested). `.aai/project.json` deliberately keeps the
+key update in sequence, not nested).
+
+Bounded had one hole worth remembering, because it is what the second property
+costs: **breaking a stale lock can FAIL, and the outcome is what decides whether
+looping is progress.** `fs.rm`'s `force` masks only ENOENT and there is no
+`recursive`, so an entry that is not an ordinary file — a `config.lock`
+DIRECTORY, an immutable or permission-denied file — throws every time; the throw
+was swallowed and `continue` restarted the loop ABOVE the deadline check, so
+`aai login` (and every `--server` invocation) spun in a tight async loop with no
+output and no exit. An unbreakable lock now falls through to the unlocked path
+like any other unusable one. `.aai/project.json` deliberately keeps the
 last-write-wins behaviour — it is per-directory, not shared across every command
 and terminal.
 
@@ -577,3 +643,92 @@ Treat those two branches as a debugging tool, not covered ground.
 same reason: it turns off this suite's "excuse a failed install as a
 registry-proxy flake" predicate (`isRegistryProxyFailure`), and CI sets it so the
 guess is not trusted where egress is real.
+
+## Running the SDK's own server (`aai dev` and host mode)
+
+The SDK's `createServer` (`packages/aai/host/server.ts`) is what `aai dev` runs,
+and its defaults are documented here because this is the caller that owns
+`AAI_DEV_HOST`, `hostModeEnv` and `resolveServerEnv`. The two fail-closed
+defaults are summarised in `packages/aai/CLAUDE.md`, "Self-hosted server
+defaults"; the argument is below.
+
+`createServer` has no request authentication of its own — it is the `aai dev`
+backend, not the managed platform. Two defaults exist because of that, and
+both are fail-closed:
+
+- **Binds loopback.** `listen(port, host = DEFAULT_LISTEN_HOST)` defaults to
+  `127.0.0.1`. Pass `"0.0.0.0"` deliberately to expose it; binding every
+  interface by default put a developer's agent (and the provider credentials
+  behind it) in reach of anyone on the same network. `aai dev` exposes this as
+  `AAI_DEV_HOST` for setups where loopback isn't reachable (e.g. running in a
+  container and connecting from the host).
+- **Host mode is opt-in.** A `?host=1` WebSocket lets the *client* supply the
+  agent definition (`systemPrompt`, `greeting`, relayed tool schemas) while the
+  session runs on the operator's credentials, so `isHostAllowed` requires an
+  explicit `AAI_ALLOW_HOST` of `1`/`true`/`yes`/`on`. Unset means off.
+  Harnesses (e.g. tau2) set it themselves. Note `resolveServerEnv` only
+  surfaces keys declared in `.env`, so `aai dev` passes the shell value through
+  explicitly (`hostModeEnv`) — otherwise exporting the variable the usual way
+  would have no effect.
+- **A host client may bring its own provider credentials**, and that is what
+  makes a host server safe to expose self-serve. The handshake's `credentials`
+  record (keyed by env var name) is merged over the server's env for that one
+  connection and WINS on conflict, so a server holding only `AAI_ALLOW_HOST`
+  runs every session on the caller's key — an unauthenticated client then has
+  no operator credential to spend, because there is none. Substituting a key
+  you own is not an escalation: it spends your quota and reveals nothing about
+  the operator's. `createHostServer` (`host/host-server.ts`) is that server in
+  one call and `examples/host-server` is the runnable shape.
+
+  **`createHostServer` exists because the three-line version was wrong three
+  ways** — see `host/host-server.ts`'s module doc for the three and for why the
+  placeholder `agent()` was never needed. `defaults` is the only knob, typed to
+  exclude the four fields the handshake owns.
+
+  **The allowlist is load-bearing, not tidiness.** Names are screened against
+  `ALL_PROVIDER_ENV_VARS` — the same vocabulary bounding
+  `withHostCredentialFallback`, for the same reason. This record is merged into
+  the env the per-connection runtime is built from, and that env is read for
+  far more than provider keys: unbounded, a client sets `DATABASE_URL` and the
+  server opens `ctx.db` against a Postgres it controls, or sets
+  `AAI_ALLOW_HOST` and self-approves. So the gate is checked against the
+  SERVER's env before the merge, never the merged one. Unknown names are
+  REJECTED by name rather than dropped — a silent drop turns a typo
+  (`ASSEMBLYAI_KEY`) into a baffling provider-resolution failure two layers
+  down, and turns a genuine smuggling attempt into something the operator never
+  hears about.
+- **A host session with no base agent runs the DEFAULT PIPELINE, not S2S.**
+  `buildHostAgent`'s doc comment claimed the opposite until 2026-08 — it
+  predated the pipeline-by-default flip, and S2S has required an explicit `s2s`
+  descriptor ever since (see "Never let S2S be a fallback"). With no
+  `hostBaseAgent`, `createRuntime` fills all three stages from the
+  all-AssemblyAI pipeline, so one caller-supplied `ASSEMBLYAI_API_KEY` covers
+  STT, the LLM gateway and TTS. The stale comment had a real cost: it is what
+  made a placeholder `agent()` look mandatory on every host server.
+
+- **Host-mode audio pacing is the CLIENT'S declaration, and it defaults to
+  paced** (`HostConfig.audioLeadMs`: omitted = the pacer's real-time
+  `CLIENT_AUDIO_LEAD_MS`, a number = that lead, `null` = unpaced).
+
+  Unpaced used to be the blanket default, on the reasoning that a host-mode
+  client is programmatic and therefore keeps its own clock. That conflates two
+  different things: being programmatic does not mean consuming FASTER than the
+  wall clock, and only a client whose timeline runs ahead is starved by pacing.
+  For a client that drains at 1x it is destructive, because in S2S mode the
+  service synthesises a whole reply server-side and it arrives in one burst
+  (measured: up to 1118 audio frames in one tau2 tick, against 205 on the
+  pipeline transport, whose per-sentence TTS flush paces it inherently). tau2
+  plays 200ms per tick and buffers the rest, so the backlog grew to MINUTES — and
+  it DISCARDS that buffer on barge-in, so 36% of all agent audio was destroyed
+  unheard, p99 181s and max 272s per barge-in on a 215s call, against 18-23% and
+  a 15s max for the pipeline arms. The caller heard a fraction of the replies and
+  kept asking "are you still there?"; the S2S arm completed a reply for 0.53 of
+  caller turns where the pipeline managed 1.00, and 18% of its sessions completed
+  no reply at all. Pacing keeps the backlog on OUR side, where
+  `PacedAudioSink.clear()` drops it on barge-in instead of handing it over to be
+  thrown away.
+
+  So tau2 is not the case unpaced was written for: its `_async_run_tick` enforces
+  a MINIMUM tick duration, so it never runs ahead of the wall clock (measured
+  mean 315ms per 200ms tick — 0.63x real time). Reach for `null` only for a
+  harness that genuinely steps faster than real time.

@@ -2,7 +2,7 @@
 
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { withBuildDir } from "./studio-build.ts";
 import { formatTestRun, runWorkspaceTests } from "./studio-test.ts";
 
@@ -43,6 +43,27 @@ test("one", () => { expect(1).toBe(1); });
     // A vitest that escaped would pull in this very file.
     expect(result.output).not.toContain("studio-test.test.ts");
     expect(result.output).not.toContain("studio-build.test.ts");
+  });
+
+  // The files vitest runs here are the coding agent's own. Every other guest
+  // spawn that executes workspace-authored code scrubs the control-channel
+  // bearer (`bash`, `runNpm`, the deploy CLI); this was the one that did not.
+  test("workspace-authored tests never see the control-channel bearer", {
+    timeout: 120_000,
+  }, async () => {
+    vi.stubEnv("AAI_GUEST_TOKEN", "host-bearer-that-must-not-leak");
+    const result = await withBuildDir(
+      {
+        "sample.test.ts": `import { expect, test } from "vitest";
+test("no host bearer", () => { expect(process.env.AAI_GUEST_TOKEN).toBeUndefined(); });
+`,
+      },
+      materialize,
+      (dir) => runWorkspaceTests(dir),
+    );
+    expect(result.ran).toBe(true);
+    if (!result.ran) return;
+    expect(result.passed, result.output).toBe(true);
   });
 
   test("reports a failing test as output the agent can act on", { timeout: 120_000 }, async () => {

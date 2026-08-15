@@ -141,7 +141,7 @@ export default agent({
   interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 500; 0 disables)
   deadAirCoverMs?: number;                   // pipeline only — speak a short filler after this much silence in a turn (default 5000; 0 disables)
   resumeFalseInterruption?: boolean;         // pipeline only — resume an interrupted reply if no user turn commits (default true)
-  preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default true; false opts out)
+  preemptiveGeneration?: boolean;            // pipeline only — start the reply from a high-confidence interim (default false; true opts in)
   syncState?: StateProjection;               // show a slot to the client: slot.projection(view)
                                              // (read it with useAgentState; see UI hooks)
 });
@@ -642,7 +642,7 @@ one-word backchannels like "yeah" don't cut it off);
 500 ms; `0` disables; interim transcripts only — committed turns always
 land). End-of-turn detection (how long a pause ends the user's turn)
 belongs to the STT provider: `assemblyAIStt({ minTurnSilenceMs })` (default
-2000 ms) / `deepgram({ endpointing })` (default 1500 ms), so mid-utterance
+1600 ms) / `deepgram({ endpointing })` (default 1500 ms), so mid-utterance
 pauses don't split a request.
 `deadAirCoverMs` is how long a turn may go silent before the transport speaks
 a short filler, so a long tool chain doesn't sound like a dropped call. It is
@@ -654,16 +654,20 @@ caller answers it and the answer barges in.
 a barge-in turns out to be noise — no user turn ever commits. The wait is not
 configurable: the resume fires once the transcript stream goes quiet with no
 final, so it can never race a real turn the STT is still endpointing.
-`preemptiveGeneration` (default `true`) starts generating the reply as soon
-as transcription is confident the caller has finished, and uses that
+`preemptiveGeneration` (default **`false`**) starts generating the reply as
+soon as transcription is confident the caller has finished, and uses that
 already-running answer if the committed transcript matches. It can shorten the
-pause before the agent speaks, and **how much is unmeasured** — nobody has
-shown the size of the saving. What bounds the downside is that a speculation
-never speaks, calls a tool, or enters history until the real turn adopts it, so
-the worst case is a wasted request and a turn that behaves exactly as it would
-with the flag off. Set `preemptiveGeneration: false` to opt out — worth doing
-on a tool-heavy agent, where a speculation that reaches a tool call is thrown
-away, so it is cost with no upside.
+pause before the agent speaks, and it is off by default because the measurement
+came back negative: over a tau2-bench retail run, 16 speculations started, 14
+were adopted at a p50 head start of 0.44s, and 5 of those 14 (36%) were poisoned
+after adoption by a tool call — discarded whole, each having burned p50 0.69s
+first. Net **+8ms per caller turn**, for 44% of its LLM requests thrown away.
+What bounds the downside either way is that a speculation never speaks, calls a
+tool, or enters history until the real turn adopts it, so the worst case is a
+wasted request and a turn that behaves exactly as it would with the flag off.
+Set `preemptiveGeneration: true` to opt in — worth trying on a text-heavy agent,
+since 36% poisoned is a tool-calling agent's number, and pointless on a
+tool-heavy one, where a speculation that reaches a tool call is thrown away.
 
 ## Providers
 
@@ -1309,9 +1313,11 @@ also what you want for anything that can be a string, an array, or null.
 **`useAgentState`** — the agent's session state, pushed automatically:
 
 ```ts no-check
+// shared.ts — the slot owns the shape; `agent()` has no `state` field.
+export const cartSlot = sessionSlot("cart", () => ({ cart: [] as Item[], staffPin: "" }));
+
 // agent.ts
 export default agent({
-  state: () => ({ cart: [] as Item[], staffPin: "" }),
   syncState: cartSlot.projection((s) => ({ cart: s.cart })),  // staffPin stays server-side
 });
 

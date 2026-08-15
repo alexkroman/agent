@@ -7,6 +7,8 @@
  * `SandboxCreateParams` fields.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
+
 /**
  * Default max sandbox lifetime. Modal's own default (5 minutes) is far too
  * short for a voice agent slot that serves sessions across hours; the slot
@@ -211,10 +213,12 @@ export function guestSandboxResources(env: NodeJS.ProcessEnv): {
   return {
     limits,
     resourceParams: {
-      ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
-      ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
-      ...(limits.cpu !== undefined && { cpu: limits.cpu }),
-      ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
+      ...omitUndefined({
+        memoryMiB: limits.memoryMiB,
+        memoryLimitMiB: limits.memoryLimitMiB,
+        cpu: limits.cpu,
+        cpuLimit: limits.cpuLimit,
+      }),
       // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
       ...(regions && { regions }),
     },

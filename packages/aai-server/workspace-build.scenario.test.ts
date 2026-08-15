@@ -21,6 +21,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type ServerType, serve } from "@hono/node-server";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { resolveHarnessPath } from "./constants.ts";
@@ -55,7 +56,7 @@ async function spawnTestHarness(): Promise<WarmHarness> {
       AAI_GUEST_TOKEN: token,
       AAI_GUEST_PORT: String(port),
       AAI_GUEST_HOST: "127.0.0.1",
-      ...(process.env.PATH === undefined ? {} : { PATH: process.env.PATH }),
+      ...omitUndefined({ PATH: process.env.PATH }),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

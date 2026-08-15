@@ -14,113 +14,46 @@
  * violation is self-correcting and a reviewer never has to re-explain it. The
  * numeric IDs are stable identifiers: a rule that is deleted leaves its number
  * retired rather than letting a later rule inherit it, because the numbers show
- * up in commit messages and in `guard-invariants-baseline.json`.
+ * up in commit messages and in `guard-invariants-baseline.json`. Rules 6 and 15
+ * are retired and reserved respectively; nothing may reuse them.
  *
- *   rule 1  — No symlinks anywhere in the repo. They do not survive the paths
- *             this code takes: an npm tarball, `aai init`'s scaffold copy, and
- *             the Modal guest image are three different archivers with three
- *             different symlink behaviours, and a link that resolves in a
- *             checkout can arrive dangling or as a 12-byte text file. Use a
- *             real file, or a module that re-exports.
- *   rule 2  — No spread-ternary object composition
- *             (`...(x !== undefined ? { x } : {})`). Use `omitUndefined()`
- *             from `@alexkroman1/aai/utils`. It is the shape
- *             `exactOptionalPropertyTypes` forces, it was hand-written 44
- *             times, and each line names its key twice — so a mismatched pair
- *             (`x !== undefined ? { y: x }`) reads as noise rather than as the
- *             bug it is. Baselined where the GUARD IS NOT THE VALUE, which is
- *             the one case `omitUndefined` cannot express.
- *   rule 3  — No `Promise.race` against a `setTimeout`. Use `p-timeout`, a
- *             dependency of all four packages that need one. The losing
- *             branch's late rejection and the timer cleanup are exactly what
- *             gets re-derived wrong. A `Promise.race` with no timer in it is
- *             fine and common (`raceGuestExit` races a process exit) — this
- *             rule is about the hand-rolled timeout, not the race.
- *   rule 4  — No inline `new Promise(r => setTimeout(r, 0))` in a test. Use
- *             `flush()` (microtask) or `tick()` (macrotask) from
- *             `aai/host/_test-utils.ts`. Spelled inline it is ambiguous about
- *             which one it meant, and the repo has already had a LOCAL `flush`
- *             defined this way shadowing the shared export, so one name meant
- *             two different waits.
- *   rule 5  — No `delete process.env.X`. Use `vi.stubEnv(name, undefined)`,
- *             which `unstubEnvs` reverses before each test. Hand-rolled
- *             save-and-restore is what rots: `deepgram.test.ts` wrote back a
- *             captured `undefined`, which env coercion turns into the STRING
- *             "undefined" for every later test in the file.
- *   rule 6  — No `ctx.state as SomeType` cast inside a template. Use
- *             `sessionSlot()`, which is the typed seam that exists because all
- *             five stateful templates had taken this cast — `tool()` learns the
- *             state shape only from an annotated context, so every module
- *             either restates the annotation or casts. Host tests may cast:
- *             they drive an inline agent that has no slot.
- *   rule 7  — Every `uses:` in `.github/workflows` is pinned to a 40-character
- *             commit SHA. A tag is a mutable pointer, so `@v7` grants every
- *             future version of that code the permissions of the job it runs
- *             in — including the release job's npm token.
- *   rule 8  — No hand-rolled owned-map eviction
- *             (`if (m.get(k) === mine) m.delete(k)`). Use `createOwnedMap()`.
- *             The case it exists for is an async teardown settling after the
- *             key was re-claimed (reconnect resume, redeploy), which evicts the
- *             successor's entry.
- *   rule 9  — No hand-rolled per-key promise chain
- *             (`tails.get(k) ?? Promise.resolve()`). Use `createKeyedLock()`,
- *             or `slot.update` for the `ctx.state` case. The two parts that get
- *             missed are dropping the drained entry BY OWNERSHIP and resolving
- *             your own place in the chain when you abandon a timed-out acquire.
- *   rule 10 — Every Markdown file under `research/` has YAML frontmatter with
- *             non-empty `issue` and `status` and an ISO `last_updated`.
- *             Research documents are implementation plans attached to tracked
- *             work, not an unowned parallel backlog. *   rule 11 — No hardcoded `/tmp` path in shipped source. On Windows `/tmp/x` is
- *             DRIVE-RELATIVE and resolves to `D:\tmp\x`, which does not exist,
- *             so the write fails with ENOENT. Use `join(tmpdir(), …)`. Two
- *             shipped modules had it and both run on a developer's own machine
- *             under `aai dev`. Baselined only for `modal-agent-sandbox.ts`,
- *             whose paths name a location INSIDE the Linux sandbox.
- *   rule 12 — Every route literal in the guest's own dispatch is declared in
- *             `GUEST_ROUTES` (`packages/aai-server/guest-routes.ts`). The
- *             exposure table is verified against the PLATFORM; its upstream
- *             half is transcribed by hand and nothing checked it, which is how
- *             `GET /studio/tools` came to be a real guest route in neither
- *             table. `aai-server` may not import guest source, so this reads
- *             both trees as text.
- *   rule 13 — No import in a template escapes its own template directory. A
- *             template SHIPS: `aai init` copies `templates/<name>/` and nothing
- *             above it comes along, so the import resolves here and in nothing a
- *             user runs.
- *   rule 14 — No fixture directory that no code file resolves a path to. The
- *             pinned RPC fixtures in `aai-server` outlived their only reader by
- *             five commits, with a README telling the next reader never to delete
- *             them and a `turbo.json` comment citing them by name as a reason the
- *             test task must hash JSON. A reference has to RESOLVE rather than
- *             match the name — the string that made the dead directory look read
- *             belonged to a different package's sibling.
- *   rule 15 — reserved.
- *   rule 16 — No new `on*` callback on the SESSION's own surfaces. A transport
- *             reports a `TransportEventBody` and the session takes one, both in
- *             the protocol's own event vocabulary, so a new thing worth observing
- *             is a union member in `sdk/protocol-events.ts` rather than a name
- *             threaded through `session-core.ts`, `transports/types.ts`,
- *             `runtime-session-callbacks.ts` and four harnesses. That threading
- *             is what put 157 of these across eleven files, 78 of them in test
- *             doubles whose only job was to satisfy the shape. A name is
- *             legitimate exactly when there is NO EVENT for it — binary audio,
- *             `reply.started` (which the wire does not have), and the lifecycle
- *             hooks a caller must ACT on — and the baseline is those.
+ * ## The catalogue is DERIVED — `node scripts/guard-invariants.mjs --rules`
+ *
+ * This header used to carry the rule list in prose, and it went stale exactly
+ * the way a hand-kept list of anything does here: rules 17, 18 and 19 were
+ * absent, and a missing newline had run rule 10's paragraph into rule 11's. The
+ * one line that did NOT drift was the printed count, because it is computed from
+ * `ABSOLUTE_RULES.length + LINE_RULES.length`. So the catalogue is computed the
+ * same way now, from the `id`/`label`/`remedy` every rule already carries, and
+ * `--rules` prints it. A new rule joins the catalogue by existing.
+ *
+ * The baseline's `_description` is generated from the same data by `--update`,
+ * for the same reason: the hand-written one named three of the six rules that
+ * are enforced at zero.
  *
  * Baselines for rules with pre-existing violations live in
  * `guard-invariants-baseline.json`. Counts there may only SHRINK. `--update`
  * lowers them for you and refuses to raise any, so recording a removal is one
  * command and blessing an addition needs a hand edit that shows up in review —
- * the same contract as `check-escape-hatches.mjs`.
+ * the same contract as `check-escape-hatches.mjs`, whose machinery this shares
+ * (`_ratchet.mjs`, which also carries the corpus floor both gates were missing).
  *
  * Wired up as `pnpm check:invariants`, in `scripts/check.sh` and the CI check
  * job (both — see AGENTS.md on ratchets that lived in only one).
  */
 
-import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
-import { LINE_RULES } from "./guard-invariants-rules.mjs";
+import {
+  assertNotUniversallyEmpty,
+  assertScanCorpus,
+  compareToBaseline,
+  scanGroups,
+  totalOf,
+  updateBaseline,
+  warnStale,
+} from "./_ratchet.mjs";
+import { LINE_RULES, SESSION_SURFACE_PATHS, SOURCE_PATHSPECS } from "./guard-invariants-rules.mjs";
 import {
   scanResearchFrontmatter,
   scanSymlinks,
@@ -150,6 +83,16 @@ const BASELINE_PATH = new URL("guard-invariants-baseline.json", import.meta.url)
  * harness free to grow its callback stub back, which is precisely the
  * silently-blind shape the set exists to prevent. `"*"` still means every rule,
  * and is right only for the gate's own machinery.
+ *
+ * **Two blanket `"*"` entries were ordinary SDK modules**, and both are gone.
+ * `sdk/epoch.ts` and `sdk/session-slot.ts` were exempt from every line rule —
+ * twelve of them, including `p-timeout`, the hand-rolled sleep and the record
+ * guard — and `session-slot.ts` is the state primitive every stateful template
+ * goes through. The justification recorded for it named RETIRED rule 6, a rule
+ * about `ctx.state as T` casts in a template, which is neither this file nor a
+ * live rule. Measured before removing them: neither module matched a single
+ * line rule, so the exemptions were pure latent surface — which is what makes
+ * dropping them free and what would have made keeping them expensive.
  */
 const SELF_REFERENTIAL = new Map([
   ["scripts/guard-invariants.mjs", "*"],
@@ -165,10 +108,8 @@ const SELF_REFERENTIAL = new Map([
   ["packages/aai/sdk/omit-undefined.ts", ["rule2_spreadTernary"]], // its doc shows the banned spelling
   ["packages/aai/sdk/keyed-lock.ts", ["rule9_handRolledKeyedLock"]], // rule 9 IS this implementation
   ["packages/aai/sdk/owned-map.ts", ["rule8_handRolledOwnedMap"]], // rule 8 IS this implementation
-  ["packages/aai/sdk/epoch.ts", "*"],
-  ["packages/aai/sdk/session-slot.ts", "*"], // rule 6 (retired) named the cast it replaces
   ["packages/aai/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
-  ["packages/aai/sdk/utils.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body
+  ["packages/aai/sdk/is-record.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body
 ]);
 
 /** Is `file` exempt from the rule keyed `ruleKey`? */
@@ -178,48 +119,15 @@ function isSelfReferential(file, ruleKey) {
   return scope === "*" || scope.includes(ruleKey);
 }
 
-/** Run git, returning stdout. Throws on real failure (not "no matches"). */
-function git(args, { allowNoMatch = false } = {}) {
-  try {
-    return execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  } catch (err) {
-    if (allowNoMatch && err.status === 1) return "";
-    throw err;
-  }
-}
-
-/**
- * Split one `git grep -n` line into `{ file, line, text }`.
- *
- * Sliced positionally rather than split on ":" — a matched source line very
- * often contains colons.
- */
-function parseMatch(raw) {
-  const fileEnd = raw.indexOf(":");
-  const lineEnd = raw.indexOf(":", fileEnd + 1);
-  return {
-    file: raw.slice(0, fileEnd),
-    line: Number(raw.slice(fileEnd + 1, lineEnd)),
-    text: raw.slice(lineEnd + 1).trim(),
-  };
-}
-
 /** True when the line carries only prose — a `//` or `*` comment. */
 function isCommentOnly(text) {
   return text.startsWith("//") || text.startsWith("*") || text.startsWith("/*");
 }
 
-function scanLineRule({ key, re, paths, skipComments }) {
-  const out = git(["grep", "-nIE", "--untracked", "-e", re, "--", ...paths], {
-    allowNoMatch: true,
-  });
-  if (out === "") return [];
-  return out
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map(parseMatch)
-    .filter((m) => !isSelfReferential(m.file, key))
-    .filter((m) => !(skipComments && isCommentOnly(m.text)));
+/** Drop the matches a rule must not count: its own definition, and prose. */
+function countsAsViolation(match, rule) {
+  if (isSelfReferential(match.file, rule.key)) return false;
+  return !(rule.skipComments && isCommentOnly(match.text));
 }
 
 // ---------------------------------------------------------------------------
@@ -322,76 +230,107 @@ const ABSOLUTE_RULES = [
   },
 ];
 
+const GATE = "guard-invariants";
+const UPDATE_COMMAND = "node scripts/guard-invariants.mjs --update";
+
+/**
+ * The rule catalogue, DERIVED. `node scripts/guard-invariants.mjs --rules`.
+ *
+ * The prose version of this lived in the header and went three rules stale
+ * (17, 18 and 19 were absent) while the one computed line — the count at the
+ * bottom of a run — stayed right. So the catalogue is computed too, and a new
+ * rule joins it by existing.
+ */
+function ruleCatalogue() {
+  const rows = [
+    ...ABSOLUTE_RULES.map((r) => ({ ...r, enforcement: "absolute (no baseline)" })),
+    ...LINE_RULES.map((r) => ({ ...r, enforcement: `per-file baseline (${r.key})` })),
+  ].sort((a, b) => a.id - b.id);
+  const lines = [`${GATE}: ${rows.length} rule(s).\n`];
+  for (const { id, label, remedy, enforcement } of rows) {
+    lines.push(`rule ${String(id).padStart(2)} — ${label}  [${enforcement}]`);
+    for (const line of remedy.split("\n")) lines.push(`    ${line}`);
+    lines.push("");
+  }
+  lines.push("Rules 6 (retired) and 15 (reserved) have no definition; the numbers");
+  lines.push("stay retired rather than being reused — they appear in commit messages");
+  lines.push("and in the baseline's history.");
+  return lines.join("\n");
+}
+
+if (process.argv.includes("--rules")) {
+  console.log(ruleCatalogue());
+  process.exit(0);
+}
+
+/**
+ * The baseline's `_description`, generated rather than carried forward.
+ *
+ * The hand-written one named three of the six rules that are enforced at zero,
+ * which is the same staleness the prose catalogue had. Derived — and derived
+ * from the baseline being WRITTEN rather than the one that was read, so
+ * "enforced at zero, no entry here" cannot go stale the first time a rule's last
+ * occurrence is removed.
+ */
+function baselineDescription(next) {
+  const zeroed = [
+    ...ABSOLUTE_RULES.map((r) => r.id),
+    ...LINE_RULES.filter((r) => next[r.key] === undefined).map((r) => r.id),
+  ].sort((a, b) => a - b);
+  return (
+    "Per-file budgets for guard-invariants' line rules — see scripts/guard-invariants.mjs " +
+    "and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its " +
+    "number and may never hold more; `--update` lowers an entry and refuses to raise one. " +
+    "Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, " +
+    `with no entry here: rule ${zeroed.join(", rule ")}.`
+  );
+}
+
 const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
 
+/**
+ * The floors under the scan — see `_ratchet.mjs` on why they measure the CORPUS.
+ *
+ * Two of them, because the rules walk two different scopes: ~1,530 files under
+ * the source pathspecs, and the twelve literal paths rule 16 is scoped to. That
+ * second one is `=== paths.length` in spirit: every entry is a literal, so a
+ * rename empties the rule, which is the failure a hand-kept file list has.
+ */
+const MIN_SOURCE_FILES = 800;
+
+assertScanCorpus({
+  gate: GATE,
+  what: "the line-rule source scan",
+  pathspecs: SOURCE_PATHSPECS,
+  minFiles: MIN_SOURCE_FILES,
+});
+assertScanCorpus({
+  gate: GATE,
+  what: "rule 16's session-surface file list",
+  pathspecs: SESSION_SURFACE_PATHS,
+  minFiles: SESSION_SURFACE_PATHS.length,
+});
+
 /** Per-baselined-rule `{ file: count }` in the current tree, plus the lines. */
-const actual = new Map();
-const occurrences = new Map();
-for (const rule of LINE_RULES) {
-  const byFile = new Map();
-  const linesByFile = new Map();
-  for (const match of scanLineRule(rule)) {
-    byFile.set(match.file, (byFile.get(match.file) ?? 0) + 1);
-    linesByFile.set(match.file, [...(linesByFile.get(match.file) ?? []), match]);
-  }
-  actual.set(rule.key, byFile);
-  occurrences.set(rule.key, linesByFile);
-}
+const { counts: actual, occurrences } = scanGroups(LINE_RULES, { filter: countsAsViolation });
 
 // ---------------------------------------------------------------------------
 // --update
 // ---------------------------------------------------------------------------
 
 if (process.argv.includes("--update")) {
-  const next = { _description: baseline._description };
-  const lowered = [];
-  const refused = [];
-
-  for (const rule of LINE_RULES) {
-    const allowed = baseline[rule.key] ?? {};
-    const current = actual.get(rule.key) ?? new Map();
-    const merged = {};
-    for (const file of new Set([...Object.keys(allowed), ...current.keys()])) {
-      const was = allowed[file] ?? 0;
-      const now = current.get(file) ?? 0;
-      if (now > was) {
-        refused.push({ label: `rule ${rule.id}`, file, was, now });
-        if (was > 0) merged[file] = was;
-        continue;
-      }
-      if (now < was) lowered.push({ label: `rule ${rule.id}`, file, was, now });
-      if (now > 0) merged[file] = now;
-    }
-    if (Object.keys(merged).length > 0) {
-      next[rule.key] = Object.fromEntries(
-        Object.entries(merged).sort(([a], [b]) => a.localeCompare(b)),
-      );
-    }
-  }
-
-  if (refused.length > 0) {
-    console.error(`\nguard-invariants --update: refusing to RAISE ${refused.length} entr(ies):\n`);
-    for (const { label, file, was, now } of refused) {
-      console.error(`  ${label}  ${file}  ${was} -> ${now}`);
-    }
-    console.error(
-      "\nBaselines only ratchet down. Fix the violation. If an occurrence is\n" +
-        "genuinely unavoidable, raise the number by hand and say why in the PR —\n" +
-        "the increase then lands in a reviewable diff.\n",
-    );
-    process.exit(1);
-  }
-
-  writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
-  if (lowered.length === 0) {
-    console.log("guard-invariants --update: baseline already matches the work tree.");
-  } else {
-    console.log(`guard-invariants --update: lowered ${lowered.length} entr(ies):\n`);
-    for (const { label, file, was, now } of lowered) {
-      console.log(`  ${label}  ${file}  ${was} -> ${now}`);
-    }
-  }
-  process.exit(0);
+  updateBaseline({
+    gate: GATE,
+    baselinePath: BASELINE_PATH,
+    baseline,
+    groups: LINE_RULES.map((rule) => ({ ...rule, label: `rule ${rule.id}` })),
+    counts: actual,
+    describe: baselineDescription,
+    advice:
+      "Baselines only ratchet down. Fix the violation. If an occurrence is\n" +
+      "genuinely unavoidable, raise the number by hand and say why in the PR —\n" +
+      "the increase then lands in a reviewable diff.",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -404,7 +343,6 @@ const MAX_TEXT = 100;
 const ANNOTATE = process.env.GITHUB_ACTIONS === "true";
 
 let failed = false;
-const stale = [];
 
 function annotate(file, line, message) {
   if (!ANNOTATE) return;
@@ -430,19 +368,25 @@ for (const { id, label, scan, remedy } of ABSOLUTE_RULES) {
   console.error(`\n${remedy}\n`);
 }
 
+const {
+  stale,
+  allowedTotal: baselineTotal,
+  currentTotal: treeTotal,
+} = compareToBaseline(
+  LINE_RULES.map((rule) => ({ ...rule, label: `rule ${rule.id}` })),
+  baseline,
+  actual,
+);
+
 for (const rule of LINE_RULES) {
   const allowed = baseline[rule.key] ?? {};
   const current = actual.get(rule.key) ?? new Map();
-  const allowedTotal = Object.values(allowed).reduce((sum, n) => sum + n, 0);
+  const allowedTotal = totalOf(allowed);
   const currentTotal = [...current.values()].reduce((sum, n) => sum + n, 0);
 
   const over = [];
   for (const [file, count] of current) {
     if (count > (allowed[file] ?? 0)) over.push({ file, budget: allowed[file] ?? 0, count });
-  }
-  for (const [file, budget] of Object.entries(allowed)) {
-    const count = current.get(file) ?? 0;
-    if (count < budget) stale.push({ label: `rule ${rule.id}`, file, budget, count });
   }
 
   const summary = `allowed=${allowedTotal} now=${currentTotal}`;
@@ -472,21 +416,21 @@ for (const rule of LINE_RULES) {
 if (failed) {
   console.error(
     "guard-invariants: fix the violation(s) above rather than editing the\n" +
-      "baseline. See the header of scripts/guard-invariants.mjs for each rule's\n" +
-      "rationale.",
+      "baseline. `node scripts/guard-invariants.mjs --rules` prints every rule's\n" +
+      "rationale and remedy.",
   );
   process.exit(1);
 }
 
-if (stale.length > 0) {
-  console.warn(
-    `\nguard-invariants: ${stale.length} baseline entr(ies) now sit above the real count — ` +
-      "run `node scripts/guard-invariants.mjs --update` to give the headroom back:\n",
-  );
-  for (const { label, file, budget, count } of stale.slice(0, MAX_SHOWN)) {
-    console.warn(`  ${label}  ${file}  ${budget} -> ${count}`);
-  }
-  if (stale.length > MAX_SHOWN) console.warn(`  … and ${stale.length - MAX_SHOWN} more`);
-}
+// Every line rule at zero against a non-empty baseline is a blind scan until
+// proven otherwise — see `_ratchet.mjs`.
+assertNotUniversallyEmpty({
+  gate: GATE,
+  allowedTotal: baselineTotal,
+  currentTotal: treeTotal,
+  updateCommand: UPDATE_COMMAND,
+});
+
+warnStale({ gate: GATE, stale, updateCommand: UPDATE_COMMAND, maxShown: MAX_SHOWN });
 
 console.log(`\nguard-invariants: ${ABSOLUTE_RULES.length + LINE_RULES.length} rule(s) hold. ✓`);

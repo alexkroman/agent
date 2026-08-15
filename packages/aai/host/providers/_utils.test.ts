@@ -1,20 +1,69 @@
 // Copyright 2026 the AAI authors. MIT license.
+import { createNanoEvents } from "nanoevents";
 import { describe, expect, it } from "vitest";
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import { createSessionShell } from "./_utils.ts";
+
+type ShellEvents = { error: (err: Error) => void; note: (text: string) => void };
 
 /** Collect the messages a shell surfaces, with a no-op teardown. */
 function makeShell(cleanCloseIsFatal?: boolean) {
   const errors: string[] = [];
+  const emitter = createNanoEvents<ShellEvents>();
+  emitter.on("error", (err) => errors.push(err.message));
   const shell = createSessionShell({
+    emitter,
     makeStreamError: (message) => new Error(message),
-    emitError: (err) => errors.push(err.message),
+    emitError: (err) => emitter.emit("error", err),
     teardown: () => {
       // No connection to release; these tests exercise close semantics only.
     },
-    ...(cleanCloseIsFatal === undefined ? {} : { cleanCloseIsFatal }),
+    ...omitUndefined({ cleanCloseIsFatal }),
   });
-  return { shell, errors };
+  return { shell, errors, emitter };
 }
+
+describe("createSessionShell emit", () => {
+  it("contains a listener throw instead of letting it escape the socket handler", () => {
+    // These fire from inside a raw `ws.on("message")`, where a throw escapes
+    // into Node's EventEmitter as an uncaughtException — taking down a
+    // multi-tenant host rather than one session. Five sites emitted around the
+    // shell, and `safeEmit` was applied in two openers of seven, which is why
+    // the emitter is the shell's now.
+    const { shell } = makeShell();
+    shell.on("note", () => {
+      throw new Error("listener blew up");
+    });
+    expect(() => shell.emit("note", "hello")).not.toThrow();
+  });
+
+  it("delivers to every listener and returns an unsubscribe", () => {
+    const { shell } = makeShell();
+    const seen: string[] = [];
+    const off = shell.on("note", (text) => seen.push(text));
+    shell.emit("note", "one");
+    off();
+    shell.emit("note", "two");
+    expect(seen).toEqual(["one"]);
+  });
+
+  it("emits nothing once the session is closed", async () => {
+    const { shell } = makeShell();
+    const seen: string[] = [];
+    shell.on("note", (text) => seen.push(text));
+    await shell.close();
+    shell.emit("note", "after close");
+    expect(seen).toEqual([]);
+  });
+
+  it("contains a listener throw on the error path too", () => {
+    const { shell } = makeShell();
+    shell.on("error", () => {
+      throw new Error("error listener blew up");
+    });
+    expect(() => shell.streamError("boom")).not.toThrow();
+  });
+});
 
 describe("createSessionShell close handling", () => {
   it.each([undefined, false, true])(

@@ -20,6 +20,24 @@
  * What the secret buys when it is set is real: without it, anyone who learns
  * a slug can drive sandbox boots and provider spend by POSTing to the
  * webhook. With it, only the carrier can.
+ *
+ * **The carrier is the CALLER'S to name, so it must not be able to select the
+ * branch that checks nothing.** `?carrier=` on `POST /:slug/phone` is a query
+ * parameter, and the route carries no auth middleware — this is its only gate.
+ * Enabling-by-presence read per carrier meant an agent with `TWILIO_AUTH_TOKEN`
+ * set was fully bypassed by `?carrier=telnyx`: the Twilio branch was skipped on
+ * the carrier mismatch, the Telnyx branch on the missing `TELNYX_PUBLIC_KEY`,
+ * and the fall-through answered `{ ok: true }`. The route then brokered a Modal
+ * sandbox and replied with TwiML naming the guest's auth-free `wss://…/phone`.
+ * Symmetric: a Telnyx-only agent was bypassed by OMITTING the parameter, since
+ * the default is `twilio`.
+ *
+ * So the fall-through is scoped to an agent that has configured NOTHING. Once
+ * ANY carrier secret is set, a request this agent cannot verify is refused —
+ * including one naming a carrier whose secret is absent. An operator running
+ * two carriers on one agent sets both secrets; an operator running one sets one
+ * and points that carrier's webhook URL at the matching `?carrier=`, which the
+ * media-stream URL already required them to do.
  */
 
 import { createHmac, createPublicKey, timingSafeEqual, verify } from "node:crypto";
@@ -130,8 +148,10 @@ export function verifyTelnyxSignature(opts: {
 /**
  * Verify a webhook against whichever secret the agent has configured.
  *
- * Returns `{ ok: true }` when no secret is set — see the module doc for why
- * that is the default, and what setting one buys.
+ * Returns `{ ok: true }` only when the agent has configured NO carrier secret
+ * at all. Once one is set, an unverifiable request is refused — see the module
+ * doc for why the caller must not be able to pick the branch, and what setting
+ * a secret buys.
  */
 export function verifyPhoneWebhook(opts: {
   carrier: string;
@@ -141,6 +161,7 @@ export function verifyPhoneWebhook(opts: {
   headers: Headers;
 }): WebhookVerdict {
   const authToken = opts.env?.[TWILIO_AUTH_TOKEN_SECRET];
+  const publicKey = opts.env?.[TELNYX_PUBLIC_KEY_SECRET];
   if (opts.carrier === "twilio" && authToken) {
     return verifyTwilioSignature({
       authToken,
@@ -149,7 +170,6 @@ export function verifyPhoneWebhook(opts: {
       signature: opts.headers.get("x-twilio-signature"),
     });
   }
-  const publicKey = opts.env?.[TELNYX_PUBLIC_KEY_SECRET];
   if (opts.carrier === "telnyx" && publicKey) {
     return verifyTelnyxSignature({
       publicKey,
@@ -157,6 +177,18 @@ export function verifyPhoneWebhook(opts: {
       signature: opts.headers.get("telnyx-signature-ed25519"),
       timestamp: opts.headers.get("telnyx-timestamp"),
     });
+  }
+  // No secret for the carrier this REQUEST named. An agent that configured one
+  // for some other carrier has asked for its webhooks to be checked, and the
+  // caller naming a carrier is not permission to skip the check — that is the
+  // bypass the module doc describes. Refuse, naming the carrier so the fix
+  // ("point this number at ?carrier=…, or set that carrier's secret") is
+  // readable from the log line.
+  if (authToken || publicKey) {
+    return {
+      ok: false,
+      reason: `no webhook secret configured for carrier "${opts.carrier}"`,
+    };
   }
   return { ok: true };
 }

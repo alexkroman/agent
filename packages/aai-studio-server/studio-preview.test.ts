@@ -1,16 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The "landing on a project" half of preview handling: the preview slug, the
- * sandbox warm-up, and the wake that hangs off the session broker call.
+ * The "landing on a project" half of preview handling (studio-preview-wake.ts):
+ * the sandbox warm-up, and the wake that hangs off the session broker call.
  *
  * The deploy loop and its durable queue live in
- * `studio-preview-deploy.test.ts` — the two halves share only a workspace, and
+ * `studio-preview-deploy.test.ts`, and the preview slug's NAME in
+ * `studio-project-slugs.test.ts` — the three share only a workspace, and
  * splitting them keeps each under the file-length cap.
  */
 
 import { describe, expect, test, vi } from "vitest";
 import { makeStore, PROJECT, SCOPE, settled, TARGET } from "./_studio-preview-test-utils.ts";
-import { previewSlugFor, wakeProjectPreview, warmPreviewSandbox } from "./studio-preview.ts";
+import { wakeProjectPreview, warmPreviewSandbox } from "./studio-preview-wake.ts";
 import type { WorkspaceDeployTarget } from "./studio-session-broker.ts";
 import {
   createWorkspace,
@@ -18,25 +19,6 @@ import {
   getWorkspace,
   mutateWorkspace,
 } from "./studio-workspace.ts";
-
-describe("previewSlugFor", () => {
-  test("appends -preview to the project name", () => {
-    expect(previewSlugFor(PROJECT)).toBe("contact-form-x7k2mq-preview");
-  });
-
-  test("truncates so the result still fits the 64-char slug shape", () => {
-    const long = `a${"b".repeat(70)}`;
-    const slug = previewSlugFor(long);
-    expect(slug.length).toBeLessThanOrEqual(64);
-    expect(slug.endsWith("-preview")).toBe(true);
-    // Never a double separator at the truncation point.
-    expect(slug).not.toContain("--preview");
-  });
-
-  test("trims trailing separators left by truncation", () => {
-    expect(previewSlugFor(`${"x".repeat(55)}-tail`)).toBe(`${"x".repeat(55)}-preview`);
-  });
-});
 
 describe("warmPreviewSandbox", () => {
   test("hits the platform's client-config broker for the slug, with a deadline", async () => {
@@ -184,6 +166,36 @@ describe("wakeProjectPreview", () => {
     wake(workspaces, schedule, fetchImpl);
     await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The retry has to CLEAR the stamp as well as schedule, and for a long time
+   * it only scheduled — which made it a no-op in the one state it exists to
+   * rescue. A failed deploy leaves `previewHash` naming the last GOOD deploy;
+   * revert the bad edit and the files hash back to that value, so the job the
+   * retry enqueues finds a matching hash and returns. Every project open then
+   * scheduled another no-op behind a banner that could not clear. The `gone`
+   * branch three tests down always cleared; `forcePreviewRedeploy` is what
+   * stops the two branches from disagreeing again.
+   */
+  test("a settled failure retry clears previewHash, so the deploy is not a no-op", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      // The workspace was reverted to exactly what is deployed.
+      previewHash: currentFilesHash(current),
+      previewError: "deploy failed (HTTP 500): Internal server error",
+    }));
+    const schedule = scheduleFn();
+    wake(workspaces, schedule, okFetch());
+    await vi.waitFor(() => expect(schedule).toHaveBeenCalledTimes(1));
+    await settled();
+    const after = await getWorkspace(workspaces, SCOPE, PROJECT);
+    expect(after?.previewHash).toBeUndefined();
+    // The slug survives — the redeploy re-claims it, so the pane's URL holds.
+    expect(after?.previewSlug).toBe("p-preview");
   });
 
   test("a retry leaves previewError stamped for the pane's banner", async () => {

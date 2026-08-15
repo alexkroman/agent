@@ -73,6 +73,26 @@ test("storage enable provisions, stores credentials, and reports enabled", async
   expect(await status.json()).toEqual({ enabled: true });
 });
 
+test("enabling an already-enabled app does not rotate the running guest's password", async () => {
+  // `provision` mints a fresh password every call and the caller persists it,
+  // so a second enable used to invalidate the `DATABASE_URL` baked into the
+  // resident sandbox at spawn — `ctx.db` starts erroring mid-session, and
+  // nothing here restarts a sandbox for a storage change. `aai storage enable`
+  // run twice was the whole reproduction.
+  const appDb = fakeAppDb();
+  const { fetch, secrets } = await deployWithStorage({ appDb });
+
+  await storageReq(fetch, "POST");
+  const stored = await secrets.get("app-db:my-agent");
+  appDb.provision.mockResolvedValue({ ...META, password: "0".repeat(32) });
+
+  const again = await storageReq(fetch, "POST");
+  expect(again.status).toBe(200);
+  expect(await again.json()).toEqual({ ok: true, enabled: true });
+  expect(appDb.provision).toHaveBeenCalledTimes(1);
+  await expect(secrets.get("app-db:my-agent")).resolves.toBe(stored);
+});
+
 test("storage disable deprovisions, deletes credentials, and reports disabled", async () => {
   const appDb = fakeAppDb();
   const { fetch, secrets } = await deployWithStorage({ appDb });

@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { text } from "node:stream/consumers";
+import { isRecord } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
+import { checkedResponse, isStringArray } from "./_api-client.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { secretRequest } from "./_slug-api.ts";
 import { log, unwrapCancel } from "./_ui.ts";
@@ -71,9 +73,15 @@ export async function executeSecretList(
   cwd: string,
   server: string | undefined,
 ): Promise<CommandResult<SecretListData>> {
-  const {
-    data: { vars },
-  } = await secretRequest<{ vars: string[] }>(cwd, "", { action: "secret" }, server);
+  const { data, target } = await secretRequest(cwd, "", { action: "secret" }, server);
+  // Checked, not cast: a 200 without `vars` died on `Cannot read properties of
+  // undefined (reading 'length')` — a stack trace where the CLI's own error
+  // sentence belongs. See `checkedResponse`.
+  const { vars } = checkedResponse(
+    data,
+    (value): value is { vars: string[] } => isRecord(value) && isStringArray(value.vars),
+    `the secret list for ${target}`,
+  );
   if (vars.length === 0) {
     log.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {

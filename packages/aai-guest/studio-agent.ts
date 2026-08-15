@@ -36,12 +36,13 @@
 import { type AgentDef, agent, type BuiltinTool } from "@alexkroman1/aai";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import { withTools } from "@alexkroman1/aai/manifest";
+import type { HarnessBundleAccess } from "./harness-types.ts";
 import { buildWorkspaceDir } from "./studio-build.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import type { StudioSession } from "./studio-session.ts";
 import { createTemplateTools } from "./studio-template-tools.ts";
 import { createStudioTools } from "./studio-tools.ts";
-import type { TypecheckFn } from "./studio-write-diagnostics.ts";
+import { createPostWriteDiagnostics, type TypecheckFn } from "./studio-write-diagnostics.ts";
 
 /**
  * Per-call deadline for every coding-agent tool — passed to
@@ -68,11 +69,7 @@ const STUDIO_BUILTIN_TOOLS: readonly BuiltinTool[] = [
 ];
 
 /** What the agent's tools need from the harness, beyond the session itself. */
-export type StudioAgentDeps = {
-  /** The harness's own bundle loader (`loadBundle`). */
-  loadBundle: (code: string) => Promise<{ config?: unknown }>;
-  /** The harness's one-shot trial executor (`executeTool`). */
-  executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
+export type StudioAgentDeps = HarnessBundleAccess & {
   /** The workspace type check backing post-write diagnostics. */
   typecheck: TypecheckFn;
 };
@@ -87,6 +84,12 @@ export type StudioAgentDeps = {
  */
 export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps): AgentDef {
   const { dir } = session;
+  // ONE checker for both write-shaped tool families. It hangs off a coalescing
+  // runner, and the whole point of that runner is that concurrent writes share
+  // a single follow-up compiler pass — which two independent runners cannot do,
+  // so building it per family silently doubled the `tsc` runs a parallel burst
+  // of `write_file` + `use_template` costs.
+  const diagnostics = createPostWriteDiagnostics(deps.typecheck);
   const authored = agent({
     name: "AAI Studio",
     text: true,
@@ -108,14 +111,14 @@ export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps)
     ...createProjectTools({ dir }),
     ...createTemplateTools({
       dir,
-      // Same post-copy diagnostics backend the write tools use.
-      typecheck: deps.typecheck,
+      // The same checker the write tools use — see above.
+      diagnostics,
     }),
     ...createStudioTools({
       dir,
       // Post-write diagnostics: the same tsc pass builds run, so a type
       // error reaches the agent inside the write result that caused it.
-      typecheck: deps.typecheck,
+      diagnostics,
       // Build the live session workspace in place, in THIS sandbox,
       // through the same CLI bundler pass `aai deploy` runs.
       build: () => buildWorkspaceDir(dir, { worker: true, client: false }),

@@ -17,11 +17,13 @@
  * length cap; the shared fakes live in _studio-routes-test-utils.ts.
  */
 
+import { createRateLimiter } from "aai-server/rate-limit";
 import { createDevAuth } from "aai-server/supabase-auth";
 import { authFetch } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import { createProject, devToken, wakePreviewMock } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
+import { CHAT_RATE_LIMIT, PROJECT_CREATE_RATE_LIMIT } from "./studio-rate-limit.ts";
 import { studioScope } from "./studio-workspace.ts";
 
 // The orchestrator constructs its studio routes internally; intercept the
@@ -37,8 +39,8 @@ vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("./studio-preview.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-preview.ts")>();
+vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
   const { wakePreviewMock: mock } = await import("./_studio-routes-test-utils.ts");
   return { ...original, wakeProjectPreview: (...args: unknown[]) => mock(...args) };
 });
@@ -170,6 +172,32 @@ describe("the Preview pane can wake the preview", () => {
     expect(wakePreviewMock).toHaveBeenCalledTimes(2);
     const scopes = wakePreviewMock.mock.calls.map((call) => (call[0] as { scope: string }).scope);
     expect(new Set(scopes).size).toBe(2);
+  });
+
+  /**
+   * And METERED, which the throttle above cannot be a substitute for: it is a
+   * fixed-size `TtlCache`, i.e. an LRU, so a caller cycling more distinct
+   * project names than it holds evicts entries faster than they expire and
+   * every request lands as a first one. The route's own doc used to justify
+   * being unmetered by "the throttle below".
+   */
+  test("rate limited per scope, with a Retry-After", async () => {
+    const { fetch } = await createTestCombined({
+      studioRateLimiters: {
+        chat: createRateLimiter(CHAT_RATE_LIMIT),
+        projectCreate: createRateLimiter(PROJECT_CREATE_RATE_LIMIT),
+        previewWake: createRateLimiter({ limit: 1, windowMs: 60_000 }),
+      },
+    });
+    await createProject(fetch);
+    await createProject(fetch, "other-proj");
+    expect((await authFetch(fetch, wakeUrl, { body: {} })).status).toBe(202);
+    // A DIFFERENT project, so the per-project throttle is not what answers.
+    const limited = await authFetch(fetch, "/studio/projects/other-proj/preview/wake", {
+      body: {},
+    });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
   });
 
   test("requires a bearer key", async () => {

@@ -19,13 +19,12 @@
  *   reports "skipped" so `test_agent` still returns its build/load result.
  */
 
-import { readFileSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
 import { scrubDir } from "./studio-build.ts";
-import { runCapped } from "./studio-spawn.ts";
+import { envWithoutGuestToken, runCapped } from "./studio-spawn.ts";
 
 /** Wall clock for the run. The per-tool deadline (STUDIO_TOOL_TIMEOUT_MS,
  *  studio-tools.ts) is 120s and the build has already spent part of it, so
@@ -48,12 +47,16 @@ async function testFiles(dir: string): Promise<string[]> {
 /**
  * The workspace's own vitest binary, resolved by the same node_modules
  * walk-up everything else in the guest uses.
+ *
+ * `createRequire().resolve` has no async form and stays synchronous; the
+ * manifest READ does not, and this runs in the same process as live voice
+ * sessions, whose audio pacing is a loop on the event loop.
  */
-function resolveVitestBin(dir: string): string | null {
+async function resolveVitestBin(dir: string): Promise<string | null> {
   try {
     const require = createRequire(path.join(dir, "package.json"));
     const pkgPath = require.resolve("vitest/package.json");
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as {
+    const pkg = JSON.parse(await readFile(pkgPath, "utf-8")) as {
       bin?: string | Record<string, string>;
     };
     const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.vitest;
@@ -70,7 +73,7 @@ export async function runWorkspaceTests(dir: string): Promise<TestRunResult> {
   const files = await testFiles(dir);
   if (files.length === 0) return { ran: false, reason: "no test files in the workspace" };
 
-  const bin = resolveVitestBin(dir);
+  const bin = await resolveVitestBin(dir);
   if (!bin) return { ran: false, reason: "vitest is not available in this sandbox" };
 
   let code: number | null;
@@ -79,7 +82,12 @@ export async function runWorkspaceTests(dir: string): Promise<TestRunResult> {
     // `run` (never watch) and `--root` so vitest cannot escape the workspace.
     const result = await runCapped(process.execPath, [bin, "run", "--root", dir], {
       cwd: dir,
-      env: { ...process.env, CI: "true" },
+      // Scrubbed like every other child that executes workspace-authored code
+      // (`bash`, `runNpm`, the deploy CLI): the files vitest runs here are the
+      // coding agent's own `*.test.ts`. `bash` can read `/proc/<pid>/environ`
+      // regardless, so this is defence in depth rather than a boundary — but it
+      // was the one spawn site in the package outside the policy.
+      env: { ...envWithoutGuestToken(), CI: "true" },
       timeoutMs: TEST_TIMEOUT_MS,
       cap: OUTPUT_CAP,
       combineStreams: true,

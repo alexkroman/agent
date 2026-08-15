@@ -295,7 +295,17 @@ async function rebuildSlot(
     if (!parts) {
       // A slug with no bundle must not leave an empty slot behind — the
       // pre-auth upgrade path can't be allowed to grow the map per 404.
-      if (created) deleteSlot(slots, slug);
+      //
+      // NOT gated on `created`: an EXISTING slot that reaches here has no
+      // sandbox either (`resolveSandbox` terminated a dead one just above, and
+      // a slot mid-rebuild never had one), so the shell it leaves is the same
+      // shell for the same reason. It was reachable — a rebuild for a slug
+      // whose agent was deleted in the meantime — and permanent, because
+      // `reconcileSlug` returns early on `!slot?.sandbox`, so nothing else ever
+      // looks at it again. The claim/identity discipline still holds: this runs
+      // under the slug lock, and the entry is either the one this call claimed
+      // or the one it read under the same lock.
+      deleteSlot(slots, slug);
       return null;
     }
     if (created) debug("Lazy-discovered agent from store", { slug });
@@ -306,7 +316,9 @@ async function rebuildSlot(
     slot.sandbox = sandbox;
     return sandbox;
   } catch (err) {
-    if (created) deleteSlot(slots, slug);
+    // Same rule as the no-bundle branch above: the slot has no sandbox
+    // attached on this path either, so leaving it is leaving a shell.
+    deleteSlot(slots, slug);
     throw err;
   }
 }

@@ -502,6 +502,65 @@ describe("cancel, error, close", () => {
     });
   });
 
+  test("an in-band error does not discard the live reply's transcript", async () => {
+    // The other half of "the socket stays open and the session is usable": the
+    // response the error interrupted is STILL RUNNING, so its transcript buffer
+    // is live state. Clearing it made the later `…transcript.done` read "" and
+    // suppress the emit — the caller heard the whole reply, the client showed
+    // no transcript, and nothing entered history.
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({ type: "response.created", response: { id: "r4" } }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.output_audio_transcript.delta",
+        item_id: "i1",
+        delta: "Your balance is",
+      }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({ type: "error", error: { message: "unknown field" } }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.output_audio_transcript.delta",
+        item_id: "i1",
+        delta: " five hundred dollars.",
+      }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({ type: "response.output_audio_transcript.done", item_id: "i1" }),
+    });
+    expect(cbs.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: "Your balance is five hundred dollars.",
+    });
+  });
+
+  test("a response that really ended does discard them", async () => {
+    // The counterpart: `response.done` is a real end, so the next reply must
+    // not inherit this one's buffer.
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({ type: "response.created", response: { id: "r5" } }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.output_audio_transcript.delta",
+        item_id: "i2",
+        delta: "half a sentence",
+      }),
+    });
+    fake.fire("message", { data: JSON.stringify({ type: "response.done" }) });
+    fake.fire("message", {
+      data: JSON.stringify({ type: "response.output_audio_transcript.done", item_id: "i2" }),
+    });
+    expect(cbs.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+  });
+
   test("error event with missing message uses fallback", async () => {
     const { fake, cbs, ready } = startedTransport();
     await ready;

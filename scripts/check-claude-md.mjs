@@ -40,7 +40,9 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+import { repoRoot } from "./_fs.mjs";
+
+const ROOT = repoRoot(import.meta.url);
 
 /** 20% under the 150k limit. */
 const MAX_CHARS = 120_000;

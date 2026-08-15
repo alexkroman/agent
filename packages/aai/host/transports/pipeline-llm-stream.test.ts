@@ -319,6 +319,47 @@ describe("preemptive generation: poison arriving AFTER adoption", () => {
     expect(onToolCall).not.toHaveBeenCalled();
   });
 
+  test("the abandoned run's spoken preamble does not enter the record twice", async () => {
+    // The model spoke before calling its tool, which the TOOLS prompt tells it
+    // not to do — but when it happens the restart regenerates that opening, so
+    // the caller hears it twice. `collected` and the TTS coalescer are reset
+    // here; the caller's `accumulated` cannot be, and left standing it makes
+    // `finishSpokenTurn` commit the preamble twice — an agent quoting itself in
+    // the transcript and in history.
+    let accumulated = "";
+    const spoken: string[] = [];
+    await consumeLlmStream({
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "restarted reply" }] }),
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "where is my order" }],
+      tools: {},
+      toolChoice: "auto",
+      temperature: undefined,
+      repairToolCall: async () => null,
+      maxSteps: 1,
+      sendTtsText: (text: string) => spoken.push(text),
+      callbacks: { report: () => undefined },
+      emitError: () => undefined,
+      log: silentLogger,
+      sid: "sid-late-poison-3",
+      signal: new AbortController().signal,
+      onDelta: (delta: string) => {
+        accumulated += delta;
+      },
+      onRestart: () => {
+        accumulated = "";
+      },
+      adopted: adoptedTape(
+        [{ type: "text-delta", text: "Let me look that up. " }, TOOL_CALL],
+        () => undefined,
+      ),
+    });
+    // The caller heard the opening twice (nothing can undo that)...
+    expect(spoken.join("")).toContain("Let me look that up.");
+    // ...but the record holds one reply, not the preamble glued to a second.
+    expect(accumulated).toBe("restarted reply");
+  });
+
   test("a clean adopted tape is used as-is, with no restart", async () => {
     // The guard must not fire on the ordinary adoption path — that would throw
     // away every head start preemptive generation exists to buy.

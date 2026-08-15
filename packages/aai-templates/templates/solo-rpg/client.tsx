@@ -1,18 +1,31 @@
 import "@alexkroman1/aai-ui/styles.css";
+import type { DeepReadonly } from "@alexkroman1/aai";
 import { ChatView, client, SidebarLayout, StartScreen, useAgentState } from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
 import {
   type Clock,
-  DEFAULT_STATE,
   type Disposition,
   type GameState,
   GENRES,
+  gameSlot,
   MAX_RESOURCE,
   MIN_MOMENTUM,
   type NPC,
   type StoryBlueprint,
   type TIME_PHASES,
 } from "./shared.ts";
+
+// The campaign before the first tool call, derived from the SAME projection the
+// server pushes rather than from the module default beside it — so a session
+// that has run no tool renders exactly what its first push will replace. Every
+// sibling template derives its fallback this way; this one read `DEFAULT_STATE`
+// directly, which is a second copy of "what an untouched session looks like".
+//
+// It is typed READONLY because that is what the projection produces, and a
+// client only ever renders what the server pushed — so the four components
+// below take a readonly campaign too, which is the deep-readonly slot
+// propagating exactly as far as it should.
+const EMPTY_GAME = gameSlot.projection((game) => game)(undefined);
 
 // ── Color Palette ────────────────────────────────────────────────────────────
 const C = {
@@ -290,7 +303,7 @@ function StatPip({ label, value }: { label: string; value: number }) {
   );
 }
 
-function ClockDisplay({ clock }: { clock: Clock }) {
+function ClockDisplay({ clock }: { clock: DeepReadonly<Clock> }) {
   const typeColor =
     clock.clockType === "threat"
       ? C.threat
@@ -355,7 +368,7 @@ function ClockDisplay({ clock }: { clock: Clock }) {
   );
 }
 
-function NpcCard({ npc }: { npc: NPC }) {
+function NpcCard({ npc }: { npc: DeepReadonly<NPC> }) {
   const dispColor = C.disposition[npc.disposition] || C.textMuted;
   const icon = DISP_ICON[npc.disposition] || "\u25CB";
   return (
@@ -390,7 +403,7 @@ function NpcCard({ npc }: { npc: NPC }) {
   );
 }
 
-function StoryArc({ story }: { story: StoryBlueprint }) {
+function StoryArc({ story }: { story: DeepReadonly<StoryBlueprint> }) {
   const totalActs = story.acts.length;
   const currentPhase = story.acts[story.currentAct - 1]?.phase ?? "";
   const pct = totalActs > 0 ? ((story.currentAct - 1) / totalActs) * 100 : 0;
@@ -443,7 +456,7 @@ function StoryArc({ story }: { story: StoryBlueprint }) {
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
-function Sidebar({ game }: { game: GameState }) {
+function Sidebar({ game }: { game: DeepReadonly<GameState> }) {
   return (
     <div
       style={{
@@ -771,7 +784,7 @@ function SoloRPGApp() {
   // The agent's own session state, projected by `syncState` and pushed after
   // every tool call — no per-tool `ctx.send`, and nothing to keep in step
   // when a new tool starts mutating the game.
-  const game = useAgentState<GameState>(DEFAULT_STATE);
+  const game = useAgentState<DeepReadonly<GameState>>(EMPTY_GAME);
 
   return (
     <StartScreen

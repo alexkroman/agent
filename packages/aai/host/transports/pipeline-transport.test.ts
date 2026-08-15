@@ -380,6 +380,27 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("a terminate detaches the provider listeners, the way stop() does", async () => {
+      // Teardown's job is that nothing further happens. A terminate that left
+      // every STT/TTS listener attached rested instead on four separate
+      // downstream guards each staying true — the audio gate, the two
+      // `isTerminated` checks, the aborted session signal — so the unsubscribe
+      // belongs in the part both teardown paths share.
+      const { opts, stt, tts } = makeOpts();
+      const t = createPipelineTransport(opts);
+      await t.start();
+      const sttEmitter = stt.last()?.emitter;
+      const ttsEmitter = tts.last()?.emitter;
+      expect(sttEmitter?.events.partial?.length).toBeGreaterThan(0);
+      expect(ttsEmitter?.events.audio?.length).toBeGreaterThan(0);
+
+      stt.last()?.fireError("stt_stream_error", "stt failed");
+
+      expect(sttEmitter?.events.partial ?? []).toHaveLength(0);
+      expect(ttsEmitter?.events.audio ?? []).toHaveLength(0);
+      await t.stop();
+    });
+
     test("STT open failure fires onError('stt', ...) via reportOpenRejection", async () => {
       const { opts, callbacks } = makeOpts({
         stt: createFailingSttProvider("stt_connect_failed", "connect failed"),

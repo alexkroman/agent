@@ -1,3 +1,5 @@
+import type { DeepReadonly } from "@alexkroman1/aai";
+
 // ─── Store types ─────────────────────────────────────────────────────────────
 // Field names are tau2's snake_case verbatim, because `seed.json` is tau2's
 // records unmodified. Renaming them here would mean transforming 107 KB of
@@ -128,6 +130,18 @@ export interface RetailState {
   activity: ActivityEntry[];
   focus: { orderId?: string; productId?: string };
 }
+
+/**
+ * The store as a READ hands it out: deep-frozen, and typed to say so.
+ *
+ * The projection and its helpers take this rather than {@link RetailState},
+ * which is the widening a deep-readonly slot forces and the reason it is worth
+ * doing: a mutable state still satisfies it, so `client.tsx` still projects
+ * `emptyRetailState()` and every `retailTool` body still passes its draft,
+ * while a projection helper that WOULD have mutated stops compiling instead of
+ * throwing at its first call.
+ */
+export type FrozenRetailState = DeepReadonly<RetailState>;
 
 /**
  * A pristine, EMPTY store — no seed data.
@@ -266,13 +280,13 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
 
 // ─── Projection ──────────────────────────────────────────────────────────────
 
-function paymentLabel(method: PaymentMethod): string {
+function paymentLabel(method: DeepReadonly<PaymentMethod>): string {
   if (method.source === "gift_card") return "Gift card";
   if (method.source === "paypal") return "PayPal";
   return `${method.brand} ending ${method.last_four}`;
 }
 
-function paymentMethodView(method: PaymentMethod): PaymentMethodView {
+function paymentMethodView(method: DeepReadonly<PaymentMethod>): PaymentMethodView {
   return {
     id: method.id,
     source: method.source,
@@ -284,7 +298,7 @@ function paymentMethodView(method: PaymentMethod): PaymentMethodView {
 /** Net of payments minus refunds — what the customer has actually paid. Items
  *  can't be summed instead: a modified order's items no longer match what was
  *  charged. */
-export function orderTotal(order: Order): number {
+export function orderTotal(order: DeepReadonly<Order>): number {
   const net = order.payment_history.reduce(
     (sum, p) => sum + (p.transaction_type === "payment" ? p.amount : -p.amount),
     0,
@@ -292,7 +306,7 @@ export function orderTotal(order: Order): number {
   return Math.round(net * 100) / 100;
 }
 
-function orderView(order: Order): OrderView {
+function orderView(order: DeepReadonly<Order>): OrderView {
   return {
     orderId: order.order_id,
     status: order.status,
@@ -312,7 +326,10 @@ function orderView(order: Order): OrderView {
  * an exchange sayable. Only available variants, only the focused order, and
  * capped on both axes so the payload stays bounded.
  */
-function swapOptionsFor(state: RetailState, order: Order | undefined): SwapOptionView[] {
+function swapOptionsFor(
+  state: FrozenRetailState,
+  order: DeepReadonly<Order> | undefined,
+): SwapOptionView[] {
   if (!order) return [];
   return order.items.slice(0, MAX_SWAP_ITEMS).map((item) => {
     const product = state.store.products[item.product_id];
@@ -344,7 +361,7 @@ function swapOptionsFor(state: RetailState, order: Order | undefined): SwapOptio
  *  real one even before the first tool call, so the optional chaining this
  *  used to carry — which read as security gating and was not — is gone. The
  *  gating that IS security is still here, on `user`. */
-export function storeView(state: RetailState): StoreView {
+export function storeView(state: FrozenRetailState): StoreView {
   const userId = state.authenticatedUserId;
   const user = userId ? state.store.users[userId] : undefined;
   const focusedOrderId = state.focus.orderId;
@@ -396,7 +413,7 @@ const MAX_BULLETS = 6;
  * that offers actions the data can't support — "return an item" to someone
  * with no delivered order — is worse than no list.
  */
-export function buildScriptBullets(state: RetailState): string[] {
+export function buildScriptBullets(state: FrozenRetailState): string[] {
   const userId = state.authenticatedUserId;
   const user = userId ? state.store.users[userId] : undefined;
 

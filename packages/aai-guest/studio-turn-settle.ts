@@ -14,8 +14,14 @@ import { hostRequest } from "./harness-rpc.ts";
 import type { StudioSession } from "./studio-session.ts";
 import { snapshotWorkspace } from "./studio-workspace-fs.ts";
 
-/** Deadline for the end-of-turn workspace sync / chat persist RPCs. */
-const SYNC_RPC_TIMEOUT_MS = 30_000;
+/**
+ * Deadline for the guest→host workspace-sync / chat-persist RPCs.
+ *
+ * Exported because `studio-chat.ts` fires the start-of-turn persist on the same
+ * channel and had its own copy of the number under a byte-identical doc comment
+ * — one concern, one deadline, and this is the module that owns those RPCs.
+ */
+export const SYNC_RPC_TIMEOUT_MS = 30_000;
 
 /**
  * Push the workspace and settled conversation back to the host's stores.

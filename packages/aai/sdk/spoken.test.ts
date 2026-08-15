@@ -118,6 +118,25 @@ describe("resolveOne", () => {
     expect(isToolFailure(result) && result.error).toBe("There is no option to choose from.");
   });
 
+  test("a FALSY candidate at a named position is still picked", () => {
+    // `at` reports "no such position" with `undefined` and nothing else, so the
+    // truthiness test this replaced additionally rejected a legitimate falsy
+    // candidate: `resolveOne<0 | 5>` could not return `0`, and an empty-string
+    // candidate could never be picked at all.
+    const describe0 = (n: number) => String(n);
+    expect(resolveOne([0, 5], "the first one", { describe: describe0 })).toBe(0);
+    expect(resolveOne([5, 0], "the last one", { describe: describe0 })).toBe(0);
+    expect(resolveOne(["", "b"], "the first one", { describe: (t) => t })).toBe("");
+  });
+
+  test("a position past the end of a falsy list still fails, rather than picking", () => {
+    const result = resolveOne([0, 5], "the fifth one", {
+      label: "amount",
+      describe: (n: number) => String(n),
+    });
+    expect(isToolFailure(result) && result.error).toContain("are 2 amounts");
+  });
+
   test("the singular reads as one, not as `1 jackets`", () => {
     const result = resolveOne([JACKETS[0] as Jacket], "the fourth one", {
       label: "jacket",

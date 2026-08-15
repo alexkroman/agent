@@ -25,7 +25,7 @@ import { calculateTotal, orderSlot, orderView, type Pizza, pizzaPrice } from "./
 /** Each context is one session — the cart is session-scoped by construction,
  *  and `createToolContext` mints a distinct session id per call. Its default
  *  `db` rejects every query, which is right here: this template keeps its cart
- *  in ctx.state and must never touch storage. */
+ *  in a session slot and must never touch storage. */
 function makeCtx(sessionId?: string) {
   const ctx = createToolContext(sessionId ? { sessionId } : {});
   return { ctx, sent: ctx.sent };
@@ -157,7 +157,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
   });
 
   test("carts are scoped per session — two sessions never share pizzas or names", async () => {
-    // ctx.state is per-session by construction — each session has its own.
+    // The slot is keyed per session by construction — each session has its own.
     const { ctx: sessionA } = makeCtx("session-a");
     const { ctx: sessionB } = makeCtx("session-b");
 

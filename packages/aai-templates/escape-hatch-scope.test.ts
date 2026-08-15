@@ -43,6 +43,23 @@ const script = import.meta.glob("../../scripts/check-escape-hatches.mjs", {
   eager: true,
 })["../../scripts/check-escape-hatches.mjs"];
 
+/**
+ * The shared ratchet ENGINE, which both baseline gates now run on.
+ *
+ * Read separately because this spec works by scraping gate source for the
+ * mechanisms it must keep: when the two ratchets converged onto one engine,
+ * every assertion about `--update`'s refuse-to-raise contract silently stopped
+ * finding its string in `check-escape-hatches.mjs` and the test failed naming a
+ * mechanism that had merely MOVED. A spec that scrapes has to be told where the
+ * thing lives, which is the cost of scraping and the reason it is worth it here
+ * — the alternative is trusting that a gate still contains its own gate.
+ */
+const engine = import.meta.glob("../../scripts/_ratchet.mjs", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+})["../../scripts/_ratchet.mjs"];
+
 /** A real, human-written guide in this repo — prose, not code. */
 const scaffoldGuide = import.meta.glob("./scaffold/CLAUDE.md", {
   query: "?raw",
@@ -159,6 +176,23 @@ describe("escape-hatch ratchet scope", () => {
     // blessed additions, the ratchet would be advisory: every failure would
     // have a one-command bypass, and the reviewable diff — the actual control
     // on a deliberate increase — would never be produced.
-    expect(script).toContain("refusing to RAISE");
+    expect(engine).toContain("refusing to RAISE");
+  });
+
+  test("the gate still runs on the shared ratchet engine", () => {
+    // The assertion above moved to `_ratchet.mjs`, so on its own it would now
+    // pass for a gate that had stopped using the engine entirely — it would be
+    // checking a file nothing runs. This is the other half.
+    expect(script).toContain("_ratchet.mjs");
+  });
+
+  test("the top-level scripts/*.md exclusion is not lost", () => {
+    // A git pathspec is fnmatch WITHOUT FNM_PATHNAME, so the literal slash in
+    // `scripts/**/*.md` makes a subdirectory MANDATORY — it matched the files
+    // under scripts/starter-eval/ and not one of the ~29 at the top level.
+    // Both spellings are needed; deleting either silently re-opens the
+    // CHANGELOG.md release-blocker this exclusion exists to prevent.
+    expect(script).toContain(':!scripts/**/*.md"');
+    expect(script).toContain(':!scripts/*.md"');
   });
 });

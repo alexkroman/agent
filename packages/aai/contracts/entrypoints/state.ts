@@ -13,6 +13,7 @@
  */
 
 export {
+  type DeepReadonly,
   type SessionSlot,
   type SessionSlotOptions,
   type SlotStore,

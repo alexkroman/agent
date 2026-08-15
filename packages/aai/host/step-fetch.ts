@@ -38,32 +38,52 @@ import type { StepFetch, StepFetchInit } from "../sdk/step-fetch.ts";
 import { asDispatcher, type PinnedRequestInit, pinnedFetch } from "./_undici.ts";
 
 /**
+ * A published step `fetch`, with the pool behind it.
+ *
+ * The `close` half is not optional bookkeeping: the pool is per SERVER, and
+ * `aai dev` builds a new server on every file save. Without a way to release
+ * the previous one, each rebuild stranded a keep-alive pool whose sockets
+ * nothing would ever close.
+ *
+ * Not exported from `/runtime`: every caller takes it by inference, and the
+ * pool is this module's business.
+ *
+ * @internal
+ */
+type StepFetchHandle = {
+  /** What {@link publishStepFetch} publishes. */
+  fetch: StepFetch;
+  /** Drain and close this handle's connection pool. Idempotent. */
+  close(): Promise<void>;
+};
+
+/**
  * Build the fetch `createServer` publishes for this process's steps.
  *
  * One dispatcher per call and one call per server, so a fan-out's segments share
  * a warm pool — a TLS handshake per request cost ~20% of wall time in the
- * measurements the SDK-side module records.
+ * measurements the SDK-side module records. The pool is returned alongside the
+ * fetch rather than captured and forgotten; see {@link StepFetchHandle}.
  *
  * @internal
  */
-export function createStepFetch(): StepFetch {
-  const dispatcher = asDispatcher(
-    new Agent({
-      // The point of the whole module — see above.
-      allowH2: false,
-      connections: STEP_FETCH_CONNECTIONS,
-      keepAliveTimeout: STEP_FETCH_KEEP_ALIVE_MS,
-      pipelining: STEP_FETCH_PIPELINING,
-      // A step owns its own deadline — an `AbortSignal` it passes, or the
-      // DevKit's step budget. undici's default 300s header timeout and 300s body
-      // timeout would otherwise cut a long provider call off with a transport
-      // error the caller cannot classify, which is the failure mode this whole
-      // module exists to remove.
-      headersTimeout: 0,
-      bodyTimeout: 0,
-    }),
-  );
-  return (url: string, init: StepFetchInit = {}): Promise<Response> => {
+export function createStepFetch(): StepFetchHandle {
+  const agent = new Agent({
+    // The point of the whole module — see above.
+    allowH2: false,
+    connections: STEP_FETCH_CONNECTIONS,
+    keepAliveTimeout: STEP_FETCH_KEEP_ALIVE_MS,
+    pipelining: STEP_FETCH_PIPELINING,
+    // A step owns its own deadline — an `AbortSignal` it passes, or the
+    // DevKit's step budget. undici's default 300s header timeout and 300s body
+    // timeout would otherwise cut a long provider call off with a transport
+    // error the caller cannot classify, which is the failure mode this whole
+    // module exists to remove.
+    headersTimeout: 0,
+    bodyTimeout: 0,
+  });
+  const dispatcher = asDispatcher(agent);
+  const fetch: StepFetch = (url: string, init: StepFetchInit = {}): Promise<Response> => {
     // Rebuilt rather than spread wholesale: `StepFetchInit` admits only the
     // plain shapes that survive the realm boundary (see `_undici.ts`), and
     // copying it field by field is what keeps a `Headers` or a `FormData` from
@@ -81,4 +101,8 @@ export function createStepFetch(): StepFetch {
     };
     return pinnedFetch(url, request);
   };
+  // `close`, not `destroy`: a request already in flight when the server shuts
+  // down is a step's, and cutting it off would fail a run that was about to
+  // finish. Idle keep-alive sockets — the thing a rebuild strands — go either way.
+  return { fetch, close: () => agent.close() };
 }

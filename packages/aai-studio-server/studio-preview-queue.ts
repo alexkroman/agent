@@ -36,6 +36,7 @@
  */
 
 import { safeJsonParse } from "@alexkroman1/aai";
+import { isRecord } from "@alexkroman1/aai/utils";
 import type { SqlExec } from "aai-server/secret-store";
 
 /** The pgmq queue name. Also the prefix of its archive table. */
@@ -112,8 +113,8 @@ function parseJob(raw: unknown): PreviewJob | null {
   // Non-JSON text is a genuinely unreadable payload, not a crash — `safeJsonParse`
   // returns undefined, which the object check below rejects like any other shape.
   const value = typeof raw === "string" ? safeJsonParse(raw) : raw;
-  if (typeof value !== "object" || value === null) return null;
-  const { scope, project, serverUrl, userId } = value as Record<string, unknown>;
+  if (!isRecord(value)) return null;
+  const { scope, project, serverUrl, userId } = value;
   if (typeof scope !== "string" || typeof project !== "string") return null;
   if (typeof serverUrl !== "string") return null;
   return { scope, project, serverUrl, ...(typeof userId === "string" && { userId }) };

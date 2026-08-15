@@ -2,7 +2,7 @@
 
 /** @jsxImportSource react */
 
-import { type ComponentType, createElement, useEffect, useState } from "react";
+import { type ComponentType, createElement, type ReactNode, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { pageBaseUrl } from "./_utils.ts";
@@ -142,6 +142,58 @@ export function resolveContainer(target: string | HTMLElement = "#app"): HTMLEle
 }
 
 /**
+ * What a mount hands back: unmount, and `using` support.
+ *
+ * @internal
+ */
+export type MountedRoot = {
+  /** Unmount the React tree (and, for `client()`, dispose the session). */
+  dispose(): void;
+  /** Alias for `dispose` for use with `using`. */
+  [Symbol.dispose](): void;
+};
+
+/**
+ * Render `node` into `container` and hand back its teardown.
+ *
+ * Shared by {@link client} and `page()` because the plumbing is identical and
+ * the two decisions in it are not obvious enough to be re-derived: the root is
+ * created here rather than by the caller so nothing else can hold one, and the
+ * render is `flushSync` so the mount is observable to the caller's NEXT
+ * STATEMENT (and to a test) rather than scheduled — `client()` returns a handle
+ * whose session is expected to be live, and `page()` returns one a caller may
+ * dispose immediately.
+ *
+ * `onDispose` runs after the unmount, which is the order `client()` needs: the
+ * tree comes down before the session under it goes away.
+ *
+ * @internal
+ */
+export function mountRoot(
+  container: HTMLElement,
+  node: ReactNode,
+  onDispose?: () => void,
+): MountedRoot {
+  const root = createRoot(container);
+  flushSync(() => {
+    root.render(node);
+  });
+  return {
+    dispose() {
+      root.unmount();
+      onDispose?.();
+    },
+    // Delegated through `this` rather than through a captured local, so the
+    // alias still holds after the handle is spread into a wider one (which is
+    // exactly what `client()` does to add `session`) or after a caller replaces
+    // `dispose` on the object it was handed.
+    [Symbol.dispose]() {
+      this.dispose();
+    },
+  };
+}
+
+/**
  * Default shell rendered in config tier.
  * Wraps StartScreen → (SidebarLayout →) ChatView.
  */
@@ -175,6 +227,16 @@ function DefaultShell({
  * immediately — optimistically — while the lookup is in flight; servers
  * without the endpoint (every lookup failure resolves to the empty default)
  * work exactly as before.
+ *
+ * **The lookup is SKIPPED when the caller already named the agent.** The
+ * response's only consumer here is the fallback below, so with an explicit
+ * `client({ name })` the request was issued and its answer thrown away — and on
+ * the platform this endpoint is the BROKER, so the discarded request is one that
+ * can boot a sandbox. The session's own per-attempt lookup
+ * (`session-core.ts`'s URL provider) is a different question and deliberately
+ * left alone: it re-brokers on every connection attempt, which is what makes a
+ * reconnect land on a REPLACEMENT sandbox, so it may not be served from
+ * anything this render already has.
  */
 function DefaultRoot({
   platformUrl,
@@ -188,8 +250,10 @@ function DefaultRoot({
   sidebarWidth?: string | undefined;
 }) {
   const [resolved, setResolved] = useState<ClientConfigResponse | null>(null);
+  const needsLookup = name === undefined;
 
   useEffect(() => {
+    if (!needsLookup) return;
     let cancelled = false;
     void fetchClientConfig(platformUrl).then((cfg) => {
       if (!cancelled) setResolved(cfg);
@@ -197,7 +261,7 @@ function DefaultRoot({
     return () => {
       cancelled = true;
     };
-  }, [platformUrl]);
+  }, [platformUrl, needsLookup]);
 
   // An explicit client({ name }) wins; otherwise use the server-declared name.
   return (
@@ -282,9 +346,10 @@ export function client(config: ClientConfig): ClientHandle {
 
   const toolConfig: ToolDisplayConfig = config.tools ?? {};
 
-  const root = createRoot(container);
-  flushSync(() => {
-    root.render(
+  return {
+    session,
+    ...mountRoot(
+      container,
       createElement(
         ToolConfigContext.Provider,
         { value: toolConfig },
@@ -294,18 +359,7 @@ export function client(config: ClientConfig): ClientHandle {
           createElement(SessionProvider, { value: session }, rootNode),
         ),
       ),
-    );
-  });
-
-  const handle: ClientHandle = {
-    session,
-    dispose() {
-      root.unmount();
-      session[Symbol.dispose]();
-    },
-    [Symbol.dispose]() {
-      handle.dispose();
-    },
+      () => session[Symbol.dispose](),
+    ),
   };
-  return handle;
 }

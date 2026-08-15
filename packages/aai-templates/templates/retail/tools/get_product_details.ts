@@ -11,8 +11,6 @@ export default retailTool({
     product_id: z.string().max(60).describe("The product id, e.g. '6086499569'"),
   }),
   requiresAuth: false,
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
-  // is load-bearing for the generic `result` type in `summary`.
   execute: (args, state) => {
     const product = findProduct(state, args.product_id);
     if (isToolFailure(product)) return product;

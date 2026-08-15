@@ -9,7 +9,7 @@ import incidentUpdateStatus from "./tools/incident_update_status.ts";
 import resourcesDispatch from "./tools/resources_dispatch.ts";
 import resourcesUpdateStatus from "./tools/resources_update_status.ts";
 
-/** The dispatch board lives in ctx.state, one per session — and
+/** The dispatch board lives in one session slot, one board per session — and
  *  `createToolContext` gives each call its own session id, so two contexts are
  *  two boards by construction. */
 function makeCtx(): { ctx: ToolContext } {

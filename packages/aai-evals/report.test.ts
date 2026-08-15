@@ -112,6 +112,7 @@ describe("evalShortfalls", () => {
     ms: { min: 0, max: 0, mean: 0, spread: 0 },
     unstable: [],
     harnessErrors: 0,
+    measuredPasses: 2,
   });
 
   test("no floor means no shortfall — the tier reports by default", () => {

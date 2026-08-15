@@ -21,7 +21,11 @@ vi.mock("./_ui.ts", async () => ({
 
 // Mock apiRequest to return controlled parsed responses.
 const mockApiRequest = vi.fn();
-vi.mock("./_api-client.ts", () => ({
+// Only `apiRequest` is faked. The response GUARDS (`checkedResponse`,
+// `isStringArray`) stay real — they are part of what these specs exercise, and
+// a factory that omitted them would make every guarded call site undefined.
+vi.mock("./_api-client.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./_api-client.ts")>()),
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
   HINT_NOT_DEPLOYED: "not-deployed-hint",
 }));
@@ -160,5 +164,22 @@ describe("secret commands with explicit server", () => {
     await executeSecretList("/tmp", "https://custom-server.com");
 
     expect(getServerInfo).toHaveBeenCalledWith("/tmp", "https://custom-server.com");
+  });
+});
+
+describe("a response that is not the secret route's", () => {
+  // It used to die on `Cannot read properties of undefined (reading 'length')`
+  // — a stack trace where the CLI's own sentence belongs. See
+  // `checkedResponse` in `_api-client.ts`.
+  test.each([
+    ["a body with no `vars`", { ok: true }],
+    ["a `vars` that is not an array", { vars: "MY_KEY" }],
+    ["a `vars` holding non-strings", { vars: [1, 2] }],
+  ])("%s is refused with a sentence naming the route", async (_label, body) => {
+    mockApiRequest.mockResolvedValue(body);
+
+    await expect(executeSecretList("/tmp", undefined)).rejects.toThrow(
+      /Unexpected response from the secret list for test-agent/,
+    );
   });
 });

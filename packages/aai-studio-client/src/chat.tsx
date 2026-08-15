@@ -11,16 +11,17 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
-  useReducer,
   useRef,
   useState,
 } from "react";
 import type { ChatSession, StudioStatus } from "./api.ts";
 import { errorText } from "./api-error.ts";
-import { drainText, EMPTY_QUEUE, hasPendingWork, nextToFlush, queueReducer } from "./chat-queue.ts";
+import type { NotifyChat } from "./chat-notify.ts";
 import { EmptyStateBody, Transcript } from "./chat-transcript.tsx";
 import { Composer } from "./composer.tsx";
 import { createSandboxTransport } from "./sandbox-transport.ts";
+import { useMessageQueue } from "./use-message-queue.ts";
+import { useNotifyRegistration } from "./use-notify-registration.ts";
 
 type ChatPanelProps = {
   /**
@@ -74,39 +75,11 @@ type ChatPanelProps = {
   /**
    * Hands the app a function that posts a message into the conversation —
    * how publish output and secret changes reach the coding agent. See
-   * {@link NotifyChat} for the two modes.
+   * {@link NotifyChat} for what a note is, and use-notify-registration.ts for
+   * the three ways one can arrive (and why the mid-turn one has to wait).
    */
   registerNotify?: ((fn: NotifyChat | null) => void) | undefined;
 };
-
-/**
- * Post a message into the live conversation.
- *
- * Default is a silent append: the message shows in the transcript and rides
- * along with the agent's *next* turn, which is what a successful publish or a
- * secret change wants — neither needs an answer, and spending a turn on
- * "published fine" invites the agent to go do unrequested work.
- *
- * `respond: true` sends it as a real turn instead. A FAILED publish needs
- * that: the CLI output is only useful if the agent actually engages with it,
- * and as a silent note it would sit there until the user typed something,
- * which reads as the agent ignoring a build break it was told about.
- */
-export type NotifyChat = (text: string, opts?: { respond?: boolean }) => void;
-
-/**
- * How a notification should reach the conversation.
- *
- * Falls back to `"append"` rather than dropping when a turn is already in
- * flight or chat is not yet accepting: a publish failure has to survive
- * either way, and the next turn still carries an appended message.
- */
-export function notifyDispatch(
-  opts: { respond?: boolean } | undefined,
-  state: { busy: boolean; chatReady: boolean },
-): "turn" | "append" {
-  return opts?.respond === true && !state.busy && state.chatReady ? "turn" : "append";
-}
 
 /**
  * What the brokered sandbox is doing, rendered at the foot of the restored
@@ -257,75 +230,30 @@ function ProjectChat({
 
   // Follow-ups typed while the agent works. The composer's text lives one
   // level up (see `input`), so a Stop can hand the queue back to it.
-  const [queue, dispatchQueue] = useReducer(queueReducer, EMPTY_QUEUE);
-  const setInput = onInputChange;
-  const pending = hasPendingWork(queue, busy);
-
-  /**
-   * Hand the queue back to the composer: the one answer to "this turn will not
-   * end normally". Used by an explicit Stop and by a failed turn — neither may
-   * fire the follow-ups (a Stop is the user taking control back, and a
-   * follow-up sent over a failed turn buries the error), and neither may eat
-   * text the user typed while waiting.
-   */
-  const drainQueueToComposer = useCallback(() => {
-    if (queue.items.length === 0) return;
-    setInput((current) => drainText(queue, current));
-    dispatchQueue({ type: "clear" });
-  }, [queue, setInput]);
-
-  // Send the head of the queue the moment a turn settles — one turn at a
-  // time, FIFO. While a turn runs, `turn-observed` releases the dispatch
-  // latch (see chat-queue.ts for why it exists at all).
-  useEffect(() => {
-    if (busy) {
-      dispatchQueue({ type: "turn-observed" });
-      return;
-    }
-    // A failed turn parks the queue, and `status` stays `error` until some
-    // request starts — but every submit joins the queue while it is non-empty,
-    // so parking it here would wedge the composer permanently.
-    if (status === "error") {
-      drainQueueToComposer();
-      return;
-    }
-    const next = nextToFlush(queue, { status, chatReady });
-    if (next === null) return;
-    dispatchQueue({ type: "dispatch" });
-    void sendMessage({ text: next });
-  }, [busy, status, chatReady, queue, sendMessage, drainQueueToComposer]);
+  const queue = useMessageQueue({
+    status,
+    busy,
+    chatReady,
+    sendMessage,
+    setInput: onInputChange,
+  });
 
   // Mirror the outstanding-work state up to the app. The cleanup clears it on
   // unmount (project switch, back to home) so a turn left streaming in a
   // previous project can't keep Publish locked in the next one.
+  const { pending } = queue;
   useEffect(() => {
     onBusyChange?.(pending);
     return () => onBusyChange?.(false);
   }, [pending, onBusyChange]);
 
-  // Read through refs so the registration below stays stable: re-registering
-  // on every status tick would swap the function the app holds mid-publish.
-  // `pending`, not `busy`: a note sent as its own turn while follow-ups are
-  // queued would jump the line, so it appends instead.
-  const pendingRef = useRef(pending);
-  pendingRef.current = pending;
-  const chatReadyRef = useRef(chatReady);
-  chatReadyRef.current = chatReady;
-
   // Publish output and secret changes arrive as injected user messages —
   // visible in the transcript, carried into the agent's next turn, and
-  // persisted with the conversation when that turn settles.
-  useEffect(() => {
-    if (!registerNotify) return;
-    registerNotify((text, opts) => {
-      const mode = notifyDispatch(opts, {
-        busy: pendingRef.current,
-        chatReady: chatReadyRef.current,
-      });
-      if (mode === "turn") {
-        void sendMessage({ text });
-        return;
-      }
+  // persisted with the conversation when that turn settles. A note that
+  // arrives mid-turn WAITS (see use-notify-registration.ts): appending
+  // underneath a streaming message corrupts the transcript it is written into.
+  const appendMessage = useCallback(
+    (text: string) => {
       setMessages((current) => [
         ...current,
         {
@@ -334,18 +262,28 @@ function ProjectChat({
           parts: [{ type: "text", text }],
         },
       ]);
-    });
-    return () => registerNotify(null);
-  }, [registerNotify, setMessages, sendMessage]);
+    },
+    [setMessages],
+  );
+  useNotifyRegistration({
+    registerNotify,
+    // `pending`, not `busy`: a note sent as its own turn while follow-ups are
+    // queued would jump the line, and the transcript is unsafe to append to
+    // through the dispatch window as well as the stream.
+    pending,
+    chatReady,
+    sendMessage,
+    appendMessage,
+  });
 
   const handleStop = () => {
-    drainQueueToComposer();
+    queue.drainToComposer();
     // Aborts the SSE fetch; the server sees the request signal fire and
     // cancels the LLM stream, in-flight tool calls, and the session sandbox.
+    // Nothing to refresh by hand afterwards: `ai@7` calls `onFinish` from a
+    // `finally`, so an aborted turn reports too (with `isAbort: true`), and
+    // the files it wrote before being stopped are picked up there.
     void stop();
-    // The turn may have written files before it was stopped — onFinish won't
-    // fire for an aborted stream, so refresh the workspace here.
-    onWorkspaceChanged();
   };
 
   // Prompt queued by the guided pre-project flow — send exactly once.
@@ -356,15 +294,6 @@ function ProjectChat({
     void sendMessage({ text: initialPrompt });
     onInitialPromptSent();
   }, [initialPrompt, chatReady, sendMessage, onInitialPromptSent]);
-
-  const send = (text: string) => {
-    if (!chatReady) return;
-    if (pending) {
-      dispatchQueue({ type: "queue", text });
-      return;
-    }
-    void sendMessage({ text });
-  };
 
   return (
     <>
@@ -396,10 +325,10 @@ function ProjectChat({
         onStop={handleStop}
         placeholder={busy ? "Queue a follow-up…" : "Describe your agent…"}
         value={input}
-        onValueChange={setInput}
-        onSend={send}
+        onValueChange={onInputChange}
+        onSend={queue.submit}
         queued={queue.items}
-        onRemoveQueued={(id) => dispatchQueue({ type: "remove", id })}
+        onRemoveQueued={queue.remove}
       />
     </>
   );

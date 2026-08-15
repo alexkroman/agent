@@ -182,3 +182,65 @@ describe("what a failure tells the step to do", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe("failures that used to escape the class", () => {
+  /**
+   * `stepFetch` catches everything the request throws — this call's own
+   * `AbortSignal.timeout` included — and rethrows a `StepTransportError`. So
+   * the two failure modes this module most advertises handling escaped as a
+   * class the documented `catch` does not recognise:
+   * `err instanceof StepGenerateError && !err.retryable` is what two templates
+   * copy verbatim, and `toStepError` falls through to "no verdict available"
+   * for anything else.
+   */
+  test("a request that never got an answer is a StepGenerateError, and retryable", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new Error("socket hang up"))),
+    );
+    const error = await stepGenerate("hi").catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(StepGenerateError);
+    expect(error).toMatchObject({ retryable: true });
+  });
+
+  test("this call's OWN deadline is one of them", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) => {
+        // What the platform really raises when `AbortSignal.timeout` fires: a
+        // `TimeoutError` out of `fetch`, which `stepFetch` wraps.
+        expect(init.signal).toBeInstanceOf(AbortSignal);
+        return Promise.reject(new DOMException("The operation timed out.", "TimeoutError"));
+      }),
+    );
+    const error = await stepGenerate("hi", { timeoutMs: 5 }).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(StepGenerateError);
+    expect(error).toMatchObject({ retryable: true });
+    // The transport error is kept as the cause, because its message carries the
+    // whole code chain that says WHICH failure this was.
+    expect(String((error as StepGenerateError).cause)).toContain("TimeoutError");
+  });
+
+  test("a 200 that is not JSON is a StepGenerateError quoting the body", async () => {
+    // A proxy or a saturated gateway answers HTML with whatever status it
+    // likes; `response.json()` rejected with a bare `SyntaxError` naming
+    // neither the gateway nor the status.
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Response("<html>502 Bad Gateway</html>", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+          }),
+      ),
+    );
+    const error = await stepGenerate("hi").catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(StepGenerateError);
+    expect(error).toMatchObject({ retryable: true, status: 200 });
+    expect(String(error)).toContain("<html>502 Bad Gateway</html>");
+  });
+});

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { runTool } from "./_test-utils.ts";
 import { MAX_STUDIO_FILES } from "./limits.ts";
 import { bundledTemplatesRoot, createTemplateTools } from "./studio-template-tools.ts";
-import type { TypecheckResult } from "./studio-write-diagnostics.ts";
+import { createPostWriteDiagnostics, type TypecheckResult } from "./studio-write-diagnostics.ts";
 
 let dir: string;
 let templatesRoot: string;
@@ -29,7 +29,9 @@ function makeTools(opts?: {
 }): Record<string, ToolDef> {
   return createTemplateTools({
     dir,
-    typecheck: opts?.typecheck ?? (async () => ({ ok: true, skipped: false })),
+    diagnostics: createPostWriteDiagnostics(
+      opts?.typecheck ?? (async () => ({ ok: true, skipped: false })),
+    ),
     templatesRoot: opts?.templatesRoot !== undefined ? opts.templatesRoot : templatesRoot,
   });
 }
@@ -72,7 +74,7 @@ describe("list_templates", () => {
     expect(root).not.toBeNull();
     const tools = createTemplateTools({
       dir,
-      typecheck: async () => ({ ok: true, skipped: false }),
+      diagnostics: createPostWriteDiagnostics(async () => ({ ok: true, skipped: false })),
     });
     const result = await execute(tools, "list_templates", {});
     expect(result).toContain("- simple");

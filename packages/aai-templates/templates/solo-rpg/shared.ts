@@ -1,4 +1,4 @@
-import { sessionSlot, type ToolContext } from "@alexkroman1/aai";
+import { type DeepReadonly, sessionSlot, type ToolContext } from "@alexkroman1/aai";
 import { z } from "zod";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
@@ -320,14 +320,24 @@ export const DEFAULT_STATE: GameState = {
   kidMode: false,
 };
 
-// ── Live game state (ctx.state) ─────────────────────────────────────────────
-// The in-play game lives in `ctx.state`, the agent's per-session mutable
-// state — concurrent players get independent games by construction, and the
-// live game needs no persistence of its own (that's what save slots are for).
-// The clone is load-bearing: `DEFAULT_STATE` is one module-level object shared
-// by every session in the process, so a mutation without it would let one
-// player's game show up in another's.
+// ── Live game state (one session slot) ───────────────────────────────────────
+// The in-play game lives in one `sessionSlot`, keyed per session — concurrent
+// players get independent games by construction. The clone is load-bearing:
+// `DEFAULT_STATE` is one module-level object shared by every session in the
+// process, so a factory without it would let one player's game show up in
+// another's.
 export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE));
+
+/**
+ * The game as a READ hands it out: deep-frozen, and typed to say so.
+ *
+ * Every pure helper below takes this rather than {@link GameState}, which is
+ * the widening a deep-readonly slot forces and the reason it is worth doing:
+ * a mutable `GameState` still satisfies it, so a helper called with an
+ * `updateTool` draft is unaffected, while a helper that WOULD have mutated
+ * stops compiling instead of throwing at its first call in production.
+ */
+export type FrozenGameState = DeepReadonly<GameState>;
 
 // ── Persistent save slots (ctx.db) ───────────────────────────────────────────
 // save_game / load_game are genuine cross-session persistence, so they use
@@ -431,7 +441,7 @@ export function makeNpc(opts: {
   };
 }
 
-export function clockSummary(c: Clock) {
+export function clockSummary(c: DeepReadonly<Clock>) {
   return {
     id: c.id,
     name: c.name,
@@ -448,7 +458,7 @@ export function clockSummary(c: Clock) {
  * setup_character, update_state, and check_state. Includes the player's
  * content boundaries (contentLines) so they survive past the setup turn.
  */
-export function stateSummary(state: GameState) {
+export function stateSummary(state: FrozenGameState) {
   return {
     initialized: state.initialized,
     phase: state.phase,

@@ -1,12 +1,9 @@
-import { tool } from "@alexkroman1/aai";
 import { dispatchSlot, incidentAgeMinutes, resourceBrief, resourceUtilization } from "../shared.ts";
 
-export default tool({
+export default dispatchSlot.tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
-  async execute(_args, ctx) {
-    const state = dispatchSlot.get(ctx);
-
+  execute(_args, state) {
     const activeIncidents = Object.values(state.incidents)
       .filter((i) => i.status !== "resolved")
       .sort((a, b) => b.triageScore - a.triageScore);

@@ -6,7 +6,7 @@ import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "../../sdk/constan
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
 import type { ToolChoice } from "../../sdk/types.ts";
-import { errorMessage, safeJsonParse, toArgsRecord } from "../../sdk/utils.ts";
+import { errorMessage, isRecord, safeJsonParse, toArgsRecord } from "../../sdk/utils.ts";
 import { createAudioSendGate } from "../_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import {
@@ -17,6 +17,7 @@ import {
 } from "../_ws.ts";
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
+import { createEmitError } from "./pipeline-error.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 const DEFAULT_MODEL = "gpt-realtime-2";
@@ -47,6 +48,9 @@ type OpenaiRealtimeTransportOptions = {
 
 export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptions): Transport {
   const log = opts.logger ?? consoleLogger;
+  // The one place "the session is over" is spelled — omitting `fatal` is what
+  // says it, so it is worth having exactly one function that knows that.
+  const emitError = createEmitError(opts.callbacks);
   const createWs = opts.createWebSocket ?? defaultCreateHeaderWebSocket;
   const model = opts.options.model ?? DEFAULT_MODEL;
   const voice = opts.options.voice ?? DEFAULT_VOICE;
@@ -124,10 +128,11 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
    * A TURN-level error report. `fatal: false` on every one of them, deliberately:
    * none of these closes the socket, so the conversation goes on — and an absent
    * `fatal` means the session is over, which releases the client's microphone.
-   * The one terminal reporter is the close handler.
+   * The one terminal reporter is the close handler, which calls `emitError` with
+   * no options — the one spelling of "the session is over" (pipeline-error.ts).
    */
   function reportError(code: SessionErrorCode, message: string): void {
-    opts.callbacks.report({ type: "error.reported", code, message, fatal: false });
+    emitError(code, message, { fatal: false });
   }
 
   async function start(): Promise<void> {
@@ -242,7 +247,14 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const err = obj.error as { message?: unknown } | undefined;
     const message = typeof err?.message === "string" ? err.message : "OpenAI Realtime error";
     log.warn("OpenAI Realtime error event", { error: obj.error });
-    clearTurnBuffers();
+    // The turn buffers are NOT cleared here, and that is the same argument as
+    // the paragraph below one step further: the response this error interrupts
+    // is still running, so its transcript buffer is live state rather than turn
+    // residue. Clearing it left the later `…transcript.done` reading `""`,
+    // which suppresses the emit — the caller heard the whole reply, the client
+    // showed no transcript for it, and nothing entered history. Only a response
+    // that really ended (`response.done`, a cancel, a server-VAD barge-in) may
+    // discard them.
     // An in-band `error` event leaves the socket open and the session usable —
     // OpenAI sends them for recoverable conditions (a response requested while
     // one is active, an unknown field). `onError` defaults to FATAL, and a fatal
@@ -307,8 +319,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       log.warn("OpenAI Realtime: invalid JSON");
       return;
     }
-    if (typeof raw !== "object" || raw === null) return;
-    const obj = raw as Record<string, unknown>;
+    if (!isRecord(raw)) return;
+    const obj = raw;
     switch (obj.type) {
       case "response.output_audio.delta":
         handleAudioDelta(obj);
@@ -372,11 +384,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       return;
     }
     log.warn("OpenAI Realtime closed unexpectedly", { code, reason });
-    opts.callbacks.report({
-      type: "error.reported",
-      code: "connection",
-      message: `OpenAI Realtime closed (code=${code})`,
-    });
+    // No `fatal` key: the socket is gone, so the session really is over.
+    emitError("connection", `OpenAI Realtime closed (code=${code})`);
   }
 
   async function stop(): Promise<void> {

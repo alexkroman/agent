@@ -22,11 +22,13 @@
  * own loader. One build path with `aai deploy`, exercised on every call.
  */
 
+import type { Stats } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import picomatch from "picomatch";
 import { z } from "zod";
+import type { HarnessBundleAccess } from "./harness-types.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { applyEdit, clearEditMisses, rewriteHint, StudioEditError } from "./studio-edit.ts";
 import { globMatcher, grepWorkspace, StudioGrepError } from "./studio-grep.ts";
@@ -41,7 +43,7 @@ import {
   STUDIO_TOOL_DESCRIPTIONS,
 } from "./studio-tool-descriptions.ts";
 import { resolveInside, walkWorkspace } from "./studio-workspace-fs.ts";
-import { createPostWriteDiagnostics, type TypecheckFn } from "./studio-write-diagnostics.ts";
+import type { PostWriteDiagnostics } from "./studio-write-diagnostics.ts";
 
 /** Output cap per stream; beyond it the tail is kept (errors print last). */
 const BASH_OUTPUT_CAP = 16_000;
@@ -78,17 +80,13 @@ export const STUDIO_TOOL_LABELS: Readonly<Record<string, string>> = {
   get_page_design: "Study page design",
 };
 
-export type StudioToolDeps = {
+export type StudioToolDeps = HarnessBundleAccess & {
   /** Absolute workspace root the session materialized. */
   dir: string;
-  /** Types-only check of the workspace — feeds post-write diagnostics. */
-  typecheck: TypecheckFn;
+  /** The shared post-write checker — same instance the template tools use. */
+  diagnostics: PostWriteDiagnostics;
   /** Build the session workspace into a worker bundle, in this sandbox. */
   build: () => Promise<{ worker?: string; buildError?: string }>;
-  /** Load a built worker bundle into this harness; returns its config. */
-  loadBundle: (code: string) => Promise<{ config?: unknown }>;
-  /** Trial-run one tool of the loaded bundle. */
-  executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
 };
 
 /**
@@ -198,8 +196,7 @@ function describeConfig(config: unknown): { summary: string; toolNames: string[]
 
 /** Build the coding agent's workspace tool set over the session dir. */
 export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef> {
-  const { dir } = deps;
-  const postWriteDiagnostics = createPostWriteDiagnostics(deps.typecheck);
+  const { dir, diagnostics: postWriteDiagnostics } = deps;
   return {
     list_files: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.list_files,
@@ -312,12 +309,29 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
       inputSchema: z.object({ path: z.string() }),
       execute: async ({ path: rel }) => {
         const abs = resolveInside(dir, rel);
+        let entry: Stats;
         try {
-          await stat(abs);
+          entry = await stat(abs);
         } catch {
           return `Error: no such file: ${rel}`;
         }
-        await rm(abs, { force: true });
+        // `stat` admits directories, and `rm` without `recursive` rejects one
+        // with a raw `ERR_FS_EISDIR` — the only failure in this tool set that
+        // escaped as a Node error where every neighbour answers in prose. It
+        // stays a REFUSAL rather than becoming a recursive delete: this tool is
+        // `delete_file`, the agent may have meant one file inside, and `bash`
+        // is the deliberate escape hatch for the rest.
+        if (entry.isDirectory()) {
+          return (
+            `Error: ${rel} is a directory, and delete_file removes one file. ` +
+            "Delete the files inside it (list_files shows them), or use bash for the whole tree."
+          );
+        }
+        try {
+          await rm(abs, { force: true });
+        } catch (err) {
+          return `Error: could not delete ${rel}: ${errorMessage(err)}`;
+        }
         return `Deleted ${rel}`;
       },
     }),

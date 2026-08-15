@@ -17,7 +17,8 @@
  * or an explicit `vi.unstubAllGlobals()`.
  */
 
-import { isRecord } from "./utils.ts";
+import { isRecord } from "./is-record.ts";
+import { safeJsonParse } from "./safe-json-parse.ts";
 
 /** One request a {@link StubGateway} answered. */
 export interface StubGatewayCall {
@@ -125,10 +126,17 @@ export function stubGateway(
   };
 }
 
-/** The request body as an object, whatever the caller encoded it as. */
+/**
+ * The request body as an object, whatever the caller encoded it as.
+ *
+ * `safeJsonParse` rather than `JSON.parse`: this runs inside the fake the code
+ * under test is dialling, so a throw here surfaces as a failure of that code
+ * rather than of the request it made. A body this cannot read contributes no
+ * `prompt` and no `system`, which is what the spec's assertion will say.
+ */
 function decodeBody(body: RequestInit["body"]): Record<string, unknown> {
   if (typeof body !== "string") return {};
-  const parsed: unknown = JSON.parse(body);
+  const parsed = safeJsonParse(body);
   return isRecord(parsed) ? parsed : {};
 }
 
@@ -137,8 +145,8 @@ function readMessages(body: Record<string, unknown>): { role: string; content: s
   const messages = body.messages;
   if (!Array.isArray(messages)) return [];
   return messages.flatMap((message: unknown) => {
-    if (typeof message !== "object" || message === null) return [];
-    const { role, content } = message as { role?: unknown; content?: unknown };
+    if (!isRecord(message)) return [];
+    const { role, content } = message;
     return typeof role === "string" && typeof content === "string" ? [{ role, content }] : [];
   });
 }

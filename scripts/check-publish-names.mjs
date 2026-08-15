@@ -12,33 +12,24 @@
  * scope. Wired up as `pnpm check:publish-names` in CI.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname;
-const PACKAGES_DIR = join(ROOT, "packages");
+import { publishablePackages, readJson, repoRoot } from "./_fs.mjs";
+
+const ROOT = repoRoot(import.meta.url);
 const ALLOWED_SCOPES = ["@alexkroman1/"];
 
 const errors = [];
 
-for (const entry of readdirSync(PACKAGES_DIR)) {
-  const pkgJsonPath = join(PACKAGES_DIR, entry, "package.json");
-  let stat;
-  try {
-    stat = statSync(pkgJsonPath);
-  } catch {
-    continue;
-  }
-  if (!stat.isFile()) continue;
-
+for (const dir of publishablePackages(ROOT)) {
+  const pkgJsonPath = join(ROOT, dir, "package.json");
   let pkg;
   try {
-    pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
+    pkg = readJson(pkgJsonPath);
   } catch (err) {
-    errors.push(`${pkgJsonPath}: could not read/parse: ${err.message}`);
+    errors.push(`${pkgJsonPath}: ${err.message}`);
     continue;
   }
-  if (pkg.private === true) continue;
   if (typeof pkg.name !== "string") {
     errors.push(`${pkgJsonPath}: missing "name" field`);
     continue;
@@ -54,6 +45,14 @@ for (const entry of readdirSync(PACKAGES_DIR)) {
         "private.",
     );
   }
+}
+
+// A floor, for the reason every gate here now has one: this script's entire
+// success output is a sentence, so a scan that stopped finding packages would
+// print it over nothing.
+if (publishablePackages(ROOT).length === 0) {
+  console.error("check-publish-names: found no publishable packages — is the scan still right?");
+  process.exit(1);
 }
 
 if (errors.length > 0) {

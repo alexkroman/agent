@@ -23,6 +23,7 @@
  * ```
  */
 
+import { omitUndefined } from "../../omit-undefined.ts";
 import type { LlmProvider } from "../../providers.ts";
 import type { AssemblyAIGatewayModel } from "./gateway-models.ts";
 
@@ -209,7 +210,10 @@ export function assemblyAILlm(opts: AssemblyAILlmOptions = {}): AssemblyAILlmPro
     options: {
       ...opts,
       model,
-      ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+      // `omitUndefined`, not an inverted spread-ternary: this repo has one
+      // spelling of an optional field (`guard-invariants` rule 2), and the
+      // inverted form is a spelling that rule cannot see.
+      ...omitUndefined({ reasoningEffort }),
     },
   };
 }

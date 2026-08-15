@@ -23,7 +23,14 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
-export const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+import { typedEntryPoints } from "./_api-surface.mjs";
+import { readJson, repoRoot } from "./_fs.mjs";
+
+// `readJson` was defined here (silently) and twice more elsewhere; it is
+// `_fs.mjs`'s now, re-exported so the ~20 call sites in this tree read as before.
+export { readJson } from "./_fs.mjs";
+
+export const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
 const PACKAGES_ROOT = join(ROOT, "packages");
 
 /** Marker a scaffolded fixture carries until somebody writes the real example. */
@@ -60,7 +67,6 @@ const NON_AUTHORING_SUBPATHS = {
 };
 
 export const rel = (path) => relative(ROOT, path);
-export const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 
 /**
  * Write JSON that Biome already agrees with.
@@ -228,27 +234,16 @@ export function authoringSubpaths(pkg) {
     );
   }
 
+  // The scan AND the slug are `_api-surface.mjs`'s, shared with
+  // `api-report.mjs`, because the two are coupled by the filename that slug
+  // produces — this reads `etc/<slug>.api.md`, that writes it. Keys stay the
+  // subpath as a CONSUMER appends it (`/utils`, not `./utils`), which is what
+  // `internal-surface.json` and every message here is keyed by.
   return Object.fromEntries(
-    typedSubpaths(exports)
-      .filter((subpath) => !Object.hasOwn(denied, subpath))
-      // "." -> "index"; "./stt" -> "stt" — the slug `api-report.mjs` writes.
-      .map((subpath) =>
-        subpath === "."
-          ? [".", "index"]
-          : [subpath.replace(/^\./, ""), subpath.replace(/^\.\//, "").replaceAll("/", "-")],
-      ),
+    typedEntryPoints(manifest)
+      .filter(({ subpath }) => !Object.hasOwn(denied, subpath))
+      .map(({ subpath, slug }) => [subpath === "." ? "." : subpath.replace(/^\./, ""), slug]),
   );
-}
-
-/** The subpaths of an `exports` map that resolve to declarations. */
-function typedSubpaths(exports) {
-  return Object.entries(exports)
-    .filter(([subpath]) => !subpath.includes("*"))
-    .filter(([, target]) => {
-      const types = typeof target === "string" ? target : target?.types;
-      return typeof types === "string" && types.endsWith(".d.ts");
-    })
-    .map(([subpath]) => subpath);
 }
 
 /**

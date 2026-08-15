@@ -11,14 +11,27 @@
  * - `app-db:<slug>`    — an app's provisioned database credentials, JSON
  */
 
+/**
+ * The two per-slug secret-name prefixes.
+ *
+ * Exported because they are also spelled in SQL: the orphan-preview sweep
+ * (`pg-cron.ts`) deletes `'agent-env:' || slug` and `'app-db:' || slug` from
+ * `vault.secrets` inside a plpgsql body, which no type-checker relates to the
+ * helpers below. Interpolating from here is what keeps the sweep and the writer
+ * the same string — a disagreement there deletes nothing, silently, while the
+ * schema it was meant to clean up survives.
+ */
+export const AGENT_ENV_SECRET_PREFIX = "agent-env:";
+export const APP_DB_SECRET_PREFIX = "app-db:";
+
 /** SecretStore name for one agent's env record. */
 export function agentEnvSecretName(slug: string): string {
-  return `agent-env:${slug}`;
+  return `${AGENT_ENV_SECRET_PREFIX}${slug}`;
 }
 
 /** SecretStore name for one app's provisioned database credentials. */
 export function appDbSecretName(slug: string): string {
-  return `app-db:${slug}`;
+  return `${APP_DB_SECRET_PREFIX}${slug}`;
 }
 
 /**

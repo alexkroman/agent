@@ -199,6 +199,37 @@ describe("workspace CRUD", () => {
       /Invalid file path/,
     );
   });
+
+  /**
+   * A path is NORMALIZED where it is stored, not merely validated on the way
+   * past. `./agent.ts` and `agent.ts` are the same file and both pass the
+   * safe-path check, and the map used to be keyed on whatever the writer sent
+   * — two entries denoting one file, both listed in the editor, with whichever
+   * the bundler resolved being the one that ran.
+   */
+  test("normalizes file paths, so one file is never two keys", async () => {
+    const store = createMemoryWorkspaceStore();
+    await createWorkspace(store, "s", "p", { files: { "./agent.ts": "code" } });
+    expect((await getWorkspace(store, "s", "p"))?.files).toEqual({ "agent.ts": "code" });
+
+    // Both spellings in ONE write: they always denoted one file, and the later
+    // entry is what a plain object literal would have kept.
+    await mutateWorkspace(store, "s", "p", (current) => ({
+      ...current,
+      files: { "agent.ts": "first", "./agent.ts": "second" },
+    }));
+    expect((await getWorkspace(store, "s", "p"))?.files).toEqual({ "agent.ts": "second" });
+  });
+
+  test("a push spelling a path differently is not a change", async () => {
+    // The hash is of the NORMALIZED map, so `aai push` sending `./agent.ts`
+    // for a stored `agent.ts` is byte-identical: no version bump, no preview
+    // churn — on every push, not just the first.
+    const store = createMemoryWorkspaceStore();
+    await createWorkspace(store, "s", "p", { files: { "agent.ts": "code" } });
+    const result = await syncWorkspaceSource(store, "s", "p", { "./agent.ts": "code" });
+    expect(result.changed).toBe(false);
+  });
 });
 
 describe("mutateWorkspace", () => {

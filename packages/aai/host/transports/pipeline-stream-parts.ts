@@ -15,10 +15,11 @@ import {
   DEFAULT_DEAD_AIR_COVER_MS,
 } from "../../sdk/constants.ts";
 
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import { capToolResult, errorMessage, toArgsRecord } from "../../sdk/utils.ts";
 import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
-import type { EmitError } from "./types.ts";
+import type { EmitError, SendTtsText } from "./types.ts";
 
 /** A single `fullStream` part from `streamText`. */
 export type StreamPart = {
@@ -36,7 +37,7 @@ type StreamPartHandlerDeps = {
   /** Receives each assistant text delta (accumulated into the transcript). */
   onDelta: (delta: string) => void;
   /** Forwards text to the active TTS session (no-op if none), carrying `record`. */
-  sendTtsText: (text: string, record: boolean) => void;
+  sendTtsText: SendTtsText;
   /**
    * A speech segment ended — see {@link TtsTextCoalescer.boundary}. Omitted when
    * `sendTtsText` does no batching, in which case there is nothing to release.
@@ -101,14 +102,13 @@ const MAX_LOGGED_RESPONSE_BODY = 300;
 export function llmErrorDetails(error: unknown): Record<string, unknown> {
   const call = RetryError.isInstance(error) ? error.lastError : error;
   if (!APICallError.isInstance(call)) return {};
-  const requestId = call.responseHeaders?.["x-request-id"];
   return {
     statusCode: call.statusCode,
     url: call.url,
-    ...(requestId ? { requestId } : {}),
-    ...(call.responseBody
-      ? { responseBody: call.responseBody.slice(0, MAX_LOGGED_RESPONSE_BODY) }
-      : {}),
+    ...omitUndefined({
+      requestId: call.responseHeaders?.["x-request-id"],
+      responseBody: call.responseBody?.slice(0, MAX_LOGGED_RESPONSE_BODY),
+    }),
   };
 }
 
@@ -190,7 +190,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     }
     lastChar = out.slice(-1);
     if (record) onDelta(out);
-    sendTtsText(out, record);
+    sendTtsText(out, { record });
   }
 
   /**

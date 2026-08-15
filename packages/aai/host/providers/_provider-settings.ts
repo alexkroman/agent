@@ -129,8 +129,11 @@ export function describeResolvedProviders(resolved: {
       tts: describe(TTS_SETTINGS, resolved.tts),
     };
   }
-  // The AssemblyAI S2S descriptor takes no options at all today (no voice, no
-  // languages, no keyterms — see the S2S section of packages/aai/CLAUDE.md),
-  // so there is nothing to fill in and the kind is the whole story.
-  return { s2s: describe({}, resolved.s2s) ?? { kind: "assemblyai" } };
+  // No stage table: an S2S descriptor's options ARE its effective settings
+  // (`assemblyAIS2s({ voice, languages, keyterms })` since 2026-08-09), so
+  // `describe`'s own fallthrough reports them and there is nothing host-side to
+  // fill in. An ABSENT descriptor reports as absent, like a missing pipeline
+  // stage above — naming a vendor for a descriptor that is not there is the one
+  // thing this log must never do.
+  return { s2s: describe({}, resolved.s2s) };
 }

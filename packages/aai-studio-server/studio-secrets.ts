@@ -30,6 +30,7 @@
  * platform nowhere.
  */
 
+import { safeJsonParse } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import {
   deleteSlugSecret,
@@ -40,12 +41,13 @@ import {
 import type { SecretStore } from "aai-server/secret-store";
 import type { BundleStore } from "aai-server/store-types";
 import type { WorkspaceStore } from "aai-server/workspace-store";
+import { forcePreviewRedeploy } from "./studio-preview.ts";
 import {
   ownedProjectSlugs,
   PROJECT_ENVIRONMENTS,
   type ProjectEnvironment,
 } from "./studio-project-slugs.ts";
-import { getWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
+import { getWorkspace, type StudioWorkspace } from "./studio-workspace.ts";
 
 export type ProjectSecretsEnv = SecretEnv & {
   workspaces: WorkspaceStore;
@@ -76,12 +78,8 @@ async function readProjectSecrets(
 ): Promise<Record<string, string>> {
   const raw = await env.secrets.get(projectEnvSecretName(scope, project));
   if (raw === null) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return isRecord(parsed) ? (parsed as Record<string, string>) : {};
-  } catch {
-    return {};
-  }
+  const parsed = safeJsonParse(raw);
+  return isRecord(parsed) ? (parsed as Record<string, string>) : {};
 }
 
 /** Replace the project's record; an empty one is deleted rather than stored. */
@@ -141,37 +139,58 @@ type MutationParams = ProjectParams & { schedulePreview?: () => void };
 
 /**
  * Redeploy the preview so the agent the user is looking at picks the change
- * up on its own. Clearing the stamp is what makes the deploy run at all — it
- * no-ops on a matching files hash. Production waits for a Publish.
+ * up on its own. Production waits for a Publish.
+ *
+ * `forcePreviewRedeploy` (studio-preview.ts) owns the clear-then-schedule
+ * pair: clearing the stamp is what makes the deploy run at all, since it
+ * no-ops on a matching files hash and a saved secret changes no file.
  */
-async function redeployPreview(env: ProjectSecretsEnv, params: MutationParams): Promise<void> {
-  if (!params.schedulePreview) return;
-  const workspace = await getWorkspace(env.workspaces, params.scope, params.project);
-  if (workspace?.previewSlug === undefined) return;
-  await stampWorkspaceMeta(env.workspaces, params.scope, params.project, {
-    previewHash: undefined,
-  });
-  params.schedulePreview();
+function redeployPreview(
+  env: ProjectSecretsEnv,
+  params: MutationParams,
+  project: ResolvedProject,
+): Promise<void> {
+  const schedule = params.schedulePreview;
+  if (!schedule || project.workspace.previewSlug === undefined) return Promise.resolve();
+  return forcePreviewRedeploy(env.workspaces, params.scope, params.project, schedule);
 }
 
 /**
- * Run `op` against every agent of the project this caller owns.
- * Returns null when the project itself does not exist (a 404), and an empty
- * list when it exists but has deployed nothing yet — writing secrets before a
- * first deploy reaches no agent TODAY, and the project record is what carries
- * it to the deploy that comes later.
+ * The project as every path here needs it: the workspace row, and the slugs of
+ * its agents this caller owns.
+ *
+ * Resolved ONCE per request and threaded, because each of the three steps of a
+ * mutation used to resolve it again — the record write, the per-slug fan-out,
+ * the preview redeploy, and then the state read that answers the request —
+ * which cost three workspace reads and two ownership fan-outs for one PUT.
+ *
+ * Null means the project does not exist (a 404). An empty `targets` means it
+ * exists and has deployed nothing yet: writing secrets before a first deploy
+ * reaches no agent TODAY, and the project record is what carries them to the
+ * deploy that comes later.
  */
-async function overProjectAgents<T>(
+type ResolvedProject = {
+  workspace: StudioWorkspace;
+  targets: { environment: ProjectEnvironment; slug: string }[];
+};
+
+async function resolveProject(
   env: ProjectSecretsEnv,
   params: ProjectParams,
-  op: (slug: string, environment: ProjectEnvironment) => Promise<T>,
-): Promise<{ environment: ProjectEnvironment; slug: string; result: T }[] | null> {
+): Promise<ResolvedProject | null> {
   const workspace = await getWorkspace(env.workspaces, params.scope, params.project);
   if (!workspace) return null;
-  const targets = await ownedProjectSlugs(env.store, params.apiKey, workspace);
+  return { workspace, targets: await ownedProjectSlugs(env.store, params.apiKey, workspace) };
+}
+
+/** Run `op` against every agent of the project this caller owns. */
+function overProjectAgents<T>(
+  project: ResolvedProject,
+  op: (slug: string, environment: ProjectEnvironment) => Promise<T>,
+): Promise<{ environment: ProjectEnvironment; slug: string; result: T }[]> {
   // The agents are independent stores under independent per-slug locks.
   return Promise.all(
-    targets.map(async ({ environment, slug }) => ({
+    project.targets.map(async ({ environment, slug }) => ({
       environment,
       slug,
       result: await op(slug, environment),
@@ -183,9 +202,12 @@ async function overProjectAgents<T>(
 export async function projectSecretsState(
   env: ProjectSecretsEnv,
   params: ProjectParams,
+  /** The already-resolved project, when the caller has one (a mutation). */
+  resolved?: ResolvedProject,
 ): Promise<ProjectSecretsState | null> {
-  const listed = await overProjectAgents(env, params, (slug) => listSlugSecrets(env, slug));
-  if (listed === null) return null;
+  const project = resolved ?? (await resolveProject(env, params));
+  if (project === null) return null;
+  const listed = await overProjectAgents(project, (slug) => listSlugSecrets(env, slug));
   const held = Object.keys(await readProjectSecrets(env, params.scope, params.project));
   const byEnvironment = new Map(listed.map((entry) => [entry.environment, entry]));
   const environments: ProjectSecretsEnvironmentState[] = PROJECT_ENVIRONMENTS.map((environment) => {
@@ -209,20 +231,29 @@ export async function projectSecretsState(
  * flag first: a deploy racing this reads the record to decide what to inject,
  * so writing it last would let an update miss a deploy that landed in between
  * — and let a delete be undone by one.
+ *
+ * **The project's EXISTENCE is checked ahead of that write**, which is a
+ * different ordering question and used to be the wrong way round: the record
+ * went in unconditionally and the 404 came from `overProjectAgents` three
+ * statements later, so a PUT (or DELETE) against a project that does not exist
+ * answered 404 having already written a Vault record under that name. Nothing
+ * cascades it — the delete cascade only runs for a project that exists — so a
+ * later project taking that name inherited a stranger's values on its first
+ * deploy. Resolving first costs nothing: the mutation needs the workspace and
+ * its owned slugs anyway.
  */
 export async function setProjectSecrets(
   env: ProjectSecretsEnv,
   params: MutationParams & { updates: Record<string, string> },
 ): Promise<ProjectSecretsState | null> {
   const { scope, project } = params;
+  const resolved = await resolveProject(env, params);
+  if (resolved === null) return null;
   const held = await readProjectSecrets(env, scope, project);
   await writeProjectSecrets(env, scope, project, { ...held, ...params.updates });
-  const written = await overProjectAgents(env, params, (slug) =>
-    setSlugSecrets(env, slug, params.updates),
-  );
-  if (written === null) return null;
-  await redeployPreview(env, params);
-  return projectSecretsState(env, params);
+  await overProjectAgents(resolved, (slug) => setSlugSecrets(env, slug, params.updates));
+  await redeployPreview(env, params, resolved);
+  return projectSecretsState(env, params, resolved);
 }
 
 /** Drop `key` from the project's record and from every agent it has. */
@@ -231,12 +262,13 @@ export async function deleteProjectSecret(
   params: MutationParams & { key: string },
 ): Promise<ProjectSecretsState | null> {
   const { scope, project, key } = params;
+  const resolved = await resolveProject(env, params);
+  if (resolved === null) return null;
   const { [key]: _dropped, ...rest } = await readProjectSecrets(env, scope, project);
   await writeProjectSecrets(env, scope, project, rest);
-  const deleted = await overProjectAgents(env, params, (slug) => deleteSlugSecret(env, slug, key));
-  if (deleted === null) return null;
-  await redeployPreview(env, params);
-  return projectSecretsState(env, params);
+  await overProjectAgents(resolved, (slug) => deleteSlugSecret(env, slug, key));
+  await redeployPreview(env, params, resolved);
+  return projectSecretsState(env, params, resolved);
 }
 
 /**

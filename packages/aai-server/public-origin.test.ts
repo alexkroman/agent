@@ -96,10 +96,11 @@ describe("agentPublicBaseUrl", () => {
     );
   });
 
-  test("falls back to the origin a request was last served on", () => {
-    // The path that makes this work with no new configuration: three of the four
-    // spawn paths hold no request (blue-green handover, the wake sweep, the peer
-    // route), so the value has to outlive the request that established it.
+  test("in LOCAL DEV, falls back to the origin a request was last served on", () => {
+    // Three of the four spawn paths hold no request (blue-green handover, the
+    // wake sweep, the peer route), so the value has to outlive the request that
+    // established it — which is only acceptable where there is no tenant
+    // boundary to cross. `{}` is local dev: no SUPABASE_STORAGE_BUCKET.
     rememberPublicOrigin(behindTls("/digest-desk/client-config"), {});
     expect(agentPublicBaseUrl("digest-desk", {})).toBe(
       "https://agent.example.modal.run/digest-desk",
@@ -120,5 +121,49 @@ describe("agentPublicBaseUrl", () => {
     expect(agentPublicBaseUrl("x", { AAI_PUBLIC_ORIGIN: "   " })).toBe(
       "https://agent.example.modal.run/x",
     );
+  });
+
+  describe("in production, no request teaches this replica an origin", () => {
+    // Production = anything that is not `isLocalDev`, whose sentinel is the
+    // deploy artifact bucket (see _boot.ts).
+    const PROD: NodeJS.ProcessEnv = { SUPABASE_STORAGE_BUCKET: "aai-deploys" };
+
+    test("an attacker's Host header cannot poison another tenant's guest", () => {
+      // The attack, end to end. `rememberPublicOrigin` runs from the shared
+      // middleware on EVERY request before any auth, and what it records is
+      // baked into the NEXT sandbox this replica spawns — any slug, any tenant
+      // — as AAI_PUBLIC_BASE_URL, which is what `publicWebhookUrl(token)` mints
+      // and what a workflow author hands to a payment provider. One
+      // unauthenticated `GET /health` used to be the whole exploit.
+      rememberPublicOrigin(new Request("http://evil.example/health"), PROD);
+      expect(agentPublicBaseUrl("someone-elses-agent", PROD)).toBeUndefined();
+
+      // Not even via the forwarded headers, which are equally caller-supplied
+      // when nothing proxies this service.
+      rememberPublicOrigin(
+        behindTls("/health", { "x-forwarded-host": "evil.example", "x-forwarded-proto": "https" }),
+        PROD,
+      );
+      expect(agentPublicBaseUrl("someone-elses-agent", PROD)).toBeUndefined();
+    });
+
+    test("a legitimate request is not learned from either — only config is", () => {
+      // There is no header that distinguishes an honest Host from a forged one,
+      // so the answer is not a better check: it is refusing to guess. The SDK's
+      // throw naming `publicUrl` is the report, and `AAI_PUBLIC_ORIGIN` the fix.
+      rememberPublicOrigin(behindTls("/digest-desk/client-config"), PROD);
+      expect(agentPublicBaseUrl("digest-desk", PROD)).toBeUndefined();
+      expect(
+        agentPublicBaseUrl("digest-desk", { ...PROD, AAI_PUBLIC_ORIGIN: "https://aai.example" }),
+      ).toBe("https://aai.example/digest-desk");
+    });
+
+    test("still RETURNS the resolved origin for the request that asked", () => {
+      // The self-directed uses (a redirect Location, the URL a carrier signed)
+      // are unaffected — only the cross-request memory is refused.
+      expect(rememberPublicOrigin(behindTls("/health"), PROD)).toBe(
+        "https://agent.example.modal.run",
+      );
+    });
   });
 });

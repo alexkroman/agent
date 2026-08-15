@@ -40,14 +40,31 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
  * budget for this failure mode — without one, a permanently wedged peer would
  * be re-dialed every ~10s forever, which is the unbounded retry loop
  * `RECONNECT_OPTIONS.maxRetries` exists to prevent.
+ *
+ * CONSECUTIVE is the whole of it, and only `succeeded()` says so — see its doc.
  */
 const MAX_HANDSHAKE_TIMEOUTS = 3;
 
 export type HandshakeGuard = {
   /** Start the deadline for the attempt that just opened. */
   arm(): void;
-  /** Stop it — `config` arrived, or this socket is closing. */
+  /** Stop it — this socket is closing, or the connection is being torn down. */
   disarm(): void;
+  /**
+   * The `config` frame arrived: stop the deadline AND spend nothing.
+   *
+   * Separate from {@link HandshakeGuard.disarm} because the budget is
+   * CONSECUTIVE, and only a completed handshake proves the peer is healthy. One
+   * guard covers a whole `connect()`, partysocket's retries included, so with a
+   * plain disarm the count survived every successful session in between: an
+   * hour-long call whose socket dropped three times, each drop timing out once
+   * before the next attempt succeeded, surfaced the permanent
+   * "Agent did not complete the session handshake" error against a peer that
+   * had answered every time. A close must NOT reset it — a wedged peer closes
+   * and reopens on its own, and resetting there is the unbounded re-dial loop
+   * the budget exists to bound.
+   */
+  succeeded(): void;
 };
 
 /**
@@ -99,5 +116,9 @@ export function createHandshakeGuard(opts: {
       timer = setTimeout(fire, HANDSHAKE_TIMEOUT_MS);
     },
     disarm,
+    succeeded(): void {
+      disarm();
+      timeouts = 0;
+    },
   };
 }

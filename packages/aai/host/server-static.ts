@@ -7,9 +7,12 @@
  * decision in it is about a FILE — where a URL resolves to, whether that path
  * escaped the directory, and what to do once the headers are out.
  *
- * The containment check is the part worth not re-deriving. Decoding happens
- * BEFORE the join, so an encoded traversal (`%2e%2e%2f`) decodes to `..`,
- * collapses in `path.join`, and is caught the same way a literal one is.
+ * The containment check is the part worth not re-deriving, and it has two
+ * halves. Decoding happens BEFORE the join, so an encoded traversal
+ * (`%2e%2e%2f`) decodes to `..`, collapses in `path.join`, and is caught the
+ * same way a literal one is. And BOTH sides of the comparison come off the
+ * RESOLVED root — it is a pure string check, so a relative `clientDir` compared
+ * against its own resolved form fails containment for every asset.
  */
 
 import fs from "node:fs";
@@ -18,6 +21,7 @@ import path from "node:path";
 import { lookup as mimeLookup } from "mime-types";
 import { requestPath } from "../sdk/request-url.ts";
 import { errorMessage } from "../sdk/utils.ts";
+import { decodePathSegment } from "./_path-decode.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /**
@@ -51,23 +55,23 @@ export async function serveStatic(
 ): Promise<boolean> {
   const url = requestPath(req.url);
   // Percent-decode so assets with spaces or non-ASCII names resolve (browsers
-  // request them encoded). A malformed escape throws URIError — treat it as
-  // not-found rather than crashing the request. Decoding happens BEFORE the
-  // join + containment check below, so an encoded traversal (`%2e%2e%2f`)
-  // decodes to `..`, collapses in `path.join`, and is caught by
-  // `isPathInside` like a literal one.
-  let pathname: string;
-  try {
-    pathname = decodeURIComponent(url);
-  } catch {
-    return false;
-  }
-  const filePath = path.join(dir, pathname === "/" ? "index.html" : pathname);
+  // request them encoded). A malformed escape is not a path — `decodePathSegment`
+  // answers undefined and this reads as not-found rather than crashing the
+  // request. Decoding happens BEFORE the join + containment check below, so an
+  // encoded traversal (`%2e%2e%2f`) decodes to `..`, collapses in `path.join`,
+  // and is caught by `isPathInside` like a literal one.
+  const pathname = decodePathSegment(url);
+  if (pathname === undefined) return false;
 
-  // Resolve before the containment check to avoid prefix collisions
-  // (e.g. dir="/app/static" matching "/app/static-secrets/…").
-  const resolved = path.resolve(dir);
-  if (!isPathInside(resolved, filePath)) return false;
+  // Resolved FIRST, and the join is off the resolved root — the containment
+  // check compares two paths, so both have to be absolute. Joining onto a
+  // relative `clientDir` and comparing against `path.resolve(dir)` made every
+  // asset fail containment and 404 with no log line, for a `@public` option
+  // whose doc states no absolute-path requirement. Resolving also avoids prefix
+  // collisions (dir="/app/static" matching "/app/static-secrets/…").
+  const root = path.resolve(dir);
+  const filePath = path.join(root, pathname === "/" ? "index.html" : pathname);
+  if (!isPathInside(root, filePath)) return false;
 
   // Only pre-response failures (ENOENT, EACCES, a directory) return false —
   // the caller then writes the 404. Once headers go out below, every failure

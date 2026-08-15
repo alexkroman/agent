@@ -5,7 +5,7 @@ import { describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { createTestOrchestrator, createTestStore, deploy, deployAgent } from "./test-utils.ts";
 
 describe("handleAgentHealth", () => {
@@ -43,7 +43,7 @@ describe("handleAgentClientConfig", () => {
     sandbox: Sandbox = makeFakeSandbox(),
   ): Promise<void> {
     await deployAgent(fetch, slug);
-    slots.claim(slug, {
+    setSlot(slots, {
       slug,
       sandbox,
       version: (await store.getAgentVersion(slug)) ?? 1,
@@ -93,6 +93,35 @@ describe("handleAgentClientConfig", () => {
     // URL. The default client renders its empty defaults for the rest.
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ sessionUrl: "wss://tunnel.test:443/websocket" });
+  });
+
+  test("two slugs on one reused loopback port do not share a memoized config", async () => {
+    // The memo was keyed on the guest ORIGIN alone, justified by "a guest origin
+    // is unique to one sandbox". True of a Modal tunnel hostname; false of the
+    // subprocess backend, whose guests are `ws://127.0.0.1:<port>` on a port the
+    // OS is free to hand out again — so within the 10-minute TTL, B's page load
+    // could be answered with A's name and greeting.
+    const slots = createSlotCache();
+    const names = ["agent-a", "agent-b"];
+    const guestFetch: typeof globalThis.fetch = async () =>
+      Response.json({ name: names.shift() ?? "exhausted" });
+    const { fetch, store } = await createTestOrchestrator({ slots, guestFetch });
+
+    // One port, two sandboxes: A's guest exits, B's lands on the same port.
+    const onOnePort = (): Sandbox => ({
+      ...makeFakeSandbox(),
+      sessionUrl: vi.fn(() => Promise.resolve("ws://127.0.0.1:41234/websocket")),
+      guestOrigin: vi.fn(() => Promise.resolve("ws://127.0.0.1:41234")),
+    });
+    await seedResident(fetch, store, slots, "agent-one", onOnePort());
+    await seedResident(fetch, store, slots, "agent-two", onOnePort());
+
+    await expect((await fetch("/agent-one/client-config")).json()).resolves.toMatchObject({
+      name: "agent-a",
+    });
+    await expect((await fetch("/agent-two/client-config")).json()).resolves.toMatchObject({
+      name: "agent-b",
+    });
   });
 
   test("answers 503 when the sandbox VM failed to start", async () => {
@@ -223,7 +252,7 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   // at version 1, matching the single putAgent below, so the resident is
   // not retired as superseded.
   if (opts.seedSandbox !== false) {
-    slots.claim(slug, { slug, sandbox, version: 1 });
+    setSlot(slots, { slug, sandbox, version: 1 });
   }
   const store = createTestStore();
   await store.putAgent({

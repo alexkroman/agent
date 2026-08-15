@@ -1,4 +1,4 @@
-import { isToolFailure, tool } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   dispatchSlot,
@@ -7,13 +7,12 @@ import {
   incidentAgeMinutes,
 } from "../shared.ts";
 
-export default tool({
+export default dispatchSlot.tool({
   description: "Get full details on a specific incident including timeline and assigned resources.",
   inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
   }),
-  async execute(args, ctx) {
-    const state = dispatchSlot.get(ctx);
+  execute(args, state) {
     const inc = findIncident(state, args.incidentId);
     if (isToolFailure(inc)) return inc;
 

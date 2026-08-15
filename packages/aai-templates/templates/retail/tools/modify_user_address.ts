@@ -13,10 +13,6 @@ export default retailTool({
     user_id: z.string().max(100).describe("The user id, e.g. 'sara_doe_496'"),
     ...AddressFields,
   }),
-  // `execute` before `summary`: TS infers the wrapper's generic `R` from
-  // `execute`'s return type, and processes object literal properties in
-  // source order — with `summary` first, `result` in its signature can't be
-  // inferred and silently falls back to `unknown`.
   execute: (args, state) => {
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;

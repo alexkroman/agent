@@ -107,6 +107,48 @@ describe("studio publish (workspace/deploy)", () => {
     await failing.broker.dispose();
   });
 
+  /**
+   * The idle sweeper must not terminate a sandbox with a Publish inside it.
+   * The numbers make this ordinary rather than exotic:
+   * `WORKSPACE_DEPLOY_TIMEOUT_MS` is 330s against a 300s idle window, and the
+   * deploy touches `lastUsed` only when it RETURNS — so a cold build started
+   * partway into an idle window was swept mid-`aai deploy`, the whole build
+   * re-ran, and the browser's chat URL was dead.
+   */
+  test("the idle sweeper spares a sandbox with a publish in flight", async () => {
+    vi.useFakeTimers();
+    try {
+      const gate = Promise.withResolvers<void>();
+      const guest = fakeGuest("wss://tunnel.example:443", gate.promise);
+      // Idle from the moment it is brokered, so only the in-flight hold can be
+      // keeping the sweeper off it.
+      const { broker } = await makeBroker([guest], { idleMs: 0 });
+      await broker.ensureSession(SCOPE, PROJECT, "caller-key");
+
+      const publishing = broker.deployWorkspace(
+        SCOPE,
+        PROJECT,
+        { "agent.ts": "// v1" },
+        { serverUrl: "https://platform.example", apiKey: "caller-key" },
+      );
+      // Two sweep intervals inside the build.
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(guest.disposed()).toBe(false);
+
+      gate.resolve();
+      const outcome = await publishing;
+      expect(outcome.ok).toBe(true);
+
+      // And the hold is RELEASED — the sandbox is evictable again once the
+      // build is done, or the sweeper would never reach a published project.
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(guest.disposed()).toBe(true);
+      await broker.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("a failing afterDeploy never turns a shipped deploy into an error", async () => {
     // The CLI output is already on its way to the chat; reporting a transport
     // failure over a follow-up would be a lie about what happened.

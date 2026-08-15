@@ -123,6 +123,35 @@ describe("POST /deploy body concurrency", () => {
     const after = await deploy(fetch, { key: "k", body: { slug: "after" } });
     expect(after.status).toBe(200);
   });
+
+  test("a slow key verification does not occupy a body slot", async () => {
+    // The gate prices a slot in RSS — buffered bytes — and `authMw` buffers
+    // nothing: it reads headers, then asks AssemblyAI (5s cap) and Vault. Held
+    // BEHIND the gate, two junk bearers took both slots for the length of an
+    // AssemblyAI hiccup and every legitimate deploy 503'd behind them. So
+    // `authMw` runs in FRONT of it.
+    const { promise: stall, resolve: release } = Promise.withResolvers<void>();
+    const keyVerifier = vi.fn(async (key: string) => {
+      if (key === "slow-key") await stall;
+      return true;
+    });
+    const { fetch } = await createTestOrchestrator({
+      keyVerifier,
+      deployBodyConcurrency: 1,
+      deployBodyWaitMs: 10,
+    });
+
+    const stuck = deploy(fetch, { key: "slow-key", body: { slug: "stuck" } });
+    await new Promise((r) => setImmediate(r));
+
+    // The single slot is still free, because the stalled request has not
+    // reached the gate. Under the old order this was a 503.
+    const other = await deploy(fetch, { key: "fine", body: { slug: "other" } });
+    expect(other.status).toBe(200);
+
+    release();
+    await expect(stuck.then((r) => r.status)).resolves.toBe(200);
+  });
 });
 
 describe("POST /deploy per-IP rate limit", () => {

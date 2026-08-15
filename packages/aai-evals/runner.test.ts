@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
+import { formatSpread } from "./report.ts";
 import { evalMinScore, evalRepeat, runEval } from "./runner.ts";
 
 describe("runEval", () => {
@@ -65,6 +66,28 @@ describe("runEval", () => {
     expect(report.unstable).toEqual(["sometimes"]);
   });
 
+  test("unstable labels sort by CODE UNIT, not by locale", () => {
+    // `localeCompare` with no explicit locale answers to the runtime's ICU
+    // default, so the same run would print a different order on a different
+    // machine — and this list goes into a committed report. These four are
+    // chosen because locale collation and code-unit order DISAGREE on them:
+    // a locale-aware sort ignores case and puts "a" before "B", while code
+    // units put every uppercase letter first. Asserting the code-unit answer
+    // is what makes the ordering a property of the data rather than the box.
+    let call = 0;
+    return runEval({
+      name: "case",
+      repeat: 2,
+      body: async (t) => {
+        call += 1;
+        const flips = call === 1;
+        for (const label of ["b", "B", "a", "A"]) t.check(flips, label);
+      },
+    }).then((report) => {
+      expect(report.unstable).toEqual(["A", "B", "a", "b"]);
+    });
+  });
+
   test("a harness failure is recorded on its pass and does not lose the others", async () => {
     let call = 0;
     const report = await runEval({
@@ -79,6 +102,41 @@ describe("runEval", () => {
     expect(report.harnessErrors).toBe(1);
     expect(report.passes[1]?.error).toContain("sandbox died");
     expect(report.passes.map((p) => p.checks.length)).toEqual([1, 1, 1]);
+  });
+
+  test("a harness failure is kept OUT of the score and the spread", async () => {
+    // The pass that dies here has recorded one passing check, so it scores 1.0.
+    // Averaged in, a dead sandbox would RAISE the reported score and set
+    // `score.max` — the "averaging the two hides both" failure `EvalPass.error`
+    // documents, applied to the number the tier is read for.
+    let call = 0;
+    const report = await runEval({
+      name: "case",
+      repeat: 2,
+      body: async (t) => {
+        call += 1;
+        t.check(true, "reached");
+        if (call === 2) throw new Error("sandbox died");
+        t.check(false, "second");
+      },
+    });
+    expect(report.harnessErrors).toBe(1);
+    expect(report.measuredPasses).toBe(1);
+    // Only the surviving pass: one of two checks held.
+    expect(report.score).toEqual({ min: 0.5, max: 0.5, mean: 0.5, spread: 0 });
+  });
+
+  test("every pass dying is NO measurement, reported as such", async () => {
+    const report = await runEval({
+      name: "case",
+      repeat: 2,
+      body: async () => {
+        throw new Error("sandbox died");
+      },
+    });
+    expect(report.measuredPasses).toBe(0);
+    expect(report.harnessErrors).toBe(2);
+    expect(formatSpread(report)).toBe("not measured");
   });
 
   test("an unreached assertion is missing data, not a flip", async () => {

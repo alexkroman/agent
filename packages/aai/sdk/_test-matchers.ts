@@ -8,6 +8,7 @@
 
 import { isDeepStrictEqual } from "node:util";
 import { expect } from "vitest";
+import { isRecord } from "./is-record.ts";
 import { EVENT_ID_PREFIX, SessionEventSchema } from "./protocol.ts";
 
 type MatcherResult = { pass: boolean; message: () => string };
@@ -25,7 +26,7 @@ function fieldsSuffix(fields?: Record<string, unknown>): string {
  * one as meaningful.
  */
 function withStubMeta(received: unknown): unknown {
-  if (typeof received !== "object" || received === null) return received;
+  if (!isRecord(received)) return received;
   if ("meta" in received) return received;
   return { ...received, meta: { id: `${EVENT_ID_PREFIX}TEST`, at: 0 } };
 }

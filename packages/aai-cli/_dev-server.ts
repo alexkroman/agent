@@ -40,7 +40,7 @@ import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
 import { resolveServerEnv } from "./_server-common.ts";
-import { log, notify, outputSilenced } from "./_ui.ts";
+import { notify, outputSilenced } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
 import { buildWorker } from "./worker-bundler.ts";
@@ -126,8 +126,11 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
   }
 
   // Anything still unresolved would otherwise surface as an auth failure on
-  // the first session (or a deploy-time rejection) — warn now.
-  for (const warning of agentEnvWarnings(agentDef, env)) log.warn(warning);
+  // the first session (or a deploy-time rejection) — warn now. Through
+  // `notify`, not `log.warn`: `aai dev` is long-running, so JSON mode (which a
+  // pipe auto-selects) has already silenced `log` and the first session then
+  // fails auth with nothing having said why. See this package's CLAUDE.md.
+  for (const warning of agentEnvWarnings(agentDef, env)) notify("warn", warning);
   return env;
 }
 
@@ -282,6 +285,10 @@ export type DevServerOptions = {
  * `strictPort` because the reported URL is `http://localhost:<port>` —
  * without it, Vite silently binds port+N when the port is busy and the
  * printed/JSON-returned URL points at whatever else was listening.
+ *
+ * `AAI_DEV_HOST` reaches BOTH servers. Binding only the backend left Vite —
+ * the port the user is told to open — on loopback, i.e. failing exactly the
+ * case that variable exists for (`aai dev` in a container, reached from the host).
  */
 export function viteDevConfig(
   cwd: string,
@@ -299,6 +306,8 @@ export function viteDevConfig(
     server: {
       port: vitePort,
       strictPort: true,
+      // Omitted rather than `undefined`: Vite reads this key's PRESENCE.
+      ...omitUndefined({ host: devBindHost() }),
       proxy: {
         "/health": target,
         "/client-config": target,

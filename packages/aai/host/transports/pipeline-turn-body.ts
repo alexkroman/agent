@@ -67,6 +67,18 @@ export function createTurnBody(deps: {
         // barge-in on the adopted reply must kill the request the speculation
         // started, and until this line nothing owns it.
         claimed?.adopt(signal),
+        // A poisoned adoption restarts the run from scratch, so everything
+        // accumulated from the abandoned one is about to be regenerated —
+        // including, when the model spoke before calling its tool, an opening
+        // the caller hears twice. The audio is unavoidable; recording it twice
+        // is not. `heard` starts a new reply for the same reason: its spans
+        // index THIS string, and the still-playing preamble stays honest
+        // because `startReply` deliberately leaves the playback clock alone.
+        () => {
+          accumulated = "";
+          persistedLen = 0;
+          heard.startReply();
+        },
       );
 
       if (signal.aborted) {

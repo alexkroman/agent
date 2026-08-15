@@ -50,7 +50,7 @@ import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import type { LlmProvider } from "../../sdk/providers.ts";
 import { gatewayToolSchemaMiddleware } from "./_gateway-tool-schema.ts";
 import { repairOpenAiStream } from "./_openai-stream-repair.ts";
-import { options } from "./_utils.ts";
+import { options, pickEndpoint } from "./_utils.ts";
 
 /** One registry entry per LLM provider kind — adding a provider is one entry here. */
 export type LlmRegistryEntry = {
@@ -121,12 +121,13 @@ export const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     label: "AssemblyAI",
     create: (apiKey, d) => {
       const opts = options<AssemblyAILlmOptions>(d);
-      // An explicit gatewayUrl WINS over `region`, same rule as the STT
-      // opener's streamingUrl: naming an endpoint is deliberate and the
-      // residency shorthand must not silently overwrite it.
-      const baseURL =
-        opts.gatewayUrl ||
-        (opts.region === "eu" ? ASSEMBLYAI_LLM_GATEWAY_EU_URL : ASSEMBLYAI_LLM_GATEWAY_URL);
+      // An explicit gatewayUrl WINS over `region` — the rule `pickEndpoint`
+      // owns, shared with the STT opener's `streamingUrl`. Unlike that one this
+      // stage has a US default of its own to fall back to.
+      const baseURL = pickEndpoint(opts.gatewayUrl, opts.region, {
+        eu: ASSEMBLYAI_LLM_GATEWAY_EU_URL,
+        default: ASSEMBLYAI_LLM_GATEWAY_URL,
+      });
       // The gateway implements /chat/completions only, so use .chat() —
       // the provider's default callable targets OpenAI's Responses API.
       // `fetch` repairs the gateway's id-less streaming tool_call deltas,

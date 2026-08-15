@@ -313,6 +313,49 @@ describe("global config concurrent updates", () => {
       expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
     });
   });
+
+  test("an UNBREAKABLE stale lock proceeds unlocked instead of spinning forever", async () => {
+    await withTempDir(async (dir) => {
+      const { approveServer, readGlobalConfig } = await import("./_config.ts");
+      const fs = await import("node:fs/promises");
+      const lockPath = path.join(dir, "config.lock");
+      // A DIRECTORY at the lock path. `fs.rm`'s `force` masks only ENOENT and
+      // there is no `recursive`, so breaking it throws every time — and the
+      // throw used to be swallowed by a `continue` that restarted the loop
+      // ABOVE the deadline check. `aai login` then spun in a tight async loop
+      // with no output and no exit; this test hung rather than failing.
+      await fs.mkdir(lockPath);
+      const old = new Date(Date.now() - 60_000);
+      await fs.utimes(lockPath, old, old);
+
+      const started = Date.now();
+      await approveServer("https://example.com", dir);
+
+      // Bounded acquisition, then the documented degrade-to-unlocked path.
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
+      // The directory is not ours, so teardown must leave it alone.
+      expect((await fs.stat(lockPath)).isDirectory()).toBe(true);
+    });
+  });
+
+  test("a lock held by someone else is waited out, then the update still lands", async () => {
+    await withTempDir(async (dir) => {
+      const { approveServer, readGlobalConfig } = await import("./_config.ts");
+      const fs = await import("node:fs/promises");
+      const lockPath = path.join(dir, "config.lock");
+      // Fresh, so not stale: acquisition waits out its 2s budget and then
+      // proceeds unlocked rather than throwing — failing `aai login` over a
+      // stuck lockfile would be worse than the lost update.
+      await fs.writeFile(lockPath, "");
+
+      const started = Date.now();
+      await approveServer("https://example.com", dir);
+
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
+    });
+  });
 });
 
 describe("updateGlobalConfig", () => {

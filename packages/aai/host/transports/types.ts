@@ -129,6 +129,37 @@ export type EmitErrorOpts = { fatal?: boolean };
  */
 export type EmitError = (code: SessionErrorCode, message: string, opts?: EmitErrorOpts) => void;
 
+/** Per-send options for {@link SendTtsText}. */
+export type SendTtsOptions = {
+  /**
+   * Publish the cumulative TTS text as an interim `agent-transcript.updated`.
+   * Defaults to `true`; the greeting and the start-failure line publish their
+   * own final instead.
+   */
+  publishTranscript?: boolean;
+  /**
+   * These characters are part of the model's own reply. Defaults to `true`;
+   * `false` marks dead-air filler — audible, so it moves the heard POSITION,
+   * but never truncated into history (see `pipeline-heard.ts`).
+   */
+  record?: boolean;
+};
+
+/**
+ * Send text to the active TTS session — the pipeline's one speaking verb.
+ *
+ * One type rather than one per module, because it crosses four of them (the
+ * transport that implements it, the coalescer that batches it, the stream-part
+ * handler that calls it, and the lifecycle/outcome modules that speak fixed
+ * lines) and each had written its own signature: two options objects that named
+ * different subsets, and one positional `boolean` whose meaning was only
+ * legible at the definition. A parameter added to the real thing then reached
+ * some call sites and not others, silently, since every field is optional.
+ *
+ * @internal
+ */
+export type SendTtsText = (text: string, opts?: SendTtsOptions) => void;
+
 /**
  * Minimal config a transport may receive at construction time.
  * @internal

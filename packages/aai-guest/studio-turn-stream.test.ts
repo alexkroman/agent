@@ -16,19 +16,20 @@ async function collect(stream: ReadableStream<UIMessageChunk>): Promise<UIMessag
   return out;
 }
 
+// The gate is observed through `enter()` alone: a `busy` reader existed once
+// and no production code ever read it, so these assertions were its only
+// consumers — a test affordance in the shape of an API. `enter() === null` is
+// the same question, asked the way the two real callers ask it.
 describe("createTurnGate", () => {
   test("admits one turn and refuses the next", () => {
     const gate = createTurnGate();
-    const release = gate.enter();
-    expect(release).not.toBeNull();
-    expect(gate.busy).toBe(true);
+    expect(gate.enter()).not.toBeNull();
     expect(gate.enter()).toBeNull();
   });
 
   test("reopens on release", () => {
     const gate = createTurnGate();
     gate.enter()?.();
-    expect(gate.busy).toBe(false);
     expect(gate.enter()).not.toBeNull();
   });
 
@@ -41,9 +42,9 @@ describe("createTurnGate", () => {
     const second = gate.enter();
     expect(second).not.toBeNull();
     first?.();
-    expect(gate.busy).toBe(true);
+    expect(gate.enter()).toBeNull();
     second?.();
-    expect(gate.busy).toBe(false);
+    expect(gate.enter()).not.toBeNull();
   });
 
   test("release is idempotent — both the response close and the turn settle call it", () => {
@@ -51,7 +52,7 @@ describe("createTurnGate", () => {
     const release = gate.enter();
     release?.();
     release?.();
-    expect(gate.busy).toBe(false);
+    expect(gate.enter()).not.toBeNull();
   });
 });
 

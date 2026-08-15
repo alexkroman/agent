@@ -77,6 +77,29 @@ server.listen(port, "127.0.0.1");
 setInterval(() => {}, 1000);
 `;
 
+/**
+ * A server that listens on its FIRST run and exits immediately on every one
+ * after — a process that does not survive the kill this mode inflicts.
+ *
+ * The marker file is what carries "first run" across the SIGKILL, since each
+ * generation is a fresh process. Written per port so tests do not share it.
+ */
+const DYING_SERVER = `
+const fs = require("node:fs");
+const http = require("node:http");
+const port = Number(process.argv[process.argv.indexOf("--port") + 1]);
+const marker = process.env.AAI_FAULT_TEST_MARKER;
+if (fs.existsSync(marker)) { console.log("refusing to come back"); process.exit(1); }
+fs.writeFileSync(marker, "1");
+const server = http.createServer((req, res) => {
+  res.writeHead(req.url === "/health" ? 200 : 404).end("{}");
+});
+server.listen(port, "127.0.0.1", () => {
+  console.log("listening pid=" + process.pid);
+  setInterval(() => { console.log("TICK pid=" + process.pid); }, 150);
+});
+`;
+
 let fakeBin: string | undefined;
 let silentBin: string | undefined;
 let tmpDir: string | undefined;
@@ -99,6 +122,13 @@ async function silent(): Promise<string> {
   silentBin = path.join(tmpDir ?? os.tmpdir(), "silent-dev.cjs");
   await fs.writeFile(silentBin, SILENT_SERVER);
   return silentBin;
+}
+
+async function dying(): Promise<string> {
+  await fake(); // for tmpDir
+  const bin = path.join(tmpDir ?? os.tmpdir(), `dying-dev-${nextPort}.cjs`);
+  await fs.writeFile(bin, DYING_SERVER);
+  return bin;
 }
 
 async function supervise(
@@ -238,6 +268,38 @@ describe("supervision", () => {
       points: [{ after: "NO SUCH LINE" }],
     });
     await expect(server.awaitSettled(2000)).rejects.toThrow(/Last lines seen/);
+  });
+
+  test("a restart that never becomes healthy is REPORTED, not an unhandled rejection", async () => {
+    // `cycle = cycle.then(() => recycle(point))` left a rejected promise with
+    // no handler for as long as it took the suite to reach `stop()` — seconds —
+    // and Node reports that as an unhandledRejection, which under vitest fails
+    // whichever test happens to be running and names the wrong thing. The
+    // failure is now recorded when it happens and re-raised here, which is what
+    // `stop`'s comment always intended: reported rather than swallowed.
+    const marker = path.join(tmpDir ?? os.tmpdir(), `marker-${nextPort}`);
+    const unhandled: unknown[] = [];
+    const onUnhandled = (err: unknown): void => {
+      unhandled.push(err);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      server = await startSupervisedDevServer({
+        aaiBin: await dying(),
+        cwd: tmpDir ?? os.tmpdir(),
+        port: nextPort++,
+        env: { ...process.env, AAI_FAULT_TEST_MARKER: marker },
+        profile: { description: "kill the one boot it has", points: [{ afterHealthy: 1 }] },
+        // Otherwise this assertion costs the shipped 60s health budget.
+        healthTimeoutMs: 2000,
+      });
+
+      await expect(server.awaitSettled(20_000)).rejects.toThrow(/never became healthy/);
+      // Nothing reached the process-level handler on the way.
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   test("stop() during a pending kill cycle does not leave a process behind", async () => {

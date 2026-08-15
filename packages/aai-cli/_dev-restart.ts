@@ -17,7 +17,7 @@
  * except through `ops`, so a test can use a plain label.
  */
 
-import { sleep } from "@alexkroman1/aai/internal";
+import { createCoalescingRunner, sleep } from "@alexkroman1/aai/internal";
 import { errorMessage } from "./_utils.ts";
 
 /** Attempts to bind the port during the close→listen swap. */
@@ -76,44 +76,50 @@ export type RestartSupervisor<S> = {
  */
 export function createRestartSupervisor<S>(ops: RestartOps<S>): RestartSupervisor<S> {
   const wait = ops.sleep ?? sleep;
-  // Starts true: startup counts as an in-flight "restart", so a change event
-  // landing during the multi-second boot queues instead of racing the build.
-  let restarting = true;
-  let pendingRestart = false;
+  // Startup is not a restart, but it is a window in which a change event must
+  // QUEUE rather than race the initial build — so it is tracked separately
+  // from the in-flight bookkeeping the runner below owns, and released by
+  // `adopt`. That difference is why this is not simply the runner's first run:
+  // the boot has no promise for it to coalesce against.
+  let booting = true;
+  let queuedDuringBoot = false;
   let closed = false;
   let current: S | undefined;
   let cleanupPromise: Promise<void> | undefined;
 
+  /**
+   * At most one rebuild in flight; every change landing during one collapses
+   * into a SINGLE trailing rebuild started after it settles.
+   *
+   * That is exactly the repo's `createCoalescingRunner` contract, and this
+   * module used to re-derive it with a `restarting` flag, a `pendingRestart`
+   * flag and a `do/while` loop. Coalescing is the right policy for the same
+   * reason it is there: a rebuild reads the files as they are WHEN IT RUNS, so
+   * N queued rebuilds would do the trailing one's work N times, while dropping
+   * the trigger outright would leave the newest save unserved (or, when the
+   * in-flight rebuild died on a mid-edit syntax error, leave the server down).
+   */
+  const rebuilds = createCoalescingRunner(() => restartOnce());
+
   function request(): void {
-    // A change during an in-flight restart must not be dropped: flag it so
-    // restart() loops once more with the newest files. Otherwise the final
-    // save is silently ignored (stale server), or — if the in-flight restart
-    // failed on a mid-edit syntax error — the server stays down entirely.
-    if (restarting) {
-      pendingRestart = true;
+    if (booting) {
+      queuedDuringBoot = true;
       return;
     }
-    restarting = true;
-    // restart() catches its own build/listen failures, but a throw from an
-    // unexpected path must still be logged and must still clear `restarting`
-    // (catch-then-finally = try/finally semantics), or watching wedges forever.
-    void restart()
-      .catch((err: unknown) => {
-        ops.notify("error", `Restart failed: ${errorMessage(err)}`);
-      })
-      .finally(() => {
-        restarting = false;
-      });
-  }
-
-  async function restart(): Promise<void> {
-    do {
-      pendingRestart = false;
-      await restartOnce();
-    } while (pendingRestart && !closed);
+    // restartOnce catches its own build/listen failures, but a throw from an
+    // unexpected path — a notifier writing to a stderr closed by
+    // `aai dev | head` — must still be logged. A rejection never wedges the
+    // runner, so the next request starts fresh.
+    void rebuilds.trigger().catch((err: unknown) => {
+      ops.notify("error", `Restart failed: ${errorMessage(err)}`);
+    });
   }
 
   async function restartOnce(): Promise<void> {
+    // A trailing rebuild queued before teardown must not build after it: the
+    // old `while (pendingRestart && !closed)` said this at the loop, and here
+    // it also covers the run the runner starts on its own.
+    if (closed) return;
     // Build the replacement server FIRST (the slow part — full bundle +
     // runtime construction). The old server keeps serving live sessions the
     // whole time, and a failed build (e.g. a mid-edit syntax error) leaves it
@@ -197,8 +203,8 @@ export function createRestartSupervisor<S>(ops: RestartOps<S>): RestartSuperviso
     request,
     adopt(server: S): void {
       current = server;
-      restarting = false;
-      if (pendingRestart) request();
+      booting = false;
+      if (queuedDuringBoot) request();
     },
     current: () => current,
     // Idempotent: SIGINT followed by SIGTERM must not run the teardown twice

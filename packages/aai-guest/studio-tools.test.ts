@@ -9,6 +9,7 @@ import { createStudioAgent } from "./studio-agent.ts";
 import { createStudioTools, STUDIO_TOOL_LABELS, type StudioToolDeps } from "./studio-tools.ts";
 import { MUTATING_TOOLS } from "./studio-turn-settle.ts";
 import { materializeWorkspace, snapshotWorkspace } from "./studio-workspace-fs.ts";
+import { createPostWriteDiagnostics, type TypecheckFn } from "./studio-write-diagnostics.ts";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -18,7 +19,7 @@ afterEach(async () => {
 async function makeTools(
   files: Record<string, string>,
   config: Record<string, unknown> = { name: "A", toolSchemas: [] },
-  typecheck: StudioToolDeps["typecheck"] = async () => ({ ok: true, skipped: false }),
+  typecheck: TypecheckFn = async () => ({ ok: true, skipped: false }),
   overrides: Partial<StudioToolDeps> = {},
 ): Promise<{ tools: ReturnType<typeof createStudioTools>; dir: string }> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "aai-studio-tools-"));
@@ -26,7 +27,7 @@ async function makeTools(
   await materializeWorkspace(dir, files);
   const deps: StudioToolDeps = {
     dir,
-    typecheck,
+    diagnostics: createPostWriteDiagnostics(typecheck),
     build: async () => ({ worker: "export default {}" }),
     loadBundle: async () => ({ config }),
     executeTool: async (name) => `ran ${name}`,
@@ -202,6 +203,18 @@ describe("guest workspace tools", () => {
     expect(String(await runTool(tools, "delete_file", { path: "old.ts" }))).toBe(
       "Error: no such file: old.ts",
     );
+  });
+
+  // `stat` admits a directory and `rm` without `recursive` rejects one, so the
+  // raw `ERR_FS_EISDIR` escaped `runTool`'s shaping as the only Node error in a
+  // tool set where every other failure is prose the model can act on.
+  test("delete_file refuses a directory in prose, not with a raw fs error", async () => {
+    const { tools, dir } = await makeTools({ "pages/home.ts": "x" });
+    const out = String(await runTool(tools, "delete_file", { path: "pages" }));
+    expect(out).toContain("is a directory");
+    expect(out).not.toContain("EISDIR");
+    // Refusing means refusing: the tree is still there.
+    expect(await readFile(path.join(dir, "pages/home.ts"), "utf-8")).toBe("x");
   });
 
   test("todo_write renders marks and the remaining count", async () => {

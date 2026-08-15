@@ -217,7 +217,6 @@ export function createStudioSessionBroker(
         schedulePreview: (s, p, target) => previews.schedule(s, p, target),
       },
       warm,
-      key,
       scope,
       project,
     );
@@ -249,6 +248,18 @@ export function createStudioSessionBroker(
         warm: entry.warm,
         touch: () => {
           entry.lastUsed = Date.now();
+        },
+        // A counter rather than a flag: Publish and an auto preview deploy can
+        // both be in this sandbox at once, and the first to finish must not
+        // clear the other's protection.
+        hold: () => {
+          entry.inFlight += 1;
+          let released = false;
+          return () => {
+            if (released) return;
+            released = true;
+            entry.inFlight -= 1;
+          };
         },
         dispose: () => disposeEntry(entry),
       };

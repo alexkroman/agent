@@ -13,8 +13,10 @@
  */
 
 import { errorMessage, isTerminal } from "@alexkroman1/aai";
-import { useEffect, useRef, useState } from "react";
-import { createWorkflowApi, type WorkflowApi, type WorkflowRun } from "./workflow-client.ts";
+import { useEffect, useState } from "react";
+import { repeatUntil } from "./_repeat-until.ts";
+import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
+import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 import { watchRunEvents } from "./workflow-events.ts";
 
 /** How often {@link useWorkflowRun} re-reads a live run when it has to poll. */
@@ -56,8 +58,6 @@ function pollUntilTerminal<R>(
   onError: (message: string) => void,
   onStopped: () => void,
 ): () => void {
-  let cancelled = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let missing = 0;
 
   /**
@@ -71,14 +71,14 @@ function pollUntilTerminal<R>(
    * sandboxes resident. A small budget is kept anyway, because the first read
    * can race a replica that has not yet seen the run.
    */
-  const onMissing = (): boolean => {
+  const onMissing = (signal: AbortSignal): boolean => {
     missing += 1;
     if (missing < MAX_MISSING_READS) return false;
-    if (!cancelled) onError(`No workflow run ${runId}`);
+    if (!signal.aborted) onError(`No workflow run ${runId}`);
     return true;
   };
 
-  const read = async (): Promise<boolean> => {
+  const read = async (signal: AbortSignal): Promise<boolean> => {
     try {
       // Resolved per read rather than captured once, so a caller that swaps
       // clients mid-run — a token arriving after login — is picked up on the
@@ -89,8 +89,8 @@ function pollUntilTerminal<R>(
       // route that describes no output type. Narrowed once, here, rather than at
       // every call site reading `run.output`.
       const next = (await getClient().get(runId)) as WorkflowRun<R> | undefined;
-      if (cancelled) return true;
-      if (!next) return onMissing();
+      if (signal.aborted) return true;
+      if (!next) return onMissing(signal);
       missing = 0;
       onRun(next);
       // Terminal: nothing will change again, so stop rather than poll a finished
@@ -99,31 +99,20 @@ function pollUntilTerminal<R>(
     } catch (err) {
       // Reported and RETRIED: a dropped request against a booting sandbox is the
       // common case here, and giving up would strand a live run.
-      if (!cancelled) onError(errorMessage(err));
+      if (!signal.aborted) onError(errorMessage(err));
       return false;
     }
   };
 
-  const tick = async (): Promise<void> => {
-    if (await read()) {
-      // Stopped on its own — a terminal run, or an id the agent will never know.
-      // Reported because `polling` cannot be derived from the snapshot alone:
-      // giving up on a MISSING id leaves `run` undefined, which reads as "still
-      // waiting" and would leave the page permanently busy.
-      if (!cancelled) onStopped();
-      return;
-    }
-    if (cancelled) return;
-    // Re-armed from the SETTLED read rather than on an interval, so a slow
-    // response cannot stack overlapping polls.
-    timer = setTimeout(() => void tick(), intervalMs);
-  };
-  void tick();
-
-  return () => {
-    cancelled = true;
-    if (timer !== undefined) clearTimeout(timer);
-  };
+  return repeatUntil(intervalMs, async (signal) => {
+    if (!(await read(signal))) return false;
+    // Stopped on its own — a terminal run, or an id the agent will never know.
+    // Reported because `polling` cannot be derived from the snapshot alone:
+    // giving up on a MISSING id leaves `run` undefined, which reads as "still
+    // waiting" and would leave the page permanently busy.
+    if (!signal.aborted) onStopped();
+    return true;
+  });
 }
 
 /**
@@ -161,20 +150,9 @@ export function useWorkflowRun<R = unknown>(
    */
   const [stopped, setStopped] = useState(false);
 
-  /**
-   * The caller's client, held in a ref rather than named as an effect
-   * dependency.
-   *
-   * As a dependency it is a footgun with no warning: the natural spelling
-   * `useWorkflowRun(id, { api: createWorkflowApi() })` passes a NEW object every
-   * render, so the effect would tear down and restart on each one — and because
-   * it opens by clearing state, every restart re-renders and schedules the next.
-   * The result is an unbounded request loop against the agent, with `error`
-   * wiped before anything can read it, presenting as "the page polls forever"
-   * rather than as a mistake at the call site.
-   */
-  const apiRef = useRef(api);
-  apiRef.current = api;
+  // The caller's client through a ref, and the lazily-built default behind it —
+  // see `_workflow-api-ref.ts` for why neither may be an effect dependency.
+  const getClient = useWorkflowApiRef(api);
 
   useEffect(() => {
     // A new id must not show the previous run's state for one frame, which is
@@ -183,16 +161,6 @@ export function useWorkflowRun<R = unknown>(
     setError(undefined);
     setStopped(false);
     if (!runId) return;
-    // The no-client default is built lazily and ONCE per watch — as a
-    // render-time default it would be a fresh object per render, the same hazard
-    // the ref above exists for.
-    let fallback: WorkflowApi | undefined;
-    const getClient = (): WorkflowApi => {
-      const current = apiRef.current;
-      if (current) return current;
-      fallback ??= createWorkflowApi();
-      return fallback;
-    };
     const onRun = (next: WorkflowRun<R>): void => {
       setRun(next);
       setError(undefined);
@@ -216,7 +184,9 @@ export function useWorkflowRun<R = unknown>(
       stopStream();
       stopPoll?.();
     };
-  }, [runId, intervalMs]);
+    // `getClient` is stable for the component's life (that is the whole point
+    // of the ref behind it), so naming it here restarts nothing.
+  }, [runId, intervalMs, getClient]);
 
   return { run, error, polling: runId !== undefined && !stopped && !isTerminal(run) };
 }

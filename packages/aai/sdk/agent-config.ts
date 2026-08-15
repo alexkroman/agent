@@ -125,10 +125,14 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
  * field works CLI → server → runtime without touching a mapper. A field added
  * to `AgentDef` must appear either in `AgentConfigSchema` or here — the
  * type-level guard in the internal-types test enforces that subtraction.
+ *
+ * It cannot catch a SUPERFLUOUS entry, which is the other direction and the one
+ * that went stale: `state` sat here after `AgentDef.state` was deleted with the
+ * `ctx.state` bag, denying a key nothing produces and telling every reader the
+ * bag still exists. An entry here is a claim that `AgentDef` has that field.
  */
 export const HOST_ONLY_AGENT_FIELDS = [
   "tools",
-  "state",
   "syncState",
   "workflows",
   // Handlers are functions, same as `workflows` — and unlike `page`, nothing
@@ -181,11 +185,20 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // The allow-list mapper this replaces is how fields went missing silently —
   // every field is optional, so an omitted copy is valid TypeScript
   // (which is how fields have gone missing silently before).
-  const wire: Record<string, unknown> = { mode };
+  const wire: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(src)) {
     if (value === undefined || HOST_ONLY_FIELD_SET.has(key)) continue;
     wire[key] = value;
   }
+  // AFTER the copy, never before it. `mode` is DERIVED — `AgentConfigSource`
+  // omits it precisely so a typed caller cannot supply one — but the copy is a
+  // deny-list over `Object.entries`, so a `mode` on a raw object (a hand-written
+  // `export default {...}`, a config round-tripped through the wire) would
+  // otherwise overwrite the value `assertProviderTriple` just classified. The
+  // deploy boundary rejects the disagreement (`IsolateConfigSchema.superRefine`),
+  // so the symptom was a confusing deploy failure rather than a wrong session —
+  // but the schema is second-guessing a value this function is the authority on.
+  wire.mode = mode;
   // parse() re-validates field shapes, copies arrays (the config must not
   // alias caller-owned arrays), and strips any key the schema doesn't know —
   // a second net under the deny-list for non-serializable strays.

@@ -33,6 +33,20 @@ async function useFakeTemplates(dir: string): Promise<void> {
 const executePublish = vi.hoisted(() => vi.fn());
 vi.mock("./studio.ts", () => ({ executePublish }));
 
+/**
+ * Real clack with a RECORDING spinner, so a spec can assert the spinner was
+ * stopped. Everything else (intro, text) stays the real thing — only the one
+ * affordance under test is replaced.
+ */
+const spinnerCalls = vi.hoisted(() => ({ started: [] as string[], stopped: [] as string[] }));
+vi.mock("@clack/prompts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@clack/prompts")>()),
+  spinner: () => ({
+    start: (msg?: string) => spinnerCalls.started.push(msg ?? ""),
+    stop: (msg?: string) => spinnerCalls.stopped.push(msg ?? ""),
+  }),
+}));
+
 // executeInit shells out (corepack/safe-chain/pnpm) only when the scaffolded
 // project has dependencies; mock execa so those paths are testable hermetically.
 const execaMock = vi.hoisted(() => vi.fn());
@@ -198,9 +212,21 @@ describe("executeInit", () => {
         // Deploying without node_modules would fail confusingly further in —
         // the deploy must not even be attempted.
         expect(executePublish).not.toHaveBeenCalled();
-        expect(result).toEqual({
+        // The three diagnostics ride the RESULT as well as `log.warn`, which
+        // JSON mode silences: without them a scripted `aai init` could not tell
+        // this outcome from `--skipDeploy`, both being `deployed: false`.
+        expect(result).toMatchObject({
           ok: true,
-          data: { dir: target, template: "deps", deployed: false },
+          data: {
+            dir: target,
+            template: "deps",
+            deployed: false,
+            warnings: [
+              expect.stringContaining("pnpm install failed: registry unreachable"),
+              expect.stringContaining("npm install -g pnpm"),
+              "Skipping publish because dependencies were not installed.",
+            ],
+          },
         });
       }),
     );
@@ -227,9 +253,12 @@ describe("executeInit", () => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "my-agent");
 
+        // execa is mocked with no implementation, so the scaffold's install
+        // fails — hence the warnings. `--skipDeploy` is what makes `deployed`
+        // false here, and the warnings are what say the install did not run.
         const result = await executeInit({ dir: target, skipDeploy: true }, { silent: true });
 
-        expect(result).toEqual({
+        expect(result).toMatchObject({
           ok: true,
           data: { dir: target, template: "simple", deployed: false },
         });
@@ -317,6 +346,11 @@ describe("executeInit", () => {
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "failed-deploy");
+        // The install has to SUCCEED for the publish to be attempted at all.
+        // Without this the test reached `!installed` instead, and passed
+        // anyway — both paths report `deployed: false`, which is exactly the
+        // ambiguity `warnings` exists to remove.
+        execaMock.mockResolvedValue({ failed: false });
         executePublish.mockResolvedValue({ ok: false, code: "publish_failed", error: "boom" });
 
         const result = await executeInit(
@@ -324,10 +358,55 @@ describe("executeInit", () => {
           { silent: true },
         );
 
+        // A publish that RESOLVES a failure is reported too — it used to return
+        // null with nothing said, so the only signal was `deployed: false`.
+        expect(result).toMatchObject({
+          ok: true,
+          data: {
+            dir: target,
+            template: "simple",
+            deployed: false,
+            warnings: expect.arrayContaining([expect.stringContaining("Publish failed: boom")]),
+          },
+        });
+      }),
+    );
+  });
+
+  test("a clean init carries no warnings field at all", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        const target = path.join(dir, "clean");
+        execaMock.mockResolvedValue({ failed: false });
+
+        const result = await executeInit({ dir: target, skipDeploy: true }, { silent: true });
+
         expect(result).toEqual({
           ok: true,
           data: { dir: target, template: "simple", deployed: false },
         });
+      }),
+    );
+  });
+
+  test("a scaffold failure stops the spinner instead of leaking it", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        spinnerCalls.started.length = 0;
+        spinnerCalls.stopped.length = 0;
+
+        // No such template: runInit throws inside the spinner's window. The
+        // leak this guards is a clack spinner whose interval and raw-mode
+        // stdin hook outlive the throw — it is only ever started when the UI
+        // is not suppressed, so this runs without `{ silent: true }`.
+        await expect(
+          executeInit({ dir: path.join(dir, "boom"), template: "no-such-template" }),
+        ).rejects.toThrow();
+
+        expect(spinnerCalls.started).toHaveLength(1);
+        expect(spinnerCalls.stopped).toEqual([expect.stringContaining("Could not create")]);
       }),
     );
   });

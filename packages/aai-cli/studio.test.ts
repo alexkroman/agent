@@ -21,7 +21,11 @@ vi.mock("./_ui.ts", async () => ({
 }));
 
 const mockApiRequest = vi.hoisted(() => vi.fn());
-vi.mock("./_api-client.ts", () => ({
+// Only `apiRequest` is faked. The response GUARDS (`checkedResponse`,
+// `isStringArray`) stay real — they are part of what these specs exercise, and
+// a factory that omitted them would make every guarded call site undefined.
+vi.mock("./_api-client.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./_api-client.ts")>()),
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
   HINT_NOT_DEPLOYED: "not-deployed-hint",
 }));
@@ -155,6 +159,22 @@ describe("executeList", () => {
     routeApi({ "GET /studio/projects": { projects: ["a", "b"] } });
     const result = await executeList({ cwd: "/tmp" });
     expect(result).toEqual({ ok: true, data: { projects: ["a", "b"] } });
+  });
+
+  // The list body was cast, not checked, so a 200 from something that is not
+  // an aai server reached `for (const name of projects)` as `undefined` — and
+  // `notFoundHint` calls the same function on an ALREADY-failing path, where a
+  // raw TypeError would replace the 404 the user needs to see.
+  test.each([
+    ["a body with no `projects`", { ok: true }],
+    ["a `projects` that is not an array", { projects: "a,b" }],
+    ["a `projects` holding non-strings", { projects: [{ name: "a" }] }],
+    ["an HTML page", "<!doctype html>"],
+  ])("%s is refused with a sentence naming the server", async (_label, body) => {
+    routeApi({ "GET /studio/projects": body });
+    await expect(executeList({ cwd: "/tmp" })).rejects.toThrow(
+      /Unexpected response from the studio project list at https:\/\/api\.test/,
+    );
   });
 });
 

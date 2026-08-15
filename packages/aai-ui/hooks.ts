@@ -98,6 +98,18 @@ function useToolCallEffect(
         // `tool_call` and `tool_call_done` frames coalescing into one commit
         // must not lose the start event. The exception is the mount pass,
         // where pre-existing settled calls are history, not new events.
+        //
+        // **It is `useToolCallStart`'s guard alone, and the asymmetry is
+        // deliberate.** This line can only fire for a hook whose `isSettled`
+        // admits an item whose status is not the one it watches, and only the
+        // start hook's does (`status === "pending"` is true for every item, by
+        // construction — a tool call is BORN pending, so insertion is what
+        // settles it there). `useToolResult` reaches `onNew` only for calls
+        // that already read `"done"`, so the condition is false for it every
+        // time. A late-mounting component therefore learns nothing about tool
+        // calls that STARTED before it, and does receive the results of ones
+        // that already completed — which is the right split: a start event is
+        // about the moment, a result is a value the UI is being driven from.
         if (tc.status !== status && firstRun) return;
         if (filterName && tc.name !== filterName) return;
         fireRef.current(callbackRef.current, tc, filterName !== null);

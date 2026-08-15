@@ -12,7 +12,6 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/internal";
 import { createKeyedLock, type KeyedLockOptions, withLock } from "./_keyed-lock.ts";
 import { type RetirableSandbox, retireSandbox } from "./sandbox-retire.ts";
 
@@ -37,13 +36,31 @@ export type AgentSlot = {
   version?: number;
 };
 
-// An OwnedMap because a redeploy replaces the slot object under the same
-// slug: mutations driven by a pre-replacement handle must no-op, which is
-// the map's `owns` check.
-export type SlotCache = OwnedMap<string, AgentSlot>;
+/**
+ * A plain `Map`, and the SLUG LOCK is the exclusion.
+ *
+ * It was an `OwnedMap`, justified as "a redeploy replaces the slot object under
+ * the same slug: mutations driven by a pre-replacement handle must no-op, which
+ * is the map's `owns` check" — and nothing here ever made that check. `setSlot`
+ * discarded the release `claim` returns, `owns()` had no production caller, and
+ * every removal went through `delete(key)`, which is unconditional and therefore
+ * identical to `Map.delete`. So the ownership machinery was inert: the type
+ * described a guarantee no call site asked for.
+ *
+ * The guarantee the call sites really rest on is `withSlugLock`. Every write and
+ * every delete runs inside it, reads the entry under the same lock, and the two
+ * teardown paths additionally identity-check the SANDBOX (`current?.sandbox !==
+ * sandbox`) — which is the check that matters and one an owned map cannot
+ * express, since a slot object legitimately outlives the sandbox in it. Naming
+ * that here is worth more than a mechanism that looked like it was doing it.
+ *
+ * If a future mutation lands OUTSIDE the slug lock, this is the note to revisit:
+ * the answer then is the lock, not a map that dedupes by identity.
+ */
+export type SlotCache = Map<string, AgentSlot>;
 
 export function createSlotCache(): SlotCache {
-  return createOwnedMap<string, AgentSlot>();
+  return new Map<string, AgentSlot>();
 }
 
 // Internal keyed lock (not p-lock): entries are deleted when released, so the
@@ -98,7 +115,7 @@ export function retireSlot(slot: AgentSlot, reason: string): Promise<void> {
 }
 
 export function setSlot(slots: SlotCache, slot: AgentSlot): void {
-  slots.claim(slot.slug, slot);
+  slots.set(slot.slug, slot);
 }
 
 export function deleteSlot(slots: SlotCache, slug: string): boolean {

@@ -64,6 +64,32 @@ describe("callable builtins", () => {
     ]);
   });
 
+  test("the object form no longer discards a second argument", async () => {
+    // `typeof x === "string" ? { url: x, ...options } : x` dropped `options`
+    // whenever the object form was used, so the two shapes the module documents
+    // as equivalent were not: this call reached the REAL network instead of the
+    // injected one, and the headers went nowhere.
+    const fetch = vi.fn(
+      async (_url: unknown, _init?: unknown) =>
+        new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+    expect(await fetchJson({ url: "https://api.example.com/x" }, { fetch })).toEqual({ ok: true });
+    const init = fetch.mock.calls[0]?.[1] as { headers?: Record<string, string> } | undefined;
+    expect(init).toBeDefined();
+
+    await fetchJson({ url: "https://api.example.com/y" }, { fetch, headers: { Accept: "x/y" } });
+    const second = fetch.mock.calls[1]?.[1] as { headers?: Record<string, string> } | undefined;
+    expect(second?.headers?.Accept).toBe("x/y");
+
+    // The object's own fields still win over the trailing options.
+    await fetchJson(
+      { url: "https://api.example.com/z", headers: { Accept: "from/object" }, fetch },
+      { headers: { Accept: "from/options" } },
+    );
+    const third = fetch.mock.calls[2]?.[1] as { headers?: Record<string, string> } | undefined;
+    expect(third?.headers?.Accept).toBe("from/object");
+  });
+
   test("the result needs no cast", async () => {
     // `Promise<unknown>` made every real call site write `as any` — the same
     // defect useToolResult had. Reading a field must just compile.

@@ -111,11 +111,15 @@ export function createSessionFleet(options: SessionFleetOptions): SessionFleet {
       void registry.touch(scope, project).catch(() => undefined);
     },
 
-    async heldByUs(scope, project) {
-      const record = await registry
-        .get(scope, project)
-        .catch(() => ({ owner: replicaId }) as StudioSessionRecord);
-      return record?.owner === replicaId;
+    heldByUs(scope, project) {
+      // The rejection handler ANSWERS the question rather than fabricating a
+      // record to answer it with: a failed read is not evidence of idleness,
+      // so it reads `true` directly instead of casting `{ owner: replicaId }`
+      // into a `StudioSessionRecord` it has none of the other fields of.
+      return registry.get(scope, project).then(
+        (record) => record?.owner === replicaId,
+        () => true,
+      );
     },
   };
 }

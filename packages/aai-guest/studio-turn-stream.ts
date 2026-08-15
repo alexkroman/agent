@@ -54,6 +54,20 @@
  * the tab, where the messages are re-read at dispatch. The refusal is a status
  * of its own (423) so the client can say which tab is busy rather than treating
  * it as a dead session and re-brokering.
+ *
+ * ## The gate is not only about TURNS — it is about the workspace
+ *
+ * A turn is one of two things that owns the session tree; the other is
+ * `initStudioSession`, which opens with `rm -rf`. Gating only `POST
+ * /studio/chat` left the second one wide open: a refresh or a second tab sends
+ * `studio/session-init` to the LIVE sandbox, and `materializeWorkspace` deleted
+ * the very directory the in-flight turn's tools had closed over — every edit
+ * since the last checkpoint gone, with `settleTurn` then syncing the mixed tree
+ * back marked `done: true`. So {@link enterTurn} is what both claim, and a
+ * session-init that cannot claim it keeps the live tree instead of resetting it
+ * (see `initStudioSession`). Taking the gate rather than merely reading a `busy`
+ * flag also closes the mirror race — a turn starting while the re-install is
+ * half way through the tree.
  */
 
 import type { ServerResponse } from "node:http";
@@ -76,18 +90,21 @@ export const TURN_IN_FLIGHT_CODE = "turn_in_flight";
  * The release is identity-checked like {@link createOwnedMap}'s: it runs after
  * awaits (a settled stream, an aborted request), by which point the slot may
  * hold a later turn that must not be freed by an earlier one's cleanup.
+ *
+ * There is deliberately no `busy` reader. There was one, and nothing in
+ * production ever read it — the only observers were this module's own spec, so
+ * it was a test affordance wearing an API's clothes, and the one caller that
+ * genuinely needed the predicate (session-init, above) needs the CLAIM rather
+ * than the reading. `enter() === null` answers the question and holds the
+ * answer still.
  */
 export type TurnGate = {
   enter(): (() => void) | null;
-  readonly busy: boolean;
 };
 
 export function createTurnGate(): TurnGate {
   let holder: symbol | null = null;
   return {
-    get busy() {
-      return holder !== null;
-    },
     enter() {
       if (holder !== null) return null;
       const mine = Symbol("turn");
@@ -100,25 +117,51 @@ export function createTurnGate(): TurnGate {
 }
 
 /**
+ * The gate every claim on this guest's workspace goes through, per PROCESS —
+ * not per session object.
+ *
+ * A sandbox serves one project (its identity is pinned at first install), but
+ * `studio/session-init` runs again on every page open, so a gate hanging off
+ * the session would be replaced by the very event that creates the race:
+ * measured, a second tab opening the project mid-turn re-installed the session,
+ * got a fresh gate, and streamed a concurrent turn anyway.
+ */
+let processTurnGate = createTurnGate();
+
+/**
+ * Claim this guest's workspace — for a chat turn, or for the re-install that
+ * would otherwise delete the tree under one. Returns the release, or `null`
+ * when the claim is already held.
+ */
+export function enterTurn(): (() => void) | null {
+  return processTurnGate.enter();
+}
+
+/** Test-only: drop the in-flight claim, like `resetSessionIdentity`. */
+export function resetTurnGate(): void {
+  processTurnGate = createTurnGate();
+}
+
+/**
  * Pass every chunk through, and turn a SOURCE ERROR into a final `error` chunk
  * followed by a clean close.
  *
  * A `TransformStream` cannot do this: when its source errors, the transform is
  * errored too and never gets the chance to enqueue anything. Hence the explicit
  * reader loop.
+ *
+ * The `catch` is the whole behaviour: it closes the controller, and a closed
+ * stream is never `pull`ed again — so the `failed` latch this used to carry at
+ * the top of `pull` could not run, and read as a second guard where there is
+ * only one.
  */
 export function withStreamErrorChunk(
   source: ReadableStream<UIMessageChunk>,
   toErrorText: (error: unknown) => string,
 ): ReadableStream<UIMessageChunk> {
   const reader = source.getReader();
-  let failed = false;
   return new ReadableStream<UIMessageChunk>({
     async pull(controller) {
-      if (failed) {
-        controller.close();
-        return;
-      }
       try {
         const { done, value } = await reader.read();
         if (done) {
@@ -129,7 +172,6 @@ export function withStreamErrorChunk(
       } catch (error) {
         // The client's stream reader treats this as the turn failing, which is
         // the whole point: a truncated reply must not read as a finished one.
-        failed = true;
         controller.enqueue({ type: "error", errorText: toErrorText(error) });
         controller.close();
       }

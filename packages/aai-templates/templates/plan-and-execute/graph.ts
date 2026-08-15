@@ -20,7 +20,7 @@
  */
 
 import type { GenerateFn } from "@alexkroman1/aai";
-import { errorMessage } from "@alexkroman1/aai";
+import { type DeepReadonly, errorMessage } from "@alexkroman1/aai";
 import {
   actSchema,
   EXECUTOR_SYSTEM,
@@ -29,7 +29,7 @@ import {
   REPLANNER_SYSTEM,
   stepActionSchema,
 } from "./prompts.ts";
-import type { PastStep, PlanState, SearchFn } from "./shared.ts";
+import type { FrozenPlanState, PastStep, SearchFn } from "./shared.ts";
 
 /** Model turns one step may take, including its final answer. */
 export const MAX_STEP_TURNS = 3;
@@ -58,7 +58,7 @@ function describeHits(hits: { title: string; url: string }[]): string {
 }
 
 /** Completed steps as the executor and the replanner both read them. */
-function historyOf(pastSteps: PastStep[]): string {
+function historyOf(pastSteps: readonly DeepReadonly<PastStep>[]): string {
   if (pastSteps.length === 0) return "Nothing done yet.";
   return pastSteps
     .map((past, index) => `${index + 1}. ${past.step}\n   → ${past.result}`)
@@ -74,7 +74,7 @@ export async function executeStep(
   search: SearchFn,
   objective: string,
   step: string,
-  pastSteps: PastStep[],
+  pastSteps: readonly DeepReadonly<PastStep>[],
 ): Promise<StepOutcome> {
   const searches: string[] = [];
   const notes: string[] = [];
@@ -153,7 +153,7 @@ export function normalizeAct(
  *  equivalent, because a notebook has nobody to interrupt it. */
 export async function replanNode(
   generate: GenerateFn,
-  state: Pick<PlanState, "objective" | "plan" | "pastSteps">,
+  state: Pick<FrozenPlanState, "objective" | "plan" | "pastSteps">,
   options: { system?: string; instruction?: string } = {},
 ): Promise<ActDecision> {
   const { object } = await generate({

@@ -8,83 +8,32 @@
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
 import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
+import type { FileBufferState } from "./file-drafts.ts";
+import { useFlash } from "./use-flash.ts";
 
 const extensions = [javascript({ typescript: true })];
 
-/**
- * Buffer state for one open file: external (agent) updates are adopted
- * unless the user has unsaved edits, in which case `conflict` flags that a
- * save would overwrite the server's newer version. Exported for tests —
- * this is the one place user work can be lost.
- */
-export function useFileDraft(serverContent: string): {
-  draft: string;
-  dirty: boolean;
-  /** The file changed on the server while the user had unsaved edits. */
-  conflict: boolean;
-  edit: (value: string) => void;
-  /** The draft was written to the server — it is the new baseline. */
-  markSaved: () => void;
-} {
-  const [draft, setDraft] = useState(serverContent);
-  const [dirty, setDirty] = useState(false);
-  const [conflict, setConflict] = useState(false);
-  const [lastServer, setLastServer] = useState(serverContent);
-
-  // "Adjust state during render" (React docs pattern) — no effect needed.
-  if (serverContent !== lastServer) {
-    setLastServer(serverContent);
-    if (dirty) {
-      setConflict(true);
-    } else {
-      // A clean buffer is never in conflict (only markSaved clears `dirty`,
-      // and it clears `conflict` too), so adopting is all that's needed.
-      setDraft(serverContent);
-    }
-  }
-
-  return {
-    draft,
-    dirty,
-    conflict,
-    edit: (value) => {
-      setDraft(value);
-      setDirty(true);
-    },
-    markSaved: () => {
-      // Saving is the user's explicit choice — overwrite acknowledged.
-      setDirty(false);
-      setConflict(false);
-    },
-  };
-}
-
 type FileBufferProps = {
   path: string | null;
-  serverContent: string;
+  /**
+   * This file's buffer, owned by the project view rather than by this
+   * component. It has to outlive both the `key={path}` remount below and the
+   * pane switcher unmounting `CodeView` entirely — see file-drafts.ts.
+   */
+  buffer: FileBufferState;
+  onEdit: (path: string, value: string) => void;
   onSave: (path: string, content: string) => Promise<void>;
 };
 
-/** One open file. Mounted with `key={path}` so switching files resets the buffer. */
-function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
-  const { draft, dirty, conflict, edit, markSaved } = useFileDraft(serverContent);
-  const [saveState, setSaveState] = useState("");
-  const saveStateTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // One live timer at a time, and none after unmount.
-  const flashSaveState = (text: string) => {
-    setSaveState(text);
-    clearTimeout(saveStateTimer.current);
-    saveStateTimer.current = setTimeout(() => setSaveState(""), 1500);
-  };
-  useEffect(() => () => clearTimeout(saveStateTimer.current), []);
+/** One open file. Keyed by path so CodeMirror itself resets on a file switch. */
+function FileBuffer({ path, buffer, onEdit, onSave }: FileBufferProps) {
+  const { draft, dirty, conflict } = buffer;
+  const { value: saveState, flash: flashSaveState } = useFlash<string>();
 
   const save = async () => {
     if (!path) return;
     try {
       await onSave(path, draft);
-      markSaved();
       flashSaveState("saved");
     } catch (err) {
       flashSaveState(err instanceof Error ? err.message : "save failed");
@@ -96,7 +45,9 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
       <div className="min-h-0 flex-1 overflow-auto">
         <CodeMirror
           value={draft}
-          onChange={edit}
+          onChange={(value) => {
+            if (path !== null) onEdit(path, value);
+          }}
           extensions={extensions}
           editable={path != null}
           height="100%"
@@ -122,7 +73,7 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
             changed on the server — saving will overwrite the agent's version
           </span>
         )}
-        <span className="text-xs text-subtle">{saveState}</span>
+        <span className="text-xs text-subtle">{saveState ?? ""}</span>
       </div>
     </div>
   );
@@ -198,11 +149,21 @@ export function FileNav({ paths, currentFile, onSelectFile }: FileNavProps) {
 type CodeViewProps = {
   files: Record<string, string>;
   currentFile: string | null;
+  /** The open file's buffer — held by the project view, not by this pane. */
+  buffer: FileBufferState;
   onSelectFile: (path: string) => void;
+  onEdit: (path: string, value: string) => void;
   onSave: (path: string, content: string) => Promise<void>;
 };
 
-export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewProps) {
+export function CodeView({
+  files,
+  currentFile,
+  buffer,
+  onSelectFile,
+  onEdit,
+  onSave,
+}: CodeViewProps) {
   const paths = Object.keys(files).sort();
   // min-w-0 matters: without it the nav's intrinsic width propagates up
   // the flex tree and stretches the whole page sideways.
@@ -212,7 +173,8 @@ export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewP
       <FileBuffer
         key={currentFile ?? ""}
         path={currentFile}
-        serverContent={currentFile ? (files[currentFile] ?? "") : ""}
+        buffer={buffer}
+        onEdit={onEdit}
         onSave={onSave}
       />
     </div>

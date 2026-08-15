@@ -65,7 +65,7 @@ test("a tool reaches session state through a slot, with no annotation", () => {
     inputSchema: z.object({ item: z.string() }),
     execute: ({ item }, ctx) => {
       expectTypeOf(item).toEqualTypeOf<string>();
-      expectTypeOf(cartSlot.get(ctx)).toEqualTypeOf<Readonly<{ items: string[] }>>();
+      expectTypeOf(cartSlot.get(ctx)).toEqualTypeOf<{ readonly items: readonly string[] }>();
       return cartSlot.update(ctx, (cart) => {
         cart.items.push(item);
         return cart.items.length;
@@ -75,15 +75,20 @@ test("a tool reaches session state through a slot, with no annotation", () => {
   expectTypeOf(add).toMatchObjectType<ToolDef<z.ZodObject<{ item: z.ZodString }>>>();
 });
 
-test("what a slot READ returns is readonly, so a lost write is a compile error", () => {
+test("what a slot READ returns is readonly ALL THE WAY DOWN", () => {
   const cartSlot = sessionSlot("cart", () => ({ items: [] as string[], total: 0 }));
   type Read = ReturnType<typeof cartSlot.get>;
-  expectTypeOf<Read>().toEqualTypeOf<Readonly<{ items: string[]; total: number }>>();
-  // Shallow rather than deep, deliberately: readonly modifiers are not checked
-  // in assignability, so a read value still passes to a domain helper declared
-  // over the mutable shape. See `freezeStorable`'s doc for why the deep
-  // guarantee is the runtime freeze instead.
-  expectTypeOf<Read>().toExtend<{ items: string[]; total: number }>();
+  expectTypeOf<Read>().toEqualTypeOf<{
+    readonly items: readonly string[];
+    readonly total: number;
+  }>();
+  // DEEP, and the nested array is the half that matters: the store deep-freezes
+  // every durable value, so `cart.items.push(x)` throws at runtime — and under
+  // the old shallow `Readonly<T>` it compiled. Two shipped templates called such
+  // a tool and threw on every invocation. A `readonly string[]` is NOT
+  // assignable to `string[]`, which is what makes the read no longer silently
+  // pass to a domain helper declared over the mutable shape.
+  expectTypeOf<Read>().not.toExtend<{ items: string[]; total: number }>();
 });
 
 test("a discovered registry composes onto a slot-backed agent", () => {

@@ -130,12 +130,18 @@ describe("createTelephonyBridge", () => {
     connect(fixture);
     fixture.socket.sent.length = 0;
 
-    fixture.bridge.send(JSON.stringify({ type: "reset" }));
+    // `session.reset` is what `session-commands.ts` emits — the spelling this
+    // spec used to feed the bridge (`reset`) is one no runtime produces, so it
+    // passed while the branch it covered was dead.
+    fixture.bridge.send(JSON.stringify({ type: "session.reset" }));
     expect(fixture.socket.sentJson()).toEqual([{ event: "clear", streamSid: "MZ0" }]);
   });
 
   test.each([
     ["agent_transcript", { type: "agent-transcript.updated", text: "hello" }],
+    // Guards the spelling above: a bare `reset` is not a protocol event, and a
+    // branch that answers one is a branch nothing on the wire reaches.
+    ["bare reset", { type: "reset" }],
     ["user_transcript", { type: "user-transcript.committed", text: "hi" }],
     ["tool_call", { type: "tool.called", toolCallId: "1", toolName: "x", args: {} }],
     ["reply_done", { type: "reply.completed" }],

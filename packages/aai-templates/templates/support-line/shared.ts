@@ -17,7 +17,7 @@
  * "evening slowdown congestion peak time" and finds D10.
  */
 
-import { pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { type DeepReadonly, pushCapped, sessionSlot } from "@alexkroman1/aai";
 import knowledge from "./knowledge.json" with { type: "json" };
 
 export interface Doc {
@@ -200,6 +200,17 @@ export function emptySupportState(): SupportState {
 
 export const supportSlot = sessionSlot("support", emptySupportState);
 
+/**
+ * The call as a READ hands it out: deep-frozen, and typed to say so.
+ *
+ * {@link supportView} takes this rather than {@link SupportState}, which is the
+ * widening a deep-readonly slot forces and the reason it is worth doing: a
+ * mutable state still satisfies it, so a call with an `update` draft is
+ * unaffected, while a projection that WOULD have mutated stops compiling
+ * instead of throwing at its first call.
+ */
+export type FrozenSupportState = DeepReadonly<SupportState>;
+
 export function recordQuestion(state: SupportState, question: string): void {
   pushCapped(state.asked, question, MAX_ASKED);
 }
@@ -208,8 +219,8 @@ export function recordQuestion(state: SupportState, question: string): void {
 
 export interface SupportView {
   product: string;
-  trace: AnswerTrace | null;
-  asked: string[];
+  trace: DeepReadonly<AnswerTrace> | null;
+  asked: readonly string[];
   /** The reference only — the callback number stays on the server. */
   ticket: string | null;
 }
@@ -219,7 +230,7 @@ export interface SupportView {
  * than the state itself: a ticket carries the caller's phone number, and
  * `syncState` is where you decide what leaves the server.
  */
-export function supportView(state: SupportState): SupportView {
+export function supportView(state: FrozenSupportState): SupportView {
   return {
     product: PRODUCT,
     trace: state.trace,

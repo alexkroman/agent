@@ -10,6 +10,7 @@
 import { randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { assertServiceRoleKey, isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
@@ -389,7 +390,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     ...(appDb && { appDb }),
     ...(sql && { sql }),
     ...(adminDb && { adminDb }),
-    ...(extraAppDbClusters !== undefined && { extraAppDbClusters }),
+    ...omitUndefined({ extraAppDbClusters }),
     ...(directory && { directory }),
   };
 }

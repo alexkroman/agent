@@ -4,6 +4,7 @@
  * with server-message simulation helpers and a config-message builder.
  */
 import { ClientMessageSchema, lenientParse } from "@alexkroman1/aai/protocol";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { vi } from "vitest";
 
 // ─── Mock WebSocket ─────────────────────────────────────────────────────────
@@ -31,7 +32,7 @@ function stampJsonFrame(data: string | ArrayBuffer): string | ArrayBuffer {
   } catch {
     return data;
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return data;
+  if (!isRecord(parsed)) return data;
   if ("meta" in parsed || !("type" in parsed)) return data;
   return JSON.stringify({ ...parsed, meta: { id: "evt_TEST", at: 0 } });
 }

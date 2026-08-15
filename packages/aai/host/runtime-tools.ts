@@ -8,7 +8,6 @@
  */
 
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
-import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import {
   DEFAULT_BUILTIN_TOOLS,
   MAX_CLIENT_EVENT_NAME_LENGTH,
@@ -20,6 +19,7 @@ import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import type { StateProjection } from "../sdk/session-state.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
+import { errorMessage } from "../sdk/utils.ts";
 import type { StartOptions, WorkflowClient } from "../sdk/workflow.ts";
 import { createStateSync } from "./_state-sync.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
@@ -27,7 +27,7 @@ import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { SessionStateStore } from "./session-state-store.ts";
-import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
+import { createToolDispatcher, type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 import type { RunNotifier } from "./workflow-notify.ts";
 
 /**
@@ -263,10 +263,35 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
    * which held these checks, is gone). Over-cap events are dropped, matching
    * that relay: the name cap mirrors the protocol schema, and the payload is
    * measured in UTF-8 bytes (what actually crosses the socket).
+   *
+   * **An UNSERIALIZABLE payload is dropped the same way, not thrown.**
+   * `JSON.stringify` throws on a cycle or a `BigInt` and returns `undefined` for
+   * a function — and this runs INSIDE the tool body, on the tool's own stack, so
+   * a throw here failed the whole tool call: the model was told the tool failed
+   * and whatever state it had already mutated was reported as a failure, for a
+   * fire-and-forget notification the doc above says is droppable. Both sibling
+   * stringify sites (`_state-sync.ts`, the event log) catch for exactly this
+   * reason.
    */
   const sendToClient = (emitter: SessionEmitter, event: string, data: unknown): void => {
     if (event.length > MAX_CLIENT_EVENT_NAME_LENGTH) return;
-    if (Buffer.byteLength(JSON.stringify(data ?? null)) > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
+    let json: string | undefined;
+    try {
+      json = JSON.stringify(data ?? null);
+    } catch (err: unknown) {
+      logger?.warn?.(`ctx.send("${event}") payload is not serializable; not sent`, {
+        error: errorMessage(err),
+      });
+      return;
+    }
+    if (json === undefined) {
+      // `JSON.stringify(() => {})` — no throw, no output. Nothing to put on the
+      // wire, and the emit below would produce an event the protocol schema
+      // rejects further down.
+      logger?.warn?.(`ctx.send("${event}") payload has no JSON form; not sent`);
+      return;
+    }
+    if (Buffer.byteLength(json) > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
     emitter.emit({ type: "custom.emitted", event, data });
   };
 
@@ -295,10 +320,9 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
     }
   };
 
-  const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
-    const tool = allTools[name];
-    if (!tool) return serializeToolFailure(`Unknown tool: ${name}`);
-    const sid = sessionId ?? "";
+  const executeTool = createToolDispatcher(allTools, async (tool, call) => {
+    const { name, args, messages } = call;
+    const sid = call.sessionId;
     /**
      * Resolved per send, never captured at dispatch. A tool call routinely
      * outlives the socket that issued it (it may run for the whole tool
@@ -333,7 +357,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
           if (emitter) sendToClient(emitter, event, data);
         },
         // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
-        signal: callOpts?.signal,
+        signal: call.options?.signal,
       });
     try {
       return await run();
@@ -349,7 +373,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
       // crash is supposed to preserve. It never rejects — see `flush`.
       await stateStore.flush(sid);
     }
-  };
+  });
   /**
    * Forced, and only for a session that ALREADY has state — i.e. a resume, or a
    * reconnect onto hydrated values. A brand-new session has nothing to show.

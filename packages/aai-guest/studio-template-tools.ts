@@ -23,12 +23,14 @@
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./limits.ts";
 import { toolchainModules } from "./studio-build.ts";
+import { isScriptFile } from "./studio-syntax.ts";
 import { STUDIO_TOOL_DESCRIPTIONS } from "./studio-tool-descriptions.ts";
 import { resolveInside, walkWorkspace } from "./studio-workspace-fs.ts";
-import { createPostWriteDiagnostics, type TypecheckFn } from "./studio-write-diagnostics.ts";
+import type { PostWriteDiagnostics } from "./studio-write-diagnostics.ts";
 
 /**
  * The bundled templates directory in the baked toolchain, or null when the
@@ -167,9 +169,6 @@ function formatCopyResult(
   return parts.join("\n");
 }
 
-/** Extensions the post-copy typecheck can vouch for (mirrors write_file's). */
-const CHECKED_EXTS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs"]);
-
 type UseTemplateArgs = { template: string; files?: string[]; overwrite?: boolean };
 
 /** The whole use_template flow: validate → read → classify → write. */
@@ -237,19 +236,18 @@ async function copyTemplate(
 export type TemplateToolDeps = {
   /** Absolute workspace root the session materialized. */
   dir: string;
-  /** Types-only check of the workspace — same backend as write_file's. */
-  typecheck: TypecheckFn;
+  /** The shared post-write checker — same instance the write tools use. */
+  diagnostics: PostWriteDiagnostics;
   /** Test seam. Defaults to the baked toolchain's bundled templates. */
   templatesRoot?: string | null;
 };
 
 /** Build the template tools over the session workspace. */
 export function createTemplateTools(deps: TemplateToolDeps): Record<string, ToolDef> {
-  const { dir } = deps;
+  const { dir, diagnostics: postWriteDiagnostics } = deps;
   // `?? null` would collapse a deliberate null (no toolchain) into the
   // default, so the seam distinguishes "absent" from "explicitly none".
   const root = "templatesRoot" in deps ? (deps.templatesRoot ?? null) : bundledTemplatesRoot();
-  const postWriteDiagnostics = createPostWriteDiagnostics(deps.typecheck);
 
   return {
     list_templates: tool({
@@ -287,15 +285,12 @@ export function createTemplateTools(deps: TemplateToolDeps): Record<string, Tool
         try {
           copied = await copyTemplate(dir, root, {
             template,
-            ...(files && { files }),
-            ...(overwrite !== undefined && { overwrite }),
+            ...omitUndefined({ files, overwrite }),
           });
         } catch (err) {
           return `Error: ${errorMessage(err)}`;
         }
-        const checked = copied.written.find((rel) =>
-          CHECKED_EXTS.has(path.extname(rel).toLowerCase()),
-        );
+        const checked = copied.written.find((rel) => isScriptFile(rel));
         const diagnostics = checked ? await postWriteDiagnostics(checked) : undefined;
         return copied.result + (diagnostics ?? "");
       },

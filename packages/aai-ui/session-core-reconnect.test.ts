@@ -292,6 +292,37 @@ describe("session-core handshake deadline", () => {
     expect(created).toHaveLength(settled);
   });
 
+  it("the budget is CONSECUTIVE — a completed handshake between timeouts spends nothing", async () => {
+    // One guard covers a whole connect(), partysocket's retries included, so a
+    // count that survived a successful handshake was per-CONNECTION rather than
+    // consecutive: three drops across an hour-long call, each timing out once
+    // before the next attempt answered, surfaced the permanent
+    // "did not complete the session handshake" error against a healthy peer.
+    core.connect();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // One timeout, then a peer that answers properly.
+    created[0]?.simulateOpen();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const healthy = await waitForNextSocket(1);
+    healthy.simulateOpen();
+    healthy.simulateMessage(makeConfig());
+    expect(core.getSnapshot().state).not.toBe("error");
+
+    // The session drops later and the next two attempts time out. Counted from
+    // the connection rather than consecutively that is the third strike and the
+    // session dies; counted consecutively it is the second, so it re-dials.
+    healthy.simulateClose();
+    for (let i = 0; i < 2; i++) {
+      const socket = await waitForNextSocket(created.length);
+      socket.simulateOpen();
+      await vi.advanceTimersByTimeAsync(10_000);
+    }
+
+    expect(core.getSnapshot().state).toBe("connecting");
+    expect(core.getSnapshot().error).toBeNull();
+  });
+
   it("a config frame disarms the deadline, so a healthy session is left alone", async () => {
     core.connect();
     await vi.advanceTimersByTimeAsync(0);

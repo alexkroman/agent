@@ -1,92 +1,34 @@
 // Copyright 2025 the AAI authors. MIT license.
 // REST helpers for the studio's project/file/deploy endpoints.
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UIMessage } from "ai";
 import { parse } from "dotenv";
 import { ApiError } from "./api-error.ts";
 import { type StreamDownReason, watchEventStream } from "./api-events.ts";
+import type {
+  Account,
+  AuthConfig,
+  ChatSession,
+  DatabaseState,
+  ProjectData,
+  ProjectKind,
+  StudioStatus,
+} from "./api-types.ts";
 
-/**
- * What a project builds — the home hero's Agent/Workflow switcher, chosen once
- * at create time and stamped on the workspace server-side, where it selects the
- * coding agent's system prompt. The client sends it and reads it back; nothing
- * here can change it after the fact.
- */
-export type ProjectKind = "agent" | "workflow";
-
-export type ProjectData = {
-  files: Record<string, string>;
-  /** Voice agent or workflow app. Always present — the server resolves it. */
-  kind?: ProjectKind;
-  /** Production slug — updated only by Publish. */
-  deployedSlug?: string;
-  /** Workspace has edits the production agent does not have yet. */
-  unpublished?: boolean;
-  /** Preview slug — auto-deployed after agent turns and editor saves. */
-  previewSlug?: string;
-  /** Changes on every successful preview deploy; the iframe's reload key. */
-  previewVersion?: string;
-  /** Workspace has edits the preview has not deployed yet. */
-  previewStale?: boolean;
-  /** CLI output of the last failed preview deploy. */
-  previewError?: string;
-};
-
-/**
- * The project's coding-agent sandbox, brokered by the platform. `token` is
- * the sandbox chat surface's per-session bearer — the browser presents it
- * (never a long-lived credential) on the public tunnel URL.
- */
-export type ChatSession = { url: string; token: string };
-
-/** How the login screen should sign the user in (see GET /studio/auth). */
-export type AuthConfig =
-  | { mode: "supabase"; supabaseUrl: string; supabasePublishableKey: string }
-  | { mode: "dev" }
-  | { mode: "none" };
-
-export type Account = { email?: string; hasKey: boolean };
-
-/** One deployed agent's database state (see GET …/database). */
-/** What one environment's schema holds right now — see `appDatabaseUsage`. */
-export type DatabaseUsage = {
-  tables: number;
-  rows: number;
-  bytes: number;
-};
-
-export type DatabaseEnvironment = {
-  environment: "production" | "preview";
-  /** The deployed slug; absent until that environment has deployed. */
-  slug?: string;
-  enabled: boolean;
-  /**
-   * Absent when the database is off OR when the measurement failed — an
-   * unread schema and an empty one are different answers, and reporting the
-   * second for the first is exactly the lie this number exists to catch.
-   */
-  usage?: DatabaseUsage;
-};
-
-/**
- * The project's `ctx.db` database, across both deployed agents. `enabled` is
- * the project's setting — what the next deploy of either agent provisions —
- * while each environment row says whether it has a database RIGHT NOW.
- * `configured: false` means this server cannot provision at all.
- */
-export type DatabaseState = {
-  enabled: boolean;
-  configured: boolean;
-  environments: DatabaseEnvironment[];
-  /** An environment that could not be switched, when others succeeded. */
-  warning?: string;
-};
-
-/** `GET /studio/status` — which LLM the studio's chat runs on. */
-export type StudioStatus = {
-  provider?: string;
-  model?: string;
-};
+// Re-exported so `./api.ts` stays the one import for a pane that needs both
+// the call and the shape it answers with.
+export type {
+  Account,
+  AuthConfig,
+  ChatSession,
+  DatabaseEnvironment,
+  DatabaseState,
+  DatabaseUsage,
+  ProjectData,
+  ProjectKind,
+  StudioStatus,
+} from "./api-types.ts";
 
 /**
  * Per-attempt deadline for the session broker call. A broker request issued
@@ -137,6 +79,36 @@ export const AUTH_CONFIG_ATTEMPT_TIMEOUT_MS = 10_000;
  */
 export const AGENT_PAGE_PROBE_TIMEOUT_MS = 5000;
 
+/**
+ * The deadline every request carries unless it names its own.
+ *
+ * A browser `fetch` has NO timeout of its own, and a hung request is not a
+ * failure — it never settles, so no error path, no retry and no backoff ever
+ * runs. That is not a per-call hazard to remember at the four call sites that
+ * happened to think of it: it is what `fetch` does, so it belongs in the one
+ * place every request goes through. Four of ~18 requests carried a deadline,
+ * and `GET /studio/status` — which gates the home hero's Send button AND the
+ * project composer — was not one of them, so a single hung read left both
+ * screens dead behind "Checking the server's chat status…" with no way out but
+ * a reload.
+ *
+ * Sized well above the slowest thing a studio route does that is not already
+ * deadlined explicitly (a deploy through the sandbox is the long one, and it
+ * has {@link CHAT_SESSION_ATTEMPT_TIMEOUT_MS}'s reasoning applied to it below),
+ * and well under a user's patience for a screen that says nothing.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+
+/**
+ * Per-attempt deadline for `GET /studio/status`.
+ *
+ * It answers from memory (which LLM the chat runs on), so it is only ever slow
+ * when the server is — and it is read before anything is submittable, so the
+ * shortest useful deadline is the right one: a timed-out attempt is what lets
+ * the query layer retry at all.
+ */
+export const STATUS_ATTEMPT_TIMEOUT_MS = 10_000;
+
 /** Throw an {@link ApiError} on non-2xx responses, else parse the JSON body. */
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -160,35 +132,61 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 /**
- * Same-origin request against the platform's own agent routes (`/:slug/…`) —
- * the secrets panel talks to the exact routes `aai secret` uses.
+ * A request, with a deadline.
+ *
+ * `timeoutMs` overrides {@link DEFAULT_REQUEST_TIMEOUT_MS} for callers whose
+ * work really is slower (the broker) or whose screen cannot afford to wait (the
+ * gates). A caller's own `signal` is COMPOSED with the deadline rather than
+ * replacing it — `AbortSignal.any` fires on whichever comes first — so passing
+ * one can only ever make a request settle sooner.
  */
-async function agentRequest<T>(key: string, path: string, init: RequestInit = {}): Promise<T> {
+type ApiInit = RequestInit & { timeoutMs?: number };
+
+async function fetchJson<T>(path: string, init: ApiInit = {}): Promise<T> {
+  const { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, signal, ...rest } = init;
+  const deadline = AbortSignal.timeout(timeoutMs);
   const res = await fetch(path, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${key}`,
-      ...(init.body != null && { "Content-Type": "application/json" }),
-      ...init.headers,
-    },
+    ...rest,
+    signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
   });
   return handleResponse<T>(res);
 }
 
+/**
+ * Same-origin request against the platform's own agent routes (`/:slug/…`) —
+ * the secrets panel talks to the exact routes `aai secret` uses.
+ */
+function agentRequest<T>(key: string, path: string, init: ApiInit = {}): Promise<T> {
+  return fetchJson<T>(path, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${key}`,
+      // The guard is not the value here — a body decides whether the header
+      // exists, it is not the header — so this stays a conditional spread
+      // rather than becoming an `omitUndefined` entry.
+      ...(init.body != null && { "Content-Type": "application/json" }),
+      ...init.headers,
+    },
+  });
+}
+
 /** The same request, against the studio surface (`/studio/…`). */
-function request<T>(key: string, path: string, init: RequestInit = {}): Promise<T> {
+function request<T>(key: string, path: string, init: ApiInit = {}): Promise<T> {
   return agentRequest<T>(key, `/studio${path}`, init);
 }
 
 export const api = {
+  /**
+   * Which LLM the studio's chat runs on. Public, and deadlined for the reason
+   * {@link DEFAULT_REQUEST_TIMEOUT_MS} exists — see
+   * {@link STATUS_ATTEMPT_TIMEOUT_MS} for why this one is shorter.
+   */
   status: (): Promise<StudioStatus> =>
-    fetch("/studio/status").then((res) => handleResponse<StudioStatus>(res)),
+    fetchJson<StudioStatus>("/studio/status", { timeoutMs: STATUS_ATTEMPT_TIMEOUT_MS }),
 
   /** Public: which login flow to render. */
   authConfig: (): Promise<AuthConfig> =>
-    fetch("/studio/auth", { signal: AbortSignal.timeout(AUTH_CONFIG_ATTEMPT_TIMEOUT_MS) }).then(
-      (res) => handleResponse<AuthConfig>(res),
-    ),
+    fetchJson<AuthConfig>("/studio/auth", { timeoutMs: AUTH_CONFIG_ATTEMPT_TIMEOUT_MS }),
 
   /**
    * Session-authed (works before an AssemblyAI key is stored). Deadlined so
@@ -196,9 +194,7 @@ export const api = {
    * {@link ACCOUNT_ATTEMPT_TIMEOUT_MS}.
    */
   getAccount: (key: string) =>
-    request<Account>(key, "/account", {
-      signal: AbortSignal.timeout(ACCOUNT_ATTEMPT_TIMEOUT_MS),
-    }),
+    request<Account>(key, "/account", { timeoutMs: ACCOUNT_ATTEMPT_TIMEOUT_MS }),
 
   /** Store the user's AssemblyAI API key — the one-time onboarding step. */
   putAccountKey: (key: string, apiKey: string) =>
@@ -234,10 +230,7 @@ export const api = {
   createProject: (key: string, opts: { prompt?: string; kind?: ProjectKind }) =>
     request<{ name: string; files: Record<string, string>; kind?: ProjectKind }>(key, "/projects", {
       method: "POST",
-      body: JSON.stringify({
-        ...(opts.prompt ? { prompt: opts.prompt } : {}),
-        ...(opts.kind ? { kind: opts.kind } : {}),
-      }),
+      body: JSON.stringify(omitUndefined({ prompt: opts.prompt, kind: opts.kind })),
     }),
 
   /** Delete a project (its workspace and chat). Deployed agents stay live. */
@@ -322,7 +315,7 @@ export const api = {
         if (frame.event === "project") handlers.onData(JSON.parse(frame.data) as ProjectData);
         if (frame.event === "chat") handlers.onChat?.(JSON.parse(frame.data) as UIMessage[]);
       },
-      ...(handlers.onOpen && { onOpen: handlers.onOpen }),
+      ...omitUndefined({ onOpen: handlers.onOpen }),
       onDown: handlers.onDown,
     }),
 
@@ -343,7 +336,7 @@ export const api = {
       onFrame: (frame) => {
         if (frame.event === "projects") handlers.onData(JSON.parse(frame.data) as string[]);
       },
-      ...(handlers.onOpen && { onOpen: handlers.onOpen }),
+      ...omitUndefined({ onOpen: handlers.onOpen }),
       onDown: handlers.onDown,
     }),
 
@@ -363,9 +356,9 @@ export const api = {
     request<ChatSession>(key, `/projects/${encodeURIComponent(project)}/session`, {
       method: "POST",
       body: "{}",
-      // A hung broker request must eventually settle so the query layer can
-      // retry it — see CHAT_SESSION_ATTEMPT_TIMEOUT_MS.
-      signal: AbortSignal.timeout(CHAT_SESSION_ATTEMPT_TIMEOUT_MS),
+      // Longer than the default, not shorter: this one really can take two
+      // minutes of honest work (see CHAT_SESSION_ATTEMPT_TIMEOUT_MS).
+      timeoutMs: CHAT_SESSION_ATTEMPT_TIMEOUT_MS,
     }),
 
   /**
@@ -377,10 +370,10 @@ export const api = {
     sessionToken: string,
     sessionUrl: string,
   ): Promise<Record<string, string>> => {
-    const res = await fetch(sessionUrl.replace(/\/chat$/, "/tools"), {
-      headers: { Authorization: `Bearer ${sessionToken}` },
-    });
-    const { tools } = await handleResponse<{ tools: { name: string; label: string }[] }>(res);
+    const { tools } = await agentRequest<{ tools: { name: string; label: string }[] }>(
+      sessionToken,
+      sessionUrl.replace(/\/chat$/, "/tools"),
+    );
     return Object.fromEntries(tools.map((t) => [t.name, t.label]));
   },
 

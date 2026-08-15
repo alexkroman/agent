@@ -172,7 +172,7 @@ type GenerateResult = {
 };
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "state", "syncState", "workflows", "events"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "events"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];

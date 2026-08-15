@@ -35,6 +35,21 @@ describe("slot cache", () => {
     expect(cache.get("a")).toBeUndefined();
   });
 
+  it("a redeploy replaces the slot under its slug", () => {
+    // The case the cache used to be an `OwnedMap` for. Nothing ever used the
+    // ownership affordance (`claim`'s release was discarded and `owns()` had no
+    // production caller), and the exclusion the call sites really rest on is
+    // `withSlugLock` — every write and delete runs inside it. So this is plain
+    // `Map` semantics, and pinning them is what says the choice was made.
+    const cache = createSlotCache();
+    const first: AgentSlot = { slug: "a", version: 1 };
+    const second: AgentSlot = { slug: "a", version: 2 };
+    setSlot(cache, first);
+    setSlot(cache, second);
+    expect(cache.get("a")).toBe(second);
+    expect(cache.size).toBe(1);
+  });
+
   it("terminateSlot detaches synchronously and shuts the sandbox down", async () => {
     const sandbox = makeSandbox();
     const slot: AgentSlot = { slug: "t", sandbox };

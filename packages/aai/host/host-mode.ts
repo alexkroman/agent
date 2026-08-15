@@ -143,6 +143,15 @@ export function withHostCredentials(
  * inventing a placeholder one to carry providers it does not have is wasted
  * ceremony.
  *
+ * `maxSteps` follows the same inheritance rule as the provider triple and
+ * `sttPrompt`: the operator's value stands, and {@link DEFAULT_HOST_MAX_STEPS}
+ * is what an unconfigured host server gets. It used to be written
+ * unconditionally on the line after the spread, so
+ * `createHostServer({ defaults: { maxSteps } })` — a documented knob on a type
+ * that explicitly admits the field — was accepted, type-checked, and silently
+ * discarded, and every tenant ran 30 steps. The host block cannot set it (there
+ * is no `maxSteps` in `HostConfigSchema`), so the base agent is the only voice.
+ *
  * @internal
  */
 export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef {
@@ -151,7 +160,7 @@ export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef
     name: baseAgent?.name ?? "host",
     systemPrompt: host.systemPrompt,
     greeting: host.greeting ?? "",
-    maxSteps: DEFAULT_HOST_MAX_STEPS,
+    maxSteps: baseAgent?.maxSteps ?? DEFAULT_HOST_MAX_STEPS,
     // STT biasing follows the provider triple's inheritance rule: the client's
     // value wins when sent, the operator's configured prompt stands otherwise.
     ...omitUndefined({ sttPrompt: host.sttPrompt }),
@@ -232,12 +241,6 @@ function rejectHandshake(ws: SessionWebSocket, log: Logger, message: string): vo
 }
 
 /**
- * Derive the S2S sample-rate config from a client's requested rates, falling
- * back to the defaults. The single `config` frame carries the client's
- * `sampleRate`/`ttsSampleRate` alongside the `host` block; honoring them keeps
- * the negotiated audio format consistent end-to-end.
- */
-/**
  * Refuse a handshake whose declared audio rates this transport cannot honour.
  *
  * The host-side counterpart of aai-ui's `assertGranted`: a client states the
@@ -278,6 +281,12 @@ function assertHostRatesSupported(
   );
 }
 
+/**
+ * Derive the S2S sample-rate config from a client's requested rates, falling
+ * back to the defaults. The single `config` frame carries the client's
+ * `sampleRate`/`ttsSampleRate` alongside the `host` block; honoring them keeps
+ * the negotiated audio format consistent end-to-end.
+ */
 function s2sConfigFromHandshake(msg: {
   sampleRate?: number | undefined;
   ttsSampleRate?: number | undefined;

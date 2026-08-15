@@ -18,8 +18,9 @@
  * `FatalError` guards are all testable.
  */
 
+import { stubStepFetch } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { extractText, extractTitle, fetchArticle, summarize } from "./workflows/digest.ts";
 
@@ -110,12 +111,28 @@ describe("extractTitle", () => {
 });
 
 describe("fetchArticle", () => {
-  /** A page server answering `html` with `status`. */
+  /** Unpublished between specs — a fetch left behind reaches the next file. */
+  let restore: (() => void) | undefined;
+  afterEach(() => {
+    restore?.();
+    restore = undefined;
+  });
+
+  /**
+   * A page server answering `html` with `status`.
+   *
+   * Published into `stepFetch`'s own slot rather than over `globalThis.fetch`:
+   * the step calls `stepFetch`, and stubbing the global would pass while
+   * exercising the fallback path production never takes.
+   */
   function stubPage(html: string, status = 200) {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(html, { status, headers: { "Content-Type": "text/html" } })),
-    );
+    const stub = stubStepFetch(() => ({
+      status,
+      body: html,
+      headers: { "Content-Type": "text/html" },
+    }));
+    restore = stub.restore;
+    return stub;
   }
 
   test("returns the page's title and its readable text", async () => {

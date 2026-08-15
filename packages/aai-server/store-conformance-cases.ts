@@ -147,6 +147,21 @@ export function workspaceStoreConformance(make: () => WorkspaceStore): void {
     expect(await store.list(s3)).toEqual([]);
   });
 
+  test("a scope that is a string PREFIX of another lists only its own", async () => {
+    // The Postgres arm compares `scope = $1` and could never get this wrong;
+    // the memory arm keyed on `${scope}/${project}` and answered `list` with a
+    // `startsWith` over that composite, so the outer scope listed the inner
+    // one's projects as its own. Arm-independent because it is a statement
+    // about the CONTRACT — scope isolation — not about a separator.
+    const store = make();
+    const outer = uid();
+    const inner = `${outer}/nested`;
+    await store.put(outer, "mine", {}, null);
+    await store.put(inner, "theirs", {}, null);
+    expect(await store.list(outer)).toEqual(["mine"]);
+    expect(await store.list(inner)).toEqual(["theirs"]);
+  });
+
   test("a doc is stored as jsonb, so an arrow operator can reach into it", async () => {
     // The `::text::jsonb` binding, from the outside: `patch` composes
     // `doc = (doc - remove) || set` IN Postgres, so a doc held as a jsonb

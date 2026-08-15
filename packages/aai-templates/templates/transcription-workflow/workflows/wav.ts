@@ -57,6 +57,32 @@ export const MAX_SEGMENT_BYTES = 40 * 1024 * 1024;
 /** The sync endpoint refuses audio shorter than this. */
 export const MIN_SEGMENT_MS = 80;
 
+/**
+ * The largest `bytesPerSecond` this desk will cut, and the reason it is checked
+ * at PARSE time rather than at cut time.
+ *
+ * `planSegments` divides by a format's bytes-per-second and then subtracts the
+ * overlap from the byte cap, so two declared formats make its loop never
+ * advance — and this is the one workflow app that takes an arbitrary uploaded
+ * file over a public form, so both are reachable by anyone with the URL:
+ *
+ * - a **zero** sample rate (or zero channels/bits, which
+ *   {@link blockAlign} already catches) makes `stride` zero, so `start +=
+ *   stride` is a no-op and the loop pushes a `Segment` per iteration until the
+ *   process dies of memory;
+ * - a **huge** one — `sampleRate` is a `uint32` and `channels`/`bitsPerSample`
+ *   are `uint16`, so a header can declare gigabytes a second — makes the
+ *   overlap alone exceed {@link MAX_SEGMENT_BYTES}, leaving `stride` NEGATIVE
+ *   and the loop walking backwards forever.
+ *
+ * Both are pure CPU with no `await` in them, so no `AbortSignal.timeout` and no
+ * step retry budget can interrupt one: the guard has to come before the loop.
+ * Requiring a whole second of audio to fit alongside the overlap is the bound
+ * that keeps the stride positive with room to spare; 48 kHz 24-bit stereo is
+ * 288 kB/s, four orders of magnitude under it.
+ */
+export const MAX_BYTES_PER_SECOND = MAX_SEGMENT_BYTES / (SEGMENT_OVERLAP_SECONDS + 1);
+
 /** A parsed linear-PCM WAV header, plus where its samples live. */
 export type WavFormat = {
   sampleRate: number;
@@ -167,6 +193,20 @@ export function parseWav(head: Uint8Array, totalBytes: number): WavFormat {
       if (blockAlign(fmt) <= 0) {
         throw new UnsupportedRecordingError(
           `That WAV declares ${fmt.channels} channels at ${fmt.bitsPerSample} bits — nothing to cut.`,
+        );
+      }
+      // The rate is validated HERE, beside the encoding and the block align,
+      // because everything downstream divides by it — see
+      // {@link MAX_BYTES_PER_SECOND} for the two loops a bad one hangs.
+      if (fmt.sampleRate <= 0) {
+        throw new UnsupportedRecordingError(
+          "That WAV declares a sample rate of 0, so nothing in it can be given a timestamp.",
+        );
+      }
+      const perSecond = bytesPerSecond(fmt);
+      if (perSecond > MAX_BYTES_PER_SECOND) {
+        throw new UnsupportedRecordingError(
+          `That WAV declares ${fmt.sampleRate} Hz across ${fmt.channels} channels at ${fmt.bitsPerSample} bits — ${perSecond} bytes a second, past the ${MAX_BYTES_PER_SECOND} this desk can cut into ${MAX_SEGMENT_BYTES}-byte requests.`,
         );
       }
       // See the doc above: `0` and `0xFFFFFFFF` both mean "unknown", and any

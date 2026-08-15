@@ -16,6 +16,7 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { createParser } from "eventsource-parser";
 import { Agent, fetch as undiciFetch } from "undici";
 
@@ -123,8 +124,8 @@ function recordToolOutput(turn: MutableTurn, name: string | undefined, out: stri
 
 /** Fold one AI SDK UI-message-stream part into the turn. */
 function applyPart(turn: MutableTurn, pending: Map<string, string>, part: unknown): void {
-  if (typeof part !== "object" || part === null) return;
-  const p = part as Record<string, unknown>;
+  if (!isRecord(part)) return;
+  const p = part;
   const type = typeof p.type === "string" ? p.type : "";
   if (type === "text-delta" && typeof p.delta === "string") {
     turn.text += p.delta;

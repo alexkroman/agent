@@ -18,6 +18,7 @@
  * stored key (and 401s until one exists).
  */
 
+import { safeJsonParse } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import {
   invalidateApiKeyOwner,
@@ -30,6 +31,7 @@ import {
   userApiKeySecretName,
 } from "aai-server/supabase-auth";
 import type { Hono } from "hono";
+import { z } from "zod";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import { AccountKeySchema, CliLinkSchema } from "./studio-schemas.ts";
 
@@ -38,18 +40,25 @@ import { AccountKeySchema, CliLinkSchema } from "./studio-schemas.ts";
  * code's hash until the CLI exchanges it. Short-lived: the CLI polls every
  * couple of seconds, so an uncollected grant means the CLI died — the
  * expiry keeps its code from being redeemable later.
+ *
+ * Validated by a SCHEMA rather than by hand-written field checks, and by
+ * `safeJsonParse` rather than a bare `try { JSON.parse }`. It is worth the
+ * ceremony because of what this record buys whoever presents it: exactly one
+ * exchange for an account's raw AssemblyAI key. A hand-rolled guard that
+ * checks two fields and casts is one edit away from admitting a shape the
+ * exchange then reads as somebody else's `uid`.
  */
-type CliLinkGrant = { uid: string; email?: string; exp: number };
+const CliLinkGrantSchema = z.object({
+  uid: z.string().min(1),
+  email: z.string().optional(),
+  exp: z.number(),
+});
+type CliLinkGrant = z.infer<typeof CliLinkGrantSchema>;
 const CLI_LINK_TTL_MS = 10 * 60_000;
 
 function parseCliLinkGrant(raw: string): CliLinkGrant | null {
-  try {
-    const grant = JSON.parse(raw) as Partial<CliLinkGrant> | null;
-    if (!grant || typeof grant.uid !== "string" || typeof grant.exp !== "number") return null;
-    return grant as CliLinkGrant;
-  } catch {
-    return null;
-  }
+  const parsed = CliLinkGrantSchema.safeParse(safeJsonParse(raw));
+  return parsed.success ? parsed.data : null;
 }
 
 export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {

@@ -33,7 +33,11 @@ export default tool({
       return toolFailure(`The knowledge base lookup failed: ${errorMessage(err)}`);
     }
 
-    await supportSlot.update(ctx, (state) => {
+    // No `await`: `slot.update` is SYNCHRONOUS, and that is the invariant
+    // rather than an implementation detail — the model call above is awaited in
+    // FRONT of the mutation for exactly that reason. Awaiting it would read as
+    // though the window could span a turn.
+    supportSlot.update(ctx, (state) => {
       state.trace = trace;
       recordQuestion(state, args.question);
     });

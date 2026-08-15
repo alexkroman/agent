@@ -79,9 +79,31 @@ export function createRestartableTimer(onElapsed: () => void): RestartableTimer 
  * arms both a short complete-utterance window and a longer fragment one) and
  * the right one for a fixed window re-armed repeatedly.
  */
-export function createCoalescingTimer(onElapsed: () => void): RestartableTimer {
+export function createCoalescingTimer(
+  onElapsed: () => void,
+  opts: {
+    /**
+     * Do not let a pending run hold the process open.
+     *
+     * OPT-IN, because it is a claim rather than a tidy-up: a timer that must
+     * FIRE before the process may exit has to keep a reference. It is right for
+     * a watchdog whose whole job is retiring something that is already alive —
+     * the idle-session one, which cannot be the last thing holding a process up
+     * when there is no session left to retire — which is the same call the four
+     * sibling `timer.unref?.()` sites in this package make by hand.
+     */
+    unref?: boolean;
+  } = {},
+): RestartableTimer {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let deadlineMs = 0;
+
+  /** Arm the underlying timer, honouring `unref`. */
+  function schedule(ms: number): ReturnType<typeof setTimeout> {
+    const handle = setTimeout(onWake, ms);
+    if (opts.unref) handle.unref?.();
+    return handle;
+  }
 
   function clear(): void {
     if (timer !== null) {
@@ -95,7 +117,7 @@ export function createCoalescingTimer(onElapsed: () => void): RestartableTimer {
     const remaining = deadlineMs - Date.now();
     if (remaining > 0) {
       // Re-armed since this timer was scheduled — sleep out the remainder.
-      timer = setTimeout(onWake, remaining);
+      timer = schedule(remaining);
       return;
     }
     timer = null;
@@ -107,7 +129,7 @@ export function createCoalescingTimer(onElapsed: () => void): RestartableTimer {
     arm(ms: number): void {
       if (!(ms > 0)) return;
       deadlineMs = Date.now() + ms;
-      if (timer === null) timer = setTimeout(onWake, ms);
+      if (timer === null) timer = schedule(ms);
     },
     clear,
     pending: () => timer !== null,

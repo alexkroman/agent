@@ -76,10 +76,19 @@ export function failureGroups(reports: readonly EvalReport[]): FailureGroup[] {
 
 const pct = (n: number): string => `${Math.round(n * 100)}%`;
 
-/** `mean (min–max, ±spread)`, or a bare number when there was one pass. */
+/**
+ * `mean (min–max, ±spread)`, or a bare number when one pass was measured.
+ *
+ * Keyed on `measuredPasses`, not `passes.length`: the score is computed over the
+ * passes that did not die, so five repeats of which four were harness errors is
+ * a SINGLE measurement and printing `±0%` for it would claim a stability nobody
+ * observed. With none measured there is no number at all, and saying so beats
+ * printing the 0% that an empty spread produces.
+ */
 export function formatSpread(report: EvalReport): string {
+  if (report.measuredPasses === 0) return "not measured";
   const { min, max, mean, spread } = report.score;
-  if (report.passes.length === 1) return pct(mean);
+  if (report.measuredPasses === 1) return pct(mean);
   return `${pct(mean)} (${pct(min)}–${pct(max)}, ±${pct(spread)})`;
 }
 

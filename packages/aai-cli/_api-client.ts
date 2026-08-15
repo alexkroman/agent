@@ -10,6 +10,7 @@
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { FetchError, ofetch } from "ofetch";
+import { CliError } from "./_output.ts";
 
 export const HINT_INVALID_API_KEY =
   "Your API key may be invalid. Run `aai` to re-enter your AssemblyAI API key.";
@@ -54,6 +55,26 @@ export type ApiRequestOptions = {
 };
 
 /**
+ * The two options a caller only ever supplies from a TEST — a fetch
+ * implementation and a zeroed retry delay.
+ *
+ * ONE declaration, so a wrapper around `apiRequest` (`runDeploy`, `runDelete`)
+ * says "plus the test seam" instead of restating both fields and both doc
+ * comments. They were written out three times, and the two copies were already
+ * spelled differently from each other.
+ */
+export type ApiTestSeam = Pick<ApiRequestOptions, "fetch" | "retryDelay">;
+
+/**
+ * {@link ApiTestSeam} as request options, with absent entries OMITTED rather
+ * than passed as `undefined` (which `exactOptionalPropertyTypes` refuses and
+ * which would override `apiRequest`'s own defaults with nothing).
+ */
+export function apiTestSeam(opts: ApiTestSeam): ApiTestSeam {
+  return omitUndefined({ fetch: opts.fetch, retryDelay: opts.retryDelay });
+}
+
+/**
  * Send an authenticated request to the platform API and return the parsed
  * JSON response. Throws a descriptive error with status-specific hints on
  * failure (the 401 hint is always included; pass more via `hints`).
@@ -76,6 +97,43 @@ export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptio
     }
     throw toApiError(err, url, opts);
   }
+}
+
+/**
+ * A 2xx body CHECKED against the shape the caller was promised, rather than
+ * cast to it.
+ *
+ * `apiRequest<T>` is a cast: `T` describes what the platform sends and nothing
+ * verifies it, so a 200 from something that is not our server — an intercepting
+ * proxy, a captive portal, a mismatched or half-deployed backend — flows on as
+ * a fully-typed object whose fields are `undefined`. That is not hypothetical
+ * and not merely cosmetic: a deploy whose response lacked `slug` printed
+ * `Deployed https://server/undefined` and wrote `slug: undefined` into
+ * `.aai/project.json`, where `JSON.stringify` DROPS it — so the next deploy saw
+ * no slug, minted a fresh one, and orphaned the running agent. `aai publish`
+ * grew a hand-written guard for exactly that (`studio.ts`); this is that guard
+ * with a name, so the next response shape gets it without the incident first.
+ *
+ * The predicate is the caller's because the shape is: this only owns the
+ * failure, whose code and hint are the same wherever it fires.
+ */
+export function checkedResponse<T>(
+  value: unknown,
+  isExpected: (value: unknown) => value is T,
+  /** The route, named as a human would say it — "the deploy route at <url>". */
+  what: string,
+): T {
+  if (isExpected(value)) return value;
+  throw new CliError(
+    "bad_response",
+    `Unexpected response from ${what}.`,
+    "Check that --server points at an aai platform server, then try again.",
+  );
+}
+
+/** True when every element of `value` is a string (an empty array qualifies). */
+export function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 /**
@@ -102,13 +160,14 @@ function unwrapEmbeddedErrors(message: string, depth = 0): string {
 /** The messages of a Zod issue tree, deduped and flattened. */
 function zodIssueMessages(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(zodIssueMessages);
-  if (value === null || typeof value !== "object") return [];
-  const node = value as { message?: unknown; issues?: unknown };
+  // `isRecord`, not an open-coded record guard plus a cast — the narrow is
+  // what makes the two field reads below legal (guard-invariants rule 17).
+  if (!isRecord(value)) return [];
   // A parent issue's own message ("Invalid key in record") is less specific
   // than its children's, so prefer the leaves when there are any.
-  const nested = zodIssueMessages(node.issues);
+  const nested = zodIssueMessages(value.issues);
   if (nested.length > 0) return nested;
-  return typeof node.message === "string" ? [node.message] : [];
+  return typeof value.message === "string" ? [value.message] : [];
 }
 
 /**

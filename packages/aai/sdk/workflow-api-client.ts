@@ -57,6 +57,7 @@
  */
 
 import { omitUndefined } from "./omit-undefined.ts";
+import { readJsonBody } from "./response-body.ts";
 import { responseErrorMessage } from "./utils.ts";
 import type { WorkflowSummary } from "./workflow.ts";
 import {
@@ -279,6 +280,16 @@ async function failure(res: Response): Promise<Error> {
   return new Error(await responseErrorMessage(res, ERROR_LABEL));
 }
 
+/**
+ * A successful body, parsed — labelled, because the status does NOT decide
+ * whether a body is JSON. Every route here answered `res.json()` unguarded, so
+ * a proxy's `200 text/html` rejected with a bare `SyntaxError` carrying no
+ * status and no `runId`. See {@link readJsonBody}.
+ */
+function readJson<T>(res: Response): Promise<T> {
+  return readJsonBody<T>(res, ERROR_LABEL);
+}
+
 // Re-exported so `@alexkroman1/aai/workflow-api` stays the one import path for
 // everything this surface takes and returns.
 export type { UploadBody, UploadOptions, UploadRef } from "./workflow-upload-client.ts";
@@ -324,7 +335,7 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
       ...deadline(wait),
     });
     if (!res.ok) throw await failure(res);
-    return (await res.json()) as { runId: string; run?: WorkflowRunSnapshot };
+    return await readJson<{ runId: string; run?: WorkflowRunSnapshot }>(res);
   }
 
   /**
@@ -346,7 +357,7 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
       ...deadline(),
     });
     if (!res.ok) throw await failure(res);
-    const body = (await res.json()) as { runs?: WorkflowRunSnapshot[] };
+    const body = await readJson<{ runs?: WorkflowRunSnapshot[] }>(res);
     return body.runs ?? [];
   }
 
@@ -358,7 +369,7 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
     async list(): Promise<WorkflowSummary[]> {
       const res = await fetch(base, { headers: auth, ...deadline() });
       if (!res.ok) throw await failure(res);
-      const body = (await res.json()) as { workflows?: WorkflowSummary[] };
+      const body = await readJson<{ workflows?: WorkflowSummary[] }>(res);
       return body.workflows ?? [];
     },
 
@@ -399,7 +410,7 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
       // own words — there is no second signal here to read.
       if (res.status === 404) return;
       if (!res.ok) throw await failure(res);
-      return (await res.json()) as WorkflowRunSnapshot;
+      return await readJson<WorkflowRunSnapshot>(res);
     },
 
     find(
@@ -455,7 +466,7 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
       // same answer as a live run that was not asleep — see `wake`'s doc.
       if (res.status === 404) return 0;
       if (!res.ok) throw await failure(res);
-      const body = (await res.json()) as { woken?: number };
+      const body = await readJson<{ woken?: number }>(res);
       return body.woken ?? 0;
     },
 
@@ -466,7 +477,7 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
         ...deadline(),
       });
       if (!res.ok) throw await failure(res);
-      const body = (await res.json()) as { cancelled?: boolean };
+      const body = await readJson<{ cancelled?: boolean }>(res);
       return body.cancelled === true;
     },
   };

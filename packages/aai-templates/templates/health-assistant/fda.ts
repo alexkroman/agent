@@ -7,6 +7,9 @@
  * argument stops being true.
  */
 
+import { isToolFailure } from "@alexkroman1/aai";
+import { fetchJson } from "@alexkroman1/aai/tools";
+
 export type FdaLabel = Record<string, unknown> & { openfda?: Record<string, string[]> };
 
 export function first(arr: string[] | undefined): string | undefined {
@@ -38,14 +41,30 @@ export function fetchFdaLabel(name: string): Promise<FdaLabel | null> {
   return p;
 }
 
+/**
+ * One openFDA lookup, through the SDK's own REST call rather than a bare
+ * `fetch`.
+ *
+ * `fetchJson` (`@alexkroman1/aai/tools`) is the same implementation behind the
+ * model-facing `fetch_json` builtin, so this inherits the three things a bare
+ * `fetch` here had none of: a request DEADLINE (`check_drug_interaction` fires
+ * a `Promise.all` over one of these per drug the caller named, and a stalled
+ * one held the whole tool call open for as long as the far side wanted), a
+ * bounded read so an unexpected body cannot be buffered whole, and URL
+ * screening on a developer's own machine under `aai dev`.
+ *
+ * It ANSWERS with `{ error }` rather than throwing for an HTTP failure, which
+ * is the builtin contract — narrowed with `isToolFailure` and folded into the
+ * same `null` this has always returned. The `catch` still earns its keep: a
+ * connection failure, a timeout or a refused URL is a throw.
+ */
 async function fetchFdaLabelUncached(name: string): Promise<FdaLabel | null> {
   const q = encodeURIComponent(name);
   try {
-    const resp = await fetch(
+    const raw = await fetchJson<{ results?: FdaLabel[] }>(
       `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${q}"+openfda.brand_name:"${q}"&limit=1`,
     );
-    if (!resp.ok) return null;
-    const raw = (await resp.json()) as { results?: FdaLabel[] };
+    if (isToolFailure(raw)) return null;
     return raw.results?.[0] ?? null;
   } catch {
     return null;

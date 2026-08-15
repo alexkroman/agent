@@ -69,6 +69,7 @@
  * @module tools
  */
 
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { DefaultToolResult } from "../sdk/types.ts";
 import type { ToolFailure } from "../sdk/utils.ts";
 import { resolveBuiltin } from "./builtin-tools.ts";
@@ -82,6 +83,25 @@ type BuiltinArgs = Record<string, unknown>;
  * the screening this whole module exists to keep.
  */
 export type CallOptions = { fetch?: typeof globalThis.fetch };
+
+/**
+ * Fold the two shapes into one spec: `f(value, options)` and `f({ value, ...options })`.
+ *
+ * The three wrappers each wrote this line, and each wrote it the same wrong way
+ * — `typeof x === "string" ? { key: x, ...options } : x` DROPS `options` in the
+ * object form, so `fetchJson({ url }, { fetch })` silently ignored the fetch it
+ * was handed. Merging both ways keeps the object form's own fields winning,
+ * which is the reading that matches "the object IS the spec".
+ */
+function normalizeSpec<K extends string, S extends object>(
+  key: K,
+  value: string | S,
+  options: object | undefined,
+): S & Record<K, string> {
+  return (
+    typeof value === "string" ? { [key]: value, ...options } : { ...options, ...value }
+  ) as S & Record<K, string>;
+}
 
 async function callBuiltin(
   name: "web_search" | "visit_webpage" | "fetch_json",
@@ -106,10 +126,10 @@ export async function fetchJson<T = DefaultToolResult>(
   url: string | ({ url: string; headers?: Record<string, string> } & CallOptions),
   options?: { headers?: Record<string, string> } & CallOptions,
 ): Promise<T | ToolFailure> {
-  const spec = typeof url === "string" ? { url, ...options } : url;
+  const spec = normalizeSpec("url", url, options);
   return (await callBuiltin(
     "fetch_json",
-    { url: spec.url, ...(spec.headers ? { headers: spec.headers } : {}) },
+    { url: spec.url, ...omitUndefined({ headers: spec.headers }) },
     spec,
   )) as T;
 }
@@ -124,7 +144,7 @@ export async function visitWebpage<T = DefaultToolResult>(
   url: string | ({ url: string } & CallOptions),
   options?: CallOptions,
 ): Promise<T | ToolFailure> {
-  const spec = typeof url === "string" ? { url, ...options } : url;
+  const spec = normalizeSpec("url", url, options);
   return (await callBuiltin("visit_webpage", { url: spec.url }, spec)) as T;
 }
 
@@ -140,13 +160,13 @@ export async function webSearch<T = DefaultToolResult>(
   query: string | ({ query: string; max_results?: number; maxResults?: number } & CallOptions),
   options?: { maxResults?: number } & CallOptions,
 ): Promise<T | ToolFailure> {
-  const spec = typeof query === "string" ? { query, ...options } : query;
+  const spec = normalizeSpec("query", query, options);
   // `max_results` is the builtin's spelling and `maxResults` the JS one;
   // both arrive here because both are things an author reasonably writes.
   const max = spec.max_results ?? spec.maxResults;
   return (await callBuiltin(
     "web_search",
-    { query: spec.query, ...(max === undefined ? {} : { max_results: max }) },
+    { query: spec.query, ...omitUndefined({ max_results: max }) },
     spec,
   )) as T;
 }

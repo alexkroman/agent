@@ -19,7 +19,7 @@ import {
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import type { Logger } from "../runtime-config.ts";
-import type { EmitError } from "./types.ts";
+import type { EmitError, SendTtsOptions, SendTtsText } from "./types.ts";
 
 /** Convert an internal conversation {@link Message} to a Vercel AI {@link ModelMessage}. */
 export function toModelMessage(m: Message): ModelMessage {
@@ -86,9 +86,11 @@ export type TtsTextCoalescer = {
    * `record` marks the text as the model's own words rather than dead-air
    * filler, and is carried through unchanged: a batch must never MIX the two,
    * or the heard cursor could not tell which characters of a coalesced send may
-   * be truncated into history (see `pipeline-heard.ts`).
+   * be truncated into history (see `pipeline-heard.ts`). `publishTranscript` is
+   * the transport's to decide and is not batched — every coalesced send
+   * publishes, which is what keeps the caption with the audio.
    */
-  send(text: string, record: boolean): void;
+  send: SendTtsText;
   /** Forward any buffered text. Call before the provider-level TTS flush. */
   flush(): void;
   /**
@@ -125,9 +127,7 @@ const CLAUSE_BOUNDARY_RE = /[.,;:!?…]["')\]]*\s*$/;
  * {@link TTS_COALESCE_MAX_CHARS} characters accumulate. Callers must
  * `flush()` when the stream ends so a trailing fragment is still spoken.
  */
-export function createTtsTextCoalescer(
-  sendRaw: (text: string, opts: { record: boolean }) => void,
-): TtsTextCoalescer {
+export function createTtsTextCoalescer(sendRaw: SendTtsText): TtsTextCoalescer {
   let pending = "";
   let pendingRecord = true;
   let firstSent = false;
@@ -138,7 +138,8 @@ export function createTtsTextCoalescer(
     sendRaw(out, { record: pendingRecord });
   };
   return {
-    send(text: string, record: boolean): void {
+    send(text: string, opts?: SendTtsOptions): void {
+      const record = opts?.record !== false;
       if (text.length === 0) return;
       // Release what is buffered before the flag flips, so no send ever mixes
       // recordable text with filler — see {@link TtsTextCoalescer.send}.

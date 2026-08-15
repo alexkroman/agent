@@ -373,3 +373,52 @@ describe("timeoutMs", () => {
     expect(call(1)[1]).not.toHaveProperty("signal");
   });
 });
+
+describe("a 2xx that is not JSON", () => {
+  /**
+   * The status does not decide whether a body is JSON. A proxy, a CDN or a
+   * platform broker answering while a sandbox boots all reply `200 text/html`,
+   * and `res.json()` rejected with a bare `SyntaxError` — no status, no label,
+   * and for `POST /runs` no `runId` for a run the agent may already have
+   * created, which is the one thing on this surface a caller cannot rebuild.
+   */
+  const html = () =>
+    new Response("<html><body>502 Bad Gateway</body></html>", {
+      status: 200,
+      headers: { "Content-Type": "text/html" },
+    });
+
+  test.each([
+    ["list", (api: ReturnType<typeof client>) => api.list()],
+    ["start", (api: ReturnType<typeof client>) => api.start("digest")],
+    ["startAndWait", (api: ReturnType<typeof client>) => api.startAndWait("digest")],
+    ["get", (api: ReturnType<typeof client>) => api.get("wrun_1")],
+    ["find", (api: ReturnType<typeof client>) => api.find("digest", "k")],
+    ["recent", (api: ReturnType<typeof client>) => api.recent("digest")],
+    ["cancel", (api: ReturnType<typeof client>) => api.cancel("wrun_1")],
+    ["wake", (api: ReturnType<typeof client>) => api.wake("wrun_1")],
+    ["upload", (api: ReturnType<typeof client>) => api.upload("bytes", { name: "a.txt" })],
+  ])("%s reports the surface, the status and a preview — not a SyntaxError", async (_name, run) => {
+    fetchMock.mockImplementation(async () => html());
+    await expect(run(client())).rejects.toThrow(
+      "Workflow API 200: <html><body>502 Bad Gateway</body></html>",
+    );
+  });
+
+  test("an empty 2xx body is the bare labelled status", async () => {
+    fetchMock.mockImplementation(async () => new Response("", { status: 200 }));
+    await expect(client().list()).rejects.toThrow("Workflow API 200");
+  });
+
+  test("a long body is capped and marked, so a whole page cannot reach a toast", async () => {
+    fetchMock.mockImplementation(async () => new Response("z".repeat(5000), { status: 200 }));
+    await expect(client().list()).rejects.toThrow(`Workflow API 200: ${"z".repeat(200)}…`);
+  });
+
+  test("a NON-2xx still reports the agent's own sentence, unchanged", async () => {
+    // The guard above must not shadow the failure path: `{ error }` is the whole
+    // diagnostic and it is what a caller sees.
+    fetchMock.mockImplementation(async () => json({ error: "No workflow named digest" }, 400));
+    await expect(client().start("digest")).rejects.toThrow("No workflow named digest");
+  });
+});

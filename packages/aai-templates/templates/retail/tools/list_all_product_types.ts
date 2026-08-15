@@ -11,8 +11,6 @@ export default retailTool({
   // that is where the per-call UI-update invariant lives.
   inputSchema: z.object({}),
   requiresAuth: false,
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
-  // is load-bearing for the generic `result` type in `summary`.
   execute: (_args, state) => {
     const entries = Object.values(state.store.products)
       .map((product) => [product.name, product.product_id] as const)

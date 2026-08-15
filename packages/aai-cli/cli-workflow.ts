@@ -10,9 +10,8 @@
  */
 
 import { defineCommand } from "citty";
-import { runCommand, sharedArgs } from "./_cli-common.ts";
+import { defineExec, sharedArgs } from "./_cli-common.ts";
 import { CliError } from "./_output.ts";
-import { resolveCwd } from "./_utils.ts";
 
 /**
  * `--token` for an agent whose operator set `AAI_WORKFLOW_API_TOKEN`.
@@ -29,18 +28,24 @@ const workflowToken = {
 /** The positional every run-scoped verb takes. */
 const runIdArg = { type: "positional", description: "Run id", required: true } as const;
 
-const workflowList = defineCommand({
+/**
+ * Every verb here reads `.aai/project.json` for the origin and the published
+ * slug, and none of them touches `agent.ts` — a directory `aai pull`ed but
+ * never edited still names a deployed agent whose runs are worth asking about.
+ */
+const WORKFLOW_CWD = "any";
+
+const workflowList = defineExec({
   meta: { name: "list", description: "List the workflows this agent declares" },
   args: { server: sharedArgs.server, json: sharedArgs.json, token: workflowToken },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const { executeWorkflowList } = await import("./workflow.ts");
-      return executeWorkflowList(resolveCwd(), { server: args.server, token: args.token });
-    });
+  cwd: WORKFLOW_CWD,
+  async run({ args, cwd }) {
+    const { executeWorkflowList } = await import("./workflow.ts");
+    return executeWorkflowList(cwd, { server: args.server, token: args.token });
   },
 });
 
-const workflowRuns = defineCommand({
+const workflowRuns = defineExec({
   meta: { name: "runs", description: "List recent runs of one workflow, newest first" },
   args: {
     workflow: { type: "positional", description: "Workflow name", required: true },
@@ -49,48 +54,45 @@ const workflowRuns = defineCommand({
     json: sharedArgs.json,
     token: workflowToken,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const { executeWorkflowRuns } = await import("./workflow.ts");
-      // Parsed here rather than in the executor so a non-numeric value fails as a
-      // CLI error naming the flag, not as a query the server rejects.
-      const limit = args.limit === undefined ? undefined : Number(args.limit);
-      if (limit !== undefined && !Number.isFinite(limit)) {
-        throw new CliError("bad_limit", "--limit must be a number");
-      }
-      return executeWorkflowRuns(resolveCwd(), args.workflow, {
-        server: args.server,
-        token: args.token,
-        limit,
-      });
+  cwd: WORKFLOW_CWD,
+  async run({ args, cwd }) {
+    const { executeWorkflowRuns } = await import("./workflow.ts");
+    // Parsed here rather than in the executor so a non-numeric value fails as a
+    // CLI error naming the flag, not as a query the server rejects.
+    const limit = args.limit === undefined ? undefined : Number(args.limit);
+    if (limit !== undefined && !Number.isFinite(limit)) {
+      throw new CliError("bad_limit", "--limit must be a number");
+    }
+    return executeWorkflowRuns(cwd, args.workflow, {
+      server: args.server,
+      token: args.token,
+      limit,
     });
   },
 });
 
-const workflowShow = defineCommand({
+const workflowShow = defineExec({
   meta: { name: "show", description: "Show one run, including its output" },
   args: { runId: runIdArg, server: sharedArgs.server, json: sharedArgs.json, token: workflowToken },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const { executeWorkflowShow } = await import("./workflow.ts");
-      return executeWorkflowShow(resolveCwd(), args.runId, {
-        server: args.server,
-        token: args.token,
-      });
+  cwd: WORKFLOW_CWD,
+  async run({ args, cwd }) {
+    const { executeWorkflowShow } = await import("./workflow.ts");
+    return executeWorkflowShow(cwd, args.runId, {
+      server: args.server,
+      token: args.token,
     });
   },
 });
 
-const workflowCancel = defineCommand({
+const workflowCancel = defineExec({
   meta: { name: "cancel", description: "Stop a running workflow run" },
   args: { runId: runIdArg, server: sharedArgs.server, json: sharedArgs.json, token: workflowToken },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const { executeWorkflowCancel } = await import("./workflow.ts");
-      return executeWorkflowCancel(resolveCwd(), args.runId, {
-        server: args.server,
-        token: args.token,
-      });
+  cwd: WORKFLOW_CWD,
+  async run({ args, cwd }) {
+    const { executeWorkflowCancel } = await import("./workflow.ts");
+    return executeWorkflowCancel(cwd, args.runId, {
+      server: args.server,
+      token: args.token,
     });
   },
 });

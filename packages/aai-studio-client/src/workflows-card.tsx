@@ -33,6 +33,7 @@ import {
 } from "@alexkroman1/aai";
 import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { platformOrigin } from "./platform-origin.ts";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
 
@@ -158,31 +159,7 @@ function startedAt(run: Run): string {
 }
 
 export function WorkflowsCard({ deployedSlug, previewSlug }: WorkflowsCardProps) {
-  const queryClient = useQueryClient();
-  // The studio and the agent surface are one origin by construction (see "One
-  // public origin" in packages/aai-server/CLAUDE.md), so no round trip asks for
-  // it.
-  const origin = window.location.origin;
   const slug = deployedSlug ?? previewSlug;
-
-  const query = useQuery({
-    queryKey: queryKeys.workflowRuns(slug),
-    queryFn: () => loadWorkflows(origin, slug as string),
-    enabled: slug !== undefined,
-    // No polling — see the header. `staleTime: Infinity` is what makes the
-    // Refresh button the only thing that re-reads, rather than every remount of
-    // the pane paying a broker call.
-    staleTime: Number.POSITIVE_INFINITY,
-    retry: false,
-  });
-
-  const stop = useMutation({
-    mutationFn: (runId: string) => cancelRun(origin, slug as string, runId),
-    // Re-read rather than patching the row: the run's new state is the agent's
-    // to report, and a cancel races whatever the run was doing.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.workflowRuns(slug) }),
-  });
-
   if (slug === undefined) {
     return (
       <Card title="Workflows" blurb={BLURB}>
@@ -192,6 +169,44 @@ export function WorkflowsCard({ deployedSlug, previewSlug }: WorkflowsCardProps)
       </Card>
     );
   }
+  return <AgentWorkflows slug={slug} deployedSlug={deployedSlug} />;
+}
+
+/**
+ * The card once there IS a slug to read.
+ *
+ * Its own component so `slug` is a required `string`. Held in one component it
+ * had to be `string | undefined`, and the query and the cancel both narrowed it
+ * with `slug as string` — a cast asserting the `enabled:` flag two lines above,
+ * which is the sort of agreement nothing checks and a later edit can break
+ * without a squiggle.
+ */
+function AgentWorkflows({
+  slug,
+  deployedSlug,
+}: {
+  slug: string;
+  deployedSlug?: string | undefined;
+}) {
+  const queryClient = useQueryClient();
+  const origin = platformOrigin();
+
+  const query = useQuery({
+    queryKey: queryKeys.workflowRuns(slug),
+    queryFn: () => loadWorkflows(origin, slug),
+    // No polling — see the header. `staleTime: Infinity` is what makes the
+    // Refresh button the only thing that re-reads, rather than every remount of
+    // the pane paying a broker call.
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  });
+
+  const stop = useMutation({
+    mutationFn: (runId: string) => cancelRun(origin, slug, runId),
+    // Re-read rather than patching the row: the run's new state is the agent's
+    // to report, and a cancel races whatever the run was doing.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.workflowRuns(slug) }),
+  });
 
   return (
     <Card title="Workflows" blurb={BLURB}>

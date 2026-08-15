@@ -42,6 +42,13 @@ import type { EmitError, TransportCallbacks } from "./types.ts";
  * aside, an absent `fatal` is what the wire schema means by "terminal", so a
  * terminal report must not carry the key at all.
  *
+ * **All THREE transports use it**, despite the file's name: the S2S and OpenAI
+ * Realtime transports had each written the two event literals out by hand, which
+ * is four independent spellings of one decision — and the decision is "may this
+ * frame end the call", where the difference between the two spellings is an
+ * absent key. The module doc above is pipeline-specific because pipeline mode is
+ * where the reporters are numerous; the rule it states is not.
+ *
  * @internal
  */
 export function createEmitError(callbacks: TransportCallbacks): EmitError {

@@ -19,6 +19,7 @@
  * ```
  */
 
+import { isRecord } from "../../is-record.ts";
 import type { TtsProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
@@ -191,11 +192,11 @@ export function assemblyAITtsLanguageCodes(): string[] {
  * Takes `unknown` so callers can pass a possibly-absent descriptor.
  */
 export function assertAssemblyAITtsLanguage(tts: unknown): void {
-  if (typeof tts !== "object" || tts === null) return;
-  const { kind, options } = tts as { kind?: unknown; options?: unknown };
+  if (!isRecord(tts)) return;
+  const { kind, options } = tts;
   if (kind !== ASSEMBLYAI_TTS_KIND) return;
-  if (typeof options !== "object" || options === null) return;
-  const { language } = options as { language?: unknown };
+  if (!isRecord(options)) return;
+  const { language } = options;
   if (language === undefined) return;
   if (typeof language === "string" && resolveAssemblyAITtsLanguage(language) !== undefined) return;
   throw new Error(

@@ -12,6 +12,7 @@
  * `define.ts` and the config boundary, not API.
  */
 
+import { isRecord } from "./is-record.ts";
 import { normalizeLlm } from "./providers/llm/from-string.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 
@@ -20,12 +21,8 @@ import { assemblyAITts } from "./providers/tts/assemblyai.ts";
  * so schema validation still owns the "not an agent config at all" error.
  */
 export function normalizeAgentConveniences(input: unknown): unknown {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
-  const { system, voice, ...rest } = input as {
-    system?: unknown;
-    voice?: unknown;
-    [key: string]: unknown;
-  };
+  if (!isRecord(input)) return input;
+  const { system, voice, ...rest } = input;
   if (typeof system === "string") {
     if (rest.systemPrompt !== undefined) {
       throw new Error("`system` and `systemPrompt` are aliases — set one, not both.");

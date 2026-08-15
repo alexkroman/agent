@@ -1,6 +1,6 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-import type { ToolFailure } from "@alexkroman1/aai";
+import type { DeepReadonly, ToolFailure } from "@alexkroman1/aai";
 import { pushCapped, sessionSlot } from "@alexkroman1/aai";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
@@ -101,7 +101,7 @@ export interface IncidentSummary {
   location: string;
 }
 
-export function incidentSummary(inc: Incident): IncidentSummary {
+export function incidentSummary(inc: DeepReadonly<Incident>): IncidentSummary {
   return { id: inc.id, severity: inc.severity, status: inc.status, location: inc.location };
 }
 
@@ -114,7 +114,7 @@ export interface DashboardView {
 /** The `syncState` projection — the whole contract with client.tsx. Takes the
  *  board itself, not the slot: `dispatchSlot.projection` supplies a real one
  *  even before the first tool call. */
-export function dashboardView(state: DispatchState): DashboardView {
+export function dashboardView(state: FrozenDispatchState): DashboardView {
   return {
     systemAlertLevel: state.alertLevel,
     incidents: Object.values(state.incidents).map(incidentSummary),
@@ -162,9 +162,9 @@ export function createDefaultState(): DispatchState {
 }
 
 // ─── State helpers ───────────────────────────────────────────────────────────
-// The dispatch board lives in `ctx.state`, the agent's per-session mutable
-// state — sessions must not see each other's incidents, and ctx.state gives
-// that isolation by construction. Nothing here needs to outlive the session.
+// The dispatch board lives in one `sessionSlot`, keyed per session — sessions
+// must not see each other's incidents, and a slot gives that isolation by
+// construction.
 
 /**
  * Growth caps. The whole dispatch state is one object whose summaries feed
@@ -186,12 +186,22 @@ function pruneState(state: DispatchState): void {
 }
 
 /**
- * The session's dispatch board, as one typed slot inside `ctx.state`.
+ * The session's dispatch board, as one typed slot.
  *
- * Mutating tools go through `dispatchSlot.update`, which serializes them per
- * session: the LLM loop runs a step's tool calls concurrently, and two
- * interleaving async mutators would each observe the other's half-applied
- * changes.
+ * Every tool here is declared through the slot rather than reaching for it from
+ * inside a `tool()` body, and WHICH HALF is the whole decision: `updateTool`
+ * runs the body inside the mutation window and hands it a draft that is stored
+ * when the body returns, `tool` hands it the deep-frozen stored value. That
+ * makes "does this tool write?" a property of the declaration a reader can see,
+ * and choosing wrong a compile error rather than a `TypeError` on the first
+ * call.
+ *
+ * The window is SYNCHRONOUS, which is what makes a read-modify-write atomic
+ * with no lock — the LLM loop runs a step's tool calls concurrently. It does
+ * NOT serialize anything (an earlier version of this comment claimed it did):
+ * there is nothing to serialize, because no other JS turn can interleave with
+ * a synchronous body. `updateTool` is what enforces the rule, refusing a
+ * thenable body by name.
  *
  * `after` is the bookkeeping every mutating tool needs and none of them should
  * have to remember — pruning resolved incidents, and recalculating the alert
@@ -204,6 +214,17 @@ export const dispatchSlot = sessionSlot("dispatch", createDefaultState, {
     recalculateAlertLevel(state);
   },
 });
+
+/**
+ * The board as a READ hands it out: deep-frozen, and typed to say so.
+ *
+ * The pure helpers below take this rather than {@link DispatchState}, which is
+ * the widening a deep-readonly slot forces and the reason it is worth doing: a
+ * mutable board still satisfies it, so a helper called with an `updateTool`
+ * draft is unaffected, while a helper that WOULD have mutated stops compiling
+ * instead of throwing at its first call in production.
+ */
+export type FrozenDispatchState = DeepReadonly<DispatchState>;
 
 // ─── Incident helpers ────────────────────────────────────────────────────────
 
@@ -235,7 +256,20 @@ export function createIncident(state: DispatchState, overrides: Partial<Incident
   return incident;
 }
 
-export function findIncident(state: DispatchState, incidentId: string): Incident | ToolFailure {
+/**
+ * One incident by id, or the failure the model should read.
+ *
+ * Generic over the incident's own type rather than pinned to {@link Incident},
+ * so ONE lookup serves both halves of the slot: a mutating tool passes its
+ * draft and gets a mutable incident back to change, while `incident_get` passes
+ * what `dispatchSlot.tool` handed it — deep-frozen — and gets a readonly one.
+ * Pinning it would have made the read path the odd one out, and its way out
+ * would have been a cast.
+ */
+export function findIncident<I extends DeepReadonly<Incident>>(
+  state: { readonly incidents: { readonly [id: string]: I } },
+  incidentId: string,
+): I | ToolFailure {
   return state.incidents[incidentId] ?? { error: `Incident ${incidentId} not found` };
 }
 
@@ -249,17 +283,19 @@ export function logEvent(inc: Incident, event: string): void {
 }
 
 /** Minutes since the incident was created, rounded. */
-export function incidentAgeMinutes(inc: Incident): number {
+export function incidentAgeMinutes(inc: DeepReadonly<Incident>): number {
   return Math.round((Date.now() - inc.createdAt) / 60_000);
 }
 
 /** A resource as tool results describe it to the LLM. */
-export function resourceBrief(r: Resource): {
+export function resourceBrief(r: DeepReadonly<Resource>): {
   callsign: string;
   type: Resource["type"];
   capabilities: string[];
 } {
-  return { callsign: r.callsign, type: r.type, capabilities: r.capabilities };
+  // `capabilities` is COPIED: a brief is a fresh object handed to the LLM, and
+  // the source list belongs either to a frozen slot value or to a live draft.
+  return { callsign: r.callsign, type: r.type, capabilities: [...r.capabilities] };
 }
 
 /**
@@ -267,7 +303,7 @@ export function resourceBrief(r: Resource): {
  * resources have been released (and possibly reassigned), so escalating,
  * re-resolving, or dispatching to it would corrupt resource assignments.
  */
-export function assertNotResolved(inc: Incident, action: string): ToolFailure | null {
+export function assertNotResolved(inc: DeepReadonly<Incident>, action: string): ToolFailure | null {
   if (inc.status === "resolved") {
     return {
       error: `Incident ${inc.id} is resolved — cannot ${action}. Create a new incident if the situation has reopened.`,
@@ -573,7 +609,7 @@ export function recommendResources(
 /** Fraction of resources not currently available, 0–1. The alert level and
  *  the dashboard's displayed utilization both derive from this, so they can
  *  never disagree about what "utilization" means. */
-export function resourceUtilization(state: DispatchState): number {
+export function resourceUtilization(state: FrozenDispatchState): number {
   const available = state.resources.filter((r) => r.status === "available").length;
   return 1 - available / state.resources.length;
 }

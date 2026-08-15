@@ -500,6 +500,11 @@ export type Db = {
 };
 
 // @public
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer E)[] ? readonly DeepReadonly<E>[] : T extends object ? {
+    readonly [K in keyof T]: DeepReadonly<T[K]>;
+} : T;
+
+// @public
 export const DEFAULT_BUILTIN_TOOLS: readonly [];
 
 // @public
@@ -895,12 +900,12 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 export interface SessionSlot<K extends string, T> {
     create(): T;
     readonly durable: boolean;
-    get(ctx: ToolContext): Readonly<T>;
+    get(ctx: ToolContext): DeepReadonly<T>;
     readonly key: K;
-    projection<V>(project: (value: Readonly<T>) => V): StateProjection<V>;
-    reset(ctx: ToolContext): Readonly<T>;
-    set(ctx: ToolContext, value: T): Readonly<T>;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, Readonly<T>, R>): ToolDef<P>;
+    projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
+    reset(ctx: ToolContext): DeepReadonly<T>;
+    set(ctx: ToolContext, value: T): DeepReadonly<T>;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P>;
     update<R>(ctx: ToolContext, mutate: (draft: T) => R): R;
     updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R>): ToolDef<P>;
 }
@@ -2057,7 +2062,7 @@ type GenerateResult = {
 };
 
 // @public
-export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "state", "syncState", "workflows", "events"];
+export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "events"];
 
 // @public
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
@@ -3274,7 +3279,7 @@ export function createSessionStateStore(opts: {
 }): SessionStateStore;
 
 // @internal
-export function createStepFetch(): StepFetch;
+export function createStepFetch(): StepFetchHandle;
 
 // @internal
 export function createStepReporter(logger: Logger): StepReporter;
@@ -3482,7 +3487,7 @@ export function installWorkflowSupport(opts: {
     env?: Record<string, string> | undefined;
     dataDir?: string | undefined;
     logger: Logger;
-}): UploadStore;
+}): WorkflowSupport;
 
 // @internal
 export function isDebugEnv(value: string | undefined): boolean;
@@ -4217,6 +4222,12 @@ export type StateSyncSession = {
 // @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
 
+// @internal
+type StepFetchHandle = {
+    fetch: StepFetch;
+    close(): Promise<void>;
+};
+
 // @public
 type StepFetchInit = {
     method?: string | undefined;
@@ -4696,6 +4707,12 @@ type WorkflowSummary = {
     description?: string;
     inputSchema?: unknown;
     uploads?: readonly string[];
+};
+
+// @internal
+type WorkflowSupport = {
+    uploads: UploadStore;
+    close(): Promise<void>;
 };
 
 // @internal

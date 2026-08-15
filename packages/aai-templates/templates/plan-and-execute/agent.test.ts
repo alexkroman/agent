@@ -26,7 +26,7 @@ const agentDef = withDiscoveredTools(
 import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./graph.ts";
 import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
 import type { SearchFn } from "./shared.ts";
-import { planSlot, planView } from "./shared.ts";
+import { MAX_PAST_STEPS, planSlot, planView } from "./shared.ts";
 
 // ─── A scripted model ────────────────────────────────────────────────────────
 //
@@ -268,6 +268,31 @@ describe("work_next_step", () => {
     // A finished plan is not worked again.
     expect(await run("work_next_step", {}, ctx)).toMatchObject({ done: true });
     expect(stateOf(ctx).pastSteps).toHaveLength(1);
+  });
+
+  test("the completed-step trail is capped, so the executor's prompt cannot grow forever", async () => {
+    // `historyOf` renders every past step into the executor's prompt AND the
+    // replanner's, so an uncapped list is a model bill that grows linearly with
+    // the plan — the reason `recordStep` holds MAX_PAST_STEPS.
+    const total = MAX_PAST_STEPS + 3;
+    const { generate } = scriptedModel({
+      steps: Array.from({ length: total }, (_, i) => `Step ${i + 1}`),
+      turns: Array.from({ length: total }, (_, i) => ({ answer: `Found ${i + 1}.` })),
+      acts: Array.from({ length: total }, (_, i) => ({
+        kind: "plan" as const,
+        steps: Array.from({ length: total - i - 1 }, (_, j) => `Step ${i + j + 2}`),
+      })),
+    });
+    const ctx = makeCtx(generate);
+    await run("start_plan", { objective: "a long one" }, ctx);
+    for (let i = 0; i < total; i++) await run("work_next_step", {}, ctx);
+
+    const state = stateOf(ctx);
+    expect(state.pastSteps).toHaveLength(MAX_PAST_STEPS);
+    // The OLDEST go: the replanner decides from what was just found, and its
+    // fallback answer is the last entry.
+    expect(state.pastSteps[0]?.step).toBe(`Step ${total - MAX_PAST_STEPS + 1}`);
+    expect(state.pastSteps.at(-1)?.step).toBe(`Step ${total}`);
   });
 
   test("two calls never share a plan", async () => {

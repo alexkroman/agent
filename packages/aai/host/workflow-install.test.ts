@@ -87,9 +87,18 @@ describe("installWorkflowSupport", () => {
   });
 
   test("returns the store it published, so a server can serve the upload routes", () => {
-    const store = install();
-    expect(store.create).toBeTypeOf("function");
-    expect(store.info).toBeTypeOf("function");
-    expect(store.read).toBeTypeOf("function");
+    const { uploads } = install();
+    expect(uploads.create).toBeTypeOf("function");
+    expect(uploads.info).toBeTypeOf("function");
+    expect(uploads.read).toBeTypeOf("function");
+  });
+
+  test("hands back a close, because the pools it opens are the SERVER's to release", async () => {
+    // `aai dev` re-runs `createServer` on every save. Before this, each rebuild
+    // stranded an upload pool and an undici keep-alive pool — nothing anywhere
+    // held a reference to close. Idempotent, since a server may close twice.
+    const support = install();
+    await expect(support.close()).resolves.toBeUndefined();
+    await expect(support.close()).resolves.toBeUndefined();
   });
 });

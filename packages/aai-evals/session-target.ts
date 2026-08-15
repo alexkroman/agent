@@ -30,7 +30,7 @@ import { sleep } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { createRuntime, type Logger } from "@alexkroman1/aai/runtime";
-import { type EvalScope, eventScope } from "./assertions.ts";
+import { type EvalScope, eventScope, TURN_ENDS } from "./assertions.ts";
 import { installFakeSpeech } from "./fake-speech.ts";
 import type { EvalRecorder } from "./runner.ts";
 
@@ -49,11 +49,12 @@ const silentLogger: Logger = {
   error: dropLine,
 };
 
-/** The events that end a reply, and so end a `say()`. */
-const TURN_ENDS: ReadonlySet<SessionEvent["type"]> = new Set([
-  "reply.completed",
-  "reply.cancelled",
-]);
+// "What ends a reply" is `assertions.ts`'s `TURN_ENDS`, imported rather than
+// restated. It was declared in both files, and the two must agree by
+// construction: a third terminator added to one copy would make `say()` return
+// mid-reply while the assertions still thought the turn was open — which reads
+// as the agent misbehaving, the exact class of harness bug this package's guide
+// records having been bitten by twice.
 
 /** One live level-1 session. */
 export type EvalSession = {
@@ -94,7 +95,27 @@ export type EvalSessionOptions = {
  * including its `events` hooks, its slots and its `tools/` files.
  */
 export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSession> {
+  // Everything between the install and the returned `close()` is wrapped,
+  // because `installFakeSpeech` registers a PROCESS-GLOBAL kind pair and the
+  // only thing that unregisters it is the handle this function returns. A throw
+  // in between — a runtime that will not start, an agent whose provider config
+  // is wrong, the greeting timing out — left the pair registered for the
+  // worker's life with nobody holding a release, so `AAI_EVAL_REPEAT=5` against
+  // a failing agent orphaned five of them. `runEval` catches the throw and runs
+  // the next repeat, which is exactly what makes the leak compound.
   const fake = installFakeSpeech();
+  try {
+    return await openWithFakes(opts, fake);
+  } catch (err) {
+    fake.release();
+    throw err;
+  }
+}
+
+async function openWithFakes(
+  opts: EvalSessionOptions,
+  fake: ReturnType<typeof installFakeSpeech>,
+): Promise<EvalSession> {
   const events: SessionEvent[] = [];
   const sink: ClientSink = {
     open: true,
@@ -113,14 +134,6 @@ export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSes
     env: { ...opts.env, ...fake.env },
     logger: opts.logger ?? silentLogger,
   });
-
-  const session = runtime.createSession({
-    id: `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    agent: opts.agent.name,
-    client: sink,
-  });
-  session.configure(runtime.readyConfig);
-  await session.start();
 
   const waitFor = async (
     what: string,
@@ -159,17 +172,38 @@ export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSes
     return at !== -1 && since.slice(at).some((e) => TURN_ENDS.has(e.type));
   };
 
-  // The greeting is a real turn and belongs in the session's history, so it is
-  // driven and awaited rather than skipped: an agent whose opening line asks a
-  // question is answered by the case's first `say()`, exactly as a caller would.
-  const greetingFrom = events.length;
-  session.command({ type: "audio_ready" });
-  if (opts.agent.greeting !== undefined && opts.agent.greeting !== "") {
-    await waitFor(
-      "the greeting",
-      (since) => since.some((e) => TURN_ENDS.has(e.type)),
-      greetingFrom,
-    );
+  const session = runtime.createSession({
+    id: `eval-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    agent: opts.agent.name,
+    client: sink,
+  });
+
+  try {
+    session.configure(runtime.readyConfig);
+    await session.start();
+
+    // The greeting is a real turn and belongs in the session's history, so it is
+    // driven and awaited rather than skipped: an agent whose opening line asks a
+    // question is answered by the case's first `say()`, exactly as a caller
+    // would.
+    const greetingFrom = events.length;
+    session.command({ type: "audio_ready" });
+    if (opts.agent.greeting !== undefined && opts.agent.greeting !== "") {
+      await waitFor(
+        "the greeting",
+        (since) => since.some((e) => TURN_ENDS.has(e.type)),
+        greetingFrom,
+      );
+    }
+  } catch (err) {
+    // The runtime is live from `createRuntime` onward and the caller never
+    // receives a handle down this path, so nothing else can shut it down. A
+    // greeting that times out is the realistic case, and `runEval` starts the
+    // next repeat immediately afterwards. Best-effort on both, because the
+    // ORIGINAL failure is the one worth reporting.
+    await session.stop().catch(() => undefined);
+    await runtime.shutdown().catch(() => undefined);
+    throw err;
   }
 
   return {

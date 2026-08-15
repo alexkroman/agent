@@ -21,10 +21,8 @@
  */
 
 import { type ComponentType, createElement } from "react";
-import { flushSync } from "react-dom";
-import { createRoot } from "react-dom/client";
 import { ThemeProvider } from "./context.ts";
-import { resolveContainer } from "./define-client.tsx";
+import { mountRoot, resolveContainer } from "./define-client.tsx";
 import type { ClientTheme } from "./types.ts";
 
 /**
@@ -101,23 +99,11 @@ export function page(config: PageConfig): PageHandle {
 
   if (config.name && typeof document !== "undefined") document.title = config.name;
 
-  const root = createRoot(container);
-  // `flushSync` for the same reason `client()` uses it: the mount must be
-  // observable to the caller's next statement (and to a test) rather than
-  // scheduled.
-  flushSync(() => {
-    root.render(
-      createElement(ThemeProvider, { value: config.theme }, createElement(config.component)),
-    );
-  });
-
-  const handle: PageHandle = {
-    dispose() {
-      root.unmount();
-    },
-    [Symbol.dispose]() {
-      handle.dispose();
-    },
-  };
-  return handle;
+  // The mount itself is `client()`'s — one copy of the root, the `flushSync`
+  // and the disposable handle. What differs is only the tree: no session
+  // provider, no tool-config context, because there is no session.
+  return mountRoot(
+    container,
+    createElement(ThemeProvider, { value: config.theme }, createElement(config.component)),
+  );
 }

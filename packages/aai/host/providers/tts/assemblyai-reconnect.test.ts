@@ -7,8 +7,10 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
 import { tick } from "../../_test-utils.ts";
+import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
 import { FakeWebSocket, pcmBase64 } from "./_assemblyai-fake-ws-test-utils.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
+import { openAssemblyAITts } from "./assemblyai.ts";
 
 // Async factory importing an import-free module: the adapter's own "ws"
 // import must not be reachable from the factory (it would re-enter the mock).
@@ -147,6 +149,51 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("the INITIAL connect is bounded too, and drops the socket when it black-holes", async () => {
+    // The reconnect above always carried a deadline; the initial open did not,
+    // and the constant's own doc claimed it was "bounded by session.start()'s
+    // timeout" — true of the SESSION and false of the SOCKET. `ws-handler`'s
+    // pTimeout says in its own comment that it does not cancel the underlying
+    // start(), so a black-holed connect outlived the session waiting on it.
+    vi.useFakeTimers();
+    try {
+      FakeWebSocket.neverOpen = true;
+      const controller = new AbortController();
+      const openPromise = openAssemblyAITts({}).open({
+        sampleRate: 16_000,
+        apiKey: "test-key",
+        signal: controller.signal,
+      });
+      // Handler first: the timer settles the promise inside advanceTimers, and
+      // a rejection with none attached is an unhandled rejection.
+      const rejected = expect(openPromise).rejects.toMatchObject({ code: "tts_connect_failed" });
+
+      await vi.advanceTimersByTimeAsync(WS_OPEN_TIMEOUT_MS + 1);
+
+      await rejected;
+      expect(FakeWebSocket.instances.at(-1)?.readyState).toBe(FakeWebSocket.CLOSED);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("an abort during the initial connect abandons the socket", async () => {
+    // `closeOnAbort` is registered only AFTER the connect resolves, so before
+    // this the session's own hang-up could not reach a socket still connecting.
+    FakeWebSocket.neverOpen = true;
+    const controller = new AbortController();
+    const openPromise = openAssemblyAITts({}).open({
+      sampleRate: 16_000,
+      apiKey: "test-key",
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    await expect(openPromise).rejects.toMatchObject({ code: "tts_connect_failed" });
+    expect(FakeWebSocket.instances.at(-1)?.readyState).toBe(FakeWebSocket.CLOSED);
   });
 
   test("close() after cancel closes the replacement socket", async () => {

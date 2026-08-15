@@ -20,11 +20,11 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 // Zod-free imports only — this module is the `/typecheck` subpath the guest
 // sandbox loads, so it must stay light (no build toolchain, no zod).
-import { binFromPackageJson, errorMessage } from "./_utils.ts";
+import { binFromManifest, errorMessage, readPackageJson } from "./_utils.ts";
 
 /** Bound on one typecheck run — a hung compiler must not wedge a deploy. */
 const TYPECHECK_TIMEOUT_MS = 120_000;
@@ -76,30 +76,32 @@ function findTypescriptPackage(cwd: string): string | undefined {
 /**
  * Resolve the project's TypeScript compiler entry (its own `tsc` bin), plus
  * its major version — see {@link tscArgs} for what the version decides.
+ *
+ * ONE read and ONE parse of the manifest, for both fields. It used to take the
+ * bin from `binFromPackageJson` and then re-read the same file for the version,
+ * on the path the studio runs after every settled write burst.
  */
 function resolveTsc(cwd: string): { entry: string; major: number } {
   const dir = findTypescriptPackage(cwd);
   if (dir === undefined) throw new Error("no typescript package in the project's node_modules");
-  const manifest = path.join(dir, "package.json");
-  const bin = binFromPackageJson(manifest, "tsc");
+  const manifestPath = path.join(dir, "package.json");
+  const manifest = readPackageJson(manifestPath);
+  const bin = binFromManifest(manifestPath, manifest, "tsc");
   if (!bin) throw new Error("installed typescript package declares no tsc bin");
-  return { entry: bin, major: readMajor(manifest) };
+  return { entry: bin, major: majorOf(manifest.version) };
 }
 
 /**
- * The resolved compiler's major version, or 0 when it can't be read.
+ * A version string's major, or 0 when there isn't one.
  *
  * 0 is the safe answer: {@link tscArgs} only ADDS flags above a version
- * floor, so an unreadable manifest degrades to the flag set every TypeScript
- * accepts rather than failing a build over a cosmetic read.
+ * floor, so a manifest with no readable version degrades to the flag set every
+ * TypeScript accepts rather than failing a build over a cosmetic field. (A
+ * manifest that cannot be read or parsed at all still throws, from the read
+ * above, and is reported as "TypeScript is not installed" — which it is.)
  */
-function readMajor(manifest: string): number {
-  try {
-    const { version } = JSON.parse(readFileSync(manifest, "utf-8")) as { version?: unknown };
-    return typeof version === "string" ? Number.parseInt(version, 10) || 0 : 0;
-  } catch {
-    return 0;
-  }
+function majorOf(version: unknown): number {
+  return typeof version === "string" ? Number.parseInt(version, 10) || 0 : 0;
 }
 
 /**

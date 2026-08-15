@@ -167,14 +167,17 @@ function createCaptureNode(
       node.port.postMessage({ event: "start" });
     },
     stop() {
-      return new Promise((resolve) => {
-        const cap = setTimeout(resolve, CAPTURE_STOP_ACK_TIMEOUT_MS);
-        onStopped = () => {
-          clearTimeout(cap);
-          resolve();
-        };
-        node.port.postMessage({ event: "stop" });
-      });
+      // `Promise.withResolvers` rather than an executor: the resolver has to
+      // outlive the constructor call — it is stored on `onStopped` for the port
+      // handler above — so an executor only exists to hoist it back out.
+      const { promise, resolve } = Promise.withResolvers<void>();
+      const cap = setTimeout(resolve, CAPTURE_STOP_ACK_TIMEOUT_MS);
+      onStopped = () => {
+        clearTimeout(cap);
+        resolve();
+      };
+      node.port.postMessage({ event: "stop" });
+      return promise;
     },
   };
 }
@@ -373,31 +376,34 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
         pendingStopTurn = null;
         return Promise.resolve();
       }
-      return new Promise<void>((resolve) => {
-        // Settle a resolver this call replaces so its promise never strands.
-        onPlaybackStop?.();
-        // Bounded wait: if the context suspends mid-playback or the processor
-        // dies, the 'stop' message never arrives — resolve anyway so session
-        // state can't be stuck in "speaking". The poll catches a suspension
-        // quickly; the hard cap covers a silently dead processor and sits
-        // just past the worklet's PLAYBACK_BUFFER_SECONDS ring (the longest
-        // legitimate drain).
-        const settle = (): void => {
-          clearInterval(poll);
-          clearTimeout(cap);
-          if (onPlaybackStop === settle) {
-            onPlaybackStop = null;
-            pendingStopTurn = null;
-          }
-          resolve();
-        };
-        const poll = setInterval(() => {
-          if (ctx.state !== "running") settle();
-        }, PLAYBACK_DONE_POLL_MS);
-        const cap = setTimeout(settle, PLAYBACK_DONE_MAX_WAIT_MS);
-        onPlaybackStop = settle;
-        pendingStopTurn = turn;
-      });
+      // `Promise.withResolvers` for the same reason `stop()` above uses it: the
+      // resolver is stored on `onPlaybackStop` for the port handler to call, so
+      // it has to outlive the constructor rather than be hoisted out of one.
+      const { promise, resolve } = Promise.withResolvers<void>();
+      // Settle a resolver this call replaces so its promise never strands.
+      onPlaybackStop?.();
+      // Bounded wait: if the context suspends mid-playback or the processor
+      // dies, the 'stop' message never arrives — resolve anyway so session
+      // state can't be stuck in "speaking". The poll catches a suspension
+      // quickly; the hard cap covers a silently dead processor and sits
+      // just past the worklet's PLAYBACK_BUFFER_SECONDS ring (the longest
+      // legitimate drain).
+      const settle = (): void => {
+        clearInterval(poll);
+        clearTimeout(cap);
+        if (onPlaybackStop === settle) {
+          onPlaybackStop = null;
+          pendingStopTurn = null;
+        }
+        resolve();
+      };
+      const poll = setInterval(() => {
+        if (ctx.state !== "running") settle();
+      }, PLAYBACK_DONE_POLL_MS);
+      const cap = setTimeout(settle, PLAYBACK_DONE_MAX_WAIT_MS);
+      onPlaybackStop = settle;
+      pendingStopTurn = turn;
+      return promise;
     },
 
     flush() {
