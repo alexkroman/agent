@@ -69,6 +69,6 @@ import type { AgentDef } from "./types.ts";
  *
  * @public
  */
-export function withDiscoveredTools<S>(def: AgentDef<S>, modules: ToolModules): AgentDef<S> {
-  return withTools(def, toolRegistry<S>(modules));
+export function withDiscoveredTools(def: AgentDef, modules: ToolModules): AgentDef {
+  return withTools(def, toolRegistry(modules));
 }

@@ -3,9 +3,6 @@ import { gameSlot } from "./shared.ts";
 
 export default agent({
   name: "Solo RPG",
-  // The campaign exists before the first tool call, so a resumed connection
-  // has something to project rather than an empty state object.
-  state: gameSlot.state,
   greeting:
     "Welcome. Tell me your name, or describe the kind of story you want, and we will begin. You can say something like, dark fantasy warrior named Kael, or just give me a name and I will build a world around you.",
   sttPrompt:
@@ -15,5 +12,7 @@ export default agent({
   // One declaration replaces a `ctx.send("game_state", state)` in every
   // state-mutating tool — six of them, and adding a seventh meant
   // remembering to push or watching the UI quietly fall out of sync.
-  syncState: gameSlot.read,
+  // The identity projection: this campaign IS what the client renders, and the
+  // slot's own default is what a session that has run no tool projects.
+  syncState: gameSlot.projection((game) => game),
 });

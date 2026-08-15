@@ -57,12 +57,12 @@ const promptFiles = import.meta.glob("./templates/*/system-prompt.md", {
  * Pass the template's directory name. A template with no `tools/` directory
  * resolves to the def unchanged, which is the workflow-app case.
  */
-export function withTemplateTools<S>(name: string, def: AgentDef<S>): AgentDef<S> {
+export function withTemplateTools(name: string, def: AgentDef): AgentDef {
   const prefix = `./templates/${name}/tools/`;
   const own = Object.fromEntries(
     Object.entries(toolModules).filter(([path]) => path.startsWith(prefix)),
   );
-  return withTools(def, toolRegistry<S>(own));
+  return withTools(def, toolRegistry(own));
 }
 
 /**
@@ -74,7 +74,7 @@ export function withTemplateTools<S>(name: string, def: AgentDef<S>): AgentDef<S
  * `withSystemPrompt`'s three rules — so an empty file, or a file the agent
  * ignores while declaring its own prompt, fails here for every template at once.
  */
-export function withTemplatePrompt<S>(name: string, def: AgentDef<S>): AgentDef<S> {
+export function withTemplatePrompt(name: string, def: AgentDef): AgentDef {
   const prompt = promptFiles[`./templates/${name}/system-prompt.md`];
   return prompt === undefined ? def : withSystemPrompt(def, prompt);
 }

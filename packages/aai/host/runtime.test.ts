@@ -19,6 +19,7 @@ import { anthropic } from "../sdk/providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "../sdk/providers/stt/assemblyai.ts";
 import { cartesia } from "../sdk/providers/tts/cartesia.ts";
+import { sessionSlot } from "../sdk/session-slot.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
@@ -154,13 +155,13 @@ describe("createRuntime", () => {
     expect(names).toContain("run_code");
   });
 
-  test("session state is initialized from agent.state factory", async () => {
+  test("a slot installs its default on first read", async () => {
+    const slot = sessionSlot("counter", () => ({ counter: 0 }));
     const agent = makeAgent({
-      state: () => ({ counter: 0 }),
       tools: {
         get_state: {
           description: "Get state",
-          execute: (_args, ctx) => JSON.stringify(ctx.state),
+          execute: (_args, ctx) => JSON.stringify(slot.get(ctx)),
         },
       },
     });
@@ -169,22 +170,22 @@ describe("createRuntime", () => {
     expect(JSON.parse(result)).toEqual({ counter: 0 });
   });
 
-  // The no-factory half is the one that regressed: `?? {}` minted a fresh
-  // object per read, so the write below landed and vanished. Both halves run
-  // because the bug was invisible to the factory case.
-  test.each([
-    ["a state factory", { state: () => ({ n: 0 }) }],
-    ["no state factory", {}],
-  ])("session state persists across tool calls with %s", async (_label, stateField) => {
+  // The regression this replaced: `getState`'s `?? {}` minted a fresh object per
+  // read, so the write below landed and vanished — silently, and for four of the
+  // five shipped slot-backed templates.
+  test("slot state persists across tool calls", async () => {
+    const slot = sessionSlot("bumped", () => ({ n: 0 }));
     const agent = makeAgent({
-      ...stateField,
       tools: {
         bump: {
-          description: "Bump a counter on ctx.state",
-          execute: (_args, ctx) => {
-            ctx.state.n = ((ctx.state.n ?? 0) as number) + 1;
-            return String(ctx.state.n);
-          },
+          description: "Bump a counter in the slot",
+          execute: (_args, ctx) =>
+            String(
+              slot.update(ctx, (state) => {
+                state.n += 1;
+                return state.n;
+              }),
+            ),
         },
       },
     });
@@ -421,13 +422,17 @@ describe("executeToolCall", () => {
     expect(result).toContain("Storage is not enabled for this app");
   });
 
-  test("uses default empty state when state not provided", async () => {
+  test("a sessionless call gets its own detached slot store", async () => {
+    // Detached rather than shared: two such calls must not read each other's
+    // slots — the same rule the per-call `sessionId` encodes for the note builtins.
+    const slot = sessionSlot("scratch", () => ({ n: 0 }));
     const tool: ToolDef = {
-      description: "Get state",
-      execute: (_args, ctx) => JSON.stringify(ctx.state),
+      description: "Bump and report",
+      execute: (_args, ctx) => JSON.stringify(slot.update(ctx, (s) => ++s.n)),
     };
-    const result = await executeToolCall("stateTool", {}, { tool, env: {} });
-    expect(JSON.parse(result)).toEqual({});
+    const first = await executeToolCall("stateTool", {}, { tool, env: {} });
+    const second = await executeToolCall("stateTool", {}, { tool, env: {} });
+    expect([JSON.parse(first), JSON.parse(second)]).toEqual([1, 1]);
   });
 
   test("uses default empty messages when messages not provided", async () => {

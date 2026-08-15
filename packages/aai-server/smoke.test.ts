@@ -17,8 +17,7 @@ import { authHeaders, createTestOrchestrator } from "./test-utils.ts";
 /**
  * Build a deploy body from an SDK-defined agent, mimicking what the CLI does.
  */
-// biome-ignore lint/suspicious/noExplicitAny: accepts any state type
-function buildDeployBodyFromAgent(slug: string, agent: AgentDef<any>): string {
+function buildDeployBodyFromAgent(slug: string, agent: AgentDef): string {
   const config = toAgentConfig(agent);
   const toolSchemas = agentToolsToSchemas(agent.tools);
 

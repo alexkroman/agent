@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { authenticateAs } from "../authenticate.ts";
-import { retailSlot, retailTool } from "../store.ts";
+import { retailTool } from "../store.ts";
 
 export default retailTool({
   name: "find_user_id_by_name_zip",
@@ -16,8 +16,7 @@ export default retailTool({
   requiresAuth: false,
   // `execute` before `summary`: see find_user_id_by_email.ts for why the order
   // is load-bearing for the generic `result` type in `summary`.
-  execute: (args, ctx) => {
-    const state = retailSlot.get(ctx);
+  execute: (args, state) => {
     const first = args.first_name.trim().toLowerCase();
     const last = args.last_name.trim().toLowerCase();
     const zip = args.zip.replace(/\D/g, "");

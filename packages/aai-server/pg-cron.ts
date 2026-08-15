@@ -21,6 +21,7 @@
  * {@link platformCronJobs} is the whole truth about what the platform runs.
  */
 
+import { SWEEP_SESSION_STATE } from "./_session-state-sweep.ts";
 import { PLATFORM_STORAGE_KEY_SECRET, type SqlExec } from "./secret-store.ts";
 
 export type CronJob = {
@@ -287,7 +288,9 @@ export type PlatformCronStorage = {
  *
  * Minutes are spread deliberately: the three hourly jobs sit at :07, :23 and
  * :51 so the busiest one (the orphan-preview sweep, which anti-joins every
- * workspace) never shares a minute with the blob GC's Storage fan-out.
+ * workspace) never shares a minute with the blob GC's Storage fan-out. The daily
+ * ones are spread for the same reason — the session-state sweep runs one delete
+ * per app schema, so it stays off the blob GC's minute and the cron history's.
  */
 export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): readonly CronJob[] {
   return [
@@ -305,6 +308,9 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
       schedule: "*/5 * * * *",
       command: SWEEP_APP_DB_RUNAWAYS,
     },
+    // Session state a dead guest left behind — `_session-state-sweep.ts` carries
+    // the argument, including why this is not the wake sweep's reader.
+    { name: "aai-sweep-session-state", schedule: "17 5 * * *", command: SWEEP_SESSION_STATE },
     ...(opts.storage
       ? [
           {

@@ -87,7 +87,7 @@ const AgentConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
+interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
     greeting: string;
     idleTimeoutMs?: number;
@@ -99,14 +99,13 @@ interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
     s2s?: S2sProvider;
     silencePrompt?: string;
     silenceTimeoutMs?: number;
-    state?: () => S;
     stt?: SttProvider;
     sttPrompt?: string;
-    syncState?: (state: S) => unknown;
+    syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
     text?: true;
     toolChoice?: ToolChoice;
-    tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
@@ -322,6 +321,9 @@ export function createHostServer(options?: HostServerOptions): AgentServer;
 // @public
 export function createMemoryKeyStore(): WorkflowKeyStore;
 
+// @internal
+export function createMemoryStateBackend(): SessionStateBackend;
+
 // @public (undocumented)
 type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
 
@@ -339,6 +341,11 @@ export type CreatePostgresDbOptions = {
 
 // @public
 export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
+
+// @internal
+export function createPostgresStateBackend(opts: {
+    db: Db;
+}): SessionStateBackend;
 
 // @internal
 export function createRelayExecuteTool(opts: {
@@ -360,6 +367,12 @@ export function createServer(options: ServerOptions): AgentServer;
 
 // @internal
 export function createSessionCore(opts: SessionCoreOptions): SessionCore;
+
+// @internal
+export function createSessionStateStore(opts: {
+    backend: SessionStateBackend;
+    logger?: Logger | undefined;
+}): SessionStateStore;
 
 // @internal
 export function createStepFetch(): StepFetch;
@@ -415,9 +428,6 @@ export const DEFAULT_S2S_CONFIG: S2SConfig;
 // @public
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
 
-// @public
-type DefaultSessionState = any;
-
 // @internal
 type DnsLookup = (hostname: string) => Promise<{
     address: string;
@@ -433,7 +443,7 @@ export function executeToolCall(name: string, args: Readonly<Record<string, unkn
 type ExecuteToolCallOptions = {
     tool: ToolDef;
     env: Readonly<Record<string, string>>;
-    state?: Record<string, unknown>;
+    slots?: SlotStore | undefined;
     sessionId?: string | undefined;
     db?: Db | undefined;
     messages?: readonly Message[] | undefined;
@@ -803,7 +813,7 @@ export type Runtime = AgentRuntime & {
 
 // @public
 export type RuntimeOptions = {
-    agent: AgentDef<any>;
+    agent: AgentDef;
     env: AgentEnv;
     providerEnv?: ProviderEnv | undefined;
     db?: Db | undefined;
@@ -897,6 +907,9 @@ export type ServerOptions = {
 export function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerResponse, logger: Logger): Promise<boolean>;
 
 // @internal
+export const SESSION_STATE_TABLE = "aai_session_state";
+
+// @internal
 export type SessionCore = {
     readonly id: string;
     start(): Promise<void>;
@@ -973,6 +986,27 @@ export type SessionStartOptions = {
 };
 
 // @internal
+export type SessionStateBackend = {
+    readonly name: "memory" | "postgres";
+    readonly durable: boolean;
+    load(sessionId: string): Promise<Map<string, string>>;
+    commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
+    discard(sessionId: string): Promise<void>;
+};
+
+// @public
+export type SessionStateStore = {
+    viewFor(sessionId: string): SlotStore;
+    hydrate(sessionId: string): Promise<void>;
+    flush(sessionId: string): Promise<void>;
+    has(sessionId: string): boolean;
+    syncSession(sessionId: string): StateSyncSession;
+    discard(sessionId: string): void;
+    clear(): void;
+    readonly backend: Pick<SessionStateBackend, "name" | "durable">;
+};
+
+// @internal
 export type SessionWebSocket = {
     readonly readyState: number;
     readonly bufferedAmount?: number | undefined;
@@ -990,6 +1024,12 @@ export type SessionWebSocket = {
     addEventListener(type: "error", listener: (event: {
         message?: string;
     }) => void): void;
+};
+
+// @public
+type SlotStore = {
+    read(key: string): unknown;
+    write(key: string, value: unknown, durable: boolean): void;
 };
 
 // @internal
@@ -1055,6 +1095,20 @@ export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: 
 
 // @internal
 export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
+
+// @public
+interface StateProjection<V = unknown> {
+    (value?: unknown): V;
+    readonly create: () => unknown;
+    readonly key: string;
+}
+
+// @public
+type StateSyncSession = {
+    read(key: string): unknown;
+    lastPush(): string | undefined;
+    recordPush(json: string): void;
+};
 
 // @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
@@ -1195,9 +1249,9 @@ type ToolChoice = "auto" | "required" | "none" | {
 };
 
 // @public
-type ToolContext<S = DefaultSessionState> = {
+type ToolContext = {
     env: Readonly<Record<string, string>>;
-    state: S;
+    slots: SlotStore;
     db: Db;
     generate: GenerateFn;
     messages: readonly Message[];
@@ -1208,10 +1262,10 @@ type ToolContext<S = DefaultSessionState> = {
 };
 
 // @public
-type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState> = {
+type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
     description: string;
     inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
 };
 
 // @public

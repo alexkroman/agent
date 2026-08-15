@@ -1,4 +1,4 @@
-import { type SlotStateOf, sessionSlot, type ToolContext } from "@alexkroman1/aai";
+import { sessionSlot } from "@alexkroman1/aai";
 
 export const SIZES = ["small", "medium", "large"] as const;
 export const CRUSTS = ["thin", "regular", "thick", "stuffed"] as const;
@@ -93,19 +93,28 @@ export function emptyOrder(): OrderState {
   return { pizzas: [], nextId: 1, customerName: null };
 }
 
-/** The session's cart, as one typed slot inside `ctx.state`. */
+/** The session's cart, as one typed slot. */
 export const orderSlot = sessionSlot("order", emptyOrder);
-
-export type StateSlot = SlotStateOf<typeof orderSlot>;
 
 /**
  * Clear the cart after checkout so a follow-up order starts fresh. The
  * `placed` confirmation is passed through, because the UI is still showing
  * it — clearing the pizzas is what "reset" means here, not forgetting the
  * order that was just submitted.
+ *
+ * It takes the DRAFT, not the context, and that is the shape to copy. It used to
+ * call `orderSlot.set(ctx, …)` — which is a second write to the same slot from
+ * inside a mutating tool body, so the draft stored on the way out overwrote it
+ * and the cart was never cleared. `slot.set` refuses that outright now; a helper
+ * called from inside a mutation mutates what it was handed.
  */
-export function resetOrder(ctx: ToolContext, placed?: OrderState["placed"]): void {
-  orderSlot.set(ctx, { ...emptyOrder(), ...(placed ? { placed } : {}) });
+export function resetOrder(order: OrderState, placed?: OrderState["placed"]): void {
+  const fresh = emptyOrder();
+  order.pizzas = fresh.pizzas;
+  order.nextId = fresh.nextId;
+  order.customerName = fresh.customerName;
+  if (placed) order.placed = placed;
+  else delete order.placed;
 }
 
 /**

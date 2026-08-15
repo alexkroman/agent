@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { gameSlot } from "../shared.ts";
 
-export default gameSlot.tool({
+export default gameSlot.updateTool({
   description: "Add points to the player's score.",
   inputSchema: z.object({
     value: z.number().describe("Points to add"),

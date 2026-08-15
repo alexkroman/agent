@@ -38,9 +38,8 @@ export interface AgentServerOptions extends PassthroughServerOptions {
   /**
    * The agent to serve. Its `name` and `greeting` feed `GET /client-config`.
    *
-   * Typed as whatever `createRuntime` accepts rather than restating
-   * `AgentDef<any>`, which would need a second `noExplicitAny` suppression for
-   * the same reason the first one exists.
+   * Typed as whatever `createRuntime` accepts rather than restating `AgentDef`,
+   * so the two cannot disagree.
    */
   agent: RuntimeOptions["agent"];
   /**

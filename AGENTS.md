@@ -397,7 +397,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 3 | no `Promise.race` against a `setTimeout` | `p-timeout` |
   | 4 | no inline `new Promise(r => setTimeout(r, 0))` | `flush()` / `tick()` |
   | 5 | no `delete process.env.X` | `vi.stubEnv(name, undefined)` |
-  | 6 | no `ctx.state as T` in a template | `sessionSlot()` |
+  | ~~6~~ | *retired — `ctx.state` no longer exists* | `sessionSlot()` |
   | 7 | no floating-tag GitHub Action | a 40-char commit SHA |
   | 8 | no `if (m.get(k) === mine) m.delete(k)` | `createOwnedMap()` |
   | 9 | no `tails.get(k) ?? Promise.resolve()` | `createKeyedLock()` / `slot.update` |
@@ -408,7 +408,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
   Rule IDs are **stable**: a deleted rule leaves its number retired rather than
   letting a later rule inherit it, because the numbers appear in commit messages
-  and in the baseline. Rules 1, 7, 10, 12 and 13 are at zero and enforced absolutely;
+  and in the baseline — rule 6 is the worked example, retired when `ctx.state`
+  stopped existing and the cast it banned became unrepresentable. Rules 1, 7, 10,
+  12 and 13 are at zero and enforced absolutely;
   the rest carry per-file baselines with the same `--update`-only-lowers
   contract as `check:hatches`. Every baselined occurrence is
   legitimate and says so in the JSON — three spread-ternaries where **the guard
@@ -748,10 +750,8 @@ primitives — reach for them before re-inventing the pattern at a call site:
   resolving your own place in the chain when you abandon a timed-out acquire
   (otherwise everyone behind you blocks forever).
 
-  **For the `ctx.state` case specifically, reach for `sessionSlot`'s `update`
-  instead** (below). Those same two templates then hand-rolled the LOCK+SLOT
-  pair — `createKeyedLock()` beside `withLock(lock, ctx.sessionId, () =>
-  mutator(slot.get(ctx)))` — which is now one method. This entry stays because
+  **For a session-state mutation, reach for `sessionSlot`'s `update` instead**
+  (below): it is synchronous, so it needs no lock at all. This entry stays because
   the primitive is still the right answer for serialized work that is not a slot
   mutation, and because `timeoutMs` has no `update` equivalent; no template
   demonstrates it any more, which is recorded in `template-api-allowlist.json`
@@ -766,79 +766,29 @@ primitives — reach for them before re-inventing the pattern at a call site:
   held weakly — no unlink bookkeeping); the pipeline transport combines the
   session signal with each turn's controller this way.
 - **`sessionSlot()`** (`aai/sdk/session-slot.ts`, exported from the ROOT — it is
-  authoring API, not infrastructure) — a typed named slot inside `ctx.state`:
-  `get(ctx)` installs the default on first access and returns the live object,
-  `set`/`reset` replace it, and `read`/`projection` are the `syncState` side.
-  Reach for it whenever an agent's tools live in more than one file, which is
-  the case `ctx.state` cannot type on its own: `tool()` learns the state shape
-  only from an annotated context (`ctx: ToolContext<S>`), so every module either
-  restates that annotation or casts. All five stateful templates had taken the
-  cast — `ctx.state as StateSlot` beside a hand-rolled `slot.x ??=
-  createDefault()`, five times, comment included — and `retail` took it even
-  though its `agent()` declares a `state` factory, because the factory's type
-  cannot reach `tools/*.ts`.
+  authoring API, not infrastructure) — a typed named slot that OWNS a session's
+  state: its key, its default, its reads, its writes, its `syncState` projection,
+  and its STORAGE. There is no `ctx.state` bag any more, and no state type
+  parameter on `ToolContext`/`ToolDef`/`AgentDef`: a slot types its value in the
+  one module that declares it, which is what a tool living in its own FILE cannot
+  do with an annotation.
 
-  **`slot.tool()` / `slot.updateTool()` are what a tool module should reach
-  for**, and between them they retire the last two lines a slot-backed tool
-  costs: `execute` is handed the live value second, so the body needs neither
-  the `ctx: ToolContext<SlotStateOf<typeof slot>>` annotation nor the opening
-  `const cart = slot.get(ctx)`. `updateTool` is the same thing run inside
-  `slot.update` — the one to use whenever the body AWAITS, and it inherits that
-  method's non-reentrancy. Both return an ordinary `ToolDef`, so they drop into
-  `agent({ tools })` unchanged; `retail`'s `retailTool` wrapper is built on
-  `updateTool` and is what a per-agent wrapper looks like on top of one.
+  Four rules, each enforced rather than documented: `update(ctx, mutate)` is
+  SYNCHRONOUS and hands the body a mutable DRAFT committed when it returns (so an
+  await goes in front of the mutation, and a thenable `updateTool` body throws);
+  `get` returns a frozen `Readonly<T>`; a durable value is checked
+  STRUCTURALLY in both backends, so a `Map` fails in a spec rather than on the
+  first deployment with a database; and `syncState` takes `slot.projection(view)`,
+  which is callable so a client derives its own empty state from the same
+  function. **Read "A slot OWNS its session state" in `packages/aai/CLAUDE.md`**
+  for the whole API and its load-bearing properties, and
+  `host/session-state-store.ts` for the two backends and the commit point.
 
-  **`slot.state` is the `AgentDef.state` factory**, so declaring it is
-  `state: cartSlot.state`. Declaring it is still worth it — that is what makes
-  the session's state exist before the first tool call, which
-  `pushStateSnapshot` needs on resume — and the property exists because the
-  hand-written `state: () => ({ [slot.key]: slot.create() })` it replaces is
-  the half that gets forgotten: FOUR of the five slot-backed templates omitted
-  it, against a guide paragraph telling them to write it. A factory rather than
-  the slot itself, so `S` is still inferred from the position it has always
-  been inferred from and tools stay checked against the state shape.
-
-  **`slot.update(ctx, mutate)` is the serialized half, and it is what an ASYNC
-  mutator must use.** It holds a per-slot, per-session key for the mutation and
-  then runs the slot's optional `after` hook. Both stateful templates with async
-  tool bodies had hand-rolled exactly this — `createKeyedLock()` at module scope
-  plus `withLock(lock, ctx.sessionId, () => mutator(slot.get(ctx)))`, twice,
-  rationale paragraph included — and `after` is what dispatch-center's copy did
-  on top (prune resolved incidents, recalculate the alert level), which is
-  bookkeeping every mutating tool needs and any new one would forget. `get` is
-  still right for a synchronous read-modify-write, which cannot interleave.
-
-  Three properties to know before relying on it. It is **not re-entrant** — a
-  `mutate` body calling `update` on the same slot waits on a key only its caller
-  can release, which is a deadlock rather than an error (retail keeps that
-  unreachable by construction: `retailTool` is the only caller, and tool bodies
-  run inside it). `after` **does not run when the mutator throws**, so a
-  half-applied value is left as the mutator left it rather than normalized by a
-  hook that never saw a complete mutation, and the mutator's error is the one
-  that propagates. And the lock is per SLOT as well as per session, so two
-  different slots' updates nest safely and one caller never queues behind
-  another's.
-
-  **`createKeyedLock`/`withLock` stay public and are now unexercised by any
-  template** (allowlisted, deliberately). They remain the right tool for
-  serialized work that is not a slot mutation — an external resource, a key
-  that is not the session id, or `{ timeoutMs }` when a contended mutation must
-  fail rather than queue. `slot.update` covers the case the templates actually
-  had, which is why none of them demonstrates the raw primitive any more.
-
-  Two more things the API shape is load-bearing about. `create` is a FACTORY
-  called once per session, so a shared module-level default must be cloned
-  inside it (`() => structuredClone(DEFAULT)`) or every session mutates one
-  object — three templates need this. And `projection(fn)` hands `fn` a REAL value
-  rather than the slot, which is what lets a `syncState` projection drop the
-  optional chaining it used to carry for the pre-first-tool-call frame; in
-  `retail`'s `storeView` that chaining read as security gating and was not (the
-  gating that IS security is on `user`, and stayed). The client's empty-state
-  fallback then comes from `slot.projection(view)(undefined)` — still derived
-  from the projection, so a new field reaches the first render. `retail` is the
-  one exception and says why in place: its factory pulls a 107 KB `seed.json`,
-  so the client builds the fallback from a seedless `emptyRetailState()` rather
-  than importing the slot.
+  **`createKeyedLock`/`withLock` stay public and are unexercised by any template**
+  (allowlisted, deliberately): a synchronous mutation window has nothing to
+  serialize, so they remain the right tool only for serialized work that is NOT
+  a slot mutation — an external resource, a key that is not the session id, or
+  `{ timeoutMs }` when a contended mutation must fail rather than queue.
 - **`ToolFailure` / `isToolFailure()`** (`aai/sdk/utils.ts`, exported from the
   root and `/utils`) — the `{ error: string }` object a tool returns for a
   failure the MODEL should see and recover from, and the guard that narrows one.
@@ -867,7 +817,7 @@ primitives — reach for them before re-inventing the pattern at a call site:
 - **`pushCapped(list, item, max)`** (`aai/sdk/utils.ts`, root and `/utils`) —
   append to a list holding a cap, mutating in place (the list is usually a
   property of the state object, so returning a new array is a reassignment the
-  caller can forget). For the append-only lists an agent keeps in `ctx.state`: a
+  caller can forget). For the append-only lists an agent keeps in a slot: a
   timeline, an activity feed, a session log. Every one of them feeds an LLM
   summary or a `syncState` payload, so uncapped it grows what the model reads
   and what crosses the wire for the length of the call. Three templates had

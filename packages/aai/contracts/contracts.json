@@ -1,15 +1,16 @@
 {
   "agent": {
-    "current": 9,
-    "supported": [3, 9],
+    "current": 10,
+    "supported": [3, 10],
     "dropped": {
-      "8": "`agent({ tools })` is gone: a tool is declared by its FILE. `tools/incident_create.ts` that default-exports `tool({ \u2026 })` IS the tool `incident_create`, enumerated where the bundle is assembled and named by nothing \u2014 so the map every epoch up to 8 was authored with no longer type-checks, and `tools` on the parameter shape is now the InlineToolsMisuse message naming the file to create. The map restated a rule the filesystem already carried, and the cost was not its 62 lines: forgetting one was SILENT, so the file compiled, every gate passed, and the tool never reached the model. A resolved registry goes on with `withTools`, which is what the build and `withDiscoveredTools` both call.",
       "1": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "2": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "4": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "5": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "6": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
-      "7": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument."
+      "7": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
+      "8": "`agent({ tools })` is gone: a tool is declared by its FILE. `tools/incident_create.ts` that default-exports `tool({ \u2026 })` IS the tool `incident_create`, enumerated where the bundle is assembled and named by nothing \u2014 so the map every epoch up to 8 was authored with no longer type-checks, and `tools` on the parameter shape is now the InlineToolsMisuse message naming the file to create. The map restated a rule the filesystem already carried, and the cost was not its 62 lines: forgetting one was SILENT, so the file compiled, every gate passed, and the tool never reached the model. A resolved registry goes on with `withTools`, which is what the build and `withDiscoveredTools` both call.",
+      "9": "AgentDef lost its state type parameter, its `state` factory and `InferAgentState`: session state belongs to a sessionSlot, which types and stores its own value, so there is no per-agent state shape to thread. `syncState` takes that slot's projection rather than a function over the whole bag."
     }
   },
   "builtins": {
@@ -42,11 +43,16 @@
     "dropped": {}
   },
   "state": {
-    "current": 7,
-    "supported": [3, 4, 5, 6, 7],
+    "current": 8,
+    "supported": [8],
     "dropped": {
       "1": "Not a change to this capability's own surface \u2014 `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow \u2014 and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
-      "2": "Not a change to this capability's own surface \u2014 `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow \u2014 and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole."
+      "2": "Not a change to this capability's own surface \u2014 `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow \u2014 and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
+      "3": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now \u2014 the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
+      "4": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now \u2014 the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
+      "5": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now \u2014 the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
+      "6": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now \u2014 the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
+      "7": "The slot API changed shape with the durable store: `update` is synchronous and hands the body a draft, `get` returns a frozen `Readonly<T>`, `read`/`state`/`SlotState`/`SlotStateOf` are gone with `ctx.state`, and `projection` returns a callable carrying the slot's key and default."
     }
   },
   "step-errors": {
@@ -60,15 +66,21 @@
     "dropped": {}
   },
   "testing": {
-    "current": 11,
-    "supported": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-    "dropped": {}
+    "current": 12,
+    "supported": [2, 3, 4, 5, 6, 7, 8, 9, 12],
+    "dropped": {
+      "1": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
+      "10": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
+      "11": "`createToolContext` takes no state type parameter and supplies `slots` (a real slot store, applying the same storability check the deployed one does) in place of the `state` bag."
+    }
   },
   "tool": {
-    "current": 7,
-    "supported": [2, 3, 4, 5, 6, 7],
+    "current": 8,
+    "supported": [3, 4, 5, 6, 8],
     "dropped": {
-      "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false \u2014 a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard."
+      "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false \u2014 a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard.",
+      "2": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
+      "7": "`ToolContext` and `ToolDef` take no state type parameter: a tool reads and writes session state through a sessionSlot, which types the value in the module that declares it."
     }
   },
   "tts": {

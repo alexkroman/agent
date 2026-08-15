@@ -5,7 +5,7 @@
 ```ts
 
 // @public
-interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
+interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
     greeting: string;
     idleTimeoutMs?: number;
@@ -17,14 +17,13 @@ interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
     s2s?: S2sProvider;
     silencePrompt?: string;
     silenceTimeoutMs?: number;
-    state?: () => S;
     stt?: SttProvider;
     sttPrompt?: string;
-    syncState?: (state: S) => unknown;
+    syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
     text?: true;
     toolChoice?: ToolChoice;
-    tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
@@ -50,7 +49,7 @@ export function createRunSnapshot<R = unknown>(over?: RunSnapshotOverrides<R>): 
 export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
 
 // @public
-export function createToolContext<S = DefaultSessionState>(overrides?: Partial<ToolContext<S>>): TestToolContext<S>;
+export function createToolContext(overrides?: Partial<ToolContext>): TestToolContext;
 
 // @public
 export function createUnusedDb(): Db;
@@ -59,9 +58,6 @@ export function createUnusedDb(): Db;
 type Db = {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
-
-// @public
-type DefaultSessionState = any;
 
 // @public
 type FindOptions = {
@@ -145,7 +141,7 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 });
 
 // @public
-export function runTool<S>(agent: ToolBearingAgent<S>, name: string, args: InferSchemaOutput<ToolInputSchema>, ctx: ToolContext<S>): Promise<unknown>;
+export function runTool(agent: ToolBearingAgent, name: string, args: InferSchemaOutput<ToolInputSchema>, ctx: ToolContext): Promise<unknown>;
 
 // @public
 type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -159,6 +155,12 @@ export interface SentEvent {
     // (undocumented)
     event: string;
 }
+
+// @public
+type SlotStore = {
+    read(key: string): unknown;
+    write(key: string, value: unknown, durable: boolean): void;
+};
 
 // @public
 interface StandardSchemaIssue {
@@ -196,6 +198,13 @@ type StartOptions = {
     key?: string;
     notify?: boolean | string;
 };
+
+// @public
+interface StateProjection<V = unknown> {
+    (value?: unknown): V;
+    readonly create: () => unknown;
+    readonly key: string;
+}
 
 // @public
 type StreamOptions = {
@@ -293,13 +302,13 @@ export type StubUpload = Uint8Array | {
 export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => void;
 
 // @public
-export type TestToolContext<S = DefaultSessionState> = ToolContext<S> & {
+export type TestToolContext = ToolContext & {
     readonly sent: SentEvent[];
 };
 
 // @public
-export type ToolBearingAgent<S = DefaultSessionState> = {
-    readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema, S>>>;
+export type ToolBearingAgent = {
+    readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
 };
 
 // @public
@@ -309,9 +318,9 @@ type ToolChoice = "auto" | "required" | "none" | {
 };
 
 // @public
-type ToolContext<S = DefaultSessionState> = {
+type ToolContext = {
     env: Readonly<Record<string, string>>;
-    state: S;
+    slots: SlotStore;
     db: Db;
     generate: GenerateFn;
     messages: readonly Message[];
@@ -322,10 +331,10 @@ type ToolContext<S = DefaultSessionState> = {
 };
 
 // @public
-type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState> = {
+type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
     description: string;
     inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
 };
 
 // @public
@@ -335,7 +344,7 @@ type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 type ToolModules = Readonly<Record<string, unknown>>;
 
 // @public
-export function toolOf<S>(agent: ToolBearingAgent<S>, name: string): ToolDef<ToolInputSchema, S>;
+export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
 
 // @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -348,7 +357,7 @@ type WakeUpOptions = {
 };
 
 // @public
-export function withDiscoveredTools<S>(def: AgentDef<S>, modules: ToolModules): AgentDef<S>;
+export function withDiscoveredTools(def: AgentDef, modules: ToolModules): AgentDef;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

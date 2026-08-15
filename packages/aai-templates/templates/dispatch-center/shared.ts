@@ -1,7 +1,7 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 import type { ToolFailure } from "@alexkroman1/aai";
-import { pushCapped, type SlotStateOf, sessionSlot } from "@alexkroman1/aai";
+import { pushCapped, sessionSlot } from "@alexkroman1/aai";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -204,8 +204,6 @@ export const dispatchSlot = sessionSlot("dispatch", createDefaultState, {
     recalculateAlertLevel(state);
   },
 });
-
-export type StateSlot = SlotStateOf<typeof dispatchSlot>;
 
 // ─── Incident helpers ────────────────────────────────────────────────────────
 

@@ -55,7 +55,7 @@ import type { AgentDef } from "./types.ts";
  *
  * @internal
  */
-export function withSystemPrompt<S>(def: AgentDef<S>, prompt: string): AgentDef<S> {
+export function withSystemPrompt(def: AgentDef, prompt: string): AgentDef {
   const trimmed = prompt.trim();
   if (trimmed === "") {
     throw new Error(

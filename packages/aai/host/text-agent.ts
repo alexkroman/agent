@@ -63,6 +63,7 @@ import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import { assemblyAILlm } from "../sdk/providers/llm/assemblyai.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
+import { createDetachedSlotStore } from "../sdk/session-state.ts";
 import type { AgentDef, Message, ToolChoice } from "../sdk/types.ts";
 import type { WorkflowClient } from "../sdk/workflow.ts";
 import type { RunCodeExecutor } from "./builtin-run-code.ts";
@@ -256,15 +257,17 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
   });
 
   /**
-   * The session's ONE state object, memoized like the runtime's — created on
-   * first tool call rather than at construction, so a conversation that never
-   * calls a tool never runs the factory.
+   * The agent's slot state for this text agent's whole life — one store, so two
+   * turns of one conversation see the same cart.
+   *
+   * Detached rather than the runtime's two-backend store, and that is a real
+   * limitation stated in place: a text agent is not a session (`createRuntime`
+   * refuses one), it has no resume path and no grace window, so there is nothing
+   * for a durable value to survive INTO. Slots still behave identically —
+   * `createDetachedSlotStore` applies the same storability check and the same
+   * freeze — so a text agent cannot hold a shape a voice one could not store.
    */
-  let state: Record<string, unknown> | undefined;
-  const getState = (): Record<string, unknown> => {
-    state ??= agent.state ? (agent.state() as Record<string, unknown>) : {};
-    return state;
-  };
+  const slots = createDetachedSlotStore();
 
   /**
    * The turn's messages, as `ctx.messages` sees them. Bound by reference and
@@ -279,7 +282,7 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
     return executeToolCall(name, args, {
       tool,
       env,
-      state: getState(),
+      slots,
       sessionId: sid ?? sessionId,
       db: opts.db,
       workflows: opts.workflows,

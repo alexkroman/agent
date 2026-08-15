@@ -18,14 +18,7 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-import {
-  calculateTotal,
-  orderSlot,
-  orderView,
-  type Pizza,
-  pizzaPrice,
-  type StateSlot,
-} from "./shared.ts";
+import { calculateTotal, orderSlot, orderView, type Pizza, pizzaPrice } from "./shared.ts";
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
 
@@ -34,14 +27,14 @@ import {
  *  `db` rejects every query, which is right here: this template keeps its cart
  *  in ctx.state and must never touch storage. */
 function makeCtx(sessionId?: string) {
-  const ctx = createToolContext<StateSlot>(sessionId ? { sessionId } : {});
+  const ctx = createToolContext(sessionId ? { sessionId } : {});
   return { ctx, sent: ctx.sent };
 }
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup
  *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
  *  what is local is only which agent they run against. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext<StateSlot>) =>
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
   runTool(agentDef, name, args, ctx);
 
 const margherita: Omit<Pizza, "id"> = {
@@ -207,7 +200,7 @@ describe("orderView projection", () => {
       ctx,
     );
 
-    const view = orderView(orderSlot.read(ctx.state));
+    const view = orderView(orderSlot.get(ctx));
     expect(view.orderPlaced).toBe(false);
     const item = view.pizzas[0];
     if (!item) throw new Error("no pizza in the projection");
@@ -229,7 +222,7 @@ describe("orderView projection", () => {
     await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
     await run("place_order", {}, ctx);
 
-    const view = orderView(orderSlot.read(ctx.state));
+    const view = orderView(orderSlot.get(ctx));
     expect(view.orderPlaced).toBe(true);
     expect(view.pizzas).toEqual([]);
     expect(view.estimatedMinutes).toBe(20);

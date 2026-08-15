@@ -16,7 +16,7 @@
  */
 
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
-import type { DefaultSessionState, ToolContext, ToolDef } from "./types.ts";
+import type { ToolContext, ToolDef } from "./types.ts";
 
 /**
  * The slice of an agent these helpers read: its tool table.
@@ -26,8 +26,8 @@ import type { DefaultSessionState, ToolContext, ToolDef } from "./types.ts";
  *
  * @public
  */
-export type ToolBearingAgent<S = DefaultSessionState> = {
-  readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema, S>>>;
+export type ToolBearingAgent = {
+  readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
 };
 
 /**
@@ -44,7 +44,7 @@ export type ToolBearingAgent<S = DefaultSessionState> = {
  *
  * @public
  */
-export function toolOf<S>(agent: ToolBearingAgent<S>, name: string): ToolDef<ToolInputSchema, S> {
+export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema> {
   const def = agent.tools[name];
   if (!def) {
     const declared = Object.keys(agent.tools);
@@ -77,11 +77,11 @@ export function toolOf<S>(agent: ToolBearingAgent<S>, name: string): ToolDef<Too
  *
  * @public
  */
-export async function runTool<S>(
-  agent: ToolBearingAgent<S>,
+export async function runTool(
+  agent: ToolBearingAgent,
   name: string,
   args: InferSchemaOutput<ToolInputSchema>,
-  ctx: ToolContext<S>,
+  ctx: ToolContext,
 ): Promise<unknown> {
   return await toolOf(agent, name).execute(args, ctx);
 }

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { SESSION_RESUME_GRACE_MS } from "../sdk/constants.ts";
 import { openaiRealtime } from "../sdk/providers/s2s/openai-realtime.ts";
 import type { S2sProvider } from "../sdk/providers.ts";
+import { sessionSlot } from "../sdk/session-slot.ts";
 import {
   createFakeLanguageModel,
   createFakeSttProvider,
@@ -100,20 +101,16 @@ describe("createRuntime shutdown", () => {
 
   test("state is not re-initialized when already present for session", async () => {
     const stateFactory = vi.fn(() => ({ counter: 0 }));
+    const slot = sessionSlot("counter", stateFactory);
     const agent = makeAgent({
-      state: stateFactory,
       tools: {
         increment: {
           description: "Increment counter",
-          execute: (_args, ctx) => {
-            const state = ctx.state as { counter: number };
-            state.counter++;
-            return String(state.counter);
-          },
+          execute: (_args, ctx) => String(slot.update(ctx, (state) => ++state.counter)),
         },
         get_state: {
           description: "Get state",
-          execute: (_args, ctx) => JSON.stringify(ctx.state),
+          execute: (_args, ctx) => JSON.stringify(slot.get(ctx)),
         },
       },
     });
@@ -147,16 +144,15 @@ describe("createRuntime createSession", () => {
   });
 
   test("old session's delayed stop keeps the resumed session's sink and state", async () => {
+    const slot = sessionSlot("counter", () => ({ counter: 0 }));
     const agent = makeAgent({
-      state: () => ({ counter: 0 }),
       tools: {
         ping: {
           description: "Ping the client and bump state",
           execute: (_args, ctx) => {
-            const state = ctx.state as { counter: number };
-            state.counter++;
-            ctx.send("ping", { n: state.counter });
-            return String(state.counter);
+            const n = slot.update(ctx, (state) => ++state.counter);
+            ctx.send("ping", { n });
+            return String(n);
           },
         },
       },
@@ -222,17 +218,13 @@ describe("createRuntime createSession", () => {
     });
   });
 
-  test("resume after the old session fully stopped keeps ctx.state (grace window)", async () => {
+  test("resume after the old session fully stopped keeps its slot state (grace window)", async () => {
+    const slot = sessionSlot("counter", () => ({ counter: 0 }));
     const agent = makeAgent({
-      state: () => ({ counter: 0 }),
       tools: {
         increment: {
           description: "Bump state",
-          execute: (_args, ctx) => {
-            const state = ctx.state as { counter: number };
-            state.counter++;
-            return String(state.counter);
-          },
+          execute: (_args, ctx) => String(slot.update(ctx, (state) => ++state.counter)),
         },
       },
     });
@@ -261,16 +253,12 @@ describe("createRuntime createSession", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       const stateFactory = vi.fn(() => ({ counter: 0 }));
+      const slot = sessionSlot("counter", stateFactory);
       const agent = makeAgent({
-        state: stateFactory,
         tools: {
           increment: {
             description: "Bump state",
-            execute: (_args, ctx) => {
-              const state = ctx.state as { counter: number };
-              state.counter++;
-              return String(state.counter);
-            },
+            execute: (_args, ctx) => String(slot.update(ctx, (state) => ++state.counter)),
           },
         },
       });
@@ -371,18 +359,21 @@ describe("createRuntime with custom options", () => {
     expect(session).toBeDefined();
   });
 
-  test("default state is empty object when agent has no state factory", async () => {
+  test("an untouched slot reads as its own default, not as an empty bag", async () => {
+    // There is no bag: a session that has run no tool has no state at all, and
+    // the value a first read sees comes from the slot's own factory.
+    const slot = sessionSlot("shape", () => ({ ready: true }));
     const agent = makeAgent({
       tools: {
         get_state: {
           description: "Get state",
-          execute: (_args, ctx) => JSON.stringify(ctx.state),
+          execute: (_args, ctx) => JSON.stringify(slot.get(ctx)),
         },
       },
     });
     const runtime = createRuntime({ agent, env: {} });
     const result = await runtime.executeTool("get_state", {}, "s1", []);
-    expect(JSON.parse(result)).toEqual({});
+    expect(JSON.parse(result)).toEqual({ ready: true });
   });
 });
 
@@ -500,7 +491,10 @@ describe("Runtime — session routing", () => {
     });
 
     const startP = session.start();
-    // Drive the WS open so transport.start() resolves
+    // `start()` hydrates this session's slot state before it opens anything, so
+    // the socket is constructed a microtask later than it used to be — waiting
+    // for the constructor rather than assuming it already ran.
+    await vi.waitFor(() => expect(createOpenaiRealtimeWebSocket).toHaveBeenCalled());
     for (const fn of listeners.open ?? []) fn(undefined);
     await startP;
 

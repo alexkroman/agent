@@ -36,7 +36,7 @@
  */
 
 import type { ToolInputSchema } from "./schema.ts";
-import type { AgentDef, DefaultSessionState, ToolDef } from "./types.ts";
+import type { AgentDef, ToolDef } from "./types.ts";
 
 /**
  * The name grammar. Snake_case, leading letter, because the name is what the
@@ -59,9 +59,7 @@ const SPEC_RE = /\.(?:test|spec)$/;
 export type ToolModules = Readonly<Record<string, unknown>>;
 
 /** A checked set of tools, keyed by the name the model calls. */
-export type ToolRegistry<S = DefaultSessionState> = Readonly<
-  Record<string, ToolDef<ToolInputSchema, S>>
->;
+export type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
 
 /**
  * A tool as recognized at RUNTIME, which has to be structural: `tool()` is
@@ -69,7 +67,7 @@ export type ToolRegistry<S = DefaultSessionState> = Readonly<
  * is the mistake worth naming — under discovery it would otherwise register an
  * object the executor calls `execute` on and fail per turn instead of at build.
  */
-function isToolDef(value: unknown): value is ToolDef<ToolInputSchema, never> {
+function isToolDef(value: unknown): value is ToolDef<ToolInputSchema> {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as { description?: unknown; execute?: unknown };
   return typeof candidate.description === "string" && typeof candidate.execute === "function";
@@ -103,8 +101,8 @@ function toolNameOf(path: string): string {
  *
  * @public
  */
-export function toolRegistry<S = DefaultSessionState>(modules: ToolModules): ToolRegistry<S> {
-  const registry: Record<string, ToolDef<ToolInputSchema, S>> = {};
+export function toolRegistry(modules: ToolModules): ToolRegistry {
+  const registry: Record<string, ToolDef<ToolInputSchema>> = {};
   const sources: Record<string, string> = {};
 
   for (const [path, module] of Object.entries(modules)) {
@@ -135,7 +133,7 @@ export function toolRegistry<S = DefaultSessionState>(modules: ToolModules): Too
       );
     }
     sources[name] = path;
-    registry[name] = exported as ToolDef<ToolInputSchema, S>;
+    registry[name] = exported;
   }
 
   return registry;
@@ -160,16 +158,9 @@ export function toolRegistry<S = DefaultSessionState>(modules: ToolModules): Too
  * what this catches is a hand-written `export default { … tools: {…} }` that
  * skipped `agent()`, and a second `withTools` over a def that already has one.
  *
- * `NoInfer` on the registry for the reason {@link AgentDef.tools} carries it:
- * `S` belongs to the DEF. Without it a tool written without the state type —
- * the common case, since `tool()` only learns `S` from an annotated context —
- * competes with the def for the inference and collapses `S` to `never`, so
- * `withTools(agent({ state }), { ping })` silently loses the state shape. The
- * registry is still CHECKED against `S`.
- *
  * @public
  */
-export function withTools<S>(def: AgentDef<S>, registry: ToolRegistry<NoInfer<S>>): AgentDef<S> {
+export function withTools(def: AgentDef, registry: ToolRegistry): AgentDef {
   for (const name of Object.keys(registry)) {
     if (def.tools[name] !== undefined) {
       throw new Error(

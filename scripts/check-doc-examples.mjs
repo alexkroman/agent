@@ -25,7 +25,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { REPO_ROOT as repo, runScaffoldTsc } from "./_scaffold-tsc.mjs";
 
@@ -89,6 +89,11 @@ function sourceFiles(repo, pkg) {
     .split("\n")
     .filter(
       (p) =>
+        // `--cached` lists INDEX entries, so a file deleted in the work tree but
+        // not yet staged is still named here — and reading it threw ENOENT,
+        // crashing the gate rather than failing it. Any deletion in progress hit
+        // this (four frozen contract examples did).
+        existsSync(path.join(repo, p)) &&
         /\.tsx?$/.test(p) &&
         !/\.test(-d)?\.tsx?$/.test(p) &&
         !p.includes("/dist/") &&

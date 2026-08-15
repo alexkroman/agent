@@ -17,7 +17,7 @@
  * "evening slowdown congestion peak time" and finds D10.
  */
 
-import { pushCapped, type SlotStateOf, sessionSlot } from "@alexkroman1/aai";
+import { pushCapped, sessionSlot } from "@alexkroman1/aai";
 import knowledge from "./knowledge.json" with { type: "json" };
 
 export interface Doc {
@@ -199,8 +199,6 @@ export function emptySupportState(): SupportState {
 }
 
 export const supportSlot = sessionSlot("support", emptySupportState);
-
-export type StateSlot = SlotStateOf<typeof supportSlot>;
 
 export function recordQuestion(state: SupportState, question: string): void {
   pushCapped(state.asked, question, MAX_ASKED);

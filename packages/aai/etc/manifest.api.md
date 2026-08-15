@@ -81,7 +81,7 @@ export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
 };
 
 // @public
-interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
+interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
     greeting: string;
     idleTimeoutMs?: number;
@@ -93,14 +93,13 @@ interface AgentDef<S = DefaultSessionState> extends PipelineVoiceTuning {
     s2s?: S2sProvider;
     silencePrompt?: string;
     silenceTimeoutMs?: number;
-    state?: () => S;
     stt?: SttProvider;
     sttPrompt?: string;
-    syncState?: (state: S) => unknown;
+    syncState?: StateProjection | readonly StateProjection[];
     systemPrompt: string;
     text?: true;
     toolChoice?: ToolChoice;
-    tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
+    tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
     tts?: TtsProvider;
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
@@ -135,9 +134,6 @@ type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_j
 type Db = {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
-
-// @public
-type DefaultSessionState = any;
 
 // @public
 type FindOptions = {
@@ -247,6 +243,12 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 export type SessionMode = "s2s" | "pipeline" | "text";
 
 // @public
+type SlotStore = {
+    read(key: string): unknown;
+    write(key: string, value: unknown, durable: boolean): void;
+};
+
+// @public
 interface StandardSchemaIssue {
     // (undocumented)
     readonly message: string;
@@ -284,6 +286,13 @@ type StartOptions = {
 };
 
 // @public
+interface StateProjection<V = unknown> {
+    (value?: unknown): V;
+    readonly create: () => unknown;
+    readonly key: string;
+}
+
+// @public
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
@@ -304,9 +313,9 @@ type ToolChoice = "auto" | "required" | "none" | {
 };
 
 // @public
-type ToolContext<S = DefaultSessionState> = {
+type ToolContext = {
     env: Readonly<Record<string, string>>;
-    state: S;
+    slots: SlotStore;
     db: Db;
     generate: GenerateFn;
     messages: readonly Message[];
@@ -317,10 +326,10 @@ type ToolContext<S = DefaultSessionState> = {
 };
 
 // @public
-type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState> = {
+type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
     description: string;
     inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
 };
 
 // @public
@@ -330,10 +339,10 @@ type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 export type ToolModules = Readonly<Record<string, unknown>>;
 
 // @public
-export type ToolRegistry<S = DefaultSessionState> = Readonly<Record<string, ToolDef<ToolInputSchema, S>>>;
+export type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
 
 // @public
-export function toolRegistry<S = DefaultSessionState>(modules: ToolModules): ToolRegistry<S>;
+export function toolRegistry(modules: ToolModules): ToolRegistry;
 
 // @public
 export type ToolSchema = {
@@ -362,10 +371,10 @@ type WakeUpOptions = {
 };
 
 // @internal
-export function withSystemPrompt<S>(def: AgentDef<S>, prompt: string): AgentDef<S>;
+export function withSystemPrompt(def: AgentDef, prompt: string): AgentDef;
 
 // @public
-export function withTools<S>(def: AgentDef<S>, registry: ToolRegistry<NoInfer<S>>): AgentDef<S>;
+export function withTools(def: AgentDef, registry: ToolRegistry): AgentDef;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

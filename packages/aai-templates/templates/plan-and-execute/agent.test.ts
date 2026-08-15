@@ -25,7 +25,7 @@ const agentDef = withDiscoveredTools(
 
 import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./graph.ts";
 import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
-import type { SearchFn, StateSlot } from "./shared.ts";
+import type { SearchFn } from "./shared.ts";
 import { planSlot, planView } from "./shared.ts";
 
 // ─── A scripted model ────────────────────────────────────────────────────────
@@ -81,17 +81,17 @@ function fakeSearch(hits: Record<string, { title: string; url: string }[]>): {
 }
 
 function makeCtx(generate: GenerateFn, sessionId?: string) {
-  return createToolContext<StateSlot>({ generate, ...(sessionId ? { sessionId } : {}) });
+  return createToolContext({ generate, ...(sessionId ? { sessionId } : {}) });
 }
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup
  *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
  *  what is local is only which agent they run against. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext<StateSlot>) =>
+const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
   runTool(agentDef, name, args, ctx);
 
-function stateOf(ctx: ToolContext<StateSlot>) {
-  return planSlot.read(ctx.state);
+function stateOf(ctx: ToolContext) {
+  return planSlot.get(ctx);
 }
 
 // ─── 1. The nodes ────────────────────────────────────────────────────────────
@@ -206,7 +206,7 @@ describe("start_plan", () => {
   test("a broken model call is reported rather than thrown at the turn", async () => {
     // The default `createToolContext` generate rejects — a bad key looks the
     // same from here.
-    const ctx = createToolContext<StateSlot>({});
+    const ctx = createToolContext({});
     expect(await run("start_plan", { objective: "anything" }, ctx)).toMatchObject({
       error: expect.stringContaining("planner failed"),
     });

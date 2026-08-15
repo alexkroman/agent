@@ -10,6 +10,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import type { Db } from "../sdk/db.ts";
+import { sessionSlot } from "../sdk/session-slot.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { createRuntime } from "./runtime.ts";
 
@@ -106,19 +107,16 @@ describe("SDK integration: AgentDef → tool execution", () => {
   });
 
   test("per-session state isolation", async () => {
-    const agent: AgentDef<{ count: number }> = {
+    const countSlot = sessionSlot("count", () => ({ count: 0 }));
+    const agent: AgentDef = {
       name: "state-agent",
       systemPrompt: "Be helpful.",
       greeting: "Hello!",
       maxSteps: 5,
-      state: () => ({ count: 0 }),
       tools: {
         increment: {
           description: "Increment counter",
-          execute: (_args, ctx) => {
-            ctx.state.count += 1;
-            return String(ctx.state.count);
-          },
+          execute: (_args, ctx) => String(countSlot.update(ctx, (state) => ++state.count)),
         },
       },
     };

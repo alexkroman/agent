@@ -16,9 +16,10 @@
  */
 
 import type { Db } from "./db.ts";
+import { createDetachedSlotStore } from "./session-state.ts";
 import { publishStepFetch, type StepFetchInit } from "./step-fetch.ts";
 import { publishUploadReader } from "./step-uploads.ts";
-import type { DefaultSessionState, ToolContext } from "./types.ts";
+import type { ToolContext } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
@@ -57,7 +58,7 @@ export interface SentEvent {
  *
  * @public
  */
-export type TestToolContext<S = DefaultSessionState> = ToolContext<S> & {
+export type TestToolContext = ToolContext & {
   /** Events `ctx.send` received, in call order. */
   readonly sent: SentEvent[];
 };
@@ -161,9 +162,7 @@ let sessionCounter = 0;
  *
  * @public
  */
-export function createToolContext<S = DefaultSessionState>(
-  overrides: Partial<ToolContext<S>> = {},
-): TestToolContext<S> {
+export function createToolContext(overrides: Partial<ToolContext> = {}): TestToolContext {
   const sent: SentEvent[] = [];
   sessionCounter += 1;
   // Spread LAST so an override wins, including `send` — a test wanting
@@ -171,13 +170,12 @@ export function createToolContext<S = DefaultSessionState>(
   return {
     sessionId: `test-session-${sessionCounter}`,
     env: {},
-    // The empty bag a slot-backed agent starts from — the same thing the
-    // runtime hands a session with no `state` factory, which is why it is the
-    // default. The cast is unavoidable: `S` is unconstrained, so nothing proves
-    // `{}` inhabits it. It is confined to this one line rather than pushed onto
-    // every caller, which is the point of the helper; a caller who cares passes
-    // `state` and overrides it below.
-    state: {} as S,
+    // A real slot store, empty, and NOT a stub: it applies the same
+    // storability check and the same freeze the deployed one does, so a
+    // template holding a `Map` in a slot fails in its own spec rather than on
+    // the first deployment that has a database. Each call is a distinct
+    // session, so two contexts never share slot values.
+    slots: createDetachedSlotStore(),
     // Inert like `db` and `generate`: a tool that starts a workflow is testing
     // that it starts one, so the default names itself in the rejection and a
     // spec asserting the call passes its own stub.

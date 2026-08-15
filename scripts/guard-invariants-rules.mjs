@@ -130,21 +130,17 @@ export const LINE_RULES = [
       "restore by hand — and a hand-rolled restore is what rots: deepgram.test.ts\n" +
       'wrote back a captured `undefined`, which env coercion turns into "undefined".',
   },
-  {
-    id: 6,
-    key: "rule6_templateStateCast",
-    label: "ctx.state cast in a template",
-    re: "ctx\\.state as ",
-    // Templates only. Host tests legitimately cast: they drive an inline agent
-    // with no slot to type against.
-    paths: ["packages/aai-templates/templates"],
-    skipComments: true,
-    remedy:
-      "Use `sessionSlot()` from @alexkroman1/aai. It exists because all five\n" +
-      "stateful templates had taken this cast: `tool()` learns the state shape\n" +
-      "only from an annotated context, so a second module either restates the\n" +
-      "annotation or casts.",
-  },
+  // Rule 6 is RETIRED: `ctx.state` no longer exists, so `ctx.state as T` is
+  // unrepresentable rather than discouraged. It banned that cast in a template,
+  // on the finding that all five stateful ones had taken it — a tool learned the
+  // state shape only from an annotated context, so a second module either
+  // restated the annotation or cast. Session state is a `sessionSlot` now, which
+  // types and stores its own value in the module that declares it, and there is
+  // no bag left to cast.
+  //
+  // The NUMBER stays retired rather than being reused, per this file's stable-id
+  // rule: 6 appears in commit messages and in the baseline's history, and a later
+  // rule inheriting it would make both misleading.
   {
     id: 11,
     key: "rule11_hardcodedTmp",

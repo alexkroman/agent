@@ -12,7 +12,11 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import type { ExecuteTool } from "../sdk/_internal-types.ts";
+import { sessionSlot } from "../sdk/session-slot.ts";
 import type { AgentDef } from "../sdk/types.ts";
+
+/** The slot the conformance agent keeps its session state in. */
+export const conformanceSlot = sessionSlot("conformance", () => ({ count: 0, lastTurn: "" }));
 
 export type RuntimeTestContext = {
   executeTool: ExecuteTool;
@@ -23,7 +27,6 @@ export const CONFORMANCE_AGENT: AgentDef = {
   systemPrompt: "Conformance test agent.",
   greeting: "Hello!",
   maxSteps: 5,
-  state: () => ({ count: 0, lastTurn: "" }),
   tools: {
     echo: {
       description: "Echo input",
@@ -36,7 +39,7 @@ export const CONFORMANCE_AGENT: AgentDef = {
     },
     get_state: {
       description: "Get session state",
-      execute: (_args: unknown, ctx) => JSON.stringify(ctx.state),
+      execute: (_args: unknown, ctx) => JSON.stringify(conformanceSlot.get(ctx)),
     },
     echo_messages: {
       description: "Return messages as JSON",

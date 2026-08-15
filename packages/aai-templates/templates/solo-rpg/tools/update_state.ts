@@ -1,4 +1,4 @@
-import { pushCapped, tool } from "@alexkroman1/aai";
+import { pushCapped } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   DEFAULT_CLOCK_SEGMENTS,
@@ -19,7 +19,7 @@ import {
   updateCrisisFlags,
 } from "../shared.ts";
 
-export default tool({
+export default gameSlot.updateTool({
   description:
     "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.",
   inputSchema: z.object({
@@ -54,8 +54,7 @@ export default tool({
     storyComplete: z.boolean().describe("Mark story as complete").optional(),
     logEntry: z.string().max(500).describe("Short log entry for this scene").optional(),
   }),
-  async execute(args, ctx) {
-    const state = gameSlot.get(ctx);
+  execute(args, state) {
     const warnings: string[] = [];
     const clockEvents: { clock: string; trigger: string }[] = [];
 

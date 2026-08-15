@@ -4,7 +4,7 @@ import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import type { AuthResult } from "./authenticate.ts";
 import type { Address } from "./shared.ts";
-import { retailSlot, type StateSlot } from "./store.ts";
+import { retailSlot } from "./store.ts";
 import cancelPendingOrder from "./tools/cancel_pending_order.ts";
 import exchangeDeliveredOrderItems from "./tools/exchange_delivered_order_items.ts";
 import findUserIdByEmail from "./tools/find_user_id_by_email.ts";
@@ -23,12 +23,12 @@ import transferToHumanAgents from "./tools/transfer_to_human_agents.ts";
 
 /** Each call is its own session, so two contexts are two independent stores —
  *  which is what the isolation tests below rest on. */
-function makeCtx(): ToolContext<StateSlot> {
-  return createToolContext<StateSlot>();
+function makeCtx(): ToolContext {
+  return createToolContext();
 }
 
 /** A context already authenticated as `userId`, via the real tool. */
-async function authedCtx(email: string): Promise<ToolContext<StateSlot>> {
+async function authedCtx(email: string): Promise<ToolContext> {
   const ctx = makeCtx();
   // `ToolDef["execute"]`'s public signature always returns `unknown` (the
   // wire type is fixed so any tool is assignable to `ToolDef`, regardless of
@@ -367,9 +367,11 @@ describe("modify_pending_order_address", () => {
 
   test("accepts a 'pending (item modified)' order — unlike cancel", async () => {
     const ctx = await authedCtx("aarav.anderson9752@example.com");
-    const order = retailSlot.get(ctx).store.orders["#W9300146"];
-    if (!order) throw new Error("fixture missing");
-    order.status = "pending (item modified)";
+    retailSlot.update(ctx, (state) => {
+      const order = state.store.orders["#W9300146"];
+      if (!order) throw new Error("fixture missing");
+      order.status = "pending (item modified)";
+    });
     const result = await modifyPendingOrderAddress.execute(
       { order_id: "#W9300146", ...NEW_ADDRESS },
       ctx,
@@ -675,14 +677,16 @@ describe("modify_pending_order_payment", () => {
 
   test("refuses an order whose payment history is not a single payment", async () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
-    const order = retailSlot.get(ctx).store.orders["#W5442520"];
-    if (!order) throw new Error("fixture missing");
     // No seeded pending order has a second history entry, so construct one —
     // tau2 guards this case and the guard should still be covered.
-    order.payment_history.push({
-      transaction_type: "refund",
-      amount: 10,
-      payment_method_id: "credit_card_9753331",
+    retailSlot.update(ctx, (state) => {
+      const order = state.store.orders["#W5442520"];
+      if (!order) throw new Error("fixture missing");
+      order.payment_history.push({
+        transaction_type: "refund",
+        amount: 10,
+        payment_method_id: "credit_card_9753331",
+      });
     });
     const result = await modifyPendingOrderPayment.execute(
       { order_id: "#W5442520", payment_method_id: "paypal_8049766" },

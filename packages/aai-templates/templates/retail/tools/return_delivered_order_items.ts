@@ -5,7 +5,6 @@ import {
   authenticatedUser,
   findPaymentMethod,
   isGiftCard,
-  retailSlot,
   retailTool,
   setFocus,
 } from "../store.ts";
@@ -36,8 +35,7 @@ export default retailTool({
   // `execute`'s return type, and processes object literal properties in
   // source order — with `summary` first, `result` in its signature can't be
   // inferred and silently falls back to `unknown`.
-  execute: (args, ctx) => {
-    const state = retailSlot.get(ctx);
+  execute: (args, state) => {
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;
 

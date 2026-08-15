@@ -35,7 +35,7 @@
  * agent that can rebook a flight and one that can rebook a flight *by mistake*.
  */
 
-import { pushCapped, type SlotStateOf, sessionSlot, type ToolFailure } from "@alexkroman1/aai";
+import { pushCapped, sessionSlot, type ToolFailure } from "@alexkroman1/aai";
 
 // ─── The booking world ───────────────────────────────────────────────────────
 // Their notebook downloads a sqlite database of a real airline's schedule and
@@ -317,8 +317,6 @@ export const tripSlot = sessionSlot("trip", seedTrip, {
     if (state.dialogState.length === 0) state.dialogState.push("primary");
   },
 });
-
-export type StateSlot = SlotStateOf<typeof tripSlot>;
 
 export function activeAssistant(state: TripState): DialogState {
   return state.dialogState.at(-1) ?? "primary";

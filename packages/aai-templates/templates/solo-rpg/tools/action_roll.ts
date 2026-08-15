@@ -1,4 +1,3 @@
-import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   applyConsequences,
@@ -12,7 +11,7 @@ import {
   updateChaosFactor,
 } from "../shared.ts";
 
-export default tool({
+export default gameSlot.updateTool({
   description:
     "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action. Pure conversation needs no roll.",
   inputSchema: z.object({
@@ -25,8 +24,7 @@ export default tool({
     purpose: z.string().max(300).describe("What the character is attempting"),
     targetNpcId: z.string().max(32).describe("Target NPC id for social moves").optional(),
   }),
-  async execute(args, ctx) {
-    const state = gameSlot.get(ctx);
+  execute(args, state) {
     const statValue = state[args.stat];
     const roll = rollAction(args.stat, statValue, args.move);
 

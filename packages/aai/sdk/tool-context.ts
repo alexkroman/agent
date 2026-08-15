@@ -14,7 +14,8 @@
 
 import type { Db } from "./db.ts";
 import type { GenerateFn } from "./generate.ts";
-import type { DefaultSessionState, Message } from "./types.ts";
+import type { SlotStore } from "./session-state.ts";
+import type { Message } from "./types.ts";
 import type { StartOptions, WorkflowClient } from "./workflow.ts";
 
 /**
@@ -23,9 +24,12 @@ import type { StartOptions, WorkflowClient } from "./workflow.ts";
  * Provides access to the session environment, state, database, and
  * conversation history from within a tool's execute handler.
  *
- * @typeParam S - The shape of per-session state created by the agent's
- *   `state` factory. Defaults to {@link DefaultSessionState}; annotate the
- *   context (`ctx: ToolContext<MyState>`) to get real checking.
+ * @remarks
+ * It takes no type parameter. It used to take the agent's state shape, because
+ * `ctx.state` was a bag whose type a tool could only learn from an annotated
+ * context — so every module in a multi-file agent either restated the
+ * annotation or cast. {@link sessionSlot} is the whole of that job now: a
+ * slot's value is typed by the slot, in the one module that declares it.
  *
  * @example
  * ```ts
@@ -44,7 +48,7 @@ import type { StartOptions, WorkflowClient } from "./workflow.ts";
  *
  * @public
  */
-export type ToolContext<S = DefaultSessionState> = {
+export type ToolContext = {
   /**
    * Environment variables available to this agent's tools (from `.env` under
    * `aai dev`, `aai secret` in production). Custom keys a tool depends on
@@ -52,8 +56,16 @@ export type ToolContext<S = DefaultSessionState> = {
    * fails at deploy time.
    */
   env: Readonly<Record<string, string>>;
-  /** Mutable per-session state created by the agent's `state` factory. */
-  state: S;
+  /**
+   * This session's slot storage. **Reach for {@link sessionSlot}, not this** —
+   * it is on the context because a slot declared in one module has no other way
+   * to find the session, not because a tool body should call it.
+   *
+   * It replaced `ctx.state`, a field typed `any` whose whole justification was
+   * that the bag it held was dynamic. There is no bag: a slot owns its value,
+   * types it, and is the only thing that writes it.
+   */
+  slots: SlotStore;
   /**
    * SQL database scoped to this app. Available when storage is enabled
    * (`aai storage enable`, or Settings → Database in the studio); accessing

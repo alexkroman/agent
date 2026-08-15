@@ -9,7 +9,7 @@
  * out of the tools it ran.
  */
 
-import { type AgentDef, agent, tool } from "@alexkroman1/aai";
+import { type AgentDef, agent, sessionSlot, tool } from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
@@ -76,17 +76,18 @@ describe("createTextAgent", () => {
     ).toThrow(/createTextAgent/);
   });
 
-  test("runs a tool through the SDK executor, with ctx.env and ctx.state", async () => {
+  test("runs a tool through the SDK executor, with ctx.env and slot state", async () => {
     const seen: { env: unknown; state: unknown; sessionId: string }[] = [];
+    const wordSlot = sessionSlot("words", () => ({ words: [] as string[] }));
     const remember = tool({
       description: "Remember a word",
       inputSchema: z.object({ word: z.string() }),
-      execute: ({ word }, ctx) => {
-        const state = ctx.state as { words: string[] };
-        state.words.push(word);
-        seen.push({ env: ctx.env.TOKEN, state: state.words.slice(), sessionId: ctx.sessionId });
-        return { count: state.words.length };
-      },
+      execute: ({ word }, ctx) =>
+        wordSlot.update(ctx, (state) => {
+          state.words.push(word);
+          seen.push({ env: ctx.env.TOKEN, state: state.words.slice(), sessionId: ctx.sessionId });
+          return { count: state.words.length };
+        }),
     });
     const model = createFakeLanguageModel({
       steps: [
@@ -100,7 +101,6 @@ describe("createTextAgent", () => {
         {
           name: "Notes",
           text: true,
-          state: () => ({ words: [] as string[] }),
         },
         { remember },
       ),

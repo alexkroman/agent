@@ -79,9 +79,18 @@ export * from "./sdk/providers/s2s/assemblyai.ts";
  * `sdk/schema.ts` for the signatures that reference them.
  */
 export type { InferSchemaOutput, ToolInputSchema } from "./sdk/schema.ts";
-// `ctx.state`'s typed seam — next to `agent()`/`tool()` because it is how a
-// multi-file agent reads its own session state, not an optional utility.
+// Session state's typed seam — next to `agent()`/`tool()` because it is how a
+// multi-file agent reads and writes its own state, not an optional utility.
 export * from "./sdk/session-slot.ts";
+/**
+ * The two names a slot's own signatures mention, and only those.
+ *
+ * By NAME rather than `export *`: that module also holds the storability check
+ * and the detached store, which are `@internal` — and an `@internal` name on a
+ * public subpath is what `check:api-contracts` refuses, correctly, since it would
+ * sit in an author's autocomplete beside `sessionSlot`.
+ */
+export type { SlotStore, StateProjection } from "./sdk/session-state.ts";
 // Resolving what a caller SAID to one of the things a tool holds — the
 // never-guess contract, on the root barrel because it is written in a tool body
 // beside `toolFailure`, which it returns.

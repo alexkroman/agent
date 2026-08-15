@@ -555,11 +555,12 @@ The cross-replica coordination that lives in this same Postgres:
   which made both studio limits decorative against exactly the traffic they
   exist to stop. Key verification above is what makes a scope cost an
   account; the IP key is what bounds the damage before one is spent.
-- **Session resume needs no cross-replica store**: sessions live in the
-  guest sandbox, not on a replica — a `?sessionId=<id>` reconnect
-  re-brokers via `GET /:slug/client-config` and lands on the SAME sandbox,
-  whose in-guest runtime holds the state through the resume grace window.
-  (The old host-side session-state persistence died with the host relay.)
+- **Session resume needs no cross-replica store**: sessions live in the guest
+  sandbox, not on a replica — a `?sessionId=<id>` reconnect re-brokers via
+  `GET /:slug/client-config`. It need not land on the SAME sandbox any more: slot
+  state is durable in the app's own schema when storage is on, so a REPLACEMENT
+  guest (redeploy, `handoverSlot`, the peer route) recovers it.
+  `_session-state-sweep.ts` reclaims what a dead guest left.
 
 What deliberately stays in-process, and why it doesn't break statelessness:
 
@@ -1254,9 +1255,10 @@ Key properties:
 - **Resource limits**: Modal per-sandbox memory/CPU caps
   (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h).
-- **Sessions live in the guest**: the embedded runtime owns per-session
-  state (`ctx.state`, history, the resume grace window) exactly as the
-  self-hosted runtime does. The host holds no session state.
+- **Sessions live in the guest**: the embedded runtime owns per-session state
+  (slot values, history, the resume grace window) exactly as the self-hosted
+  runtime does. The host holds no session state; a DURABLE slot value lives in the
+  tenant's own schema, on the tenant's own role.
 
 Key files: `sandbox.ts`, `sandbox-vm.ts`, `modal-sandbox.ts`,
 `aai-guest/harness.ts`, `rpc-transport.ts`. A deployed agent's env is

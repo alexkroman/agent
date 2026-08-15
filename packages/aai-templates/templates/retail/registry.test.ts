@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
-import { withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { createToolContext, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
 import { retailSlot } from "./store.ts";
@@ -32,16 +32,10 @@ const retailAgent = withDiscoveredTools(
 );
 const registry = Object.entries(retailAgent.tools);
 
-let sessionCounter = 0;
-function makeCtx(): ToolContext {
-  return {
-    sessionId: `registry-test-${++sessionCounter}`,
-    send: () => {},
-    env: {},
-    state: {},
-    messages: [],
-  } as unknown as ToolContext;
-}
+// `createToolContext()` rather than a cast: it carries a real slot store (the
+// same storability check and freeze the deployed one applies), and each call is a
+// distinct session, which is what these per-tool cases assume.
+const makeCtx = (): ToolContext => createToolContext();
 
 /** Minimal args satisfying each tool's schema. Deliberately plausible-shaped
  *  but wrong — these calls are expected to fail; what is asserted is that they
@@ -190,10 +184,16 @@ describe("agent config", () => {
     expect(typeof retailAgent.syncState).toBe("function");
   });
 
-  test("declares a state factory, so sessions do not share a store", () => {
-    expect(typeof retailAgent.state).toBe("function");
-    const a = retailAgent.state?.();
-    const b = retailAgent.state?.();
+  // The slot owns the default now — there is no `state` factory on the agent to
+  // forget to declare, which is what four of five slot-backed templates used to.
+  // What still has to hold is that the factory really is called per session: the
+  // 107 KB seed is one module-level object, so a shared clone would let one
+  // caller's cancellation show up in another's.
+  test("the slot's factory clones the seed, so sessions do not share a store", () => {
+    const a = retailSlot.create();
+    const b = retailSlot.create();
     expect(a).not.toBe(b);
+    expect(a.store.orders).not.toBe(b.store.orders);
+    expect(a.store).toEqual(b.store);
   });
 });

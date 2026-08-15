@@ -2,7 +2,7 @@ import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { calculateTotal, formatPrice, orderSlot } from "../shared.ts";
 
-export default orderSlot.tool({
+export default orderSlot.updateTool({
   description: "Remove a pizza from the order by its ID.",
   inputSchema: z.object({
     pizza_id: z.number().describe("The pizza ID to remove"),

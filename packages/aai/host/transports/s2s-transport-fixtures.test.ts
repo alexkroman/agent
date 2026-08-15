@@ -17,6 +17,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { sessionSlot } from "../../sdk/session-slot.ts";
 import type { AgentDef } from "../../sdk/types.ts";
 import { createFixtureSession, flush } from "../_test-utils.ts";
 
@@ -55,20 +56,21 @@ const simpleAgent: AgentDef = {
   tools: {},
 };
 
-const statefulAgent: AgentDef<{ callCount: number }> = {
+const callSlot = sessionSlot("calls", () => ({ callCount: 0 }));
+
+const statefulAgent: AgentDef = {
   name: "stateful-agent",
   systemPrompt: "You are helpful.",
   greeting: "Hi!",
   maxSteps: 5,
-  state: () => ({ callCount: 0 }),
   tools: {
     get_weather: {
       description: "Get weather",
       inputSchema: z.object({ city: z.string() }),
-      execute: ({ city }: { city: string }, ctx) => {
-        ctx.state.callCount++;
-        return { city, calls: ctx.state.callCount };
-      },
+      execute: ({ city }: { city: string }, ctx) => ({
+        city,
+        calls: callSlot.update(ctx, (state) => ++state.callCount),
+      }),
     },
   },
 };

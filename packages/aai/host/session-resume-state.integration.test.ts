@@ -45,6 +45,7 @@ import { WebSocket } from "ws";
 import { z } from "zod";
 import { tool } from "../sdk/define.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
+import { sessionSlot } from "../sdk/session-slot.ts";
 import { createSeveringProxy, type SeveringProxy } from "./_fault-socket.ts";
 import { makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
@@ -54,6 +55,9 @@ import { _internals as s2sTransportInternals } from "./transports/s2s-transport.
 
 /** The agent's state, and what its `syncState` projection puts on the wire. */
 type ProbeState = { items: string[] };
+
+/** The slot the probe agent keeps its list in — the thing a resume has to find. */
+const probeSlot = sessionSlot("probe", (): ProbeState => ({ items: [] }));
 
 type Frame = { type: string; sessionId?: string; state?: ProbeState };
 
@@ -88,10 +92,9 @@ async function serve(): Promise<Harness> {
       s2s: assemblyAIS2s(),
       maxSteps: 4,
       toolChoice: "auto",
-      // A factory, so the state exists before the first tool call — which is
-      // what `pushStateSnapshot` needs on a resume.
-      state: (): ProbeState => ({ items: [] }),
-      syncState: (state: ProbeState) => ({ items: state.items }),
+      // The projection carries the slot's own default, so there is nothing to
+      // declare for `pushStateSnapshot` to have something to project on a resume.
+      syncState: probeSlot.projection((state) => ({ items: state.items })),
       tools: {
         add_item: tool({
           description: "Add an item to the list.",
@@ -101,11 +104,11 @@ async function serve(): Promise<Harness> {
           // about state SURVIVING — the shape of a test that measures the right
           // thing about the wrong value.
           inputSchema: z.object({ item: z.string() }),
-          execute: (args, ctx) => {
-            const state = ctx.state as ProbeState;
-            state.items.push(args.item);
-            return `added ${args.item}`;
-          },
+          execute: (args, ctx) =>
+            probeSlot.update(ctx, (state) => {
+              state.items.push(args.item);
+              return `added ${args.item}`;
+            }),
         }),
       },
     },

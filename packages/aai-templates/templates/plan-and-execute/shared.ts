@@ -13,7 +13,7 @@
  * (`solo-rpg` has the save-slot version).
  */
 
-import { pushCapped, type SlotStateOf, sessionSlot } from "@alexkroman1/aai";
+import { pushCapped, sessionSlot } from "@alexkroman1/aai";
 import { webSearch } from "@alexkroman1/aai/tools";
 import { isToolFailure } from "@alexkroman1/aai/utils";
 
@@ -46,8 +46,6 @@ export function emptyPlan(): PlanState {
 }
 
 export const planSlot = sessionSlot("plan", emptyPlan);
-
-export type StateSlot = SlotStateOf<typeof planSlot>;
 
 export function noteRevision(state: PlanState, entry: string): void {
   pushCapped(state.revisions, entry, MAX_REVISIONS);

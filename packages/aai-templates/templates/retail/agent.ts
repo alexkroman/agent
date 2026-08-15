@@ -14,7 +14,6 @@ export default agent({
   // the slot install itself on first access) means the session's store exists
   // before the first tool call, so a resumed connection has something to
   // project; the slot owns the shape either way.
-  state: retailSlot.state,
 
   // One projection pushed after every tool call. It is a projection, not a
   // flag, because the state holds all six seeded customers and only the

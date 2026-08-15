@@ -14,6 +14,7 @@ import type { Db } from "../sdk/db.ts";
 import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import type { GenerateFn, GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import { formatSchemaIssues } from "../sdk/schema.ts";
+import { createDetachedSlotStore, type SlotStore } from "../sdk/session-state.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage } from "../sdk/utils.ts";
 import type { WorkflowClient } from "../sdk/workflow.ts";
@@ -30,7 +31,11 @@ const yieldTick = (): Promise<void> => new Promise((r) => setImmediate(r));
 type ExecuteToolCallOptions = {
   tool: ToolDef;
   env: Readonly<Record<string, string>>;
-  state?: Record<string, unknown>;
+  /**
+   * This session's slot storage (`ctx.slots`). Absent for a sessionless caller,
+   * which gets a detached one — see `buildToolContext`.
+   */
+  slots?: SlotStore | undefined;
   sessionId?: string | undefined;
   db?: Db | undefined;
   messages?: readonly Message[] | undefined;
@@ -67,10 +72,13 @@ type ExecuteToolCallOptions = {
 // context's signal is the per-call controller `executeToolCall` always builds,
 // which is what makes `ToolContext.signal` non-optional.
 function buildToolContext(opts: ExecuteToolCallOptions & { signal: AbortSignal }): ToolContext {
-  const { env, state, db, messages, sessionId, send, signal, generate, workflows } = opts;
+  const { env, slots, db, messages, sessionId, send, signal, generate, workflows } = opts;
   return {
     env,
-    state: state ?? {},
+    // A caller with no session gets its own detached store rather than a shared
+    // one: two such calls must not read each other's slots, which is the same
+    // rule the `sessionId ?? randomUUID()` below encodes for the note builtins.
+    slots: slots ?? createDetachedSlotStore(),
     signal,
     workflows: workflows ?? rejectingWorkflows(WORKFLOWS_UNAVAILABLE_MESSAGE),
     get db(): Db {

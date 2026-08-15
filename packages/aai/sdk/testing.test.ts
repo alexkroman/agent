@@ -16,15 +16,15 @@ describe("createToolContext", () => {
       "sent",
       "sessionId",
       "signal",
-      "state",
+      "slots",
       "workflows",
     ]);
   });
 
-  test("defaults are inert: empty env, empty state, no messages", () => {
+  test("defaults are inert: empty env, empty slots, no messages", () => {
     const ctx = createToolContext();
     expect(ctx.env).toEqual({});
-    expect(ctx.state).toEqual({});
+    expect(ctx.slots.read("anything")).toBeUndefined();
     expect(ctx.messages).toEqual([]);
   });
 
@@ -67,13 +67,11 @@ describe("createToolContext", () => {
     const ctx = createToolContext({
       sessionId: "fixed",
       env: { API_KEY: "k" },
-      state: { cart: [] },
       db,
       messages: [{ role: "user", content: "hi" }],
     });
     expect(ctx.sessionId).toBe("fixed");
     expect(ctx.env).toEqual({ API_KEY: "k" });
-    expect(ctx.state).toEqual({ cart: [] });
     expect(ctx.db).toBe(db);
     expect(ctx.messages).toEqual([{ role: "user", content: "hi" }]);
   });
@@ -94,9 +92,19 @@ describe("createToolContext", () => {
     expect(createToolContext({ signal: controller.signal }).signal.aborted).toBe(true);
   });
 
-  test("state is typed by the caller", () => {
-    const ctx = createToolContext<{ count: number }>({ state: { count: 3 } });
-    expect(ctx.state.count).toBe(3);
+  test("its slot store applies the real storability check", () => {
+    // NOT a stub: a template holding a `Map` in a slot has to fail in its own
+    // spec rather than on the first deployment that has a database.
+    const ctx = createToolContext();
+    expect(() => ctx.slots.write("held", new Map(), true)).toThrow(/a Map/);
+  });
+
+  test("two contexts are two sessions, so their slots are independent", () => {
+    const a = createToolContext();
+    const b = createToolContext();
+    a.slots.write("cart", { items: ["apple"] }, true);
+    expect(b.slots.read("cart")).toBeUndefined();
+    expect(a.sessionId).not.toBe(b.sessionId);
   });
 });
 

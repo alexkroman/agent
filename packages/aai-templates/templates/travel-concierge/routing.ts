@@ -43,7 +43,7 @@ import {
  */
 export function delegationTool(id: SpecialistId): ToolDef {
   const specialist = SPECIALISTS[id];
-  return tripSlot.tool({
+  return tripSlot.updateTool({
     description:
       `Hand the call to the ${specialist.title}. Use this as soon as the caller ` +
       "raises something that desk owns — do not answer it yourself. Do not " +
@@ -76,7 +76,7 @@ export function delegationTool(id: SpecialistId): ToolDef {
  * a `done` tool will keep trying to answer things the desk has no tools for.
  * The `reason` is what the concierge is handed on the way back up.
  */
-export const completeOrEscalate = tripSlot.tool({
+export const completeOrEscalate = tripSlot.updateTool({
   description:
     "Hand the call back to the main concierge. Use this when the current desk's " +
     "work is finished, when the caller changes the subject to something this " +
@@ -112,7 +112,7 @@ export const completeOrEscalate = tripSlot.tool({
  * every sensitive tool stages instead of acting, so the approval has somewhere
  * to arrive.
  */
-export const confirmAction = tripSlot.tool({
+export const confirmAction = tripSlot.updateTool({
   description:
     "Apply the change the caller has just confirmed out loud. Only call this " +
     "after you have read the change back and heard a clear yes.",
@@ -122,7 +122,7 @@ export const confirmAction = tripSlot.tool({
 });
 
 /** `cancel_action` — the caller said no. Drops the staged action, changes nothing. */
-export const cancelAction = tripSlot.tool({
+export const cancelAction = tripSlot.updateTool({
   description:
     "Discard the change the caller just declined. Call this when they say no, " +
     "or when they want to change the details before confirming.",
