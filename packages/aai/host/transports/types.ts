@@ -1,53 +1,116 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Transport strategy — per-session provider wiring (S2S, pipeline, etc.).
+/**
+ * Transport strategy — per-session provider wiring (S2S, pipeline, etc.) — and
+ * the ONE way a transport tells the session what happened.
+ *
+ * ## A transport REPORTS an event; it does not name a callback per event
+ *
+ * This type used to carry one method per thing a transport observes — sixteen of
+ * them, and its own comment said as much: "one per event the transport produces".
+ * `SessionCore` then declared the same sixteen, `runtime-session-callbacks.ts`
+ * forwarded each to its twin, and four test harnesses stubbed the whole set. So a
+ * seventeenth thing worth observing cost a declaration in three places and a stub
+ * in four, none of which DECIDED anything: the transport already knew what
+ * happened, and `sdk/protocol-events.ts` already had a name for it.
+ *
+ * The vocabulary is therefore the surface. {@link TransportCallbacks.report}
+ * takes a {@link TransportEventBody} — the protocol's own event body narrowed to
+ * the events a transport can be the source of — so a new event is one union
+ * member in `protocol-events.ts` plus one `case` in the session, with nothing
+ * threaded and nothing stubbed.
+ *
+ * ## What is NOT an event keeps its own name
+ *
+ * Three callbacks survive, and the rule is exactly that there is no event for
+ * them:
+ *
+ * - {@link TransportCallbacks.onAudioChunk} — BINARY PCM, 384 kbps down. Audio
+ *   frames are deliberately outside the event vocabulary (see
+ *   `protocol-events.ts`, "Audio is NOT in here"), so there is nothing to report.
+ * - {@link TransportCallbacks.onReplyStarted} — the wire has `reply.completed`
+ *   and `reply.cancelled` and no `reply.started`. Minting one is a protocol
+ *   change with a client on the other end of it, not a callback cleanup.
+ * - {@link TransportCallbacks.onSessionReady} — the PROVIDER's own session id, a
+ *   fact about the upstream link rather than about this session. Nothing on the
+ *   wire describes it and nothing should: it is a resume token for one vendor.
+ */
 
-import type { SessionErrorCode } from "../../sdk/protocol.ts";
+import type { SessionErrorCode, SessionEventBody } from "../../sdk/protocol.ts";
 import type { Message } from "../../sdk/types.ts";
 
 /**
- * Typed callbacks into the SessionCore. One per event the transport produces.
- * Constructed at transport-creation time; no emitter.on-style indirection.
+ * The event vocabulary narrowed to a named subset.
+ *
+ * The `extends` constraint is the point: a name that is not in
+ * {@link SessionEventBody} is a COMPILE ERROR here, where a bare
+ * `Extract<SessionEventBody, { type: "speach.started" }>` would silently resolve
+ * to `never` and quietly shrink the union — the same
+ * a-pattern-that-matches-nothing shape the repo's gates keep paying for.
+ */
+type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, { type: T }>;
+
+/**
+ * What a transport may report: everything in the session event vocabulary except
+ * the events only the session itself can be the source of.
+ *
+ * The five it excludes are excluded for a reason each, not by omission:
+ * `session.configured` is the handshake (`SessionCore.configure`),
+ * `session.reset` and `session.timed-out` come from the client and the idle
+ * watchdog, `custom.emitted` is `ctx.send`, and `state.updated` is a `syncState`
+ * projection. A transport reporting any of them would be describing a decision
+ * it did not make.
+ *
+ * @internal
+ */
+export type TransportEventBody = EventsNamed<
+  | "speech.started"
+  | "speech.stopped"
+  | "user-transcript.updated"
+  | "user-transcript.committed"
+  | "agent-transcript.updated"
+  | "agent-transcript.committed"
+  | "tool.called"
+  | "tool.completed"
+  | "reply.completed"
+  | "reply.cancelled"
+  | "audio.completed"
+  | "error.reported"
+>;
+
+/** One reportable event's `type`, for a switch or a per-type recorder. */
+export type TransportEventType = TransportEventBody["type"];
+
+/**
+ * How a transport reaches the session it runs for. Constructed at
+ * transport-creation time; no emitter.on-style indirection.
  *
  * @internal
  */
 export type TransportCallbacks = {
-  onReplyStarted(replyId: string): void;
-  onReplyDone(): void;
-  onCancelled(): void;
-  onAudioChunk(bytes: Uint8Array): void;
-  onAudioDone(): void;
-  onUserTranscript(text: string): void;
   /**
-   * Interim user transcript while speech is still in progress. Pipeline mode
-   * forwards STT partials so the client can render live captions; S2S
-   * transports never call it (their providers only surface committed turns).
-   */
-  onUserTranscriptPartial?(text: string, eotConfidence?: number): void;
-  onAgentTranscript(text: string, interrupted: boolean): void;
-  /**
-   * The reply's transcript *so far*, cumulative — called each time more of it
-   * becomes audible, so a client's captions keep pace with the speech instead
-   * of landing in one lump when the reply ends.
+   * Report one thing that happened, in the protocol's own event vocabulary.
    *
-   * Pipeline mode calls this as text reaches TTS. It matters most for a reply
-   * that spends 10+ seconds in a tool chain: the dead-air cover
-   * fillers are spoken minutes before `onAgentTranscript` fires, and a client
-   * pairing text with audio has already played that audio by then. S2S
-   * transports leave it unset — their providers surface a reply's transcript
-   * once, when it is complete.
+   * Two members carry a subtlety worth knowing before you report them:
+   *
+   * - **`reply.completed` is the PROVIDER's claim, not the turn's end.** A
+   *   provider sends its `reply.done` more than once per turn, so the session
+   *   decides whether this one closes the turn and may emit nothing at all —
+   *   see `session-reply-done.ts`, which is entirely about the three ways it is
+   *   not the end.
+   * - **`agent-transcript.committed` vs `.updated` replaces a boolean.** The old
+   *   `onAgentTranscript(text, interrupted)` plus a separate
+   *   `onAgentTranscriptPartial(text)` encoded, in two callbacks and a flag,
+   *   exactly the distinction these two event names carry — only the committed
+   *   one enters history. Report the interim snapshot and an INTERRUPTED reply's
+   *   final text as `.updated`; report a reply that is being recorded as
+   *   `.committed`.
    */
-  onAgentTranscriptPartial?(text: string): void;
-  onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
-  /**
-   * Tool execution finished. Pipeline mode invokes this from the
-   * `tool-result` stream part so the client UI can mark the call done.
-   * S2S transports leave this unset — SessionCore.onToolCall emits the
-   * `tool_call_done` event itself after dispatching the tool.
-   */
-  onToolCallDone?(callId: string, result: string): void;
-  onError(code: SessionErrorCode, message: string, opts?: { fatal?: boolean }): void;
-  onSpeechStarted(): void;
-  onSpeechStopped(): void;
+  report(event: TransportEventBody): void;
+  /** Agent audio for the client. Binary, and deliberately not an event. */
+  onAudioChunk(bytes: Uint8Array): void;
+  /** A reply is beginning. Not an event: the wire has no `reply.started`. */
+  onReplyStarted(replyId: string): void;
+  /** The provider's own session id, when it issues one. Not an event. */
   onSessionReady?(providerSessionId: string): void;
 };
 

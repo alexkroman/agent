@@ -116,25 +116,10 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
     }
     return;
   }
-  switch (result.data.type) {
-    case "audio_ready":
-      session.onAudioReady();
-      break;
-    case "cancel":
-      session.onCancel();
-      break;
-    case "reset":
-      session.onReset();
-      break;
-    case "playback_progress":
-      session.onPlaybackProgress(result.data.bufferedMs);
-      break;
-    case "tool_result":
-      session.onToolResult(result.data.toolCallId, result.data.result, result.data.error);
-      break;
-    default:
-      break;
-  }
+  // Handed over whole. This was a switch picking one of five session methods
+  // named after the five commands, which is a translation table between a
+  // vocabulary and itself — see `session-core.ts`'s module doc.
+  session.command(result.data);
 }
 
 /**

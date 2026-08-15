@@ -320,6 +320,8 @@
     "ToolDefRecord",
     "Transport",
     "TransportCallbacks",
+    "TransportEventBody",
+    "TransportEventType",
     "TransportSessionConfig",
     "UPLOADS_TABLE",
     "UPLOADS_UNAVAILABLE_MESSAGE",

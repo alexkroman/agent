@@ -635,7 +635,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
     // Drive a tool call as an S2S transport would.
     core.onReplyStarted("r1");
-    core.onToolCall("call-1", "lookup", { q: 1 });
+    core.report({ type: "tool.called", toolCallId: "call-1", toolName: "lookup", args: { q: 1 } });
 
     const toolCalls = ws.sentJson().filter((m) => m.type === "tool.called");
     expect(toolCalls).toEqual([

@@ -10,8 +10,8 @@ import {
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
 import type { Logger } from "../runtime-config.ts";
+import { makeCallbacks, type RecordingCallbacks } from "./_transport-recorder.ts";
 import type { PipelineTransportOptions } from "./pipeline-transport.ts";
-import type { TransportCallbacks } from "./types.ts";
 
 export type SttFake = ReturnType<typeof createFakeSttProvider>;
 export type TtsFake = ReturnType<typeof createFakeTtsProvider>;
@@ -20,25 +20,6 @@ export type TtsFake = ReturnType<typeof createFakeTtsProvider>;
 // export is excluded from the package build and isn't declaration-portable).
 const noop = (): void => undefined;
 const silentLogger: Logger = { info: noop, warn: noop, error: noop, debug: noop };
-
-export function makeCallbacks(): TransportCallbacks {
-  return {
-    onReplyStarted: vi.fn(),
-    onReplyDone: vi.fn(),
-    onCancelled: vi.fn(),
-    onAudioChunk: vi.fn(),
-    onAudioDone: vi.fn(),
-    onUserTranscript: vi.fn(),
-    onUserTranscriptPartial: vi.fn(),
-    onAgentTranscript: vi.fn(),
-    onAgentTranscriptPartial: vi.fn(),
-    onToolCall: vi.fn(),
-    onError: vi.fn(),
-    onSpeechStarted: vi.fn(),
-    onSpeechStopped: vi.fn(),
-    onSessionReady: vi.fn(),
-  };
-}
 
 /**
  * The recorded calls of a {@link createFakeLanguageModel} passed through
@@ -58,12 +39,12 @@ export function makeOpts(
     stt = createFakeSttProvider(),
     tts = createFakeTtsProvider(),
     callbacks = makeCallbacks(),
-  }: { stt?: SttFake; tts?: TtsFake; callbacks?: TransportCallbacks } = {},
+  }: { stt?: SttFake; tts?: TtsFake; callbacks?: RecordingCallbacks } = {},
 ): {
   opts: PipelineTransportOptions;
   stt: SttFake;
   tts: TtsFake;
-  callbacks: TransportCallbacks;
+  callbacks: RecordingCallbacks;
 } {
   const opts: PipelineTransportOptions = {
     sid: "test-sid",
@@ -110,20 +91,6 @@ export function inFlightReplyScript(): ScriptedPart[] {
 export function firstCallArg<T>(fn: unknown): T {
   // biome-ignore lint/style/noNonNullAssertion: caller asserts the spy was invoked
   return (fn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as T;
-}
-
-/**
- * The interim-transcript spy. `onAgentTranscriptPartial` is optional on
- * {@link TransportCallbacks} (S2S transports never call it) but {@link
- * makeCallbacks} always sets it, so this narrows once instead of asserting at
- * every call site.
- */
-export function partialTranscriptSpy(
-  callbacks: TransportCallbacks,
-): ReturnType<typeof vi.fn<(text: string) => void>> {
-  const fn = callbacks.onAgentTranscriptPartial;
-  if (fn === undefined) throw new Error("harness callbacks are missing onAgentTranscriptPartial");
-  return vi.mocked(fn);
 }
 
 export const noopToolSchema = {

@@ -102,7 +102,15 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
 
 // ─── SessionCore mock ───────────────────────────────────────────────────────
 
-/** Create a SessionCore-shaped mock with all methods as vi.fn() spies. */
+/**
+ * Create a SessionCore-shaped mock with all methods as vi.fn() spies.
+ *
+ * Nine spies, where there were twenty-four. The session's inbound surface is two
+ * vocabularies plus two audio paths now (see `session-core.ts`), so this stub
+ * cannot go stale against an added command or event the way a per-name one did —
+ * which is the whole reason a double cast to `SessionCore` was tempting here, and
+ * a cast is exactly what stops reporting when a field is ADDED.
+ */
 export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
   return {
     id: "test",
@@ -110,26 +118,12 @@ export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     announce: vi.fn(() => true),
-    onAudio: vi.fn(),
-    onAudioReady: vi.fn(),
-    onCancel: vi.fn(),
-    onReset: vi.fn(),
-    onPlaybackProgress: vi.fn(),
     restoreHistory: vi.fn(),
-    onToolResult: vi.fn(),
+    command: vi.fn(),
+    onAudio: vi.fn(),
+    report: vi.fn(),
     onReplyStarted: vi.fn(),
-    onReplyDone: vi.fn(),
-    onCancelled: vi.fn(),
     onAudioChunk: vi.fn(),
-    onAudioDone: vi.fn(),
-    onUserTranscript: vi.fn(),
-    onUserTranscriptPartial: vi.fn(),
-    onAgentTranscript: vi.fn(),
-    onAgentTranscriptPartial: vi.fn(),
-    onToolCall: vi.fn(),
-    onError: vi.fn(),
-    onSpeechStarted: vi.fn(),
-    onSpeechStopped: vi.fn(),
     ...overrides,
   };
 }

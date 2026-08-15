@@ -207,6 +207,11 @@ export { createS2sTransport, type S2sTransportOptions } from "./transports/s2s-t
 export type {
   Transport,
   TransportCallbacks,
+  // `TransportCallbacks.report` names this, so anything implementing the one
+  // needs the other — a forgotten export here would be a type a consumer has to
+  // satisfy and has no way to import.
+  TransportEventBody,
+  TransportEventType,
   TransportSessionConfig,
 } from "./transports/types.ts";
 // The workflow HTTP API. `createServer` mounts it itself, so nothing outside

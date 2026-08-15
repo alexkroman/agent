@@ -52,7 +52,21 @@ interface LineRule {
   key: string;
   label: string;
   re: string;
+  paths: string[];
 }
+
+/**
+ * Every source file in the repo, for rule 16's pathspec check below.
+ *
+ * `query: "?raw"` is deliberately absent — only the KEYS are read, so eagerly
+ * loading a few hundred modules' contents would be pure cost.
+ */
+const repoFiles = new Set(
+  // Keys come back relative to THIS file, which Vite normalizes to the shortest
+  // form (`../aai/host/session-core.ts`) — hence the rewrite rather than a
+  // `../../packages/` pattern, whose keys are the same string either way.
+  Object.keys(import.meta.glob("../*/**/*.ts")).map((k) => k.replace(/^\.\.\//, "packages/")),
+);
 
 /**
  * The rules, IMPORTED — not scraped out of the source.
@@ -185,6 +199,36 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
     matches: ["    const prev = tails.get(key) ?? Promise.resolve();"],
     ignores: ["    const release = await lock(key);"],
   },
+  rule16_sessionCallbackName: {
+    matches: [
+      // The three shapes the surface was declared in — a method signature on
+      // `SessionCore`, an optional one on `TransportCallbacks`, and a harness
+      // stub. All three had to be edited to add one observer, which is the
+      // multiplier the rule exists to hold.
+      "  onUserTranscript(text: string): void;",
+      "  onAgentTranscriptPartial?(text: string): void;",
+      "    onSpeechStarted: vi.fn(),",
+      "    onReplyDone: () => bindCore().onReplyDone(),",
+      "  onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;",
+      "    onSpeechStopped() {",
+    ],
+    ignores: [
+      // The surface that replaced them.
+      "  report(event: TransportEventBody): void;",
+      "    report: vi.fn(),",
+      '      callbacks.report({ type: "speech.started" });',
+      // A CALL of a local function, not a declaration of a surface. Both of
+      // these are real lines in scoped files, and matching either would put
+      // permanent noise in the baseline — `onWake` is `_timer.ts`'s, which is
+      // also the worked example for "a utility taking an `on*` parameter is
+      // ordinary decomposition, not a session surface".
+      "        onReplyCompleted();",
+      "  function onWake(): void {",
+      "      onElapsed();",
+      // A member ACCESS, which is how every remaining call site reads.
+      "      opts.callbacks.onAudioChunk(bytes);",
+    ],
+  },
 };
 
 describe("guard-invariants gate", () => {
@@ -245,6 +289,22 @@ describe("guard-invariants gate", () => {
       expect(re, `rule ${id} uses \\b, which git's matcher does not implement`).not.toContain(
         "\\b",
       );
+    }
+  });
+
+  test("rule 16's hand-kept path list names files that exist", () => {
+    // Rule 16 is the one rule scoped to an explicit file list rather than to a
+    // directory pathspec, because "declares the SESSION's callback surface" is
+    // not derivable from a path — `transports/types.ts` does and its neighbour
+    // `transports/pipeline-llm-stream.ts` does not. The price of that is a list
+    // that a rename empties silently: a `git grep` pathspec matching nothing
+    // reports `now=0 ✓`, which reads exactly like the rule being upheld.
+    const rule16 = shippedLineRules().find((r) => r.id === 16);
+    expect(rule16, "rule 16 is not in LINE_RULES").toBeTypeOf("object");
+    expect(rule16?.paths.length, "rule 16 scans nothing").toBeGreaterThanOrEqual(10);
+    expect(repoFiles.size, "no package sources discovered").toBeGreaterThan(100);
+    for (const path of rule16?.paths ?? []) {
+      expect(repoFiles, `rule 16 scans "${path}", which does not exist`).toContain(path);
     }
   });
 

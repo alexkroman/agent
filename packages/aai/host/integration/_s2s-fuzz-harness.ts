@@ -209,19 +209,15 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     if (core === null) throw new Error("session core used before construction");
     return core;
   };
+  // Twelve flat forwards, one per event name, until the transport boundary became
+  // the wire vocabulary itself. Nothing here models anything any more — which is
+  // the point: this harness runs the REAL `buildSessionCallbacks` decisions
+  // nowhere, so a forwarding table it maintained by hand was a second, drifting
+  // copy of one.
   const callbacks: TransportCallbacks = {
+    report: (event) => bind().report(event),
     onReplyStarted: (id) => bind().onReplyStarted(id),
-    onReplyDone: () => bind().onReplyDone(),
-    onCancelled: () => bind().onCancelled(),
     onAudioChunk: (b) => bind().onAudioChunk(b),
-    onAudioDone: () => bind().onAudioDone(),
-    onUserTranscript: (t) => bind().onUserTranscript(t),
-    onUserTranscriptPartial: (t) => bind().onUserTranscriptPartial(t),
-    onAgentTranscript: (t, i) => bind().onAgentTranscript(t, i),
-    onToolCall: (id, name, args) => bind().onToolCall(id, name, args),
-    onError: (code, message, opts) => bind().onError(code, message, opts),
-    onSpeechStarted: () => bind().onSpeechStarted(),
-    onSpeechStopped: () => bind().onSpeechStopped(),
     onSessionReady: () => hit("sessionReady"),
   };
 

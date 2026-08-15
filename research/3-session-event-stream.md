@@ -1,7 +1,7 @@
 ---
 issue: TODO
-status: proposed
-last_updated: "2026-08-14"
+status: implemented
+last_updated: "2026-08-15"
 ---
 
 # One durable session event stream

@@ -50,26 +50,14 @@ function makeStubCore(
     configure: vi.fn((config: ReadyConfig) => {
       client?.event(stampSessionEvent({ type: "session.configured", ...config, sessionId }));
     }),
-    onAudio: vi.fn(),
-    onAudioReady: vi.fn(),
-    onCancel: vi.fn(),
-    onPlaybackProgress: vi.fn(),
-    onReset: vi.fn(),
     restoreHistory: vi.fn(),
-    onToolResult: vi.fn(),
-    onReplyStarted: vi.fn(),
-    onReplyDone: vi.fn(),
-    onCancelled: vi.fn(),
+    // Two vocabularies and two audio paths — nineteen `vi.fn()`s before the
+    // session's inbound surface became the protocol's own names.
+    command: vi.fn(),
+    report: vi.fn(),
+    onAudio: vi.fn(),
     onAudioChunk: vi.fn(),
-    onAudioDone: vi.fn(),
-    onUserTranscript: vi.fn(),
-    onUserTranscriptPartial: vi.fn(),
-    onAgentTranscript: vi.fn(),
-    onAgentTranscriptPartial: vi.fn(),
-    onToolCall: vi.fn(),
-    onError: vi.fn(),
-    onSpeechStarted: vi.fn(),
-    onSpeechStopped: vi.fn(),
+    onReplyStarted: vi.fn(),
     ...overrides,
   };
 }
@@ -226,27 +214,27 @@ describe("WebSocket server integration", () => {
     await waitForClose(ws);
   });
 
-  test("audio_ready message triggers session.onAudioReady()", async () => {
+  test("audio_ready message reaches the session as an `audio_ready` command", async () => {
     const { ws } = await connect(ctx.port);
     await vi.waitFor(() => {
       expect(ctx.captures).toHaveLength(1);
     });
     ws.send(JSON.stringify({ type: "audio_ready" }));
     await vi.waitFor(() => {
-      expect(ctx.captures[0]?.session.onAudioReady).toHaveBeenCalled();
+      expect(ctx.captures[0]?.session.command).toHaveBeenCalledWith({ type: "audio_ready" });
     });
     ws.close();
     await waitForClose(ws);
   });
 
-  test("cancel message triggers session.onCancel()", async () => {
+  test("cancel message reaches the session as a `cancel` command", async () => {
     const { ws } = await connect(ctx.port);
     await vi.waitFor(() => {
       expect(ctx.captures).toHaveLength(1);
     });
     ws.send(JSON.stringify({ type: "cancel" }));
     await vi.waitFor(() => {
-      expect(ctx.captures[0]?.session.onCancel).toHaveBeenCalled();
+      expect(ctx.captures[0]?.session.command).toHaveBeenCalledWith({ type: "cancel" });
     });
     ws.close();
     await waitForClose(ws);

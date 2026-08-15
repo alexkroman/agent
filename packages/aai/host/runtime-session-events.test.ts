@@ -41,7 +41,7 @@ describe("agent({ events }) through the runtime", () => {
 
     const session = runtime.createSession({ id: SID, agent: "a", client });
     session.configure(runtime.readyConfig);
-    session.onUserTranscript("hello");
+    session.report({ type: "user-transcript.committed", text: "hello" });
 
     expect(seen.map((e) => e.type)).toEqual(["session.configured", "user-transcript.committed"]);
   });
@@ -52,7 +52,7 @@ describe("agent({ events }) through the runtime", () => {
     const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
 
     session.onReplyStarted("r1");
-    session.onToolCall("c1", "ping", { a: 1 });
+    session.report({ type: "tool.called", toolCallId: "c1", toolName: "ping", args: { a: 1 } });
 
     expect(names).toEqual(["ping"]);
   });
@@ -62,7 +62,7 @@ describe("agent({ events }) through the runtime", () => {
     const runtime = runtimeWith({ "*": (_e, ctx) => envs.push(ctx.env) });
     const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
 
-    session.onSpeechStarted();
+    session.report({ type: "speech.started" });
 
     // Provider credentials must never reach a hook, for the same reason they
     // never reach `ctx.env` in a tool.
@@ -78,7 +78,9 @@ describe("agent({ events }) through the runtime", () => {
     const client = makeClientSink();
     const session = runtime.createSession({ id: SID, agent: "a", client });
 
-    expect(() => session.onUserTranscript("hello")).not.toThrow();
+    expect(() =>
+      session.report({ type: "user-transcript.committed", text: "hello" }),
+    ).not.toThrow();
     // And the client still got its frame.
     expect(client.event).toHaveBeenCalled();
   });
@@ -113,7 +115,7 @@ describe("agent({ events }) through the runtime", () => {
     const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
 
     session.configure(runtime.readyConfig);
-    session.onUserTranscript("hello");
+    session.report({ type: "user-transcript.committed", text: "hello" });
 
     const page = await runtime.sessionEvents?.read(SID, 0);
     expect(page?.events.map((e) => e.type)).toEqual([
@@ -126,7 +128,7 @@ describe("agent({ events }) through the runtime", () => {
     const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
     const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
 
-    session.onSpeechStarted();
+    session.report({ type: "speech.started" });
 
     // The stream is not opt-in — a resume reads it, so it is always kept.
     await expect(runtime.sessionEvents?.read(SID, 0)).resolves.toMatchObject({ tail: 1 });
@@ -144,7 +146,7 @@ describe("agent({ events }) through the runtime", () => {
 
     // The handle is a getter, so an agent with no database still gets its hooks —
     // and the one that reaches for `ctx.db` fails alone, non-fatally.
-    expect(() => session.onSpeechStarted()).not.toThrow();
+    expect(() => session.report({ type: "speech.started" })).not.toThrow();
     expect(ran).toEqual(["speech.started"]);
   });
 
@@ -154,7 +156,7 @@ describe("agent({ events }) through the runtime", () => {
     const runtime = runtimeWith({ "*": (_e, ctx) => handles.push(ctx.db) }, db);
     const session = runtime.createSession({ id: SID, agent: "a", client: makeClientSink() });
 
-    session.onSpeechStarted();
+    session.report({ type: "speech.started" });
 
     expect(handles).toEqual([db]);
   });

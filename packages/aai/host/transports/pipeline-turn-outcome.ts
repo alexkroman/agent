@@ -170,19 +170,19 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
     speakRecovery(failed) {
       if (!failed || errorPhrase.length === 0) return false;
       sendTtsText(errorPhrase);
-      callbacks.onAgentTranscript(errorPhrase, false);
+      callbacks.report({ type: "agent-transcript.committed", text: errorPhrase });
       return true;
     },
 
     async speakStartFailure() {
       if (startFailurePhrase.length === 0 || !providers.tts) return;
-      callbacks.onAgentTranscript(startFailurePhrase, false);
+      callbacks.report({ type: "agent-transcript.committed", text: startFailurePhrase });
       sendTtsText(startFailurePhrase, { publishTranscript: false });
       await drainTts().catch(() => undefined);
     },
 
     finishSpokenTurn(text) {
-      callbacks.onAgentTranscript(text, false);
+      callbacks.report({ type: "agent-transcript.committed", text });
       history.pushConversation({ role: "assistant", content: text });
       // Seed the STT provider with the agent's side of the dialog (AssemblyAI
       // Universal-3.5 Pro only; other providers have no such hook).

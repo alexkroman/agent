@@ -193,7 +193,7 @@ describe("wireSessionSocket", () => {
     expect(core.onAudio).toHaveBeenCalledOnce();
   });
 
-  test("audio_ready JSON text frame routes to session.onAudioReady", async () => {
+  test("audio_ready JSON text frame routes to an `audio_ready` command", async () => {
     const core = makeMockCore();
     const ws = openSocket();
     const logger = makeLogger();
@@ -207,10 +207,10 @@ describe("wireSessionSocket", () => {
 
     await waitForSessionReady(logger);
     simulateTextFrame(ws, JSON.stringify({ type: "audio_ready" }));
-    expect(core.onAudioReady).toHaveBeenCalledOnce();
+    expect(core.command).toHaveBeenCalledWith({ type: "audio_ready" });
   });
 
-  test("cancel JSON text frame routes to session.onCancel", async () => {
+  test("cancel JSON text frame routes to a `cancel` command", async () => {
     const core = makeMockCore();
     const ws = openSocket();
     const logger = makeLogger();
@@ -224,10 +224,10 @@ describe("wireSessionSocket", () => {
 
     await waitForSessionReady(logger);
     simulateTextFrame(ws, JSON.stringify({ type: "cancel" }));
-    expect(core.onCancel).toHaveBeenCalledOnce();
+    expect(core.command).toHaveBeenCalledWith({ type: "cancel" });
   });
 
-  test("reset JSON text frame routes to session.onReset", async () => {
+  test("reset JSON text frame routes to a `reset` command", async () => {
     const core = makeMockCore();
     const ws = openSocket();
     const logger = makeLogger();
@@ -241,7 +241,7 @@ describe("wireSessionSocket", () => {
 
     await waitForSessionReady(logger);
     simulateTextFrame(ws, JSON.stringify({ type: "reset" }));
-    expect(core.onReset).toHaveBeenCalledOnce();
+    expect(core.command).toHaveBeenCalledWith({ type: "reset" });
   });
 
   test("invalid JSON text frame is dropped with warning, session not closed", async () => {
@@ -260,7 +260,7 @@ describe("wireSessionSocket", () => {
 
     simulateTextFrame(ws, "this is not json{{{");
     expect(logger.warn).toHaveBeenCalledWith("ws: invalid JSON; dropping", expect.any(Object));
-    expect(core.onAudioReady).not.toHaveBeenCalled();
+    expect(core.command).not.toHaveBeenCalledWith({ type: "audio_ready" });
     expect(ws.readyState).toBe(MockWebSocket.OPEN);
   });
 
@@ -281,7 +281,7 @@ describe("wireSessionSocket", () => {
     // Valid envelope but unknown type — lenientParse returns ok:false, malformed:false; must NOT warn (rolling-upgrade tolerance)
     simulateTextFrame(ws, JSON.stringify({ type: "some_future_message_type" }));
     expect(logger.warn).not.toHaveBeenCalled();
-    expect(core.onAudioReady).not.toHaveBeenCalled();
+    expect(core.command).not.toHaveBeenCalledWith({ type: "audio_ready" });
     expect(ws.readyState).toBe(MockWebSocket.OPEN);
   });
 
@@ -299,12 +299,12 @@ describe("wireSessionSocket", () => {
     });
 
     simulateTextFrame(ws, JSON.stringify({ type: "cancel" }));
-    expect(core.onCancel).not.toHaveBeenCalled();
+    expect(core.command).not.toHaveBeenCalledWith({ type: "cancel" });
 
     startGate.resolve();
     await waitForSessionReady(logger);
 
-    expect(core.onCancel).toHaveBeenCalledOnce();
+    expect(core.command).toHaveBeenCalledWith({ type: "cancel" });
   });
 
   test("pre-ready binary frames are byte-budgeted, not capped at the JSON message count", async () => {
@@ -382,7 +382,7 @@ describe("wireSessionSocket", () => {
     // what this used to check, and it would hold just as well if the frame
     // were being dispatched into a half-built session.
     expect(createSession).not.toHaveBeenCalled();
-    expect(core.onAudioReady).not.toHaveBeenCalled();
+    expect(core.command).not.toHaveBeenCalledWith({ type: "audio_ready" });
     expect(ws.sent).toEqual([]);
   });
 });

@@ -39,7 +39,7 @@ describe("PipelineTransport", () => {
       tts.last()?.fireAudio(new Int16Array(2400));
 
       stt.last()?.firePartial("wait stop"); // ≥2 words → interrupts at the default threshold
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
       await t.stop();
     });
@@ -64,7 +64,7 @@ describe("PipelineTransport", () => {
       // No fireAudio: the turn is in flight but has not spoken a single chunk.
 
       stt.last()?.firePartial("hello are you there");
-      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
       expect(tts.last()?.cancel).not.toHaveBeenCalled();
       await t.stop();
     });
@@ -87,9 +87,12 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("hello any update");
       await vi.waitFor(() => {
-        expect(callbacks.onUserTranscript).toHaveBeenCalledWith("hello any update");
+        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
+          type: "user-transcript.committed",
+          text: "hello any update",
+        });
       });
-      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
       expect(tts.last()?.cancel).not.toHaveBeenCalled();
       await t.stop();
     });
@@ -121,12 +124,12 @@ describe("PipelineTransport", () => {
       stt.last()?.fireFinal("hello any update");
       stt.last()?.fireFinal("are you still there");
 
-      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
       // The reply still finishes rather than being starved by the re-prompts.
       // Driven rather than polled: the script's own length is how long it
       // needs, so there is nothing here for a slow runner to lose a race to.
       await vi.advanceTimersByTimeAsync(PART_COUNT * PART_DELAY_MS);
-      expect(callbacks.onReplyDone).toHaveBeenCalled();
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       await t.stop();
     });
 
@@ -143,14 +146,14 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("count down from 20");
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
 
       // 10 s of PCM16 at the default 24 kHz — client playback lags well behind.
       tts.last()?.fireAudio(new Int16Array(240_000));
 
       stt.last()?.firePartial("stop it"); // ≥2 words → interrupts at the default threshold
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
       await t.stop();
     });
@@ -164,17 +167,20 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("count down from 20");
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
 
       tts.last()?.fireAudio(new Int16Array(240_000));
 
       stt.last()?.fireFinal("stop that");
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
       // The new turn still runs after the stale audio is cancelled.
       await vi.waitFor(() => {
-        expect(callbacks.onUserTranscript).toHaveBeenCalledWith("stop that");
+        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
+          type: "user-transcript.committed",
+          text: "stop that",
+        });
       });
       await t.stop();
     });
@@ -188,12 +194,12 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("hi");
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
 
       // No audio was forwarded, so nothing can be playing client-side.
       stt.last()?.firePartial("hello again");
-      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
       expect(tts.last()?.cancel).not.toHaveBeenCalled();
       await t.stop();
     });
@@ -213,7 +219,7 @@ describe("PipelineTransport", () => {
       });
 
       stt.last()?.firePartial("wait"); // one word — below threshold
-      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
       expect(tts.last()?.cancel).not.toHaveBeenCalled();
       await t.stop();
     });
@@ -234,7 +240,7 @@ describe("PipelineTransport", () => {
       tts.last()?.fireAudio(new Int16Array(2400)); // the agent is now speaking
 
       stt.last()?.firePartial("wait now"); // two words — meets threshold
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
       await t.stop();
     });
@@ -257,10 +263,13 @@ describe("PipelineTransport", () => {
       // A one-word FINAL arrives while the agent is speaking — below threshold.
       stt.last()?.fireFinal("yeah");
       await vi.waitFor(() => {
-        expect(callbacks.onUserTranscript).toHaveBeenCalledWith("yeah");
+        expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
+          type: "user-transcript.committed",
+          text: "yeah",
+        });
       });
       // Below threshold does NOT interrupt the in-flight reply...
-      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
       expect(tts.last()?.cancel).not.toHaveBeenCalled();
       // ...but it is NOT dropped: it is still transcribed and answered as a
       // deferred turn once the current reply finishes (chainTurn), rather than
@@ -278,7 +287,7 @@ describe("PipelineTransport", () => {
 
       stt.last()?.fireFinal("count down from 20");
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
       // 10 s of PCM16 at the default 24 kHz — barge-in stays live on the
       // client playback tail for the whole test.
@@ -286,12 +295,12 @@ describe("PipelineTransport", () => {
 
       // First partial opens the speaking edge — 0 ms of sustained speech.
       stt.last()?.firePartial("wait stop");
-      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
 
       // The user keeps talking past the duration gate → the next partial interrupts.
       await vi.advanceTimersByTimeAsync(120);
       stt.last()?.firePartial("wait stop that");
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
       await t.stop();
     });
@@ -314,7 +323,7 @@ describe("PipelineTransport", () => {
       expect(callbacks.onAudioChunk).toHaveBeenCalledTimes(1);
 
       stt.last()?.firePartial("wait stop");
-      expect(callbacks.onCancelled).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalledTimes(1);
 
       // A chunk already in flight lands after the abort flushed the client:
       // it must not reach the client or re-advance the playback clock...
@@ -323,7 +332,7 @@ describe("PipelineTransport", () => {
       // ...because a re-opened floor would make the user's continuing speech
       // fire a second spurious cancel.
       stt.last()?.firePartial("wait stop please");
-      expect(callbacks.onCancelled).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalledTimes(1);
 
       // The gate reopens with the next turn's first TTS text, so its own
       // first chunks are never dropped.
@@ -354,7 +363,7 @@ describe("PipelineTransport", () => {
       expect(tts.last()?.cancel).toHaveBeenCalled();
       // cancelReply() doesn't fire onCancelled — session-core calls client.cancelled()
       // itself for client-originated cancels. onCancelled fires only for STT-partial barge-in.
-      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
       await t.stop();
     });
   });
@@ -377,8 +386,10 @@ describe("PipelineTransport", () => {
       });
       stt.last()?.fireFinal("yeah");
       await vi.waitFor(() => {
-        const transcribed = (callbacks.onUserTranscript as ReturnType<typeof vi.fn>).mock.calls;
-        if (!transcribed.some(([text]) => text === "yeah")) throw new Error("not committed");
+        const committed = callbacks.events.filter(
+          (e) => e.type === "user-transcript.committed" && e.text === "yeah",
+        );
+        if (committed.length === 0) throw new Error("not committed");
       });
       return { t, llm, stt, tts, callbacks };
     }
@@ -579,13 +590,16 @@ describe("PipelineTransport", () => {
       });
       tts.last()?.fireAudio(new Int16Array(2400));
 
-      const transcriptsBefore = vi.mocked(callbacks.onAgentTranscript).mock.calls.length;
+      const transcriptsBefore = vi.mocked(callbacks.reported("agent-transcript.committed")).mock
+        .calls.length;
       stt.last()?.firePartial("actually stop");
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
       // Well past the aborted stream settling, which is when the frame used to
       // arrive; the interim snapshots (onAgentTranscriptPartial) are unaffected.
       await vi.advanceTimersByTimeAsync(80);
-      expect(vi.mocked(callbacks.onAgentTranscript).mock.calls.length).toBe(transcriptsBefore);
+      expect(vi.mocked(callbacks.reported("agent-transcript.committed")).mock.calls.length).toBe(
+        transcriptsBefore,
+      );
       await t.stop();
     });
   });

@@ -142,7 +142,7 @@ describe("OpenAI Responses history replay", () => {
     // Turn 1: scripted reasoning + tool call + answer, persisted into history.
     stt.last()?.fireFinal("first question");
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
     });
 
     // Turn 2: history replays through the real provider's input conversion.

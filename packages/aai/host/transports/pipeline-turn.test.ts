@@ -18,9 +18,9 @@ import {
   llmCalls,
   makeOpts,
   noopToolSchema,
-  partialTranscriptSpy,
   useVirtualTime,
 } from "./_pipeline-transport-harness.ts";
+import { partialTranscripts } from "./_transport-recorder.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 useVirtualTime();
@@ -32,7 +32,10 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("Hello agent");
     await vi.waitFor(() => {
-      expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Hello agent");
+      expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
+        type: "user-transcript.committed",
+        text: "Hello agent",
+      });
       // The reply starts a tick after the transcript (chainTurn defers past a
       // possibly-rejected predecessor), so poll for it too.
       expect(callbacks.onReplyStarted).toHaveBeenCalledWith(expect.stringMatching(/^pipeline-/));
@@ -46,7 +49,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("   ");
     await vi.advanceTimersByTimeAsync(10);
-    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
+    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
     await t.stop();
   });
@@ -86,12 +89,12 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("look it up");
     await vi.waitFor(() => {
-      expect(callbacks.onAgentTranscript).toHaveBeenCalled();
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
     });
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
-      "Let me look that up. Got it. Here's the answer.",
-      false,
-    );
+    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: "Let me look that up. Got it. Here's the answer.",
+    });
     expect(tts.last()?.textChunks.join("")).toBe("Let me look that up. Got it. Here's the answer.");
     await t.stop();
   });
@@ -129,7 +132,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
     expect(tts.last()?.textChunks.join("")).toBe("Sure, let me");
 
     await vi.waitFor(() => {
-      expect(callbacks.onAgentTranscript).toHaveBeenCalled();
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
     });
     expect(tts.last()?.textChunks.join("")).toBe("Sure, let me found it.");
     await t.stop();
@@ -153,12 +156,12 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("look it up");
     await vi.waitFor(() => {
-      expect(callbacks.onAgentTranscript).toHaveBeenCalled();
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalled();
     });
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
-      "First sentence. Second sentence.",
-      false,
-    );
+    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: "First sentence. Second sentence.",
+    });
     await t.stop();
   });
 
@@ -183,13 +186,19 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("test question");
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
     });
-    expect(callbacks.onUserTranscript).toHaveBeenCalledWith("test question");
+    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
+      type: "user-transcript.committed",
+      text: "test question",
+    });
     expect(callbacks.onReplyStarted).toHaveBeenCalled();
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Sure!", false);
+    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: "Sure!",
+    });
     // onAudioDone is owned by session-core's flushReply, not the transport.
-    expect(callbacks.onAudioDone).not.toHaveBeenCalled();
+    expect(callbacks.reported("audio.completed")).not.toHaveBeenCalled();
     await t.stop();
   });
 
@@ -205,10 +214,10 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("hello?");
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
     });
     expect(tts.last()?.flush).not.toHaveBeenCalled();
-    expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
     await t.stop();
   });
 
@@ -286,10 +295,10 @@ describe("PipelineTransport — STT → LLM turn", () => {
     // about the tool context surviving into turn 2, not about the exact text.)
     stt.last()?.fireFinal("look me up");
     await vi.waitFor(() => {
-      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
-        expect.stringContaining("Found your account."),
-        false,
-      );
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+        type: "agent-transcript.committed",
+        text: expect.stringContaining("Found your account."),
+      });
     });
     const callsAfterTurn1 = llm.calls.length;
 
@@ -313,7 +322,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.start();
     stt.last()?.fireFinal("test question");
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
     });
     expect(stt.last()?.updateAgentContext).toHaveBeenCalledWith("Sure!");
     await t.stop();
@@ -382,12 +391,12 @@ describe("interrupted-speech persistence", () => {
     // stream settles — that frame would land after `cancelled`, which the client
     // treats as the end of the reply (see persistInterruptedTurn).
     await vi.waitFor(() => {
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
     });
     // Only what reached TTS is published — the coalescer was still batching the
     // rest, which the abort discarded, so the caller heard exactly this much.
     // History below records that same heard prefix, never the buffered tail.
-    expect(partialTranscriptSpy(callbacks)).toHaveBeenCalledWith(expect.stringContaining("Your "));
+    expect(partialTranscripts(callbacks)).toContainEqual(expect.stringContaining("Your "));
     const callsAfterTurn1 = llm.calls.length;
 
     // Turn 2 — its LLM prompt must contain the persisted interrupted assistant message.
@@ -432,7 +441,10 @@ describe("interrupted-speech persistence", () => {
     t.cancelReply();
 
     // No text accumulated → no interrupted transcript surfaced.
-    expect(callbacks.onAgentTranscript).not.toHaveBeenCalledWith(expect.anything(), true);
+    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: expect.anything(),
+    });
 
     // …and nothing persisted: turn 2's prompt carries no [interrupted] marker.
     const callsAfterTurn1 = llm.calls.length;
@@ -534,7 +546,7 @@ describe("interrupted-speech persistence", () => {
     tts.last()?.fireAudio(new Int16Array(2400));
     stt.last()?.firePartial("stop");
     await vi.waitFor(() => {
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
     });
 
     // The follow-up turn's LLM prompt must carry the completed tool step.
@@ -584,7 +596,7 @@ describe("interrupted-speech persistence", () => {
     stt.last()?.firePartial("stop");
 
     await vi.waitFor(() => {
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
     });
     // The turn's persist decision runs after the in-flight tool call settles
     // (the abort doesn't cut the tool promise short) — await full teardown so
@@ -592,7 +604,10 @@ describe("interrupted-speech persistence", () => {
     // assert on it, instead of racing it.
     await t.stop();
     // Only the filler was accumulated → nothing persisted as interrupted.
-    expect(callbacks.onAgentTranscript).not.toHaveBeenCalledWith(expect.anything(), true);
+    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: expect.anything(),
+    });
   });
 });
 
@@ -629,7 +644,7 @@ describe("PipelineTransport — below-threshold deferral", () => {
     stt.last()?.fireFinal("sure");
 
     // It does NOT interrupt the in-flight reply...
-    expect(callbacks.onCancelled).not.toHaveBeenCalled();
+    expect(callbacks.reported("reply.cancelled")).not.toHaveBeenCalled();
     // ...but it IS answered: a deferred turn runs after the reply, and its LLM
     // prompt carries the buffered "sure" (proving it was not dropped).
     await vi.waitFor(() => {
@@ -646,7 +661,10 @@ describe("PipelineTransport — turn commit on STT final", () => {
     const t = createPipelineTransport(opts);
     await t.start();
     stt.last()?.fireFinal("track order BOB12"); // no punctuation, still immediate
-    expect(callbacks.onUserTranscript).toHaveBeenCalledWith("track order BOB12");
+    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
+      type: "user-transcript.committed",
+      text: "track order BOB12",
+    });
     await t.stop();
   });
 });

@@ -132,13 +132,9 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     // Preemption is off in every spec here; the transport passes a real one.
     speculation: { onPartial: vi.fn(), onFinal: vi.fn(), onUtteranceIdle: vi.fn() },
     callbacks: {
-      onCancelled: () => {
-        calls.cancelled++;
+      report: (event) => {
+        if (event.type === "reply.cancelled") calls.cancelled++;
       },
-      onUserTranscript: vi.fn(),
-      onUserTranscriptPartial: vi.fn(),
-      onSpeechStarted: vi.fn(),
-      onSpeechStopped: vi.fn(),
     },
     silenceTimeoutMs: undefined,
     silencePrompt: undefined,

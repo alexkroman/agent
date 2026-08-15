@@ -22,13 +22,16 @@ describe("silence nudge", () => {
     const t = createPipelineTransport(opts);
     await t.start();
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalled();
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
     });
     // The injected instruction reaches the LLM as a user message but is
     // never surfaced as a user transcript.
-    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
+    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
     expect(JSON.stringify(llm.calls[0]?.prompt)).toContain("Check in now.");
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Still there?", false);
+    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: "Still there?",
+    });
     await t.stop();
   });
 
@@ -81,18 +84,21 @@ describe("silence nudge", () => {
     await t.start();
     // MAX_CONSECUTIVE_SILENCE_NUDGES = 3 back-to-back nudges, then quiet.
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledTimes(3);
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(3);
     });
     await vi.advanceTimersByTimeAsync(100);
-    expect(callbacks.onReplyDone).toHaveBeenCalledTimes(3);
+    expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(3);
     // Real user speech resets the budget: one reply for the user turn,
     // then nudging resumes.
     stt.last()?.fireFinal("I'm back");
-    const replyDone = callbacks.onReplyDone as ReturnType<typeof vi.fn>;
+    const replyDone = callbacks.reported("reply.completed") as ReturnType<typeof vi.fn>;
     await vi.waitFor(() => {
       expect(replyDone.mock.calls.length).toBeGreaterThanOrEqual(5);
     });
-    expect(callbacks.onUserTranscript).toHaveBeenCalledWith("I'm back");
+    expect(callbacks.reported("user-transcript.committed")).toHaveBeenCalledWith({
+      type: "user-transcript.committed",
+      text: "I'm back",
+    });
     await t.stop();
   });
 
@@ -104,7 +110,7 @@ describe("silence nudge", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    const replyDone = callbacks.onReplyDone as ReturnType<typeof vi.fn>;
+    const replyDone = callbacks.reported("reply.completed") as ReturnType<typeof vi.fn>;
     await vi.waitFor(() => {
       expect(replyDone.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
@@ -112,7 +118,10 @@ describe("silence nudge", () => {
       1,
       expect.stringContaining("greeting"),
     );
-    expect(callbacks.onAgentTranscript).toHaveBeenLastCalledWith("hello?", false);
+    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenLastCalledWith({
+      type: "agent-transcript.committed",
+      text: "hello?",
+    });
     await t.stop();
   });
 
