@@ -28,12 +28,9 @@ import { createTurnChain, createTurnGate, turnCrashLogger } from "./pipeline-tur
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
-import type { Transport } from "./types.ts";
+import type { SendTtsOptions, Transport } from "./types.ts";
 
 export type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
-
-/** `sendTtsText` options — see its definition below. */
-type SendTtsOptions = { publishTranscript?: boolean; record?: boolean };
 
 /** Create a pipeline-mode Transport (STT → LLM → TTS). @internal */
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport {
@@ -76,16 +73,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // over, and aborting it would discard the reply mid-computation only to
   // restart a slower one — a user re-prompting into the silence would
   // starve the reply indefinitely.
+  // It also owns the two facts that used to sit beside it here as loose `let`s
+  // — the turn draining its TTS, and the turn being a false-interruption resume
+  // — for the reason the module doc gives.
   const turns = createTurnMachine();
-  // The in-flight turn's body has completed (full text persisted, no
-  // [interrupted] marker) and only the TTS drain remains — a barge-in in this
-  // window is a playback cut, so its false-interruption recovery must use the
-  // cut-point prompt, not [interrupted]. Written only by runReply's drain.
-  let turnDraining = false;
-  // The running chained turn is a false-interruption resume; a committed user
-  // turn moots an unspoken one (see onSttFinal in pipeline-user-speech.ts).
-  // Written only by runChainedTurn.
-  let resumeTurnScope = false;
   // Pipeline transport owns its conversation memory (SessionCore does not in
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
@@ -137,8 +128,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turns.inFlight(),
-    isTurnDraining: () => turnDraining,
-    isResumeTurnInFlight: () => resumeTurnScope && turns.inFlight(),
+    isTurnDraining: () => turns.draining(),
+    isResumeTurnInFlight: () => turns.resumeInFlight(),
     hasTurnSpoken: () => turns.spoke(),
     isPlaybackPending: () => heard.pending(),
     abortInFlightTurn: () => abortInFlightTurn(),
@@ -201,13 +192,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     kind?: { isResume?: boolean; synthetic?: boolean },
   ): void {
     turnChain.chain(async () => {
-      resumeTurnScope = kind?.isResume === true;
+      turns.setResumeScope(kind?.isResume === true);
       try {
         await runTurn(text, { synthetic: kind?.synthetic === true }).catch(
           logTurnCrash(crashLabel),
         );
       } finally {
-        resumeTurnScope = false;
+        turns.setResumeScope(false);
       }
     });
   }
@@ -307,12 +298,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       if (spoke && !signal.aborted) {
         // The body persisted the full reply; only synthesis/playback remains.
         // A barge-in in this window is classified as a playback cut (see
-        // turnDraining above).
-        turnDraining = true;
+        // TurnMachine.draining).
+        turns.setDraining(true);
         try {
           await drainTts(signal);
         } finally {
-          turnDraining = false;
+          turns.setDraining(false);
         }
       }
       if (!signal.aborted) callbacks.report({ type: "reply.completed" });

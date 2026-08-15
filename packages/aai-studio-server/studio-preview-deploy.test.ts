@@ -200,6 +200,82 @@ describe("createPreviewDeployer", () => {
     expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeUndefined();
   });
 
+  /**
+   * The banner that could never clear. A bad edit fails its deploy and stamps
+   * `previewError` while `previewHash` still names the last GOOD deploy; the
+   * user reverts, the files hash returns to that value — and the no-op early
+   * return fired before anything was stamped, so the pane showed a build error
+   * for code no longer in the workspace, permanently, with every later job for
+   * that project confirming it. Clearing on the no-op is the one case where
+   * "success" needs no deploy: what is running already IS the current files.
+   */
+  test("a job over already-deployed files clears a stale previewError without deploying", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// good" } });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let ok = true;
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> =>
+        ok ? { ok: true, output: "Deployed" } : { ok: false, output: "Build failed" },
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+
+    // A good deploy, then a bad edit that fails.
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
+    });
+    const goodHash = (await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash;
+    ok = false;
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
+      ...ws,
+      files: { "agent.ts": "// broken" },
+    }));
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeDefined();
+    });
+    expect(deploy).toHaveBeenCalledTimes(2);
+
+    // Undo. The files now hash to exactly what is deployed.
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
+      ...ws,
+      files: { "agent.ts": "// good" },
+    }));
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeUndefined();
+    });
+
+    const after = await getWorkspace(workspaces, SCOPE, PROJECT);
+    // Nothing was redeployed — the running preview is already these files.
+    expect(deploy).toHaveBeenCalledTimes(2);
+    expect(after?.previewHash).toBe(goodHash);
+  });
+
+  test("a no-op job over a clean workspace stamps nothing at all", async () => {
+    // The common case, and the one the clear above must not turn into a write:
+    // N queued jobs for one project cost a read each, not a version bump each
+    // (every bump is an SSE push of the whole file map to every open tab).
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const deploy = vi.fn(
+      async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }),
+    );
+    const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
+    });
+    const before = await getWorkspace(workspaces, SCOPE, PROJECT);
+
+    deployer.schedule(SCOPE, PROJECT, TARGET);
+    await settled();
+
+    expect(deploy).toHaveBeenCalledTimes(1);
+    expect(await getWorkspace(workspaces, SCOPE, PROJECT)).toEqual(before);
+  });
+
   test("a deleted project deploys nothing and never resurrects", async () => {
     const workspaces = makeStore();
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));

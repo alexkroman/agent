@@ -8,7 +8,7 @@
  * committed final arrives, the real turn asks for it BY TEXT; on a match it
  * adopts the same live stream, so the head start is real generation rather than
  * a cache lookup. On any mismatch the stream is aborted and the turn proceeds
- * exactly as it does today. ON by default — see `AgentDef.preemptiveGeneration`
+ * exactly as it does today. OFF by default — see `AgentDef.preemptiveGeneration`
  * for what is and is not known about it, and for the tool-call distribution
  * that BOUNDS its reach.
  *

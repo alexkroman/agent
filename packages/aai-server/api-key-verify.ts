@@ -38,6 +38,7 @@
  */
 
 import { hash } from "node:crypto";
+import { createSingleFlight } from "./_memo.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 
 /**
@@ -100,39 +101,35 @@ export function createAssemblyAiKeyVerifier(
   const doFetch = options.fetchFn ?? globalThis.fetch;
   const cache = new TtlCache<boolean>(VERIFY_TTL_MS, VERIFY_MAX);
   // Collapses the burst a cold replica sees for one key: N concurrent
-  // requests share ONE upstream call instead of each opening their own. Same
-  // reasoning as the bundle store's single-flight, and the same reason it
-  // retains nothing — the cache above owns the settled verdict.
-  const inFlight = new Map<string, Promise<boolean>>();
+  // requests share ONE upstream call instead of each opening their own. The
+  // shared primitive rather than a hand-rolled `Map<string, Promise>` — same
+  // one the bundle store's read path uses, and the comment here already cited
+  // it as the precedent while restating it. It retains nothing, which is the
+  // property that makes it right beside a cache: the TTL above owns the
+  // settled verdict, this only closes the window before it is populated.
+  const flights = createSingleFlight<boolean>();
 
   return async (apiKey) => {
     const cacheKey = hash("sha256", apiKey);
     const cached = cache.get(cacheKey);
     if (cached !== undefined) return cached;
-    const joined = inFlight.get(cacheKey);
-    if (joined) return joined;
 
-    const flight = (async () => {
+    return flights.run(cacheKey, async () => {
       const res = await doFetch(url, {
         headers: authHeader(apiKey),
         signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
       });
       // The ONLY definite rejection. Everything else is "we do not know".
-      if (res.status === 401 || res.status === 403) return false;
+      if (res.status === 401 || res.status === 403) {
+        cache.set(cacheKey, false);
+        return false;
+      }
       if (!res.ok) {
         throw new Error(`AssemblyAI key verification failed (HTTP ${res.status})`);
       }
+      cache.set(cacheKey, true);
       return true;
-    })();
-
-    inFlight.set(cacheKey, flight);
-    try {
-      const verdict = await flight;
-      cache.set(cacheKey, verdict);
-      return verdict;
-    } finally {
-      inFlight.delete(cacheKey);
-    }
+    });
   };
 }
 

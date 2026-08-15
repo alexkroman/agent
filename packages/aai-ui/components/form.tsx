@@ -33,6 +33,7 @@
  * them somewhere a step can read them and contributes the handle instead.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import clsx from "clsx";
 import type {
   FormHTMLAttributes,
@@ -443,8 +444,7 @@ export function SubmitButton({
       // Spread rather than passed: `Button` declares these as plain optionals,
       // so a present-and-`undefined` prop is an error under
       // `exactOptionalPropertyTypes`.
-      {...(size === undefined ? {} : { size })}
-      {...(className === undefined ? {} : { className })}
+      {...omitUndefined({ size, className })}
     >
       {pending ? pendingLabel : children}
     </Button>

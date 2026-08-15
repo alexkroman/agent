@@ -20,6 +20,7 @@
  * and platform-internal tables get their own namespace.
  */
 
+import { projectKey, splitProjectKey } from "./platform-events.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /** A stored workspace document with its optimistic-concurrency version. */
@@ -205,7 +206,13 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
  */
 export function createMemoryWorkspaceStore(): WorkspaceStore {
   const rows = new Map<string, WorkspaceRecord>();
-  const key = (scope: string, project: string) => `${scope}/${project}`;
+  // `projectKey` (platform-events.ts), not a hand-rolled `${scope}/${project}`.
+  // The declared spelling is NUL-separated precisely so no (scope, project)
+  // pair can spell another's key, and the `/` copy here gave that up twice
+  // over: the composite could collide, and `list`'s prefix scan below matched
+  // every key beginning `${scope}/` — so scope `a` listed scope `a/b`'s
+  // projects as its own.
+  const key = projectKey;
 
   return {
     get(scope, project) {
@@ -254,13 +261,15 @@ export function createMemoryWorkspaceStore(): WorkspaceStore {
     },
 
     list(scope) {
-      const prefix = `${scope}/`;
-      return Promise.resolve(
-        [...rows.keys()]
-          .filter((k) => k.startsWith(prefix))
-          .map((k) => k.slice(prefix.length))
-          .sort((a, b) => a.localeCompare(b)),
-      );
+      // Split the composite and compare the scope EXACTLY, rather than testing
+      // a prefix: a prefix scan is what let one scope see another's projects,
+      // and it stays wrong-shaped even under a separator that cannot collide.
+      const projects: string[] = [];
+      for (const k of rows.keys()) {
+        const [rowScope, project] = splitProjectKey(k);
+        if (rowScope === scope) projects.push(project);
+      }
+      return Promise.resolve(projects.sort((a, b) => a.localeCompare(b)));
     },
   };
 }

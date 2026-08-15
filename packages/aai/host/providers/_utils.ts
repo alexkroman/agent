@@ -1,10 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
-/** Shared helpers for host-side STT/TTS provider openers. */
+/**
+ * Shared helpers for host-side STT/TTS provider openers. The raw-`ws` socket
+ * lifecycle those openers share lives next door in `_socket.ts`.
+ */
 
+import type { Emitter, EventsMap, Unsubscribe } from "nanoevents";
 import { pEvent } from "p-event";
 import type WebSocket from "ws";
-import { STT_FRAME_MAX_MS, STT_FRAME_TARGET_MS, WS_OPEN } from "../../sdk/constants.ts";
-import { makeSttError, makeTtsError, type SttError, type TtsError } from "../../sdk/providers.ts";
+import { STT_FRAME_MAX_MS, STT_FRAME_TARGET_MS } from "../../sdk/constants.ts";
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
+import type { SttEvents, TtsEvents } from "../../sdk/providers.ts";
+import { makeSttError, makeTtsError } from "../../sdk/providers.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 
 /** PCM16 sample rates accepted by providers that stream raw PCM16 LE audio. */
@@ -59,13 +65,25 @@ export function requireApiKey(
   return explicit;
 }
 
+/** Bound and abort-wire one socket open — see {@link waitForOpen}. */
+export interface WaitForOpenOptions {
+  /**
+   * Reject if the socket has not opened within this many ms. Mandatory for any
+   * open with nothing upstream bounding it, which is every one of them —
+   * see {@link WS_OPEN_TIMEOUT_MS}.
+   */
+  timeoutMs?: number | undefined;
+  /** Abandon the wait when the session aborts, rejecting with its reason. */
+  signal?: AbortSignal | undefined;
+}
+
 /**
  * Resolve once the socket opens; reject with the socket error if it fails
- * first. Pass `timeoutMs` to bound a connect that black-holes (no `open`, no
- * `error` — a dropped SYN or a stalled proxy emits neither): mandatory for any
- * open that runs mid-session, where nothing upstream bounds it.
+ * first, with a timeout if it black-holes (no `open`, no `error` — a dropped
+ * SYN or a stalled proxy emits neither), or with the signal's reason if the
+ * session aborts first.
  */
-export async function waitForOpen(ws: WebSocket, timeoutMs?: number): Promise<void> {
+export async function waitForOpen(ws: WebSocket, opts: WaitForOpenOptions = {}): Promise<void> {
   // rejects on "error" (p-event's default rejectionEvents)
   //
   // The suppression below is a false positive in biome 2.5.8, not a finding:
@@ -75,56 +93,7 @@ export async function waitForOpen(ws: WebSocket, timeoutMs?: number): Promise<vo
   // nothing here on identical source. Delete the ignore — do not "fix" the
   // line — once a later biome stops reporting it.
   // biome-ignore lint/nursery/noFloatingPromises: false positive, biome 2.5.8 (see above)
-  await pEvent(ws, "open", timeoutMs === undefined ? {} : { timeout: timeoutMs });
-}
-
-/**
- * Construct a raw provider WebSocket, wrapping a constructor throw as a connect
- * error, and bind the pre-connect zero-listener `error` guard.
- *
- * The guard matters: `waitForOpen`'s own `error` listener is removed once it
- * settles, so a later socket `error` with no listener bound is an unhandled
- * `'error'` event — an uncaughtException that crashes the multi-tenant host.
- * This is the one place that invariant now lives; openers call it instead of
- * repeating the try/catch + placeholder-listener dance.
- */
-export function createGuardedWs(
-  create: () => WebSocket,
-  makeConnectError: (msg: string) => Error,
-  label: string,
-): WebSocket {
-  let socket: WebSocket;
-  try {
-    socket = create();
-  } catch (cause) {
-    throw makeConnectError(`${label}: failed to create WebSocket: ${errorMessage(cause)}`);
-  }
-  socket.on("error", () => undefined);
-  return socket;
-}
-
-/**
- * Detach and politely close a socket, leaving a fresh zero-listener `error`
- * guard behind so an `'error'` emitted while the close handshake is in flight
- * (a TCP reset, a write failure) can't crash the process. `removeAllListeners`
- * on its own strips that guard — the bug this centralizes away from the
- * openers. Pass `terminate` to send a graceful shutdown frame when still open.
- */
-export function dropSocket(ws: WebSocket, terminate?: () => void): void {
-  ws.removeAllListeners();
-  ws.on("error", () => undefined);
-  if (terminate && ws.readyState === WS_OPEN) {
-    try {
-      terminate();
-    } catch {
-      // Already going away; the close below is what matters.
-    }
-  }
-  try {
-    ws.close();
-  } catch {
-    // Socket already broken — nothing left to release.
-  }
+  await pEvent(ws, "open", omitUndefined({ timeout: opts.timeoutMs, signal: opts.signal }));
 }
 
 /** Invoke `close` when `signal` aborts (immediately if already aborted). */
@@ -237,7 +206,7 @@ export function createPcmFrameAccumulator(opts: {
 }
 
 /** Scaffolding shared by every opener's session — see {@link createSessionShell}. */
-export interface SessionShell {
+export interface SessionShell<Events extends EventsMap> {
   /** True once `close()` has run (directly or via the abort signal). */
   isClosed(): boolean;
   /** Idempotent close: marks the session closed, then runs teardown with errors swallowed. */
@@ -245,11 +214,19 @@ export interface SessionShell {
   /** Emit the provider's stream error unless the session is closed. */
   streamError(message: string): void;
   /**
-   * Run `emit` unless the session is closed, swallowing any throw from a
-   * listener. Use for non-error events (partial/final/audio) fired from inside
-   * a raw socket handler, where an escaping throw is an uncaughtException.
+   * Emit a session event — the ONLY way an opener should reach its emitter.
+   *
+   * Owns both halves an opener kept getting wrong: the closed latch (nothing is
+   * emitted once the session is gone) and the try/catch (these fire from inside
+   * a raw socket handler, where a throw from a downstream listener escapes into
+   * Node's `EventEmitter` as an uncaughtException — taking down a multi-tenant
+   * host rather than one session). It was `safeEmit(() => emitter.emit(…))`,
+   * applied in two openers of seven; the emitter is the shell's now so the
+   * remaining five cannot forget.
    */
-  safeEmit(emit: () => void): void;
+  emit<K extends keyof Events>(event: K, ...args: Parameters<Events[K]>): void;
+  /** Subscribe — the session's own `on`, so no opener re-declares the forward. */
+  on<K extends keyof Events>(event: K, fn: Events[K]): Unsubscribe;
   /** Standard socket `error` handler: surfaces the error's message as a stream error. */
   onSocketError(err: unknown): void;
   /**
@@ -262,12 +239,16 @@ export interface SessionShell {
 
 /**
  * Create the session scaffolding every STT/TTS opener repeats: the `closed`
- * latch, an idempotent `close()`, and the standard socket error/close →
- * stream-error mapping. The opener keeps its own typed emitter and passes
- * `emitError` so events stay strongly typed; wire the abort signal after the
- * connection is established via `closeOnAbort(signal, shell.close)`.
+ * latch, an idempotent `close()`, the emit/subscribe surface, and the standard
+ * socket error/close → stream-error mapping. The opener hands over its own
+ * typed emitter and passes `emitError` so the error variant stays strongly
+ * typed (the generic `emit` cannot narrow a constrained `Events["error"]`
+ * without a cast); wire the abort signal after the connection is established
+ * via `closeOnAbort(signal, shell.close)`.
  */
-export function createSessionShell<E extends Error>(opts: {
+export function createSessionShell<E extends Error, Events extends EventsMap>(opts: {
+  /** The opener's typed emitter. The shell is the only thing that emits on it. */
+  emitter: Emitter<Events>;
   /** Build the provider's stream-error variant (e.g. `stt_stream_error`). */
   makeStreamError: (message: string) => E;
   /** Deliver an error event on the session emitter. */
@@ -291,7 +272,7 @@ export function createSessionShell<E extends Error>(opts: {
    * code — is what distinguishes our intent from the provider's.
    */
   cleanCloseIsFatal?: boolean | undefined;
-}): SessionShell {
+}): SessionShell<Events> {
   let closed = false;
   const close = async (): Promise<void> => {
     if (closed) return;
@@ -302,30 +283,30 @@ export function createSessionShell<E extends Error>(opts: {
       // Caller is tearing down; teardown failures are not actionable.
     }
   };
-  const streamError = (message: string): void => {
+  /**
+   * The one containment point: nothing fans out once the session is closed, and
+   * a throw from a caller-supplied listener never escapes the raw socket
+   * handler that fired the event (an uncaughtException on a multi-tenant host).
+   */
+  const contain = (fan: () => void): void => {
     if (closed) return;
-    // emitError fans out to caller-supplied listeners; a throw from one must
-    // not escape a socket 'error'/'close' handler (an uncaughtException).
     try {
-      opts.emitError(opts.makeStreamError(message));
+      fan();
     } catch {
-      // Nothing further to report the error to.
+      // A listener threw; nothing further to report it to.
     }
   };
-  const safeEmit = (emit: () => void): void => {
-    if (closed) return;
-    try {
-      emit();
-    } catch {
-      // A listener threw; nothing further to report it to, and it must not
-      // escape the raw socket handler that fired this event.
-    }
+  const streamError = (message: string): void => {
+    contain(() => opts.emitError(opts.makeStreamError(message)));
   };
   return {
     isClosed: () => closed,
     close,
     streamError,
-    safeEmit,
+    emit: (event, ...args) => {
+      contain(() => opts.emitter.emit(event, ...args));
+    },
+    on: (event, fn) => opts.emitter.on(event, fn),
     onSocketError: (err) => streamError(errorMessage(err)),
     onSocketClose: (code) => {
       // 1000 = normal closure; an absent code carries no signal either way.
@@ -347,10 +328,11 @@ export function createSessionShell<E extends Error>(opts: {
  * default backwards — see `cleanCloseIsFatal`'s own doc for what that costs.
  */
 export function createSttSessionShell(opts: {
-  emitter: { emit: (event: "error", err: SttError) => void };
+  emitter: Emitter<SttEvents>;
   teardown: () => Promise<void> | void;
-}): SessionShell {
+}): SessionShell<SttEvents> {
   return createSessionShell({
+    emitter: opts.emitter,
     makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
     emitError: (err) => opts.emitter.emit("error", err),
     cleanCloseIsFatal: true,
@@ -364,10 +346,11 @@ export function createSttSessionShell(opts: {
  * COMPLETION — the provider has finished sending the audio it was asked for.
  */
 export function createTtsSessionShell(opts: {
-  emitter: { emit: (event: "error", err: TtsError) => void };
+  emitter: Emitter<TtsEvents>;
   teardown: () => Promise<void> | void;
-}): SessionShell {
+}): SessionShell<TtsEvents> {
   return createSessionShell({
+    emitter: opts.emitter,
     makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
     emitError: (err) => opts.emitter.emit("error", err),
     teardown: opts.teardown,
@@ -391,7 +374,7 @@ export interface DoneLatch {
  * latch keeps that invariant in one place instead of a hand-kept flag per
  * opener.
  */
-export function createDoneLatch(shell: SessionShell, emitDone: () => void): DoneLatch {
+export function createDoneLatch(shell: SessionShell<TtsEvents>, emitDone: () => void): DoneLatch {
   let emitted = false;
   return {
     emitted: () => emitted,
@@ -404,4 +387,36 @@ export function createDoneLatch(shell: SessionShell, emitDone: () => void): Done
       emitted = false;
     },
   };
+}
+
+/**
+ * Pick a provider endpoint: an explicit URL, else the region's, else the
+ * vendor default (`undefined` where the vendor SDK's own default is the right
+ * answer and a stale copy here would override an SDK path bump).
+ *
+ * **An explicit URL WINS over `region`**, which is the whole reason this is one
+ * function: naming an endpoint is a deliberate act (a staging cluster, an A/B
+ * against the default host) and the residency shorthand must not silently
+ * overwrite it. The STT opener and the LLM registry each stated that rule in
+ * their own near-identical comment, and they differ only in the US case.
+ */
+export function pickEndpoint(
+  explicit: string | undefined,
+  region: string | undefined,
+  endpoints: { eu: string; default: string },
+): string;
+export function pickEndpoint(
+  explicit: string | undefined,
+  region: string | undefined,
+  endpoints: { eu: string; default?: string | undefined },
+): string | undefined;
+export function pickEndpoint(
+  explicit: string | undefined,
+  region: string | undefined,
+  endpoints: { eu: string; default?: string | undefined },
+): string | undefined {
+  // Length-checked by truthiness on purpose: an empty string is a
+  // misconfiguration, not a request for the vendor default.
+  if (explicit) return explicit;
+  return region === "eu" ? endpoints.eu : endpoints.default;
 }

@@ -21,6 +21,7 @@
  * Import via `@alexkroman1/aai/runtime`. See `examples/host-server`.
  */
 
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import {
@@ -95,7 +96,7 @@ const HOST_ONLY = "This server serves host-mode sessions only — connect with ?
  * @public
  */
 export function createHostServer(options: HostServerOptions = {}): AgentServer {
-  const { defaults, env, name = "host", logger = consoleLogger } = options;
+  const { defaults, env, name = "host", logger = consoleLogger, upgrade, request } = options;
   return createServer({
     runtime: decliningRuntime(HOST_ONLY, logger),
     name,
@@ -104,12 +105,14 @@ export function createHostServer(options: HostServerOptions = {}): AgentServer {
     // `AAI_ALLOW_HOST: "0"` left in a caller's env map must not disable the
     // one thing this server exists to do.
     env: { ...env, AAI_ALLOW_HOST: "1" },
-    // Only when the operator declared something. `buildHostAgent` treats an
-    // absent base agent as "no provider config", which `createRuntime` then
-    // fills with the default all-AssemblyAI pipeline — so omitting this is a
+    // `hostBaseAgent` only when the operator declared something. `buildHostAgent`
+    // treats an absent base agent as "no provider config", which `createRuntime`
+    // then fills with the default all-AssemblyAI pipeline — so omitting it is a
     // real default, not a degraded one.
-    ...(defaults ? { hostBaseAgent: { name, ...defaults } as AgentDef } : {}),
-    ...(options.upgrade ? { upgrade: options.upgrade } : {}),
-    ...(options.request ? { request: options.request } : {}),
+    ...omitUndefined({
+      hostBaseAgent: defaults && ({ name, ...defaults } as AgentDef),
+      upgrade,
+      request,
+    }),
   });
 }

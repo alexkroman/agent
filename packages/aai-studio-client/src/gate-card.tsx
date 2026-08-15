@@ -9,6 +9,7 @@
  * trying again cannot change.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { ApiError, errorText, isTransientError } from "./api-error.ts";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 
@@ -108,7 +109,7 @@ export function loadFailureText(
     return { message: `${definite}: ${said ? said : "unknown error"}` };
   }
   const detail = error instanceof ApiError ? errorText(error) : undefined;
-  return { message: SERVER_BUSY_MESSAGE, ...(detail !== undefined && { detail }) };
+  return { message: SERVER_BUSY_MESSAGE, ...omitUndefined({ detail }) };
 }
 
 /** The slice of a TanStack query state a gate screen reads. */

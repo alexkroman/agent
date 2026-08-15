@@ -24,6 +24,7 @@
  */
 
 import type { TtsWordTiming } from "../../../sdk/providers.ts";
+import { isRecord } from "../../../sdk/utils.ts";
 
 /** One raw word object as it may appear on the wire. */
 type RawWord = Record<string, unknown>;
@@ -41,18 +42,17 @@ const END_KEYS = ["audio_end_ms", "end_ms", "end"] as const;
 
 /** Parse one word object; `undefined` when it carries no usable timing. */
 function readWord(value: unknown): TtsWordTiming | undefined {
-  if (typeof value !== "object" || value === null) return;
-  const raw = value as RawWord;
-  const text = raw.text ?? raw.word;
+  if (!isRecord(value)) return;
+  const text = value.text ?? value.word;
   if (typeof text !== "string") return;
-  const startMs = readMs(raw, START_KEYS);
+  const startMs = readMs(value, START_KEYS);
   if (startMs === undefined) return;
   // A frame that reports only a start still locates the word; treat the word
   // as instantaneous rather than dropping it. `endMs` is what the heard cursor
   // compares against, so this errs toward counting the word as heard early —
   // the one place this module leans that way, and only when the service tells
   // us nothing better.
-  const endMs = readMs(raw, END_KEYS) ?? startMs;
+  const endMs = readMs(value, END_KEYS) ?? startMs;
   return { text, startMs, endMs: Math.max(startMs, endMs) };
 }
 
@@ -64,9 +64,8 @@ function readWord(value: unknown): TtsWordTiming | undefined {
  * both are covered.
  */
 export function readWordBoundaries(msg: unknown): TtsWordTiming[] {
-  if (typeof msg !== "object" || msg === null) return [];
-  const raw = msg as RawWord;
-  const batch = raw.words ?? raw.word_boundaries;
+  if (!isRecord(msg)) return [];
+  const batch = msg.words ?? msg.word_boundaries;
   if (Array.isArray(batch)) {
     const out: TtsWordTiming[] = [];
     for (const entry of batch) {
@@ -75,7 +74,7 @@ export function readWordBoundaries(msg: unknown): TtsWordTiming[] {
     }
     return out;
   }
-  const single = readWord(raw);
+  const single = readWord(msg);
   return single ? [single] : [];
 }
 

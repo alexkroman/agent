@@ -26,7 +26,18 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   plus the slug lock. NO idle machinery — idleness is the guest's own job
   (agent-mode self-exit), and its exit drops the whole SLOT via
   `onSandboxLost` — not just its sandbox, which grew the map by one shell per
-  slug for the container's life; a rebuild needs nothing from an empty slot
+  slug for the container's life; a rebuild needs nothing from an empty slot.
+  **A plain `Map`, and `withSlugLock` is the exclusion** — it was an `OwnedMap`
+  whose ownership affordance nothing used, i.e. a type describing a guarantee
+  no call site asked for; `SlotCache`'s own doc has the argument
+- `guest-forward.ts` — the one platform→guest forward (`forwardToGuest`) and
+  its header policy, shared by the three routes that proxy into a tenant's
+  sandbox (`/client-config`, `/:slug/workflows/*`, the durable-run webhook),
+  which had re-derived broker→URL→filter→bounded-fetch three times with three
+  different filters. **A header crossing this hop reaches TENANT CODE**, so
+  `Cookie`, `Authorization` and `X-Forwarded-*` never do; the API routes take
+  an allow-list and the webhook route deliberately passes the rest through. Its
+  module doc has the argument
 - `modal-context.ts` — the shared Modal context every spawn path needs
   first: the client, the App, the harness-baked snapshot image (built once
   per harness version, published under a content-addressed tag), and the
@@ -97,12 +108,12 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   BE that writer.
   **Wait out an emit with `memory.settled()`, never a microtask spin** — an
   emit is fire-and-forget in both directions, and the spin's iteration count is
-  unknowable and silent when wrong. The full account is on `settled()`'s own
-  doc comment in `platform-events.ts`; the two consequences to carry into new
-  code are that a watcher whose work must be waitable has to RETURN its promise
-  (which is why `watchAgentInvalidation` returns its `withSlugLock` promise
-  rather than `void`-ing it), and that because `settled()` really waits it can
-  DEADLOCK — a test holding the slug lock must commit, release, then settle
+  unknowable and silent when wrong. `settled()`'s own doc comment carries the
+  full account; the two consequences to carry into new code are that a watcher
+  whose work must be waitable has to RETURN its promise (which is why
+  `watchAgentInvalidation` returns its `withSlugLock` promise rather than
+  `void`-ing it), and that because `settled()` really waits it can DEADLOCK — a
+  test holding the slug lock must commit, release, then settle
 - `realtime-events.ts` — the production `PlatformEvents`: Supabase Realtime
   `postgres_changes` on `aai_platform.agents` / `studio_workspaces` /
   `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus
@@ -258,7 +269,16 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   declares it in `config.toml`), so nothing else would notice it going missing or
   turning public — but unlike the two guards above this one is a NETWORK call, and
   failing boot on a Storage blip would stop every container at once.
-- `deploy.ts` / `delete.ts` — deployment lifecycle
+- `deploy.ts` / `delete.ts` — deployment lifecycle.
+
+  **A delete whose app-database deprovision fails FAILS (503)**, rather than
+  warning and continuing — which deleted the `app-db:<slug>` secret and the
+  agents row, leaving the tenant schema and login role alive with their only
+  credential record gone and nothing naming the slug (`slugs()` no longer lists
+  it; the orphan sweep matches `%-preview` only). The comment claimed "a later
+  retry can finish the job"; there was none. Throwing makes it true: nothing is
+  deleted, and the drops are `if exists` so a retry is a no-op on whatever the
+  first attempt managed
 - `secret-handler.ts` — secret management
 - `secret-store.ts` — `SecretStore` interface: Supabase Vault
   (`createVaultSecretStore`, over the `SUPABASE_DB_URL` Postgres
@@ -294,7 +314,16 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   a much higher ceiling. Never treat the role setting as isolation.
 - `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
   toggling the app's database, plus `storageUsage`/`appDatabaseUsage` (how
-  much is IN it — see `packages/aai-studio-client/CLAUDE.md`)
+  much is IN it — see `packages/aai-studio-client/CLAUDE.md`).
+
+  **`enableStorage` no-ops on an already-enabled app, and that is the point.**
+  `provisionAppDatabase` mints a fresh password every call and the caller
+  persists it, so re-provisioning ROTATES the role's credentials under a
+  resident guest holding the `DATABASE_URL` baked in at spawn — and storage
+  changes move no sandboxes (below), so nothing rebuilds behind it.
+  `aai storage enable` run twice broke `ctx.db` mid-session, silently. The
+  check is INSIDE the slug lock, and having it here means neither caller can
+  forget it
 
 ## Stateless server
 
@@ -451,268 +480,37 @@ Two packages, one surface each, composed into a single process.
 locks, epochs, sandbox machinery); `platform-barrel.ts` is the sanctioned path
 to its `_`-internal utilities. **It ships no entry point** — it is a library,
 consumed through its `exports` map, and has no `build` (its subpaths resolve to
-`.ts` source, which its consumer bundles).
+`.ts` source, which its consumer bundles). `aai-studio-server` is the studio
+surface AND the composition root: its entry is the only one any deployment
+runs, and `pnpm dev:aai-server` runs it too, so local dev and production are
+the same composition. There is ONE Modal app, `aai-server-web`, from
+`packages/aai-server/modal_deploy.py` — note the asymmetry, the deploy script
+lives in the package that does NOT provide the entry.
 
-`aai-studio-server` is the studio surface AND the composition root: its entry
-is the only one any deployment runs, dispatching studio paths (`isStudioPath`,
-`aai-server/studio-paths.ts`) to the studio app and everything else — including
-`/health` and the WebSocket upgrades — to the agent orchestrator. Both apps
-share one `ServiceConfig`, so they share the slot cache and stores. That entry
-is what `pnpm dev:aai-server` runs too, so local dev and production are the
-same composition.
+**The composition itself is documented where the composition ROOT lives: see
+"One deployment, two packages" in `packages/aai-studio-server/CLAUDE.md`.**
+That is where the retired split deployment and the two constraints any revival
+owes are recorded, along with the `alwaysBundle` specifier bug that cost every
+container cold start ~72 modules of type-stripping, the 31-subpath shared-core
+`exports` map (widen it in package.json, and delete an entry when a coupling
+goes away — this list only ratchets down), `resolvePublicOrigin` and the two
+outages that came of deriving a scheme from the request URL,
+`AAI_ALLOWED_ORIGINS`, the agents-row CHANGE STREAM that is the only
+cross-service invalidation (and why its REJOIN is itself a signal), retirement
+vs. termination, and the shutdown ordering — the boot guard, the grace, the
+two-level bound, and why a long-lived response must register with
+`live-streams.ts`.
 
-There is ONE Modal app: `aai-server-web`, from `packages/aai-server/
-modal_deploy.py`. Note the asymmetry — the deploy script lives in the package
-that does NOT provide the entry; it is the platform's deploy policy, and it
-launches `packages/aai-studio-server/dist/index.mjs`.
+Two rules from it that a reader of THIS package needs in front of them:
 
-**A SPLIT deployment used to live here** — a second Modal app
-(`aai-studio-web`) with the agent app reverse-proxying to a
-`STUDIO_UPSTREAM_URL`. Removed rather than left dormant: the upstream was never
-wired, so the combined branch was the only one that ever ran while the split
-half still constrained the design. `modal_deploy.py`'s own "One app, both
-surfaces" block carries the motivation and what reviving it would cost; two
-constraints survive any revival — **one public origin** (agent pages set
-`X-Frame-Options: SAMEORIGIN`, so a studio on a second hostname breaks the
-preview iframe), and the studio service would need the event streams' timeout
-raised (see "A long-lived connection is ONE Modal input").
-
-**aai-server is COMPILED IN to that entry, and the bundler pattern must match
-its SUBPATHS.** `aai-studio-server/tsdown.config.ts` lists it under
-`deps.alwaysBundle`; `alwaysBundle` matches the SPECIFIER, not the package, and
-every import here is a subpath (`aai-server/orchestrator`, …), so the
-`/^aai-server$/` this replaced matched nothing and the whole package stayed
-external. Nothing said so — the build succeeds and the entry runs; `dist/
-index.mjs` is merely 150 KB of import statements rather than a 3.7 MB bundle.
-The cost is paid at every container COLD START, because this package's exports
-resolve to `.ts` SOURCE (it has no build): an externalized entry made every
-boot resolve, read, type-strip and compile ~72 TypeScript modules before
-serving a request, and left the image's compile cache (below) keyed on 72 files
-instead of one. `bundled-deps.test.ts` holds the pattern to the specifiers the
-entry really imports — the built file cannot be the guard, since `test` depends
-on `^build`, not on this package's own build.
-
-One consequence to keep in mind when adding code to aai-server: **the module's
-own location is no longer where its source lives.** `createRequire(import.meta
-.url)` resolves from `packages/aai-studio-server/dist/`, whose pnpm
-`node_modules` has no `aai-guest` above it — which is why `guestPackageDir`
-(modal-harness-image.ts) falls back to deriving that package root from the
-harness path. Anything else that resolves a workspace sibling by module
-location owes the same fallback.
-
-**The shared core is the `exports` map, and nothing else.** It is an
-explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
-machinery, schemas, app composition, the routes the studio reuses), and
-`platform-surface.test.ts` holds it to the imports that actually exist in
-both directions — an entry nobody imports fails, and so does an import with
-no entry. It was `"./*": "./*.ts"` for a long time, which meant every one of
-the package's ~70 modules was published to the sibling: the prose above
-described a "shared core" that no code distinguished from the agent
-service's own internals, so `aai-studio-server` reached into 31 of them and
-none of those reaches could be called a violation. Widening the surface is
-now an edit to package.json rather than a side effect of typing an import
-path. When a coupling goes away, delete the entry — this list only ratchets
-down, like the file-length allowlist.
-
-- **One public origin**, now structurally rather than by proxying: both
-  surfaces are served by one process on one hostname. This is what keeps the
-  preview iframe working — agent pages are served `X-Frame-Options:
-  SAMEORIGIN`, so the studio must share their origin. Shared base middleware
-  lives in `app-middleware.ts` so the two apps can't drift on CORS/framing
-  policy.
-- **Never derive the public scheme from the request URL** — use
-  `resolvePublicOrigin` (`aai-server/public-origin.ts`). Modal terminates TLS
-  at its edge and forwards plain HTTP to the container (its ASGI proxy adds
-  only `X-Forwarded-For`, never `X-Forwarded-Proto`), so `new URL(c.req.url)`
-  is **always** `http:` in a handler, whatever the browser used. Resolution
-  order: `AAI_PUBLIC_ORIGIN` → `x-forwarded-host`/`-proto` (a real proxy in
-  front) → infer, loopback being the only `http`.
-
-  Both places that had rolled their own cost real outages. Studio **Publish
-  died on `401 Missing Authorization header` from its own platform**: the
-  guest was handed `http://<public host>`, its `aai deploy` POST was
-  308-redirected to `https://`, and `fetch` strips `Authorization` across a
-  scheme change (different origin per the Fetch spec). The request arrived
-  unauthenticated, so the CLI reported an invalid API key it had in fact sent
-  correctly. (The since-removed studio proxy propagated the same wrong answer a
-  second way, forwarding its own `x-forwarded-proto: http`.) The bare-slug
-  redirect
-  (`/:slug` → `/:slug/`) separately echoed the cleartext URL back as an
-  absolute `Location`, bouncing https browsers through `http://`; it is now
-  relative, which no scheme can taint.
-- **Cross-service invalidation is the agents row's CHANGE STREAM**
-  (`agent-store.ts` for the row; `platform-events.ts` /
-  `realtime-events.ts` for the stream; `watchAgentInvalidation` in
-  `sandbox-resolve.ts` for the handler). Mutation handlers ONLY write the
-  row — deploy upserts it (bumping `version`), delete removes it — and
-  every replica, the writer included, reacts to the resulting Supabase
-  Realtime `postgres_changes` event: the handler drops the bundle-store
-  row caches, re-reads the version fresh (events are signals, never
-  payloads), and retires a resident at a different version (terminates on
-  a deleted row — a deleted agent must stop answering, not drain). This is
-  how a studio-service Publish reaches the agent service's resident
-  sandboxes within seconds. There is no separate signal to send — the row
-  write IS the notification, so no bump can be missed — and no duplicate
-  detection paths: the per-broker lazy version check and the idle sweep's
-  `SupersededCheck` were both removed when the change stream replaced
-  them, so `resolveSandbox` serves any LIVE resident as-is and the idle
-  sweep is purely about idleness. (Worker/client blob caches are
-  hash-keyed and immutable — a stale row is a consistent OLD deploy, never
-  a torn mix, and a wrong blob is structurally impossible.) The handler's
-  version comparison under the slug lock is what makes duplicated or
-  reordered events harmless; an unreadable version logs and leaves the
-  resident alone rather than killing a healthy sandbox.
-
-  **The stream's REJOIN is itself a signal, and on THIS stream it has to be.**
-  `subscribe()` only sends the join — the binding is not live until the ack,
-  and realtime-js rejoins after any socket drop — so changes in either window
-  reach nobody, ever. The pooled channels always fired their watchers on the
-  ack; the AGENTS channel did not, and it is where the gap is unrecoverable,
-  being the single mover of residents with no later check behind it (see the
-  deleted duplicate paths above). A deploy during a drop left the replica
-  serving superseded code and a delete left it answering for a deleted agent,
-  until the guest happened to self-exit on idle — for a busy agent, never,
-  since traffic is what keeps it non-idle. The deploy reported success.
-
-  So `watchAgents` takes a second, slug-less `onResync`, which
-  `watchAgentInvalidation` answers by re-running the same per-slug reconcile
-  over every resident. Three properties: it is a **separate callback, not a
-  nullable slug**, so a consumer that ignores resync says so by omission
-  rather than mishandling a sentinel silently; **the residents are the query,
-  not the agents table** — one version read per sandbox actually served
-  (single-flighted, 1s-cached) and none at all on a replica holding none,
-  because every reconnect fires this and the common case must stay a cheap
-  re-read; and **registration precedes `ensureAgentsChannel()`**, so a join
-  cannot fire ahead of the watcher that triggered it.
-
-  The subscription MONITOR (`createSubscriptionMonitor`, via `/health`) is the
-  complement, not the same thing: it makes a channel that never joins visible,
-  and cannot repair one that dropped and recovered on its own — the common
-  case, and the silent one.
-
-  **Deploy and delete are the ONLY mutations that move sandboxes.** Secret
-  and storage changes write Vault and bump nothing — they take effect on
-  the agent's next deploy (or whenever its sandbox is next rebuilt). That
-  trade deleted the whole secret-invalidation mechanism (the old
-  `aai_platform.slug_epochs` table); the documented way to apply a secret
-  now is to redeploy.
-
-  **Supabase setup this depends on lives in `supabase/migrations`**, applied
-  with `supabase db push` BEFORE the code that queries it: the `aai_platform`
-  schema and its tables, the watched tables' membership in the
-  `supabase_realtime` publication, the
-  `service_role` SELECT grants, the workspace-child foreign keys, the
-  orphan-sweep's `studio_workspaces.preview_slug` generated column + index,
-  and the
-  `pg_cron`/`pgmq`/`pg_net` extensions. Realtime validates channel filter
-  columns (and gates row visibility) against what the subscriber's claimed
-  role can SELECT, and the app-created `aai_platform` schema gets none of
-  Supabase's default `public` grants, so without those grants every filtered
-  subscribe fails with `invalid column for filter <col>`. Only the pg_cron
-  SCHEDULING stays at boot (`schedulePlatformSweeps` via
-  `bootstrapPlatformDb`), because the sweep bodies are defined in TypeScript
-  and change with the code that owns them.
-  The env carries `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` for the
-  Realtime socket, required in production alongside `SUPABASE_DB_URL`.
-- **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
-  A mutation replaces the code a slug runs; it says nothing about the calls
-  already in flight on the old sandbox, and closing their sockets inline —
-  which every mutation path used to do — meant shipping during the day
-  dropped live conversations. `retireSlot` splits the two things
-  "terminate" conflated: it detaches the sandbox from the slot
-  **synchronously, with no await in between** — the broker is the only
-  routing point, so from that instant no NEW session can reach it and the
-  slug is free to rebuild — then FIRE-AND-FORGETS one deadline-carrying
-  `POST /manage/drain` to the guest. The GUEST owns the drain from there
-  (`harness-agent-mode.ts`): it refuses new direct-dial sessions, exits the
-  instant its last session ends, and exits at the deadline
-  (`SANDBOX_RETIRE_DRAIN_MS`, 10 min, env overridable; 0 terminates
-  immediately) regardless — a retired sandbox is a billed guest running
-  superseded code. The host keeps NO drain state and runs no poll loop; an
-  unreachable guest (the drain request rejects) is terminated on the spot.
-  - **Retirement is for superseded, not gone.** A failed VM, an exited
-    guest, and a deleted agent stay on `terminateSlot`: there is nothing to
-    drain, and a deleted agent must stop answering rather than keep taking
-    calls for ten more minutes.
-  - **Process teardown deliberately does NOT chase retired guests** — they
-    are off the slot map and self-governing; their drain deadline is
-    minutes past the container grace period, and Modal's sandbox `timeoutMs`
-    is the backstop behind everything.
-- **The studio service holds an always-empty slot cache** — the shared
-  mutation cores' local sandbox teardowns are deliberate no-ops there,
-  while the deploy's row-version bump does the real work. It shares
-  everything else through Supabase and spawns its own Modal sandboxes for
-  `test_agent` and Publish.
-- **The web service autoscales** (constants block in `modal_deploy.py`),
-  bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Scale-in is FREE for voice
-  sessions: a replica going down RETIRES its agent guests instead of
-  waiting on or terminating them (`teardownSandboxes` — one awaited,
-  deadline-carrying drain per guest, then exit).
-
-  **Shutdown has to stop BOOTING sandboxes before it stops serving.**
-  Flipping `draining` only makes `/health` fail; the proxy stops routing here
-  when it notices, up to a health-check interval later. A request landing in
-  that window used to take the cold broker path, find an emptied slot, and
-  spawn a guest seconds before the process exited — ORPHANED, since no slot
-  referenced it and nothing held it, billing until Modal's idle timeout. Two
-  guards, in order of importance: `brokerSessionUrl` refuses to boot a new
-  sandbox when `isDraining` (503, so the client re-brokers onto a live
-  replica) while still serving a LIVE resident, which orphans nothing; and
-  `teardownSandboxes` waits `SHUTDOWN_GRACE_MS` (3s, env-overridable) before
-  emptying the slots, so requests that would have been served still are. The
-  wait is deliberately short — it spends the same SIGTERM allowance the
-  drains need, and an undelivered drain is the worse failure. The studio-only
-  service passes 0: its slot cache is always empty, so it has no such window.
-  Sessions dial the sandbox
-  tunnel directly and the guest has no dependency on the replica, so live
-  calls finish in the guests on their own clock after the replica is gone;
-  the next replica's broker spawns fresh sandboxes on demand. The old
-  count-guest-sessions-and-wait shutdown drain (`liveGuestSessions`,
-  `drainActiveSessions`, `SHUTDOWN_DRAIN_MS`) was deleted — it could only
-  ever delay the exit, and past its 120s budget it cut the very calls it
-  existed to protect. Studio guests DO go down with the replica (the
-  broker's `dispose()`): their coding-agent sessions live on the host's
-  control channel, so a dead host makes them useless.
-
-  **Shutdown is BOUNDED at two levels**, because `createShutdownHandler` arms
-  its `SHUTDOWN_CLOSE_FALLBACK_MS` timer only AFTER `onShutdown()` settles — so
-  the sole deadline used to cover the fast half (waiting for connections to
-  close) and leave the slow half unbounded, and the slow half is the one that
-  hangs. `SANDBOX_TEARDOWN_READY_MS` caps the readiness wait `Sandbox.drain` /
-  `shutdown` inherit from the spawn (the 120s BOOT budget, spent on guests with
-  nothing to drain); `SHUTDOWN_TEARDOWN_TIMEOUT_MS` is the general net over it,
-  since the Modal calls underneath carry no timeout at all. Both constants
-  carry the budget arithmetic and the why-giving-up-is-safe argument in
-  `constants.ts`; read them before changing `SHUTDOWN_GRACE_MS`, which they are
-  sized against. Pinned by tests that FAIL FAST rather than hang — "this
-  settles within a budget" times out to the suite limit once the budget is
-  gone, so the teardown promises are never awaited; settlement is recorded on
-  a `vi.fn()`.
-- **Shutdown ENDS long-lived responses; it must never let the process exit
-  destroy them** (`live-streams.ts`, wired into `serve-lifecycle.ts`). SSE
-  streams never end on their own, so `server.close()` waited out
-  `SHUTDOWN_CLOSE_FALLBACK_MS` and `process.exit(0)` destroyed the sockets,
-  cutting each chunked body before its terminating `0\r\n\r\n` — a protocol
-  error to whatever is reading. Three properties of the ending are each a hole
-  that put the truncation back while the registry looked correct: it runs FIRST
-  (before the sandbox teardown, which sleeps and then awaits a drain per
-  guest), the registry LATCHES closed (so a stream registered mid-shutdown is
-  ended on the spot rather than held until the exit), and the crash path ends
-  them too (`installProcessSafetyNets`). **Any future long-lived response owes
-  the same registration**; the guard is `live-streams.test.ts`, which reads raw
-  socket bytes because a handler-level assertion passes with the bug present.
-- **A long-lived connection is ONE Modal input, so the function `timeout`
-  bounds CALL DURATION** — not request latency, which is why the app pins
-  `FUNCTION_TIMEOUT_SECS` (4h, matching `DEFAULT_SANDBOX_TIMEOUT_MS`) rather
-  than inheriting Modal's 300s default. Nothing long-lived runs in this process
-  today — voice sessions dial the guest tunnel directly and `/:slug/websocket`
-  upgrades are handshake redirects — so the only responses under that cap are
-  the STUDIO's two event streams. Their whole story, including why 4h is
-  load-bearing for a revived split deployment, what the recurring
-  `TransferEncodingError`s in the log are (mostly not truncation we caused),
-  the log filter that collapses them, and why capping a stream's own lifetime
-  was rejected, is in `packages/aai-studio-server/CLAUDE.md`, "Long-lived
-  responses (SSE)".
+- **A resolved public origin may be used WITHIN the request that asked for it
+  and never stored for a later one.** `Host` and `x-forwarded-*` are the
+  caller's to write, so a use inside the request is self-directed (a caller who
+  lies gets its own lie back) while one that outlives it is an injection — see
+  "Durable workflows" below for the shipped instance.
+- **Deploy and delete are the ONLY mutations that move sandboxes.** Secret and
+  storage changes write Vault and bump nothing; the documented way to apply a
+  secret is to redeploy.
 
 ## Modal sandbox notes
 
@@ -782,42 +580,11 @@ down, like the file-length allowlist.
   allocation) lives in `warm-harness.ts`, used by both backends.
 - The guest base image defaults to `node:26-slim`; pin via
   `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
-  Modal App sandboxes are created under (default `aai-server`).
-
-  **Its major tracks the SERVICE image's** (`node:26-slim` in
-  `scripts/modal_image.py`) **and `.node-version`.** The guest is the dev
-  server (see `packages/aai-guest/CLAUDE.md`, "Dev/prod parity"), so a split
-  major would mean the harness runs
-  one runtime in production and another under `aai dev` — the asymmetry that
-  section exists to enumerate, and one that no test can see because each side
-  is internally consistent. The three move together; `@types/node` is the
-  fourth, since it is what `tsc` checks every package and every studio
-  workspace against — pinned two majors ahead of the runtime, it accepts APIs
-  the deployed container does not have.
-
-  Note the ceiling is a RANGE, not a pin: published `engines.node` stays
-  `>=24` so SDK consumers on the previous LTS are not broken by a platform
-  deploy, which is why bumping this image is not a package-visible change.
-  **That split floor is what decides which Node 26 features may be used
-  where, and `tsc` cannot enforce it.** The root tsconfig sets
-  `lib: ["ESNext"]`, so every V8 14.6 addition — `Map.prototype.getOrInsert`
-  / `getOrInsertComputed`, `Iterator.concat`, `Temporal` — type-checks in
-  every package. In `aai-server` / `aai-guest` / `aai-studio-*` (`>=26`) that
-  is accurate; in `aai`, `aai-ui`, `aai-cli` (`>=24`) it ships a
-  `TypeError: … is not a function` to the consumer, having passed lint,
-  typecheck, and a CI whose own Node is 26. `runtime-tools.ts` carries the
-  worked example: `getOrInsertComputed` fits its state map exactly and is
-  deliberately not used. Anything reachable from a published package needs a
-  Node-24 floor check, not a type check. (`Iterator.concat` is doubly
-  unavailable — TS 7.0.2's lib does not declare it yet.)
-
-  Safe in every package, because they predate the 24 floor: `crypto.hash()`
-  (21.7), `module.enableCompileCache()` (22.1, stable in 25.4),
-  `await using` + `Symbol.asyncDispose` (20.4). `DisposableStack` /
-  `AsyncDisposableStack` are NOT in that set — they are V8 globals Node does
-  not document, so their availability on the floor is unverified; see the
-  note in `studio-session-broker.ts`.
-
+  Modal App sandboxes are created under (default `aai-server`). **Its major
+  tracks the SERVICE image's and `.node-version`, and that split floor decides
+  which Node 26 features may be used where — a rule `tsc` cannot enforce.** See
+  "The guest image's Node major, and the split floor it creates" in
+  `packages/aai-guest/CLAUDE.md`.
 - **The harness, the build toolchain, and the V8 compile cache are baked into
   a snapshot image**, not written per spawn — with the toolchain LOCKED by a
   committed lockfile so one `harness_image_tag` can only ever mean one tree.
@@ -838,25 +605,17 @@ down, like the file-length allowlist.
   cap with no reservation**, naming the env var, rather than letting the spawn
   die inside Modal on parameters the operator never set.
 
-  They must stay two numbers, because a guest's load is bimodal: it idles as a
-  voice session (~250 MB, a few % of a core) and spikes to ~1.7 GB across
-  several cores for the seconds a `test_agent` or Publish build spends in the
-  bundler. While the reservation was pinned equal to the cap, the two had to be
-  ONE number and the affordable one won: 1 GiB / 1 core. That does not fit a
-  build, and the failure is not an OOM — the guest wedges at its cgroup ceiling
-  in permanent direct-reclaim, burning its core on back-to-back full GCs that
-  can never free rolldown's **native Rust** allocations. Measured on a wedged
-  production sandbox: RSS pinned flat at 1.29 GB, ~1 core split seven ways
-  across 4 V8 GC workers + the main thread + 2 rolldown workers, **zero** I/O,
-  453 CPU-seconds and no progress, versus 253 MB / 0.97 CPU-seconds on an idle
-  sibling. It reads as a hung build.
-
-  Two corollaries. **The cap is on the CGROUP, not the process** — so it takes
-  out `test_agent` and Publish alike, and moving the bundler into a child
-  process (as #845 did, reverted in #863) cannot escape it; the child's peak is
-  charged to the same sandbox budget. And **`--max-old-space-size` cannot help**,
-  because the memory is native, not V8's. The reservation is the idle
-  voice-session shape; the cap only has to clear the bundler's peak.
+  **Why they must stay two numbers is argued in `modal_deploy.py`'s own
+  guest-sandbox resources block** — the bimodal load, the direct-reclaim wedge
+  a single number produced, and why the cgroup cap defeats moving the bundler
+  into a child process (#845, reverted in #863). Read it there; this guide is
+  the copy at a size cap. What it does not carry is the MEASUREMENT, so: on a
+  wedged production sandbox, RSS pinned flat at 1.29 GB, ~1 core split seven
+  ways across 4 V8 GC workers + the main thread + 2 rolldown workers, **zero**
+  I/O, 453 CPU-seconds and no progress, versus 253 MB / 0.97 CPU-seconds on an
+  idle sibling. It reads as a hung build, never as an OOM — and
+  `--max-old-space-size` cannot help, because the memory is native rather than
+  V8's.
 
   **The burst range is set in ONE place** — the guest-sandbox resources block
   in `aai-server/modal_deploy.py`, the only Modal app there is. Studio
@@ -1180,71 +939,32 @@ delivered as a boot FILE written into its own sandbox (scrubbed after
 reading); per-sandbox tokens ride the exec env, and platform secrets stay
 host-side.
 
-**Credential separation:**
+**Credential separation:** each agent provides its own `ASSEMBLYAI_API_KEY`
+via `.env` (local dev) or `aai secret put` (production) — **there is no
+central/platform-owned key**, and `SandboxOptions` keeps `apiKey` (host-only,
+for S2S connections) apart from `agentEnv` (forwarded to the guest). Agent
+secrets live in Supabase Vault (`agent-env:<slug>`), and app-database
+credentials reach the guest as `DATABASE_URL` — the app's OWN scoped role,
+never a platform admin credential. **What a guest may hold, why credential
+resolution reads the agent env only and never `process.env`, the two helpers
+that must both stay sealed, and the type-level `HostCredentialEnv` brand that
+keeps `withHostCredentialFallback` out of `ctx.env` are in
+`packages/aai-guest/CLAUDE.md`, "Credential separation, and what reaches a
+guest".**
 
-Each agent provides its own `ASSEMBLYAI_API_KEY` via `.env` (local dev) or
-`aai secret put` (production). There is no central/platform-owned key.
-`SandboxOptions` has separate `apiKey` (host-only, for S2S connections) and
-`agentEnv` (forwarded to guest) fields. The key is extracted from the agent's
-stored env at sandbox creation time and kept host-side only.
-
-- **App database**: per-app Postgres role/schema credentials are
-  platform-provisioned and held in Supabase Vault. When storage is enabled
-  they reach the guest as `DATABASE_URL` in the boot-delivered agent env —
-  the app's
-  OWN scoped role (search_path pinned, statement_timeout, connection
-  limit), never a platform admin credential; it reaches only data the
-  tenant's code could read anyway, and matches what `aai dev` puts in
-  `ctx.env` via the project `.env`.
-- **Agent secrets**: stored in Supabase Vault (`agent-env:<slug>`), not
-  encrypted blobs — the old master-key envelope encryption
-  (`KV_SCOPE_SECRET`) is gone.
-- **Credential resolution reads the agent env only — never `process.env`.**
-  The platform host process holds its own credentials under exactly the names a
-  tenant descriptor could resolve (`AWS_ACCESS_KEY_ID` /
-  `AWS_SECRET_ACCESS_KEY` for Supabase storage), so a fallback would let an
-  agent that supplied no credential of its own silently borrow the
-  platform's.
-
-  There are **two** such helpers and both must stay sealed — closing only one
-  leaves the leak open, since between them they cover every provider:
-  - `resolveApiKey` (`providers/resolve.ts`) — descriptor-declared env keys.
-  - `requireApiKey` (`providers/_utils.ts`) — every STT/TTS opener and every
-    LLM (via `resolve.ts`'s `requireKey`).
-
-  Self-hosted runs opt into shell-exported keys via
-  `withHostCredentialFallback` (`providers/host-env.ts`), which copies only
-  `PROVIDER_CREDENTIAL_ENVS` (derived from the provider registries). It feeds
-  `RuntimeOptions.providerEnv`, **not** `env` — credentials must not land in
-  `ctx.env`, both so agent code can't read them and so dev keeps parity with
-  production in what `ctx.env` contains.
-
-  The providerEnv-not-env rule is **type-enforced** via the branded env
-  records in `sdk/env-types.ts`: `withHostCredentialFallback` is the only
-  minter of `HostCredentialEnv`, which satisfies
-  `RuntimeOptions.providerEnv` (`ProviderEnv`) but is a compile error for
-  `RuntimeOptions.env` (`AgentEnv`) and everything else that becomes
-  `ctx.env`. Plain records stay assignable to both, so only the dangerous
-  flow needs ceremony; `env-types.test-d.ts` locks the assignability matrix.
-  The brand is advisory against *deliberate* re-annotation — the point is
-  that leaking host credentials into `ctx.env` can no longer be silent.
-
-**Cross-agent isolation:**
-
-- App databases are separate Postgres schemas with per-app login roles —
-  agents cannot access each other's data.
-- Each sandbox communicates over its own authenticated WebSocket.
-- Sessions are per-sandbox (`Map<string, Session>`).
-- No shared mutable state between sandboxes.
+**Cross-agent isolation:** app databases are separate Postgres schemas with
+per-app login roles, each sandbox communicates over its own authenticated
+WebSocket, sessions are per-sandbox, and there is no shared mutable state
+between sandboxes.
 
 **`run_code`**: executes only inside the guest sandbox — see "The
 `run_code` executor" in `packages/aai-guest/CLAUDE.md` for its authority
 and why there is no in-process capability stripping.
 
-**SSRF protection**: `aai/host/ssrf.ts` — the SDK owns it, and so does its
-guide. The screening policy (why a CONTAINED guest is not screened), the
-bypass classes covered, and the two undici-version traps in the pinned
-dispatcher are in `packages/aai/CLAUDE.md`, "Guest network access".
+**SSRF protection**: `aai/host/ssrf.ts` is the implementation. The screening
+policy (why a CONTAINED guest is not screened), the bypass classes covered, and
+the two undici-version traps in the pinned dispatcher are in
+`packages/aai-guest/CLAUDE.md`, "Guest network access".
 
 **Auth:**
 
@@ -1478,7 +1198,7 @@ and answers with the markup that tells the carrier to open a media stream
 against that sandbox's own `/phone` endpoint. From there the carrier talks to
 the guest directly and the platform is out of the path, exactly as it is for
 browser sessions. The guest half — the bridge, the codecs, the resampling — is
-the SDK's: see "Telephony" in `packages/aai/CLAUDE.md`.
+the SDK's code (`aai/host/telephony/`) and is documented below.
 
 **Why this route exists rather than pointing the carrier at
 `/:slug/websocket`.** That endpoint answers a plain upgrade with a 302 to the
@@ -1513,11 +1233,82 @@ secret up front puts a credential in the way of trying the feature. What
 setting it buys is real — without it, anyone who learns a slug can drive
 sandbox boots and provider spend by POSTing here.
 
+**"Enabled by the secret" is per AGENT, never per CARRIER — the caller names
+the carrier.** `?carrier=` is a query parameter on a route carrying only
+`slugMw`, so reading enablement per carrier let the caller pick the branch:
+against an agent with `TWILIO_AUTH_TOKEN` set, `?carrier=telnyx` missed the
+Twilio branch (carrier mismatch) AND the Telnyx branch (no key) and fell
+through to `{ ok: true }`, after which the route brokered a Modal sandbox and
+answered with TwiML carrying the guest's auth-free `wss://…/phone`. Symmetric:
+a Telnyx-only agent was bypassed by OMITTING the parameter, the default being
+`twilio`. So the fall-through is scoped to an agent that configured NOTHING:
+once ANY carrier secret is set, an unverifiable request is refused — including
+one naming a carrier whose secret is absent.
+
 **The signed URL is the PUBLIC one.** Twilio signs the URL it built the
 request from, which behind Modal's TLS termination is never `c.req.url` — the
 handler composes it from `resolvePublicOrigin`, for the same reason everything
 else on this platform does (see "Never derive the public scheme from the
 request URL").
+
+#### The guest half: a phone call is an ordinary session
+
+`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
+stream — Twilio Media Streams, Telnyx media streaming — and runs it as an
+ordinary session. `createServer` serves it by default, so `aai dev`, a
+self-hosted server and every deployed agent all answer phone calls with no
+per-agent configuration — the platform route above is only what points a carrier
+at it.
+
+**Nothing in the session stack knows about telephony, and that is the whole
+design.** `SessionCore` talks to a `ClientSink`; `wireSessionSocket` talks to
+a `SessionWebSocket`. So the adapter is a socket-shaped SHIM
+(`createTelephonyBridge`) that speaks the client protocol on one side and the
+carrier's JSON framing on the other, handed straight to
+`runtime.startSession`. Turn-taking, barge-in, tool calls, the audio pacer and
+its ordering rules, session eviction, keepalives, start timeouts and teardown
+are not reimplemented for phone — a call gets them because it runs the same
+code the browser does. Resist adding a telephony branch anywhere below the
+bridge; if one seems necessary, the bridge is the wrong shape.
+
+Four things that are easy to get wrong here, each of which was a decision:
+
+- **Pacing stays ON.** A carrier accepts audio far faster than it plays it and
+  buffers the rest — exactly the shape that made unpaced host-mode sessions
+  destroy 36% of all agent audio (see "Host-mode audio pacing" in
+  `packages/aai-cli/CLAUDE.md`): the
+  backlog builds on the FAR side, where `PacedAudioSink.clear()` cannot reach
+  it. So the bridge sets no `audioLeadMs` and a barge-in additionally sends the
+  carrier's own `clear` frame, which is the only way to drop what it already
+  holds. Without that frame the caller talks over an agent that keeps speaking
+  for seconds after being interrupted.
+- **The rates are LEARNED from the `config` frame**, not configured. The first
+  thing any runtime sends a session is `{ sampleRate, ttsSampleRate }`, so the
+  bridge builds its converters from that — which lets one adapter serve a
+  16 kHz pipeline agent and a 24 kHz S2S agent, and avoids plumbing a rate
+  through `createServer`, whose runtime is a LAZY facade in the guest harness
+  and cannot answer a rate question before the first session exists.
+- **Downsampling must low-pass first, and both converters are STATEFUL**
+  (`telephony/resample.ts`) — decimating without the filter folds everything
+  above 4 kHz back into the speech band, and rebuilding a converter per 20 ms
+  chunk puts a click at every boundary, 50 a second. That module's doc carries
+  the measurement; `telephony/mulaw.ts`'s carries why the G.711 curve is kept
+  sample-exact rather than approximated.
+- **This does not contradict "the host does not resample"** (see the S2S
+  section). That rule says rate conversion belongs at the EDGE, because every
+  client owns its own rate and asking it to send the advertised one is cheaper
+  and more honest. A carrier is the one client that cannot comply — 8 kHz
+  μ-law is what the PSTN carries — and the bridge IS the edge. The rule put
+  the conversion exactly here.
+
+Adding a carrier is one `CarrierCodec` in `telephony/carriers.ts` and nothing
+else — that module's doc owns the two properties every codec owes (decoding
+NEVER throws, and a media frame on a non-`inbound` track is DROPPED) and why
+these frames are narrowed by hand rather than by a Zod schema.
+
+**Known gaps**, both deliberate: no `mark` frames, so `playback_progress` is
+unused and the pipeline falls back to its open-loop estimate; and DTMF is
+ignored rather than surfaced as a custom event.
 
 ### Durable workflows — `/:slug/.well-known/workflow/v1/webhook/:token`
 
@@ -1573,17 +1364,27 @@ untouched and could not have helped: it steers QUEUE dispatch and never reaches
 callbacks. (The other gap this section used to name — a parked run that nothing
 ever boots the guest for — is what the wake sweep below closes.)
 
-**The value is baked at spawn and there is ONE sandbox per slug fleet-wide, so a
-platform reachable on more than one public origin serves every session from
-whichever origin happened to spawn the guest** — set `AAI_PUBLIC_ORIGIN` on any
-deployment with two live origins, which is already the way to take that choice
-away from callers. A per-request mechanism would buy nothing: a URL handed to a
-payment provider has to outlive the request that minted it anyway. With nothing
-configured, the origin is the one the replica last SERVED a request on
-(`rememberPublicOrigin`, wired into `app-middleware.ts` — the spawn paths that
-matter hold no request: the blue-green handover fires off the change stream, the
-wake sweep off a timer). With neither, the key is omitted and the SDK throws
-naming the option, which is the designed answer.
+**In production `AAI_PUBLIC_ORIGIN` is the ONLY source of that value, and any
+deployment that mints durable URLs owes it.** It is baked at spawn and there is
+one sandbox per slug fleet-wide, so a per-request mechanism would buy nothing
+anyway — a URL handed to a payment provider has to outlive the request that
+minted it. Unset, the key is omitted and the SDK throws naming the option,
+which is the designed answer.
+
+An OBSERVED origin (`rememberPublicOrigin`, wired into `app-middleware.ts` for
+the spawn paths that hold no request — the blue-green handover fires off the
+change stream, the wake sweep off a timer) is kept in LOCAL DEV only, because a
+real hole shipped: that middleware runs before any auth, and the origin
+resolves from caller-written `Host`/`x-forwarded-host`. One
+`curl -H 'Host: evil.example' <replica>/health` made the next sandbox that
+replica booted — any slug, any tenant — mint `https://evil.example/<slug>/…`
+from `ctx.workflows.publicWebhookUrl(token)`, so the payment callback delivered
+its payload and the run token to the attacker and the run never resumed:
+unauthenticated, cross-tenant, durable past the request that caused it. That is
+the "outlives the request" half of the rule above, and no header tells an
+honest `Host` from a forged one — so production refuses to guess, while local
+dev keeps observing on the premise that also lets the isolation-free
+`subprocess` backend be selected there.
 
 ### Waking a run whose sandbox is gone — `workflow-wake.ts`
 
@@ -1819,3 +1620,70 @@ successful WebSocket upgrade proves nothing about the sandbox:
 a client can hold an open `/session` socket to a guest whose runtime
 failed to build (it is accepted, then closed 1011), so `opened.length === 1`
 can hold while every sandbox fails.
+
+## Testing this package
+
+### Building a platform request in a test
+
+**Build a request with `authFetch`/`deploy`, not a header literal.** The
+`Bearer`+`Content-Type` pair was spelled out at ~47 sites across 8 files;
+they are converted, and the 28 remaining `Bearer` strings in the package are
+all ones where the literal IS the subject — the bearer parser's own spec
+(`_bearer.test.ts`), the `resolveBearer` cases in `middleware.test.ts`, and
+header ASSERTIONS in the blob-storage / supabase-auth / warm-harness suites.
+`deploy(fetch, { key, body })` is the same idea one level up, for the
+`POST /deploy` shape ~40 specs restate; `deployPayload()` is `deployBody()`
+as an object, for callers that re-encode it (the gzip specs). Drop to a bare
+`fetch` only when the REQUEST is what a spec exercises — a missing header, a
+gzipped body, a raw string — and those cases are why `deployBody` stays.
+
+### Gating a suite on a real Postgres
+
+**Seven scenario suites need a real Postgres, and without one they SKIP.**
+That tier is the only thing in the repo that can see a driver-level bug — an
+encoding that round-trips wrong, an advisory lock not held by the session that
+thinks it holds it — because an in-memory fake holds JS values and cannot be
+stricter than the driver beneath it. So a silent skip is the worst outcome
+available, and it was the default one: `pnpm test:scenario` with no
+`AAI_TEST_PG_URL` prints a green run, and CI's Linux leg would also have passed
+if its `$GITHUB_ENV` export ever broke.
+
+- `pnpm test:pg` resolves a local database (the Supabase stack on 54322, a
+  server on 5432, or an explicit `AAI_TEST_PG_URL`) and runs the tier against
+  it. With the stack up it ALSO shells out to `supabase status -o env` and
+  exports the Supabase trio, because a port is not an arm — see "Two arms per
+  store contract" above. It starts nothing itself.
+- A skip ANNOUNCES itself, via `describeWithPg` (a database) or
+  `describeWithStack` (the whole stack) from
+  `_pg-test-utils.ts` — the one spelling for each gate, in
+  place of hand-rolled copies of `PG_URL ? describe : describe.skip`.
+- `AAI_REQUIRE_PG` and `AAI_REQUIRE_STACK` turn a skip into a hard failure. CI
+  sets each on the leg that provides it (and `pnpm test:pg` sets them for the
+  run it starts), so "the wiring broke" is red rather than quiet. Both are
+  declared in the `check:scenario` task's `env` in `turbo.json` — undeclared,
+  strict env mode would strip them and the enforcement would silently do
+  nothing.
+- **`AAI_REQUIRE_REGISTRY` is the same shape one tier up**, in `check:e2e`'s
+  `env` for the same reason — see `packages/aai-cli/CLAUDE.md`.
+
+Note vitest EXECUTES a `describe.skip` callback (it has to, to enumerate what
+it is skipping), so read `pgUrl()` inside a hook or a test, never at the top of
+a gated `describe` body — up there it throws during collection on a machine
+with no database, which fails the file instead of skipping it.
+
+### The missing logger seam
+
+One known gap, found by audit and deliberately left alone because it is a
+refactor in its own right rather than a fix riding along with something else —
+sized, not stuck.
+
+**`aai-server` writes to `console.*` directly** — 47 calls, 45 of them
+outside `_debug-log.ts` — with no logger seam, so 39 of the repo's 86
+`spyOn(console, …)` calls exist purely to keep test output quiet. The
+abstraction already exists one package over — `aai/host` has a `Logger`
+type and `consoleLogger` — and this package has
+a partial one of its own in `_debug-log.ts`. The work is to give the
+package a single injected (or module-swappable) logger and convert the call
+sites, after which the silencing spies delete themselves. It has been left
+alone because it touches ~25 files and changes production log wiring, which
+should not land inside a test-quality change.

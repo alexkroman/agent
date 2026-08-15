@@ -294,9 +294,13 @@ function registerKind<Entry>(
 ): () => void {
   const previous = Object.hasOwn(registry, kind) ? registry[kind] : undefined;
   registry[kind] = entry;
+  // The credential vocabulary is derived from these registries, so it moves
+  // with them — see ALL_PROVIDER_ENV_VARS.
+  refreshProviderEnvVars();
   return () => {
     if (previous === undefined) delete registry[kind];
     else registry[kind] = previous;
+    refreshProviderEnvVars();
   };
 }
 
@@ -403,10 +407,20 @@ export function requiredProviderEnvVars(agent: {
     if (envVar) vars.add(envVar);
   };
 
+  // `descriptorEnvVar` FIRST, exactly as `resolveStt`/`resolveTts`/`resolveLlm`
+  // and the s2s branch below all do. Skipping it here made the preflight demand
+  // the registry default while the session read the override: `assemblyAIStt({
+  // apiKeyEnv: "ASSEMBLYAI_STAGING_KEY" })` was checked for `ASSEMBLYAI_API_KEY`
+  // and never told the key it actually resolves is absent — the silently-wrong-
+  // key failure `S2S_REGISTRY`'s own doc says these registries exist to prevent,
+  // one stage over.
   const envVarFor = <E extends { envVar: string }>(
     registry: Record<string, E>,
     descriptor: object | undefined,
-  ): string | undefined => registry[descriptorKind(descriptor) ?? ""]?.envVar;
+  ): string | undefined =>
+    descriptor === undefined
+      ? undefined
+      : (descriptorEnvVar(descriptor) ?? registry[descriptorKind(descriptor) ?? ""]?.envVar);
 
   add(envVarFor(STT_REGISTRY, agent.stt));
   add(envVarFor(TTS_REGISTRY, agent.tts));
@@ -431,16 +445,20 @@ export function requiredProviderEnvVars(agent: {
 }
 
 /**
- * Every STT/TTS/LLM/S2S credential name any provider can resolve, derived from
- * the same registries — so adding a provider needs no change here.
+ * Backing array for {@link ALL_PROVIDER_ENV_VARS}, rebuilt in place whenever a
+ * kind is registered or unregistered.
  *
- * Unlike {@link requiredProviderEnvVars} (what one agent needs), this is the
- * whole vocabulary. It bounds `withHostCredentialFallback`: only these names
- * may be copied from a host environment, so no unrelated host variable can
- * reach `ctx.env`.
+ * It has to be the SAME array object across a re-derivation, because the two
+ * allowlists that read it (`withHostCredentialFallback` via
+ * `PROVIDER_CREDENTIAL_ENVS`, and the host handshake's `credentials` screen)
+ * hold it as a value rather than calling for it. Re-derived only on a registry
+ * mutation, which is a test/host-application seam and never a hot path.
  */
-export const ALL_PROVIDER_ENV_VARS: readonly string[] = [
-  ...new Set([
+const allProviderEnvVars: string[] = [];
+
+/** Re-derive the vocabulary from the four registries, in place. */
+function refreshProviderEnvVars(): void {
+  const derived = new Set([
     ...Object.values(STT_REGISTRY).map((e) => e.envVar),
     ...Object.values(TTS_REGISTRY).map((e) => e.envVar),
     ...Object.values(LLM_REGISTRY).map((e) => e.envVar),
@@ -448,5 +466,27 @@ export const ALL_PROVIDER_ENV_VARS: readonly string[] = [
     // The descriptor-less default: no `s2s` field and no pipeline triple means
     // the injected AssemblyAI pipeline, which no registry entry represents.
     ASSEMBLYAI_API_KEY_ENV,
-  ]),
-];
+  ]);
+  allProviderEnvVars.length = 0;
+  allProviderEnvVars.push(...derived);
+}
+refreshProviderEnvVars();
+
+/**
+ * Every STT/TTS/LLM/S2S credential name any provider can resolve, derived from
+ * the same registries — so adding a provider needs no change here.
+ *
+ * Unlike {@link requiredProviderEnvVars} (what one agent needs), this is the
+ * whole vocabulary. It bounds `withHostCredentialFallback`: only these names
+ * may be copied from a host environment, so no unrelated host variable can
+ * reach `ctx.env`.
+ *
+ * **LIVE, not a module-load snapshot.** The registries are mutable — that is
+ * what `registerSttKind`/`registerTtsKind`/`registerLlmKind` are for, and the
+ * eval tier's level-1 target uses one in production code paths. A snapshot left
+ * a registered kind's env var outside BOTH allowlists at once: the host-mode
+ * handshake rejects it by name as an unknown credential, and
+ * `withHostCredentialFallback` silently declines to copy it, so a fake or a
+ * host application's own provider cannot be given a key.
+ */
+export const ALL_PROVIDER_ENV_VARS: readonly string[] = allProviderEnvVars;

@@ -33,7 +33,7 @@
  * @module
  */
 
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 
 /** One recorded assertion: what was claimed, and whether it held. */
 export type EvalCheck = {
@@ -96,6 +96,15 @@ export type EvalReport = {
    */
   readonly unstable: readonly string[];
   readonly harnessErrors: number;
+  /**
+   * Passes that actually measured something — `passes.length - harnessErrors`.
+   *
+   * {@link EvalReport.score} and {@link EvalReport.ms} are over THESE, so a
+   * `score` of 0 with `measuredPasses: 0` is "no measurement", not "the agent
+   * failed everything". Read it before quoting a number from a run that has any
+   * harness errors at all.
+   */
+  readonly measuredPasses: number;
 };
 
 /** What {@link runEval} is given. */
@@ -212,15 +221,32 @@ export async function runEval(spec: EvalSpec): Promise<EvalReport> {
       ms: Date.now() - started,
       checks: recorder.checks,
       score: total === 0 ? 0 : held / total,
-      ...(error === undefined ? {} : { error }),
+      ...omitUndefined({ error }),
     });
   }
+  // A pass that died is EXCLUDED from the score and the spread, for exactly the
+  // reason `EvalPass.error` gives and `unstableLabels` already honoured: a dead
+  // sandbox and a wrong tool call want different fixes, and averaging them hides
+  // both. Unfiltered, a pass that threw after two passing checks scored 1.0 and
+  // set `score.max` — so a harness failure could RAISE the reported number and
+  // widen the spread, and `AAI_EVAL_MIN_SCORE` (which asserts `score.min`) would
+  // be answering a question about the harness. `harnessErrors` is where that
+  // fact belongs, and it is already reported.
+  //
+  // Every pass failing is not 0% either: it is no measurement. An empty
+  // `spreadOf` returns zeros, which would read as a total failure of the agent,
+  // so the report carries `measuredPasses: 0` beside it and a reader who
+  // consults only the score has `harnessErrors` staring at them.
+  const measured = passes.filter((p) => p.error === undefined);
   return {
     name: spec.name,
     passes,
-    score: spreadOf(passes.map((p) => p.score)),
-    ms: spreadOf(passes.map((p) => p.ms)),
+    score: spreadOf(measured.map((p) => p.score)),
+    // Timing stays over the measured passes too: a pass that died at its first
+    // await is a fast one, and letting it into `ms.min` misreports latency.
+    ms: spreadOf(measured.map((p) => p.ms)),
     unstable: unstableLabels(passes),
-    harnessErrors: passes.filter((p) => p.error !== undefined).length,
+    harnessErrors: passes.length - measured.length,
+    measuredPasses: measured.length,
   };
 }

@@ -83,7 +83,7 @@
  * compatible compiler itself, so no second pin is needed here.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 
@@ -91,12 +91,14 @@ import {
   collectExportedNames,
   reportSource,
   stripPackageDocumentationMarker,
+  typedEntryPoints,
 } from "./_api-surface.mjs";
+import { publishablePackages, readJson, repoRoot } from "./_fs.mjs";
 
 const require = createRequire(import.meta.url);
 const { Extractor, ExtractorConfig } = require("@microsoft/api-extractor");
 
-const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
 const CHECK = process.argv.includes("--check");
 
 /** The combined file: every entry point's report, in reading order. */
@@ -105,40 +107,12 @@ const COMBINED_FILE = "API.md";
 /** The export-name lists: what each entry point exposes, without signatures. */
 const EXPORTS_FILE = "API-EXPORTS.json";
 
-/** Publishable packages — the ones without `"private": true`. */
-function publishablePackages() {
-  return readdirSync(join(ROOT, "packages"))
-    .map((dir) => join(ROOT, "packages", dir))
-    .filter((dir) => {
-      const manifest = join(dir, "package.json");
-      return existsSync(manifest) && JSON.parse(readFileSync(manifest, "utf8")).private !== true;
-    })
-    .sort();
-}
-
-/**
- * The `.d.ts` entry points of one package's `exports` map.
- *
- * Skips three shapes that have no API to report: an asset (`./styles.css`), the
- * manifest itself (`./package.json`), and a wildcard subpath
- * (`./default-client/*`), which names a directory of built assets rather than a
- * module with a signature.
- */
-function entryPoints(manifest) {
-  const found = [];
-  for (const [subpath, target] of Object.entries(manifest.exports ?? {})) {
-    if (subpath.includes("*")) continue;
-    const types = typeof target === "string" ? target : target?.types;
-    if (typeof types !== "string" || !types.endsWith(".d.ts")) continue;
-    found.push({
-      subpath,
-      types,
-      // "." -> "index"; "./stt" -> "stt"; "./default-client/x" -> "default-client-x".
-      slug: subpath === "." ? "index" : subpath.replace(/^\.\//, "").replaceAll("/", "-"),
-    });
-  }
-  return found.sort((a, b) => a.slug.localeCompare(b.slug));
-}
+// The `.d.ts` entry points of a package's `exports` map — and their SLUGS —
+// live in `_api-surface.mjs` as `typedEntryPoints`. The scan and the slug rule
+// were written here and again in `_api-contracts-tree.mjs`, and the two are
+// coupled by a FILENAME: this script writes `etc/<slug>.api.md` and that one
+// looks it back up. A divergence therefore surfaces as "missing report" naming
+// a path nobody typed.
 
 /**
  * Run API Extractor for one entry point.
@@ -332,7 +306,7 @@ function combinedFile(sections) {
   return `${out.join("\n")}\n`;
 }
 
-const packages = publishablePackages();
+const packages = publishablePackages(ROOT).map((dir) => join(ROOT, dir));
 if (packages.length === 0) {
   console.error("api-report: found no publishable packages — is the scan still right?");
   process.exit(1);
@@ -344,8 +318,8 @@ const sections = [];
 let reportCount = 0;
 
 for (const packageDir of packages) {
-  const manifest = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
-  const entries = entryPoints(manifest);
+  const manifest = readJson(join(packageDir, "package.json"));
+  const entries = typedEntryPoints(manifest);
   if (entries.length === 0) {
     console.error(
       `api-report: ${manifest.name} declares no .d.ts entry points — check its exports map.`,

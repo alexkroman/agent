@@ -15,8 +15,6 @@ export default retailTool({
       .max(120)
       .describe("Order id such as '#W0000000', or a spoken reference to one of their orders"),
   }),
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
-  // is load-bearing for the generic `result` type in `summary`.
   execute: (args, state) => {
     const order = resolveOrder(state, args.order_id);
     if (isToolFailure(order)) return order;

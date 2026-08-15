@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { ChatMessage } from "@alexkroman1/aai-ui";
+import type { AgentState, ChatMessage } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
   client,
@@ -61,17 +61,24 @@ const statusColors: Record<string, string> = {
 // new DashboardView field can't silently miss the pre-first-tool-call render.
 const EMPTY_DASH: DashboardView = dispatchSlot.projection(dashboardView)(undefined);
 
-function stateColor(state: string): string {
-  return state === "listening"
-    ? "#22c55e"
-    : state === "thinking"
-      ? "#eab308"
-      : state === "speaking"
-        ? "#3b82f6"
-        : state === "ready"
-          ? "#22c55e"
-          : "#6b7280";
-}
+// The dot's colour per session state, as an EXHAUSTIVE map rather than an
+// if-chain with a grey default.
+//
+// The palette is this template's own — every client here paints the same six
+// states in its own colours, so the SDK has nothing to share but the union. What
+// the SDK does own is `AgentState`, and `satisfies Record<AgentState, string>`
+// is what borrows it: a state added there stops compiling here, where the
+// `state === "…"` chain this replaced answered a new state with a silent grey
+// badge in three separate files and no way to notice.
+const STATE_COLORS = {
+  disconnected: "#6b7280",
+  connecting: "#6b7280",
+  ready: "#22c55e",
+  listening: "#22c55e",
+  thinking: "#eab308",
+  speaking: "#3b82f6",
+  error: "#6b7280",
+} satisfies Record<AgentState, string>;
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -179,7 +186,7 @@ function App() {
             <span
               className="w-2.5 h-2.5 rounded-full inline-block"
               style={{
-                background: stateColor(session.state),
+                background: STATE_COLORS[session.state],
                 animation:
                   session.state === "listening"
                     ? "dc-pulse 1.5s ease-in-out infinite"

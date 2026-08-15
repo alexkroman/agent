@@ -210,7 +210,7 @@ export default tool({
       .enum(["action_theme", "npc_reaction", "scene_twist", "yes_no", "chaos_check"])
       .describe("Type of oracle consultation"),
   }),
-  async execute(args, ctx) {
+  execute(args, ctx) {
     if (args.type === "yes_no") {
       const roll = d(6);
       const answer = roll <= 2 ? "No" : roll <= 4 ? "Yes, but with a complication" : "Yes";
@@ -218,15 +218,22 @@ export default tool({
     }
 
     if (args.type === "chaos_check") {
-      // gameSlot.get returns the live state object — mutations stick.
-      const state = gameSlot.get(ctx);
-      const interrupt = checkChaosInterrupt(state);
-      return {
-        type: "chaos_check",
-        chaosFactor: state.chaosFactor,
-        interrupted: Boolean(interrupt),
-        interruptType: interrupt,
-      };
+      // `checkChaosInterrupt` LOWERS the chaos factor when the roll lands, so
+      // this branch is a write and has to go through the slot's mutation
+      // window: `gameSlot.get` hands out the deep-frozen stored value, and
+      // assigning to it is a compile error and a `TypeError`. It is one branch
+      // of five, which is why this stays an ordinary `tool()` with a scoped
+      // `update` rather than becoming `gameSlot.updateTool` — the other four
+      // read nothing and store nothing.
+      return gameSlot.update(ctx, (game) => {
+        const interrupt = checkChaosInterrupt(game);
+        return {
+          type: "chaos_check",
+          chaosFactor: game.chaosFactor,
+          interrupted: Boolean(interrupt),
+          interruptType: interrupt,
+        };
+      });
     }
 
     if (args.type === "npc_reaction") {

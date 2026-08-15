@@ -246,6 +246,14 @@ export class ToolTurnAcrossResume implements Cmd {
       return;
     }
     emitToolCall(m, h);
+    // `m.toolsInFlight` is written ONLY by `syncFromReality`, so without this
+    // the count below is the previous command's — read before the session has
+    // even seen the `tool.call` just delivered. This composite exists to
+    // manufacture exactly the state `drop.withToolInFlight` counts, and that
+    // counter is a coverage FLOOR, so grading it on stale state is how a live
+    // floor becomes a decorative one.
+    await drain();
+    syncFromReality(m, h);
     emitReplyDone(m, h, false);
     if (m.toolsInFlight > 0 && m.outstanding.size > 0) hit(h, "drop.withToolInFlight");
     hit(h, "transientDrop");

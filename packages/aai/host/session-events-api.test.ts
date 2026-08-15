@@ -223,6 +223,23 @@ describe("session events API — routing", () => {
     expect(res.end).not.toHaveBeenCalled();
   });
 
+  test.each(["%", "%A", "%zz", "%C0%80"])(
+    "a session id that will not decode (%s) is a 400, not a 500",
+    async (id) => {
+      // `decodeURIComponent` throws URIError on each of these. Here it landed in
+      // the router's catch and reported "the agent is broken" for a request the
+      // caller malformed; the module now decodes through `decodePathSegment`,
+      // like the four sibling sites. Checked AFTER the bearer, so a bad path
+      // cannot probe an unauthenticated 400.
+      const { res, json } = await call(
+        { stream: seeded(), bearer: TOKEN },
+        `${SESSION_EVENTS_PATH}/${id}`,
+      );
+      expect(res.statusCode).toBe(400);
+      expect(json()).toEqual({ error: "Malformed session id" });
+    },
+  );
+
   test("the bare prefix is not a session", async () => {
     const api = createSessionEventsApi({
       stream: () => seeded(),

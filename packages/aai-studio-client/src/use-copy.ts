@@ -3,16 +3,12 @@
 //
 // Shared because two Settings cards hand the user a string to paste into
 // something else — the CLI commands and the phone webhook URLs — and both
-// need the same three things the naive version gets wrong: the flash is keyed
-// by the copied TEXT (so one row's "Copied" does not light up every button),
-// there is at most one live timer (a second click otherwise leaves the first
-// timeout to clear the second flash early), and the timer is cleared on
-// unmount.
+// need the same thing the naive version gets wrong: the flash is keyed by the
+// copied TEXT, so one row's "Copied" does not light up every button. The
+// single-timer / clear-on-unmount half is `useFlash`, which the editor's save
+// note shares.
 
-import { useEffect, useRef, useState } from "react";
-
-/** How long a button shows its outcome before returning to "Copy". */
-const FLASH_MS = 1500;
+import { useFlash } from "./use-flash.ts";
 
 type CopyState = { text: string; ok: boolean };
 
@@ -26,28 +22,19 @@ export type Copier = {
 };
 
 export function useCopy(): Copier {
-  const [copied, setCopied] = useState<CopyState | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // One live timer at a time, and none after unmount.
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const { value: copied, flash } = useFlash<CopyState>();
 
   const copy = (text: string): void => {
-    const flash = (ok: boolean): void => {
-      setCopied({ text, ok });
-      clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(null), FLASH_MS);
-    };
     // No clipboard in an insecure context (and none in jsdom) — the text is
     // on screen either way, so a failure only changes the button label.
     const write = navigator.clipboard?.writeText(text);
     if (!write) {
-      flash(false);
+      flash({ text, ok: false });
       return;
     }
     void write.then(
-      () => flash(true),
-      () => flash(false),
+      () => flash({ text, ok: true }),
+      () => flash({ text, ok: false }),
     );
   };
 

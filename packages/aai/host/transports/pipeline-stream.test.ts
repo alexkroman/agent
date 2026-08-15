@@ -7,13 +7,10 @@ import { describe, expect, test, vi } from "vitest";
 import { PIPELINE_FLUSH_TIMEOUT_MS, TTS_COALESCE_MAX_CHARS } from "../../sdk/constants.ts";
 import { silentLogger } from "../_test-utils.ts";
 import { createTtsTextCoalescer, flushTtsAndWait } from "./pipeline-stream.ts";
+import type { SendTtsText } from "./types.ts";
 
 describe("createTtsTextCoalescer", () => {
-  function collect(): {
-    sent: string[];
-    records: boolean[];
-    send: (text: string, opts: { record: boolean }) => void;
-  } {
+  function collect(): { sent: string[]; records: boolean[]; send: SendTtsText } {
     const sent: string[] = [];
     const records: boolean[] = [];
     return {
@@ -21,7 +18,7 @@ describe("createTtsTextCoalescer", () => {
       records,
       send: (text, opts) => {
         sent.push(text);
-        records.push(opts.record);
+        records.push(opts?.record !== false);
       },
     };
   }
@@ -29,7 +26,7 @@ describe("createTtsTextCoalescer", () => {
   test("forwards the first chunk immediately (time-to-first-byte)", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("Hello ", true);
+    c.send("Hello ");
     expect(sent).toEqual(["Hello "]);
   });
 
@@ -39,8 +36,8 @@ describe("createTtsTextCoalescer", () => {
     // A turn that opens with speech, then calls a tool: "let me" is short and
     // unpunctuated, so batching would hold it for the whole tool-execution
     // window — the caller hears "Sure," then dead air.
-    c.send("Sure, ", true);
-    c.send("let me", true);
+    c.send("Sure, ");
+    c.send("let me");
     expect(sent).toEqual(["Sure, "]);
     c.boundary();
     expect(sent).toEqual(["Sure, ", "let me"]);
@@ -49,15 +46,15 @@ describe("createTtsTextCoalescer", () => {
   test("boundary() re-arms the immediate first chunk for the post-tool reply", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("Checking. ", true);
+    c.send("Checking. ");
     c.boundary();
     // Time-to-first-audio matters again after the tool gap, so the next
     // segment's opening words must not wait on a clause boundary.
-    c.send("I ", true);
+    c.send("I ");
     expect(sent).toEqual(["Checking. ", "I "]);
     // ...and batching resumes from there.
-    c.send("found ", true);
-    c.send("three ", true);
+    c.send("found ");
+    c.send("three ");
     expect(sent).toEqual(["Checking. ", "I "]);
     c.flush();
     expect(sent).toEqual(["Checking. ", "I ", "found three "]);
@@ -74,7 +71,7 @@ describe("createTtsTextCoalescer", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
     for (const word of ["Sure, ", "I ", "can ", "help, ", "what's ", "up? ", "Ask ", "away."]) {
-      c.send(word, true);
+      c.send(word);
     }
     // First word immediate; then batches flush at each trailing punctuation mark.
     expect(sent).toEqual(["Sure, ", "I can help, ", "what's up? ", "Ask away."]);
@@ -84,10 +81,10 @@ describe("createTtsTextCoalescer", () => {
   test("flushes once the pending batch reaches TTS_COALESCE_MAX_CHARS without punctuation", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("first ", true);
+    c.send("first ");
     const word = "aaaa "; // 5 chars, no punctuation
     const wordsToCap = Math.ceil(TTS_COALESCE_MAX_CHARS / word.length);
-    for (let i = 0; i < wordsToCap; i++) c.send(word, true);
+    for (let i = 0; i < wordsToCap; i++) c.send(word);
     expect(sent.length).toBe(2); // first chunk + one size-capped batch
     expect(sent[1]?.length).toBeGreaterThanOrEqual(TTS_COALESCE_MAX_CHARS);
   });
@@ -95,9 +92,9 @@ describe("createTtsTextCoalescer", () => {
   test("flush() sends any trailing fragment and is a no-op when empty", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("One ", true);
-    c.send("more ", true);
-    c.send("thing", true);
+    c.send("One ");
+    c.send("more ");
+    c.send("thing");
     c.flush();
     expect(sent.join("")).toBe("One more thing");
     const count = sent.length;
@@ -108,8 +105,8 @@ describe("createTtsTextCoalescer", () => {
   test("empty deltas are ignored and do not consume the immediate first send", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
-    c.send("", true);
-    c.send("Hi ", true);
+    c.send("");
+    c.send("Hi ");
     expect(sent).toEqual(["Hi "]);
   });
 
@@ -117,16 +114,16 @@ describe("createTtsTextCoalescer", () => {
     const { sent, records } = collect();
     const c = createTtsTextCoalescer((text, opts) => {
       sent.push(text);
-      records.push(opts.record);
+      records.push(opts?.record !== false);
     });
-    c.send("Let me ", true);
+    c.send("Let me ");
     // Sub-threshold model text is buffered...
-    c.send("check ", true);
+    c.send("check ");
     expect(sent).toEqual(["Let me "]);
     // ...and released by the filler rather than batched together with it: the
     // heard cursor slices history out of the recordable spans, so a mixed send
     // would put filler in the record (or drop model text from it).
-    c.send("One moment.", false);
+    c.send("One moment.", { record: false });
     expect(sent).toEqual(["Let me ", "check ", "One moment."]);
     expect(records).toEqual([true, true, false]);
   });

@@ -23,6 +23,7 @@
  * first tool call (it chose to act rather than speak), and total.
  */
 
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import type { Logger } from "../runtime-config.ts";
 
 /** Per-turn timing recorder — see {@link createTurnTrace}. */
@@ -98,8 +99,7 @@ export function createTurnTrace(deps: {
         // part at all (aborted early, or a request that died) is a different
         // animal from one that produced its first part instantly, and a zero
         // would average in as if it were the fast case.
-        ...(firstPartMs === undefined ? {} : { firstPartMs }),
-        ...(firstToolMs === undefined ? {} : { firstToolMs }),
+        ...omitUndefined({ firstPartMs, firstToolMs }),
         totalMs: now() - startedAt,
         steps,
         ...(aborted ? { aborted: true } : {}),

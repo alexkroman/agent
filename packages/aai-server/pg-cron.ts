@@ -21,8 +21,42 @@
  * {@link platformCronJobs} is the whole truth about what the platform runs.
  */
 
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
 import { SWEEP_SESSION_STATE } from "./_session-state-sweep.ts";
-import { PLATFORM_STORAGE_KEY_SECRET, type SqlExec } from "./secret-store.ts";
+import {
+  AGENT_ENV_SECRET_PREFIX,
+  APP_DB_SECRET_PREFIX,
+  PLATFORM_STORAGE_KEY_SECRET,
+  type SqlExec,
+} from "./secret-store.ts";
+
+/**
+ * Refuse a constant that cannot be interpolated into these sweep bodies.
+ *
+ * Three ways an innocuous constant change would break the SQL silently: a `'`
+ * would close the literal it sits in, and `%` or `_` are LIKE WILDCARDS — so a
+ * suffix that grew one would start matching slugs the sweep must not delete,
+ * which is a deleting sweep given a wider net with no error anywhere. Today's
+ * values are plain, so this only ever fires at boot for a change that has to be
+ * thought about (an `escape` clause, or a `right(slug, n) =` rewrite).
+ */
+function assertSqlLiteralSafe(value: string, name: string): string {
+  if (/['%_\\]/.test(value)) {
+    throw new Error(
+      `${name} = ${JSON.stringify(value)} cannot be interpolated into the pg_cron sweeps: ` +
+        "a quote would close the literal, and % / _ / \\ are LIKE wildcards.",
+    );
+  }
+  return value;
+}
+
+for (const [name, value] of [
+  ["PREVIEW_SLUG_SUFFIX", PREVIEW_SLUG_SUFFIX],
+  ["AGENT_ENV_SECRET_PREFIX", AGENT_ENV_SECRET_PREFIX],
+  ["APP_DB_SECRET_PREFIX", APP_DB_SECRET_PREFIX],
+] as const) {
+  assertSqlLiteralSafe(value, name);
+}
 
 export type CronJob = {
   /** Unique job name — `cron.schedule` upserts by it. */
@@ -108,6 +142,14 @@ declare
   target record;
   app_id text;
 begin
+  -- The suffix and the two Vault prefixes below are INTERPOLATED from the
+  -- constants that define them (PREVIEW_SLUG_SUFFIX in the SDK's slug contract,
+  -- AGENT_ENV_SECRET_PREFIX/APP_DB_SECRET_PREFIX in secret-store.ts). They were
+  -- literals, which is the one shape this repo already calls out as silent data
+  -- loss: three independent things key off the suffix, and a sweep whose
+  -- prefixes have drifted from the writer's deletes nothing while reporting
+  -- nothing. assertSqlLiteralSafe above is what makes putting them in a
+  -- literal (and the suffix in a LIKE) safe rather than assumed.
   -- Only vault.secrets needs guarding: the aai_platform tables come from
   -- migrations, but Vault belongs to Supabase and may not be provisioned.
   if to_regclass('vault.secrets') is null then
@@ -116,7 +158,7 @@ begin
   for target in
     with deleted as (
       delete from aai_platform.agents a
-      where a.slug like '%-preview'
+      where a.slug like '%${PREVIEW_SLUG_SUFFIX}'
         and a.updated_at < now() - interval '1 hour'
         and not exists (
           select 1 from aai_platform.studio_workspaces w
@@ -126,7 +168,7 @@ begin
     )
     select d.slug,
       (select s.decrypted_secret from vault.decrypted_secrets s
-       where s.name = 'app-db:' || d.slug) as app_db_meta
+       where s.name = '${APP_DB_SECRET_PREFIX}' || d.slug) as app_db_meta
     from deleted d
   loop
     begin
@@ -142,7 +184,8 @@ begin
         target.slug, sqlerrm;
     end;
     delete from vault.secrets s
-    where s.name in ('agent-env:' || target.slug, 'app-db:' || target.slug);
+    where s.name in ('${AGENT_ENV_SECRET_PREFIX}' || target.slug,
+                     '${APP_DB_SECRET_PREFIX}' || target.slug);
   end loop;
 end $$`;
 

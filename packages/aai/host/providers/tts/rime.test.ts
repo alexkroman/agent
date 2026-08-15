@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
 import { openRime, type RimeSession } from "./rime.ts";
 
 type WsEvent = "open" | "message" | "error" | "close";
@@ -11,6 +12,8 @@ const { FakeWebSocket } = vi.hoisted(() => {
     static OPEN = 1;
     static CLOSED = 3;
     static instances: FakeWebSocket[] = [];
+    /** When true, new sockets black-hole: no "open", no "error" — ever. */
+    static neverOpen = false;
 
     readyState = FakeWebSocket.OPEN;
     sent: string[] = [];
@@ -23,7 +26,7 @@ const { FakeWebSocket } = vi.hoisted(() => {
       this.options = opts;
       FakeWebSocket.instances.push(this);
       // Real `ws` fires "open" asynchronously; match that timing.
-      queueMicrotask(() => this._fire("open"));
+      if (!FakeWebSocket.neverOpen) queueMicrotask(() => this._fire("open"));
     }
 
     on(event: string, fn: WsListener) {
@@ -90,6 +93,7 @@ vi.mock("ws", () => ({
 
 beforeEach(() => {
   FakeWebSocket.instances.length = 0;
+  FakeWebSocket.neverOpen = false;
   vi.useFakeTimers();
 });
 
@@ -145,6 +149,75 @@ describe("rime TTS adapter", () => {
     });
 
     await expect(openPromise).rejects.toMatchObject({ code: "tts_auth_failed" });
+  });
+
+  test("an initial connect that black-holes fails the open instead of hanging forever", async () => {
+    // A dropped SYN or a stalled proxy emits neither "open" nor "error". With
+    // no deadline `waitForOpen` never settled, so `providers.open()` never
+    // resolved: the ws-handler rejected the SESSION at its own timeout without
+    // cancelling this connect, leaving the socket held by a pending listener
+    // with no owner.
+    FakeWebSocket.neverOpen = true;
+    const controller = new AbortController();
+    const openPromise = openRime({ voice: "cove" }).open({
+      sampleRate: 16_000,
+      apiKey: "test-key",
+      signal: controller.signal,
+    });
+    // Assert on the rejection BEFORE advancing: the timer settles the promise
+    // inside `advanceTimersByTimeAsync`, and a rejection with no handler yet
+    // attached is an unhandled rejection the runner reports.
+    const rejected = expect(openPromise).rejects.toMatchObject({ code: "tts_connect_failed" });
+
+    await vi.advanceTimersByTimeAsync(WS_OPEN_TIMEOUT_MS + 1);
+
+    await rejected;
+    expect(FakeWebSocket.instances.at(-1)?.readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
+  test("an abort during the connect abandons the socket rather than waiting it out", async () => {
+    // `closeOnAbort` is registered only AFTER the connect resolves, so before
+    // this the session's own hang-up could not reach a socket still connecting.
+    FakeWebSocket.neverOpen = true;
+    const controller = new AbortController();
+    const openPromise = openRime({ voice: "cove" }).open({
+      sampleRate: 16_000,
+      apiKey: "test-key",
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    await expect(openPromise).rejects.toMatchObject({ code: "tts_connect_failed" });
+    expect(FakeWebSocket.instances.at(-1)?.readyState).toBe(FakeWebSocket.CLOSED);
+  });
+
+  test("a throwing audio listener cannot escape the socket's message handler", async () => {
+    // Emitting straight off the emitter let a downstream throw escape into
+    // Node's EventEmitter as an uncaughtException, taking down a multi-tenant
+    // host rather than one session. `shell.emit` owns the containment.
+    const { session, ws } = await openSession();
+    const listener = vi.fn(() => {
+      throw new Error("listener blew up");
+    });
+    session.on("audio", listener);
+    const samples = new Int16Array([1, 2]);
+    const base64 = Buffer.from(samples.buffer).toString("base64");
+
+    expect(() => ws._msg({ type: "chunk", data: base64, contextId: null })).not.toThrow();
+    // The event really fired — otherwise the assertion above is vacuous.
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  test("a throwing error listener cannot escape the socket's message handler", async () => {
+    const { session, ws } = await openSession();
+    const listener = vi.fn(() => {
+      throw new Error("listener blew up");
+    });
+    session.on("error", listener);
+
+    expect(() => ws._msg({ type: "error", message: "upstream said no" })).not.toThrow();
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   test("incoming chunk message emits audio as Int16Array", async () => {

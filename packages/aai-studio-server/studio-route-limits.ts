@@ -21,6 +21,8 @@ import {
   CHAT_IP_RATE_LIMIT,
   CHAT_RATE_LIMIT,
   createRateLimiter,
+  PREVIEW_WAKE_IP_RATE_LIMIT,
+  PREVIEW_WAKE_RATE_LIMIT,
   PROJECT_CREATE_IP_RATE_LIMIT,
   PROJECT_CREATE_RATE_LIMIT,
   type RateLimiter,
@@ -39,6 +41,7 @@ export type RefuseFn = (scope: string, req: Request) => Promise<Response | null>
 export type RouteLimits = {
   chat: RefuseFn;
   projectCreate: RefuseFn;
+  previewWake: RefuseFn;
 };
 
 function tooMany(retryAfterSeconds: number): Response {
@@ -73,6 +76,10 @@ export function createRouteLimits(injected?: StudioRateLimiters): RouteLimits {
     projectCreate: refuse(
       injected?.projectCreate ?? createRateLimiter(PROJECT_CREATE_RATE_LIMIT),
       injected?.projectCreateIp ?? createRateLimiter(PROJECT_CREATE_IP_RATE_LIMIT),
+    ),
+    previewWake: refuse(
+      injected?.previewWake ?? createRateLimiter(PREVIEW_WAKE_RATE_LIMIT),
+      injected?.previewWakeIp ?? createRateLimiter(PREVIEW_WAKE_IP_RATE_LIMIT),
     ),
   };
 }

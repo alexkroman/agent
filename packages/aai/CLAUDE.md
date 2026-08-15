@@ -6,42 +6,35 @@ platform behaviour lives in `packages/aai-server/CLAUDE.md`.
 
 ## SDK structure
 
-The SDK is organized into two directories with a **hard dependency
-boundary** — this split is critical for sandbox security:
+The SDK is organized into two directories with a **hard dependency boundary** —
+this split is critical for sandbox security:
 
-- **`sdk/`** — shared modules with **zero Node.js dependencies**. Safe to
-  run in browsers, Deno, and sandboxed environments. Contains:
-  `types.ts`, `db.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
-  `protocol.ts`, `system-prompt.ts`,
-  `ws-upgrade.ts`, `_internal-types.ts`, `agent-config.ts` (the canonical
-  serializable config + `toAgentConfig`), `schema.ts` (Standard Schema
-  acceptance: `inputSchema` validation + JSON Schema conversion),
-  `define.ts` (`agent()` and `tool()` helpers for authoring `agent.ts`
-  files).
+- **`sdk/`** — shared modules with **zero Node.js dependencies**. Safe to run in
+  browsers, Deno, and sandboxed environments: the types, the wire protocol, the
+  canonical serializable config (`agent-config.ts` + `toAgentConfig`), Standard
+  Schema acceptance (`schema.ts`), the `agent()`/`tool()`/`sessionSlot()`
+  authoring helpers (`define.ts`, `session-slot.ts`), the provider DESCRIPTOR
+  factories, and the concurrency primitives above.
 - **`host/`** — host-only modules that **require Node.js APIs** (`node:vm`,
-  `node:crypto`, etc.). Only runs on the platform server and CLI, never
-  inside a guest sandbox. Contains:
-  `server.ts`, `runtime.ts`, `runtime-config.ts`, `runtime-types.ts`,
-  `runtime-transport.ts` (transport selection/construction for the runtime),
-  `tool-executor.ts`, `session-core.ts`, `s2s.ts`, `ws-handler.ts`,
-  `transports/` (S2S / pipeline / OpenAI Realtime `Transport`
-  implementations, including `pipeline-turn-outcome.ts` — the three ways a
-  pipeline turn ends: interrupted by barge-in, failed, or spoken — and
+  `node:crypto`, …). Only runs on the platform server and CLI, never inside a
+  guest sandbox: `server.ts`, `runtime*.ts`, `session-core.ts`, `s2s.ts`,
+  `ws-handler.ts`, `tool-executor.ts`, `builtin-tools.ts`, `postgres-db.ts`,
+  `telephony/`, `providers/` (the STT/TTS openers and the descriptor→instance
+  resolvers), and `transports/` — the S2S / pipeline / OpenAI Realtime
+  `Transport` implementations, including `pipeline-turn-outcome.ts` (the three
+  ways a pipeline turn ends: interrupted by barge-in, failed, or spoken) and
   `pipeline-transport-lifecycle.ts`, the once-per-CALL half of pipeline mode
-  (provider open, greeting, the two unrecoverable provider failures, and both
-  teardowns), split from the turn orchestration on exactly the line "a failing
-  TURN is not a failing SESSION" draws), `to-vercel-tools.ts`,
-  `providers/` (STT/TTS openers + descriptor→instance resolvers),
-  `builtin-tools.ts`, `postgres-db.ts`.
+  split from the turn orchestration on exactly the line "a failing TURN is not a
+  failing SESSION" draws.
 
-**Rule**: When adding new SDK code, place it in `sdk/` if it has no
-`node:` dependencies. Moving code from `sdk/` → `host/` is safe;
-moving `host/` → `sdk/` requires removing all Node.js imports first.
+**Rule**: When adding new SDK code, place it in `sdk/` if it has no `node:`
+dependencies. Moving code from `sdk/` → `host/` is safe; moving `host/` →
+`sdk/` requires removing all Node.js imports first.
 
-The guest harness (`packages/aai-guest/harness.ts`) runs **Node** inside each Modal
-Sandbox — the same runtime as the host and `aai dev` — loading the agent's
-ESM bundle directly; the Modal sandbox (not a language runtime permission
-model) is the security boundary.
+The guest harness (`packages/aai-guest/harness.ts`) runs **Node** inside each
+Modal Sandbox — the same runtime as the host and `aai dev` — loading the agent's
+ESM bundle directly; the Modal sandbox (not a language runtime permission model)
+is the security boundary.
 
 ## Package exports
 
@@ -76,10 +69,10 @@ of subpath exports in `aai/package.json`:
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
-| `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. Eight modules by `export *`, plus NAMED subsets of `sdk/constants.ts` and `sdk/utils.ts` — see "The root barrel is curated" below |
-| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | `createToolContext(overrides?)` — a full `ToolContext` for testing a tool's `execute` in isolation, with inert defaults, a recording `send` (`ctx.sent`), and a distinct `sessionId` per call — plus `createUnusedDb()`, the rejecting `db` it defaults to, and `createStubWorkflows(overrides?)`, the same thing for `ctx.workflows` (see its own doc for why a hand-written stub of that client goes stale). Then the fakes a tool's COLLABORATORS are driven by: `stubGenerate(script)` for `ctx.generate` (routed by system prompt — the tool-side twin of `stubGateway`, which fakes the same thing for a step), `stubGateway(replies)` and `stubUploads(files)`, `createRunSnapshot`/`createProgressStream` for the workflow fixtures, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`withDiscoveredTools(def, modules)`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, because a `tools/` directory is enumerated where the bundle is assembled — so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs. It takes the glob's RESULT rather than a directory, because `import.meta.glob` is expanded against the file containing it (a pattern inside the SDK would resolve against the SDK's own directory) and cannot take a variable; a `readdir` + `import()` is refused for a different reason — it resolves the tools through Node instead of the test runner and hands them a second copy of this SDK. PUBLISHED rather than an internal `_test-utils.ts` because the audience is an agent author's own project, which is also why it carries no vitest dependency (`send` records into an array; pass `vi.fn()` to override). See the `_test-utils.ts` section of the root guide |
+| `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. Eight modules by `export *`, plus NAMED subsets of `sdk/constants.ts` and `sdk/utils.ts` — see "The root barrel is CURATED" above |
+| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published and why the module carries no test-runner dependency. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createUnusedDb()` / `createStubWorkflows()` are the rejecting `db`/`ctx.workflows` it defaults to. Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`withDiscoveredTools(def, modules)`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs — it takes the glob's RESULT rather than a directory (`import.meta.glob` is expanded against the file containing it and cannot take a variable), and a `readdir` + `import()` is refused because it resolves the tools through Node instead of the test runner and hands them a second copy of this SDK. Each helper's own doc carries the rest; see the `_test-utils.ts` section of the root guide |
 | `@alexkroman1/aai/testing/vitest` | `sdk/testing-vitest.ts` (direct) | `installStubGateway(replies, opts?)` — the fake above, installed as the global `fetch`, returning its call log. The one place a test-runner dependency is allowed, so the rule the subpath above states stays true: `vitest` is an OPTIONAL peer, and importing THIS is what pulls it. A helper belongs here only when its remaining content is the installation — the fake itself stays framework-agnostic next door |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path (`p-timeout`, 2.4 KB with no dependencies and backing the lock's acquire deadline, is the one measured exception). Four groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the STEP surface, which a `workflows/*.ts` module imports from HERE rather than the root because it is bundled separately and the root barrel's graph would ride into the step bundle — `mapInBatches`, `stepEnv`/`requireStepEnv` (the agent env a step is handed no context to reach), `stepGenerate` (`ctx.generate`'s counterpart, one `fetch` to the LLM gateway on the agent's own key, since the AI SDK would be megabytes in a ~7 KB artifact) `stepGenerateJson`/`stripJsonFence` (the same call for a reply that must be a SHAPE, validated against a Standard Schema, still zod-free via `sdk/standard-schema.ts`) and **`stepFetch`** + `multipartBody` (a step's HTTP, HTTP/1.1-pinned: `fetch` speaks h2, and a fan-out on one connection turns a rate limit into an unreadable stream reset); those modules carry the rest; the helpers every package reaches for and no template names, so they stay off the root — `omitUndefined` and **`isRecord`**, which `typeof v === "object" && v !== null` was open-coded twelve times to spell. That check narrows to `object`, where every field read is an error, so each site paid twice with a cast; `isRecord` narrows to `Record<string, unknown>` and the cast goes with it. Arrays are excluded — every caller reads a NAMED field. `guard-invariants` rule 17 keeps copy thirteen out; the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`; the terminal prints it, the studio's approval gate shows it, and the point is that they match) |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zod-free half of the SDK, which is what makes it the CLI's import path — **the module doc owns that rule**, including why `omitUndefined` lives here rather than on `/internal` and why `createKeyedLock`'s `p-timeout` (2.4 KB, no dependencies) is the one measured exception. Four groups: the tool-code helpers the root also re-exports (`errorMessage`, `errorDetail`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `createKeyedLock`/`withLock`); the STEP surface, which a `workflows/*.ts` module imports from HERE rather than the root because it is bundled separately and the root barrel's graph would ride into the step bundle — `mapInBatches`, `stepEnv`/`requireStepEnv`, `stepGenerate` (one `fetch` to the LLM gateway on the agent's own key, since the AI SDK would be megabytes in a ~7 KB artifact), `stepGenerateJson`/`stripJsonFence`, and **`stepFetch`** + `multipartBody` (HTTP/1.1-pinned: `fetch` speaks h2, and a fan-out on one connection turns a rate limit into an unreadable stream reset); the helpers every package reaches for and no template names, so they stay off the root — `omitUndefined` and **`isRecord`**, which `typeof v === "object" && v !== null` was open-coded twelve times to spell, each site paying twice because that check narrows to `object` where every field read is an error (`guard-invariants` rule 17 keeps copy thirteen out; arrays are excluded because every caller reads a NAMED field); the framework's own wire helpers, `@internal` and root-invisible (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`, and `serializeToolFailure` — the pre-serialized `'{"error":…}'` the host emits for a tool that threw, which `isToolFailure` deliberately does NOT narrow); and the two contracts BOTH ends of a platform interaction must derive identically — the slug shape (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `sdk/slug.ts`) and the `aai login` confirmation code (`linkConfirmationCode`, `sdk/cli-link.ts`) |
 | `@alexkroman1/aai/step-errors` | `sdk/step-errors.ts` (direct) | `toStepError`/`throwStepError`/`throwFatalStepError` — the failure a `"use step"` body throws, classified into the DevKit's `FatalError`/`RetryableError`. Its own subpath because it is the one authoring module importing `workflow`, which `/utils` may not; the module doc carries the rest |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
@@ -115,23 +108,15 @@ present in the `agent()` config:
   and TTS are pluggable providers imported from the `@alexkroman1/aai/stt`
   and `@alexkroman1/aai/tts` subpath exports.
 
-  **A failing TURN is not a failing SESSION** (`EmitError` in
-  `transports/types.ts`, `createEmitError` in `transports/pipeline-error.ts`).
-  `onError` defaults to `fatal: true`, and aai-ui answers a fatal frame by
-  calling `cleanupAudio()`, bumping the connection generation and setting
-  `running: false` — the microphone is RELEASED and the call ends. Only the two
-  paths that really terminate may report that way, and both call `terminate()`:
-  `onProviderError` and the provider-open rejection (a session with no STT
-  cannot hear). The three turn-level reporters pass `{ fatal: false }` — an
-  `error` part in the LLM stream, a thrown `streamText`, and a TTS flush
-  timeout. Reported as fatal, the first two were especially perverse: the
-  transport's next act is to speak `errorPhrase` ("Sorry, I had a problem just
-  then. Could you say that again?") and invite another turn, so the caller was
-  asked to repeat themselves into a microphone the client had just switched off,
-  while the TTS case ended a live call over one clipped sentence. The pipeline
-  fuzz covers both LLM reporters (separate code paths: an `error` stream part,
-  and a request that never streams); the TTS one needs a real deadline to
-  elapse, so a deterministic spec pins it.
+  **A failing TURN is not a failing SESSION.** `onError` defaults to
+  `fatal: true`, and aai-ui answers a fatal frame by releasing the microphone
+  and ending the call — so only the two paths that really terminate may report
+  that way, and every turn-level reporter passes `{ fatal: false }`.
+  **`transports/pipeline-error.ts`'s module doc owns the rule**, both
+  terminating paths, all three turn-level reporters, why reporting the LLM ones
+  as fatal was especially perverse, and which of them the pipeline fuzz covers
+  against the one that needs a deterministic spec.
+
 - **S2S mode** (explicit opt-in — `s2s: assemblyAIS2s()` from the main
   export, or `openaiRealtime()` from `@alexkroman1/aai/s2s`) uses
   `createS2sTransport()` in `packages/aai/host/transports/s2s-transport.ts`.
@@ -153,38 +138,20 @@ present in the `agent()` config:
   | resampled to true 24 kHz | 24 kHz | speech edges, correct transcript, 279 KB of reply audio |
   | 16 kHz bytes | 16 kHz | `session.error{internal_error}` + close **1011** |
 
-  Row one is the whole problem: no `input.speech.started`, no
-  `transcript.user`, and **no error** — the service applies 24 kHz regardless,
-  decodes the audio 1.5x fast, and emits nothing. Output is unaffected, so the
-  agent greets normally and is then permanently deaf, which reads as a model or
-  service outage rather than an audio bug. Row three shows a wrong
-  *declaration* at least fails loudly, which is why `updateSession` always puts
-  the format on the wire.
+  Row one is the whole problem: relabelled audio produces no error at all, so
+  the agent greets normally and is then permanently deaf. **Why that is silent,
+  why `S2SConfig.inputSampleRate` cannot simply be changed, and why pinning the
+  rate is necessary and NOT sufficient are in the module docs that own the
+  mechanism** — `ASSEMBLYAI_S2S_SAMPLE_RATE` in `sdk/constants.ts` and
+  `pinAssemblyS2sRates` in `host/runtime-config.ts`, which also record the 2/25
+  tau2 run measured with the pin in place. The counterpart the pin cannot
+  reach is `assertHostRatesSupported` (`host-mode.ts`), which REJECTS a
+  host-mode handshake declaring a rate this transport cannot honour.
 
-  **Pinning the rate is necessary and NOT sufficient — that is the trap.**
-  `pinAssemblyS2sRates` forces `S2SConfig` to 24 kHz before `buildReadyConfig`
-  advertises it, on the reasoning that the ready frame tells the client what to
-  capture. That holds for aai-ui, which asks its `AudioContext` for the
-  advertised rate and asserts it was granted (`assertGranted`, `audio.ts`). It
-  holds for nothing else: a programmatic client that treats the config frame as
-  a bare handshake ack keeps sending what it always sent. tau2's harness is
-  exactly that — its send rate is a module constant and its chunk size is
-  derived from it at construction — so the pin changed every number in the
-  stack and not one byte of audio. That run scored **2/25**, answering 62 of
-  171 user turns and hitting an unresponsive period in **25 of 25** sessions,
-  against 15/25 and 18/25 for the two pipeline transports running the same
-  tasks at the same minute.
-
-  Nothing later in the session can detect this: no number anywhere is wrong,
-  every byte is, and the service reports neither. So the mismatch is refused at
-  the door — `assertHostRatesSupported` (`host-mode.ts`) **rejects a host-mode
-  handshake that declares a rate this transport cannot honour**, the host-side
-  counterpart of aai-ui's `assertGranted`. Declaring nothing is fine and means
-  "tell me what to use"; declaring 16 kHz is a protocol error naming the rate to
-  use instead. `pinAssemblyS2sRates` keeps its warn for the one caller with no
-  handshake to fail — an operator passing `s2sConfig` to `createRuntime`.
-
-  **The host does not resample, deliberately.** A resampler was built and
+  Two numbers those docs do not carry. That 2/25 was against **15/25 and 18/25
+  for the two pipeline transports running the same tasks at the same minute**,
+  which is what makes it a transport finding rather than a bad afternoon. And
+  **the host does not resample, deliberately.** A resampler was built and
   reverted: it worked (16 kHz converted to true 24 kHz transcribed correctly
   5/5 live, against 4/5 returning nothing when relabelled), but upsampling can
   only preserve or degrade — it invents no bandwidth — and it put ~150 lines of
@@ -216,23 +183,21 @@ present in the `agent()` config:
   — keeping the HEAD, unlike `agent_context`'s tail-keeping trim, because this is
   a standing vocabulary description rather than a trailing question.
 
-  `sttPrompt` was pipeline-only until 2026-08-06, which made it a SILENT config
-  drop of exactly the class this guide warns about: `agent({ sttPrompt })` and
-  `host.sttPrompt` both reached the agent definition and only
-  `pipeline-transport.ts` read it, so an S2S agent that set one got unbiased
-  transcription and no warning. `runtime-transport.test.ts` pins the forwarding
-  at the point it was missing (verified to fail when reverted).
-
-  **That fix landed the runtime half and left the TYPE half closed for three
-  days**, which is worth more than the bug was. `PipelineOnlyField` in
-  `sdk/define.ts` still listed `sttPrompt`, so `agent({ s2s, sttPrompt })` was a
-  compile error naming a rule that was no longer true, while `AgentDef.sttPrompt`
-  documented the field as working in both modes and the transport forwarded it.
-  The only way to reach the measured win was to skip `agent()` for a raw
-  `export default {...}`. A dropped field has a mirror image — a REJECTED field
-  the runtime honours — and it reads to an author as "unsupported", so it draws
-  no bug report at all. When a config field's mode rule changes, the type gate,
-  the doc, and the transport all move together or none of them do.
+  `sttPrompt` was pipeline-only until 2026-08-06 — a SILENT config drop of
+  exactly the class this guide warns about, since both `agent({ sttPrompt })`
+  and `host.sttPrompt` reached the agent definition and only
+  `pipeline-transport.ts` read it. **That fix then landed the runtime half and
+  left the TYPE half closed for three days**, which is worth more than the bug
+  was: `PipelineOnlyField` still listed `sttPrompt`, so `agent({ s2s,
+  sttPrompt })` was a compile error naming a rule that was no longer true while
+  `AgentDef.sttPrompt` documented the field as working in both modes and the
+  transport forwarded it — the only way to reach the measured win was to skip
+  `agent()` for a raw `export default {...}`. A dropped field has a mirror image
+  — a REJECTED field the runtime honours — and it reads to an author as
+  "unsupported", so it draws no bug report at all. **When a config field's mode
+  rule changes, the type gate, the doc, and the transport all move together or
+  none of them do.** `runtime-transport.test.ts` pins the forwarding at the
+  point it was missing.
 
   `input.language_codes`, `input.keyterms` and `output.voice` are reachable as of
   2026-08-09: `assemblyAIS2s()` takes `{ voice, languages, keyterms }`, read off
@@ -240,60 +205,54 @@ present in the `agent()` config:
   forwarded on presence only. Before that the factory took no options at all, so
   an S2S agent could not pick its voice — which is why the claim elsewhere in
   this guide that "S2S mode's voice rides on the `s2s` descriptor" was wrong when
-  written and is now merely how it works. Note `languages` must stay
-  AUTHOR-controlled rather than defaulted — an unset value means "detect per
-  turn", and a host-side `["en"]` would silently disable multilingual
-  transcription for every agent, the mirror-image bug. The accepted `voice` set
-  is the SERVICE's and is unverified here; an id it rejects arrives in-band after
-  connect, so the agent connects, reports ready, and never speaks.
-
-  Measured on tau2 retail (2 runs per arm, identical audio and pacing):
-  `language_codes: ["en"]` + voice focus 0.9 + a `transcription_prompt` took the
-  authenticating caller's first name from 1 of 6 attempts correct to 6 of 6, and
-  word recall 0.892/0.913 → 0.931/0.924. `turn_detection` is deliberately NOT
-  pinned: its default is adaptive and entity-aware (it waits out a spelled
-  value), and setting `min_silence`/`max_silence` disables both for the session.
+  written and is now merely how it works. **`AssemblyAIS2sOptions`
+  (`sdk/providers/s2s/assemblyai.ts`) owns the rest** — the tau2-bench retail
+  measurement behind the three settings (spelled first name 1/6 -> 6/6, word
+  recall ~0.89 -> ~0.93), why `languages` must stay AUTHOR-controlled rather than
+  defaulted, why an unverified `voice` id leaves an agent that connects, reports
+  ready and never speaks, and why `turn_detection` is deliberately not pinned.
 
   **An in-band service error is NOT the end of the session, and a fatal frame
-  is not a banner.** An `error.reported` with no `fatal` key means the session
-  is over, and aai-ui answers one by calling `cleanupAudio()`, bumping the
-  connection generation, and setting `running: false` — the MICROPHONE IS
-  RELEASED. Both S2S transports used to report every in-band error that way:
-  AssemblyAI's `session.error` with a non-expiry code (a rate limit, a rejected
-  field) and its bare `error` frame, OpenAI Realtime's `error` event. None of
-  those closes the socket, so the conversation demonstrably continued —
-  `tool_call`, `reply_done`, and audio all arrived afterwards on most fuzz
-  seeds — to a client that could no longer hear anyone, and a later event even
-  recovered its state to "listening" (`clearRecoveredError`), leaving a session
-  that looks live and is deaf. They now pass `{ fatal: false }`; the *only*
-  reporter of session death is the close/failed-resume path (`endSession`),
-  which is the one place that knows the link is gone and attaches the close
-  code. A truly terminal error is still covered, because the service closes the
-  socket after it. Note session-core logs a non-fatal error at DEBUG, so
-  `s2s.ts` logs the `error` frame's message itself at warn — demoting the
-  client-facing severity must not also make the service's complaint invisible.
+  is not a banner.** An `error.reported` with no `fatal` key means the session is
+  over, and aai-ui answers one by calling `cleanupAudio()`, bumping the
+  connection generation and setting `running: false` — the MICROPHONE IS
+  RELEASED. Both S2S transports used to report every in-band error that way
+  (AssemblyAI's `session.error` with a non-expiry code, its bare `error` frame,
+  OpenAI Realtime's `error` event), and none of those closes the socket: the
+  conversation demonstrably continued — `tool_call`, `reply_done` and audio all
+  arrived afterwards on most fuzz seeds — to a client that could no longer hear
+  anyone, and a later event even recovered its state to "listening"
+  (`clearRecoveredError`), leaving a session that looks live and is deaf. They
+  now pass `{ fatal: false }`; the *only* reporter of session death is the
+  close/failed-resume path (`endSession`), which is the one place that knows the
+  link is gone and attaches the close code. A truly terminal error is still
+  covered, because the service closes the socket after it. Note session-core logs
+  a non-fatal error at DEBUG, so `s2s.ts` logs the `error` frame's message itself
+  at warn — demoting the client-facing severity must not also make the service's
+  complaint invisible.
 
   **Retiring the session must also DROP THE LINK** (`endSession`). Most fatal
-  paths arrive from a close, where the socket is already gone — but not all:
-  when the service rejects a `session.resume` with `session_not_found` it says
-  so IN BAND and leaves the socket OPEN. The transport went on holding a live
-  (billed) provider session and relaying its frames to a client it had just
-  told the call was over. `endSession` closes the socket, drops the handle and
-  the queued tool results, and the inbound callbacks are gated on the session
-  still being live (`whileLive`) — `close()` does not un-deliver what is already
+  paths arrive from a close, where the socket is already gone — but not all: when
+  the service rejects a `session.resume` with `session_not_found` it says so IN
+  BAND and leaves the socket OPEN, so the transport went on holding a live
+  (billed) provider session and relaying its frames to a client it had just told
+  the call was over. `endSession` closes the socket, drops the handle and the
+  queued tool results, and the inbound callbacks are gated on the session still
+  being live (`whileLive`) — `close()` does not un-deliver what is already
   buffered.
 
   **`stop()` must be able to abandon a handshake that has not completed**
   (`ConnectS2sOptions.signal`, aborted by the transport's `teardown` controller).
   `handle?.close()` can only reach a socket that OPENED: `connectS2s` returns a
   handle only on `open`, and `ws` sets no `handshakeTimeout`, so a client that
-  hangs up mid-resume left a half-open (billed) provider connection pinned for
-  the life of the process — nothing anywhere held a reference to close. A connect
-  that loses this race is swallowed rather than reported: we aborted it, and
-  there is no session left to fail. All three of these came out of the S2S
-  property test (see "S2S property test" below), which shrank the last one
-  to two commands: `session.ready`, then a transient drop.
+  hung up mid-resume left a half-open (billed) provider connection pinned for the
+  life of the process, with nothing anywhere holding a reference to close. A
+  connect that loses this race is swallowed rather than reported: we aborted it,
+  and there is no session left to fail. All three of these came out of the S2S
+  property test, which shrank the last one to two commands: `session.ready`, then
+  a transient drop.
 
+The default injection runs at every mode-derivation site
 The default injection runs at every mode-derivation site — `toAgentConfig`
 (so it is baked into deployed configs at build time) and `createRuntime`'s
 provider resolution — before `assertProviderTriple`.
@@ -315,21 +274,18 @@ only guards raw wire shapes that skipped the fill.
   `{}`), and a failed/invalid call is recorded with an error `result` rather
   than left dangling.
 
-- **Pre-connection client config**: the default client page is
-  byte-identical for every agent and the CSP bars inline scripts, so the
-  agent's display name and greeting reach the browser via a pre-connection
-  endpoint: `GET /client-config` (dev server) / `GET /:slug/client-config`
-  (platform, unauthenticated — parity with the page and the WebSocket)
-  returns `{ name, greeting }` (`sdk/client-config.ts`, re-exported from
-  `/protocol`). **Every server builds the body through one helper**,
-  `buildClientConfig`; the platform's handler lives in
-  `aai-server/client-config-handler.ts` — and on the platform name/greeting
-  are PROXIED from the GUEST'S own `/client-config` (the bundle's live
-  agent definition; the harness passes the loaded agent's name/greeting to
-  `createServer`), never read from the stored config, which is fully opaque
-  to the host. A guest that can't answer degrades to `{ sessionUrl }` only.
-  The `aai dev` Vite proxy forwards `/client-config` to the backend.
-
+- **Pre-connection client config**: the default client page is byte-identical
+  for every agent and the CSP bars inline scripts, so the agent's display name
+  and greeting reach the browser via a pre-connection endpoint —
+  `GET /client-config` (dev server) / `GET /:slug/client-config` (platform,
+  unauthenticated, for parity with the page and the WebSocket) returning
+  `{ name, greeting }` (`sdk/client-config.ts`, re-exported from `/protocol`).
+  **Every server builds the body through one helper**, `buildClientConfig`; on
+  the platform (`aai-server/client-config-handler.ts`) name and greeting are
+  PROXIED from the GUEST'S own `/client-config` — the bundle's live agent
+  definition — never read from the stored config, which is fully opaque to the
+  host. A guest that can't answer degrades to `{ sessionUrl }` only, and the
+  `aai dev` Vite proxy forwards `/client-config` to the backend.
 - **What the BROWSER client does with all of that** — the `DefaultRoot`
   config tier, the `serverIsBroker` latch that must only be set by an
   ANSWERED lookup, and why `ApiUrlChip` shows the long-living platform
@@ -345,45 +301,28 @@ Reference providers shipped today:
   - `soniox({ model: "stt-rt-v3" })` — `SONIOX_API_KEY`
 
   **Never inherit the `assemblyai` SDK's connect deadline.** Its default
-  `connectTimeout` is **1000 ms** and covers far more than a socket open: the
-  timer is armed before the WebSocket is constructed and only cleared when the
-  server's `Begin` message arrives, so DNS + TCP + TLS + upgrade + the
-  service's session-start latency all have to fit. A link measuring ~50 ms to
-  TLS still blew it — a slow `Begin`, or a host event loop briefly blocked
-  (this is a wall-clock `setTimeout`, not an I/O deadline), is enough. All
-  three attempts then failed identically and the session died on a fatal
-  `stt_connect_failed`, which reads as a provider outage and is not one.
+  `connectTimeout` is 1000 ms and covers far more than a socket open, so a
+  healthy link still blows it and the session dies on a fatal
+  `stt_connect_failed` that reads as a provider outage.
   `host/providers/stt/assemblyai.ts` therefore always sets
   `connectTimeout`/`maxConnectionRetries`/`connectionRetryDelay` from
-  `STT_CONNECT_*` in `sdk/constants.ts`, overridable per agent via
-  `assemblyAIStt({ connectTimeoutMs, maxConnectRetries })`. The retry policy is
-  pinned rather than left to the SDK so the worst-case open time is arithmetic
-  we own: it runs inside `session.start()`, so a budget exceeding
-  `DEFAULT_SESSION_START_TIMEOUT_MS` could only surface as the less specific
-  "session.start() timed out". `assemblyai.test.ts` asserts that sum.
+  `STT_CONNECT_*`, overridable per agent via
+  `assemblyAIStt({ connectTimeoutMs, maxConnectRetries })`. **Those three
+  constants' shared doc in `sdk/pipeline-tuning-constants.ts` carries the
+  argument** — what the SDK's timer really covers, and the 8500 ms < 10000 ms
+  arithmetic against `DEFAULT_SESSION_START_TIMEOUT_MS` that `assemblyai.test.ts`
+  asserts. Re-check that sum before raising any of them.
 
-  **`assemblyAIStt({ streamingUrl })` overrides the streaming endpoint** — for
-  a staging cluster, or to A/B a pre-release host against the default. It is
-  the same `websocketBaseUrl` mechanism `region: "eu"` already used, so an
-  explicit URL WINS over `region`: naming an endpoint is deliberate and the
-  residency shorthand must not silently overwrite it. The URL must carry the
-  versioned path (`wss://host/v3/ws`); the SDK supplies that only for its own
-  default host, so a bare origin connects to the wrong route and fails at
-  connect. Leave unset in production — the SDK's default already tracks path
-  bumps, which is why the US case pins nothing host-side.
-
-  **An unset `languages` is "detect per turn", NOT "English".** Universal-3.5
-  Pro code-switches across 18 languages natively, so a monolingual line pays
-  for detection it does not want — and the failure does not look like a
-  language problem. Measured against tau2-bench retail, English utterances came
-  back transliterated into Devanagari and Hebrew script (`Hello? Any update?` →
-  `हेलो एनी अपडेट`), authentication turns included, so the tool arguments built
-  from them were garbage while every transcript looked like an ordinary
-  mis-hearing. `assemblyAIStt({ languages: ["en"] })` pins one language (the
-  `language_codes` connection parameter); a multi-element list biases toward a
-  known subset while keeping code-switching. It stays UNSENT when absent — a
-  host-side default would silently disable multilingual transcription for every
-  agent, which is the mirror-image bug.
+  Two descriptor options whose rules are stated on the options themselves
+  (`AssemblyAIOptions` in `sdk/providers/stt/assemblyai.ts`) rather than
+  restated here: **`streamingUrl`**, which overrides the streaming endpoint and
+  WINS over `region` (it must carry the versioned path — a bare origin connects
+  to the wrong route), and **`languages`, whose unset value is "detect per
+  turn", NOT "English"** — the doc records the measurement where that default
+  transliterated English into Devanagari and Hebrew script and made the tool
+  arguments garbage while every transcript read as an ordinary mis-hearing. It
+  stays UNSENT when absent: a host-side default would silently disable
+  multilingual transcription for every agent, which is the mirror-image bug.
 - **LLM**: one of the typed factories below — each returns a pure
   descriptor; the `@ai-sdk/*` package is only imported by the host-side
   resolver (`host/providers/resolve.ts`), never by the agent bundle:
@@ -409,69 +348,35 @@ Reference providers shipped today:
     the [AssemblyAI LLM Gateway](https://www.assemblyai.com/docs/llm-gateway)
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via
     `@ai-sdk/openai`'s `.chat()` client. `region: "eu"` selects the EU
-    The client is built with a `fetch` wrapper,
-    `repairOpenAiStream` (`host/providers/_openai-stream-repair.ts`): the
-    gateway documents streamed responses for OpenAI models only, and its
-    Claude streams break two AI SDK expectations. (1) `tool_calls` deltas
-    arrive with no `id`/`type`, which makes `StreamingToolCallTracker` in
-    `@ai-sdk/provider-utils` throw `Expected 'id' to be a string` and kill any
-    turn that calls a tool — the wrapper fills in a synthetic id (stable per
-    tool-call index within one response) and `type: "function"`, leaving real
-    ids alone. (2) The final usage-only chunk carries `"choices": null` where
-    the schema requires an array, so the turn dies with "Type validation
-    failed" *after* the reply has streamed — the wrapper rewrites that null to
-    `[]` (an absent `choices` stays absent); every other byte passes through.
-    A THIRD defect is a REQUEST one (Gemini 500s on the
-    `$schema`/`propertyNames` zod conversion emits) and is `transformParams`
-    middleware instead — `_gateway-tool-schema.ts` carries why. Remove each once
-    the gateway conforms.
+    endpoint. The client is built with a `fetch` wrapper,
+    `repairOpenAiStream` — the gateway documents streamed responses for OpenAI
+    models only, and its Claude streams break two AI SDK expectations, each
+    fatal to a turn. **Both defects, and why bytes are the only place they can
+    be caught (so this is a `fetch` wrapper rather than middleware), are in
+    `host/providers/_openai-stream-repair.ts`'s module doc.** A THIRD defect is
+    a REQUEST one (Gemini 500s on the `$schema`/`propertyNames` zod conversion
+    emits) and is `transformParams` middleware instead —
+    `_gateway-tool-schema.ts` carries why. Remove each once the gateway
+    conforms.
 
-    **The default model is `qwen3-next-80b-a3b`.** The id is a one-line
-    change, but it moves WHERE reasoning gets turned off, so read the two
-    blocks below together before changing it again. **And check the constant
-    before trusting this line** — it has named the wrong model before, when an
-    id was reverted in code and not here. `sdk/providers/llm/assemblyai.ts` is
-    the answer; a prose default is only a claim about it.
-
-    **On the `gpt-5.6` family `reasoning_effort: "none"` is REQUIRED for tool
-    use — not a tuning knob.** The default is no longer one of them, so this is
-    a rule about a model an author may select rather than the live path — it
-    was the live path while terra was the default, and becomes one again the
-    moment a `gpt-5.6` id is set here. With
-    `tools` present and any other effort — INCLUDING the model's own
-    server-side default, i.e.
-    sending no `reasoning_effort` at all — the gateway rejects the request:
-    *"Function tools with reasoning_effort are not supported for gpt-5.6-luna
-    in /v1/chat/completions. To use function tools, use /v1/responses or set
-    reasoning_effort to 'none'."* Measured 2026-08-06 against the live gateway,
-    4/4 attempts on both `-luna` and `-terra`. **`gpt-5.5` and
-    `qwen3-next-80b-a3b` are both unaffected**, measured the same day: `"none"`,
-    `"low"`, and no `reasoning_effort` at all each return a normal tool-calling
-    completion, streaming included.
-
-    **That message is not what this SDK would see.** The pipeline streams, and
-    streaming turns the same rejection into a bare
-    `{"message":"something went wrong","code":500}` with the explanation
-    stripped — the diagnosis exists only in the non-streaming reply, which
-    nothing in the pipeline sends. And it fires for any agent that declares a
-    tool at all — its own, or a named builtin — so an unguarded descriptor
-    fails on *every* turn of a tool-using agent while reading as a gateway
-    outage. (This paragraph used to reason from `DEFAULT_BUILTIN_TOOLS` putting
-    four tools on every agent that did not opt out, which stopped being true
-    when that default went empty; the conclusion survives the premise, because
-    a voice agent worth deploying declares tools.) So the constraint is
-    encoded rather than documented: `TOOLS_REQUIRE_NO_REASONING` in
-    `sdk/providers/llm/assemblyai.ts` makes the factory default
-    `reasoningEffort` to `"none"` for those model ids, covering all three ways
-    a descriptor is built — `assemblyAILlm({ model })`, the
-    `llm: "gpt-5.6-terra"` string shorthand (`from-string.ts`), and a bare
-    `assemblyAILlm()` whenever the default is one of them. An explicit
-    `reasoningEffort` is still honoured, same rule as `gatewayUrl` winning over
-    `region`. Add a model id to that set when the gateway adds one that shares
-    the constraint; the generated catalog (`gateway-models.ts`) cannot carry it
-    — its flags come from `supported_parameters`, which does not list
-    `reasoning_effort` for ANY model, including ones that plainly honour it
-    (a bogus value 400s naming the supported ones).
+    **The default model is `qwen3-next-80b-a3b`, and check the constant before
+    trusting this line** — it has named the wrong model before, when an id was
+    reverted in code and not here. `ASSEMBLYAI_LLM_DEFAULT_MODEL` in
+    `sdk/providers/llm/assemblyai.ts` is the answer; a prose default is only a
+    claim about it. Changing the id moves WHERE reasoning gets turned off,
+    because `TOOLS_REQUIRE_NO_REASONING` in that same module is keyed by model
+    id: **on the `gpt-5.6` family `reasoning_effort: "none"` is REQUIRED for
+    tool use, not a tuning knob**, and the factory fills it in for those ids
+    only. **That constant's doc carries the gateway's own rejection message,
+    the 4/4 measurement behind it, why the streaming path sees a bare 500
+    instead, and why an explicit `reasoningEffort` is left alone.** Read it
+    before changing the default. One thing it does not say: the generated
+    catalog (`gateway-models.ts`) cannot carry the flag — its flags come from
+    `supported_parameters`, which does not list `reasoning_effort` for ANY
+    model, including ones that plainly honour it (a bogus value 400s naming the
+    supported ones). `gpt-5.5` and `qwen3-next-80b-a3b` are both unaffected,
+    measured 2026-08-06: `"none"`, `"low"`, and no `reasoning_effort` at all
+    each return a normal tool-calling completion, streaming included.
 
     **`assemblyAIPipeline()`'s explicit `reasoningEffort: "none"` is, on the
     current default, the ONLY thing turning reasoning off.** Because
@@ -513,43 +418,29 @@ Reference providers shipped today:
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`
   - `assemblyAITts({ voice, language? })` — `ASSEMBLYAI_API_KEY`; AssemblyAI's
-    streaming TTS over `wss://streaming-tts.assemblyai.com/v1/ws/`.
-    Sharing one key with STT and the gateway means an all-AssemblyAI pipeline
-    needs exactly one secret. Two protocol details that are easy to get wrong:
-    the streaming sockets authenticate with the **raw** key, not `Bearer`, and
-    production sends no `Begin` frame until the client speaks first, so the
-    adapter must not block waiting for one (the AssemblyAI CLI does, which is
-    why it marks prod streaming TTS unavailable). Turns end on `FlushDone`;
-    a rejected key arrives in-band as an `Error` frame, i.e. as
-    `tts_stream_error` rather than `tts_auth_failed`.
-
-    A third, and the one that decides whether the agent feels responsive:
-    **`Generate` only buffers — `Flush` is what starts synthesis.** Unlike
-    Cartesia (`continue: true` synthesizes on arrival), relaying LLM deltas and
-    flushing once makes time-to-first-audio the length of the whole turn, since
-    the pipeline's only provider-level flush is the end-of-turn drain
-    (`flushTtsAndWait`, once per reply — after every LLM step *and* tool call).
-    A tool-chaining reply was silent for its entire duration, the dead-air
-    cover included, as filler is just more buffered text. The
-    adapter therefore buffers host-side and emits `Generate`+`Flush` **per
-    segment** — a sentence end, or **40 characters** when no sentence end is in
-    sight (`splitSegment` in `host/providers/tts/assemblyai-segment.ts`).
+    streaming TTS over `wss://streaming-tts.assemblyai.com/v1/ws/`. Sharing one
+    key with STT and the gateway means an all-AssemblyAI pipeline needs exactly
+    one secret. **`host/providers/tts/assemblyai.ts`'s module doc owns the
+    protocol** — the raw-key (not `Bearer`) auth and why a rejected key surfaces
+    as `tts_stream_error`, why the adapter must not block waiting for `Begin`,
+    the frame vocabulary, and the measurement behind the one thing that decides
+    whether the agent feels responsive: **`Generate` only buffers — `Flush` is
+    what starts synthesis.** Relaying LLM deltas and flushing once makes
+    time-to-first-audio the length of the whole turn, since the pipeline's only
+    provider-level flush is the end-of-turn drain (`flushTtsAndWait`, once per
+    reply); a tool-chaining reply was silent for its entire duration, the
+    dead-air cover included, as filler is just more buffered text. The adapter
+    therefore buffers host-side and emits `Generate`+`Flush` **per segment** — a
+    sentence end, or **40 characters** when no sentence end is in sight
+    (`splitSegment` in `host/providers/tts/assemblyai-segment.ts`).
 
     **Segment LENGTH is the knob, not flush count, and it has a cliff on both
-    sides.** Sentence-only segmentation makes time-to-first-audio the length of
-    the reply's FIRST SENTENCE, which a long opening clause easily stretches
-    past half a second. Measured 2026-08-06 against production on such a reply
-    (medians of 3 runs): sentence-only 538ms to first audio / 12.64s of audio,
-    adding the 40-char budget **286ms / 14.00s** — half the latency for ~11%
-    more audio. But going finer collapses: same text, 15 flushes (per-3-word)
-    produced **21.20s** and per-delta 3.1x. The service's `WordBoundaries`
-    frames name the mechanism — under per-delta flushing their `audio_start_ms`
-    steps 0, 880, 1680, 2400, i.e. **every flush is padded into a ~800ms slot
-    however little text it carries**. So "stream continuously" is not available
-    on this protocol at any useful quality; the budget is a floor-BREAKER (a
-    buffer already holding whole sentences still flushes as one large segment),
-    and a per-clause boundary was measured and buys nothing, because clause
-    marks cluster near sentence marks anyway.
+    sides** — "stream continuously" is not available on this protocol at any
+    useful quality. **`host/providers/tts/assemblyai-segment.ts`'s module doc
+    owns the whole curve**: the three measured segmentations, the per-3-word
+    collapse, the `WordBoundaries` frames that name the ~800ms padding slot
+    behind it, why the budget is a floor-BREAKER rather than a cap, and why the
+    two-word floor exists. Read it before touching either constant.
 
     Two invariants come with segmenting — only the
     turn's **last** acknowledgement may emit `done` (`flushTtsAndWait` resolves
@@ -575,13 +466,23 @@ Adding a provider means: descriptor factory there, an opener in
 `host/providers/resolve.ts`.
 
 **Reach for `createSttSessionShell` / `createTtsSessionShell`, not
-`createSessionShell` directly.** The raw factory takes the error constructor,
-the emit, AND `cleanCloseIsFatal` — and the last of those is a per-stage
-invariant rather than a per-provider choice (see its doc: fatal for a
-continuous INPUT stream, normal completion for an output one). Seven openers
-restated the same three lines, which made a session-deafening default one
-copy-paste away; the wrappers leave a provider with only its own `teardown`
-to name.
+`createSessionShell` directly.** The raw factory also takes `cleanCloseIsFatal`,
+which is a per-STAGE invariant rather than a per-provider choice (see its doc:
+fatal for a continuous INPUT stream, normal completion for an output one). Seven
+openers restated the same three lines, which made a session-deafening default
+one copy-paste away. Two more rules the openers must not re-derive:
+**`shell.emit` / `shell.on` are the ONLY path to an opener's emitter**
+(`host/providers/_utils.ts`) — the shell owns the closed latch and the try/catch,
+because these fire from inside a raw socket handler where a throw from a
+downstream listener escapes into Node's `EventEmitter` as an uncaughtException
+and takes down a multi-tenant host; it was `safeEmit(...)` applied in two openers
+of seven. And **`openGuardedWs` (`host/providers/_socket.ts`) is the only way to
+open a raw provider WebSocket**, carrying the connect deadline
+(`WS_OPEN_TIMEOUT_MS`, 8000, kept under `DEFAULT_SESSION_START_TIMEOUT_MS` so the
+failure names the provider) and the pre-connect zero-listener `error` guard —
+without it a black-holed connect leaves `providers.open()` pending forever on a
+socket with no owner, and a later socket `error` with no listener bound crashes
+the host. Both module docs carry the rest.
 
 **All four stages are registries, S2S included.** For a long time only
 STT/TTS/LLM were: S2S was three hand-written kind comparisons, and they
@@ -655,30 +556,26 @@ no-op). **See `host/workflow-notify.ts`'s module doc** for the rest.
 ## Voices
 
 **`ASSEMBLYAI_TTS_VOICES` in `sdk/providers/tts/assemblyai.ts` is the list.**
-Read it there; do not restate it here, and do not trust a voice name that
-isn't in it.
+Read it there; do not restate it here, and do not trust a voice name that isn't
+in it.
 
 That instruction is the whole point of the constant. This section used to
-carry its own table — `ivy`, `sam`, `mia`, `jack`, `sophie`, `oliver` and a
-dozen more — of which every entry was either deprecated or had never existed,
-and the provider's doc comment carried a *different* wrong list: two
+carry
+its own table, of which every entry was either deprecated or had never existed,
+while the provider's doc comment carried a *different* wrong list — two
 hand-maintained lists, both fiction, both pointed at by anyone looking for a
-voice.
-
-The failure they cause is invisible at authoring time: a wrong voice id is
-rejected in-band after the TTS socket opens, so the agent connects, reports
-ready, and is permanently silent. Nothing before a live session catches it.
-Hence one checkable constant, with the accent alongside each name and the
-deprecated set kept separately in `ASSEMBLYAI_TTS_DEPRECATED_VOICES`.
+voice. The failure is invisible at authoring time: a wrong voice id is rejected
+in-band after the TTS socket opens, so the agent connects, reports ready and is
+permanently silent. Hence one checkable constant, with the accent alongside each
+name and the deprecated set in `ASSEMBLYAI_TTS_DEPRECATED_VOICES`.
 
 On the default pipeline the voice is the top-level `voice` field —
 `agent({ voice: "michael" })`, an author convenience desugared to
-`tts: assemblyAITts({ voice })` in `normalizeAgentConveniences` (typed
-against the catalog, invalid alongside an explicit `tts` descriptor, which
-owns its own voice). An explicit AssemblyAI TTS stage picks it with
-`assemblyAITts({ voice })` from `@alexkroman1/aai/tts` (or
-`assemblyAIPipeline({ voice })`). S2S mode's voice rides on the `s2s`
-descriptor — `voice` is a compile error there.
+`tts: assemblyAITts({ voice })` in `normalizeAgentConveniences` (typed against
+the catalog, invalid alongside an explicit `tts` descriptor, which owns its own
+voice). An explicit AssemblyAI TTS stage picks it with `assemblyAITts({ voice })`
+from `@alexkroman1/aai/tts` (or `assemblyAIPipeline({ voice })`). S2S mode's
+voice rides on the `s2s` descriptor — `voice` is a compile error there.
 
 ## `ctx.generate` (one-shot LLM generation)
 
@@ -700,6 +597,122 @@ typed `object`. Note zod 4.4 stamps `~standard` onto its plain
 `toJSONSchema()` OUTPUT too — schema detection keys off the `_zod` instance
 marker, never the `~standard` interface (`isConvertibleSchema`).
 
+## Concurrency primitives (use these, don't hand-roll)
+
+The repo's recurring async-coordination patterns are reified as small
+primitives, and almost all of them live in this package — reach for one before
+re-inventing the pattern at a call site. Two that do not are stated in the root
+`AGENTS.md`: `p-timeout` for timeouts (never a hand-rolled `Promise.race` with a
+timer) and native `AbortSignal.any([...])` for combining signals.
+
+**Each primitive's module doc carries the hazard it reifies and the shape it
+replaced; what follows is the index plus the rule and the adopters.**
+
+- **`createEpoch()`** (`sdk/epoch.ts`, `@alexkroman1/aai/internal`) — staleness
+  guard for async continuations: capture `current()` when deferring work, check
+  `isCurrent(gen)` when it settles, `bump()` to invalidate. Adopted by the
+  aai-ui connection/turn generations and the pipeline turn gate. Don't hand-roll
+  `let generation = 0; generation++` counters.
+- **`createOwnedMap()`** (`sdk/owned-map.ts`, `/internal`) — a map whose entries
+  are removed by ownership TOKEN, so an async teardown settling after the key
+  was re-claimed (reconnect resume, redeploy) can't evict the successor's entry.
+  `owns()` guards non-delete mutations. Adopted by the runtime's
+  `sessions`/`sinkMap`, the WS handler, and the platform `SlotCache`. Don't
+  write `if (map.get(k) === mine) map.delete(k)` by hand
+  (`guard-invariants` rule 8).
+- **`createCoalescingRunner()`** (`sdk/coalescing-runner.ts`, `/internal`) —
+  serialize + coalesce repeatable async work: at most one run in flight,
+  triggers during a run share ONE trailing re-run started after the current
+  settles, rejections never wedge the runner. For work that reads latest state
+  when it runs (workspace sync, post-write typechecks). Don't hand-roll
+  `inFlight`/`trailing` flag pumps.
+- **`createTurnMachine()`** (`host/transports/pipeline-turn-state.ts`) — the
+  pipeline transport's turn lifecycle (in-flight reply, spoke flag, TTS audio
+  gate) as a discriminated-union machine whose named transitions are the only
+  mutation path. New turn-state reads/writes go through it, not new closure
+  flags.
+- **`createKeyedLock()`** (`sdk/keyed-lock.ts`, `/utils` and the root — the one
+  primitive here that is PUBLIC) — serialize async work per key; `withLock(lock,
+  key, fn)` releases in every outcome, and an optional `timeoutMs` bounds the
+  ACQUIRE, which is what makes a contended mutation answerable instead of queued
+  (`KeyedLockTimeoutError` → the platform's 409). It is public because the
+  hazard is an agent author's as much as the platform's: **the LLM loop runs a
+  step's tool calls CONCURRENTLY**, so two async mutators of one external
+  resource interleave at every await. Don't write
+  `tails.get(k) ?? Promise.resolve()` by hand (rule 9) — the two parts that get
+  missed are dropping the drained entry BY OWNERSHIP, and resolving your own
+  place in the chain when you abandon a timed-out acquire.
+
+  **For a session-state mutation reach for `slot.update` instead** (below): its
+  window is synchronous, so it has nothing to serialize. This primitive remains
+  the right answer for serialized work that is NOT a slot mutation — an external
+  resource, a key that is not the session id, or `{ timeoutMs }` when a
+  contended mutation must fail rather than queue. No template demonstrates it
+  any more, which is recorded in `template-api-allowlist.json` rather than being
+  an oversight.
+- **`sleep(ms, { signal?, unref? })`** (`sdk/sleep.ts`, `/internal`) — the ONE
+  wait; `guard-invariants` rule 19 keeps the seventh spelling out. It replaced
+  **six** spellings across five packages at 22 call sites, and the argument is
+  not the line count: they split into two families differing in whether
+  `vi.useFakeTimers()` can drive them, which no call site shows. **Read the
+  module doc** for that measurement, why `unref` is opt-in (it is a claim, and
+  the shared default it replaced made a shutdown grace skip its own drains), and
+  why an abort resolves with the listener detached. Not a timeout (`p-timeout`,
+  rule 3), not a yield (`flush()`/`tick()`, rule 4).
+
+  **Never write a control character as a source literal.** A raw NUL in
+  `host/workflow-notify.ts` made `git grep` call the file BINARY, so it was
+  silently exempt from every repo gate — all of which are `git grep` — and had
+  grown the sixth `sleep` where nothing could see it. Use `\u0000`.
+- **`ToolFailure` / `isToolFailure()` / `toolFailure(message)`**
+  (`sdk/utils.ts`, root and `/utils`) — the `{ error: string }` object a tool
+  returns for a failure the MODEL should see and recover from, its guard, and
+  its constructor. The guard is the point: failures propagate, so a helper
+  returning `Order | ToolFailure` has a caller that forwards it unchanged, and
+  `"error" in value` only works once the value is known to be an object. Five
+  templates returned the shape; `retail` had its own `ErrorResult` + `isError`
+  (used at ~40 sites) and `dispatch-center` narrowed with inline `"error" in
+  inc` at six. The constructor exists so that "how do I report a failure?" lands
+  next to `isToolFailure` rather than on `serializeToolFailure()`, which returns
+  the pre-serialized wire STRING the host emits for a tool that THREW — so
+  `isToolFailure(serializeToolFailure(m))` is `false`. Under its old name
+  (`toolError`) that was a trap rather than a distinction, and it was used by
+  ZERO of the fourteen templates despite its own doc telling authors to return
+  it. It is `@internal` on `/utils` now; `utils.test.ts` pins both halves.
+- **`pushCapped(list, item, max)`** (`sdk/utils.ts`, root and `/utils`) — append
+  to a list holding a cap, mutating IN PLACE (the list is usually a property of
+  a slot's value, so returning a new array is a reassignment the caller can
+  forget). For the append-only lists an agent keeps: a timeline, an activity
+  feed, a session log. Every one of them feeds an LLM summary or a `syncState`
+  payload, so uncapped it grows what the model reads and what crosses the wire
+  for the length of the call. Three templates had hand-rolled `push` +
+  `slice(-MAX)`; the fourth, `infocom-adventure`, had NOT — its command history
+  sliced only for display and grew without bound, which is the bug a shared
+  primitive turns into a decision.
+- **`omitUndefined()`** (`sdk/omit-undefined.ts`, `/utils`) — the one way to
+  build the optional half of an object under `exactOptionalPropertyTypes`. That
+  flag makes `{ name: maybeName }` an error whenever the value can be
+  `undefined`, so the only spelling that compiles was
+  `...(name !== undefined ? { name } : {})` — correct, and hand-written 44 times
+  across five packages, eight of them in a single object literal in
+  `host/agent-server.ts`. Each line names its key twice, which is what makes a
+  mismatched pair (`x !== undefined ? { y: x }`) read as noise rather than as
+  the bug it is. Write `...omitUndefined({ name, greeting })`; renaming a key
+  works the same. `guard-invariants` rule 2 sees all three spellings, and its
+  remedy names the three sites that deliberately keep the long form — the ones
+  where the GUARD IS NOT THE VALUE. Check that before converting a fourth. It
+  lives on `/utils` rather than `/internal` for the zero-zod reason
+  `sdk/utils.ts`'s own module doc states.
+- **`sessionSlot()`** (`sdk/session-slot.ts`, the ROOT — it is authoring API,
+  not infrastructure) — a typed named slot that OWNS a session's state: its key,
+  its default, its reads, its writes, its `syncState` projection, and its
+  STORAGE. There is no `ctx.state` bag any more. See "A slot OWNS its session
+  state" below.
+- **`resolveOne(candidates, spoken, opts)`** (`sdk/spoken.ts`, ROOT only) — pick
+  the one thing a caller named, or fail LISTING the candidates. See "Resolving
+  what a caller SAID" below for the order it applies its readings in and why
+  ambiguity is an ANSWER rather than a guess.
+
 ## A slot OWNS its session state — and stores it
 
 There is no `ctx.state`. A session's state lives in `sessionSlot()`s
@@ -715,7 +728,8 @@ the fleet-wide peer route a cold broker takes all handed a reconnecting caller a
 agent that remembered the whole conversation (the client replays history) and had
 forgotten its cart. Nothing on the client can replay state back.
 
-Four rules follow, and each is enforced rather than documented:
+Five rules follow, and each is enforced rather than documented. **`session-slot.ts`
+carries each one on the member it governs** — read it before changing any of them:
 
 - **`update` is SYNCHRONOUS and hands the body a mutable DRAFT.** Whatever the
   mutator leaves behind is stored when it returns, so a read-modify-write is
@@ -723,11 +737,24 @@ Four rules follow, and each is enforced rather than documented:
   calls CONCURRENTLY. An await goes in FRONT of the mutation; `slot.updateTool`
   refuses a thenable body naming the rule, and a nested `update`/`set`/`reset` on
   the same slot throws rather than being overwritten by the outer draft (which is
-  a write that succeeds and then vanishes — `pizza-ordering` had one).
-- **`get` returns a frozen `Readonly<T>`.** The type catches `state.field = x`;
-  the FREEZE is the real guarantee, because a shallow type cannot see a write
-  inside a domain helper and every template has those. `freezeStorable`'s doc
-  says why the type is deliberately not deep.
+  a write that succeeds and then vanishes — `pizza-ordering` had one). A throwing
+  mutator stores NOTHING and does not wedge the slot for the rest of the session.
+- **`slot.get()` returns a frozen `DeepReadonly<T>` — the TYPE matches the
+  freeze.** Mutating what it returns is a compile error at every depth
+  (`cart.items.push(x)` as much as `cart.total = 0`) and a `TypeError` for a
+  caller with no types, because a mutation applied there is applied to a value
+  nothing is going to store. A shallow `Readonly<T>` over a deep freeze left the
+  RUNTIME STRICTER THAN THE TYPE and shipped in two templates. It propagates into
+  an agent's own helpers, which is the price — one that will not take
+  `DeepReadonly<T>` is one that mutates.
+- **`slot.set()` stores a COPY** (`privateCopy`, a `structuredClone` for a durable
+  slot), so the freeze lands on the slot's own object and never on the caller's.
+  Its own examples — a load, an import, a restore — are exactly the cases where
+  the caller still holds a reference to what it passed, and freezing in place
+  turned an unrelated later line (`imported.items.push(...)`) into a `TypeError`
+  from a stack naming nothing about this slot. `update` was always safe; its draft
+  is the same copy. A VIRTUAL slot is handed the live value and nothing
+  freezes it.
 - **A durable value is checked STRUCTURALLY, in both backends.** `Map` → `{}`,
   `Date` → string, `NaN` → null: the values that corrupt do not throw, so
   `JSON.stringify` is not the check. Running it in the memory backend too is the
@@ -744,6 +771,16 @@ Postgres when `DATABASE_URL` is present, memory otherwise, reported in the
 `persist` flag is refused for the reason above. A value that genuinely cannot be
 stored declares `{ durable: false }` — a VIRTUAL slot, neither checked, frozen nor
 committed.
+
+**`SessionStateBackend.countEvents` is `max(event_index) + 1`, not a
+`count(*)`.** It is read on hydrate so a session resuming onto a REPLACEMENT
+process continues its event log rather than restarting at 0 and overwriting its
+own history — and this log need not be dense from zero: an event past
+`MAX_SESSION_EVENTS` advances the position without being stored, and a partly
+failed flush leaves a hole. Under a count either case hands a resumed session an
+index it has already used, so its `tail` goes BACKWARDS and the re-used appends
+are silently dropped by `on conflict do nothing`. **Both backends must answer
+`max + 1`**, or the memory one stops being a valid double for the Postgres one.
 
 **Read `host/session-state-store.ts`** for the commit point (the end of the tool
 call, awaited, once per changed slot), the fail-open rule for shape drift on
@@ -802,119 +839,88 @@ when a caller reads it aloud and which words name a status.
 
 ## Storage (`ctx.db`)
 
-There is no KV store anymore. Persistent state is the opt-in **app
-database**: enabling storage for an app (CLI `aai storage enable <slug>`; the
-studio's Settings pane → Database, which switches BOTH of a project's agents
-at once — see the Database-card note in
-`packages/aai-studio-client/CLAUDE.md`; or
-`DATABASE_URL` in the project `.env` under
-`aai dev`) gives its tools `ctx.db` — a SQL handle
-(`query<T>(sql, params?)`, `$1` placeholders) backed by a per-app schema in
-the platform's Supabase Postgres. Accessing `ctx.db` without storage
-enabled throws with that enablement guidance. On the platform each app
-gets its own schema + login role (search_path pinned, 10s
-statement_timeout); credentials live in Supabase Vault. Session-scoped
-scratch belongs in a `sessionSlot` (or the `remember`/`recall` builtins, now
-in-memory per-session) — which is durable through the same app database when one
-exists, so the two differ in SHAPE (a typed value per session vs. SQL an author
-writes) rather than in whether they survive.
+There is no KV store anymore. Persistent state is the opt-in **app database**:
+enabling storage for an app (CLI `aai storage enable <slug>`; the studio's
+Settings pane → Database, which switches BOTH of a project's agents at once —
+see the Database-card note in `packages/aai-studio-client/CLAUDE.md`; or
+`DATABASE_URL` in the project `.env` under `aai dev`) gives its tools `ctx.db` —
+a SQL handle (`query<T>(sql, params?)`, `$1` placeholders) backed by a per-app
+schema in the platform's Supabase Postgres. Accessing `ctx.db` without storage
+enabled throws with that enablement guidance. On the platform each app gets its
+own schema + login role (search_path pinned, 10s statement_timeout);
+credentials live in Supabase Vault.
 
-There is no Vector store anymore — `ctx.vector`, the `vector:` agent field,
-the `@alexkroman1/aai/vector` subpath and the platform-owned `PINECONE_API_KEY`
-were all removed. If retrieval returns it follows `ctx.db`'s path: per-app
-schema, platform-provisioned credentials in Vault.
-`ctx.db` connects DIRECTLY from the guest: the app's own scoped Postgres
-credentials (role/search_path pinned at provisioning) ride into the guest as
-`DATABASE_URL` in the agent's boot env, and the bundle's runtime opens its
-own connection — exactly as `aai dev` does with a project `.env`. The old
-host-proxied `db/query` RPC is gone: it kept a versioned RPC in the
-harness↔bundle contract to protect a credential that only reaches the
+**`ctx.db` connects DIRECTLY from the guest** — the app's own scoped Postgres
+credentials ride in as `DATABASE_URL` in the agent's boot env and the bundle's
+runtime opens its own connection, exactly as `aai dev` does with a project
+`.env`. The old host-proxied `db/query` RPC is gone: it kept a versioned RPC in
+the harness↔bundle contract to protect a credential that only reaches the
 tenant's own data anyway.
+
+Session-scoped scratch belongs in a `sessionSlot` (or the `remember`/`recall`
+builtins, now in-memory per-session) — which is durable through the same app
+database when one exists, so the two differ in SHAPE (a typed value per session
+vs. SQL an author writes) rather than in whether they survive. There is no
+Vector store anymore either — `ctx.vector`, the `vector:` agent field, the
+`@alexkroman1/aai/vector` subpath and the platform-owned `PINECONE_API_KEY` were
+all removed; if retrieval returns it follows `ctx.db`'s path.
 
 ## Guest network access
 
-There is **no per-agent egress policy**. `allowedHosts` and its enforcement
-stack (the SDK's `tool-egress`/`guest-fetch-policy` in-process guard, the
-platform's Modal outbound-domain allowlist, `guest-egress.ts`) were removed:
-the agent's own code runs in the guest with open egress, exactly as it does
-under `aai dev`. The Modal container is the isolation boundary — a tenant
-can reach the internet, not the platform. Tool code and providers `fetch`
-directly.
+There is **no per-agent egress policy**, and the network builtins screen a URL
+only when there is no container around them (`builtinFetch` in `host/ssrf.ts`).
+`host/ssrf.ts` is the implementation and lives here so the platform's guest-fetch
+proxy and the SDK's own builtins resolve ONE copy of it. **The policy, the
+`AAI_SANDBOX_CONTAINED` declaration, the screen's bypass classes and the two
+undici-version traps in the pinned dispatcher are in
+`packages/aai-guest/CLAUDE.md`, "Guest network access"** — the guest is what the
+rule is about, and this guide is at its cap.
 
-**The network builtins follow one rule: screen only when there is no
-container around us** (`builtinFetch` in `host/ssrf.ts`).
+## A request-path decode never throws
 
-- **Contained** (a Modal Sandbox) → plain `pinnedFetch`, no SSRF screen. The
-  screen guards nothing a tenant cannot bypass in one line, because their own
-  tool code has open egress by design — so it constrains the *model*, not the
-  author. The container is the boundary and it holds no PLATFORM credentials
-  (`ctx.db`'s DATABASE_URL is the app's own scoped role).
-- **Not contained** (`aai dev`, and the subprocess backend) → `safeFetch`.
-  Here the host IS someone's machine: these same builtins run in the
-  developer's own process, where a model-controlled URL can reach localhost,
-  the LAN, or cloud metadata. That is the case the screen exists for.
+**`decodePathSegment` (`host/_path-decode.ts`) is the one spelling**, applied at
+all five decode sites (`workflow-api.ts` x2, `server-static.ts`,
+`workflow-serve.ts`, `session-events-api.ts`). `decodeURIComponent` THROWS a
+`URIError` on a malformed escape and a request target is attacker-supplied:
+`GET /.well-known/workflow/v1/webhook/%` is a legal HTTP request that nothing in
+the stack rejects before a handler cuts the path apart. Those five sites sat in
+three different accidental safety regimes — one caught explicitly, three inside
+an `async` router whose rejection is answered 500, and **one fully synchronous**
+(`webhookToken` → `pickWorkflowHandler` → `handleWorkflowRequest`, called from
+`createServer`'s `options.request?.(…)` hook with no `try`). That one reached the
+guest's `uncaughtException` guard and `process.exit(4)`, unauthenticated, taking
+every concurrent voice session on the sandbox down with it.
 
-Containment is **declared by the spawner**, never inferred by the guest:
-`modal-sandbox.ts` sets `AAI_SANDBOX_CONTAINED=1` in the exec env and the
-subprocess backend does not. "Am I a guest" and "am I contained" are
-different questions — the subprocess backend runs a guest with no container
-at all, so a guest-token sniff would open egress on a developer's laptop.
-`ssrf.test.ts` pins that distinction.
+So the decode is a FUNCTION with a stated contract rather than an expression
+repeated with different luck: `undefined` means "this is not a decodable path
+segment", and each caller answers it the way its own route answers a bad request
+— a 400, a 404, or a decline. **There is no spelling of this that throws, and a
+caller must never re-throw it**; the module doc carries the rest.
 
-The residual risk in a container is prompt injection steering the model at an
-internal endpoint; accepted, because the sandbox has nothing internal worth
-reaching and an author who wants that can already write it.
+## A builtin's HTTP read is bounded at the READ, in BYTES
 
-**SSRF screening implementation (`host/ssrf.ts`).** The rules the screen
-itself has to get right, as opposed to when it runs:
+**`fetchCappedText` (`host/_fetch-capped.ts`) is the one bounded fetch** for
+every builtin that reads a model-controlled URL — `visit_webpage`, `fetch_json`,
+`get_page_design`'s page and stylesheet reads, and `web_search`'s two endpoints.
+Two rules it exists to make unrepresentable:
 
-- Lives in the SDK, not `aai-server`, so both the platform's guest-fetch proxy
-  and the SDK's own network builtins resolve one implementation.
-- `resolveAndAssertPublic()` uses the `bogon` library for private IP ranges.
-- Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
-- Blocks `.internal`, `.local`, cloud metadata hostnames, and non-HTTP(S)
-  protocols.
-- Re-validates every redirect hop and strips credential headers once a redirect
-  leaves the original origin.
-- Pins the validated IP with an undici dispatcher `lookup` rather than
-  rewriting the URL hostname. Rewriting broke TLS — SNI and cert verification
-  use the URL, not the `Host` header — so every `https://` request failed. Keep
-  the URL intact when touching this.
-- **The dispatcher and the `fetch` it is handed to must come from the same
-  undici.** `pinnedDispatcher` builds an `Agent` from this package's `undici`
-  dependency, while `globalThis.fetch` is backed by the copy bundled into the
-  Node runtime (`process.versions.undici`) — a different major. undici 8
-  reworked the dispatch-handler interface, so a v8 `Agent` rejects the v7-style
-  handler Node's internal fetch builds, with `InvalidArgumentError: invalid
-  onRequestStart method` surfacing as a bare `TypeError: fetch failed`. A
-  dispatcher is attached to *every* hostname request, so the mismatch takes out
-  all SSRF-guarded egress at once — `web_search`, `visit_webpage`,
-  `get_page_design`, and `fetch_json`. `safeFetch` therefore routes through
-  `pinnedFetch`, undici's own `fetch`; never reintroduce `globalThis.fetch`
-  there. Guarded by `ssrf-dispatcher.test.ts` — the rest of the SSRF suite
-  injects a fake fetch and never builds a real dispatcher, which is why this
-  shipped unnoticed. Two rules survived the (since-removed) tool-egress
-  guard that first hit this: **the caller may not name a fetch
-  implementation** (leave `fetchFn` unset — it exists for tests — so the
-  pinned default applies), and the guard test has to cover the *call site*,
-  not just `pinnedFetch` in isolation.
+- **The cap bounds the READ, not the value that is kept.** Every site used to do
+  `const body = await resp.text()` and only then slice or refuse it, so the body
+  was fully buffered into host memory first and the "cap" bounded nothing — the
+  real limit was `FETCH_TIMEOUT_MS` times the link's bandwidth, on a URL a prompt
+  injection picks. (`fetch_json` additionally pre-checked `content-length`, which
+  reads `Number(null)` → `0` for any chunked response and therefore passed the
+  guard exactly when the body was unbounded.) The body is read through
+  `resp.body.getReader()` one chunk at a time, stopping the moment the budget is
+  exceeded and cancelling the stream.
+- **The budget is in BYTES, never `String.length`.** The old caps compared UTF-16
+  code units against a byte budget, so a body of multi-byte characters passed at
+  up to ~3x its nominal size.
 
-  **The request *body* crosses the same seam, and `FormData` does not survive
-  it.** undici 8's `extractBody` brand-checks each body type with an
-  `instanceof` against **its own** class, so a `globalThis.FormData` (an
-  instance of Node's *internal* undici's class) matches no branch, falls
-  through to the string conversion, and goes out as `Content-Type: text/plain`
-  with the 17-byte body `[object FormData]` — the server answers
-  `415 Unsupported Media Type` and the caller sees an opaque HTTP failure.
-
-  The rule that generalizes: **never hand a `FormData`, `Blob`, `File`,
-  `Headers`, or `Request` to a `fetch` that might not be the one your realm's
-  global came from** — pass bytes.
-- The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
-  `fetch_json`) take a
-  model-controlled URL and **default** to this via `safeFetch` in
-  `builtin-tools.ts`. Protection is not opt-in per caller; only tests override
-  the `fetch` option.
+`truncated` is the caller's decision: a page is worth reading in part, where a
+JSON document clipped mid-value is not parseable and must be refused. An HTTP
+failure is answered as `{ ok: false }` rather than thrown, because every caller
+turns one into a tool result.
 
 ## The session takes two VOCABULARIES, not nineteen callbacks
 
@@ -992,19 +998,30 @@ are two READERS of that one answer, which is what keeps the resume prompt from
 quoting words the record denies. It also owns the playback clock, so the
 barge-in gate reads the same object.
 
-Two tiers of accuracy, decided at RUNTIME rather than by a capability flag:
+Two tiers of accuracy, decided at RUNTIME rather than by a capability flag: a
+provider that reports word timings (AssemblyAI TTS's `WordBoundaries` frames,
+parsed in `providers/tts/assemblyai-words.ts`) gives a cursor at the last word
+whose audio WHOLLY elapsed; Cartesia and Rime both HAVE a timing frame that is
+not wired up, so they degrade to a proportional estimate snapped to a word —
+exactly what was there before, so nothing regresses, and the zero case needs no
+timings at all. Both roundings err toward UNDER-keeping, deliberately:
+over-keeping is the measured failure, while under-keeping costs a word or two of
+redundancy that the resume prompt's "without repeating what they already heard"
+absorbs.
 
-| provider | timings | cursor |
-| --- | --- | --- |
-| AssemblyAI TTS | `WordBoundaries` frames, parsed in `providers/tts/assemblyai-words.ts` | last word whose audio WHOLLY elapsed |
-| Cartesia | `add_timestamps` exists in the SDK, not wired up | proportional estimate, snapped to a word |
-| Rime | a `timestamps` frame exists, unmodelled | proportional estimate, snapped to a word |
-
-A provider that reports nothing degrades to exactly the estimate that was there
-before, so nothing regresses; the zero case needs no timings at all. Both
-roundings err toward UNDER-keeping, deliberately: over-keeping is the measured
-failure, while under-keeping costs a word or two of redundancy that the resume
-prompt's "without repeating what they already heard" absorbs.
+**The proportional estimate is CLAMPED, because `spoken.length / audioMs` is
+not a speech rate** (`MAX_SPEECH_CHARS_PER_MS` in `pipeline-heard.ts`). Text
+runs ahead of synthesis by however far the LLM is ahead of the voice — widest
+mid-reply, which is exactly when a barge-in happens — so the raw ratio reads
+text nobody has spoken yet as heard: an LLM streaming ~200 chars/s against a
+provider synthesizing at 1x hands over a 300-character reply inside 1.5s, so
+five seconds in the ratio claims all 300 characters against the ~75 the caller
+actually heard. No causal bound fixes that, because the gap is PROPORTIONAL
+rather than additive. The rate has to come from the language instead: English
+narration runs 14-18 characters a second, so the ceiling sits at the top of that
+band and the estimate takes the MIN of it and the observed ratio — a voice
+slower than the ceiling is still tracked. The constant's doc carries the
+arithmetic.
 
 **The lag is `HEARD_AUDIO_LAG_MS` (750), and it is DERIVED rather than
 measured** — its row in the defaults table below carries the decomposition and
@@ -1044,27 +1061,29 @@ the agent kept talking; the client had been told it stopped.
 
 **That divergence is not cosmetic, because clients act on it.** tau2-bench's
 harness DISCARDS its entire agent playout buffer on `speech_started` and has no
-`cancelled` handler at all — so the one event that really means "the agent
-stopped" is ignored, and the one that did not is treated as authoritative. A
-reply still being spoken was thrown away mid-sentence. `aai-ui` reads the same
-event as informational (it only clears the caption; playback stops on
-`cancelled`), which is why this never showed up in the browser.
-
-Measured by replaying the benchmark's own recorded caller audio against a live
-pipeline agent (the `scripts/voice-replay/` harness, since removed), on the
-run's 10 conversations richest
-in these signals: **184 `speech_started` against 87 `cancelled` — 53% of the
-events the client acted on were not interruptions at all.** The agent yielded
-to non-directed speech on 12 of 12 occasions and then sat silent a median 5.9s
-(these are real barge-outs, not inter-sentence gaps: only 2.5% of natural gaps
+`cancelled` handler at all, so the one event that really means "the agent
+stopped" is ignored and the one that did not is treated as authoritative — a
+reply still being spoken was thrown away mid-sentence. (`aai-ui` reads the event
+as informational and stops playback on `cancelled`, which is why this never
+showed up in the browser.) Measured by replaying the benchmark's own recorded
+caller audio against a live pipeline agent, on the run's 10 conversations
+richest in these signals: **184 `speech_started` against 87 `cancelled` — 53% of
+the events the client acted on were not interruptions at all.** The agent
+yielded to non-directed speech on 12 of 12 occasions and then sat silent a
+median 5.9s (real barge-outs, not inter-sentence gaps: only 2.5% of natural gaps
 between agent segments are ≤0.6s).
 
 So while the agent holds the floor the edge is HELD, and released only when a
 barge-in really fires (alongside `cancelled`) or when the agent stops speaking
-on its own — `createGatedSpeechEdges` in `pipeline-user-speech.ts`. While the
-agent is silent it passes straight through: there is no floor to yield and the
-event just means "listening". Live captions are unaffected either way, because
+on its own; while the agent is silent it passes straight through, because there
+is no floor to yield. Live captions are unaffected either way —
 `user-transcript.updated` is emitted independently of the gate.
+**`pipeline-speech-edges.ts` owns the mechanism**, and its two layers are
+deliberately separate: `createSpeechEdgeTracker` decides WHEN an utterance
+starts and ends (pipeline mode has no VAD, so this is derived from partials and
+finals, with a watchdog for utterances that never commit), and
+`createGatedSpeechEdges` decides WHETHER the client is told. The turn
+orchestration consuming both is `pipeline-user-speech.ts`.
 
 The property to preserve — and what the specs in `pipeline-voice-events.test.ts`
 pin — is that **the score no longer depends on how the client reads the event**.
@@ -1082,31 +1101,25 @@ reverting the gate.
 
 On the platform, the browser's session WebSocket connects DIRECTLY to the
 agent's sandbox (`/session` on its Modal tunnel, discovered via the
-`GET /:slug/client-config` broker) — "server" below means the process
-running the runtime: the guest harness on the platform, the `aai dev`
-server locally. Audio path depends on the session mode (see above):
+`GET /:slug/client-config` broker) — "server" below means the process running
+the runtime: the guest harness on the platform, the `aai dev` server locally.
+The audio path depends on the session mode:
 
-- **S2S mode**: user speaks → browser captures PCM → WebSocket → server
-  relays audio into a single AssemblyAI S2S socket → agentic loop (LLM +
-  tools) runs service-side → synthesized audio streams back through the
-  same socket → server forwards to browser → user can interrupt at any
-  time (cancels the in-flight turn).
-- **Pipeline mode**: user speaks → browser captures PCM → WebSocket →
-  server forwards audio to the STT provider → STT partials stream to the
-  client as `user-transcript.updated` (live captions) and drive the
+- **S2S mode**: browser captures PCM → WebSocket → server relays it into a
+  single AssemblyAI S2S socket → the agentic loop (LLM + tools) runs
+  service-side → synthesized audio streams back through the same socket →
+  server forwards it to the browser. An interrupt cancels the in-flight turn.
+- **Pipeline mode**: browser captures PCM → WebSocket → server forwards it to
+  the STT provider → partials stream to the client as
+  `user-transcript.updated` (live captions) and drive the
   `speech.started`/`speech.stopped` edges → the committed turn is reported as
-  `user-transcript.committed` → host runs the LLM loop via `streamText`
-  (tool calls execute on the host just like S2S mode) → assistant text
-  chunks stream into the TTS provider → synthesized audio returns over
-  the client WebSocket → interrupts cancel the in-flight LLM stream and
-  TTS playback. A barge-in that never commits a user turn is treated as a
-  false interruption and the reply resumes (see
-  `resumeFalseInterruption`). `preemptiveGeneration` (OFF by default,
-  measured) opens a
-  branch one step earlier: a high-confidence STT INTERIM
-  starts a speculative LLM stream that reaches no TTS, no tool and no
-  history, and the committed final either adopts that running stream or
-  discards it — see the row below.
+  `user-transcript.committed` → the host runs the LLM loop via `streamText`
+  (tool calls execute host-side just as in S2S mode) → assistant text chunks
+  stream into the TTS provider → audio returns over the client WebSocket. An
+  interrupt cancels the in-flight LLM stream and TTS playback; a barge-in that
+  never commits a user turn is a false interruption and the reply resumes (see
+  `resumeFalseInterruption`). `preemptiveGeneration` (OFF by default, measured)
+  opens a branch one step earlier — see its row below.
 
 ## Default values and magic numbers
 
@@ -1117,23 +1130,23 @@ defaults that affect agent behavior:
 
 | Default | Value | Where applied | Notes |
 | --- | --- | --- | --- |
-| `maxSteps` | 10 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max **tool-calling** steps per reply, LiveKit's `max_tool_steps` analog. **The cap and the forced final answer are ONE change and must not be separated, whatever the number is.** `stopWhen: stepCountIs(n)` alone ends the turn wherever the budget runs out — including straight after a tool result with nothing said — and that reply completes *successfully* with an empty transcript, so `errorPhrase` never fires and the caller simply hears the agent stop. So the `stopWhen` budget is `maxSteps + 1` and `prepareStep` forces `toolChoice: "none"` on that extra step (`forceFinalAnswer`, `pipeline-llm-stream.ts`): every tool result is still in context and the model's only remaining move is to speak. The override also beats an agent-level `toolChoice: "required"`, which would otherwise demand a tool call on the one step where tools are off. **The measurement says the cap barely shapes ordinary turns in either direction**: across 815 replies in two tau2-bench retail runs, 28-33% of replies called a tool at all, and among those p50 **1**, p90 3, p99 5-6 — exactly **one reply of 815** ever reached 10. A cap of 3 was tried on the strength of that p90 and reverted: what it truncates is the chain-heavy tail, where a step limit turns a completable task into a half-answer, and the forced final step makes that degradation quiet rather than absent. That one 10-step reply is the real lesson — after its preamble it made **7 consecutive tool calls with no speech at all**, so what the caller experienced was dead air (see `DEFAULT_DEAD_AIR_COVER_MS`), not a step limit. Tune the silence, not the cap — and note S2S enforces the same cap service-side by refusing tool calls past it (`session-core.ts`), where no forced final step is possible. |
+| `maxSteps` | 10 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max **tool-calling** steps per reply, LiveKit's `max_tool_steps` analog. **The cap and the forced final answer are ONE change and must not be separated, whatever the number is.** `stopWhen: stepCountIs(n)` alone ends the turn wherever the budget runs out — including straight after a tool result with nothing said — and that reply completes *successfully* with an empty transcript, so `errorPhrase` never fires and the caller simply hears the agent stop. So the `stopWhen` budget is `maxSteps + 1` and `prepareStep` forces `toolChoice: "none"` on that extra step (`forceFinalAnswer`, `pipeline-llm-stream.ts`); the override also beats an agent-level `toolChoice: "required"`, which would otherwise demand a tool call on the one step where tools are off. **`DEFAULT_MAX_STEPS`'s own doc (`sdk/tool-loop-constants.ts`) carries the measurement** — the 815-reply tau2-bench distribution, the cap of 3 that was tried and reverted, and why the single 10-step reply is a DEAD-AIR finding (tune the silence, not the cap) rather than a step-limit one. Note S2S enforces the same cap service-side by refusing tool calls past it (`session-core.ts`), where no forced final step is possible. |
 | `toolChoice` | `"auto"` | runtime resolution | LLM decides when to use tools vs respond directly. Full AI SDK set: `"auto"`, `"required"`, `"none"`, `{ type: "tool", toolName }`. |
-| `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. Re-armed on every inbound audio frame (`resetIdle`), so it measures silence, not call length. On expiry session-core emits `idle_timeout` **and closes the socket** — the event alone retires nothing (clients treat it as informational and wait for the close), so for a long time an idle session lingered and only Modal's 300s input cap reaped it. |
+| `idleTimeoutMs` | 300,000 (5 min) | `constants.ts` | `0` or non-finite disables the timer entirely. Re-armed on every inbound audio frame (`resetIdle`), so it measures silence, not call length. On expiry session-core emits `idle_timeout` **and closes the socket** — the event alone retires nothing. |
 | `silenceTimeoutMs` | unset (disabled) | `pipeline-silence.ts` | Pipeline only: assistant proactively takes a turn after this much user silence. Capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back nudges until the user speaks again. `silencePrompt` customizes the injected instruction (default `DEFAULT_SILENCE_PROMPT`); it is kept in LLM history but never emitted as a user transcript. |
 | `minBargeInWords` | 2 (`DEFAULT_MIN_BARGE_IN_WORDS`) | `constants.ts` | Pipeline only: interim-transcript words before user speech interrupts the in-flight reply. 2 keeps one-word backchannels from cutting the agent off; sub-threshold finals are answered after the reply. |
 | `interruptionMinDurationMs` | 500 (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`) | `constants.ts` | Pipeline only: sustained speech (ms since the utterance's first partial) required before an interim-triggered barge-in fires — LiveKit's `min_interruption_duration` analog. Non-zero by default: room noise and echo of the agent's own voice produce short interim transcripts, and each one used to abandon a reply mid-word. Finals are never gated. 0 disables. |
-| AssemblyAI `min_turn_silence` / `max_turn_silence` | 1600 / 3500 (`DEFAULT_MIN_TURN_SILENCE_MS`, `DEFAULT_MAX_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | **Two knobs, not one, and the pause-tolerance one is the MAX.** On Universal-3.5 Pro the minimum is when the model runs its end-of-turn CHECK: the turn ends only if it READS as complete, otherwise a partial is emitted and the turn stays open. The maximum force-ends regardless of content. So the minimum is the latency floor on every finished utterance, while the maximum is paid only by utterances that never read complete. Both are always sent, because the service defaults them independently (min from the `mode` preset — 128/128/800 for `min_latency`/`balanced`/`max_accuracy` — and max to **1536**), and sending only one is how they invert. That inversion is the bug this pair replaced: the minimum was raised 1500 -> 2000 -> 3000 chasing Full-Duplex-Bench v3's hesitation recording while the maximum was never set, so from 2000 on the check could not fire before the content-blind force-end at 1536 had closed the turn — every ending came from the acoustic fallback, which is the mechanism that splits utterances, and the 3000 step changed nothing while taxing every complete utterance ~3s. The two knobs guard opposite splits, so the minimum must clear the pause BETWEEN sentences and BETWEEN dictated characters, while the maximum clears the pause WITHIN one continuous thought. **The rest of the evidence lives in `sdk/endpointing-constants.ts`'s module doc** — the 800 and 3000 reverts, the 600-2000 sweep that puts the knee at 1600, why a pause histogram is the wrong instrument, and the measured no-ops (`interruption_delay`, `mode`, ~470 ms to first partial being a model floor). Moved there when this guide hit its size cap; read it before changing either number rather than re-deriving it. Override via `assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })`. |
-| AssemblyAI `voice_focus` / `voice_focus_threshold` | `near-field` / 0.9 (`DEFAULT_VOICE_FOCUS_THRESHOLD`) | `host/providers/stt/assemblyai.ts` | **Both are always sent together; the threshold is above the service's own 0.7.** The interferer this tunes for is background SPEECH — a television, a radio, another conversation — and that is why no VAD setting substitutes: Voice Focus suppresses background audio BEFORE the model sees it while `vad_threshold` gates frames after, and those frames legitimately *are* speech, so a frame gate cannot tell "a voice" from "the caller's voice". The symptom reads as a hallucinating model and is not one: fluent, well-formed English the caller never said, in the register of whatever was playing behind them, prepended to their real utterance. **0.9 is measured** — tau2-bench retail, four sessions replayed byte-identical through the live service at 8 kHz telephony with a TV news bed at 15 dB SNR (`medium_size_room_tv_news_iphone_mic.wav`): against the service default, background words fell 32% -> 18% of all words heard, caller-speech recall rose 51% -> 70%, and the name/ZIP gating authentication survived 12/12 utterances against 9/12. At the default one authentication turn came back as "And we're getting that live look from the estuary here in Chaplin" and the tool call built from it was garbage. **`vad_threshold` was swept in the same harness and loses in BOTH directions**, which is why it stays unset: 0.6 cut leakage to 15% but collapsed recall to 51% and took key facts *below* baseline (8/12), because the caller's quiet spelled letters are exactly what a stricter gate discards; 0.05-0.20 left recall flat at 70-71% (voice focus had already saturated it) while leakage rose 19% -> 27%, buying one recovered utterance — the content-free "Still waiting." — for five words of traffic report. `far-field` is much worse here (44% leakage; it amplifies the room, which is where the interfering speech is), and disabling Voice Focus is catastrophic rather than a fallback: recall collapsed to 4% with ONE end-of-turn in 232 s, because continuous background speech never leaves enough silence to endpoint — so a suppression regression surfaces as a turn-taking failure, not a transcription one. Override via `assemblyAIStt({ voiceFocus, voiceFocusThreshold })`; the threshold is omitted entirely when voice focus is off. |
+| AssemblyAI `min_turn_silence` / `max_turn_silence` | 1600 / 3500 (`DEFAULT_MIN_TURN_SILENCE_MS`, `DEFAULT_MAX_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | **Two knobs, not one, and the pause-tolerance one is the MAX.** The minimum is when the model runs its end-of-turn CHECK (the turn ends only if it READS as complete), so it is the latency floor on every finished utterance; the maximum force-ends regardless of content and is paid only by utterances that never read complete. Both are always sent, because the service defaults them independently and sending only one is how they invert — the bug this pair replaced, where raising the minimum past the unset maximum's 1536 made every ending come from the acoustic fallback that splits utterances. **The evidence lives in `sdk/endpointing-constants.ts`'s module doc** — the 800 and 3000 reverts, the 600-2000 sweep that puts the knee at 1600, why a pause histogram is the wrong instrument, and the measured no-ops (`interruption_delay`, `mode`, ~470 ms to first partial being a model floor). Read it before changing either number rather than re-deriving it. Override via `assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })`. |
+| AssemblyAI `voice_focus` / `voice_focus_threshold` | `near-field` / 0.9 (`DEFAULT_VOICE_FOCUS_THRESHOLD`) | `host/providers/stt/assemblyai.ts` | **Both are always sent together; the threshold is above the service's own 0.7.** The interferer this tunes for is background SPEECH, and the symptom reads as a hallucinating model and is not one. **`DEFAULT_VOICE_FOCUS_THRESHOLD`'s doc owns the evidence** — why no VAD setting substitutes (suppression before the model vs. a frame gate after it), the 15 dB SNR tau2-bench measurement behind 0.9, why `far-field` is much worse, and why disabling Voice Focus surfaces as a TURN-TAKING failure rather than a transcription one. What it does not carry is the **`vad_threshold` sweep run in the same harness, which loses in BOTH directions** — which is why that knob stays unset: 0.6 cut leakage to 15% but collapsed recall to 51% and took key facts *below* baseline (8/12), because the caller's quiet spelled letters are exactly what a stricter gate discards; 0.05-0.20 left recall flat at 70-71% (voice focus had already saturated it) while leakage rose 19% -> 27%, buying one recovered utterance — the content-free "Still waiting." — for five words of traffic report. Override via `assemblyAIStt({ voiceFocus, voiceFocusThreshold })`; the threshold is omitted entirely when voice focus is off. |
 | Deepgram `endpointing` | 1500 (`DEFAULT_DEEPGRAM_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Same role as `min_turn_silence` above — the provider owns end-of-turn; override via `deepgram({ endpointing })`. |
 | `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |
-| `deadAirCoverMs` (dead-air cover) | 5000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream-parts.ts` | Pipeline only, **ON by default**: a turn that sends nothing to TTS for this long gets a short filler — `DEAD_AIR_OPENING_PHRASE` when nothing has reached the caller yet this turn, then `DEAD_AIR_COVER_PHRASES` cycled, with the wait doubling each time up to `DEAD_AIR_COVER_MAX_MS`. Armed as the turn's stream opens and re-armed across every tool call, so it covers the pre-first-token gap as well as the chain; `deadAirCoverMs: 0` disables it. **It used to be silently disabled in the shipped default**: the enable was `holdPhrase.length > 0` and `holdPhrase` had been defaulted to `""`, so one knob turned off two mechanisms and no spec noticed (the harness named a phrase, the fuzz set `""`). **The long-chain findings govern this knob, not the TTFT one.** Cover pays out only after measured silence, so it is justified by the gaps that actually happen: 15-24s tool chains on tau2-bench retail, and 31.4s of silence after a committed user turn with gpt-5.5 ended only by the first tool call. LLM time-to-first-text (p50 **1.10s** / mean 1.42s, tau2 retail) is the reason nothing is spoken at t=0 instead — the ordinary opening gap is a pause, not dead air, and covering it would cost the eight-word first sentence the voice rules reserve for the answer (interruption rate 17% under 10 words rising to 59% past 35). **Must stay above the MEDIAN tool turn**: at 2000 it sat under the ordinary case and fired on 93% of tool turns (EVA airline run, `pretoolspeech_rate` 0.933, tool turns averaging 6.24s), twice on the longest — converting a latency problem into `verbosity_or_filler_rate` 0.38 and `redundant_statements_rate` 0.60. There is no measured value between 2000 and 5000. **Cover phrases must also be purely declarative**, never a request for patience: filler goes into an open mic, so "Still working on that." drew "All right, I'll hold" from the caller, which barged in, and the agent was still answering it two turns later after the caller had said goodbye. `DEAD_AIR_OPENING_PHRASE`'s wording is a judgement call satisfying that rule, not a measurement — which is why "One moment." was not simply moved here. The fillers are emitted `record: false`: they reach TTS and the INTERIM transcript so the caption matches the audio, and never `onDelta`, so they stay out of history, `ctx.messages`, resume and the STT agent-context hint. That flag has a SECOND consumer now — the heard cursor (`pipeline-heard.ts`) carries it through to the TTS send so filler moves the heard position (it is audible) without ever being truncatable into the record; see "History records what was HEARD". **The prompt no longer asks for a holding line either** — see `PROMPT_TOOLS`, which records the 15% -> 43% -> 29% measurement that retired it. |
-| `resumeFalseInterruption` | `true` | `pipeline-transport-options.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn. `false` disables. **It is a boolean because the WAIT cannot be an author knob.** The resume fires when the transcript stream goes quiet with no committed final — the speaking edge's idle watchdog, `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (4000, internal) — and nothing shorter is safe: this was a `falseInterruptionTimeoutMs: number` defaulting to 2000, measured from roughly the same instant as the STT's `min_turn_silence`, so EVERY genuine barge-in raced its own resume and the resume won often enough to be the common case. Each one cost a billed LLM turn, put "the user did not actually say anything" in history directly ahead of the real user turn, and (TTS time-to-first-audio ~350ms) made the caller hear the agent continue the reply they had just interrupted. The floor on the deadline is the STT's endpointing plus final-emission latency, which the transport cannot see — it receives an already-resolved `SttOpener` — and the ceiling is patience (at 5000 a reply cut by noise resumed almost six seconds later, which reads as a dropped call), so there is no useful range to expose. The old number never governed anything anyway: a probe at `falseInterruptionTimeoutMs: 3` resumed at ~3500ms. A mid-turn cut resumes from the `[interrupted]` history marker (`DEFAULT_FALSE_INTERRUPTION_PROMPT`) only when no cut point is known; otherwise, and always for a cut during the client playback tail, the prompt quotes the estimated last-heard words (`buildTailResumePrompt`) — measured, resuming from the marker instead repeated 60%+ of the words in 10% of consecutive agent utterances, because TTS runs behind the text. That anchor is now the SAME cursor history is truncated with (`pipeline-heard.ts`), so it can never name words the record denies, and it is word-accurate wherever the TTS provider reports timings. A tail cut with less than `TAIL_RESUME_MIN_UNHEARD_MS` unheard arms nothing. |
-| `preemptiveGeneration` | `false` | `pipeline-speculation.ts` | Pipeline only, **OFF by default because it was finally measured.** Starts the reply from a high-confidence STT INTERIM (`SttTurnMeta.endOfTurnConfidence` >= `PREEMPTIVE_CONFIDENCE_THRESHOLD`, 0.9) and ADOPTS that running stream when the committed final says the same thing. It shipped ON and unmeasured, and this row used to name the two measurements owed. The first — the `headStartMs`/adoption-rate log (`Pipeline speculation adopted` at info, discards at debug) — was collected over a tau2-bench retail run and settles it: **16 speculations started, 14 adopted at a p50 0.44s head start, and 5 of those 14 (36%) POISONED AFTER ADOPTION** by a tool call, which is unusable whole, so `consumeLlmStream` discards the generation and reissues the request — each having burned p50 0.69s (p90 1.34s) first. Netted out that is 9 turns at +0.44s against 5 at -0.69s: **+0.51s across 68 caller turns, +8ms each**, beside a p50 first word of ~1.0s and a p90 of 6.6s. For that it issued 16 requests and threw away 7 (**44%**), and it widens the turn-serialization bound since a speculation runs outside the turn chain. The 36% that lose are the TOOL-CALLING turns, already the slow ones. **A `hasText()` adoption gate was tried and reverted the same day**, and the reason generalises: the head start (0.44s) is SHORTER than LLM time-to-first-token (p50 1.10s), so at `take()` the speculation has generated *nothing* and such a gate rejects essentially every adoption — the wasted request with none of the benefit, strictly worse than off. Whether the first part is text or a tool call is not knowable at adoption time; that is the shape of the feature. The two structural guardrails are unchanged and are what made ON survivable: no speculative speech (`createStreamPartHandler` is the only path to `sendTtsText` and is built only inside `consumeLlmStream`) and no speculative tool execution (`toDeclaredTools` omits `execute`, so a speculation reaching a tool call is discarded WHOLE, preamble included). Match rule `normalizeUtterance(final) === normalizeUtterance(partial)`; an extension, truncation or revision all discard. Sawtooth rules: a differing partial aborts at once, identical text at rising confidence never re-fires, at most `MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE` (2) per utterance. Inert unless `toolChoice` is `"auto"`/`"none"`. **Turning it back on wants a case where the arithmetic differs** — a text-heavy agent (36% poison is a tool-calling agent's number) or a longer head start from later endpointing — plus the second measurement still owed: a tau2-bench run at the same tasks and seed showing no reward regression. The default is pinned twice (`pipeline-transport-options.test.ts` at the resolver, `pipeline-preemption.test.ts` end-to-end) so a flip either way is a deliberate edit. A speculation must never call `emitError` — it has no reply the client knows about. |
-| `HEARD_AUDIO_LAG_MS` | 750 ms | `pipeline-heard.ts` | Pipeline only, internal (no agent field; the transport takes a `heardLagMs` for tests). How far behind the "audio forwarded" bookkeeping the caller's ear is — subtracted from the estimated playback position to get the cursor that decides what an interrupted reply records and where the resume anchor sits. **DERIVED, not measured**: `PLAYBACK_JITTER_MS` (400) plus an assumed sub-second network hop, the same decomposition `PIPELINE_PLAYBACK_GRACE_MS` states for the same delay with the opposite sign. It is a second constant precisely so tuning the grace for barge-in robustness (where erring late is harmless) cannot silently drop more words from the record (where erring either way costs). See "History records what was HEARD". |
-| `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. **The LLM view is trimmed by `capLlm`, not `cap`** (`pipeline-history.ts`): that view holds tool-call/result PAIRS, and an index trim can land between an assistant `tool-call` message and the `tool` message answering it. Both providers reject an unmatched tool result outright (OpenAI: "messages with role 'tool' must be a response to a preceding message with 'tool_calls'"), so every remaining turn of the call failed at the provider and the caller heard `errorPhrase` instead of a reply. Turn sizes vary — 2 messages for a text-only turn, 4 for one tool call, more for a chain — so the window drifts out of alignment with turn boundaries on its own; nothing about the conversation has to be unusual. Only the FRONT is trimmed, so dropping leading `tool` messages is sufficient. A uniform turn size hides the whole class: 4 divides 200, so every trim lands on a turn boundary. |
-| resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's slot state survives awaiting a `?sessionId=<id>` resume — the session-state store's sweep (in-guest on the platform, in-process under `aai dev`) waits it out, cancelled when the session resumes. Sized above the browser client's worst-case automatic-reconnect span (~105s); the client reconnects with the sessionId from the `config` frame, so the resumed session finds its state under the same key. It bounds the IN-PROCESS half only: a durable value outlives it and is reclaimed by the platform's TTL sweep (`aai-server/_session-state-sweep.ts`), because an agent guest that self-exits on idle can reclaim nothing. |
-| `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (empty) | `constants.ts` | NO built-ins are enabled by default — omitting the field and passing `[]` mean the same thing, and every built-in (`think`/`remember`/`recall`/`calculate` as much as `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code`) is opt-in by name. A custom or relayed tool with the same name wins — the built-in is dropped. This row read "`think`, `remember`, `recall`, `calculate` … on by default" long after the constant went empty; the constant is `as const satisfies` now so the emptiness is a type-level fact. |
+| `deadAirCoverMs` (dead-air cover) | 5000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream-parts.ts` | Pipeline only, **ON by default**: a turn that sends nothing to TTS for this long gets a short filler, armed as the turn's stream opens and re-armed across every tool call so it covers the pre-first-token gap as well as the chain; `0` disables. **It used to be silently disabled in the shipped default** — the enable was `holdPhrase.length > 0` and `holdPhrase` had been defaulted to `""`, so one knob turned off two mechanisms and no spec noticed. **Why 5000 rather than 2000 or t=0 is argued on `DEFAULT_DEAD_AIR_COVER_MS`**, and **`DEAD_AIR_COVER_PHRASES` owns the rule that a phrase must be purely declarative**, with the call it derailed. The fillers are emitted `record: false`: they reach TTS and the INTERIM transcript so the caption matches the audio, and never `onDelta`, so they stay out of history, `ctx.messages`, resume and the STT agent-context hint. That flag has a SECOND consumer — the heard cursor (`pipeline-heard.ts`) carries it through to the TTS send so filler moves the heard position (it is audible) without ever being truncatable into the record. **The prompt no longer asks for a holding line either** — see `PROMPT_TOOLS`, which records the 15% -> 43% -> 29% measurement that retired it. |
+| `resumeFalseInterruption` | `true` | `pipeline-transport-options.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn. `false` disables. **It is a boolean because the WAIT cannot be an author knob** — it fires when the transcript stream goes quiet with no committed final (the speaking edge's idle watchdog, `DEFAULT_SPEECH_IDLE_TIMEOUT_MS`, 4000, internal), and the rule is stated on `PipelineVoiceTuning.resumeFalseInterruption`. Nothing shorter is safe: this was a `falseInterruptionTimeoutMs: number` defaulting to 2000, measured from roughly the same instant as the STT's `min_turn_silence`, so EVERY genuine barge-in raced its own resume and the resume won often enough to be the common case — each costing a billed LLM turn, putting "the user did not actually say anything" in history directly ahead of the real user turn, and making the caller hear the agent continue the reply they had just interrupted. The floor on the deadline is the STT's endpointing plus final-emission latency, which the transport cannot see, and the ceiling is patience, so there is no useful range to expose; the old number never governed anything anyway (a probe at `falseInterruptionTimeoutMs: 3` resumed at ~3500ms). A mid-turn cut resumes from the `[interrupted]` history marker only when no cut point is known; otherwise the prompt quotes the estimated last-heard words (`buildTailResumePrompt`) — measured, resuming from the marker instead repeated 60%+ of the words in 10% of consecutive agent utterances. That anchor is the SAME cursor history is truncated with (`pipeline-heard.ts`), so it can never name words the record denies. |
+| `preemptiveGeneration` | `false` | `pipeline-speculation.ts` | Pipeline only, **OFF by default because it was finally measured.** Starts the reply from a high-confidence STT INTERIM (`SttTurnMeta.endOfTurnConfidence` >= `PREEMPTIVE_CONFIDENCE_THRESHOLD`, 0.9) and ADOPTS that running stream when the committed final says the same thing. **The whole measurement is on `PipelineTransportOptions.preemptiveGeneration` (`pipeline-transport-options.ts`) and restated for authors on `PipelineVoiceTuning` (`sdk/agent-voice-tuning.ts`)** — the 16/14/0.44s head start, the 36% poisoned after adoption, the +8ms net per caller turn for 44% of requests thrown away, the `hasText()` adoption gate that was tried and reverted the same day, and the second measurement (a tau2-bench run showing no reward regression) still owed before it goes back on. What lives only here: the two structural guardrails that made ON survivable — no speculative speech (`createStreamPartHandler` is the only path to `sendTtsText` and is built only inside `consumeLlmStream`) and no speculative tool execution (`toDeclaredTools` omits `execute`, so a speculation reaching a tool call is discarded WHOLE, preamble included) — the match rule `normalizeUtterance(final) === normalizeUtterance(partial)` (an extension, truncation or revision all discard), the sawtooth rules (a differing partial aborts at once, identical text at rising confidence never re-fires, at most `MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE` (2) per utterance), inertness unless `toolChoice` is `"auto"`/`"none"`, the double pin of the default (`pipeline-transport-options.test.ts` at the resolver, `pipeline-preemption.test.ts` end-to-end) so a flip either way is a deliberate edit, and that a speculation must never call `emitError` — it has no reply the client knows about. |
+| `HEARD_AUDIO_LAG_MS` | 750 ms | `pipeline-heard.ts` | Pipeline only, internal (no agent field; the transport takes a `heardLagMs` for tests). How far behind the "audio forwarded" bookkeeping the caller's ear is — subtracted from the estimated playback position to get the cursor that decides what an interrupted reply records and where the resume anchor sits. **DERIVED, not measured**, and its own doc says why it is a SECOND constant rather than a reuse of `PIPELINE_PLAYBACK_GRACE_MS`. See "History records what was HEARD". |
+| `maxHistory` | 200 | `constants.ts` | Sliding window of conversation messages retained. **The LLM view is trimmed by `capLlm`, not `cap`** (`pipeline-history.ts`): that view holds tool-call/result PAIRS, and an index trim can land between an assistant `tool-call` message and the `tool` message answering it. Both providers reject an unmatched tool result outright, so every remaining turn of the call failed at the provider and the caller heard `errorPhrase` instead of a reply. Turn sizes vary — 2 messages for a text-only turn, 4 for one tool call, more for a chain — so the window drifts out of alignment with turn boundaries on its own; nothing about the conversation has to be unusual. Only the FRONT is trimmed, so dropping leading `tool` messages is sufficient. A uniform turn size hides the whole class: 4 divides 200, so every trim lands on a turn boundary. |
+| resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's slot state survives awaiting a `?sessionId=<id>` resume; the constant's doc carries the ~105s client-reconnect span it is sized against. It bounds the IN-PROCESS half only: a durable value outlives it and is reclaimed by the platform's TTL sweep (`aai-server/_session-state-sweep.ts`), because an agent guest that self-exits on idle can reclaim nothing. |
+| `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (empty) | `constants.ts` | NO built-ins are enabled by default — omitting the field and passing `[]` mean the same thing, and every built-in is opt-in by name. A custom or relayed tool with the same name wins. **The constant's doc carries the evidence that argues the OTHER way** (the reverted trim to `["calculate"]`, the tau2 measurement where the model invoked neither `think` nor `calculate`, the prompt-size cost) and should have to be answered by any change. This row read "`think`, `remember`, `recall`, `calculate` … on by default" long after the constant went empty; it is `as const satisfies` now so the emptiness is a type-level fact. |
 
 ## Provider sockets disable permessage-deflate
 
@@ -1154,152 +1167,42 @@ re-checking if one of them shows unexplained per-session memory.
 ## Self-hosted server defaults (`aai/host/server.ts`)
 
 `createServer` has no request authentication of its own — it is the `aai dev`
-backend, not the managed platform. Two defaults exist because of that, and
-both are fail-closed:
+backend, not the managed platform — so two defaults are fail-closed: it **binds
+loopback** (`127.0.0.1`; pass `"0.0.0.0"` deliberately, and `aai dev` exposes
+`AAI_DEV_HOST` for setups where loopback isn't reachable), and **host mode is
+opt-in** behind an explicit `AAI_ALLOW_HOST`. `createHostServer`
+(`host/host-server.ts`) is the host-only server in one call; its module doc
+carries the three ways the hand-rolled version was wrong.
 
-- **Binds loopback.** `listen(port, host = DEFAULT_LISTEN_HOST)` defaults to
-  `127.0.0.1`. Pass `"0.0.0.0"` deliberately to expose it; binding every
-  interface by default put a developer's agent (and the provider credentials
-  behind it) in reach of anyone on the same network. `aai dev` exposes this as
-  `AAI_DEV_HOST` for setups where loopback isn't reachable (e.g. running in a
-  container and connecting from the host).
-- **Host mode is opt-in.** A `?host=1` WebSocket lets the *client* supply the
-  agent definition (`systemPrompt`, `greeting`, relayed tool schemas) while the
-  session runs on the operator's credentials, so `isHostAllowed` requires an
-  explicit `AAI_ALLOW_HOST` of `1`/`true`/`yes`/`on`. Unset means off.
-  Harnesses (e.g. tau2) set it themselves. Note `resolveServerEnv` only
-  surfaces keys declared in `.env`, so `aai dev` passes the shell value through
-  explicitly (`hostModeEnv`) — otherwise exporting the variable the usual way
-  would have no effect.
-- **A host client may bring its own provider credentials**, and that is what
-  makes a host server safe to expose self-serve. The handshake's `credentials`
-  record (keyed by env var name) is merged over the server's env for that one
-  connection and WINS on conflict, so a server holding only `AAI_ALLOW_HOST`
-  runs every session on the caller's key — an unauthenticated client then has
-  no operator credential to spend, because there is none. Substituting a key
-  you own is not an escalation: it spends your quota and reveals nothing about
-  the operator's. `createHostServer` (`host/host-server.ts`) is that server in
-  one call and `examples/host-server` is the runnable shape.
-
-  **`createHostServer` exists because the three-line version was wrong three
-  ways.** Standing up a host-only server on `createServer` directly meant
-  remembering `AAI_ALLOW_HOST` (a stringly-typed flag guarding the only thing
-  the server does), inventing a placeholder `agent()` whose prompt is never
-  read just to carry provider descriptors, and hand-rolling a `SessionRuntime`
-  facade to decline the plain `/websocket` sessions it cannot serve. The
-  wrapper does all three once; `defaults` is the only knob, and it is typed to
-  exclude the four fields the handshake owns. Note the placeholder agent was
-  never needed even before the wrapper — see the `buildHostAgent` correction
-  below.
-
-  **The allowlist is load-bearing, not tidiness.** Names are screened against
-  `ALL_PROVIDER_ENV_VARS` — the same vocabulary bounding
-  `withHostCredentialFallback`, for the same reason. This record is merged into
-  the env the per-connection runtime is built from, and that env is read for
-  far more than provider keys: unbounded, a client sets `DATABASE_URL` and the
-  server opens `ctx.db` against a Postgres it controls, or sets
-  `AAI_ALLOW_HOST` and self-approves. So the gate is checked against the
-  SERVER's env before the merge, never the merged one. Unknown names are
-  REJECTED by name rather than dropped — a silent drop turns a typo
-  (`ASSEMBLYAI_KEY`) into a baffling provider-resolution failure two layers
-  down, and turns a genuine smuggling attempt into something the operator never
-  hears about.
-- **A host session with no base agent runs the DEFAULT PIPELINE, not S2S.**
-  `buildHostAgent`'s doc comment claimed the opposite until 2026-08 — it
-  predated the pipeline-by-default flip, and S2S has required an explicit `s2s`
-  descriptor ever since (see "Never let S2S be a fallback"). With no
-  `hostBaseAgent`, `createRuntime` fills all three stages from the
-  all-AssemblyAI pipeline, so one caller-supplied `ASSEMBLYAI_API_KEY` covers
-  STT, the LLM gateway and TTS. The stale comment had a real cost: it is what
-  made a placeholder `agent()` look mandatory on every host server.
-
-- **Host-mode audio pacing is the CLIENT'S declaration, and it defaults to
-  paced** (`HostConfig.audioLeadMs`: omitted = the pacer's real-time
-  `CLIENT_AUDIO_LEAD_MS`, a number = that lead, `null` = unpaced).
-
-  Unpaced used to be the blanket default, on the reasoning that a host-mode
-  client is programmatic and therefore keeps its own clock. That conflates two
-  different things: being programmatic does not mean consuming FASTER than the
-  wall clock, and only a client whose timeline runs ahead is starved by pacing.
-  For a client that drains at 1x it is destructive, because in S2S mode the
-  service synthesises a whole reply server-side and it arrives in one burst
-  (measured: up to 1118 audio frames in one tau2 tick, against 205 on the
-  pipeline transport, whose per-sentence TTS flush paces it inherently). tau2
-  plays 200ms per tick and buffers the rest, so the backlog grew to MINUTES — and
-  it DISCARDS that buffer on barge-in, so 36% of all agent audio was destroyed
-  unheard, p99 181s and max 272s per barge-in on a 215s call, against 18-23% and
-  a 15s max for the pipeline arms. The caller heard a fraction of the replies and
-  kept asking "are you still there?"; the S2S arm completed a reply for 0.53 of
-  caller turns where the pipeline managed 1.00, and 18% of its sessions completed
-  no reply at all. Pacing keeps the backlog on OUR side, where
-  `PacedAudioSink.clear()` drops it on barge-in instead of handing it over to be
-  thrown away.
-
-  So tau2 is not the case unpaced was written for: its `_async_run_tick` enforces
-  a MINIMUM tick duration, so it never runs ahead of the wall clock (measured
-  mean 315ms per 200ms tick — 0.63x real time). Reach for `null` only for a
-  harness that genuinely steps faster than real time.
+**The rest — why a host client may bring its own provider credentials and what
+makes that safe to expose self-serve, the `ALL_PROVIDER_ENV_VARS` allowlist and
+why the gate is checked against the SERVER's env before the merge, the
+`buildHostAgent` correction (a host session with no base agent runs the DEFAULT
+PIPELINE, not S2S), and the host-mode audio pacing measurement — is in
+`packages/aai-cli/CLAUDE.md`, "Running the SDK's own server (`aai dev` and host
+mode)".** It went there when this guide hit its size cap; `aai dev` is the
+server's principal caller and the CLI owns `AAI_DEV_HOST`, `hostModeEnv` and
+`resolveServerEnv`.
 
 ## Telephony: a phone call is an ordinary session
 
-`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
-stream — Twilio Media Streams, Telnyx media streaming — and runs it as an
-ordinary session. `createServer` serves it by default, so `aai dev`, a
-self-hosted server and every deployed agent all answer phone calls with no
-per-agent configuration. The platform half (the TwiML webhook that points a
-carrier here) is in `packages/aai-server/CLAUDE.md`.
-
+`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media stream —
+Twilio Media Streams, Telnyx media streaming — and runs it as an ordinary
+session. `createServer` serves it by default, so `aai dev`, a self-hosted server
+and every deployed agent all answer phone calls with no per-agent configuration.
 **Nothing in the session stack knows about telephony, and that is the whole
-design.** `SessionCore` talks to a `ClientSink`; `wireSessionSocket` talks to
-a `SessionWebSocket`. So the adapter is a socket-shaped SHIM
-(`createTelephonyBridge`) that speaks the client protocol on one side and the
-carrier's JSON framing on the other, handed straight to
-`runtime.startSession`. Turn-taking, barge-in, tool calls, the audio pacer and
-its ordering rules, session eviction, keepalives, start timeouts and teardown
-are not reimplemented for phone — a call gets them because it runs the same
-code the browser does. Resist adding a telephony branch anywhere below the
-bridge; if one seems necessary, the bridge is the wrong shape.
+design**: the adapter is a socket-shaped SHIM (`createTelephonyBridge`) speaking
+the client protocol on one side and the carrier's JSON framing on the other,
+handed straight to `runtime.startSession`. Resist adding a telephony branch
+anywhere below the bridge; if one seems necessary, the bridge is the wrong shape.
 
-Four things that are easy to get wrong here, each of which was a decision:
-
-- **Pacing stays ON.** A carrier accepts audio far faster than it plays it and
-  buffers the rest — exactly the shape that made unpaced host-mode sessions
-  destroy 36% of all agent audio (see "Host-mode audio pacing" above): the
-  backlog builds on the FAR side, where `PacedAudioSink.clear()` cannot reach
-  it. So the bridge sets no `audioLeadMs` and a barge-in additionally sends the
-  carrier's own `clear` frame, which is the only way to drop what it already
-  holds. Without that frame the caller talks over an agent that keeps speaking
-  for seconds after being interrupted.
-- **The rates are LEARNED from the `config` frame**, not configured. The first
-  thing any runtime sends a session is `{ sampleRate, ttsSampleRate }`, so the
-  bridge builds its converters from that — which lets one adapter serve a
-  16 kHz pipeline agent and a 24 kHz S2S agent, and avoids plumbing a rate
-  through `createServer`, whose runtime is a LAZY facade in the guest harness
-  and cannot answer a rate question before the first session exists.
-- **Downsampling must low-pass first** (`telephony/resample.ts`). Decimating
-  24 kHz TTS to 8 kHz without it folds everything above 4 kHz back into the
-  speech band; measured, a 6 kHz tone lands at 2 kHz at FULL amplitude. It
-  reads as a poor phone line rather than as a defect, which is how it ships.
-  Upsampling needs no filter — the carrier already band-limits to ~3.4 kHz.
-  Both converters are STATEFUL and must stay so: rebuilt per 20 ms chunk they
-  put a click at every boundary, 50 a second.
-- **This does not contradict "the host does not resample"** (see the S2S
-  section). That rule says rate conversion belongs at the EDGE, because every
-  client owns its own rate and asking it to send the advertised one is cheaper
-  and more honest. A carrier is the one client that cannot comply — 8 kHz
-  μ-law is what the PSTN carries — and the bridge IS the edge. The rule put
-  the conversion exactly here.
-
-Adding a carrier is one `CarrierCodec` in `telephony/carriers.ts` and nothing
-else. Two properties they all owe: decoding NEVER throws (a carrier is free to
-add frame types, and a throw off a socket event takes the host down mid-call),
-and a media frame on a non-`inbound` track is DROPPED — a both-tracks stream
-otherwise transcribes the agent as the caller and every reply reads as a
-barge-in against itself.
-
-**Known gaps**, both deliberate: no `mark` frames, so `playback_progress` is
-unused and the pipeline falls back to its open-loop estimate; and DTMF is
-ignored rather than surfaced as a custom event.
+**Both halves of the phone-call surface are documented together in
+`packages/aai-server/CLAUDE.md`, "Telephony"** — the platform's TwiML webhook
+route beside the four SDK-side decisions this guide used to carry (why pacing
+stays ON and a barge-in sends the carrier's own `clear` frame, why the rates are
+LEARNED from the `config` frame, why downsampling must low-pass first, and why
+none of that contradicts "the host does not resample"), plus the two properties
+every `CarrierCodec` owes and the two deliberate gaps.
 
 ## Pipeline-transport interleaving fuzz
 
@@ -1316,53 +1219,60 @@ discovery and regression are separate jobs, what the generator produces, the
 `preemptiveGeneration` arm's two honest limits, and why the coverage floors are
 hand-rolled. Read it there; do not restate it here.
 
+## Specs that observe a timer
+
+**A spec that observes a TIMER runs on virtual time, never the wall clock.**
+The pipeline-transport specs used to wait out real milliseconds
+(`await sleep(60)`) to see whether a window had elapsed, which cost ~2.3s of
+the unit run and, far worse, made them races: they were the specs that failed
+first on a contended runner, and the flake named a timing spec rather than a
+bug. It also capped what a spec could describe — every window had to shrink
+to tens of milliseconds, so the dead-air cover was exercised at
+`deadAirCoverMs: 1` and the SHIPPED 5s default was tested by nothing.
+`useVirtualTime()` (`transports/_pipeline-transport-harness.ts`) installs
+fake timers per file; drive them with `vi.advanceTimersByTimeAsync(ms)`.
+
+**No scheduler had to be threaded through `PipelineTransportOptions` for
+this, and the note that said otherwise was wrong.** The claim was that fake
+timers could not compose with the fake providers because `_fake-llm.ts`
+schedules its own `setTimeout` for `delayMs` — but that is the GLOBAL
+`setTimeout`, which is exactly what `vi.useFakeTimers()` replaces, so it is
+driven along with everything else. `vi.waitFor` composes too. Check the
+cheap mechanism before building the seam.
+
+Two things virtual time does break, both mechanical: `tick()` is a
+`setTimeout(0)` and hangs until something advances the clock (use
+`vi.advanceTimersByTimeAsync(0)`), and a `vi.waitFor` that polls for work
+gated on a timer still polls in REAL time — prefer advancing by the amount
+the work actually needs, which is deterministic and has no race to lose.
+
+Deliberately NOT converted: `s2s-transport.test.ts`'s five `sleep(5)` calls.
+Those are queue-settle yields, not timer observations — nothing is racing
+them, and rewriting them would be churn.
+
 ## S2S property test
 
 **`aai` has a fast-check PROPERTY TEST over the S2S stack**
 (`host/integration/s2s-fuzz.integration.test.ts` plus `_s2s-fuzz-model.ts`,
 `_s2s-fuzz-harness.ts`, `_s2s-fuzz-commands.ts`; same command, also keyless).
-It differs from the pipeline fuzz twice over — in what it composes, and in how
-it generates.
+**The spec's own module doc and `_s2s-fuzz-model.ts`'s carry the design** — why
+the SOCKET is the only fake (every S2S spec that predates it stubs a
+neighbouring layer, and the bugs it found live in the seams), why nothing here
+uses a TIMER (the hand-rolled walk it replaced could not re-run a
+counterexample, and this one runs in ~150ms), and the ledgers the oracles read.
+Four things worth knowing before adding to it:
 
-- **The only fake is the SOCKET.** `connectS2s` (wire parse + dispatch),
-  `createS2sTransport` (resume, tool-result redelivery, audio suppression) and
-  `createSessionCore` (turn lifecycle, tool execution) all run for real, with
-  a recording `ClientSink` at the far end. That is the point: every S2S spec that
-  predates it stubs out a neighbouring layer (the transport specs mock
-  `connectS2s`, the wire specs mock the callbacks), and all three bugs it found
-  live in the seam BETWEEN layers, with every layer's own suite green.
-- **Model-based COMMANDS, where the pipeline fuzz generates a script.** Both
-  are fast-check; the difference is that legality here lives in each command's
-  `check()` against a model that IS the provider state machine, so an illegal
-  frame is never generated (no audio outside a reply, no `reply.started` while
-  the service awaits a `tool.result`) and a counterexample contains only the
-  commands that ran. Reverting each of the three fixes reproduces it from
+- **Model-based COMMANDS, where the pipeline fuzz generates a script.** Legality
+  lives in each command's `check()` against a model that IS the provider state
+  machine, so an illegal frame is never generated and a counterexample contains
+  only the commands that ran — reverting the three fixes reproduces them from
   `[session.error(rate_limited)]`, `[drop.transient, openSocket,
-  session.error(session_not_found)]`, and `[drop.transient]` — one, three, and
-  one command.
-- **No timers anywhere.** Socket opening and tool settlement are COMMANDS, so
-  when a tool settles relative to a drop is part of the generated plan rather
-  than a race. That is what makes shrinking and replay mean anything: this
-  suite's own first draft awaited real `setTimeout`s, could not re-run its
-  counterexamples, and intermittently reported a finding no rerun could
-  reproduce. It is also why it runs in ~150ms rather than ~50s — the
-  per-command drain is a `setImmediate`, not a ~1ms timer.
+  session.error(session_not_found)]` and `[drop.transient]`.
 - **Three properties, differentiated by a per-run `faultBudget`** (0 / 2 / 3):
-  turns, reconnects, retirement. One combined property cannot serve both ends
-  — at 2 faults per 40 commands a tool call rarely survived to be answered (the
+  turns, reconnects, retirement. One combined property cannot serve both ends —
+  at 2 faults per 40 commands a tool call rarely survived to be answered (the
   central oracle ran 7 times out of 80 executions), and at 0 there are no
   resumes to redeliver across.
-- Oracles: a tool call the service issued gets exactly one `tool.result` (zero
-  leaves the service holding a turn it can never continue — the user hears an
-  agent go silent until the idle timeout); nothing conversational reaches a
-  client that was told the session is over; at most one fatal `connection`
-  error per session, and no socket opened after it; no socket left open after
-  `stop()`; `session.resume` only ever names an id the service issued. The
-  streaming ones live in the harness's sink and THROW, so fast-check shrinks;
-  the end-of-run ones run before `stop()`, which legitimately abandons work.
-- **A resumed session inherits the dead socket's unanswered tool calls** —
-  that is what `session.resume` MEANS, and it is the premise the tool-answer
-  oracle rests on. Stop modelling it and the oracle stops meaning anything.
 - **A finding is only reachable if the run does not excuse it first.** The
   tool-answer exemptions (interrupted turn, client reset, retired session, link
   not ready, a SIBLING call of the same reply still running — results flush per
@@ -1370,16 +1280,17 @@ it generates.
   increments a `skip:<why>` counter and the floors are on the CHECKED counts.
   `toolAnsweredAcrossResume` has been near zero through three separate
   mistakes; it is the floor that stands between a live oracle and a decorative
-  one. `S2S_FUZZ_COVERAGE=1` prints the table.
+  one. `S2S_FUZZ_COVERAGE=1` prints the table. Note a resumed session inherits
+  the dead socket's unanswered tool calls — that is what `session.resume` MEANS,
+  and it is the premise the tool-answer oracle rests on.
 - **The fakes' fidelity is where the false findings came from**, every time.
   Three drafts blamed the transport for behaviour their own fake had invented:
-  a `executeTool` that ignored its abort signal (the real one settles promptly
-  via `pTimeout({ signal })`, so `stop()` was reported as hanging forever), one
-  that ignored an ALREADY-aborted signal (which is exactly what a `tool.call`
-  after a client cancel receives, since `onCancel` aborts the reply without
-  replacing it), and one that rejected where the real executor always RESOLVES
-  with a `serializeToolFailure(...)` string. Check the real collaborator's
-  contract before believing a finding.
+  an `executeTool` ignoring its abort signal (the real one settles promptly via
+  `pTimeout({ signal })`, so `stop()` looked like it hung forever), one ignoring
+  an ALREADY-aborted signal (what a `tool.call` after a client cancel receives),
+  and one that rejected where the real executor always RESOLVES with a
+  `serializeToolFailure(...)` string. Check the real collaborator's contract
+  before believing a finding.
 
 ## Fixture replay testing (`host/`)
 
@@ -1474,15 +1385,15 @@ and each stage's EFFECTIVE SETTINGS — "which transport is this agent on" must
 be answerable from one log line rather than inferred from the shape of the
 message stream (`S2S <<` prefixes).
 
-**Settings, not just kinds** (`host/providers/_provider-settings.ts`). The
-kind alone (`stt: "assemblyai"`) names the vendor and nothing that decides
-behaviour, and on this codebase almost every such value is a DEFAULT nobody
-wrote down: the endpointing pair, the Voice Focus threshold, the connect
-budget, the gateway model id and its `reasoningEffort`, the TTS voice. Those
-are exactly what a bad session gets blamed on — a split utterance, a mute
-agent, background speech in the transcript — and none of them appeared
-anywhere at startup, so confirming one meant re-deriving the `??` chains by
-hand against a build you hope is deployed. A default pipeline now prints:
+**Settings, not just kinds** (`host/providers/_provider-settings.ts`). The kind
+alone (`stt: "assemblyai"`) names the vendor and nothing that decides behaviour,
+and almost every such value here is a DEFAULT nobody wrote down: the endpointing
+pair, the Voice Focus threshold, the connect budget, the gateway model id and
+its `reasoningEffort`, the TTS voice. Those are exactly what a bad session gets
+blamed on — a split utterance, a mute agent, background speech in the transcript
+— and none of them appeared anywhere at startup, so confirming one meant
+re-deriving the `??` chains by hand against a build you hope is deployed. A
+default pipeline now prints:
 
 ```text
 Session mode resolved {
@@ -1495,12 +1406,11 @@ Session mode resolved {
 }
 ```
 
-The defaults come from the SAME `resolve*Settings` function the stage's
-opener dials with (`sdk/providers/**` — pure descriptor data, so this costs
-none of the vendor-SDK load time `lazyOpener` defers), never a second copy of
-the `??` chains: **a settings log that can drift from the wire is worse than
-no log, because it is believed.** A new provider adds its resolver there and
-one entry in the stage table; the tables are per-stage because
-`ASSEMBLYAI_KIND`, `ASSEMBLYAI_TTS_KIND`, `ASSEMBLYAI_LLM_KIND` and
-`ASSEMBLYAI_S2S_KIND` are four different constants all equal to
-`"assemblyai"`.
+The defaults come from the SAME `resolve*Settings` function the stage's opener
+dials with (`sdk/providers/**` — pure descriptor data, so this costs none of the
+vendor-SDK load time `lazyOpener` defers), never a second copy of the `??`
+chains: **a settings log that can drift from the wire is worse than no log,
+because it is believed.** A new provider adds its resolver there and one entry
+in the stage table; the tables are per-stage because `ASSEMBLYAI_KIND`,
+`ASSEMBLYAI_TTS_KIND`, `ASSEMBLYAI_LLM_KIND` and `ASSEMBLYAI_S2S_KIND` are four
+different constants all equal to `"assemblyai"`.

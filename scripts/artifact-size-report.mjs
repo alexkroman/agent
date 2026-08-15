@@ -50,20 +50,11 @@
  */
 
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
+import { publishablePackages, readJson, repoRoot, withPackedTarball } from "./_fs.mjs";
 import {
   REPORT_KIND,
   REPORT_SCHEMA_VERSION,
@@ -71,7 +62,7 @@ import {
 } from "./artifact-size-format.mjs";
 import { renderMarkdown } from "./artifact-size-markdown.mjs";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = repoRoot(import.meta.url);
 
 /**
  * The one bundle that is not a published package: the guest harness.
@@ -124,18 +115,6 @@ function measureTree(dir) {
   return { bytes, files };
 }
 
-/** Publishable packages — the ones without `"private": true`. */
-function publishablePackages() {
-  return readdirSync(join(ROOT, "packages"))
-    .map((dir) => join("packages", dir))
-    .filter((dir) => {
-      const manifestPath = join(ROOT, dir, "package.json");
-      if (!existsSync(manifestPath)) return false;
-      return JSON.parse(readFileSync(manifestPath, "utf8")).private !== true;
-    })
-    .sort();
-}
-
 /**
  * Pack a package and measure the tarball.
  *
@@ -144,21 +123,14 @@ function publishablePackages() {
  * every historical "we shipped the wrong thing" bug lives in that gap.
  */
 function measurePackage(dir) {
-  const manifest = JSON.parse(readFileSync(join(ROOT, dir, "package.json"), "utf8"));
-  const workDir = mkdtempSync(join(tmpdir(), "aai-size-"));
-  try {
-    execFileSync("pnpm", ["pack", "--pack-destination", workDir], {
-      cwd: join(ROOT, dir),
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const tarball = readdirSync(workDir).find((name) => name.endsWith(".tgz"));
-    if (tarball === undefined) throw new Error(`pnpm pack produced no tarball for ${dir}`);
-    const packedBytes = statSync(join(workDir, tarball)).size;
-
+  const manifest = readJson(join(ROOT, dir, "package.json"));
+  // The pack + scratch-directory dance is `_fs.mjs`'s, shared with
+  // `check-publish-protocols.mjs` — the only two things in the repo that pack.
+  return withPackedTarball(join(ROOT, dir), ({ tarball, workDir }) => {
+    const packedBytes = statSync(tarball).size;
     const extractDir = join(workDir, "unpacked");
     mkdirSync(extractDir, { recursive: true });
-    execFileSync("tar", ["-xzf", join(workDir, tarball), "-C", extractDir], { encoding: "utf8" });
+    execFileSync("tar", ["-xzf", tarball, "-C", extractDir], { encoding: "utf8" });
     const unpacked = measureTree(join(extractDir, "package"));
 
     return {
@@ -169,9 +141,7 @@ function measurePackage(dir) {
       fileCount: unpacked.files,
       runtimeDependencies: Object.keys(manifest.dependencies ?? {}).sort(),
     };
-  } finally {
-    rmSync(workDir, { force: true, recursive: true });
-  }
+  });
 }
 
 function measureBundle({ name, path, note }) {
@@ -316,7 +286,7 @@ function main() {
     kind: REPORT_KIND,
     schemaVersion: REPORT_SCHEMA_VERSION,
     bundles: BUNDLES.map(measureBundle),
-    packages: publishablePackages().map(measurePackage),
+    packages: publishablePackages(ROOT).map(measurePackage),
   };
 
   let baselineReport;

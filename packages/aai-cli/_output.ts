@@ -63,8 +63,15 @@ export function ok<T>(data: T): CommandResult<T> {
   return { ok: true, data };
 }
 
-/** Create an error result. */
-export function fail<T>(code: string, error: string, hint?: string): CommandResult<T> {
+/**
+ * Create an error result.
+ *
+ * `CommandResult<never>`, not `CommandResult<T>`: a failure carries no `data`,
+ * so the parameter was inferred as `unknown` at all ten call sites and named
+ * a type this value can never hold. `never` widens into any `CommandResult<T>`
+ * the caller declares, so `return fail(...)` still type-checks everywhere.
+ */
+export function fail(code: string, error: string, hint?: string): CommandResult<never> {
   return hint ? { ok: false, error, code, hint } : { ok: false, error, code };
 }
 

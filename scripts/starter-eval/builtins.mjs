@@ -15,10 +15,20 @@
  *
  *   node scripts/starter-eval/builtins.mjs run.json [more.json ...]
  *
- * Reads the workspaces the harness captured. It captures them for EVERY run,
- * shippable or not, which is what makes these totals rather than a lower
- * bound — the runs that SUCCEEDED are exactly the ones whose unprompted
- * choices the question is about, and the harness used to drop them.
+ * **These are LOWER BOUNDS, and the loop below says so twice** — a row with no
+ * `files["agent.ts"]` is skipped, and the printed caveat repeats it. The header
+ * used to claim the opposite ("captured for EVERY run, shippable or not, which
+ * is what makes these totals rather than a lower bound"), describing a capture
+ * behaviour of `scripts/starter-eval/run.mjs`, which no longer exists — its case
+ * loop moved to `packages/aai-evals/starter.eval.test.ts`. A doc contradicting
+ * both its own code and its own printed caveat is worse than no doc here,
+ * because the numbers decide `DEFAULT_BUILTIN_TOOLS` membership and "total" and
+ * "lower bound" argue in opposite directions: a low unprompted count is evidence
+ * AGAINST a default only if it is a total.
+ *
+ * Making the capture unconditional is the other fix and is not available from
+ * here: whatever produces the run JSON has to do it. If that changes, correct
+ * this paragraph and the caveat below together.
  */
 
 import { readFileSync } from "node:fs";

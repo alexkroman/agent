@@ -50,7 +50,9 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+import { readJson, repoRoot } from "./_fs.mjs";
+
+const ROOT = repoRoot(import.meta.url);
 
 // Caps. Tests get more headroom — exhaustive cases legitimately run long.
 const SOURCE_MAX = 500;
@@ -78,11 +80,9 @@ const TOP = (() => {
 
 let allowlist;
 try {
-  allowlist = JSON.parse(readFileSync(join(ROOT, "scripts", "file-length-allowlist.json"), "utf8"));
+  allowlist = readJson(join(ROOT, "scripts", "file-length-allowlist.json"));
 } catch (err) {
-  console.error(
-    `check-file-length: failed to read/parse scripts/file-length-allowlist.json: ${err.message}`,
-  );
+  console.error(`check-file-length: ${err.message}`);
   process.exit(1);
 }
 

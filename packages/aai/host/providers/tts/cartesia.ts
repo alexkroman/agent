@@ -123,7 +123,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         ws.context({ ...contextOptions, contextId: randomUUID() });
 
       let context = mintContext();
-      const doneLatch = createDoneLatch(shell, () => emitter.emit("done"));
+      const doneLatch = createDoneLatch(shell, () => shell.emit("done"));
       // Defer minting after flush/cancel until next sendText so late audio
       // chunks + Cartesia's real `done` (tagged with the flushed context's id)
       // still pass the filter. Rotating eagerly would drop in-flight audio.
@@ -155,7 +155,10 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         // throwing on a misaligned length.
         const pcm = bytesToPcm16(buf);
         if (pcm.length === 0) return;
-        emitter.emit("audio", pcm);
+        // Through the shell: this fires from inside the SDK's own event
+        // handler, so a listener that throws would escape as an
+        // uncaughtException.
+        shell.emit("audio", pcm);
       });
 
       ws.on("done", (event) => {
@@ -224,9 +227,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           doneLatch.emitOnce();
           rotatePending = true;
         },
-        on(event, fn) {
-          return emitter.on(event, fn);
-        },
+        on: shell.on,
         close: shell.close,
         _ws: ws,
         _currentContextId: () => context.contextId,

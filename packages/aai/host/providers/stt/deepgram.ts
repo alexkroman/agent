@@ -43,21 +43,18 @@ type MessagePayload =
   | listen.ListenV1UtteranceEnd
   | listen.ListenV1SpeechStarted;
 
-function handleMessage(data: MessagePayload, closed: boolean, emitter: Emitter<SttEvents>): void {
-  if (closed || data.type !== "Results") return;
+// Emits through the shell, which owns the closed latch and the throw
+// containment: this fires from inside the SDK's own socket handler, where a
+// listener that throws would escape as an uncaughtException.
+function handleMessage(data: MessagePayload, shell: SessionShell<SttEvents>): void {
+  if (data.type !== "Results") return;
   const text = data.channel?.alternatives?.[0]?.transcript ?? "";
   if (text.length === 0) return;
-  emitter.emit(data.is_final ? "final" : "partial", text);
+  shell.emit(data.is_final ? "final" : "partial", text);
 }
 
-function wireSocketEvents(
-  connection: V1Socket,
-  emitter: Emitter<SttEvents>,
-  shell: SessionShell,
-): void {
-  connection.on("message", (data: MessagePayload) =>
-    handleMessage(data, shell.isClosed(), emitter),
-  );
+function wireSocketEvents(connection: V1Socket, shell: SessionShell<SttEvents>): void {
+  connection.on("message", (data: MessagePayload) => handleMessage(data, shell));
   connection.on("error", (err: Error) => shell.onSocketError(err));
   connection.on("close", (event: { code?: number }) => shell.onSocketClose(event?.code));
 }
@@ -96,7 +93,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
         teardown: () => connection.close(),
       });
 
-      wireSocketEvents(connection, emitter, shell);
+      wireSocketEvents(connection, shell);
 
       try {
         connection.connect();
@@ -129,9 +126,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
           if (shell.isClosed() || audioGate.shouldDrop()) return;
           connection.sendMedia(pcm16ToBytes(pcm));
         },
-        on(event, fn) {
-          return emitter.on(event, fn);
-        },
+        on: shell.on,
         close: shell.close,
         _connection: connection,
       };

@@ -14,20 +14,13 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
-import { safeJsonParse } from "../../../sdk/utils.ts";
+import { isRecord, safeJsonParse } from "../../../sdk/utils.ts";
 import { createAudioSendGate } from "../../_audio-gate.ts";
 import { pcm16ToBytes } from "../../_pcm.ts";
 import { createRestartableTimer } from "../../_timer.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
-import {
-  closeOnAbort,
-  connectOrThrow,
-  createGuardedWs,
-  createSttSessionShell,
-  dropSocket,
-  requireApiKey,
-  waitForOpen,
-} from "../_utils.ts";
+import { dropSocket, openGuardedWs } from "../_socket.ts";
+import { closeOnAbort, createSttSessionShell, requireApiKey } from "../_utils.ts";
 
 // `@soniox/speech-to-text-web` is browser-only (MediaRecorder/getUserMedia),
 // so we speak the WebSocket protocol directly.
@@ -83,8 +76,20 @@ function buildConfigFrame(
   return config;
 }
 
+/**
+ * Read one server frame, or `null` for anything that is not a JSON object.
+ *
+ * **The parse layer's contract is to drop — never to throw out of the socket's
+ * `message` handler**, which would be an uncaughtException taking down a
+ * multi-tenant host rather than one session. That is why the shape is probed
+ * field by field from here on rather than trusted: the declared interface is a
+ * description of what the service sends today, and `safeJsonParse` returns
+ * whatever actually arrived.
+ */
 function parseFrame(raw: WebSocket.RawData): SonioxResponse | null {
-  return (safeJsonParse(raw.toString()) as SonioxResponse | undefined) ?? null;
+  const parsed = safeJsonParse(raw.toString());
+  if (!isRecord(parsed)) return null;
+  return parsed as SonioxResponse;
 }
 
 interface SonioxEmit {
@@ -100,7 +105,14 @@ function handleResponse(res: SonioxResponse, emit: SonioxEmit, finalBuf: { value
     emit.streamError(`Soniox error ${res.error_code}: ${res.error_message ?? "unknown"}`);
     return;
   }
-  if (!res.tokens || res.tokens.length === 0) return;
+  // ARRAY-checked, not truthy-checked: `tokens.length === 0` is false for a
+  // truthy non-array (`undefined === 0`), so `"tokens": 5` — a field with the
+  // wrong type, which is what a service shipping a new shape emits — used to
+  // reach the `for … of` below and throw "not iterable" straight out of
+  // `ws.on("message")`, i.e. an uncaughtException on a multi-tenant host.
+  // Dropping it keeps the rest of the frame usable: an `error_code` alongside
+  // it is still surfaced above.
+  if (!Array.isArray(res.tokens) || res.tokens.length === 0) return;
   const nonFinal = consumeTokens(res.tokens, (text) => {
     finalBuf.value += text;
   });
@@ -130,25 +142,28 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
         makeSttError("stt_auth_failed", msg),
       );
 
-      const ws = createGuardedWs(
-        () => new WebSocket(SONIOX_WS_URL, PROVIDER_WS_OPTIONS),
-        (msg) => makeSttError("stt_connect_failed", msg),
-        "Soniox STT",
-      );
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
       const finalBuf = { value: "" };
 
-      // Emit `final`/`partial` through the shell's throw containment: a
-      // listener that throws must not escape a socket 'message' handler (an
-      // uncaughtException), and nothing may be emitted once the session closed.
-      const safeEmitFinal = (text: string): void =>
-        shell.safeEmit(() => emitter.emit("final", text));
-      const safeEmitPartial = (text: string): void =>
-        shell.safeEmit(() => emitter.emit("partial", text));
+      // Bounded and abort-wired: an upgrade that black-holes must not leave
+      // `open()` pending with a socket nobody owns — see `openGuardedWs`. The
+      // config frame goes out inside the same guarded window, since a failed
+      // first send is a failed open.
+      const ws = await openGuardedWs({
+        create: () => new WebSocket(SONIOX_WS_URL, PROVIDER_WS_OPTIONS),
+        label: "Soniox STT",
+        makeConnectError: (msg) => makeSttError("stt_connect_failed", msg),
+        signal: openOpts.signal,
+        onOpen: (socket) =>
+          socket.send(JSON.stringify(buildConfigFrame(apiKey, opts, openOpts.sampleRate))),
+      });
 
+      // Every emit goes through the shell: it owns the closed latch and the
+      // throw containment a socket 'message' handler needs (a listener that
+      // throws would otherwise escape as an uncaughtException).
       const flushTimer = createRestartableTimer(() => {
         if (finalBuf.value.length > 0) {
-          safeEmitFinal(finalBuf.value);
+          shell.emit("final", finalBuf.value);
           finalBuf.value = "";
         }
       });
@@ -156,9 +171,9 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
       const emit: SonioxEmit = {
         emitFinal: (text) => {
           flushTimer.clear();
-          safeEmitFinal(text);
+          shell.emit("final", text);
         },
-        emitPartial: safeEmitPartial,
+        emitPartial: (text) => shell.emit("partial", text),
         streamError: (message) => shell.streamError(message),
         armFlush: () => flushTimer.arm(SONIOX_FINAL_FLUSH_MS),
       };
@@ -168,7 +183,7 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
         teardown: () => {
           flushTimer.clear();
           // Flush any batched finals so the last utterance isn't dropped. This
-          // runs after the shell marked the session closed, so `safeEmit`
+          // runs after the shell marked the session closed, so `shell.emit`
           // (gated on `closed`) would swallow it — emit directly, still
           // containing a listener throw so it can't escape teardown.
           if (finalBuf.value.length > 0) {
@@ -184,21 +199,6 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
           dropSocket(ws);
         },
       });
-
-      try {
-        await connectOrThrow(
-          "Soniox STT",
-          (msg) => makeSttError("stt_connect_failed", msg),
-          () => waitForOpen(ws),
-        );
-
-        ws.send(JSON.stringify(buildConfigFrame(apiKey, opts, openOpts.sampleRate)));
-      } catch (err) {
-        // Failed connect / config send: close the socket before rethrowing so
-        // it can't linger half-open (late errors land in the guard listener).
-        dropSocket(ws);
-        throw err;
-      }
 
       ws.on("message", (raw: WebSocket.RawData) => {
         if (shell.isClosed()) return;
@@ -224,9 +224,7 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
           if (audioGate.shouldDrop()) return;
           ws.send(pcm16ToBytes(pcm), { binary: true });
         },
-        on(event, fn) {
-          return emitter.on(event, fn);
-        },
+        on: shell.on,
         close: shell.close,
       };
     },

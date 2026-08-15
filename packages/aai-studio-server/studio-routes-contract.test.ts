@@ -44,8 +44,8 @@ vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   return { ...original, createStudioSessionBroker: (...args: unknown[]) => mock(...(args as [])) };
 });
 
-vi.mock("./studio-preview.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-preview.ts")>();
+vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
   const { wakePreviewMock } = await import("./_studio-routes-test-utils.ts");
   return { ...original, wakeProjectPreview: (...args: unknown[]) => wakePreviewMock(...args) };
 });

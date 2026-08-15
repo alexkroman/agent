@@ -3,9 +3,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isRecord } from "@alexkroman1/aai/utils";
-import { type ArgsDef, type CommandDef, defineCommand, runMain, showUsage } from "citty";
-import { runCommand, setup, sharedArgs, unknownFlagsForArgv } from "./_cli-common.ts";
+import { defineCommand, runMain, showUsage } from "citty";
+import { commandPath, defineExec, sharedArgs, unknownFlagsForArgv } from "./_cli-common.ts";
 import { CliError, fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
 import { log } from "./_ui.ts";
@@ -30,27 +29,29 @@ function readCliVersion(dir: string): string {
   process.stderr.write("warning: could not read aai's package.json — reporting version unknown\n");
   return "unknown";
 }
-const VERSION: string = readCliVersion(cliDir);
 
 /**
- * `aai secret put` for a subcommand, `aai` for the root — the name to put in
- * front of `--help` when telling someone which usage to read.
+ * The version, read on FIRST ACCESS rather than at module load.
  *
- * `meta` is a `Resolvable`, so it can be a function or a promise; only the
- * plain-object form carries a name synchronously and anything else degrades
- * to the binary name rather than blocking the error path on a resolve.
+ * Two synchronous reads and a parse used to run for every invocation of every
+ * subcommand, on the startup path this package deliberately budgets (the same
+ * one that keeps zod out of `_utils.ts` and `_ui.ts`, and that `bin.mjs` exists
+ * to put `module.enableCompileCache()` in front of). Only `--version` and the
+ * usage renderer read `meta.version`, and citty reads it as a property — so a
+ * getter is transparent to both while charging the file read to the two
+ * commands that display it. Memoized because usage rendering reads it twice.
  */
-function commandPath<T extends ArgsDef>(cmd: CommandDef<T>, parent?: CommandDef<T>): string {
-  const nameOf = (c: CommandDef<T> | undefined): string | undefined => {
-    const meta = c?.meta;
-    return isRecord(meta) && typeof meta.name === "string" ? meta.name : undefined;
-  };
-  const parts = [nameOf(parent), nameOf(cmd)].filter((n): n is string => n !== undefined);
-  const path = parts.join(" ");
-  return path.startsWith("aai") ? path : `aai ${path}`.trim();
-}
+let _version: string | undefined;
+const mainMeta = {
+  name: "aai",
+  description: "Voice agent development kit",
+  get version(): string {
+    _version ??= readCliVersion(cliDir);
+    return _version;
+  },
+};
 
-const init = defineCommand({
+const init = defineExec({
   meta: { name: "init", description: "Scaffold a new agent project" },
   args: {
     dir: { type: "positional", description: "Project directory", required: false },
@@ -65,77 +66,70 @@ const init = defineCommand({
     json: sharedArgs.json,
     skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
   },
-  async run({ args }) {
-    await runCommand(args, async (mode) => {
-      const { executeInit } = await import("./init.ts");
-      return executeInit(
-        {
-          dir: args.dir,
-          force: args.force,
-          template: args.template,
-          // JSON mode is non-interactive — accept defaults as if --yes was passed.
-          yes: mode === "json" ? true : args.yes,
-          skipDeploy: args.skipDeploy,
-          server: args.server,
-        },
-        mode === "json" ? { silent: true } : undefined,
-      );
-    });
+  // It creates the directory it works in, and resolves the target itself.
+  cwd: "none",
+  async run({ args, mode }) {
+    const { executeInit } = await import("./init.ts");
+    return executeInit(
+      {
+        dir: args.dir,
+        force: args.force,
+        template: args.template,
+        // JSON mode is non-interactive — accept defaults as if --yes was passed.
+        yes: mode === "json" ? true : args.yes,
+        skipDeploy: args.skipDeploy,
+        server: args.server,
+      },
+      mode === "json" ? { silent: true } : undefined,
+    );
   },
 });
 
-const dev = defineCommand({
+const dev = defineExec({
   meta: { name: "dev", description: "Start a local development server" },
   args: {
     port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup({ agent: true });
-      const { executeDev } = await import("./dev.ts");
-      return executeDev({ cwd, port: args.port });
-    });
+  cwd: "agent",
+  async run({ args, cwd }) {
+    const { executeDev } = await import("./dev.ts");
+    return executeDev({ cwd, port: args.port });
   },
 });
 
-const test = defineCommand({
+const test = defineExec({
   meta: { name: "test", description: "Run agent tests" },
   args: {
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      // `{ agent: true }` like dev/build/push/publish. Without it this was
-      // the one project-scoped command that would run anywhere: in a
-      // directory with no agent.ts it found no test file, reported
-      // `{ passed: true, skipped: true }` and exited 0 — a green result for
-      // a project that isn't there, which in CI is indistinguishable from a
-      // passing suite.
-      const cwd = await setup({ agent: true });
-      const { executeTest } = await import("./test.ts");
-      return executeTest(cwd);
-    });
+  // Like dev/build/push/publish. This command shipped once WITHOUT the agent
+  // gate, and that is the incident `defineExec`'s `cwd` field exists for: in a
+  // directory with no agent.ts it found no test file, reported
+  // `{ passed: true, skipped: true }` and exited 0 — a green result for a
+  // project that is not there, which in CI reads as a passing suite.
+  cwd: "agent",
+  async run({ cwd }) {
+    const { executeTest } = await import("./test.ts");
+    return executeTest(cwd);
   },
 });
 
-const build = defineCommand({
+const build = defineExec({
   meta: { name: "build", description: "Bundle agent without deploying" },
   args: {
     json: sharedArgs.json,
     skipTests: { type: "boolean", description: "Skip running tests before build" },
     skipTypecheck: { type: "boolean", description: "Skip type checking before build" },
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup({ agent: true });
-      const { executeBuild } = await import("./build.ts");
-      return executeBuild({ cwd, skipTests: args.skipTests, skipTypecheck: args.skipTypecheck });
-    });
+  cwd: "agent",
+  async run({ args, cwd }) {
+    const { executeBuild } = await import("./build.ts");
+    return executeBuild({ cwd, skipTests: args.skipTests, skipTypecheck: args.skipTypecheck });
   },
 });
 
-const eject = defineCommand({
+const eject = defineExec({
   meta: {
     name: "eject",
     description: "Add the self-hosted server.mjs entrypoint to an older project",
@@ -144,12 +138,10 @@ const eject = defineCommand({
     force: { type: "boolean", alias: "f", description: "Replace an existing server.mjs" },
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup({ agent: true });
-      const { executeEject } = await import("./eject.ts");
-      return executeEject({ cwd, force: args.force });
-    });
+  cwd: "agent",
+  async run({ args, cwd }) {
+    const { executeEject } = await import("./eject.ts");
+    return executeEject({ cwd, force: args.force });
   },
 });
 
@@ -157,7 +149,7 @@ const eject = defineCommand({
 // Publish route runs it inside the project's sandbox (aai-guest/
 // studio-publish.ts), which is the only production deploy path. Users go
 // through `aai publish`.
-const deploy = defineCommand({
+const deploy = defineExec({
   meta: { name: "deploy", description: "(internal) used by studio Publish", hidden: true },
   args: {
     server: sharedArgs.server,
@@ -170,21 +162,19 @@ const deploy = defineCommand({
     },
     skipTypecheck: { type: "boolean", description: "Skip type checking before deploy" },
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup({ agent: true });
-      const { executeDeploy } = await import("./deploy.ts");
-      return executeDeploy({
-        cwd,
-        server: args.server,
-        allowPreviewSlug: args.allowPreviewSlug,
-        skipTypecheck: args.skipTypecheck,
-      });
+  cwd: "agent",
+  async run({ args, cwd }) {
+    const { executeDeploy } = await import("./deploy.ts");
+    return executeDeploy({
+      cwd,
+      server: args.server,
+      allowPreviewSlug: args.allowPreviewSlug,
+      skipTypecheck: args.skipTypecheck,
     });
   },
 });
 
-const del = defineCommand({
+const del = defineExec({
   meta: {
     name: "delete",
     description: "Delete the studio project and its deployed agents",
@@ -193,63 +183,57 @@ const del = defineCommand({
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup();
-      const { executeDelete } = await import("./delete.ts");
-      return executeDelete({ cwd, server: args.server });
-    });
+  // The link in `.aai/project.json` is what it deletes; a directory that has
+  // lost its agent.ts can still own a studio project.
+  cwd: "any",
+  async run({ args, cwd }) {
+    const { executeDelete } = await import("./delete.ts");
+    return executeDelete({ cwd, server: args.server });
   },
 });
 
-const secretPut = defineCommand({
+const secretPut = defineExec({
   meta: { name: "put", description: "Create or update a secret" },
   args: {
     name: { type: "positional", description: "Secret name", required: true },
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async (mode) => {
-      const cwd = await setup();
-      const { executeSecretPut, NO_INPUT, readStdin } = await import("./secret.ts");
-      const value = mode === "json" ? await readStdin() : undefined;
-      if (mode === "json" && !value) {
-        throw new CliError(...NO_INPUT);
-      }
-      return executeSecretPut(cwd, args.name, value, args.server);
-    });
+  cwd: "any",
+  async run({ args, mode, cwd }) {
+    const { executeSecretPut, NO_INPUT, readStdin } = await import("./secret.ts");
+    const value = mode === "json" ? await readStdin() : undefined;
+    if (mode === "json" && !value) {
+      throw new CliError(...NO_INPUT);
+    }
+    return executeSecretPut(cwd, args.name, value, args.server);
   },
 });
 
-const secretDelete = defineCommand({
+const secretDelete = defineExec({
   meta: { name: "delete", description: "Delete a secret" },
   args: {
     name: { type: "positional", description: "Secret name", required: true },
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup();
-      const { executeSecretDelete } = await import("./secret.ts");
-      return executeSecretDelete(cwd, args.name, args.server);
-    });
+  cwd: "any",
+  async run({ args, cwd }) {
+    const { executeSecretDelete } = await import("./secret.ts");
+    return executeSecretDelete(cwd, args.name, args.server);
   },
 });
 
-const secretList = defineCommand({
+const secretList = defineExec({
   meta: { name: "list", description: "List all secrets" },
   args: {
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup();
-      const { executeSecretList } = await import("./secret.ts");
-      return executeSecretList(cwd, args.server);
-    });
+  cwd: "any",
+  async run({ args, cwd }) {
+    const { executeSecretList } = await import("./secret.ts");
+    return executeSecretList(cwd, args.server);
   },
 });
 
@@ -258,9 +242,8 @@ const secret = defineCommand({
   subCommands: { put: secretPut, delete: secretDelete, list: secretList },
 });
 
-/** Resolve the working directory for a storage subcommand's optional [dir]. */
-function resolveStorageCwd(dir: string | undefined): string {
-  const cwd = resolveCwd();
+/** A storage subcommand's optional [dir], resolved against the working directory. */
+function resolveStorageCwd(cwd: string, dir: string | undefined): string {
   return dir ? path.resolve(cwd, dir) : cwd;
 }
 
@@ -270,37 +253,35 @@ const storageDir = {
   required: false,
 } as const;
 
-const storageStatus = defineCommand({
+const storageStatus = defineExec({
   meta: { name: "status", description: "Show whether storage is enabled" },
   args: {
     dir: storageDir,
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const { executeStorageStatus } = await import("./storage.ts");
-      return executeStorageStatus(resolveStorageCwd(args.dir), args.server);
-    });
+  cwd: "any",
+  async run({ args, cwd }) {
+    const { executeStorageStatus } = await import("./storage.ts");
+    return executeStorageStatus(resolveStorageCwd(cwd, args.dir), args.server);
   },
 });
 
-const storageEnable = defineCommand({
+const storageEnable = defineExec({
   meta: { name: "enable", description: "Enable the agent's app database" },
   args: {
     dir: storageDir,
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const { executeStorageEnable } = await import("./storage.ts");
-      return executeStorageEnable(resolveStorageCwd(args.dir), args.server);
-    });
+  cwd: "any",
+  async run({ args, cwd }) {
+    const { executeStorageEnable } = await import("./storage.ts");
+    return executeStorageEnable(resolveStorageCwd(cwd, args.dir), args.server);
   },
 });
 
-const storageDisable = defineCommand({
+const storageDisable = defineExec({
   meta: {
     name: "disable",
     description: "Disable storage and DROP the database schema with all its data",
@@ -311,13 +292,12 @@ const storageDisable = defineCommand({
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const { executeStorageDisable } = await import("./storage.ts");
-      return executeStorageDisable(resolveStorageCwd(args.dir), {
-        server: args.server,
-        force: args.force,
-      });
+  cwd: "any",
+  async run({ args, cwd }) {
+    const { executeStorageDisable } = await import("./storage.ts");
+    return executeStorageDisable(resolveStorageCwd(cwd, args.dir), {
+      server: args.server,
+      force: args.force,
     });
   },
 });
@@ -327,40 +307,42 @@ const storage = defineCommand({
   subCommands: { status: storageStatus, enable: storageEnable, disable: storageDisable },
 });
 
-const login = defineCommand({
+const login = defineExec({
   meta: { name: "login", description: "Link your signed-in browser account and save your API key" },
   args: {
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
+  // Account-level, not project-level: it works from anywhere.
+  cwd: "none",
   async run({ args }) {
-    await runCommand(args, async () => {
-      const { executeLogin } = await import("./login.ts");
-      return executeLogin({ server: args.server });
-    });
+    const { executeLogin } = await import("./login.ts");
+    return executeLogin({ server: args.server });
   },
 });
 
-const templates = defineCommand({
+const templates = defineExec({
   meta: { name: "templates", description: "List available project templates" },
   args: {
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async (mode) => {
-      const { listTemplates } = await import("./_templates.ts");
-      const names = await listTemplates();
-      if (mode === "human") {
-        for (const name of names) log.message(name);
-        log.info("Scaffold one with `aai init --template <name>`.");
-      }
-      return { ok: true, data: { templates: names } };
-    });
+  // Reads the CLI's own bundled templates; the working directory is irrelevant.
+  cwd: "none",
+  async run({ mode }) {
+    const { listTemplates } = await import("./_templates.ts");
+    const names = await listTemplates();
+    if (mode === "human") {
+      for (const name of names) log.message(name);
+      log.info("Scaffold one with `aai init --template <name>`.");
+    }
+    return { ok: true, data: { templates: names } };
   },
 });
 
 export const mainCommand = defineCommand({
-  meta: { name: "aai", version: VERSION, description: "Voice agent development kit" },
+  // `mainMeta`, not a spread of it: spreading would READ the getter here and
+  // put the file read back on module load, which is the thing it removes.
+  meta: mainMeta,
   subCommands: {
     init,
     dev,

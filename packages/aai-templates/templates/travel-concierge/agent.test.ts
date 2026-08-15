@@ -173,6 +173,49 @@ describe("sensitive tools stage rather than act", () => {
     expect(await run("cancel_ticket", {}, ctx)).toEqual({ error: "There is no ticket to cancel." });
   });
 
+  test("a second staging is REFUSED rather than overwriting the first", async () => {
+    // The LLM loop runs a step's tool calls concurrently, so two sensitive
+    // tools in one step is ordinary: the model hears "move my flight and book
+    // the hotel" and emits both. Assigning `pending` unconditionally made the
+    // second win — both answered `awaitingConfirmation`, the caller said yes
+    // once, and one of the two changes was silently dropped forever.
+    const ctx = makeCtx();
+    const first = (await run("update_ticket", { flightId: "LX52" }, ctx)) as {
+      awaitingConfirmation: boolean;
+    };
+    expect(first.awaitingConfirmation).toBe(true);
+
+    const second = (await run("book_hotel", { hotelId: "H1", nights: 2 }, ctx)) as {
+      error: string;
+    };
+    // The refusal NAMES what is already waiting, which is what lets the model
+    // settle that one and come back rather than guess.
+    expect(second.error).toContain("LX52");
+    expect(second.error).toMatch(/confirm_action or cancel_action/);
+
+    // The first staging is untouched, and it is what a yes applies.
+    expect(stateOf(ctx).pending).toEqual({ kind: "update_ticket", flightId: "LX52" });
+    const applied = (await run("confirm_action", {}, ctx)) as { applied: string };
+    expect(applied.applied).toContain("LX52");
+    expect(stateOf(ctx).bookings).toEqual([]);
+
+    // Once the queue is clear, the hotel can be staged after all.
+    const retried = (await run("book_hotel", { hotelId: "H1", nights: 2 }, ctx)) as {
+      awaitingConfirmation: boolean;
+    };
+    expect(retried.awaitingConfirmation).toBe(true);
+  });
+
+  test("cancel_action clears the block, so a declined change does not wedge the desk", async () => {
+    const ctx = makeCtx();
+    await run("book_car_rental", { carId: "C2", days: 3 }, ctx);
+    await run("cancel_action", {}, ctx);
+    const staged = (await run("book_excursion", { excursionId: "E2" }, ctx)) as {
+      awaitingConfirmation: boolean;
+    };
+    expect(staged.awaitingConfirmation).toBe(true);
+  });
+
   test("two calls never share a stack, a ticket or an itinerary", async () => {
     const first = makeCtx("call-a");
     const second = makeCtx("call-b");

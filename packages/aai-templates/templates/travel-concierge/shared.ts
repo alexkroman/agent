@@ -35,7 +35,7 @@
  * agent that can rebook a flight and one that can rebook a flight *by mistake*.
  */
 
-import { pushCapped, sessionSlot, type ToolFailure } from "@alexkroman1/aai";
+import { type DeepReadonly, pushCapped, sessionSlot, type ToolFailure } from "@alexkroman1/aai";
 
 // ─── The booking world ───────────────────────────────────────────────────────
 // Their notebook downloads a sqlite database of a real airline's schedule and
@@ -280,7 +280,9 @@ export interface TripState {
   ticket: { reference: string; flightId: string } | null;
   /** Their `dialog_state` stack: `primary` is always the bottom. */
   dialogState: DialogState[];
-  /** Staged-but-unconfirmed sensitive action — at most one at a time. */
+  /** Staged-but-unconfirmed sensitive action — at most one at a time, which
+   *  {@link stageAction} ENFORCES by refusing a second rather than by saying so
+   *  here. A concurrent step emitting two sensitive tools is ordinary. */
   pending: PendingAction | null;
   bookings: BookingRecord[];
   /** What has happened on this call, for the sidebar. Capped on append. */
@@ -318,7 +320,18 @@ export const tripSlot = sessionSlot("trip", seedTrip, {
   },
 });
 
-export function activeAssistant(state: TripState): DialogState {
+/**
+ * The call as a READ hands it out: deep-frozen, and typed to say so.
+ *
+ * The pure helpers below take this rather than {@link TripState}, which is the
+ * widening a deep-readonly slot forces and the reason it is worth doing: a
+ * mutable state still satisfies it, so every `updateTool` draft passes
+ * unchanged, while a helper that WOULD have mutated stops compiling instead of
+ * throwing at its first call.
+ */
+export type FrozenTripState = DeepReadonly<TripState>;
+
+export function activeAssistant(state: FrozenTripState): DialogState {
   return state.dialogState.at(-1) ?? "primary";
 }
 
@@ -332,7 +345,7 @@ export function note(state: TripState, entry: string): void {
  * Describe a staged action in one sentence, in the second person — this is
  * read aloud, so it is a question's worth of text and not a receipt.
  */
-export function describeAction(action: PendingAction): string | ToolFailure {
+export function describeAction(action: DeepReadonly<PendingAction>): string | ToolFailure {
   switch (action.kind) {
     case "update_ticket": {
       const flight = FLIGHTS.find((f) => f.id === action.flightId);
@@ -370,6 +383,17 @@ export function describeAction(action: PendingAction): string | ToolFailure {
  * Every sensitive tool ends in this call and none of them mutate anything —
  * that is the whole gate, and keeping it to one helper is what stops the next
  * sensitive tool from being the one that forgets it.
+ *
+ * **It REFUSES a second staging, and that is the enforcement half of
+ * {@link TripState.pending}'s "at most one at a time".** The LLM loop runs a
+ * step's tool calls CONCURRENTLY, so two sensitive tools in one step is an
+ * ordinary outcome — the model says "change my flight and book the hotel" and
+ * emits both. An unconditional assignment made the second win: both tools
+ * answered `awaitingConfirmation`, the model read both back, the caller said
+ * yes, and `confirm_action` applied ONE of them with nothing anywhere saying
+ * the other had been dropped. A gate whose failure is a silent no-op is not a
+ * gate. Refusing names the sentence already waiting, which is what lets the
+ * model ask about that one first and restage the rest afterwards.
  */
 export function stageAction(
   state: TripState,
@@ -379,6 +403,15 @@ export function stageAction(
   | ToolFailure {
   const described = describeAction(action);
   if (typeof described !== "string") return described;
+  const waiting = state.pending ? describeAction(state.pending) : null;
+  if (waiting !== null) {
+    return {
+      error:
+        `Something is already waiting for the caller's yes: ${typeof waiting === "string" ? waiting : state.pending?.kind}. ` +
+        "Settle it with confirm_action or cancel_action, then ask for this one. " +
+        "Only one change can be waiting at a time — nothing about this request has been staged.",
+    };
+  }
   state.pending = action;
   note(state, `Awaiting confirmation: ${described}`);
   return {
@@ -475,11 +508,11 @@ export interface TripView {
   assistant: DialogState;
   assistantTitle: string;
   ticket: { reference: string; flightId: string; route: string; departs: string } | null;
-  bookings: BookingRecord[];
+  bookings: readonly DeepReadonly<BookingRecord>[];
   total: number;
   /** The staged action's sentence, so the browser shows what voice just asked. */
   pending: string | null;
-  log: string[];
+  log: readonly string[];
 }
 
 /**
@@ -489,7 +522,7 @@ export interface TripView {
  * have to re-switch on, and the stack top is the one field the sidebar is
  * actually built around.
  */
-export function tripView(state: TripState): TripView {
+export function tripView(state: FrozenTripState): TripView {
   const assistant = activeAssistant(state);
   const flight = state.ticket ? FLIGHTS.find((f) => f.id === state.ticket?.flightId) : undefined;
   const described = state.pending ? describeAction(state.pending) : null;

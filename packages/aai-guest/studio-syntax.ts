@@ -39,32 +39,56 @@ import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { errorMessage } from "@alexkroman1/aai";
 
-/** Extensions oxc can parse. JSON is skipped — it is not a script. */
-const CHECKED = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs"]);
+/**
+ * Extensions oxc can parse — and, because they are the same set, the ones a
+ * post-write type check and a post-copy check can vouch for. JSON is skipped:
+ * it is not a script.
+ *
+ * ONE definition. It was written out three times (here,
+ * `studio-write-diagnostics.ts`, `studio-template-tools.ts`), two of them with a
+ * comment claiming to mirror one of the others — which is the shape a set takes
+ * just before it stops mirroring.
+ */
+const SCRIPT_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs"]);
+
+/** Is this workspace-relative path something a parser or `tsc` can speak for? */
+export function isScriptFile(file: string): boolean {
+  return SCRIPT_EXTENSIONS.has(path.extname(file).toLowerCase());
+}
 
 type OxcTransformer = (code: string, filename: string) => Promise<unknown>;
 
-/** `null` means "checked and unavailable" — distinct from "not yet loaded". */
-let transformer: Promise<OxcTransformer | null> | null = null;
+/** The memoized resolve. Rejects — and clears itself — when it cannot resolve. */
+let transformer: Promise<OxcTransformer> | null = null;
 
 /**
  * Resolve vite's oxc transform from the workspace's own toolchain. A sandbox
  * without it simply skips the check rather than blocking every write.
+ *
+ * RESET ON FAILURE, exactly as `loadToolchain` does in `studio-build.ts`, and
+ * for a sharper reason: the failure is not only "this image has no toolchain",
+ * which is permanent. `createRequire` is anchored at the WORKSPACE, and the
+ * workspace is re-materialized on every page open — so a resolve racing a
+ * session re-install can fail transiently. Caching the `null` that came back
+ * from one such moment disabled the write-time syntax gate for the life of the
+ * process, silently: every later write was accepted unparsed, which is the one
+ * failure this module exists to prevent. The cost of retrying is a
+ * `require.resolve` that throws, per write, in a sandbox that genuinely has no
+ * toolchain — and that sandbox cannot build or type-check either.
  */
-function loadTransformer(dir: string): Promise<OxcTransformer | null> {
+function loadTransformer(dir: string): Promise<OxcTransformer> {
   transformer ??= (async () => {
-    try {
-      const { createRequire } = await import("node:module");
-      const require = createRequire(path.join(dir, "package.json"));
-      const vite = (await import(require.resolve("vite"))) as {
-        transformWithOxc?: OxcTransformer;
-      };
-      return vite.transformWithOxc ?? null;
-    } catch {
-      // No toolchain in this sandbox: skip the check rather than block writes.
-      return null;
-    }
-  })();
+    const { createRequire } = await import("node:module");
+    const require = createRequire(path.join(dir, "package.json"));
+    const vite = (await import(require.resolve("vite"))) as {
+      transformWithOxc?: OxcTransformer;
+    };
+    if (!vite.transformWithOxc) throw new Error("vite exports no transformWithOxc");
+    return vite.transformWithOxc;
+  })().catch((err: unknown) => {
+    transformer = null;
+    throw err;
+  });
   return transformer;
 }
 
@@ -87,9 +111,14 @@ export async function syntaxError(
   file: string,
   content: string,
 ): Promise<string | undefined> {
-  if (!CHECKED.has(path.extname(file).toLowerCase())) return;
-  const transform = await loadTransformer(dir);
-  if (!transform) return;
+  if (!isScriptFile(file)) return;
+  let transform: OxcTransformer;
+  try {
+    transform = await loadTransformer(dir);
+  } catch {
+    // No toolchain reachable right now: skip the check rather than block writes.
+    return;
+  }
   try {
     await transform(content, file);
   } catch (err) {

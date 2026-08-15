@@ -33,6 +33,13 @@
  * adds no reachability an unauthenticated caller did not already have. A
  * workflow that needs more should use `createHook()` behind its own route.
  *
+ * **What crosses into the guest is the SENDER's message, minus this hop's
+ * credentials.** The request is passed through rather than allow-listed,
+ * because the run receives it whole and a signature header is what a payment
+ * provider's own verification needs — but `Cookie`, `Authorization` and
+ * `X-Forwarded-*` describe the caller to US and stop here. See
+ * `guest-forward.ts`.
+ *
  * ## What this route does NOT fix
  *
  * The URL the DevKit MINTS still names the guest's own origin
@@ -47,6 +54,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
 import { debug } from "./_debug-log.ts";
 import type { AppContext } from "./context.ts";
+import { forwardToGuest, NEVER_RETURNED, passThroughHeaders } from "./guest-forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
 import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrl, notFoundMessage } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
@@ -82,40 +90,6 @@ const WORKFLOW_WEBHOOK_TIMEOUT_MS = 30_000;
 
 /** What a sender is told to wait when the sandbox is still booting. */
 const RETRY_AFTER_SECONDS = 5;
-
-/**
- * Headers that describe THIS hop rather than the message, plus the two the
- * next hop recomputes. Forwarding `content-length` alongside a body undici
- * re-frames is how a proxy invents a truncated request.
- */
-const HOP_BY_HOP = new Set([
-  "connection",
-  "proxy-connection",
-  "keep-alive",
-  "transfer-encoding",
-  "te",
-  "trailer",
-  "upgrade",
-  "proxy-authorization",
-  "expect",
-  "host",
-  "content-length",
-]);
-
-/**
- * Response headers that describe the guest→platform hop. `content-encoding`
- * goes with them: `fetch` has already decoded the body, so passing the header
- * on would declare an encoding the bytes no longer carry.
- */
-const RESPONSE_STRIP = new Set([...HOP_BY_HOP, "content-encoding"]);
-
-function copyHeaders(from: Headers, strip: Set<string>): Headers {
-  const headers = new Headers();
-  from.forEach((value, name) => {
-    if (!strip.has(name.toLowerCase())) headers.append(name, value);
-  });
-  return headers;
-}
 
 /**
  * The guest's own webhook URL for this token.
@@ -169,16 +143,25 @@ export function createWorkflowWebhookHandler(
     // and a duplex stream would have to outlive this handler's timeout.
     const body = await c.req.arrayBuffer();
     try {
-      const url = guestWebhookUrl(brokered.guestOrigin, token, new URL(c.req.url).search);
-      const res = await fetchFn(url, {
+      const res = await forwardToGuest({
+        fetchFn,
+        url: guestWebhookUrl(brokered.guestOrigin, token, new URL(c.req.url).search),
         method: c.req.method,
-        headers: copyHeaders(c.req.raw.headers, HOP_BY_HOP),
+        // PASS-THROUGH, not the allow-list the API hop uses, and the exception
+        // is load-bearing: the DevKit hands the whole `Request` to the run as
+        // the hook's payload, so a workflow verifying `Stripe-Signature` or
+        // `X-Hub-Signature-256` reads a header nothing here can enumerate.
+        // `NEVER_FORWARDED` still strips the hop-by-hop set AND the three
+        // credential-bearing headers (`Cookie`, `Authorization`,
+        // `X-Forwarded-*`) that used to reach tenant code through this route.
+        headers: passThroughHeaders(c.req.raw.headers),
         ...(body.byteLength > 0 ? { body } : {}),
-        signal: AbortSignal.timeout(WORKFLOW_WEBHOOK_TIMEOUT_MS),
+        // The whole response is buffered below, so the deadline covers it.
+        timeoutMs: WORKFLOW_WEBHOOK_TIMEOUT_MS,
       });
       return new Response(await res.arrayBuffer(), {
         status: res.status,
-        headers: copyHeaders(res.headers, RESPONSE_STRIP),
+        headers: passThroughHeaders(res.headers, NEVER_RETURNED),
       });
     } catch (err: unknown) {
       // The sandbox was brokered and then would not answer — a fault worth a

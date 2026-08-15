@@ -34,6 +34,8 @@
  * Standard Schema works here, zod being merely the documented default.
  */
 
+import { isRecord } from "./is-record.ts";
+import { previewBody } from "./response-body.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
 import {
   formatSchemaIssues,
@@ -41,9 +43,6 @@ import {
   type StandardSchemaV1,
 } from "./standard-schema.ts";
 import { type StepGenerateOptions, stepGenerate } from "./step-generate.ts";
-
-/** How much of an unusable reply is worth quoting back in the failure. */
-const MAX_REPLY_PREVIEW_CHARS = 200;
 
 /** Options for {@link stepGenerateJson}: {@link StepGenerateOptions} plus the shape. */
 export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
@@ -99,8 +98,14 @@ export async function stepGenerateJson<S extends StandardSchemaV1>(
   const { schema, ...generate } = opts;
   const reply = await stepGenerate(prompt, generate);
   const parsed = safeJsonParse(stripJsonFence(reply));
-  if (parsed === null || typeof parsed !== "object") {
-    throw new Error(`Expected JSON from the model, got: ${preview(reply)}`);
+  // A record OR an array, spelled out — this is the one guard in the package
+  // that must accept arrays, because a caller's schema is free to describe a
+  // LIST and a top-level `[...]` reply is then correct. `isRecord` alone would
+  // reject it; the two comparisons written inline would say the same thing
+  // while reading as the guard this package has a name for
+  // (`guard-invariants` rule 17).
+  if (!(isRecord(parsed) || Array.isArray(parsed))) {
+    throw new Error(`Expected JSON from the model, got: ${previewBody(reply)}`);
   }
   const result = await schema["~standard"].validate(parsed);
   if (result.issues) {
@@ -123,11 +128,4 @@ export async function stepGenerateJson<S extends StandardSchemaV1>(
 export function stripJsonFence(reply: string): string {
   const fenced = /^\s*```(?:json)?\s*\n([\s\S]*?)\n?\s*```\s*$/.exec(reply);
   return (fenced?.[1] ?? reply).trim();
-}
-
-/** As much of an unusable reply as belongs in an error message. */
-function preview(reply: string): string {
-  return reply.length > MAX_REPLY_PREVIEW_CHARS
-    ? `${reply.slice(0, MAX_REPLY_PREVIEW_CHARS)}…`
-    : reply;
 }

@@ -11,6 +11,7 @@
  * guest cannot rewrite the hint, and sweeping on ten replicas at once.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { WORKFLOW_WAKE_NAMESPACE } from "./_workflow-wake-read.ts";
 import { appDbIdentifier } from "./app-database.ts";
@@ -87,7 +88,7 @@ function sweepWith(
 ) {
   const hints = opts.hints ?? {};
   const wake = vi.fn(opts.wake ?? (() => Promise.resolve(OK)));
-  const adminDb = fakeAdminDb({ ...(opts.locked !== undefined && { locked: opts.locked }), hints });
+  const adminDb = fakeAdminDb({ ...omitUndefined({ locked: opts.locked }), hints });
   const sweep = createWorkflowWakeSweep({
     adminDb,
     store: storeWithSlugs(opts.slugs ?? Object.keys(hints)),
@@ -95,8 +96,7 @@ function sweepWith(
     wake,
     ...(opts.isDraining && { isDraining: opts.isDraining }),
     ...(opts.now && { now: opts.now }),
-    ...(opts.retryMs !== undefined && { retryMs: opts.retryMs }),
-    ...(opts.maxPerTick !== undefined && { maxPerTick: opts.maxPerTick }),
+    ...omitUndefined({ retryMs: opts.retryMs, maxPerTick: opts.maxPerTick }),
   });
   return { sweep, wake, adminDb };
 }

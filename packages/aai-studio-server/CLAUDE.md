@@ -9,7 +9,10 @@ workspaces, previews, and Publish. Its front-end is in
 
 The browser studio's server side (documented below):
 
-  `studio-routes.ts` (HTTP surface), `studio-session-broker.ts` (per-project
+  `studio-routes.ts` (HTTP surface: the broker, auth/scope middleware, and
+  the routes that are not the project document itself),
+  `studio-project-routes.ts` (project CRUD, the two file routes, and `aai
+  push`'s `PUT …/source`), `studio-session-broker.ts` (per-project
   coding-agent sandboxes: the collaborators, the per-project lock, and the
   public surface), `studio-session-ensure.ts` (the reuse -> adopt -> spawn
   ladder and what a session install IS — everything in it runs under that
@@ -48,6 +51,18 @@ voice agents without the CLI:
   `mutateWorkspace` (`studio-workspace.ts`), which retry a conflicted write
   once — the in-process keyed lock (`studio-workspace-lock.ts`) still
   serializes local writers, so a conflict means another replica.
+
+  **A file's PATH is normalized where it is stored, not merely validated.**
+  `SafePathSchema` computes a `posix.normalize`d path and `stampWorkspace`
+  used to throw away that value and key the map on whatever the writer sent —
+  so `agent.ts` and `./agent.ts` were two entries denoting one file: both in
+  the editor, either one built depending on what the bundler resolved, and a
+  write to one leaving the other stale. Every writer goes through
+  `stampWorkspace`, so normalizing there covers the editor PUT, the guest's
+  end-of-turn sync and `aai push` alike (the push additionally normalizes
+  before its byte-identical check, or a `./`-spelled push would read as a
+  change on every run). `DELETE …/file` normalizes its `?path=` for the same
+  reason — it addresses the stored key.
 
   **METADATA STAMPS do not go through that read-modify-write** — they use
   `stampWorkspaceMeta` over `WorkspaceStore.patch`, a single
@@ -392,6 +407,38 @@ voice agents without the CLI:
   matches, and the drain holds a per-project lock, so N jobs for one project
   cost one deploy plus a read each — replacing an in-process map with a dirty
   bit whose whole purpose was to approximate that without durability.
+
+  **The no-op still CLEARS a stale `previewError`, and that is the one write
+  it makes.** A failed deploy stamps the banner while `previewHash` keeps
+  naming the last GOOD deploy; undo the bad edit and the files hash back to
+  that stamp, so the deploy has nothing to do — and while the early return
+  fired before stamping anything, the pane showed a build error for code no
+  longer in the workspace, forever, with every later edit that hashed back
+  here re-confirming it. Only a SUCCESSFUL deploy deletes the stamp, and this
+  is the one case where success needs no deploy.
+
+  **Every "force the preview to redeploy" goes through `forcePreviewRedeploy`**
+  (studio-preview.ts): clear `previewHash`, then schedule. It was written out
+  three times — the database switch, a secret mutation, and the wake — with two
+  different omissions between them, and one of those omissions WAS the bug
+  above: the wake's settled-failure retry scheduled without clearing, so the
+  state it exists to rescue was the one it could not. The remaining divergence
+  is deliberate and lives at the call sites: the database and secret switches
+  skip the whole thing when the project has no `previewSlug` yet.
+  **The preview slug is `<project>-preview` SHORTENED BY DIGEST, not by
+  truncation** (`previewSlugFor`, beside `projectSlugFor` in
+  studio-project-slugs.ts — the two answer "what are this project's agents
+  called" from its two sides). Project names run to the slug grammar's full 64
+  characters and the suffix costs 8, so plain truncation mapped every name
+  agreeing in its first 56 onto ONE preview slug: both deploys succeed (same
+  account, no ownership 409), both stamp their own `previewHash`, and one
+  agent serves both projects' Preview panes with nothing reporting an error.
+  The old comment argued that names are suffix-randomized server-side — true
+  of GENERATED names, and `aai push` and the create body both take an explicit
+  one. The last nine characters of a shortened slug are a digest of the whole
+  name instead. Only NEW previews are affected; a deployed one is read from
+  the workspace's `previewSlug` stamp.
+
   **A queue row NEVER carries a credential**: it names the studio `userId`,
   and the drain resolves the key from Vault (`user-key:<uid>`), so a job
   redelivered to another replica can still deploy. A raw-key caller's job
@@ -506,6 +553,17 @@ voice agents without the CLI:
   to each slug as a deploy claims it — composed with the database's hook into
   the broker's one `afterDeploy` (`studio-deploy-hooks.ts`).
 
+  **The project's EXISTENCE is resolved ahead of that write** — a different
+  ordering question, and it used to be the wrong way round: the record went in
+  unconditionally and the 404 came from the per-slug fan-out three statements
+  later, so a PUT or DELETE naming a project that does not exist answered 404
+  having already written a Vault record under that name. Nothing cascades it
+  (the delete cascade only runs for a project that exists), so a later project
+  taking the name inherited a stranger's values on its first deploy. The
+  mutation now resolves the workspace and its owned slugs ONCE, up front, and
+  threads them — which also removed two of the three workspace reads and one
+  of the two ownership fan-outs a single panel save used to cost.
+
   Three properties. The record is a **FLOOR, never an override**: a name the
   slug already carries is left alone, or every deploy would silently
   reinstate the studio's value over one set with `aai secret put`. A mutation
@@ -517,7 +575,9 @@ voice agents without the CLI:
   keys.
 
   **Two things wake a project's preview, and it needs both**
-  (`wakeProjectPreview` in studio-preview.ts). Landing on the project — the
+  (`wakeProjectPreview` in studio-preview-wake.ts — split from
+  studio-preview.ts, which owns the deploy LOOP; nothing in the wake deploys
+  anything itself). Landing on the project — the
   once-per-open session broker call — warms the embedded agent's sandbox
   through the platform's public client-config broker (`warmPreviewSandbox`) so
   a preview idle-evicted since the last visit is booting before the pane's
@@ -535,8 +595,13 @@ voice agents without the CLI:
   reporter is a TRIGGER, never evidence**: both triggers land in the same
   function and the broker 404 below is what decides, so a client cannot talk
   the platform into a deploy and a probe that failed locally costs a no-op.
-  The route is throttled per project (`PREVIEW_WAKE_THROTTLE_MS`) because a
-  wake costs a workspace read plus a broker call that can spawn a sandbox;
+  The route is **rate-limited** (`PREVIEW_WAKE_RATE_LIMIT`, scope + IP, like
+  every other route that can spawn a sandbox) and additionally throttled per
+  project (`PREVIEW_WAKE_THROTTLE_MS`) because a wake costs a workspace read
+  plus a broker call that can spawn a sandbox. The throttle used to be the
+  whole answer and could not be: it is a fixed-size `TtlCache`, i.e. an LRU, so
+  a caller cycling more than its 1,000 distinct project names evicts entries
+  faster than they expire and every request lands as a first one;
   the pane itself sends exactly one per missing preview, since the wake
   enqueues a durable job whose queue owns the retries.
 
@@ -853,6 +918,25 @@ direction, not the current state.
   activity touches the lease too — an agent turn longer than the window
   would otherwise let the row expire and invite a peer to cold-spawn
   mid-turn.
+- **EVERY rung of the ladder refreshes the lease, the reuse included.** The
+  cold path claims and `fleet.adopt` touches; `reuseSession` moved `lastUsed`
+  and called nothing on the fleet, so a user reloading every few minutes
+  without completing a turn kept the sandbox locally fresh while `expires_at`
+  ran out under it. The next broker call landing on a PEER then read
+  `sessions` miss → `adopt` → `registry.get` null → cold path → `spawnNamed` →
+  Modal refuses the duplicate name → null → **404 "Project not found" for a
+  project that plainly exists**, healed only by the client re-brokering onto
+  the owning replica. `studio-session-broker.test.ts` asserts it as EXPIRY
+  (two reloads spanning a lease, then a peer adopting), because a `touch` call
+  count would pass for a touch that reached the wrong row.
+- **Nor is a sandbox with WORK INSIDE IT idle** (`SessionEntry.inFlight`,
+  held by `LiveSession.hold` for the length of a `workspace/deploy`).
+  `WORKSPACE_DEPLOY_TIMEOUT_MS` is 330s against this 300s window and the
+  deploy touches only when it RETURNS, so a 200s cold build starting partway
+  into an idle window was swept mid-`aai deploy`: the sandbox terminated under
+  the CLI, the whole build re-ran, and the browser's chat URL was dead. The
+  count is re-read after the `heldByUs` round trip too — a Publish can begin
+  inside it.
 - **`chatToken` is minted once per SANDBOX and stored in the row**, so every
   replica hands back the same one. Re-minting per broker call would revoke
   the token every other tab is holding.
@@ -1067,3 +1151,298 @@ runs) because reaching it needs six alternating clock-advance/drain pairs with
 every deploy throwing — a sequence a random 40-op walk effectively never
 produces. A coverage floor cannot fix that; the cap boundary has its own
 targeted property asserting both directions instead.
+
+## Serving a current studio client in dev
+
+**`predev` also rebuilds the studio front-end**: aai-studio-server's
+`predev` ends with `pnpm --filter aai-studio-client build`, so
+`pnpm dev:aai-server` always serves a current client. `studio-static.ts`
+serves whatever is in that package's `dist/` — nothing checks its age —
+so without this a stale (or absent) bundle is served silently and the
+studio looks unchanged no matter what you edit. Unconditional rather than
+staleness-gated like the harness above: the build is sub-second, which is
+cheaper than the check would be worth.
+
+## One deployment, two packages (aai-studio-server / aai-server)
+
+Two packages, one surface each, composed into a single process.
+
+`aai-server` is the agent surface plus the shared platform core (stores,
+locks, epochs, sandbox machinery); `platform-barrel.ts` is the sanctioned path
+to its `_`-internal utilities. **It ships no entry point** — it is a library,
+consumed through its `exports` map, and has no `build` (its subpaths resolve to
+`.ts` source, which its consumer bundles).
+
+`aai-studio-server` is the studio surface AND the composition root: its entry
+is the only one any deployment runs, dispatching studio paths (`isStudioPath`,
+`aai-server/studio-paths.ts`) to the studio app and everything else — including
+`/health` and the WebSocket upgrades — to the agent orchestrator. Both apps
+share one `ServiceConfig`, so they share the slot cache and stores. That entry
+is what `pnpm dev:aai-server` runs too, so local dev and production are the
+same composition.
+
+There is ONE Modal app: `aai-server-web`, from `packages/aai-server/
+modal_deploy.py`. Note the asymmetry — the deploy script lives in the package
+that does NOT provide the entry; it is the platform's deploy policy, and it
+launches `packages/aai-studio-server/dist/index.mjs`.
+
+**A SPLIT deployment used to live here** — a second Modal app
+(`aai-studio-web`) with the agent app reverse-proxying to a
+`STUDIO_UPSTREAM_URL`. Removed rather than left dormant: the upstream was never
+wired, so the combined branch was the only one that ever ran while the split
+half still constrained the design.
+`packages/aai-server/modal_deploy.py`'s own "One app, both
+surfaces" block carries the motivation and what reviving it would cost; two
+constraints survive any revival — **one public origin** (agent pages set
+`X-Frame-Options: SAMEORIGIN`, so a studio on a second hostname breaks the
+preview iframe), and the studio service would need the event streams' timeout
+raised (see "A long-lived connection is ONE Modal input").
+
+**aai-server is COMPILED IN to that entry, and the bundler pattern must match
+its SUBPATHS.** `aai-studio-server/tsdown.config.ts` lists it under
+`deps.alwaysBundle`; `alwaysBundle` matches the SPECIFIER, not the package, and
+every import here is a subpath (`aai-server/orchestrator`, …), so the
+`/^aai-server$/` this replaced matched nothing and the whole package stayed
+external. Nothing said so — the build succeeds and the entry runs; `dist/
+index.mjs` is merely 150 KB of import statements rather than a 3.7 MB bundle.
+The cost is paid at every container COLD START, because this package's exports
+resolve to `.ts` SOURCE (it has no build): an externalized entry made every
+boot resolve, read, type-strip and compile ~72 TypeScript modules before
+serving a request, and left the image's compile cache (below) keyed on 72 files
+instead of one. `bundled-deps.test.ts` holds the pattern to the specifiers the
+entry really imports — the built file cannot be the guard, since `test` depends
+on `^build`, not on this package's own build.
+
+One consequence to keep in mind when adding code to aai-server: **the module's
+own location is no longer where its source lives.** `createRequire(import.meta
+.url)` resolves from `packages/aai-studio-server/dist/`, whose pnpm
+`node_modules` has no `aai-guest` above it — which is why `guestPackageDir`
+(modal-harness-image.ts) falls back to deriving that package root from the
+harness path. Anything else that resolves a workspace sibling by module
+location owes the same fallback.
+
+**The shared core is the `exports` map, and nothing else.** It is an
+explicit list of 31 subpaths, grouped by role (stores, coordination, sandbox
+machinery, schemas, app composition, the routes the studio reuses), and
+`platform-surface.test.ts` holds it to the imports that actually exist in
+both directions — an entry nobody imports fails, and so does an import with
+no entry. It was `"./*": "./*.ts"` for a long time, which meant every one of
+the package's ~70 modules was published to the sibling: the prose above
+described a "shared core" that no code distinguished from the agent
+service's own internals, so `aai-studio-server` reached into 31 of them and
+none of those reaches could be called a violation. Widening the surface is
+now an edit to package.json rather than a side effect of typing an import
+path. When a coupling goes away, delete the entry — this list only ratchets
+down, like the file-length allowlist.
+
+- **One public origin**, now structurally rather than by proxying: both
+  surfaces are served by one process on one hostname. This is what keeps the
+  preview iframe working — agent pages are served `X-Frame-Options:
+  SAMEORIGIN`, so the studio must share their origin. Shared base middleware
+  lives in `app-middleware.ts` so the two apps can't drift on CORS/framing
+  policy.
+- **Never derive the public scheme from the request URL** — use
+  `resolvePublicOrigin` (`aai-server/public-origin.ts`). Modal terminates TLS
+  at its edge and forwards plain HTTP to the container (its ASGI proxy adds
+  only `X-Forwarded-For`, never `X-Forwarded-Proto`), so `new URL(c.req.url)`
+  is **always** `http:` in a handler, whatever the browser used. Resolution
+  order: `AAI_PUBLIC_ORIGIN` → `x-forwarded-host`/`-proto` (a real proxy in
+  front) → infer, loopback being the only `http`.
+
+  Both places that had rolled their own cost real outages. Studio **Publish
+  died on `401 Missing Authorization header` from its own platform**: the
+  guest was handed `http://<public host>`, its `aai deploy` POST was
+  308-redirected to `https://`, and `fetch` strips `Authorization` across a
+  scheme change (different origin per the Fetch spec). The request arrived
+  unauthenticated, so the CLI reported an invalid API key it had in fact sent
+  correctly. (The since-removed studio proxy propagated the same wrong answer a
+  second way, forwarding its own `x-forwarded-proto: http`.) The bare-slug
+  redirect
+  (`/:slug` → `/:slug/`) separately echoed the cleartext URL back as an
+  absolute `Location`, bouncing https browsers through `http://`; it is now
+  relative, which no scheme can taint.
+
+  **A resolved origin may be used WITHIN the request that asked for it and
+  never stored for a later one.** `Host` and `x-forwarded-*` are the caller's
+  to write, so a use inside the request is self-directed (a caller who lies
+  gets its own lie back) while one that outlives it is an injection — see
+  "Durable workflows" below for the shipped instance.
+- **Cross-origin callers come from `AAI_ALLOWED_ORIGINS`, and unset means
+  none.** Comma-separated, or `*`; read in `app-middleware.ts` so both surfaces
+  get one answer, an explicit `allowedOrigins` argument still winning.
+  Rejecting is right here — both surfaces are same-origin by construction. It
+  was settable by no composition at all for a long time, while the option's doc
+  claimed a default of "any origin": fail-closed, so never a hole, but the only
+  documentation there gave the wrong answer to "is CORS open?".
+- **Cross-service invalidation is the agents row's CHANGE STREAM**
+  (`agent-store.ts` for the row; `platform-events.ts` /
+  `realtime-events.ts` for the stream; `watchAgentInvalidation` in
+  `sandbox-resolve.ts` for the handler). Mutation handlers ONLY write the
+  row — deploy upserts it (bumping `version`), delete removes it — and
+  every replica, the writer included, reacts to the resulting Supabase
+  Realtime `postgres_changes` event: the handler drops the bundle-store
+  row caches, re-reads the version fresh (events are signals, never
+  payloads), and retires a resident at a different version (terminates on
+  a deleted row — a deleted agent must stop answering, not drain). This is
+  how a studio-service Publish reaches the agent service's resident
+  sandboxes within seconds. There is no separate signal to send — the row
+  write IS the notification, so no bump can be missed — and no duplicate
+  detection paths: the per-broker lazy version check and the idle sweep's
+  `SupersededCheck` were both removed when the change stream replaced
+  them, so `resolveSandbox` serves any LIVE resident as-is and the idle
+  sweep is purely about idleness. (Worker/client blob caches are
+  hash-keyed and immutable — a stale row is a consistent OLD deploy, never
+  a torn mix, and a wrong blob is structurally impossible.) The handler's
+  version comparison under the slug lock is what makes duplicated or
+  reordered events harmless; an unreadable version logs and leaves the
+  resident alone rather than killing a healthy sandbox.
+
+  **The stream's REJOIN is itself a signal, and on THIS stream it has to be.**
+  `subscribe()` only sends the join — the binding is not live until the ack,
+  and realtime-js rejoins after any socket drop — so changes in either window
+  reach nobody, ever. The pooled channels always fired their watchers on the
+  ack; the AGENTS channel did not, and it is where the gap is unrecoverable,
+  being the single mover of residents with no later check behind it (see the
+  deleted duplicate paths above). A deploy during a drop left the replica
+  serving superseded code and a delete left it answering for a deleted agent,
+  until the guest happened to self-exit on idle — for a busy agent, never,
+  since traffic is what keeps it non-idle. The deploy reported success.
+
+  So `watchAgents` takes a second, slug-less `onResync`, which
+  `watchAgentInvalidation` answers by re-running the same per-slug reconcile
+  over every resident. Three properties: it is a **separate callback, not a
+  nullable slug**, so a consumer that ignores resync says so by omission
+  rather than mishandling a sentinel silently; **the residents are the query,
+  not the agents table** — one version read per sandbox actually served
+  (single-flighted, 1s-cached) and none at all on a replica holding none,
+  because every reconnect fires this and the common case must stay a cheap
+  re-read; and **registration precedes `ensureAgentsChannel()`**, so a join
+  cannot fire ahead of the watcher that triggered it.
+
+  The subscription MONITOR (`createSubscriptionMonitor`, via `/health`) is the
+  complement, not the same thing: it makes a channel that never joins visible,
+  and cannot repair one that dropped and recovered on its own — the common
+  case, and the silent one.
+
+  **Deploy and delete are the ONLY mutations that move sandboxes.** Secret
+  and storage changes write Vault and bump nothing — they take effect on
+  the agent's next deploy (or whenever its sandbox is next rebuilt). That
+  trade deleted the whole secret-invalidation mechanism (the old
+  `aai_platform.slug_epochs` table); the documented way to apply a secret
+  now is to redeploy.
+
+  **Supabase setup this depends on lives in `supabase/migrations`**, applied
+  with `supabase db push` BEFORE the code that queries it: the `aai_platform`
+  schema and its tables, the watched tables' membership in the
+  `supabase_realtime` publication, the
+  `service_role` SELECT grants, the workspace-child foreign keys, the
+  orphan-sweep's `studio_workspaces.preview_slug` generated column + index,
+  and the
+  `pg_cron`/`pgmq`/`pg_net` extensions. Realtime validates channel filter
+  columns (and gates row visibility) against what the subscriber's claimed
+  role can SELECT, and the app-created `aai_platform` schema gets none of
+  Supabase's default `public` grants, so without those grants every filtered
+  subscribe fails with `invalid column for filter <col>`. Only the pg_cron
+  SCHEDULING stays at boot (`schedulePlatformSweeps` via
+  `bootstrapPlatformDb`), because the sweep bodies are defined in TypeScript
+  and change with the code that owns them.
+  The env carries `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` for the
+  Realtime socket, required in production alongside `SUPABASE_DB_URL`.
+- **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
+  A mutation replaces the code a slug runs; it says nothing about the calls
+  already in flight on the old sandbox, and closing their sockets inline —
+  which every mutation path used to do — meant shipping during the day
+  dropped live conversations. `retireSlot` splits the two things
+  "terminate" conflated: it detaches the sandbox from the slot
+  **synchronously, with no await in between** — the broker is the only
+  routing point, so from that instant no NEW session can reach it and the
+  slug is free to rebuild — then FIRE-AND-FORGETS one deadline-carrying
+  `POST /manage/drain` to the guest. The GUEST owns the drain from there
+  (`harness-agent-mode.ts`): it refuses new direct-dial sessions, exits the
+  instant its last session ends, and exits at the deadline
+  (`SANDBOX_RETIRE_DRAIN_MS`, 10 min, env overridable; 0 terminates
+  immediately) regardless — a retired sandbox is a billed guest running
+  superseded code. The host keeps NO drain state and runs no poll loop; an
+  unreachable guest (the drain request rejects) is terminated on the spot.
+  - **Retirement is for superseded, not gone.** A failed VM, an exited
+    guest, and a deleted agent stay on `terminateSlot`: there is nothing to
+    drain, and a deleted agent must stop answering rather than keep taking
+    calls for ten more minutes.
+  - **Process teardown deliberately does NOT chase retired guests** — they
+    are off the slot map and self-governing; their drain deadline is
+    minutes past the container grace period, and Modal's sandbox `timeoutMs`
+    is the backstop behind everything.
+- **The studio service holds an always-empty slot cache** — the shared
+  mutation cores' local sandbox teardowns are deliberate no-ops there,
+  while the deploy's row-version bump does the real work. It shares
+  everything else through Supabase and spawns its own Modal sandboxes for
+  `test_agent` and Publish.
+- **The web service autoscales** (constants block in `modal_deploy.py`),
+  bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Scale-in is FREE for voice
+  sessions: a replica going down RETIRES its agent guests instead of
+  waiting on or terminating them (`teardownSandboxes` — one awaited,
+  deadline-carrying drain per guest, then exit).
+
+  **Shutdown has to stop BOOTING sandboxes before it stops serving.**
+  Flipping `draining` only makes `/health` fail; the proxy stops routing here
+  when it notices, up to a health-check interval later. A request landing in
+  that window used to take the cold broker path, find an emptied slot, and
+  spawn a guest seconds before the process exited — ORPHANED, since no slot
+  referenced it and nothing held it, billing until Modal's idle timeout. Two
+  guards, in order of importance: `brokerSessionUrl` refuses to boot a new
+  sandbox when `isDraining` (503, so the client re-brokers onto a live
+  replica) while still serving a LIVE resident, which orphans nothing; and
+  `teardownSandboxes` waits `SHUTDOWN_GRACE_MS` (3s, env-overridable) before
+  emptying the slots, so requests that would have been served still are. The
+  wait is deliberately short — it spends the same SIGTERM allowance the
+  drains need, and an undelivered drain is the worse failure. The studio-only
+  service passes 0: its slot cache is always empty, so it has no such window.
+  Sessions dial the sandbox
+  tunnel directly and the guest has no dependency on the replica, so live
+  calls finish in the guests on their own clock after the replica is gone;
+  the next replica's broker spawns fresh sandboxes on demand. The old
+  count-guest-sessions-and-wait shutdown drain (`liveGuestSessions`,
+  `drainActiveSessions`, `SHUTDOWN_DRAIN_MS`) was deleted — it could only
+  ever delay the exit, and past its 120s budget it cut the very calls it
+  existed to protect. Studio guests DO go down with the replica (the
+  broker's `dispose()`): their coding-agent sessions live on the host's
+  control channel, so a dead host makes them useless.
+
+  **Shutdown is BOUNDED at two levels**, because `createShutdownHandler` arms
+  its `SHUTDOWN_CLOSE_FALLBACK_MS` timer only AFTER `onShutdown()` settles — so
+  the sole deadline used to cover the fast half (waiting for connections to
+  close) and leave the slow half unbounded, and the slow half is the one that
+  hangs. `SANDBOX_TEARDOWN_READY_MS` caps the readiness wait `Sandbox.drain` /
+  `shutdown` inherit from the spawn (the 120s BOOT budget, spent on guests with
+  nothing to drain); `SHUTDOWN_TEARDOWN_TIMEOUT_MS` is the general net over it,
+  since the Modal calls underneath carry no timeout at all. Both constants
+  carry the budget arithmetic and the why-giving-up-is-safe argument in
+  `constants.ts`; read them before changing `SHUTDOWN_GRACE_MS`, which they are
+  sized against. Pinned by tests that FAIL FAST rather than hang — "this
+  settles within a budget" times out to the suite limit once the budget is
+  gone, so the teardown promises are never awaited; settlement is recorded on
+  a `vi.fn()`.
+- **Shutdown ENDS long-lived responses; it must never let the process exit
+  destroy them** (`live-streams.ts`, wired into `serve-lifecycle.ts`). SSE
+  streams never end on their own, so `server.close()` waited out
+  `SHUTDOWN_CLOSE_FALLBACK_MS` and `process.exit(0)` destroyed the sockets,
+  cutting each chunked body before its terminating `0\r\n\r\n` — a protocol
+  error to whatever is reading. Three properties of the ending are each a hole
+  that put the truncation back while the registry looked correct: it runs FIRST
+  (before the sandbox teardown, which sleeps and then awaits a drain per
+  guest), the registry LATCHES closed (so a stream registered mid-shutdown is
+  ended on the spot rather than held until the exit), and the crash path ends
+  them too (`installProcessSafetyNets`). **Any future long-lived response owes
+  the same registration**; the guard is `live-streams.test.ts`, which reads raw
+  socket bytes because a handler-level assertion passes with the bug present.
+- **A long-lived connection is ONE Modal input, so the function `timeout`
+  bounds CALL DURATION** — not request latency, which is why the app pins
+  `FUNCTION_TIMEOUT_SECS` (4h, matching `DEFAULT_SANDBOX_TIMEOUT_MS`) rather
+  than inheriting Modal's 300s default. Nothing long-lived runs in this process
+  today — voice sessions dial the guest tunnel directly and `/:slug/websocket`
+  upgrades are handshake redirects — so the only responses under that cap are
+  the STUDIO's two event streams. Their whole story, including why 4h is
+  load-bearing for a revived split deployment, what the recurring
+  `TransferEncodingError`s in the log are (mostly not truncation we caused),
+  the log filter that collapses them, and why capping a stream's own lifetime
+  was rejected, is in "Long-lived responses (SSE)" above.

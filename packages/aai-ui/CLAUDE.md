@@ -76,9 +76,16 @@ one to, so paying it down means a private module.
   useSessionSelector, ThemeProvider, useTheme
 - `hooks.ts` — useToolResult, useToolCallStart, useEvent
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
-- `define-client.tsx` — client mount helper
+- `define-client.tsx` — client mount helper, and the two pieces `page()` shares
+  with it: `resolveContainer` (the default `#app` selector and its error
+  sentence) and `mountRoot` (the root, the `flushSync`, and the disposable
+  handle). Both mounts were written out in full, comments included; what
+  actually differs between them is only the tree
 - `default-client.tsx` / `build-default-client.ts` — the default UI shipped
   to agents with no `client.tsx`, and its build step
+- `_workflow-api-ref.ts` / `_repeat-until.ts` — the two scaffolds the workflow
+  hooks are built out of: the client-in-a-ref preamble (five copies) and the
+  "bounded read, re-armed from the settled read" loop (two)
 - `types.ts` — UI type definitions
 - `components/` — UI components (console-shell, chat-view, controls,
   message-list, auto-scroll, start-screen, sidebar-layout, tool-call-block,
@@ -409,6 +416,22 @@ the whole reason this route is shaped the way it is:
   at the same list as one that watched throughout. That is why the default
   `startIndex` is 0 and not "from now": a tail-only default would make the same
   page show different things depending on when it opened.
+- **A negative `startIndex` is resolved by the READER, on its first read.** "The
+  last N" names no position a later read can resume from — the tail it counts
+  back from moves with every line the run writes — so carrying it into the
+  re-open meant asking from 0 and dropping `seen` chunks off the FRONT, which is
+  a different set entirely: a reader that opened at `-3` on a ten-line log held
+  lines 7-9 and was then handed lines 3 onwards, four it never asked for
+  followed by the three it already had. So the FIRST read is issued from 0 and
+  trimmed to the window, and every read after it is the ordinary absolute case.
+  The first read costs the whole log, which is exactly what the default already
+  does.
+
+**One React commit per READ, not per line.** `consumeFrames` drains a whole
+bounded read anyway, so it returns the chunks and the hook appends them in one
+update; a per-chunk callback re-rendered the page once per progress line and
+rebuilt the list each time, which for a fan-out writing a line per segment is an
+O(n²) copy of a log the reader can only see one frame of at a time.
 
 The write half is the author's, and it is `getWritable()` from `workflow`
 (imported directly, like `sleep`) called from a STEP and never from the body —
@@ -560,6 +583,14 @@ calls `refresh` when its own run settles, which is exactly when the list is
 stale. `transcription-workflow` is the worked example, and it replaced a text box
 asking the reader to paste a run id they would have had to write down.
 
+**Every read carries a `createEpoch()` generation, and the READ bumps it — not
+only the unmount.** With the cleanup as the sole bumper, two `refresh()` calls
+captured the same generation, so whichever settled last won: a slow earlier read
+overwrote a newer one's answer with a staler list, which for the
+"my run finished, re-read the history" call is routinely the wrong way round.
+Reach for the primitive rather than a `useRef(0)` counter — see "Concurrency
+primitives" in the root guide.
+
 ### `report()` writes to the page AND the server log
 
 `report(line)` (`@alexkroman1/aai/utils`) is what a step says about itself. It
@@ -643,14 +674,24 @@ Four properties are load-bearing and each covers a bug that is silent:
   natural spelling passes a new object every render; as a dependency that is an
   unbounded request loop against the agent, with `error` wiped before anything
   can read it — presenting as "the page polls forever" rather than as a mistake
-  at the call site. Hoist the client out of the component anyway.
+  at the call site. Hoist the client out of the component anyway. All five
+  workflow hooks get this from **`useWorkflowApiRef(api)`** — the ref, the
+  lazily-built default behind it, and one copy of the argument, which had been
+  written out five times with four copies of the same paragraph. It returns a
+  STABLE getter read per request, so a caller swapping clients mid-watch (a
+  token arriving after login) is picked up without the watch restarting.
 - **A 404 is a STABLE answer**, so the poll gives up after `MAX_MISSING_READS`.
   Unbounded, a stale id (restored from `localStorage`, or belonging to an agent
   redeployed onto a fresh database) polls — and BROKERS — for as long as the tab
   is open.
 - **`polling` cannot be derived from the snapshot alone.** Giving up on a
   missing id leaves `run` undefined, which reads as "still waiting", so the
-  hook tracks the stop explicitly.
+  hook tracks the stop explicitly. **A caller must READ it rather than re-derive
+  its own**: `useWorkflowSubmit` computed `pending` as
+  `runId !== undefined && !isTerminal(run)`, dropped the stop, and so left the
+  submit button disabled and reading "Working…" for the life of the page once
+  the watch gave up — with the correct error rendered directly above it. It is
+  `starting || tracked.polling` now, and this bullet is why that term exists.
 - **Every stream ending is NAMED** — `done` (terminal), `missing` (will never
   exist), `idle` (the stream hit its own duration cap, because a run can sleep
   for hours and a connection held that long is one nothing is maintaining). A
@@ -727,6 +768,17 @@ boolean, an empty optional field nothing at all. That is load-bearing rather
 than tidy, because these values go straight into a workflow's input where a zod
 schema is waiting — `"3"` against `z.number()` is a rejected run, and the browser
 is the only place that still knows the control was `type="number"`.
+
+**What a control contributes is decided per ELEMENT KIND, so every branch owes
+the same two checks.** `collectValues` had them on `<input>` alone: a `<select>`
+contributed `element.value`, which is the FIRST selected option and nothing more
+— so `<SelectField multiple>` (which type-checks, since the props extend
+`SelectHTMLAttributes`) handed a list-shaped schema one string — and a disabled
+`<SelectField>` or `<TextAreaField>` contributed a value where a disabled
+`<TextField>` did not, one form answering the same question two ways. A
+multi-select reads `selectedOptions` and contributes `[]` when nothing is
+chosen, which is the honest answer for a control that is present and empty as
+against one left blank (the number field's omission rule).
 
 **A `<FileField>` describes a file; by default it does not upload one.** It
 contributes `{ name, size, type, lastModified }`, and `read="text"` /
@@ -836,6 +888,12 @@ untouched by all of this: the server said the session survived, so later
 activity still retires its banner, which is the case the recovery was
 written for.
 
+**And the banner is ANNOUNCED.** `ConsoleShell` renders it with `role="alert"`,
+the same way `Form` renders a submit failure, because the latch above makes this
+the ONLY remaining signal: the state eyebrow beside it goes back to reading like
+a live session, so a plain `<div>` appearing mid-page told a screen-reader user
+nothing at all about a call that had ended.
+
 ## A handshake is not a session (`session-core-handshake.ts`)
 
 **An open socket proves the peer answered `101`, nothing more.** The server
@@ -860,13 +918,23 @@ failed one.
 since `open` fires again on each partysocket retry) and disarms it on the
 `config` frame or the close. On expiry it re-dials — the sandbox behind the
 endpoint may have been replaced, and the URL provider re-brokers — and after
-`MAX_HANDSHAKE_TIMEOUTS` it surfaces a real `connection` error. Two things
+`MAX_HANDSHAKE_TIMEOUTS` it surfaces a real `connection` error. Three things
 make it correct rather than merely present:
 
 - **The budget is its own.** `forceReconnect` calls partysocket's
   `reconnect()`, which resets `_retryCount` to -1 — so `RECONNECT_OPTIONS.
   maxRetries` cannot bound this failure mode, and without a separate cap a
   wedged peer would be re-dialed every ~10s forever.
+- **The budget is CONSECUTIVE, which takes a second method to say.** One guard
+  covers a whole `connect()` — partysocket's retries live under it — so a plain
+  `disarm()` on the `config` frame left the count standing across every
+  successful session in between, making it per-CONNECTION: an hour-long call
+  whose socket dropped three times, each drop timing out once before the next
+  attempt answered, ended on the permanent "did not complete the session
+  handshake" error against a peer that had answered every time. `succeeded()` is
+  the completed handshake and resets it; `disarm()` is a socket closing and must
+  NOT, because a wedged peer closes and reopens on its own and resetting there
+  is the unbounded re-dial this budget exists to bound.
 - **The timer is a bare `setTimeout`, so it does NOT come off with the
   connection's `AbortSignal`** the way the socket listeners do. It has to
   disarm on `abort` explicitly, or an explicit disconnect leaves it armed and
@@ -920,6 +988,17 @@ the SDK's — see "Pre-connection client config" in `packages/aai/CLAUDE.md`.
 (any failure degrades to the empty default, so older servers keep working)
 and mounts the chat shell; the shell uses the server-declared `name` unless
 `client({ name })` overrides it. A custom `component` ignores all of it.
+
+**It skips the lookup entirely when `client({ name })` named the agent**, because
+the response's only consumer there is that fallback — and on the platform this
+endpoint is the BROKER, so the discarded request is one that can boot a sandbox.
+The SESSION's lookup is a separate question and is deliberately left as it is:
+it re-brokers per connection ATTEMPT, which is what makes a reconnect land on a
+REPLACEMENT sandbox, so it may not be served from an answer this render already
+holds — the two are minutes apart (the session only connects from the Start
+button), and a memo spanning them would hand the socket a `sessionUrl` naming an
+evicted sandbox, turning a first-attempt connect into a failed attempt plus a
+retry.
 
 **The session's per-attempt broker lookup uses `loadClientConfig`, not
 `fetchClientConfig`** — it returns `null` for a lookup that produced no

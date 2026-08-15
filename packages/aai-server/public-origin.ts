@@ -29,11 +29,23 @@
  *    guessing `http` there is the failure above. A self-hosted plaintext
  *    deployment on a public hostname must set `AAI_PUBLIC_ORIGIN`.
  *
- * Note the `x-forwarded-*` headers are caller-supplied when nothing proxies
- * this service (combined mode). The blast radius is self-directed — the
- * origin is only ever paired with the *same request's* bearer token — but
- * `AAI_PUBLIC_ORIGIN` is the way to take the choice away from callers.
+ * Note the `Host` and `x-forwarded-*` headers are ALL caller-supplied: Modal's
+ * proxy forwards the client's `Host` and adds no `x-forwarded-host`, and in
+ * combined mode nothing rewrites either. What that costs depends entirely on
+ * where the answer goes:
+ *
+ * - **Within the request that asked** — a redirect `Location`, the URL a
+ *   carrier signed, the `x-forwarded-*` pair handed to a downstream hop — it is
+ *   self-directed. A caller who lies about the host gets its own lie back.
+ * - **Anywhere it OUTLIVES the request** it is an injection, because the next
+ *   reader is somebody else. That is why {@link rememberPublicOrigin} does not
+ *   record one in production: see its doc.
+ *
+ * `AAI_PUBLIC_ORIGIN` is the way to take the choice away from callers, and it
+ * is what a deployment that mints durable URLs owes.
  */
+
+import { isLocalDev } from "./_boot.ts";
 
 /** Hosts that are genuinely reached over cleartext HTTP. */
 function isLoopback(host: string): boolean {
@@ -68,7 +80,8 @@ export function resolvePublicOrigin(req: Request, env: NodeJS.ProcessEnv = proce
 }
 
 /**
- * The last origin this replica RESOLVED for a real request.
+ * The last origin this replica resolved for a request it was willing to LEARN
+ * from — local dev only. See {@link rememberPublicOrigin}.
  *
  * Derived config, not state: losing it costs one re-observation, no request
  * reads it, and nothing coordinates on it — so it does not breach the
@@ -84,15 +97,42 @@ export function resolvePublicOrigin(req: Request, env: NodeJS.ProcessEnv = proce
 let observedOrigin: string | undefined;
 
 /**
- * Record the origin of a request being served, and return it.
+ * Record the origin of a request being served — IN LOCAL DEV ONLY — and return
+ * the resolved origin either way.
  *
  * Called from the shared platform middleware, so both surfaces feed it and no
  * route has to remember. `AAI_PUBLIC_ORIGIN` still wins wherever the value is
  * read, so an operator who sets it never depends on what was observed.
+ *
+ * **Why production learns nothing.** The origin resolves from `Host` /
+ * `x-forwarded-host`, which are the CALLER'S to write, and this middleware runs
+ * on every request before any auth — `GET /health` included. What it writes is
+ * read by {@link agentPublicBaseUrl} at the next SPAWN, for ANY slug and any
+ * tenant, and baked into that guest as `AAI_PUBLIC_BASE_URL`. One
+ * `curl -H 'Host: evil.example' <replica>/health` therefore made the next
+ * sandbox this replica booted mint `https://evil.example/<slug>/…` from
+ * `ctx.workflows.publicWebhookUrl(token)` — a URL its author hands to a payment
+ * provider. The callback then delivers the payload and the run token to the
+ * attacker, and the run never resumes. Unauthenticated, cross-tenant, and
+ * durable past the request that caused it, which is exactly the line the module
+ * doc above draws: an origin that outlives its request is an injection.
+ *
+ * There is no header a server can distinguish from a forged one, so the
+ * production answer is not a better check — it is refusing to guess. With
+ * nothing observed, `agentPublicBaseUrl` returns `undefined`, the boot env omits
+ * the key, and the SDK throws naming `publicUrl` the first time an author asks
+ * for a durable URL. That is the failure the shipped plan designed for
+ * (`research/3.75-guest-public-origin.md`), it is loud, and it is one env var to
+ * fix: `AAI_PUBLIC_ORIGIN`.
+ *
+ * Local dev keeps the observation because there is no tenant boundary to cross
+ * there and no attacker to cross it — the same `isLocalDev` premise that lets
+ * the isolation-free `subprocess` sandbox backend be selected at all — and
+ * because requiring config for `pnpm dev:aai-server` would be pure friction.
  */
 export function rememberPublicOrigin(req: Request, env: NodeJS.ProcessEnv = process.env): string {
   const origin = resolvePublicOrigin(req, env);
-  observedOrigin = origin;
+  if (isLocalDev(env)) observedOrigin = origin;
   return origin;
 }
 
@@ -121,6 +161,12 @@ export function forgetObservedPublicOrigin(): void {
  * `ctx.workflows.webhookUrl()` THROWS naming the option, which is the whole
  * point: a `localhost` URL handed to a third party fails weeks later, at them,
  * with nothing here to look at.
+ *
+ * **In production the only source is `AAI_PUBLIC_ORIGIN`**, because nothing else
+ * is the operator's word — see {@link rememberPublicOrigin} for what an observed
+ * one costs. A deployment that mints durable webhook URLs must set it; one that
+ * does not is unaffected, and gets the throw above rather than a wrong URL if it
+ * ever starts.
  */
 export function agentPublicBaseUrl(
   slug: string,

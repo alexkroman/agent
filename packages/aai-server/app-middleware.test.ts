@@ -10,8 +10,8 @@
  */
 
 import { Hono } from "hono";
-import { beforeEach, describe, expect, test } from "vitest";
-import { applyPlatformMiddleware } from "./app-middleware.ts";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { applyPlatformMiddleware, resolveAllowedOrigins } from "./app-middleware.ts";
 import type { HonoEnv } from "./context.ts";
 import { agentPublicBaseUrl, forgetObservedPublicOrigin } from "./public-origin.ts";
 
@@ -27,7 +27,7 @@ describe("applyPlatformMiddleware", () => {
     forgetObservedPublicOrigin();
   });
 
-  test("records the public origin of every request it serves", async () => {
+  test("records the public origin of every request it serves (local dev)", async () => {
     const app = appWithMiddleware();
     // Cleartext with a public Host, which is what Modal forwards: the resolver
     // is what turns that into https, and this asserts the middleware ran it.
@@ -35,6 +35,18 @@ describe("applyPlatformMiddleware", () => {
     expect(agentPublicBaseUrl("digest-desk", {})).toBe(
       "https://agent.example.modal.run/digest-desk",
     );
+  });
+
+  test("in production it records NOTHING, whatever Host a caller writes", async () => {
+    // The middleware is where the poisoning happened: it runs on every request
+    // before any auth, so an unauthenticated `GET /health` carrying
+    // `Host: evil.example` set the origin baked into the next sandbox this
+    // replica spawned — for any slug, any tenant. See `rememberPublicOrigin`.
+    vi.stubEnv("SUPABASE_STORAGE_BUCKET", "aai-deploys");
+    const app = appWithMiddleware();
+    const res = await app.request(new Request("http://evil.example/ok"));
+    expect(res.status).toBe(200);
+    expect(agentPublicBaseUrl("someone-elses-agent", {})).toBeUndefined();
   });
 
   test("records it for a request that 404s too", async () => {
@@ -70,5 +82,51 @@ describe("applyPlatformMiddleware", () => {
       new Request("http://localhost/ok", { headers: { Origin: "https://evil.test" } }),
     );
     expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  describe("AAI_ALLOWED_ORIGINS", () => {
+    // `allowedOrigins` was an option no composition set, whose own doc claimed
+    // it defaulted to "any origin" while the behaviour was to reject every
+    // cross-origin caller. Threading it from the environment HERE rather than
+    // through each entry point is what keeps the two surfaces from drifting —
+    // which is the whole reason this module exists.
+    const originOf = async (env?: string): Promise<string | null> => {
+      if (env !== undefined) vi.stubEnv("AAI_ALLOWED_ORIGINS", env);
+      const res = await appWithMiddleware().request(
+        new Request("http://localhost/ok", { headers: { Origin: "https://app.example" } }),
+      );
+      return res.headers.get("access-control-allow-origin");
+    };
+
+    test("a listed origin is allowed", async () => {
+      await expect(originOf("https://app.example, https://other.example")).resolves.toBe(
+        "https://app.example",
+      );
+    });
+
+    test("an unlisted one still is not", async () => {
+      await expect(originOf("https://other.example")).resolves.toBeNull();
+    });
+
+    test("`*` opens it, which has to be an explicit act", async () => {
+      await expect(originOf("*")).resolves.toBe("*");
+    });
+
+    test("blank or whitespace reads as unset, not as an empty allow-list entry", async () => {
+      await expect(originOf("  ")).resolves.toBeNull();
+      expect(resolveAllowedOrigins({ AAI_ALLOWED_ORIGINS: " , " })).toBeUndefined();
+      expect(resolveAllowedOrigins({})).toBeUndefined();
+    });
+
+    test("an explicit argument wins over the environment", async () => {
+      vi.stubEnv("AAI_ALLOWED_ORIGINS", "*");
+      const app = new Hono<HonoEnv>();
+      applyPlatformMiddleware(app, []);
+      app.get("/ok", (c) => c.text("ok"));
+      const res = await app.request(
+        new Request("http://localhost/ok", { headers: { Origin: "https://app.example" } }),
+      );
+      expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    });
   });
 });

@@ -86,7 +86,9 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
   const models = new WeakMap<LlmProvider, LanguageModel>();
 
   const resolveModel = (descriptor: LlmProvider | undefined): LanguageModel => {
-    if (!(descriptor && isDescriptor(descriptor))) {
+    // `isDescriptor` is `isRecord` plus a `kind` check, and `isRecord(undefined)`
+    // is already false — the extra truthiness guard read as a second condition.
+    if (!isDescriptor(descriptor)) {
       throw new Error(
         "generate: no LLM configured. Pass an `llm` descriptor in the generate " +
           "options (from @alexkroman1/aai/llm), or run the agent in pipeline mode.",

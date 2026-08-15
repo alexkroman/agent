@@ -82,6 +82,32 @@ describe("useWorkflowRuns", () => {
     await waitFor(() => expect(api.recent).toHaveBeenCalledTimes(2));
   });
 
+  test("a refresh that overtakes a slower read in flight DROPS the older answer", async () => {
+    // The epoch was bumped only by the effect's cleanup, so two refreshes
+    // captured the same generation and whichever settled LAST won — which for a
+    // "the run I just started has finished, re-read the list" refresh is
+    // routinely the older, staler read.
+    const slow = Promise.withResolvers<WorkflowRun[]>();
+    const api = fakeApi({
+      recent: vi
+        .fn<WorkflowApi["recent"]>()
+        .mockReturnValueOnce(slow.promise)
+        .mockResolvedValue([run({ runId: "wrun_fresh" })]),
+    });
+    const { result } = renderHook(() => useWorkflowRuns("transcribe", { api }));
+
+    // The second read answers first, with the newer list.
+    await act(async () => result.current.refresh());
+    await waitFor(() => expect(result.current.runs[0]?.runId).toBe("wrun_fresh"));
+
+    // The first read lands late. It must not overwrite what replaced it.
+    await act(async () => {
+      slow.resolve([run({ runId: "wrun_stale" })]);
+      await slow.promise;
+    });
+    expect(result.current.runs[0]?.runId).toBe("wrun_fresh");
+  });
+
   test("reads nothing when it is skipped or has no workflow", () => {
     const api = fakeApi();
     renderHook(() => useWorkflowRuns("transcribe", { api, skip: true }));

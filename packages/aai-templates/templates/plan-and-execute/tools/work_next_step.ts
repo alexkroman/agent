@@ -1,6 +1,6 @@
 import { errorMessage, isToolFailure, tool, toolFailure } from "@alexkroman1/aai";
 import { executeStep, replanNode } from "../graph.ts";
-import { liveSearch, noteRevision, type PastStep, planSlot } from "../shared.ts";
+import { liveSearch, noteRevision, type PastStep, planSlot, recordStep } from "../shared.ts";
 
 /**
  * One turn of their execute→replan loop: do the head step, then let the
@@ -54,7 +54,9 @@ export default tool({
     try {
       const outcome = await executeStep(ctx.generate, liveSearch, objective, step, pastSteps);
       planSlot.update(ctx, (plan) => {
-        plan.pastSteps.push({ step, result: outcome.result, searches: outcome.searches });
+        // Capped: `historyOf` renders this whole list into two prompts, so an
+        // append with no bound is a model bill that grows with the plan.
+        recordStep(plan, { step, result: outcome.result, searches: outcome.searches });
       });
 
       // Their `replan_step`: the plan after a step is whatever still needs

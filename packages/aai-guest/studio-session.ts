@@ -13,6 +13,7 @@
 import path from "node:path";
 import { toolchainModules, workspaceDependencyOptions, workspacesRoot } from "./studio-build.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
+import { enterTurn } from "./studio-turn-stream.ts";
 import { ensureWorkspaceDependencies, SESSION_INSTALL_BUDGET_MS } from "./studio-workspace-deps.ts";
 import { materializeWorkspace } from "./studio-workspace-fs.ts";
 
@@ -112,9 +113,32 @@ export function resetSessionIdentity(): void {
 /**
  * Initialize (or replace) the harness's studio session: materialize the
  * workspace to a scratch dir and remember the turn configuration. Called by
- * the `studio/session-init` control-channel request — repeat calls reset
- * the workspace to the store's current files (the broker re-inits on every
- * page session so the sandbox never serves a stale tree).
+ * the `studio/session-init` control-channel request and by its HTTP twin —
+ * repeat calls reset the workspace to the store's current files (the broker
+ * re-inits on every page session so the sandbox never serves a stale tree).
+ *
+ * **Except while a turn is running, when the LIVE TREE WINS.** A refresh or a
+ * second tab sends `studio/session-init` to the live sandbox, and the reset
+ * `materializeWorkspace` opens with is an `rm -rf` of a path that is constant
+ * per process — the very directory the in-flight turn's tools closed over. That
+ * deleted every edit since the last checkpoint, gave the next tool an ENOENT
+ * one call after it had reported success, handed `buildWorkspaceDir` a
+ * half-populated tree so the agent started "fixing" phantom build errors, and
+ * ended with `settleTurn` syncing the mixed result back marked `done: true` —
+ * i.e. publishing it. So the reset is claimed through the same gate a turn is
+ * ({@link enterTurn}), and a session-init that cannot claim it re-points the
+ * session at the live tree and touches nothing on disk.
+ *
+ * That is also the correct answer rather than merely the safe one: mid-turn the
+ * guest's tree is AHEAD of the store, so resetting to the store's files is
+ * restoring a stale snapshot over newer work. The install itself is still
+ * replaced (a new `chatToken`, system prompt and model), which is all the tab
+ * that asked for it actually needs — and its first turn is refused 423 until
+ * the running one finishes, which the browser already handles.
+ *
+ * Holding the gate for the whole preparation, rather than reading a "busy"
+ * flag, is what also closes the mirror race: a turn cannot start while the tree
+ * is half-materialized.
  */
 export async function initStudioSession(params: StudioSessionParams): Promise<StudioSession> {
   const identity = { scope: params.scope, project: params.project };
@@ -128,27 +152,39 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
   // the aai CLI bundlers, and only this root has the toolchain's
   // node_modules above it for the workspace's bare imports to resolve.
   const dir = path.join(workspacesRoot(), "session");
-  await materializeWorkspace(dir, params.files);
-  // Complete the workspace into a real project (package.json, tsconfig,
-  // …) — same shape `aai init` scaffolds; the files sync back to the
-  // store at end of turn like everything else in the workspace.
-  await ensureProjectShape(dir);
-  // `materializeWorkspace` opened with `rm -rf`, so a re-install (a refresh, a
-  // replica taking over) has just deleted the node_modules `add_dependency`
-  // built — and a workspace pushed from a laptop never had one. Reinstate
-  // whatever package.json declares before the first build reads an import.
-  // Non-fatal: a session is still usable when one dependency will not install,
-  // and the build that needs it says so where the coding agent can act on it.
-  const depWarning = await ensureWorkspaceDependencies(dir, {
-    ...workspaceDependencyOptions(),
-    // The host abandons session-init well before npm's own cap, and this runs
-    // on every page open — a slow registry must degrade the install, not the
-    // session. See SESSION_INSTALL_BUDGET_MS.
-    budgetMs: SESSION_INSTALL_BUDGET_MS,
-  });
-  if (depWarning !== null) console.error(`studio workspace dependencies: ${depWarning}`);
+  const session = { ...params, system: params.system + toolchainPromptSection(), dir };
+
+  const release = enterTurn();
+  if (!release) {
+    // A turn owns the tree. See the header: keep it, take the new config.
+    console.error("studio session-init: a turn is in flight — keeping the live workspace");
+    return session;
+  }
+  try {
+    await materializeWorkspace(dir, params.files);
+    // Complete the workspace into a real project (package.json, tsconfig,
+    // …) — same shape `aai init` scaffolds; the files sync back to the
+    // store at end of turn like everything else in the workspace.
+    await ensureProjectShape(dir);
+    // `materializeWorkspace` opened with `rm -rf`, so a re-install (a refresh, a
+    // replica taking over) has just deleted the node_modules `add_dependency`
+    // built — and a workspace pushed from a laptop never had one. Reinstate
+    // whatever package.json declares before the first build reads an import.
+    // Non-fatal: a session is still usable when one dependency will not install,
+    // and the build that needs it says so where the coding agent can act on it.
+    const depWarning = await ensureWorkspaceDependencies(dir, {
+      ...workspaceDependencyOptions(),
+      // The host abandons session-init well before npm's own cap, and this runs
+      // on every page open — a slow registry must degrade the install, not the
+      // session. See SESSION_INSTALL_BUDGET_MS.
+      budgetMs: SESSION_INSTALL_BUDGET_MS,
+    });
+    if (depWarning !== null) console.error(`studio workspace dependencies: ${depWarning}`);
+  } finally {
+    release();
+  }
   // Pinned only once the install actually succeeded: a rejected first install
   // must not brand the sandbox with an identity it never served.
   installedFor = identity;
-  return { ...params, system: params.system + toolchainPromptSection(), dir };
+  return session;
 }

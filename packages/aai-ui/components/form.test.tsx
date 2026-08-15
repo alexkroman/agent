@@ -129,6 +129,42 @@ describe("collected values", () => {
     submit();
     expect(await submitted(onSubmit)).toEqual({});
   });
+
+  test("a multi-select contributes EVERY selected option, not just the first", async () => {
+    // `HTMLSelectElement.value` is the first selected option, so this used to
+    // hand a list-shaped schema one string.
+    const { onSubmit, submit } = renderForm(
+      <SelectField name="langs" label="Languages" options={["en", "fr", "de"]} multiple />,
+    );
+    const select = screen.getByLabelText("Languages") as HTMLSelectElement;
+    for (const option of Array.from(select.options)) {
+      option.selected = option.value !== "fr";
+    }
+    fireEvent.change(select);
+    submit();
+    expect(await submitted(onSubmit)).toEqual({ langs: ["en", "de"] });
+  });
+
+  test("a multi-select with nothing chosen contributes an empty list", async () => {
+    const { onSubmit, submit } = renderForm(
+      <SelectField name="langs" label="Languages" options={["en", "fr"]} multiple />,
+    );
+    submit();
+    expect(await submitted(onSubmit)).toEqual({ langs: [] });
+  });
+
+  test("a disabled select and a disabled textarea contribute nothing either", async () => {
+    // The `disabled` check was on `readInput` alone, so a disabled
+    // `<SelectField>` contributed a value where a disabled `<TextField>` did not.
+    const { onSubmit, submit } = renderForm(
+      <>
+        <SelectField name="lang" label="Language" options={["en"]} defaultValue="en" disabled />
+        <TextAreaField name="notes" label="Notes" defaultValue="hi" disabled />
+      </>,
+    );
+    submit();
+    expect(await submitted(onSubmit)).toEqual({});
+  });
 });
 
 describe("file fields", () => {

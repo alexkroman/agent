@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file baselines for the mechanical invariants in scripts/guard-invariants.mjs. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a rule may hold none. Counts only ratchet DOWN \u2014 `node scripts/guard-invariants.mjs --update` lowers them to match the tree and refuses to raise any, so blessing an addition needs a hand edit that lands in a reviewable diff. Rules 1, 7 and 10 appear nowhere here: they are at zero and enforced absolutely.",
+  "_description": "Per-file baselines for the mechanical invariants in scripts/guard-invariants.mjs. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a rule may hold none. Counts only ratchet DOWN — `node scripts/guard-invariants.mjs --update` lowers them to match the tree and refuses to raise any, so blessing an addition needs a hand edit that lands in a reviewable diff. Rules 1, 7 and 10 appear nowhere here: they are at zero and enforced absolutely.",
   "rule2_spreadTernary": {
     "packages/aai-cli/_utils.ts": 1,
     "packages/aai-server/subprocess-sandbox.ts": 1,
@@ -34,7 +34,9 @@
     "packages/aai/host/ws-handler.ts": 4
   },
   "rule17_openCodedRecordGuard": {
-    "packages/aai/sdk/standard-schema.ts": 1
+    "packages/aai-evals/assertions.ts": 1,
+    "packages/aai/sdk/standard-schema.ts": 1,
+    "scripts/_api-contracts.mjs": 1
   },
   "rule18_splitOnQuestionMark": {
     "packages/aai-cli/workflow-bundler.ts": 1

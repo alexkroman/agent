@@ -19,29 +19,29 @@
  * care which kind of rule they came from.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
-/**
- * The repo root, derived from this module's own location.
- *
- * Every `readFileSync` below already resolves against `import.meta.url`, so the
- * git calls have to as well or the two disagree: a pathspec is relative to the
- * CWD, so `ls-files -- packages` from inside a package directory matches NOTHING
- * and hands back file paths that would not have resolved anyway. That is the
- * silent-success shape this whole gate exists to avoid — `fixtureDirs()` returned
- * `[]` and rule 14 printed `0 ✓` when the suite ran under
- * `pnpm --filter aai-templates test:coverage`, whose cwd is the package.
- */
-const REPO_ROOT = new URL("../", import.meta.url);
+import { git } from "./_ratchet.mjs";
 
-/** Run git from the REPO ROOT, returning stdout. */
-function git(args) {
-  return execFileSync("git", args, {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    cwd: REPO_ROOT,
-  });
+/**
+ * Read a repo-relative file listed by git, or `undefined` when it is not there.
+ *
+ * **The list comes from the INDEX and the read is of the WORKING TREE**, so a
+ * file deleted-but-not-yet-staged is listed and absent. Reading it blind throws
+ * an uncaught ENOENT out of the gate, which kills every OTHER rule with it and
+ * names a file the author already deleted — a failure that reads as a bug in the
+ * gate rather than as a dirty tree. `scanResearchFrontmatter` had guarded this
+ * for a while, with a comment recording having been bitten; the three sibling
+ * scanners had not, so they all go through here now.
+ *
+ * Skipping is the right answer rather than a silent pass: a deleted file has no
+ * content to check, and `git ls-files` stops listing it the moment the deletion
+ * is staged.
+ */
+function readRepoFile(file) {
+  const path = new URL(`../${file}`, import.meta.url);
+  if (!existsSync(path)) return;
+  return readFileSync(path, "utf8");
 }
 
 export function scanSymlinks() {
@@ -62,7 +62,9 @@ export function scanUnpinnedActions() {
     .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"));
   const found = [];
   for (const file of files) {
-    const lines = readFileSync(new URL(`../${file}`, import.meta.url), "utf8").split("\n");
+    const source = readRepoFile(file);
+    if (source === undefined) continue;
+    const lines = source.split("\n");
     lines.forEach((text, index) => {
       const match = /^\s*(?:-\s*)?uses:\s*(\S+)/.exec(text);
       if (match === null) return;
@@ -85,15 +87,8 @@ export function scanResearchFrontmatter() {
     .filter((f) => f.endsWith(".md") && f !== "research/README.md");
   const found = [];
   for (const file of files) {
-    // The list comes from the INDEX and the read is of the WORKING TREE, so a
-    // doc deleted-but-not-yet-committed is listed and absent — which crashed the
-    // whole gate with an ENOENT stack trace, taking the other eleven rules with
-    // it. A deleted file has no frontmatter to check, so skipping is the answer
-    // rather than a silent pass: `git ls-files` will stop listing it the moment
-    // the deletion is staged.
-    const path = new URL(`../${file}`, import.meta.url);
-    if (!existsSync(path)) continue;
-    const source = readFileSync(path, "utf8");
+    const source = readRepoFile(file);
+    if (source === undefined) continue;
     // Deliberately not a YAML parser: the three fields are scalars, and a
     // dependency here would be one more thing that can be absent when a gate
     // runs. A malformed block fails the shape check below, which is the answer
@@ -275,20 +270,12 @@ export function scanUndeclaredGuestRoutes() {
  * @returns {boolean} true when the specifier leaves the file's own template
  */
 export function importEscapesTemplate(file, specifier) {
-  const parts = file.split("/");
   // packages/aai-templates/templates/<name>/… — the fourth segment is the
   // template, and its directory is the boundary a shipped file may not cross.
-  const templateRoot = parts.slice(0, 4).join("/");
-  // POSIX-style throughout: these paths come from git, so they are already
-  // `/`-separated on every OS.
-  const segments = [...parts.slice(0, -1), ...specifier.split("/")];
-  const resolved = [];
-  for (const segment of segments) {
-    if (segment === "." || segment === "") continue;
-    if (segment === "..") resolved.pop();
-    else resolved.push(segment);
-  }
-  return !resolved.join("/").startsWith(`${templateRoot}/`);
+  const templateRoot = file.split("/").slice(0, 4).join("/");
+  // The `.`/`..` walk is `resolveAgainstFile`'s, below — this used to be a
+  // second copy of it, where one of the two was already the general form.
+  return !resolveAgainstFile(file, specifier).startsWith(`${templateRoot}/`);
 }
 
 export function scanTemplateEscapingImports() {
@@ -297,7 +284,9 @@ export function scanTemplateEscapingImports() {
     .filter((f) => /\.(?:m?[jt]s|tsx)$/.test(f));
   const found = [];
   for (const file of files) {
-    const lines = readFileSync(new URL(`../${file}`, import.meta.url), "utf8").split("\n");
+    const source = readRepoFile(file);
+    if (source === undefined) continue;
+    const lines = source.split("\n");
     lines.forEach((text, index) => {
       const match = /(?:from|import)\s*\(?\s*["'](\.\.?\/[^"']+)["']/.exec(text);
       if (match === null) return;
@@ -405,7 +394,8 @@ export function scanUnreadFixtureDirs() {
   /** Every path any code file resolves a fixture-ish string literal to. */
   const referenced = new Set();
   for (const file of readers) {
-    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    const source = readRepoFile(file);
+    if (source === undefined) continue;
     for (const [, specifier] of source.matchAll(/["'`]([^"'`\n]*fixtures[^"'`\n]*)["'`]/gi)) {
       const resolved = resolveAgainstFile(file, specifier);
       // Record every ancestor too: `join(here, "fixtures/a/b.json")` reads the

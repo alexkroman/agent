@@ -13,6 +13,7 @@ import {
   type S2sHandle,
   type S2sSessionConfig,
 } from "../s2s.ts";
+import { createEmitError } from "./pipeline-error.ts";
 import type { Transport, TransportCallbacks } from "./types.ts";
 
 /** @internal Exposed for testing — allows spying on connectS2s in unit tests. */
@@ -53,6 +54,10 @@ const TRANSIENT_CLOSE_CODES = new Set<number>([
 export function createS2sTransport(opts: S2sTransportOptions): Transport {
   const log = opts.logger ?? consoleLogger;
   const createWs = opts.createWebSocket ?? defaultCreateS2sWebSocket;
+  // One reporter for both arms of the decision this transport keeps making —
+  // omitting `fatal` says the session is OVER, and that spelling lives in
+  // exactly one place (pipeline-error.ts) for all three transports.
+  const emitError = createEmitError(opts.callbacks);
   let handle: S2sHandle | null = null;
   let currentReplyId: string | null = null;
   let providerSessionId: string | null = null;
@@ -122,7 +127,8 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     handle?.close();
     handle = null;
     pendingToolResults = [];
-    opts.callbacks.report({ type: "error.reported", code: "connection", message: detail });
+    // No `fatal` key: this is the one path that really ends an S2S session.
+    emitError("connection", detail);
   }
 
   /**
@@ -134,9 +140,6 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
    * socket actually closing. Every one of those would be relayed to a client
    * that has been told the call is over and has released its microphone
    * (aai-ui's `handleErrorEvent`), which is the thing being fixed.
-   *
-   * `onClose`, `onError`, and `onSessionExpired` are deliberately NOT gated:
-   * they carry their own latches, and onClose still has logging to do.
    */
   function whileLive<A extends unknown[]>(fn: (...args: A) => void): (...args: A) => void {
     return (...args: A) => {
@@ -145,68 +148,27 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     };
   }
 
+  /**
+   * Gate a whole group of inbound callbacks, so gating is the DEFAULT.
+   *
+   * Applied by hand this was twelve `whileLive(...)` wrappers and a comment
+   * naming the three exemptions — an arrangement where the thirteenth callback
+   * is ungated by omission and nothing says so. Here the exemptions are the
+   * ones that do not go through this function, which is a fact about the code
+   * rather than a note beside it.
+   */
+  function gateInbound<T extends Record<string, (...args: never[]) => void>>(raw: T): T {
+    const gated: Record<string, (...args: never[]) => void> = {};
+    for (const [name, fn] of Object.entries(raw)) gated[name] = whileLive(fn);
+    return gated as T;
+  }
+
   function buildCallbacks(): S2sCallbacks {
     return {
-      onSessionReady: whileLive((id) => {
-        const isFirstReady = providerSessionId === null;
-        providerSessionId = id;
-        if (reconnecting) {
-          reconnecting = false;
-          log.info("S2S resumed", { sid: opts.sid, sessionId: id });
-        } else if (isFirstReady) {
-          log.info("S2S session ready", { sid: opts.sid, sessionId: id });
-        }
-        flushPendingToolResults();
-        opts.callbacks.onSessionReady?.(id);
-      }),
-      onReplyStarted: whileLive((replyId) => {
-        // A reply on the (possibly resumed) socket is real progress — the
-        // session is healthy again, so clear the flapping-resume counter.
-        resumeAttempts = 0;
-        suppressAudioUntilReply = false;
-        currentReplyId = replyId;
-        opts.callbacks.onReplyStarted(replyId);
-      }),
-      onReplyDone: whileLive(() => {
-        currentReplyId = null;
-        opts.callbacks.report({ type: "reply.completed" });
-      }),
-      onCancelled: whileLive(() => {
-        currentReplyId = null;
-        opts.callbacks.report({ type: "reply.cancelled" });
-      }),
-      onAudio: whileLive((bytes: Uint8Array) => {
-        if (suppressAudioUntilReply) return;
-        opts.callbacks.onAudioChunk(bytes);
-      }),
-      onUserTranscript: whileLive((text: string) =>
-        opts.callbacks.report({ type: "user-transcript.committed", text }),
-      ),
-      onUserTranscriptPartial: whileLive((text: string) =>
-        opts.callbacks.report({ type: "user-transcript.updated", text }),
-      ),
-      // An INTERRUPTED reply is `.updated`, never `.committed`: it enters no
-      // history, because history records what the caller HEARD and the service
-      // trims an interrupted transcript to what was spoken. This is the one call
-      // site in the repo that reports either arm — every pipeline path records.
-      onAgentTranscript: whileLive((text: string, interrupted: boolean) =>
-        opts.callbacks.report({
-          type: interrupted ? "agent-transcript.updated" : "agent-transcript.committed",
-          text,
-        }),
-      ),
-      // `transcript.agent.delta` DOES arrive — re-measured against the live
-      // service, see `_s2s-reply.ts`. It is the only carrier of text for a reply
-      // that sends no final `transcript.agent`, which is the ordinary shape of a
-      // tool-preamble turn.
-      onAgentTranscriptPartial: whileLive((text: string) =>
-        opts.callbacks.report({ type: "agent-transcript.updated", text }),
-      ),
-      onToolCall: whileLive((callId: string, name: string, args: Record<string, unknown>) =>
-        opts.callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args }),
-      ),
-      onSpeechStarted: whileLive(() => opts.callbacks.report({ type: "speech.started" })),
-      onSpeechStopped: whileLive(() => opts.callbacks.report({ type: "speech.stopped" })),
+      // NOT gated, deliberately, and the only three: they carry their own
+      // latches (`sessionEnded`, `closing`, `reconnecting`), they are what
+      // DRIVES the retirement the gate reads, and `onClose` still has logging
+      // to do after it.
       onSessionExpired: () => {
         // Server reports session no longer exists (likely session_not_found
         // in response to our resume). Surface as fatal — nothing to resume.
@@ -239,14 +201,65 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       // link is gone. An error that really is terminal is followed by the
       // service closing the socket, so it still surfaces there — with the close
       // code attached, which is strictly more diagnostic than this frame.
-      onError: (err) =>
-        opts.callbacks.report({
-          type: "error.reported",
-          code: "internal",
-          message: err.message,
-          fatal: false,
-        }),
+      onError: (err) => emitError("internal", err.message, { fatal: false }),
       onClose: (code, reason) => handleClose(code, reason),
+      ...gateInbound({
+        onSessionReady: (id: string) => {
+          const isFirstReady = providerSessionId === null;
+          providerSessionId = id;
+          if (reconnecting) {
+            reconnecting = false;
+            log.info("S2S resumed", { sid: opts.sid, sessionId: id });
+          } else if (isFirstReady) {
+            log.info("S2S session ready", { sid: opts.sid, sessionId: id });
+          }
+          flushPendingToolResults();
+          opts.callbacks.onSessionReady?.(id);
+        },
+        onReplyStarted: (replyId: string) => {
+          // A reply on the (possibly resumed) socket is real progress — the
+          // session is healthy again, so clear the flapping-resume counter.
+          resumeAttempts = 0;
+          suppressAudioUntilReply = false;
+          currentReplyId = replyId;
+          opts.callbacks.onReplyStarted(replyId);
+        },
+        onReplyDone: () => {
+          currentReplyId = null;
+          opts.callbacks.report({ type: "reply.completed" });
+        },
+        onCancelled: () => {
+          currentReplyId = null;
+          opts.callbacks.report({ type: "reply.cancelled" });
+        },
+        onAudio: (bytes: Uint8Array) => {
+          if (suppressAudioUntilReply) return;
+          opts.callbacks.onAudioChunk(bytes);
+        },
+        onUserTranscript: (text: string) =>
+          opts.callbacks.report({ type: "user-transcript.committed", text }),
+        onUserTranscriptPartial: (text: string) =>
+          opts.callbacks.report({ type: "user-transcript.updated", text }),
+        // An INTERRUPTED reply is `.updated`, never `.committed`: it enters no
+        // history, because history records what the caller HEARD and the service
+        // trims an interrupted transcript to what was spoken. This is the one call
+        // site in the repo that reports either arm — every pipeline path records.
+        onAgentTranscript: (text: string, interrupted: boolean) =>
+          opts.callbacks.report({
+            type: interrupted ? "agent-transcript.updated" : "agent-transcript.committed",
+            text,
+          }),
+        // `transcript.agent.delta` DOES arrive — re-measured against the live
+        // service, see `_s2s-reply.ts`. It is the only carrier of text for a reply
+        // that sends no final `transcript.agent`, which is the ordinary shape of a
+        // tool-preamble turn.
+        onAgentTranscriptPartial: (text: string) =>
+          opts.callbacks.report({ type: "agent-transcript.updated", text }),
+        onToolCall: (callId: string, name: string, args: Record<string, unknown>) =>
+          opts.callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args }),
+        onSpeechStarted: () => opts.callbacks.report({ type: "speech.started" }),
+        onSpeechStopped: () => opts.callbacks.report({ type: "speech.stopped" }),
+      }),
     };
   }
 

@@ -27,6 +27,7 @@ import {
   connectOrThrow,
   createPcmFrameAccumulator,
   createSttSessionShell,
+  pickEndpoint,
   requireApiKey,
 } from "../_utils.ts";
 
@@ -132,27 +133,24 @@ function normalizeAgentContext(text: string): string | undefined {
 }
 
 /**
+ * The streaming endpoint to dial, or `undefined` to leave the SDK's own.
+ *
+ * An explicit `streamingUrl` wins over `region` — the rule {@link pickEndpoint}
+ * owns, shared with the LLM gateway's `gatewayUrl`. The US default is left to
+ * the SDK (hence no `default` here), whose own default already carries the
+ * versioned path: a stale copy would override an SDK path bump.
+ */
+function resolveStreamingUrl(opts: AssemblyAIOptions): string | undefined {
+  return pickEndpoint(opts.streamingUrl, opts.region, { eu: ASSEMBLYAI_STREAMING_EU_URL });
+}
+
+/**
  * Assemble the SDK's transcriber params from the descriptor options and the
  * per-session open options. Built as a loose record and cast once at the call
  * site: the SDK's param type is a strict string-literal union and, under
  * exactOptionalPropertyTypes, does not accept our widened `string` option
  * types via conditional spreads.
  */
-/**
- * The streaming endpoint to dial, or `undefined` to leave the SDK's own.
- *
- * An explicit `streamingUrl` wins over `region`: it is a deliberate choice (a
- * staging cluster, an A/B against the default host) and must not be silently
- * overwritten by the residency shorthand. Otherwise EU data residency points
- * the socket at the EU host. The US default is left to the SDK, whose own
- * default already carries the versioned path — a stale copy here would override
- * an SDK path bump.
- */
-function resolveStreamingUrl(opts: AssemblyAIOptions): string | undefined {
-  if (opts.streamingUrl) return opts.streamingUrl;
-  return opts.region === "eu" ? ASSEMBLYAI_STREAMING_EU_URL : undefined;
-}
-
 function buildTranscriberParams(
   opts: AssemblyAIOptions,
   openOpts: SttOpenOptions,
@@ -270,9 +268,12 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
           endOfTurnConfidence,
         });
         if (text.length === 0) return;
+        // Through the shell: this fires from inside the SDK's own turn handler,
+        // so a listener that throws would escape as an uncaughtException.
+        //
         // The key is OMITTED rather than set to undefined: `exactOptionalPropertyTypes`
         // distinguishes the two, and "the provider said nothing" is the absent case.
-        emitter.emit(
+        shell.emit(
           event.end_of_turn ? "final" : "partial",
           text,
           endOfTurnConfidence === undefined ? {} : { endOfTurnConfidence },
@@ -318,9 +319,7 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
           if (shell.isClosed() || audioGate.shouldDrop()) return;
           frames.push(pcm);
         },
-        on(event, fn) {
-          return emitter.on(event, fn);
-        },
+        on: shell.on,
         close: () => {
           if (!shell.isClosed()) frames.flush();
           return shell.close();

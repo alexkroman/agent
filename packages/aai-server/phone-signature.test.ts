@@ -238,14 +238,79 @@ describe("verifyPhoneWebhook", () => {
 
   test("does not apply Twilio's token to a Telnyx call", () => {
     // Each carrier's secret gates only its own scheme; a Twilio token says
-    // nothing about a Telnyx request and must not be read as approval.
+    // nothing about a Telnyx request and must not be read as approval. It is
+    // also not a reason to let the request THROUGH — see below.
     const verdict = verifyPhoneWebhook({
       carrier: "telnyx",
       env: { TWILIO_AUTH_TOKEN: AUTH_TOKEN },
       url: URL_UNDER_TEST,
       rawBody,
-      headers: new Headers(),
+      headers: new Headers({ "telnyx-signature-ed25519": "x", "telnyx-timestamp": "1" }),
     });
-    expect(verdict).toEqual({ ok: true });
+    expect(verdict).toMatchObject({ ok: false });
+  });
+
+  test("a caller-named carrier cannot select the branch that checks nothing", () => {
+    // The attack: `?carrier=` is a query parameter on an unauthenticated route,
+    // so a caller picks which branch runs. Against an agent with only
+    // TWILIO_AUTH_TOKEN stored, `carrier=telnyx` used to skip the Twilio branch
+    // (carrier mismatch) AND the Telnyx branch (no TELNYX_PUBLIC_KEY) and fall
+    // through to `{ ok: true }` — after which the route brokered a sandbox and
+    // answered with the guest's auth-free media-stream URL.
+    expect(
+      verifyPhoneWebhook({
+        carrier: "telnyx",
+        env: { TWILIO_AUTH_TOKEN: AUTH_TOKEN },
+        url: URL_UNDER_TEST,
+        rawBody,
+        headers: new Headers(),
+      }),
+    ).toMatchObject({ ok: false });
+
+    // Symmetric: a Telnyx-only agent is bypassed by OMITTING the parameter,
+    // because the route defaults to `twilio`.
+    expect(
+      verifyPhoneWebhook({
+        carrier: "twilio",
+        env: { TELNYX_PUBLIC_KEY: "AAAA" },
+        url: URL_UNDER_TEST,
+        rawBody,
+        headers: new Headers(),
+      }),
+    ).toMatchObject({ ok: false });
+
+    // And an unrecognized carrier name is not a third way through. (The route
+    // 400s this one before it gets here; the check does not rely on that.)
+    expect(
+      verifyPhoneWebhook({
+        carrier: "not-a-carrier",
+        env: { TWILIO_AUTH_TOKEN: AUTH_TOKEN },
+        url: URL_UNDER_TEST,
+        rawBody,
+        headers: new Headers(),
+      }),
+    ).toMatchObject({ ok: false });
+  });
+
+  test("an agent running both carriers is checked on whichever it is called as", () => {
+    const env = { TWILIO_AUTH_TOKEN: AUTH_TOKEN, TELNYX_PUBLIC_KEY: "AAAA" };
+    expect(
+      verifyPhoneWebhook({
+        carrier: "twilio",
+        env,
+        url: URL_UNDER_TEST,
+        rawBody,
+        headers: new Headers({ "x-twilio-signature": twilioSignature(URL_UNDER_TEST, params) }),
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      verifyPhoneWebhook({
+        carrier: "telnyx",
+        env,
+        url: URL_UNDER_TEST,
+        rawBody,
+        headers: new Headers(),
+      }),
+    ).toMatchObject({ ok: false });
   });
 });

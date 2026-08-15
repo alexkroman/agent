@@ -20,18 +20,23 @@
  * dependency list, where the cost this rule exists to keep off the startup
  * path is zod's module graph. It belongs on the PUBLIC subpath because the
  * hazard it addresses is an agent author's — the LLM loop runs a step's tool
- * calls concurrently, so two async mutators of one `ctx.state` interleave —
- * and `/internal` would be telling users to import internal API.
+ * calls concurrently, so two async mutators of one external resource interleave
+ * — and `/internal` would be telling users to import internal API. (Per-session
+ * state is not that case any more: `sessionSlot`'s `update` window is
+ * synchronous, so it has nothing to serialize.)
  *
  * @module utils
  */
 
 import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
-// Imported as well as re-exported: `responseErrorMessage` below calls it, and a
+// Imported as well as re-exported: the functions below call them, and a
 // re-export does not bring the name into this module's scope.
+import { isRecord } from "./is-record.ts";
+import { statusWithPreview } from "./response-body.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
 
 export { linkConfirmationCode } from "./cli-link.ts";
+export { isRecord } from "./is-record.ts";
 export {
   createKeyedLock,
   type KeyedLock,
@@ -71,39 +76,6 @@ export {
   type UploadSlice,
   uploadInfo,
 } from "./step-uploads.ts";
-
-/**
- * Whether a value is a non-null, non-array object, narrowed to
- * `Record<string, unknown>` so its fields can be read without a second cast.
- *
- * The narrowing is the point. `typeof value === "object" && value !== null` is
- * three tokens anyone can write, which is exactly why it was written twelve
- * times here — and it narrows to `object`, on which every field read is an
- * error, so each site paid for it again with a cast
- * (`(value as { kind?: unknown }).kind`). A cast is not a check: it says
- * nothing about the value and stops reporting when the shape moves.
- *
- * Arrays are excluded because every caller is reading a NAMED field — `.type`,
- * `.error`, `.kind`, `.then` — none of which an array has. For "any non-null
- * object, arrays included", write the two comparisons inline; that case has one
- * site in this repo and does not want a name.
- *
- * @example
- * ```ts
- * import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
- *
- * function readStatus(body: string): string | undefined {
- *   const parsed = safeJsonParse(body);
- *   if (!isRecord(parsed)) return undefined;
- *   return typeof parsed.status === "string" ? parsed.status : undefined;
- * }
- * ```
- *
- * @public
- */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {
@@ -204,13 +176,6 @@ export function isToolFailure(value: unknown): value is ToolFailure {
 }
 
 /**
- * Longest slice of an unrecognized error body {@link responseErrorMessage}
- * quotes. Enough to identify a proxy's HTML page or a gateway's JSON without
- * putting a whole document into a log line or a toast.
- */
-const ERROR_BODY_PREVIEW_CHARS = 200;
-
-/**
  * Read a failed `Response`'s error sentence — the one every route this SDK
  * serves answers with.
  *
@@ -256,15 +221,14 @@ export async function responseErrorMessage(res: Response, label?: string): Promi
     // which at least says what happened.
     if (typeof error === "string" && error !== "") return error;
   }
-  const status = label === undefined ? `${res.status}` : `${label} ${res.status}`;
-  return text ? `${status}: ${text.slice(0, ERROR_BODY_PREVIEW_CHARS)}` : status;
+  return statusWithPreview(res.status, text, label);
 }
 
 /**
  * Append to a list, dropping the oldest entries so it never exceeds `max`.
  * Mutates `list` in place and returns it.
  *
- * For the append-only lists an agent keeps in `ctx.state` — a timeline, an
+ * For the append-only lists an agent keeps in a `sessionSlot` — a timeline, an
  * activity feed, a session log. Every one of them feeds an LLM summary or a
  * `syncState` payload, so an uncapped list grows what the model reads and
  * what crosses the wire for the length of the call, unboundedly. In place

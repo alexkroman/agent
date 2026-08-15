@@ -1,20 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * HTTP surface of the browser studio, mounted at `/studio`:
+ * HTTP surface of the browser studio, mounted at `/studio` — the whole route
+ * inventory, whichever module registers it:
  *
  * - `GET  /studio/status`                     — which LLM chat runs on
- * - `GET  /studio/projects`                   — list the caller's projects
- * - `POST /studio/projects`                   — create a project (starter files;
- *   the server generates the name from the creating `prompt` unless an
- *   explicit `name` is sent)
- * - `GET  /studio/projects/:project`          — files + deployed slug
- * - `GET  /studio/projects/:project/chat`     — persisted chat history
- * - `DELETE /studio/projects/:project`        — delete THE PROJECT: workspace,
- *   chat, and its deployed + preview agents (ownership-gated cascade)
- * - `PUT  /studio/projects/:project/file`     — write one file
- * - `DELETE /studio/projects/:project/file`   — delete one file (`?path=`)
- * - `PUT  /studio/projects/:project/source`   — replace the whole file map
- *   (`aai push`; upserts, fast-forward-checked against `baseHash`)
+ * - The project document's own CRUD — list, create, read, delete, the two
+ *   file routes, and `aai push`'s `PUT …/source` — lives in
+ *   studio-project-routes.ts, which registers it here. Split out when this
+ *   file reached the 500-line cap; that module's header lists the eight
+ *   routes.
  * - `POST /studio/projects/:project/deploy`   — the project's sandbox runs
  *   `aai deploy`; the CLI output rides back for the chat
  * - `GET/POST/DELETE /studio/projects/:project/database` — the project's
@@ -53,15 +47,9 @@
  * for raw callers — either way a caller only ever sees their own projects.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
-import { zValidator } from "@hono/zod-validator";
-import { deleteAgentResources } from "aai-server/delete";
 import { authMw } from "aai-server/middleware";
 import { TtlCache } from "aai-server/platform-barrel";
-import { RESERVED_SLUGS } from "aai-server/schemas";
-import { verifySlugOwner } from "aai-server/secrets";
 import { userApiKeySecretName } from "aai-server/supabase-auth";
-import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { registerAccountRoutes } from "./studio-account-routes.ts";
@@ -71,34 +59,17 @@ import { deployStudioProject } from "./studio-deploy.ts";
 import { createAfterDeploy } from "./studio-deploy-hooks.ts";
 import { registerEventRoutes } from "./studio-events-routes.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
-import { PREVIEW_WAKE_THROTTLE_MS, wakeProjectPreview } from "./studio-preview.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
+import { PREVIEW_WAKE_THROTTLE_MS, wakeProjectPreview } from "./studio-preview-wake.ts";
+import { registerProjectRoutes } from "./studio-project-routes.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createRouteLimits } from "./studio-route-limits.ts";
-import {
-  CreateProjectSchema,
-  generateProjectName,
-  ProjectNameSchema,
-  StudioFileSchema,
-  SyncSourceSchema,
-} from "./studio-schemas.ts";
+import { ProjectNameSchema } from "./studio-schemas.ts";
 import { registerSecretRoutes } from "./studio-secret-routes.ts";
-import { deleteProjectSecrets } from "./studio-secrets.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import { onSettledEdit, previewOrigin } from "./studio-settled-edit.ts";
-import { projectPayload } from "./studio-sse.ts";
-import { starterFiles } from "./studio-template.ts";
-import {
-  createWorkspace,
-  deleteWorkspace,
-  getWorkspace,
-  listProjects,
-  mutateWorkspace,
-  projectKey,
-  studioScope,
-  syncWorkspaceSource,
-} from "./studio-workspace.ts";
+import { projectKey, studioScope } from "./studio-workspace.ts";
 
 export type StudioRouteOptions = {
   /**
@@ -150,28 +121,32 @@ export function createStudioRoutes(options: StudioRouteOptions): {
   // (the stores ride on the request env). Per-replica, like the slot cache.
   let broker: StudioSessionBroker | undefined;
   const ensureBroker = (c: Context<StudioHonoEnv>): StudioSessionBroker => {
-    // Read the store out of the request env rather than closing over `c`: the
-    // broker outlives every request, and a closure over the Context would pin
-    // that whole request — its body, headers, and response — for the life of
-    // the process. The workspace/chat bindings below are read eagerly for the
-    // same reason.
-    const secrets = c.env.secrets;
-    const afterDeploy = createAfterDeploy(c);
-    broker ??= (options.broker ?? createStudioSessionBroker)({
-      workspaces: c.env.workspaces,
-      chats: c.env.chats,
-      ...(options.sessionRegistry && { registry: options.sessionRegistry }),
-      ...(options.replicaId && { replicaId: options.replicaId }),
-      previewQueue: options.previewQueue,
-      // Runs after any successful deploy, on both paths — see
-      // studio-deploy-hooks.ts.
-      afterDeploy,
-      // A preview job redelivered here may have been enqueued by a replica
-      // that is gone, so the drain resolves the user's key from Vault rather
-      // than the job carrying one. Bound to the request env's SecretStore —
-      // the same `user-key:<uid>` record the bearer resolution reads.
-      resolveApiKey: (userId) => secrets.get(userApiKeySecretName(userId)),
-    });
+    // Everything below runs ONCE per process, inside the guard rather than
+    // ahead of it: `createAfterDeploy` and the `resolveApiKey` closure were
+    // built on every call and discarded on all but the first, which is a hook
+    // pair allocated per request for a once-per-process construction.
+    if (!broker) {
+      // Read the stores out of the request env rather than closing over `c`:
+      // the broker outlives every request, and a closure over the Context
+      // would pin that whole request — its body, headers, and response — for
+      // the life of the process.
+      const secrets = c.env.secrets;
+      broker = (options.broker ?? createStudioSessionBroker)({
+        workspaces: c.env.workspaces,
+        chats: c.env.chats,
+        ...(options.sessionRegistry && { registry: options.sessionRegistry }),
+        ...(options.replicaId && { replicaId: options.replicaId }),
+        previewQueue: options.previewQueue,
+        // Runs after any successful deploy, on both paths — see
+        // studio-deploy-hooks.ts.
+        afterDeploy: createAfterDeploy(c),
+        // A preview job redelivered here may have been enqueued by a replica
+        // that is gone, so the drain resolves the user's key from Vault rather
+        // than the job carrying one. Bound to the request env's SecretStore —
+        // the same `user-key:<uid>` record the bearer resolution reads.
+        resolveApiKey: (userId) => secrets.get(userApiKeySecretName(userId)),
+      });
+    }
     return broker;
   };
 
@@ -214,94 +189,6 @@ export function createStudioRoutes(options: StudioRouteOptions): {
   // The two live event streams (studio-events-routes.ts).
   registerEventRoutes(studio, requestScope);
 
-  studio.get("/projects", async (c) => {
-    const scope = requestScope(c);
-    return c.json({ projects: await listProjects(c.env.workspaces, scope) });
-  });
-
-  studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
-    const scope = requestScope(c);
-    const limited = await limits.projectCreate(scope, c.req.raw);
-    if (limited) return limited;
-    const { name, prompt, kind } = c.req.valid("json");
-    // No explicit name: the server generates one, v0-style — a readable base
-    // from the creating prompt plus a random suffix, via the same generator
-    // slugless CLI deploys use (see aai-server/slug-generate.ts). The suffix
-    // makes a same-scope collision negligible; one retry absorbs it anyway.
-    const attempts = name ? [name] : [generateProjectName(prompt), generateProjectName(prompt)];
-    // Creation is atomic at the store (versioned insert): two concurrent
-    // creates — even on different replicas — cannot both succeed, so the
-    // loser can never reset the winner's files. No lock needed here.
-    for (const candidate of attempts) {
-      try {
-        // `kind` is stamped once, here: it selects the coding agent's system
-        // prompt at every later session install (studio-session-ensure.ts), so
-        // it has to outlive the request that chose it.
-        const workspace = await createWorkspace(c.env.workspaces, scope, candidate, {
-          files: starterFiles(),
-          kind,
-        });
-        return c.json({ name: candidate, files: workspace.files, kind: workspace.kind }, 201);
-      } catch (err) {
-        if (!(err instanceof WorkspaceConflictError)) throw err;
-      }
-    }
-    return c.json({ error: "Project already exists" }, 409);
-  });
-
-  studio.get("/projects/:project", async (c) => {
-    const { scope, project } = c.var;
-    const workspace = await getWorkspace(c.env.workspaces, scope, project);
-    if (!workspace) return c.json({ error: "Project not found" }, 404);
-    return c.json(projectPayload(workspace));
-  });
-
-  // Persisted chat history for the project — written server-side when a chat
-  // turn's stream settles, restored by the client on project open.
-  studio.get("/projects/:project/chat", async (c) => {
-    const { scope, project } = c.var;
-    // Independent reads — the chat fetch doesn't depend on the existence check.
-    const [workspace, messages] = await Promise.all([
-      getWorkspace(c.env.workspaces, scope, project),
-      c.env.chats.getChat(scope, project),
-    ]);
-    if (!workspace) return c.json({ error: "Project not found" }, 404);
-    return c.json({ messages: messages ?? [] });
-  });
-
-  // Deleting a project deletes THE PROJECT — workspace, chat, and its
-  // deployed agents (production and preview), the same resources Publish
-  // and the preview auto-deploy created. One delete concept on every
-  // surface: the studio's Delete button and `aai delete` both land here.
-  studio.delete("/projects/:project", async (c) => {
-    const { scope, project } = c.var;
-    const workspace = await getWorkspace(c.env.workspaces, scope, project);
-    const slugs = [
-      ...new Set(
-        [workspace?.deployedSlug, workspace?.previewSlug].filter(
-          (slug): slug is string => typeof slug === "string",
-        ),
-      ),
-    ];
-    for (const slug of slugs) {
-      // Ownership is still the agents row's credential hash, never project
-      // scope alone — a workspace naming a slug the caller doesn't own
-      // (however it got there) must not become a deletion oracle.
-      const owner = await verifySlugOwner(c.var.apiKey, { slug, store: c.env.store });
-      if (owner.status === "owned") await deleteAgentResources(c.env, slug);
-    }
-    // No lock needed: a racing versioned write cannot resurrect the project —
-    // `mutateWorkspace` only ever replaces an existing row.
-    await Promise.all([
-      deleteWorkspace(c.env.workspaces, scope, project),
-      c.env.chats.deleteChat(scope, project),
-      // A project name can be taken again, so a surviving secret record
-      // would hand the next project a dead one's provider keys.
-      deleteProjectSecrets(c.env, scope, project),
-    ]);
-    return c.json({ ok: true });
-  });
-
   /** See studio-settled-edit.ts — what an out-of-turn workspace write owes. */
   const settledEdit = (c: Context<StudioHonoEnv>, scope: string, project: string): void =>
     onSettledEdit(ensureBroker(c), c, scope, project);
@@ -322,85 +209,12 @@ export function createStudioRoutes(options: StudioRouteOptions): {
       schedule: ensureBroker(c).schedulePreview,
     });
 
-  studio.put("/projects/:project/file", zValidator("json", StudioFileSchema), async (c) => {
-    const { scope, project } = c.var;
-    const { path, content } = c.req.valid("json");
-    // An editor PUT racing a chat turn drops neither edit: mutateWorkspace
-    // serializes local writers and re-derives cleanly on a cross-replica
-    // version conflict.
-    try {
-      const workspace = await mutateWorkspace(c.env.workspaces, scope, project, (current) => ({
-        ...current,
-        files: { ...current.files, [path]: content },
-      }));
-      if (!workspace) return c.json({ error: "Project not found" }, 404);
-    } catch (err) {
-      return c.json({ error: errorMessage(err) }, 400);
-    }
-    settledEdit(c, scope, project);
-    return c.json({ ok: true });
-  });
-
-  studio.delete("/projects/:project/file", async (c) => {
-    const { scope, project } = c.var;
-    const path = c.req.query("path");
-    if (!path) return c.json({ error: "Missing path query parameter" }, 400);
-    let deleted = false;
-    const workspace = await mutateWorkspace(c.env.workspaces, scope, project, (current) => {
-      // Reset per attempt: a conflict retry re-derives from a fresh read.
-      deleted = false;
-      if (!current.files[path]) return null;
-      deleted = true;
-      const files = { ...current.files };
-      delete files[path];
-      return { ...current, files };
-    });
-    if (!(workspace && deleted)) return c.json({ error: "File not found" }, 404);
-    settledEdit(c, scope, project);
-    return c.json({ ok: true });
-  });
-
-  // `aai push`: replace the project's entire file map in one atomic write.
-  // Upserts — a first push creates the project under the pushed name (so it
-  // shares the create rate limit); later pushes are fast-forward-checked
-  // against `baseHash` (409 = the studio edited since the caller's pull).
-  // Per-file paths, count, and byte caps are enforced by the workspace
-  // write itself, exactly as for the guest's sync and the editor PUT.
-  /** Guards a push may trip, as responses: conflict (409) or bad input (400). */
-  const syncSourceError = (err: unknown): Response => {
-    if (err instanceof WorkspaceConflictError) {
-      return Response.json(
-        {
-          error:
-            "Project changed since your last pull — run `aai pull` again (or push with --force)",
-        },
-        { status: 409 },
-      );
-    }
-    return Response.json({ error: errorMessage(err) }, { status: 400 });
-  };
-
-  studio.put("/projects/:project/source", zValidator("json", SyncSourceSchema), async (c) => {
-    const { scope, project } = c.var;
-    const { files, baseHash } = c.req.valid("json");
-    const existing = await getWorkspace(c.env.workspaces, scope, project);
-    if (!existing) {
-      // Creation via push: same guards as POST /projects — reserved names
-      // can never go live, and creates are rate-limited per scope.
-      if (RESERVED_SLUGS.has(project)) return c.json({ error: "That name is reserved" }, 400);
-      const limited = await limits.projectCreate(scope, c.req.raw);
-      if (limited) return limited;
-    }
-    try {
-      const result = await syncWorkspaceSource(c.env.workspaces, scope, project, files, baseHash);
-      if (result.changed) settledEdit(c, scope, project);
-      return c.json(
-        { ok: true, sourceHash: result.sourceHash, created: result.created },
-        result.created ? 201 : 200,
-      );
-    } catch (err) {
-      return syncSourceError(err);
-    }
+  // The project document itself: list/create/read/delete, the two file
+  // routes, and `aai push`'s whole-map replace (studio-project-routes.ts).
+  registerProjectRoutes(studio, {
+    requestScope,
+    projectCreate: limits.projectCreate,
+    settledEdit,
   });
 
   studio.post("/projects/:project/deploy", async (c) => {
@@ -468,8 +282,8 @@ export function createStudioRoutes(options: StudioRouteOptions): {
    *
    * The caller is a TRIGGER, not evidence: the wake re-checks with its own
    * broker call and schedules nothing unless that 404s too. So this route
-   * cannot be talked into a deploy, which is what lets it be cheap to call
-   * and unrate-limited beyond the throttle below.
+   * cannot be talked into a deploy, which is what lets it be cheap to call —
+   * but not free, which is why it is rate-limited like its siblings.
    *
    * 202 either way — the wake is fire-and-forget by construction, so "did it
    * redeploy" is not a question this response could answer, and a project
@@ -477,8 +291,16 @@ export function createStudioRoutes(options: StudioRouteOptions): {
    * slug the workspace stamped, so a miss here means a delete raced it).
    */
   const wokenRecently = new TtlCache<true>(PREVIEW_WAKE_THROTTLE_MS, 1000);
-  studio.post("/projects/:project/preview/wake", (c) => {
+  studio.post("/projects/:project/preview/wake", async (c) => {
     const { scope, project } = c.var;
+    // METERED, like every other route that can spawn a sandbox. The throttle
+    // below used to be the whole answer, and a fixed-size `TtlCache` cannot
+    // be: it is an LRU, so a caller cycling more than its 1,000 distinct
+    // project names evicts entries faster than the TTL expires them and every
+    // request lands as a first one. The limiter is the bound that does not
+    // move; the throttle is the cheap per-project one for the honest client.
+    const limited = await limits.previewWake(scope, c.req.raw);
+    if (limited) return limited;
     const key = projectKey(scope, project);
     // Per process, so a fleet-wide burst is bounded by the replica count
     // rather than by one number — enough, because the pane sends this ONCE

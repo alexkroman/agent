@@ -20,6 +20,7 @@
  */
 
 import type http from "node:http";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { requestQuery } from "../sdk/request-url.ts";
 import { isTerminal, type StreamOptions } from "../sdk/workflow.ts";
 import type { RunReader } from "./workflow-api-events.ts";
@@ -81,10 +82,10 @@ export async function streamRunOutput(
     sendJson(res, 400, { error: "`startIndex` must be an integer" });
     return;
   }
-  const options = {
-    ...(namespace !== null && { namespace }),
-    ...(startIndex !== undefined && { startIndex }),
-  };
+  // `namespace ?? undefined` because it comes off `URLSearchParams.get`, which
+  // reports absence as `null` — `omitUndefined` speaks the one absence this
+  // codebase builds optional properties from.
+  const options = omitUndefined({ namespace: namespace ?? undefined, startIndex });
   // The tail is read BEFORE the stream, so a chunk written between the two is
   // simply not in this read's budget — it belongs to the reader's next one. The
   // other order would let the budget name an index the read has to wait for.

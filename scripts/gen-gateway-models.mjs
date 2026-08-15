@@ -26,7 +26,9 @@
  */
 
 import { writeFileSync } from "node:fs";
+
 import { apiKey } from "./_api-key.mjs";
+import { compareNames } from "./_fs.mjs";
 
 const US = "https://llm-gateway.assemblyai.com/v1/models";
 const EU = "https://llm-gateway.eu.assemblyai.com/v1/models";
@@ -80,7 +82,14 @@ const entries = us
       context: m.context_length ?? 0,
     };
   })
-  .sort((a, b) => a.id.localeCompare(b.id));
+  // Code-unit order, never `localeCompare`: this writes a COMMITTED generated
+  // artifact (`gateway-models.ts`) that `check-gateway-models.mjs` compares byte
+  // for byte, and `localeCompare` with no explicit locale answers to the
+  // runtime's ICU default — so the same catalog would produce a different file
+  // on a different machine and the gate would report a change that is really a
+  // locale. `_api-surface.mjs` states the rule; this is the second artifact it
+  // applies to.
+  .sort((a, b) => compareNames(a.id, b.id));
 
 const body = entries
   .map(

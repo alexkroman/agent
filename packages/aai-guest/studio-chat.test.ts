@@ -3,7 +3,7 @@
 // and filesystem tools, with a scripted model and a fake host channel. This
 // is the browser's view of the coding-agent sandbox.
 
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { requestPath } from "@alexkroman1/aai/internal";
@@ -11,8 +11,9 @@ import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { handleHostResponse, setHostSend } from "./harness-rpc.ts";
 import type { JsonRpcMessage } from "./harness-types.ts";
-import { handleStudioRequest, resetTurnGate, type StudioChatDeps } from "./studio-chat.ts";
+import { handleStudioRequest, type StudioChatDeps } from "./studio-chat.ts";
 import { initStudioSession, type StudioSession } from "./studio-session.ts";
+import { resetTurnGate } from "./studio-turn-stream.ts";
 
 const API_KEY = "caller-key-123";
 
@@ -412,6 +413,60 @@ describe("guest studio chat surface", () => {
     } finally {
       await close();
     }
+  });
+
+  // `studio/session-init` opens with `rm -rf` on a path that is constant per
+  // process, and the turn gate covered only `POST /studio/chat` — so a refresh
+  // or a second tab deleted the workspace out from under a running turn, and
+  // `settleTurn` then published the mixed tree with `done: true`.
+  test("a session-init arriving mid-turn keeps the live workspace", async () => {
+    fakeHost();
+    const session = await makeSession({ "agent.ts": "// original" });
+    const pending = pendingModel();
+    const { url, close } = await serve(session, deps(pending.model));
+    try {
+      const first = post(url, chatBody("start working"));
+      await pending.started;
+      await first;
+      // What a tool writes mid-turn, before any checkpoint has synced it.
+      await writeFile(path.join(session.dir, "agent.ts"), "// written mid-turn", "utf-8");
+
+      // The second tab. Same project, so the identity pin lets it through, and
+      // the files it carries are the STORE's — i.e. one edit behind.
+      const reinstalled = await initStudioSession({
+        scope: "test-scope",
+        project: "proj",
+        files: { "agent.ts": "// stale copy from the store" },
+        apiKey: API_KEY,
+        chatToken: "second-tab-token",
+        system: "You are a coding agent.",
+        model: "fake-1",
+        maxSteps: 4,
+      });
+
+      // The install succeeded and re-points at the same tree…
+      expect(reinstalled.dir).toBe(session.dir);
+      expect(reinstalled.chatToken).toBe("second-tab-token");
+      // …but the running turn's work is still on disk, un-reset.
+      expect(await readFile(path.join(session.dir, "agent.ts"), "utf-8")).toBe(
+        "// written mid-turn",
+      );
+
+      pending.finish();
+      await first.then((res) => res.text());
+    } finally {
+      await close();
+    }
+  });
+
+  test("a session-init with no turn in flight DOES reset the workspace", async () => {
+    // The other half of the rule above: outside a turn the store is the truth,
+    // and a refresh must not keep serving a tree the user has since reverted.
+    const session = await makeSession({ "agent.ts": "// first" });
+    await writeFile(path.join(session.dir, "stray.ts"), "// left over", "utf-8");
+    const again = await makeSession({ "agent.ts": "// second" });
+    expect(await readFile(path.join(again.dir, "agent.ts"), "utf-8")).toBe("// second");
+    await expect(readFile(path.join(again.dir, "stray.ts"), "utf-8")).rejects.toThrow();
   });
 
   // The measured failure: `pipeUIMessageStreamToResponse` rejects on a broken

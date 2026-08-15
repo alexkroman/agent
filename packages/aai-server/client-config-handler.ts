@@ -19,14 +19,16 @@
  * cannot answer degrades to `{ sessionUrl }` and the default client renders
  * its empty defaults, exactly as it does against an older self-hosted
  * server. Answers are immutable for a sandbox's lifetime, so they are
- * memoized per guest origin — the round trip to the sandbox tunnel is paid
- * once per sandbox, not once per page load.
+ * memoized per (slug, deploy version, guest origin) — the round trip to the
+ * sandbox tunnel is paid once per sandbox, not once per page load. See
+ * {@link memoKey} for why the origin alone is not enough.
  */
 
 import { buildClientConfig, ClientConfigResponseSchema } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
+import { forwardToGuest } from "./guest-forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
 import { brokerSessionUrlOrThrow } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
@@ -38,11 +40,30 @@ import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 const GUEST_CONFIG_TIMEOUT_MS = 1500;
 
 /**
- * How long a guest's answer is remembered. A guest origin is unique to one
- * sandbox and its config is immutable for that sandbox's life, so the TTL
- * exists to evict entries for dead sandboxes, not to refresh live ones.
+ * How long a guest's answer is remembered. A guest's config is immutable for
+ * its sandbox's life, so the TTL exists to evict entries for dead sandboxes,
+ * not to refresh live ones.
  */
 const GUEST_CONFIG_CACHE_TTL_MS = 10 * 60_000;
+
+/**
+ * The memo key: slug, deploy version, guest origin.
+ *
+ * It was the ORIGIN alone, on the premise that "a guest origin is unique to one
+ * sandbox". That holds for a Modal tunnel hostname and NOT for the subprocess
+ * backend, whose guests are `ws://127.0.0.1:<port>` on a free port the OS is
+ * free to hand out again: within the TTL, `GET /B/client-config` could be
+ * answered with A's name and greeting once A's guest had exited and B's landed
+ * on the same port. The slug is what makes that unrepresentable, and the
+ * version is what stops a same-slug redeploy landing on the same port from
+ * serving the previous build's name for up to ten minutes.
+ *
+ * NUL-separated for the same reason `projectKey` is (platform-events.ts): none
+ * of the three parts can contain one, so no triple can spell another's key.
+ */
+function memoKey(slug: string, version: number | undefined, guestOrigin: string): string {
+  return `${slug}\u0000${version ?? ""}\u0000${guestOrigin}`;
+}
 
 /**
  * The guest's own answer, minus `sessionUrl` (which is the BROKER's to say).
@@ -55,8 +76,8 @@ const GUEST_CONFIG_CACHE_TTL_MS = 10 * 60_000;
 type GuestClientConfig = { name?: string; greeting?: string; page?: "voice" | "static" };
 
 /**
- * Build the broker's request handler. A factory so the per-origin memo and
- * the injectable guest fetch (tests) live together — one cache per app.
+ * Build the broker's request handler. A factory so the memo and the injectable
+ * guest fetch (tests) live together — one cache per app.
  */
 export function createAgentClientConfigHandler(
   fetchFn: typeof fetch = fetch,
@@ -70,12 +91,20 @@ export function createAgentClientConfigHandler(
    * and is NOT cached, so a guest still booting answers on the next request
    * rather than pinning empty defaults for the TTL.
    */
-  async function fetchGuestClientConfig(guestOrigin: string): Promise<GuestClientConfig> {
-    const cached = memo.get(guestOrigin);
+  async function fetchGuestClientConfig(
+    key: string,
+    guestOrigin: string,
+  ): Promise<GuestClientConfig> {
+    const cached = memo.get(key);
     if (cached) return cached;
     try {
-      const url = guestHttpUrl(guestOrigin, GUEST_ROUTES.clientConfig);
-      const res = await fetchFn(url, { signal: AbortSignal.timeout(GUEST_CONFIG_TIMEOUT_MS) });
+      const res = await forwardToGuest({
+        fetchFn,
+        url: guestHttpUrl(guestOrigin, GUEST_ROUTES.clientConfig),
+        // Nothing from the caller crosses: this hop is the PLATFORM asking a
+        // guest to describe itself, not a proxied request.
+        timeoutMs: GUEST_CONFIG_TIMEOUT_MS,
+      });
       if (!res.ok) return {};
       const parsed = ClientConfigResponseSchema.safeParse(await res.json());
       if (!parsed.success) return {};
@@ -83,7 +112,7 @@ export function createAgentClientConfigHandler(
       const config = {
         ...omitUndefined({ name, greeting, page }),
       };
-      memo.set(guestOrigin, config);
+      memo.set(key, config);
       return config;
     } catch {
       return {};
@@ -94,7 +123,10 @@ export function createAgentClientConfigHandler(
     const slug = c.var.slug;
     const brokered = await brokerSessionUrlOrThrow(slug, broker);
 
-    const guestConfig = await fetchGuestClientConfig(brokered.guestOrigin);
+    const guestConfig = await fetchGuestClientConfig(
+      memoKey(slug, broker.slots.get(slug)?.version, brokered.guestOrigin),
+      brokered.guestOrigin,
+    );
     return c.json(
       buildClientConfig({
         ...guestConfig,

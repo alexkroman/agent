@@ -10,8 +10,6 @@ export default retailTool({
   inputSchema: z.object({
     user_id: z.string().max(100).describe("The user id, e.g. 'sara_doe_496'"),
   }),
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
-  // is load-bearing for the generic `result` type in `summary`.
   execute: (args, state) => {
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;

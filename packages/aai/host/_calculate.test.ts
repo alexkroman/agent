@@ -72,6 +72,16 @@ describe("calculate", () => {
     expect(error("1 // 2")).toMatch(/unexpected/i);
   });
 
+  test("the rejected character is named, and named whole for an astral one", () => {
+    // One non-anchored complement match both rejects and names the character;
+    // the `u` flag is what keeps an emoji from being reported as half a
+    // surrogate pair, which is what iterating the string used to buy.
+    expect(error("2 + t")).toBe(
+      'Unexpected character "t" — only numbers, + - * / % ^ and parentheses are supported',
+    );
+    expect(error("2 + 🙂")).toContain('"🙂"');
+  });
+
   test("no code execution — JS syntax is rejected", () => {
     expect(calculate("process.exit(1)").ok).toBe(false);
     expect(calculate("1; console.log(2)").ok).toBe(false);

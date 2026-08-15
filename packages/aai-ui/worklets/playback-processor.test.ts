@@ -111,6 +111,27 @@ describe("playback-processor worklet", () => {
     expect(w.posted).toHaveLength(0); // turn not ended: still buffering
   });
 
+  test("reports the backlog in the CONTEXT's rate, not the worklet global's", () => {
+    // Everything else derived in the constructor reads the resolved `rate`;
+    // `bufferedMs` read the global instead. Production never notices (the
+    // option is unset, so the two are equal) and the node-less harness is the
+    // only place that can assert on this number at all — which is what the
+    // divergence made impossible. 1 kHz: the progress cadence is 500 samples
+    // and the fill target 400, so one 600-sample render both starts playback
+    // and crosses the report interval.
+    const w = instantiateWorklet(playbackProcessorSource, { sampleRate: 1000 });
+    writePcm(w, seq(1, 1200));
+    render(w, 600);
+
+    const progress = w.posted.find(
+      (message) => (message as { event?: string }).event === "progress",
+    ) as { bufferedMs: number } | undefined;
+    // `avail` is read before the quantum is copied out, so the backlog is the
+    // whole 1200 samples — 1200ms at 1 kHz. Read against the harness's 48 kHz
+    // global it was 25ms: the same buffer, off by the ratio of the two rates.
+    expect(progress?.bufferedMs).toBeCloseTo(1200, 5);
+  });
+
   test("interrupt discards buffered audio and ends the turn", () => {
     const w = makeProcessor();
     writePcm(w, [1000, 2000, 3000]);

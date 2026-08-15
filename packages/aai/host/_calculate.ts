@@ -31,11 +31,16 @@ const RESULT_PRECISION = 12;
 export type CalculateResult = { ok: true; value: number } | { ok: false; error: string };
 
 /**
- * Characters the arithmetic grammar can ever need: digits, decimal point,
- * the operators, parentheses, and `e`/`E` for scientific notation. Anything
- * else (letters, `;`, `!`, `[`, …) is rejected before the parser sees it.
+ * The complement of the characters the arithmetic grammar can ever need
+ * (digits, decimal point, the operators, parentheses, and `e`/`E` for
+ * scientific notation) — so the first match IS the offending character and one
+ * pass both rejects and names it. Anything else (letters, `;`, `!`, `[`, …)
+ * never reaches the parser.
+ *
+ * `u` so an astral character is reported whole rather than as half a surrogate
+ * pair, which is what iterating the string with `[...cleaned]` used to buy.
  */
-const ALLOWED_CHARS = /^[0-9.eE+\-*/%^()]*$/;
+const DISALLOWED_CHAR = /[^0-9.eE+\-*/%^()]/u;
 
 /**
  * Arithmetic-only parser: `+ - * / %` (remainder) and `^` (power) stay on;
@@ -119,11 +124,11 @@ export function calculate(expression: string): CalculateResult {
   // meaningful) rather than failing the whole call over formatting.
   const cleaned = expression.replace(/[$,\s]/g, "");
   if (cleaned.length === 0) return { ok: false, error: "Empty expression" };
-  if (!ALLOWED_CHARS.test(cleaned)) {
-    const ch = [...cleaned].find((c) => !ALLOWED_CHARS.test(c)) ?? "";
+  const offending = DISALLOWED_CHAR.exec(cleaned);
+  if (offending) {
     return {
       ok: false,
-      error: `Unexpected character "${ch}" — only numbers, + - * / % ^ and parentheses are supported`,
+      error: `Unexpected character "${offending[0]}" — only numbers, + - * / % ^ and parentheses are supported`,
     };
   }
   try {

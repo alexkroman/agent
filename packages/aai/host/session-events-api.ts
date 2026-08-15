@@ -43,15 +43,10 @@
 
 import { requestPath, requestQuery } from "../sdk/request-url.ts";
 import { SESSION_EVENT_READ_LIMIT } from "../sdk/session-event-constants.ts";
-import { errorMessage } from "../sdk/utils.ts";
+import { decodePathSegment } from "./_path-decode.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
-import {
-  answerHandlerFailure,
-  bearerMatches,
-  type JsonResponse,
-  sendJson,
-} from "./workflow-api-http.ts";
+import { bearerMatches, claimUnder, type JsonResponse, sendJson } from "./workflow-api-http.ts";
 
 /** Path prefix this surface lives under. */
 export const SESSION_EVENTS_PATH = "/session-events";
@@ -154,7 +149,14 @@ export function createSessionEventsApi(
     // the LAST path segment, so a caller that passed the raw URL would put
     // `?startIndex=1` inside the session id and read a log that does not exist.
     const path = requestPath(url);
-    const sessionId = decodeURIComponent(path.slice(`${SESSION_EVENTS_PATH}/`.length));
+    const sessionId = decodePathSegment(path.slice(`${SESSION_EVENTS_PATH}/`.length));
+    // A segment that will not percent-decode is a malformed REQUEST, not a
+    // missing session — see `_path-decode.ts` for why no decode site here may
+    // simply throw.
+    if (sessionId === undefined) {
+      sendJson(res, 400, { error: "Malformed session id" });
+      return;
+    }
     if (sessionId.length === 0) {
       sendJson(res, 404, { error: "No session id" });
       return;
@@ -180,11 +182,12 @@ export function createSessionEventsApi(
     });
   }
 
-  return (req, res, url, method) => {
-    if (!url.startsWith(`${SESSION_EVENTS_PATH}/`)) return false;
-    route(req, res, url, method).catch((err: unknown) => {
-      answerHandlerFailure(res, logger, "Session events request failed", errorMessage(err));
-    });
-    return true;
-  };
+  // The bare prefix names no session, so it is NOT claimed — the one thing this
+  // surface's claim rule does differently from the workflow API's.
+  return claimUnder<SessionEventsRequest, SessionEventsResponse>({
+    claims: (url) => url.startsWith(`${SESSION_EVENTS_PATH}/`),
+    route,
+    logger,
+    label: "Session events request failed",
+  });
 }

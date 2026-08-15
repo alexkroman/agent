@@ -4,6 +4,7 @@
 // parts, plus the part→block grouping helpers. Split from chat.tsx for
 // file-size discipline.
 
+import { isRecord } from "@alexkroman1/aai/utils";
 import { ToolCallRow } from "@alexkroman1/aai-ui";
 import type { UIMessage } from "ai";
 
@@ -64,8 +65,11 @@ function clip(text: string, max: number): string {
 export function summarizeArgs(input: unknown): string {
   const direct = scalarText(input);
   if (direct !== null) return clip(direct, ARGS_SUMMARY_CHARS);
-  if (input === null || typeof input !== "object" || Array.isArray(input)) return "";
-  const entries = Object.entries(input as Record<string, unknown>).flatMap(([key, value]) => {
+  // `isRecord` already excludes null and arrays, and — the point of using it —
+  // narrows, so the `Object.entries` below needs no cast asserting what the
+  // check was supposed to establish.
+  if (!isRecord(input)) return "";
+  const entries = Object.entries(input).flatMap(([key, value]) => {
     const text = scalarText(value);
     return text === null ? [] : [[key, text] as const];
   });

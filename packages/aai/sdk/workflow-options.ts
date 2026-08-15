@@ -16,7 +16,8 @@ export type StartOptions = {
    * **This is the one piece of durable-workflow machinery the Workflow DevKit
    * has no equivalent for, and it is kept because a VOICE agent is broken
    * without it.** `start` resolves with a `runId`; the natural place a tool puts
-   * it is `ctx.state`, and per-session state is swept `SESSION_RESUME_GRACE_MS`
+   * it is a `sessionSlot`, and a session's slot values are swept
+   * `SESSION_RESUME_GRACE_MS`
    * after the caller hangs up. So the run outlives the session and the only
    * handle to it does not. Passing `key: ctx.sessionId` (or a phone number, an
    * account id, an upload id) means the next turn — or the next CALL — can find

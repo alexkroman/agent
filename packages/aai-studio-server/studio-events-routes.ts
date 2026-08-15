@@ -59,11 +59,17 @@ export function registerEventRoutes(
   // `/projects/events`) because "events" is a valid project name.
   studio.get("/events", (c) => {
     const scope = requestScope(c);
+    // Destructured BEFORE the reader closure, for the reason `ensureBroker`
+    // documents: a shared reader outlives the request that created it (later
+    // streams on the same key reuse the FIRST `read`), so closing over `c`
+    // pins that request — its body, its headers, its response — for the whole
+    // time some tab, anywhere, is still watching this scope.
+    const workspaces = c.env.workspaces;
     return streamSSE(c, async (stream) => {
       const sse = createSsePusher(stream);
       const reads = scopeReads.acquire(scope, async () => ({
         event: "projects",
-        data: JSON.stringify(await listProjects(c.env.workspaces, scope)),
+        data: JSON.stringify(await listProjects(workspaces, scope)),
       }));
       const frame = (): Promise<Frame> => reads.trigger();
       const unwatch = c.env.events.watchScopeProjects(scope, () => sse.push(frame));
@@ -81,16 +87,20 @@ export function registerEventRoutes(
   // tabs/devices see finished turns without re-opening the project.
   studio.get("/projects/:project/events", async (c) => {
     const { scope, project } = c.var;
+    // Read off the request env before either closure below captures anything
+    // — see the note in `GET /events`.
+    const workspaces = c.env.workspaces;
+    const chats = c.env.chats;
     // Existence only — the frames below re-read. A 404 has to be answerable
     // before the response becomes a stream.
-    if (!(await getWorkspace(c.env.workspaces, scope, project))) {
+    if (!(await getWorkspace(workspaces, scope, project))) {
       return c.json({ error: "Project not found" }, 404);
     }
     return streamSSE(c, async (stream) => {
       const sse = createSsePusher(stream);
       const key = projectKey(scope, project);
       const projectReader = projectReads.acquire(key, async () => {
-        const current = await getWorkspace(c.env.workspaces, scope, project);
+        const current = await getWorkspace(workspaces, scope, project);
         // A vanished workspace (project deleted) ends the stream; the client's
         // other queries surface the 404. Shared, so it ends EVERY stream on
         // this project — which is what deleting a project should do.
@@ -99,7 +109,7 @@ export function registerEventRoutes(
       });
       const chatReader = chatReads.acquire(key, async () => ({
         event: "chat",
-        data: JSON.stringify((await c.env.chats.getChat(scope, project)) ?? []),
+        data: JSON.stringify((await chats.getChat(scope, project)) ?? []),
       }));
       const projectFrame = (): Promise<Frame> => projectReader.trigger();
       const chatFrame = (): Promise<Frame> => chatReader.trigger();

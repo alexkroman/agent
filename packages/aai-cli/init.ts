@@ -15,7 +15,44 @@ type InitData = {
   deployed: boolean;
   slug?: string;
   url?: string;
+  /**
+   * Diagnostics a human sees as `log.warn` lines: a failed `pnpm install`, a
+   * failed publish, the publish skipped because of the former.
+   *
+   * They have to ride the result for the same reason `PushOutcome.warnings`
+   * does — `log.warn` is silenced in JSON mode and JSON mode is AUTO-DETECTED
+   * on a pipe, so a scripted `aai init` was told `{ ok: true, deployed: false }`
+   * for a project whose dependencies never installed and could not tell that
+   * apart from `--skipDeploy`.
+   */
+  warnings?: string[];
 };
+
+/**
+ * Run `fn` behind a clack spinner, stopping it in EVERY outcome.
+ *
+ * The naked form (`s?.start(); await work(); s?.stop()`) leaks the spinner on a
+ * failure: clack keeps its interval and its raw-mode stdin hook, so a throw
+ * left a spinner ticking under the error message with the cursor hidden. The
+ * `catch` label is what the terminal is left showing, so it names the step.
+ */
+async function withSpinner<T>(
+  silent: boolean | undefined,
+  labels: { start: string; done: string; failed: string },
+  fn: () => Promise<T>,
+): Promise<T> {
+  const s = silent ? undefined : p.spinner();
+  s?.start(labels.start);
+  // Not named `ok` — that is the result constructor this module imports.
+  let succeeded = false;
+  try {
+    const value = await fn();
+    succeeded = true;
+    return value;
+  } finally {
+    s?.stop(succeeded ? labels.done : labels.failed);
+  }
+}
 
 const DEFAULT_PROJECT_NAME = "my-voice-agent";
 
@@ -83,20 +120,24 @@ async function runPnpmInstall(cwd: string): Promise<void> {
 }
 
 /** Install deps with pnpm. Returns true on success (or no deps to install). */
-async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
+async function installDeps(cwd: string, warn: Warn, silent?: boolean): Promise<boolean> {
   if (!(await hasDeps(cwd))) return true;
   await ensurePnpm();
 
-  const s = silent ? undefined : p.spinner();
-  s?.start("Installing dependencies with pnpm");
   try {
-    await runPnpmInstall(cwd);
-    s?.stop("Dependencies installed");
+    await withSpinner(
+      silent,
+      {
+        start: "Installing dependencies with pnpm",
+        done: "Dependencies installed",
+        failed: "Dependency install failed",
+      },
+      () => runPnpmInstall(cwd),
+    );
     return true;
   } catch (err: unknown) {
-    s?.stop("Dependency install failed");
-    log.warn(`pnpm install failed: ${errorMessage(err)}`);
-    log.warn("Install pnpm (`npm install -g pnpm`), then run `pnpm install` in the project.");
+    warn(`pnpm install failed: ${errorMessage(err)}`);
+    warn("Install pnpm (`npm install -g pnpm`), then run `pnpm install` in the project.");
     return false;
   }
 }
@@ -106,24 +147,47 @@ function resolveTargetDir(dir: string): string {
   return path.resolve(resolveCwd(), dir);
 }
 
+/**
+ * Record a diagnostic: shown to a human AND kept for the result.
+ *
+ * One call site, two destinations — that pairing is the point. `log.warn`
+ * alone is silenced in JSON mode, and a second hand-written `warnings.push`
+ * beside each call is how the two drift.
+ */
+type Warn = (message: string) => void;
+
+function collectWarnings(): { warn: Warn; warnings: string[] } {
+  const warnings: string[] = [];
+  return {
+    warnings,
+    warn: (message) => {
+      warnings.push(message);
+      log.warn(message);
+    },
+  };
+}
+
 /** Publish after init and return deploy metadata if successful. */
 async function tryPublish(
   cwd: string,
   server: string | undefined,
+  warn: Warn,
 ): Promise<{ slug: string; url: string; studioUrl: string } | null> {
   // Server defaulting (dev mode → localhost) is owned by resolveServerUrl
   // inside executePublish — pass the explicit flag through untouched.
   const { executePublish } = await import("./studio.ts");
   try {
     const result = await executePublish({ cwd, ...(server ? { server } : {}) });
-    return result.ok
-      ? { slug: result.data.slug, url: result.data.url, studioUrl: result.data.studioUrl }
-      : null;
+    if (result.ok) {
+      return { slug: result.data.slug, url: result.data.url, studioUrl: result.data.studioUrl };
+    }
+    warn(`Publish failed: ${result.error}`);
+    return null;
   } catch (err) {
     // The project was scaffolded and installed — a publish failure (server
     // unreachable, bad key) must not fail the whole init.
-    log.warn(`Publish failed: ${errorMessage(err)}`);
-    log.warn("Your project was still created — run `aai publish` in it to retry.");
+    warn(`Publish failed: ${errorMessage(err)}`);
+    warn("Your project was still created — run `aai publish` in it to retry.");
     return null;
   }
 }
@@ -136,10 +200,11 @@ async function scaffoldProject(
   silent?: boolean,
 ): Promise<void> {
   const { runInit } = await import("./_init.ts");
-  const s = silent ? undefined : p.spinner();
-  s?.start(`Creating ${dir}`);
-  await runInit({ targetDir: cwd, template });
-  s?.stop("Project created");
+  await withSpinner(
+    silent,
+    { start: `Creating ${dir}`, done: "Project created", failed: `Could not create ${dir}` },
+    () => runInit({ targetDir: cwd, template }),
+  );
 }
 
 /** Print post-init instructions. */
@@ -176,18 +241,19 @@ export async function executeInit(
   }
 
   const template = opts.template ?? "simple";
+  const { warn, warnings } = collectWarnings();
 
   await scaffoldProject(dir, cwd, template, suppressUi);
-  const installed = await installDeps(cwd, suppressUi);
+  const installed = await installDeps(cwd, warn, suppressUi);
 
   let deployed = false;
   let slug: string | undefined;
   let url: string | undefined;
 
   if (!installed) {
-    log.warn("Skipping publish because dependencies were not installed.");
+    warn("Skipping publish because dependencies were not installed.");
   } else if (!opts.skipDeploy) {
-    const published = await tryPublish(cwd, opts.server);
+    const published = await tryPublish(cwd, opts.server, warn);
     if (published) {
       deployed = true;
       slug = published.slug;
@@ -202,5 +268,7 @@ export async function executeInit(
   const data: InitData = { dir: cwd, template, deployed };
   if (slug) data.slug = slug;
   if (url) data.url = url;
+  // Omitted when empty so a clean init's result stays exactly as before.
+  if (warnings.length > 0) data.warnings = warnings;
   return ok(data);
 }

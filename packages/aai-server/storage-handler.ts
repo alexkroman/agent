@@ -59,11 +59,32 @@ export async function storageUsage(env: StorageEnv, slug: string): Promise<AppDb
   });
 }
 
-/** Provision + persist credentials. Idempotent. */
+/**
+ * Provision + persist credentials. Idempotent, and idempotent is the POINT
+ * rather than a nicety.
+ *
+ * **An already-enabled app is left alone.** `provision` mints a fresh password
+ * on every call and the caller persists it, so re-provisioning ROTATES the
+ * role's credentials — while the resident guest is still holding the
+ * `DATABASE_URL` baked into it at spawn. `aai storage enable` run twice was
+ * enough: the second call stopped the running agent's `ctx.db` from
+ * authenticating, mid-session, with nothing on this side reporting anything.
+ * (Secret and storage changes deliberately do not move sandboxes — see "Deploy
+ * and delete are the ONLY mutations that move sandboxes" in this package's
+ * guide — so there is no rebuild behind this to paper over it.)
+ *
+ * The check is INSIDE the slug lock, so two concurrent enables cannot both see
+ * "absent" and both provision. The studio's own per-project path reads
+ * `storageStatus` first for the same reason; this is the guard the per-slug
+ * route was missing, and having it here means neither caller can forget it.
+ */
 export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled: true }> {
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
   return env.slugLock(slug, async () => {
+    if ((await env.secrets.get(appDbSecretName(slug))) !== null) {
+      return { enabled: true as const };
+    }
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
     console.info("Storage enabled", { slug, role: meta.role });

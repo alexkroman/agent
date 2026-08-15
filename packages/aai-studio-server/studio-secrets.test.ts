@@ -95,13 +95,37 @@ describe("setProjectSecrets", () => {
     expect(await store.getEnv(`${PROJECT}-preview`)).toEqual({});
   });
 
-  test("an unknown project is null, not an empty write", async () => {
+  /**
+   * The 404 has to come BEFORE the record write, not after it. The record went
+   * in unconditionally and the existence check lived three statements later
+   * inside the per-slug fan-out, so a PUT against a project that does not
+   * exist answered 404 having already written a Vault record under that name —
+   * and nothing cascades it, because the delete cascade only runs for a
+   * project that exists. A later project taking that name inherited a
+   * stranger's provider keys on its first deploy.
+   */
+  test("an unknown project is null, and leaves NO record behind", async () => {
     const state = await setProjectSecrets(env, {
       ...params,
       project: "no-such-project",
       updates: { A: "1" },
     });
     expect(state).toBeNull();
+    expect(await secrets.get(projectEnvSecretName(SCOPE, "no-such-project"))).toBeNull();
+  });
+
+  test("deleting a key on an unknown project is null, and writes nothing", async () => {
+    const state = await deleteProjectSecret(env, {
+      ...params,
+      project: "no-such-project",
+      key: "A",
+    });
+    expect(state).toBeNull();
+    expect(await secrets.get(projectEnvSecretName(SCOPE, "no-such-project"))).toBeNull();
+  });
+
+  test("reading an unknown project is null", async () => {
+    expect(await projectSecretsState(env, { ...params, project: "no-such-project" })).toBeNull();
   });
 
   test("redeploys the preview, since a secret reaches an agent when it is BUILT", async () => {

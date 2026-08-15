@@ -71,7 +71,7 @@ export interface SttEventHandlers {
  * Split out of the transport so the barge-in policy — which is all threshold
  * and ordering rules rather than turn orchestration — reads on its own. The
  * transport's mutable turn state arrives as the `isTurnInFlight` /
- * `hasTurnSpoken` / `isPlaybackPending` predicates rather than as captured
+ * `hasTurnSpoken` / `agentIsSpeaking` predicates rather than as captured
  * variables, so this module never needs to know how a turn is represented.
  */
 function createSttEventHandlers(deps: {
@@ -88,8 +88,15 @@ function createSttEventHandlers(deps: {
   isResumeTurnInFlight: () => boolean;
   /** True once the in-flight turn has put audio on the wire. */
   hasTurnSpoken: () => boolean;
-  /** True while forwarded audio may still be playing client-side. */
-  isPlaybackPending: () => boolean;
+  /**
+   * Is the agent actually speaking right now — audio already emitted for the
+   * in-flight turn, or forwarded audio still playing out client-side? Passed in
+   * rather than derived here, the way `edgeGate` is: it is the predicate the
+   * whole barge-in policy turns on, and the outward speaking-edge gate turns on
+   * the same one. See {@link createUserActivity} for the definition and why it
+   * is not "a turn is in flight".
+   */
+  agentIsSpeaking: () => boolean;
   /** Abort the in-flight turn and cancel TTS playback. */
   abortInFlightTurn: () => void;
   /**
@@ -118,27 +125,7 @@ function createSttEventHandlers(deps: {
   log: Logger;
   sid: string;
 }): SttEventHandlers {
-  const { speechEdges, recovery, nudger, callbacks, log } = deps;
-
-  /**
-   * Is the agent actually speaking right now — audio already emitted for the
-   * in-flight turn, or forwarded audio still playing out client-side?
-   *
-   * Deliberately not "a turn is in flight". A turn that has yet to emit audio
-   * cannot be spoken over, so a barge-in has nothing to stop; all it would do
-   * is discard the reply mid-computation and restart a strictly slower one (the
-   * abandoned work redone on top of a longer history). A user re-prompting into
-   * that silence on any regular cadence would then starve the reply
-   * indefinitely, every restart outliving the next re-prompt. Utterances
-   * arriving before the agent speaks take the deferral path instead: they
-   * commit as chained turns and are answered once the reply in progress lands.
-   *
-   * Once a turn has spoken it keeps the floor for the rest of its run, so a
-   * mid-reply TTS stall (playback draining while more text is still streaming)
-   * does not silently reopen the pre-audio window.
-   */
-  const agentIsSpeaking = (): boolean =>
-    deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken());
+  const { speechEdges, recovery, nudger, callbacks, log, agentIsSpeaking } = deps;
 
   /**
    * Arm false-interruption recovery for the partial-triggered barge-in that is
@@ -361,9 +348,29 @@ export function createUserActivity(deps: {
 }): UserActivity {
   const { log, sid, callbacks } = deps;
   const isBusy = (): boolean => deps.isTurnInFlight() || deps.isPlaybackPending();
-  // Same predicate the barge-in rules use — see `agentIsSpeaking` in
-  // createSttEventHandlers for why it is "has audio been emitted" rather than
-  // "is a turn in flight".
+  /**
+   * Is the agent actually speaking right now — audio already emitted for the
+   * in-flight turn, or forwarded audio still playing out client-side?
+   *
+   * Defined ONCE and passed to both readers (the outward speaking-edge gate
+   * and the STT handlers' barge-in rules), because the two must agree by
+   * construction: a gate that holds `speech_started` back on one definition
+   * while a barge-in fires on another is a client told the agent yielded by a
+   * transport that decided it had not.
+   *
+   * Deliberately not "a turn is in flight". A turn that has yet to emit audio
+   * cannot be spoken over, so a barge-in has nothing to stop; all it would do
+   * is discard the reply mid-computation and restart a strictly slower one (the
+   * abandoned work redone on top of a longer history). A user re-prompting into
+   * that silence on any regular cadence would then starve the reply
+   * indefinitely, every restart outliving the next re-prompt. Utterances
+   * arriving before the agent speaks take the deferral path instead: they
+   * commit as chained turns and are answered once the reply in progress lands.
+   *
+   * Once a turn has spoken it keeps the floor for the rest of its run, so a
+   * mid-reply TTS stall (playback draining while more text is still streaming)
+   * does not silently reopen the pre-audio window.
+   */
   const agentIsSpeaking = (): boolean =>
     deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken());
 
@@ -429,7 +436,7 @@ export function createUserActivity(deps: {
     isTurnDraining: deps.isTurnDraining,
     isResumeTurnInFlight: deps.isResumeTurnInFlight,
     hasTurnSpoken: deps.hasTurnSpoken,
-    isPlaybackPending: deps.isPlaybackPending,
+    agentIsSpeaking,
     abortInFlightTurn: deps.abortInFlightTurn,
     tailResumePrompt: deps.tailResumePrompt,
     speechEdges,

@@ -22,6 +22,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
+import { isRecord } from "./is-record.ts";
 import type { StandardSchemaV1 } from "./standard-schema.ts";
 
 export {
@@ -49,12 +50,15 @@ export type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>
  * by a `toJsonSchema()` / `toJSONSchema()` method (ArkType).
  */
 function jsonSchemaConverterFor(value: unknown): (() => unknown) | undefined {
-  if (typeof value !== "object" || value === null) return;
-  if ("_zod" in value) return () => z.toJSONSchema(value as z.ZodType);
+  if (!isRecord(value)) return;
+  // Kept as `unknown` for the cast below. Narrowing to a record says the value
+  // has fields, not that it is a zod schema — the `_zod` marker is what says
+  // that — so the cast is against the original value rather than against the
+  // narrow, which would be an overlap error and no more true.
+  const schema: unknown = value;
+  if ("_zod" in value) return () => z.toJSONSchema(schema as z.ZodType);
   if (!("~standard" in value)) return;
-  const convert =
-    (value as { toJsonSchema?: unknown }).toJsonSchema ??
-    (value as { toJSONSchema?: unknown }).toJSONSchema;
+  const convert = value.toJsonSchema ?? value.toJSONSchema;
   return typeof convert === "function" ? () => convert.call(value) : undefined;
 }
 

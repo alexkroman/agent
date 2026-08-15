@@ -63,6 +63,7 @@
 import { MAX_SESSION_STATE_BYTES } from "../sdk/constants.ts";
 import { freezeStorable, type SlotStore } from "../sdk/session-state.ts";
 import { errorMessage } from "../sdk/utils.ts";
+import { getOrCreate } from "./_get-or-create.ts";
 import type { StateSyncSession } from "./_state-sync.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -120,10 +121,18 @@ export type SessionStateBackend = {
     limit: number,
   ): Promise<readonly StoredSessionEvent[]>;
   /**
-   * How many events are stored for `sessionId` — i.e. the next free index.
+   * The next free index for `sessionId` — one past the HIGHEST stored index,
+   * which is not the same thing as how many are stored.
    *
    * Read on hydrate so a session resuming onto a REPLACEMENT process continues
-   * its log rather than restarting at 0 and overwriting its own history.
+   * its log rather than restarting at 0 and overwriting its own history. A count
+   * only answers that for a log dense from zero, and this one need not be: an
+   * event past `MAX_SESSION_EVENTS` advances the position without being stored,
+   * and a partly-failed flush leaves a hole. Under a count both cases hand a
+   * resumed session an index it has already used, so its `tail` goes BACKWARDS
+   * and the re-used appends are silently dropped by `on conflict do nothing`.
+   * Both backends must answer `max + 1`, or the memory one stops being a valid
+   * double for the Postgres one.
    */
   countEvents(sessionId: string): Promise<number>;
 };
@@ -226,7 +235,18 @@ export function createMemoryStateBackend(): SessionStateBackend {
       }
       return Promise.resolve(out);
     },
-    countEvents: (sessionId) => Promise.resolve(events.get(sessionId)?.size ?? 0),
+    countEvents: (sessionId) => {
+      // `max + 1`, not `size` — see the backend type's doc. A sparse log (the
+      // retention cap, a partly-failed flush) is exactly where the two differ,
+      // and it is the case this answer exists for.
+      const log = events.get(sessionId);
+      let highest = -1;
+      // A loop rather than `Math.max(...keys)`: the log holds up to
+      // `MAX_SESSION_EVENTS` entries and spreading that many arguments is a
+      // stack overflow waiting for the cap to be raised.
+      for (const index of log?.keys() ?? []) if (index > highest) highest = index;
+      return Promise.resolve(highest + 1);
+    },
   };
 }
 
@@ -370,17 +390,12 @@ export function createSessionStateStore(opts: {
   const { backend, logger } = opts;
   const sessions = new Map<string, SessionEntry>();
 
-  const entryFor = (sessionId: string): SessionEntry => {
-    const existing = sessions.get(sessionId);
-    if (existing) return existing;
-    const created: SessionEntry = {
+  const entryFor = (sessionId: string): SessionEntry =>
+    getOrCreate(sessions, sessionId, () => ({
       values: new Map(),
       dirty: new Set(),
       committed: new Map(),
-    };
-    sessions.set(sessionId, created);
-    return created;
-  };
+    }));
 
   return {
     backend,

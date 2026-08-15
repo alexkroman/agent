@@ -60,12 +60,19 @@ type WorkflowOptions = { server?: string | undefined; token?: string | undefined
  * sentence naming `aai publish`. The client is handed the AGENT's base URL and
  * appends the route prefix itself, so the `/workflows` literal is not spelled
  * here — it is the same constant the server matches on.
+ *
+ * `serverUrl` is joined as-is: `resolveServerUrl` is the single producer of
+ * every origin that reaches here and strips trailing slashes once, at
+ * resolution time, precisely so join sites do not each carry a copy. The copy
+ * this used to hold also DISAGREED with it — `/\/$/` takes one slash where the
+ * upstream `/\/+$/` takes all — so the two would have differed on the only
+ * input either was written for.
  */
 async function target(cwd: string, opts: WorkflowOptions): Promise<Target> {
   const { serverUrl, slug } = await getServerInfo(cwd, opts.server);
   return {
     api: createWorkflowApiClient({
-      baseUrl: `${serverUrl.replace(/\/$/, "")}/${slug}`,
+      baseUrl: `${serverUrl}/${slug}`,
       ...omitUndefined({ token: opts.token }),
     }),
     slug,

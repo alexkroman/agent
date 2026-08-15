@@ -310,6 +310,29 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     deps.unwatch();
   });
 
+  it("nor does a rebuild for a slug that was deleted since it was last served", async () => {
+    // The half the `created` guard missed: a slot that ALREADY existed and has
+    // no sandbox (its guest exited, or the delete event tore the sandbox off)
+    // takes the same no-bundle branch, and leaving it there is permanent —
+    // `reconcileSlug` returns early on `!slot?.sandbox`, so nothing looks at
+    // that shell again for the life of the container.
+    const deps = await seedAgent("deleted-later");
+    const first = await resolveSandbox("deleted-later", deps);
+    expect(first).not.toBeNull();
+
+    // Detach the sandbox without removing the slot, which is what an idle
+    // self-exit's async teardown or a mid-flight rebuild leaves behind.
+    const slot = deps.slots.get("deleted-later");
+    expect(slot).toBeDefined();
+    await first?.shutdown();
+    delete slot?.sandbox;
+
+    await deps.store.deleteAgent("deleted-later");
+    await expect(resolveSandbox("deleted-later", deps)).resolves.toBeNull();
+    expect(deps.slots.get("deleted-later")).toBeUndefined();
+    deps.unwatch();
+  });
+
   it("a secret change does NOT retire the resident sandbox", async () => {
     const deps = await seedAgent("secretly-updated");
     const first = await resolveSandbox("secretly-updated", deps);

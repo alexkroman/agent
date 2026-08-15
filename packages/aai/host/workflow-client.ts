@@ -44,6 +44,7 @@
 
 import type { Db } from "../sdk/db.ts";
 import { mapInBatches } from "../sdk/map-in-batches.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { formatSchemaIssues, toToolJsonSchema } from "../sdk/schema.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type {
@@ -128,6 +129,29 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   const { workflows, keys, wdk, publicUrl, logger } = opts;
 
   /**
+   * The two indexes over `agent({ workflows })`, built in ONE pass.
+   *
+   * `nameByDef` is what `resolve` looks a def up in — the same identity mapping
+   * it used to re-derive by scanning `Object.entries` on every call, which is
+   * the one direction this record was not already indexed in. FIRST key wins in
+   * both, matching `Object.entries` order: the same def declared under two keys
+   * is legitimate (see `resolve`), a run of it carries no trace of which one a
+   * caller meant, and the two indexes must agree about which one it is.
+   *
+   * A def the compiler never transformed contributes no `workflowId` entry
+   * rather than throwing: `start` is where that build failure is reported, and a
+   * client that could not even be CONSTRUCTED for it would take the other
+   * workflows' reads down with it.
+   */
+  const nameByDef = new Map<AnyWorkflowDef, string>();
+  const declaredNameById = new Map<string, string>();
+  for (const [name, def] of Object.entries(workflows)) {
+    if (!nameByDef.has(def)) nameByDef.set(def, name);
+    const id = def.run.workflowId;
+    if (id !== undefined && !declaredNameById.has(id)) declaredNameById.set(id, name);
+  }
+
+  /**
    * The declared name of a workflow, by IDENTITY against `agent({ workflows })`.
    *
    * Identity rather than a `name` field on the def is what keeps that record the
@@ -147,9 +171,9 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
         throw new WorkflowRequestError(unknownWorkflowMessage(workflow, Object.keys(workflows)));
       return { name: workflow, def };
     }
-    for (const [name, def] of Object.entries(workflows)) {
-      if (def === workflow) return { name, def };
-    }
+    const name = nameByDef.get(workflow);
+    const declared = name === undefined ? undefined : workflows[name];
+    if (name !== undefined && declared) return { name, def: declared };
     // A def that is not in the record cannot be started: nothing maps it to a
     // name, so a run of it could never be found again. The message names the
     // declared set because the usual cause is a workflow written and not wired
@@ -186,28 +210,6 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   }
 
   /**
-   * `workflowId` → the key it is declared under: `resolve`'s mapping, run the
-   * other way for the run records WDK hands back.
-   *
-   * Built once from the same record, so a name reported on a snapshot is by
-   * construction one `resolve` accepts. FIRST key wins, matching `resolve`'s own
-   * `Object.entries` order — the same def declared under two keys is legitimate
-   * (see `resolve`), and a run of it carries no trace of which one a caller
-   * meant, so one of them has to be picked and it may as well be the one listed
-   * first.
-   *
-   * A def the compiler never transformed contributes nothing rather than
-   * throwing: `start` is where that build failure is reported, and a client that
-   * could not even be CONSTRUCTED for it would take the other workflows' reads
-   * down with it.
-   */
-  const declaredNameById = new Map<string, string>();
-  for (const [name, def] of Object.entries(workflows)) {
-    const id = def.run.workflowId;
-    if (id !== undefined && !declaredNameById.has(id)) declaredNameById.set(id, name);
-  }
-
-  /**
    * WDK's run record as our discriminated snapshot.
    *
    * The `output` read is deliberately conditional on `status === "completed"`,
@@ -229,7 +231,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // `parseWorkflowName` takes.
       workflow: declaredNameById.get(record.workflowName) ?? record.workflowName,
       createdAt: new Date(record.createdAt).getTime(),
-      ...(key !== undefined && { key }),
+      ...omitUndefined({ key }),
     };
     switch (record.status) {
       case "completed":
@@ -367,16 +369,20 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     listing(): WorkflowSummary[] {
       return Object.entries(workflows).map(([name, def]) => ({
         name,
-        ...(def.description !== undefined && { description: def.description }),
-        // Converted here rather than stored, because the reader is a browser
-        // rendering a form and a Standard Schema does not survive the wire.
-        // A schema that cannot convert is omitted rather than fatal: the listing
-        // is also what `workflow_status` reads, and a form that cannot be
-        // rendered must not take the status tool down with it.
-        ...(def.input !== undefined && { inputSchema: safeJsonSchema(def.input, name, logger) }),
-        // Forwarded rather than derived: which properties are uploads is the
-        // author's declaration, and the page is the reader that acts on it.
-        ...(def.uploads !== undefined && { uploads: def.uploads }),
+        ...omitUndefined({
+          description: def.description,
+          // Converted here rather than stored, because the reader is a browser
+          // rendering a form and a Standard Schema does not survive the wire.
+          // A schema that cannot convert is omitted rather than fatal: the
+          // listing is also what `workflow_status` reads, and a form that cannot
+          // be rendered must not take the status tool down with it. `def.input &&`
+          // rather than a bare call: the guard is what makes the argument
+          // present, so it stays in front of it.
+          inputSchema: def.input && safeJsonSchema(def.input, name, logger),
+          // Forwarded rather than derived: which properties are uploads is the
+          // author's declaration, and the page is the reader that acts on it.
+          uploads: def.uploads,
+        }),
       }));
     },
   } satisfies WorkflowClient as WorkflowClient;

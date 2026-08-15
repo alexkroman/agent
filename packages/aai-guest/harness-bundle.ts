@@ -8,7 +8,7 @@
  * comes from the BUNDLE, never from the harness — see `HarnessState`.
  */
 
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,6 +19,7 @@ import {
   type SessionRuntime,
   type WorkflowSurface,
 } from "@alexkroman1/aai/runtime";
+import { isRecord } from "@alexkroman1/aai/utils";
 import type { WebSocket } from "ws";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
 import type { StudioSession } from "./studio-session.ts";
@@ -43,7 +44,22 @@ async function importBundleModule(code: string): Promise<Record<string, unknown>
   // directory carries no resolution meaning here.
   const path = join(tmpdir(), `aai-bundle-${process.pid}-${++bundleSeq}.mjs`);
   await writeFile(path, code, "utf-8");
-  return await import(pathToFileURL(path).href);
+  try {
+    return await import(pathToFileURL(path).href);
+  } finally {
+    // Unlinked as soon as the loader is done with it. The unique name exists so
+    // a REPEAT load runs the new code (Node caches the registry by URL), so
+    // nothing ever reads this path twice — and the studio's build → load → try
+    // loop calls `test_agent` after every meaningful change, at ~8 MB a time,
+    // into a sandbox that lives for hours. Nothing was deleting them.
+    //
+    // Safe after the import resolves: the module is compiled and instantiated,
+    // and the bundle's own `createRequire(import.meta.url)` uses this path only
+    // as a resolution ANCHOR, which needs no file. The one thing given up is
+    // Node printing the source line under a stack frame from inside the bundle;
+    // the frame, the file and the line still appear.
+    await rm(path, { force: true }).catch(() => undefined);
+  }
 }
 
 // ---- Harness state ----------------------------------------------------------
@@ -129,7 +145,11 @@ export async function loadBundle(
   // the trust boundary is, and deleting the guard would have raised no error.
   const exported: unknown = mod.default ?? mod;
 
-  if (exported === null || typeof exported !== "object") {
+  // `isRecord`, not a hand-written `typeof … !== "object" || … === null`: same
+  // guard, one spelling, and the one `guard-invariants` rule 17 recognizes. It
+  // also refuses an ARRAY, which the hand-written form let through — into a
+  // cast to `AgentDef` — while the message beside it already said "an object".
+  if (!isRecord(exported)) {
     throw new Error("Agent bundle must export an object");
   }
   const agent = exported as AgentDef;

@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { ChatMessage } from "@alexkroman1/aai-ui";
+import type { AgentState, ChatMessage } from "@alexkroman1/aai-ui";
 import { AutoScroll, client, useSession, useUserTranscript } from "@alexkroman1/aai-ui";
 
 const CSS = `
@@ -52,6 +52,25 @@ const GREEN_DIM = "#00aa2a";
 const GREEN_DARK = "#003300";
 const CYAN = "#00ccff";
 
+// The cursor dot's colour per session state, as an EXHAUSTIVE map rather than an
+// if-chain with a grey default.
+//
+// The palette is this template's own — every client here paints the same six
+// states in its own colours, so the SDK has nothing to share but the union. What
+// the SDK does own is `AgentState`, and `satisfies Record<AgentState, string>`
+// is what borrows it: a state added there stops compiling here, where the
+// `state === "…"` chain this replaced answered a new state with a silent grey
+// badge in three separate files and no way to notice.
+const STATE_COLORS = {
+  disconnected: GREEN_DARK,
+  connecting: GREEN_DARK,
+  ready: GREEN_DARK,
+  listening: GREEN,
+  thinking: CYAN,
+  speaking: "#ffaa00",
+  error: GREEN_DARK,
+} satisfies Record<AgentState, string>;
+
 function InfocomAdventure() {
   const session = useSession();
   // `speaking` and `text` in place of a `userTranscript !== null` check: `null`
@@ -74,14 +93,7 @@ function InfocomAdventure() {
 
   const msgCount = session.messages.filter((m: ChatMessage) => m.role === "user").length;
 
-  const dotColor =
-    session.state === "listening"
-      ? GREEN
-      : session.state === "speaking"
-        ? "#ffaa00"
-        : session.state === "thinking"
-          ? CYAN
-          : GREEN_DARK;
+  const dotColor = STATE_COLORS[session.state];
 
   if (!session.started) {
     return (

@@ -59,7 +59,7 @@ function setup(opts: { fleet?: Partial<SessionFleet>; idleMs?: number } = {}) {
    * moment that matters rather than at claim time — otherwise every boundary
    * assertion silently carries one sweep interval of slack.
    */
-  function addEntry(project: string, ageAtSweep: number) {
+  function addEntry(project: string, ageAtSweep: number, inFlight = 0) {
     const warm = makeWarm();
     const key = `scope/${project}`;
     const entry = {
@@ -69,6 +69,7 @@ function setup(opts: { fleet?: Partial<SessionFleet>; idleMs?: number } = {}) {
       project,
       lastUsed: Date.now() + SWEEP_INTERVAL_MS - ageAtSweep,
       chatToken: "tok",
+      inFlight,
       release: () => false,
     } as SessionEntry;
     entry.release = sessions.claim(key, entry);
@@ -278,6 +279,70 @@ describe("createSessionReaper", () => {
       expect(warm.disposed).toBe(1);
       expect(calls.release).toEqual(["scope/alpha"]);
       expect(sessions.get("scope/alpha")).toBeUndefined();
+      reaper.stop();
+    });
+
+    /**
+     * A Publish or an auto preview deploy runs INSIDE the sandbox and can
+     * legitimately outlive the idle window — `WORKSPACE_DEPLOY_TIMEOUT_MS` is
+     * 330s against a 300s window — and the deploy touches `lastUsed` only when
+     * it RETURNS. So the clock alone said "idle" for a sandbox that was
+     * building: it was terminated mid-`aai deploy`, the build re-ran from
+     * scratch, and the browser's chat URL was dead.
+     */
+    test("never evicts a sandbox with work in flight, and does not even read the registry", async () => {
+      const { reaper, sessions, calls, addEntry } = setup();
+      const { warm } = addEntry("alpha", IDLE_MS * 3, 1);
+
+      await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS * 3);
+
+      expect(warm.disposed).toBe(0);
+      expect(sessions.get("scope/alpha")).toBeDefined();
+      // Not merely spared — never examined. The sweep is skipped before the
+      // registry round trip, so a busy sandbox costs no reads either.
+      expect(calls.heldByUs).toEqual([]);
+      reaper.stop();
+    });
+
+    test("evicts once the in-flight deploy releases", async () => {
+      const { reaper, sessions, addEntry } = setup();
+      const { entry, warm } = addEntry("alpha", IDLE_MS + 1, 1);
+
+      await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
+      expect(warm.disposed).toBe(0);
+
+      entry.inFlight = 0;
+      await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
+
+      expect(warm.disposed).toBe(1);
+      expect(sessions.get("scope/alpha")).toBeUndefined();
+      reaper.stop();
+    });
+
+    test("a deploy that starts DURING the registry read still spares the sandbox", async () => {
+      // The last gap: `heldByUs` spans a real round trip, and a Publish can
+      // begin inside it. Re-read after the await or the terminate lands on a
+      // sandbox that is building.
+      const gates: ((held: boolean) => void)[] = [];
+      const { reaper, sessions, addEntry } = setup({
+        fleet: {
+          heldByUs: () =>
+            new Promise<boolean>((resolve) => {
+              gates.push(resolve);
+            }),
+        },
+      });
+      const { entry, warm } = addEntry("alpha", IDLE_MS + 1);
+
+      await vi.advanceTimersByTimeAsync(SWEEP_INTERVAL_MS);
+      expect(gates).toHaveLength(1);
+      // Publish arrives while the read is outstanding.
+      entry.inFlight = 1;
+      gates[0]?.(false);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(warm.disposed).toBe(0);
+      expect(sessions.get("scope/alpha")).toBeDefined();
       reaper.stop();
     });
 

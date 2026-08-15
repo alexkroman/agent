@@ -13,6 +13,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { useWorkflowSubmit, useWorkflows } from "./use-workflow-form.ts";
+import { MAX_MISSING_READS } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 /**
@@ -258,6 +259,22 @@ describe("useWorkflowSubmit", () => {
     await act(async () => {
       await second;
     });
+  });
+
+  test("stops being pending once the watch gives up on a run the agent never knew", async () => {
+    // The regression: `pending` used to be re-derived from the snapshot as
+    // `!isTerminal(run)`, and giving up past MAX_MISSING_READS leaves `run`
+    // undefined — so the submit button stayed disabled and reading "Working…"
+    // for the life of the page, with the correct error directly above it.
+    const api = fakeApi({ get: vi.fn(async () => undefined) });
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({}));
+
+    await waitFor(() => expect(result.current.error).toBe("No workflow run wrun_1"));
+    expect(api.get).toHaveBeenCalledTimes(MAX_MISSING_READS);
+    expect(result.current.run).toBeUndefined();
+    expect(result.current.pending).toBe(false);
   });
 
   test("reset puts the form back to its initial state", async () => {

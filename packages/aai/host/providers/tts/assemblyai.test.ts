@@ -25,6 +25,29 @@ describe("AssemblyAI TTS adapter", () => {
     expect(openAssemblyAITts({}).name).toBe("assemblyai");
   });
 
+  test.each([
+    ["audio", false, (ws: FakeWebSocket) => ws._msg({ type: "Audio", audio: pcmBase64([1, 2]) })],
+    ["done", true, (ws: FakeWebSocket) => ws._msg({ type: "FlushDone" })],
+  ] as const)(
+    "a throwing %s listener cannot escape the socket's message handler",
+    async (event, endTurn, fire) => {
+      // Emitting straight off the emitter let a downstream throw escape into
+      // Node's EventEmitter as an uncaughtException, taking down a multi-tenant
+      // host rather than one session. `shell.emit` owns the containment.
+      const { session, ws } = await openSession();
+      session.sendText("a sentence. ");
+      if (endTurn) session.flush();
+      const listener = vi.fn(() => {
+        throw new Error("listener blew up");
+      });
+      session.on(event, listener);
+
+      expect(() => fire(ws)).not.toThrow();
+      // The event really fired — otherwise the assertion above is vacuous.
+      expect(listener).toHaveBeenCalledTimes(1);
+    },
+  );
+
   test("connects to the production streaming-TTS host with voice and sample rate", async () => {
     const { ws } = await openSession({ voice: "michael" });
     const url = new URL(ws.url);

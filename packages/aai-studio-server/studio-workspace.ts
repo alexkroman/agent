@@ -143,11 +143,41 @@ export function projectKey(scope: string, project: string): string {
   return platformProjectKey(scope, project);
 }
 
-/** Validate a workspace-relative file path; throws on traversal/absolute paths. */
-function assertSafeFilePath(path: string): string {
+/**
+ * Validate a workspace-relative file path and return its NORMALIZED form;
+ * throws on traversal/absolute paths.
+ *
+ * The normalization is the return value and callers must use it. `agent.ts`
+ * and `./agent.ts` both pass `SafePathSchema`, which normalizes them to the
+ * same path — and the workspace is a `Record<string, string>` keyed by
+ * whatever the writer sent, so storing the raw key gave one file two entries.
+ * Both then show in the editor, `test_agent` builds whichever the bundler
+ * resolves, and a write to one leaves the other stale.
+ */
+export function normalizeFilePath(path: string): string {
   const parsed = SafePathSchema.safeParse(path);
   if (!parsed.success) throw new Error(`Invalid file path: ${path}`);
   return parsed.data;
+}
+
+/**
+ * The file map as it will be STORED: every key validated and normalized.
+ *
+ * Returns the input unchanged when no key moved, which keeps
+ * {@link stampWorkspace}'s reference-equality hash reuse working — a
+ * metadata-only mutation spreads `current` and must not pay for a re-hash.
+ * When two keys normalize to one, the later entry wins: they always denoted
+ * one file, and this is where they become one.
+ */
+function normalizeFileMap(files: Record<string, string>): Record<string, string> {
+  let moved = false;
+  const normalized: Record<string, string> = {};
+  for (const [path, content] of Object.entries(files)) {
+    const safe = normalizeFilePath(path);
+    if (safe !== path) moved = true;
+    normalized[safe] = content;
+  }
+  return moved ? normalized : files;
 }
 
 /** Enforce per-file, per-workspace file-count and total-size limits. */
@@ -186,13 +216,11 @@ function parseWorkspace(doc: unknown): StudioWorkspace | null {
  * its stamped hash is reused rather than re-serializing the whole tree.
  */
 function stampWorkspace(workspace: WorkspaceInput, prior?: StudioWorkspace): StudioWorkspace {
-  for (const path of Object.keys(workspace.files)) assertSafeFilePath(path);
-  assertWorkspaceLimits(workspace.files);
+  const files = normalizeFileMap(workspace.files);
+  assertWorkspaceLimits(files);
   const hashValue =
-    prior?.hash !== undefined && workspace.files === prior.files
-      ? prior.hash
-      : filesHash(workspace.files);
-  return { ...workspace, hash: hashValue, updatedAt: Date.now() };
+    prior?.hash !== undefined && files === prior.files ? prior.hash : filesHash(files);
+  return { ...workspace, files, hash: hashValue, updatedAt: Date.now() };
 }
 
 export async function getWorkspace(
@@ -233,13 +261,19 @@ export function syncWorkspaceSource(
   baseHash?: string,
 ): Promise<{ workspace: StudioWorkspace; sourceHash: string; created: boolean; changed: boolean }> {
   return withLock(workspaceLock, projectKey(scope, project), async () => {
+    // Normalized BEFORE the no-op comparison, not only on the way into the
+    // store: a push spelling a path `./agent.ts` hashes differently from the
+    // `agent.ts` it is stored as, so comparing the raw map would report every
+    // such push as a change — a version bump and a preview deploy per `aai
+    // push`, for a byte-identical tree.
+    const incoming = normalizeFileMap(files);
     const record = await store.get(scope, project);
     const current = record ? parseWorkspace(record.doc) : null;
     if (!(record && current)) {
       // A caller holding a baseHash pulled a project that has since been
       // deleted — that is a conflict to surface, not a fresh create.
       if (baseHash !== undefined) throw new WorkspaceConflictError(scope, project);
-      const doc = stampWorkspace({ files });
+      const doc = stampWorkspace({ files: incoming });
       await store.put(scope, project, doc, null);
       return { workspace: doc, sourceHash: currentFilesHash(doc), created: true, changed: true };
     }
@@ -247,10 +281,10 @@ export function syncWorkspaceSource(
     if (baseHash !== undefined && baseHash !== storedHash) {
       throw new WorkspaceConflictError(scope, project);
     }
-    if (filesHash(files) === storedHash) {
+    if (filesHash(incoming) === storedHash) {
       return { workspace: current, sourceHash: storedHash, created: false, changed: false };
     }
-    const doc = stampWorkspace({ ...current, files }, current);
+    const doc = stampWorkspace({ ...current, files: incoming }, current);
     await store.put(scope, project, doc, record.version);
     return { workspace: doc, sourceHash: currentFilesHash(doc), created: false, changed: true };
   });

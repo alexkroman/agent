@@ -39,17 +39,41 @@ export function validateAgentExport(mod: any): void {
   }
 }
 
+/** The fields of an installed package's manifest that this CLI reads. */
+export type PackageManifest = {
+  bin?: string | Record<string, string>;
+  version?: string;
+};
+
 /**
- * Absolute path of `binName`'s script declared by the package.json at
- * `pkgJsonPath`, or undefined when the package declares no such bin.
+ * Read and parse a package.json SYNCHRONOUSLY.
+ *
+ * Separate from {@link binFromPackageJson} so a caller that needs two fields
+ * pays for one read and one parse. `resolveTsc` needed exactly that: it read
+ * the TypeScript manifest for the bin and then again for the version, on a
+ * path that runs after every settled write burst in the studio.
+ */
+export function readPackageJson(pkgJsonPath: string): PackageManifest {
+  return JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as PackageManifest;
+}
+
+/**
+ * Absolute path of `binName`'s script declared by `manifest`, which was read
+ * from `pkgJsonPath` — or undefined when the package declares no such bin.
  * Handles both `"bin": "script.js"` and `"bin": { name: "script.js" }`.
  */
-export function binFromPackageJson(pkgJsonPath: string, binName: string): string | undefined {
-  const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as {
-    bin?: string | Record<string, string>;
-  };
-  const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.[binName];
+export function binFromManifest(
+  pkgJsonPath: string,
+  manifest: PackageManifest,
+  binName: string,
+): string | undefined {
+  const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[binName];
   return bin ? path.join(path.dirname(pkgJsonPath), bin) : undefined;
+}
+
+/** {@link binFromManifest} for a caller that needs nothing else from the file. */
+export function binFromPackageJson(pkgJsonPath: string, binName: string): string | undefined {
+  return binFromManifest(pkgJsonPath, readPackageJson(pkgJsonPath), binName);
 }
 
 export async function fileExists(p: string): Promise<boolean> {

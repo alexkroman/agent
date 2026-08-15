@@ -6,12 +6,44 @@
  * `RuntimeOptions.runCode`.
  */
 
+import { Worker } from "node:worker_threads";
 import { errorMessage, isToolFailure } from "@alexkroman1/aai";
 import pTimeout from "p-timeout";
 import type { AgentDef, ToolContext } from "./harness-types.ts";
 import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
 
 // ---- run_code builtin -------------------------------------------------------
+
+/**
+ * The body of the worker thread one `run_code` call runs in.
+ *
+ * A STRING rather than a sibling file, because the harness ships as ONE bundled
+ * artifact (`codeSplitting: false`, baked into the snapshot image) and there is
+ * no second file for a worker to be started from. The model's code arrives as
+ * `workerData`, never spliced into this source — a quote in the agent's program
+ * must not be able to end this program.
+ *
+ * Evaluated as CommonJS, which is what `eval: true` gives; the async IIFE is
+ * what lets the model's code use top-level `await`.
+ */
+const RUN_CODE_WORKER = `
+const { parentPort, workerData } = require("node:worker_threads");
+const output = [];
+const push = (...args) => output.push(args.map(String).join(" "));
+const sandboxConsole = { log: push, info: push, warn: push, error: push, debug: push };
+(async () => {
+  try {
+    const factory = new Function("console", "return (async () => {\\n" + workerData.code + "\\n})();");
+    await factory(sandboxConsole);
+    parentPort.postMessage({ output });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    parentPort.postMessage({ output, error: message });
+  }
+})();
+`;
+
+type RunCodeMessage = { output?: unknown; error?: unknown };
 
 /**
  * Execute agent-supplied JavaScript for the `run_code` builtin — wired into
@@ -23,29 +55,66 @@ import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "
  * agent bundle and nothing more; an escape lands in a container that is
  * already confined and network-restricted.
  *
+ * ## The timeout needs a THREAD to cancel, not a promise to race
+ *
+ * This used to be a bare `new Function` in the harness process under
+ * `pTimeout`. That bounds nothing a timer can outlive, and the returned async
+ * IIFE runs SYNCHRONOUSLY up to its first `await` — so a model-authored
+ * `while (true) {}`, which has no `await` at all, never yields, and the
+ * `pTimeout` timer that was supposed to fire at 5s cannot be reached to fire.
+ * It wedged the WHOLE GUEST: `/health` stopped answering, every concurrent
+ * voice session on that sandbox stalled, and `createIdleController`'s interval
+ * never ticked, so the guest could not even self-exit — it burned to Modal's
+ * lifetime cap. Both `limits.ts` and the package guide called the timeout
+ * "enforced", and for the class of program most worth bounding it was not.
+ *
+ * A worker thread is the only thing in Node that can be stopped mid-loop:
+ * `terminate()` tears down the isolate whether or not it ever yields. The costs
+ * are real and priced in — one isolate spawn (tens of ms) per call, and the
+ * loss of shared globals between calls, neither of which any caller depends on.
+ *
  * Output is captured through an injected `console` argument rather than a
- * global monkey-patch, so concurrent run_code calls never clobber each other.
+ * global monkey-patch, so concurrent run_code calls never clobber each other,
+ * and it now rides back over `postMessage` from the worker.
+ *
+ * `timeoutMs` is a test seam. Production always takes {@link RUN_CODE_TIMEOUT_MS}.
  */
-export async function runCode(code: string): Promise<string | { error: string }> {
-  const output: string[] = [];
-  const push = (...args: unknown[]) => output.push(args.map(String).join(" "));
-  const sandboxConsole = { log: push, info: push, warn: push, error: push, debug: push };
-
+export async function runCode(
+  code: string,
+  timeoutMs: number = RUN_CODE_TIMEOUT_MS,
+): Promise<string | { error: string }> {
+  let worker: Worker;
   try {
-    // Async wrapper so user code can use top-level `await`.
-    const factory = new Function("console", `return (async () => {\n${code}\n})();`) as (
-      c: typeof sandboxConsole,
-    ) => Promise<unknown>;
-
-    await pTimeout(factory(sandboxConsole), {
-      milliseconds: RUN_CODE_TIMEOUT_MS,
-      message: `run_code timed out after ${RUN_CODE_TIMEOUT_MS}ms`,
+    worker = new Worker(RUN_CODE_WORKER, { eval: true, workerData: { code } });
+  } catch (err) {
+    return { error: errorMessage(err) };
+  }
+  const settled = new Promise<RunCodeMessage>((resolve, reject) => {
+    worker.once("message", resolve);
+    worker.once("error", reject);
+    // Only reachable when the worker died without answering — the model's code
+    // called `process.exit`, or an OOM took the isolate. Late `reject` after a
+    // `resolve` is a no-op, so the ordinary exit needs no guard.
+    worker.once("exit", (exitCode) => {
+      reject(new Error(`run_code ended without a result (worker exit ${exitCode})`));
     });
-
-    const text = output.join("\n").trim();
+  });
+  try {
+    const message = await pTimeout(settled, {
+      milliseconds: timeoutMs,
+      message: `run_code timed out after ${timeoutMs}ms`,
+    });
+    if (typeof message.error === "string") return { error: message.error };
+    const lines = Array.isArray(message.output) ? message.output.map(String) : [];
+    const text = lines.join("\n").trim();
     return text || "Code ran successfully (no output)";
   } catch (err) {
     return { error: errorMessage(err) };
+  } finally {
+    // The whole point on the timeout path; on every other path it also reclaims
+    // an isolate whose event loop the model left work pending in (a dangling
+    // `setInterval`), which used to keep the HARNESS alive instead.
+    void worker.terminate();
   }
 }
 

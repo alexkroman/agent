@@ -42,7 +42,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+import { repoRoot } from "./_fs.mjs";
+
+const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
 const SOURCE = join(ROOT, "packages/aai-templates/scaffold/CLAUDE.md");
 const DESTINATION = join(ROOT, "packages/aai/AGENT_GUIDE.md");
 const CHECK = process.argv.includes("--check");

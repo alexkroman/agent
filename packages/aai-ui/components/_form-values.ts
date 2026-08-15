@@ -24,13 +24,34 @@ export async function collectValues(form: HTMLFormElement): Promise<FormValues> 
   for (const element of Array.from(form.elements)) {
     if (element instanceof HTMLInputElement) {
       await readInput(element, values);
+      // The `disabled` check was `readInput`'s alone, so a disabled
+      // `<SelectField>` contributed a value where a disabled `<TextField>` did
+      // not — one form, two answers to the same question.
     } else if (
       (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) &&
-      element.name !== ""
-    )
-      values[element.name] = element.value;
+      element.name !== "" &&
+      !element.disabled
+    ) {
+      values[element.name] =
+        element instanceof HTMLSelectElement ? readSelect(element) : element.value;
+    }
   }
   return values;
+}
+
+/**
+ * One `<select>`, by arity.
+ *
+ * `HTMLSelectElement.value` is the FIRST selected option and nothing more, so a
+ * `<SelectField multiple>` — which type-checks, since the props extend
+ * `SelectHTMLAttributes` — contributed one string where its schema is waiting
+ * for a list. `selectedOptions` is the whole of what the user picked; nothing
+ * selected contributes `[]`, which is the honest answer for a control that is
+ * present and empty rather than one that was left blank.
+ */
+function readSelect(select: HTMLSelectElement): string | string[] {
+  if (!select.multiple) return select.value;
+  return Array.from(select.selectedOptions, (option) => option.value);
 }
 
 /** One `<input>`, by type. */

@@ -137,6 +137,27 @@ describe("runDeploy", () => {
     expect(result.slug).toBe("server-generated");
   });
 
+  // A 200 whose body carries no `slug` used to flow on: the command printed
+  // `Deployed https://server/undefined` and wrote `slug: undefined` into
+  // `.aai/project.json`, which `JSON.stringify` DROPS — so the next deploy saw
+  // no slug, minted a fresh one, and orphaned the running agent. Refusing the
+  // response is what keeps the config honest. See `checkedResponse`.
+  test.each([
+    ["no slug", { ok: true }],
+    ["a non-string slug", { slug: 42 }],
+    ["an HTML page", "<!doctype html><title>Login</title>"],
+  ])("a 200 with %s is refused instead of writing an undefined slug", async (_label, body) => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(typeof body === "string" ? body : JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow(
+      /Unexpected response from the deploy route at http:\/\/localhost:3000/,
+    );
+  });
+
   test("throws on non-ok error response after retries", async () => {
     // 5xx is retried, so each attempt needs a fresh (unconsumed) Response.
     const mockFetch = vi

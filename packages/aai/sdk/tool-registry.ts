@@ -35,6 +35,7 @@
  * the agent could not do the thing with no error anywhere.
  */
 
+import { isRecord } from "./is-record.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import type { AgentDef, ToolDef } from "./types.ts";
 
@@ -68,9 +69,9 @@ export type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
  * object the executor calls `execute` on and fail per turn instead of at build.
  */
 function isToolDef(value: unknown): value is ToolDef<ToolInputSchema> {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as { description?: unknown; execute?: unknown };
-  return typeof candidate.description === "string" && typeof candidate.execute === "function";
+  return (
+    isRecord(value) && typeof value.description === "string" && typeof value.execute === "function"
+  );
 }
 
 /**

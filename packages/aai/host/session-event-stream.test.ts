@@ -281,6 +281,34 @@ describe("session event stream — hydration", () => {
     expect(page.tail).toBe(2);
   });
 
+  test("a SPARSE log resumes past its highest index, not past its count", async () => {
+    // `countEvents` answered `count(*)`, which equals the next free index only
+    // for a log dense from zero. A hole — a partly-lost flush, or the retention
+    // cap — made the count SMALLER than the highest index written, so a resumed
+    // session continued at a position it had already used: its `tail` went
+    // backwards and `on conflict do nothing` silently discarded the re-appends.
+    const backend = createMemoryStateBackend();
+    // Indices 0 and 5 stored, nothing between — five events' worth of hole.
+    const stored = (index: number) => ({
+      index,
+      json: JSON.stringify(stampSessionEvent({ type: "speech.started" })),
+    });
+    await backend.appendEvents(SID, [stored(0), stored(5)]);
+    await expect(backend.countEvents(SID)).resolves.toBe(6);
+
+    const stream = createSessionEventStream({ backend });
+    await stream.hydrate(SID);
+    expect(stream.tail(SID)).toBe(6);
+    stream.append(SID, { type: "user-transcript.committed", text: "after" });
+    await stream.flush(SID);
+
+    const page = await stream.read(SID, 0);
+    // Three distinct events, not two — the new one did not land on index 2 and
+    // get dropped, and the tail only ever moved forwards.
+    expect(page.events).toHaveLength(3);
+    expect(page.tail).toBe(7);
+  });
+
   test("a fresh session hydrates to nothing", async () => {
     const { stream } = makeStream();
     await stream.hydrate("never-seen");

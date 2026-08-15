@@ -23,8 +23,10 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { createEpoch, type Epoch } from "@alexkroman1/aai/internal";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createWorkflowApi, type WorkflowApi, type WorkflowRun } from "./workflow-client.ts";
+import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
+import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 /** Options for {@link useWorkflowRuns}. */
 export type UseWorkflowRunsOptions = {
@@ -84,22 +86,26 @@ export function useWorkflowRuns<R = unknown>(
   const [loading, setLoading] = useState(!skip && workflow !== undefined);
   const [error, setError] = useState<string | undefined>(undefined);
 
-  // The client in a REF for the reason `useWorkflowRun` documents at length: the
-  // natural spelling passes a new object every render, and naming it as an
-  // effect dependency turns that into an unbounded request loop.
-  const apiRef = useRef(api);
-  apiRef.current = api;
-  const fallbackRef = useRef<WorkflowApi | undefined>(undefined);
-  // Every read carries the generation it started in, and a read from an earlier
-  // one is DROPPED — an unmount bumps it, and so does a refresh that overtakes a
-  // slower read still in flight.
-  const generation = useRef(0);
+  // The client through a ref — see `_workflow-api-ref.ts`.
+  const getClient = useWorkflowApiRef(api);
+  /**
+   * Every read carries the epoch it started in, and a read from an earlier one
+   * is DROPPED.
+   *
+   * Bumped by the unmount AND by each read as it starts, which is the half that
+   * was missing: with only the cleanup bumping, two `refresh()` calls captured
+   * the SAME epoch, so a slow earlier read overwrote a newer one's answer with
+   * a staler list — the exact case the drop exists for.
+   */
+  const epochRef = useRef<Epoch | undefined>(undefined);
+  epochRef.current ??= createEpoch();
+  const epoch = epochRef.current;
 
   const load = useCallback((): void => {
     if (skip || workflow === undefined) return;
-    fallbackRef.current ??= createWorkflowApi();
-    const client = apiRef.current ?? fallbackRef.current;
-    const mine = generation.current;
+    const client = getClient();
+    epoch.bump();
+    const mine = epoch.current();
     setLoading(true);
     // A spread rather than `{ limit }`: the option is a plain optional on the
     // client, so a present-and-undefined value is an error under
@@ -109,27 +115,29 @@ export function useWorkflowRuns<R = unknown>(
       key === undefined ? client.recent(workflow, options) : client.find(workflow, key, options);
     read
       .then((found) => {
-        if (generation.current !== mine) return;
+        if (!epoch.isCurrent(mine)) return;
         setRuns(found as WorkflowRun<R>[]);
         setError(undefined);
         setLoading(false);
       })
       .catch((err: unknown) => {
-        if (generation.current !== mine) return;
+        if (!epoch.isCurrent(mine)) return;
         // Reported rather than swallowed: an empty list renders as "you have
         // never run this", which is a confident false statement about an agent
         // that was merely unreachable.
         setError(errorMessage(err));
         setLoading(false);
       });
-  }, [workflow, limit, key, skip]);
+    // `getClient` and `epoch` are both stable for the component's life, so
+    // naming them re-creates nothing.
+  }, [workflow, limit, key, skip, getClient, epoch]);
 
   useEffect(() => {
     load();
     return () => {
-      generation.current += 1;
+      epoch.bump();
     };
-  }, [load]);
+  }, [load, epoch]);
 
   // `load` IS the refresh: one reader, so a re-read and the first read cannot
   // drift apart, and it is stable for the dependencies above.

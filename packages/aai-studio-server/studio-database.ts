@@ -50,8 +50,9 @@ import {
 } from "aai-server/storage-handler";
 import type { BundleStore } from "aai-server/store-types";
 import type { WorkspaceStore } from "aai-server/workspace-store";
+import { forcePreviewRedeploy } from "./studio-preview.ts";
 import {
-  ownsProjectSlug,
+  ownedProjectSlugs,
   PROJECT_ENVIRONMENTS,
   type ProjectEnvironment,
   projectSlugFor,
@@ -99,16 +100,16 @@ function storageEnvOf(env: ProjectDatabaseEnv): StorageEnv {
 
 async function environmentState(
   env: ProjectDatabaseEnv,
-  apiKey: string,
+  owned: ReadonlySet<string>,
   workspace: StudioWorkspace,
   environment: ProjectEnvironment,
 ): Promise<ProjectDatabaseEnvironmentState> {
   const slug = projectSlugFor(workspace, environment);
   if (slug === undefined) return { environment, enabled: false };
   // A foreign slug reads as "no database here" rather than reporting whether
-  // someone else's agent has one.
-  if (!(await ownsProjectSlug(env.store, apiKey, slug)))
-    return { environment, slug, enabled: false };
+  // someone else's agent has one. It is still NAMED, unlike an environment
+  // that has never deployed — the pane can say which agent it is looking at.
+  if (!owned.has(slug)) return { environment, slug, enabled: false };
   const storage = storageEnvOf(env);
   const { enabled } = await storageStatus(storage, slug);
   if (!enabled) return { environment, slug, enabled };
@@ -118,20 +119,23 @@ async function environmentState(
   return { environment, slug, enabled, ...(usage && { usage }) };
 }
 
-function stateFor(
+async function stateFor(
   env: ProjectDatabaseEnv,
   apiKey: string,
   workspace: StudioWorkspace,
 ): Promise<ProjectDatabaseState> {
-  return Promise.all(
-    PROJECT_ENVIRONMENTS.map((environment) =>
-      environmentState(env, apiKey, workspace, environment),
-    ),
-  ).then((environments) => ({
+  // One ownership resolution for both environments — `ownedProjectSlugs` is
+  // the shared answer to "which of this project's agents are the caller's"
+  // (studio-project-slugs.ts), and it checks them concurrently.
+  const owned = new Set((await ownedProjectSlugs(env.store, apiKey, workspace)).map((e) => e.slug));
+  const environments = await Promise.all(
+    PROJECT_ENVIRONMENTS.map((environment) => environmentState(env, owned, workspace, environment)),
+  );
+  return {
     enabled: workspace.databaseEnabled === true,
     configured: env.appDb !== undefined,
     environments,
-  }));
+  };
 }
 
 /** The project's database state, or null when the project does not exist. */
@@ -193,12 +197,12 @@ export async function setProjectDatabase(
   const failures: string[] = [];
   let switched = 0;
   let lastFailure: unknown;
-  for (const environment of PROJECT_ENVIRONMENTS) {
-    const slug = projectSlugFor(workspace, environment);
-    // No agent yet: the flag above is the whole answer — its first deploy
-    // provisions through reconcileProjectDatabase.
-    if (slug === undefined) continue;
-    if (!(await ownsProjectSlug(env.store, apiKey, slug))) continue;
+  // An environment with no agent yet is simply absent here: the flag above is
+  // the whole answer for it, and its first deploy provisions through
+  // `reconcileProjectDatabase`. Same for one whose slug the caller does not
+  // own. The applies stay SEQUENTIAL — each is a schema provision under the
+  // slug lock — while the ownership reads inside `ownedProjectSlugs` are not.
+  for (const { environment, slug } of await ownedProjectSlugs(env.store, apiKey, workspace)) {
     try {
       await applyToSlug(env, slug, enabled);
       switched += 1;
@@ -210,11 +214,12 @@ export async function setProjectDatabase(
   if (switched === 0 && lastFailure !== undefined) throw lastFailure;
 
   // The preview environment is the one the user is looking at, so it must not
-  // wait for an unrelated edit to pick this up. Clearing the stamp is what
-  // makes the deploy run at all (it no-ops on a matching files hash).
-  if (params.schedulePreview && workspace.previewSlug !== undefined) {
-    await stampWorkspaceMeta(env.workspaces, scope, project, { previewHash: undefined });
-    params.schedulePreview();
+  // wait for an unrelated edit to pick this up. `forcePreviewRedeploy` owns
+  // the clear-then-schedule pair (studio-preview.ts) — the clear is what makes
+  // the deploy run at all, since it no-ops on a matching files hash.
+  const schedulePreview = params.schedulePreview;
+  if (schedulePreview && workspace.previewSlug !== undefined) {
+    await forcePreviewRedeploy(env.workspaces, scope, project, schedulePreview);
   }
 
   const state = await stateFor(env, apiKey, workspace);

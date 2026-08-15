@@ -175,15 +175,29 @@ export function parseRange(
 }
 
 /**
+ * Everything a `filename="…"` may hold: printable ASCII, minus the two
+ * characters that would break out of the quoting.
+ *
+ * An ALLOW-list, because the deny-list it replaced (`["\\\r\n]`) was solving the
+ * wrong problem. Stripping CR/LF is response-SPLITTING defence; what a filename
+ * also has to be is a header value Node will accept, and Node rejects every
+ * control character. A `\x01` in an uploaded name therefore survived into the
+ * metadata row and then made `res.writeHead` throw `ERR_INVALID_CHAR` — the same
+ * throw on every subsequent read, so that upload was permanently a 500 with no
+ * way to correct it. Non-ASCII is not lost: `filename*` carries the real name
+ * and every browser prefers it.
+ */
+const FILENAME_UNSAFE = /["\\]|[^\x20-\x7e]/g;
+
+/**
  * A `Content-Disposition` naming the file.
  *
- * The filename is the UPLOADER's string, so it is quoted with its quotes and
- * backslashes stripped rather than escaped — a header value that breaks out of
- * its own quoting is a response-splitting bug, and no filename needs those
- * characters enough to justify the risk. The `filename*` form carries anything
- * non-ASCII.
+ * The filename is the UPLOADER's string, so the quoted form is stripped to
+ * {@link FILENAME_UNSAFE}'s complement rather than escaped — no filename needs
+ * those characters enough to justify either risk. `encodeURIComponent` makes the
+ * `filename*` half ASCII by construction, so it is safe whatever arrived.
  */
 function contentDisposition(name: string): string {
-  const plain = name.replaceAll(/["\\\r\n]/g, "");
+  const plain = name.replaceAll(FILENAME_UNSAFE, "");
   return `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }

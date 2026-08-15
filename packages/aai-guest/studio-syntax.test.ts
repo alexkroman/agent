@@ -5,6 +5,12 @@ import { formatRejection, syntaxError } from "./studio-syntax.ts";
 
 const DIR = process.cwd();
 
+// NOT covered here: the memo's reset-on-failure (see `loadTransformer`). The
+// only way to provoke it is a `require.resolve("vite")` that throws, and vitest
+// patches `createRequire` so that resolve succeeds from ANY directory —
+// including one with no `node_modules` above it at all. A test that appeared to
+// exercise it would be asserting against the runner, not the module.
+
 describe("syntaxProblems", () => {
   test("accepts a valid module", async () => {
     expect(await syntaxError(DIR, "agent.ts", "export const x: number = 1;\n")).toBeUndefined();

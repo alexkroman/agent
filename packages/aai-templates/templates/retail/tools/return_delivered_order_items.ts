@@ -31,10 +31,6 @@ export default retailTool({
       .max(80)
       .describe("Where the refund goes — the original method, or one of their gift cards"),
   }),
-  // `execute` before `summary`: TS infers the wrapper's generic `R` from
-  // `execute`'s return type, and processes object literal properties in
-  // source order — with `summary` first, `result` in its signature can't be
-  // inferred and silently falls back to `unknown`.
   execute: (args, state) => {
     const user = authenticatedUser(state);
     if (isToolFailure(user)) return user;

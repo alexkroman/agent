@@ -161,6 +161,82 @@ only ever keeps more verbatim.
 merge they used to be compared against was a second place the tool set was
 written down.
 
+**The post-write checker is built ONCE, in `createStudioAgent`, and handed to
+both write-shaped tool families** (`createStudioTools`, `createTemplateTools`)
+as `diagnostics`. It hangs off a `createCoalescingRunner`, and the entire point
+of that runner is that concurrent writes share ONE follow-up compiler pass —
+which two independent runners cannot do. Both factories used to call
+`createPostWriteDiagnostics(deps.typecheck)` for themselves, so a parallel burst
+of `write_file` + `use_template` silently paid two `tsc` runs where the module
+doc promises "worst case two checks, never one per file". Pass the CHECKER down,
+never the `typecheck` function.
+
+**The scripts a check can speak for are one set**, `isScriptFile` in
+`studio-syntax.ts`. It was written out three times — the syntax gate, the
+post-write diagnostics, the post-copy check — two of them commented as mirroring
+one of the others, which is the shape a set takes just before it stops
+mirroring.
+
+**A "toolchain unavailable" verdict is never remembered.** `loadTransformer`
+memoizes the resolve and CLEARS the memo on rejection, exactly as `loadToolchain`
+does in `studio-build.ts` — and for a sharper reason than "the image might have
+no toolchain", which is permanent anyway: `createRequire` is anchored at the
+WORKSPACE, which a session re-install deletes and rebuilds, so a resolve racing
+one can fail transiently. Caching that `null` disabled the write-time syntax gate
+for the life of the process, silently, and every later write was accepted
+unparsed — the one failure the module exists to prevent. Note this is not covered
+by a test: vitest patches `createRequire`, so `require.resolve("vite")` succeeds
+from any directory and the failure cannot be provoked in that tier.
+
+**Every child that runs workspace-authored code gets a scrubbed env.**
+`envWithoutGuestToken()` (`studio-spawn.ts`) is `process.env` minus
+`AAI_GUEST_TOKEN`, and `bash`, `runNpm` and the workspace TEST RUN all take it;
+the deploy and build children take `pathOnlyEnv()`, which is stricter still. The
+test run was the one spawn site outside the policy for a while, and the files it
+executes are the coding agent's own `*.test.ts`. It is defence in depth rather
+than a boundary — `bash` can read `/proc/<pid>/environ` regardless — which is
+exactly why it should be uniform: an exception here is not a smaller hole, it is
+an unexplained one.
+
+## One claim on the workspace at a time — turns AND re-installs
+
+`createTurnGate` (`studio-turn-stream.ts`) holds a single process-wide claim,
+taken through `enterTurn()`. TWO things take it, and the second is the one that
+was missing: a chat turn, and `initStudioSession`.
+
+The turn half is the older story — two tabs streamed turns into one sandbox, two
+agents edited one workspace, and the settles raced, so the loser's turn was
+absent from the stored conversation. The second turn is REFUSED (423) rather
+than queued, because a waiting request would run with a conversation snapshot
+taken before the turn it waited for and would clobber it on settle anyway; the
+queue that makes sense is the one in the tab, where messages are re-read at
+dispatch.
+
+The re-install half is what `POST /studio/chat`-only gating missed.
+`initStudioSession` opens with `materializeWorkspace`, which is an `rm -rf` of a
+path that is CONSTANT PER PROCESS — so a refresh or a second tab sending
+`studio/session-init` to the live sandbox deleted the very directory the
+in-flight turn's tools had closed over. Every edit since the last checkpoint
+gone; a tool handed ENOENT one call after reporting success; `buildWorkspaceDir`
+given a half-populated tree, so the agent started "fixing" phantom build errors;
+and `settleTurn` syncing the mixed result back with `done: true`, which is what
+auto preview deploys key off. So a session-init that cannot take the claim keeps
+the live tree and re-points the session at it, taking only the new config (chat
+token, system prompt, model).
+
+**Keeping the tree is the CORRECT answer, not merely the safe one.** Mid-turn
+the guest's tree is ahead of the store, so resetting to the store's files is
+restoring a stale snapshot over newer work. The tab that asked for the install
+still gets a working session; its first turn is refused 423 until the running
+one finishes, which the browser already handles
+(`aai-studio-client/src/resilient-fetch.ts`).
+
+**Take the claim, do not read a flag.** The gate carried a `busy` reader that no
+production code ever consumed — a test affordance in the shape of an API — and
+reading it here would still have left the mirror race open, a turn starting
+while the tree is half materialized. Holding it across the whole preparation
+closes both directions, which is why `TurnGate` is now `enter()` alone.
+
 ## A workspace's own package.json is REIFIED, not just read
 
 `studio-workspace-deps.ts` runs `npm install --omit=dev` in the workspace when
@@ -260,13 +336,31 @@ have written that file itself.
 - The host-side `execute` (`builtin-run-code.ts`) is a guard for the
   self-hosted path (`aai dev`), which has no sandbox — it refuses rather
   than evaluating attacker-influenceable code in the host process.
-- The executor is a bare `new Function` async wrapper: code runs with the
-  **same authority as the rest of the sandboxed agent** — open egress,
-  filesystem, env, child processes — and nothing more. There is deliberately
-  no in-process capability stripping; the container is the whole boundary.
-  (This is why the tool description promises only "output from console.log",
-  not "no network/filesystem" — that claim would be false now.)
-- 5-second execution timeout (enforced in the guest).
+- The executor is a `new Function` async wrapper **inside a worker thread**:
+  code runs with the **same authority as the rest of the sandboxed agent** —
+  open egress, filesystem, env, child processes — and nothing more. There is
+  deliberately no in-process capability stripping; the container is the whole
+  boundary. (This is why the tool description promises only "output from
+  console.log", not "no network/filesystem" — that claim would be false now.)
+- **5-second execution timeout, enforced by `terminate()`, not by a promise
+  race.** This is the one thing about `run_code` worth reading twice. The
+  executor used to run in the harness process under `pTimeout`, and that bounds
+  nothing a timer can outlive: an async IIFE runs SYNCHRONOUSLY up to its first
+  `await`, so model-authored code with no `await` in it — `while (true) {}` —
+  never yields, and the timer that was supposed to stop it can never be reached
+  to fire. It wedged the WHOLE GUEST: `/health` stopped answering, every
+  concurrent voice session on that sandbox stalled, and `createIdleController`'s
+  interval never ticked, so the guest could not even self-exit and burned to
+  Modal's lifetime cap. A worker thread is the only thing in Node that can be
+  stopped mid-loop. The costs are priced in: one isolate spawn (tens of ms) per
+  call, and no shared globals BETWEEN calls — the model's code gets its own
+  `process.env` copy, and a `setInterval` it leaves behind dies with the worker
+  instead of pinning the harness alive.
+- **The worker body is a string constant, not a sibling file**, because the
+  harness ships as one bundled artifact (`codeSplitting: false`) with no second
+  file to start a worker from. The model's code travels as `workerData` and is
+  never spliced into that source — a quote in the agent's program must not be
+  able to end the harness's.
 
 ## Dev/prod parity
 
@@ -321,6 +415,16 @@ version it was built and tested against, the same one `aai dev` ran.
   (`MAX_WORKER_SIZE` is 30 MB), and `evalWorkerBundle` imports workers via
   a temp `file:` URL — the bundled runtime's CJS interop calls
   `createRequire(import.meta.url)`, which rejects `data:` URLs.
+- **That temp file is UNLINKED as soon as the import resolves.** Each load wrote
+  ~8 MB into `tmpdir()` under a name unique per load (Node caches the module
+  registry by URL, so a repeat load needs a new one) and nothing ever removed
+  them — while the tool description tells the coding agent to run `test_agent`
+  after every meaningful change, in a sandbox that lives for hours. Deleting is
+  safe once `import()` has resolved: the module is compiled and instantiated,
+  and the bundle's own `createRequire(import.meta.url)` uses the path only as a
+  resolution ANCHOR. The one thing given up is Node printing the source line
+  under a stack frame from inside the bundle. The module-registry retention is
+  unavoidable; the on-disk copy was not.
 - The dev server passes `runtime: false` to `buildWorker`: it builds its
   runtime in-process from the same installed SDK anyway, and inlining the
   runtime on every watch rebuild would make reloads multi-second.
@@ -572,3 +676,219 @@ not all at once when this ships.
 One side effect worth knowing: `loadBundleParts` now reads the agents row ONCE
 and derives the worker source from it, where it previously issued `getAgent`
 and `getWorkerCode` concurrently and each read the row.
+
+## Guest network access
+
+There is **no per-agent egress policy**. `allowedHosts` and its enforcement
+stack (the SDK's `tool-egress`/`guest-fetch-policy` in-process guard, the
+platform's Modal outbound-domain allowlist, `guest-egress.ts`) were removed:
+the agent's own code runs in the guest with open egress, exactly as it does
+under `aai dev`. The Modal container is the isolation boundary — a tenant
+can reach the internet, not the platform. Tool code and providers `fetch`
+directly.
+
+**The network builtins follow one rule: screen only when there is no
+container around us** (`builtinFetch` in `host/ssrf.ts`).
+
+- **Contained** (a Modal Sandbox) → plain `pinnedFetch`, no SSRF screen. The
+  screen guards nothing a tenant cannot bypass in one line, because their own
+  tool code has open egress by design — so it constrains the *model*, not the
+  author. The container is the boundary and it holds no PLATFORM credentials
+  (`ctx.db`'s DATABASE_URL is the app's own scoped role).
+- **Not contained** (`aai dev`, and the subprocess backend) → `safeFetch`.
+  Here the host IS someone's machine: these same builtins run in the
+  developer's own process, where a model-controlled URL can reach localhost,
+  the LAN, or cloud metadata. That is the case the screen exists for.
+
+Containment is **declared by the spawner**, never inferred by the guest:
+`modal-sandbox.ts` sets `AAI_SANDBOX_CONTAINED=1` in the exec env and the
+subprocess backend does not. "Am I a guest" and "am I contained" are
+different questions — the subprocess backend runs a guest with no container
+at all, so a guest-token sniff would open egress on a developer's laptop.
+`ssrf.test.ts` pins that distinction.
+
+The residual risk in a container is prompt injection steering the model at an
+internal endpoint; accepted, because the sandbox has nothing internal worth
+reaching and an author who wants that can already write it.
+
+**SSRF screening implementation (`host/ssrf.ts`).** The rules the screen
+itself has to get right, as opposed to when it runs:
+
+- Lives in the SDK, not `aai-server`, so both the platform's guest-fetch proxy
+  and the SDK's own network builtins resolve one implementation.
+- `resolveAndAssertPublic()` uses the `bogon` library for private IP ranges.
+- Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
+- Blocks `.internal`, `.local`, cloud metadata hostnames, and non-HTTP(S)
+  protocols.
+- Re-validates every redirect hop and strips credential headers once a redirect
+  leaves the original origin.
+- Pins the validated IP with an undici dispatcher `lookup` rather than
+  rewriting the URL hostname. Rewriting broke TLS — SNI and cert verification
+  use the URL, not the `Host` header — so every `https://` request failed. Keep
+  the URL intact when touching this.
+- **The dispatcher and the `fetch` it is handed to must come from the same
+  undici.** `pinnedDispatcher` builds an `Agent` from this package's `undici`
+  dependency, while `globalThis.fetch` is backed by the copy bundled into the
+  Node runtime (`process.versions.undici`) — a different major. undici 8
+  reworked the dispatch-handler interface, so a v8 `Agent` rejects the v7-style
+  handler Node's internal fetch builds, with `InvalidArgumentError: invalid
+  onRequestStart method` surfacing as a bare `TypeError: fetch failed`. A
+  dispatcher is attached to *every* hostname request, so the mismatch takes out
+  all SSRF-guarded egress at once — `web_search`, `visit_webpage`,
+  `get_page_design`, and `fetch_json`. `safeFetch` therefore routes through
+  `pinnedFetch`, undici's own `fetch`; never reintroduce `globalThis.fetch`
+  there. Guarded by `ssrf-dispatcher.test.ts` — the rest of the SSRF suite
+  injects a fake fetch and never builds a real dispatcher, which is why this
+  shipped unnoticed. Two rules survived the (since-removed) tool-egress
+  guard that first hit this: **the caller may not name a fetch
+  implementation** (leave `fetchFn` unset — it exists for tests — so the
+  pinned default applies), and the guard test has to cover the *call site*,
+  not just `pinnedFetch` in isolation.
+
+  **The request *body* crosses the same seam, and `FormData` does not survive
+  it.** undici 8's `extractBody` brand-checks each body type with an
+  `instanceof` against **its own** class, so a `globalThis.FormData` (an
+  instance of Node's *internal* undici's class) matches no branch, falls
+  through to the string conversion, and goes out as `Content-Type: text/plain`
+  with the 17-byte body `[object FormData]` — the server answers
+  `415 Unsupported Media Type` and the caller sees an opaque HTTP failure.
+
+  The rule that generalizes: **never hand a `FormData`, `Blob`, `File`,
+  `Headers`, or `Request` to a `fetch` that might not be the one your realm's
+  global came from** — pass bytes.
+- The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
+  `fetch_json`) take a
+  model-controlled URL and **default** to this via `safeFetch` in
+  `builtin-tools.ts`. Protection is not opt-in per caller; only tests override
+  the `fetch` option.
+
+## Building the harness for a test run
+
+**The aai-server test project auto-builds the guest harness**:
+`scripts/ensure-guest-harness.mjs` runs as vitest `globalSetup` — wired in
+`packages/aai-server/vitest.config.ts`, the ONE config that declares it —
+and builds `aai-guest` when `dist/harness.mjs` is missing or older than the
+sources, tracking BOTH aai-guest and the `packages/aai` SDK it bundles.
+`createSandbox` resolves the harness eagerly, so an unbuilt one otherwise
+fails every sandbox test. `GUEST_HARNESS_PATH` skips the check.
+
+**Inside a turbo task (`TURBO_HASH`) it VERIFIES instead of building**, and a
+missing harness there THROWS, naming the `dependsOn` to add. Turbo already
+orders `aai-guest#build` ahead of every consumer and decides staleness by
+hashing inputs; the mtime heuristic is only a guess, and it guesses wrong in
+the ordinary case — a turbo cache HIT restores `dist/harness.mjs` with the
+archived mtime, so any edit under `packages/aai` makes a byte-correct harness
+look stale. The globalSetup then spawned a NESTED `turbo run build` inside
+the parent run, and two tsdown processes wrote `dist/` while sibling tasks
+read it: `aai-studio-server#test` (which declares no globalSetup of its own)
+and `aai-server#check:integration` failed intermittently with "Guest harness
+not built" or `MODULE_NOT_FOUND` on `aai-guest` — naming a file nothing in
+their own package touches. It is the mirror image of the race
+`packages/aai-server/turbo.json` documents: that comment notes this script
+cannot wait out a harness being rebuilt underneath it, and the script was
+itself that rebuild. **A harness a turbo task needs must be DECLARED**
+(`^build`, or `aai-guest#build`), never built at test time.
+
+The same script also runs as
+`predev` in aai-studio-server (the entry `pnpm dev:aai-server` runs, so dev
+always boots with a fresh harness for local-dev sandboxes) and as
+`predeploy:modal` in aai-server, which owns the Modal deploy (a fail-fast
+before the remote image build, which rebuilds the harness itself). Also
+runnable directly: `node scripts/ensure-guest-harness.mjs`.
+
+## The guest image's Node major, and the split floor it creates
+
+The guest base image defaults to `node:26-slim`; pin via
+`MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
+Modal App sandboxes are created under (default `aai-server`).
+
+**Its major tracks the SERVICE image's** (`node:26-slim` in
+`scripts/modal_image.py`) **and `.node-version`.** The guest is the dev
+server (see `packages/aai-guest/CLAUDE.md`, "Dev/prod parity"), so a split
+major would mean the harness runs
+one runtime in production and another under `aai dev` — the asymmetry that
+section exists to enumerate, and one that no test can see because each side
+is internally consistent. The three move together; `@types/node` is the
+fourth, since it is what `tsc` checks every package and every studio
+workspace against — pinned two majors ahead of the runtime, it accepts APIs
+the deployed container does not have.
+
+Note the ceiling is a RANGE, not a pin: published `engines.node` stays
+`>=24` so SDK consumers on the previous LTS are not broken by a platform
+deploy, which is why bumping this image is not a package-visible change.
+**That split floor is what decides which Node 26 features may be used
+where, and `tsc` cannot enforce it.** The root tsconfig sets
+`lib: ["ESNext"]`, so every V8 14.6 addition — `Map.prototype.getOrInsert`
+/ `getOrInsertComputed`, `Iterator.concat`, `Temporal` — type-checks in
+every package. In `aai-server` / `aai-guest` / `aai-studio-*` (`>=26`) that
+is accurate; in `aai`, `aai-ui`, `aai-cli` (`>=24`) it ships a
+`TypeError: … is not a function` to the consumer, having passed lint,
+typecheck, and a CI whose own Node is 26. `runtime-tools.ts` carries the
+worked example: `getOrInsertComputed` fits its state map exactly and is
+deliberately not used. Anything reachable from a published package needs a
+Node-24 floor check, not a type check. (`Iterator.concat` is doubly
+unavailable — TS 7.0.2's lib does not declare it yet.)
+
+Safe in every package, because they predate the 24 floor: `crypto.hash()`
+(21.7), `module.enableCompileCache()` (22.1, stable in 25.4),
+`await using` + `Symbol.asyncDispose` (20.4). `DisposableStack` /
+`AsyncDisposableStack` are NOT in that set — they are V8 globals Node does
+not document, so their availability on the floor is unverified; see the
+note in `studio-session-broker.ts`.
+
+## Credential separation, and what reaches a guest
+
+Each agent provides its own `ASSEMBLYAI_API_KEY` via `.env` (local dev) or
+`aai secret put` (production). There is no central/platform-owned key.
+`SandboxOptions` has separate `apiKey` (host-only, for S2S connections) and
+`agentEnv` (forwarded to guest) fields. The key is extracted from the agent's
+stored env at sandbox creation time and kept host-side only.
+
+- **App database**: per-app Postgres role/schema credentials are
+  platform-provisioned and held in Supabase Vault. When storage is enabled
+  they reach the guest as `DATABASE_URL` in the boot-delivered agent env —
+  the app's
+  OWN scoped role (search_path pinned, statement_timeout, connection
+  limit), never a platform admin credential; it reaches only data the
+  tenant's code could read anyway, and matches what `aai dev` puts in
+  `ctx.env` via the project `.env`.
+- **Agent secrets**: stored in Supabase Vault (`agent-env:<slug>`), not
+  encrypted blobs — the old master-key envelope encryption
+  (`KV_SCOPE_SECRET`) is gone.
+- **Credential resolution reads the agent env only — never `process.env`.**
+  The platform host process holds its own credentials under exactly the names a
+  tenant descriptor could resolve (`AWS_ACCESS_KEY_ID` /
+  `AWS_SECRET_ACCESS_KEY` for Supabase storage), so a fallback would let an
+  agent that supplied no credential of its own silently borrow the
+  platform's.
+
+  There are **two** such helpers and both must stay sealed — closing only one
+  leaves the leak open, since between them they cover every provider:
+  - `resolveApiKey` (`providers/resolve.ts`) — descriptor-declared env keys.
+  - `requireApiKey` (`providers/_utils.ts`) — every STT/TTS opener and every
+    LLM (via `resolve.ts`'s `requireKey`).
+
+  Self-hosted runs opt into shell-exported keys via
+  `withHostCredentialFallback` (`providers/host-env.ts`), which copies only
+  `PROVIDER_CREDENTIAL_ENVS` (derived from the provider registries). It feeds
+  `RuntimeOptions.providerEnv`, **not** `env` — credentials must not land in
+  `ctx.env`, both so agent code can't read them and so dev keeps parity with
+  production in what `ctx.env` contains.
+
+  The providerEnv-not-env rule is **type-enforced** via the branded env
+  records in `sdk/env-types.ts`: `withHostCredentialFallback` is the only
+  minter of `HostCredentialEnv`, which satisfies
+  `RuntimeOptions.providerEnv` (`ProviderEnv`) but is a compile error for
+  `RuntimeOptions.env` (`AgentEnv`) and everything else that becomes
+  `ctx.env`. Plain records stay assignable to both, so only the dangerous
+  flow needs ceremony; `env-types.test-d.ts` locks the assignability matrix.
+  The brand is advisory against *deliberate* re-annotation — the point is
+  that leaking host credentials into `ctx.env` can no longer be silent.
+
+**Cross-agent isolation:**
+
+- App databases are separate Postgres schemas with per-app login roles —
+  agents cannot access each other's data.
+- Each sandbox communicates over its own authenticated WebSocket.
+- Sessions are per-sandbox (`Map<string, Session>`).
+- No shared mutable state between sandboxes.

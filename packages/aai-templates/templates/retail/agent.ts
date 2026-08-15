@@ -9,11 +9,10 @@ export default agent({
   // filled from the all-AssemblyAI pipeline at parse time. Only `stt` is
   // overridden below; `llm` and `tts` take the defaults.
 
-  // The store lives in ctx.state, one pristine copy per session — callers must
-  // not see each other's cancellations. Declaring `state` (rather than letting
-  // the slot install itself on first access) means the session's store exists
-  // before the first tool call, so a resumed connection has something to
-  // project; the slot owns the shape either way.
+  // The store lives in one `sessionSlot` (`store.ts`), a pristine copy per
+  // session — callers must not see each other's cancellations. Nothing declares
+  // it here: the slot installs itself on first access, and its `projection`
+  // below is what gives a session that has run no tool something to render.
 
   // One projection pushed after every tool call. It is a projection, not a
   // flag, because the state holds all six seeded customers and only the

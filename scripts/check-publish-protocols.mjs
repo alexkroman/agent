@@ -25,12 +25,11 @@
  * asserts on the artifact rather than on the intent.
  */
 
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+import { manifestInTarball, publishablePackages, repoRoot, withPackedTarball } from "./_fs.mjs";
+
+const ROOT = repoRoot(import.meta.url);
 
 /**
  * Protocols that must never survive into a tarball, and what each means when
@@ -50,18 +49,7 @@ const VERSION_FIELDS = [
 ];
 
 /** The three published packages — see check-publish-names.mjs for the scope rule. */
-const publishable = readdirSync(join(ROOT, "packages"))
-  .map((dir) => join("packages", dir))
-  .filter((dir) => {
-    let manifest;
-    try {
-      manifest = JSON.parse(readFileSync(join(ROOT, dir, "package.json"), "utf8"));
-    } catch {
-      return false;
-    }
-    return manifest.private !== true;
-  })
-  .sort();
+const publishable = publishablePackages(ROOT);
 
 if (publishable.length === 0) {
   console.error(
@@ -70,47 +58,23 @@ if (publishable.length === 0) {
   process.exit(1);
 }
 
-const workDir = mkdtempSync(join(tmpdir(), "aai-publish-protocols-"));
 const failures = [];
 
-try {
-  for (const dir of publishable) {
-    const destination = join(workDir, dir.replaceAll("/", "-"));
-    mkdirSync(destination, { recursive: true });
+for (const dir of publishable) {
+  // `withPackedTarball` owns the pack + scratch-directory dance, shared with
+  // `artifact-size-report.mjs` — the only two things in the repo that pack.
+  // Read the manifest straight out of the archive: extracting to disk first
+  // would let a stale extraction from an earlier run answer instead.
+  const manifest = withPackedTarball(join(ROOT, dir), ({ tarball }) => manifestInTarball(tarball));
 
-    // `--pack-destination` keeps the tarball out of the package directory, so a
-    // failed run cannot leave a stray .tgz that the next `files` glob picks up.
-    execFileSync("pnpm", ["pack", "--pack-destination", destination], {
-      cwd: join(ROOT, dir),
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    const [tarball] = readdirSync(destination).filter((name) => name.endsWith(".tgz"));
-    if (tarball === undefined) {
-      failures.push({ dir, name: "(tarball)", field: "-", found: "pnpm pack produced no .tgz" });
-      continue;
-    }
-
-    // Read the manifest straight out of the archive. Extracting to disk first
-    // would let a stale extraction from an earlier run answer instead.
-    const manifest = JSON.parse(
-      execFileSync("tar", ["-xzOf", join(destination, tarball), "package/package.json"], {
-        encoding: "utf8",
-      }),
-    );
-
-    for (const field of VERSION_FIELDS) {
-      for (const [name, range] of Object.entries(manifest[field] ?? {})) {
-        const hit = FORBIDDEN.find(({ protocol }) => String(range).startsWith(protocol));
-        if (hit !== undefined) {
-          failures.push({ dir, name, field, found: `${range} — ${hit.meaning}` });
-        }
+  for (const field of VERSION_FIELDS) {
+    for (const [name, range] of Object.entries(manifest[field] ?? {})) {
+      const hit = FORBIDDEN.find(({ protocol }) => String(range).startsWith(protocol));
+      if (hit !== undefined) {
+        failures.push({ dir, name, field, found: `${range} — ${hit.meaning}` });
       }
     }
   }
-} finally {
-  rmSync(workDir, { force: true, recursive: true });
 }
 
 if (failures.length > 0) {

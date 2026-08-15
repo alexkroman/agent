@@ -315,9 +315,14 @@ export const DEFAULT_VOICE_FOCUS = "near-field";
  * Deadline for the TTS replacement socket opened after a mid-turn cancel
  * (barge-in drops the whole connection — see the AssemblyAI TTS module doc).
  *
- * Unlike the initial open, which runs inside `session.start()` and is bounded
- * by its timeout, the cancel-reconnect runs mid-session with no deadline
- * upstream. A connect that black-holes (no `open`, no `error`) would otherwise
+ * Its own deadline because it is its own budget, not because the initial open
+ * lacks one — that open is bounded by `WS_OPEN_TIMEOUT_MS` in
+ * `host/providers/_socket.ts`. This comment used to say the initial open "runs
+ * inside `session.start()` and is bounded by its timeout", which was true of
+ * the SESSION and false of the SOCKET: `ws-handler`'s `pTimeout` rejects the
+ * session and says in its own comment that it does not cancel the underlying
+ * `start()`, so a black-holed initial connect outlived the session that was
+ * waiting on it. A connect that black-holes (no `open`, no `error`) would
  * leave the adapter queueing frames forever: every later turn's flushes count
  * as sent while nothing reaches the wire, so each reply burns the full
  * {@link PIPELINE_FLUSH_TIMEOUT_MS} in silence and the session is mute until

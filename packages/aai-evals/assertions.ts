@@ -26,6 +26,7 @@
  */
 
 import type { SessionEvent } from "@alexkroman1/aai/protocol";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { EvalRecorder } from "./runner.ts";
 
 /** One tool call, paired with its result when the stream carries one. */
@@ -100,8 +101,17 @@ export type EvalScope = {
   turns(): number;
 };
 
-/** The events that END a reply, and so partition a scope into turns. */
-const TURN_ENDS: ReadonlySet<SessionEvent["type"]> = new Set([
+/**
+ * The events that END a reply.
+ *
+ * They partition a scope into turns here, and they are what `say()` waits for in
+ * `session-target.ts` — one declaration, because those two must agree by
+ * construction. They did not: the set was written out twice, and a third
+ * terminator added to one copy would make `say()` return mid-reply while these
+ * assertions still thought the turn was open, which reads as the agent
+ * misbehaving rather than as a harness bug.
+ */
+export const TURN_ENDS: ReadonlySet<SessionEvent["type"]> = new Set([
   "reply.completed",
   "reply.cancelled",
 ]);
@@ -142,7 +152,7 @@ function toolCallsOf(events: readonly SessionEvent[]): EvalToolCall[] {
       toolCallId: event.toolCallId,
       name: event.toolName,
       args: event.args,
-      ...(result === undefined ? {} : { result }),
+      ...omitUndefined({ result }),
     });
   }
   return calls;
@@ -150,6 +160,10 @@ function toolCallsOf(events: readonly SessionEvent[]): EvalToolCall[] {
 
 /** Deep PARTIAL match: every key of `expected` present and equal in `actual`. */
 function matchesPartial(actual: unknown, expected: unknown): boolean {
+  // Not `isRecord`, deliberately: this branch must let an ARRAY through to the
+  // one below it, and `isRecord` excludes arrays. It is the "any non-null
+  // object, arrays included" case `guard-invariants` rule 17's remedy says to
+  // write out and baseline.
   if (expected === null || typeof expected !== "object") return actual === expected;
   if (Array.isArray(expected)) {
     return (
@@ -158,8 +172,8 @@ function matchesPartial(actual: unknown, expected: unknown): boolean {
       expected.every((item, i) => matchesPartial(actual[i], item))
     );
   }
-  if (actual === null || typeof actual !== "object" || Array.isArray(actual)) return false;
-  const seen = actual as Record<string, unknown>;
+  if (!isRecord(actual)) return false;
+  const seen = actual;
   return Object.entries(expected as Record<string, unknown>).every(
     ([key, value]) => key in seen && matchesPartial(seen[key], value),
   );
@@ -184,6 +198,49 @@ function matchesToken(text: string, token: string | RegExp): boolean {
 function short(value: unknown, max = 160): string {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return (text ?? String(value)).slice(0, max);
+}
+
+/**
+ * A scope that FAILS every assertion made on it, with the same reason each time.
+ *
+ * The one caller is {@link EvalScope.turn} out of range, and the shape exists
+ * because the obvious alternative — an empty scope — is silently WRONG. Half the
+ * vocabulary is negative (`noErrors`, `notEvent`, `notCalledTool`,
+ * `usedNoTools`, `maxToolCalls`, `saidNothingAbout`) and every one of those
+ * holds vacuously over no events, so a case asserting three things about a turn
+ * that never happened scored 75% and read as a mostly-correct agent.
+ *
+ * "Nothing was measured" is not "nothing was wrong". Each recorded label keeps
+ * the assertion's own name, so a report still says WHICH claims were on a turn
+ * that did not exist rather than collapsing them into one line.
+ */
+function failedScope(recorder: EvalRecorder, prefix: string, reason: string): EvalScope {
+  const fail = (label: string): void => {
+    recorder.check(false, `${prefix}${label}`, reason);
+  };
+  const scope: EvalScope = {
+    events: [],
+    toolCalls: [],
+    said: [],
+    succeeded: () => fail("succeeded"),
+    calledTool: (name) => fail(`calledTool(${name})`),
+    notCalledTool: (name) => fail(`notCalledTool(${name})`),
+    toolOrder: (names) => fail(`toolOrder(${names.join(" → ")})`),
+    usedNoTools: () => fail("usedNoTools"),
+    maxToolCalls: (n) => fail(`maxToolCalls(${n})`),
+    saidSomething: (token) => fail(`saidSomething(${String(token)})`),
+    saidNothingAbout: (token) => fail(`saidNothingAbout(${String(token)})`),
+    noErrors: () => fail("noErrors"),
+    event: (type) => fail(`event(${type})`),
+    notEvent: (type) => fail(`notEvent(${type})`),
+    eventOrder: (types) => fail(`eventOrder(${types.join(" → ")})`),
+    eventsSatisfy: (label) => fail(label),
+    // A turn OF a turn that does not exist does not exist either, and the
+    // reason travels with it.
+    turn: (index) => failedScope(recorder, `${prefix}turn ${index}: `, reason),
+    turns: () => 0,
+  };
+  return scope;
 }
 
 /**
@@ -342,8 +399,22 @@ export function eventScope(
       const slices = turnsOf(events);
       const slice = slices[index];
       if (slice === undefined) {
+        // An out-of-range turn returns a scope that FAILS every assertion made
+        // on it, not an empty one.
+        //
+        // An empty scope satisfies every NEGATIVE claim vacuously — `noErrors`,
+        // `notEvent`, `notCalledTool`, `usedNoTools`, `maxToolCalls`,
+        // `saidNothingAbout` all hold over no events — so the old behaviour
+        // recorded ONE failure and then silently passed the rest. A three-call
+        // chain on a nonexistent turn scored 75%, and the package guide's claim
+        // that out of range "FAILS rather than silently asserting nothing" was
+        // true of the first call only. Failing everything is the honest reading:
+        // nothing was measured, so nothing held.
+        //
+        // The `turn(N)` record itself stays, so a bare `scope.turn(3)` with no
+        // assertion hung off it still fails.
         check(false, `turn(${index})`, `only ${slices.length} completed turn(s)`);
-        return eventScope(recorder, [], `${prefix}turn ${index}: `);
+        return failedScope(recorder, `${prefix}turn ${index}: `, `only ${slices.length} turn(s)`);
       }
       return eventScope(recorder, slice, `${prefix}turn ${index}: `);
     },

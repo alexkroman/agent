@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { sessionSlot } from "./session-slot.ts";
+import { type DeepReadonly, sessionSlot } from "./session-slot.ts";
 import { createToolContext } from "./testing.ts";
 
 type Cart = { items: string[]; nextId: number };
@@ -53,8 +53,10 @@ describe("sessionSlot", () => {
 
   test("what get returns is FROZEN, so a lost write is a throw", () => {
     // The whole read contract. A mutation applied here is applied to a value
-    // nothing is going to store, and the shallow `Readonly<T>` type cannot see
-    // a write that happens inside a domain helper — every template has those.
+    // nothing is going to store. The type says so at every depth now
+    // (`DeepReadonly<T>` — see `define.test-d.ts`), so the cast below is what it
+    // takes to reach this throw; it stays because the freeze is the guarantee at
+    // an UNTYPED call site, which is where a domain helper's write lands.
     const ctx = createToolContext();
     const cart = cartSlot.get(ctx);
     expect(Object.isFrozen(cart)).toBe(true);
@@ -81,12 +83,35 @@ describe("sessionSlot", () => {
     expect(DEFAULT.items).toEqual([]);
   });
 
-  test("set replaces the value wholesale and returns it", () => {
+  test("set replaces the value wholesale and returns what it stored", () => {
     const ctx = createToolContext();
     cartSlot.update(ctx, (cart) => cart.items.push("apple"));
     const loaded: Cart = { items: ["pear"], nextId: 9 };
-    expect(cartSlot.set(ctx, loaded)).toBe(loaded);
-    expect(cartSlot.get(ctx)).toBe(loaded);
+    const stored = cartSlot.set(ctx, loaded);
+    expect(stored).toEqual(loaded);
+    expect(cartSlot.get(ctx)).toBe(stored);
+  });
+
+  test("set stores a COPY, so the caller's own object is not frozen under it", () => {
+    // The failure this pins: `set`'s own doc names a load, an import and a
+    // restore — every one of which is a caller still holding the object it
+    // passed. Freezing that object in place turned the caller's next line into
+    // a `TypeError` from a stack naming nothing about this slot.
+    const ctx = createToolContext();
+    const loaded: Cart = { items: ["pear"], nextId: 9 };
+    cartSlot.set(ctx, loaded);
+    expect(Object.isFrozen(loaded)).toBe(false);
+    expect(Object.isFrozen(loaded.items)).toBe(false);
+    expect(() => loaded.items.push("plum")).not.toThrow();
+    // …and the slot did not follow the caller's mutation.
+    expect(cartSlot.get(ctx).items).toEqual(["pear"]);
+  });
+
+  test("what set returns is frozen all the way down, as get's is", () => {
+    const ctx = createToolContext();
+    const stored = cartSlot.set(ctx, { items: ["pear"], nextId: 9 });
+    expect(Object.isFrozen(stored)).toBe(true);
+    expect(Object.isFrozen(stored.items)).toBe(true);
   });
 
   test("reset discards the value and installs a fresh default", () => {
@@ -346,7 +371,7 @@ describe("sessionSlot", () => {
   });
 
   describe("projection", () => {
-    const view = (cart: Readonly<Cart>) => ({ count: cart.items.length });
+    const view = (cart: DeepReadonly<Cart>) => ({ count: cart.items.length });
 
     test("projects the stored value", () => {
       expect(cartSlot.projection(view)({ items: ["a", "b"], nextId: 3 })).toEqual({ count: 2 });

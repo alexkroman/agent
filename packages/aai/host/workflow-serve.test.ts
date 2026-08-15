@@ -174,6 +174,18 @@ describe("webhookToken", () => {
     expect(webhookToken("/.well-known/workflow/v1/flow")).toBeUndefined();
     expect(webhookToken("/health")).toBeUndefined();
   });
+
+  test.each([
+    ["a lone percent", "%"],
+    ["a truncated escape", "%A"],
+    ["a non-hex escape", "%zz"],
+    ["an overlong UTF-8 sequence", "%C0%80"],
+  ])("declines %s instead of throwing", (_label, token) => {
+    // `decodeURIComponent` raises URIError on every one of these, and this whole
+    // call chain is synchronous — see the module doc on `_path-decode.ts`.
+    expect(() => webhookToken(`${WORKFLOW_WEBHOOK_PREFIX}${token}`)).not.toThrow();
+    expect(webhookToken(`${WORKFLOW_WEBHOOK_PREFIX}${token}`)).toBeUndefined();
+  });
 });
 
 /**
@@ -272,6 +284,30 @@ describe("handleWorkflowRequest", () => {
   test("declines an unrelated path so it falls through to the rest of the server", async () => {
     const s = await serving(surfaceOf());
     expect((await fetch(`${s.url}/health`)).status).toBe(404);
+    await s.close();
+  });
+
+  test("answers a malformed webhook path instead of killing the process", async () => {
+    // The regression for the worst finding of the 2026-08 sweep. `GET
+    // /.well-known/workflow/v1/webhook/%` is an unauthenticated request whose raw
+    // `%` clears the ""/"/" guards and reached `decodeURIComponent`. Nothing in
+    // `webhookToken` → `pickWorkflowHandler` → `handleWorkflowRequest` is async
+    // and `createServer` calls them from its `request` hook with no `try`, so the
+    // URIError surfaced as an uncaughtException — `process.exit(4)` in the guest,
+    // taking every concurrent voice session with it.
+    //
+    // Driven through a real server (the `serving` harness reproduces exactly that
+    // untried synchronous call), so an answer is proof the throw is gone: a
+    // handler that threw here would destroy the socket, not answer 404.
+    const surface = surfaceOf();
+    const s = await serving(surface);
+    for (const token of ["%", "%A", "%zz", "%C0%80"]) {
+      const res = await fetch(`${s.url}${WORKFLOW_WEBHOOK_PREFIX}${token}`);
+      expect(res.status, token).toBe(404);
+      expect(await res.text()).toBe("unclaimed");
+    }
+    // Declined rather than delivered: a token nobody can decode identifies no run.
+    expect(surface.webhook).not.toHaveBeenCalled();
     await s.close();
   });
 

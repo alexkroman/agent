@@ -38,9 +38,14 @@ import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-sto
  */
 export { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 
-// Deploys preflight the agent's required credentials against the merged env
-// (see `missingCredentials` in deploy.ts); the default S2S test config needs
-// the AssemblyAI key, so the standard test env carries one.
+// The default test worker is an S2S config, which resolves its provider
+// credential from `ASSEMBLYAI_API_KEY` — so the standard test env carries one
+// and a deployed agent built from this payload can actually open a session.
+//
+// (The comment here used to point at `missingCredentials` in `deploy.ts`. That
+// function is the CLI's, it lives in `aai-cli/_preflight.ts`, and it WARNS
+// rather than gating — the platform runs no such preflight, because it cannot
+// see what `aai secret put` already stored server-side.)
 export const VALID_ENV: Record<string, string> = { ASSEMBLYAI_API_KEY: "test-key" };
 
 /**

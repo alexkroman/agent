@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { gameSlot } from "../shared.ts";
 
-export default gameSlot.tool({
+export default gameSlot.updateTool({
   description: "Add an item to the player's inventory.",
   inputSchema: z.object({
     value: z.string().describe("Item name to take"),

@@ -122,7 +122,7 @@ export type SttTurnMeta = {
    * mechanism that truncates a spelled identifier mid-entity.
    *
    * One policy reads it today: PREEMPTIVE GENERATION
-   * (`AgentDef.preemptiveGeneration`, on by default), which starts a
+   * (`AgentDef.preemptiveGeneration`, OFF by default), which starts a
    * speculative LLM stream from an interim whose confidence clears
    * `PREEMPTIVE_CONFIDENCE_THRESHOLD`. The sawtooth above is not
    * background for that policy — it DICTATED two of its rules, and both are

@@ -68,6 +68,7 @@ import {
   SESSION_EVENT_READ_LIMIT,
 } from "../sdk/session-event-constants.ts";
 import { errorMessage } from "../sdk/utils.ts";
+import { getOrCreate } from "./_get-or-create.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionStateBackend, StoredSessionEvent } from "./session-state-store.ts";
 
@@ -182,13 +183,8 @@ export function createSessionEventStream(opts: {
   const { backend, logger } = opts;
   const sessions = new Map<string, StreamEntry>();
 
-  const entryFor = (sessionId: string): StreamEntry => {
-    const existing = sessions.get(sessionId);
-    if (existing) return existing;
-    const created: StreamEntry = { next: 0, pending: [], cappedReported: false };
-    sessions.set(sessionId, created);
-    return created;
-  };
+  const entryFor = (sessionId: string): StreamEntry =>
+    getOrCreate(sessions, sessionId, () => ({ next: 0, pending: [], cappedReported: false }));
 
   /** Write out `entry`'s pending events, putting them back on failure. */
   async function writePending(sessionId: string, entry: StreamEntry): Promise<void> {

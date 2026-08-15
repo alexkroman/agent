@@ -28,8 +28,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
+import { readJson, repoRoot } from "./_fs.mjs";
+
 const checkOnly = process.argv.includes("--check");
-const root = new URL("..", import.meta.url).pathname;
+const root = repoRoot(import.meta.url);
 const scaffoldPath = join(root, "packages/aai-templates/scaffold/package.json");
 const workspacePath = join(root, "pnpm-workspace.yaml");
 
@@ -68,22 +70,9 @@ const sharedDepSources = {
   "@types/node": "package.json",
 };
 
-/** Read and parse a package.json, failing loudly with the offending path. */
-function readJson(path) {
-  let text;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (err) {
-    console.error(`sync-scaffold-versions: failed to read ${path}: ${err.message}`);
-    process.exit(1);
-  }
-  try {
-    return JSON.parse(text);
-  } catch (err) {
-    console.error(`sync-scaffold-versions: failed to parse ${path}: ${err.message}`);
-    process.exit(1);
-  }
-}
+// `readJson` is `_fs.mjs`'s. The fail-loudly-with-the-path behaviour that was
+// written here is the one the shared version kept, because a parse error inside
+// a gate otherwise arrives as `Unexpected token }` with no file attached.
 
 /** The workspace catalogs, read once: `catalog` is the default, `catalogs` the named ones. */
 const workspace = (() => {

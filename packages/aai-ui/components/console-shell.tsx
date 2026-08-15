@@ -106,9 +106,14 @@ export function ConsoleShell({
           {state}
         </Eyebrow>
       </div>
-      {/* Error banner */}
+      {/* Error banner. `role="alert"` for the reason `Form` uses it on the same
+          job: a screen reader is otherwise never told this appeared, and per
+          the `fatalError` latch (see session-core) this banner is the ONLY
+          remaining signal — the state eyebrow beside it goes back to reading
+          like a live session. */}
       {error && (
         <div
+          role="alert"
           className="px-3.5 py-2.5 rounded-aai border text-[13px] leading-[130%] shrink-0"
           style={{
             borderColor: "rgba(179,38,30,0.35)",

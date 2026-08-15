@@ -3,7 +3,7 @@ import { createHmac } from "node:crypto";
 import { describe, expect, test, vi } from "vitest";
 import { PHONE_READY_TIMEOUT_MS } from "./phone-handler.ts";
 import type { Sandbox } from "./sandbox.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
 
 type TestFetch = Awaited<ReturnType<typeof createTestOrchestrator>>["fetch"];
@@ -25,7 +25,7 @@ async function seedResident(
   slug: string,
 ): Promise<void> {
   await deployAgent(harness.fetch, slug);
-  slots.claim(slug, {
+  setSlot(slots, {
     slug,
     sandbox: makeFakeSandbox(),
     version: (await harness.store.getAgentVersion(slug)) ?? 1,
@@ -117,7 +117,7 @@ describe("POST /:slug/phone", () => {
         sessionUrl: vi.fn(() => new Promise<string>(() => undefined)),
         guestOrigin: vi.fn(() => new Promise<string>(() => undefined)),
       };
-      slots.claim("my-agent", {
+      setSlot(slots, {
         slug: "my-agent",
         sandbox: booting,
         version: (await harness.store.getAgentVersion("my-agent")) ?? 1,
@@ -244,6 +244,34 @@ describe("POST /:slug/phone", () => {
       await seedResident(harness, slots, "my-agent");
       const { status } = await callWebhook(harness.fetch, "/my-agent/phone");
       expect(status).toBe(200);
+    });
+
+    test("?carrier= cannot steer a signed agent onto the unchecked branch", async () => {
+      // The whole attack, at the route: this endpoint carries `slugMw` and no
+      // auth middleware, and `?carrier=` is the caller's to write. Against an
+      // agent with TWILIO_AUTH_TOKEN stored, naming a carrier whose secret is
+      // absent used to skip both branches and answer 200 with TwiML carrying
+      // the guest's auth-free `wss://…/phone` URL — a sandbox boot and a media
+      // stream, unauthenticated, for anyone who knows the slug.
+      const harness = await signedHarness();
+      const { status, xml } = await callWebhook(harness.fetch, "/my-agent/phone?carrier=telnyx", {
+        body: BODY,
+      });
+      expect(status).toBe(403);
+      expect(xml).not.toContain("<Stream");
+      expect(xml).not.toContain("wss://tunnel.test");
+    });
+
+    test("a Telnyx-only agent is not bypassed by omitting the parameter", async () => {
+      // The mirror image: the route defaults to `twilio`, so leaving the
+      // parameter off was the same bypass in the other direction.
+      const slots = createSlotCache();
+      const harness = await createTestOrchestrator({ slots });
+      await seedResident(harness, slots, "my-agent");
+      await harness.store.putEnv("my-agent", { TELNYX_PUBLIC_KEY: "AAAA" });
+      const { status, xml } = await callWebhook(harness.fetch, "/my-agent/phone", { body: BODY });
+      expect(status).toBe(403);
+      expect(xml).not.toContain("<Stream");
     });
   });
 });

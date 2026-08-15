@@ -25,6 +25,7 @@
     "DEFAULT_SYSTEM_PROMPT",
     "DEFAULT_TOOL_CHOICE",
     "Db",
+    "DeepReadonly",
     "DefaultToolResult",
     "DefaultedAgentField",
     "FindOptions",

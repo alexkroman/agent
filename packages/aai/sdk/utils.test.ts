@@ -299,7 +299,15 @@ describe("responseErrorMessage", () => {
   test("the preview is capped, so a whole HTML document cannot reach a log line", async () => {
     const res = new Response("x".repeat(5000), { status: 500 });
     const message = await responseErrorMessage(res);
-    expect(message).toBe(`500: ${"x".repeat(200)}`);
+    // Capped AND marked: a cut body and a short one otherwise read identically
+    // to whoever is holding the log line, and a JSON envelope cut mid-token
+    // looks malformed rather than long.
+    expect(message).toBe(`500: ${"x".repeat(200)}\u2026`);
+  });
+
+  test("a body exactly at the cap is quoted whole, with no marker", async () => {
+    const res = new Response("y".repeat(200), { status: 500 });
+    expect(await responseErrorMessage(res)).toBe(`500: ${"y".repeat(200)}`);
   });
 
   test("a body that cannot be read at all degrades instead of throwing", async () => {

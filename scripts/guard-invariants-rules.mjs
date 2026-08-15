@@ -51,10 +51,20 @@ const ARGS = "\\([^)]*\\)";
 const MAP_GET = `\\.get${ARGS}`;
 /** An `on*` handler name — the observer-callback naming convention. */
 const ON_NAME = "on[A-Z][A-Za-z0-9]*";
-/** `typeof X === "object"`, either operand order's half of rule 17. */
+/** ERE for a literal `&&`. */
+const AND = " && ";
+/** ERE for a literal `||` — the pipe is alternation, so both halves escape. */
+const OR = " \\|\\| ";
+/** `typeof X === "object"`, the positive half of rule 17. */
 const TYPEOF_OBJECT = `typeof ${MEMBER} === "object"`;
-/** `X !== null`, the other half. */
+/** `typeof X !== "object"`, the same test written as a guard clause. */
+const NOT_TYPEOF_OBJECT = `typeof ${MEMBER} !== "object"`;
+/** `X !== null`, the other positive half. */
 const NOT_NULL = `${MEMBER} !== null`;
+/** `X === null`, the guard-clause half. */
+const IS_NULL = `${MEMBER} === null`;
+/** The spread of a parenthesised expression — the head of rule 2's three shapes. */
+const SPREAD_OPEN = "\\.\\.\\.\\([^)]*";
 /** A literal `"?"` argument, escaped for ERE. */
 const QUERY_ARG = '\\("\\?"\\)';
 /** A `.split("?")` call — hand-cutting a request target into path and query. */
@@ -118,7 +128,7 @@ const DECLARES = `(\\?)?(:|${ARGS} *(:|\\{))`;
  * `guard-invariants-gate.test.ts` asserts every path here exists, because a
  * hand-kept list's one real failure mode is a rename quietly emptying the rule.
  */
-const SESSION_SURFACE_PATHS = [
+export const SESSION_SURFACE_PATHS = [
   "packages/aai/host/session-core.ts",
   "packages/aai/host/session-commands.ts",
   "packages/aai/host/transports/types.ts",
@@ -136,13 +146,40 @@ const SESSION_SURFACE_PATHS = [
   "packages/aai/host/integration/_s2s-fuzz-harness.ts",
 ];
 
-/** Source roots the line rules walk. */
+/**
+ * Source roots the line rules walk.
+ *
+ * `:!scripts/` + `*.md` is not a duplicate of the doublestar line above it. A
+ * git pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so a `*` already crosses `/`
+ * and the LITERAL SLASH in the doublestar form makes a subdirectory mandatory —
+ * that glob excluded nothing at the `scripts/` top level, which is exactly where
+ * a `README.md` would go. The same trap `check-file-length.mjs` documents at
+ * length, where it had left ~29 files unmeasured while printing a checkmark. The
+ * `packages/` exclusion needs no twin, and not by luck: every markdown file
+ * under `packages/` is at least one directory deep. Verify either with
+ * `git ls-files "<glob>"`, never by reading it.
+ */
 export const SOURCE_PATHSPECS = [
   "packages",
   "scripts",
   ":!packages/**/dist/**",
   ":!packages/**/*.md",
   ":!scripts/**/*.md",
+  ":!scripts/*.md",
+  // A frozen compatibility example is EXCLUDED FROM EVERY LINE RULE, not
+  // exempted from one. `contracts/compatibility/<capability>/v<N>.ts` is an
+  // authoring example written the way that epoch was authored, and
+  // `pnpm typecheck` compiling it is the backward-compatibility gate — so
+  // "fixing" one to satisfy a rule destroys the check it exists to be. The
+  // awkwardness is load-bearing, which is also why the sweep that produced
+  // these rules skipped the directory by design.
+  //
+  // It has to be a pathspec rather than a `SELF_REFERENTIAL` entry: an
+  // exemption is per file AND per rule, so the next widened rule re-opens
+  // the same hole. Rule 2's widening did exactly that — four reviewers
+  // reported `workflow/v5.ts` independently, each proposing a per-rule
+  // exemption, and the next rule would have collected a fifth report.
+  ":!packages/*/contracts/compatibility/**",
 ];
 
 /**
@@ -162,16 +199,35 @@ export const LINE_RULES = [
     id: 2,
     key: "rule2_spreadTernary",
     label: "spread-ternary object composition",
-    re: "\\.\\.\\.\\([^)]* !== undefined \\?",
+    // THREE spellings of one idiom, not one. The original pattern required
+    // `!== undefined ?`, so the two other ways the repo writes the same
+    // conditional spread scored zero and were free to spread: the INVERTED
+    // ternary (`...(x === undefined ? {} : { x })`) and the `&&` form
+    // (`...(x !== undefined && { x })`). Both were in the tree in quantity, in
+    // sdk, host, transports, guest, server and ui, while the rule reported three.
+    //
+    // The trailing `{}` / `{` is what keeps this honest rather than merely
+    // wider. `...(opts.system === undefined ? [] : [{ role: "system", … }])`
+    // spreads an ARRAY, which `omitUndefined` cannot express at all, and
+    // `...(opts.languages !== undefined && opts.languages.length > 0 ? … )` is a
+    // compound condition rather than a presence test. Neither matches, and
+    // neither should.
+    re: `${SPREAD_OPEN} !== undefined \\?|${SPREAD_OPEN} === undefined \\? \\{\\}|${SPREAD_OPEN} !== undefined && \\{`,
     paths: SOURCE_PATHSPECS,
     skipComments: true,
     remedy:
       "Use `...omitUndefined({ x })` from @alexkroman1/aai/utils.\n" +
+      "All three spellings mean the same thing and this rule sees all three —\n" +
+      "`x !== undefined ? { x } : {}`, `x === undefined ? {} : { x }`, and\n" +
+      "`x !== undefined && { x }`.\n" +
       "Baseline an occurrence only when the GUARD IS NOT THE VALUE —\n" +
       "`params.port !== undefined ? { AAI_GUEST_PORT: String(params.port) }`\n" +
       'would stringify undefined into "undefined", and\n' +
       "`opts.mode !== undefined ? { mode: 0o700 }` sets a different value from\n" +
-      "the one it tests. Those are the only three in the repo.",
+      "the one it tests.\n" +
+      "A frozen `contracts/compatibility/**` example is the other legitimate\n" +
+      "entry: those are authoring examples written the way an epoch WAS\n" +
+      "authored, and editing one destroys the check it exists to be.",
   },
   {
     id: 3,
@@ -310,17 +366,27 @@ export const LINE_RULES = [
     id: 17,
     key: "rule17_openCodedRecordGuard",
     label: "open-coded record guard",
-    // BOTH operand orders. `value !== null && typeof value === "object"` is the
-    // same check and was the spelling at three of the twelve original sites, so
-    // a one-way pattern would have left a quarter of them representable.
+    // FOUR spellings: the positive conjunction in both operand orders, and the
+    // NEGATED DISJUNCTION in both — `if (typeof v !== "object" || v === null)
+    // return null;` followed by a cast, which is how a guard clause is written
+    // and which is how this codebase actually writes it.
     //
-    // The `!== null` half is what makes this a duck-type rather than a narrow.
+    // The two-way version of this pattern graded 1 occurrence out of 21 and
+    // printed a checkmark. Its own comment argued that a one-way pattern "would
+    // have left a quarter of them representable"; leaving the negated form out
+    // left 95%. De Morgan is not a different check, it is the same check read
+    // from the failing side, and the cast that follows it is the same cost —
+    // which is the thing the rule is actually about.
+    //
+    // The null half is still what makes this a duck-type rather than a narrow.
     // `typeof addr === "object" && addr` (an `AddressInfo | string | null` from
     // `server.address()`) and `typeof root === "object"` (a declared union in
     // `studio-build.ts`) are ordinary union narrowing over a type the compiler
-    // already knows, and neither matches — which is the whole reason this rule
-    // can run without an allowlist of them.
-    re: `${TYPEOF_OBJECT} && ${NOT_NULL}|${NOT_NULL} && ${TYPEOF_OBJECT}`,
+    // already knows, and none of the four alternatives matches either — which is
+    // the whole reason this rule can run without an allowlist of them.
+    re:
+      `${TYPEOF_OBJECT}${AND}${NOT_NULL}|${NOT_NULL}${AND}${TYPEOF_OBJECT}|` +
+      `${NOT_TYPEOF_OBJECT}${OR}${IS_NULL}|${IS_NULL}${OR}${NOT_TYPEOF_OBJECT}`,
     paths: SOURCE_PATHSPECS,
     skipComments: true,
     remedy:
@@ -340,10 +406,18 @@ export const LINE_RULES = [
       "\n" +
       "Note it EXCLUDES arrays, because every caller here reads a named field.\n" +
       'For "any non-null object, arrays included", write the two comparisons\n' +
-      "inline and baseline it — that case has one site in the repo\n" +
-      "(`sdk/standard-schema.ts`, narrowing a declared union, and it may not\n" +
-      "import `sdk/utils.ts` anyway: `/utils` re-exports `stepGenerateJson`,\n" +
-      "which imports standard-schema, so the edge would be a cycle).",
+      "inline and baseline it — `sdk/standard-schema.ts` narrows a declared\n" +
+      "union that way and is the entry to copy.\n" +
+      "\n" +
+      "The guard is defined in a LEAF module so that anything may import it;\n" +
+      "if it looks unreachable from where you are, check that before writing\n" +
+      "the comparisons out — an import cycle was the historical reason nine\n" +
+      "of these existed inside this package at once.\n" +
+      "\n" +
+      "A `scripts/*.mjs` gate is the one place the remedy genuinely does not\n" +
+      "apply: plain node with no build step cannot import the SDK's TypeScript,\n" +
+      "and a second copy of the guard living in `scripts/` would be the very\n" +
+      "duplication this rule exists to stop. Those are baselined, one line each.",
   },
   {
     id: 18,

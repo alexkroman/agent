@@ -16,7 +16,13 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("./_agent.ts", () => ({
   getServerInfo: vi.fn().mockResolvedValue({
-    serverUrl: "https://agents.example/",
+    // No trailing slash, because the real `getServerInfo` cannot return one:
+    // `resolveServerUrl` strips them once, at resolution time, precisely so
+    // join sites do not each carry a copy (`_agent.test.ts` pins that). The
+    // fixture used to carry one, which is what kept a fourth — and subtly
+    // different, `/\/$/` against `/\/+$/` — stripping regex alive in
+    // `workflow.ts`.
+    serverUrl: "https://agents.example",
     slug: "digest-x7k2mq",
     apiKey: "test-api-key",
   }),

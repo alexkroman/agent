@@ -49,13 +49,31 @@
  * ratchet in AssemblyAI/cli's scripts/check.sh, and by the per-file baselines
  * in vercel/eve's `scripts/guard-invariants-baseline.json`.
  *
+ * The ratchet MACHINERY — the scan, the corpus floor, the `--update`
+ * merge/refuse, the violations-and-stale reporting — lives in `_ratchet.mjs`,
+ * shared with `guard-invariants.mjs`, which is the same machine with different
+ * patterns. What stays here is what makes this gate this gate: the patterns, the
+ * scope, and the reasoning behind both.
+ *
  * Wired up as `pnpm check:hatches`.
  */
 
-import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+
+import {
+  assertNotUniversallyEmpty,
+  assertScanCorpus,
+  compareToBaseline,
+  scanGroups,
+  totalOf,
+  updateBaseline,
+  warnStale,
+} from "./_ratchet.mjs";
 
 const BASELINE_PATH = new URL("escape-hatch-baseline.json", import.meta.url);
+
+const GATE = "check-hatches";
+const UPDATE_COMMAND = "node scripts/check-escape-hatches.mjs --update";
 
 // Each pattern is an extended-regex (`git grep -E`) so it works on every git
 // build. Keep these conservative — only match genuine escape hatches.
@@ -130,6 +148,18 @@ const PATTERNS = [
 // second file whose content is a list of the pattern names, so the first run
 // scored its own `"as unknown as": { ... }` keys as four fresh hatches. It is
 // the self-referential trap described above, arriving by a new route.
+//
+// `:!scripts/*.md` sits beside `:!scripts/**/*.md` and is not redundant, which
+// is the fnmatch trap `check-file-length.mjs` spends ten lines on: a git
+// pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so the `*` in `scripts/**/*.md`
+// already crosses `/` and the LITERAL SLASH after it makes a subdirectory
+// mandatory. That glob therefore excluded nothing at the `scripts/` top level.
+// Latent only because there is no `scripts/README.md` today — adding one would
+// have re-opened the release-blocking CHANGELOG bug above, in the one directory
+// where the release notes are least likely to be looked for. `packages/**/*.md`
+// is unaffected and not by luck: every markdown file under `packages/` is at
+// least one directory deep. Verify either with `git ls-files "<glob>"`, never by
+// reading it.
 const PATHSPECS = [
   "packages",
   "scripts",
@@ -138,130 +168,46 @@ const PATHSPECS = [
   ":!scripts/escape-hatch-baseline.json",
   ":!packages/**/*.md",
   ":!scripts/**/*.md",
+  ":!scripts/*.md",
 ];
 
-/** Run git, returning stdout. Throws on real failure (not "no matches"). */
-function git(args, { allowNoMatch = false } = {}) {
-  try {
-    return execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  } catch (err) {
-    // git grep exits 1 when there are simply no matches — not an error.
-    if (allowNoMatch && err.status === 1) return "";
-    throw err;
-  }
-}
-
 /**
- * Split one `git grep -n` output line into `{ file, line, text }`.
+ * The floor under the scan. ~1,530 files are in scope today.
  *
- * The format is `<file>:<line>:<text>`. Slice off the prefixes positionally
- * rather than splitting on ":" — the matched source line very often contains
- * colons.
+ * See `_ratchet.mjs` for why the floor is on the CORPUS and not on the match
+ * count: this is a debt ratchet whose goal is zero, so a minimum number of
+ * matches would eventually block the campaign the gate exists to encourage.
  */
-function parseMatch(raw) {
-  const fileEnd = raw.indexOf(":");
-  const lineEnd = raw.indexOf(":", fileEnd + 1);
-  return {
-    file: raw.slice(0, fileEnd),
-    line: Number(raw.slice(fileEnd + 1, lineEnd)),
-    text: raw.slice(lineEnd + 1).trim(),
-  };
-}
-
-/**
- * Every work-tree line matching `re`.
- *
- * `--untracked` so a hatch in a brand-new, not-yet-added file is counted —
- * otherwise `git add` is all it takes to defer the gate to a later commit.
- */
-function listMatches(re) {
-  const out = git(["grep", "-nIE", "--untracked", "-e", re, "--", ...PATHSPECS], {
-    allowNoMatch: true,
-  });
-  if (out === "") return [];
-  return out
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map(parseMatch);
-}
+const MIN_SCANNED_FILES = 800;
 
 const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
 
-/** Per-pattern `{ file: count }` for the current work tree. */
-const actual = new Map();
-/** Per-pattern `file -> matches[]`, so a failure can name lines. */
-const occurrences = new Map();
+assertScanCorpus({
+  gate: GATE,
+  what: "the escape-hatch scan",
+  pathspecs: PATHSPECS,
+  minFiles: MIN_SCANNED_FILES,
+});
 
-for (const { label, re } of PATTERNS) {
-  const byFile = new Map();
-  const linesByFile = new Map();
-  for (const match of listMatches(re)) {
-    byFile.set(match.file, (byFile.get(match.file) ?? 0) + 1);
-    linesByFile.set(match.file, [...(linesByFile.get(match.file) ?? []), match]);
-  }
-  actual.set(label, byFile);
-  occurrences.set(label, linesByFile);
-}
+const groups = PATTERNS.map(({ label, re }) => ({ key: label, label, re, paths: PATHSPECS }));
+const { counts: actual, occurrences } = scanGroups(groups);
 
 // ---------------------------------------------------------------------------
 // --update: lower the baseline to match reality. Never raise it.
 // ---------------------------------------------------------------------------
 
 if (process.argv.includes("--update")) {
-  const next = { _description: baseline._description };
-  const lowered = [];
-  const refused = [];
-
-  for (const { label } of PATTERNS) {
-    const allowed = baseline[label] ?? {};
-    const current = actual.get(label) ?? new Map();
-    const merged = {};
-
-    for (const file of new Set([...Object.keys(allowed), ...current.keys()])) {
-      const was = allowed[file] ?? 0;
-      const now = current.get(file) ?? 0;
-      if (now > was) {
-        // The whole point of the ratchet. `--update` is a convenience for
-        // recording removals, not a way to bless additions — otherwise the
-        // gate would be advisory and one command would silence it.
-        refused.push({ label, file, was, now });
-        if (was > 0) merged[file] = was;
-        continue;
-      }
-      if (now < was) lowered.push({ label, file, was, now });
-      if (now > 0) merged[file] = now;
-    }
-
-    if (Object.keys(merged).length > 0) {
-      next[label] = Object.fromEntries(
-        Object.entries(merged).sort(([a], [b]) => a.localeCompare(b)),
-      );
-    }
-  }
-
-  if (refused.length > 0) {
-    console.error(`\ncheck-hatches --update: refusing to RAISE ${refused.length} entr(ies):\n`);
-    for (const { label, file, was, now } of refused) {
-      console.error(`  ${label}  ${file}  ${was} -> ${now}`);
-    }
-    console.error(
-      "\nThe baseline only ratchets down. Fix the underlying type/lint error\n" +
-        "instead of silencing it. If a suppression is genuinely unavoidable, raise\n" +
-        "the number by hand so the increase shows up in the diff and gets reviewed.\n",
-    );
-    process.exit(1);
-  }
-
-  writeFileSync(BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
-  if (lowered.length === 0) {
-    console.log("check-hatches --update: baseline already matches the work tree.");
-  } else {
-    console.log(`check-hatches --update: lowered ${lowered.length} entr(ies):\n`);
-    for (const { label, file, was, now } of lowered) {
-      console.log(`  ${label}  ${file}  ${was} -> ${now}`);
-    }
-  }
-  process.exit(0);
+  updateBaseline({
+    gate: GATE,
+    baselinePath: BASELINE_PATH,
+    baseline,
+    groups,
+    counts: actual,
+    advice:
+      "The baseline only ratchets down. Fix the underlying type/lint error\n" +
+      "instead of silencing it. If a suppression is genuinely unavoidable, raise\n" +
+      "the number by hand so the increase shows up in the diff and gets reviewed.",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -272,35 +218,17 @@ if (process.argv.includes("--update")) {
 const MAX_SHOWN = 20;
 const MAX_TEXT = 100;
 
-const violations = [];
-/** Entries the tree is now UNDER — free headroom that should be given back. */
-const stale = [];
-let allowedTotal = 0;
-let actualTotal = 0;
-
-for (const { label } of PATTERNS) {
-  const allowed = baseline[label] ?? {};
-  const current = actual.get(label) ?? new Map();
-
-  for (const [file, count] of current) {
-    const budget = allowed[file] ?? 0;
-    if (count > budget) {
-      violations.push({ label, file, budget, count });
-    }
-  }
-  for (const [file, budget] of Object.entries(allowed)) {
-    const count = current.get(file) ?? 0;
-    if (count < budget) stale.push({ label, file, budget, count });
-  }
-
-  allowedTotal += Object.values(allowed).reduce((sum, n) => sum + n, 0);
-  actualTotal += [...current.values()].reduce((sum, n) => sum + n, 0);
-}
+const {
+  violations,
+  stale,
+  allowedTotal,
+  currentTotal: actualTotal,
+} = compareToBaseline(groups, baseline, actual);
 
 const width = Math.max(...PATTERNS.map((p) => p.label.length));
 console.log("check-hatches: escape hatches vs escape-hatch-baseline.json\n");
 for (const { label } of PATTERNS) {
-  const allowed = Object.values(baseline[label] ?? {}).reduce((sum, n) => sum + n, 0);
+  const allowed = totalOf(baseline[label]);
   const count = [...(actual.get(label) ?? new Map()).values()].reduce((sum, n) => sum + n, 0);
   const delta = count - allowed;
   const sign = delta > 0 ? `+${delta}` : `${delta}`;
@@ -328,19 +256,20 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
+// Every pattern at zero against a non-empty baseline is a blind scan until
+// proven otherwise — see `_ratchet.mjs`. It sits AFTER the violation report so a
+// genuine failure is still what a reader sees first.
+assertNotUniversallyEmpty({
+  gate: GATE,
+  allowedTotal,
+  currentTotal: actualTotal,
+  updateCommand: UPDATE_COMMAND,
+});
+
 // Not a failure. Reclaiming headroom is the ratchet working, and the author who
 // removed a hatch should not be blocked for not having also run --update. But
 // unclaimed headroom is a hatch the NEXT branch can add for free, which is the
 // slow leak that makes a ratchet stop ratcheting.
-if (stale.length > 0) {
-  console.warn(
-    `\ncheck-hatches: ${stale.length} baseline entr(ies) now sit above the real count — ` +
-      "run `node scripts/check-escape-hatches.mjs --update` to give the headroom back:\n",
-  );
-  for (const { label, file, budget, count } of stale.slice(0, MAX_SHOWN)) {
-    console.warn(`  ${label}  ${file}  ${budget} -> ${count}`);
-  }
-  if (stale.length > MAX_SHOWN) console.warn(`  … and ${stale.length - MAX_SHOWN} more`);
-}
+warnStale({ gate: GATE, stale, updateCommand: UPDATE_COMMAND, maxShown: MAX_SHOWN });
 
 console.log("\ncheck-hatches: every file within its baseline. ✓");

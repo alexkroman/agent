@@ -41,11 +41,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { readJson, repoRoot } from "./_fs.mjs";
+
 const checkOnly = process.argv.includes("--check");
-const root = new URL("..", import.meta.url).pathname;
+const root = repoRoot(import.meta.url);
 const guestPkgPath = join(root, "packages/aai-guest/package.json");
 const toolchainDir = join(root, "packages/aai-guest/toolchain");
 const manifestPath = join(toolchainDir, "package.json");
@@ -74,7 +76,8 @@ const LOCKED_PACKAGES = [
   "zod",
 ];
 
-const readJson = (path) => JSON.parse(readFileSync(path, "utf-8"));
+// `readJson` is `_fs.mjs`'s — it names the offending path on a read or parse
+// failure, which this copy did not.
 
 /** The version each locked package resolves to in THIS checkout. */
 function installedVersions() {

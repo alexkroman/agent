@@ -56,28 +56,39 @@ export type GuestWiringDeps = {
    * guest RPC because an agent turn longer than the idle window is activity
    * no other replica can see, and an expired lease invites a peer to
    * cold-spawn a duplicate in the middle of it.
+   *
+   * Zero-arg, and both hooks are: the broker builds this object per WIRED
+   * SANDBOX (see `wire`), closing over the harness, key, scope and project, so
+   * every argument these used to declare was one the implementation ignored in
+   * favour of the closure — a signature describing a lookup that does not
+   * happen.
    */
-  touch: (warm: WarmHarness, scope: string, project: string) => void;
+  touch: () => void;
   /**
    * The preview target for this sandbox, or null when it should not
    * auto-deploy (brokered without a `serverUrl`, or the sandbox is no longer
    * the project's — checked at RPC time, not at wire time).
    */
-  previewTarget: (warm: WarmHarness, key: string) => PreviewTarget | null;
+  previewTarget: () => PreviewTarget | null;
   schedulePreview: (scope: string, project: string, target: PreviewTarget) => void;
 };
 
-/** Wire the control channel for one project's sandbox. */
+/**
+ * Wire the control channel for one project's sandbox.
+ *
+ * Takes no session KEY any more: the two hooks that used to be handed one
+ * resolve it from their own closure (see `GuestWiringDeps.touch`), so the
+ * parameter described a lookup this module never performed.
+ */
 export function wireGuest(
   deps: GuestWiringDeps,
   warm: WarmHarness,
-  key: string,
   scope: string,
   project: string,
 ): void {
   // No db — trial tool runs report storage-not-enabled, same as before.
   warm.conn.onRequest("studio/sync-workspace", async (params) => {
-    deps.touch(warm, scope, project);
+    deps.touch();
     const parsed = GuestFilesSchema.safeParse(params);
     // Throwing rejects the RPC — the guest logs it; the turn still streams.
     if (!parsed.success) throw new Error(`Invalid workspace sync: ${parsed.error.message}`);
@@ -91,12 +102,12 @@ export function wireGuest(
     // sync: mid-turn checkpoints would preview half-finished trees.
     // Fire-and-forget: the sync must settle now; the deploy stamps its
     // outcome later.
-    const target = parsed.data.done ? deps.previewTarget(warm, key) : null;
+    const target = parsed.data.done ? deps.previewTarget() : null;
     if (target) deps.schedulePreview(scope, project, target);
     return { ok: true };
   });
   warm.conn.onRequest("studio/persist-chat", async (params) => {
-    deps.touch(warm, scope, project);
+    deps.touch();
     const parsed = GuestChatSchema.safeParse(params);
     if (!parsed.success) throw new Error(`Invalid chat snapshot: ${parsed.error.message}`);
     await deps.chats.putChat(scope, project, parsed.data.messages);

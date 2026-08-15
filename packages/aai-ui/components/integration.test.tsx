@@ -411,4 +411,22 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     expect(screen.getByText("Lost connection")).toBeDefined();
     expect(screen.getByText("Resume")).toBeDefined();
   });
+
+  test("the session error banner is ANNOUNCED, not just drawn", () => {
+    // Per the `fatalError` latch this banner is the only remaining signal that
+    // a live-looking session is dead, and a plain `<div>` appearing mid-page
+    // tells a screen reader nothing. `Form` already uses `role="alert"` for the
+    // same job.
+    const core = createMockSessionCore({ started: true, running: true });
+    renderWithProvider(<ChatView />, core);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    act(() =>
+      core.update({
+        state: "error",
+        error: { code: "tts", message: "Cartesia TTS: missing API key." },
+      }),
+    );
+    expect(screen.getByRole("alert").textContent).toBe("Cartesia TTS: missing API key.");
+  });
 });

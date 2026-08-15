@@ -33,17 +33,28 @@ import { createTextAgent } from "@alexkroman1/aai/runtime";
 import { convertToModelMessages, type LanguageModel, type UIMessage } from "ai";
 import { verifyBearer } from "./harness-auth.ts";
 import { hostRequest } from "./harness-rpc.ts";
+import type { HarnessBundleAccess } from "./harness-types.ts";
 import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS } from "./studio-agent.ts";
 import { typecheckWorkspaceDir } from "./studio-build.ts";
-import { compactMessages, needsCompaction } from "./studio-compaction.ts";
+import {
+  compactMessages,
+  DEFAULT_COMPACTION,
+  estimateTokens,
+  needsCompaction,
+} from "./studio-compaction.ts";
 import { CORS_HEADERS, readBody, sendJson } from "./studio-http.ts";
 import type { StudioSession } from "./studio-session.ts";
 import { STUDIO_TOOL_LABELS } from "./studio-tools.ts";
 import { createTurnBudget } from "./studio-turn-budget.ts";
-import { createWorkspaceCheckpointer, MUTATING_TOOLS, settleTurn } from "./studio-turn-settle.ts";
 import {
-  createTurnGate,
+  createWorkspaceCheckpointer,
+  MUTATING_TOOLS,
+  SYNC_RPC_TIMEOUT_MS,
+  settleTurn,
+} from "./studio-turn-settle.ts";
+import {
   deliverTurn,
+  enterTurn,
   TURN_IN_FLIGHT_CODE,
   TURN_IN_FLIGHT_STATUS,
 } from "./studio-turn-stream.ts";
@@ -51,30 +62,8 @@ import type { TypecheckFn } from "./studio-write-diagnostics.ts";
 
 /** Matches the host store's whole-conversation byte cap (4 MB). */
 const MAX_CHAT_BODY_BYTES = 4_000_000;
-/** Deadline for the end-of-turn workspace sync / chat persist RPCs. */
-const SYNC_RPC_TIMEOUT_MS = 30_000;
 
-/**
- * One turn at a time, per PROCESS — not per session object.
- *
- * A sandbox serves one project (its identity is pinned at first install), but
- * `studio/session-init` runs again on every page open, so a gate hanging off
- * the session would be replaced by the very event that creates the race:
- * measured, a second tab opening the project mid-turn re-installed the
- * session, got a fresh gate, and streamed a concurrent turn anyway.
- */
-let turnGate = createTurnGate();
-
-/** Test-only: drop the in-flight turn, like `resetSessionIdentity`. */
-export function resetTurnGate(): void {
-  turnGate = createTurnGate();
-}
-
-export type StudioChatDeps = {
-  /** The harness's own bundle loader (`loadBundle`). */
-  loadBundle: (code: string) => Promise<{ config?: unknown }>;
-  /** The harness's one-shot trial executor (`executeTool`). */
-  executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
+export type StudioChatDeps = HarnessBundleAccess & {
   /** Test seam. Defaults to the gateway model on the session's caller key. */
   model?: LanguageModel;
   /**
@@ -172,8 +161,11 @@ async function runTurn(
     // logs) — one per attempt. Without this the raised step cap would just
     // trade a step-cap failure for a context-overflow one.
     prepareStep: async ({ messages: stepMessages }) => {
-      const base = needsCompaction(stepMessages)
-        ? await compactMessages(chat.model, stepMessages)
+      // One estimate per step, threaded into both readers: it stringifies every
+      // non-string message content, and this list is the whole conversation.
+      const estimate = estimateTokens(stepMessages);
+      const base = needsCompaction(stepMessages, DEFAULT_COMPACTION, estimate)
+        ? await compactMessages(chat.model, stepMessages, DEFAULT_COMPACTION, estimate)
         : stepMessages;
       // Past the hard deadline the turn gets exactly one more step, with
       // tools off, so it ends on something the user can read rather than on
@@ -252,10 +244,12 @@ export function handleStudioRequest(
     sendJson(res, 405, { error: "Method not allowed" });
     return true;
   }
-  // One turn at a time per guest: a project has one sandbox and every tab
-  // posts its own whole-conversation view, so a second concurrent turn
-  // interleaves workspace edits and its settle erases the first turn.
-  const release = turnGate.enter();
+  // One claim on the workspace at a time per guest: a project has one sandbox
+  // and every tab posts its own whole-conversation view, so a second concurrent
+  // turn interleaves workspace edits and its settle erases the first turn. The
+  // same claim is what a mid-turn `studio/session-init` fails to take, which is
+  // what stops it deleting the tree under this turn (see studio-turn-stream.ts).
+  const release = enterTurn();
   if (!release) {
     sendJson(res, TURN_IN_FLIGHT_STATUS, {
       error: "This project is already running a turn",

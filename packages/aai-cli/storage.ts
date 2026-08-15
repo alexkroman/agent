@@ -1,17 +1,30 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { isRecord } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
-import type { ApiRequestOptions } from "./_api-client.ts";
+import { type ApiRequestOptions, checkedResponse } from "./_api-client.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { slugRequest } from "./_slug-api.ts";
 import { log } from "./_ui.ts";
 
-async function storageRequest<T = unknown>(
+/**
+ * The storage route's answer, CHECKED — every caller here reads `enabled` and
+ * a body without it reported "Storage is disabled for <slug>" (and returned
+ * `enabled: undefined` to a script) for a server that never said so. See
+ * `checkedResponse`.
+ */
+async function storageRequest(
   cwd: string,
   init?: Pick<ApiRequestOptions, "method">,
   server?: string,
-): Promise<{ data: T; slug: string }> {
-  return slugRequest<T>(cwd, "/storage", { ...init, action: "storage" }, server);
+): Promise<{ enabled: boolean; slug: string }> {
+  const { data, slug } = await slugRequest(cwd, "/storage", { ...init, action: "storage" }, server);
+  const checked = checkedResponse(
+    data,
+    (value): value is { enabled: boolean } => isRecord(value) && typeof value.enabled === "boolean",
+    `the storage route for ${slug}`,
+  );
+  return { enabled: checked.enabled, slug };
 }
 
 type StorageStatusData = { slug: string; enabled: boolean };
@@ -20,10 +33,7 @@ export async function executeStorageStatus(
   cwd: string,
   server: string | undefined,
 ): Promise<CommandResult<StorageStatusData>> {
-  const {
-    data: { enabled },
-    slug,
-  } = await storageRequest<{ enabled: boolean }>(cwd, undefined, server);
+  const { enabled, slug } = await storageRequest(cwd, undefined, server);
   if (enabled) {
     log.info(`Storage is enabled for ${slug}`);
   } else {
@@ -36,10 +46,7 @@ export async function executeStorageEnable(
   cwd: string,
   server: string | undefined,
 ): Promise<CommandResult<StorageStatusData>> {
-  const {
-    data: { enabled },
-    slug,
-  } = await storageRequest<{ enabled: boolean }>(cwd, { method: "POST" }, server);
+  const { enabled, slug } = await storageRequest(cwd, { method: "POST" }, server);
   log.success(`Storage enabled for ${slug}`);
   log.info("Tool code can now use ctx.db.query(sql, params).");
   return ok({ slug, enabled });
@@ -81,10 +88,7 @@ export async function executeStorageDisable(
     }
   }
 
-  const {
-    data: { enabled },
-    slug,
-  } = await storageRequest<{ enabled: boolean }>(cwd, { method: "DELETE" }, opts.server);
+  const { enabled, slug } = await storageRequest(cwd, { method: "DELETE" }, opts.server);
   log.success(`Storage disabled for ${slug} — database schema and data dropped`);
   return ok({ slug, enabled });
 }

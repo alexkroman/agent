@@ -73,6 +73,16 @@ Two consequences worth knowing:
   throw from the body is recorded as that pass's `error`; the other repeats still
   run.
 
+  **And it is kept out of the SCORE, which for a while it was not.** `runEval`
+  averaged every pass, so a pass that died after two passing checks scored 1.0
+  and set `score.max` — a harness failure could RAISE the number the tier is read
+  for and widen the spread, and `AAI_EVAL_MIN_SCORE` (which asserts `score.min`)
+  was partly answering a question about the harness. `score` and `ms` are over
+  the passes that did NOT die; `measuredPasses` says how many that was, and a
+  report with `measuredPasses: 0` prints `not measured` rather than the 0% an
+  empty spread would otherwise produce. `unstableLabels` was already guarded this
+  way — the spread simply had not caught up.
+
 ## One number is not a result
 
 The instrument is noisy in a measured way: identical code has scored **0.56 and
@@ -219,6 +229,20 @@ of bug that would have made a report LIE rather than error:
   reporting a broken agent. The utterance's own `user-transcript.committed` is the
   anchor; every event of its reply follows it.
 
+**What ENDS a reply is declared once**, `TURN_ENDS` in `assertions.ts`, imported
+by `session-target.ts`. It was written out in both, and the two must agree by
+construction: a third terminator added to one copy makes `say()` return
+mid-reply while the assertions still think the turn is open — the same shape as
+the second bug above, arriving by a different route.
+
+**`openEvalSession` releases the fake stages when its own setup throws.**
+`installFakeSpeech()` registers a PROCESS-GLOBAL kind pair and the only thing
+that unregisters it is the handle the function returns, so a runtime that would
+not start, or a greeting that timed out, left the pair registered for the
+worker's life with nobody holding a release. `runEval` catches the throw and runs
+the next repeat, which is what made it compound — `AAI_EVAL_REPEAT=5` against a
+failing agent orphaned five pairs. The runtime is shut down on that path too.
+
 ## The studio starter eval
 
 `starter.eval.test.ts` + `studio-target.ts` are `scripts/starter-eval/run.mjs`'s
@@ -267,6 +291,16 @@ run with no key, no studio and no model.
    (`all.turn(1).calledTool(…)`) to a whole-run one — "on that turn" is most of
    the meaning, and `turn(index)` out of range FAILS rather than silently
    asserting nothing.
+
+   **That claim used to be true of the first call only.** An out-of-range
+   `turn()` recorded one failure and then returned an EMPTY scope — and half the
+   vocabulary is negative (`noErrors`, `notEvent`, `notCalledTool`,
+   `usedNoTools`, `maxToolCalls`, `saidNothingAbout`), every one of which holds
+   vacuously over no events. So a three-call chain on a turn that never happened
+   recorded one failure and two passes and scored **75%**, which reads as a
+   mostly-correct agent. It returns a scope that fails EVERY assertion now, each
+   under its own label, because "nothing was measured" is not "nothing was
+   wrong".
 4. Reach for `eventsSatisfy(label, predicate)` for a claim the vocabulary does
    not carry — a ratio between two event types is the shape the guides' own
    findings take.

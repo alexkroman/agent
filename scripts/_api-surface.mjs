@@ -24,6 +24,8 @@
 
 import { createRequire } from "node:module";
 
+import { compareNames } from "./_fs.mjs";
+
 const require = createRequire(import.meta.url);
 const extractorRequire = createRequire(require.resolve("@microsoft/api-extractor/package.json"));
 const ts = extractorRequire("typescript");
@@ -88,11 +90,48 @@ const isExported = (statement) =>
  * with no explicit locale answers to the runtime's — so the same tree would
  * produce a different file on a machine with a different ICU default, and the
  * gate would report a surface change that is really a locale change.
+ *
+ * DEFINED in `_fs.mjs` and re-exported here, where the argument lives: this
+ * module requires api-extractor's bundled TypeScript at load time, and the other
+ * two artifact sorts that need the rule (the ratchet baselines, the gateway
+ * model catalog) must not import a compiler to sort strings.
  */
-export function compareNames(a, b) {
-  if (a < b) return -1;
-  if (a > b) return 1;
-  return 0;
+export { compareNames } from "./_fs.mjs";
+
+/**
+ * The `.d.ts` entry points of one package's `exports` map, with their slugs.
+ *
+ * ONE definition, because the two callers are coupled by a FILENAME:
+ * `api-report.mjs` writes `etc/<slug>.api.md` and `_api-contracts-tree.mjs`
+ * looks the same slug back up to read it. Each had its own scan and its own copy
+ * of the `"." -> "index"` rule, so a divergence between them would surface as a
+ * "missing report" naming a path no human ever typed.
+ *
+ * Skips three shapes that have no API to report: an asset (`./styles.css`), the
+ * manifest itself (`./package.json`), and a wildcard subpath
+ * (`./default-client/*`), which names a directory of built assets rather than a
+ * module with a signature.
+ *
+ * Sorted by slug with `compareNames`, never `localeCompare` — the order decides
+ * the section order of the committed `API.md`.
+ *
+ * @param {{ exports?: Record<string, unknown> }} manifest
+ * @returns {{ subpath: string, types: string, slug: string }[]}
+ */
+export function typedEntryPoints(manifest) {
+  const found = [];
+  for (const [subpath, target] of Object.entries(manifest.exports ?? {})) {
+    if (subpath.includes("*")) continue;
+    const types = typeof target === "string" ? target : target?.types;
+    if (typeof types !== "string" || !types.endsWith(".d.ts")) continue;
+    found.push({ subpath, types, slug: entryPointSlug(subpath) });
+  }
+  return found.sort((a, b) => compareNames(a.slug, b.slug));
+}
+
+/** `"." -> "index"`; `"./stt" -> "stt"`; `"./default-client/x" -> "default-client-x"`. */
+export function entryPointSlug(subpath) {
+  return subpath === "." ? "index" : subpath.replace(/^\.\//, "").replaceAll("/", "-");
 }
 
 /** The release tag API Extractor stamped in the comment above a declaration. */

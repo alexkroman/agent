@@ -225,7 +225,6 @@
   ],
   "@alexkroman1/aai-ui": [
     "AgentCustomEvent",
-    "AgentState",
     "ApiUrlChip",
     "BaseOptions",
     "ButtonSize",

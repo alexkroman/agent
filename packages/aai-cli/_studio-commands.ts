@@ -2,26 +2,23 @@
 // The studio-workspace citty commands (`aai list/pull/push/publish`) —
 // definitions only; behavior lives in studio.ts.
 
-import { defineCommand } from "citty";
-import { runCommand, setup, sharedArgs } from "./_cli-common.ts";
-import { resolveCwd } from "./_utils.ts";
+import { defineExec, sharedArgs } from "./_cli-common.ts";
 
-export const list = defineCommand({
+export const list = defineExec({
   meta: { name: "list", description: "List your studio projects" },
   args: {
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = resolveCwd();
-      const { executeList } = await import("./studio.ts");
-      return executeList({ cwd, server: args.server });
-    });
+  // Reads the account's projects; the directory only supplies a `serverUrl`.
+  cwd: "any",
+  async run({ args, cwd }) {
+    const { executeList } = await import("./studio.ts");
+    return executeList({ cwd, server: args.server });
   },
 });
 
-export const pull = defineCommand({
+export const pull = defineExec({
   meta: { name: "pull", description: "Pull a studio project into a local directory" },
   args: {
     project: {
@@ -38,22 +35,21 @@ export const pull = defineCommand({
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = resolveCwd();
-      const { executePull } = await import("./studio.ts");
-      return executePull({
-        cwd,
-        project: args.project,
-        dir: args.dir,
-        force: args.force,
-        server: args.server,
-      });
+  // It CREATES the project directory — requiring one would be backwards.
+  cwd: "any",
+  async run({ args, cwd }) {
+    const { executePull } = await import("./studio.ts");
+    return executePull({
+      cwd,
+      project: args.project,
+      dir: args.dir,
+      force: args.force,
+      server: args.server,
     });
   },
 });
 
-export const push = defineCommand({
+export const push = defineExec({
   meta: { name: "push", description: "Sync this project's source to its studio workspace" },
   args: {
     force: {
@@ -64,16 +60,14 @@ export const push = defineCommand({
     server: sharedArgs.server,
     json: sharedArgs.json,
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup({ agent: true });
-      const { executePush } = await import("./studio.ts");
-      return executePush({ cwd, server: args.server, force: args.force });
-    });
+  cwd: "agent",
+  async run({ args, cwd }) {
+    const { executePush } = await import("./studio.ts");
+    return executePush({ cwd, server: args.server, force: args.force });
   },
 });
 
-export const publish = defineCommand({
+export const publish = defineExec({
   meta: {
     name: "publish",
     description: "Push to the studio and deploy to production (the studio's Publish button)",
@@ -88,16 +82,14 @@ export const publish = defineCommand({
     json: sharedArgs.json,
     skipTypecheck: { type: "boolean", description: "Skip type checking before publishing" },
   },
-  async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup({ agent: true });
-      const { executePublish } = await import("./studio.ts");
-      return executePublish({
-        cwd,
-        server: args.server,
-        force: args.force,
-        skipTypecheck: args.skipTypecheck,
-      });
+  cwd: "agent",
+  async run({ args, cwd }) {
+    const { executePublish } = await import("./studio.ts");
+    return executePublish({
+      cwd,
+      server: args.server,
+      force: args.force,
+      skipTypecheck: args.skipTypecheck,
     });
   },
 });

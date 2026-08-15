@@ -74,36 +74,35 @@ function runHooks(
   ctx: () => SessionEventContext,
   logger: Logger | undefined,
 ): void {
-  const typed = handlers[event.type];
+  // Widened at the LOOKUP, once. The handler's own type is narrower than
+  // `SessionEvent`, and the widening is safe in exactly the way the map's key
+  // guarantees: `handlers[event.type]` was looked up BY this event's own type,
+  // so the handler it yields is declared for it.
+  const typed = handlers[event.type] as SessionEventHandler | undefined;
   const wildcard = handlers["*"];
   if (!(typed || wildcard)) return;
   // Built once for the pair rather than per handler.
   const resolved = ctx();
-  for (const handler of [typed, wildcard]) {
-    if (!handler) continue;
+  const report = (err: unknown): void => {
+    logger?.warn?.("Session event hook failed", {
+      type: event.type,
+      id: event.meta.id,
+      error: errorMessage(err),
+    });
+  };
+  const invoke = (handler: SessionEventHandler | undefined): void => {
+    if (!handler) return;
     try {
-      // The handler's own type is narrower than `SessionEvent` for the typed
-      // arm, and this loop has widened it back — which is safe in exactly the
-      // way the map's key guarantees: `handlers[event.type]` was looked up BY
-      // this event's own type, so the handler it yields is declared for it.
-      const result = (handler as SessionEventHandler)(event, resolved);
-      if (result instanceof Promise) {
-        result.catch((err: unknown) => {
-          logger?.warn?.("Session event hook failed", {
-            type: event.type,
-            id: event.meta.id,
-            error: errorMessage(err),
-          });
-        });
-      }
+      const result = handler(event, resolved);
+      if (result instanceof Promise) result.catch(report);
     } catch (err: unknown) {
-      logger?.warn?.("Session event hook failed", {
-        type: event.type,
-        id: event.meta.id,
-        error: errorMessage(err),
-      });
+      report(err);
     }
-  }
+  };
+  // Two calls rather than a loop over a two-element array: this runs per EVENT
+  // on a live call, and the array existed only to say "these two, in order".
+  invoke(typed);
+  invoke(wildcard);
 }
 
 /**

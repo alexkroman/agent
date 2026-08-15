@@ -82,11 +82,15 @@ export async function mapInBatches<T, R>(
     // `slice` + `Promise.all`, never a shared cursor over the whole list: the
     // map's callbacks are invoked synchronously, in array order, before any of
     // them settles. That is the property replay depends on.
-    results.push(
-      ...(await Promise.all(
-        items.slice(from, from + width).map((item, at) => run(item, from + at)),
-      )),
+    const batch = await Promise.all(
+      items.slice(from, from + width).map((item, at) => run(item, from + at)),
     );
+    // Appended one at a time, NOT `push(...batch)`: `size` is the caller's and
+    // is uncapped, and a spread passes the whole batch through the argument
+    // list — so a wide enough batch is `RangeError: Maximum call stack size
+    // exceeded` from a line that reads as concatenation. The engine's argument
+    // limit is around 64k and a fan-out over a large upload can reach it.
+    for (const result of batch) results.push(result);
   }
   return results;
 }

@@ -25,7 +25,7 @@ import type { TurnChain, TurnGate } from "./pipeline-turn-gate.ts";
 import type { TurnOutcome } from "./pipeline-turn-outcome.ts";
 import type { TurnMachine } from "./pipeline-turn-state.ts";
 import type { UserActivity } from "./pipeline-user-speech.ts";
-import type { EmitError, TransportCallbacks } from "./types.ts";
+import type { EmitError, SendTtsText, TransportCallbacks } from "./types.ts";
 
 /** What {@link createPipelineLifecycle} hands back to the transport. */
 export interface PipelineLifecycle {
@@ -89,7 +89,7 @@ export interface PipelineLifecycleDeps {
   /** Latch the transport's `terminated` flag — see the module doc. */
   markTerminated: () => void;
   abortInFlightTurn: () => void;
-  sendTtsText: (text: string, opts?: { publishTranscript?: boolean }) => void;
+  sendTtsText: SendTtsText;
   runReply: (
     idPrefix: string,
     body: (signal: AbortSignal) => Promise<boolean /* spoke */>,
@@ -128,13 +128,24 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
   // deterministically instead of leaving fire-and-forget opens to pile up.
   let startPromise: Promise<"ok" | "failed"> | null = null;
 
-  /** Everything both teardown paths clear — the difference is what follows. */
+  /**
+   * Everything both teardown paths clear — the difference is what follows.
+   *
+   * The provider unsubscribe belongs HERE and not only in `stop()`. A
+   * terminate left every STT/TTS listener attached and rested on four separate
+   * guards downstream (the audio gate, `isTerminated` in the STT handlers, the
+   * aborted session signal, the `isTerminated` check in `onProviderError`) to
+   * make sure nothing acted on what still arrived — four things that each have
+   * to keep being true, in a teardown whose whole job is that nothing further
+   * happens. Idempotent, so the pairing with `stop()` costs nothing.
+   */
   function quiesce(): void {
     gate.invalidateAll();
     nudger.clear();
     recovery.clear();
     speechEdges.reset();
     speculation.discard("reset");
+    deps.providers().unsubscribe();
   }
 
   // Idempotent teardown after an unrecoverable provider error.
@@ -241,7 +252,6 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
       quiesce();
       sessionAbort.abort();
       turns.abortCurrent();
-      deps.providers().unsubscribe();
       // Let an in-flight start() settle after the abort so any provider that
       // opened mid-connect is adopted-then-closed (openSide) before we close
       // below — otherwise a slow socket lands after stop() and lingers.

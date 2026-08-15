@@ -218,6 +218,43 @@ describe("createRuntime createSession", () => {
     );
   });
 
+  test("ctx.send drops an unserializable payload instead of failing the tool call", async () => {
+    // `JSON.stringify` throws on a cycle and returns undefined for a function —
+    // and this runs on the TOOL's own stack, so the throw failed the whole call:
+    // the model was told the tool failed and the state it had already mutated
+    // was reported as a failure, for a notification the cap logic above already
+    // treats as droppable.
+    const agent = makeAgent({
+      tools: {
+        emit: {
+          description: "Send a payload that has no JSON form",
+          inputSchema: z.object({ kind: z.string() }),
+          execute: (args, ctx) => {
+            if ((args as { kind: string }).kind === "cycle") {
+              const cyclic: Record<string, unknown> = {};
+              cyclic.self = cyclic;
+              ctx.send("bad", cyclic);
+            } else {
+              ctx.send("bad", () => "not JSON");
+            }
+            return "sent";
+          },
+        },
+      },
+    });
+    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+    const client = makeClientSink();
+    runtime.createSession({ id: "s-unserializable", agent: agent.name, client });
+
+    for (const kind of ["cycle", "function"]) {
+      // The tool's own result, not a serialized failure.
+      expect(await runtime.executeTool("emit", { kind }, "s-unserializable", [])).toBe("sent");
+    }
+    expect(client.event).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "custom.emitted" }),
+    );
+  });
+
   test("resume after the old session fully stopped keeps its slot state (grace window)", async () => {
     const slot = sessionSlot("counter", () => ({ counter: 0 }));
     const agent = makeAgent({

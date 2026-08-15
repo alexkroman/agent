@@ -225,6 +225,18 @@ export function createServer(options: ServerOptions): AgentServer {
   const defaultHtml = `<!DOCTYPE html><html><body><h1>${escapeHtml(name)}</h1><p>Agent server running.</p></body></html>`;
 
   /**
+   * The upload store and the three step slots a `"use step"` function reads.
+   *
+   * The HANDLE is held, not just its store: what this call opens (an upload
+   * pool, a keep-alive pool) is this server's to close, and `aai dev` builds a
+   * new server on every save. See `installWorkflowSupport`.
+   */
+  const workflowSupport = installWorkflowSupport({
+    ...omitUndefined({ env, dataDir: options.workflowDataDir }),
+    logger,
+  });
+
+  /**
    * The durable-workflow API (`/workflows/*`).
    *
    * Mounted here rather than left to the `request` hook so every front door
@@ -237,13 +249,7 @@ export function createServer(options: ServerOptions): AgentServer {
    */
   const workflowApi = createWorkflowApi({
     engine: () => runtime.workflows,
-    // Publishes the upload reader and the progress reporter a `"use step"`
-    // function reads — see `installWorkflowSupport` for why this is the server's
-    // job and not the runtime's.
-    uploads: installWorkflowSupport({
-      ...omitUndefined({ env, dataDir: options.workflowDataDir }),
-      logger,
-    }),
+    uploads: workflowSupport.uploads,
     ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
     logger,
   });
@@ -434,6 +440,10 @@ export function createServer(options: ServerOptions): AgentServer {
       try {
         await runtime.shutdown();
       } finally {
+        // The pools this server OPENED. `aai dev` rebuilds a server on every
+        // save, and a pool nothing releases is stranded for the life of the
+        // process. Never rejects.
+        await workflowSupport.close();
         try {
           // runtime.shutdown() closes the provider transports but not the
           // client sockets, and wss.close() on a noServer WebSocketServer does

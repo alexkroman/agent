@@ -66,6 +66,21 @@ export type LiveSession = {
   warm: WarmHarness;
   /** Publishing is activity — keep the idle sweeper off a busy session. */
   touch: () => void;
+  /**
+   * Hold the sandbox against idle eviction for the length of the deploy;
+   * call the returned release when it settles (idempotent).
+   *
+   * `touch` alone cannot cover this, and the two numbers say why:
+   * {@link WORKSPACE_DEPLOY_TIMEOUT_MS} is 330s while `STUDIO_SESSION_IDLE_MS`
+   * is 300s, and the touch happens only once the request RETURNS — so a cold
+   * build that starts more than ~100s into an idle window is swept while it
+   * runs, and `disposeEntry` terminates the sandbox the guest's own
+   * `aai deploy` is executing in. The measured cost is the whole build again
+   * plus a dead chat URL in the browser. A hold is preferred over widening
+   * the idle window because it says the true thing — this sandbox is BUSY —
+   * instead of guessing how long busy lasts.
+   */
+  hold: () => () => void;
   /** Dead sandbox: drop it so the next broker call respawns. */
   dispose: () => Promise<void>;
 };
@@ -159,6 +174,9 @@ async function runDeploy(
 ): Promise<WorkspaceDeployOutcome> {
   const existing = deps.liveSession(scope, project);
   if (existing) {
+    // Held for the whole round trip, not touched after it: a build can outlast
+    // the idle window (see LiveSession.hold).
+    const release = existing.hold();
     try {
       const outcome = await requestDeploy(existing.warm, files, target);
       existing.touch();
@@ -171,6 +189,8 @@ async function runDeploy(
         error: errorMessage(err),
       });
       await existing.dispose();
+    } finally {
+      release();
     }
   }
 

@@ -10,15 +10,7 @@ import { useRef } from "react";
 import { ACCOUNT_MENU_ID, ACCOUNT_TOGGLE_ATTR } from "./account-menu.tsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import { useDismissablePanel } from "./dismissable.ts";
-
-/**
- * Absolute URL of a deployed agent. The href works either way, but the *text*
- * is what people copy out or paste to a colleague, so it carries the origin
- * rather than a bare "/slug/".
- */
-export function agentUrl(slug: string): string {
-  return new URL(`/${slug}/`, window.location.origin).toString();
-}
+import { agentUrl } from "./platform-origin.ts";
 
 /** Tooltip while a chat turn is streaming and Publish is locked. */
 const PUBLISH_WAIT_FOR_TURN = "Publish unlocks when the agent finishes its turn";
@@ -67,7 +59,11 @@ export function PublishMenu(props: PublishMenuProps) {
   useDismissablePanel({ open, onClose, panel, toggleAttr: PUBLISH_TOGGLE_ATTR });
 
   if (!open) return null;
-  const published = props.deployedSlug && !props.error;
+  // The URL rather than a boolean: a `published &&` flag left the two `href`
+  // and text reads narrowing `deployedSlug` by cast, which is a claim about a
+  // condition three lines away rather than a fact the compiler holds.
+  const publishedUrl =
+    props.deployedSlug !== undefined && !props.error ? agentUrl(props.deployedSlug) : null;
   return (
     <div
       ref={panel}
@@ -90,14 +86,14 @@ export function PublishMenu(props: PublishMenuProps) {
       >
         {props.busy ? "Publishing…" : "Publish"}
       </button>
-      {published && (
+      {publishedUrl && (
         <a
           className="font-mono text-xs break-all text-indigo"
-          href={agentUrl(props.deployedSlug as string)}
+          href={publishedUrl}
           target="_blank"
           rel="noreferrer"
         >
-          {agentUrl(props.deployedSlug as string)} ↗
+          {publishedUrl} ↗
         </a>
       )}
       {props.error && (

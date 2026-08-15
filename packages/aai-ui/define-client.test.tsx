@@ -149,10 +149,23 @@ describe("client", () => {
       throw new Error("network down");
     });
     vi.stubGlobal("fetch", fetchSpy);
-    const handle = client({ name: "Test", target: "#app", platformUrl: "http://localhost:3000" });
+    const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
     expect(container.textContent).toContain("Start Conversation");
     expect(container.textContent).not.toContain("HTTP turns");
+    handle.dispose();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not look up client-config at all when the caller named the agent", async () => {
+    // The response's only consumer is the name fallback, and on the platform
+    // this endpoint is the BROKER — a request able to boot a sandbox, issued to
+    // fill in a value the caller already supplied.
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const handle = client({ name: "Test", target: "#app", platformUrl: "http://localhost:3000" });
+    await vi.waitFor(() => expect(container.textContent).toContain("Test"));
+    expect(fetchSpy).not.toHaveBeenCalled();
     handle.dispose();
     vi.unstubAllGlobals();
   });

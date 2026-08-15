@@ -47,12 +47,13 @@
  * on a writable install directory that nothing else here needs.
  */
 
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "../sdk/utils.ts";
+import { decodePathSegment } from "./_path-decode.ts";
 
 /** Distinct temp file per load — Node's module registry caches by URL. */
 let moduleSeq = 0;
@@ -123,7 +124,18 @@ export async function loadWorkflowModule(
   // preserves the reasoning rather than working around it.
   const file = join(tmpdir(), `aai-${label}-${process.pid}-${++moduleSeq}.mjs`);
   await writeFile(file, rewriteWorkflowImports(code), "utf-8");
-  return (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+  try {
+    return (await import(pathToFileURL(file).href)) as Record<string, unknown>;
+  } finally {
+    // Deleted once it is IN the module registry, which is keyed by URL and holds
+    // the evaluated module — nothing re-reads the file, and `moduleSeq` exists
+    // precisely so a later load cannot want this URL back. Without this, every
+    // `createWorkflowSurface` left two files behind: two per `aai dev` save, and
+    // in a long studio build→load loop that is the tmpdir filling up with dead
+    // bundles nothing ever collects. Best effort — a failed unlink is a stale
+    // temp file, not a failed load.
+    await rm(file, { force: true }).catch(() => undefined);
+  }
 }
 
 /** The `POST` export a builder route module owes, or a failure naming which one. */
@@ -156,6 +168,13 @@ export const WORKFLOW_WEBHOOK_PREFIX = "/.well-known/workflow/v1/webhook/";
  * approval email — so the token is the only thing identifying the run, and an
  * empty trailing segment must not read as a valid one.
  *
+ * **A segment that will not decode is "not a webhook path" too**, and that is
+ * the load-bearing part: this whole call chain is synchronous and
+ * `createServer` invokes it from the `request` hook with no `try`, so a
+ * `URIError` from a raw `%` here reached the guest's `uncaughtException` guard
+ * and exited the process — from an unauthenticated `GET`. See
+ * `_path-decode.ts`.
+ *
  * @internal
  */
 export function webhookToken(pathname: string): string | undefined {
@@ -164,7 +183,7 @@ export function webhookToken(pathname: string): string | undefined {
   // A token with a slash in it is not one: the route is a single segment, and
   // accepting more would let `…/webhook/a/b` reach the DevKit as the token "a/b".
   if (token === "" || token.includes("/")) return;
-  return decodeURIComponent(token);
+  return decodePathSegment(token);
 }
 
 /**

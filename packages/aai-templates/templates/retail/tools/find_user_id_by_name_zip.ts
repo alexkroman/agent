@@ -14,8 +14,6 @@ export default retailTool({
     zip: z.string().max(20).describe("Zip code, e.g. '12345'"),
   }),
   requiresAuth: false,
-  // `execute` before `summary`: see find_user_id_by_email.ts for why the order
-  // is load-bearing for the generic `result` type in `summary`.
   execute: (args, state) => {
     const first = args.first_name.trim().toLowerCase();
     const last = args.last_name.trim().toLowerCase();

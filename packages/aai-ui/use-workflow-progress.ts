@@ -44,9 +44,11 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { repeatUntil } from "./_repeat-until.ts";
 import { sseFrames } from "./_sse.ts";
-import { createWorkflowApi, type WorkflowApi } from "./workflow-client.ts";
+import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
+import type { WorkflowApi } from "./workflow-client.ts";
 
 /** The slice of the client this needs: one method. */
 export type RunProgressReader = Pick<WorkflowApi, "streamOutput">;
@@ -81,29 +83,25 @@ type Ending =
   | "unsupported";
 
 /**
- * Drain one bounded read's frames, reporting how it ended and how many chunks it
- * handed over.
+ * Drain one bounded read's frames, reporting how it ended and everything it
+ * carried.
  *
- * `skip` is how many leading chunks the reader has already been given, which is
- * non-zero only in the negative-`startIndex` case: a re-open there cannot name an
- * absolute position, so it re-reads the window from the beginning.
+ * The chunks are RETURNED rather than handed over one at a time, and that is
+ * what lets the hook commit a whole read in one React update: a per-chunk
+ * callback re-rendered the page once per progress line and rebuilt the list
+ * each time, which for a fan-out writing a line per segment is an O(n²) copy of
+ * the log a reader can already only see one frame at a time. A read is bounded
+ * by construction (see the module doc), so buffering one is bounded too.
  */
 async function consumeFrames<T>(
   body: ReadableStream<Uint8Array>,
-  skip: number,
   signal: AbortSignal,
-  onChunk: (chunk: T) => void,
-): Promise<{ ending: Ending; taken: number }> {
-  let remaining = skip;
-  let taken = 0;
+): Promise<{ ending: Ending; chunks: T[] }> {
+  const chunks: T[] = [];
   let ending: Ending = "partial";
   for await (const frame of sseFrames(body, signal)) {
     if (frame.event === "chunk") {
-      if (remaining > 0) remaining -= 1;
-      else {
-        taken += 1;
-        onChunk(frame.data as T);
-      }
+      chunks.push(frame.data as T);
     } else if (frame.event === "done") {
       // `complete` on the `done` frame is the RUN's state, not the read's: a
       // bounded read always ends, and only this says whether to come back.
@@ -112,89 +110,96 @@ async function consumeFrames<T>(
         : "partial";
     } else if (frame.event === "missing") {
       // The id will never exist, so there is nothing to come back for.
-      return { ending: "complete", taken };
+      return { ending: "complete", chunks };
     }
   }
-  return { ending, taken };
+  return { ending, chunks };
 }
 
 /**
- * Read one run's progress until it is complete, reporting each chunk.
+ * Read one run's progress until it is complete, reporting each read's chunks.
  *
  * Module-level rather than inline in the hook, so the loop reads without React in
  * the way — the same split `useWorkflowRun` makes with `pollUntilTerminal`.
  *
- * Every re-open asks from `startIndex + seen`, so a read only ever fetches chunks
- * this reader has not already been given. That is what keeps the poll cheap: a
- * quiet run answers with a bare `done` rather than the whole log again.
+ * Every re-open asks from an ABSOLUTE position past the last chunk read, so a
+ * read only ever fetches what this reader has not seen. That is what keeps the
+ * poll cheap: a quiet run answers with a bare `done` rather than the whole log
+ * again.
+ *
+ * ## A negative `startIndex` is resolved on the FIRST read, not carried
+ *
+ * "The last N lines" names no position a later read can resume from — the tail
+ * it counts back from moves with every line the run writes. Carrying it meant a
+ * re-open asking for everything from 0 and dropping `seen` chunks off the
+ * FRONT, which is a different set entirely: a reader that opened at
+ * `startIndex: -3` on a 10-line log holds lines 7-9, and its next read handed
+ * over lines 3 onwards — four lines it never asked for, then the three it
+ * already had, in that order. The dedupe the old comment claimed would need the
+ * first read's absolute tail, which the reader never learned.
+ *
+ * So the first read is issued from 0 instead, and only its last N chunks are
+ * handed over. The window the caller asked for is unchanged, and the reader now
+ * knows exactly where it is — every read after it is the ordinary absolute case.
+ * The cost is that the first read transfers the whole log, which is what the
+ * DEFAULT (`startIndex: 0`, "replay everything") already does.
  */
 function readProgressUntilComplete<T>(
   getClient: () => RunProgressReader,
   runId: string,
   options: { namespace?: string | undefined; startIndex?: number | undefined },
   intervalMs: number,
-  onChunk: (chunk: T) => void,
+  onChunks: (chunks: T[]) => void,
   onEnded: (ending: Ending) => void,
 ): () => void {
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  // Chunks handed to the caller, which is also the offset the next read resumes
-  // from. A negative `startIndex` ("the last N") is only meaningful on the FIRST
-  // read; after that this reader holds an absolute position and uses it.
-  let seen = 0;
+  const start = options.startIndex ?? 0;
+  // How many trailing chunks of the first read the caller actually asked for,
+  // for a negative `startIndex` only. Everything else takes the whole read.
+  const tail = start < 0 ? -start : undefined;
+  // The absolute index the NEXT read starts at. A negative start reads from 0
+  // and trims, so its cursor starts at 0 too — see the doc above.
+  let next = tail === undefined ? start : 0;
+  let firstRead = true;
 
-  const resumeFrom = (): number | undefined => {
-    if (seen === 0) return options.startIndex;
-    const base = options.startIndex ?? 0;
-    // A negative start has no absolute successor to resume from, so a re-open
-    // asks for everything and the dedupe below drops what was already seen.
-    return base < 0 ? undefined : base + seen;
-  };
-
-  /** One bounded read. */
-  const readOnce = async (): Promise<Ending> => {
-    const from = resumeFrom();
+  /** One bounded read. Resolves how it ended. */
+  const readOnce = async (signal: AbortSignal): Promise<Ending> => {
     // `omitUndefined` rather than a spread: under `exactOptionalPropertyTypes` a
     // present-and-undefined `namespace` is not the same as an absent one, and the
-    // client would put an empty parameter on the query string.
+    // client would put an empty parameter on the query string. Index 0 is left
+    // off for the same reason — it is what the route does with no parameter.
     const res = await getClient().streamOutput(runId, {
-      ...omitUndefined({ namespace: options.namespace, startIndex: from }),
-      signal: controller.signal,
+      ...omitUndefined({
+        namespace: options.namespace,
+        startIndex: next === 0 ? undefined : next,
+      }),
+      signal,
     });
     // A non-2xx, or a body-less response, is an agent that does not serve this —
     // the ordinary case for one deployed before the route existed, and also what
     // a 404 for an unknown run looks like.
     if (!(res.ok && res.body)) return "unsupported";
-    const skip = from === undefined ? seen : 0;
-    const { ending, taken } = await consumeFrames<T>(res.body, skip, controller.signal, onChunk);
-    seen += taken;
+    const { ending, chunks } = await consumeFrames<T>(res.body, signal);
+    next += chunks.length;
+    const fresh = firstRead && tail !== undefined ? chunks.slice(-tail) : chunks;
+    firstRead = false;
+    if (fresh.length > 0 && !signal.aborted) onChunks(fresh);
     return ending;
   };
 
-  const tick = async (): Promise<void> => {
+  return repeatUntil(intervalMs, async (signal) => {
     let ending: Ending;
     try {
-      ending = await readOnce();
+      ending = await readOnce(signal);
     } catch {
       // A thrown fetch is a transport failure, not an absent route — and not a
       // reason to stop watching a live run, so it is retried like a `partial`.
       ending = "partial";
     }
-    if (controller.signal.aborted) return;
-    if (ending !== "partial") {
-      onEnded(ending);
-      return;
-    }
-    // Re-armed from the SETTLED read rather than on an interval, so a slow
-    // response cannot stack overlapping reads.
-    timer = setTimeout(() => void tick(), intervalMs);
-  };
-  void tick();
-
-  return () => {
-    controller.abort();
-    if (timer !== undefined) clearTimeout(timer);
-  };
+    if (signal.aborted) return true;
+    if (ending === "partial") return false;
+    onEnded(ending);
+    return true;
+  });
 }
 
 /**
@@ -241,14 +246,9 @@ export function useWorkflowProgress<T = string>(
   const [streaming, setStreaming] = useState(false);
   const [supported, setSupported] = useState(true);
 
-  /**
-   * The caller's client, held in a ref rather than named as an effect
-   * dependency — the same footgun `useWorkflowRun` documents at length: the
-   * natural spelling passes a new object every render, which as a dependency is
-   * an unbounded stream-reopen loop against the agent.
-   */
-  const apiRef = useRef(api);
-  apiRef.current = api;
+  // The caller's client through a ref — see `_workflow-api-ref.ts` for why it
+  // may not be an effect dependency.
+  const getClient = useWorkflowApiRef(api);
 
   useEffect(() => {
     // A new id must not show the previous run's lines for a frame.
@@ -257,21 +257,13 @@ export function useWorkflowProgress<T = string>(
     setStreaming(false);
     if (!runId) return;
     setStreaming(true);
-    // Built lazily and ONCE per watch — as a render-time default it would be a
-    // fresh object per render, the same hazard the ref above exists for.
-    let fallback: WorkflowApi | undefined;
-    const getClient = (): WorkflowApi => {
-      const current = apiRef.current;
-      if (current) return current;
-      fallback ??= createWorkflowApi();
-      return fallback;
-    };
     const stop = readProgressUntilComplete<T>(
       getClient,
       runId,
       { namespace, startIndex },
       intervalMs,
-      (chunk) => setProgress((seen) => [...seen, chunk]),
+      // One commit per READ, not per line — see `consumeFrames`.
+      (chunks) => setProgress((seen) => [...seen, ...chunks]),
       (ending) => {
         setStreaming(false);
         if (ending === "unsupported") setSupported(false);
@@ -281,7 +273,7 @@ export function useWorkflowProgress<T = string>(
       stop();
       setStreaming(false);
     };
-  }, [runId, namespace, startIndex, intervalMs]);
+  }, [runId, namespace, startIndex, intervalMs, getClient]);
 
   return { progress, latest: progress.at(-1), streaming, supported };
 }

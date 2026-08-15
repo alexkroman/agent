@@ -48,7 +48,7 @@ import type { PipelineHistory } from "./pipeline-history.ts";
 import { persistInterruptedTurn } from "./pipeline-history.ts";
 import type { PipelineProviderSessions } from "./pipeline-providers.ts";
 import type { TurnGate } from "./pipeline-turn-gate.ts";
-import type { TransportCallbacks } from "./types.ts";
+import type { SendTtsText, TransportCallbacks } from "./types.ts";
 
 /** Session-scoped collaborators every outcome needs. */
 export interface TurnOutcomeDeps {
@@ -66,7 +66,7 @@ export interface TurnOutcomeDeps {
    *  `publishTranscript: false` suppresses the interim transcript for a phrase
    *  the caller publishes as a final itself — see the definition in
    *  pipeline-transport.ts. */
-  sendTtsText: (text: string, opts?: { publishTranscript?: boolean }) => void;
+  sendTtsText: SendTtsText;
 }
 
 export interface TurnOutcome {

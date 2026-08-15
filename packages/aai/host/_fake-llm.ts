@@ -69,8 +69,12 @@ function scriptedPartToStreamPart(part: ScriptedPart, textId: string): StreamPar
     case "error":
       return { type: "error", error: part.error };
     default: {
-      const never: never = part;
-      return never;
+      // A fake that fabricates a frame the real provider cannot emit is a
+      // FIDELITY bug, and returning the `never` handed it an `undefined` frame
+      // to enqueue — the fake's own contract broken, silently, from a branch
+      // typed as returning a StreamPart.
+      const unreachable: never = part;
+      throw new Error(`fake LLM: unsupported scripted part ${JSON.stringify(unreachable)}`);
     }
   }
 }

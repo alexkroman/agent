@@ -9,6 +9,11 @@
  * Wall-clock cap for a single `run_code` execution, enforced in the guest (the
  * only place `run_code` runs — see SANDBOX_ONLY_BUILTINS). This is the sole
  * definition; the SDK has no host-side counterpart.
+ *
+ * Enforced by TERMINATING the worker thread the code runs in, not by racing a
+ * promise: model-authored code with no `await` in it never yields, so a timer
+ * in the same thread can never fire. See `runCode` in `trial.ts` for the wedge
+ * that taught us the difference.
  */
 export const RUN_CODE_TIMEOUT_MS = 5000;
 

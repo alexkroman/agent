@@ -22,9 +22,10 @@
 
 import { Parser } from "htmlparser2";
 import { z } from "zod";
-import { FETCH_TIMEOUT_MS } from "../sdk/constants.ts";
+import { MAX_HTML_BYTES } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
+import { type CappedText, fetchCappedText } from "./_fetch-capped.ts";
 import { builtinFetch } from "./ssrf.ts";
 
 const webSearchParams = z.object({
@@ -219,19 +220,22 @@ async function searchEndpoint(
   query: string,
   format: EndpointFormat,
 ): Promise<SearchAttempt> {
-  let resp: Response;
+  let page: CappedText;
   try {
-    resp = await fetchFn(`${endpoint}?${new URLSearchParams({ q: query })}`, {
+    // Bounded at the READ — a results page past MAX_HTML_BYTES is a page whose
+    // shape has moved, and the surplus is exactly what the parse cannot use.
+    page = await fetchCappedText(`${endpoint}?${new URLSearchParams({ q: query })}`, {
+      fetch: fetchFn,
       headers: DDG_HEADERS,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      maxBytes: MAX_HTML_BYTES,
     });
   } catch (err) {
     return { ok: false, error: `Search request failed: ${errorMessage(err)}` };
   }
-  if (!resp.ok) {
-    return { ok: false, error: `Search request failed: ${resp.status} ${resp.statusText}` };
+  if (!page.ok) {
+    return { ok: false, error: `Search request failed: ${page.error}` };
   }
-  const html = await resp.text();
+  const html = page.text;
   const results = parseResults(html, format);
   // A challenge is decided from the PARSE rather than from a second marker regex
   // over the raw bytes: "the page had result markup" and "we could read it" are

@@ -168,15 +168,27 @@ function repairChunk(payload: unknown, ids: Map<string, string>, newId: () => st
 }
 
 /**
+ * Whitespace-tolerant probe for the null-`choices` chunk.
+ *
+ * The compact `"choices":null` was justified by `JSON.stringify` never putting
+ * whitespace after a colon — which is a claim about OUR serializer, and these
+ * are the GATEWAY's bytes: any encoder that pretty-prints, or a proxy that
+ * re-serializes, spells the same defect `"choices": null`. A miss is not a
+ * degradation but the exact failure this module exists to prevent, the turn
+ * dying on "Type validation failed" after the reply has already streamed.
+ */
+const NULL_CHOICES_RE = /"choices"\s*:\s*null/;
+
+/**
  * Cheap pre-parse check: a line can only need repair when it carries a
- * `tool_calls` delta or an explicitly-null `choices`. `JSON.stringify` never
- * puts whitespace after a colon, so the compact spelling covers everything
- * the gateway emits. Lines failing this check — the vast majority of
- * every stream (text deltas) — pass through with no parse/stringify round
- * trip, and byte-for-byte by construction.
+ * `tool_calls` delta or an explicitly-null `choices`. Lines failing this check
+ * — the vast majority of every stream (text deltas) — pass through with no
+ * parse/stringify round trip, and byte-for-byte by construction. Being
+ * permissive is free: a line that passes and turns out to need nothing is
+ * re-emitted unchanged by {@link repairLine}.
  */
 function mayNeedRepair(body: string): boolean {
-  return body.includes('"tool_calls"') || body.includes('"choices":null');
+  return body.includes('"tool_calls"') || NULL_CHOICES_RE.test(body);
 }
 
 /**

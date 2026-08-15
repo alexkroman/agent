@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
-// The stale-key path: a 401 from the REST queries must sign the user out
-// (clearing the stored key) rather than strand them on dead requests.
+// The stale-key path: a 401 from the REST queries must REFRESH the bearer
+// rather than strand the user on dead requests — and rather than sign them out
+// of a session that was still recoverable (see auth-recovery.ts).
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -56,14 +57,52 @@ afterEach(() => {
 });
 
 describe("App auth handling", () => {
-  test("a 401 on the project list signs the user out", async () => {
+  test("a 401 on the project list refreshes the bearer instead of signing out", async () => {
+    // The regression: supabase-js pauses its refresh ticker on hidden tabs, so
+    // focusing a tab that sat for an hour refetches with an expired — but
+    // REFRESHABLE — access token. Signing out there revokes the refresh token
+    // on a live session, and races supabase-js's own focus refresh.
     stubFetch({
       "/studio/status": () => jsonResponse({ provider: "assemblyai", model: "gpt-5.5" }),
       "/studio/events": sseResponse,
       "/studio/projects": () => jsonResponse({ error: "unauthorized" }, 401),
     });
     const onSignOut = vi.fn();
-    renderApp(onSignOut);
+    const refreshAuth = vi.fn(() => Promise.resolve());
+    renderApp(onSignOut, refreshAuth);
+    await waitFor(() => expect(refreshAuth).toHaveBeenCalled());
+    expect(onSignOut).not.toHaveBeenCalled();
+  });
+
+  test("a bearer that stays rejected after its refresh budget signs the user out", async () => {
+    // The terminal state. A server that will 401 a refreshable token (a
+    // different Supabase project, a JWT-secret mismatch, clock skew) must not
+    // become an unbounded refresh+refetch loop — the sign-in gate is somewhere
+    // the user can act.
+    stubFetch({
+      "/studio/status": () => jsonResponse({ provider: "assemblyai", model: "gpt-5.5" }),
+      "/studio/events": sseResponse,
+      "/studio/projects": () => jsonResponse({ error: "unauthorized" }, 401),
+    });
+    const onSignOut = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // Each render mints a new bearer, standing in for a refresh that "succeeds"
+    // and produces a token the server rejects just the same.
+    const { rerender } = render(
+      <QueryClientProvider client={client}>
+        <App bearer="t1" onSignOut={onSignOut} refreshAuth={() => Promise.resolve()} />
+      </QueryClientProvider>,
+    );
+    for (const bearer of ["t2", "t3", "t4"]) {
+      rerender(
+        <QueryClientProvider client={client}>
+          <App bearer={bearer} onSignOut={onSignOut} refreshAuth={() => Promise.resolve()} />
+        </QueryClientProvider>,
+      );
+      await waitFor(() =>
+        expect(screen.getByText(/No projects yet|Loading projects/)).toBeDefined(),
+      );
+    }
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
 

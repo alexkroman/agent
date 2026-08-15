@@ -33,6 +33,7 @@
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -163,7 +164,15 @@ export type OrchestratorOpts = {
    * silently never waking the apps placed elsewhere.
    */
   extraAppDbClusters?: number;
-  /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
+  /**
+   * Allowed CORS origins.
+   *
+   * Omitted falls back to `AAI_ALLOWED_ORIGINS` (comma-separated, or `*`), and
+   * with that unset every cross-origin request is REJECTED — which is what this
+   * has always done, despite the doc here having claimed the opposite ("any
+   * origin") for as long as it existed. Same-origin callers are unaffected, and
+   * this platform is same-origin by construction; see `resolveAllowedOrigins`.
+   */
   allowedOrigins?: string[];
   /**
    * Test seam for platform→guest HTTP: the client-config broker's proxy fetch
@@ -260,11 +269,21 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const harnessImageTag = (): Promise<string | null> =>
     currentHarnessImageTag(resolveHarnessPath());
 
+  // ORDER IS THE POINT. `authMw` runs AHEAD of the body gate, not behind it.
+  // The gate's slots exist to bound BUFFERED BYTES (see `_semaphore.ts` and
+  // `DEPLOY_BODY_CONCURRENCY`), and a slot held across `authMw` bounds latency
+  // instead: `assertVerifiedApiKey`'s 5s outbound fetch to AssemblyAI plus a
+  // Vault round trip sat inside the critical section, so two junk-bearer
+  // requests could hold both slots while AssemblyAI was slow and 503 every
+  // legitimate deploy behind them. `authMw` reads headers only — it buffers
+  // nothing — so moving it in front costs the gate nothing and takes the
+  // unauthenticated caller out of it entirely. The rate limiter stays first,
+  // for the same reason it was already there.
   app.post(
     "/deploy",
     deployRateMw,
-    deployBodyGate,
     authMw,
+    deployBodyGate,
     deployBodyLimit,
     gzipRequestMw,
     zValidator("json", DeployBodySchema),
@@ -310,9 +329,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     broker: brokerOpts,
     ...(opts.adminDb && { adminDb: opts.adminDb }),
     ...(opts.isDraining && { isDraining: opts.isDraining }),
-    ...(opts.extraAppDbClusters !== undefined && {
-      extraAppDbClusters: opts.extraAppDbClusters,
-    }),
+    ...omitUndefined({ extraAppDbClusters: opts.extraAppDbClusters }),
   });
 
   const agents = new Hono<HonoEnv>();

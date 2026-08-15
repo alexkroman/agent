@@ -1,42 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Studio shell (design 1b): shared top bar. Landing always shows the home
-// page — a project sidebar plus a centered hero prompt box (home.tsx) whose
-// first message creates a project; opening a project swaps to the 360px chat
-// panel on the left with the Preview/Code pane on the right. TanStack Query
-// owns all server state, invalidated after agent turns / publishes.
+// Studio shell (design 1b): the account-scoped half — routing, the project
+// list, the home hero whose first message creates a project, and the account
+// menu. Everything that only exists while a project is open lives in
+// project-view.tsx, which takes `project` as a REQUIRED prop.
+// TanStack Query owns all server state, invalidated after agent turns /
+// publishes.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { UIMessage } from "ai";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AccountMenu } from "./account-menu.tsx";
-import {
-  api,
-  type ChatSession,
-  type ProjectData,
-  type ProjectKind,
-  type StudioStatus,
-} from "./api.ts";
-import { ApiError, errorText, isTransientError } from "./api-error.ts";
-import { ChatPanel, type NotifyChat } from "./chat.tsx";
+import { api, type ProjectKind, type StudioStatus } from "./api.ts";
+import { errorText } from "./api-error.ts";
+import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
 import { HomeHero, HomeSidebar } from "./home.tsx";
-import { PreviewPane } from "./preview.tsx";
+import { useProjectRoute } from "./project-route.ts";
+import { ProjectView } from "./project-view.tsx";
 import { queryKeys } from "./query-keys.ts";
-import { SettingsPane } from "./settings.tsx";
-import { lazyRetry } from "./stale-build.ts";
-import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
+import { TopBar } from "./top-bar.tsx";
 import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
-
-// CodeMirror is the bulk of the bundle and only the Code tab needs it — the
-// default (Preview) path shouldn't pay for it.
-//
-// Wrapped in `lazyRetry` because that laziness is exactly what a deploy
-// breaks: the chunk URL is content-hashed and served `immutable`, so a tab
-// open across a Modal deploy is holding a name the new containers 404. The
-// user clicks Code hours later and, unhandled, `lazy` throws into a tree with
-// no boundary — a blank studio. See stale-build.ts.
-const CodeView = lazy(
-  lazyRetry(() => import("./code-view.tsx").then((m) => ({ default: m.CodeView }))),
-);
 
 type AppProps = {
   bearer: string;
@@ -49,51 +30,13 @@ type AppProps = {
   refreshAuth: () => Promise<void>;
 };
 
-// v0-style project URLs: each project lives at /studio/chat/<name>, so a
-// build is linkable/bookmarkable. The server serves the same shell for the
-// path; the client owns the mapping below (pushState + popstate).
-const PROJECT_PATH_RE = /^\/studio\/chat\/([a-z0-9][a-z0-9_-]*)\/?$/;
-
-function projectFromPath(pathname: string): string | null {
-  return PROJECT_PATH_RE.exec(pathname)?.[1] ?? null;
-}
-
-function projectPath(name: string | null): string {
-  return name ? `/studio/chat/${encodeURIComponent(name)}` : "/";
-}
-
-/** Stable identity while the workspace loads, so effects keyed on it don't churn. */
-const EMPTY_FILES: Record<string, string> = {};
-
-/**
- * How many transient broker failures to ride out before surfacing the
- * retryable error state. With TanStack's default exponential backoff
- * (1s doubling, capped at 30s) this keeps trying for roughly three minutes
- * of delay plus attempt time — enough to span a server restart, so a chat
- * opened mid-restart connects on its own once a sandbox is available.
- */
-const CHAT_SESSION_MAX_RETRIES = 10;
-
 export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
   const queryClient = useQueryClient();
-  // The URL seeds the initial selection (a shared /studio/chat/<name> link
-  // opens that project); after that, selection drives the URL.
-  const [project, setProject] = useState<string | null>(() =>
-    projectFromPath(window.location.pathname),
-  );
-  const [currentFile, setCurrentFile] = useState<string | null>(null);
-  const [tab, setTab] = useState<StudioTab>("preview");
-  const [publishOpen, setPublishOpen] = useState(false);
+  const { project, selectProject } = useProjectRoute();
   // The two top-bar dropdowns overlap in the same corner, so opening one
-  // closes the other.
+  // closes the other (the project view closes Publish when it opens this).
   const [accountOpen, setAccountOpen] = useState(false);
-  const [previewNonce, setPreviewNonce] = useState(0);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
-  // A chat turn is in flight. Publish locks on this: the preview only
-  // deploys on the guest's END-OF-TURN workspace sync (mid-turn checkpoints
-  // can leave a half-finished tree), and Publish ships the same workspace —
-  // so it unlocks on the same turn-settled event the preview builds on.
-  const [chatBusy, setChatBusy] = useState(false);
 
   const status = useQuery<StudioStatus>({ queryKey: queryKeys.status, queryFn: api.status });
 
@@ -101,37 +44,6 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     queryKey: queryKeys.projects,
     queryFn: () => api.listProjects(bearer),
   });
-
-  // The query holds the project state; the SSE subscription below feeds it.
-  const workspace = useQuery<ProjectData>({
-    queryKey: queryKeys.project(project),
-    queryFn: () => api.getProject(bearer, project as string),
-    enabled: project != null,
-  });
-
-  // Live project state, pushed by the server whenever the workspace or chat
-  // row changes (Supabase Realtime behind an SSE relay — see the events
-  // routes in studio-routes.ts). This is how a finished auto preview deploy
-  // reaches the pane: `previewVersion` changes and the iframe reloads
-  // itself. The old polling loop (and its edit-activity window) is gone; a
-  // dropped stream resubscribes with a fixed backoff while the project
-  // stays open. Pushed chat history refreshes the query cache — the panel
-  // in THIS tab owns its live conversation (`useChat` seeds once at mount),
-  // so this is what keeps a second tab's next open current.
-  useEventStream(
-    useCallback(
-      (handlers: StreamHandlers) =>
-        project == null
-          ? () => undefined
-          : api.watchProject(bearer, project, {
-              onData: (data) => queryClient.setQueryData(queryKeys.project(project), data),
-              onChat: (messages) => queryClient.setQueryData(queryKeys.chat(project), messages),
-              ...handlers,
-            }),
-      [bearer, project, queryClient],
-    ),
-    refreshAuth,
-  );
 
   // Live project LIST for the home sidebar — a project created or deleted
   // on another device shows up without a refresh.
@@ -147,104 +59,28 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     refreshAuth,
   );
 
-  // Persisted chat history, re-fetched on every project open. `useChat`
-  // owns the live conversation after hydration, but the server rewrites the
-  // row as each turn settles — so a cached snapshot goes stale the moment a
-  // turn completes, and switching back to a project must re-ask the server
-  // or it re-hydrates from the pre-turn cache and drops the newest turns.
-  // ProjectChat reads its seed once at mount, so a cached array served
-  // before the refetch resolves would hydrate stale and the fresh result
-  // would be ignored — gcTime: 0 evicts the cache on switch-away instead,
-  // making every open a fresh fetch behind the loading pane. Focus
-  // refetches are pointless for the same reason the cache is.
-  const chat = useQuery<UIMessage[]>({
-    queryKey: queryKeys.chat(project),
-    queryFn: () => api.getChat(bearer, project as string),
-    enabled: project != null,
-    gcTime: 0,
-    refetchOnWindowFocus: false,
-  });
+  // A stale key is the one auth failure worth handling globally, and the
+  // answer is to REFRESH it rather than sign out — see auth-recovery.ts for
+  // the session this used to end while it was still recoverable.
+  useAuthRecovery(authRejection(projects.error), refreshAuth, { onExhausted: onSignOut });
 
-  // The project's coding-agent sandbox. Brokered once per project open and
-  // held for the session; a dead sandbox (evicted, replaced) surfaces as a
-  // failed chat send, which invalidates this query to re-broker. Transient
-  // failures (a restarting server, a timed-out attempt) retry with backoff
-  // behind the panel's "Starting sandbox…" state; a 4xx is a real answer
-  // and fails immediately.
-  const chatSession = useQuery<ChatSession>({
-    queryKey: queryKeys.chatSession(project),
-    queryFn: () => api.createChatSession(bearer, project as string),
-    enabled: project != null,
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnWindowFocus: false,
-    retry: (failureCount, error) =>
-      failureCount < CHAT_SESSION_MAX_RETRIES && isTransientError(error),
-  });
-
-  // Friendly tool labels, served by the sandbox (single source of truth —
-  // the guest owns the tool set). Sticky: labels are static per build.
-  const toolLabels = useQuery<Record<string, string>>({
-    queryKey: queryKeys.toolLabels(chatSession.data?.url),
-    queryFn: () =>
-      api.sandboxToolLabels(chatSession.data?.token as string, chatSession.data?.url as string),
-    enabled: chatSession.data != null,
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnWindowFocus: false,
-  });
-
-  // A stale key is the one auth failure worth handling globally — one check
-  // over every REST query rather than a copy-pasted effect per query.
-  const authError = [projects.error, workspace.error, chat.error].find(
-    (err) => err instanceof ApiError && err.status === 401,
-  );
+  // A refreshed bearer has to reach the queries the old one was rejected on:
+  // only the account's cache key carries a bearer, so an error-state query has
+  // nothing to notice and would stay refused until the next window focus. The
+  // brokered chat session is excluded — its token comes from the broker's
+  // response, not from this bearer, so re-brokering on every hourly refresh
+  // would boot a container for nothing.
+  const lastBearer = useRef(bearer);
   useEffect(() => {
-    if (authError) onSignOut();
-  }, [authError, onSignOut]);
+    if (lastBearer.current === bearer) return;
+    lastBearer.current = bearer;
+    void queryClient.invalidateQueries({
+      predicate: (query) => query.queryKey[0] !== queryKeys.chatSessions[0],
+    });
+  }, [bearer, queryClient]);
 
   // Deliberately no auto-select: landing always shows the hero, and existing
   // projects are one click away in the home sidebar.
-
-  /** Select a project (or null for the home hero) and sync the URL. */
-  const selectProject = (name: string | null) => {
-    setProject(name);
-    setCurrentFile(null);
-    const path = projectPath(name);
-    if (window.location.pathname !== path) window.history.pushState(null, "", path);
-  };
-
-  // Back/forward moves between home and projects like any other pages.
-  useEffect(() => {
-    const onPop = () => {
-      setProject(projectFromPath(window.location.pathname));
-      setCurrentFile(null);
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
-
-  const files = workspace.data?.files ?? EMPTY_FILES;
-  const deployedSlug = workspace.data?.deployedSlug;
-  // "Publish unlocks after your first build" — there must be an agent to ship.
-  const hasBuild = project != null && "agent.ts" in files;
-
-  // Default file selection follows the loaded workspace.
-  useEffect(() => {
-    if (currentFile && currentFile in files) return;
-    const entry = "agent.ts" in files ? "agent.ts" : (Object.keys(files)[0] ?? null);
-    setCurrentFile(entry);
-  }, [files, currentFile]);
-
-  // Refresh server state after agent turns / saves. The project's own data
-  // arrives over the event stream (which also covers the preview deploy that
-  // follows an edit); the invalidations cover the project list and force an
-  // immediate re-read for the edit itself. Deliberately does NOT bump
-  // previewNonce: the preview iframe reloads by itself when `previewVersion`
-  // changes, and a forced reload here would kill any in-progress voice
-  // session for nothing.
-  const invalidateWorkspace = () => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.project(project) });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
-  };
 
   const createProject = useMutation({
     // The SERVER names the project — a base derived from the prompt plus a
@@ -266,66 +102,6 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     },
   });
 
-  const saveFile = useMutation({
-    mutationFn: ({ path, content }: { path: string; content: string }) =>
-      api.writeFile(bearer, project as string, path, content),
-    onSuccess: invalidateWorkspace,
-    // The editor's save handler shows the failure inline next to the buffer;
-    // log it too so a rejected save is never completely silent.
-    onError: (err) => {
-      console.error("File save failed:", err);
-    },
-  });
-
-  // Injected by the mounted ProjectChat: posts a message into the live
-  // conversation — how publish output and secret changes reach the coding
-  // agent. Silent by default; `{ respond: true }` runs a turn (see NotifyChat).
-  const notifyChatRef = useRef<NotifyChat | null>(null);
-  const notifyChat: NotifyChat = (text, opts) => notifyChatRef.current?.(text, opts);
-  // Stable identity: ProjectChat's registration effect depends on this, and
-  // it only writes to a ref, so empty deps are correct.
-  const registerNotify = useCallback((fn: NotifyChat | null) => {
-    notifyChatRef.current = fn;
-  }, []);
-
-  const publish = useMutation({
-    mutationFn: () => api.deploy(bearer, project as string),
-    onSuccess: (result) => {
-      invalidateWorkspace();
-      // The PRODUCTION agent changed — reload the pane's production-fallback
-      // iframe (projects that predate auto previews frame production).
-      setPreviewNonce((n) => n + 1);
-      setTab("preview");
-      // The CLI's output goes to the chat so the agent knows what shipped
-      // (warnings included — e.g. the missing-credential preflight).
-      notifyChat(
-        `I published the project with the Publish button. aai deploy output:\n\n${result.output}`,
-      );
-    },
-    onError: (err) => {
-      // Deploy errors are CLI output too — the coding agent is the one who
-      // can fix a failed build or deploy, so it must see them AND act. This
-      // one runs a turn rather than waiting to be noticed on the next.
-      const message = errorText(err);
-      notifyChat(
-        `I tried to publish with the Publish button, but aai deploy failed:\n\n${message}`,
-        { respond: true },
-      );
-    },
-  });
-
-  const deleteProject = useMutation({
-    mutationFn: () => api.deleteProject(bearer, project as string),
-    onSuccess: () => {
-      // Back to the default pane — the deleted project's Settings page has
-      // nothing left to show, and the next project opens on Preview.
-      setTab("preview");
-      selectProject(null);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
-    },
-    onError: (err) => alert(errorText(err)),
-  });
-
   // Hero start: typing the first message creates a project (named from the
   // prompt server-side, of the kind the hero's switcher selected) and forwards
   // it as the first chat turn.
@@ -338,147 +114,54 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     createProject.mutate({ prompt, kind });
   };
 
-  // The Preview pane's report that the platform is not serving the slug it
-  // wants to frame. Not a mutation: nothing on screen waits on it, and the
-  // pane owns the one-shot/retry policy — this is just the request.
-  const wakePreview = useCallback(
-    () => (project ? api.wakePreview(bearer, project) : Promise.resolve()),
-    [bearer, project],
-  );
-
-  const publishError = errorText(publish.error);
-  const publishOutput = publish.data?.output;
-
-  // A failed workspace fetch would otherwise render as an empty project (and
-  // a misleading "Publish unlocks after your first build" tooltip).
-  const workspaceError = errorText(workspace.error);
+  const toggleAccount = () => setAccountOpen((v) => !v);
 
   return (
     <div className="relative flex h-full flex-col">
-      <TopBar
-        project={project}
-        tab={tab}
-        deployedSlug={deployedSlug}
-        hasBuild={hasBuild}
-        chatBusy={chatBusy}
-        publishOpen={publishOpen}
-        accountOpen={accountOpen}
-        onGoHome={() => selectProject(null)}
-        onSelectTab={(next) => {
-          setPublishOpen(false);
-          setTab(next);
-        }}
-        onLogOut={onSignOut}
-        onTogglePublish={() => {
-          setAccountOpen(false);
-          setPublishOpen((v) => !v);
-        }}
-        onToggleAccount={() => {
-          setPublishOpen(false);
-          setAccountOpen((v) => !v);
-        }}
-      />
-      <AccountMenu open={accountOpen} bearer={bearer} onClose={() => setAccountOpen(false)} />
-      <PublishMenu
-        open={publishOpen}
-        busy={publish.isPending}
-        chatBusy={chatBusy}
-        output={publishOutput}
-        error={publishError}
-        deployedSlug={deployedSlug}
-        // The disabled button is the UI gate; the guard is the backstop for
-        // a menu that was already open when a turn started streaming.
-        onPublish={() => {
-          if (!chatBusy) publish.mutate();
-        }}
-        onClose={() => setPublishOpen(false)}
-      />
-      {workspaceError && (
-        <div className="border-b border-line bg-panel px-5 py-2 text-xs text-err">
-          Failed to load project: {workspaceError}
-        </div>
-      )}
       {project == null ? (
-        // Home: previous projects in the sidebar, and the stage is one big
-        // prompt box — typing creates a project and forwards the message as
-        // its first turn. Landing always starts here (no auto-select).
-        <div className="flex min-h-0 flex-1">
-          <HomeSidebar projects={projects.data} onSelectProject={selectProject} />
-          <HomeHero
-            status={status.data}
-            creating={createProject.isPending}
-            onStart={startWithPrompt}
+        <>
+          {/* The same bar, minus everything project-scoped: the hero has no
+              panes and nothing to publish. */}
+          <TopBar
+            project={null}
+            tab="preview"
+            hasBuild={false}
+            accountOpen={accountOpen}
+            onGoHome={() => selectProject(null)}
+            onSelectTab={() => undefined}
+            onLogOut={onSignOut}
+            onTogglePublish={() => undefined}
+            onToggleAccount={toggleAccount}
           />
-        </div>
+          {/* Home: previous projects in the sidebar, and the stage is one big
+              prompt box — typing creates a project and forwards the message as
+              its first turn. Landing always starts here (no auto-select). */}
+          <div className="flex min-h-0 flex-1">
+            <HomeSidebar projects={projects.data} onSelectProject={selectProject} />
+            <HomeHero
+              status={status.data}
+              creating={createProject.isPending}
+              onStart={startWithPrompt}
+            />
+          </div>
+        </>
       ) : (
-        <main className="flex min-h-0 flex-1">
-          <ChatPanel
-            key={project}
-            // undefined = still loading (the panel must not flash "new chat");
-            // a failed fetch degrades to an empty history rather than wedging
-            // the panel in its loading state.
-            chatHistory={chat.data ?? (chat.isError ? [] : undefined)}
-            chatSession={chatSession.data}
-            sessionError={chatSession.error}
-            toolLabels={toolLabels.data}
-            // Re-broker, and hand the panel the lease that came back so the
-            // turn that found the sandbox gone can be re-sent on it. Read from
-            // the CACHE rather than from `chatSession.data`: this settles
-            // before React has re-rendered with the new prop, and a re-read of
-            // the render-time value would see the dead lease (see
-            // sandbox-transport.ts).
-            onSessionStale={async () => {
-              await queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
-              return queryClient.getQueryData<ChatSession>(queryKeys.chatSession(project));
-            }}
-            chatStatus={status.data}
-            initialPrompt={pendingPrompt}
-            onInitialPromptSent={() => setPendingPrompt(null)}
-            onWorkspaceChanged={invalidateWorkspace}
-            onBusyChange={setChatBusy}
-            registerNotify={registerNotify}
-          />
-          {tab === "preview" && (
-            <PreviewPane
-              previewSlug={workspace.data?.previewSlug}
-              previewVersion={workspace.data?.previewVersion}
-              previewStale={workspace.data?.previewStale}
-              // "No preview yet" counts as stale, so the pane needs this to
-              // tell a first build in flight from an untouched project.
-              hasAgent={hasBuild}
-              previewError={workspace.data?.previewError}
-              deployedSlug={deployedSlug}
-              nonce={previewNonce}
-              onPreviewMissing={wakePreview}
-            />
-          )}
-          {tab === "code" && (
-            <Suspense
-              fallback={<div className="flex flex-1 items-center justify-center text-subtle" />}
-            >
-              <CodeView
-                files={files}
-                currentFile={currentFile}
-                onSelectFile={setCurrentFile}
-                onSave={async (path, content) => {
-                  await saveFile.mutateAsync({ path, content });
-                }}
-              />
-            </Suspense>
-          )}
-          {tab === "settings" && (
-            <SettingsPane
-              bearer={bearer}
-              project={project}
-              deployedSlug={deployedSlug}
-              previewSlug={workspace.data?.previewSlug}
-              onNotifyChat={notifyChat}
-              onDeleteProject={() => deleteProject.mutate()}
-              deleting={deleteProject.isPending}
-            />
-          )}
-        </main>
+        <ProjectView
+          key={project}
+          bearer={bearer}
+          project={project}
+          chatStatus={status.data}
+          refreshAuth={refreshAuth}
+          initialPrompt={pendingPrompt}
+          onInitialPromptSent={() => setPendingPrompt(null)}
+          onGoHome={() => selectProject(null)}
+          onLogOut={onSignOut}
+          accountOpen={accountOpen}
+          onToggleAccount={toggleAccount}
+        />
       )}
+      {/* Account-scoped, so it renders over either half. */}
+      <AccountMenu open={accountOpen} bearer={bearer} onClose={() => setAccountOpen(false)} />
     </div>
   );
 }

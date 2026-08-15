@@ -450,7 +450,8 @@ export interface AgentDef extends PipelineVoiceTuning {
    *
    * A text agent is the same `agent()` definition every voice agent is —
    * `systemPrompt`, `tools`, `maxSteps`, `toolChoice`, `builtinTools`,
-   * `state`, `requiredEnv` all mean exactly what they mean elsewhere, and
+   * `requiredEnv` and a tool's `sessionSlot`s all mean exactly what they mean
+   * elsewhere, and
    * tools run through the same executor, so one tool works in both. What it
    * drops is everything downstream of speech: `stt`, `tts` and `s2s` are
    * rejected (there is no audio to transcribe or synthesize), as are the

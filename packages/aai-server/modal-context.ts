@@ -18,6 +18,7 @@
 
 import { readFile } from "node:fs/promises";
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   AlreadyExistsError,
   type Image,
@@ -218,7 +219,7 @@ export function guestSandboxCreateParams(opts: {
     idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
     ...resourceParams,
     tags: sandboxTags(opts.role, opts.slug),
-    ...(opts.name === undefined ? {} : { name: opts.name }),
+    ...omitUndefined({ name: opts.name }),
   };
 }
 

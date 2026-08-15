@@ -30,30 +30,52 @@ function requireBearerToken(req: Request): string {
 
 export type ResolvedBearer = { apiKey: string; userId?: string };
 
+/**
+ * A per-`SecretStore` TTL cache, created on first use.
+ *
+ * A WeakMap so tests' independent memory stores cannot see each other's
+ * entries, and so a discarded store's cache goes with it. Both Vault lookups
+ * below wanted exactly this and had written it out twice, byte for byte apart
+ * from the variable names — which is how the two would have drifted on TTL or
+ * on the WeakMap's own semantics without anything pointing at the divergence.
+ */
+function secretScopedCache(ttlMs: number): {
+  for(secrets: SecretStore): TtlCache<string>;
+  drop(secrets: SecretStore, key: string): void;
+} {
+  const caches = new WeakMap<SecretStore, TtlCache<string>>();
+  return {
+    for(secrets) {
+      let cache = caches.get(secrets);
+      if (!cache) {
+        cache = new TtlCache<string>(ttlMs);
+        caches.set(secrets, cache);
+      }
+      return cache;
+    },
+    // Never CREATES a cache: an invalidation for a store nothing has read from
+    // has nothing to drop, and materializing one there would leak an entry per
+    // store that only ever wrote.
+    drop(secrets, key) {
+      caches.get(secrets)?.delete(key);
+    },
+  };
+}
+
 // The user-id → stored-API-key lookup rides EVERY JWT-authed request (each
 // editor save, project GET, SSE subscribe), and each lookup is a Vault query
 // — a Postgres round trip plus server-side decrypt. Cache it beside the
-// token-verify cache with the same short TTL. Scoped per SecretStore (a
-// WeakMap, so tests' independent memory stores can't see each other's
-// entries), and only found keys are cached: a "no key yet" account is the
-// onboarding path, where a stale negative would 401 the first request after
-// the key is saved. Rotation is bounded by the TTL on other replicas and
-// exact on the writing one (`invalidateUserApiKey` from the account route).
+// token-verify cache with the same short TTL. Only found keys are cached: a
+// "no key yet" account is the onboarding path, where a stale negative would
+// 401 the first request after the key is saved. Rotation is bounded by the TTL
+// on other replicas and exact on the writing one (`invalidateUserApiKey` from
+// the account route).
 const USER_KEY_TTL_MS = 60_000;
-const userKeyCaches = new WeakMap<SecretStore, TtlCache<string>>();
-
-function userKeyCache(secrets: SecretStore): TtlCache<string> {
-  let cache = userKeyCaches.get(secrets);
-  if (!cache) {
-    cache = new TtlCache<string>(USER_KEY_TTL_MS);
-    userKeyCaches.set(secrets, cache);
-  }
-  return cache;
-}
+const userKeyCaches = secretScopedCache(USER_KEY_TTL_MS);
 
 /** Drop a user's cached API key — call after storing a new one. */
 export function invalidateUserApiKey(secrets: SecretStore, userId: string): void {
-  userKeyCaches.get(secrets)?.delete(userId);
+  userKeyCaches.drop(secrets, userId);
 }
 
 // Reverse lookup for RAW-key bearers: which studio user owns this key
@@ -64,20 +86,11 @@ export function invalidateUserApiKey(secrets: SecretStore, userId: string): void
 // owner and would otherwise pay a Vault round trip per request. A stale
 // negative costs at most TTL of key-derived scoping right after onboarding;
 // the account route invalidates the writing replica exactly.
-const keyOwnerCaches = new WeakMap<SecretStore, TtlCache<string>>();
-
-function keyOwnerCache(secrets: SecretStore): TtlCache<string> {
-  let cache = keyOwnerCaches.get(secrets);
-  if (!cache) {
-    cache = new TtlCache<string>(USER_KEY_TTL_MS);
-    keyOwnerCaches.set(secrets, cache);
-  }
-  return cache;
-}
+const keyOwnerCaches = secretScopedCache(USER_KEY_TTL_MS);
 
 /** Drop a key's cached owner — call after storing a new key mapping. */
 export function invalidateApiKeyOwner(secrets: SecretStore, apiKey: string): void {
-  keyOwnerCaches.get(secrets)?.delete(apiKeyOwnerSecretName(apiKey));
+  keyOwnerCaches.drop(secrets, apiKeyOwnerSecretName(apiKey));
 }
 
 /** The studio user id that stored `apiKey` as their account key, if any. */
@@ -85,7 +98,7 @@ async function lookupApiKeyOwner(
   secrets: SecretStore,
   apiKey: string,
 ): Promise<string | undefined> {
-  const cache = keyOwnerCache(secrets);
+  const cache = keyOwnerCaches.for(secrets);
   // Cache keys are the hashed secret name — never the raw credential.
   const name = apiKeyOwnerSecretName(apiKey);
   let owner = cache.get(name);
@@ -164,7 +177,7 @@ export async function resolveBearer(
   if (!user) {
     throw new HTTPException(401, { message: "Invalid or expired session — sign in again" });
   }
-  const cache = userKeyCache(env.secrets);
+  const cache = userKeyCaches.for(env.secrets);
   let apiKey = cache.get(user.id);
   if (apiKey === undefined) {
     const stored = await env.secrets.get(userApiKeySecretName(user.id));

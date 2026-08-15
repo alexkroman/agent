@@ -2,10 +2,10 @@ import { agent } from "@alexkroman1/aai";
 import { menuText, orderSlot, orderView } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 
-// The in-progress order lives in `ctx.state` (see shared.ts) — per-session by
-// construction, so concurrent customers each get their own cart. The six tools
-// that read and write it are the six files in `tools/`: a file there IS a tool,
-// named by its own filename, so nothing registers them here.
+// The in-progress order lives in one `sessionSlot` (see shared.ts) —
+// per-session by construction, so concurrent customers each get their own cart.
+// The six tools that read and write it are the six files in `tools/`: a file
+// there IS a tool, named by its own filename, so nothing registers them here.
 
 export default agent({
   name: "Pizza Palace",

@@ -37,7 +37,7 @@ import {
   startWorkflowWorldIfDeclared,
   type WorkflowSurface,
 } from "@alexkroman1/aai/runtime";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { verifyBearer } from "./harness-auth.ts";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { bundleSourceOf, readVerifiedBundle } from "./harness-bundle-source.ts";
@@ -88,7 +88,10 @@ export async function readAgentBoot(
 async function readAgentEnvFile(envPath: string | undefined): Promise<Record<string, string>> {
   if (!envPath) return {};
   const raw = JSON.parse(await readFile(envPath, "utf-8")) as unknown;
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+  // `isRecord` rather than the hand-written negated disjunction: the guard also
+  // rules out an array, which was the third clause here, and it is the one
+  // spelling `guard-invariants` rule 17 recognizes.
+  if (!isRecord(raw)) {
     throw new Error("agent env file must contain a JSON object");
   }
   const agentEnv: Record<string, string> = {};

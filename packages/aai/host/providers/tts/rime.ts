@@ -35,16 +35,14 @@ import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import { createRestartableTimer } from "../../_timer.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
+import { dropSocket, openGuardedWs } from "../_socket.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
-  connectOrThrow,
   createDoneLatch,
-  createGuardedWs,
   createTtsSessionShell,
-  dropSocket,
   requireApiKey,
-  waitForOpen,
+  type SessionShell,
 } from "../_utils.ts";
 
 export interface RimeSession extends TtsSession {
@@ -68,9 +66,14 @@ const FIRST_AUDIO_TIMEOUT_MS = 5000;
 
 // Extracted to a top-level function to keep `open()` under the cognitive
 // complexity limit; session state is threaded through via the ref callbacks.
+//
+// Emits through `shell`, never the raw emitter: this runs inside a socket
+// 'message' handler, where a throw from a downstream listener escapes into
+// Node's EventEmitter as an uncaughtException — taking down a multi-tenant host
+// rather than one session.
 function handleRimeMessage(
   raw: WebSocket.Data,
-  emitter: Emitter<TtsEvents>,
+  shell: SessionShell<TtsEvents>,
   armQuiescence: () => void,
   isActiveTimer: () => boolean,
 ): void {
@@ -82,7 +85,7 @@ function handleRimeMessage(
   if (msg.type === "chunk" && typeof msg.data === "string") {
     const pcm = bytesToPcm16(base64ToUint8(msg.data));
     if (pcm.length > 0) {
-      emitter.emit("audio", pcm);
+      shell.emit("audio", pcm);
       // Each chunk resets the quiescence window so `done` fires only after
       // audio stops — applies to both the first-audio and post-chunk timers.
       if (isActiveTimer()) armQuiescence();
@@ -90,7 +93,7 @@ function handleRimeMessage(
     return;
   }
   if (msg.type === "error") {
-    emitter.emit(
+    shell.emit(
       "error",
       makeTtsError("tts_stream_error", `Rime TTS: ${msg.message ?? "unknown error"}`),
     );
@@ -111,27 +114,19 @@ export function openRime(opts: RimeOptions): TtsOpener {
 
       const url = `wss://users-ws.rime.ai/ws2?speaker=${encodeURIComponent(voice)}&modelId=${encodeURIComponent(model)}&audioFormat=pcm&samplingRate=${sampleRate}&lang=${encodeURIComponent(lang)}`;
 
-      // Construct synchronously so `waitForOpen`'s listener is registered
-      // before the socket can emit `open`; the guard listener protects against
-      // a late socket error with zero listeners crashing the process.
-      const ws = createGuardedWs(
-        () =>
+      // Bounded and abort-wired: an upgrade that black-holes must not leave
+      // `open()` pending with a socket nobody owns — see `openGuardedWs`, which
+      // also owns registering the pre-connect zero-listener error guard.
+      const ws = await openGuardedWs({
+        create: () =>
           new WebSocket(url, {
             headers: { Authorization: `Bearer ${apiKey}` },
             ...PROVIDER_WS_OPTIONS,
           }),
-        connectError,
-        "Rime TTS",
-      );
-
-      try {
-        await connectOrThrow("Rime TTS", connectError, () => waitForOpen(ws));
-      } catch (err) {
-        // Failed connect: close the socket before rethrowing so it can't
-        // linger half-open (late errors land in the guard listener).
-        dropSocket(ws);
-        throw err;
-      }
+        label: "Rime TTS",
+        makeConnectError: connectError,
+        signal: openOpts.signal,
+      });
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
       // One timer serving both windows: whichever was armed last wins, which is
@@ -149,7 +144,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
         },
       });
 
-      const doneLatch = createDoneLatch(shell, () => emitter.emit("done"));
+      const doneLatch = createDoneLatch(shell, () => shell.emit("done"));
       const emitDoneOnce = () => {
         quiescence.clear();
         doneLatch.emitOnce();
@@ -160,7 +155,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
 
       ws.on("message", (raw: WebSocket.Data) => {
         if (shell.isClosed()) return;
-        handleRimeMessage(raw, emitter, armQuiescence, quiescence.pending);
+        handleRimeMessage(raw, shell, armQuiescence, quiescence.pending);
       });
 
       ws.on("error", (err: Error) => shell.onSocketError(err));
@@ -209,9 +204,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
           emitDoneOnce();
         },
 
-        on(event, fn) {
-          return emitter.on(event, fn);
-        },
+        on: shell.on,
 
         close: shell.close,
 

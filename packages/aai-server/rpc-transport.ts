@@ -10,6 +10,7 @@
 // exactly this).
 
 import { errorMessage, safeJsonParse } from "@alexkroman1/aai";
+import { isRecord } from "@alexkroman1/aai/utils";
 import {
   createJSONRPCErrorResponse,
   JSONRPCClient,
@@ -120,19 +121,18 @@ type ParsedMessage =
 
 function parseJsonRpcMessage(raw: unknown): ParsedMessage {
   const value = safeJsonParse(String(raw));
-  if (typeof value !== "object" || value === null) return null;
+  if (!isRecord(value)) return null;
 
-  const obj = value as Record<string, unknown>;
-  if ("result" in obj || "error" in obj) {
-    const parsed = JsonRpcResponseSchema.safeParse(obj);
+  if ("result" in value || "error" in value) {
+    const parsed = JsonRpcResponseSchema.safeParse(value);
     return parsed.success ? { kind: "response", data: parsed.data } : null;
   }
-  if ("id" in obj && "method" in obj) {
-    const parsed = JsonRpcRequestSchema.safeParse(obj);
+  if ("id" in value && "method" in value) {
+    const parsed = JsonRpcRequestSchema.safeParse(value);
     return parsed.success ? { kind: "request", data: parsed.data } : null;
   }
-  if ("method" in obj) {
-    const parsed = JsonRpcNotificationSchema.safeParse(obj);
+  if ("method" in value) {
+    const parsed = JsonRpcNotificationSchema.safeParse(value);
     return parsed.success ? { kind: "notification", data: parsed.data } : null;
   }
   return null;

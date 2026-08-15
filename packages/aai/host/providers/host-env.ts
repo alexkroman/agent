@@ -23,9 +23,15 @@ import { ALL_PROVIDER_ENV_VARS } from "./resolve.ts";
  * Every env var name a provider descriptor may resolve a credential from:
  * the registry-derived STT/TTS/LLM/S2S set.
  *
+ * The registry array ITSELF, not a copy: it is already deduplicated, and it is
+ * kept live across `registerSttKind`/`registerTtsKind`/`registerLlmKind` (see
+ * {@link ALL_PROVIDER_ENV_VARS}). A copy taken at module load would have frozen
+ * this allowlist at the built-in providers, so a registered kind's credential
+ * could never be copied from the host environment.
+ *
  * @internal
  */
-export const PROVIDER_CREDENTIAL_ENVS: readonly string[] = [...new Set(ALL_PROVIDER_ENV_VARS)];
+export const PROVIDER_CREDENTIAL_ENVS: readonly string[] = ALL_PROVIDER_ENV_VARS;
 
 /**
  * Return `env` with any missing provider credential filled in from

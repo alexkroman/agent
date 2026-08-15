@@ -197,34 +197,60 @@ const CONFIG_LOCK_STALE_MS = 10_000;
  */
 async function withGlobalConfigLock<T>(dir: string, fn: () => Promise<T>): Promise<T> {
   const lockPath = path.join(dir, "config.lock");
-  const deadline = Date.now() + CONFIG_LOCK_TIMEOUT_MS;
-  let held = false;
-  for (;;) {
-    try {
-      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-      // "wx" fails when the file exists — the atomic test-and-set.
-      await (await fs.open(lockPath, "wx", 0o600)).close();
-      held = true;
-      break;
-    } catch (err) {
-      if (!isEexist(err)) break; // unlockable; proceed
-      const age = await fs
-        .stat(lockPath)
-        .then((s) => Date.now() - s.mtimeMs)
-        .catch(() => 0);
-      if (age > CONFIG_LOCK_STALE_MS) {
-        await fs.rm(lockPath, { force: true }).catch(() => undefined);
-        continue;
-      }
-      if (Date.now() >= deadline) break; // proceed unlocked
-      await sleep(CONFIG_LOCK_RETRY_MS);
-    }
-  }
+  const held = await acquireConfigLock(dir, lockPath);
   try {
     return await fn();
   } finally {
     if (held) await fs.rm(lockPath, { force: true }).catch(() => undefined);
   }
+}
+
+/** True when this process created the lockfile; false means "proceed unlocked". */
+async function acquireConfigLock(dir: string, lockPath: string): Promise<boolean> {
+  const deadline = Date.now() + CONFIG_LOCK_TIMEOUT_MS;
+  for (;;) {
+    try {
+      await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+      // "wx" fails when the file exists — the atomic test-and-set.
+      await (await fs.open(lockPath, "wx", 0o600)).close();
+      return true;
+    } catch (err) {
+      if (!isEexist(err)) return false; // unlockable; proceed
+      if (!(await contendForLock(lockPath, deadline))) return false;
+    }
+  }
+}
+
+/**
+ * One turn of the contention loop: break the lock if it is stale, otherwise
+ * wait a beat. False means STOP — the deadline passed, or the lock cannot be
+ * broken at all.
+ *
+ * That second case is the one worth naming. `fs.rm`'s `force` masks only
+ * ENOENT and there is no `recursive`, so an entry that is not an ordinary file
+ * — a `config.lock` DIRECTORY, an immutable or permission-denied file — makes
+ * the removal throw every time. Swallowing that throw and looping restarted
+ * the loop ABOVE the deadline check, so `aai login` (and every `--server`
+ * invocation) spun in a tight async loop with no output and no exit: bounded
+ * acquisition, the contract stated above, held in every case except the one
+ * where breaking the lock is impossible. The removal's OUTCOME is what decides
+ * whether looping is progress.
+ */
+async function contendForLock(lockPath: string, deadline: number): Promise<boolean> {
+  const age = await fs
+    .stat(lockPath)
+    .then((s) => Date.now() - s.mtimeMs)
+    .catch(() => 0);
+  if (age > CONFIG_LOCK_STALE_MS) {
+    const broken = await fs.rm(lockPath, { force: true }).then(
+      () => true,
+      () => false,
+    );
+    return broken && Date.now() < deadline;
+  }
+  if (Date.now() >= deadline) return false;
+  await sleep(CONFIG_LOCK_RETRY_MS);
+  return true;
 }
 
 /**

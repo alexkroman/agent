@@ -2,7 +2,13 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse, settle, sseResponse, stubFetch } from "./_test-utils.ts";
-import { api, parseSecrets } from "./api.ts";
+import {
+  api,
+  CHAT_SESSION_ATTEMPT_TIMEOUT_MS,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  parseSecrets,
+  STATUS_ATTEMPT_TIMEOUT_MS,
+} from "./api.ts";
 import { ApiError, isTransientError } from "./api-error.ts";
 
 describe("parseSecrets", () => {
@@ -201,9 +207,33 @@ describe("api", () => {
   test("status is unauthenticated and returns the body", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ provider: "assemblyai" }));
     await expect(api.status()).resolves.toEqual({ provider: "assemblyai" });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit | undefined];
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/studio/status");
-    expect(init).toBeUndefined();
+    expect(new Headers(init.headers).get("Authorization")).toBeNull();
+  });
+
+  test("every request carries a deadline, `/studio/status` included", async () => {
+    // H9: a browser fetch has no timeout of its own, so a hung read never
+    // settles — no error, no retry, no backoff. `/studio/status` was one of the
+    // ~14 that carried none, and it gates the home hero's Send button and the
+    // project composer both: one hung read deadened two screens until a reload.
+    const fetchMock = stubFetch(() => jsonResponse({}));
+    await api.status();
+    await api.listProjects("k");
+    await api.getProject("k", "p");
+    await api.wakePreview("k", "p");
+    const signals = fetchMock.mock.calls.map((c) => (c[1] as RequestInit | undefined)?.signal);
+    expect(signals).toHaveLength(4);
+    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test("the broker's deadline is LONGER than the default, not shorter", async () => {
+    // The one call whose honest work can take two minutes. The composition is
+    // `AbortSignal.any`, so a caller's signal can only ever make a request
+    // settle sooner — which is why the broker states its deadline rather than
+    // passing a signal.
+    expect(CHAT_SESSION_ATTEMPT_TIMEOUT_MS).toBeGreaterThan(DEFAULT_REQUEST_TIMEOUT_MS);
+    expect(STATUS_ATTEMPT_TIMEOUT_MS).toBeLessThan(DEFAULT_REQUEST_TIMEOUT_MS);
   });
 
   test("non-OK responses throw ApiError with the server's error message", async () => {

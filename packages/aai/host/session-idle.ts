@@ -63,17 +63,25 @@ export function createIdleWatchdog(opts: IdleWatchdogOptions): IdleWatchdog {
   const idleMs = opts.idleMs === 0 || !Number.isFinite(opts.idleMs) ? 0 : opts.idleMs;
   let stopped = false;
 
-  const timer = createCoalescingTimer(() => {
-    opts.logger.info("session idle timeout", { sid: opts.sid });
-    // The event is a notification, not a teardown: clients treat it as
-    // informational and wait for the close (aai-ui routes it to its default
-    // branch and transitions on the close handler). Retiring the socket is what
-    // actually reclaims the session, its provider sockets, and — on the
-    // platform — the Modal input a WebSocket occupies. Closing runs the normal
-    // teardown path via the socket's close listener.
-    opts.notify();
-    opts.close();
-  });
+  const timer = createCoalescingTimer(
+    () => {
+      opts.logger.info("session idle timeout", { sid: opts.sid });
+      // The event is a notification, not a teardown: clients treat it as
+      // informational and wait for the close (aai-ui routes it to its default
+      // branch and transitions on the close handler). Retiring the socket is
+      // what actually reclaims the session, its provider sockets, and — on the
+      // platform — the Modal input a WebSocket occupies. Closing runs the
+      // normal teardown path via the socket's close listener.
+      opts.notify();
+      opts.close();
+    },
+    // A five-minute wait for a session to go quiet must not be the last thing
+    // holding the process open — what it exists to retire is by definition
+    // still alive, and something else is holding the reference for it. The
+    // package's four other long timers (the keepalive, the lock sweep, the SSE
+    // heartbeat, the state sweep) all say the same by hand.
+    { unref: true },
+  );
 
   return {
     reset(): void {

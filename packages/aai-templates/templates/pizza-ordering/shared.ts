@@ -1,4 +1,4 @@
-import { sessionSlot } from "@alexkroman1/aai";
+import { type DeepReadonly, sessionSlot } from "@alexkroman1/aai";
 
 export const SIZES = ["small", "medium", "large"] as const;
 export const CRUSTS = ["thin", "regular", "thick", "stuffed"] as const;
@@ -33,7 +33,7 @@ export const MENU = {
   },
 } as const;
 
-export function calculateTotal(pizzas: Pizza[]): number {
+export function calculateTotal(pizzas: readonly ReadonlyPizza[]): number {
   return pizzas.reduce((total, pizza) => total + pizzaPrice(pizza), 0);
 }
 
@@ -62,7 +62,7 @@ export function menuText(): string {
   ].join("\n");
 }
 
-export function pizzaPrice(p: Pizza): number {
+export function pizzaPrice(p: ReadonlyPizza): number {
   const base = MENU.sizes[p.size];
   const crust = MENU.crusts[p.crust];
   const toppings = p.toppings.reduce(
@@ -73,9 +73,9 @@ export function pizzaPrice(p: Pizza): number {
 }
 
 // ── Order state ──────────────────────────────────────────────────────────────
-// The in-progress order is session-scoped scratch, so it lives in `ctx.state`
-// (the agent's per-session mutable state) — concurrent customers each get
-// their own cart, and an abandoned cart vanishes with its session.
+// The in-progress order is session-scoped scratch, so it lives in one
+// `sessionSlot` keyed per session — concurrent customers each get their own
+// cart.
 
 export interface OrderState {
   pizzas: Pizza[];
@@ -95,6 +95,18 @@ export function emptyOrder(): OrderState {
 
 /** The session's cart, as one typed slot. */
 export const orderSlot = sessionSlot("order", emptyOrder);
+
+/**
+ * A pizza as a READ hands it out, and the cart likewise: deep-frozen, and typed
+ * to say so.
+ *
+ * `pizzaPrice` and `calculateTotal` take the readonly shape because they are
+ * pure and are called from both halves of the slot — a mutable `Pizza` still
+ * satisfies it, so an `updateTool` draft passes unchanged, while a helper that
+ * WOULD have mutated stops compiling instead of throwing on its first call.
+ */
+export type ReadonlyPizza = DeepReadonly<Pizza>;
+export type FrozenOrderState = DeepReadonly<OrderState>;
 
 /**
  * Clear the cart after checkout so a follow-up order starts fresh. The
@@ -123,7 +135,9 @@ export function resetOrder(order: OrderState, placed?: OrderState["placed"]): vo
  * leaves the server.
  */
 export interface OrderView {
-  pizzas: Pizza[];
+  /** Readonly, because the projection hands the client the slot's own list
+   *  rather than a copy — see {@link ReadonlyPizza}. */
+  pizzas: readonly ReadonlyPizza[];
   total: string;
   orderPlaced: boolean;
   orderNumber?: number;
@@ -132,7 +146,7 @@ export interface OrderView {
 
 /** Takes the cart itself, not the slot — `orderSlot.projection` supplies a real
  *  one even before the first tool call, so there is nothing to optional-chain. */
-export function orderView(order: OrderState): OrderView {
+export function orderView(order: FrozenOrderState): OrderView {
   const placed = order.placed;
   return {
     pizzas: order.pizzas,

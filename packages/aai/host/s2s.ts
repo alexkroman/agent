@@ -12,7 +12,7 @@ import {
   WS_OPEN,
 } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
-import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
+import { errorMessage, isRecord, safeJsonParse } from "../sdk/utils.ts";
 import { createAudioSendGate } from "./_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import {
@@ -359,11 +359,11 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, LOG_PREVIEW_CHARS) });
         return;
       }
-      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      if (!isRecord(raw)) {
         log.warn("S2S << non-object JSON message", { type: typeof raw });
         return;
       }
-      handleObject(raw as Record<string, unknown>, raw);
+      handleObject(raw, raw);
     } catch (err) {
       const msg = errorMessage(err);
       log.error("S2S message dispatch failed", { error: msg });

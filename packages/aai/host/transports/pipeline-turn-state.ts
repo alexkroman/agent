@@ -23,6 +23,16 @@
  *   Closed on interrupt so chunks still in flight can't re-advance the
  *   playback clock or reach the just-flushed client; reopened by the next
  *   turn's first TTS text, which always precedes that turn's audio.
+ *
+ * Two further facts about the turn in flight — whether its body is done and
+ * only the TTS drain remains, and whether it is a false-interruption resume —
+ * lived on in `pipeline-transport.ts` as loose `let`s after this module was
+ * written, which is the arrangement it exists to replace: each had one write
+ * site, one comment saying so, and nothing enforcing it, while every reader
+ * reached them through a predicate that also consulted {@link
+ * TurnMachine.inFlight}. They are {@link TurnMachine.draining} and {@link
+ * TurnMachine.resumeInFlight} now, so "what is true of the turn in flight" is
+ * answered in one place.
  */
 
 /** The turn phase: either no turn exists, or exactly one abortable reply. */
@@ -39,6 +49,22 @@ export interface TurnMachine {
   spoke(): boolean;
   /** May TTS provider audio be forwarded to the client right now? */
   audioGateOpen(): boolean;
+  /**
+   * True while the in-flight turn's body has completed — its full text is
+   * persisted with no `[interrupted]` marker — and only its TTS drain remains.
+   *
+   * The classifier for a barge-in in that window: the turn is still "in
+   * flight" (the drain lasts as long as the remaining synthesis for a
+   * sentence-flushing adapter), but resuming it from the marker would tell the
+   * model to continue past an ending it already produced. See
+   * `armBargeInRecovery` in pipeline-user-speech.ts.
+   */
+  draining(): boolean;
+  /**
+   * True while the turn in flight is a false-interruption resume — a committed
+   * user turn moots one that has not spoken yet (`onSttFinal`).
+   */
+  resumeInFlight(): boolean;
 
   /** A new turn starts: it becomes the abortable reply; `spoke` resets. */
   begin(ctl: AbortController): void;
@@ -60,6 +86,16 @@ export interface TurnMachine {
   markSpoke(): void;
   /** New TTS text opens (or reopens) the audio gate for its turn. */
   openAudioGate(): void;
+  /**
+   * The turn's body finished and its TTS drain is starting (`true`), or the
+   * drain is over (`false`). Paired around the drain in `runReply`.
+   */
+  setDraining(draining: boolean): void;
+  /**
+   * The chained turn about to run is (or is no longer) a false-interruption
+   * resume. Paired around `runTurn` in `runChainedTurn`.
+   */
+  setResumeScope(resume: boolean): void;
 }
 
 /** Create a {@link TurnMachine}; the gate starts open for the greeting. */
@@ -67,6 +103,8 @@ export function createTurnMachine(): TurnMachine {
   let phase: TurnPhase = IDLE;
   let spoke = false;
   let audioGateOpen = true;
+  let draining = false;
+  let resumeScope = false;
 
   function abortCurrent(): void {
     if (phase.kind !== "running") return;
@@ -80,6 +118,11 @@ export function createTurnMachine(): TurnMachine {
     inFlight: () => phase.kind === "running",
     spoke: () => spoke,
     audioGateOpen: () => audioGateOpen,
+    draining: () => draining,
+    // Both halves, because a resume scope with no turn in it is not a resume in
+    // flight — the scope is set around the whole chained call, which includes
+    // the moment before `begin` and the moment after `settle`.
+    resumeInFlight: () => resumeScope && phase.kind === "running",
     begin(ctl: AbortController): void {
       phase = { kind: "running", ctl };
       spoke = false;
@@ -98,6 +141,12 @@ export function createTurnMachine(): TurnMachine {
     },
     openAudioGate(): void {
       audioGateOpen = true;
+    },
+    setDraining(value: boolean): void {
+      draining = value;
+    },
+    setResumeScope(value: boolean): void {
+      resumeScope = value;
     },
   };
 }

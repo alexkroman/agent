@@ -59,7 +59,18 @@ export function runScaffoldTsc({ name, include, overrides = {} }) {
     });
     return { ok: true };
   } catch (err) {
-    return { ok: false, output: String(err.stdout ?? "") };
+    // stderr as well as stdout. tsc writes DIAGNOSTICS to stdout, but the two
+    // ways this call fails for a reason that is not a diagnostic — a missing
+    // `node_modules/.bin/tsc` (ENOENT, no output at all) and a config tsc
+    // refuses to load — say so on stderr or in the spawn error. Discarding it
+    // produced an empty diagnostic block under a heading like "a documentation
+    // example does not compile", pointing the reader at the templates when the
+    // problem was the toolchain.
+    const stdout = String(err.stdout ?? "");
+    const stderr = String(err.stderr ?? "");
+    const spawnFailure = err.stdout === undefined && err.stderr === undefined ? String(err) : "";
+    const output = [stdout, stderr, spawnFailure].filter((part) => part.trim() !== "").join("\n");
+    return { ok: false, output };
   } finally {
     rmSync(configPath, { force: true });
   }

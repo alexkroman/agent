@@ -8,7 +8,11 @@ import {
 } from "../sdk/constants.ts";
 import { createMockToolContext } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
-import { createGetPageDesign, extractStylesheetUrls } from "./page-design.ts";
+import { createGetPageDesign, parsePage } from "./page-design.ts";
+
+/** The stylesheet-link half of the one parse — what `extractStylesheetUrls` was. */
+const extractStylesheetUrls = (html: string, baseUrl: string): string[] =>
+  parsePage(html, baseUrl).stylesheetUrls;
 
 const PAGE_URL = "https://example.com/pricing";
 
@@ -31,6 +35,36 @@ function run(routes: Record<string, string | Response | Error>, url = PAGE_URL) 
   const def = createGetPageDesign(routedFetch(routes));
   return def.execute({ url }, createMockToolContext()) as Promise<Record<string, unknown>>;
 }
+
+describe("parsePage", () => {
+  test("cuts scripts, styles and comments while leaving surviving markup byte-identical", () => {
+    // The stripped markup is assembled by slicing the fetched string, so
+    // anything that is not cut is exactly what was fetched — no re-serialize.
+    const html = `<div class='a' data-x="1 > 0">keep</div><script>var s = "</div>";</script>`;
+    const parsed = parsePage(html, PAGE_URL);
+    expect(parsed.html).toBe(`<div class='a' data-x="1 > 0">keep</div>`);
+    expect(parsed.inlineCss).toEqual([]);
+  });
+
+  test("a <link> written inside a script string is not a stylesheet", () => {
+    // Rawtext is the parser's problem — a tag regex over the same bytes saw one.
+    const html = `<script>var s = '<link rel="stylesheet" href="/not-real.css">';</script>`;
+    expect(parsePage(html, PAGE_URL).stylesheetUrls).toEqual([]);
+  });
+
+  test("an unclosed script is cut to the end of the document", () => {
+    expect(parsePage("<p>a</p><script>var x = 1", PAGE_URL).html).toBe("<p>a</p>");
+  });
+
+  test("<style> bodies are collected raw, un-decoded and blank-free", () => {
+    const parsed = parsePage(
+      `<style>.a::after { content: "&amp;" }</style><style>  </style><style>.b{}</style>`,
+      PAGE_URL,
+    );
+    expect(parsed.inlineCss).toEqual(['.a::after { content: "&amp;" }', ".b{}"]);
+    expect(parsed.html).toBe("");
+  });
+});
 
 describe("extractStylesheetUrls", () => {
   test("resolves relative hrefs against the page URL, in document order", () => {

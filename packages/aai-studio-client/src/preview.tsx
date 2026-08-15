@@ -174,21 +174,27 @@ type PreviewPaneProps = {
  * instead (see {@link PreviewPane}), so a row saying the same thing above it
  * would be redundant.
  */
-function PaneBanner(props: PreviewPaneProps & { framed: boolean }) {
-  if (props.previewError) {
-    return (
-      <div className="flex shrink-0 flex-col gap-1 border-b border-line bg-red-50 px-4 py-2">
-        <span className="text-[11px] text-err">
-          The preview build failed — ask the agent in the chat to fix it.
-          {props.framed ? " What's running below is the last good preview." : ""}
-        </span>
-        <pre className="m-0 max-h-24 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[10px] whitespace-pre-wrap text-err">
-          {props.previewError}
-        </pre>
-      </div>
-    );
-  }
-  return null;
+function PaneBanner({
+  previewError,
+  framed,
+}: {
+  /** CLI output of the last failed preview deploy, if there was one. */
+  previewError: string | undefined;
+  /** Is the last good preview still framed below this row? */
+  framed: boolean;
+}) {
+  if (!previewError) return null;
+  return (
+    <div className="flex shrink-0 flex-col gap-1 border-b border-line bg-red-50 px-4 py-2">
+      <span className="text-[11px] text-err">
+        The preview build failed — ask the agent in the chat to fix it.
+        {framed ? " What's running below is the last good preview." : ""}
+      </span>
+      <pre className="m-0 max-h-24 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[10px] whitespace-pre-wrap text-err">
+        {previewError}
+      </pre>
+    </div>
+  );
 }
 
 /** The pane's own screen, for when there is nothing to frame (yet). */
@@ -227,7 +233,7 @@ export function PreviewPane(props: PreviewPaneProps) {
   if (slug && ready && !building) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PaneBanner {...props} framed={true} />
+        <PaneBanner previewError={props.previewError} framed={true} />
         {/* Same-origin and unsandboxed on purpose: `sandbox` without
             allow-same-origin blocks getUserMedia, the pane's whole point.
             Only the user's own preview/production agent is ever framed here —
@@ -257,7 +263,7 @@ export function PreviewPane(props: PreviewPaneProps) {
     // there is nothing to wait for the probe to rule out.
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <PaneBanner {...props} framed={false} />
+        <PaneBanner previewError={props.previewError} framed={false} />
         {ready === null && !building ? (
           <div className="min-h-0 flex-1 bg-cream" />
         ) : (

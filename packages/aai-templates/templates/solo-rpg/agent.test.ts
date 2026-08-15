@@ -15,6 +15,7 @@ import actionRoll from "./tools/action_roll.ts";
 import burnMomentum from "./tools/burn_momentum.ts";
 import checkState from "./tools/check_state.ts";
 import loadGame from "./tools/load_game.ts";
+import oracle from "./tools/oracle.ts";
 import saveGame from "./tools/save_game.ts";
 import setupCharacter from "./tools/setup_character.ts";
 import updateState from "./tools/update_state.ts";
@@ -140,7 +141,7 @@ describe("setup_character", () => {
 
   test("game state is scoped per session — a second session sees a fresh game", async () => {
     await setupCharacter.execute(SETUP_ARGS, makeCtx("session-a"));
-    // ctx.state is per-session by construction — a new session, a new game.
+    // The slot is keyed per session by construction — a new session, a new game.
     const other = (await checkState.execute({} as never, makeCtx("session-b"))) as {
       initialized: boolean;
     };
@@ -358,6 +359,122 @@ describe("rollAction", () => {
   });
 });
 
+// ── oracle ───────────────────────────────────────────────────────────────────
+//
+// `chaos_check` is the one oracle branch that WRITES: `checkChaosInterrupt`
+// lowers the chaos factor when the roll lands. It used to read the slot with
+// `gameSlot.get` and assign to what came back, under a comment claiming the
+// value was live — which described the removed `ctx.state` bag, not a slot. The
+// stored value is deep-frozen, so ~1 call in 5 at the default chaos factor (and
+// ~6 in 10 as it climbs) threw a `TypeError` instead of answering. These
+// assertions are on the STORED value for that reason: a body writing to a
+// private copy would pass every check on its own return value.
+
+describe("oracle", () => {
+  /** Force `d(sides)` to roll `value` on the next call. */
+  function mockRoll(value: number, sides: number) {
+    return vi.spyOn(Math, "random").mockReturnValue((value - 0.5) / sides);
+  }
+
+  test("a chaos interrupt that LANDS lowers the stored chaos factor", async () => {
+    const ctx = makeCtx();
+    const state = playingState();
+    state.chaosFactor = 9; // threshold 6 — a roll of 1 lands
+    gameSlot.set(ctx, state);
+    mockRoll(1, 10);
+
+    const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
+      interrupted: boolean;
+      interruptType: string | null;
+      chaosFactor: number;
+    };
+
+    expect(result.interrupted).toBe(true);
+    expect(result.interruptType).toBeTruthy();
+    expect(result.chaosFactor).toBe(8);
+    // The half the old code could not do: the write reached the slot.
+    expect(gameSlot.get(ctx).chaosFactor).toBe(8);
+  });
+
+  test("the chaos factor floors at 3, where no roll is taken at all", async () => {
+    const ctx = makeCtx();
+    const state = playingState();
+    state.chaosFactor = 3; // threshold 0 — `checkChaosInterrupt` returns early
+    gameSlot.set(ctx, state);
+
+    const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
+      interrupted: boolean;
+      chaosFactor: number;
+    };
+    expect(result.interrupted).toBe(false);
+    expect(gameSlot.get(ctx).chaosFactor).toBe(3);
+  });
+
+  test("a chaos check that MISSES changes nothing", async () => {
+    const ctx = makeCtx();
+    const state = playingState();
+    state.chaosFactor = 5; // threshold 2
+    gameSlot.set(ctx, state);
+    mockRoll(10, 10); // past the threshold
+
+    const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
+      interrupted: boolean;
+      chaosFactor: number;
+    };
+    expect(result.interrupted).toBe(false);
+    expect(result.chaosFactor).toBe(5);
+    expect(gameSlot.get(ctx).chaosFactor).toBe(5);
+  });
+
+  test("a chaos check on an untouched session starts from the default factor", async () => {
+    const ctx = makeCtx();
+    mockRoll(1, 10); // DEFAULT_STATE.chaosFactor is 5, so threshold 2 — lands
+    const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as { chaosFactor: number };
+    expect(result.chaosFactor).toBe(DEFAULT_STATE.chaosFactor - 1);
+    expect(gameSlot.get(ctx).chaosFactor).toBe(DEFAULT_STATE.chaosFactor - 1);
+  });
+
+  test("yes_no maps the d6 onto its three answers", async () => {
+    const ctx = makeCtx();
+    for (const [roll, answer] of [
+      [1, "No"],
+      [2, "No"],
+      [3, "Yes, but with a complication"],
+      [4, "Yes, but with a complication"],
+      [5, "Yes"],
+      [6, "Yes"],
+    ] as const) {
+      mockRoll(roll, 6);
+      const result = (await oracle.execute({ type: "yes_no" }, ctx)) as {
+        roll: number;
+        answer: string;
+      };
+      expect.soft(result, `roll ${roll}`).toEqual({ type: "yes_no", roll, answer });
+    }
+  });
+
+  test("the four inspiration branches answer without touching the game", async () => {
+    const ctx = makeCtx();
+    gameSlot.set(ctx, playingState());
+    const before = structuredClone(gameSlot.get(ctx));
+
+    const reaction = (await oracle.execute({ type: "npc_reaction" }, ctx)) as { reaction: string };
+    const twist = (await oracle.execute({ type: "scene_twist" }, ctx)) as { twist: string };
+    const theme = (await oracle.execute({ type: "action_theme" }, ctx)) as {
+      action: string;
+      theme: string;
+      seed: string;
+    };
+
+    expect(reaction.reaction).toBeTruthy();
+    expect(twist.twist).toBeTruthy();
+    expect(theme.action).toBeTruthy();
+    expect(theme.theme).toBeTruthy();
+    expect(theme.seed.split(" ")).toHaveLength(3);
+    expect(gameSlot.get(ctx)).toEqual(before);
+  });
+});
+
 // ── update_state: clocks, caps, validation ───────────────────────────────────
 
 describe("update_state", () => {
@@ -442,7 +559,7 @@ describe("save_game / load_game", () => {
     expect(saved.slot).toBe("chapter-2");
     expect(rows.get("save:chapter-2")).toMatchObject({ playerName: "Kael", sceneCount: 7 });
 
-    // Session B (fresh ctx.state, same app db) resumes it.
+    // Session B (a fresh game slot, the same app db) resumes it.
     const sessionB = makeCtx("session-b", db);
     const loaded = (await loadGame.execute({ slot: "chapter-2" }, sessionB)) as Record<
       string,

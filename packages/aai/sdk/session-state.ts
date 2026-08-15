@@ -121,17 +121,27 @@ function describe(value: unknown): string {
  * authors write around. `undefined` inside an ARRAY is refused: it becomes
  * `null`, which changes the element rather than removing the key.
  *
- * ## Why it freezes, and why the TYPE is only `Readonly<T>`
+ * ## Why it freezes, and why the type MATCHES the freeze
  *
- * The freeze is the real guarantee. `SessionSlot.get` returns `Readonly<T>`,
- * which catches the common mistake (`state.field = x`) at compile time and
- * deliberately stops there: a DEEP readonly type would be correct and would
- * propagate through every domain helper an agent's own modules declare —
- * `orderTotal(cart)`, `incidentSummary(incident)` — for a guarantee the freeze
- * already gives at runtime, in both backends, at typed and untyped call sites
- * alike. TypeScript does not check readonly modifiers in assignability, so
- * `Readonly<T>` still passes to a helper taking `T`, which is what keeps the
- * shallow type free.
+ * The freeze is the real guarantee, and it is DEEP — this walk calls
+ * `Object.freeze` on every array and every nested object it validates.
+ * `SessionSlot.get` therefore returns `DeepReadonly<T>` (`sdk/session-slot.ts`).
+ *
+ * It returned a shallow `Readonly<T>` for a while, on the argument that a deep
+ * one would propagate through every domain helper an agent's own modules declare
+ * — `orderTotal(cart)`, `incidentSummary(incident)` — for a guarantee this walk
+ * already gave at runtime. It does propagate, and the argument was still wrong:
+ * a shallow type left the RUNTIME STRICTER THAN THE TYPE, so
+ * `game.inventory.push(item)` and `game.flags[key] = true` both compiled and
+ * both threw on the first call. Two shipped templates did exactly that, in tools
+ * nothing in the repo executed. A type that under-describes a runtime rule does
+ * not save the call sites it fails to reach; it just moves the report from
+ * compile time to production.
+ *
+ * The propagation is the price, and it is paid at the helper: a helper that must
+ * take a slot read declares `DeepReadonly<T>` (or its own readonly shape), and
+ * one that will not is a helper that mutates — which is the finding, not the
+ * inconvenience.
  *
  * ES modules are strict, so a mutation of a frozen value is a `TypeError` rather
  * than a write that sticks in memory and vanishes through Postgres. Paid once

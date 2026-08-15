@@ -146,6 +146,9 @@ describe("host-supplied credentials", () => {
   });
 });
 
+/** Mirrors the module-private DEFAULT_HOST_MAX_STEPS in host-mode.ts. */
+const DEFAULT_HOST_MAX_STEPS = 30;
+
 describe("buildHostAgent", () => {
   test("maps systemPrompt/greeting and relays tools (no in-process tool defs)", () => {
     const agent = buildHostAgent({
@@ -157,7 +160,21 @@ describe("buildHostAgent", () => {
     expect(agent.greeting).toBe("Hi there.");
     // Host tools are relayed, not real ToolDefs, so the synthetic agent has none.
     expect(agent.tools).toEqual({});
-    expect(typeof agent.maxSteps).toBe("number");
+    expect(agent.maxSteps).toBe(DEFAULT_HOST_MAX_STEPS);
+  });
+
+  test("the operator's maxSteps survives; the host default only fills an unset one", () => {
+    // `createHostServer({ defaults: { maxSteps } })` reaches here as the base
+    // agent, and `HostSessionDefaults` admits the field explicitly. It used to
+    // be overwritten by the host default on the line after the spread, so every
+    // tenant ran 30 steps whatever the operator configured — and the assertion
+    // that was here (`typeof agent.maxSteps === "number"`) held either way.
+    const base = { name: "deployed", systemPrompt: "base", greeting: "", maxSteps: 5, tools: {} };
+    expect(buildHostAgent({ systemPrompt: "P", tools: [] }, base).maxSteps).toBe(5);
+    const { maxSteps: _drop, ...noSteps } = base;
+    expect(buildHostAgent({ systemPrompt: "P", tools: [] }, noSteps as typeof base).maxSteps).toBe(
+      DEFAULT_HOST_MAX_STEPS,
+    );
   });
 
   test("defaults greeting to empty string when omitted", () => {

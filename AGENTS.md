@@ -65,37 +65,18 @@ selected one each by the scripts, so a new test needs no config edit (see
 **No tier carries a `retry`** — a tier that retries has classified its own
 failures as noise; `vitest.slow.config.ts` carries the argument.
 
-**Seven scenario suites need a real Postgres, and without one they SKIP.**
-That tier is the only thing in the repo that can see a driver-level bug — an
-encoding that round-trips wrong, an advisory lock not held by the session that
-thinks it holds it — because an in-memory fake holds JS values and cannot be
-stricter than the driver beneath it. So a silent skip is the worst outcome
-available, and it was the default one: `pnpm test:scenario` with no
-`AAI_TEST_PG_URL` prints a green run, and CI's Linux leg would also have passed
-if its `$GITHUB_ENV` export ever broke.
-
-- `pnpm test:pg` resolves a local database (the Supabase stack on 54322, a
-  server on 5432, or an explicit `AAI_TEST_PG_URL`) and runs the tier against
-  it. With the stack up it ALSO shells out to `supabase status -o env` and
-  exports the Supabase trio, because a port is not an arm — see "Two arms" in
-  `packages/aai-server/CLAUDE.md`. It starts nothing itself.
-- A skip ANNOUNCES itself, via `describeWithPg` (a database) or
-  `describeWithStack` (the whole stack) from
-  `packages/aai-server/_pg-test-utils.ts` — the one spelling for each gate, in
-  place of hand-rolled copies of `PG_URL ? describe : describe.skip`.
-- `AAI_REQUIRE_PG` and `AAI_REQUIRE_STACK` turn a skip into a hard failure. CI
-  sets each on the leg that provides it (and `pnpm test:pg` sets them for the
-  run it starts), so "the wiring broke" is red rather than quiet. Both are
-  declared in the `check:scenario` task's `env` in `turbo.json` — undeclared,
-  strict env mode would strip them and the enforcement would silently do
-  nothing.
-- **`AAI_REQUIRE_REGISTRY` is the same shape one tier up**, in `check:e2e`'s
-  `env` for the same reason — see `packages/aai-cli/CLAUDE.md`.
-
-Note vitest EXECUTES a `describe.skip` callback (it has to, to enumerate what
-it is skipping), so read `pgUrl()` inside a hook or a test, never at the top of
-a gated `describe` body — up there it throws during collection on a machine
-with no database, which fails the file instead of skipping it.
+**Seven scenario suites need a real Postgres, and without one they SKIP** — a
+silent skip being the worst outcome available, since that tier is the only thing
+in the repo that can see a driver-level bug. `pnpm test:pg` resolves a local
+database and runs the tier against it; a skip ANNOUNCES itself via
+`describeWithPg` / `describeWithStack`; and `AAI_REQUIRE_PG` / `AAI_REQUIRE_STACK`
+turn a skip into a hard failure, declared in the `check:scenario` task's `env` in
+`turbo.json` because strict env mode would otherwise strip them and the
+enforcement would silently do nothing. **`AAI_REQUIRE_REGISTRY` is the same shape
+one tier up**, in `check:e2e`'s `env` — see `packages/aai-cli/CLAUDE.md`. The
+whole gate, including the vitest collection trap that makes `pgUrl()` illegal at
+the top of a gated `describe` body, is in `packages/aai-server/CLAUDE.md`,
+"Gating a suite on a real Postgres".
 
 ### Single-package shortcuts
 
@@ -270,6 +251,16 @@ one commit of history. A file in the tree has no merge base and no such modes.
   diff. A run that is under budget WARNS, naming the entries to give back —
   unclaimed headroom is a hatch the next branch gets for free.
 
+  **Both baseline ratchets now share one engine (`scripts/_ratchet.mjs`), and
+  both take a CORPUS FLOOR: the pathspecs must resolve to at least 800 files or
+  the run fails.** `git grep` exits 1 both for "no matches" and for "pathspec
+  matched nothing", and the two are indistinguishable from the exit code — so a
+  package rename or a typo'd `:!` exclusion made every pattern report `now=0`,
+  which then degraded to the stale-warning path and printed a checkmark. The
+  floor is on the CORPUS rather than on the match count deliberately: these are
+  DEBT ratchets whose goal is zero, so a minimum match count would eventually
+  block the very campaign the gate exists to encourage.
+
   **Markdown is not scanned**, and the reason is worth keeping: the patterns
   are plain substrings with no notion of code versus prose, so any doc that
   *discusses* a hatch scores as one. `CHANGELOG.md` is the sharp edge —
@@ -316,6 +307,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   the ~29 at the top level — exactly where an unreviewed harness hides — while
   printing "all files within caps ✓".
   Adding `scripts/*.mjs`/`scripts/*.ts` took the measured set from 6 files to 35.
+  **The same trap was live in both ratchets' `:!scripts/**/*.md` exclusions**,
+  which excluded nothing at the `scripts/` top level for the identical reason;
+  `:!scripts/*.md` now sits beside each of them.
   `packages/**/*.ts` is unaffected and not by luck — every source file there is
   at least one directory deep — which is why the miss survived review. Verify any
   pathspec with `git ls-files "<glob>"` rather than reading it;
@@ -336,7 +330,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
   bare `throw`.
 
   There is deliberately **no allowlist**: an entry would assert that some test
-  rightly checks nothing, which is never true. Two things the gate needs to
+  rightly checks nothing, which is never true. It does carry FLOORS (200 files,
+  2,000 tests), for the reason the corpus floor above exists: its whole success
+  output is a count, so a glob or a parser that stopped matching would print
+  "all 0 test(s) assert something ✓" and pass. Two things the gate needs to
   stay trustworthy, both learned by getting them wrong: it masks comments and
   string literals before scanning (a JSDoc paragraph *about* `test()` is not a
   test, and three files here have one), and it excludes
@@ -422,7 +419,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | # | Rule | Instead |
   | --- | --- | --- |
   | 1 | no symlinks anywhere | a real file, or a module that re-exports |
-  | 2 | no `...(x !== undefined ? { x } : {})` | `omitUndefined()` |
+  | 2 | no conditional spread of an object literal — the ternary, the inverted ternary, or the `&&` form | `omitUndefined()` |
   | 3 | no `Promise.race` against a `setTimeout` | `p-timeout` |
   | 4 | no inline `new Promise(r => setTimeout(r, 0))` | `flush()` / `tick()` |
   | 5 | no `delete process.env.X` | `vi.stubEnv(name, undefined)` |
@@ -436,16 +433,21 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 13 | no template import escaping its template dir | move it in, or publish it |
   | 14 | no fixture directory nothing reads | delete it, or add the reader |
   | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
-  | 17 | no `typeof x === "object" && x !== null` | `isRecord()` |
+  | 17 | no open-coded record guard, in either polarity | `isRecord()` |
   | 18 | no `req.url.split("?")` | `requestPath()` / `requestQuery()` |
   | 19 | no hand-rolled sleep (or `node:timers/promises`) | `sleep()` |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
   later rule inherit it (rule 6, retired when `ctx.state` stopped existing; and
-  15, reserved). Rules 1, 7, 10, 12, 13 and 14 are at zero and enforced absolutely;
-  the rest carry per-file baselines with the same `--update`-only-lowers
-  contract as `check:hatches`. Every baselined occurrence is
+  15, reserved). Rules 1, 3, 7, 9, 10, 12, 13 and 14 are at zero and enforced
+  absolutely; the rest carry per-file baselines.
+  `node scripts/guard-invariants.mjs --rules` prints the whole catalogue,
+  DERIVED from the rule definitions — the prose copy that used to live in the
+  script's header went three rules stale (17, 18 and 19 were absent) while the
+  one computed line, the printed count, stayed right. The per-file baselines
+  carry the same `--update`-only-lowers contract as `check:hatches`. Every
+  baselined occurrence is
   legitimate and says so in the JSON — three spread-ternaries where **the guard
   is not the value** (`String(params.port)` would stringify `undefined` into
   `"undefined"`; `{ mode: 0o700 }` sets a different value from the one it
@@ -453,9 +455,18 @@ one commit of history. A file in the tree has no merge base and no such modes.
   `studio-sse.ts`, the two `/tmp` literals that name a path inside the Linux
   sandbox rather than on this machine, one record guard over a declared
   union, one `.split("?")` that cuts a Vite module id rather than a
-  request target, and one hand-rolled sleep inside a fixture of USER code (a
+  request target, one hand-rolled sleep inside a fixture of USER code (a
   user's own agent may not import an SDK internal, so the hand-rolled form is
-  what that fixture is demonstrating).
+  what that fixture is demonstrating), and the two `scripts/*.mjs` guards that a
+  plain-node gate cannot replace with an SDK import.
+
+  **The frozen `contracts/compatibility/**` examples are no longer baselined at
+  all** — they are excluded from every line rule by a pathspec in
+  `SOURCE_PATHSPECS` (read the comment there). That is the rule, not a
+  convenience: an exemption is per FILE *and* per RULE, so the next widened rule
+  re-opens the hole a per-file baseline had closed. Which is exactly what rule
+  2's widening did — four reviewers reported the same frozen file
+  independently.
 
   **Three of these rules found real bugs on the day they were written**, which is
   the argument for the whole gate. Rule 2 caught two `omitUndefined`
@@ -596,12 +607,12 @@ rather than here:
 
 | Guide | Covers |
 | --- | --- |
-| `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, session modes, STT/LLM/TTS/S2S providers, voices, `ctx.db`, `ctx.generate`, guest network access + SSRF, the canonical agent-config schema, data flow, the defaults/magic-numbers table, self-hosted `createServer` defaults |
+| `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, session modes, STT/LLM/TTS/S2S providers, voices, `ctx.db`, `ctx.generate`, the concurrency primitives, session slots, the canonical agent-config schema, data flow, the defaults/magic-numbers table |
 | `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses, **workflow apps** (`page()`, `createWorkflowApi`, `useWorkflowRun`, and the workflow HTTP API the SDK serves) |
-| `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations |
-| `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers |
-| `packages/aai-server/CLAUDE.md` | Platform: sandboxes + Modal backends, stateless server, the two-package/one-deployment composition, security architecture, auth, stores/locks |
-| `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals |
+| `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations, `aai dev`'s server and host mode |
+| `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers, guest network access + SSRF, credential separation |
+| `packages/aai-server/CLAUDE.md` | Platform: sandboxes + Modal backends, stateless server, security architecture, auth, telephony, durable-workflow routes, stores/locks |
+| `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals, the two-package/one-deployment composition |
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
 | `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels |
@@ -651,33 +662,22 @@ doc keeps the argument.
 
 Each package has distinct test helpers tailored to its domain:
 
-- **`aai/sdk/testing.ts`** — the one that is PUBLISHED
-  (`@alexkroman1/aai/testing`, so a user's agent project can import it, which is
-  why it carries no test-runner dependency): `createToolContext(overrides?)`
-  builds a `ToolContext` for testing a tool's `execute`, and `createUnusedDb()`
-  is the `db` it defaults to. Defaults are inert — empty `env`/`state`, a `db`
-  and `generate` that reject naming themselves, a `signal` that never aborts, a
-  `send` that records into `ctx.sent` — and **each call is a distinct session**,
-  which is what the two-context isolation tests rest on; pass `sessionId` when
-  two contexts must be the SAME session. Pass `send: vi.fn()` when a spec asserts
-  call counts (`solo-rpg` does) and the recorder steps aside.
-
-  It replaced the same eight-field stub in four template suites, two of which
-  reached for `{ … } as unknown as ToolContext` — the cast that also stops
-  reporting when a field is ADDED, which is the failure a shared builder exists
-  to prevent. Its own spec asserts the field LIST, since that is the contract.
-
-  **A tool's COLLABORATORS need fakes too**, and the same subpath carries them:
-  `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/
-  `createProgressStream`, `toolOf`/`runTool`. Each came out of the same signal —
-  the same helper in a third template — and each replaces a fixture that was
-  either casting or hand-building an envelope; the subpath table in
-  `packages/aai/CLAUDE.md` says which.
-- **`aai/sdk/testing-vitest.ts`** — `@alexkroman1/aai/testing/vitest`, the one
-  module in the SDK that may import a test runner (`vitest` as an OPTIONAL
-  peer), so `/testing` stays framework-agnostic and importing THIS is what pulls
-  the runner. Reach for the same split when a helper's only remaining content is
-  the installation of a framework-agnostic fake.
+- **`aai/sdk/testing.ts`** and **`aai/sdk/testing-vitest.ts`** — the ones that
+  are PUBLISHED (`@alexkroman1/aai/testing` and `/testing/vitest`, so a user's
+  agent project can import them). `createToolContext(overrides?)` builds a
+  `ToolContext` for testing a tool's `execute`; the collaborator fakes
+  (`stubGenerate`, `stubGateway`/`stubUploads`, `toolOf`/`runTool`,
+  `withDiscoveredTools`) drive what that tool calls. **The subpath table in
+  `packages/aai/CLAUDE.md` carries the inventory and the argument** — why the
+  defaults are inert, why each call is a distinct session, and why `/testing`
+  stays framework-agnostic while importing `/testing/vitest` is what pulls the
+  runner. The repo-wide half is only that they replaced the same eight-field
+  stub in four template suites, two of which reached for
+  `{ … } as unknown as ToolContext` — the cast that also stops reporting when a
+  field is ADDED, which is the failure a shared builder exists to prevent.
+  **Reach for that split** — a framework-agnostic fake beside a
+  runner-installing wrapper — whenever a helper's only remaining content is the
+  installation of the fake.
 - **`aai/host/_test-utils.ts`** — `flush()` (microtask yield), `makeTool()`,
   `makeAgent()`, `makeConfig()`, fixture replay helpers for S2S mocking
 - **`aai-cli/_test-utils.ts`** — `withTempDir()` (temp dir + cleanup),
@@ -695,17 +695,9 @@ Each package has distinct test helpers tailored to its domain:
   (`createMockKv()` was listed here for a while and has never existed in this
   package — KV was removed.)
 
-  **Build a request with `authFetch`/`deploy`, not a header literal.** The
-  `Bearer`+`Content-Type` pair was spelled out at ~47 sites across 8 files;
-  they are converted, and the 28 remaining `Bearer` strings in the package are
-  all ones where the literal IS the subject — the bearer parser's own spec
-  (`_bearer.test.ts`), the `resolveBearer` cases in `middleware.test.ts`, and
-  header ASSERTIONS in the blob-storage / supabase-auth / warm-harness suites.
-  `deploy(fetch, { key, body })` is the same idea one level up, for the
-  `POST /deploy` shape ~40 specs restate; `deployPayload()` is `deployBody()`
-  as an object, for callers that re-encode it (the gzip specs). Drop to a bare
-  `fetch` only when the REQUEST is what a spec exercises — a missing header, a
-  gzipped body, a raw string — and those cases are why `deployBody` stays.
+  **Build a request with `authFetch`/`deploy`, not a header literal**, and
+  see `packages/aai-server/CLAUDE.md`, "Building a platform request in a test",
+  for the ~47 converted sites and the three shapes that deliberately stay raw.
 
 ### `@dev/source` custom export condition
 
@@ -757,56 +749,25 @@ When searching for "Session", narrow by package to find the right one.
 
 ### Concurrency primitives (use these, don't hand-roll)
 
-The codebase's recurring async-coordination patterns are reified as small
-primitives — reach for them before re-inventing the pattern at a call site:
+The repo's recurring async-coordination patterns are reified as small
+primitives. Almost all of them are `packages/aai` exports, so **the catalogue
+and the argument behind each one live in `packages/aai/CLAUDE.md`,
+"Concurrency primitives"** — go there before re-inventing one at a call site.
+What is there, by name: `createEpoch()` (staleness guard for async
+continuations), `createOwnedMap()` (a map whose entries are removed by
+ownership token), `createCoalescingRunner()` (serialize + coalesce repeatable
+async work), `createTurnMachine()` (the pipeline's turn lifecycle),
+`createKeyedLock()`/`withLock()` (serialize async work per key — the one that
+is PUBLIC, because the LLM loop runs a step's tool calls concurrently),
+`sleep(ms, { signal?, unref? })` (the ONE wait; `guard-invariants` rule 19
+keeps the seventh spelling out), `sessionSlot()` (a typed named slot that owns
+a session's state, with a SYNCHRONOUS update window), `ToolFailure` /
+`isToolFailure()` / `toolFailure()` (the failure a tool returns for the MODEL
+to recover from), `pushCapped()`, `resolveOne()`, `omitUndefined()` and
+`isRecord()`.
 
-- **`createEpoch()`** (`aai/sdk/epoch.ts`, exported from
-  `@alexkroman1/aai/internal`) —
-  staleness guard for async continuations: capture `current()` when deferring
-  work, check `isCurrent(gen)` when it settles, `bump()` to invalidate.
-  Adopted by the aai-ui connection/turn generations and the pipeline turn
-  gate. Don't hand-roll `let generation = 0; generation++` counters.
-- **`createOwnedMap()`** (`aai/sdk/owned-map.ts`, exported from
-  `@alexkroman1/aai/internal`) — a map whose entries are removed by ownership token:
-  `claim(key, value)` returns the only release for that claim, so an async
-  teardown settling after the key was re-claimed (reconnect resume, redeploy)
-  can't evict the successor's entry. `owns()` guards non-delete mutations.
-  Adopted by the runtime's `sessions`/`sinkMap`, the WS handler, and the
-  platform `SlotCache`. Don't write `if (map.get(k) === mine) map.delete(k)`
-  by hand.
-- **`createCoalescingRunner()`** (`aai/sdk/coalescing-runner.ts`, exported
-  from `@alexkroman1/aai/internal`) — serialize + coalesce repeatable async
-  work: at most one run in flight, triggers during a run share ONE trailing
-  re-run started after the current settles, rejections never wedge the
-  runner. For work that reads latest state when it runs (workspace sync,
-  post-write typechecks). Don't hand-roll `inFlight`/`trailing` flag pumps.
-- **`createTurnMachine()`** (`aai/host/transports/pipeline-turn-state.ts`) —
-  the pipeline transport's turn lifecycle (in-flight reply, spoke flag, TTS
-  audio gate) as a discriminated-union machine whose named transitions are
-  the only mutation path. New turn-state reads/writes go through it, not new
-  closure flags.
-- **`createKeyedLock()`** (`aai/sdk/keyed-lock.ts`, exported from
-  `@alexkroman1/aai/utils` and the root — the one primitive here that is
-  PUBLIC) — serialize async work per key: `lock(key)` resolves with a release
-  once every earlier holder of that key has released, and `withLock(lock, key,
-  fn)` releases in every outcome. An optional `timeoutMs` bounds the ACQUIRE,
-  which is what makes a contended mutation answerable instead of queued
-  (`KeyedLockTimeoutError` → the platform's 409). It is public because the
-  hazard is an agent author's as much as the platform's: **the LLM loop runs a
-  step's tool calls CONCURRENTLY**, so two async mutators of one `ctx.state`
-  interleave at every await and each reads what the other half-applied. Two
-  templates had hand-rolled the same per-session promise chain before it was
-  published. Don't write `tails.get(k) ?? Promise.resolve()` by hand — the two
-  parts that get missed are dropping the drained entry BY OWNERSHIP, and
-  resolving your own place in the chain when you abandon a timed-out acquire
-  (otherwise everyone behind you blocks forever).
+Two are repo-wide rather than this SDK's, and stay here:
 
-  **For a session-state mutation, reach for `sessionSlot`'s `update` instead**
-  (below): it is synchronous, so it needs no lock at all. This entry stays because
-  the primitive is still the right answer for serialized work that is not a slot
-  mutation, and because `timeoutMs` has no `update` equivalent; no template
-  demonstrates it any more, which is recorded in `template-api-allowlist.json`
-  rather than being an oversight.
 - **Timeouts**: use `p-timeout` (a dependency of aai, aai-cli, aai-guest,
   and aai-server) — never a hand-rolled `Promise.race` with a timer; the
   losing branch's late rejection and timer cleanup are exactly what gets
@@ -816,113 +777,6 @@ primitives — reach for them before re-inventing the pattern at a call site:
 - **Combining abort signals**: use native `AbortSignal.any([...])` (sources
   held weakly — no unlink bookkeeping); the pipeline transport combines the
   session signal with each turn's controller this way.
-- **`sleep(ms, { signal?, unref? })`** (`aai/sdk/sleep.ts`, exported from
-  `@alexkroman1/aai/internal`) — the ONE wait; `guard-invariants` rule 19 keeps
-  the seventh out. It replaced **six** spellings across five packages at 22 call
-  sites, and the argument is not the line count: they split into two families
-  differing in whether `vi.useFakeTimers()` can drive them, which no call site
-  shows. **Read the module doc** for that measurement, why `unref` is opt-in
-  (it is a claim, and the shared default it replaced made a shutdown grace skip
-  its own drains), and why an abort resolves with the listener detached. Not a
-  timeout (`p-timeout`, rule 3), not a yield (`flush()`/`tick()`, rule 4).
-
-  **Never write a control character as a source literal.** A raw NUL in
-  `host/workflow-notify.ts` made `git grep` call the file BINARY, so it was
-  silently exempt from every gate here — all of which are `git grep` — and had
-  grown the sixth `sleep` where nothing could see it. Use `\u0000`.
-- **`sessionSlot()`** (`aai/sdk/session-slot.ts`, exported from the ROOT — it is
-  authoring API, not infrastructure) — a typed named slot that OWNS a session's
-  state: its key, its default, its reads, its writes, its `syncState` projection,
-  and its STORAGE. There is no `ctx.state` bag any more, and no state type
-  parameter on `ToolContext`/`ToolDef`/`AgentDef`: a slot types its value in the
-  one module that declares it, which is what a tool living in its own FILE cannot
-  do with an annotation.
-
-  Four rules, each enforced rather than documented: `update(ctx, mutate)` is
-  SYNCHRONOUS and hands the body a mutable DRAFT committed when it returns (so an
-  await goes in front of the mutation, and a thenable `updateTool` body throws);
-  `get` returns a frozen `Readonly<T>`; a durable value is checked
-  STRUCTURALLY in both backends, so a `Map` fails in a spec rather than on the
-  first deployment with a database; and `syncState` takes `slot.projection(view)`,
-  which is callable so a client derives its own empty state from the same
-  function. **Read "A slot OWNS its session state" in `packages/aai/CLAUDE.md`**
-  for the whole API and its load-bearing properties, and
-  `host/session-state-store.ts` for the two backends and the commit point.
-
-  **`createKeyedLock`/`withLock` stay public and are unexercised by any template**
-  (allowlisted, deliberately): a synchronous mutation window has nothing to
-  serialize, so they remain the right tool only for serialized work that is NOT
-  a slot mutation — an external resource, a key that is not the session id, or
-  `{ timeoutMs }` when a contended mutation must fail rather than queue.
-- **`ToolFailure` / `isToolFailure()`** (`aai/sdk/utils.ts`, exported from the
-  root and `/utils`) — the `{ error: string }` object a tool returns for a
-  failure the MODEL should see and recover from, and the guard that narrows one.
-  The guard is the point: failures propagate, so a helper returning `Order |
-  ToolFailure` has a caller that forwards it unchanged, and `"error" in value`
-  only works once the value is known to be an object. Five templates returned
-  the shape; `retail` had its own `ErrorResult` + `isError` (used at ~40 sites)
-  and `dispatch-center` narrowed with inline `"error" in inc` at six.
-
-  **`toolFailure(message)` is the constructor, and it is named to pair with the
-  guard.** The object literal means the same thing and stays perfectly good
-  TypeScript; the function exists so that "how do I report a failure?" lands
-  next to `isToolFailure` instead of landing on the thing below.
-
-  **That thing was `toolError()`, and it is now `serializeToolFailure()` and
-  off the root barrel.** It returns the pre-serialized wire STRING
-  `'{"error":"…"}'` — what the host itself emits for a tool that threw — so
-  `isToolFailure(serializeToolFailure(m))` is `false`. Under the old name that
-  was a trap rather than a distinction: it read as the constructor for the
-  shape `isToolFailure` tests, and it was used by ZERO of the fourteen
-  templates despite its own doc telling authors to return it, which is what a
-  helper with the wrong shape for its stated audience looks like. All ~15
-  callers are inside `host/`, so it is `@internal` on `/utils` now.
-  `utils.test.ts` pins both halves — the `true` for `toolFailure`, the `false`
-  for the wire string.
-- **`pushCapped(list, item, max)`** (`aai/sdk/utils.ts`, root and `/utils`) —
-  append to a list holding a cap, mutating in place (the list is usually a
-  property of the state object, so returning a new array is a reassignment the
-  caller can forget). For the append-only lists an agent keeps in a slot: a
-  timeline, an activity feed, a session log. Every one of them feeds an LLM
-  summary or a `syncState` payload, so uncapped it grows what the model reads
-  and what crosses the wire for the length of the call. Three templates had
-  hand-rolled `push` + `slice(-MAX)`; the fourth,
-  `infocom-adventure`, had NOT — its command history sliced only for display and
-  grew without bound, which is the bug a shared primitive turns into a decision.
-- **`resolveOne(candidates, spoken, opts)`** (`aai/sdk/spoken.ts`, ROOT only —
-  it imports `toolFailure` from `sdk/utils.ts`, so re-exporting it there would be
-  a cycle) — pick the one thing a caller named, or fail LISTING the candidates.
-  The contract is behavioural rather than structural, which is why it is worth
-  sharing: ambiguity is an ANSWER, never a guess, because the consequence of
-  guessing is cancelling the wrong order. `spokenDigits` and `spokenOrdinal` are
-  the readings it consults. See "Resolving what a caller SAID" in
-  `packages/aai/CLAUDE.md` for the order it applies them in and the one thing a
-  word-boundary match cannot rule out.
-- **`omitUndefined()`** (`aai/sdk/omit-undefined.ts`, exported from
-  `@alexkroman1/aai/utils`) — the one way to build the optional half of an
-  object under `exactOptionalPropertyTypes`. That flag makes
-  `{ name: maybeName }` an error whenever the value can be `undefined`, so the
-  only spelling that compiles is `...(name !== undefined ? { name } : {})` —
-  correct, and hand-written 44 times across five packages, eight of them in a
-  single object literal in `host/agent-server.ts`. Each line names its key
-  twice, which is what makes a mismatched pair (`x !== undefined ? { y: x }`)
-  read as noise rather than as the bug it is. Write
-  `...omitUndefined({ name, greeting })` instead; renaming a key
-  (`{ leadMs: audioLeadMs }`) works the same.
-
-  Three sites deliberately keep the long form, and they are the ones where the
-  GUARD IS NOT THE VALUE — `params.port !== undefined ? { AAI_GUEST_PORT:
-  String(params.port) }` (`omitUndefined` would stringify `undefined` into
-  `"undefined"`), the `JSON.stringify` twin in `aai-server/test-utils.ts`, and
-  `opts.mode !== undefined ? { mode: 0o700 }` in the CLI, which sets a
-  DIFFERENT value from the one it tests. Check that before converting a
-  fourth.
-
-  It lives on `/utils` rather than `/internal` (where the other cross-package
-  primitives above sit) for one reason: `/internal` re-exports
-  `formatSchemaIssues` from `sdk/schema.ts`, so importing anything from it
-  pulls **zod** — and `aai-cli/_utils.ts`, one of its callers, is on the
-  documented zod-free CLI startup path.
 
 ### Dependency versions live in the pnpm catalog
 
@@ -1308,45 +1162,20 @@ you only need to list one package.
 ### Testing
 
 - **Vitest**. Test files co-located: `foo.ts` → `foo.test.ts`.
-- **The aai-server test project auto-builds the guest harness**:
-  `scripts/ensure-guest-harness.mjs` runs as vitest `globalSetup` — wired in
-  `packages/aai-server/vitest.config.ts`, the ONE config that declares it —
-  and builds `aai-guest` when `dist/harness.mjs` is missing or older than the
-  sources, tracking BOTH aai-guest and the `packages/aai` SDK it bundles.
-  `createSandbox` resolves the harness eagerly, so an unbuilt one otherwise
-  fails every sandbox test. `GUEST_HARNESS_PATH` skips the check.
-
-  **Inside a turbo task (`TURBO_HASH`) it VERIFIES instead of building**, and a
-  missing harness there THROWS, naming the `dependsOn` to add. Turbo already
-  orders `aai-guest#build` ahead of every consumer and decides staleness by
-  hashing inputs; the mtime heuristic is only a guess, and it guesses wrong in
-  the ordinary case — a turbo cache HIT restores `dist/harness.mjs` with the
-  archived mtime, so any edit under `packages/aai` makes a byte-correct harness
-  look stale. The globalSetup then spawned a NESTED `turbo run build` inside
-  the parent run, and two tsdown processes wrote `dist/` while sibling tasks
-  read it: `aai-studio-server#test` (which declares no globalSetup of its own)
-  and `aai-server#check:integration` failed intermittently with "Guest harness
-  not built" or `MODULE_NOT_FOUND` on `aai-guest` — naming a file nothing in
-  their own package touches. It is the mirror image of the race
-  `packages/aai-server/turbo.json` documents: that comment notes this script
-  cannot wait out a harness being rebuilt underneath it, and the script was
-  itself that rebuild. **A harness a turbo task needs must be DECLARED**
-  (`^build`, or `aai-guest#build`), never built at test time.
-
-  The same script also runs as
-  `predev` in aai-studio-server (the entry `pnpm dev:aai-server` runs, so dev
-  always boots with a fresh harness for local-dev sandboxes) and as
-  `predeploy:modal` in aai-server, which owns the Modal deploy (a fail-fast
-  before the remote image build, which rebuilds the harness itself). Also
-  runnable directly: `node scripts/ensure-guest-harness.mjs`.
-- **`predev` also rebuilds the studio front-end**: aai-studio-server's
-  `predev` ends with `pnpm --filter aai-studio-client build`, so
-  `pnpm dev:aai-server` always serves a current client. `studio-static.ts`
-  serves whatever is in that package's `dist/` — nothing checks its age —
-  so without this a stale (or absent) bundle is served silently and the
-  studio looks unchanged no matter what you edit. Unconditional rather than
-  staleness-gated like the harness above: the build is sub-second, which is
-  cheaper than the check would be worth.
+- **A harness a turbo task needs must be DECLARED, never built at test time**
+  (`^build`, or `aai-guest#build`). `scripts/ensure-guest-harness.mjs` runs as
+  the aai-server test project's vitest `globalSetup` and builds
+  `aai-guest/dist/harness.mjs` when it is missing or stale — but inside a turbo
+  task (`TURBO_HASH`) it VERIFIES instead, and a missing harness THROWS naming
+  the `dependsOn` to add. **See "Building the harness for a test run" in
+  `packages/aai-guest/CLAUDE.md`** for why the mtime heuristic guesses wrong
+  under a turbo cache hit, and the cross-package flake that cost. It also runs
+  as `predev` in aai-studio-server and as `predeploy:modal` in aai-server, and
+  is runnable directly: `node scripts/ensure-guest-harness.mjs`.
+- **`predev` also rebuilds the studio front-end**, unconditionally — see
+  "Serving a current studio client in dev" in
+  `packages/aai-studio-server/CLAUDE.md` for why staleness-gating it is the
+  wrong trade and what a stale bundle looks like (nothing).
 - **Each suite is defined once, in its own package's `vitest.config.ts`.**
   The root `vitest.config.ts` discovers them with `projects: ["packages/*"]`
   and adds only the typecheck-only `aai-types` project. Use
@@ -1435,33 +1264,11 @@ you only need to list one package.
   export so one name meant two different waits.
 - Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
 - **A spec that observes a TIMER runs on virtual time, never the wall clock.**
-  The pipeline-transport specs used to wait out real milliseconds
-  (`await sleep(60)`) to see whether a window had elapsed, which cost ~2.3s of
-  the unit run and, far worse, made them races: they were the specs that failed
-  first on a contended runner, and the flake named a timing spec rather than a
-  bug. It also capped what a spec could describe — every window had to shrink
-  to tens of milliseconds, so the dead-air cover was exercised at
-  `deadAirCoverMs: 1` and the SHIPPED 5s default was tested by nothing.
-  `useVirtualTime()` (`transports/_pipeline-transport-harness.ts`) installs
-  fake timers per file; drive them with `vi.advanceTimersByTimeAsync(ms)`.
-
-  **No scheduler had to be threaded through `PipelineTransportOptions` for
-  this, and the note that said otherwise was wrong.** The claim was that fake
-  timers could not compose with the fake providers because `_fake-llm.ts`
-  schedules its own `setTimeout` for `delayMs` — but that is the GLOBAL
-  `setTimeout`, which is exactly what `vi.useFakeTimers()` replaces, so it is
-  driven along with everything else. `vi.waitFor` composes too. Check the
-  cheap mechanism before building the seam.
-
-  Two things virtual time does break, both mechanical: `tick()` is a
-  `setTimeout(0)` and hangs until something advances the clock (use
-  `vi.advanceTimersByTimeAsync(0)`), and a `vi.waitFor` that polls for work
-  gated on a timer still polls in REAL time — prefer advancing by the amount
-  the work actually needs, which is deterministic and has no race to lose.
-
-  Deliberately NOT converted: `s2s-transport.test.ts`'s five `sleep(5)` calls.
-  Those are queue-settle yields, not timer observations — nothing is racing
-  them, and rewriting them would be churn.
+  A spec that waits out real milliseconds to see whether a window elapsed is a
+  race, and the flake then names a timing spec rather than a bug. **The worked
+  case — the pipeline-transport specs, `useVirtualTime()`, the two things
+  virtual time breaks, and the two specs deliberately NOT converted — is in
+  `packages/aai/CLAUDE.md`, "Specs that observe a timer".**
 - Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
   — they are checked by tsc but never executed at runtime. Use
   `expectTypeOf` from vitest to assert on type shapes. Projects:
@@ -1881,10 +1688,10 @@ The security model is documented where the boundaries live:
 
 - **Sandbox isolation, credential separation, auth, `run_code`, the platform's
   own threat model** — `packages/aai-server/CLAUDE.md`.
-- **What a guest may do, and what the harness contract exposes** —
-  `packages/aai-guest/CLAUDE.md`.
-- **SSRF (`aai/host/ssrf.ts`), the `sdk/` vs `host/` dependency boundary,
-  provider credential resolution** — `packages/aai/CLAUDE.md`.
+- **What a guest may do, what the harness contract exposes, guest network
+  access + SSRF (`aai/host/ssrf.ts` is the implementation), and credential
+  separation** — `packages/aai-guest/CLAUDE.md`.
+- **The `sdk/` vs `host/` dependency boundary** — `packages/aai/CLAUDE.md`.
 - **Where the CLI is allowed to send a user's API key** —
   `packages/aai-cli/CLAUDE.md`.
 
@@ -1916,16 +1723,8 @@ back to the host's `process.env`.
 ### Open testability work
 
 One known gap, found by audit and deliberately left alone because it is a
-refactor in its own right rather than a fix riding along with something else —
-sized, not stuck.
-
-- **`aai-server` writes to `console.*` directly** — 47 calls, 45 of them
-  outside `_debug-log.ts` — with no logger seam, so 39 of the repo's 86
-  `spyOn(console, …)` calls exist purely to keep test output quiet. The
-  abstraction already exists one package over — `aai/host` has a `Logger`
-  type and `consoleLogger` — and this package has
-  a partial one of its own in `_debug-log.ts`. The work is to give the
-  package a single injected (or module-swappable) logger and convert the call
-  sites, after which the silencing spies delete themselves. It is left out
-  here because it touches ~25 files and changes production log wiring, which
-  should not land inside a test-quality change.
+refactor in its own right rather than a fix riding along with something else:
+**`aai-server` writes to `console.*` directly**, with no logger seam, so 39 of
+the repo's 86 `spyOn(console, …)` calls exist purely to keep test output quiet.
+Sized, not stuck — see "The missing logger seam" in
+`packages/aai-server/CLAUDE.md`.

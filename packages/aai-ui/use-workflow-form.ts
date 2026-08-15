@@ -34,10 +34,12 @@
  * followed from the same id either way.
  */
 
-import { errorMessage, isTerminal, type WorkflowSummary } from "@alexkroman1/aai";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { errorMessage, type WorkflowSummary } from "@alexkroman1/aai";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { useCallback, useEffect, useState } from "react";
+import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
-import { createWorkflowApi, type WorkflowApi, type WorkflowRun } from "./workflow-client.ts";
+import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 /** Options for {@link useWorkflows}. */
 export type UseWorkflowsOptions = {
@@ -87,16 +89,13 @@ export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult
     error: undefined,
   });
 
-  // The client in a ref for the reason `useWorkflowRun` documents: as an effect
-  // dependency, the natural spelling passes a new object every render.
-  const apiRef = useRef(api);
-  apiRef.current = api;
+  // The client through a ref — see `_workflow-api-ref.ts`.
+  const getClient = useWorkflowApiRef(api);
 
   useEffect(() => {
     if (skip) return;
     let cancelled = false;
-    const client = apiRef.current ?? createWorkflowApi();
-    client
+    getClient()
       .list()
       .then((workflows) => {
         if (!cancelled) setState({ workflows, loading: false, error: undefined });
@@ -112,7 +111,7 @@ export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult
     return () => {
       cancelled = true;
     };
-  }, [skip]);
+  }, [skip, getClient]);
 
   return state;
 }
@@ -129,8 +128,8 @@ export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult
  * are not an object at all, which `submit` accepts.
  */
 async function uploadFiles(api: WorkflowApi, input: unknown): Promise<unknown> {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) return input;
-  const entries = Object.entries(input as Record<string, unknown>);
+  if (!isRecord(input)) return input;
+  const entries = Object.entries(input);
   const out: Record<string, unknown> = {};
   for (const [name, value] of entries) {
     if (value instanceof File) {
@@ -223,33 +222,24 @@ export function useWorkflowSubmit<R = unknown>(
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | undefined>(undefined);
 
-  /**
-   * The caller's client, in a ref for the reason `useWorkflowRun` documents at
-   * length: the natural spelling passes a NEW object every render, and naming it
-   * as a dependency turns that into a restart loop.
-   */
-  const apiRef = useRef(api);
-  apiRef.current = api;
-  const fallbackRef = useRef<WorkflowApi | undefined>(undefined);
+  // The caller's client through a ref — see `_workflow-api-ref.ts`.
+  const getClient = useWorkflowApiRef(api);
 
   const tracked = useWorkflowRun<R>(runId, {
     ...(api && { api }),
-    ...(intervalMs !== undefined && { intervalMs }),
+    ...omitUndefined({ intervalMs }),
   });
 
   const submit = useCallback(
     async (input: unknown) => {
-      // The no-client default is built lazily and ONCE, the same hazard
-      // `useWorkflowRun` keeps its own fallback in a ref for.
-      fallbackRef.current ??= createWorkflowApi();
-      const client = apiRef.current ?? fallbackRef.current;
+      const client = getClient();
       setStarting(true);
       setStartError(undefined);
       // Dropped BEFORE the request, not after it returns: the previous run's
       // result must not sit under a form that is already submitting again.
       setRunId(undefined);
       try {
-        const options = { ...(key !== undefined && { key }) };
+        const options = omitUndefined({ key });
         // Files first: a run input carries an upload ID, never bytes, and this
         // is the one place that knows both the chosen file and the client that
         // can store it. A form using `<FileField upload>` (which is what
@@ -269,7 +259,7 @@ export function useWorkflowSubmit<R = unknown>(
         setStarting(false);
       }
     },
-    [workflow, key, wait],
+    [workflow, key, wait, getClient],
   );
 
   const reset = useCallback(() => {
@@ -281,9 +271,17 @@ export function useWorkflowSubmit<R = unknown>(
     submit,
     reset,
     run: tracked.run,
-    // `starting` covers the gap between the POST returning and the first read
-    // landing, which is otherwise a frame with no run and no spinner.
-    pending: starting || (runId !== undefined && !isTerminal(tracked.run)),
+    // `tracked.polling` rather than a second derivation from the snapshot, and
+    // that is the whole of it: `useWorkflowRun` gives up on an id the agent
+    // keeps reporting as unknown (`MAX_MISSING_READS`), which leaves `run`
+    // undefined — so `!isTerminal(tracked.run)` reads as "still waiting" and
+    // pinned the submit button disabled and reading "Working…" for the life of
+    // the page, with the correct error shown directly above it. That stop is
+    // exactly what `polling` exists to report, per its own doc: it cannot be
+    // derived from the snapshot. `starting` still covers the gap between the
+    // POST returning and the first read landing, which is otherwise a frame
+    // with no run and no spinner.
+    pending: starting || tracked.polling,
     error: startError ?? tracked.error,
   };
 }

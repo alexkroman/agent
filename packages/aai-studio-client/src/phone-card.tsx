@@ -9,6 +9,7 @@
 // value, and getting any of the three wrong produces a number that answers
 // and then hangs up.
 
+import { platformOrigin } from "./platform-origin.ts";
 import { Card } from "./settings-card.tsx";
 import { useCopy } from "./use-copy.ts";
 
@@ -118,10 +119,7 @@ type PhoneCardProps = {
 
 export function PhoneCard({ deployedSlug, secretNames, pendingSecrets }: PhoneCardProps) {
   const copier = useCopy();
-  // The studio and the agent surface are one origin by construction (see
-  // "One public origin" in packages/aai-server/CLAUDE.md), so the page's own
-  // origin is the platform's — no server round trip to ask for it.
-  const origin = window.location.origin;
+  const origin = platformOrigin();
 
   return (
     <Card

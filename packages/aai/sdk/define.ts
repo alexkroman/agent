@@ -3,6 +3,7 @@
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import type { AgentParams, DefaultedAgentField, StaticAgentParams } from "./agent-params.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import {
@@ -158,7 +159,7 @@ export function agent(def: AgentParams): AgentDef {
  * silently ignoring a declared one is that failure with a new cause.
  */
 function assertNoInlineTools(def: unknown): void {
-  if (typeof def !== "object" || def === null || !("tools" in def)) return;
+  if (!(isRecord(def) && "tools" in def)) return;
   throw new Error(
     "agent({ tools }) is not how a tool is declared: a tool IS a file. Move each entry to " +
       "tools/<the name the model calls>.ts as `export default tool({ … })` — the build enumerates " +

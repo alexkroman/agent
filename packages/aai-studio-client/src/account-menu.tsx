@@ -13,13 +13,12 @@
 // whether one is stored (`hasKey`), so this is a write-only field — the
 // stored value is shown as a masked placeholder, never fetched.
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 import { api } from "./api.ts";
-import { errorText } from "./api-error.ts";
+import { ApiKeyField } from "./api-key-field.tsx";
 import { useDismissablePanel } from "./dismissable.ts";
 import { queryKeys } from "./query-keys.ts";
-import { isEnterSubmit } from "./send-button.tsx";
 
 /** Links the top bar's toggle to this panel, and exempts it from click-away. */
 export const ACCOUNT_MENU_ID = "account-menu";
@@ -34,7 +33,6 @@ type AccountMenuProps = {
 export function AccountMenu({ open, bearer, onClose }: AccountMenuProps) {
   const panel = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState("");
   useDismissablePanel({ open, onClose, panel, toggleAttr: ACCOUNT_TOGGLE_ATTR });
 
   // Shares main.tsx's cache entry (same key), so the email is already there
@@ -45,30 +43,8 @@ export function AccountMenu({ open, bearer, onClose }: AccountMenuProps) {
     enabled: open,
   });
 
-  const save = useMutation({
-    mutationFn: (apiKey: string) => api.putAccountKey(bearer, apiKey),
-    onSuccess: () => {
-      setDraft("");
-      void queryClient.invalidateQueries({ queryKey: queryKeys.accounts });
-      // A project's coding-agent sandbox was installed with the OLD key
-      // (`studio/session-init` delivers the caller's key to the guest, and
-      // every chat turn dials the LLM gateway with it). Dropping the brokered
-      // session makes the next one re-install with the new key — the broker
-      // re-inits the SAME live sandbox, so this costs one request, not a
-      // respawn, and the chat URL and token are unchanged.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
-    },
-  });
-
   if (!open) return null;
 
-  const submit = () => {
-    const apiKey = draft.trim();
-    if (!apiKey || save.isPending) return;
-    save.mutate(apiKey);
-  };
-
-  const error = errorText(save.error);
   return (
     <div
       ref={panel}
@@ -96,34 +72,27 @@ export function AccountMenu({ open, bearer, onClose }: AccountMenuProps) {
         </a>
         .
       </p>
-      <input
-        className="field h-9"
-        type="password"
-        aria-label="New AssemblyAI API key"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (isEnterSubmit(e)) submit();
-        }}
+      <ApiKeyField
+        bearer={bearer}
+        submitLabel="Update key"
+        inputClassName="h-9"
+        ariaLabel="New AssemblyAI API key"
         placeholder={account.data?.hasKey ? "New key (current: ••••••••)" : "AssemblyAI API key"}
-        spellCheck={false}
-        autoComplete="off"
+        onSaved={() => {
+          // A project's coding-agent sandbox was installed with the OLD key
+          // (`studio/session-init` delivers the caller's key to the guest, and
+          // every chat turn dials the LLM gateway with it). Dropping the
+          // brokered session makes the next one re-install with the new key —
+          // the broker re-inits the SAME live sandbox, so this costs one
+          // request, not a respawn, and the chat URL and token are unchanged.
+          void queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions });
+        }}
+        savedNote={
+          <p className="m-0 text-xs text-muted">
+            Key updated. New chat turns and publishes use it right away.
+          </p>
+        }
       />
-      <button
-        type="button"
-        className="btn btn-primary self-start"
-        onClick={submit}
-        disabled={save.isPending || draft.trim() === ""}
-      >
-        {save.isPending ? "Saving…" : "Update key"}
-      </button>
-      {/* Cleared on the next edit, so it can't linger over a stale field. */}
-      {save.isSuccess && draft === "" && (
-        <p className="m-0 text-xs text-muted">
-          Key updated. New chat turns and publishes use it right away.
-        </p>
-      )}
-      {error && <p className="m-0 text-xs text-err">{error}</p>}
     </div>
   );
 }

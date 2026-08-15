@@ -357,6 +357,63 @@ describe("createTextAgent", () => {
     ]);
   });
 
+  test("two overlapping turns each see their OWN conversation", async () => {
+    // `turnMessages` used to be one instance-scoped `let` that `stream()`
+    // overwrote, with a comment claiming the opposite — so turn 1's in-flight
+    // tool call read turn 2's conversation. The tool here blocks until both
+    // turns have started, which is exactly the interleaving a chat surface
+    // serving two tabs produces.
+    const seen: string[] = [];
+    const peek = tool({
+      description: "Read history",
+      execute: (_args, ctx) => {
+        seen.push(ctx.messages.map((m) => m.content).join("|"));
+        return "ok";
+      },
+    });
+    const chat = createTextAgent({
+      agent: textAgent({ name: "Peeker", text: true }, { peek }),
+      model: createFakeLanguageModel({
+        // One step per `doStream` call, and the two turns interleave: turn 1's
+        // request, turn 2's request, then each turn's answering step.
+        steps: [
+          [{ type: "tool-call", toolCallId: "c1", toolName: "peek", input: "{}" }],
+          [{ type: "tool-call", toolCallId: "c2", toolName: "peek", input: "{}" }],
+          [{ type: "text", text: "ok" }],
+          [{ type: "text", text: "ok" }],
+        ],
+      }),
+      logger: silentLogger,
+    });
+
+    // Both turns are STARTED before either model stream yields its tool call —
+    // which is the ordinary case, since that wait is LLM latency measured in
+    // seconds. `stream()` assigned the shared `let` synchronously, so by the
+    // time turn 1's tool was dispatched the variable already held turn 2's
+    // conversation and both reads answered "beta".
+    await Promise.all([
+      drain(chat.stream({ messages: [{ role: "user", content: "alpha" }] })),
+      drain(chat.stream({ messages: [{ role: "user", content: "beta" }] })),
+    ]);
+
+    expect(seen.toSorted((a, b) => a.localeCompare(b))).toEqual(["alpha", "beta"]);
+  });
+
+  test("the exposed `tools` belong to no turn", async () => {
+    // `TextAgent.tools` is the declaration list a caller renders. It must carry
+    // the right NAMES; it is not the set a turn runs on, so a call through it
+    // reads an empty `ctx.messages` rather than some other turn's.
+    const chat = createTextAgent({
+      agent: textAgent(
+        { name: "Peeker", text: true },
+        { peek: tool({ description: "Read history", execute: () => "ok" }) },
+      ),
+      model: createFakeLanguageModel({ script: [] }),
+      logger: silentLogger,
+    });
+    expect(Object.keys(chat.tools)).toEqual(["peek"]);
+  });
+
   test("an abort signal ends the turn", async () => {
     const abort = new AbortController();
     const model = createFakeLanguageModel({

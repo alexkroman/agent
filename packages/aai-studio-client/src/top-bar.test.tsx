@@ -5,7 +5,8 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { agentUrl, PublishMenu, TopBar } from "./top-bar.tsx";
+import { agentUrl } from "./platform-origin.ts";
+import { PublishMenu, TopBar } from "./top-bar.tsx";
 
 afterEach(cleanup);
 

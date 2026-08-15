@@ -12,6 +12,16 @@
  * journaled and replayed, so bytes may not travel in it.
  */
 
+import { omitUndefined } from "./omit-undefined.ts";
+import { readJsonBody } from "./response-body.ts";
+
+/**
+ * Names the surface in a failure that was not the agent's own `{ error }`
+ * sentence — the same label `workflow-api-client.ts` uses, spelled here because
+ * that module imports THIS one and not the other way round.
+ */
+const UPLOAD_ERROR_LABEL = "Workflow API";
+
 /** What an upload call accepts as the file's bytes. */
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
 
@@ -75,10 +85,19 @@ export async function uploadFile(
     // own `| undefined` as a value this may be, and a body is exactly what an
     // upload always has.
     body: file as NonNullable<RequestInit["body"]>,
-    ...(options?.signal ? { signal: options.signal } : {}),
+    // `omitUndefined` is this repo's one spelling of an optional field
+    // (`guard-invariants` rule 2), and it is the same one
+    // `workflow-api-client.ts` uses for this exact key.
+    ...omitUndefined({ signal: options?.signal }),
   });
   if (!res.ok) throw await fail(res);
-  const stored = (await res.json()) as { id: string; name: string; type: string; size: number };
+  // Guarded like every other read on this surface: a 2xx whose body is not
+  // JSON is a proxy answering, not the agent, and `res.json()` would reject
+  // with a bare `SyntaxError` for a file that has already been stored.
+  const stored = await readJsonBody<{ id: string; name: string; type: string; size: number }>(
+    res,
+    UPLOAD_ERROR_LABEL,
+  );
   // The URL is built from THIS client's base, not from the `url` the agent
   // answered with: the agent knows its own paths and not the origin it was
   // reached on, which on the platform is `/:slug/workflows/…`.

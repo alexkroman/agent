@@ -97,7 +97,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
       // event handler, so a listener that throws would escape as an
       // uncaughtException, and nothing may be emitted once the session closed.
       function emitTranscript(event: "partial" | "final", text: string | undefined) {
-        if (text && text.length > 0) shell.safeEmit(() => emitter.emit(event, text));
+        if (text && text.length > 0) shell.emit(event, text);
       }
 
       connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, (msg) => {
@@ -117,7 +117,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
       });
 
       connection.on(RealtimeEvents.AUTH_ERROR, (msg) => {
-        shell.safeEmit(() => emitter.emit("error", makeSttError("stt_auth_failed", msg.error)));
+        shell.emit("error", makeSttError("stt_auth_failed", msg.error));
       });
 
       closeOnAbort(openOpts.signal, shell.close);
@@ -143,9 +143,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
           if (shell.isClosed()) return;
           frames.push(pcm);
         },
-        on(event, fn) {
-          return emitter.on(event, fn);
-        },
+        on: shell.on,
         close: () => {
           if (!shell.isClosed()) frames.flush();
           return shell.close();

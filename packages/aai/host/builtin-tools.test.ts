@@ -70,6 +70,20 @@ describe("resolveAllBuiltins defs", () => {
     expect(Object.keys(defs)).toHaveLength(0);
   });
 
+  test("an Object.prototype key is an unknown name, not a phantom tool", () => {
+    // The registries are object literals, so a truthy index walked the
+    // prototype: `constructor` reached `Object` and was INVOKED as a factory,
+    // declaring a tool with no `execute`, and `toString` returned the string
+    // "[object Object]", which crashed agentToolsToSchemas on `"parameters" in
+    // def`. Reachable through /runtime's untyped `builtinTools`.
+    for (const name of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      const { defs, schemas, guidance } = resolveAllBuiltins([name]);
+      expect(defs).toEqual({});
+      expect(schemas).toEqual([]);
+      expect(guidance).toEqual([]);
+    }
+  });
+
   // ─── run_code (host-side guard) ─────────────────────────────────────────
   // run_code executes untrusted JS and now runs ONLY inside the guest sandbox
   // (Modal/Deno) — see deno-harness.test.ts for execution coverage. The
@@ -136,6 +150,36 @@ describe("resolveAllBuiltins defs", () => {
       error: "Response was not valid JSON",
       url: "https://api.example.com/text",
     });
+  });
+
+  test("fetch_json refuses an over-cap body without buffering it whole", async () => {
+    // MAX_JSON_BYTES is 1 MB. The stream offers 4 MB and is pulled lazily, so
+    // the `await resp.text()` this replaced would have read every chunk before
+    // measuring — the cap bounded what was KEPT, not what a prompt-injected URL
+    // could make the host read.
+    let pulled = 0;
+    const chunk = new Uint8Array(64 * 1024);
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulled >= 64) {
+          controller.close();
+          return;
+        }
+        pulled += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    const { defs } = resolveAllBuiltins(["fetch_json"], {
+      fetch: fakeFetch(() => Promise.resolve(new Response(body))),
+    });
+    const result = await defs.fetch_json?.execute(
+      { url: "https://api.example.com/huge" },
+      createMockToolContext(),
+    );
+    expect(result).toEqual({ error: "Response too large", url: "https://api.example.com/huge" });
+    // 1 MB of 64 KiB chunks is 16, plus the one past the budget and the
+    // stream's own read-ahead.
+    expect(pulled).toBeLessThanOrEqual(19);
   });
 
   test("fetch_json passes allowed custom headers to fetch", async () => {

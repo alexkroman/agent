@@ -16,6 +16,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
+import { errorMessage } from "../sdk/utils.ts";
 
 /**
  * The response members a JSON reply touches, named rather than taken whole.
@@ -174,4 +175,45 @@ export function readBody(req: http.IncomingMessage, limit: number): Promise<Buff
     });
     req.on("error", reject);
   });
+}
+
+/**
+ * Turn an ASYNC route into the synchronous claim `ServerOptions.request` wants.
+ *
+ * The contract this owns is the one both HTTP surfaces in this package restate
+ * and neither states: **claiming is synchronous, handling is not, and a claimed
+ * request always gets exactly one answer** — which holds only because the
+ * promise's rejection is caught here. That catch was incidental at both call
+ * sites (an anonymous `.catch` at the end of a factory), and it is the thing
+ * standing between a malformed request and an unhandled rejection in a process
+ * whose `uncaughtException` handler exits.
+ *
+ * `claims` is a predicate rather than a prefix because the two surfaces really
+ * do differ: `/workflows` IS a route, while `/session-events` on its own names
+ * no session and must fall through.
+ *
+ * `onError` gets first refusal on a rejection and answers whether it handled
+ * one — the workflow API maps `BodyTooLargeError` to a 413 there, so a caller
+ * can tell "this input is too large" from "the agent is broken". Anything it
+ * declines becomes an opaque 500 with the cause in the log.
+ *
+ * @internal
+ */
+export function claimUnder<Req, Res extends JsonResponse>(opts: {
+  claims: (url: string) => boolean;
+  route: (req: Req, res: Res, url: string, method: string) => Promise<void>;
+  logger: { error: (message: string, meta?: Record<string, unknown>) => void };
+  /** Log line for a rejection this surface did not handle. */
+  label: string;
+  onError?: (err: unknown, res: Res) => boolean;
+}): (req: Req, res: Res, url: string, method: string) => boolean {
+  const { claims, route, logger, label, onError } = opts;
+  return (req, res, url, method) => {
+    if (!claims(url)) return false;
+    route(req, res, url, method).catch((err: unknown) => {
+      if (onError?.(err, res)) return;
+      answerHandlerFailure(res, logger, label, errorMessage(err));
+    });
+    return true;
+  };
 }

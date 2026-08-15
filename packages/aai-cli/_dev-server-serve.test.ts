@@ -10,7 +10,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/runtime";
 import getPort from "get-port";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { agentEnvWarnings, startDevServer, viteDevConfig } from "./_dev-server.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 import { DEDUPED_PEERS } from "./_vite-env.ts";
@@ -118,6 +118,29 @@ describe("viteDevConfig", () => {
     // Vite would otherwise silently bind port+N when the port is busy while
     // executeDev prints/returns http://localhost:<requested port>.
     expect(viteDevConfig("/proj", 3000, 3001).server?.strictPort).toBe(true);
+  });
+
+  test("AAI_DEV_HOST binds Vite too, not just the backend", () => {
+    // With a client.tsx, Vite owns the port the user is told to open — so a
+    // backend bound to 0.0.0.0 behind a Vite bound to loopback is unreachable
+    // from exactly the case the variable documents as its reason for existing
+    // ("running `aai dev` inside a container and connecting from the host").
+    vi.stubEnv("AAI_DEV_HOST", "0.0.0.0");
+    expect(viteDevConfig("/proj", 3000, 3001).server?.host).toBe("0.0.0.0");
+  });
+
+  test.each(["", "   "])("leaves Vite on its loopback default for AAI_DEV_HOST=%o", (value) => {
+    // `devBindHost` normalizes blank to "unset", and the key is then OMITTED
+    // rather than passed as undefined — Vite's `host` has meaning by presence.
+    vi.stubEnv("AAI_DEV_HOST", value);
+    const server = viteDevConfig("/proj", 3000, 3001).server;
+    expect(server && "host" in server).toBe(false);
+  });
+
+  test("omits host entirely when AAI_DEV_HOST is unset", () => {
+    vi.stubEnv("AAI_DEV_HOST", undefined);
+    const server = viteDevConfig("/proj", 3000, 3001).server;
+    expect(server && "host" in server).toBe(false);
   });
 });
 

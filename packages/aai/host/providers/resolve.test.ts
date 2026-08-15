@@ -24,6 +24,7 @@ import { XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import { ASSEMBLYAI_S2S_KIND } from "../../sdk/providers/s2s/assemblyai.ts";
 import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
 import type { LlmProvider, SttOpener } from "../../sdk/providers.ts";
+import { PROVIDER_CREDENTIAL_ENVS } from "./host-env.ts";
 import {
   ALL_PROVIDER_ENV_VARS,
   registerLlmKind,
@@ -321,6 +322,29 @@ describe("requiredProviderEnvVars", () => {
     ]);
   });
 
+  it.each([
+    ["stt", { stt: { kind: "assemblyai", options: { apiKeyEnv: "STAGING_KEY" } } }],
+    ["tts", { tts: { kind: "rime", options: { apiKeyEnv: "STAGING_KEY" } } }],
+    ["llm", { llm: { kind: "anthropic", options: { apiKeyEnv: "STAGING_KEY" } } }],
+  ] as const)("honours a %s descriptor's apiKeyEnv, as every resolver does", (_stage, agent) => {
+    // The preflight has to ask for the key the SESSION will read. Reading only
+    // `registry[kind].envVar` made it demand the registry default while
+    // `resolveStt`/`resolveTts`/`resolveLlm` all read the override — so the
+    // deploy was gated on a variable the agent does not use and never told the
+    // author the one it does use is missing.
+    expect(requiredProviderEnvVars(agent)).toContain("STAGING_KEY");
+  });
+
+  it("does not name the registry default alongside an apiKeyEnv override", () => {
+    expect(
+      requiredProviderEnvVars({
+        stt: { kind: "assemblyai", options: { apiKeyEnv: "ASSEMBLYAI_STAGING_KEY" } },
+        llm: { kind: "anthropic", options: { apiKeyEnv: "ANTHROPIC_STAGING_KEY" } },
+        tts: { kind: "rime", options: { apiKeyEnv: "RIME_STAGING_KEY" } },
+      }),
+    ).toEqual(["ASSEMBLYAI_STAGING_KEY", "RIME_STAGING_KEY", "ANTHROPIC_STAGING_KEY"]);
+  });
+
   it("names no key for an unrecognized S2S kind rather than falling back to AssemblyAI", () => {
     // The S2S branch used to be `kind === openai-realtime ? OPENAI : ASSEMBLYAI`,
     // so a third vendor's descriptor silently demanded ASSEMBLYAI_API_KEY — and
@@ -399,6 +423,27 @@ describe("ALL_PROVIDER_ENV_VARS", () => {
 
   it("has no duplicates", () => {
     expect(ALL_PROVIDER_ENV_VARS).toEqual([...new Set(ALL_PROVIDER_ENV_VARS)]);
+  });
+
+  it("is LIVE across registerSttKind, not a module-load snapshot", () => {
+    // It was a snapshot, which put a registered kind's credential outside BOTH
+    // allowlists at once: the host-mode handshake rejects an unlisted name by
+    // name, and withHostCredentialFallback silently declines to copy it — so a
+    // fake speech stage (or a host application's own provider) could not be
+    // given a key at all.
+    expect(ALL_PROVIDER_ENV_VARS).not.toContain("LATE_STT_KEY");
+    const unregister = registerSttKind("late-stt", {
+      envVar: "LATE_STT_KEY",
+      open: () => ({ name: "late", open: async () => ({}) as never }),
+    });
+    try {
+      expect(ALL_PROVIDER_ENV_VARS).toContain("LATE_STT_KEY");
+      // The same array object the two allowlists hold, so they move with it.
+      expect(PROVIDER_CREDENTIAL_ENVS).toContain("LATE_STT_KEY");
+    } finally {
+      unregister();
+    }
+    expect(ALL_PROVIDER_ENV_VARS).not.toContain("LATE_STT_KEY");
   });
 });
 

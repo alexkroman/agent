@@ -4,7 +4,7 @@
  *
  * A tool's `execute` takes a {@link ToolContext}, so testing one means building
  * one. Every field is supplied at runtime and most tests care about exactly
- * two of them (`state`, `sessionId`), which is why the hand-rolled version of
+ * two of them (`slots`, `sessionId`), which is why the hand-rolled version of
  * this ends up as `{ … } as unknown as ToolContext` — a cast that also stops
  * telling you when a field is added.
  *
@@ -120,9 +120,9 @@ let sessionCounter = 0;
 /**
  * Build a {@link ToolContext} for testing a tool's `execute` in isolation.
  *
- * Defaults are chosen so the context is inert: empty `env`, empty `state`, a
- * `db` and `generate` that reject with a message naming themselves, a `signal`
- * that never aborts, and a `send` that records. Override any of them.
+ * Defaults are chosen so the context is inert: empty `env`, an empty slot store,
+ * a `db` and `generate` that reject with a message naming themselves, a
+ * `signal` that never aborts, and a `send` that records. Override any of them.
  *
  * **Each call is a distinct session.** `sessionId` auto-increments, which is
  * what makes the two-context isolation test — the same tool run against two
@@ -130,20 +130,22 @@ let sessionCounter = 0;
  * explicitly when a test needs two contexts to be the SAME session (a
  * reconnect, a keyed lock).
  *
- * @typeParam S - The session-state shape, so `ctx.state` is typed in the test
- *   the same way the agent types it. Pass `state` to infer it.
+ * There is no state type parameter, because there is no `ctx.state` bag to
+ * type: a slot types its own value in the module that declares it, and reading
+ * the slot back is how a spec asserts what a tool wrote.
  *
  * @example
  * ```ts no-check
  * // `no-check`: the tool under test is in another file, which is the point.
  * import { createToolContext } from "@alexkroman1/aai/testing";
  * import { expect, test } from "vitest";
- * import { addItem } from "./tools/add_item.ts";
+ * import { cartSlot } from "./shared.ts";
+ * import addItem from "./tools/add_item.ts";
  *
  * test("add_item appends to this session's cart", async () => {
  *   const ctx = createToolContext();
  *   await addItem.execute({ item: "apple" }, ctx);
- *   expect(ctx.state).toEqual({ cart: { items: ["apple"] } });
+ *   expect(cartSlot.get(ctx).items).toEqual(["apple"]);
  * });
  * ```
  *

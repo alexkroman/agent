@@ -25,7 +25,7 @@
  */
 
 import { throwStepError, toStepError } from "@alexkroman1/aai/step-errors";
-import { report, stepGenerateJson } from "@alexkroman1/aai/utils";
+import { report, stepFetch, stepGenerateJson } from "@alexkroman1/aai/utils";
 import { FatalError, sleep } from "workflow";
 import { z } from "zod";
 
@@ -45,7 +45,7 @@ const MAX_ARTICLE_CHARS = 24_000;
 /** Points the digest reduces a page to. */
 const POINTS = 3;
 
-/** The page fetch's deadline. `fetch` has none of its own, and a hung step never ends. */
+/** The page fetch's deadline. HTTP has none of its own, and a hung step never ends. */
 const FETCH_TIMEOUT_MS = 30_000;
 
 /** What one digest pass produces. Small and JSON-shaped, like every step result. */
@@ -113,13 +113,19 @@ export async function fetchArticle(url: string): Promise<Article> {
   const { hostname } = new URL(url);
   await report(`Reading ${hostname}…`);
 
-  const response = await fetch(url, {
-    // Some sites answer a bare fetch with a challenge page; asking for HTML at
-    // least says what we want. Nothing here defeats a real bot wall, and a
+  // `stepFetch`, not `fetch`, and the rule has no exception for a step that
+  // makes only one request: the global pins nothing, so it offers h2 in ALPN
+  // and a server that takes it multiplexes every concurrent request from this
+  // process onto ONE connection — and a capacity limit then arrives as a stream
+  // reset with no HTTP status, which `toStepError` below has nothing to read.
+  // It also reports a connection failure with its whole `cause` chain instead
+  // of a bare `TypeError: fetch failed`. Redirects are followed by default.
+  const response = await stepFetch(url, {
+    // Some sites answer a bare request with a challenge page; asking for HTML
+    // at least says what we want. Nothing here defeats a real bot wall, and a
     // template pretending otherwise would be the dishonest version.
     headers: { Accept: "text/html,application/xhtml+xml" },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    redirect: "follow",
   });
   // The retryable/terminal split, for the page we were pointed at: a 404 or a
   // 403 answers the same way on the fourth attempt, while a rate limit is

@@ -118,4 +118,24 @@ describe("toAgentConfig", () => {
     expect("llm" in config).toBe(false);
     expect("tts" in config).toBe(false);
   });
+
+  test("a `mode` on the SOURCE cannot overwrite the derived one", () => {
+    // `AgentConfigSource` omits `mode` precisely so a typed caller cannot
+    // supply one — but the copy is a deny-list over `Object.entries`, so a raw
+    // `export default {...}` or a config round-tripped through the wire reaches
+    // it anyway. The derived value is the authority; `IsolateConfigSchema`'s
+    // `superRefine` would otherwise reject the disagreement at deploy time,
+    // which reads as a confusing deploy failure rather than as this.
+    const config = toAgentConfig({
+      ...base,
+      s2s: desc("assemblyai"),
+      mode: "pipeline",
+    } as never);
+    expect(config.mode).toBe("s2s");
+  });
+
+  test("…in the other direction too", () => {
+    const config = toAgentConfig({ ...base, mode: "s2s" } as never);
+    expect(config.mode).toBe("pipeline");
+  });
 });

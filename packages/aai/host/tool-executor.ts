@@ -7,6 +7,7 @@
  */
 
 import pTimeout from "p-timeout";
+import type { ExecuteTool, ExecuteToolOptions } from "../sdk/_internal-types.ts";
 import { EMPTY_PARAMS } from "../sdk/_internal-types.ts";
 import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
@@ -187,4 +188,49 @@ export async function executeToolCall(
     // call in the reply leaks a listener on it.
     turnSignal?.removeEventListener("abort", followTurn);
   }
+}
+
+/**
+ * One dispatched call, as {@link createToolDispatcher} hands it over.
+ *
+ * Not exported: both callers take it by inference, and nothing outside this
+ * module names a dispatched call.
+ */
+type ToolCall = {
+  name: string;
+  args: Readonly<Record<string, unknown>>;
+  /** `""` when the caller has no session — never `undefined`, so the run body cannot forget. */
+  sessionId: string;
+  messages?: readonly Message[] | undefined;
+  options?: ExecuteToolOptions | undefined;
+};
+
+/**
+ * The dispatcher shape every in-process tool path shares: look the name up, or
+ * report an unknown one AS A TOOL RESULT.
+ *
+ * The lookup is two lines and was written twice — the self-hosted runtime
+ * (`runtime-tools.ts`) and the text agent (`text-agent.ts`) — but what is
+ * duplicated is a POLICY rather than a line count: an unknown name is a failure
+ * the MODEL sees and can recover from, not a throw that fails the turn, and the
+ * sentence it reads is part of that. Two copies is two places for one of those
+ * to drift into the other kind of failure.
+ *
+ * Everything below the lookup stays with the caller, deliberately: the two
+ * paths build genuinely different contexts (one has a live emitter, a slot
+ * store and a commit point; the other has a detached store and a longer
+ * deadline), and folding those into an options bag here would be one function
+ * with two disjoint halves.
+ *
+ * @internal
+ */
+export function createToolDispatcher(
+  tools: Readonly<Record<string, ToolDef>>,
+  run: (tool: ToolDef, call: ToolCall) => Promise<string>,
+): ExecuteTool {
+  return (name, args, sessionId, messages, options) => {
+    const tool = tools[name];
+    if (!tool) return Promise.resolve(serializeToolFailure(`Unknown tool: ${name}`));
+    return run(tool, { name, args, sessionId: sessionId ?? "", messages, options });
+  };
 }

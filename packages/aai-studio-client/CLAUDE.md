@@ -16,6 +16,17 @@ Panes: `chat.tsx` (chat + composer), and the three the top bar's
 segmented control switches between — `preview.tsx`, `code-view.tsx`,
 `settings.tsx`.
 
+**The shell splits on whether a project is open**, and the split is what makes
+`project` a `string` rather than a `string | null` everywhere below it.
+`app.tsx` owns the account-scoped half — routing (`project-route.ts`), the
+project list, the home hero, the account menu — and `project-view.tsx` owns
+everything that only exists while a project is open: its workspace, chat and
+sandbox queries, the three panes, Publish, and the unsaved editor drafts. In
+one component the six calls that take a project name all narrowed it with
+`project as string`, a cast standing in for the `enabled:` flag two lines
+above — an agreement nothing checks. `ProjectView` is mounted `key={project}`,
+so every piece of per-project state resets on a switch with no effect to do it.
+
 ## Panes and behaviour
 
 - **The home hero switches between the two things the platform builds**
@@ -219,6 +230,29 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   (`resolveServerUrl`), and the client cannot compare its own origin
   against the CLI's default without importing from aai-cli, which would
   widen the package boundary.
+- **Unsaved editor work lives ABOVE the editor** (`file-drafts.ts`). The Code
+  pane's buffer used to live inside `FileBuffer`, which is mounted
+  `key={currentFile}` under a `CodeView` the pane switcher renders as
+  `{tab === "code" && …}` — so the `dirty` flag and the `conflict` warning that
+  exist to protect the user's text were computed by a component React unmounts
+  the moment they click Preview or pick another file. Typing an edit and
+  switching panes threw it away, silently, with nothing consulting either flag
+  first. The buffers are held by `ProjectView` now, so both unmounts are
+  survivable, and `beforeunload` covers the one thing that outlives even that
+  (a reload, a closed tab). A project switch is deliberately unguarded: it is
+  the same navigation the browser prompt covers, and the drafts belong to the
+  project they go with.
+  - Not a confirm and not a hidden-but-mounted `CodeView`: a confirm needs the
+    dirty flag to have survived the unmount anyway (so it is this *plus* a
+    dialog), and keeping the pane mounted fixes the pane switch but not the file
+    switch — and pins CodeMirror, lazily loaded because it is the bulk of the
+    bundle, into a `display: none` subtree it re-measures on every re-show.
+  - The reconcile rule is a **pure function** (`syncBuffers`), not an effect:
+    what happens to your text when the agent edits the same file is the thing
+    worth testing directly. A clean buffer adopts; a dirty one keeps the text
+    and raises `conflict`; a just-saved one keeps its draft until the workspace
+    refetch catches up (`lastServer`, not equality with `draft`, is what a
+    change is measured against).
 - **Client**: `packages/aai-studio-client` is a Vite-built React app;
   `studio-static.ts` resolves its `dist/` via `require.resolve` and serves
   it at `/` with hashed assets under `/studio-assets/`. When it hasn't
@@ -431,6 +465,28 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   pushed underneath it gets pushed a second time). Hence a queue held OUTSIDE
   `messages`, flushed on the settle.
 
+  **A NOTE posted into the chat waits the same way**
+  (`chat-notify.ts`, `use-notify-registration.ts`). Publish output, secret
+  changes and the Database toggle reach the coding agent as injected user
+  messages, and `notifyDispatch` used to fall back to `"append"` whenever a turn
+  was in flight — chosen as the *safe* option, on the reasoning that a publish
+  failure has to survive either way. It is the one case where appending is not
+  safe. The SDK's streaming writer (`ai@7`, `Chat.makeRequest`) compares
+  `response.state.message.id` against `this.lastMessage?.id` on every chunk and
+  takes `pushMessage` when they differ, so a note appended UNDER a streaming
+  assistant message becomes `lastMessage` and the next chunk pushes the
+  assistant message a second time instead of replacing it: one object at two
+  indices, under one React key, in the array the end-of-turn sync PERSISTS.
+  Saving a secret while the agent worked was enough. So the third mode is
+  `"defer"` — held outside `messages`, exactly as the queue holds a mid-turn
+  submit, and flushed on the settle. Two properties of the flush: it gates on
+  `pending` rather than `busy` (the dispatch window is unsafe too, and a note
+  sent as its own turn while follow-ups are queued would jump the line), and it
+  delivers **at most one deferred note as a turn** — a later `respond` note
+  degrades to an append rather than running a second turn against one guest
+  session, and loses nothing, since an appended message rides the turn just
+  started.
+
   Three rules the reducer exists to hold, each covering a bug that is invisible
   without it: the flush is **latched** from dispatch until the turn is observed
   (`sendMessage` awaits before flipping the status, so a re-render in that
@@ -444,16 +500,54 @@ segmented control switches between — `preview.tsx`, `code-view.tsx`,
   status never flushes while every submit joins a non-empty queue — parking it
   there wedges the composer permanently.
 
-- **Requests are deadlined; the SSE streams deliberately are NOT.** Every
-  one-shot request that a screen waits on carries `AbortSignal.timeout` (the
-  gate reads above, the broker call, the preview probe), because a browser
-  fetch has none of its own and a hung request is not a failure — it never
-  settles, so no error path, retry, or backoff ever runs. `watchEventStream`
-  (`api-events.ts`) is the one place that must not have one: a healthy
-  stream IS a request that stays open indefinitely and says nothing for
-  minutes, so no duration separates it from a hung one. Its liveness comes
-  from the other end — the server pings, a dead connection surfaces as the
+- **Requests are deadlined BY DEFAULT; the SSE streams deliberately are NOT.**
+  A browser fetch has no timeout of its own and a hung request is not a failure
+  — it never settles, so no error path, retry, or backoff ever runs. That is
+  what `fetch` does rather than a per-call hazard to remember, so the deadline
+  lives in `fetchJson()` in `api.ts`, which every request goes through
+  (`DEFAULT_REQUEST_TIMEOUT_MS`); a call names its own `timeoutMs` only when its
+  work really is slower (`CHAT_SESSION_ATTEMPT_TIMEOUT_MS`) or its screen cannot
+  afford to wait (the gate reads, the preview probe, `/studio/status`). A
+  caller's own `signal` is COMPOSED with the deadline via `AbortSignal.any`, so
+  passing one can only ever make a request settle sooner — never opt out.
+
+  It was per-call before, and **four of ~18 requests carried one**.
+  `GET /studio/status` was not among them, and it gates two screens: the home
+  hero's textarea and Send sit behind "Checking the server's chat status…" while
+  `status.data` is undefined, and inside a project `chatReady` stays false so the
+  composer is disabled and `send()` returns early. One hung read deadened both,
+  with no error, no retry and no way out but a reload.
+
+  `watchEventStream` (`api-events.ts`) is the one place that must not have a
+  deadline: a healthy stream IS a request that stays open indefinitely and says
+  nothing for minutes, so no duration separates it from a hung one. Its liveness
+  comes from the other end — the server pings, a dead connection surfaces as the
   read ending, and that reaches `onDown` → backoff resubscribe.
+
+- **A rejected bearer is REFRESHED, never signed out on** (`auth-recovery.ts`).
+  There were three call sites and two opposite conclusions. supabase-js runs its
+  refresh ticker only on FOCUSED tabs, so a studio tab left in the background for
+  an hour holds an expired-but-*refreshable* access token; focusing it refetches
+  `projects`, `workspace` and `chat` with that dead bearer, all three 401, and
+  the app's effect called `auth.signOut()` with no scope — revoking the refresh
+  token on a session that was still good, and racing supabase-js's own focus
+  refresh on the same event (the synchronous effect won). The event stream and
+  the account gate already did the right thing; now there is one
+  `useAuthRecovery(authRejection(…), refreshAuth)` and `refresh` alone decides
+  whether the session survives, which is already its stated contract.
+  - **The recovery is CAPPED, and the cap is the terminal state.** Against a
+    server that will 401 a refreshable token — a different Supabase project, a
+    JWT-secret mismatch, clock skew — an uncapped refresh is a loop behind a
+    screen that says nothing. `AccountGate` used to run `void refreshAuth();
+    return null;` *in its render body* (twice, under `StrictMode`), which is
+    exactly that loop with a blank page in front of it. It is an effect now, it
+    renders "Signing you back in…" while an attempt is in flight, and past the
+    cap it signs out — the sign-in gate is somewhere the user can act.
+  - **A refreshed bearer has to be pushed at the queries.** Only the account's
+    cache key carries a bearer, so an error-state query has nothing to notice
+    and would stay refused until the next window focus; `App` invalidates on a
+    bearer change, excluding the chat session (its token comes from the broker's
+    response, not from this bearer).
 - **The SSE backoff resets on a stream that SERVED, not one that opened**
   (`EVENTS_MIN_UPTIME_MS` in `use-event-stream.ts`). Accepting a request is
   not the same as serving it: a server that answers `200` and then ends the

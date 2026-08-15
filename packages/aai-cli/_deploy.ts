@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { gzipSync } from "node:zlib";
-import { omitUndefined } from "@alexkroman1/aai/utils";
-import { apiRequest } from "./_api-client.ts";
+import { isRecord } from "@alexkroman1/aai/utils";
+import { type ApiTestSeam, apiRequest, apiTestSeam, checkedResponse } from "./_api-client.ts";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
 
-export type DeployOpts = {
+export type DeployOpts = ApiTestSeam & {
   url: string;
   bundle: DirectoryBundleOutput;
   /** Env var values from .env to send to the server. */
@@ -20,10 +20,6 @@ export type DeployOpts = {
    * by the studio's own in-guest deploy, not by ordinary users.
    */
   allowPreviewSlug?: boolean;
-  /** Retry delay override for tests (0 = no real sleeps on retry paths). */
-  retryDelay?: number;
-  /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
-  fetch?: typeof globalThis.fetch;
 };
 
 export type DeployResult = {
@@ -43,7 +39,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
       clientFiles: opts.bundle.clientFiles,
     }),
   );
-  const data = await apiRequest<{ slug: string }>(`${opts.url}/deploy`, {
+  const data = await apiRequest(`${opts.url}/deploy`, {
     method: "POST",
     body,
     headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
@@ -57,9 +53,16 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     // its response would create a second, orphaned agent. Redeploys target a
     // fixed slug and stay retried.
     ...(opts.slug ? {} : { retry: 0 }),
-    ...omitUndefined({ retryDelay: opts.retryDelay }),
-    ...(opts.fetch ? { fetch: opts.fetch } : {}),
+    ...apiTestSeam(opts),
   });
 
-  return { slug: data.slug };
+  // Checked, not cast — a 200 with no `slug` used to be written into
+  // `.aai/project.json` as `undefined`, which `JSON.stringify` drops, so the
+  // next deploy minted a fresh slug and orphaned the running agent. See
+  // `checkedResponse`.
+  return checkedResponse(
+    data,
+    (value): value is DeployResult => isRecord(value) && typeof value.slug === "string",
+    `the deploy route at ${opts.url}`,
+  );
 }

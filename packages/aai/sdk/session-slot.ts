@@ -13,10 +13,18 @@
  * @module session-slot
  */
 
+import type { DeepReadonly } from "./deep-readonly.ts";
+import { isRecord } from "./is-record.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { SlotStore, StateProjection } from "./session-state.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
-import { isRecord } from "./utils.ts";
+
+// Re-exported rather than defined here: it is the type of what `get` hands
+// back, so it belongs beside `sessionSlot` on the root barrel — and it is its
+// OWN module so an agent's domain helper can name it without importing the
+// slot machinery, which is exactly what adopting it asks every such helper to
+// do (see the type's own doc).
+export type { DeepReadonly } from "./deep-readonly.ts";
 
 /**
  * The authoring shape of a slot-backed tool: {@link ToolDef} with the slot's
@@ -29,9 +37,9 @@ import { isRecord } from "./utils.ts";
  * type error the first time it reads `ctx.env`, since `V` is not a
  * {@link ToolContext}.
  *
- * @typeParam V - What `execute` is handed: a frozen `Readonly<T>` from
- *   {@link SessionSlot.tool}, a mutable draft from
- *   {@link SessionSlot.updateTool}.
+ * @typeParam V - What `execute` is handed: a deep-frozen
+ *   {@link DeepReadonly}`<T>` from {@link SessionSlot.tool}, a mutable draft
+ *   from {@link SessionSlot.updateTool}.
  *
  * @public
  */
@@ -65,12 +73,14 @@ export interface SessionSlot<K extends string, T> {
   /**
    * This session's value, installing the default on first access.
    *
-   * **Readonly, and frozen.** Mutating what this returns is a compile error,
-   * and a `TypeError` for a caller with no types — because a mutation applied
-   * here is applied to a value nothing is going to store. Every write goes
-   * through {@link SessionSlot.update}.
+   * **Readonly all the way down, and frozen to match.** Mutating what this
+   * returns is a compile error at every depth — `cart.items.push(x)` as much as
+   * `cart.total = 0` — and a `TypeError` for a caller with no types, because a
+   * mutation applied here is applied to a value nothing is going to store.
+   * Every write goes through {@link SessionSlot.update}. See
+   * {@link DeepReadonly} for why the type is deep rather than shallow.
    */
-  get(ctx: ToolContext): Readonly<T>;
+  get(ctx: ToolContext): DeepReadonly<T>;
   /**
    * Mutate this session's value, and store the result.
    *
@@ -118,18 +128,26 @@ export interface SessionSlot<K extends string, T> {
   /**
    * Replace this session's value wholesale (a load, an import, a restore), and
    * return it as `get` would.
+   *
+   * **The caller's object is COPIED, not adopted.** A durable slot freezes what
+   * it stores, and this method's own examples — a load, an import, a restore —
+   * are exactly the cases where the caller still holds a reference to what it
+   * passed: freezing in place turned an unrelated later line
+   * (`imported.items.push(...)`) into a `TypeError` from a stack that names
+   * nothing about this slot. {@link SessionSlot.update} was already safe because
+   * its draft is a copy; this is the same rule applied to the other writer.
    */
-  set(ctx: ToolContext, value: T): Readonly<T>;
+  set(ctx: ToolContext, value: T): DeepReadonly<T>;
   /** Discard this session's value and install a fresh default, and return it. */
-  reset(ctx: ToolContext): Readonly<T>;
+  reset(ctx: ToolContext): DeepReadonly<T>;
   /**
    * Define a READ-ONLY tool over this slot: `execute` is handed the frozen
    * value, so the body needs neither a context annotation nor an opening
    * `slot.get(ctx)`.
    *
    * A body that mutates wants {@link SessionSlot.updateTool}. This one's value
-   * is `Readonly<T>`, so choosing wrong is a compile error rather than a
-   * write that goes nowhere.
+   * is {@link DeepReadonly}`<T>`, so choosing wrong is a compile error — at any
+   * depth — rather than a write that goes nowhere or throws.
    *
    * @example
    * ```ts
@@ -146,7 +164,7 @@ export interface SessionSlot<K extends string, T> {
    * ```
    */
   tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
-    def: SlotToolDef<P, Readonly<T>, R>,
+    def: SlotToolDef<P, DeepReadonly<T>, R>,
   ): ToolDef<P>;
   /**
    * Define a MUTATING tool over this slot: the body runs inside
@@ -210,7 +228,7 @@ export interface SessionSlot<K extends string, T> {
    * });
    * ```
    */
-  projection<V>(project: (value: Readonly<T>) => V): StateProjection<V>;
+  projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
 }
 
 /**
@@ -351,24 +369,39 @@ export function sessionSlot<const K extends string, T>(
     );
   };
 
-  const get = (ctx: ToolContext): Readonly<T> => {
-    const existing = current(ctx);
-    if (existing !== undefined) return existing as Readonly<T>;
+  const get = (ctx: ToolContext): DeepReadonly<T> => {
+    const existing = slots(ctx).read(key);
+    if (existing !== undefined) return existing as DeepReadonly<T>;
     const value = create();
     store(ctx, value);
-    return value as Readonly<T>;
+    return frozen(value);
   };
 
   /**
-   * The private copy a mutation window works on.
+   * A value this slot has just stored, as `get` describes it.
+   *
+   * The cast is the seam between the runtime guarantee and the type: `store`
+   * hands a durable value to `freezeStorable`, which deep-freezes it, so what
+   * comes back really is readonly at every depth — but only the freeze knows
+   * that, and a generic `T` cannot be narrowed to `DeepReadonly<T>` by
+   * inference. One function rather than a cast per return, so there is one
+   * place to read that argument.
+   */
+  const frozen = (value: T): DeepReadonly<T> => value as DeepReadonly<T>;
+
+  /**
+   * The private copy this slot works on, for both of its writers.
    *
    * A durable slot's stored value is FROZEN and shared with every reader that
-   * already called `get`, so the copy is what makes the window private — and what
-   * makes a throwing mutator leave the stored value exactly as it was. A VIRTUAL
-   * slot is handed the live value: it holds the things `structuredClone` cannot
-   * copy, which is the reason it exists.
+   * already called `get`, so the copy is what makes an `update` window private —
+   * and what makes a throwing mutator leave the stored value exactly as it was.
+   * `set` needs it for the mirror-image reason: without a copy it freezes the
+   * CALLER's own object, and the caller of a load/import/restore is precisely
+   * the one still holding a reference to it. A VIRTUAL slot is handed the live
+   * value: it holds the things `structuredClone` cannot copy, which is the
+   * reason it exists, and nothing freezes it.
    */
-  const copyForDraft = (value: T): T => (durable ? structuredClone(value) : value);
+  const privateCopy = (value: T): T => (durable ? structuredClone(value) : value);
 
   const update = <R>(ctx: ToolContext, mutate: (draft: T) => R): R => {
     if (open.has(ctx.sessionId)) {
@@ -378,7 +411,7 @@ export function sessionSlot<const K extends string, T>(
     }
     const existing = current(ctx);
     // A fresh value needs no copy — nothing else has a reference to it yet.
-    const draft = existing === undefined ? create() : copyForDraft(existing);
+    const draft = existing === undefined ? create() : privateCopy(existing);
     open.add(ctx.sessionId);
     let result: R;
     try {
@@ -401,14 +434,18 @@ export function sessionSlot<const K extends string, T>(
     update,
     set(ctx, value) {
       assertNoOpenDraft(ctx, "set");
-      store(ctx, value);
-      return value as Readonly<T>;
+      // A copy, so the freeze lands on the slot's own object rather than on the
+      // caller's — see this method's doc on the interface above.
+      const stored = privateCopy(value);
+      store(ctx, stored);
+      return frozen(stored);
     },
     reset(ctx) {
       assertNoOpenDraft(ctx, "reset");
+      // No copy: `create()` is a fresh value nothing else has a reference to.
       const value = create();
       store(ctx, value);
-      return value as Readonly<T>;
+      return frozen(value);
     },
     // Spreading the rest rather than restating `description`/`inputSchema`
     // keeps `inputSchema`'s optionality EXACTLY as declared — rebuilding it
@@ -436,7 +473,7 @@ export function sessionSlot<const K extends string, T>(
     }),
     projection(project) {
       const projection = (value?: unknown): ReturnType<typeof project> =>
-        project((value === undefined ? create() : value) as Readonly<T>);
+        project((value === undefined ? create() : value) as DeepReadonly<T>);
       // The slot's own `create` rather than a captured default: the runtime
       // calls this for a session that never touched the slot, and a shared
       // default object would then be projected — and, worse, be the thing a

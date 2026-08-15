@@ -32,15 +32,22 @@
  * never one per file.
  */
 
-import path from "node:path";
 import { createCoalescingRunner } from "@alexkroman1/aai/internal";
 import pTimeout from "p-timeout";
+import { isScriptFile } from "./studio-syntax.ts";
 
 export type TypecheckResult = { ok: true; skipped: boolean } | { ok: false; output: string };
 export type TypecheckFn = () => Promise<TypecheckResult>;
 
-/** Extensions whose writes trigger a check — mirrors the syntax gate's set. */
-const CHECKED = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs"]);
+/**
+ * The diagnostics block to append after a write of `rel`, or undefined when the
+ * workspace is clean, the file is not a script, or the check could not run.
+ *
+ * Named because it is what the tool families are handed: ONE checker, built by
+ * `createStudioAgent` and shared, so the coalescing runner below actually
+ * coalesces across them.
+ */
+export type PostWriteDiagnostics = (rel: string) => Promise<string | undefined>;
 
 /**
  * Deadline for one post-write check. Far above the measured ~0.6s so it only
@@ -67,7 +74,7 @@ const HINTS_SEPARATOR = "\n\nHints:\n";
 export function createPostWriteDiagnostics(
   typecheck: TypecheckFn,
   timeoutMs: number = POST_WRITE_TYPECHECK_TIMEOUT_MS,
-): (rel: string) => Promise<string | undefined> {
+): PostWriteDiagnostics {
   // The in-flight compiler may have read the tree before this caller's write
   // landed, so its verdict cannot clear this write — exactly the runner's
   // trailing-run semantics. Each run degrades to undefined on timeout or a
@@ -78,7 +85,7 @@ export function createPostWriteDiagnostics(
   );
 
   return async (rel) => {
-    if (!CHECKED.has(path.extname(rel).toLowerCase())) return;
+    if (!isScriptFile(rel)) return;
     const result = await runner.trigger();
     if (result === undefined || result.ok) return;
     return formatPostWriteDiagnostics(rel, result.output);
