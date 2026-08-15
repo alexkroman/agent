@@ -1,7 +1,7 @@
 ---
 issue: TODO
-status: proposed
-last_updated: "2026-08-14"
+status: abandoned
+last_updated: "2026-08-15"
 ---
 
 # Resolve the agent definition per session, and retire host mode's parallel path
@@ -15,6 +15,115 @@ capability, and it rides the event vocabulary
 
 **Depends on `3-session-event-stream.md`** for the resolver events
 (`session.started` / `turn.started` / `step.started`).
+
+## Outcome: ABANDONED — the trusted half of the input is empty
+
+Written up in full below, and not built. Four things were checked against the
+tree before deciding, and each one takes a load-bearing premise away.
+
+**1. There is no trusted per-caller input for a resolver to read, so one side of
+this plan's own security boundary does not exist.** The plan's rule is that
+"where the resolver's INPUT comes from" must stay visible in the type: an
+operator-authored resolver reading its own tenant table is a different
+proposition from one reading a client-supplied handshake block. Every session
+entry point was checked, and NONE of them carries an authenticated caller
+identity a tenant could be looked up BY:
+
+| entry | per-connection input the host can trust |
+| --- | --- |
+| platform `/:slug/websocket` | none — a pure handshake redirect (`orchestrator-ws.ts`), no auth posture, and the owner-authenticated version was deliberately deleted |
+| guest `/session` on the sandbox tunnel | none — dialled directly by the browser off the client-config broker |
+| `aai dev` `/websocket` | none — loopback, single user |
+| `WS /phone` | none surfaced — `telephony-bridge.ts` reads no carrier-asserted `From`, and hands the socket straight to `startSession` |
+
+`parseWsUpgradeParams` carries `sessionId` and `resume` and nothing else, and a
+fresh session id is a random UUID. So the only per-connection input that reaches
+a resolver is the CLIENT-SUPPLIED handshake — the untrusted one. "A resolver"
+and "host mode" would be the same feature with the same threat model, and the
+general form would carry the gate's absence rather than the gate. That is this
+plan's own stop condition, reached from the input side rather than the return
+side: *if the boundary cannot be kept, do not do this.*
+
+The gap this plan named as its win beyond deletion — "an operator who wants
+per-tenant instructions on their own terms has no mechanism" — is therefore not
+delivered by a resolver either. A resolver would have nothing to key on.
+
+**2. Host mode is a PRELUDE to the ordinary path, not a parallel one, so the
+seam this plan says is missing already exists.** `startHostSession` ends in
+`runtime.startSession(ws, …)`. From there it is `wireSessionSocket` →
+`createSession` → the same `SessionCore`, the same transports, the same tool
+executor, with the relay attached through `RuntimeOptions.executeTool` /
+`toolSchemas` / `onToolResult` — three options that were already the seam for "a
+definition not known at build time". What looks like a second path is the
+handshake PRELUDE, and no resolver can delete it, because "the definition
+arrives at handshake time" is what generates it: the deferred start, the
+handshake timeout, the socket-died-first race, the env promise, the
+per-connection runtime teardown.
+
+**3. The 808 lines re-measured: ~200 are deletable, not 808.** Split by whether
+a resolver removes the code or renames it:
+
+| piece | lines | verdict |
+| --- | --- | --- |
+| `isHostAllowed` (`host-mode.ts` 58-79) | 22 | deletable |
+| `buildHostAgent` (`host-mode.ts` 126-161) | 36 | deletable — becomes author code |
+| `host-server.ts` | 115 | deletable — becomes an agent definition |
+| the `?host=1` branch in `server.ts` + `hostModeEnv` | ~28 | deletable |
+| `startHostSession` + its options (`host-mode.ts` 163-201, 291-462) | 211 | INHERENT — renamed, not removed |
+| `unknownCredentialName` / `withHostCredentials` (81-124) | 44 | keep (plan agrees) |
+| `sendEvent` / `rejectHandshake` (203-232) | 30 | keep |
+| `assertHostRatesSupported` / `s2sConfigFromHandshake` (234-289) | 56 | keep — measured, and pinned by `packages/aai/CLAUDE.md` |
+| `host-relay.ts`, `providers/host-env.ts`, `sdk/env-types.ts` | 253 | keep (plan agrees) |
+
+So the diff would be roughly line-NEUTRAL: ~200 lines out, a resolver type, its
+wiring, its docs and ~650 lines of reworked tests in. The plan's table
+attributed "~435 lines" to "the second session entry and its gate", which
+conflates the gate (22) with the credential screen, the rate refusal and the
+deferred-start machinery it also says to keep.
+
+**4. The resolvable field set collapses to ONE field on this architecture.** The
+unit that holds a definition is the RUNTIME, not the session: `agentConfig`,
+`toolSchemas`, the provider resolution (`runtime-pipeline-providers.ts`, eager
+and deliberately per-runtime), the transport factory and the system-prompt cache
+are all fixed at `createRuntime`. `BuildTransportArgs` is
+`{ sessionOpts, systemPrompt, callbacks }` — `systemPrompt` is the ONLY
+definition field already passed per session. Of the five fields this plan
+sketches: `greeting` is excluded by this plan's own `/client-config` rule,
+`tools` is excluded because a relayed tool is a schema plus an execution CHANNEL
+(see the answered questions below), `llm` would put a per-session vendor-SDK
+resolution on the session-start path that is hoisted off it on purpose, and
+`sttPrompt` reaches the transports through the per-runtime `agentConfig`. A
+resolver that "runs inside `session.start()`" can therefore decide the system
+prompt and nothing else — and a resolver that decides more has to build a
+per-connection runtime, which is `startHostSession`.
+
+### And the platform surface would be WIDER, not narrower
+
+Worth recording, because it is the opposite of what the plan expects from
+`aai-server/CLAUDE.md`'s standing note. Host mode is unreachable on a deployed
+agent **by construction, not by a flag**: `createServer`'s host branch is
+`wantsHost && env && isHostAllowed(env)`, and the guest harness calls
+`createServer` with no `env` at all (`harness-agent-mode.ts`, `harness.ts` —
+`env` goes to `createRuntime`, never to the server). So no tenant secret can
+re-enable it either; the argument is simply absent.
+
+A resolver's handshake cannot be gated that way, because delivery is what calls
+the resolver. Either the capability is `aai dev`-only — in which case the
+plan's headline benefit, making per-caller instructions expressible on a
+deployed agent, is nil — or it opens a handshake surface in the guest that is
+closed today, on an upgrade with no auth posture. The plan is right that adding
+that auth back is out of scope; the consequence is that this plan is BLOCKED on
+it rather than adjacent to it.
+
+### What would revive this
+
+Not the resolver type — the trusted input. Something that gives a connection an
+authenticated identity the host can hand a resolver: the platform's owner-auth
+on `/:slug/websocket` returning, or `createServer`'s `upgrade` hook growing a
+return value richer than `boolean` so a self-hosted operator can attach the
+identity it already authenticated. With that in place the plan's distinction #1
+has two non-empty sides and can be enforced by a type. Without it, "resolver"
+means "the client decides", which is what `?host=1` already says out loud.
 
 ## The finding is the parallel PATH, not the overlay
 
@@ -173,6 +282,9 @@ and a resolver would move that to runtime).
 
 ## Scope
 
+**Not executed** — kept as the record of what was proposed, and because the
+next proposal in this area will start from it. See "Outcome" above.
+
 | Change | Where |
 | --- | --- |
 | Resolver type + `session.started` wiring inside `session.start()` | `sdk/define.ts`, `host/ws-handler.ts`, `host/runtime.ts` |
@@ -190,20 +302,55 @@ planned to drive the same path. If both plans land, level 1 should drive the
 resolver rather than the `?host=1` entry — so these two want sequencing against
 each other, not just against doc 3.
 
-## Open questions
+## Open questions, ANSWERED
 
-- **Is `buildHostAgent`'s behaviour actually expressible as a resolver?** It
-  overlays four fields and empties `tools`, which looks trivially expressible —
-  but `tools: {}` is load-bearing (injected tools are RELAYED, not executed), so
-  the resolver has to be able to say "these tool schemas, executed elsewhere."
-  That is the relay boundary poking through, and it decides whether the tools
-  field can take a resolver at all in the first cut.
-- **Does `createHostServer` survive as a convenience?** Its value was doing three
-  easily-forgotten things at once. If a resolver makes the host-only server an
-  ordinary agent definition, the convenience might be better as a template than
-  as an exported factory.
-- **What does `AAI_ALLOW_HOST` become?** If the handshake input only reaches an
-  agent that declares a resolver for it, declaring the resolver IS the opt-in and
-  the env flag is redundant. That is the good outcome, and it needs confirming
-  rather than assuming — the flag currently also gates a server that holds
-  operator credentials.
+Answered against the tree; these are what turned the plan down.
+
+- **Is `buildHostAgent`'s behaviour actually expressible as a resolver? NO —
+  not the `tools` half, and not in any cut.** A resolver returns DATA. A relayed
+  tool is a schema plus an execution CHANNEL, and the channel is the client
+  socket — so "these tool schemas, executed elsewhere" is not something the
+  return value can say. It is said today by two runtime options beside the
+  agent (`toolSchemas` + `executeTool`, with `onToolResult` closing the loop),
+  and those cannot move onto an `AgentDef` field because `AgentDef` is
+  serialized into the stored config while a relay is a live socket. The
+  workaround — a resolver returning `relayedTools` that the framework wires to
+  "the peer that supplied them" — is coherent, and it is also an admission that
+  the field only means anything for a handshake-supplied definition, i.e. it is
+  host mode's concept with a general name. So `tools` cannot take a resolver,
+  which is what this question said would decide the first cut.
+
+  The other four fields ARE expressible, and three of them are worth nothing
+  without the fourth: `maxSteps` and `sttPrompt` are per-runtime today,
+  `greeting` is barred by the `/client-config` rule this plan sets, and
+  `systemPrompt` alone does not need a new authoring surface.
+
+- **Does `createHostServer` survive as a convenience? It survives BETTER than
+  the resolver does.** Its whole value is the three things it says once and
+  correctly — no agent, no env gate to remember, no credentials required — and
+  each of the three is a statement about a SERVER, not about an agent
+  definition. A resolver could carry the definition overlay and would carry
+  none of the rest: the declining runtime for plain `/websocket`, the `env: {}`
+  default that makes an unauthenticated caller safe to serve because there is
+  no operator credential to spend, and the typed `defaults` that excludes the
+  four fields the handshake owns. It is 115 lines that a nine-line agent
+  definition does not replace.
+
+- **What does `AAI_ALLOW_HOST` become? It has to STAY, which is the clearest
+  single reason not to do this.** "Declaring the resolver is the opt-in" is true
+  of the AUTHOR and false of the OPERATOR, and on this platform they are
+  different people: an operator runs a server holding provider credentials, and
+  the flag is what stops a definition supplied by an unauthenticated client
+  from spending them. A per-agent declaration cannot make that decision on an
+  operator's behalf — and worse, it moves the decision to the party with no
+  stake in the credentials. The flag is also what makes the capability
+  answerable from OUTSIDE the bundle: with it, "can this server be handed an
+  arbitrary agent?" is one env var; without it, the answer is whatever every
+  deployed bundle's resolver happens to read.
+
+## What the consumer of `?host=1` should do
+
+Nothing. `?host=1`, `startHostSession`, `buildHostAgent` and `createHostServer`
+all stand. `5-behaviour-eval-tier.md`'s level 1 should drive `?host=1` with
+`AAI_ALLOW_HOST=1`, exactly as the external harness does today, and its own open
+question ("does level 1 use host mode?") is answered yes with nothing pending.
