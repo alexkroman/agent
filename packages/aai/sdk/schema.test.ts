@@ -7,6 +7,7 @@ import {
   type StandardSchemaV1,
   toToolJsonSchema,
 } from "./schema.ts";
+import { isRecord } from "./utils.ts";
 
 /** Minimal non-Zod Standard Schema with an ArkType-style converter. */
 function fakeArk(): StandardSchemaV1 & { toJsonSchema: () => Record<string, unknown> } {
@@ -15,9 +16,7 @@ function fakeArk(): StandardSchemaV1 & { toJsonSchema: () => Record<string, unkn
       version: 1,
       vendor: "arktype",
       validate: (value: unknown) =>
-        typeof value === "object" && value !== null
-          ? { value }
-          : { issues: [{ message: "must be an object" }] },
+        isRecord(value) ? { value } : { issues: [{ message: "must be an object" }] },
     },
     toJsonSchema: () => ({ $schema: "x", type: "object" }),
   };

@@ -2,7 +2,7 @@
 // Zod schemas + limits for the browser studio (coding agent) HTTP surface.
 
 import { slugifyName } from "@alexkroman1/aai/slugify";
-import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
+import { isRecord, MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
 import { generatedSlug } from "aai-server/slug-generate";
 import { z } from "zod";
@@ -221,7 +221,7 @@ function totalStringLength(value: unknown): number {
     for (const item of value) total += totalStringLength(item);
     return total;
   }
-  if (value !== null && typeof value === "object") {
+  if (isRecord(value)) {
     let total = 0;
     for (const item of Object.values(value)) total += totalStringLength(item);
     return total;

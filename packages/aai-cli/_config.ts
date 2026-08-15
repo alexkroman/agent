@@ -8,7 +8,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import envPaths from "env-paths";
 import { z } from "zod";
 import { CliError } from "./_output.ts";
-import { errorMessage, readJson, writeJson } from "./_utils.ts";
+import { errorMessage, isEexist, readJson, writeJson } from "./_utils.ts";
 
 /**
  * `.aai/project.json` lives in the working tree, so everything in it is
@@ -206,7 +206,7 @@ async function withGlobalConfigLock<T>(dir: string, fn: () => Promise<T>): Promi
       held = true;
       break;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") break; // unlockable; proceed
+      if (!isEexist(err)) break; // unlockable; proceed
       const age = await fs
         .stat(lockPath)
         .then((s) => Date.now() - s.mtimeMs)

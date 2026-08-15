@@ -30,6 +30,7 @@
  * platform nowhere.
  */
 
+import { isRecord } from "@alexkroman1/aai/utils";
 import {
   deleteSlugSecret,
   listSlugSecrets,
@@ -77,7 +78,7 @@ async function readProjectSecrets(
   if (raw === null) return {};
   try {
     const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, string>) : {};
+    return isRecord(parsed) ? (parsed as Record<string, string>) : {};
   } catch {
     return {};
   }

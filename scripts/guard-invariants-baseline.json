@@ -32,5 +32,8 @@
     "packages/aai/host/transports/_transport-recorder.ts": 3,
     "packages/aai/host/transports/types.ts": 4,
     "packages/aai/host/ws-handler.ts": 4
+  },
+  "rule17_openCodedRecordGuard": {
+    "packages/aai/sdk/standard-schema.ts": 1
   }
 }

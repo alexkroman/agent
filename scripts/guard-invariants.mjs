@@ -168,6 +168,7 @@ const SELF_REFERENTIAL = new Map([
   ["packages/aai/sdk/epoch.ts", "*"],
   ["packages/aai/sdk/session-slot.ts", "*"], // rule 6 (retired) named the cast it replaces
   ["packages/aai/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
+  ["packages/aai/sdk/utils.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body
 ]);
 
 /** Is `file` exempt from the rule keyed `ruleKey`? */

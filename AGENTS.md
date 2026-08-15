@@ -436,6 +436,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 13 | no template import escaping its template dir | move it in, or publish it |
   | 14 | no fixture directory nothing reads | delete it, or add the reader |
   | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
+  | 17 | no `typeof x === "object" && x !== null` | `isRecord()` |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
@@ -447,8 +448,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   is not the value** (`String(params.port)` would stringify `undefined` into
   `"undefined"`; `{ mode: 0o700 }` sets a different value from the one it
   tests), the CLI test setup's env scrub, one hand-rolled owned-map in
-  `studio-sse.ts`, and the two `/tmp` literals that name a path inside the Linux
-  sandbox rather than on this machine.
+  `studio-sse.ts`, the two `/tmp` literals that name a path inside the Linux
+  sandbox rather than on this machine, and one record guard over a declared
+  union.
 
   **Two of these rules found real bugs on the day they were written**, which is
   the argument for the whole gate. Rule 2 caught two `omitUndefined`

@@ -10,6 +10,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { execaNode, execaSync, type ResultPromise } from "execa";
 import pTimeout from "p-timeout";
 import { errorMessage } from "./_utils.ts";
@@ -121,7 +122,7 @@ async function startServer(configPath: string): Promise<{ server: VerdaccioProce
   // so only the startup deadline needs wiring up by hand. execa's `timeout`
   // option is not usable here — it would kill the long-running server.
   const started = subprocess.getOneMessage({
-    filter: (msg) => typeof msg === "object" && msg !== null && "verdaccio_started" in msg,
+    filter: (msg) => isRecord(msg) && "verdaccio_started" in msg,
   });
   try {
     await pTimeout(started, {

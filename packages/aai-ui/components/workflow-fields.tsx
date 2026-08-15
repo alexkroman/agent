@@ -23,6 +23,7 @@
  */
 
 import type { WorkflowSummary } from "@alexkroman1/aai";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { useWorkflows } from "../use-workflow-form.ts";
 import { CheckboxField, FileField, NumberField, SelectField, TextField } from "./form.tsx";
 
@@ -183,7 +184,7 @@ function typeOf(property: JsonSchemaProperty): string | undefined {
 
 /** The listing's `unknown` schema as the object shape this reads, when it is one. */
 function asObjectSchema(schema: unknown): JsonObjectSchema | undefined {
-  return schema !== null && typeof schema === "object" ? (schema as JsonObjectSchema) : undefined;
+  return isRecord(schema) ? (schema as JsonObjectSchema) : undefined;
 }
 
 /**
