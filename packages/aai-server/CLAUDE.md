@@ -167,9 +167,8 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `api-key-verify.ts` — raw API-key verification against AssemblyAI (see
   "Auth" below). The one absolute authentication check on the platform
 - `rate-limit.ts` — the shared fixed-window limiter (in-memory + Postgres).
-  It lived in `aai-studio-server` while the studio was its only caller, which
-  is why `POST /deploy` had none: this package cannot import from that one.
-  Policy stays with each consumer; only the mechanism is here
+  Only the MECHANISM is here; policy stays with each consumer, and every window
+  the platform runs is the studio's (`aai-studio-server/CLAUDE.md`, "Rate limits")
 - `client-ip.ts` — the rate-limit key. Reads the **last** `X-Forwarded-For`
   entry (the hop our own proxy appended), not the first — the leftmost is
   client-supplied, and keying on it hands an attacker an unlimited supply of
@@ -253,13 +252,12 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   hashes: the live set is every `worker_hash` plus every value of
   `client_files`, so a blob outside it is unreferenced by construction.
 
-  **`assertBucketPrivate` refuses boot on a MISCONFIGURED bucket and only
-  warns on an unreachable one.** The bucket is the one piece of Supabase state
-  living in the dashboard rather than in `supabase/migrations`, so nothing
-  else would notice it going missing or turning public. But this guard is a
-  network call, unlike `assertServiceRoleKey`/`assertSessionModeUrl` — failing
-  boot on a Storage blip would stop every container at once, a worse outage
-  than the one guarded against.
+  **`assertBucketPrivate` refuses boot on a MISCONFIGURED bucket and only warns
+  on an unreachable one.** The bucket is the one piece of Supabase state living
+  in the dashboard rather than in `supabase/migrations` (a local `supabase start`
+  declares it in `config.toml`), so nothing else would notice it going missing or
+  turning public — but unlike the two guards above this one is a NETWORK call, and
+  failing boot on a Storage blip would stop every container at once.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `secret-store.ts` — `SecretStore` interface: Supabase Vault
@@ -335,23 +333,16 @@ differ, and each is a decision rather than an oversight:
 
   **Staying on `postgres_changes` is not cheap, and a publication COLUMN LIST
   cannot make it cheaper.** These are signal streams — handlers re-read — so
-  every settled edit hands walrus the WHOLE workspace document, detoasted and
-  serialized, for a payload the handler discards. Narrowing the publication to
-  the identity columns is the obvious fix and it is a NO-OP: column lists are a
-  `pgoutput` feature, and Supabase Realtime does not decode with pgoutput.
-  `realtime.list_changes` reads the publication for its TABLE list alone and
-  decodes with **wal2json** (`pg_logical_slot_get_changes(…, 'add-tables', …)`),
-  which has no notion of publications and emits every column regardless —
-  measured on realtime v2.112.6 / PG 17.6, where a publication with
-  `attnames = {id,small}` still emitted the excluded column in full. The lists
-  were written, measured, and reverted; `platform-schema.test.ts` now guards
-  AGAINST them, because the cost of the attempt is not the migration, it is the
-  comment explaining a mechanism that isn't there.
-
-  If the decode cost ever has to come down, it takes a different mechanism, not
-  a narrower publication: Broadcast from Database (a trigger calling
-  `realtime.broadcast_changes` with a payload you choose), or moving the signal
-  onto a skinny table that does not carry `doc`.
+  every settled edit hands walrus the WHOLE workspace document for a payload the
+  handler discards. Narrowing the publication is the obvious fix and is a NO-OP:
+  column lists are a `pgoutput` feature, and `realtime.list_changes` reads the
+  publication for its TABLE list alone and decodes with **wal2json**, which has
+  no notion of publications and emits every column regardless (measured on
+  realtime v2.112.6 / PG 17.6). The lists were written, measured and reverted;
+  `platform-schema.test.ts` guards AGAINST them, because the cost of the attempt
+  is the comment explaining a mechanism that isn't there. Bringing the decode cost
+  down takes a different mechanism — Broadcast from Database, or a skinny signal
+  table that does not carry `doc`.
 - **RLS is enabled and DENY-ALL, which is not what RLS is usually for.**
   Access is really controlled by the grant: `anon`/`authenticated` hold no
   privilege on `aai_platform`, and it is not a PostgREST-exposed schema.
@@ -432,22 +423,15 @@ into a jsonb column from inside Postgres — an arrow operator, `-`, `jsonb_set`
 a predicate in a pg_cron body — needs a test against a real database.
 
 **Those are both the FORWARD direction, and the reverse one cost us three
-tables.** A table that is queried nowhere *and* declared nowhere satisfies
-every check above trivially, and production held exactly that:
-`sandbox_registry`, `slug_epochs`, and `slug_locks`, created at runtime by
-`pg-ensure.ts` before the schema was declared and never dropped — because a
-declared schema has no `drop` for a table it never declared. #950 replaced each
-one (a Modal sandbox NAME, `agents.version`, and `pg_advisory_lock`
-respectively) and correctly declared only what the code still needed, which is
-how they became invisible rather than wrong.
-
-They were not inert. `20260807000000_platform_rls.sql` enables RLS on the five
-tables it names, so leftovers would have been the only tables in the schema
-without it — and nothing reports that, since splinter's
-`rls_disabled_in_public` and the RLS-disabled alerts both key on `public`.
-`20260807120000_drop_orphan_platform_tables.sql` drops them (`slug_epochs` was
-not empty: 21 stale counters superseded by `agents.version`, recorded in that
-migration's header rather than discovered afterwards).
+tables.** A table queried nowhere *and* declared nowhere satisfies every check
+above trivially, and production held exactly that: `sandbox_registry`,
+`slug_epochs` and `slug_locks`, created at runtime by `pg-ensure.ts` before the
+schema was declared, replaced by #950, and never dropped — because a declared
+schema has no `drop` for a table it never declared. They were not inert: they
+would have been the only tables in the schema without RLS, which nothing reports
+(splinter's `rls_disabled_in_public` and the RLS-disabled alerts both key on
+`public`). `20260807120000_drop_orphan_platform_tables.sql` drops them, and its
+header carries the full account including the 21 stale `slug_epochs` counters.
 
 **Drift detection cannot be static** — it is a fact about a database, not the
 repo — so the guard is `schema-drift.scenario.test.ts`, gated on
@@ -455,6 +439,38 @@ repo — so the guard is `schema-drift.scenario.test.ts`, gated on
 declared by a migration. Point it at whatever database you want the claim to
 hold for; `supabase db diff --linked --schema aai_platform` is the ad-hoc
 equivalent and also reports column-level drift.
+
+### Two arms per store contract, and the stack is the only real one
+
+Every store's memory/Postgres equivalence is ASSERTED, not assumed. One case list
+per contract in `store-conformance-cases.ts` (registry: `store-conformance.ts`);
+the unit suites run it over the MEMORY arm unconditionally, and the two
+`*store-conformance.scenario.test.ts` files run the same list over the local
+Supabase stack behind `describeWithStack`, which `pnpm test:pg` resolves.
+`research/3.5-store-backend-fidelity.md` has the argument; the rules:
+
+- **An arm is legitimate only if something really runs on it.** Memory qualifies
+  (an agent with no `DATABASE_URL`), the stack qualifies (it IS the platform), a
+  STOCK Postgres does not — nothing runs `aai_platform` without Vault, pg_cron and
+  walrus — so the `create extension`-stripping regex and the plpgsql `pgmq.create`
+  stub propping that arm up are deleted. A plain server stays right for the SDK's
+  own stores, where a user brings the database.
+- **The fake `SqlExec` is a RECORDER, not an arm**, and keeps its own spec: the
+  statements a store issues, and the DDL it must not.
+- **A case is arm-independent** — fresh keys from `uniqueKeys`, never `"s"`/`"p"`
+  — and what one arm cannot express is not a shared case (`RateLimiter.check`'s
+  `now` is dropped by the pg implementation on purpose).
+- **Register the pair or the gate fails.** `store-conformance-registry.test.ts`
+  (a TEXT scan, respecting the boundary this package may not import across)
+  refuses an unregistered `createPg*`/`createMemory*` pair, a registered name that
+  does not exist, or a conformable contract not invoked from BOTH a unit and a
+  scenario file; `conformance: false` must say why.
+- **`ensurePlatformTables` VERIFIES a CLI-built database** against
+  `supabase_migrations.schema_migrations`, failing with the pending filenames and
+  the command rather than on a column six migrations later.
+- **`pg-cron.scenario.test.ts` EXECUTES every sweep body**, which nothing did:
+  `pg-cron.test.ts` asserts only that the body reached `cron.schedule` as a
+  string, so a syntax error was green and swallowed hourly by `guarded()`.
 
 The cross-replica coordination that lives in this same Postgres:
 
@@ -515,24 +531,10 @@ The cross-replica coordination that lives in this same Postgres:
   forgets produces no error at all. Only the row caches are dropped: blob
   caches are content-addressed and cannot go stale. The broker path
   deliberately does NOT go through this wrapper — it mutates nothing.
-- **Rate limits** (`rate-limit.ts`; the studio's windows in
-  `aai-studio-server/studio-rate-limit.ts`): the chat, project-create, and
-  deploy windows are rows in `aai_platform.studio_rate_limits`
-  (`createPgRateLimiter`, one atomic upsert per check), so a limit holds
-  platform-wide instead of multiplying by the replica count — which for an
-  ABUSE limit is the whole point, since `MAX_CONTAINERS = 10` makes a
-  per-replica cap a cap of ten times the number written down. Fail-closed: a
-  database error propagates rather than silently unmetering the route.
-  Expired rows are swept by pg_cron (`pg-cron.ts`), not in-process. The
-  `studio_` table name is now a misnomer; `name` namespaces each limiter's
-  rows, which is what lets a second consumer share it without a migration.
-
-  **Every limited route is keyed TWICE — by scope and by client IP.** The
-  scope key is derived from the caller's bearer, so for a raw-key caller it
-  was a value they chose: one character's difference minted a fresh window,
-  which made both studio limits decorative against exactly the traffic they
-  exist to stop. Key verification above is what makes a scope cost an
-  account; the IP key is what bounds the damage before one is spent.
+- **Rate limits** (`rate-limit.ts`): rows in `aai_platform.studio_rate_limits`,
+  one atomic upsert per check, so a limit holds platform-wide rather than
+  multiplying by the replica count. Windows and keying: "Rate limits" in
+  `packages/aai-studio-server/CLAUDE.md`.
 - **Session resume needs no cross-replica store**: sessions live in the guest
   sandbox, not on a replica — a `?sessionId=<id>` reconnect re-brokers via
   `GET /:slug/client-config`. It need not land on the SAME sandbox any more: slot

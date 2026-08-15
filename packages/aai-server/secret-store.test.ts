@@ -1,7 +1,20 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { createMemorySecretStore, createVaultSecretStore } from "./secret-store.ts";
+import { secretStoreConformance } from "./store-conformance-cases.ts";
 import { createRecordingSql as fakeSql } from "./test-utils.ts";
+
+// ── The CONTRACT, over the arm that runs everywhere ─────────────────────────
+//
+// One case list in `store-conformance.ts`, shared with the stack arm in
+// `store-conformance.scenario.test.ts`. The memory arm is unconditional, so this
+// module stays covered on every machine; the stack arm adds what only a real
+// Vault can hold. The suites below keep whatever each implementation
+// uniquely owes — the statements it issues, and its own edge cases.
+
+describe("SecretStore conformance: memory", () => {
+  secretStoreConformance(() => createMemorySecretStore());
+});
 
 describe("createVaultSecretStore", () => {
   test("get reads decrypted_secrets by name", async () => {

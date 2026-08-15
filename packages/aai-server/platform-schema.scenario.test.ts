@@ -21,7 +21,29 @@
  * (the point is that it works on a fresh project) and concurrent runs cannot
  * collide.
  *
- * Runs in the integration tier against `AAI_TEST_PG_URL`.
+ * **Runs against the STACK, in a throwaway database on it.** It used to run
+ * against a stock server, which meant the migration could not be applied as it
+ * ships: every `create extension` line was stripped by a regex and a plpgsql
+ * `pgmq.create(text)` was hand-written so the queue block could run — a fourth
+ * implementation of a contract, in SQL, whose own comment conceded it was
+ * "deliberately not an emulation of pgmq" while being exactly that. Both are
+ * gone; the stack has the real extensions.
+ *
+ * One line still cannot apply, and it is a property of pg_cron rather than of
+ * the arm: pg_cron is a SINGLE-DATABASE extension pinned to
+ * `cron.database_name` (`postgres`), so `create extension pg_cron` in any other
+ * database raises `can only create extension in database postgres`. The
+ * throwaway database is what makes the fresh-project claim testable, so the one
+ * line is skipped — and COUNTED, so a second such line cannot arrive silently.
+ * Nothing is stubbed: the extension really exists in the cluster.
+ *
+ * The per-store round-trip specs that used to live here are now the conformance
+ * tables (`store-conformance.ts`, run over the stack in
+ * `store-conformance.scenario.test.ts`). They were a THIRD spec set over
+ * contracts that already had two, free to drift and silent about it. What stays
+ * is what is about the MIGRATION: that it applies, that re-applying it is a
+ * no-op, that the foreign keys and cascades it declares really hold, and that no
+ * store issued DDL.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -29,53 +51,42 @@ import path from "node:path";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import { createPgAgentRows } from "./agent-store.ts";
+import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import { createPgChatStore } from "./chat-store.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { createPgWorkspaceStore, WorkspaceConflictError } from "./workspace-store.ts";
+import { createPgWorkspaceStore } from "./workspace-store.ts";
 
 const migrationsDir = path.resolve(import.meta.dirname, "../../supabase/migrations");
 
 /**
- * The migration as it ships, minus the two `create extension` lines.
+ * The migration as it ships, minus the one line a throwaway database cannot run.
  *
- * pg_cron, pgmq and pg_net are Supabase-provided and cannot be installed on a
- * stock server (all three are compiled extensions; pg_cron additionally needs
- * `shared_preload_libraries`). Everything else — every table, index, the
- * publication block, the grants, the foreign keys, and the pgmq queue
- * creation — executes VERBATIM, because `stubPgmq` below supplies the one
- * function the migration calls.
+ * pg_cron is single-database by design: the background worker reads job
+ * descriptions from `cron.database_name` (`postgres`), and `create extension
+ * pg_cron` anywhere else raises `can only create extension in database
+ * postgres`. Everything else — supabase_vault, pgmq, pg_net, every table, index,
+ * the publication block, the grants, the foreign keys, and the pgmq queue
+ * creation — executes VERBATIM against the real extensions.
  *
- * pg_net needs no stub, unlike pgmq: nothing in the migrations CALLS `net.*`.
- * Its only consumer is a pg_cron sweep body, which lives in TypeScript
- * (pg-cron.ts) and guards itself on `to_regnamespace('net')` — so a database
- * without the extension is a sweep that no-ops, which is exactly the shape
- * this stock server stands in for.
- *
- * The substitution is COUNTED so this can never quietly cover less: a third
- * extension, or a changed extension line, fails the assertion in the first
- * test rather than silently widening what is skipped.
+ * The substitution is COUNTED so this can never quietly cover less: a second
+ * omitted line fails the assertion in the first test rather than silently
+ * widening what is skipped.
  */
-function migrationForStockPostgres(): { sql: string; stripped: number } {
+function migrationForThrowawayDatabase(): { sql: string; skipped: number } {
   const files = readdirSync(migrationsDir)
     .filter((n) => n.endsWith(".sql"))
     .sort();
   if (files.length === 0) throw new Error(`no migrations in ${migrationsDir}`);
   const raw = files.map((n) => readFileSync(path.join(migrationsDir, n), "utf-8")).join("\n");
-  let stripped = 0;
-  // `with schema extensions` is part of the line for pg_net (Supabase's
-  // convention; a bare create lands the extension in `public`), so the pattern
-  // has to allow the clause or that one silently stops being stripped — the
-  // count below is what turns "silently" into a failure.
-  const sql = raw.replace(/^create extension if not exists \w+(?: with schema \w+)?;$/gm, () => {
-    stripped += 1;
-    return "-- extension omitted: not available on a stock server";
+  let skipped = 0;
+  const sql = raw.replace(/^create extension if not exists pg_cron;$/gm, () => {
+    skipped += 1;
+    return "-- pg_cron omitted: single-database extension, pinned to cron.database_name";
   });
-  return { sql, stripped };
+  return { sql, skipped };
 }
 
-describeWithPg("the platform migration applies and the stores work against it", () => {
+describeWithStack("the platform migration applies and the stores work against it", () => {
   /**
    * Read inside the hooks, not at the top of this body: vitest EXECUTES a
    * `describe.skip` callback (it has to, to enumerate the tests it is skipping),
@@ -105,18 +116,10 @@ describeWithPg("the platform migration applies and the stores work against it", 
     db = createPostgresDb({ url: toPgUrl(url), max: 2 });
     sql = (query, params) => db.query(query, params);
 
-    // Stand in for the pgmq extension so the migration's queue block can run
-    // as written. Stubbing beats stripping: the block has real error handling
-    // (`pgmq.create` is not `if not exists`, so it catches the duplicate), and
-    // that handling is worth executing. Without the stub the call raises
-    // `3F000 schema "pgmq" does not exist`, which those handlers deliberately
-    // do NOT catch — so the whole migration aborts.
-    await stubPgmq(sql);
-
     // The whole migration in one statement — as `supabase db push` sends it,
     // `do $$ … $$` blocks and all, so a statement-splitting bug in this test
     // cannot make a broken migration look fine.
-    await sql(migrationForStockPostgres().sql);
+    await sql(migrationForThrowawayDatabase().sql);
   });
 
   afterAll(async () => {
@@ -129,147 +132,45 @@ describeWithPg("the platform migration applies and the stores work against it", 
     }
   });
 
-  test("needs exactly the three extensions that cannot be installed locally", () => {
-    // Guards the substitution above: if the migration grows another extension,
-    // decide whether it is testable rather than quietly skipping it. pg_net
-    // was the third such decision — see the note on
-    // `migrationForStockPostgres`.
-    expect(migrationForStockPostgres().stripped).toBe(3);
+  test("only pg_cron is omitted, and the other extensions are REAL", async () => {
+    // Guards the substitution above: a second omitted line means deciding
+    // whether it is testable rather than quietly skipping it.
+    expect(migrationForThrowawayDatabase().skipped).toBe(1);
+    // And the two the migration CREATES are really installed here, by the
+    // migration itself — which is what makes the pgmq queue block executable
+    // rather than something a hand-written plpgsql stub stood in for.
+    const rows = await sql(
+      `select extname from pg_extension where extname in ('pgmq', 'pg_net') order by extname`,
+    );
+    expect(rows.map((r) => String(r.extname))).toEqual(["pg_net", "pgmq"]);
+    // **`supabase_vault` is ABSENT here, and that is a finding about the
+    // migrations rather than about this arm.** No migration creates it — Supabase
+    // pre-installs it in the project's own `postgres` database — so a database
+    // built from `supabase/migrations` ALONE, which is exactly what this
+    // throwaway one is, has no Vault and `createVaultSecretStore` cannot work
+    // against it. The conformance table reaches Vault because it runs against the
+    // stack's `postgres` database, where the platform's schema really lives.
+    // Asserted rather than merely noted, so a migration that starts declaring it
+    // has to come and change this line.
+    const vault = await sql("select extname from pg_extension where extname = 'supabase_vault'");
+    expect(vault).toEqual([]);
   });
 
   test("re-applying the migration is a no-op, not an error", async () => {
     // Every statement is `if not exists`-guarded or wrapped in an existence
     // check, and `supabase db push` may legitimately re-run it.
-    const { sql: migration } = migrationForStockPostgres();
+    const { sql: migration } = migrationForThrowawayDatabase();
     await expect(sql(migration)).resolves.toBeDefined();
   });
 
-  test("agents rows round-trip through the real table", async () => {
-    const rows = createPgAgentRows(sql);
-    // Every column the schema declares, including the nullable one — a
-    // `not null` the store does not supply would fail right here.
-    await rows.put({
-      slug: "round-trip",
-      credential_hashes: ["sha256:abc"],
-      worker_hash: "wh-1",
-      client_files: { "index.html": "ch-1" },
-      harness_image_tag: "aai-guest-harness:deadbeef",
-    });
-
-    const got = await rows.get("round-trip");
-    expect(got).toMatchObject({
-      slug: "round-trip",
-      credential_hashes: ["sha256:abc"],
-      // jsonb, so the nested object has to survive the driver both ways.
-      worker_hash: "wh-1",
-      client_files: { "index.html": "ch-1" },
-      harness_image_tag: "aai-guest-harness:deadbeef",
-    });
-    expect(typeof got?.version).toBe("number");
-  });
-
-  test("a re-put bumps version — the cross-replica invalidation signal", async () => {
-    const rows = createPgAgentRows(sql);
-    const base = {
-      slug: "versioned",
-      credential_hashes: ["sha256:one"],
-      worker_hash: "w1",
-      client_files: {},
-    };
-    await rows.put(base);
-    const first = await rows.getVersion("versioned");
-    await rows.put({ ...base, worker_hash: "w2" });
-    const second = await rows.getVersion("versioned");
-
-    // Sandboxes retire on a version mismatch, so a version that does NOT move
-    // on redeploy means resident guests keep serving superseded code — the
-    // quietest possible failure of the whole invalidation design.
-    expect(first).not.toBeNull();
-    expect(second).toBeGreaterThan(first as number);
-    // And the row really was updated, not duplicated.
-    expect((await rows.get("versioned"))?.worker_hash).toBe("w2");
-  });
-
-  test("a nullable harness_image_tag reads back as null, not undefined", async () => {
-    // The pin is optional (the subprocess backend has no image), and the
-    // store's schema distinguishes null from absent.
-    const rows = createPgAgentRows(sql);
-    await rows.put({
-      slug: "unpinned",
-      credential_hashes: [],
-      worker_hash: "w",
-      client_files: {},
-    });
-    expect((await rows.get("unpinned"))?.harness_image_tag).toBeNull();
-  });
-
-  test("delete removes the row and its version", async () => {
-    const rows = createPgAgentRows(sql);
-    await rows.put({
-      slug: "doomed",
-      credential_hashes: [],
-      worker_hash: "w",
-      client_files: {},
-    });
-    await rows.delete("doomed");
-    expect(await rows.get("doomed")).toBeNull();
-    // Null version is what tells the invalidation handler to TERMINATE rather
-    // than drain — it must not read as "version 0".
-    expect(await rows.getVersion("doomed")).toBeNull();
-  });
-
-  test("workspace rows round-trip, and the optimistic version guards writes", async () => {
-    const workspaces = createPgWorkspaceStore(sql);
-    // `null` means create; it must CONFLICT rather than overwrite if a row
-    // exists, which is the whole basis of the cross-replica retry in
-    // studio-workspace.ts.
-    const v1 = await workspaces.put("scope-a", "proj", { files: { "agent.ts": "1" } }, null);
-    expect(await workspaces.get("scope-a", "proj")).toEqual({
-      doc: { files: { "agent.ts": "1" } },
-      version: v1,
-    });
-    await expect(workspaces.put("scope-a", "proj", { files: {} }, null)).rejects.toThrow(
-      WorkspaceConflictError,
-    );
-
-    // A write naming the current version wins and moves it; one naming a stale
-    // version loses. Real Postgres is the only place this is a real CAS.
-    const v2 = await workspaces.put("scope-a", "proj", { files: { "agent.ts": "2" } }, v1);
-    expect(v2).toBeGreaterThan(v1);
-    await expect(workspaces.put("scope-a", "proj", { files: {} }, v1)).rejects.toThrow(
-      WorkspaceConflictError,
-    );
-    expect((await workspaces.get("scope-a", "proj"))?.doc).toEqual({
-      files: { "agent.ts": "2" },
-    });
-
-    // Listing is scope-filtered — a cross-tenant leak here would be silent.
-    await workspaces.put("scope-b", "other", { files: {} }, null);
-    expect(await workspaces.list("scope-a")).toEqual(["proj"]);
-    expect(await workspaces.list("scope-b")).toEqual(["other"]);
-
-    await workspaces.delete("scope-a", "proj");
-    expect(await workspaces.get("scope-a", "proj")).toBeNull();
-  });
-
-  test("chat rows round-trip", async () => {
-    const chats = createPgChatStore(sql);
-    // A chat BELONGS to a workspace (`studio_chats_workspace_fk`), so the
-    // project has to exist first — which is the real ordering: a chat row is
-    // only ever written by `studio/persist-chat`, at the end of a turn in a
-    // session brokered against an existing project. Writing one standalone
-    // is a shape production never produces, and until the foreign key landed
-    // this test was the only place it happened.
-    const workspaces = createPgWorkspaceStore(sql);
-    await workspaces.put("scope-chat", "proj", { files: {} }, null);
-
-    const messages = [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }];
-    await chats.putChat("scope-chat", "proj", messages);
-    expect(await chats.getChat("scope-chat", "proj")).toEqual(messages);
-    expect(await chats.getChat("scope-chat", "absent")).toBeNull();
-    await chats.deleteChat("scope-chat", "proj");
-    expect(await chats.getChat("scope-chat", "proj")).toBeNull();
-  });
+  // The per-store round-trip specs that used to sit here — agents columns and
+  // the version bump, workspace CAS, chat round-trip — are the conformance
+  // tables now (`store-conformance.scenario.test.ts`, over the same case list
+  // the memory arms run). They were a THIRD spec set over contracts that already
+  // had two, and the drift between three internally-green spec sets is silent by
+  // construction. What is left in this file is about the MIGRATION: that it
+  // applies, that re-applying it is a no-op, that the keys and cascades it
+  // declares really hold, and that no store issued DDL.
 
   test("deleting a workspace cascades to its chat", async () => {
     // The point of the foreign key: project deletion writes the workspace and
@@ -342,23 +243,4 @@ describeWithPg("the platform migration applies and the stores work against it", 
 /** `URL` renders `postgres:` as `postgres://…`; keep the driver's spelling. */
 function toPgUrl(url: URL): string {
   return url.toString();
-}
-
-/**
- * The minimum pgmq surface the MIGRATION touches: a `pgmq.create(text)` that
- * makes a queue table, so the migration's queue block — including its
- * duplicate-tolerating exception handler — runs as written.
- *
- * Deliberately not an emulation of pgmq. The queue's own semantics (visibility
- * timeouts, redelivery, archiving) are exercised against the in-memory
- * implementation in `studio-preview-queue.test.ts`; the real extension's SQL
- * remains untested, which is a known gap and a different test than this one.
- */
-async function stubPgmq(sql: SqlExec): Promise<void> {
-  await sql(`create schema if not exists pgmq;
-create or replace function pgmq.create(queue_name text) returns void as $fn$
-begin
-  execute format('create table pgmq.q_%I (msg_id bigserial primary key)', queue_name);
-end;
-$fn$ language plpgsql;`);
 }

@@ -76,16 +76,19 @@ if its `$GITHUB_ENV` export ever broke.
 
 - `pnpm test:pg` resolves a local database (the Supabase stack on 54322, a
   server on 5432, or an explicit `AAI_TEST_PG_URL`) and runs the tier against
-  it. With nothing listening it prints the commands that start one rather than
-  starting one itself.
-- A skip ANNOUNCES itself, via `describeWithPg` from
-  `packages/aai-server/_pg-test-utils.ts` — the one spelling for the gate, in
-  place of the five hand-rolled copies of `PG_URL ? describe : describe.skip`.
-- `AAI_REQUIRE_PG` turns a skip into a hard failure. CI's Linux leg sets it
-  (and `pnpm test:pg` sets it for the run it starts), so "the wiring broke" is
-  red rather than quiet. It is declared in the `check:scenario` task's `env`
-  in `turbo.json` — undeclared, strict env mode would strip it and the
-  enforcement would silently do nothing.
+  it. With the stack up it ALSO shells out to `supabase status -o env` and
+  exports the Supabase trio, because a port is not an arm — see "Two arms" in
+  `packages/aai-server/CLAUDE.md`. It starts nothing itself.
+- A skip ANNOUNCES itself, via `describeWithPg` (a database) or
+  `describeWithStack` (the whole stack) from
+  `packages/aai-server/_pg-test-utils.ts` — the one spelling for each gate, in
+  place of hand-rolled copies of `PG_URL ? describe : describe.skip`.
+- `AAI_REQUIRE_PG` and `AAI_REQUIRE_STACK` turn a skip into a hard failure. CI
+  sets each on the leg that provides it (and `pnpm test:pg` sets them for the
+  run it starts), so "the wiring broke" is red rather than quiet. Both are
+  declared in the `check:scenario` task's `env` in `turbo.json` — undeclared,
+  strict env mode would strip them and the enforcement would silently do
+  nothing.
 - **`AAI_REQUIRE_REGISTRY` is the same shape one tier up**, in `check:e2e`'s
   `env` for the same reason — see `packages/aai-cli/CLAUDE.md`.
 

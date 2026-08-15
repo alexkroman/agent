@@ -33,7 +33,7 @@ import {
 import { isStudioPath } from "aai-server/studio-paths";
 import { teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
-import { createPgPreviewQueue } from "./studio-preview-queue.ts";
+import { createMemoryPreviewQueue, createPgPreviewQueue } from "./studio-preview-queue.ts";
 import {
   CHAT_IP_RATE_LIMIT,
   CHAT_RATE_LIMIT,
@@ -75,10 +75,17 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
   // Cross-replica studio session registry — only with a platform database.
   // Without one there is a single process, so there are no peers to find.
   const sessionRegistry = base.sql ? createPgStudioSessionRegistry(base.sql) : undefined;
-  // Durable preview deploys — only with a platform database. Without one the
-  // broker's in-memory queue applies: correct for a single process, and it
-  // loses pending previews on restart, which is what pgmq prevents.
-  const previewQueue = base.sql ? createPgPreviewQueue(base.sql) : undefined;
+  // Durable preview deploys — pgmq with a platform database, an in-memory
+  // queue without one. THIS is the decision, and it is the only one: the broker
+  // used to make a second one (`options.previewQueue ??
+  // createMemoryPreviewQueue()`) that could only ever disagree with this, and
+  // did so silently. The memory tier announces itself the way every other
+  // memory selection in this codebase does, because losing pending previews on
+  // restart is a behaviour difference a developer should see in the boot log.
+  const previewQueue = base.sql ? createPgPreviewQueue(base.sql) : createMemoryPreviewQueue();
+  if (!base.sql) {
+    console.info("Local dev mode: in-memory preview queue; pending previews are lost on restart");
+  }
   return {
     store: base.store,
     workspaces: base.workspaces,
@@ -91,7 +98,7 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     ...(base.slugLock && { slugLock: base.slugLock }),
     ...(rateLimiters && { studioRateLimiters: rateLimiters }),
     ...(sessionRegistry && { studioSessionRegistry: sessionRegistry }),
-    ...(previewQueue && { previewQueue }),
+    previewQueue,
     replicaId: base.replicaId,
     isDraining,
   };

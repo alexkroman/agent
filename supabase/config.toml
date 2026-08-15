@@ -1,16 +1,68 @@
-# Supabase CLI project config, for applying `migrations/` to the platform
-# database (`supabase link --project-ref <ref>` then `supabase db push`).
+# Supabase CLI project config.
 #
-# Deliberately minimal. The platform does not run a local Supabase stack: dev
-# and tests use in-memory stores (see `isLocalDev`), and the only thing the CLI
-# is used for here is migrations. Sections for auth/storage/realtime settings
-# are intentionally absent — those are configured in the Supabase dashboard,
-# and duplicating them here would create a second source of truth that nothing
-# applies.
+# Two jobs, and for a long time this file only admitted to the first:
+#
+# 1. Applying `migrations/` to the platform database
+#    (`supabase link --project-ref <ref>` then `supabase db push`).
+# 2. **Declaring the shape of the LOCAL stack**, which is the platform tier's one
+#    real arm. `scripts/with-test-pg.mjs` lists `supabase start` first among the
+#    databases it hopes to find and shells out to `supabase status -o env` to
+#    resolve it; `packages/aai-server/realtime-rls.scenario.test.ts` and the two
+#    `store-conformance.scenario.test.ts` files are written against it; and
+#    nothing anywhere runs `aai_platform` WITHOUT Vault, pg_cron and walrus, so a
+#    stock Postgres is not an alternative to it.
+#
+# The header used to say the opposite outright — "The platform does not run a
+# local Supabase stack: dev and tests use in-memory stores… the only thing the
+# CLI is used for here is migrations" — and `major_version` was annotated "Only
+# used by a local `supabase start`, which this repo does not require." Both were
+# true when written and neither is now.
+#
+# Sections for auth/storage/realtime *dashboard* settings are still intentionally
+# absent: those are configured in the Supabase dashboard, and duplicating them
+# here would create a second source of truth that nothing applies. What belongs
+# here is the local stack's own shape, which this file is the only place to state.
 
 project_id = "aai-platform"
 
 [db]
-# Matches the Postgres major the platform's Supabase project runs. Only used
-# by a local `supabase start`, which this repo does not require.
+# Matches the Postgres major the platform's Supabase project runs — and the
+# image a local `supabase start` therefore brings up
+# (`public.ecr.aws/supabase/postgres`), which is why the extension arms are real:
+# supabase_vault, pgmq, pg_cron and pg_net are all in it.
 major_version = 17
+
+# The TRANSACTION-mode pooler, off by default and declared here so it can be
+# turned on deliberately.
+#
+# `assertSessionModeUrl` refuses a transaction-mode `SUPABASE_DB_URL` at boot
+# because an advisory lock taken through one is not held by whoever thinks it
+# holds it — the pooler returns the server connection between statements, so
+# `platform-lock.ts`'s whole mutual-exclusion premise evaporates silently. That
+# is one of the three bugs this repo has shipped and the only one never
+# reproduced anywhere, and the reason is that no test had a transaction-mode port
+# to take a lock through. Enabling this gives it one: take a lock on 54329 and
+# show it is not held.
+#
+# Left `enabled = false` because the container is one more thing every
+# `supabase start` waits for, and only a test that is deliberately about the
+# pooler wants it. Flip it, `supabase stop && supabase start`, and 54329 answers.
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+
+# The deploy-artifact bucket, so `SUPABASE_STORAGE_BUCKET` resolves against the
+# local stack and `blob-storage.ts` has an arm at all.
+#
+# It is the one piece of this platform's Supabase state that lives in the
+# dashboard rather than in `migrations/`, which is why `assertBucketPrivate`
+# exists — and why blob storage is registered in `store-conformance.ts` with
+# `conformance: false`: there was nothing local to point a real arm at. Private,
+# because production's is: blobs are read through an authenticated `download()`
+# or a per-call signed URL, never publicly.
+[storage]
+enabled = true
+
+[storage.buckets.blobs]
+public = false

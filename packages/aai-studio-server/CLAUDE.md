@@ -771,6 +771,33 @@ key↔account mapping — stay in that guide's "Auth" block.
   is the only way a raw key leaves the platform, and only to the terminal
   that minted the code.
 
+## Rate limits
+
+Moved here from `packages/aai-server/CLAUDE.md` when that guide hit its size cap,
+on the same audience split that brought "Studio auth" the other way: the
+MECHANISM is the shared core's (`rate-limit.ts`, `createPgRateLimiter`), and every
+window the platform actually runs is this surface's. The limiter itself lived in
+THIS package while the studio was its only caller, which is why `POST /deploy`
+had none — aai-server cannot import from here.
+
+The windows (`studio-rate-limit.ts`): the chat, project-create, and
+deploy windows are rows in `aai_platform.studio_rate_limits`
+(`createPgRateLimiter`, one atomic upsert per check), so a limit holds
+platform-wide instead of multiplying by the replica count — which for an
+ABUSE limit is the whole point, since `MAX_CONTAINERS = 10` makes a
+per-replica cap a cap of ten times the number written down. Fail-closed: a
+database error propagates rather than silently unmetering the route.
+Expired rows are swept by pg_cron (`pg-cron.ts`), not in-process. The
+`studio_` table name is now a misnomer; `name` namespaces each limiter's
+rows, which is what lets a second consumer share it without a migration.
+
+**Every limited route is keyed TWICE — by scope and by client IP.** The
+scope key is derived from the caller's bearer, so for a raw-key caller it
+was a value they chose: one character's difference minted a fresh window,
+which made both studio limits decorative against exactly the traffic they
+exist to stop. Key verification above is what makes a scope cost an
+account; the IP key is what bounds the damage before one is spent.
+
 ## One studio sandbox per project, fleet-wide
 
 The same problem hit the studio harder, and the fix is shaped differently

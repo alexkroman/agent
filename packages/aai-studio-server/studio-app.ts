@@ -74,11 +74,13 @@ export type StudioAppOpts = {
    */
   studioSessionRegistry?: StudioSessionRegistry;
   /**
-   * Durable preview-deploy queue (studio-preview-queue.ts). Injected in
-   * production (pgmq over the platform database); without it previews fall
-   * back to an in-memory queue that loses pending deploys on restart.
+   * Durable preview-deploy queue (studio-preview-queue.ts): pgmq over the
+   * platform database in production, `createMemoryPreviewQueue()` in a single
+   * process. REQUIRED — the composition root picks one, and nothing below it
+   * may substitute a different tier (see `StudioSessionBrokerOptions
+   * .previewQueue`).
    */
-  previewQueue?: PreviewQueue;
+  previewQueue: PreviewQueue;
   replicaId?: string;
   allowedOrigins?: string[];
   isDraining?: () => boolean;
@@ -105,7 +107,7 @@ export function createStudioApp(opts: StudioAppOpts): {
   const studioRoutes = createStudioRoutes({
     ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
     ...(opts.studioSessionRegistry && { sessionRegistry: opts.studioSessionRegistry }),
-    ...(opts.previewQueue && { previewQueue: opts.previewQueue }),
+    previewQueue: opts.previewQueue,
     ...(opts.replicaId && { replicaId: opts.replicaId }),
   });
   app.route("/studio", studioRoutes.routes);

@@ -26,6 +26,7 @@ import {
 } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
 import { MAX_STUDIO_FILES } from "./studio-limits.ts";
+import type { PreviewQueue } from "./studio-preview-queue.ts";
 
 // The orchestrator constructs its studio routes internally; intercept the
 // deploy pipeline, the session broker, and the preview wake at the module
@@ -248,9 +249,7 @@ describe("session broker wiring", () => {
     const registry = { claim: vi.fn(), release: vi.fn() } as unknown as NonNullable<
       Parameters<typeof createTestCombined>[0]
     >["studioSessionRegistry"];
-    const previewQueue = { enqueue: vi.fn() } as unknown as NonNullable<
-      Parameters<typeof createTestCombined>[0]
-    >["previewQueue"];
+    const previewQueue = { enqueue: vi.fn() } as unknown as PreviewQueue;
 
     const secrets = createMemorySecretStore();
     const combined = await createTestCombined({
@@ -281,8 +280,12 @@ describe("session broker wiring", () => {
 
     const opts = brokerOptions();
     expect(Object.keys(opts)).not.toContain("registry");
-    expect(Object.keys(opts)).not.toContain("previewQueue");
     expect(Object.keys(opts)).not.toContain("replicaId");
+    // `previewQueue` is deliberately NOT in that list: it is required, so the
+    // harness (a composition root of its own) always chooses one. The broker
+    // used to substitute a memory queue itself when the key was absent, which
+    // is the second decision point this asserts is gone.
+    expect(opts.previewQueue).toBeDefined();
   });
 });
 

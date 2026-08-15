@@ -12,12 +12,11 @@ import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
+import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 import type { createStudioRoutes } from "./studio-routes.ts";
 
 /** Options the app forwarded to `createStudioRoutes` on the last build. */
-const routeOpts = vi.hoisted(
-  () => ({ last: undefined }) as { last?: Parameters<typeof createStudioRoutes>[0] },
-);
+const routeOpts = vi.hoisted(() => ({}) as { last?: Parameters<typeof createStudioRoutes>[0] });
 
 // The route factory is wrapped, not replaced: the app under test still gets
 // real routes, and the forwarded options become observable. Without this the
@@ -35,20 +34,25 @@ vi.mock("./studio-routes.ts", async (importOriginal) => {
 });
 
 function makeApp(overrides: Partial<StudioAppOpts> = {}) {
+  // One process, so the memory queue — the choice the composition root makes,
+  // spelled here because nothing downstream may make it any more. Returned so
+  // the forwarding assertions below can name the instance they expect.
+  const previewQueue = overrides.previewQueue ?? createMemoryPreviewQueue();
   const { app } = createStudioApp({
     store: createTestStore(),
     workspaces: createMemoryWorkspaceStore(),
     chats: createMemoryChatStore(),
     ...overrides,
+    previewQueue,
   });
   const fetch = (path: string, init?: RequestInit) =>
     app.fetch(new Request(`http://studio.local${path}`, init));
-  return { app, fetch };
+  return { app, fetch, previewQueue };
 }
 
 describe("createStudioApp", () => {
   beforeEach(() => {
-    routeOpts.last = undefined;
+    delete routeOpts.last;
   });
 
   it("serves the health check, and 503s while draining", async () => {
@@ -156,14 +160,17 @@ describe("createStudioApp", () => {
     it("omits an absent dependency rather than passing undefined", () => {
       // The routes distinguish "not configured" from "configured as
       // undefined" only by key presence, so the spreads must add nothing.
-      makeApp();
-      expect(routeOpts.last).toEqual({});
-      expect(Object.keys(routeOpts.last ?? {})).toEqual([]);
+      // `previewQueue` is the exception and is REQUIRED, not spread: the
+      // composition root always chooses one, so its absence is a compile error
+      // rather than a silent downgrade to a queue that loses pending previews.
+      const { previewQueue: chosen } = makeApp();
+      expect(routeOpts.last).toEqual({ previewQueue: chosen });
+      expect(Object.keys(routeOpts.last ?? {})).toEqual(["previewQueue"]);
     });
 
     it("forwards one dependency without inventing the others", () => {
-      makeApp({ replicaId: "replica-7" });
-      expect(routeOpts.last).toEqual({ replicaId: "replica-7" });
+      const { previewQueue: chosen } = makeApp({ replicaId: "replica-7" });
+      expect(routeOpts.last).toEqual({ previewQueue: chosen, replicaId: "replica-7" });
     });
   });
 });

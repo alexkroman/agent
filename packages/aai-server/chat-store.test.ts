@@ -5,12 +5,12 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  type ChatStore,
   createMemoryChatStore,
   createPgChatStore,
   MAX_STUDIO_CHAT_STORE_BYTES,
   trimChatToByteBudget,
 } from "./chat-store.ts";
+import { chatStoreConformance } from "./store-conformance-cases.ts";
 import {
   createDispatchingSql,
   createRecordingSql,
@@ -55,60 +55,19 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
   ]);
 }
 
-// ── Behavioral parity: both implementations must agree ─────────────────────
+// ── The CONTRACT, over the arm that runs everywhere ─────────────────────────
+//
+// See the same block in `workspace-store.test.ts`: one case list in
+// `store-conformance.ts`, the memory arm unconditional here, the stack arm in
+// `store-conformance.scenario.test.ts`, and the fake SqlExec back in its own
+// recorder spec below rather than posing as a `postgres` implementation.
+//
+// The memory arm has no `studio_chats_workspace_fk`, so its `parent` is a no-op;
+// the stack arm creates the workspace a chat hangs off. Passing the parent in
+// keeps the cases identical rather than branching inside them.
 
-const implementations: [string, () => ChatStore][] = [
-  ["memory", () => createMemoryChatStore()],
-  ["postgres (fake SqlExec)", () => createPgChatStore(createFakeSql().sql)],
-];
-
-describe.each(implementations)("ChatStore parity: %s", (_name, make) => {
-  test("getChat returns null for a project with no chat", async () => {
-    expect(await make().getChat("s", "ghost")).toBeNull();
-  });
-
-  test("putChat + getChat round-trips the message list", async () => {
-    const store = make();
-    await store.putChat("s", "p", [msg("m1"), msg("m2")]);
-    expect(await store.getChat("s", "p")).toEqual([msg("m1"), msg("m2")]);
-  });
-
-  test("putChat is a plain upsert — the row is always the latest snapshot", async () => {
-    const store = make();
-    await store.putChat("s", "p", [msg("m1")]);
-    await store.putChat("s", "p", [msg("m1"), msg("m2"), msg("m3")]);
-    expect(await store.getChat("s", "p")).toEqual([msg("m1"), msg("m2"), msg("m3")]);
-  });
-
-  test("chats are scoped: same project name under two scopes stays separate", async () => {
-    const store = make();
-    await store.putChat("s1", "p", [msg("mine")]);
-    await store.putChat("s2", "p", [msg("theirs")]);
-    expect(await store.getChat("s1", "p")).toEqual([msg("mine")]);
-    expect(await store.getChat("s2", "p")).toEqual([msg("theirs")]);
-  });
-
-  test("deleteChat removes the row and is idempotent", async () => {
-    const store = make();
-    await store.putChat("s", "p", [msg("m1")]);
-    await store.deleteChat("s", "p");
-    expect(await store.getChat("s", "p")).toBeNull();
-    await store.deleteChat("s", "p"); // no throw
-  });
-
-  test("an oversized conversation is trimmed from the front on write", async () => {
-    const store = make();
-    const big = "x".repeat(200 * 1024);
-    const messages = [msg("m1", big), msg("m2", big), msg("m3", big), msg("m4", "recent")];
-    await store.putChat("s", "p", messages);
-    const stored = (await store.getChat("s", "p")) as { id: string }[];
-    // Whole oldest messages dropped; the newest survive intact.
-    expect(stored.at(-1)?.id).toBe("m4");
-    expect(stored.length).toBeLessThan(messages.length);
-    expect(Buffer.byteLength(JSON.stringify(stored))).toBeLessThanOrEqual(
-      MAX_STUDIO_CHAT_STORE_BYTES,
-    );
-  });
+describe("ChatStore conformance: memory", () => {
+  chatStoreConformance(() => createMemoryChatStore());
 });
 
 test("memory store never shares mutable state with callers", async () => {
