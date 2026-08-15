@@ -16,7 +16,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { sleep } from "./_sleep.ts";
+import { sleep } from "@alexkroman1/aai/internal";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
 import type { GuestFetch, GuestProcLike } from "./warm-harness.ts";
 
@@ -65,7 +65,7 @@ export async function pollGuestHealth(
             `guest /health not ready after ${GUEST_READY_TIMEOUT_MS}ms: ${lastError}`,
           );
         }
-        await sleep(AGENT_HEALTH_RETRY_MS);
+        await sleep(AGENT_HEALTH_RETRY_MS, { unref: true });
       }
     })(),
     proc,

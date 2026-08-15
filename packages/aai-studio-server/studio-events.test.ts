@@ -10,6 +10,7 @@
  * - `GET /studio/events` — the caller's project list (`projects` frames)
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { authHeaders, type TestFetch } from "aai-server/test-utils";
 import { expect, test } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
@@ -291,7 +292,7 @@ test("streams on one project share a fixed number of reads per change", async ()
     openEvents(harness.fetch, "proj"),
   ]);
   const pending = streams.map((res) => readFrames(res, "project", 2));
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  await sleep(50);
 
   reads = 0;
   // Written straight to the underlying store — so `reads` counts what the

@@ -17,7 +17,7 @@
  * except through `ops`, so a test can use a plain label.
  */
 
-import { setTimeout as sleep } from "node:timers/promises";
+import { sleep } from "@alexkroman1/aai/internal";
 import { errorMessage } from "./_utils.ts";
 
 /** Attempts to bind the port during the close→listen swap. */
@@ -42,7 +42,12 @@ export type RestartOps<S> = {
    * swallowed so one leak can't strand the others.
    */
   teardown?: () => Promise<void>;
-  /** Injectable so retry specs don't sleep real wall-clock. */
+  /**
+   * Injectable so retry specs need neither wall-clock nor fake timers. The
+   * default is the repo's one `sleep`, which virtual time CAN drive — this seam
+   * predates it and existed because `node:timers/promises` cannot be driven at
+   * all (see `aai/sdk/sleep.ts`).
+   */
   sleep?: (ms: number) => Promise<void>;
 };
 

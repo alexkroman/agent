@@ -33,6 +33,7 @@
  * because a synchronous call's whole value is that a fast run answers fast.
  */
 
+import { sleep } from "../sdk/sleep.ts";
 import { clampWorkflowWait, isTerminal, type WorkflowRunSnapshot } from "../sdk/workflow.ts";
 import type { RunReader } from "./workflow-api-events.ts";
 
@@ -108,22 +109,9 @@ export async function waitForRun(
       if (!run) return;
       const remaining = deadline - now();
       if (remaining <= 0) return run;
-      await delay(Math.min(pollMs, remaining));
+      await sleep(Math.min(pollMs, remaining), { unref: true });
     }
   } finally {
     link.off("close", onClose);
   }
-}
-
-/**
- * A plain delay.
- *
- * Not a timeout, so `p-timeout` is not what this wants — there is nothing to
- * race. Unref'd so a poll interval can never hold the process open past a
- * shutdown.
- */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms).unref?.();
-  });
 }

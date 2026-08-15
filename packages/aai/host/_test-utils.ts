@@ -41,10 +41,14 @@ export function tick(): Promise<void> {
   return new Promise<void>((r) => setTimeout(r, 0));
 }
 
-/** Sleep real wall-clock ms. Prefer fake timers or `vi.waitFor` where possible. */
-export function sleep(ms: number): Promise<void> {
-  return new Promise<void>((r) => setTimeout(r, ms));
-}
+/**
+ * Sleep real wall-clock ms. Prefer fake timers or `vi.waitFor` where possible.
+ *
+ * Re-exported rather than re-implemented: this was a fourth copy of the repo's
+ * one `sleep`, and being spelled here is what let `vi.useFakeTimers()` drive it
+ * — a property the shared one now owns and asserts. See `sdk/sleep.ts`.
+ */
+export { sleep } from "../sdk/sleep.ts";
 
 export function createMockToolContext(overrides?: Partial<ToolContext>): ToolContext {
   return {

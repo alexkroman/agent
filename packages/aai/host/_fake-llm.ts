@@ -10,6 +10,8 @@
  */
 
 import type { LanguageModel } from "ai";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
+import { sleep } from "../sdk/sleep.ts";
 
 // ─── Fake LLM ───────────────────────────────────────────────────────────────
 
@@ -73,21 +75,6 @@ function scriptedPartToStreamPart(part: ScriptedPart, textId: string): StreamPar
   }
 }
 
-/** Wait `ms` or resolve immediately when `signal` aborts. */
-function delayOrAbort(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise<void>((resolve) => {
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(t);
-        resolve();
-      },
-      { once: true },
-    );
-  });
-}
-
 async function streamScript(
   controller: ReadableStreamDefaultController<StreamPart>,
   script: ScriptedPart[],
@@ -100,7 +87,7 @@ async function streamScript(
   try {
     for (const part of script) {
       if (signal?.aborted) break;
-      if (delayMs !== undefined && delayMs > 0) await delayOrAbort(delayMs, signal);
+      if (delayMs !== undefined && delayMs > 0) await sleep(delayMs, omitUndefined({ signal }));
       if (signal?.aborted) break;
       controller.enqueue(scriptedPartToStreamPart(part, textId));
     }

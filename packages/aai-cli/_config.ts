@@ -4,7 +4,8 @@ import { mkdtempSync } from "node:fs";
 import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
+
+import { sleep } from "@alexkroman1/aai/internal";
 import envPaths from "env-paths";
 import { z } from "zod";
 import { CliError } from "./_output.ts";

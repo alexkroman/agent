@@ -21,6 +21,7 @@
  * `guest-readiness.test.ts`; slot attach/detach is `sandbox.test.ts`.
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
 import { describe, expect, it } from "vitest";
 import {
@@ -30,7 +31,6 @@ import {
   makeFakeSandbox,
   makeHarnessFile,
 } from "./_sandbox-vm-test-utils.ts";
-import { sleep } from "./_sleep.ts";
 import {
   AGENT_BUNDLE_REMOTE_PATH,
   AGENT_ENV_REMOTE_PATH,

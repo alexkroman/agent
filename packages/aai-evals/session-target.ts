@@ -26,6 +26,7 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
+import { sleep } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { createRuntime, type Logger } from "@alexkroman1/aai/runtime";
@@ -53,11 +54,6 @@ const TURN_ENDS: ReadonlySet<SessionEvent["type"]> = new Set([
   "reply.completed",
   "reply.cancelled",
 ]);
-
-const delay = (ms: number): Promise<void> =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
 
 /** One live level-1 session. */
 export type EvalSession = {
@@ -143,7 +139,7 @@ export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSes
               .join(", ")}`,
         );
       }
-      await delay(POLL_MS);
+      await sleep(POLL_MS);
     }
   };
 

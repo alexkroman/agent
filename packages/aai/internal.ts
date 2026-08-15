@@ -57,6 +57,11 @@ export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
 export { requestPath, requestQuery } from "./sdk/request-url.ts";
 export { formatSchemaIssues } from "./sdk/schema.ts";
+// The one `sleep`. Here rather than on `/utils` because that subpath is where a
+// `workflows/*.ts` module imports its step surface from, and the DevKit's own
+// DURABLE `sleep` is imported from "workflow" in those same files — see the
+// module doc.
+export { type SleepOptions, sleep } from "./sdk/sleep.ts";
 // The unavailable-workflows trio. Here rather than on the root barrel because all
 // three are `@internal`: their readers are the tool executor, the two
 // test-context builders, and the guest harness. Keeping them off the root also

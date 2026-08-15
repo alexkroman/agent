@@ -46,6 +46,7 @@ import { z } from "zod";
 import { tool } from "../sdk/define.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { sessionSlot } from "../sdk/session-slot.ts";
+import { sleep } from "../sdk/sleep.ts";
 import { createSeveringProxy, type SeveringProxy } from "./_fault-socket.ts";
 import { makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
@@ -174,7 +175,7 @@ async function connect(proxy: SeveringProxy, query = ""): Promise<Client> {
             `no "${type}" frame in ${ms}ms; saw [${frames.map((f) => f.type).join(", ")}]`,
           );
         }
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await sleep(20);
       }
     },
     closed: () =>
@@ -199,7 +200,7 @@ async function addItem(h: Harness, item: string, callId: string): Promise<void> 
   callbacks.onReplyStarted(`reply-${callId}`);
   callbacks.onToolCall(callId, "add_item", { item });
   // The executor is async and syncs state in its own tail; give it the turn.
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await sleep(100);
   callbacks.onReplyDone();
 }
 
@@ -272,7 +273,7 @@ describe("ctx.state across a severed connection (real runtime)", () => {
     const second = await connect(harness.proxy);
     await second.waitFor("session.configured");
     // Long enough that a snapshot would have arrived if one were coming.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await sleep(200);
     expect(second.frames.filter((frame) => frame.type === "state.updated")).toHaveLength(0);
     second.ws.close();
   });

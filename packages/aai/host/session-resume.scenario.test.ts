@@ -33,6 +33,7 @@
 
 import { afterEach, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
+import { sleep } from "../sdk/sleep.ts";
 import { createSeveringProxy, type SeveringProxy } from "./_fault-socket.ts";
 import { silentLogger } from "./_test-utils.ts";
 import { createServer, type SessionRuntime } from "./server.ts";
@@ -295,7 +296,7 @@ describe("a session across a severed connection", () => {
     const proxy = await createSeveringProxy({ target: harness.proxy.port });
     try {
       const { ws } = await connect(proxy);
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      await sleep(400);
       expect(proxy.severed()).toBe(0);
       expect(proxy.live()).toBe(1);
       ws.close();

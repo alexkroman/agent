@@ -5,8 +5,8 @@
  * stderr is not misreported as a network timeout.
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, it } from "vitest";
-import { sleep } from "./_sleep.ts";
 import { raceGuestExit } from "./guest-readiness.ts";
 
 /**

@@ -17,6 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { sleep } from "@alexkroman1/aai/internal";
 import { errorDetail } from "@alexkroman1/aai/utils";
 import { ofetch } from "ofetch";
 import type { Browser } from "playwright";
@@ -340,7 +341,7 @@ async function setupEventInjector(browser: Browser, port: number) {
       Boolean((globalThis as Record<string, unknown>).__aai_test_ws),
     );
     if (ready) break;
-    await new Promise((r) => setTimeout(r, 50));
+    await sleep(50);
   }
   // Wait for the session to settle after the config message. In headless
   // Chromium, initAudioCapture fails (no microphone), which sets state to
@@ -380,7 +381,7 @@ async function setupEventInjector(browser: Browser, port: number) {
       // can overwrite state they set — e.g. the error-recovery banner.
       if (msg.type === "session.configured") continue;
       await inject(msg);
-      await new Promise((r) => setTimeout(r, 50));
+      await sleep(50);
     }
   };
 
