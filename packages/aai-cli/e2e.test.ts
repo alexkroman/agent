@@ -348,23 +348,37 @@ async function setupEventInjector(browser: Browser, port: number) {
   // audio error can overwrite test-driven state transitions.
   await page.locator('[data-state="error"]').waitFor({ timeout: 10_000 });
 
-  /** Inject a server->client event via the captured WebSocket. */
+  /**
+   * Inject a server->client event via the captured WebSocket.
+   *
+   * `meta` is STAMPED here rather than written into the fixtures, because that
+   * is where it comes from in production: the server mints an event id when it
+   * writes the event (`evt_` + a ULID) and the client only validates the
+   * prefix. Freezing forty invented ids into six JSON files would read as data
+   * the assertions care about, and none of them do — while a fixture that
+   * omits `meta` is rejected by `ServerMessageSchema` before any handler runs,
+   * which is the shape of the failure this replaced.
+   */
+  let injected = 0;
   const inject = (msg: Record<string, unknown>) =>
-    page.evaluate((json) => {
-      const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
-      ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
-    }, msg);
+    page.evaluate(
+      (json) => {
+        const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
+        ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
+      },
+      { meta: { id: `evt_e2e${++injected}`, at: Date.now() }, ...msg },
+    );
 
   /** Replay a fixture file (from aai-ui/fixtures/). */
   const replayFixture = async (fixtureName: string) => {
     const fixturePath = path.resolve(dir, "../aai-ui/fixtures", fixtureName);
     const messages = JSON.parse(fs.readFileSync(fixturePath, "utf-8")) as Record<string, unknown>[];
     for (const msg of messages) {
-      // Skip config frames: the test server already sent one on connect, and
-      // re-injecting a config re-runs initAudioCapture, whose async failure
+      // Skip the handshake frame: the test server already sent one on connect,
+      // and re-injecting one re-runs initAudioCapture, whose async failure
       // (headless Chromium has no microphone) races later fixture events and
       // can overwrite state they set — e.g. the error-recovery banner.
-      if (msg.type === "config") continue;
+      if (msg.type === "session.configured") continue;
       await inject(msg);
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -423,7 +437,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
          // Echo the id the client asked to resume, so a redial that carries one
          // is answered as the SAME session rather than a fresh one.
          const asked = new URL(req.url, "http://localhost").searchParams.get("sessionId");
-         ws.send(JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: asked || "resumed-e2e-7" }));
+         ws.send(JSON.stringify({ type: "session.configured", meta: { id: "evt_e2ehandshake", at: Date.now() }, audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: asked || "resumed-e2e-7" }));
        });
        s.listen(0, () => console.log("PORT:" + s.address().port));`,
       ],
@@ -483,7 +497,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
       () => {
         const found = frames.some((f) => {
           try {
-            return JSON.parse(f).type === "config";
+            return JSON.parse(f).type === "session.configured";
           } catch {
             return false;
           }
@@ -628,7 +642,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     await page.getByText("A day on Venus is longer than its year.").waitFor();
 
     // Inject a reset event as if the server acknowledged the reset
-    await inject({ type: "reset" });
+    await inject({ type: "session.reset" });
 
     // Messages should be cleared — the assistant message should no longer be visible
     await page
@@ -670,7 +684,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
     // Inject an error event
-    await inject({ type: "error", code: "internal", message: "Connection lost" });
+    await inject({ type: "error.reported", code: "internal", message: "Connection lost" });
 
     // Error banner should appear with the message
     await page.getByText("Connection lost").waitFor({ timeout: 30_000 });

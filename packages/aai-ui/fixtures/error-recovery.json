@@ -1,17 +1,31 @@
 [
   {
-    "type": "config",
+    "type": "session.configured",
     "audioFormat": "pcm16",
     "sampleRate": 16000,
     "ttsSampleRate": 24000,
     "sessionId": "sess_fixture_004"
   },
-  { "type": "agent_transcript", "text": "Hello!" },
-  { "type": "reply_done" },
-
-  { "type": "speech_started" },
-  { "type": "speech_stopped" },
-  { "type": "user_transcript", "text": "Tell me something" },
-
-  { "type": "error", "code": "stt", "message": "Speech recognition failed" }
+  {
+    "type": "agent-transcript.committed",
+    "text": "Hello!"
+  },
+  {
+    "type": "reply.completed"
+  },
+  {
+    "type": "speech.started"
+  },
+  {
+    "type": "speech.stopped"
+  },
+  {
+    "type": "user-transcript.committed",
+    "text": "Tell me something"
+  },
+  {
+    "type": "error.reported",
+    "code": "stt",
+    "message": "Speech recognition failed"
+  }
 ]
