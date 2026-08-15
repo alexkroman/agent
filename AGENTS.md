@@ -43,7 +43,12 @@ the assertion.**
 | Scenario | `pnpm test:scenario` | a real subprocess, port, bundler, or Postgres | 120s |
 | Scenario + real Postgres | `pnpm test:pg` | the above, `AAI_TEST_PG_URL` resolved | 120s |
 | E2E | `pnpm test:e2e` | full process spawn + Playwright browser | 300s |
+| Eval | `pnpm test:eval` | a live model on a real key, `*.eval.test.ts` | 1800s |
 | Templates | `pnpm test:templates` | template agent example tests | 5s |
+
+**The eval tier REPORTS and does not gate** — absent from `pnpm check` and CI,
+because a measurably noisy instrument must not block a merge. Runs repeat and the
+report carries a spread; `packages/aai-evals/CLAUDE.md` owns it.
 
 They used to be separated by TIMEOUT, a proxy for the rule above that stops being
 one as soon as two tests are slow for unrelated reasons. `pipeline-fuzz` (pure
@@ -52,10 +57,10 @@ policy and serial block, so neither was configured for its own failure mode — 
 `pnpm test:integration` took **721 seconds to evaluate twelve tests**, 50 of 63
 skipping for want of a database. It is 10 seconds now.
 
-**Membership is a NAMING CONVENTION** — `*.integration.test.ts` and
-`*.scenario.test.ts`, excluded by every unit config and selected one each by the
-scripts, so a new test needs no config edit (see "Integration- and scenario-tier
-membership" below for the deliberate exceptions).
+**Membership is a NAMING CONVENTION** — `*.integration.test.ts`,
+`*.scenario.test.ts` and `*.eval.test.ts`, excluded by every unit config and
+selected one each by the scripts, so a new test needs no config edit (see
+"Integration- and scenario-tier membership" below for the deliberate exceptions).
 
 **No tier carries a `retry`** — a tier that retries has classified its own
 failures as noise; `vitest.slow.config.ts` carries the argument.
@@ -304,9 +309,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   pathspec in the repo. A pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so `*`
   already crosses `/` and `scripts/**/*.mjs` parses as "scripts/" + anything +
   "/" + anything + ".mjs" — the literal slash makes a subdirectory MANDATORY. It
-  therefore matched the six files under `scripts/starter-eval/` and not one of
-  the ~29 at the top level, i.e. exactly where this gate's own comment says an
-  unreviewed 900-line harness hides, while printing "all files within caps ✓".
+  therefore matched the three files under `scripts/starter-eval/` and not one of
+  the ~29 at the top level — exactly where an unreviewed harness hides — while
+  printing "all files within caps ✓".
   Adding `scripts/*.mjs`/`scripts/*.ts` took the measured set from 6 files to 35.
   `packages/**/*.ts` is unaffected and not by luck — every source file there is
   at least one directory deep — which is why the miss survived review. Verify any
@@ -533,7 +538,7 @@ move to accommodate a PR, so the earlier that is known the cheaper it is. Both
 
 ## Architecture
 
-Eight workspace packages under `packages/`:
+Nine workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
@@ -545,6 +550,7 @@ Eight workspace packages under `packages/`:
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds. Also the composition root — its entry is the one every deployment runs |
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
+| `packages/aai-evals/` | `aai-evals` | Behaviour eval tier (private): the runner, its assertion vocabulary over the session event stream, and its targets |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, `aai-guest`, and `aai-server` all
 depend on `@alexkroman1/aai` (via `workspace:*`). `aai-server` depends on
@@ -583,6 +589,7 @@ rather than here:
 | `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals |
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
+| `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels |
 
 ### `research/` holds issue-backed plans
 
@@ -1509,7 +1516,8 @@ documented in that package's guide, not here:
 | Pipeline-transport interleaving fuzz, fixture replay (`host/fixtures/`) | `packages/aai/CLAUDE.md` |
 | Template mount correlation (`template-page-mount.test.ts`) | `packages/aai-templates/CLAUDE.md` |
 | Browser session / audio fuzz harnesses (`fuzz-*.test.ts`, worklet stress) | `packages/aai-ui/CLAUDE.md` |
-| Studio starter evals (`scripts/starter-eval/`), studio concurrency fuzz | `packages/aai-studio-server/CLAUDE.md` |
+| Studio starter evals (what they measure), studio concurrency fuzz | `packages/aai-studio-server/CLAUDE.md` |
+| The eval runner, its assertion vocabulary, and both eval targets | `packages/aai-evals/CLAUDE.md` |
 | Sandbox/SSRF boundary tests, and why there is no load or chaos tier | `packages/aai-server/CLAUDE.md` |
 
 #### Vitest config differences per package

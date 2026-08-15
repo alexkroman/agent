@@ -185,9 +185,14 @@ export interface SttOpenOptions {
 
 /**
  * Host-side openable STT provider — produced by `resolveStt(descriptor)`.
- * Part of the host-only opener layer, never constructed by user code.
+ * Part of the host-only opener layer, never constructed by an AGENT.
  *
- * @internal
+ * Not `@internal`: it is the parameter of `registerSttKind` on
+ * `@alexkroman1/aai/runtime`, which is how a HOST application substitutes a
+ * fake speech stage (the behaviour eval tier's level-1 target does exactly
+ * that). It is deliberately absent from `@alexkroman1/aai/stt`, where the rest
+ * of the opener-layer types live — an agent author picks a descriptor and never
+ * writes one of these.
  */
 export interface SttOpener {
   readonly name: string;
@@ -287,9 +292,8 @@ export interface TtsOpenOptions {
 
 /**
  * Host-side openable TTS provider — produced by `resolveTts(descriptor)`.
- * Part of the host-only opener layer, never constructed by user code.
- *
- * @internal
+ * Part of the host-only opener layer, never constructed by an AGENT. See
+ * {@link SttOpener} for why it carries no `@internal` tag.
  */
 export interface TtsOpener {
   readonly name: string;

@@ -23,6 +23,7 @@
 // platform server). It is consumed directly by sibling test files.
 
 export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "../sdk/env-types.ts";
+export type { SttOpener, TtsOpener } from "../sdk/providers.ts";
 // The publisher half of the step env — the READER (`stepEnv`) is authoring API
 // on `@alexkroman1/aai/utils`, and lives in `sdk/` because the step bundle
 // bundles it. Only a host calls this: the guest at bundle load, `aai dev` on
@@ -88,7 +89,20 @@ export { PROVIDER_CREDENTIAL_ENVS, withHostCredentialFallback } from "./provider
 // dev server to check credentials before starting; `resolveLlm` lets host
 // applications (e.g. the platform server's browser studio) turn an LLM
 // descriptor into a Vercel AI SDK model without duplicating provider wiring.
-export { requiredProviderEnvVars, resolveLlm } from "./providers/resolve.ts";
+//
+// `registerSttKind`/`registerTtsKind` are the SPEECH-STAGE substitution seam,
+// and they are on this subpath rather than on `/stt`+`/tts` because a HOST
+// application registers a kind and an agent author never does. `aai-evals`'
+// level-1 target is the in-repo consumer: it drives a real pipeline session
+// with a real LLM and real tools, with the two speech stages faked, which is
+// what "text-driven, above the audio boundary" means in practice.
+export {
+  type OpenerRegistryEntry,
+  registerSttKind,
+  registerTtsKind,
+  requiredProviderEnvVars,
+  resolveLlm,
+} from "./providers/resolve.ts";
 export {
   type AgentRuntime,
   createRuntime,

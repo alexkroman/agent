@@ -1,10 +1,19 @@
 ---
 issue: TODO
-status: proposed
-last_updated: "2026-08-14"
+status: implemented
+last_updated: "2026-08-15"
 ---
 
 # An in-repo behaviour eval tier
+
+> **Implemented** as `packages/aai-evals` — see that package's `CLAUDE.md` for
+> the rules this doc establishes, which moved there. LEVEL 1 ONLY: level 2
+> (paced audio replay) is deliberately not built, and nothing in the tier may
+> imply it is. Two of the open questions below are answered: level 1 does NOT
+> drive `?host=1`, because the client protocol carries no text command and a user
+> turn reaches a session as PCM and nothing else; and level 2's corpus will be
+> fetch-on-demand keyed by content hash, decided when the paced target that
+> defines its shape exists. The judge stays unbuilt, as this doc asks.
 
 There is no way, inside this repository, to assert that an agent called the right
 tool in the right order and said the right thing. Every such measurement in the

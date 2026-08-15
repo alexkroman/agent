@@ -130,6 +130,13 @@
         "modal"
       ]
     },
+    "packages/aai-evals": {
+      "entry": [
+        "**/*.test.ts",
+        "**/*.eval.test.ts"
+      ],
+      "includeEntryExports": true
+    },
     "packages/aai-studio-client": {
       "entry": [
         "**/*.test.{ts,tsx}"
