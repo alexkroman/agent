@@ -145,12 +145,13 @@ if [ "$MODE" = "--local" ]; then
   # green subset reads as a green branch — and the gates left out are exactly
   # the ones whose failures are hardest to guess from a diff (a broken
   # `{@link}` fails `docs`, which treats warnings as errors; a route that only
-  # exists under `aai dev` fails `check:integration`). Naming them is the
+  # exists under `aai dev` fails `check:scenario`). Naming them is the
   # difference between choosing to skip a gate and forgetting it exists.
   echo -e "\n${YELLOW}Not run by --local (CI will):${NC}"
   echo "  check:attw          published export types"
   echo "  check:markdown      markdownlint over every .md"
-  echo "  check:integration   real subsystems — HTTP, WebSockets, Postgres (pnpm test:pg)"
+  echo "  check:integration   multiple modules in memory — the fast-check harnesses"
+  echo "  check:scenario      a real subprocess, port, bundler, or Postgres (pnpm test:pg)"
   echo "  check:e2e           full process spawn + Playwright"
   echo "  docs                TypeDoc, with treatWarningsAsErrors"
   echo -e "  Run \`pnpm check\` for all of them.\n"
@@ -160,7 +161,7 @@ else
     build typecheck lint check:publint check:attw \
     check:syncpack check:sherif check:knip check:markdown \
     lint:scripts \
-    test:coverage check:integration docs \
+    test:coverage check:integration check:scenario docs \
     --continue; then
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1

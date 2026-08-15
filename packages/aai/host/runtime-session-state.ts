@@ -10,9 +10,10 @@
  */
 
 import type { Db } from "../sdk/db.ts";
-import type { ClientSink } from "../sdk/protocol.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
+import type { SessionEmitter } from "./session-emitter.ts";
+import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
 import { createPostgresStateBackend } from "./session-state-postgres.ts";
 import {
   createMemoryStateBackend,
@@ -24,6 +25,15 @@ import { createStateSweeps, type StateSweeps } from "./session-state-sweeps.ts";
 /** The store, its grace-window sweeps, and the line an operator reads at boot. */
 export type RuntimeSessionState = {
   store: SessionStateStore;
+  /**
+   * The session event stream, over the SAME backend as `store`.
+   *
+   * Here rather than in its own factory because the backend is the thing that
+   * must not be built twice: two selection rules could disagree about whether an
+   * agent is durable, and two `discard`s would reclaim half a session each. See
+   * `session-state-store.ts` on the two consumers.
+   */
+  stream: SessionEventStream;
   sweeps: StateSweeps;
   /**
    * What `createRuntime` puts in "Session mode resolved".
@@ -47,14 +57,15 @@ export function createRuntimeSessionState(opts: {
   db: Db | undefined;
   logger: Logger;
 }): RuntimeSessionState {
-  const store = createSessionStateStore({
-    backend: opts.db ? createPostgresStateBackend({ db: opts.db }) : createMemoryStateBackend(),
-    logger: opts.logger,
-  });
+  const backend = opts.db
+    ? createPostgresStateBackend({ db: opts.db })
+    : createMemoryStateBackend();
+  const store = createSessionStateStore({ backend, logger: opts.logger });
   return {
     store,
+    stream: createSessionEventStream({ backend, logger: opts.logger }),
     sweeps: createStateSweeps(store),
-    describe: { backend: store.backend.name, durable: store.backend.durable },
+    describe: { backend: backend.name, durable: backend.durable },
   };
 }
 
@@ -84,7 +95,7 @@ export function createRuntimeSessionState(opts: {
  *
  * So it happens on every teardown path, including a direct
  * `runtime.createSession()` caller that never goes through `startSession`'s
- * `onSessionEnd` hook. `releaseSink` guards the reconnect-resume race: an old
+ * `onSessionEnd` hook. `release` guards the reconnect-resume race: an old
  * session's async `stop()` can settle after a resumed session re-claimed the
  * same id, and a bare key delete would then wipe the NEW session's sink and
  * state — release-by-claim returns false once that has happened.
@@ -96,14 +107,15 @@ export function attachSessionState(
   opts: {
     state: RuntimeSessionState;
     sessionId: string;
-    client: ClientSink;
-    /** Releases this session's sink claim; false once a resume superseded it. */
-    releaseSink: () => boolean;
+    /** This session's event emitter — what a forced state snapshot is pushed through. */
+    emitter: SessionEmitter;
+    /** Releases this session's claims on its id; false once a resume superseded them. */
+    release: () => boolean;
     /** `pushStateSnapshot`, absent on the sandbox path where the runtime holds no state. */
-    pushStateSnapshot?: ((sessionId: string, sink: ClientSink) => void) | undefined;
+    pushStateSnapshot?: ((sessionId: string, emitter: SessionEmitter) => void) | undefined;
   },
 ): void {
-  const { state, sessionId, client, releaseSink, pushStateSnapshot } = opts;
+  const { state, sessionId, emitter, release, pushStateSnapshot } = opts;
   const startCore = core.start.bind(core);
   core.start = async () => {
     await state.store.hydrate(sessionId);
@@ -113,7 +125,7 @@ export function attachSessionState(
     // empty until some later tool call happened to change something — which it
     // may never do. That is the bug this call exists to prevent, reached by a new
     // route.
-    pushStateSnapshot?.(sessionId, client);
+    pushStateSnapshot?.(sessionId, emitter);
     await startCore();
   };
 
@@ -122,7 +134,7 @@ export function attachSessionState(
     try {
       await stopCore();
     } finally {
-      if (releaseSink()) {
+      if (release()) {
         // Slot state outlives the socket: keep it for the resume grace window so
         // a `?sessionId=<id>` reconnect finds it.
         state.sweeps.schedule(sessionId);

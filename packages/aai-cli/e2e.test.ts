@@ -28,6 +28,7 @@ import {
   detachedCli,
   dir,
   installDeps,
+  isRegistryProxyFailure,
   startRegistry,
   waitForExit,
   waitForHealth,
@@ -85,25 +86,6 @@ afterAll(async () => {
 });
 
 // --- Pack + build: representative templates ---
-
-/**
- * Network/proxy failure shapes from the mock registry's npmjs passthrough
- * (verdaccio maps a failed upstream fetch to a plain 404, so
- * ERR_PNPM_FETCH_* on a THIRD-PARTY package counts). A fetch failure naming
- * our own scope is never a proxy flake — those packages live in verdaccio's
- * local storage, so failing to resolve one means the published packages are
- * actually broken.
- */
-function isRegistryProxyFailure(err: unknown): boolean {
-  const msg =
-    err instanceof Error
-      ? `${err.message}\n${(err as { stderr?: string }).stderr ?? ""}\n${(err as { stdout?: string }).stdout ?? ""}`
-      : String(err);
-  if (/@alexkroman1/i.test(msg) && /404|Not Found|ERR_PNPM_FETCH/i.test(msg)) return false;
-  return /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|407|502|503|504|ERR_PNPM_FETCH|fetch failed|network/i.test(
-    msg,
-  );
-}
 
 describe("pack + build: template workflows", () => {
   test.concurrent.for(templates)("template %s", async (template, ctx) => {
@@ -240,7 +222,7 @@ describe("aai dev: a scaffolded workflow template", () => {
   /**
    * The question this answers is "can a user `aai init` a workflow template and
    * `aai dev` it", and nothing else in the repo can: the in-tree integration
-   * test (`dev-workflow.integration.test.ts`) drives the same code against a
+   * test (`dev-workflow.scenario.test.ts`) drives the same code against a
    * fixture that resolves `workflow` from this workspace, and the `npm start`
    * leg above runs `server.mjs`, which has no bundler and builds no workflows.
    * Only here is the project scaffolded, installed from the published manifest,
@@ -659,13 +641,13 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("thinking state: user message appears after user_transcript", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "What is the meaning of life?" });
+    await inject({ type: "user-transcript.committed", text: "What is the meaning of life?" });
     await page.getByText("What is the meaning of life?").waitFor();
 
     // State indicator should show "thinking"
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "42." });
+    await inject({ type: "agent-transcript.updated", text: "42." });
     await page.getByText("42.").waitFor();
 
     await page.close();
@@ -674,11 +656,11 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   test.concurrent("state transitions: thinking → listening after reply_done", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "Hello" });
+    await inject({ type: "user-transcript.committed", text: "Hello" });
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "Hi there!" });
-    await inject({ type: "reply_done" });
+    await inject({ type: "agent-transcript.updated", text: "Hi there!" });
+    await inject({ type: "reply.completed" });
     await page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 });
 
     await page.close();

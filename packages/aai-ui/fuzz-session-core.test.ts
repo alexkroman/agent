@@ -80,20 +80,20 @@ function serverOp(ctx: Ctx, op: (typeof SERVER_OPS)[number]): void {
       ws.simulateMessage(makeConfig(16_000, 24_000, "sess-fuzz"));
       break;
     case "speech_started":
-      send({ type: "speech_started" });
+      send({ type: "speech.started" });
       break;
     case "user_partial":
-      send({ type: "user_transcript_partial", text: "par" });
+      send({ type: "user-transcript.updated", text: "par" });
       break;
     case "user_transcript":
-      send({ type: "user_transcript", text: "hello" });
+      send({ type: "user-transcript.committed", text: "hello" });
       break;
     case "agent_transcript":
-      send({ type: "agent_transcript", text: "hi there" });
+      send({ type: "agent-transcript.updated", text: "hi there" });
       break;
     case "tool_call":
       send({
-        type: "tool_call",
+        type: "tool.called",
         toolCallId: `tc-${++toolIdSeq}`,
         toolName: "lookup",
         args: { q: 1 },
@@ -105,43 +105,43 @@ function serverOp(ctx: Ctx, op: (typeof SERVER_OPS)[number]): void {
       // split so a counterexample says which case it needed.
       const pending = ctx.core.getSnapshot().toolCalls.find((tc) => tc.status === "pending");
       const id = pending ? pending.callId : `tc-${++toolIdSeq}`;
-      send({ type: "tool_call_done", toolCallId: id, toolName: "lookup", result: "{}" });
+      send({ type: "tool.completed", toolCallId: id, toolName: "lookup", result: "{}" });
       break;
     }
     case "tool_call_done_unknown":
       send({
-        type: "tool_call_done",
+        type: "tool.completed",
         toolCallId: `tc-${++toolIdSeq}`,
         toolName: "lookup",
         result: "{}",
       });
       break;
     case "reply_done":
-      send({ type: "reply_done" });
+      send({ type: "reply.completed" });
       break;
     case "cancelled":
-      send({ type: "cancelled" });
+      send({ type: "reply.cancelled" });
       break;
     case "reset":
-      send({ type: "reset" });
+      send({ type: "session.reset" });
       break;
     case "custom_event":
-      send({ type: "custom_event", event: "ping", data: { n: 1 } });
+      send({ type: "custom.emitted", event: "ping", data: { n: 1 } });
       break;
     case "agent_state":
-      send({ type: "agent_state", state: { cart: [] } });
+      send({ type: "state.updated", state: { cart: [] } });
       break;
     case "error_fatal":
-      send({ type: "error", code: "llm", message: "boom" });
+      send({ type: "error.reported", code: "llm", message: "boom" });
       break;
     case "error_nonfatal":
-      send({ type: "error", code: "stt", message: "meh", fatal: false });
+      send({ type: "error.reported", code: "stt", message: "meh", fatal: false });
       break;
     case "idle_timeout":
-      send({ type: "idle_timeout" });
+      send({ type: "session.timed-out" });
       break;
     case "audio_done":
-      send({ type: "audio_done" });
+      send({ type: "audio.completed" });
       break;
     case "audio_chunk":
       ws.simulateMessage(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));

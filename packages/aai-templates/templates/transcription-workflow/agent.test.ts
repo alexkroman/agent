@@ -10,7 +10,7 @@
  * merge are all testable, while durability, suspension and replay are not. A
  * body test that looked like a durability test would be the worse failure; the
  * real thing is exercised end to end by `aai-cli`'s
- * `dev-workflow.integration.test.ts`, which builds a project and runs one.
+ * `dev-workflow.scenario.test.ts`, which builds a project and runs one.
  *
  * The WAV half is worth its own section because it is where a silent bug lives:
  * a cut that lands mid-frame, or an off-by-one in the chunk walk, produces audio

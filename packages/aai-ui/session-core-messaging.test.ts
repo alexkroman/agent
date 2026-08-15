@@ -286,14 +286,16 @@ describe("createSessionCore", () => {
   // ─── Reconnection with history ──────────────────────────────────────────
 
   describe("reconnection", () => {
-    it("sends JSON history message on reconnect if messages exist", () => {
+    it("does NOT replay history on reconnect — the server is authoritative", () => {
       // First connection
       core.connect();
       lastSocket?.simulateOpen();
       lastSocket?.simulateMessage(makeConfig());
 
       // Accumulate a message
-      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello" }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user-transcript.committed", text: "Hello" }),
+      );
       expect(core.getSnapshot().messages).toHaveLength(1);
 
       // Disconnect and reconnect
@@ -301,26 +303,30 @@ describe("createSessionCore", () => {
       core.connect();
       const reconnectSocket = lastSocket;
       reconnectSocket?.simulateOpen();
-
-      // Send config to trigger history send
       reconnectSocket?.simulateMessage(makeConfig());
 
-      // Should have sent a JSON history message
-      const calls = reconnectSocket?.send.mock.calls ?? [];
-      expect(calls.length).toBeGreaterThan(0);
-      // Find the history message
-      const historyCall = calls.find((c) => {
-        if (typeof c[0] !== "string") return false;
-        try {
-          return JSON.parse(c[0] as string).type === "history";
-        } catch {
-          return false;
-        }
-      });
-      expect(historyCall).toBeDefined();
-      const msg = JSON.parse(historyCall?.[0] as string);
-      expect(msg.type).toBe("history");
-      expect(msg.messages).toEqual([{ role: "user", content: "Hello" }]);
+      // The client used to push its own `messages` back here, which made it the
+      // authority on what the agent remembered. The server restores the
+      // conversation from its retained event stream now — so this frame is gone
+      // from the protocol, and sending it would be a second mechanism doing the
+      // same job with the client's the one that actually ran.
+      const sentTypes = (reconnectSocket?.send.mock.calls ?? [])
+        .map((c) => c[0])
+        .filter((frame): frame is string => typeof frame === "string")
+        .map((frame) => {
+          try {
+            return String((JSON.parse(frame) as { type?: unknown }).type);
+          } catch {
+            return "";
+          }
+        });
+      expect(sentTypes).not.toContain("history");
+
+      // The transcript on screen is untouched: nothing clears it, so a reconnect
+      // does not blank the conversation the user is reading.
+      expect(core.getSnapshot().messages).toEqual([
+        expect.objectContaining({ role: "user", content: "Hello" }),
+      ]);
       assertValidClientFrames(reconnectSocket);
     });
   });
@@ -342,7 +348,7 @@ describe("createSessionCore", () => {
       vi.unstubAllGlobals();
     });
 
-    it("server-initiated close reconnects with the resume URL and replays history", async () => {
+    it("server-initiated close reconnects with the resume URL", async () => {
       core.connect();
       // partysocket opens the underlying socket asynchronously (0ms timer).
       await vi.advanceTimersByTimeAsync(0);
@@ -352,7 +358,7 @@ describe("createSessionCore", () => {
 
       first?.simulateOpen();
       first?.simulateMessage(makeConfig(16_000, 24_000, "sess-1"));
-      first?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello" }));
+      first?.simulateMessage(JSON.stringify({ type: "user-transcript.committed", text: "Hello" }));
       expect(core.getSnapshot().messages).toHaveLength(1);
 
       // Unexpected close: the session surfaces "connecting" (not
@@ -372,13 +378,19 @@ describe("createSessionCore", () => {
       second?.simulateOpen();
       expect(core.getSnapshot().state).toBe("ready");
       second?.simulateMessage(makeConfig(16_000, 24_000, "sess-1"));
-      const historyCall = (second?.send.mock.calls ?? []).find(
-        (c) => typeof c[0] === "string" && JSON.parse(c[0] as string).type === "history",
-      );
-      expect(historyCall).toBeDefined();
-      expect(JSON.parse(historyCall?.[0] as string).messages).toEqual([
-        { role: "user", content: "Hello" },
-      ]);
+      // The resume id is the whole of what the client contributes now: the
+      // SERVER restores the conversation, from its own retained event stream
+      // keyed by that id (`runtime-session-stream.ts`). What used to follow here
+      // was the client pushing its `messages` back, i.e. the client deciding
+      // what the agent remembered.
+      const sent = (second?.send.mock.calls ?? [])
+        .map((c) => c[0])
+        .filter((frame): frame is string => typeof frame === "string");
+      expect(
+        sent.map((frame) => String((JSON.parse(frame) as { type?: unknown }).type)),
+      ).not.toContain("history");
+      // And the transcript survives the reconnect, as it always did.
+      expect(core.getSnapshot().messages).toHaveLength(1);
     });
 
     it("user disconnect does not reconnect", async () => {
@@ -416,7 +428,7 @@ describe("createSessionCore", () => {
       // Events from the first socket's listeners have been cleaned up
       // by the AbortController, so they won't fire. The second socket
       // should be functional:
-      secondSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+      secondSocket?.simulateMessage(JSON.stringify({ type: "speech.started" }));
       expect(core.getSnapshot().userTranscript).toBe("");
     });
   });
@@ -431,21 +443,23 @@ describe("createSessionCore", () => {
 
     it("handles a full turn: speech → transcript → thinking → speaking → listening", () => {
       // User starts speaking
-      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech.started" }));
       expect(core.getSnapshot().userTranscript).toBe("");
 
       // Speech stops
-      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_stopped" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech.stopped" }));
 
       // Transcript arrives
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user_transcript", text: "What time is it?" }),
+        JSON.stringify({ type: "user-transcript.committed", text: "What time is it?" }),
       );
       expect(core.getSnapshot().state).toBe("thinking");
       expect(core.getSnapshot().messages).toHaveLength(1);
 
       // Agent responds with text -- the live caption, not a message yet
-      lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "It is 3pm." }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "agent-transcript.updated", text: "It is 3pm." }),
+      );
       expect(core.getSnapshot().agentTranscript).toBe("It is 3pm.");
       expect(core.getSnapshot().messages).toHaveLength(1);
 
@@ -454,11 +468,11 @@ describe("createSessionCore", () => {
       expect(core.getSnapshot().state).toBe("speaking");
 
       // Audio done
-      lastSocket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
       expect(core.getSnapshot().state).toBe("listening");
 
       // Reply done -- the caption becomes the assistant turn
-      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
       expect(core.getSnapshot().state).toBe("listening");
       expect(core.getSnapshot().messages).toHaveLength(2);
     });
@@ -466,13 +480,13 @@ describe("createSessionCore", () => {
     it("handles a turn with tool calls", () => {
       // User message
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user_transcript", text: "Search for cats" }),
+        JSON.stringify({ type: "user-transcript.committed", text: "Search for cats" }),
       );
 
       // Tool call started
       lastSocket?.simulateMessage(
         JSON.stringify({
-          type: "tool_call",
+          type: "tool.called",
           toolCallId: "tc-1",
           toolName: "web_search",
           args: { query: "cats" },
@@ -483,47 +497,53 @@ describe("createSessionCore", () => {
 
       // Tool call done
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "tool_call_done", toolCallId: "tc-1", result: "Found 42 cats" }),
+        JSON.stringify({ type: "tool.completed", toolCallId: "tc-1", result: "Found 42 cats" }),
       );
       expect(core.getSnapshot().toolCalls[0]?.status).toBe("done");
       expect(core.getSnapshot().toolCalls[0]?.result).toBe("Found 42 cats");
 
       // Agent responds
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "agent_transcript", text: "I found 42 cats." }),
+        JSON.stringify({ type: "agent-transcript.updated", text: "I found 42 cats." }),
       );
-      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
       expect(core.getSnapshot().messages).toHaveLength(2);
     });
 
     it("tool call afterMessageId anchors to the last message at insert time", () => {
       // Three messages first (ids 1, 2, 3)
-      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "msg1" }));
-      lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "reply1" }));
-      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
-      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "msg2" }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user-transcript.committed", text: "msg1" }),
+      );
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "agent-transcript.updated", text: "reply1" }),
+      );
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user-transcript.committed", text: "msg2" }),
+      );
       expect(core.getSnapshot().messages).toHaveLength(3);
 
       // Tool call after 3 messages anchors to the message with id 3
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "calc", args: {} }),
+        JSON.stringify({ type: "tool.called", toolCallId: "tc-1", toolName: "calc", args: {} }),
       );
       expect(core.getSnapshot().toolCalls[0]?.afterMessageId).toBe(3);
     });
 
     it("tool call inserted before any message anchors to -1", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "calc", args: {} }),
+        JSON.stringify({ type: "tool.called", toolCallId: "tc-1", toolName: "calc", args: {} }),
       );
       expect(core.getSnapshot().toolCalls[0]?.afterMessageId).toBe(-1);
     });
 
     it("tool call seq is monotonic across insertions", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "a", args: {} }),
+        JSON.stringify({ type: "tool.called", toolCallId: "tc-1", toolName: "a", args: {} }),
       );
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "tool_call", toolCallId: "tc-2", toolName: "b", args: {} }),
+        JSON.stringify({ type: "tool.called", toolCallId: "tc-2", toolName: "b", args: {} }),
       );
       expect(core.getSnapshot().toolCalls.map((tc) => tc.seq)).toEqual([1, 2]);
     });

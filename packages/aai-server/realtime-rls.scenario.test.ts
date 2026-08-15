@@ -19,7 +19,7 @@
  * stream from a dead one, which is why every assertion here waits for a frame
  * to arrive rather than for an error not to.
  *
- * Complements `platform-schema.integration.test.ts`, which applies the same
+ * Complements `platform-schema.scenario.test.ts`, which applies the same
  * migrations to a stock Postgres and drives the stores against them. That
  * covers the SQL and the owner-connection path (owners bypass policies, so
  * enabling RLS is inert for the platform's own queries). It has no Realtime,

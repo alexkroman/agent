@@ -6,6 +6,7 @@
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { SessionEventHandlers } from "./session-events.ts";
 import type { StateProjection } from "./session-state.ts";
 // Imported as well as re-exported below: a re-export does not bring the name into
 // this module's scope, and `ToolDef.execute` needs it.
@@ -348,6 +349,49 @@ export interface AgentDef extends PipelineVoiceTuning {
    * built some version of that by hand.
    */
   syncState?: StateProjection | readonly StateProjection[];
+  /**
+   * Observe the session's own event stream — an audit log, per-turn metrics, or
+   * "write every call to my own database".
+   *
+   * Keyed by event type, with `"*"` matching every event. Typed handlers run
+   * first, then `"*"`, and both run AFTER the event has been recorded in the
+   * session's retained stream and sent to the client:
+   *
+   * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   *
+   * agent({
+   *   name: "Audited",
+   *   events: {
+   *     "tool.called": (e, ctx) => {
+   *       void ctx.db.query("insert into audit (id, tool) values ($1, $2)", [
+   *         e.meta.id,
+   *         e.toolName,
+   *       ]);
+   *     },
+   *     "*": (e) => console.log(e.meta.at, e.type),
+   *   },
+   * });
+   * ```
+   *
+   * Three properties are load-bearing, and each is a rule rather than a detail:
+   *
+   * - **Observe-only.** A handler cannot inject model context, change a reply, or
+   *   cancel anything. That is what keeps the stream a LOG rather than a second
+   *   control path, and it is why a handler receives no way to reply.
+   * - **A throw is NON-FATAL.** It is logged against the event and the session
+   *   continues — a failing audit hook must not end a phone call. An async
+   *   handler is not awaited either, for the same reason: the caller is mid-turn.
+   * - **Delivery is at-least-once, and `meta.id` is the key.** The id is stable
+   *   across replays, so a handler storing content keys on it; a handler doing a
+   *   non-idempotent side effect keys on the work's own coordinates instead,
+   *   because retried work re-emits under fresh ids.
+   *
+   * Before this there was no way for an agent author to observe their own agent
+   * at all: the framework carried 51 internal `on*` callback options and not one
+   * of them was reachable from `agent.ts`.
+   */
+  events?: SessionEventHandlers;
   /**
    * How long the session may go with no inbound audio before it is closed
    * (ms). Measures silence, not call length — re-armed on every audio frame.

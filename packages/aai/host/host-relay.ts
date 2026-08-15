@@ -4,7 +4,7 @@
  *
  * A host-mode caller supplies tool *schemas*, not tool code, so nothing it
  * declares can execute in this process. `createRelayExecuteTool` is what makes
- * that true — it is an {@link ExecuteTool} that emits a `tool_call` frame and
+ * that true — it is an {@link ExecuteTool} that emits a `tool.called` frame and
  * waits for the matching inbound `tool_result`, so the model's tool calls are
  * answered by the caller rather than by the server.
  *
@@ -17,7 +17,7 @@ import type { ExecuteTool } from "../sdk/_internal-types.ts";
 import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import { DEFAULT_RELAY_TOOL_TIMEOUT_MS } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
-import type { ClientEvent } from "../sdk/protocol.ts";
+import type { SessionEventBody } from "../sdk/protocol.ts";
 import { safeJsonParse } from "../sdk/utils.ts";
 
 /**
@@ -43,7 +43,14 @@ export type RelayExecuteTool = {
   dispose(): void;
 };
 
-type ToolCallEvent = Extract<ClientEvent, { type: "tool_call" }>;
+/**
+ * The frame a relay sends to ask the CLIENT to run a tool.
+ *
+ * A BODY, not a stamped event: the relay is built before the session exists (it
+ * is the session's `executeTool`), so it has no emitter to record through and its
+ * caller stamps. See `host-mode.ts`'s `sendEvent`.
+ */
+type ToolCallEvent = Extract<SessionEventBody, { type: "tool.called" }>;
 
 /**
  * A relay's `result` field arrives as a string on the wire. Clients commonly
@@ -56,7 +63,7 @@ function normalizeResult(raw: string): string {
 }
 
 /**
- * Build a relay tool executor: `executeTool` emits a `tool_call` frame via
+ * Build a relay tool executor: `executeTool` emits a `tool.called` frame via
  * `send` and returns a promise keyed by `toolCallId`; `onToolResult` settles
  * that promise when the client replies. Calls that never receive a result
  * reject after `timeoutMs` (default `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, 120 000 ms).
@@ -101,7 +108,7 @@ export function createRelayExecuteTool(opts: {
     }
     const { promise, resolve, reject } = Promise.withResolvers<string>();
     pending.set(toolCallId, { resolve, reject });
-    opts.send({ type: "tool_call", toolCallId, toolName: name, args });
+    opts.send({ type: "tool.called", toolCallId, toolName: name, args });
     // p-timeout owns the deadline and the abort listener: it rejects with the
     // timeout Error below, or with the signal's abort reason on cancellation.
     // Either way the pending entry is dropped once the call settles.

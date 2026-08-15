@@ -391,7 +391,7 @@ the whole reason this route is shaped the way it is:
   finished run* — which is the case a page hits most. That is not hypothetical:
   `GET /runs/:id/stream` held a response open until a 120-second test timeout on
   a completed two-line run, and no unit test could see it, because a fake stream
-  is a closed one. Only `dev-workflow.integration.test.ts`, against a real
+  is a closed one. Only `dev-workflow.scenario.test.ts`, against a real
   transform and a real world, reaches it.
 
   The route therefore bounds each read by `streamTail()` — the last written index

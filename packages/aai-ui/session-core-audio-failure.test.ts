@@ -176,7 +176,7 @@ describe("buffered greeting replay", () => {
     socket?.simulateMessage(makeConfig());
     // Both arrive before any microtask can advance the init pipeline.
     socket?.simulateMessage(new Uint8Array([1, 2, 3, 4]).buffer);
-    socket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+    socket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
 
     await vi.waitFor(() => {
       expect(core.getSnapshot().recording).toBe(true);

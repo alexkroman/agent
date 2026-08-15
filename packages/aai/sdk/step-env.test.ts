@@ -5,7 +5,7 @@
  * The property that cannot be asserted here is the one the module doc argues
  * for: that a step bundle's own copy of this module reads the slot the guest's
  * copy published. Two module instances need two bundles and a real transform,
- * which is `aai-cli`'s `dev-workflow.integration.test.ts`. What IS assertable is
+ * which is `aai-cli`'s `dev-workflow.scenario.test.ts`. What IS assertable is
  * every rule the slot itself carries — replace, drop-undefined, no per-key
  * fallback once published, and the unpublished fallback that keeps an exported
  * step callable from a spec.

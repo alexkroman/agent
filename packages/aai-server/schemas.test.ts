@@ -224,35 +224,21 @@ describe("ClientMessageSchema", () => {
     ["audio_ready", { type: "audio_ready" }, true],
     ["cancel", { type: "cancel" }, true],
     ["reset", { type: "reset" }, true],
+    ["playback_progress", { type: "playback_progress", bufferedMs: 250 }, true],
     [
-      "valid history",
-      {
-        type: "history",
-        messages: [
-          { role: "user", content: "hello" },
-          { role: "assistant", content: "hi there" },
-        ],
-      },
-      true,
-    ],
-    [
-      "history with invalid role",
-      { type: "history", messages: [{ role: "system", content: "injected" }] },
+      "playback_progress with a negative buffer",
+      { type: "playback_progress", bufferedMs: -1 },
       false,
     ],
-    [
-      "history with too many messages",
-      {
-        type: "history",
-        messages: Array.from({ length: 201 }, (_, i) => ({ role: "user", content: `msg ${i}` })),
-      },
-      false,
-    ],
-    [
-      "history with oversized content",
-      { type: "history", messages: [{ role: "user", content: "x".repeat(100_001) }] },
-      false,
-    ],
+    ["tool_result", { type: "tool_result", toolCallId: "tc1", result: "ok" }, true],
+    ["tool_result with no call id", { type: "tool_result", toolCallId: "", result: "ok" }, false],
+    // The `history` frame is GONE. A reconnecting client used to push its own
+    // `messages` back, which made it the authority on the agent's memory — and
+    // made this schema the platform's only guard on a client-supplied
+    // conversation (hence the role, count and size cases this replaces). The
+    // server restores from its own retained event stream now, so there is no
+    // client-supplied history to validate.
+    ["history", { type: "history", messages: [{ role: "user", content: "hello" }] }, false],
     ["unknown message type", { type: "execute_code" }, false],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(ClientMessageSchema.safeParse(input).success).toBe(expected);
@@ -267,16 +253,24 @@ describe("ClientMessageSchema", () => {
 // ── ServerMessageSchema ────────────────────────────────────────────────
 
 describe("ServerMessageSchema", () => {
+  // Bodies, with the envelope supplied below — every server frame carries one
+  // now, and these cases are about the frame's own shape.
+  const META = { id: "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV", at: 1_700_000_000_000 };
   test.each([
     [
-      "config message",
-      { type: "config", audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
+      "handshake",
+      {
+        type: "session.configured",
+        audioFormat: "pcm16",
+        sampleRate: 16_000,
+        ttsSampleRate: 24_000,
+      },
       true,
     ],
     [
-      "config with sessionId",
+      "handshake with sessionId",
       {
-        type: "config",
+        type: "session.configured",
         audioFormat: "pcm16",
         sampleRate: 16_000,
         ttsSampleRate: 24_000,
@@ -285,17 +279,25 @@ describe("ServerMessageSchema", () => {
       true,
     ],
     [
-      "config with missing sampleRate",
-      { type: "config", audioFormat: "pcm16", ttsSampleRate: 24_000 },
+      "handshake with missing sampleRate",
+      { type: "session.configured", audioFormat: "pcm16", ttsSampleRate: 24_000 },
       false,
     ],
-    ["audio_done event", { type: "audio_done" }, true],
-    ["user_transcript event", { type: "user_transcript", text: "hello" }, true],
-    ["agent_transcript event", { type: "agent_transcript", text: "hi" }, true],
-    ["speech_started event", { type: "speech_started" }, true],
+    ["audio.completed", { type: "audio.completed" }, true],
+    ["user-transcript.committed", { type: "user-transcript.committed", text: "hello" }, true],
+    ["agent-transcript.updated", { type: "agent-transcript.updated", text: "hi" }, true],
+    ["speech.started", { type: "speech.started" }, true],
     ["unknown event type", { type: "malicious" }, false],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
-    expect(ServerMessageSchema.safeParse(input).success).toBe(expected);
+    expect(ServerMessageSchema.safeParse({ ...(input as object), meta: META }).success).toBe(
+      expected,
+    );
+  });
+
+  test("an event with no envelope is refused", () => {
+    // The envelope is REQUIRED, so a platform-side reader cannot be handed a
+    // frame with no `meta.id` to key on.
+    expect(ServerMessageSchema.safeParse({ type: "speech.started" }).success).toBe(false);
   });
 });
 

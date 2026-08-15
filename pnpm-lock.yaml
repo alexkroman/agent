@@ -78,6 +78,9 @@ catalogs:
     typescript:
       specifier: ^7.0.2
       version: 7.0.2
+    ulid:
+      specifier: ^3.0.2
+      version: 3.0.2
     use-stick-to-bottom:
       specifier: ^1.1.6
       version: 1.1.6
@@ -255,6 +258,9 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
+      ulid:
+        specifier: 'catalog:'
+        version: 3.0.2
       undici:
         specifier: ^8.10.0
         version: 8.10.0

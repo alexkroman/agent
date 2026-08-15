@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
     "packages/aai-cli/e2e.test.ts": 1,
     "packages/aai-ui/default-client.tsx": 1,
@@ -46,7 +46,7 @@
     "packages/aai-server/realtime-events.ts": 1,
     "packages/aai-server/serve-lifecycle.ts": 2,
     "packages/aai-server/supabase-auth.test.ts": 2,
-    "packages/aai-server/ws.integration.test.ts": 1,
+    "packages/aai-server/ws.scenario.test.ts": 1,
     "packages/aai-studio-client/src/_test-utils.ts": 1,
     "packages/aai-studio-server/_studio-routes-test-utils.ts": 1,
     "packages/aai-studio-server/_studio-session-test-utils.ts": 2,

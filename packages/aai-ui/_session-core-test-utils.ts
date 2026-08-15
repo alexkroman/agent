@@ -16,6 +16,26 @@ export function resetLastSocket(): void {
   lastSocket = null;
 }
 
+/**
+ * Add an event envelope to a JSON server frame that lacks one.
+ *
+ * Non-JSON and non-object payloads pass through: several specs deliberately
+ * deliver malformed frames, and mangling those would test the helper instead of
+ * the client.
+ */
+function stampJsonFrame(data: string | ArrayBuffer): string | ArrayBuffer {
+  if (typeof data !== "string") return data;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    return data;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return data;
+  if ("meta" in parsed || !("type" in parsed)) return data;
+  return JSON.stringify({ ...parsed, meta: { id: "evt_TEST", at: 0 } });
+}
+
 export class MockWebSocket {
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
@@ -61,8 +81,22 @@ export class MockWebSocket {
   }
 
   /** Simulate receiving a message from the server (text JSON, binary ArrayBuffer, or Uint8Array). */
+  /**
+   * Deliver one server frame.
+   *
+   * **A JSON frame is STAMPED with an event envelope if it has none**, because
+   * this double stands in for the SERVER and a real one always stamps — the
+   * envelope is minted once, where the event is recorded
+   * (`aai/host/session-event-stream.ts`). Without this every spec here would
+   * carry a `meta` it never asserts on, and a spec that forgot one would see its
+   * frame silently DROPPED by `lenientParse` rather than fail: the shape of
+   * unfaithful-fake bug this package's own fuzz notes warn about.
+   *
+   * A frame that brings its own `meta` is passed through untouched, which is
+   * what lets a spec assert on the envelope (or send a deliberately bad one).
+   */
   simulateMessage(data: string | Uint8Array | ArrayBuffer) {
-    const payload = data instanceof Uint8Array ? data.buffer : data;
+    const payload = data instanceof Uint8Array ? data.buffer : stampJsonFrame(data);
     for (const cb of this._listeners.get("message") ?? []) {
       cb(new MessageEvent("message", { data: payload }));
     }
@@ -151,7 +185,7 @@ export function makeConfig(
   extra: Record<string, unknown> = {},
 ): string {
   return JSON.stringify({
-    type: "config",
+    type: "session.configured",
     audioFormat: "pcm16",
     sampleRate,
     ttsSampleRate,

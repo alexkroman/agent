@@ -17,7 +17,6 @@ import {
 import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { OwnedMap } from "../sdk/owned-map.ts";
-import type { ClientSink } from "../sdk/protocol.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import type { StateProjection } from "../sdk/session-state.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
@@ -26,6 +25,7 @@ import { createStateSync } from "./_state-sync.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
+import type { SessionEmitter } from "./session-emitter.ts";
 import type { SessionStateStore } from "./session-state-store.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 import type { RunNotifier } from "./workflow-notify.ts";
@@ -89,7 +89,7 @@ type ToolSetup = {
    * and there may not be one. Absent on the sandbox path, where the runtime
    * holds no state.
    */
-  pushStateSnapshot?: (sessionId: string, sink: ClientSink) => void;
+  pushStateSnapshot?: (sessionId: string, emitter: SessionEmitter) => void;
 };
 
 /** Runtime state the tool-setup paths close over. */
@@ -124,7 +124,16 @@ type ToolSetupDeps = {
    */
   notifier?: RunNotifier | undefined;
   logger: NonNullable<RuntimeOptions["logger"]>;
-  sinkMap: OwnedMap<string, ClientSink>;
+  /**
+   * Live EMITTER per session, so `ctx.send` and a `syncState` push are recorded
+   * in the session's event stream and seen by its hooks like any other event —
+   * they used to write straight to a `ClientSink`, which made them the two events
+   * no log could contain and no hook could observe.
+   *
+   * Still a map rather than one emitter, and still resolved per send, for the
+   * resume reason spelled out at `liveEmitter`.
+   */
+  emitters: OwnedMap<string, SessionEmitter>;
   /**
    * Per-session slot state (self-hosted mode only), over the memory or Postgres
    * backend — see `host/session-state-store.ts`. Reclaimed after the resume
@@ -228,7 +237,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
-  const { agent, opts, env, resolvedDb, workflows, notifier, logger, sinkMap, stateStore } = deps;
+  const { agent, opts, env, resolvedDb, workflows, notifier, logger, emitters, stateStore } = deps;
   const builtinOpts = {
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -255,10 +264,10 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
    * that relay: the name cap mirrors the protocol schema, and the payload is
    * measured in UTF-8 bytes (what actually crosses the socket).
    */
-  const sendToClient = (sink: ClientSink, event: string, data: unknown): void => {
+  const sendToClient = (emitter: SessionEmitter, event: string, data: unknown): void => {
     if (event.length > MAX_CLIENT_EVENT_NAME_LENGTH) return;
     if (Buffer.byteLength(JSON.stringify(data ?? null)) > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
-    sink.event({ type: "custom_event", event, data });
+    emitter.emit({ type: "custom.emitted", event, data });
   };
 
   /**
@@ -269,14 +278,14 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   const projections = toProjectionList(agent.syncState);
   const stateSync = projections.length > 0 ? createStateSync(projections) : undefined;
   const syncStateToClient = (
-    sink: ClientSink | undefined,
+    emitter: SessionEmitter | undefined,
     sessionId: string,
     options?: { force?: boolean },
   ): void => {
-    if (!(sink && stateSync)) return;
+    if (!(emitter && stateSync)) return;
     const result = stateSync(stateStore.syncSession(sessionId), options);
     if (result.push) {
-      sink.event({ type: "agent_state", state: result.state });
+      emitter.emit({ type: "state.updated", state: result.state });
       return;
     }
     if (result.reason === "failed") {
@@ -294,15 +303,15 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
      * Resolved per send, never captured at dispatch. A tool call routinely
      * outlives the socket that issued it (it may run for the whole tool
      * timeout, and a session survives a disconnect through the resume grace
-     * window), so by the time it sends, `sinkMap` may hold the RESUMED
-     * connection's sink under the same id — captured, both sends below went
+     * window), so by the time it sends, `emitters` may hold the RESUMED
+     * connection's emitter under the same id — captured, both sends below went
      * to the superseded socket instead. For `syncState` that is worse than a
      * dropped frame: the push records the projection as delivered
      * (`lastSent` in _state-sync.ts, keyed by the state object the resume
      * shares), so the next unchanged projection is skipped and the
      * reconnected client stays stale with no further push coming.
      */
-    const liveSink = (): ClientSink | undefined => sinkMap.get(sid);
+    const liveEmitter = (): SessionEmitter | undefined => emitters.get(sid);
     const run = () =>
       executeToolCall(name, args, {
         tool,
@@ -320,8 +329,8 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         // (the same shape a missing sink produced before), and binding it
         // late is what lets a resumed client receive it.
         send: (event, data) => {
-          const sink = liveSink();
-          if (sink) sendToClient(sink, event, data);
+          const emitter = liveEmitter();
+          if (emitter) sendToClient(emitter, event, data);
         },
         // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
         signal: callOpts?.signal,
@@ -332,7 +341,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
       // Both in `finally` so a throwing tool still publishes and stores what it
       // changed before it failed — a half-applied mutation the UI is not showing
       // is worse than one it is, and the same goes for one nothing stored.
-      syncStateToClient(liveSink(), sid);
+      syncStateToClient(liveEmitter(), sid);
       // THE COMMIT POINT, and it is awaited. `slot.update` is synchronous by
       // contract, so it cannot await a write of its own; this is where a tool
       // call's mutations reach the backend, once per changed slot rather than
@@ -348,9 +357,9 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
    * `store.has` is what says which: it is true once a slot has been written or
    * hydrated, which is the same question `stateMap.has(sid)` used to answer.
    */
-  const pushStateSnapshot = (sessionId: string, sink: ClientSink): void => {
+  const pushStateSnapshot = (sessionId: string, emitter: SessionEmitter): void => {
     if (!(stateSync && stateStore.has(sessionId))) return;
-    syncStateToClient(sink, sessionId, { force: true });
+    syncStateToClient(emitter, sessionId, { force: true });
   };
 
   return { executeTool, toolSchemas, toolGuidance: builtins.guidance, pushStateSnapshot };

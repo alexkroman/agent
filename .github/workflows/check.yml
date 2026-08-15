@@ -178,7 +178,10 @@ jobs:
       # job in the normal case and a real rebuild in the abnormal one.
       - run: pnpm exec turbo run test:coverage --filter "./packages/${{ matrix.package }}"
 
-  integration:
+  # Both middle tiers. Named for both because it runs both: the integration tier
+  # (in-memory, no real resource) and the scenario tier (a real subprocess, port,
+  # bundler, or the Postgres started below).
+  integration-and-scenario:
     needs: setup
     runs-on: ${{ matrix.os }}
     strategy:
@@ -206,10 +209,10 @@ jobs:
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build
-      # Postgres for the platform integration tests: the per-slug advisory lock
+      # Postgres for the platform SCENARIO tests: the per-slug advisory lock
       # and the migration + its stores. Both assert PostgreSQL semantics that
       # their unit suites can only assert in prose (see
-      # platform-lock.integration.test.ts).
+      # platform-lock.scenario.test.ts).
       #
       # A step rather than a `services:` container, because those need Docker
       # and this job's matrix includes macos-latest, where it is unavailable.
@@ -232,7 +235,11 @@ jobs:
           # and this job would pass — the exact "a check that exists without
           # running" failure their own comments say they must not become.
           echo "AAI_REQUIRE_PG=1" >> "$GITHUB_ENV"
-      - run: pnpm exec turbo run check:integration
+      # Both slow tiers below e2e, in one job. They are separate TASKS — the
+      # integration tier is in-memory only and the scenario tier is what needs the
+      # Postgres started above — but they share this job's checkout and build, and
+      # splitting them into two jobs would pay for that twice for ~20s of work.
+      - run: pnpm exec turbo run check:integration check:scenario
 
   e2e:
     needs: setup
@@ -270,17 +277,27 @@ jobs:
       # --concurrency=1: the e2e run republishes every publishable package from
       # the live workspace, truncating shared dist/ directories while it does.
       # Nothing may run beside it. Matches `pnpm test:e2e` and scripts/check.sh.
+      #
+      # AAI_REQUIRE_REGISTRY makes a failed install a FAILURE here rather than a
+      # visible skip. Three of the four tests can excuse an install failure as a
+      # registry-proxy flake, on a predicate over error TEXT — a guess, and this is
+      # the one job where a broken published `exports` map surfaces, so on a
+      # runner with real egress the excuse has to be off. Same shape and same
+      # reason as AAI_REQUIRE_PG in the integration-and-scenario job. It stays available
+      # locally, where a developer behind a proxy cannot make the passthrough work.
       - run: pnpm exec turbo run check:e2e --concurrency=1
+        env:
+          AAI_REQUIRE_REGISTRY: "1"
 
   # Single gate job for branch protection — add only "ci" as a required check
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, integration, e2e]
+    needs: [lint-typecheck-and-checks, test, integration-and-scenario, e2e]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration-and-scenario.result }} ${{ needs.e2e.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"

@@ -83,6 +83,18 @@ export const GUEST_ROUTES = {
    * from the public internet.
    */
   workflowWebhook: "/.well-known/workflow/v1/webhook",
+  /**
+   * PUBLIC read of one session's retained event stream (the SDK server's own
+   * route) — bearer-gated, and OFF unless the agent's env sets
+   * `AAI_SESSION_EVENTS_TOKEN`.
+   *
+   * Closed by default where `workflows` above is open, and the difference is
+   * the caller: a workflow app's PAGE has no credential to present, so
+   * fail-open is the only way it could work at all, while nothing in the
+   * product reads this one — a reconnecting browser is restored server-side —
+   * and its content is the conversation itself.
+   */
+  sessionEvents: "/session-events",
   /** Agent-mode management surface (bearer-gated): session count + drain. */
   manageStatus: "/manage/status",
   manageDrain: "/manage/drain",
@@ -191,6 +203,22 @@ export const GUEST_ROUTE_EXPOSURE = {
   // does would claim a bearer check that does not exist. Reconsider only if a
   // run's queue ever moves out of the guest — then they need a platform route
   // AND an authenticity check of their own, not one without the other.
+  // DIRECT-DIAL, and the choice is worth stating because `proxied` was the
+  // other candidate and is what an audit ingester would want.
+  //
+  // What direct-dial costs: a Modal tunnel URL dies with the sandbox, and an
+  // agent guest self-exits on idle — so this reads a LIVE session's log, or one
+  // whose sandbox is still up, and not a call from last week. What it avoids is
+  // a platform route that would have to BOOT a sandbox to read rows back out of
+  // the tenant's own Postgres, on a surface with no in-product caller.
+  //
+  // The cases proxying would serve are already served better: an operator reads
+  // `aai_session_events` in the app schema with SQL, and an INGESTER uses the
+  // hook surface (`agent({ events })`) to write each event where it wants as it
+  // happens — which is also the only version that does not depend on a sandbox
+  // being alive. Promoting this to `proxied` is one route registration plus the
+  // methods declared here, if a caller turns up that needs it.
+  sessionEvents: { via: "direct-dial" },
   workflowFlow: { via: "guest-internal" },
   workflowStep: { via: "guest-internal" },
   // The one workflow route with a caller outside the container, and the reason

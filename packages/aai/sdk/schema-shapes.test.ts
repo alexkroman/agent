@@ -1,12 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
-import {
-  ClientEventSchema,
-  ClientMessageSchema,
-  ReadyConfigSchema,
-  ServerMessageSchema,
-} from "./protocol.ts";
+import { ReadyConfigSchema, SessionCommandSchema, SessionEventSchema } from "./protocol.ts";
 
 type ZodObjectLike = { shape: Record<string, unknown> };
 
@@ -31,17 +26,18 @@ function discriminatedUnionShapes(schema: {
   return result;
 }
 
+// The two unions, named as they are DECLARED. `ServerMessageSchema` and
+// `ClientMessageSchema` are literal aliases of these (`protocol.ts:153`, `:165`),
+// and this file used to snapshot both sides of the first one — the same object,
+// twice, identical by construction. Naming the declarations also stops the
+// aliases reading as load-bearing.
 describe("protocol schema shapes", () => {
-  test("ClientEventSchema option shapes", () => {
-    expect(discriminatedUnionShapes(ClientEventSchema)).toMatchSnapshot();
+  test("SessionEventSchema option shapes", () => {
+    expect(discriminatedUnionShapes(SessionEventSchema)).toMatchSnapshot();
   });
 
-  test("ServerMessageSchema option shapes", () => {
-    expect(discriminatedUnionShapes(ServerMessageSchema)).toMatchSnapshot();
-  });
-
-  test("ClientMessageSchema option shapes", () => {
-    expect(discriminatedUnionShapes(ClientMessageSchema)).toMatchSnapshot();
+  test("SessionCommandSchema option shapes", () => {
+    expect(discriminatedUnionShapes(SessionCommandSchema)).toMatchSnapshot();
   });
 
   test("ReadyConfigSchema shape", () => {

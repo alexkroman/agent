@@ -353,7 +353,7 @@ today for a reason this mode surfaced rather than caused, and a
 required check would be red with it. `restart-on-boot` is the one that is green,
 because it kills between runs.
 
-What CI runs is `_fault-mode.integration.test.ts` — the supervisor's own spec,
+What CI runs is `_fault-mode.scenario.test.ts` — the supervisor's own spec,
 driven against a fake server (including one that prints nothing at all), because
 a mode whose whole job is to inject faults has to be shown to inject them.
 
@@ -379,7 +379,7 @@ Three things separate the two, and picking the wrong one measures nothing:
 - **It severs rather than closing.** `destroy()`, never a close frame: a clean
   close is the "user hung up" case aai-ui deliberately does NOT reconnect from,
   so a test built on `ws.close()` proves the opposite of what it looks like.
-  `session-resume.integration.test.ts` asserts the client observes **1006** for
+  `session-resume.scenario.test.ts` asserts the client observes **1006** for
   exactly that reason.
 - **It is a proxy for the same reason this one is a supervisor.** The sockets are
   server-side, so the obvious shape is an env-gated `ws.close()` inside

@@ -9,7 +9,6 @@ import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
 import {
   defaultConfig,
   openSocket,
-  parseFirstFrame,
   simulateBinaryFrame,
   simulateTextFrame,
   waitForSessionReady,
@@ -102,56 +101,47 @@ describe("wireSessionSocket", () => {
     });
   });
 
-  test("sends CONFIG JSON frame as first message on open", () => {
+  // The handshake is an EVENT now (`session.configured`), so the session emits it
+  // and this layer's job is only to ask, at zero RTT and before `start()`. The
+  // frame's own contents are asserted where they are built, in
+  // `session-core.test.ts` — one claim per layer, rather than this file reaching
+  // through a mock core to a socket.
+  test("asks the session to announce itself, with the negotiated audio config", () => {
+    const core = makeMockCore();
     const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: createOwnedMap(),
-      createSession: () => makeMockCore(),
+      createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
 
-    expect(ws.sent.length).toBeGreaterThanOrEqual(1);
-    expect(typeof ws.sent[0]).toBe("string");
-    expect(parseFirstFrame(ws).type).toBe("config");
+    expect(core.configure).toHaveBeenCalledWith(defaultConfig);
   });
 
-  test("CONFIG frame contains correct sampleRate and ttsSampleRate", () => {
+  test("announces before starting the session, so the client is never left waiting", () => {
+    const order: string[] = [];
+    const core = makeMockCore({
+      configure: vi.fn(() => order.push("configure")),
+      start: vi.fn(() => {
+        order.push("start");
+        return Promise.resolve();
+      }),
+    });
     const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: createOwnedMap(),
-      createSession: () => makeMockCore(),
+      createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
 
-    const msg = parseFirstFrame(ws);
-    expect(msg.type).toBe("config");
-    expect(msg.audioFormat).toBe("pcm16");
-    expect(msg.sampleRate).toBe(16_000);
-    expect(msg.ttsSampleRate).toBe(24_000);
-  });
-
-  test("CONFIG frame includes the session ID as sessionId", () => {
-    const ws = openSocket();
-    let capturedId: string | undefined;
-
-    wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
-      createSession: (sid) => {
-        capturedId = sid;
-        return makeMockCore();
-      },
-      readyConfig: defaultConfig,
-      logger: silentLogger,
-    });
-
-    const msg = parseFirstFrame(ws);
-    expect(msg.type).toBe("config");
-    expect(msg.sessionId).toBeTruthy();
-    expect(msg.sessionId).toBe(capturedId);
+    // A socket that has been open for seconds carrying nothing is a wedged peer,
+    // not a slow one — aai-ui's handshake guard is armed on this frame — so the
+    // announcement may not wait on provider connections.
+    expect(order).toEqual(["configure", "start"]);
   });
 
   test("raw binary Uint8Array routes to session.onAudio", async () => {
@@ -252,30 +242,6 @@ describe("wireSessionSocket", () => {
     await waitForSessionReady(logger);
     simulateTextFrame(ws, JSON.stringify({ type: "reset" }));
     expect(core.onReset).toHaveBeenCalledOnce();
-  });
-
-  test("history JSON text frame routes to session.onHistory with decoded messages", async () => {
-    const core = makeMockCore();
-    const ws = openSocket();
-    const logger = makeLogger();
-
-    wireSessionSocket(ws, {
-      sessions: createOwnedMap(),
-      createSession: () => core,
-      readyConfig: defaultConfig,
-      logger,
-    });
-
-    await waitForSessionReady(logger);
-
-    const messages = [
-      { role: "user" as const, content: "Hello" },
-      { role: "assistant" as const, content: "Hi there" },
-    ];
-    simulateTextFrame(ws, JSON.stringify({ type: "history", messages }));
-    expect(core.onHistory).toHaveBeenCalledOnce();
-    const passed = (core.onHistory as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
-    expect(passed).toEqual(messages);
   });
 
   test("invalid JSON text frame is dropped with warning, session not closed", async () => {

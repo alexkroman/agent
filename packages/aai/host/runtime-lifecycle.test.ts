@@ -140,7 +140,7 @@ describe("createRuntime createSession", () => {
     expect(typeof session.onAudio).toBe("function");
     expect(typeof session.onCancel).toBe("function");
     expect(typeof session.onReset).toBe("function");
-    expect(typeof session.onHistory).toBe("function");
+    expect(typeof session.restoreHistory).toBe("function");
   });
 
   test("old session's delayed stop keeps the resumed session's sink and state", async () => {
@@ -178,11 +178,9 @@ describe("createRuntime createSession", () => {
 
     const result = await runtime.executeTool("ping", {}, "resume-1", []);
     expect(result).toBe("2");
-    expect(newClient.event).toHaveBeenCalledWith({
-      type: "custom_event",
-      event: "ping",
-      data: { n: 2 },
-    });
+    expect(newClient.event).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "custom.emitted", event: "ping", data: { n: 2 } }),
+    );
   });
 
   test("ctx.send drops an over-cap payload but relays an under-cap one", async () => {
@@ -206,16 +204,18 @@ describe("createRuntime createSession", () => {
     // this; the runtime now owns it since ctx.send runs in-guest).
     await runtime.executeTool("emit", { size: 70_000 }, "s1", []);
     expect(client.event).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: "custom_event" }),
+      expect.objectContaining({ type: "custom.emitted" }),
     );
 
     // Comfortably under → relayed.
     await runtime.executeTool("emit", { size: 10 }, "s1", []);
-    expect(client.event).toHaveBeenCalledWith({
-      type: "custom_event",
-      event: "big",
-      data: { blob: "x".repeat(10) },
-    });
+    expect(client.event).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "custom.emitted",
+        event: "big",
+        data: { blob: "x".repeat(10) },
+      }),
+    );
   });
 
   test("resume after the old session fully stopped keeps its slot state (grace window)", async () => {

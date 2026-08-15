@@ -22,9 +22,12 @@
 
 import type { AgentConfig, ToolSchema } from "../../sdk/_internal-types.ts";
 import { serializeToolFailure } from "../../sdk/_tool-failure-wire.ts";
-import type { ClientEvent, ClientSink } from "../../sdk/protocol.ts";
+import type { ClientSink, SessionEvent } from "../../sdk/protocol.ts";
 import type { Logger } from "../runtime-config.ts";
 import { createSessionCore, type SessionCore } from "../session-core.ts";
+import { createSessionEmitter } from "../session-emitter.ts";
+import { createSessionEventStream } from "../session-event-stream.ts";
+import { createMemoryStateBackend } from "../session-state-store.ts";
 import { createS2sTransport } from "../transports/s2s-transport.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
 import { createFakeS2sLink, type FakeS2sLink } from "./_s2s-fuzz-model.ts";
@@ -65,13 +68,14 @@ const TOOL_SCHEMAS: ToolSchema[] = [
  * bumped the connection generation, so the agent would be talking to a session
  * whose microphone is gone and whose UI says the call ended.
  */
-const CONVERSATION_EVENTS = new Set<ClientEvent["type"]>([
-  "user_transcript",
-  "user_transcript_partial",
-  "agent_transcript",
-  "reply_done",
-  "tool_call",
-  "speech_started",
+const CONVERSATION_EVENTS = new Set<SessionEvent["type"]>([
+  "user-transcript.committed",
+  "user-transcript.updated",
+  "agent-transcript.updated",
+  "agent-transcript.committed",
+  "reply.completed",
+  "tool.called",
+  "speech.started",
 ]);
 
 /** A tool execution the harness is holding open until a command settles it. */
@@ -84,7 +88,7 @@ export interface Harness {
   session: SessionCore;
   link: FakeS2sLink;
   /** Every client event, in order. */
-  events: ClientEvent[];
+  events: SessionEvent[];
   /** Tool executions in flight, oldest first. */
   pendingTools: PendingTool[];
   /** Call ids whose execution has settled — a result exists to send. */
@@ -125,15 +129,15 @@ function fail(what: string): never {
 }
 
 /** A fatal `error` frame latches: the client has released its microphone. */
-function noteFatalError(h: Harness, e: Extract<ClientEvent, { type: "error" }>): void {
+function noteFatalError(h: Harness, e: Extract<SessionEvent, { type: "error.reported" }>): void {
   h.declaredDead ??= `${e.code}: ${e.message}`;
   if (e.code === "connection") h.socketsAtRetirement ??= h.link.sockets.length;
 }
 
 /** `speech_stopped` must pair with a `speech_started` any client can have seen. */
 function checkSpeechPairing(h: Harness): void {
-  const starts = h.events.filter((x) => x.type === "speech_started").length;
-  const stops = h.events.filter((x) => x.type === "speech_stopped").length;
+  const starts = h.events.filter((x) => x.type === "speech.started").length;
+  const stops = h.events.filter((x) => x.type === "speech.stopped").length;
   if (stops > starts) fail("speech_stopped with no matching speech_started");
 }
 
@@ -142,12 +146,17 @@ function makeSink(h: Harness): ClientSink {
     open: true,
     event(e) {
       if (h.stopped) fail(`event ${e.type} reached the client after stop() resolved`);
+      // `audio.completed` is an ordinary event now rather than a sink method, so
+      // the oracle that used to live in `playAudioDone` lives here.
+      if (e.type === "audio.completed" && h.stopped) {
+        fail("audio done reached the client after stop() resolved");
+      }
       h.events.push(e);
-      if (e.type === "error" && e.fatal !== false) noteFatalError(h, e);
+      if (e.type === "error.reported" && e.fatal !== false) noteFatalError(h, e);
       else if (h.declaredDead !== null && CONVERSATION_EVENTS.has(e.type)) {
         fail(`${e.type} reached the client after a fatal [${h.declaredDead}]`);
       }
-      if (e.type === "speech_stopped") checkSpeechPairing(h);
+      if (e.type === "speech.stopped") checkSpeechPairing(h);
     },
     playAudioChunk() {
       if (h.stopped) fail("audio reached the client after stop() resolved");
@@ -156,9 +165,6 @@ function makeSink(h: Harness): ClientSink {
       if (h.audioSuppressed) {
         fail("audio reached the client after cancel, before the next reply started");
       }
-    },
-    playAudioDone() {
-      if (h.stopped) fail("audio done reached the client after stop() resolved");
     },
   };
 }
@@ -230,10 +236,25 @@ export async function createHarness(cov: Record<string, number>): Promise<Harnes
     logger: silentLogger,
   });
 
+  const sink = makeSink(h);
   core = createSessionCore({
     id: "fuzz",
     agent: "fuzz-agent",
-    client: makeSink(h),
+    client: sink,
+    // A real emitter over a real stream on the memory backend: the stamping and
+    // the client-then-hooks ordering are part of what this property exercises,
+    // and every oracle above reads the SINK, so a stub would only hide the seam.
+    emitter: createSessionEmitter({
+      sessionId: "fuzz",
+      client: sink,
+      // A REAL stream on the memory backend, not a stub: the stamping, the index
+      // assignment and the client-then-hooks ordering are part of what the
+      // property exercises, and every oracle above reads the sink the emitter
+      // writes to. Built here rather than with `_test-utils.ts`'s `makeEmitter`
+      // for the reason at the top of this file — these modules must not import
+      // the vitest-backed helpers.
+      stream: createSessionEventStream({ backend: createMemoryStateBackend() }),
+    }),
     agentConfig: AGENT_CONFIG,
     transport,
     logger: silentLogger,

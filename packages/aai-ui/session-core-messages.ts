@@ -12,10 +12,10 @@
 
 import { DEFAULT_MAX_HISTORY, safeJsonParse } from "@alexkroman1/aai";
 import {
-  type ClientEvent,
   lenientParse,
   type ServerMessage,
   ServerMessageSchema,
+  type SessionEvent,
 } from "@alexkroman1/aai/protocol";
 import { toArgsRecord } from "@alexkroman1/aai/utils";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
@@ -33,7 +33,7 @@ const MAX_PREINIT_AUDIO_CHUNKS = 100;
 
 /**
  * Snapshot fields cleared when a session's conversation state is wiped —
- * shared by the initial snapshot, `resetState()`, and the server `reset` event.
+ * shared by the initial snapshot, `resetState()`, and `session.reset`.
  * The empty arrays are safe to share: snapshot collections are never mutated
  * in place, only replaced.
  */
@@ -83,7 +83,7 @@ type MessageHandlers = {
   handleMessage(data: unknown): SessionConfigMessage | undefined;
   /**
    * Wait for `io`'s playback queue to drain, then transition to `"listening"`
-   * — guarded by the same turn-boundary generation the live `audio_done`
+   * — guarded by the same turn-boundary generation the live `audio.completed`
    * path uses. `initAudioCapture` routes the pre-init greeting replay
    * through this so a barge-in mid-greeting can't be stomped by the
    * replayed completion resolving late.
@@ -138,7 +138,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   }
 
   /**
-   * `agent_transcript` carries the reply's text so far as a full-replacement
+   * The agent-transcript events carry the reply's text so far as a full-replacement
    * snapshot (see the protocol schema), so it renders as the live assistant
    * bubble and only becomes a message when the reply closes. Pipeline mode sends
    * one per piece of speech, so appending each would break a single reply into a
@@ -153,7 +153,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   }
 
   /**
-   * The reply is over (`reply_done`, or `cancelled` for a barge-in): move
+   * The reply is over (`reply.completed`, or `reply.cancelled` for a barge-in): move
    * whatever was spoken into the conversation. A cancelled reply still keeps its
    * text — the caller heard that much, and dropping it would leave the
    * transcript claiming the agent never spoke.
@@ -200,7 +200,8 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   /**
    * Return to "listening" at a turn boundary — unless the session is over.
    *
-   * `reply_done`, `cancelled` and `reset` each wrote `state: "listening"`
+   * `reply.completed`, `reply.cancelled` and `session.reset` each wrote
+   * `state: "listening"`
    * unconditionally, which is the second half of the same bug
    * `clearRecoveredError`'s latch covers: the host's fatal paths all call
    * `terminate()`, and terminating emits `onCancelled()`. So the frame that
@@ -211,7 +212,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
     updateState(conn.fatalError ? extra : { ...extra, state: "listening" });
   }
 
-  function handleErrorEvent(e: Extract<ClientEvent, { type: "error" }>): void {
+  function handleErrorEvent(e: Extract<SessionEvent, { type: "error.reported" }>): void {
     console.error("Agent error:", e.message);
     if (e.fatal === false) {
       // Turn-level failure (e.g. one upload's transcription failed): show
@@ -239,28 +240,31 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   }
 
   /** Single entry point for all server->client session events. */
-  function handleEvent(e: ClientEvent): void {
-    if (e.type !== "error") clearRecoveredError();
+  function handleEvent(e: SessionEvent): void {
+    if (e.type !== "error.reported") clearRecoveredError();
 
     switch (e.type) {
-      case "speech_started":
+      case "speech.started":
         updateState({ userTranscript: "" });
         break;
-      case "speech_stopped":
+      case "speech.stopped":
         // VAD detected end of speech -- processing will follow.
         break;
-      case "user_transcript":
+      case "user-transcript.committed":
         handleUserTranscriptEvent(e.text);
         break;
-      case "user_transcript_partial":
+      case "user-transcript.updated":
         // Live captions while the user is still speaking; the committed turn
-        // follows as `user_transcript`, which moves it into `messages`.
+        // follows as `user-transcript.committed`, which moves it into `messages`.
         updateState({ userTranscript: e.text });
         break;
-      case "agent_transcript":
+      // Both carry the reply's text so far; only the STREAM needs them apart
+      // (see the events' own docs), and a caption renders either identically.
+      case "agent-transcript.updated":
+      case "agent-transcript.committed":
         handleAgentTranscriptEvent(e.text);
         break;
-      case "tool_call":
+      case "tool.called":
         updateState({
           toolCalls: appendCapped(
             getSnapshot().toolCalls,
@@ -276,7 +280,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
           ),
         });
         break;
-      case "tool_call_done": {
+      case "tool.completed": {
         const tcs = getSnapshot().toolCalls;
         const idx = tcs.findIndex((tc) => tc.callId === e.toolCallId);
         if (idx !== -1) {
@@ -287,17 +291,17 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         }
         break;
       }
-      case "reply_done":
+      case "reply.completed":
         commitAgentTranscript();
         toListening();
         break;
-      case "cancelled":
+      case "reply.cancelled":
         conn.turn.bump();
         conn.voiceIO?.flush();
         commitAgentTranscript();
         toListening({ userTranscript: null });
         break;
-      case "reset": {
+      case "session.reset": {
         conn.turn.bump();
         conn.voiceIO?.flush();
         // A fatal session keeps its banner here too: CLEARED_SESSION_STATE
@@ -306,18 +310,18 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         toListening(conn.fatalError ? {} : CLEARED_SESSION_STATE);
         break;
       }
-      case "custom_event":
+      case "custom.emitted":
         appendCustomEvent(e.event, e.data);
         break;
-      case "agent_state":
+      case "state.updated":
         // Replace, never append: this is the current value of the agent's
         // state, and only the newest one is meaningful.
         updateState({ agentState: e.state });
         break;
-      case "error":
+      case "error.reported":
         handleErrorEvent(e);
         break;
-      case "idle_timeout":
+      case "session.timed-out":
         // The server closes the socket itself; this only marks the close as
         // expected so the automatic reconnect doesn't undo the reclamation.
         deps.conn.retiredByServer = true;
@@ -403,7 +407,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       return;
     }
     const msg: ServerMessage = parsed.data;
-    if (msg.type === "config") {
+    if (msg.type === "session.configured") {
       // A completed handshake is a live session, so it supersedes whatever
       // ended the last one — the only frame that may clear the fatal latch
       // (see `ConnState.fatalError`), since everything else a dying session
@@ -415,11 +419,10 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         sid: msg.sessionId,
       };
     }
-    if (msg.type === "audio_done") {
+    if (msg.type === "audio.completed") {
       playAudioDone();
       return;
     }
-    // Everything else is a ClientEvent.
     handleEvent(msg);
   }
 

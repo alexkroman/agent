@@ -1,0 +1,219 @@
+{
+  "version": 2,
+  "ServerMessage": [
+    {
+      "type": "session.configured",
+      "audioFormat": "pcm16",
+      "sampleRate": 16000,
+      "ttsSampleRate": 24000,
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "session.configured",
+      "audioFormat": "pcm16",
+      "sampleRate": 16000,
+      "ttsSampleRate": 24000,
+      "sessionId": "sess-abc",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "audio.completed",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "speech.started",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "speech.stopped",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "user-transcript.updated",
+      "text": "par",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "user-transcript.updated",
+      "text": "partial",
+      "eotConfidence": 0.91,
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "user-transcript.committed",
+      "text": "cancel my second order",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "agent-transcript.updated",
+      "text": "Let me look",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "agent-transcript.committed",
+      "text": "Let me look. Found it.",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "tool.called",
+      "toolCallId": "tc1",
+      "toolName": "lookup_order",
+      "args": {
+        "id": "4471"
+      },
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "tool.completed",
+      "toolCallId": "tc1",
+      "result": "{\"status\":\"shipped\"}",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "reply.completed",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "reply.cancelled",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "session.reset",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "session.timed-out",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "error.reported",
+      "code": "stt",
+      "message": "speech recognition failed",
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "error.reported",
+      "code": "tool",
+      "message": "one upload failed",
+      "fatal": false,
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "custom.emitted",
+      "event": "game_state",
+      "data": {
+        "hp": 10
+      },
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    },
+    {
+      "type": "state.updated",
+      "state": {
+        "items": []
+      },
+      "meta": {
+        "id": "evt_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+        "at": 1700000000000
+      }
+    }
+  ],
+  "ClientMessage": [
+    {
+      "type": "audio_ready"
+    },
+    {
+      "type": "cancel"
+    },
+    {
+      "type": "reset"
+    },
+    {
+      "type": "playback_progress",
+      "bufferedMs": 1200
+    },
+    {
+      "type": "tool_result",
+      "toolCallId": "tc1",
+      "result": "ok"
+    },
+    {
+      "type": "tool_result",
+      "toolCallId": "tc1",
+      "result": "ok",
+      "error": "timed out"
+    }
+  ],
+  "constants": {
+    "AUDIO_FORMAT": "pcm16",
+    "DEFAULT_STT_SAMPLE_RATE": 16000,
+    "DEFAULT_TTS_SAMPLE_RATE": 24000,
+    "MAX_TOOL_RESULT_CHARS": 4000,
+    "SessionErrorCodes": [
+      "stt",
+      "llm",
+      "tts",
+      "tool",
+      "protocol",
+      "connection",
+      "audio",
+      "internal"
+    ]
+  }
+}

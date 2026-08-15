@@ -51,7 +51,7 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
   // unwrap has no analogue here: this fake stores the doc as text and parses
   // it on every read, so it cannot represent the double-encoded row the
   // unwrap exists for. That shape is covered against a real Postgres in
-  // jsonb-encoding.integration.test.ts, which is the only place it is
+  // jsonb-encoding.scenario.test.ts, which is the only place it is
   // representable at all. Distinguished from the versioned update by a longer
   // prefix (both statements begin `update <table> set doc =`), and listed
   // FIRST so that longer prefix is the one that matches.

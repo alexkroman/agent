@@ -3,7 +3,7 @@
  * Specs for the durable-run wake sweep.
  *
  * The SQL is asserted against a real Postgres in
- * `workflow-wake.integration.test.ts` — an in-memory fake cannot tell whether
+ * `workflow-wake.scenario.test.ts` — an in-memory fake cannot tell whether
  * `where wake_at <= now()` really filters, or whether a savepoint really keeps
  * one tenant's unreadable table from taking the pass down. What is asserted here
  * is the POLICY around it, which is where the expensive mistakes live: waking an

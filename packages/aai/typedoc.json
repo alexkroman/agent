@@ -21,5 +21,14 @@
       "LanguageModel": "https://ai-sdk.dev/docs/reference/ai-sdk-core/language-model"
     }
   },
-  "intentionallyNotExported": ["StandardSchemaV1"]
+  "intentionallyNotExported": [
+    "StandardSchemaV1",
+    // A type-level helper, not API: `SessionEventBody` is
+    // `DistributiveOmit<SessionEvent, "meta">` because a plain `Omit` over a
+    // discriminated union collapses it to one non-discriminated object. Nothing a
+    // consumer can name, and nothing they need to — the distribution is what they
+    // get. Exporting it to satisfy the reference would put a conditional-type
+    // utility on the published surface.
+    "DistributiveOmit"
+  ]
 }

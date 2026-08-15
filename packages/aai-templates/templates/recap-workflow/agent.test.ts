@@ -23,7 +23,7 @@
  *   replay or suspension, and could not. `recapFlow` itself is deliberately not
  *   driven here for exactly that reason — a body test dressed up as a durability
  *   test would be the worse failure. `aai-cli`'s
- *   `dev-workflow.integration.test.ts` is the tier that builds a project and
+ *   `dev-workflow.scenario.test.ts` is the tier that builds a project and
  *   runs a real one.
  */
 

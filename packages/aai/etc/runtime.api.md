@@ -89,6 +89,7 @@ const AgentConfigSchema: z.ZodObject<{
 // @public
 interface AgentDef extends PipelineVoiceTuning {
     builtinTools?: readonly BuiltinTool[];
+    events?: SessionEventHandlers;
     greeting: string;
     idleTimeoutMs?: number;
     llm?: LlmProvider;
@@ -121,6 +122,7 @@ export type AgentRuntime = {
     shutdown(): Promise<void>;
     readonly readyConfig: ReadyConfig;
     readonly workflows?: WorkflowClient | undefined;
+    readonly sessionEvents?: SessionEventStream | undefined;
 };
 
 // @public
@@ -209,70 +211,11 @@ export type CarrierInbound =
 export type CarrierName = keyof typeof CARRIER_CODECS;
 
 // @public
-type ClientEvent = z.infer<typeof ClientEventSchema>;
-
-// @public
-const ClientEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
-    type: z.ZodLiteral<"speech_started">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech_stopped">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user_transcript">;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"user_transcript_partial">;
-    text: z.ZodString;
-    eotConfidence: z.ZodOptional<z.ZodNumber>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent_transcript">;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool_call">;
-    toolCallId: z.ZodString;
-    toolName: z.ZodString;
-    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool_call_done">;
-    toolCallId: z.ZodString;
-    result: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply_done">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"cancelled">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reset">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"idle_timeout">;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"error">;
-    code: z.ZodEnum<{
-        audio: "audio";
-        connection: "connection";
-        internal: "internal";
-        llm: "llm";
-        protocol: "protocol";
-        stt: "stt";
-        tool: "tool";
-        tts: "tts";
-    }>;
-    message: z.ZodString;
-    fatal: z.ZodOptional<z.ZodBoolean>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"custom_event">;
-    event: z.ZodString;
-    data: z.ZodUnknown;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agent_state">;
-    state: z.ZodUnknown;
-}, z.core.$strip>], "type">;
-
-// @public
 interface ClientSink {
     close?(reason?: string): void;
-    event(e: ClientEvent): void;
+    event(e: SessionEvent): void;
     readonly open: boolean;
     playAudioChunk(chunk: Uint8Array): void;
-    playAudioDone(): void;
 }
 
 // @public
@@ -369,6 +312,12 @@ export function createServer(options: ServerOptions): AgentServer;
 export function createSessionCore(opts: SessionCoreOptions): SessionCore;
 
 // @internal
+export function createSessionEventStream(opts: {
+    backend: SessionStateBackend;
+    logger?: Logger | undefined;
+}): SessionEventStream;
+
+// @internal
 export function createSessionStateStore(opts: {
     backend: SessionStateBackend;
     logger?: Logger | undefined;
@@ -427,6 +376,9 @@ export const DEFAULT_S2S_CONFIG: S2SConfig;
 
 // @public
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
+
+// @public
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 // @internal
 type DnsLookup = (hostname: string) => Promise<{
@@ -907,11 +859,15 @@ export type ServerOptions = {
 export function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerResponse, logger: Logger): Promise<boolean>;
 
 // @internal
+export const SESSION_EVENT_TABLE = "aai_session_events";
+
+// @internal
 export const SESSION_STATE_TABLE = "aai_session_state";
 
 // @internal
 export type SessionCore = {
     readonly id: string;
+    configure(config: ReadyConfig): void;
     start(): Promise<void>;
     stop(): Promise<void>;
     onAudio(bytes: Uint8Array): void;
@@ -919,9 +875,9 @@ export type SessionCore = {
     onCancel(): void;
     onReset(): void;
     onPlaybackProgress(bufferedMs: number): void;
-    onHistory(messages: readonly Message[]): void;
     announce(instruction: string): boolean;
     onToolResult(toolCallId: string, result: string, error?: string): void;
+    restoreHistory(messages: readonly Message[]): void;
     onReplyStarted(replyId: string): void;
     onReplyDone(): void;
     onCancelled(): void;
@@ -944,6 +900,7 @@ export type SessionCoreOptions = {
     id: string;
     agent: string;
     client: ClientSink;
+    emitter: SessionEmitter;
     agentConfig: AgentConfig;
     executeTool: ExecuteTool;
     transport: Transport;
@@ -953,6 +910,11 @@ export type SessionCoreOptions = {
         result: string;
         error?: string;
     }) => void;
+};
+
+// @public
+type SessionEmitter = {
+    emit(body: SessionEventBody): SessionEvent;
 };
 
 // @public
@@ -971,7 +933,184 @@ const SessionErrorCodeSchema: z.ZodEnum<{
 }>;
 
 // @public
-export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows">;
+type SessionEvent = z.infer<typeof SessionEventSchema>;
+
+// @public
+type SessionEventBody = DistributiveOmit<SessionEvent, "meta">;
+
+// @public
+type SessionEventContext = {
+    sessionId: string;
+    env: Readonly<Record<string, string>>;
+    db: Db;
+};
+
+// @public
+type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
+
+// @public
+type SessionEventHandlers = {
+    [K in SessionEvent["type"]]?: SessionEventHandler<Extract<SessionEvent, {
+        type: K;
+    }>>;
+} & {
+    "*"?: SessionEventHandler;
+};
+
+// @public
+export type SessionEventPage = {
+    events: readonly SessionEvent[];
+    tail: number;
+};
+
+// @public
+const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"session.configured">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    audioFormat: z.ZodString;
+    sampleRate: z.ZodNumber;
+    ttsSampleRate: z.ZodNumber;
+    sessionId: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"audio.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"speech.started">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"speech.stopped">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+    eotConfidence: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent-transcript.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"agent-transcript.committed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool.called">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    toolCallId: z.ZodString;
+    toolName: z.ZodString;
+    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    toolCallId: z.ZodString;
+    result: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reply.completed">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reply.cancelled">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session.reset">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session.timed-out">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"error.reported">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    code: z.ZodEnum<{
+        audio: "audio";
+        connection: "connection";
+        internal: "internal";
+        llm: "llm";
+        protocol: "protocol";
+        stt: "stt";
+        tool: "tool";
+        tts: "tts";
+    }>;
+    message: z.ZodString;
+    fatal: z.ZodOptional<z.ZodBoolean>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"custom.emitted">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    event: z.ZodString;
+    data: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"state.updated">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    state: z.ZodUnknown;
+}, z.core.$strip>], "type">;
+
+// @public
+export type SessionEventStream = {
+    append(sessionId: string, body: SessionEventBody): SessionEvent;
+    tail(sessionId: string): number;
+    read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
+    flush(sessionId: string): Promise<void>;
+    hydrate(sessionId: string): Promise<void>;
+    discard(sessionId: string): void;
+    clear(): void;
+    readonly durable: boolean;
+};
+
+// @public
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents">;
 
 // @public
 export type SessionStartOptions = {
@@ -992,6 +1131,9 @@ export type SessionStateBackend = {
     load(sessionId: string): Promise<Map<string, string>>;
     commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
     discard(sessionId: string): Promise<void>;
+    appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
+    readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
+    countEvents(sessionId: string): Promise<number>;
 };
 
 // @public
@@ -1034,6 +1176,9 @@ type SlotStore = {
 
 // @internal
 export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
+
+// @internal
+export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
 
 // @public
 interface StandardSchemaIssue {
@@ -1123,6 +1268,12 @@ type StepFetchInit = {
 
 // @internal
 export type StepReporter = (line: string) => void | Promise<void>;
+
+// @public
+type StoredSessionEvent = {
+    index: number;
+    json: string;
+};
 
 // @public
 type StreamOptions = {
@@ -1237,9 +1388,9 @@ export interface TextTurnOptions {
 // @public
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
-// @public (undocumented)
-type ToolCallEvent = Extract<ClientEvent, {
-    type: "tool_call";
+// @public
+type ToolCallEvent = Extract<SessionEventBody, {
+    type: "tool.called";
 }>;
 
 // @public

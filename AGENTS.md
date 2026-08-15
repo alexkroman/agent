@@ -33,20 +33,39 @@ pnpm check:affected      # Only check packages affected by changes since main
 
 ### Test tiers
 
-| Tier | Command | Scope | Timeout |
-| --- | --- | --- | --- |
-| Unit | `pnpm test` | Fast, mocked, co-located | 5s |
-| Integration | `pnpm test:integration` | Real subsystems (HTTP servers, WebSockets) | 30s |
-| Integration + a real Postgres | `pnpm test:pg` | The above, with `AAI_TEST_PG_URL` resolved | 30s |
-| E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
-| Templates | `pnpm test:templates` | Template agent example tests | 5s |
+**Tiers are cut by what a test may TOUCH: pick the tightest one that can express
+the assertion.**
 
-**Five integration suites need a real Postgres, and without one they SKIP.**
+| Tier | Command | Membership rule | Timeout |
+| --- | --- | --- | --- |
+| Unit | `pnpm test` | no filesystem writes, subprocess, or real network | 5s |
+| Integration | `pnpm test:integration` | multiple modules **in memory** | 30s |
+| Scenario | `pnpm test:scenario` | a real subprocess, port, bundler, or Postgres | 120s |
+| Scenario + real Postgres | `pnpm test:pg` | the above, `AAI_TEST_PG_URL` resolved | 120s |
+| E2E | `pnpm test:e2e` | full process spawn + Playwright browser | 300s |
+| Templates | `pnpm test:templates` | template agent example tests | 5s |
+
+They used to be separated by TIMEOUT, a proxy for the rule above that stops being
+one as soon as two tests are slow for unrelated reasons. `pipeline-fuzz` (pure
+memory) and `platform-schema` (needs a database) shared one tier, timeout, retry
+policy and serial block, so neither was configured for its own failure mode — and
+`pnpm test:integration` took **721 seconds to evaluate twelve tests**, 50 of 63
+skipping for want of a database. It is 10 seconds now.
+
+**Membership is a NAMING CONVENTION** — `*.integration.test.ts` and
+`*.scenario.test.ts`, excluded by every unit config and selected one each by the
+scripts, so a new test needs no config edit (see "Integration- and scenario-tier
+membership" below for the deliberate exceptions).
+
+**No tier carries a `retry`** — a tier that retries has classified its own
+failures as noise; `vitest.slow.config.ts` carries the argument.
+
+**Seven scenario suites need a real Postgres, and without one they SKIP.**
 That tier is the only thing in the repo that can see a driver-level bug — an
 encoding that round-trips wrong, an advisory lock not held by the session that
 thinks it holds it — because an in-memory fake holds JS values and cannot be
 stricter than the driver beneath it. So a silent skip is the worst outcome
-available, and it was the default one: `pnpm test:integration` with no
+available, and it was the default one: `pnpm test:scenario` with no
 `AAI_TEST_PG_URL` prints a green run, and CI's Linux leg would also have passed
 if its `$GITHUB_ENV` export ever broke.
 
@@ -59,9 +78,14 @@ if its `$GITHUB_ENV` export ever broke.
   place of the five hand-rolled copies of `PG_URL ? describe : describe.skip`.
 - `AAI_REQUIRE_PG` turns a skip into a hard failure. CI's Linux leg sets it
   (and `pnpm test:pg` sets it for the run it starts), so "the wiring broke" is
-  red rather than quiet. It is declared in the `check:integration` task's `env`
+  red rather than quiet. It is declared in the `check:scenario` task's `env`
   in `turbo.json` — undeclared, strict env mode would strip it and the
   enforcement would silently do nothing.
+- **`AAI_REQUIRE_REGISTRY` is the same shape one tier up**, in `check:e2e`'s
+  `env` for the same reason: it turns the e2e suite's "excuse a failed install as
+  a registry-proxy flake" predicate off, and CI sets it so the guess is not
+  trusted where egress is real. See `isRegistryProxyFailure` in
+  `aai-cli/e2e.test.ts`.
 
 Note vitest EXECUTES a `describe.skip` callback (it has to, to enumerate what
 it is skipping), so read `pgUrl()` inside a hook or a test, never at the top of
@@ -405,12 +429,13 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 11 | no hardcoded `/tmp` in shipped source | `join(tmpdir(), …)` |
   | 12 | every guest route literal is in `GUEST_ROUTES` | declare it + its exposure |
   | 13 | no template import escaping its template dir | move it in, or publish it |
+  | 14 | no fixture directory nothing reads | delete it, or add the reader |
 
   Rule IDs are **stable**: a deleted rule leaves its number retired rather than
   letting a later rule inherit it, because the numbers appear in commit messages
   and in the baseline — rule 6 is the worked example, retired when `ctx.state`
   stopped existing and the cast it banned became unrepresentable. Rules 1, 7, 10,
-  12 and 13 are at zero and enforced absolutely;
+  12, 13 and 14 are at zero and enforced absolutely;
   the rest carry per-file baselines with the same `--update`-only-lowers
   contract as `check:hatches`. Every baselined occurrence is
   legitimate and says so in the JSON — three spread-ternaries where **the guard
@@ -475,8 +500,8 @@ Every package has floors — `aai-templates` was for a while the one that did
 not, so CI measured its coverage and threw the number away. Each package's
 `vitest.config.ts` declares per-package coverage floors
 (lines/functions/branches/statements) that CI enforces via
-`pnpm test:coverage` (the `test` job runs it per package), and the root
-`vitest.config.ts` holds combined floors for whole-repo runs. Like the
+`pnpm test:coverage` (the `test` job runs it per package). The root
+`vitest.config.ts` holds NO thresholds — see below. Like the
 other ratchets these only move up: when a coverage run shows actuals
 comfortably above a floor, raise the floor to ~2-3 points below the
 actual. Never lower a floor to make a PR pass — add tests instead.
@@ -484,14 +509,17 @@ Coverage measures production source only; test infrastructure
 (`_test-utils.ts`, mocks, fixtures, setup files) is excluded via
 `sharedCoverageExclude` in `vitest.shared.ts`.
 
-**The per-package floors are what gates a PR; the root ones are not.**
-`pnpm test:coverage` is `turbo run test:coverage`, which fans out to each
-package's own config, and CI runs `pnpm --filter ./packages/<pkg>
-test:coverage` per matrix entry — so nothing in the repo or in CI ever
-evaluates the root `vitest.config.ts` thresholds. The only thing that does is
-a direct `pnpm vitest run --coverage` at the root. Keep them anyway: it is the
-only floor that sees the repo as one program. Just don't read them as the
-gate — they had drifted ~4 points under an actual nobody had measured.
+**The per-package floors are the only ones, because they are the only ones
+anything evaluates.** `pnpm test:coverage` is `turbo run test:coverage`, which
+fans out to each package's own config, and CI runs `pnpm --filter
+./packages/<pkg> test:coverage` per matrix entry — so nothing in the repo or in
+CI ever read the root `vitest.config.ts` thresholds, and only a direct
+`pnpm vitest run --coverage` at the root ever could. They were kept for a while
+on the argument that they were "the only floor that sees the repo as one
+program", which is a view nobody's pipeline takes; what they actually were was a
+ratchet no process could move and no PR could trip, sitting ~4 points under an
+actual nobody had measured. They are DELETED. The measured actuals stay in a
+comment there, which was the informative half.
 
 **And the floors are measured locally now, because for a long time they were
 not.** `scripts/check.sh` ran `test`, CI's matrix runs `test:coverage`, so the
@@ -1334,25 +1362,34 @@ you only need to list one package.
   failed. A loop is still right when the cases share expensive setup, or when
   it already labels them (`expect.soft(value, label)`) — several deliberately do.
 - **The slow tiers use ONE root config, `vitest.slow.config.ts`**, selected by
-  `VITEST_PROFILE` (`integration` 30s / `e2e` 300s) with `VITEST_INCLUDE`
-  choosing the files. There is no per-package slow config and no
-  `vitest.integration.config.ts`.
-- **Integration-tier membership is a NAMING CONVENTION: `*.integration.test.ts`.**
-  Unit configs exclude that glob and `test:integration` selects it, so a new
-  integration test lands in the right tier with no config edit. It replaced a
+  `VITEST_PROFILE` (`integration` 30s / `scenario` 120s / `e2e` 300s) with
+  `VITEST_INCLUDE` choosing the files. There is no per-package slow config and no
+  `vitest.integration.config.ts`. Note `integration` is the DEFAULT when
+  `VITEST_PROFILE` is unset, so a scenario script must set it explicitly.
+- **Integration- and scenario-tier membership is a NAMING CONVENTION:
+  `*.integration.test.ts` and `*.scenario.test.ts`.**
+  Unit configs exclude both globs and `test:integration` / `test:scenario`
+  select one each, so a new slow test lands in the right tier with no config
+  edit. It replaced a
   hand-kept filename list duplicated between each `exclude` array and the
   `VITEST_INCLUDE` env var, which had gone stale: `aai` and
   `aai-studio-server` between them excluded five files that no longer existed.
-  **Only the `.integration.` infix decides the tier**, so several tests are
+  **Only the INFIX decides the tier**, so several tests are
   deliberately UNIT tests despite "integration" in the name — `aai-cli`'s
   `integration.test.ts` / `integration-edge-cases.test.ts`, and
   `aai-server`'s `agent-server-integration.test.ts`. That last one really does
   boot a real harness subprocess (hence that package's 20s timeout) and is a
-  standing judgement call: it is the only test covering
+  standing judgement call: by the membership rule it is a SCENARIO test, but it
+  is the only test covering
   `subprocess-sandbox.ts` / `warm-harness.ts` / `sandbox-vm.ts`, so promoting
-  it to the integration tier drops aai-server's measured line coverage ~92% →
+  it drops aai-server's measured line coverage ~92% →
   88.74% and trips its 89% floor. Moving it means restoring that coverage
   first, not lowering the floor.
+
+  `aai` owns files in both; `aai-server` and `aai-cli` own only SCENARIO ones and
+  so declare no `check:integration` at all. A package with no files in a tier
+  declares no script for it — vitest fails a run matching nothing, which beats a
+  green no-op.
 - In tests, use `flush()` from `_test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks — and note
   `flush()` is MICROTASK-only. For a full macrotask yield use `tick()`, and for
@@ -1445,6 +1482,22 @@ you only need to list one package.
   "Quality ratchets" above). CI runs it for every package in the test
   matrix, so a PR that drops coverage below a package's floor fails.
 
+#### Mutation score is a manual DIAGNOSTIC, not a tier and not a gate
+
+`pnpm test:mutate:sdk` mutates the schema core (689 lines) and you read the score
+off `reports/mutation/sdk/index.html`. It is named here **because it is wired
+nowhere** — no gate, no CI job, no turbo task — which is exactly how it reached
+eight config files and seven npm scripts that no guide mentioned. Six broader
+scopes are deleted (the host scope alone is 29,376 lines, i.e. hours) along with
+a `break: 40` threshold nothing enforced; the survivor declares none, since a
+threshold nothing enforces reads as a gate. It CANNOT become one: `inPlace: true`
+is forced by TS 7 removing the API Stryker's sandbox preprocessor calls, so the
+run mutates the real tree — read `stryker.base.config.mjs`, which carries that
+argument plus the `bin.mjs` mode hazard to check before committing after a run.
+Note `check:test-assertions` is the affordable half and not redundant with it: it
+catches a test with NO assertion, where mutation catches an assertion that does
+not DISCRIMINATE.
+
 #### Package-specific suites
 
 The harnesses that only make sense next to the code they exercise are
@@ -1474,8 +1527,9 @@ documented in that package's guide, not here:
 Tests can behave differently based on environment variables set in
 package.json scripts (not always obvious from test code alone):
 
-- `VITEST_PROFILE` — switches timeout/retry profiles in
-  `vitest.slow.config.ts`: `integration` (30s), `e2e` (300s)
+- `VITEST_PROFILE` — switches the timeout profile in
+  `vitest.slow.config.ts`: `integration` (30s), `scenario` (120s), `e2e` (300s).
+  No profile sets a `retry`
 - `VITEST_INCLUDE` — filters which test files to include
 - `VITEST_POOL` — can override pool strategy at runtime
 - `AAI_TEST_PM` — package manager the e2e suite installs the scaffolded
@@ -1520,12 +1574,14 @@ re-add the matrix without a Windows machine to reproduce on**, and do not add it
 as `continue-on-error` — a leg that is green while broken is worse than no leg,
 which is the rule the rest of this file's gates are built on.
 
-Note the INTEGRATION tier was never the right thing to duplicate onto Windows
+Note the middle tiers were never the right thing to duplicate onto Windows
 anyway, which is where this diverged from vercel/eve (they run their integration
-tier on a Windows matrix leg). Eight of this repo's eleven
-`*.integration.test.ts` files are aai-server's Postgres, WebSocket and sandbox
+tier on a Windows matrix leg). Ten of this repo's fourteen
+`*.scenario.test.ts` files are aai-server's Postgres, WebSocket and bundler
 tests — Linux by design, not by accident. Running them on Windows would test the
-runner rather than the code.
+runner rather than the code. The three remaining `*.integration.test.ts` files
+are pure in-memory property tests, so they would tell you about fast-check, not
+about Windows.
 
 #### The e2e suite is pnpm-only in CI
 

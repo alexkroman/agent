@@ -6,7 +6,7 @@
  * the durable half of `sessionSlot`, and it lives entirely in the
  * driver↔Postgres seam: a `jsonb` column, an `unnest` upsert, and a value that
  * has already been serialized once by the store above it. That is the exact shape
- * of the bug `jsonb-encoding.integration.test.ts` exists for — a value encoded
+ * of the bug `jsonb-encoding.scenario.test.ts` exists for — a value encoded
  * twice, so the column holds a jsonb STRING rather than an object — and it is
  * unrepresentable in the memory backend, which holds the same strings and cannot
  * be stricter than the driver beneath it.
@@ -30,7 +30,9 @@ import { sessionSlot } from "@alexkroman1/aai";
 import {
   createPostgresDb,
   createPostgresStateBackend,
+  createSessionEventStream,
   createSessionStateStore,
+  SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
 } from "@alexkroman1/aai/runtime";
 import { createToolContext } from "@alexkroman1/aai/testing";
@@ -75,6 +77,10 @@ describeWithPg("session state over a real Postgres", () => {
 
   const storeFor = () =>
     createSessionStateStore({ backend: createPostgresStateBackend({ db: appDb }) });
+
+  /** The event stream over the SAME backend — one store, two consumers. */
+  const streamFor = () =>
+    createSessionEventStream({ backend: createPostgresStateBackend({ db: appDb }) });
 
   test("a slot's value survives a new process", async () => {
     // The whole point: the second store shares nothing with the first but the
@@ -231,5 +237,67 @@ describeWithPg("session state over a real Postgres", () => {
        where session_id in ('s-old', 's-new')`,
     );
     expect(rows.map((r) => r.session_id)).toEqual(["s-new"]);
+  });
+
+  test("a session's EVENT log survives a new process, at its own indices", async () => {
+    // The driver is the only thing that can fail here — an index round-tripping
+    // through `bigint` as a string, a `jsonb` column rejecting what the memory
+    // backend holds happily — which is why this tier exists at all.
+    const first = streamFor();
+    first.append("s-ev", { type: "user-transcript.committed", text: "my order is 4471" });
+    first.append("s-ev", { type: "agent-transcript.committed", text: "Found it." });
+    await first.flush("s-ev");
+
+    const second = streamFor();
+    await second.hydrate("s-ev");
+    const page = await second.read("s-ev", 0);
+
+    expect(page.events.map((e: { type: string }) => e.type)).toEqual([
+      "user-transcript.committed",
+      "agent-transcript.committed",
+    ]);
+    // The position continues, so a resumed session cannot overwrite its own log.
+    expect(second.tail("s-ev")).toBe(2);
+  });
+
+  test("a re-appended index is a no-op, so a retried flush cannot duplicate", async () => {
+    const stream = streamFor();
+    stream.append("s-retry", { type: "speech.started" });
+    await stream.flush("s-retry");
+    // The same index again — what a retry after a partial failure sends.
+    const backend = createPostgresStateBackend({ db: appDb });
+    await backend.appendEvents("s-retry", [{ index: 0, json: '{"type":"speech.stopped"}' }]);
+
+    const rows = await sql<{ count: number }>(
+      `select count(*)::int as count from ${SCHEMA}.${SESSION_EVENT_TABLE} where session_id = $1`,
+      ["s-retry"],
+    );
+    expect(rows[0]?.count).toBe(1);
+  });
+
+  test("the TTL sweep reclaims aged EVENT rows too", async () => {
+    // Both tables, one job: a session's durable footprint is its slot values AND
+    // its event log, and a sweep that reclaimed one would leave the other growing
+    // in a schema the author sees as their own database usage.
+    const stream = streamFor();
+    for (const sid of ["e-old", "e-new"]) {
+      stream.append(sid, { type: "speech.started" });
+      await stream.flush(sid);
+    }
+    // Aged by `created_at`, not `updated_at`: an event row is append-only and
+    // never rewritten, so that is the only time it has.
+    await sql(
+      `update ${SCHEMA}.${SESSION_EVENT_TABLE} set created_at = now() - interval '3 days'
+       where session_id = $1`,
+      ["e-old"],
+    );
+
+    await sql(SWEEP_SESSION_STATE);
+
+    const rows = await sql<{ session_id: string }>(
+      `select distinct session_id from ${SCHEMA}.${SESSION_EVENT_TABLE}
+       where session_id in ('e-old', 'e-new')`,
+    );
+    expect(rows.map((r) => r.session_id)).toEqual(["e-new"]);
   });
 });

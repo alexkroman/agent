@@ -15,8 +15,8 @@
  * `pnpm test:pg` is that step, once:
  *
  * ```sh
- * pnpm test:pg                        # the whole integration tier
- * pnpm test:pg pnpm --filter aai-server test:integration
+ * pnpm test:pg                        # the whole scenario tier
+ * pnpm test:pg pnpm --filter aai-server test:scenario
  * node scripts/with-test-pg.mjs --print
  * ```
  *
@@ -95,7 +95,7 @@ Start one of these, then re-run:
 
 Or point at one yourself:
 
-  AAI_TEST_PG_URL=postgres://user:pass@host:5432/db pnpm test:integration
+  AAI_TEST_PG_URL=postgres://user:pass@host:5432/db pnpm test:scenario
 
 The suites WRITE (under prefixes they own, and they clean up), so give them a
 scratch database — never a real one.`;
@@ -110,14 +110,14 @@ console.log(`with-test-pg: using ${resolved.what} — ${resolved.url}`);
 if (PRINT_ONLY) process.exit(0);
 
 if (command.length === 0) {
-  console.error("with-test-pg: no command given (e.g. `pnpm test:integration`).");
+  console.error("with-test-pg: no command given (e.g. `pnpm test:scenario`).");
   process.exit(1);
 }
 
 // A skip is what this script exists to prevent, so the run it starts refuses to
 // be a quiet one: AAI_REQUIRE_PG makes the suites fail rather than skip if the
 // variable somehow does not reach them (turbo's strict env mode is one way that
-// happens — both names are declared in the `check:integration` task's `env`).
+// happens — both names are declared in the `check:scenario` task's `env`).
 const child = spawn(command[0], command.slice(1), {
   stdio: "inherit",
   env: { ...process.env, AAI_TEST_PG_URL: resolved.url, AAI_REQUIRE_PG: "1" },

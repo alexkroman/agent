@@ -110,6 +110,27 @@ const importEscapesTemplate = Object.values(
 )[0];
 
 /**
+ * Rule 14's two halves, imported as real values for the same reason as 12's and
+ * 13's. This rule is the one where the difference between "matches the name" and
+ * "resolves to the directory" IS the rule, so a resolver that quietly agreed with
+ * every candidate would report a clean tree while the bug it was written for sat
+ * in it.
+ */
+const resolveAgainstFile = Object.values(
+  import.meta.glob<(readerFile: string, specifier: string) => string>(
+    "../../scripts/guard-invariants-scanners.mjs",
+    { import: "resolveAgainstFile", eager: true },
+  ),
+)[0];
+
+const fixtureDirs = Object.values(
+  import.meta.glob<() => string[]>("../../scripts/guard-invariants-scanners.mjs", {
+    import: "fixtureDirs",
+    eager: true,
+  }),
+)[0];
+
+/**
  * One positive and one negative sample per rule, keyed by the rule's `key`.
  *
  * The positives are written to look like the real anti-pattern rather than
@@ -329,6 +350,66 @@ describe("guard-invariants gate", () => {
       expect(importEscapesTemplate?.(`${PIZZA}/tools/add_pizza.ts`, "../../pizza-ordering")).toBe(
         true,
       );
+    });
+  });
+
+  describe("rule 14 — a fixture directory nothing reads", () => {
+    const COMPAT = "packages/aai/sdk/protocol-compat.test.ts";
+
+    test("the pure halves are importable", () => {
+      expect(resolveAgainstFile, "resolveAgainstFile not exported").toBeTypeOf("function");
+      expect(fixtureDirs, "fixtureDirs not exported").toBeTypeOf("function");
+    });
+
+    test("the historical bug: the only `compat-fixtures` string names a DIFFERENT package", () => {
+      // This is the whole rule. `packages/aai-server/compat-fixtures/` outlived
+      // its only reader by five commits while this string sat in the tree the
+      // entire time, pointing at its own sibling — so a scan matching the NAME
+      // finds a reader for the dead directory and reports a clean tree.
+      expect(resolveAgainstFile?.(COMPAT, "compat-fixtures")).toBe(
+        "packages/aai/sdk/compat-fixtures",
+      );
+      expect(resolveAgainstFile?.(COMPAT, "compat-fixtures")).not.toBe(
+        "packages/aai-server/compat-fixtures",
+      );
+    });
+
+    test("a CROSS-PACKAGE reader resolves, so a live directory is not flagged", () => {
+      // aai-cli's e2e suite replays aai-ui's fixtures. A package-scoped scan
+      // would report that directory as unread, which is a false positive on a
+      // rule that carries no baseline — i.e. a blocked push.
+      expect(resolveAgainstFile?.("packages/aai-cli/e2e.test.ts", "../aai-ui/fixtures")).toBe(
+        "packages/aai-ui/fixtures",
+      );
+    });
+
+    test("reading one FILE counts as reading its directory", () => {
+      // `join(here, "fixtures/hello.pcm16")` names a file; the directory is what
+      // the rule is about, so the scan credits every ancestor of the resolved
+      // path and this is the resolution it does that to.
+      expect(
+        resolveAgainstFile?.(
+          "packages/aai/host/integration/pipeline-reference.integration.test.ts",
+          "fixtures/hello-how-are-you.pcm16",
+        ),
+      ).toBe("packages/aai/host/integration/fixtures/hello-how-are-you.pcm16");
+    });
+
+    test("candidate discovery finds the real fixture directories", () => {
+      // A discovery step that found nothing would report "0 ✓" — the same output
+      // as the rule being upheld, which is the failure shape this whole suite
+      // exists for. Nested candidates are separate: `host/fixtures` and
+      // `host/integration/fixtures` are two directories, not one.
+      const dirs = fixtureDirs?.() ?? [];
+      expect(dirs).toContain("packages/aai/sdk/compat-fixtures");
+      expect(dirs).toContain("packages/aai-ui/fixtures");
+      expect(dirs).toContain("packages/aai/host/fixtures");
+      expect(dirs).toContain("packages/aai/host/integration/fixtures");
+    });
+
+    test("the deleted aai-server fixture set is really gone", () => {
+      // The one-time deletion this rule turns into a standing check.
+      expect(fixtureDirs?.() ?? []).not.toContain("packages/aai-server/compat-fixtures");
     });
   });
 

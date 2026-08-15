@@ -18,7 +18,7 @@ import { createSessionCore } from "./session-core.ts";
 import type { SessionCore } from "./session-core-types.ts";
 
 const fatalError = () =>
-  JSON.stringify({ type: "error", code: "internal", message: "provider died" });
+  JSON.stringify({ type: "error.reported", code: "internal", message: "provider died" });
 
 describe("session-core error handling", () => {
   let core: SessionCore;
@@ -80,7 +80,12 @@ describe("session-core error handling", () => {
         expect(core.getSnapshot().recording).toBe(true);
       });
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "error", code: "stt", message: "one turn failed", fatal: false }),
+        JSON.stringify({
+          type: "error.reported",
+          code: "stt",
+          message: "one turn failed",
+          fatal: false,
+        }),
       );
       expect(core.getSnapshot().error?.code).toBe("stt");
 
@@ -124,12 +129,12 @@ describe("session-core error handling", () => {
       });
       lastSocket?.simulateMessage(
         JSON.stringify({
-          type: "error",
+          type: "error.reported",
           code: "tts",
           message: "Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the agent env.",
         }),
       );
-      lastSocket?.simulateMessage(JSON.stringify({ type: "cancelled" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.cancelled" }));
       const snap = core.getSnapshot();
       expect(snap.state).toBe("error");
       expect(snap.error?.message).toContain("CARTESIA_API_KEY");
@@ -148,7 +153,7 @@ describe("session-core error handling", () => {
       expect(core.getSnapshot().state).toBe("error");
 
       lastSocket?.simulateMessage(makeConfig());
-      lastSocket?.simulateMessage(JSON.stringify({ type: "cancelled" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.cancelled" }));
       const snap = core.getSnapshot();
       expect(snap.state).toBe("listening");
       expect(snap.error).toBe(null);
@@ -225,7 +230,9 @@ describe("session-core error handling", () => {
     lastSocket?.simulateMessage(fatalError());
     expect(core.getSnapshot().state).toBe("error");
 
-    lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "still here" }));
+    lastSocket?.simulateMessage(
+      JSON.stringify({ type: "agent-transcript.updated", text: "still here" }),
+    );
     const snap = core.getSnapshot();
     expect(snap.state).toBe("error");
     expect(snap.error).toEqual({ code: "internal", message: "provider died" });
@@ -237,11 +244,18 @@ describe("session-core error handling", () => {
     core.connect();
     lastSocket?.simulateOpen();
     lastSocket?.simulateMessage(
-      JSON.stringify({ type: "error", code: "stt", message: "one turn failed", fatal: false }),
+      JSON.stringify({
+        type: "error.reported",
+        code: "stt",
+        message: "one turn failed",
+        fatal: false,
+      }),
     );
     expect(core.getSnapshot().error?.code).toBe("stt");
 
-    lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "still here" }));
+    lastSocket?.simulateMessage(
+      JSON.stringify({ type: "agent-transcript.updated", text: "still here" }),
+    );
     expect(core.getSnapshot().error).toBe(null);
   });
 

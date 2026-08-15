@@ -12,15 +12,8 @@
 import { z } from "zod";
 
 import { ToolSchemaSchema } from "./_internal-types.ts";
-import {
-  MAX_AUDIO_SAMPLE_RATE,
-  MAX_CLIENT_EVENT_NAME_LENGTH,
-  MAX_ERROR_MESSAGE_CHARS,
-  MAX_PLAYBACK_BUFFERED_MS,
-  MAX_TOOL_RESULT_CHARS,
-  MAX_TRANSCRIPT_CHARS,
-} from "./constants.ts";
-import { capToolResult } from "./utils.ts";
+import { type SessionCommand, SessionCommandSchema } from "./protocol-commands.ts";
+import { type SessionEvent, SessionEventSchema } from "./protocol-events.ts";
 
 // The pre-connection client-config endpoint's wire format is part of the
 // same protocol surface — re-exported so clients import one subpath.
@@ -30,6 +23,31 @@ export {
   type ClientConfigResponse,
   ClientConfigResponseSchema,
 } from "./client-config.ts";
+
+/**
+ * The two halves of the wire vocabulary, re-exported so `/protocol` stays one
+ * import for a client. They are separate MODULES because the split between them
+ * is load-bearing — see `protocol-events.ts` — and separate files because this
+ * one is at the file-length cap.
+ */
+export {
+  SESSION_COMMAND_TYPES,
+  // The name every `lenientParse` call site already spells for the same set.
+  SESSION_COMMAND_TYPES as CLIENT_MESSAGE_TYPES,
+  type SessionCommand,
+  SessionCommandSchema,
+} from "./protocol-commands.ts";
+export {
+  EVENT_ID_PREFIX,
+  SESSION_EVENT_TYPES,
+  type SessionErrorCode,
+  SessionErrorCodeSchema,
+  type SessionEvent,
+  type SessionEventBody,
+  type SessionEventMeta,
+  SessionEventMetaSchema,
+  SessionEventSchema,
+} from "./protocol-events.ts";
 
 /**
  * Audio codec identifier used in the wire protocol.
@@ -79,171 +97,29 @@ export function lenientParse<T>(
   return { ok: false, malformed, error: result.error.message };
 }
 
-/** Discriminator literal values (the known `type`s) of a discriminated union. */
-function discriminatorValues(union: z.ZodDiscriminatedUnion): ReadonlySet<string> {
-  const key = union.def.discriminator;
-  const values = new Set<string>();
-  for (const option of union.options) {
-    const field = (option as z.ZodObject).shape[key];
-    if (field instanceof z.ZodLiteral && typeof field.value === "string") {
-      values.add(field.value);
-    }
-  }
-  return values;
-}
-
-// ─── Error codes ───────────────────────────────────────────────────────────
-
-/**
- * Zod schema for session error codes.
- * @public
- */
-export const SessionErrorCodeSchema = z.enum([
-  "stt",
-  "llm",
-  "tts",
-  "tool",
-  "protocol",
-  "connection",
-  "audio",
-  "internal",
-]);
-
-/**
- * Error codes for categorizing session errors on the wire.
- *
- * @public
- */
-export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
-
-// ─── Client events ─────────────────────────────────────────────────────────
-
-/** Helper: simple event with only a type field. */
-const ev = <T extends string>(t: T) => z.object({ type: z.literal(t) });
-
-/** Zod schema for {@link ClientEvent}. */
-export const ClientEventSchema = z.discriminatedUnion("type", [
-  ev("speech_started"),
-  ev("speech_stopped"),
-  z.object({
-    type: z.literal("user_transcript"),
-    text: z.string().max(MAX_TRANSCRIPT_CHARS),
-  }),
-  /**
-   * Interim (in-progress) user transcript — live captions while the user is
-   * still speaking. Pipeline mode forwards STT partials here; the committed
-   * turn still arrives as `user_transcript`. Clients on older protocol
-   * versions drop the unknown type via `lenientParse`.
-   */
-  z.object({
-    type: z.literal("user_transcript_partial"),
-    text: z.string().max(MAX_TRANSCRIPT_CHARS),
-    /**
-     * The STT service's confidence that the user's turn has ENDED as of this
-     * interim, 0..1, when the provider reports one (AssemblyAI's
-     * `end_of_turn_confidence`). Absent means "no opinion", never zero.
-     *
-     * Carried on the wire so an endpointing policy can be MEASURED before it
-     * is built: pairing each interim's confidence and text against the final
-     * that follows gives the lead time a speculative turn-start would buy and
-     * the rate at which the transcript would still have been correct. Nothing
-     * acts on it.
-     */
-    eotConfidence: z.number().min(0).max(1).optional(),
-  }),
-  /**
-   * The current reply's transcript so far — a **full-replacement snapshot**, and
-   * the last one before `reply_done` is the whole reply. Pipeline mode sends one
-   * as each piece of text reaches TTS, so captions track the speech; S2S sends a
-   * single one per reply, when its provider reports the finished transcript.
-   * Either way a client renders the latest text for the reply in progress and
-   * commits it on `reply_done`/`cancelled` — never appending them as separate
-   * turns.
-   *
-   * Snapshot, NOT an append-only or monotonically growing string: a pipeline
-   * reply's final snapshot can be SHORTER than the one before it, and can differ
-   * in the middle rather than only at the end. The interim snapshots are built
-   * from everything handed to TTS, which includes the dead-air cover fillers
-   * the caller hears; the reply's closing snapshot is the model's own words,
-   * with that filler removed — so "I'm checking on this. Thanks, I found your
-   * account. I'm still on it. Here it is." is followed by "Thanks, I found your
-   * account. Here it is.". That is deliberate: the
-   * committed message should read as dialogue, while the live caption should
-   * match the audio. A client that diffs against the previous snapshot, renders
-   * incrementally, or assumes a common prefix will corrupt — replace the text.
-   */
-  z.object({
-    type: z.literal("agent_transcript"),
-    text: z.string().max(MAX_TRANSCRIPT_CHARS),
-  }),
-  z.object({
-    type: z.literal("tool_call"),
-    toolCallId: z.string(),
-    toolName: z.string(),
-    args: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    type: z.literal("tool_call_done"),
-    toolCallId: z.string(),
-    result: z.string().max(MAX_TOOL_RESULT_CHARS),
-  }),
-  ev("reply_done"),
-  ev("cancelled"),
-  ev("reset"),
-  ev("idle_timeout"),
-  z.object({
-    type: z.literal("error"),
-    code: SessionErrorCodeSchema,
-    message: z.string().max(MAX_ERROR_MESSAGE_CHARS),
-    /**
-     * False for turn-level errors the session survives (e.g. a failed
-     * one-shot transcription): the client should surface the message but
-     * keep the session interactive. Absent means fatal — the historical
-     * semantics, where an error always followed a session teardown.
-     */
-    fatal: z.boolean().optional(),
-  }),
-  z.object({
-    type: z.literal("custom_event"),
-    event: z.string().min(1).max(MAX_CLIENT_EVENT_NAME_LENGTH),
-    data: z.unknown(),
-  }),
-  /**
-   * The agent's projected session state (see `AgentDef.syncState`).
-   *
-   * Its own frame rather than a `custom_event` for two reasons: the client
-   * keeps the LATEST value rather than appending to an event log, so a
-   * component mounting late still sees current state; and a reserved type
-   * cannot collide with an event name the author chose.
-   */
-  z.object({
-    type: z.literal("agent_state"),
-    state: z.unknown(),
-  }),
-]);
-
-/**
- * Discriminated union of all **server→client** session events. Despite the
- * shared prefix, this is the opposite direction from {@link ClientMessage}
- * (client→server): "client" here means events delivered *to* the client.
- */
-export type ClientEvent = z.infer<typeof ClientEventSchema>;
-
 /**
  * Typed interface for pushing session events to a connected client.
  *
- * Events (`event`, `playAudioDone`) send JSON text frames. Audio chunks
- * (`playAudioChunk`) send raw PCM16 binary frames.
+ * Events send JSON text frames; audio chunks (`playAudioChunk`) send raw PCM16
+ * binary frames. There is no `playAudioDone` — the turn's `audio.completed` is
+ * an ordinary event now, and the sink orders it behind held audio by type. That
+ * is what let it join the retained stream: a method on the sink was a frame no
+ * event log could see.
  */
 export interface ClientSink {
   /** True when the underlying connection is open and will accept calls. */
   readonly open: boolean;
-  /** Push a session event (JSON text frame) to the client. */
-  event(e: ClientEvent): void;
+  /**
+   * Push a session event (JSON text frame) to the client.
+   *
+   * Takes an ALREADY-STAMPED {@link SessionEvent}: the envelope is minted once,
+   * by the session's emitter, which is also what appends the event to the
+   * retained stream. A sink that stamped its own would mint a second id for an
+   * event the stream had already recorded under another.
+   */
+  event(e: SessionEvent): void;
   /** Send a single PCM16 audio chunk (raw binary frame) to the client. */
   playAudioChunk(chunk: Uint8Array): void;
-  /** Signal that TTS audio is complete (JSON text frame). */
-  playAudioDone(): void;
   /**
    * Close the underlying connection (best-effort, idempotent). Used when the
    * server retires a session out from under a connected client — a resume
@@ -265,100 +141,33 @@ export const ReadyConfigSchema = z.object({
 /** Protocol-level session config returned to the client on connect. */
 export type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
 
-/** Zod schema for server→client text messages. */
-export const ServerMessageSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("config"),
-    audioFormat: z.string(),
-    // Bounded: these numbers feed client-side allocations (the playback
-    // worklet's rate*60 ring buffer), so an unbounded server value would be
-    // an allocation-size lever against the client.
-    sampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE),
-    ttsSampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE),
-    /** Session ID for this connection. Clients can reconnect with
-     *  `?sessionId=<id>` to resume a persisted session. */
-    sessionId: z.string().optional(),
-  }),
-  ev("audio_done"),
-  ...ClientEventSchema.options,
-]);
+/**
+ * Server→client text messages: every {@link SessionEvent}, and nothing else.
+ *
+ * It is an ALIAS rather than a second union now. `config` and `audio_done` used
+ * to be declared here, outside the event vocabulary, which is what let the
+ * handshake and a turn boundary be the two frames no event stream could contain
+ * — they are `session.configured` and `audio.completed` in
+ * `protocol-events.ts`, and the retained stream carries them like anything else.
+ */
+export const ServerMessageSchema = SessionEventSchema;
 
 /** Server→client text messages (binary frames carry raw PCM16 audio). */
-export type ServerMessage = z.infer<typeof ServerMessageSchema>;
+export type ServerMessage = SessionEvent;
 
-/** Zod schema for client→server text messages. */
-export const ClientMessageSchema = z.discriminatedUnion("type", [
-  ev("audio_ready"),
-  ev("cancel"),
-  ev("reset"),
-  z.object({
-    /**
-     * How much forwarded agent audio the client still holds UNPLAYED.
-     *
-     * The one closed-loop signal in the protocol. Without it the host models
-     * playback open-loop — `pipeline-heard.ts` assumes every forwarded chunk
-     * begins playing the instant it is sent, at exactly 1.0x, plus a fixed
-     * grace — and nothing anywhere can detect a client that drains slower than
-     * real time. Such a client accrues a backlog that grows across a reply and
-     * is invisible to the host, which then believes the line is silent while
-     * the caller is still listening.
-     *
-     * Five things ride that estimate, and all five fail the same way: the
-     * outward `speech_started` gate (opens early, so a client that truncates
-     * on that event throws away speech the caller had not heard), the heard
-     * cursor (records unheard words as delivered, so the model never repeats
-     * them), the barge-in floor, the false-interruption resume anchor, and the
-     * silence nudger. Measured against a harness draining at **0.60-0.67x**:
-     * the host declared playback finished while the client still held 3.8-7.3s
-     * of the reply, and 39.5s of agent speech — 41% of all audio it lost — was
-     * destroyed on edges the barge-in gates had explicitly ruled were not
-     * interruptions.
-     *
-     * **Advisory and monotonic in one direction only.** The host clamps
-     * UPWARD (`max(existing, now + bufferedMs)`), never down, so a client that
-     * never sends this, sends it late, or under-reports degrades to exactly
-     * the open-loop behaviour — there is no way for this frame to make the
-     * host think less audio is outstanding than it already believes, and no
-     * existing client regresses by not adopting it. Send it while audio is
-     * queued (aai-ui sends one every `PLAYBACK_PROGRESS_INTERVAL_MS`); stop
-     * when the buffer empties.
-     */
-    type: z.literal("playback_progress"),
-    bufferedMs: z.number().min(0).max(MAX_PLAYBACK_BUFFERED_MS),
-  }),
-  z.object({
-    type: z.literal("history"),
-    messages: z
-      .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(100_000) }))
-      .max(200),
-  }),
-  z.object({
-    type: z.literal("tool_result"),
-    toolCallId: z.string().min(1),
-    /**
-     * Truncated rather than rejected. A `.max()` here made an oversized result
-     * fail validation, and a failed client message is *dropped* — so the relay
-     * call it was answering never settled and hung to
-     * `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, presenting as a stuck tool rather than as
-     * data that didn't fit. The transform bounds host memory the same way while
-     * letting the turn continue on the part that fits (marked `[truncated]`).
-     */
-    result: z.string().transform(capToolResult),
-    error: z.string().optional(),
-  }),
-]);
-
-/** The set of recognised client→server message `type` values — pass to
- *  `lenientParse` so a known-but-invalid message warns instead of being
- *  silently dropped as an unknown forward-compat type. */
-export const CLIENT_MESSAGE_TYPES: ReadonlySet<string> = discriminatorValues(ClientMessageSchema);
+/**
+ * Client→server text messages.
+ *
+ * An alias of {@link SessionCommandSchema}; the name is kept because it is what
+ * every `lenientParse` call site already spells, and the direction now lives in
+ * the type it resolves to.
+ */
+export const ClientMessageSchema = SessionCommandSchema;
 
 /**
  * **Client→server** text messages (binary frames carry raw PCM16 audio).
- * Note the direction: the similarly named {@link ClientEvent} flows the other
- * way (server→client).
  */
-export type ClientMessage = z.infer<typeof ClientMessageSchema>;
+export type ClientMessage = SessionCommand;
 
 // ─── Host mode ───────────────────────────────────────────────────────────────
 

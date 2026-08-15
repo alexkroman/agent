@@ -3,37 +3,34 @@
 // and tool-step enforcement, bridging a Transport to the client protocol.
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
-import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
-import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
+import type { ClientSink, ReadyConfig, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
-import { capToolResult, errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
+import type { SessionEmitter } from "./session-emitter.ts";
 import { createIdleWatchdog } from "./session-idle.ts";
+import { dispatchReplyDone } from "./session-reply-done.ts";
+import { type ReplyToolState, runToolStep } from "./session-tool-steps.ts";
 import type { Transport } from "./transports/types.ts";
 
-const REPLY_DONE_SLOW_THRESHOLD_MS = 50;
-
-type PendingTool = { callId: string; result: string };
-
-type ReplyState = {
-  currentReplyId: string | null;
-  pendingTools: PendingTool[];
-  toolCallCount: number;
-  /** Aborts this reply's in-flight tool executions on barge-in/reset/stop. */
-  abort: AbortController;
-  /**
-   * True after a `reply.done` flushed this reply's tool results to the
-   * transport and the turn is waiting on the provider's continuation.
-   * Cleared by any sign of continuation progress (tool call, transcript,
-   * audio). While set, a `reply.done` with no new pending tools is a
-   * duplicate frame — flushing it would emit a premature client
-   * `reply_done`/`audio_done` mid-turn.
-   */
-  flushedAwaitingContinuation: boolean;
-};
+/**
+ * This session's view of one reply's tool state.
+ *
+ * The shape is `session-tool-steps.ts`'s — that module mutates it — with the two
+ * fields whose meaning belongs to the TURN documented here:
+ *
+ * - `abort` cancels this reply's in-flight tool executions on
+ *   barge-in/reset/stop.
+ * - `flushedAwaitingContinuation` is true after a `reply.done` flushed this
+ *   reply's tool results to the transport and the turn is waiting on the
+ *   provider's continuation. Cleared by any sign of continuation progress (tool
+ *   call, transcript, audio). While set, a `reply.done` with no new pending tools
+ *   is a duplicate frame — flushing it would emit a premature client
+ *   `reply.completed`/`audio.completed` mid-turn.
+ */
+type ReplyState = ReplyToolState;
 
 /**
  * Configuration for {@link createSessionCore}.
@@ -44,13 +41,20 @@ export type SessionCoreOptions = {
   id: string;
   agent: string;
   client: ClientSink;
+  /**
+   * The one way this session publishes an event — see `session-emitter.ts`. It
+   * records into the retained stream, sends to {@link SessionCoreOptions.client},
+   * and runs the agent's hooks, in that order. `client` is still here for the
+   * audio path, which is binary and deliberately outside the event vocabulary.
+   */
+  emitter: SessionEmitter;
   agentConfig: AgentConfig;
   executeTool: ExecuteTool;
   transport: Transport;
   logger?: Logger;
   /**
    * Host/relay mode hook. When set, tool calls are relayed to the client for
-   * out-of-process execution: `onToolCall` skips its own `tool_call` emit (the
+   * out-of-process execution: `onToolCall` skips its own `tool.called` emit (the
    * relay `executeTool` emits it, keyed by `toolCallId`) and inbound
    * `tool_result` frames are routed here to settle the pending call.
    */
@@ -66,6 +70,21 @@ export type SessionCoreOptions = {
  */
 export type SessionCore = {
   readonly id: string;
+  /**
+   * Announce the session to its client: the handshake frame, carrying the audio
+   * negotiation and this session's own id.
+   *
+   * On the session rather than on the socket handler because it is an EVENT now
+   * — `session.configured` — so it is stamped, recorded in the retained stream
+   * and seen by hooks like anything else. It used to be a hand-assembled JSON
+   * literal written straight to the socket, which is precisely what made the
+   * handshake a frame no event log could contain.
+   *
+   * Sent at zero RTT, before {@link SessionCore.start}, and that ordering is
+   * load-bearing: a socket open for seconds carrying nothing is a wedged peer,
+   * not a slow one, and aai-ui's handshake guard is armed on exactly this frame.
+   */
+  configure(config: ReadyConfig): void;
   start(): Promise<void>;
   stop(): Promise<void>;
   // Inbound from client (decoded by ws-handler)
@@ -80,7 +99,6 @@ export type SessionCore = {
    * estimate (S2S, where the service owns turn-taking) simply omits the hook.
    */
   onPlaybackProgress(bufferedMs: number): void;
-  onHistory(messages: readonly Message[]): void;
   /**
    * Make the agent SPEAK about something the caller did not just say.
    *
@@ -98,6 +116,21 @@ export type SessionCore = {
   announce(instruction: string): boolean;
   /** Inbound relayed tool result (host mode): settles the pending relay call. */
   onToolResult(toolCallId: string, result: string, error?: string): void;
+  /**
+   * Put a prior conversation back, on resume.
+   *
+   * **The SERVER calls this, from its own retained event stream** — see
+   * `runtime-session-stream.ts`. It used to be driven by a `history` client
+   * frame, i.e. the client was the authority on what the agent remembered, which
+   * is what the event stream exists to replace: a client could omit, truncate or
+   * invent turns, and a client that had never connected before (a second tab, a
+   * phone call resuming) had nothing to send at all.
+   *
+   * Restores BOTH views, because they are two lists: `ctx.messages`, which is
+   * this module's, and the transport's own LLM history, which is
+   * `seedHistory`'s.
+   */
+  restoreHistory(messages: readonly Message[]): void;
   // Inbound from transport (reply lifecycle, transcripts, audio, tool calls)
   onReplyStarted(replyId: string): void;
   onReplyDone(): void;
@@ -146,9 +179,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   // Has this client ever sent `playback_progress`? Gates the one-time log in
   // onPlaybackProgress — see there for why the distinction is worth a line.
   let sawPlaybackReport = false;
-  function emit(event: ClientEvent): void {
-    opts.client.event(event);
-  }
+  const emit = opts.emitter.emit;
 
   // The idle deadline and everything it means — see `session-idle.ts`, which is
   // where the "measure SPEECH, not bytes" argument lives.
@@ -156,9 +187,35 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     sid: opts.id,
     idleMs: rawIdleMs,
     logger: log,
-    notify: () => emit({ type: "idle_timeout" }),
+    notify: () => emit({ type: "session.timed-out" }),
     close: () => opts.client.close?.("idle timeout"),
   });
+
+  // Built once: everything here is fixed for the session's lifetime, and
+  // `history` is a thunk precisely because the array is not.
+  const toolStepDeps = {
+    sessionId: opts.id,
+    agentConfig: opts.agentConfig,
+    executeTool: opts.executeTool,
+    emit,
+    log,
+    history: () => history,
+    relayed: Boolean(opts.onToolResult),
+  };
+
+  // The `reply.done` dispatcher's view of the session. Thunks, not values:
+  // `reply` and `turnPromise` are both reassigned by a barge-in mid-dispatch, and
+  // reading them late is the whole of that module's staleness handling.
+  const replyDoneDeps = {
+    sessionId: opts.id,
+    agent: opts.agent,
+    emit,
+    log,
+    currentReply: () => reply,
+    turnPromise: () => turnPromise,
+    sendToolResult: (callId: string, result: string) =>
+      opts.transport.sendToolResult(callId, result),
+  };
 
   /** Re-arm the idle deadline. Transport-observed conversation only. */
   function resetIdle(): void {
@@ -186,25 +243,18 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     reply = emptyReply();
   }
 
-  function flushReply(startMs: number, hadTurnPromise: boolean): void {
-    const stepsUsed = reply.toolCallCount;
-    if (stepsUsed > 0) log.info("Turn complete", { steps: stepsUsed, agent: opts.agent });
-    opts.client.playAudioDone();
-    emit({ type: "reply_done" });
-    reply.currentReplyId = null;
-    const durationMs = Date.now() - startMs;
-    if (durationMs >= REPLY_DONE_SLOW_THRESHOLD_MS) {
-      log.warn("slow reply_done dispatch", {
-        sid: opts.id,
-        agent: opts.agent,
-        durationMs,
-        hadTurnPromise,
-      });
-    }
-  }
-
   return {
     id: opts.id,
+
+    configure(config) {
+      emit({
+        type: "session.configured",
+        audioFormat: config.audioFormat,
+        sampleRate: config.sampleRate,
+        ttsSampleRate: config.ttsSampleRate,
+        sessionId: opts.id,
+      });
+    },
 
     async start() {
       resetIdle();
@@ -248,7 +298,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       // the transport until the next reply.
       reply.abort.abort();
       opts.transport.cancelReply();
-      emit({ type: "cancelled" });
+      emit({ type: "reply.cancelled" });
     },
     onPlaybackProgress(bufferedMs) {
       // Logged ONCE per session, because "is this client closed-loop?" changes
@@ -273,7 +323,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       // Clear conversation state the transport owns (pipeline LLM history);
       // without this the "forgotten" dialogue keeps feeding the next turn.
       opts.transport.reset?.();
-      emit({ type: "reset" });
+      emit({ type: "session.reset" });
     },
     announce(instruction) {
       // A stopped session's transport may still hold sockets mid-teardown, so
@@ -284,14 +334,14 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       return true;
     },
 
-    onHistory(messages) {
-      pushMessages(...messages);
-      // Forward to the transport so pipeline mode's LLM sees the restored
-      // context on reconnect (S2S restores context service-side via resume).
-      opts.transport.seedHistory?.(messages);
-    },
     onToolResult(toolCallId, result, error) {
       opts.onToolResult?.({ toolCallId, result, ...omitUndefined({ error }) });
+    },
+    restoreHistory(messages) {
+      pushMessages(...messages);
+      // Forward to the transport so pipeline mode's LLM sees the restored
+      // context on resume (S2S restores context service-side via resume).
+      opts.transport.seedHistory?.(messages);
     },
 
     // ─── Inbound from transport ───────────────────────────────────────────
@@ -309,63 +359,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onReplyDone() {
-      const startMs = Date.now();
-      // Capture the reply object, not just its id: barge-in/reset swap in a
-      // fresh reply object (beginReply/cancelReply), and sendPending runs later
-      // (after turnPromise). Comparing by identity keeps a stale reply.done
-      // from mutating the current reply.
-      const doneReply = reply;
-      // Dedup duplicate reply.done events — once the reply is fully dispatched
-      // (or was never started) currentReplyId is null.
-      if (doneReply.currentReplyId === null) {
-        log.debug("Dropping duplicate reply.done (no active reply)");
-        return;
-      }
-      const hadTurnPromise = turnPromise !== null;
-      const sendPending = () => {
-        // A newer reply replaced this one → it's stale. Drop its orphaned
-        // pending tools; never touch the current reply.
-        if (reply !== doneReply) {
-          doneReply.pendingTools = [];
-          return;
-        }
-        if (doneReply.pendingTools.length > 0) {
-          for (const tool of doneReply.pendingTools)
-            opts.transport.sendToolResult(tool.callId, tool.result);
-          doneReply.pendingTools = [];
-          doneReply.flushedAwaitingContinuation = true;
-        } else if (doneReply.flushedAwaitingContinuation) {
-          // Tool results were already flushed and no continuation progress
-          // (tool call / transcript / audio) has arrived since — this
-          // reply.done is a duplicate frame, not the turn's real end.
-          log.debug("Dropping duplicate reply.done (awaiting tool continuation)");
-        } else {
-          flushReply(startMs, hadTurnPromise);
-        }
-      };
-      // sendPending writes to the transport, which may be a dying socket — a
-      // throw here must surface as a log, not an unhandled rejection (or a
-      // sync throw out of the transport's event dispatch).
-      const sendPendingSafely = () => {
-        try {
-          sendPending();
-        } catch (err) {
-          log.warn("reply.done dispatch failed", { sid: opts.id, error: errorMessage(err) });
-        }
-      };
-      if (hadTurnPromise) {
-        void turnPromise?.then(sendPendingSafely).catch((err: unknown) => {
-          log.warn("turn promise rejected before reply.done dispatch", {
-            sid: opts.id,
-            error: errorMessage(err),
-          });
-        });
-      } else sendPendingSafely();
+      dispatchReplyDone(replyDoneDeps);
     },
 
     onCancelled() {
       cancelReply();
-      emit({ type: "cancelled" });
+      emit({ type: "reply.cancelled" });
     },
 
     onAudioChunk(bytes) {
@@ -376,12 +375,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       opts.client.playAudioChunk(bytes);
     },
     onAudioDone() {
-      opts.client.playAudioDone();
+      emit({ type: "audio.completed" });
     },
 
     onUserTranscript(text) {
       resetIdle();
-      emit({ type: "user_transcript", text });
+      emit({ type: "user-transcript.committed", text });
       pushMessages({ role: "user", content: text });
     },
     onUserTranscriptPartial(text, eotConfidence) {
@@ -390,7 +389,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       // mid-sentence.
       resetIdle();
       emit({
-        type: "user_transcript_partial",
+        type: "user-transcript.updated",
         text,
         ...(eotConfidence === undefined ? {} : { eotConfidence }),
       });
@@ -398,17 +397,24 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     onAgentTranscript(text, interrupted) {
       resetIdle();
       reply.flushedAwaitingContinuation = false;
-      emit({ type: "agent_transcript", text });
-      if (!interrupted) pushMessages({ role: "assistant", content: text });
+      // The COMMITTED event only for a reply that is recorded, which is what
+      // makes the stream's assistant turns the session's own rather than a
+      // re-derivation — see the event's own doc.
+      if (interrupted) {
+        emit({ type: "agent-transcript.updated", text });
+      } else {
+        emit({ type: "agent-transcript.committed", text });
+        pushMessages({ role: "assistant", content: text });
+      }
     },
     onAgentTranscriptPartial(text) {
       resetIdle();
-      // Same event type as the final transcript: `agent_transcript` carries the
-      // reply's text so far and the last one within a reply wins, so a client
+      // Same event type as the final transcript: `agent-transcript.updated` carries
+      // the reply's text so far and the last one within a reply wins, so a client
       // needs no new case to render it. History is untouched — the final call
       // above pushes the assistant turn exactly once.
       reply.flushedAwaitingContinuation = false;
-      emit({ type: "agent_transcript", text });
+      emit({ type: "agent-transcript.updated", text });
     },
 
     onToolCall(callId, name, args) {
@@ -417,57 +423,14 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       // drain must not start tool work (guest RPC, ctx.db, ctx.generate)
       // against a session already torn down.
       if (stopped) return;
-      // In relay/host mode the relay `executeTool` emits the `tool_call` frame
-      // itself (keyed by callId), so emitting here too would duplicate it.
-      if (!opts.onToolResult) emit({ type: "tool_call", toolCallId: callId, toolName: name, args });
-      if (reply.currentReplyId === null) {
-        log.warn("tool_call with no active reply", { sid: opts.id, name });
-        return;
-      }
-      // Bind results to the reply that issued the call. If a barge-in/reset
-      // swaps in a new reply before this tool completes, the result lands in
-      // this (now orphaned) object instead of corrupting the new reply's
-      // pendingTools (which would hang or mis-route the turn).
-      const activeReply = reply;
-      activeReply.flushedAwaitingContinuation = false;
-      activeReply.toolCallCount++;
-      const maxSteps = opts.agentConfig.maxSteps;
-      if (maxSteps !== undefined && activeReply.toolCallCount > maxSteps) {
-        log.info("maxSteps exceeded; refusing tool call", {
-          toolCallCount: activeReply.toolCallCount,
-          maxSteps,
-        });
-        activeReply.pendingTools.push({
-          callId,
-          result: serializeToolFailure(
-            "Maximum tool steps reached. Please respond to the user now.",
-          ),
-        });
-        emit({ type: "tool_call_done", toolCallId: callId, result: "{}" });
-        return;
-      }
-      const p = (async () => {
-        try {
-          // Snapshot history: the live array is push/spliced by transcript
-          // events while the tool runs (mirrors to-vercel-tools.ts). The
-          // reply's abort signal lets barge-in/reset/stop settle the call.
-          const result = await opts.executeTool(name, args, opts.id, history.slice(), {
-            toolCallId: callId,
-            signal: activeReply.abort.signal,
-          });
-          // Full result goes to the provider; the client `tool_call_done`
-          // event is capped by the wire schema (MAX_TOOL_RESULT_CHARS), so
-          // truncate it or the client silently drops the whole message and the
-          // UI tool-call block stays "pending" forever.
-          activeReply.pendingTools.push({ callId, result });
-          emit({ type: "tool_call_done", toolCallId: callId, result: capToolResult(result) });
-        } catch (err) {
-          const message = errorMessage(err);
-          activeReply.pendingTools.push({ callId, result: serializeToolFailure(message) });
-          emit({ type: "tool_call_done", toolCallId: callId, result: capToolResult(message) });
-        }
-      })();
-      turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
+      // Bound to the reply that issued the call, by identity — a barge-in or
+      // reset swaps in a fresh reply object and the result must land in the
+      // orphaned one. See `session-tool-steps.ts`, which owns the budget and the
+      // execution.
+      const p = runToolStep(reply, { callId, name, args }, toolStepDeps);
+      // `!== undefined`, not truthiness: a promise is always truthy, and the
+      // absence of one is the signal (the step budget refused the call).
+      if (p !== undefined) turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
     },
 
     onError(code, message, errOpts) {
@@ -481,14 +444,19 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       const entry = { sid: opts.id, code, message };
       if (errOpts?.fatal === false) log.debug("session error", entry);
       else log.warn("session error (fatal)", entry);
-      emit({ type: "error", code, message, ...(errOpts?.fatal === false && { fatal: false }) });
+      emit({
+        type: "error.reported",
+        code,
+        message,
+        ...(errOpts?.fatal === false && { fatal: false }),
+      });
     },
     onSpeechStarted() {
       resetIdle();
-      emit({ type: "speech_started" });
+      emit({ type: "speech.started" });
     },
     onSpeechStopped() {
-      emit({ type: "speech_stopped" });
+      emit({ type: "speech.stopped" });
     },
   };
 }

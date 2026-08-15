@@ -1,14 +1,16 @@
 /**
- * The three invariants that are not a line scan.
+ * The invariants that are not a line scan.
  *
- * Rules 1, 7 and 10 each read a different shape — git's index, the workflow
- * files, and YAML frontmatter — so none of them fits the `git grep -E` pattern
- * every other rule uses. Split out of `guard-invariants.mjs` at that seam
- * because the gate was 34 lines under the 500-line cap, and
- * `check:file-length` warns before the cap precisely so the split lands in its
- * own commit rather than inside whatever change would have forced it.
+ * Rules 1, 7, 10, 12, 13 and 14 each read a different shape — git's index, the
+ * workflow files, YAML frontmatter, two dispatch tables as text, import
+ * specifiers, and resolved fixture paths — so none of them fits the
+ * `git grep -E` pattern every other rule uses. Split out of
+ * `guard-invariants.mjs` at that seam because the gate was 34 lines under the
+ * 500-line cap, and `check:file-length` warns before the cap precisely so the
+ * split lands in its own commit rather than inside whatever change would have
+ * forced it.
  *
- * All three are at ZERO in the tree and enforced absolutely — they have no
+ * All of them are at ZERO in the tree and enforced absolutely — they have no
  * entry in `guard-invariants-baseline.json`, which is deliberate: "this is at
  * zero" should be visible rather than implied by an empty JSON object.
  *
@@ -20,9 +22,26 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
-/** Run git, returning stdout. */
+/**
+ * The repo root, derived from this module's own location.
+ *
+ * Every `readFileSync` below already resolves against `import.meta.url`, so the
+ * git calls have to as well or the two disagree: a pathspec is relative to the
+ * CWD, so `ls-files -- packages` from inside a package directory matches NOTHING
+ * and hands back file paths that would not have resolved anyway. That is the
+ * silent-success shape this whole gate exists to avoid — `fixtureDirs()` returned
+ * `[]` and rule 14 printed `0 ✓` when the suite ran under
+ * `pnpm --filter aai-templates test:coverage`, whose cwd is the package.
+ */
+const REPO_ROOT = new URL("../", import.meta.url);
+
+/** Run git from the REPO ROOT, returning stdout. */
 function git(args) {
-  return execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return execFileSync("git", args, {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    cwd: REPO_ROOT,
+  });
 }
 
 export function scanSymlinks() {
@@ -288,4 +307,115 @@ export function scanTemplateEscapingImports() {
     });
   }
   return found;
+}
+
+// --- rule 14: a fixture directory nothing reads ----------------------------
+
+/** Files that can READ a fixture. Markdown is prose ABOUT one, never a reader. */
+const CODE_FILE = /\.(?:m?[jt]s|tsx|json|ya?ml)$/;
+
+/** Only these are candidates — a directory whose name says what it holds. */
+const FIXTURE_DIR_SEGMENT = /fixtures/i;
+
+/**
+ * Files whose CONTENT describes this rule, and which therefore "read" whatever
+ * fixture directory they name — including a DEAD one, since the worked example in
+ * `scanUnreadFixtureDirs`'s doc below is
+ * `packages/aai-server/` + `compat-fixtures/` spelled in backticks. Left in, the
+ * gate's own explanation of the bug would mark that bug as fixed.
+ *
+ * `guard-invariants.mjs` carries a `SELF_REFERENTIAL` set for exactly this reason
+ * and applies it to the LINE rules only, so an absolute scanner needs its own.
+ * Fourth time this trap has been paid for here.
+ */
+const SELF_REFERENTIAL_READERS = new Set([
+  "scripts/guard-invariants-scanners.mjs",
+  "scripts/guard-invariants.mjs",
+  "packages/aai-templates/guard-invariants-gate.test.ts",
+]);
+
+/**
+ * Resolve a `/`-separated specifier against the DIRECTORY of the file holding it.
+ *
+ * The one form that matters is `join(import.meta.dirname, "compat-fixtures")` and
+ * its relatives, so a reference is interpreted exactly as the module system would
+ * interpret it. Paths come from git, so they are `/`-separated on every OS.
+ *
+ * @param {string} readerFile - repo-relative path of the file holding the string
+ * @param {string} specifier  - the string literal found in it
+ * @returns {string} the repo-relative path it names
+ */
+export function resolveAgainstFile(readerFile, specifier) {
+  const segments = [...readerFile.split("/").slice(0, -1), ...specifier.split("/")];
+  const resolved = [];
+  for (const segment of segments) {
+    if (segment === "." || segment === "") continue;
+    if (segment === "..") resolved.pop();
+    else resolved.push(segment);
+  }
+  return resolved.join("/");
+}
+
+/**
+ * Every directory under `packages/` whose name contains "fixtures".
+ *
+ * Derived from git's index rather than a walk, and nested candidates are kept
+ * separately (`host/fixtures` and `host/integration/fixtures` are two).
+ *
+ * @returns {string[]} repo-relative directory paths
+ */
+export function fixtureDirs() {
+  const dirs = new Set();
+  for (const file of git(["ls-files", "--", "packages"]).split("\n").filter(Boolean)) {
+    const parts = file.split("/");
+    // Skip the filename; a candidate is a DIRECTORY on the path.
+    for (let i = 1; i < parts.length - 1; i++) {
+      if (FIXTURE_DIR_SEGMENT.test(parts[i])) dirs.add(parts.slice(0, i + 1).join("/"));
+    }
+  }
+  return [...dirs].sort();
+}
+
+/**
+ * Fixture directories no code file resolves a path to.
+ *
+ * **A reference must RESOLVE, not merely match the name** — that is the whole
+ * design, and matching the basename would have missed the case this rule exists
+ * for. `packages/aai-server/compat-fixtures/` outlived its only reader
+ * (`sandbox-compat.test.ts`, deleted in 30914c9b) by five commits while
+ * `packages/aai/sdk/protocol-compat.test.ts` held the string
+ * `"compat-fixtures"` all along — pointing at its OWN sibling. A name-only scan
+ * finds that string and reports the dead directory as read.
+ *
+ * Erring toward "found a reader" is deliberate: this rule is enforced absolutely
+ * with no baseline, so a false positive blocks a push while a false negative
+ * merely leaves the status quo. Hence a candidate passes on ANY resolving
+ * reference from anywhere in `packages/` or `scripts/`, including a
+ * cross-package one — `packages/aai-ui/fixtures/` is read by
+ * `packages/aai-cli/e2e.test.ts`, so a package-scoped scan would flag a live
+ * directory.
+ *
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+export function scanUnreadFixtureDirs() {
+  const readers = git(["ls-files", "--", "packages", "scripts"])
+    .split("\n")
+    .filter((f) => CODE_FILE.test(f) && !SELF_REFERENTIAL_READERS.has(f));
+
+  /** Every path any code file resolves a fixture-ish string literal to. */
+  const referenced = new Set();
+  for (const file of readers) {
+    const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+    for (const [, specifier] of source.matchAll(/["'`]([^"'`\n]*fixtures[^"'`\n]*)["'`]/gi)) {
+      const resolved = resolveAgainstFile(file, specifier);
+      // Record every ancestor too: `join(here, "fixtures/a/b.json")` reads the
+      // directory, not only that one file.
+      const parts = resolved.split("/");
+      for (let i = 1; i <= parts.length; i++) referenced.add(parts.slice(0, i).join("/"));
+    }
+  }
+
+  return fixtureDirs()
+    .filter((dir) => !referenced.has(dir))
+    .map((dir) => ({ file: dir, line: 0, text: "fixture directory no code file reads" }));
 }

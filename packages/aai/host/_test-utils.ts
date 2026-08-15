@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { vi } from "vitest";
 import type { AgentConfig } from "../sdk/_internal-types.ts";
-import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
+import type { ClientSink, SessionEvent } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { createDetachedSlotStore } from "../sdk/session-state.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
@@ -13,6 +13,13 @@ import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
 import { createRuntime } from "./runtime.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
+import {
+  createSessionEmitter,
+  type SessionEmitter,
+  type SessionEventHookDeps,
+} from "./session-emitter.ts";
+import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
+import { createMemoryStateBackend } from "./session-state-store.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 
 /** Yield to the microtask queue so pending promises settle. */
@@ -99,6 +106,7 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
 export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
   return {
     id: "test",
+    configure: vi.fn(),
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     announce: vi.fn(() => true),
@@ -107,7 +115,7 @@ export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
     onCancel: vi.fn(),
     onReset: vi.fn(),
     onPlaybackProgress: vi.fn(),
-    onHistory: vi.fn(),
+    restoreHistory: vi.fn(),
     onToolResult: vi.fn(),
     onReplyStarted: vi.fn(),
     onReplyDone: vi.fn(),
@@ -140,6 +148,34 @@ export function makeMockHandle(): S2sHandle {
 }
 
 /**
+ * A real {@link SessionEmitter} over a real stream on the memory backend — what a
+ * spec passes as `createSessionCore({ emitter })`.
+ *
+ * REAL rather than a `vi.fn()` for the reason the memory state backend is a valid
+ * double for the Postgres one: the stamping, the index assignment and the
+ * client-then-hooks ordering are the emitter's whole content, and a stub would
+ * assert none of it while every session spec ran through it. Assert on the SINK
+ * for what the client saw, and read `stream` here for what was recorded.
+ */
+export function makeEmitter(
+  client: ClientSink,
+  opts?: { sessionId?: string; hooks?: SessionEventHookDeps },
+): { emitter: SessionEmitter; stream: SessionEventStream; sessionId: string } {
+  const sessionId = opts?.sessionId ?? "test-session";
+  const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
+  return {
+    emitter: createSessionEmitter({
+      sessionId,
+      client,
+      stream,
+      ...(opts?.hooks ? { hooks: opts.hooks } : {}),
+    }),
+    stream,
+    sessionId,
+  };
+}
+
+/**
  * Minimal ClientSink stub that satisfies the 3-method interface.
  * All methods are vi.fn() spies. Use in tests that need a valid ClientSink
  * but don't need to inspect event payloads (e.g. routing / creation tests).
@@ -149,7 +185,6 @@ export function makeClientSink(overrides?: Partial<ClientSink>): ClientSink {
     open: true,
     event: vi.fn(),
     playAudioChunk: vi.fn(),
-    playAudioDone: vi.fn(),
     ...overrides,
   };
 }
@@ -221,7 +256,7 @@ export type TrackingClientSink = ClientSink & {
   readonly cancelledCount: number;
   readonly speechStartedCount: number;
   readonly speechStoppedCount: number;
-  events: ClientEvent[];
+  events: SessionEvent[];
 };
 
 export function makeTrackingClient(): TrackingClientSink {
@@ -229,9 +264,9 @@ export function makeTrackingClient(): TrackingClientSink {
   const userTranscripts: string[] = [];
   const toolCallEvents: { callId: string; name: string; args: unknown }[] = [];
   const audioChunks: Uint8Array[] = [];
-  const events: ClientEvent[] = [];
+  const events: SessionEvent[] = [];
 
-  function countByType(type: ClientEvent["type"]): number {
+  function countByType(type: SessionEvent["type"]): number {
     let n = 0;
     for (const e of events) if (e.type === type) n++;
     return n;
@@ -245,27 +280,31 @@ export function makeTrackingClient(): TrackingClientSink {
     audioChunks,
     events,
     get replyDoneCount() {
-      return countByType("reply_done");
+      return countByType("reply.completed");
     },
     get cancelledCount() {
-      return countByType("cancelled");
+      return countByType("reply.cancelled");
     },
     get speechStartedCount() {
-      return countByType("speech_started");
+      return countByType("speech.started");
     },
     get speechStoppedCount() {
-      return countByType("speech_stopped");
+      return countByType("speech.stopped");
     },
-    event: vi.fn((e: ClientEvent) => {
+    event: vi.fn((e: SessionEvent) => {
       events.push(e);
       switch (e.type) {
-        case "agent_transcript":
+        // Both: an interim snapshot and the reply's committed text. They are
+        // separate events now (only the second enters history), and a recorder
+        // that took one would have stopped seeing whole replies.
+        case "agent-transcript.updated":
+        case "agent-transcript.committed":
           agentTranscripts.push(e.text);
           break;
-        case "user_transcript":
+        case "user-transcript.committed":
           userTranscripts.push(e.text);
           break;
-        case "tool_call":
+        case "tool.called":
           toolCallEvents.push({ callId: e.toolCallId, name: e.toolName, args: e.args });
           break;
         default:
@@ -275,7 +314,6 @@ export function makeTrackingClient(): TrackingClientSink {
     playAudioChunk: vi.fn((chunk: Uint8Array) => {
       audioChunks.push(chunk);
     }),
-    playAudioDone: vi.fn(),
   };
 }
 

@@ -208,24 +208,25 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     conn.ws = null;
   }
 
-  /** React to the server's `config` message: record it, set up the audio
-   *  path for the session's mode, and replay history on reconnect. */
+  /**
+   * React to the server's `session.configured` frame: record it and set up the
+   * session's audio path.
+   *
+   * **It no longer replays history, and the deletion is the point.** A reconnect
+   * used to push this snapshot's `messages` back, making the CLIENT the authority
+   * on the agent's memory; the server restores the conversation from its own
+   * retained event stream now, which also covers what a client cannot — a second
+   * tab, a call resuming onto a replacement sandbox, a reopened tab. This
+   * snapshot's `messages` are untouched: nothing clears the transcript on screen.
+   */
   function onServerConfig(config: SessionConfigMessage): void {
     if (config.sid) {
       sessionId = config.sid;
       options.onSessionId?.(config.sid);
     }
-    const isReconnect = hasConnected;
     hasConnected = true;
     // initAudioCapture handles its own failures (sets error state internally).
     void initAudioCapture(conn, config, audioDeps);
-
-    if (isReconnect && currentSnapshot.messages.length > 0) {
-      sendJson({
-        type: "history",
-        messages: currentSnapshot.messages.map((m) => ({ role: m.role, content: m.content })),
-      });
-    }
   }
 
   /**

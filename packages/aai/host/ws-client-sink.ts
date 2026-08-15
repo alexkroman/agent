@@ -10,7 +10,7 @@ import type { ClientSink } from "../sdk/protocol.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { createAudioPacer } from "./audio-pacer.ts";
 import type { Logger } from "./runtime-config.ts";
-import { AUDIO_DONE_FRAME, type SessionWebSocket, safeSend } from "./ws-frames.ts";
+import { type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
 /** WebSocket close code sent when a stalled client is disconnected (policy violation). */
 const WS_CLOSE_POLICY_VIOLATION = 1008;
@@ -29,9 +29,9 @@ const WS_CLOSE_NORMAL = 1000;
  * a provider frame arrives — otherwise a whole reply lands in the socket buffer
  * at once and a slow link turns that into seconds of invisible queue. The pacer
  * owns two ordering rules that follow from holding audio back: end-of-reply
- * frames are queued behind it (`audio_done` and `reply_done` — an early turn
+ * frames are queued behind it (`audio.completed` and `reply.completed` — an early turn
  * boundary truncates the reply client-side, or hands its remaining audio to the
- * next turn), and a `cancelled`/`reset` event discards it (the client flushes
+ * next turn), and a `reply.cancelled`/`session.reset` event discards it (the client flushes
  * its own buffer on those, so held audio would arrive as an orphan fragment).
  *
  * Audio backpressure: the pacer keeps the socket buffer small in the ordinary
@@ -50,7 +50,6 @@ export function createClientSink(
   let closedForBackpressure = false;
   const pacer = createAudioPacer({
     sendAudio: (chunk) => safeSend(ws, chunk, log),
-    sendDone: () => safeSend(ws, AUDIO_DONE_FRAME, log),
     sampleRate: ttsSampleRate,
     ...omitUndefined({ leadMs: audioLeadMs }),
   });
@@ -61,12 +60,14 @@ export function createClientSink(
     event(e) {
       // Both events tell the client to drop its playback buffer, so whatever
       // this turn still has queued here is dead audio.
-      if (e.type === "cancelled" || e.type === "reset") pacer.clear();
+      if (e.type === "reply.cancelled" || e.type === "session.reset") pacer.clear();
       const send = (): void => safeSend(ws, JSON.stringify(e), log);
-      // `reply_done` closes the turn the held audio belongs to, so it may not
-      // overtake it — see the pacer's ordering rules. Every other event is
+      // Both of these close out the turn the held audio belongs to, so neither
+      // may overtake it — see the pacer's ordering rules. `audio.completed` is
+      // the stronger case: the playback worklet takes it as "this is all there
+      // is", so an early one truncates the reply. Every other event is
       // conversation-critical and goes out now.
-      if (e.type === "reply_done") pacer.pushAfterAudio(send);
+      if (e.type === "reply.completed" || e.type === "audio.completed") pacer.pushAfterAudio(send);
       else send();
     },
     playAudioChunk(chunk) {
@@ -87,9 +88,6 @@ export function createClientSink(
         return;
       }
       pacer.push(chunk);
-    },
-    playAudioDone() {
-      pacer.pushDone();
     },
     close(reason) {
       try {

@@ -31,13 +31,15 @@ route this document proposed.** What landed:
   `agent.ts`, which is now three fields and no mention of tools. Seven templates,
   65 files.
 
-  **Six templates still declare tools inline and are NOT converted**:
+  ~~**Six templates still declare tools inline and are NOT converted**:
   `health-assistant`, `embedded-assets`, `infocom-adventure`, `night-owl`,
-  `recap-desk`, `research-desk`. This document's table only ever counted the
-  templates that had a `tools/` directory, so they were missed by its measurement
-  as well as by the first pass of the work; converting them belongs with
-  `tools-off-the-agent-def.md`, which is where the param goes away and where
-  "a tool is only ever a file" becomes true rather than conventional.
+  `recap-workflow`, `research-workflow`.~~ **Converted since — all six now have
+  a `tools/` directory (22 files between them) and no `tools:` map.**
+  This document's table only ever counted the templates that HAD a `tools/`
+  directory, which is how they were missed by its measurement as well as by the
+  first pass of the work. What still belongs with
+  `tools-off-the-agent-def.md` is removing the param itself, so that
+  "a tool is only ever a file" is true rather than conventional.
 - `agent({ tools })` still EXISTS and
   `withTools` merges rather than replaces, so the param is unused by the templates
   rather than gone; removing it from the authoring surface is
@@ -47,6 +49,12 @@ route this document proposed.** What landed:
   lowering with `import.meta.glob` — deliberately not a `readdir` + `import()`,
   which would resolve the tools through Node instead of vitest and hand them a
   second copy of the SDK.
+- **The rule has a sibling now.** `1.5-prose-off-the-agent-def.md` applies this
+  document's mechanism to the one remaining field that is a DOCUMENT rather than
+  a value — the system prompt — and argues against sweeping `greeting` and `name`
+  up with it. It consumes this plan's discovery rule and
+  `tools-off-the-agent-def.md`'s generated-entry seam, and should land after both
+  so it does not invent a second discovery mechanism beside the one they settle.
 
 **The correction that mattered was WHERE the derivation may live**, and it is
 recorded under "The mechanism is build time, not runtime" below: the entry
@@ -69,7 +77,7 @@ same section.
 | dispatch-center | 12 | 13 |
 | travel-concierge | 10 | 16 |
 | solo-rpg | 8 | 8 |
-| plan-desk | 4 | 5 |
+| plan-and-execute | 4 | 5 |
 | support-line | 3 | 4 |
 | **total** | **52** | **62** |
 
@@ -128,6 +136,25 @@ It applies the rule uniformly — `agent/tools/`, `agent/hooks/`
 (`agent/hooks/auth/load-profile.ts` → `"auth/load-profile"`),
 `agent/channels/` (file stem is the channel id), `agent/connections/`. Discovery
 is the registration; there is no map anywhere.
+
+**It also reaches two things this document did not look at, and they are
+`1.5-prose-off-the-agent-def.md`'s subject.** Recorded here because this is where
+the principle is quoted, and because one of the two is the reverse of what the
+principle would suggest:
+
+- **PROSE is a path too.** `defineAgent` has no `instructions` field;
+  `instructions.md` sits beside `agent.ts`, and the slot accepts three forms —
+  markdown, a MODULE (`instructions.{ts,…}`, for prose that has to be computed),
+  or an `instructions/` directory. Our counterpart already half-exists: 12 of 22
+  templates keep a `system-prompt.md` and hand-write the same `?raw` import.
+- **eve authors no `name` AT ALL**, so principle 7's "do not add redundant `name`
+  fields" is literal there: `deriveAgentIdFromRoots` returns `packageName ??
+  basename(appRoot)`. Ours is not redundant and should NOT be derived — it is
+  display prose the browser shell prints, it is the one required field on
+  `AgentDef`, and deriving it means title-casing a directory, which mangles
+  `solo-rpg`. eve gets away with it by rendering no agent name anywhere; we
+  serve one from `GET /client-config`. See that plan for the full argument, and
+  for why `greeting.txt` is rejected on the same reasoning.
 
 ## Design
 

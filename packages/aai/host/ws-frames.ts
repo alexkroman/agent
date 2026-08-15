@@ -74,10 +74,6 @@ export function asSessionWebSocket(ws: {
   return ws as unknown as SessionWebSocket;
 }
 
-export const AUDIO_DONE_FRAME = JSON.stringify({
-  type: "audio_done",
-} satisfies { type: "audio_done" });
-
 /**
  * Send on a session socket, tolerating the close race between the readyState check and send.
  * @internal

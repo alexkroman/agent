@@ -112,7 +112,7 @@ describe("createSessionCore", () => {
   it("end returns to the not-started state and clears the conversation", () => {
     core.start();
     lastSocket?.simulateOpen();
-    lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+    lastSocket?.simulateMessage(JSON.stringify({ type: "speech.started" }));
     const socket = lastSocket;
 
     core.end();
@@ -216,19 +216,19 @@ describe("createSessionCore", () => {
     });
 
     it("speech_started sets userTranscript to empty string", () => {
-      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech.started" }));
       expect(core.getSnapshot().userTranscript).toBe("");
     });
 
     it("speech_stopped is handled without error", () => {
-      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_stopped" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech.stopped" }));
       // speech_stopped is a no-op, state shouldn't change
       expect(core.getSnapshot().state).toBe("ready");
     });
 
     it("user_transcript_partial sets the live userTranscript without touching messages", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user_transcript_partial", text: "hello wor" }),
+        JSON.stringify({ type: "user-transcript.updated", text: "hello wor" }),
       );
       const snap = core.getSnapshot();
       expect(snap.userTranscript).toBe("hello wor");
@@ -237,16 +237,20 @@ describe("createSessionCore", () => {
 
     it("user_transcript after partials commits the message and clears the live transcript", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "user_transcript_partial", text: "hello wor" }),
+        JSON.stringify({ type: "user-transcript.updated", text: "hello wor" }),
       );
-      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello world" }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user-transcript.committed", text: "Hello world" }),
+      );
       const snap = core.getSnapshot();
       expect(snap.messages).toEqual([{ id: 1, role: "user", content: "Hello world" }]);
       expect(snap.userTranscript).toBe(null);
     });
 
     it("user_transcript appends user message and sets state to thinking", () => {
-      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello world" }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user-transcript.committed", text: "Hello world" }),
+      );
       const snap = core.getSnapshot();
       expect(snap.messages).toEqual([{ id: 1, role: "user", content: "Hello world" }]);
       expect(snap.userTranscript).toBe(null);
@@ -256,12 +260,14 @@ describe("createSessionCore", () => {
     it("agent_transcript renders live and commits on reply_done", () => {
       // Cumulative within a reply: pipeline mode sends one per piece of speech,
       // so each is the caption to show, not a turn of its own.
-      lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "Hi" }));
-      lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "Hi there" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "agent-transcript.updated", text: "Hi" }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "agent-transcript.updated", text: "Hi there" }),
+      );
       expect(core.getSnapshot().agentTranscript).toBe("Hi there");
       expect(core.getSnapshot().messages).toEqual([]);
 
-      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
       const snap = core.getSnapshot();
       expect(snap.messages).toEqual([{ id: 1, role: "assistant", content: "Hi there" }]);
       expect(snap.agentTranscript).toBe(null);
@@ -269,26 +275,32 @@ describe("createSessionCore", () => {
 
     it("keeps what the caller heard when a reply is cancelled", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "agent_transcript", text: "The total is" }),
+        JSON.stringify({ type: "agent-transcript.updated", text: "The total is" }),
       );
-      lastSocket?.simulateMessage(JSON.stringify({ type: "cancelled" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.cancelled" }));
       expect(core.getSnapshot().messages).toEqual([
         { id: 1, role: "assistant", content: "The total is" },
       ]);
     });
 
     it("assigns monotonic ids to messages across roles", () => {
-      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "one" }));
-      lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "two" }));
-      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
-      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "three" }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user-transcript.committed", text: "one" }),
+      );
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "agent-transcript.updated", text: "two" }),
+      );
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user-transcript.committed", text: "three" }),
+      );
       expect(core.getSnapshot().messages.map((m) => m.id)).toEqual([1, 2, 3]);
     });
 
     it("tool_call adds pending tool call", () => {
       lastSocket?.simulateMessage(
         JSON.stringify({
-          type: "tool_call",
+          type: "tool.called",
           toolCallId: "tc-1",
           toolName: "search",
           args: { query: "test" },
@@ -308,7 +320,7 @@ describe("createSessionCore", () => {
       // First add a tool call
       lastSocket?.simulateMessage(
         JSON.stringify({
-          type: "tool_call",
+          type: "tool.called",
           toolCallId: "tc-1",
           toolName: "search",
           args: { query: "test" },
@@ -316,7 +328,7 @@ describe("createSessionCore", () => {
       );
       // Then complete it
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "tool_call_done", toolCallId: "tc-1", result: "found it" }),
+        JSON.stringify({ type: "tool.completed", toolCallId: "tc-1", result: "found it" }),
       );
       const snap = core.getSnapshot();
       expect(snap.toolCalls).toHaveLength(1);
@@ -329,23 +341,23 @@ describe("createSessionCore", () => {
 
     it("tool_call_done ignores unknown toolCallId", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "tool_call_done", toolCallId: "unknown-id", result: "result" }),
+        JSON.stringify({ type: "tool.completed", toolCallId: "unknown-id", result: "result" }),
       );
       // Should not throw, toolCalls should remain empty
       expect(core.getSnapshot().toolCalls).toEqual([]);
     });
 
     it("reply_done transitions state to listening", () => {
-      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
       expect(core.getSnapshot().state).toBe("listening");
     });
 
     it("cancelled resets transcripts and transitions to listening", () => {
       // Set up some transcript state
-      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech.started" }));
       expect(core.getSnapshot().userTranscript).toBe("");
 
-      lastSocket?.simulateMessage(JSON.stringify({ type: "cancelled" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.cancelled" }));
       const snap = core.getSnapshot();
       expect(snap.userTranscript).toBe(null);
       expect(snap.agentTranscript).toBe(null);
@@ -354,13 +366,15 @@ describe("createSessionCore", () => {
 
     it("reset clears all state and transitions to listening", () => {
       // Accumulate some state
-      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "msg1" }));
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "t", args: {} }),
+        JSON.stringify({ type: "user-transcript.committed", text: "msg1" }),
+      );
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "tool.called", toolCallId: "tc-1", toolName: "t", args: {} }),
       );
       expect(core.getSnapshot().messages).toHaveLength(1);
 
-      lastSocket?.simulateMessage(JSON.stringify({ type: "reset" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "session.reset" }));
       const snap = core.getSnapshot();
       expect(snap.messages).toEqual([]);
       expect(snap.toolCalls).toEqual([]);
@@ -372,7 +386,7 @@ describe("createSessionCore", () => {
 
     it("error event sets error state and stops running", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "error", code: "internal", message: "Something broke" }),
+        JSON.stringify({ type: "error.reported", code: "internal", message: "Something broke" }),
       );
       const snap = core.getSnapshot();
       expect(snap.state).toBe("error");
@@ -382,12 +396,12 @@ describe("createSessionCore", () => {
 
     it("non-error event clears a NON-FATAL error banner", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "error", code: "internal", message: "fail", fatal: false }),
+        JSON.stringify({ type: "error.reported", code: "internal", message: "fail", fatal: false }),
       );
       expect(core.getSnapshot().error?.message).toBe("fail");
 
       // The session kept running, so later activity retires the banner.
-      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech.started" }));
       const snap = core.getSnapshot();
       expect(snap.state).not.toBe("error");
       expect(snap.error).toBe(null);
@@ -395,11 +409,11 @@ describe("createSessionCore", () => {
 
     it("a non-error event does NOT clear a fatal one — the session is over", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "error", code: "internal", message: "fail" }),
+        JSON.stringify({ type: "error.reported", code: "internal", message: "fail" }),
       );
       expect(core.getSnapshot().state).toBe("error");
 
-      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech.started" }));
       const snap = core.getSnapshot();
       expect(snap.state).toBe("error");
       expect(snap.error).toEqual({ code: "internal", message: "fail" });
@@ -416,23 +430,25 @@ describe("createSessionCore", () => {
 
     it("does not bump on state-only changes", () => {
       const v0 = core.getSnapshot().contentVersion;
-      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply.completed" }));
       expect(core.getSnapshot().state).toBe("listening");
       expect(core.getSnapshot().contentVersion).toBe(v0);
     });
 
     it("bumps when messages, tool calls, or transcripts change", () => {
       const v0 = core.getSnapshot().contentVersion;
-      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech.started" }));
       const v1 = core.getSnapshot().contentVersion;
       expect(v1).toBeGreaterThan(v0);
 
-      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "hi" }));
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user-transcript.committed", text: "hi" }),
+      );
       const v2 = core.getSnapshot().contentVersion;
       expect(v2).toBeGreaterThan(v1);
 
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "t", args: {} }),
+        JSON.stringify({ type: "tool.called", toolCallId: "tc-1", toolName: "t", args: {} }),
       );
       expect(core.getSnapshot().contentVersion).toBeGreaterThan(v2);
     });
@@ -462,14 +478,14 @@ describe("createSessionCore", () => {
       lastSocket?.simulateMessage(new Uint8Array(320).buffer);
       expect(core.getSnapshot().state).toBe("speaking");
 
-      lastSocket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "audio.completed" }));
       // Without voiceIO, the done handler calls updateState directly
       expect(core.getSnapshot().state).toBe("listening");
     });
 
     it("audio chunk ignored in error state with error set", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({ type: "error", code: "internal", message: "fail" }),
+        JSON.stringify({ type: "error.reported", code: "internal", message: "fail" }),
       );
       expect(core.getSnapshot().state).toBe("error");
 

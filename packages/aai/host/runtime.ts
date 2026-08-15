@@ -11,6 +11,7 @@ import pTimeout, { TimeoutError } from "p-timeout";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { assertProviderTriple, type SessionMode } from "../sdk/config-rules.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
+import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
@@ -24,7 +25,9 @@ import { createPostgresDb } from "./postgres-db.ts";
 import { describeResolvedProviders } from "./providers/_provider-settings.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
+import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
 import { attachSessionState, createRuntimeSessionState } from "./runtime-session-state.ts";
+import { attachSessionStream } from "./runtime-session-stream.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
   createTransportFactory,
@@ -33,8 +36,8 @@ import {
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
 import { textAgentHasNoSession } from "./text-agent.ts";
-import type { TransportCallbacks } from "./transports/types.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow-runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
@@ -193,6 +196,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // successor's entry (see sdk/owned-map.ts).
   const sessions = createOwnedMap<string, SessionCore>();
   const sinkMap = createOwnedMap<string, ClientSink>();
+  // What `ctx.send` and a `syncState` push resolve through, for the same resume
+  // reason as the sink map beside it — see `liveEmitter` in `runtime-tools.ts`.
+  const emitters = createOwnedMap<string, SessionEmitter>();
   // The Voice Agent API accepts exactly one sample rate and honours no
   // declaration to the contrary, so its rates are pinned rather than
   // negotiated. Pinned BEFORE the ready config is built, because that frame is
@@ -230,7 +236,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     resolvedDb,
     workflows,
     logger,
-    sinkMap,
+    emitters,
     stateStore: sessionState.store,
   });
 
@@ -290,13 +296,33 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     sessionState.sweeps.cancel(sessionOpts.id);
     const releaseSink = sinkMap.claim(sessionOpts.id, sessionOpts.client);
 
+    // The one way this session publishes an event: recorded into the retained
+    // stream, sent to the client, then announced to the agent's own hooks. Built
+    // BEFORE the transport callbacks, because two of them emit directly. The
+    // storage message is the SAME constant a tool's `ctx.db` throws — an audit
+    // hook and a tool hit one condition, so they must not describe it two ways.
+    const hooks = hookDepsFor({
+      handlers: agent.events,
+      env,
+      db: resolvedDb,
+      storageDisabledMessage: STORAGE_DISABLED_MESSAGE,
+    });
+    const emitter = createSessionEmitter({
+      sessionId: sessionOpts.id,
+      client: sessionOpts.client,
+      stream: sessionState.stream,
+      logger,
+      ...(hooks ? { hooks } : {}),
+    });
+    const releaseEmitter = emitters.claim(sessionOpts.id, emitter);
+
     // Call it — `pipelineProviders` is a thunk (see above), so `Boolean(...)` on
     // the function itself is always true and would route every S2S session down
     // the pipeline branch. By here a session is being created, so resolving is
     // exactly what a static agent's deferral was waiting for.
     const isPipeline = pipelineProviders() !== null;
     // Relay (host) mode: the relay `executeTool` emits the client-facing
-    // `tool_call` itself (mirrors session-core's `!opts.onToolResult` guard).
+    // `tool.called` itself (mirrors the `relayed` flag session-core passes on).
     const isRelay = Boolean(opts.onToolResult);
     const systemPrompt = systemPromptForToday();
 
@@ -308,50 +334,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       return core;
     }
 
-    // onToolCall wiring, by transport + relay mode:
-    // - S2S: route through SessionCore, which executes and emits done itself.
-    // - Pipeline in-process: tools run inside streamText; forward to the client
-    //   sink for UI observability only (routing through SessionCore would
-    //   re-execute the tool and hang the turn on non-empty pendingTools).
-    // - Pipeline relay: the relay executeTool already emitted the tool_call to
-    //   the client (the executor); a second emit here would be a duplicate frame
-    //   the client runs twice — corrupting write state, doubling read latency.
-    let onToolCall: TransportCallbacks["onToolCall"];
-    if (!isPipeline) {
-      onToolCall = (id, name, args) => bindCore().onToolCall(id, name, args);
-    } else if (isRelay) {
-      onToolCall = () => undefined;
-    } else {
-      onToolCall = (id, name, args) =>
-        sessionOpts.client.event({ type: "tool_call", toolCallId: id, toolName: name, args });
-    }
-
-    const callbacks: TransportCallbacks = {
-      onReplyStarted: (replyId) => bindCore().onReplyStarted(replyId),
-      onReplyDone: () => bindCore().onReplyDone(),
-      onCancelled: () => bindCore().onCancelled(),
-      onAudioChunk: (bytes) => bindCore().onAudioChunk(bytes),
-      onAudioDone: () => bindCore().onAudioDone(),
-      onUserTranscript: (text) => bindCore().onUserTranscript(text),
-      onUserTranscriptPartial: (text) => bindCore().onUserTranscriptPartial(text),
-      onAgentTranscript: (text, interrupted) => bindCore().onAgentTranscript(text, interrupted),
-      onAgentTranscriptPartial: (text) => bindCore().onAgentTranscriptPartial(text),
-      onToolCall,
-      // Pipeline: emit `tool_call_done` when streamText surfaces the
-      // `tool-result` part so the UI can flip status from pending → done.
-      // S2S transports never set this; SessionCore.onToolCall emits done itself.
-      // Suppressed in relay mode: the client owns the tool lifecycle there and a
-      // duplicate `tool_call_done` would only echo a result it already computed.
-      ...(isPipeline && !isRelay
-        ? {
-            onToolCallDone: (id: string, result: string) =>
-              sessionOpts.client.event({ type: "tool_call_done", toolCallId: id, result }),
-          }
-        : {}),
-      onError: (code, message, errOpts) => bindCore().onError(code, message, errOpts),
-      onSpeechStarted: () => bindCore().onSpeechStarted(),
-      onSpeechStopped: () => bindCore().onSpeechStopped(),
-    };
+    // Everything a transport calls back into, including the one callback with
+    // three different right answers — see `runtime-session-callbacks.ts`.
+    const callbacks = buildSessionCallbacks({ bindCore, emitter, isPipeline, isRelay });
 
     const transport = buildTransport({
       sessionOpts,
@@ -363,6 +348,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       id: sessionOpts.id,
       agent: sessionOpts.agent,
       client: sessionOpts.client,
+      emitter,
       agentConfig,
       executeTool,
       transport,
@@ -376,9 +362,26 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     attachSessionState(core, {
       state: sessionState,
       sessionId: sessionOpts.id,
-      client: sessionOpts.client,
-      releaseSink,
+      emitter,
+      // Both claims come off together: they are one session's hold on one id, and
+      // releasing only the sink would leave a `ctx.send` from a straggling tool
+      // call resolving an emitter whose socket is gone.
+      release: () => {
+        const owned = releaseSink();
+        releaseEmitter();
+        return owned;
+      },
       pushStateSnapshot,
+    });
+
+    // The event log's own bookends: continue it on the way in (and restore the
+    // conversation from it on a resume), write out the batch on the way out. A
+    // separate wrapper from the state one because they are separate lifetimes —
+    // see `runtime-session-stream.ts`.
+    attachSessionStream(core, {
+      stream: sessionState.stream,
+      sessionId: sessionOpts.id,
+      resumed: sessionOpts.resumed === true,
     });
 
     return core;
@@ -397,6 +400,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
           agent: agent.name,
           client,
           skipGreeting: startOpts?.skipGreeting ?? false,
+          // A resume is what makes a history restore worth a round trip, and the
+          // socket's own `?sessionId=` is the honest signal — inferring it from a
+          // stored count would read a crashed-and-reconnected session the same as
+          // a fresh one whose id happened to collide.
+          resumed: resumeFrom !== undefined,
         }),
       readyConfig,
       logger,
@@ -419,6 +427,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   function releaseResources(): void {
     sessions.clear();
     sinkMap.clear();
+    emitters.clear();
     // Watches outlive nothing: every session they could announce to is gone,
     // and a poll loop left running would hold the process past shutdown.
     notifier?.stop();
@@ -428,6 +437,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // CACHE: a stored row still belongs to a session that may yet resume onto a
     // replacement process, which is the whole point of storing it.
     sessionState.store.clear();
+    // Same reasoning for the event log's in-process half: the pending batch of a
+    // force-closed session is unrecoverable either way, and holding the entries
+    // would leak one per session past shutdown.
+    sessionState.stream.clear();
     // Pending grace-window sweeps have nothing left to reclaim.
     sessionState.sweeps.clear();
     // Release a runtime-owned DB pool (see the resolution comment above).
@@ -469,6 +482,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     startSession,
     shutdown,
     readyConfig,
+    // The event log, exposed for the same reason `workflows` below is: a surface
+    // outside the runtime serves reads of it (`GET /session-events/:id`), and one
+    // stream per runtime is what makes an index mean the same thing to every
+    // reader.
+    sessionEvents: sessionState.stream,
     // Exposed rather than kept private because tool code is not the only caller:
     // `createServer` serves the workflow HTTP API from exactly this client, so a
     // page and a `curl` reach the same runs a tool does. One client per runtime,

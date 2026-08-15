@@ -81,7 +81,7 @@
       ]
     },
     // Tests read more than TypeScript: JSON fixtures (`aai/host/fixtures/`,
-    // `aai-ui/fixtures/`, `aai-server/compat-fixtures/`) and snapshots
+    // `aai-ui/fixtures/`, `aai/sdk/compat-fixtures/`) and snapshots
     // (`__snapshots__/*.snap`) were all unhashed, so an edited fixture — or an
     // obsolete snapshot, which `update: "none"` exists to turn into a FAILURE —
     // replayed green. `$TURBO_DEFAULT$` covers whatever a fixture is next
@@ -168,21 +168,55 @@
         "package.json"
       ]
     },
+    // The integration tier is now in-memory ONLY — multiple modules, no
+    // filesystem, no subprocess, no port, no database (see the profile docs in
+    // `vitest.slow.config.ts`). Everything that needs a real resource is
+    // `check:scenario` below, which is where the env declarations moved with it.
+    //
+    // VITEST_PROFILE/VITEST_INCLUDE are declared even though each package's script
+    // sets them inline: a variable that selects what a task DOES belongs in the
+    // hash, so an override from the command line cannot share a cache entry with
+    // the default run. That is the rule `AAI_TEST_PM` and `VITEST_POOL` are in
+    // `env` for.
     "check:integration": {
       "dependsOn": [
         "build"
       ],
-      // AAI_REQUIRE_PG rides beside the URL for the reason the AAI_TEST_PM note
-      // below spells out: strict env mode strips an undeclared variable before
-      // the task starts, so CI's "a skip is a failure" enforcement would be
-      // silently inert — the failure mode it exists to prevent, one level up.
-      // In `env` rather than `globalPassThroughEnv` because it changes what the
-      // task DOES: a required run and a skippable one must not share a cache
-      // entry.
+      "env": [
+        "VITEST_PROFILE",
+        "VITEST_INCLUDE",
+        "VITEST_POOL"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "../../vitest.shared.ts"
+      ]
+    },
+    // A real subprocess, a real HTTP/WebSocket port, a real bundler, or a real
+    // Postgres. Split out of `check:integration` because one config could not
+    // serve both populations: `pipeline-fuzz` (pure memory) and
+    // `platform-schema` (needs a database) shared one timeout, one retry policy
+    // and one queue, and neither was configured for its own failure mode.
+    //
+    // AAI_REQUIRE_PG rides beside the URL for the reason the AAI_TEST_PM note
+    // below spells out: strict env mode strips an undeclared variable before
+    // the task starts, so CI's "a skip is a failure" enforcement would be
+    // silently inert — the failure mode it exists to prevent, one level up.
+    // In `env` rather than `globalPassThroughEnv` because it changes what the
+    // task DOES: a required run and a skippable one must not share a cache
+    // entry.
+    "check:scenario": {
+      "dependsOn": [
+        "build"
+      ],
       "env": [
         "AAI_TEST_PG_URL",
         "AAI_REQUIRE_PG",
-        "AAI_FAULT_PROFILE"
+        "AAI_FAULT_PROFILE",
+        "VITEST_PROFILE",
+        "VITEST_INCLUDE",
+        "VITEST_POOL"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -203,6 +237,13 @@
     // usual: a fault run and a clean run of the same tree MUST NOT share a cache
     // entry, or the first green clean run would serve a FULL TURBO for every
     // later fault run and the mode would test nothing.
+    //
+    // AAI_REQUIRE_REGISTRY is the third instance of the same pair of reasons, and
+    // it is the one where a silent strip would be worst: it turns the suite's
+    // "excuse a failed install as a registry-proxy flake" predicate OFF, so
+    // undeclared it would leave CI's enforcement inert — a gate reporting success
+    // while checking nothing, which is exactly what it exists to prevent. In
+    // `env`, so a required run and a skippable one are different cache entries.
     "check:e2e": {
       "dependsOn": [
         "build"
@@ -213,7 +254,8 @@
       ],
       "env": [
         "AAI_TEST_PM",
-        "AAI_FAULT_PROFILE"
+        "AAI_FAULT_PROFILE",
+        "AAI_REQUIRE_REGISTRY"
       ]
     },
     "//#check:syncpack": {

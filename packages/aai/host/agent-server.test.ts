@@ -62,9 +62,9 @@ describe("createAgentServer", () => {
         ws.addEventListener("close", () => resolve({ type: "closed" }));
         ws.addEventListener("error", () => resolve({ type: "error" }));
       });
-      // The ready `config` frame — a declining facade would have sent a
+      // The handshake frame — a declining facade would have sent a
       // protocol error and closed instead.
-      expect(first).toMatchObject({ type: "config" });
+      expect(first).toMatchObject({ type: "session.configured" });
       ws.close();
     });
   });

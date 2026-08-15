@@ -166,6 +166,38 @@ export async function waitForExit(child: ChildProcess, timeoutMs = 5000): Promis
  * artifact happened to exist from an earlier build, the test would have PASSED
  * while never running the script it exists to exercise.
  */
+/**
+ * Whether a failed install may be excused as the mock registry's npmjs
+ * passthrough failing rather than as a real dependency-resolution break.
+ *
+ * **`AAI_REQUIRE_REGISTRY` turns every excuse off**, and CI sets it — the same
+ * shape as `AAI_REQUIRE_PG`, for the same reason. A skip predicate over ERROR TEXT
+ * is a guess, and this tier is where a broken `exports` map surfaces: with three
+ * of four tests able to self-skip, a genuine break whose message happens to
+ * contain a matched substring would report green in the one job that could have
+ * caught it. Locally the excuse stays, because a developer behind a proxy has no
+ * way to make the passthrough work and a hard failure there is just noise.
+ *
+ * The predicate itself is narrowed to TRANSPORT-level failures. `fetch failed`
+ * and `network` are gone: both are substrings a real 404 can carry, which made
+ * them the two patterns most likely to excuse the thing this suite exists to
+ * find. verdaccio maps a failed upstream fetch to a plain 404, so
+ * `ERR_PNPM_FETCH_*` on a THIRD-PARTY package still counts — but never one naming
+ * our own scope, since those live in verdaccio's local storage and failing to
+ * resolve one means the published packages are actually broken.
+ */
+export function isRegistryProxyFailure(err: unknown): boolean {
+  if (/^(1|true|yes|on)$/i.test(process.env.AAI_REQUIRE_REGISTRY ?? "")) return false;
+  const msg =
+    err instanceof Error
+      ? `${err.message}\n${(err as { stderr?: string }).stderr ?? ""}\n${(err as { stdout?: string }).stdout ?? ""}`
+      : String(err);
+  if (/@alexkroman1/i.test(msg) && /404|Not Found|ERR_PNPM_FETCH/i.test(msg)) return false;
+  return /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|407|502|503|504|ERR_PNPM_FETCH/i.test(
+    msg,
+  );
+}
+
 export function installDeps(registry: MockRegistry, projectDir: string): void {
   const env = { ...aaiEnv(), ...registry.env, npm_config_ignore_scripts: "true" };
 

@@ -13,7 +13,10 @@ export default defineConfig({
     include: ["**/*.test.ts"],
     // Same contended-check-run headroom rationale as aai-server.
     testTimeout: 20_000,
-    exclude: ["**/*.integration.test.ts", "node_modules", "dist"],
+    // Both slow-tier infixes, per the convention in the root guide — excluded here
+    // so a new one lands in its own tier with no config edit. This package owns
+    // none of either today.
+    exclude: ["**/*.integration.test.ts", "**/*.scenario.test.ts", "node_modules", "dist"],
     coverage: {
       exclude: [...sharedCoverageExclude, "index.ts", "modal_deploy.py"],
       // Ratchet seed for a new package: set just below the first measured

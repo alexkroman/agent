@@ -7,10 +7,10 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { ClientEvent } from "../sdk/protocol.ts";
+import type { SessionEventBody } from "../sdk/protocol.ts";
 import { createRelayExecuteTool } from "./host-relay.ts";
 
-type ToolCallEvent = Extract<ClientEvent, { type: "tool_call" }>;
+type ToolCallEvent = Extract<SessionEventBody, { type: "tool.called" }>;
 
 function makeSend() {
   const events: ToolCallEvent[] = [];
@@ -34,7 +34,7 @@ describe("createRelayExecuteTool", () => {
     });
 
     expect(events).toEqual([
-      { type: "tool_call", toolCallId: "call-1", toolName: "lookup", args: { city: "Paris" } },
+      { type: "tool.called", toolCallId: "call-1", toolName: "lookup", args: { city: "Paris" } },
     ]);
 
     relay.onToolResult({ toolCallId: "call-1", result: "sunny" });
