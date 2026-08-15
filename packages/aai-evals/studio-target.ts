@@ -15,6 +15,7 @@
  * @module
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { createParser } from "eventsource-parser";
 import { Agent, fetch as undiciFetch } from "undici";
 
@@ -260,9 +261,7 @@ export function createStudioClient(origin: string, key: string): StudioClient {
         // the sync has happened rather than merely that the project exists.
         if (files?.["agent.ts"] !== undefined) return files;
         if (Date.now() >= deadline) return files;
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, WORKSPACE_POLL_MS);
-        });
+        await sleep(WORKSPACE_POLL_MS);
       }
     },
   };

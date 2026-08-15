@@ -26,7 +26,8 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { sleep } from "./_sleep.ts";
+import { sleep } from "@alexkroman1/aai/internal";
+
 import { envMs } from "./constants.ts";
 import { retireSlot, type SlotCache } from "./sandbox-slots.ts";
 
@@ -81,6 +82,15 @@ export async function teardownSandboxes(targets: TeardownTargets): Promise<void>
   const { slots, broker } = targets;
 
   // Let the proxy notice we are unhealthy before emptying the slots.
+  //
+  // REFERENCED, deliberately. This wait used to come from a package-private
+  // `_sleep.ts` that unref'd every timer it armed, which is defensible for the
+  // two dial/health poll intervals that also used it and wrong here: an unref'd
+  // grace during shutdown lets the process exit before it elapses, skipping
+  // every drain below — the exact thing this routine exists to deliver. Nothing
+  // else guarantees a pending handle at this point, since the listener is
+  // already closing. `SHUTDOWN_TEARDOWN_TIMEOUT_MS` is the net if the grace is
+  // ever misconfigured long.
   const graceMs = targets.graceMs ?? shutdownGraceMs();
   if (graceMs > 0) await sleep(graceMs);
 

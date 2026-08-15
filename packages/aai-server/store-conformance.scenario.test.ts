@@ -30,7 +30,7 @@
  * scratch database. Never point it at production.
  */
 
-import { setTimeout as sleep } from "node:timers/promises";
+import { sleep } from "@alexkroman1/aai/internal";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";

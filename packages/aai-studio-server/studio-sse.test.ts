@@ -12,6 +12,7 @@
  * which reads raw socket bytes the way Modal's ASGI proxy parser does.
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { endLiveStreams, resetLiveStreams } from "aai-server/live-streams";
 import type { SSEStreamingApi } from "hono/streaming";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -110,7 +111,7 @@ describe("createSsePusher", () => {
       sse.push(async () => {
         const slow = first;
         first = false;
-        if (slow) await new Promise((r) => setTimeout(r, 50));
+        if (slow) await sleep(50);
         return { event: "project", data };
       });
     }

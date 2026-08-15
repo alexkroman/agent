@@ -20,6 +20,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { sleep } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   resolveFaultProfile,
@@ -150,7 +151,7 @@ describe("supervision", () => {
     const res = await fetch(`${server.url}/health`);
     expect(res.status).toBe(200);
     // Give it long enough that a stray trigger would have fired.
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await sleep(600);
     expect(server.restarts()).toBe(0);
     expect(pids(server)).toHaveLength(1);
     // Vacuously consumed — an empty plan is fully injected.
@@ -193,7 +194,7 @@ describe("supervision", () => {
       description: "a pattern nothing prints",
       points: [{ after: "NO SUCH LINE" }],
     });
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    await sleep(800);
     expect(server.restarts()).toBe(0);
     expect(() => server?.assertPlanConsumed()).toThrow(/injected 0 of 1 fault/);
     expect(() => server?.assertPlanConsumed()).toThrow(/"NO SUCH LINE"/);

@@ -414,7 +414,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Sixteen numbered rules, each printing WHY the invariant exists and what to use
+  Seventeen numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -438,6 +438,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
   | 17 | no `typeof x === "object" && x !== null` | `isRecord()` |
   | 18 | no `req.url.split("?")` | `requestPath()` / `requestQuery()` |
+  | 19 | no hand-rolled sleep (or `node:timers/promises`) | `sleep()` |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
@@ -451,10 +452,12 @@ one commit of history. A file in the tree has no merge base and no such modes.
   tests), the CLI test setup's env scrub, one hand-rolled owned-map in
   `studio-sse.ts`, the two `/tmp` literals that name a path inside the Linux
   sandbox rather than on this machine, one record guard over a declared
-  union, and one `.split("?")` that cuts a Vite module id rather than a
-  request target.
+  union, one `.split("?")` that cuts a Vite module id rather than a
+  request target, and one hand-rolled sleep inside a fixture of USER code (a
+  user's own agent may not import an SDK internal, so the hand-rolled form is
+  what that fixture is demonstrating).
 
-  **Two of these rules found real bugs on the day they were written**, which is
+  **Three of these rules found real bugs on the day they were written**, which is
   the argument for the whole gate. Rule 2 caught two `omitUndefined`
   conversions the documented 44-site sweep had missed (`host/s2s.ts`,
   `secret-handler.test.ts`). Rule 11 came out of a Windows CI leg that failed on
@@ -462,6 +465,11 @@ one commit of history. A file in the tree has no merge base and no such modes.
   drive-relative on Windows — both of which run on a developer's own machine
   under `aai dev`, so the bug was never guest-only. See "Windows is NOT tested,
   and is currently broken".
+
+  Rule 19 found a **sixth** hand-rolled `sleep` that no gate here could see:
+  `host/workflow-notify.ts` held a raw NUL byte, which makes a file BINARY to
+  `git grep` — so it was silently exempt from all nineteen rules and from
+  `check:hatches`. Fixing the byte is what made the rule find the copy.
 
   **Rule 16 is scoped to an explicit FILE LIST** (role is not derivable from a
   path), so its gate spec asserts every path exists; it also found
@@ -808,6 +816,20 @@ primitives — reach for them before re-inventing the pattern at a call site:
 - **Combining abort signals**: use native `AbortSignal.any([...])` (sources
   held weakly — no unlink bookkeeping); the pipeline transport combines the
   session signal with each turn's controller this way.
+- **`sleep(ms, { signal?, unref? })`** (`aai/sdk/sleep.ts`, exported from
+  `@alexkroman1/aai/internal`) — the ONE wait; `guard-invariants` rule 19 keeps
+  the seventh out. It replaced **six** spellings across five packages at 22 call
+  sites, and the argument is not the line count: they split into two families
+  differing in whether `vi.useFakeTimers()` can drive them, which no call site
+  shows. **Read the module doc** for that measurement, why `unref` is opt-in
+  (it is a claim, and the shared default it replaced made a shutdown grace skip
+  its own drains), and why an abort resolves with the listener detached. Not a
+  timeout (`p-timeout`, rule 3), not a yield (`flush()`/`tick()`, rule 4).
+
+  **Never write a control character as a source literal.** A raw NUL in
+  `host/workflow-notify.ts` made `git grep` call the file BINARY, so it was
+  silently exempt from every gate here — all of which are `git grep` — and had
+  grown the sixth `sleep` where nothing could see it. Use `\u0000`.
 - **`sessionSlot()`** (`aai/sdk/session-slot.ts`, exported from the ROOT — it is
   authoring API, not infrastructure) — a typed named slot that OWNS a session's
   state: its key, its default, its reads, its writes, its `syncState` projection,

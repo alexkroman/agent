@@ -18,8 +18,9 @@
 
 import { createServer } from "node:net";
 import { errorMessage } from "@alexkroman1/aai";
+import { sleep } from "@alexkroman1/aai/internal";
 import { WebSocket } from "ws";
-import { sleep } from "./_sleep.ts";
+
 import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest-routes.ts";
 import { agentPublicBaseUrl } from "./public-origin.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
@@ -142,7 +143,7 @@ export async function dialGuest(url: string, token: string): Promise<RpcWebSocke
           { cause: err },
         );
       }
-      await sleep(GUEST_DIAL_RETRY_MS);
+      await sleep(GUEST_DIAL_RETRY_MS, { unref: true });
     }
   }
 }

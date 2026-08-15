@@ -59,6 +59,36 @@ const NOT_NULL = `${MEMBER} !== null`;
 const QUERY_ARG = '\\("\\?"\\)';
 /** A `.split("?")` call — hand-cutting a request target into path and query. */
 const SPLIT_ON_QUERY = `\\.split${QUERY_ARG}`;
+/**
+ * A `setTimeout` delay argument that is NOT the literal 0 — a digit 1-9, the head
+ * of an identifier, or the open paren of an expression. This is the whole
+ * difference between rule 19 (a sleep) and rule 4 (a yield), so it has to be
+ * exact: `, 0)` must fall to rule 4, whose remedy names which of the two yields
+ * the caller meant.
+ *
+ * The paren is here because omitting it under-matches SILENTLY, which is the
+ * failure this whole gate exists to prevent — `setTimeout(resolve, (8 - i) * 20)`
+ * is as much a sleep as `setTimeout(resolve, 160)`, and the first draft of this
+ * fragment could not see one.
+ */
+const NONZERO_DELAY = `[1-9(${ID_HEAD}]`;
+/**
+ * A hand-rolled timer promise with a nonzero delay.
+ *
+ * `.*` before `setTimeout` for rule 4's documented reason — the executor's own
+ * parameter list closes a paren, so a negated-paren class matches nothing. But
+ * `[^,)]*` INSIDE the call, because the greedy `.*` would otherwise let a
+ * two-parameter executor supply the comma: `new Promise((resolve, reject) =>
+ * setTimeout(resolve, 0))` matches `, r` and would be reported as a sleep.
+ */
+const SLEEP_PROMISE = `new Promise\\(.*setTimeout\\([^,)]*, ?${NONZERO_DELAY}`;
+/**
+ * The aliased `node:timers/promises` sleep — the one timer `vi.useFakeTimers()`
+ * cannot drive. Matched on the aliased IMPORT rather than the module specifier,
+ * so a future caller wanting `scheduler.wait` from the same module is not caught
+ * by a rule that has nothing to say about it.
+ */
+const TIMERS_PROMISES = `setTimeout as ${IDENT}`;
 /** Line start plus indentation: where a property or method is DECLARED. */
 const AT_LINE_START = "^ *";
 /**
@@ -344,5 +374,45 @@ export const LINE_RULES = [
       "Splitting a string that is NOT a request target is legitimate and\n" +
       "baselined: `aai-cli/workflow-bundler.ts` strips a Vite module id's query\n" +
       "suffix, where there is no request and no path to answer with.",
+  },
+  {
+    id: 19,
+    key: "rule19_handRolledSleep",
+    label: "hand-rolled sleep",
+    // Two shapes in one rule because they are the same mistake reached from two
+    // directions — hand-rolling the timer promise, and reaching for the ONE
+    // built-in the test runner cannot drive.
+    //
+    // The nonzero delay is what distinguishes this from rule 4, which owns the
+    // `, 0)` case (a yield, whose remedy is `flush()`/`tick()` — two different
+    // waits that must not be spelled the same). `[1-9]` after the comma is the
+    // whole difference: a literal 0 belongs to rule 4, and a NAMED delay
+    // (`setTimeout(resolve, ms)`) is a sleep whatever it holds, so an identifier
+    // matches here too.
+    re: `${SLEEP_PROMISE}|${TIMERS_PROMISES}`,
+    paths: SOURCE_PATHSPECS,
+    skipComments: true,
+    remedy:
+      "Use the `sleep` helper from @alexkroman1/aai/internal.\n" +
+      "\n" +
+      "There were FIVE spellings of this across four packages, two of them\n" +
+      "byte-identical across a package boundary. That is the ordinary kind of\n" +
+      "duplication; the reason this is a rule is that the five split into two\n" +
+      "families differing in a property no reader can see at a call site.\n" +
+      "\n" +
+      "`vi.useFakeTimers()` replaces the global setTimeout and does NOT patch\n" +
+      "node:timers/promises. Measured: a spec that advances the fake clock by\n" +
+      "an hour never sees such a wait resolve. So the spelling silently decides\n" +
+      "whether a poll loop can be tested at all, and no tier carries a retry —\n" +
+      "a spec that waits out real milliseconds is the one that fails first on\n" +
+      "a contended runner, naming the timing helper rather than the bug.\n" +
+      "\n" +
+      "The shared helper takes `{ unref }` (opt-in, because it is a claim that\n" +
+      "abandoning the wait is correct) and `{ signal }` (resolving rather than\n" +
+      "throwing, with the listener detached on every path so a loop against a\n" +
+      "long-lived signal retains nothing).\n" +
+      "\n" +
+      "A zero-length wait is NOT this: that is rule 4, and the remedy there\n" +
+      "names which of the two yields you meant.",
   },
 ];

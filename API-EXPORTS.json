@@ -129,6 +129,7 @@
     "PLAYBACK_JITTER_MS",
     "PLAYBACK_PROGRESS_INTERVAL_MS",
     "PLAYBACK_REFILL_MS",
+    "SleepOptions",
     "WORKFLOWS_UNAVAILABLE_MESSAGE",
     "WS_OPEN",
     "createCoalescingRunner",
@@ -138,7 +139,8 @@
     "parseWsUpgradeParams",
     "rejectingWorkflows",
     "requestPath",
-    "requestQuery"
+    "requestQuery",
+    "sleep"
   ],
   "@alexkroman1/aai/llm": [
     "ANTHROPIC_API_KEY_ENV",

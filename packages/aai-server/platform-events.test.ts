@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryChatStore } from "./chat-store.ts";
@@ -221,7 +222,7 @@ describe("store decorators", () => {
     const memory = createMemoryPlatformEvents();
     let done = false;
     memory.events.watchAgents(async () => {
-      await new Promise((r) => setTimeout(r, 5));
+      await sleep(5);
       done = true;
     });
 

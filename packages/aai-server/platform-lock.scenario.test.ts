@@ -32,11 +32,11 @@
  * Postgres, so any server will do.
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import type { CloseableDb, ReservedDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import { sleep } from "./_sleep.ts";
 import {
   createPgSlugLock,
   SLUG_LOCK_NAMESPACE,

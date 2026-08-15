@@ -123,6 +123,15 @@ export function requestPath(rawUrl: string | undefined): string;
 // @internal
 export function requestQuery(rawUrl: string | undefined): URLSearchParams;
 
+// @internal
+export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
+
+// @internal
+export type SleepOptions = {
+    signal?: AbortSignal;
+    unref?: boolean;
+};
+
 // @public
 interface StandardSchemaIssue {
     // (undocumented)

@@ -8,9 +8,9 @@
  */
 
 import type { AddressInfo } from "node:net";
+import { sleep } from "@alexkroman1/aai/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
-import { sleep } from "./_sleep.ts";
 import { forgetObservedPublicOrigin, rememberPublicOrigin } from "./public-origin.ts";
 import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
 

@@ -29,6 +29,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sleep } from "@alexkroman1/aai/internal";
 import getPort, { portNumbers } from "get-port";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createWorkerEvaluator } from "./_bundler.ts";
@@ -532,7 +533,7 @@ describe("aai dev serves the workflow HTTP API", () => {
       const result = await api(`/workflows/runs/${runId}/wake`, { method: "POST" });
       expect(result.status).toBe(200);
       woken = Number(result.body.woken);
-      if (woken === 0) await new Promise((resolve) => setTimeout(resolve, 50));
+      if (woken === 0) await sleep(50);
     }
 
     expect(woken).toBeGreaterThan(0);

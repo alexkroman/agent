@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { inlineWorker } from "./_sandbox-vm-test-utils.ts";
-import { sleep } from "./_sleep.ts";
 import { SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";

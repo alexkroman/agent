@@ -52,11 +52,15 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
+import { sleep } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { waitForExit, waitForHealth } from "./_e2e-test-utils.ts";
 
 /** How long to wait for a restarted server to answer `/health` before giving up. */
 const HEALTH_TIMEOUT_MS = 60_000;
+
+/** Interval between `awaitSettled` polls of the fault tracker. */
+const SETTLE_POLL_MS = 100;
 
 /**
  * One kill, described by what the server DID rather than by when — the two
@@ -348,7 +352,7 @@ export async function startSupervisedDevServer(
     dying?.kill("SIGKILL");
     if (dying) await waitForExit(dying, 10_000);
     if (point.downMs !== undefined && point.downMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, point.downMs));
+      await sleep(point.downMs);
     }
     if (stopped) return;
     await spawnOnce();
@@ -390,7 +394,7 @@ export async function startSupervisedDevServer(
       const deadline = Date.now() + timeoutMs;
       while (tracker.firedCount() < points.length) {
         if (Date.now() > deadline) throw new Error(shortfall() ?? "fault plan did not settle");
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await sleep(SETTLE_POLL_MS);
       }
       // Every kill has FIRED, but the last one's restart may still be in flight:
       // `cycle` is the queue those kills run on, so awaiting it is what makes

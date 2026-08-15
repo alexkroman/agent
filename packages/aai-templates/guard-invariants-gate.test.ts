@@ -174,6 +174,10 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
       "    await new Promise((resolve) => setTimeout(resolve, 0));",
       "  return new Promise((r) => setTimeout(r, 0));",
     ],
+    // The 50ms twin is deliberately here AND in rule 19's `matches`: rule 4
+    // owns the zero-length yield, rule 19 the nonzero sleep, and the samples
+    // are only ever tested against their own rule. That the same line appears
+    // on both sides is the split working, not a contradiction.
     ignores: ["    await flush();", "    await new Promise((r) => setTimeout(r, 50));"],
   },
   rule5_deleteProcessEnv: {
@@ -247,6 +251,35 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
       // permanent noise in the baseline for checks that are not duck-typing.
       '        listenPort = typeof addr === "object" && addr ? addr.port : port;',
       '  return typeof root === "object" ? root.types : undefined;',
+    ],
+  },
+  rule19_handRolledSleep: {
+    matches: [
+      // A literal delay, a named one, and an EXPRESSION — the third is what the
+      // first draft of the delay fragment could not see, and it is a real line
+      // in a workflow fixture.
+      "    await new Promise((resolve) => setTimeout(resolve, 250));",
+      "  return new Promise((r) => setTimeout(r, ms));",
+      "  await new Promise((resolve) => setTimeout(resolve, (8 - index) * 20));",
+      // The other family: the one timer `vi.useFakeTimers()` cannot drive.
+      '    import { setTimeout as sleep } from "node:timers/promises";',
+      '    import { setTimeout as nodeSleep } from "node:timers/promises";',
+    ],
+    ignores: [
+      "    await sleep(250);",
+      "    await sleep(GUEST_DIAL_RETRY_MS, { unref: true });",
+      "    await sleep(delayMs, omitUndefined({ signal }));",
+      // Rule 4's shape, which this rule must NOT sweep in — a zero-length yield
+      // has a different remedy (`flush()` vs `tick()`, and which one you meant).
+      "    await new Promise((resolve) => setTimeout(resolve, 0));",
+      "  return new Promise((r) => setTimeout(r, 0));",
+      // A two-parameter executor supplying the comma. Without `[^,)]*` inside
+      // the call the greedy `.*` reads `, r` as the delay and reports a yield as
+      // a sleep.
+      "    await new Promise((resolve, reject) => setTimeout(resolve, 0));",
+      // Importing something else from the same module, which this rule has
+      // nothing to say about.
+      '    import { scheduler } from "node:timers/promises";',
     ],
   },
   rule18_splitOnQuestionMark: {
