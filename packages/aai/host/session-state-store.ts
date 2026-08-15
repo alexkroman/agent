@@ -97,7 +97,7 @@ export type SessionStateStore = {
    * fresh session has nothing to load, and the backend answers empty.
    *
    * Rejects on a backend failure, which the caller turns into a failed session
-   * start. Shape drift is NOT a failure — see {@link createSessionStateStore}.
+   * start. Shape drift is NOT a failure — see `createSessionStateStore`'s doc.
    */
   hydrate(sessionId: string): Promise<void>;
   /** Commit whatever this session changed. Never rejects; a failure is logged. */
@@ -170,7 +170,7 @@ export function createMemoryStateBackend(): SessionStateBackend {
  *
  * Its own function because the fail-open rule is the interesting decision here
  * and it deserves to be readable on its own — see
- * {@link createSessionStateStore}'s doc for why a value the running code cannot
+ * `createSessionStateStore`'s doc for why a value the running code cannot
  * make sense of is discarded rather than refused.
  */
 function hydrateOne(

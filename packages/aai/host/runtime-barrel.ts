@@ -38,6 +38,10 @@ export {
   UPLOADS_UNAVAILABLE_MESSAGE,
   type UploadReader,
 } from "../sdk/step-uploads.ts";
+// `SessionStateStore.syncSession` mentions this type, and a type a public
+// signature MENTIONS but does not export is a docs-build warning here — and
+// warnings are errors (see the `WdkStreamOptions` note below, same rule).
+export type { StateSyncSession } from "./_state-sync.ts";
 export {
   type AgentServerOptions,
   createAgentServer,

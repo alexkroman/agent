@@ -293,6 +293,7 @@
     "SessionStateStore",
     "SessionWebSocket",
     "StartHostSessionOptions",
+    "StateSyncSession",
     "StepFetch",
     "StepReporter",
     "TELEPHONY_PATH",

@@ -1104,7 +1104,7 @@ interface StateProjection<V = unknown> {
 }
 
 // @public
-type StateSyncSession = {
+export type StateSyncSession = {
     read(key: string): unknown;
     lastPush(): string | undefined;
     recordPush(json: string): void;

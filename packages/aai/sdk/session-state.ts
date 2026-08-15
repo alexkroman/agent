@@ -18,7 +18,7 @@
  * and every test against a memory-backed slot would pass on shapes Postgres
  * cannot hold.
  *
- * That is what {@link freezeStorable} is for, and why it runs in BOTH backends.
+ * That is what `freezeStorable` (below) is for, and why it runs in BOTH backends.
  * It is the whole reason the memory backend is a valid test double for the
  * Postgres one.
  */
@@ -43,7 +43,7 @@ export type SlotStore = {
    * This session's value for `key`, or `undefined` when the slot has never
    * been written (a fresh session, or one whose stored value was discarded).
    *
-   * The returned object is FROZEN — see {@link freezeStorable}.
+   * The returned object is FROZEN — see `freezeStorable` in this module.
    */
   read(key: string): unknown;
   /**
