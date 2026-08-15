@@ -2,7 +2,7 @@
 // Pipeline transport — STT → LLM → TTS orchestration behind the Transport interface.
 //
 // Pipeline mode executes tools inline via streamText's `tools.execute`.
-// `callbacks.onToolCall` is observability-only; runtime.ts routes it to
+// A `tool.called` report is observability-only here; runtime.ts routes it to
 // `client.toolCall` directly (bypassing SessionCore's tool-dispatch path,
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
@@ -233,7 +233,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // heard cursor below still indexes the same positions (normalizeSpeechText).
     providers.tts?.sendText(normalizeSpeechText(text));
     const tail = heard.onText(text, opts?.record !== false);
-    if (opts?.publishTranscript !== false) callbacks.onAgentTranscriptPartial?.(tail);
+    if (opts?.publishTranscript !== false)
+      callbacks.report({ type: "agent-transcript.updated", text: tail });
   }
 
   // How a turn is wrapped up once its stream settles — interrupted, failed, or
@@ -276,7 +277,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
    * Shared reply scaffold: mint the reply id and turn controller, run the
    * turn body, then drain TTS — only when the body produced speech, since a
    * tool-call-only turn never gets a TTS `done` and would burn the full
-   * flush timeout. Do NOT call callbacks.onAudioDone() here — session-core's
+   * flush timeout. Do NOT report `audio.completed` here — session-core's
    * flushReply emits audioDone + replyDone together; calling it here would
    * double-fire audio_done.
    */
@@ -314,7 +315,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
           turnDraining = false;
         }
       }
-      if (!signal.aborted) callbacks.onReplyDone();
+      if (!signal.aborted) callbacks.report({ type: "reply.completed" });
     } finally {
       // Return to idle unless a newer turn already replaced this one.
       turns.settle(ctl);
@@ -393,7 +394,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       abortInFlightTurn();
       // Silence after a client-initiated cancel should still nudge.
       nudger.arm();
-      // Do NOT call callbacks.onCancelled() here — session-core.onCancel
+      // Do NOT report `reply.cancelled` here — the session's own `cancel` command
       // (client-initiated) calls client.cancelled() itself. Barge-in fires
       // onCancelled directly in onSttPartial where the cancel originates here.
     },

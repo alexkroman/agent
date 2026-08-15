@@ -32,13 +32,16 @@ describe("pipeline greeting", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
       });
       expect(tts.last()?.textChunks).toContain(GREETING);
       expect(callbacks.onReplyStarted).toHaveBeenCalledWith(expect.stringContaining("greeting"));
-      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(GREETING, false);
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+        type: "agent-transcript.committed",
+        text: GREETING,
+      });
       // onAudioDone is owned by session-core's flushReply, not the transport.
-      expect(callbacks.onAudioDone).not.toHaveBeenCalled();
+      expect(callbacks.reported("audio.completed")).not.toHaveBeenCalled();
       await t.stop();
     });
 
@@ -47,7 +50,7 @@ describe("pipeline greeting", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
       });
       expect(stt.last()?.updateAgentContext).toHaveBeenCalledWith(GREETING);
       await t.stop();
@@ -62,10 +65,13 @@ describe("pipeline greeting", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
       });
-      expect(callbacks.onAgentTranscript).toHaveBeenCalledExactlyOnceWith(GREETING, false);
-      expect(callbacks.onAgentTranscriptPartial).not.toHaveBeenCalled();
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledExactlyOnceWith({
+        type: "agent-transcript.committed",
+        text: GREETING,
+      });
+      expect(callbacks.reported("agent-transcript.updated")).not.toHaveBeenCalled();
       await t.stop();
     });
 
@@ -90,15 +96,15 @@ describe("pipeline greeting", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
       });
 
       t.reset?.();
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledTimes(2);
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(2);
       });
       expect(tts.last()?.textChunks.filter((c) => c === GREETING)).toHaveLength(2);
-      expect(callbacks.onAgentTranscript).toHaveBeenCalledTimes(2);
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledTimes(2);
       await t.stop();
     });
 
@@ -114,7 +120,7 @@ describe("pipeline greeting", () => {
 
       t.reset?.();
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
       });
       expect(tts.last()?.textChunks).toContain(GREETING);
       await t.stop();
@@ -141,7 +147,7 @@ describe("pipeline greeting", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
       });
 
       stt.last()?.fireFinal("remember the number nine");
@@ -151,7 +157,7 @@ describe("pipeline greeting", () => {
 
       t.reset?.();
       await vi.waitFor(() => {
-        expect(callbacks.onAgentTranscript).toHaveBeenCalledTimes(2);
+        expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledTimes(2);
       });
       stt.last()?.fireFinal("what now");
       await vi.waitFor(() => {

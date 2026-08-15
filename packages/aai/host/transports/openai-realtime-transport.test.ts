@@ -2,27 +2,11 @@
 import { describe, expect, test, vi } from "vitest";
 import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import { silentLogger } from "../_test-utils.ts";
+import { makeCallbacks as noopCallbacks } from "./_transport-recorder.ts";
 import {
   createOpenaiRealtimeTransport,
   type OpenaiRealtimeWebSocket,
 } from "./openai-realtime-transport.ts";
-import type { TransportCallbacks } from "./types.ts";
-
-function noopCallbacks(): TransportCallbacks {
-  return {
-    onReplyStarted: vi.fn(),
-    onReplyDone: vi.fn(),
-    onCancelled: vi.fn(),
-    onAudioChunk: vi.fn(),
-    onAudioDone: vi.fn(),
-    onUserTranscript: vi.fn(),
-    onAgentTranscript: vi.fn(),
-    onToolCall: vi.fn(),
-    onError: vi.fn(),
-    onSpeechStarted: vi.fn(),
-    onSpeechStopped: vi.fn(),
-  };
-}
 
 type Listener = (ev: unknown) => void;
 
@@ -105,7 +89,7 @@ describe("openai-realtime-transport: connect and session.update", () => {
     await expect(ready).resolves.toBeUndefined();
     fake.fire("close", { code: 1006, reason: "" });
     // Routed to the session, not the (already settled) connect.
-    expect(cbs.onError).toHaveBeenCalled();
+    expect(cbs.reported("error.reported")).toHaveBeenCalled();
   });
 
   test("opens WS with auth headers and sends session.update on open", async () => {
@@ -257,12 +241,12 @@ describe("audio in/out", () => {
     expect(cbs.onAudioChunk).toHaveBeenCalledWith(new Uint8Array([5, 6, 7, 8]));
   });
 
-  test("response.output_audio.done calls onAudioDone", async () => {
+  test("response.output_audio.done reports audio.completed", async () => {
     const type = "response.output_audio.done";
     const { fake, cbs, ready } = startedTransport();
     await ready;
     fake.fire("message", { data: JSON.stringify({ type }) });
-    expect(cbs.onAudioDone).toHaveBeenCalledTimes(1);
+    expect(cbs.reported("audio.completed")).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -276,11 +260,11 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
     fake.fire("message", {
       data: JSON.stringify({ type: "input_audio_buffer.speech_stopped" }),
     });
-    expect(cbs.onSpeechStarted).toHaveBeenCalledTimes(1);
-    expect(cbs.onSpeechStopped).toHaveBeenCalledTimes(1);
+    expect(cbs.reported("speech.started")).toHaveBeenCalledTimes(1);
+    expect(cbs.reported("speech.stopped")).toHaveBeenCalledTimes(1);
   });
 
-  test("user transcription completed routes to onUserTranscript", async () => {
+  test("user transcription completed routes to a committed user transcript", async () => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     fake.fire("message", {
@@ -289,7 +273,10 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
         transcript: "hello world",
       }),
     });
-    expect(cbs.onUserTranscript).toHaveBeenCalledWith("hello world");
+    expect(cbs.reported("user-transcript.committed")).toHaveBeenCalledWith({
+      type: "user-transcript.committed",
+      text: "hello world",
+    });
   });
 
   test("response.created → onReplyStarted; response.done → onReplyDone", async () => {
@@ -300,7 +287,7 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
     });
     expect(cbs.onReplyStarted).toHaveBeenCalledWith("resp_1");
     fake.fire("message", { data: JSON.stringify({ type: "response.done" }) });
-    expect(cbs.onReplyDone).toHaveBeenCalledTimes(1);
+    expect(cbs.reported("reply.completed")).toHaveBeenCalledTimes(1);
   });
 
   test("agent transcript: deltas accumulated, emitted on done", async () => {
@@ -314,11 +301,14 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
     fake.fire("message", {
       data: JSON.stringify({ type: `${prefix}.delta`, item_id, delta: "there." }),
     });
-    expect(cbs.onAgentTranscript).not.toHaveBeenCalled();
+    expect(cbs.reported("agent-transcript.committed")).not.toHaveBeenCalled();
     fake.fire("message", {
       data: JSON.stringify({ type: `${prefix}.done`, item_id }),
     });
-    expect(cbs.onAgentTranscript).toHaveBeenCalledWith("Hi there.", false);
+    expect(cbs.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: "Hi there.",
+    });
   });
 
   test("agent transcript: done with no buffered deltas does not emit", async () => {
@@ -330,12 +320,12 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
         item_id: "empty",
       }),
     });
-    expect(cbs.onAgentTranscript).not.toHaveBeenCalled();
+    expect(cbs.reported("agent-transcript.committed")).not.toHaveBeenCalled();
   });
 });
 
 describe("tool calls", () => {
-  test("function_call_arguments deltas accumulate; .done emits onToolCall", async () => {
+  test("function_call_arguments deltas accumulate; .done reports tool.called", async () => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     const item_id = "item_t";
@@ -368,7 +358,12 @@ describe("tool calls", () => {
         arguments: '{"q":"hi"}',
       }),
     });
-    expect(cbs.onToolCall).toHaveBeenCalledWith("call_1", "lookup", { q: "hi" });
+    expect(cbs.reported("tool.called")).toHaveBeenCalledWith({
+      type: "tool.called",
+      toolCallId: "call_1",
+      toolName: "lookup",
+      args: { q: "hi" },
+    });
   });
 
   test("done with empty/invalid args still calls onToolCall with {}", async () => {
@@ -390,7 +385,12 @@ describe("tool calls", () => {
         arguments: "",
       }),
     });
-    expect(cbs.onToolCall).toHaveBeenCalledWith("call_e", "noop", {});
+    expect(cbs.reported("tool.called")).toHaveBeenCalledWith({
+      type: "tool.called",
+      toolCallId: "call_e",
+      toolName: "noop",
+      args: {},
+    });
   });
 
   test("sendToolResult sends conversation.item.create + response.create", async () => {
@@ -454,7 +454,7 @@ describe("cancel, error, close", () => {
       data: JSON.stringify({ type: "response.created", response: { id: "r2" } }),
     });
     transport.cancelReply();
-    expect(cbs.onCancelled).not.toHaveBeenCalled();
+    expect(cbs.reported("reply.cancelled")).not.toHaveBeenCalled();
   });
 
   test("server-VAD barge-in flushes client playback via onCancelled", async () => {
@@ -469,8 +469,8 @@ describe("cancel, error, close", () => {
     fake.fire("message", {
       data: JSON.stringify({ type: "input_audio_buffer.speech_started" }),
     });
-    expect(cbs.onCancelled).toHaveBeenCalledTimes(1);
-    expect(cbs.onSpeechStarted).toHaveBeenCalledTimes(1);
+    expect(cbs.reported("reply.cancelled")).toHaveBeenCalledTimes(1);
+    expect(cbs.reported("speech.started")).toHaveBeenCalledTimes(1);
   });
 
   test("speech_started with no reply in flight does not fire onCancelled", async () => {
@@ -479,8 +479,8 @@ describe("cancel, error, close", () => {
     fake.fire("message", {
       data: JSON.stringify({ type: "input_audio_buffer.speech_started" }),
     });
-    expect(cbs.onCancelled).not.toHaveBeenCalled();
-    expect(cbs.onSpeechStarted).toHaveBeenCalledTimes(1);
+    expect(cbs.reported("reply.cancelled")).not.toHaveBeenCalled();
+    expect(cbs.reported("speech.started")).toHaveBeenCalledTimes(1);
   });
 
   // NON-fatal is the load-bearing half of these two. An in-band `error` event
@@ -494,20 +494,34 @@ describe("cancel, error, close", () => {
     fake.fire("message", {
       data: JSON.stringify({ type: "error", error: { message: "boom" } }),
     });
-    expect(cbs.onError).toHaveBeenCalledWith("internal", "boom", { fatal: false });
+    expect(cbs.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "internal",
+      message: "boom",
+      fatal: false,
+    });
   });
 
   test("error event with missing message uses fallback", async () => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     fake.fire("message", { data: JSON.stringify({ type: "error" }) });
-    expect(cbs.onError).toHaveBeenCalledWith("internal", expect.any(String), { fatal: false });
+    expect(cbs.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "internal",
+      message: expect.any(String),
+      fatal: false,
+    });
   });
 
   test("unexpected close routes to onError with connection code", async () => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     fake.fire("close", { code: 1006, reason: "" });
-    expect(cbs.onError).toHaveBeenCalledWith("connection", expect.stringMatching(/closed/i));
+    expect(cbs.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "connection",
+      message: expect.stringMatching(/closed/i),
+    });
   });
 });

@@ -49,6 +49,54 @@ const MEMBER = `[${ID_HEAD}][${ID_TAIL}.]*`;
 const ARGS = "\\([^)]*\\)";
 /** A `.get(…)` call — the read half of both hand-rolled-map patterns. */
 const MAP_GET = `\\.get${ARGS}`;
+/** An `on*` handler name — the observer-callback naming convention. */
+const ON_NAME = "on[A-Z][A-Za-z0-9]*";
+/** Line start plus indentation: where a property or method is DECLARED. */
+const AT_LINE_START = "^ *";
+/**
+ * A property or method DECLARATION, as opposed to a call of one.
+ *
+ * `onFoo:` (a property), or `onFoo(args):`/`onFoo(args) {` (a signature or a
+ * method). Deliberately NOT `onFoo();`, which is an ordinary call of a local
+ * function — `_timer.ts`'s `onWake()` and `_pipeline-fuzz-model.ts`'s
+ * `onReplyCompleted()` are both that, and neither declares a surface.
+ */
+const DECLARES = `(\\?)?(:|${ARGS} *(:|\\{))`;
+
+/**
+ * The modules that declare the SESSION's callback surfaces — rule 16's scope.
+ *
+ * An explicit list, and that is the answer to "scope by module role, not by
+ * counting every `on*` in the package" rather than a shortcut around it. Role is
+ * not derivable from a path here: `transports/types.ts` declares the session
+ * boundary and `transports/pipeline-llm-stream.ts`, its neighbour, decomposes a
+ * hot path with `on*` parameters — a glob over `transports/` would catch both and
+ * a glob over `host/*.ts` would catch neither. The two things NOT in scope are in
+ * scope for that reason: provider adapter contracts (`_s2s-dispatch.ts`'s
+ * `S2sCallbacks`, `providers/**`'s `onSttPartial`/`onTtsAudio`) sit BELOW the
+ * session and are what a new provider is written against, and utilities that take
+ * an `on*` PARAMETER (`_timer.ts`) are ordinary function decomposition.
+ *
+ * `guard-invariants-gate.test.ts` asserts every path here exists, because a
+ * hand-kept list's one real failure mode is a rename quietly emptying the rule.
+ */
+const SESSION_SURFACE_PATHS = [
+  "packages/aai/host/session-core.ts",
+  "packages/aai/host/session-commands.ts",
+  "packages/aai/host/transports/types.ts",
+  "packages/aai/host/runtime-types.ts",
+  "packages/aai/host/runtime-session-callbacks.ts",
+  "packages/aai/host/runtime.ts",
+  "packages/aai/host/ws-handler.ts",
+  // The doubles. A per-name callback surface has a MULTIPLIER: every harness
+  // standing in for the thing that fires a callback has to satisfy its whole
+  // shape, and 78 of the original 157 occurrences were exactly that.
+  "packages/aai/host/_test-utils.ts",
+  "packages/aai/host/transports/_transport-recorder.ts",
+  "packages/aai/host/transports/_pipeline-transport-harness.ts",
+  "packages/aai/host/integration/_pipeline-fuzz-model.ts",
+  "packages/aai/host/integration/_s2s-fuzz-harness.ts",
+];
 
 /** Source roots the line rules walk. */
 export const SOURCE_PATHSPECS = [
@@ -188,5 +236,36 @@ export const LINE_RULES = [
       "`slot.update` for the ctx.state case. The parts that get missed are\n" +
       "dropping the drained entry BY OWNERSHIP and resolving your own place in\n" +
       "the chain when you abandon a timed-out acquire.",
+  },
+  {
+    id: 16,
+    key: "rule16_sessionCallbackName",
+    label: "session callback name (report an event)",
+    re: `${AT_LINE_START}${ON_NAME}${DECLARES}`,
+    paths: SESSION_SURFACE_PATHS,
+    skipComments: true,
+    remedy:
+      "Add the EVENT to `packages/aai/sdk/protocol-events.ts` and report it —\n" +
+      "`SessionCore.report(event)` and `TransportCallbacks.report(event)` take the\n" +
+      "protocol's own vocabulary, so a new thing the session observes costs one\n" +
+      "union member and one `case`. A new `on*` costs a declaration on the type, a\n" +
+      "forward in `runtime-session-callbacks.ts`, and a stub in each of the four\n" +
+      "harnesses that stand in for the thing that fires it — which is the\n" +
+      "multiplier that put 157 of these across eleven files.\n\n" +
+      "A name is legitimate exactly when there IS NO EVENT for it, and every\n" +
+      "baselined occurrence is one of three kinds:\n" +
+      "  - BINARY AUDIO (`onAudio`, `onAudioChunk`). 384 kbps of PCM, deliberately\n" +
+      "    outside the event vocabulary — see `protocol-events.ts`, and note the\n" +
+      "    retained stream is why: audio in it would be minutes of samples per call\n" +
+      "    in the tenant's own Postgres.\n" +
+      "  - NO EVENT EXISTS (`onReplyStarted` — the wire has `reply.completed` and\n" +
+      "    `reply.cancelled` and no `reply.started`; `onSessionReady` — a provider's\n" +
+      "    own resume token, which nothing on the wire describes).\n" +
+      "  - LIFECYCLE THE CALLER MUST ACT ON (`onOpen`/`onClose`/`onSessionEnd`/\n" +
+      "    `onSinkCreated`/`onToolResult`). These release state or settle a pending\n" +
+      "    call; an observe-only hook could not, which is the same distinction\n" +
+      "    `SessionEventContext` draws by carrying no `send`.\n\n" +
+      "Minting an event to dodge this rule is worse than the callback: an event is\n" +
+      "AUTHOR-VISIBLE (`agent({ events })`) and retained, so it is a promise.",
   },
 ];

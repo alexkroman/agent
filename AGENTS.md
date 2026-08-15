@@ -430,12 +430,12 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 12 | every guest route literal is in `GUEST_ROUTES` | declare it + its exposure |
   | 13 | no template import escaping its template dir | move it in, or publish it |
   | 14 | no fixture directory nothing reads | delete it, or add the reader |
+  | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
 
-  Rule IDs are **stable**: a deleted rule leaves its number retired rather than
-  letting a later rule inherit it, because the numbers appear in commit messages
-  and in the baseline — rule 6 is the worked example, retired when `ctx.state`
-  stopped existing and the cast it banned became unrepresentable. Rules 1, 7, 10,
-  12, 13 and 14 are at zero and enforced absolutely;
+  Rule IDs are **stable** — the numbers appear in commit messages and in the
+  baseline, so a deleted rule leaves its number retired rather than letting a
+  later rule inherit it (rule 6, retired when `ctx.state` stopped existing; and
+  15, reserved). Rules 1, 7, 10, 12, 13 and 14 are at zero and enforced absolutely;
   the rest carry per-file baselines with the same `--update`-only-lowers
   contract as `check:hatches`. Every baselined occurrence is
   legitimate and says so in the JSON — three spread-ternaries where **the guard
@@ -453,6 +453,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
   drive-relative on Windows — both of which run on a developer's own machine
   under `aai dev`, so the bug was never guest-only. See "Windows is NOT tested,
   and is currently broken".
+
+  **Rule 16 is scoped to an explicit FILE LIST** (role is not derivable from a
+  path), so its gate spec asserts every path exists; it also found
+  `SELF_REFERENTIAL` too blunt to be per-FILE, so exemptions are per rule now.
 
   Two things any new rule must respect. **A pattern that matches nothing prints
   the same checkmark as a rule being upheld**, so
@@ -1937,8 +1941,8 @@ back to the host's `process.env`.
 ### Open testability work
 
 One known gap, found by audit and deliberately left alone because it is a
-refactor in its own right rather than a fix that rides along with something
-else. It is not blocked on a decision; it is sized, not stuck.
+refactor in its own right rather than a fix riding along with something else —
+sized, not stuck.
 
 - **`aai-server` writes to `console.*` directly** — 47 calls, 45 of them
   outside `_debug-log.ts` — with no logger seam, so 39 of the repo's 86

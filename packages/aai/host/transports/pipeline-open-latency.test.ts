@@ -11,25 +11,8 @@ import {
   createFakeTtsProvider,
 } from "../_pipeline-test-fakes.ts";
 import { silentLogger } from "../_test-utils.ts";
+import { makeCallbacks } from "./_transport-recorder.ts";
 import { createPipelineTransport, type PipelineTransportOptions } from "./pipeline-transport.ts";
-import type { TransportCallbacks } from "./types.ts";
-
-function makeCallbacks(): TransportCallbacks {
-  return {
-    onReplyStarted: vi.fn(),
-    onReplyDone: vi.fn(),
-    onCancelled: vi.fn(),
-    onAudioChunk: vi.fn(),
-    onAudioDone: vi.fn(),
-    onUserTranscript: vi.fn(),
-    onAgentTranscript: vi.fn(),
-    onToolCall: vi.fn(),
-    onError: vi.fn(),
-    onSpeechStarted: vi.fn(),
-    onSpeechStopped: vi.fn(),
-    onSessionReady: vi.fn(),
-  };
-}
 
 /** STT opener whose open() blocks until release() is called. */
 function makeGatedStt(): {
@@ -82,7 +65,7 @@ describe("PipelineTransport — provider-open latency", () => {
     gated.release();
     await startP;
     expect(gated.inner.last()).toBeDefined();
-    expect(callbacks.onError).not.toHaveBeenCalled();
+    expect(callbacks.reported("error.reported")).not.toHaveBeenCalled();
     await t.stop();
   });
 
@@ -120,7 +103,11 @@ describe("PipelineTransport — provider-open latency", () => {
 
     // The failure surfaced, the greeting turn was cancelled, and the adopted
     // TTS session did not outlive the terminate.
-    expect(callbacks.onError).toHaveBeenCalledWith("stt", "stt connect failed");
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "stt",
+      message: "stt connect failed",
+    });
     expect(tts.last()?.closed.value).toBe(true);
   });
 });

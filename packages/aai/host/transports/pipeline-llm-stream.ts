@@ -68,7 +68,7 @@ export interface ConsumeLlmStreamParams {
   /** Is the caller speaking right now? Suppresses filler — see StreamPartHandlerDeps. */
   callerSpeaking?: (() => boolean) | undefined;
   /** Tool-call/tool-result observability hooks, forwarded to SessionCore. */
-  callbacks: Pick<TransportCallbacks, "onToolCall" | "onToolCallDone">;
+  callbacks: Pick<TransportCallbacks, "report">;
   /** Report an LLM-stream error. */
   emitError: EmitError;
   log: Logger;
@@ -388,8 +388,15 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         // execution parks the fullStream read, deferring dispose() below.
         signal,
         callerSpeaking,
-        onToolCall: callbacks.onToolCall,
-        onToolCallDone: callbacks.onToolCallDone,
+        // `pipeline-stream-parts.ts` keeps its own two parameters: it is transport
+        // INTERNALS, where an `on*` argument is ordinary function decomposition
+        // rather than an observability surface. This is the seam where the two
+        // vocabularies meet. `result` arrives already capped (`capToolResult`
+        // there), which the wire schema requires.
+        onToolCall: (callId, name, args) =>
+          callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args }),
+        onToolCallDone: (callId, result) =>
+          callbacks.report({ type: "tool.completed", toolCallId: callId, result }),
         emitError,
         log,
         sid,

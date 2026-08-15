@@ -21,7 +21,7 @@ import {
   createFakeSttProvider,
   createFakeTtsProvider,
 } from "../_pipeline-test-fakes.ts";
-import { makeCallbacks } from "./_pipeline-transport-harness.ts";
+import { makeCallbacks } from "./_transport-recorder.ts";
 import {
   type PipelineTransportOptions,
   resolvePipelineOptions,

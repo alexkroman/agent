@@ -24,16 +24,16 @@ describe("injectTurn", () => {
     t.injectTurn?.("The research you started has finished. Tell the caller.");
 
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalled();
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
     });
     expect(JSON.stringify(llm.calls[0]?.prompt)).toContain("has finished");
     // Never a user transcript: nobody said this, and a client rendering it as
     // the caller's own words would be a lie about the conversation.
-    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
-      "Your research is done — tulips were mostly fine.",
-      false,
-    );
+    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
+    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: "Your research is done — tulips were mostly fine.",
+    });
     await t.stop();
   });
 

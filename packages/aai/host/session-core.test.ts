@@ -125,7 +125,7 @@ describe("createSessionCore — lifecycle", () => {
     const stopping = core.stop();
     // Trailing transport events arrive mid-drain.
     core.onReplyStarted("late-reply");
-    core.onToolCall("late-call", "lookup", {});
+    core.report({ type: "tool.called", toolCallId: "late-call", toolName: "lookup", args: {} });
     core.onAudioChunk(new Uint8Array([1]));
     stopGate.resolve();
     await stopping;
@@ -190,7 +190,7 @@ describe("createSessionCore — client inbound", () => {
   test("onCancel cancels the reply and emits cancelled", async () => {
     const { core, transport, sink } = makeCore();
     await core.start();
-    core.onCancel();
+    core.command({ type: "cancel" });
     expect(transport.cancelReply).toHaveBeenCalledOnce();
     expect(sink.events.some((e) => e.type === "reply.cancelled")).toBe(true);
   });
@@ -206,9 +206,9 @@ describe("createSessionCore — client inbound", () => {
     const { core } = makeCore({ executeTool });
     await core.start();
     core.onReplyStarted("r1");
-    core.onToolCall("c1", "lookup", {});
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
     expect(seenSignal?.aborted).toBe(false);
-    core.onCancel();
+    core.command({ type: "cancel" });
     expect(seenSignal?.aborted).toBe(true);
     await flush();
   });
@@ -221,10 +221,10 @@ describe("createSessionCore — client inbound", () => {
     const { core, transport } = makeCore({ executeTool });
     await core.start();
     core.onReplyStarted("r1");
-    core.onToolCall("c1", "lookup", {});
-    core.onCancel();
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
+    core.command({ type: "cancel" });
     gate.resolve("late result");
-    core.onReplyDone();
+    core.report({ type: "reply.completed" });
     await vi.waitFor(() => {
       expect(transport.sendToolResult).toHaveBeenCalledWith("c1", "late result");
     });
@@ -232,7 +232,7 @@ describe("createSessionCore — client inbound", () => {
   test("onReset emits session.reset", async () => {
     const { core, sink } = makeCore();
     await core.start();
-    core.onReset();
+    core.command({ type: "reset" });
     expect(sink.events.some((e) => e.type === "session.reset")).toBe(true);
   });
 });
@@ -248,7 +248,7 @@ describe("createSessionCore — transport inbound (basic)", () => {
   test("onUserTranscript pushes to history and emits", async () => {
     const { core, sink } = makeCore();
     await core.start();
-    core.onUserTranscript("hello");
+    core.report({ type: "user-transcript.committed", text: "hello" });
     expect(sink.events.some((e) => e.type === "user-transcript.committed")).toBe(true);
   });
 });
@@ -258,7 +258,7 @@ describe("createSessionCore — reply dedup", () => {
     const { core, sink } = makeCore();
     await core.start();
     core.onReplyStarted("r1");
-    core.onReplyDone();
+    core.report({ type: "reply.completed" });
     expect(sink.events.some((e) => e.type === "reply.completed")).toBe(true);
     // `audio.completed` is an EVENT now, not a `playAudioDone()` on the sink —
     // which is what put it in the retained stream. The sink is what keeps it
@@ -269,8 +269,8 @@ describe("createSessionCore — reply dedup", () => {
     const { core, sink } = makeCore();
     await core.start();
     core.onReplyStarted("r1");
-    core.onReplyDone();
-    core.onReplyDone();
+    core.report({ type: "reply.completed" });
+    core.report({ type: "reply.completed" });
     const dones = sink.events.filter((e) => e.type === "reply.completed");
     expect(dones).toHaveLength(1);
   });
@@ -278,8 +278,8 @@ describe("createSessionCore — reply dedup", () => {
     const { core, sink } = makeCore();
     await core.start();
     core.onReplyStarted("r1");
-    core.onCancelled();
-    core.onReplyDone();
+    core.report({ type: "reply.cancelled" });
+    core.report({ type: "reply.completed" });
     expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
   });
 });
@@ -290,9 +290,9 @@ describe("createSessionCore — tool call pending results", () => {
     const { core, sink, transport } = makeCore({ executeTool });
     await core.start();
     core.onReplyStarted("r1");
-    core.onToolCall("cid", "my_tool", {});
+    core.report({ type: "tool.called", toolCallId: "cid", toolName: "my_tool", args: {} });
     await flush();
-    core.onReplyDone();
+    core.report({ type: "reply.completed" });
     await vi.waitFor(() =>
       expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "tool-output"),
     );
@@ -308,18 +308,18 @@ describe("createSessionCore — tool call pending results", () => {
     // Reply r1 issues a slow tool and completes its turn (done is queued
     // behind the pending tool).
     core.onReplyStarted("r1");
-    core.onToolCall("cid1", "slow", {});
-    core.onReplyDone();
+    core.report({ type: "tool.called", toolCallId: "cid1", toolName: "slow", args: {} });
+    core.report({ type: "reply.completed" });
 
     // Barge-in cancels r1; a new reply r2 starts.
-    core.onCancelled();
+    core.report({ type: "reply.cancelled" });
     core.onReplyStarted("r2");
 
     // r1's tool finally resolves — its result belongs to the cancelled reply
     // and must not be routed into r2.
     slow.resolve("slow-output");
     await flush();
-    core.onReplyDone();
+    core.report({ type: "reply.completed" });
     await flush();
 
     expect(transport.sendToolResult).not.toHaveBeenCalledWith("cid1", "slow-output");
@@ -352,12 +352,12 @@ describe("createSessionCore — tool concurrency", () => {
     };
     const { core } = makeCore({ executeTool });
     await core.start();
-    core.onUserTranscript("first");
+    core.report({ type: "user-transcript.committed", text: "first" });
     core.onReplyStarted("r1");
-    core.onToolCall("cid", "t", {});
+    core.report({ type: "tool.called", toolCallId: "cid", toolName: "t", args: {} });
     // Arrives while the tool is (conceptually) still running — must not
     // appear in the view the tool captured.
-    core.onUserTranscript("second");
+    core.report({ type: "user-transcript.committed", text: "second" });
     await flush();
     expect(captured?.map((m) => m.content)).toEqual(["first"]);
   });
@@ -367,9 +367,9 @@ describe("createSessionCore — tool concurrency", () => {
     const { core } = makeCore({ executeTool });
     await core.start();
     core.onReplyStarted("r1");
-    core.onToolCall("cid", "slow", {});
+    core.report({ type: "tool.called", toolCallId: "cid", toolName: "slow", args: {} });
     expect(signals[0]?.aborted).toBe(false);
-    core.onCancelled();
+    core.report({ type: "reply.cancelled" });
     expect(signals[0]?.aborted).toBe(true);
   });
 
@@ -378,7 +378,7 @@ describe("createSessionCore — tool concurrency", () => {
     const { core } = makeCore({ executeTool });
     await core.start();
     core.onReplyStarted("r1");
-    core.onToolCall("cid", "slow", {});
+    core.report({ type: "tool.called", toolCallId: "cid", toolName: "slow", args: {} });
     core.onReplyStarted("r2");
     expect(signals[0]?.aborted).toBe(true);
   });
@@ -388,7 +388,7 @@ describe("createSessionCore — tool concurrency", () => {
     const { core, transport } = makeCore({ executeTool });
     await core.start();
     core.onReplyStarted("r1");
-    core.onToolCall("cid", "slow", {});
+    core.report({ type: "tool.called", toolCallId: "cid", toolName: "slow", args: {} });
     // Resolves only because stop() aborts the reply's signal — otherwise this
     // await would hang on the never-resolving tool.
     await core.stop();
@@ -403,20 +403,20 @@ describe("createSessionCore — duplicate reply.done in multi-hop turns", () => 
     const { core, sink, transport } = makeCore({ executeTool });
     await core.start();
     core.onReplyStarted("r1");
-    core.onToolCall("cid", "t", {});
+    core.report({ type: "tool.called", toolCallId: "cid", toolName: "t", args: {} });
     await flush();
-    core.onReplyDone(); // flushes the tool result to the transport
+    core.report({ type: "reply.completed" }); // flushes the tool result to the transport
     await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "out"));
 
-    core.onReplyDone(); // duplicated frame from the service
+    core.report({ type: "reply.completed" }); // duplicated frame from the service
     await flush();
     await flush();
     await flush();
     expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
 
     // The real continuation arrives and ends the turn exactly once.
-    core.onAgentTranscript("answer", false);
-    core.onReplyDone();
+    core.report({ type: "agent-transcript.committed", text: "answer" });
+    core.report({ type: "reply.completed" });
     await vi.waitFor(() =>
       expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(1),
     );
@@ -428,20 +428,20 @@ describe("createSessionCore — duplicate reply.done in multi-hop turns", () => 
     await core.start();
     core.onReplyStarted("r1");
 
-    core.onToolCall("c1", "t", {});
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "t", args: {} });
     await flush();
-    core.onReplyDone();
+    core.report({ type: "reply.completed" });
     await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("c1", "out"));
     expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
 
-    core.onToolCall("c2", "t", {}); // continuation hop
+    core.report({ type: "tool.called", toolCallId: "c2", toolName: "t", args: {} }); // continuation hop
     await flush();
-    core.onReplyDone();
+    core.report({ type: "reply.completed" });
     await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("c2", "out"));
     expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(0);
 
-    core.onAgentTranscript("final answer", false);
-    core.onReplyDone();
+    core.report({ type: "agent-transcript.committed", text: "final answer" });
+    core.report({ type: "reply.completed" });
     await vi.waitFor(() =>
       expect(sink.events.filter((e) => e.type === "reply.completed")).toHaveLength(1),
     );
@@ -490,12 +490,22 @@ describe("createSessionCore — idle timeout", () => {
   // the signal — and a client cannot fake it: to make STT report speech it
   // has to send audio that really contains some.
   test.each([
-    ["speech the transport detected", (c: SessionCore) => c.onSpeechStarted()],
-    ["an interim user transcript", (c: SessionCore) => c.onUserTranscriptPartial("hel")],
-    ["a committed user turn", (c: SessionCore) => c.onUserTranscript("hello")],
+    ["speech the transport detected", (c: SessionCore) => c.report({ type: "speech.started" })],
+    [
+      "an interim user transcript",
+      (c: SessionCore) => c.report({ type: "user-transcript.updated", text: "hel" }),
+    ],
+    [
+      "a committed user turn",
+      (c: SessionCore) => c.report({ type: "user-transcript.committed", text: "hello" }),
+    ],
     ["the agent replying", (c: SessionCore) => c.onReplyStarted("r1")],
     ["agent audio", (c: SessionCore) => c.onAudioChunk(new Uint8Array([1]))],
-    ["a tool call", (c: SessionCore) => c.onToolCall("c1", "t", {})],
+    [
+      "a tool call",
+      (c: SessionCore) =>
+        c.report({ type: "tool.called", toolCallId: "c1", toolName: "t", args: {} }),
+    ],
   ])("%s resets the idle timer", async (_label, act) => {
     vi.useFakeTimers();
     try {
@@ -605,10 +615,10 @@ describe("createSessionCore — history", () => {
     await core.start();
 
     core.restoreHistory([{ role: "user", content: "prior" }]);
-    core.onUserTranscript("now");
+    core.report({ type: "user-transcript.committed", text: "now" });
 
     core.onReplyStarted("r1");
-    core.onToolCall("c1", "lookup", {});
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
     expect(executeTool.mock.calls[0]?.[3]).toEqual([
       { role: "user", content: "prior" },
@@ -622,10 +632,10 @@ describe("createSessionCore — history", () => {
     await core.start();
     core.restoreHistory([{ role: "user", content: "prior" }]);
 
-    core.onReset();
+    core.command({ type: "reset" });
 
     core.onReplyStarted("r1");
-    core.onToolCall("c1", "lookup", {});
+    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
     expect(executeTool.mock.calls[0]?.[3]).toEqual([]);
   });
@@ -638,7 +648,7 @@ describe("createSessionCore — error logging", () => {
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     const { core, sink } = makeCore({ logger });
 
-    core.onError("stt", "socket closed 1000");
+    core.report({ type: "error.reported", code: "stt", message: "socket closed 1000" });
 
     expect(logger.warn).toHaveBeenCalledWith("session error (fatal)", {
       sid: "s-test",
@@ -660,7 +670,7 @@ describe("createSessionCore — error logging", () => {
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     const { core } = makeCore({ logger });
 
-    core.onError("internal", "recoverable", { fatal: false });
+    core.report({ type: "error.reported", code: "internal", message: "recoverable", fatal: false });
 
     expect(logger.warn).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith("session error", {

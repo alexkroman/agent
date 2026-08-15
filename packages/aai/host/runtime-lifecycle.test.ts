@@ -138,8 +138,8 @@ describe("createRuntime createSession", () => {
     expect(typeof session.start).toBe("function");
     expect(typeof session.stop).toBe("function");
     expect(typeof session.onAudio).toBe("function");
-    expect(typeof session.onCancel).toBe("function");
-    expect(typeof session.onReset).toBe("function");
+    expect(typeof session.command).toBe("function");
+    expect(typeof session.report).toBe("function");
     expect(typeof session.restoreHistory).toBe("function");
   });
 

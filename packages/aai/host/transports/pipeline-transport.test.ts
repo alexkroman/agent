@@ -9,12 +9,8 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
-import {
-  firstCallArg,
-  makeCallbacks,
-  makeOpts,
-  useVirtualTime,
-} from "./_pipeline-transport-harness.ts";
+import { firstCallArg, makeOpts, useVirtualTime } from "./_pipeline-transport-harness.ts";
+import { makeCallbacks } from "./_transport-recorder.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 // Turn-processing specs (STT final → LLM stream → TTS) live in
@@ -198,7 +194,7 @@ describe("PipelineTransport", () => {
       await t.start();
       stt.last()?.fireFinal("how's the weather?");
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
       // Two tool steps, then exactly one forced answer step — not a third
       // tool step, and not silence.
@@ -217,7 +213,7 @@ describe("PipelineTransport", () => {
       await t.start();
       stt.last()?.fireFinal("hi");
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
       expect(llm.calls.length).toBe(1);
       expect(llm.calls[0]?.toolChoice).not.toEqual({ type: "none" });
@@ -314,7 +310,7 @@ describe("PipelineTransport", () => {
   });
 
   describe("tool observability", () => {
-    test("callbacks.onToolCall fires for each tool-call stream part", async () => {
+    test("a tool.called report fires for each tool-call stream part", async () => {
       const script: ScriptedPart[] = [
         {
           type: "tool-call",
@@ -345,9 +341,14 @@ describe("PipelineTransport", () => {
       await t.start();
       stt.last()?.fireFinal("how's the weather?");
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
-      expect(callbacks.onToolCall).toHaveBeenCalledWith("tc-1", "get_weather", expect.any(Object));
+      expect(callbacks.reported("tool.called")).toHaveBeenCalledWith({
+        type: "tool.called",
+        toolCallId: "tc-1",
+        toolName: "get_weather",
+        args: expect.any(Object),
+      });
       await t.stop();
     });
   });
@@ -358,7 +359,11 @@ describe("PipelineTransport", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireError("stt_stream_error", "stt failed");
-      expect(callbacks.onError).toHaveBeenCalledWith("stt", "stt failed");
+      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+        type: "error.reported",
+        code: "stt",
+        message: "stt failed",
+      });
       await t.stop();
     });
 
@@ -367,7 +372,11 @@ describe("PipelineTransport", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       tts.last()?.fireError("tts_stream_error", "tts failed");
-      expect(callbacks.onError).toHaveBeenCalledWith("tts", "tts failed");
+      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+        type: "error.reported",
+        code: "tts",
+        message: "tts failed",
+      });
       await t.stop();
     });
 
@@ -377,7 +386,11 @@ describe("PipelineTransport", () => {
       });
       const t = createPipelineTransport(opts);
       await t.start();
-      expect(callbacks.onError).toHaveBeenCalledWith("stt", "connect failed");
+      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+        type: "error.reported",
+        code: "stt",
+        message: "connect failed",
+      });
       await t.stop();
     });
 
@@ -387,7 +400,11 @@ describe("PipelineTransport", () => {
       });
       const t = createPipelineTransport(opts);
       await t.start();
-      expect(callbacks.onError).toHaveBeenCalledWith("tts", "tts connect failed");
+      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+        type: "error.reported",
+        code: "tts",
+        message: "tts connect failed",
+      });
       await t.stop();
     });
 
@@ -409,12 +426,16 @@ describe("PipelineTransport", () => {
 
       expect(tts.last()?.textChunks.join("")).toContain("cannot hear you");
       // Spoken, and surfaced as a transcript so captions match the audio.
-      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
-        expect.stringContaining("cannot hear you"),
-        false,
-      );
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+        type: "agent-transcript.committed",
+        text: expect.stringContaining("cannot hear you"),
+      });
       // Still a failed start: the client must learn the session is dead.
-      expect(callbacks.onError).toHaveBeenCalledWith("stt", "connect timed out");
+      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+        type: "error.reported",
+        code: "stt",
+        message: "connect timed out",
+      });
       expect(callbacks.onSessionReady).not.toHaveBeenCalled();
       await t.stop();
     });
@@ -427,7 +448,7 @@ describe("PipelineTransport", () => {
       });
       const t = createPipelineTransport(opts);
       await t.start();
-      expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+      expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
       await t.stop();
     });
 
@@ -443,8 +464,12 @@ describe("PipelineTransport", () => {
       );
       const t = createPipelineTransport(opts);
       await t.start();
-      expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
-      expect(callbacks.onError).toHaveBeenCalledWith("stt", "connect timed out");
+      expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+        type: "error.reported",
+        code: "stt",
+        message: "connect timed out",
+      });
       await t.stop();
     });
 
@@ -493,7 +518,7 @@ describe("PipelineTransport", () => {
       stt.last()?.fireFinal("second turn still runs");
       await vi.waitFor(() => {
         expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
       await t.stop();
     });
@@ -561,10 +586,10 @@ describe("PipelineTransport — recovery when the LLM stream fails", () => {
     stt.last()?.fireFinal("are you there?");
 
     await vi.waitFor(() => {
-      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
-        expect.stringContaining("Sorry, I had a problem"),
-        false,
-      );
+      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+        type: "agent-transcript.committed",
+        text: expect.stringContaining("Sorry, I had a problem"),
+      });
     });
     await t.stop();
   });
@@ -584,7 +609,12 @@ describe("PipelineTransport — recovery when the LLM stream fails", () => {
     stt.last()?.fireFinal("are you there?");
 
     await vi.waitFor(() => {
-      expect(callbacks.onError).toHaveBeenCalledWith("llm", expect.any(String), { fatal: false });
+      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+        type: "error.reported",
+        code: "llm",
+        message: expect.any(String),
+        fatal: false,
+      });
     });
     await t.stop();
   });
@@ -596,7 +626,10 @@ describe("PipelineTransport — recovery when the LLM stream fails", () => {
     stt.last()?.fireFinal("are you there?");
 
     await vi.waitFor(() => {
-      expect(callbacks.onError).toHaveBeenCalledWith("llm", expect.any(String), {
+      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+        type: "error.reported",
+        code: "llm",
+        message: expect.any(String),
         fatal: false,
       });
     });

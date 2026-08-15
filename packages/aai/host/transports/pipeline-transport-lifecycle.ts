@@ -143,7 +143,7 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
     markTerminated();
     quiesce();
     abortInFlightTurn();
-    callbacks.onCancelled();
+    callbacks.report({ type: "reply.cancelled" });
     sessionAbort.abort();
     // Close whatever was adopted before the failure (e.g. TTS went live,
     // then STT's open failed) — it must not outlive the terminate.
@@ -168,7 +168,7 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
 
   function runGreeting(text: string): Promise<void> {
     return runReply("pipeline-greeting", async () => {
-      callbacks.onAgentTranscript(text, false);
+      callbacks.report({ type: "agent-transcript.committed", text });
       history.pushConversation({ role: "assistant", content: text });
       history.pushLlm({ role: "assistant", content: text });
       sendTtsText(text, { publishTranscript: false });
