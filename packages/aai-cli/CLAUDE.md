@@ -368,11 +368,14 @@ Three things separate the two, and picking the wrong one measures nothing:
 
 - **This mode kills a PROCESS; that one cuts a CONNECTION.** They are not
   degrees of the same fault. A workflow survives a process restart because its
-  state is in Postgres; a voice session does not, because `ctx.state` and the
-  session/sink maps are plain `Map`s in `runtime.ts`. So a socket drop is the
-  only disconnect a session is advertised to survive, and no test will make it
-  survive a restart — that would be a feature (persisting session state), not a
-  test.
+  state is in Postgres; a voice session survives only PARTLY, and the split is
+  worth knowing before choosing a mode. Its slot state is durable when the app
+  has a database (`aai/host/session-state-store.ts`), so a reconnect recovers the
+  cart — but the session and sink maps are still plain `Map`s in `runtime.ts` and
+  the transport holds live provider sockets, a turn machine and an audio pacer,
+  none of which has a representation to store. So a socket drop remains the only
+  disconnect a SESSION is advertised to survive; what a restart now preserves is
+  the state, not the call.
 - **It severs rather than closing.** `destroy()`, never a close frame: a clean
   close is the "user hung up" case aai-ui deliberately does NOT reconnect from,
   so a test built on `ws.close()` proves the opposite of what it looks like.
