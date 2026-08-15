@@ -16,6 +16,7 @@ import {
   PROJECT,
   SCOPE,
 } from "./_studio-session-test-utils.ts";
+import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 import { chatUrlForGuest, createStudioSessionBroker } from "./studio-session-broker.ts";
 import { createMemoryStudioSessionRegistry } from "./studio-session-registry.ts";
 import { createWorkspace, getWorkspace } from "./studio-workspace.ts";
@@ -454,6 +455,7 @@ describe("cross-replica studio sessions", () => {
       replicaId,
       spawn: spawn as never,
       harnessPath: "/fake/harness.mjs",
+      previewQueue: createMemoryPreviewQueue(),
       ...(adopt ? { adopt: adopt as never } : {}),
     });
     return { broker, spawn };

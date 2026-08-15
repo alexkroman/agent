@@ -2,27 +2,8 @@ import { describe, expect, test, vi } from "vitest";
 import { S2S_MAX_RESUME_ATTEMPTS } from "../../sdk/constants.ts";
 import { makeMockHandle, silentLogger, sleep } from "../_test-utils.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle, S2sWebSocket } from "../s2s.ts";
+import { makeCallbacks, type RecordingCallbacks } from "./_transport-recorder.ts";
 import { _internals, createS2sTransport, type S2sTransportOptions } from "./s2s-transport.ts";
-import type { TransportCallbacks } from "./types.ts";
-
-function makeCallbacks(): TransportCallbacks {
-  return {
-    onReplyStarted: vi.fn(),
-    onReplyDone: vi.fn(),
-    onCancelled: vi.fn(),
-    onAudioChunk: vi.fn(),
-    onAudioDone: vi.fn(),
-    onUserTranscript: vi.fn(),
-    onUserTranscriptPartial: vi.fn(),
-    onAgentTranscript: vi.fn(),
-    onAgentTranscriptPartial: vi.fn(),
-    onToolCall: vi.fn(),
-    onError: vi.fn(),
-    onSpeechStarted: vi.fn(),
-    onSpeechStopped: vi.fn(),
-    onSessionReady: vi.fn(),
-  };
-}
 
 function makeTransportOptions(overrides: Partial<S2sTransportOptions> = {}): S2sTransportOptions {
   return {
@@ -65,7 +46,7 @@ describe("S2sTransport", () => {
 
 /** Capture the S2sCallbacks that the transport hands to connectS2s. */
 function setupSpiedTransport(): {
-  callbacks: TransportCallbacks;
+  callbacks: RecordingCallbacks;
   handles: S2sHandle[];
   capturedCallbacks: S2sCallbacks[];
 } {
@@ -122,8 +103,8 @@ describe("S2sTransport reconnect", () => {
     const newHandle = expectAt(handles, 1, "new handle");
     expect(newHandle.resumeSession).toHaveBeenCalledWith("sess_abc");
 
-    expect(callbacks.onCancelled).toHaveBeenCalledOnce();
-    expect(callbacks.onError).not.toHaveBeenCalled();
+    expect(callbacks.reported("reply.cancelled")).toHaveBeenCalledOnce();
+    expect(callbacks.reported("error.reported")).not.toHaveBeenCalled();
   });
 
   test("a tool.result dropped during the resume window is redelivered once resumed", async () => {
@@ -168,10 +149,11 @@ describe("S2sTransport reconnect", () => {
 
     await sleep(5);
     expect(handles.length).toBe(1);
-    expect(callbacks.onError).toHaveBeenCalledWith(
-      "connection",
-      expect.stringContaining("S2S closed mid-reply"),
-    );
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "connection",
+      message: expect.stringContaining("S2S closed mid-reply"),
+    });
   });
 
   test("does NOT reconnect when stop() was called", async () => {
@@ -188,7 +170,7 @@ describe("S2sTransport reconnect", () => {
 
     await sleep(5);
     expect(handles.length).toBe(1);
-    expect(callbacks.onError).not.toHaveBeenCalled();
+    expect(callbacks.reported("error.reported")).not.toHaveBeenCalled();
   });
 
   test("surfaces resume failure when the resumed socket also closes", async () => {
@@ -206,10 +188,11 @@ describe("S2sTransport reconnect", () => {
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onClose(1006, "");
 
-    expect(callbacks.onError).toHaveBeenCalledWith(
-      "connection",
-      expect.stringContaining("resume failed"),
-    );
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "connection",
+      message: expect.stringContaining("resume failed"),
+    });
   });
 
   test("surfaces resume failure when server reports session_not_found", async () => {
@@ -226,10 +209,11 @@ describe("S2sTransport reconnect", () => {
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onSessionExpired();
 
-    expect(callbacks.onError).toHaveBeenCalledWith(
-      "connection",
-      expect.stringContaining("session expired"),
-    );
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "connection",
+      message: expect.stringContaining("session expired"),
+    });
   });
 
   test("a failed resume emits exactly one error when close fires before the rejection", async () => {
@@ -254,9 +238,9 @@ describe("S2sTransport reconnect", () => {
     cb1.onSessionReady("sess_abc");
     cb1.onClose(1005, "");
 
-    await vi.waitFor(() => expect(callbacks.onError).toHaveBeenCalled());
+    await vi.waitFor(() => expect(callbacks.reported("error.reported")).toHaveBeenCalled());
     await sleep(5);
-    expect(callbacks.onError).toHaveBeenCalledTimes(1);
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledTimes(1);
     // No further resume attempt after the failure (the 1006 close is transient
     // by code, but the retired session must not loop back into resume).
     expect(spy).toHaveBeenCalledTimes(2);
@@ -281,14 +265,14 @@ describe("S2sTransport reconnect", () => {
     cb1.onSessionReady("sess_abc");
     cb1.onClose(1005, "");
 
-    await vi.waitFor(() => expect(callbacks.onError).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(callbacks.reported("error.reported")).toHaveBeenCalledTimes(1));
 
     // The dead resume socket's close event trails in with a transient code —
     // it must neither re-emit the error nor kick off another resume loop.
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onClose(1006, "");
     await sleep(5);
-    expect(callbacks.onError).toHaveBeenCalledTimes(1);
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
@@ -330,10 +314,11 @@ describe("S2sTransport reconnect", () => {
 
     // The drop past the cap surfaces a fatal error and spawns no further resume.
     await vi.waitFor(() => {
-      expect(callbacks.onError).toHaveBeenCalledWith(
-        "connection",
-        expect.stringContaining("abandoned"),
-      );
+      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+        type: "error.reported",
+        code: "connection",
+        message: expect.stringContaining("abandoned"),
+      });
     });
     expect(handles.length).toBe(S2S_MAX_RESUME_ATTEMPTS + 1);
   });
@@ -358,7 +343,7 @@ describe("S2sTransport reconnect", () => {
       if (i < cycles) cb.onClose(1006, "");
     }
 
-    expect(callbacks.onError).not.toHaveBeenCalled();
+    expect(callbacks.reported("error.reported")).not.toHaveBeenCalled();
     expect(handles.length).toBe(cycles + 1);
   });
 
@@ -373,10 +358,11 @@ describe("S2sTransport reconnect", () => {
     // provider dropped a live idle session. This must not be swallowed, or the
     // client sits "connected" while every later utterance vanishes.
     cb.onClose(1008, "policy");
-    expect(callbacks.onError).toHaveBeenCalledWith(
-      "connection",
-      expect.stringContaining("closed unexpectedly"),
-    );
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "connection",
+      message: expect.stringContaining("closed unexpectedly"),
+    });
   });
 
   // Regression: found by `integration/s2s-fuzz.integration.test.ts`. Whether a
@@ -395,7 +381,12 @@ describe("S2sTransport reconnect", () => {
     // releases the microphone and ends the call, so the agent keeps replying to
     // a session that can no longer hear anyone.
     cb.onError(new Error("slow down"));
-    expect(callbacks.onError).toHaveBeenCalledWith("internal", "slow down", { fatal: false });
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "internal",
+      message: "slow down",
+      fatal: false,
+    });
 
     // Still usable: a later reply must reach the client normally.
     cb.onReplyStarted("r1");
@@ -420,17 +411,18 @@ describe("S2sTransport reconnect", () => {
     const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
     cb2.onSessionExpired();
 
-    expect(callbacks.onError).toHaveBeenCalledWith(
-      "connection",
-      expect.stringContaining("session expired"),
-    );
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
+      type: "error.reported",
+      code: "connection",
+      message: expect.stringContaining("session expired"),
+    });
     const h2 = expectAt(handles, 1, "resumed handle");
     expect(h2.close).toHaveBeenCalled();
 
     // And the retired transport relays nothing further from that socket.
     const audioCalls = vi.mocked(callbacks.onAudioChunk).mock.calls.length;
     cb2.onUserTranscript("are you still there");
-    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
+    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
     expect(callbacks.onAudioChunk).toHaveBeenCalledTimes(audioCalls);
   });
 
@@ -470,7 +462,7 @@ describe("S2sTransport reconnect", () => {
     resume.resolve(resumeHandle);
     await sleep(5);
     expect(resumeHandle.close).toHaveBeenCalled();
-    expect(callbacks.onError).not.toHaveBeenCalled();
+    expect(callbacks.reported("error.reported")).not.toHaveBeenCalled();
   });
 
   test("cancelReply drops in-flight audio until the next reply starts", async () => {
@@ -498,7 +490,10 @@ describe("S2sTransport reconnect", () => {
     cb.onSessionReady("sess");
     cb.onUserTranscriptPartial("what's the wea");
 
-    expect(callbacks.onUserTranscriptPartial).toHaveBeenCalledWith("what's the wea");
+    expect(callbacks.reported("user-transcript.updated")).toHaveBeenCalledWith({
+      type: "user-transcript.updated",
+      text: "what's the wea",
+    });
   });
 
   // S2S has no incremental agent transcript to forward — `transcript.agent.delta`
@@ -515,7 +510,10 @@ describe("S2sTransport reconnect", () => {
     cb.onReplyStarted("r1");
     cb.onAgentTranscript("It's sunny.", false);
 
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("It's sunny.", false);
-    expect(callbacks.onAgentTranscriptPartial).not.toHaveBeenCalled();
+    expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+      type: "agent-transcript.committed",
+      text: "It's sunny.",
+    });
+    expect(callbacks.reported("agent-transcript.updated")).not.toHaveBeenCalled();
   });
 });

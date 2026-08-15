@@ -3,6 +3,19 @@
 import { describe, expect, test } from "vitest";
 import { createPgRateLimiter, createRateLimiter } from "./rate-limit.ts";
 import type { SqlExec } from "./secret-store.ts";
+import { rateLimiterConformance } from "./store-conformance-cases.ts";
+
+// ── The CONTRACT, over the arm that runs everywhere ─────────────────────────
+//
+// One case list in `store-conformance.ts`, shared with the stack arm in
+// `store-conformance.scenario.test.ts`. The memory arm is unconditional, so this
+// module stays covered on every machine; the stack arm adds what only a real
+// Postgres can hold. The suites below keep whatever each implementation
+// uniquely owes — the statements it issues, and its own edge cases.
+
+describe("RateLimiter conformance: memory", () => {
+  rateLimiterConformance((opts) => createRateLimiter(opts));
+});
 
 describe("createRateLimiter", () => {
   test("allows up to the limit within a window, then refuses", async () => {

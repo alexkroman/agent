@@ -3,6 +3,7 @@
 
 import type { ToolSchema } from "../../sdk/_internal-types.ts";
 import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "../../sdk/constants.ts";
+import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
 import type { ToolChoice } from "../../sdk/types.ts";
 import { errorMessage, safeJsonParse, toArgsRecord } from "../../sdk/utils.ts";
@@ -119,6 +120,16 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     });
   }
 
+  /**
+   * A TURN-level error report. `fatal: false` on every one of them, deliberately:
+   * none of these closes the socket, so the conversation goes on — and an absent
+   * `fatal` means the session is over, which releases the client's microphone.
+   * The one terminal reporter is the close handler.
+   */
+  function reportError(code: SessionErrorCode, message: string): void {
+    opts.callbacks.report({ type: "error.reported", code, message, fatal: false });
+  }
+
   async function start(): Promise<void> {
     const url = `${baseUrl}?model=${encodeURIComponent(model)}`;
     log.info("OpenAI Realtime connecting", { url });
@@ -149,7 +160,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         // Non-fatal: one frame failed to dispatch, the socket is untouched, and
         // the next frame will be handled normally. See handleErrorEvent below
         // for why a fatal frame here would be worse than the dropped frame.
-        opts.callbacks.onError("internal", msg, { fatal: false });
+        reportError("internal", msg);
       }
     });
     sock.addEventListener("close", (ev) => {
@@ -175,7 +186,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       // handleClose reports THAT as fatal with the code attached. Reporting this
       // one as fatal too tore the client down (mic released) one event early,
       // for a socket error that may not even be terminal.
-      opts.callbacks.onError("internal", msg, { fatal: false });
+      reportError("internal", msg);
     });
     await connect.promise;
   }
@@ -192,7 +203,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   function handleUserTranscript(obj: Record<string, unknown>): void {
     if (typeof obj.transcript === "string") {
-      opts.callbacks.onUserTranscript(obj.transcript);
+      opts.callbacks.report({ type: "user-transcript.committed", text: obj.transcript });
     }
   }
 
@@ -213,7 +224,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const id = asString(obj.item_id);
     const text = agentTranscriptBuffers.get(id) ?? "";
     agentTranscriptBuffers.delete(id);
-    if (text) opts.callbacks.onAgentTranscript(text, false);
+    if (text) opts.callbacks.report({ type: "agent-transcript.committed", text });
   }
 
   function clearTurnBuffers(): void {
@@ -224,7 +235,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   function handleResponseDone(): void {
     replyInFlight = false;
     clearTurnBuffers();
-    opts.callbacks.onReplyDone();
+    opts.callbacks.report({ type: "reply.completed" });
   }
 
   function handleErrorEvent(obj: Record<string, unknown>): void {
@@ -238,7 +249,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     // frame makes aai-ui release the microphone and end the call, so a
     // recoverable complaint silently cost the user their mic while this
     // transport kept relaying replies. Session death is handleClose's to report.
-    opts.callbacks.onError("internal", message, { fatal: false });
+    reportError("internal", message);
   }
 
   function handleOutputItemAdded(obj: Record<string, unknown>): void {
@@ -287,7 +298,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const argsStr = asString(obj.arguments) || (buf?.argsBuffer ?? "");
     log.info("OpenAI Realtime tool call", { name, callId, args: argsStr });
     const args = parseToolArgs(argsStr, name, callId);
-    opts.callbacks.onToolCall(callId, name, args);
+    opts.callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args });
   }
 
   function handleMessage(data: unknown): void {
@@ -303,7 +314,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         handleAudioDelta(obj);
         return;
       case "response.output_audio.done":
-        opts.callbacks.onAudioDone();
+        opts.callbacks.report({ type: "audio.completed" });
         return;
       case "input_audio_buffer.speech_started":
         if (replyInFlight) {
@@ -315,12 +326,12 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
           // barge-in). Mirrors `cancelReply()`'s local state reset.
           replyInFlight = false;
           clearTurnBuffers();
-          opts.callbacks.onCancelled();
+          opts.callbacks.report({ type: "reply.cancelled" });
         }
-        opts.callbacks.onSpeechStarted();
+        opts.callbacks.report({ type: "speech.started" });
         return;
       case "input_audio_buffer.speech_stopped":
-        opts.callbacks.onSpeechStopped();
+        opts.callbacks.report({ type: "speech.stopped" });
         return;
       case "conversation.item.input_audio_transcription.completed":
         handleUserTranscript(obj);
@@ -361,7 +372,11 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       return;
     }
     log.warn("OpenAI Realtime closed unexpectedly", { code, reason });
-    opts.callbacks.onError("connection", `OpenAI Realtime closed (code=${code})`);
+    opts.callbacks.report({
+      type: "error.reported",
+      code: "connection",
+      message: `OpenAI Realtime closed (code=${code})`,
+    });
   }
 
   async function stop(): Promise<void> {
@@ -415,7 +430,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       send({ type: "response.cancel" });
       replyInFlight = false;
       clearTurnBuffers();
-      // Do NOT call callbacks.onCancelled() here — session-core.onCancel
+      // Do NOT report `reply.cancelled` here — the session's own `cancel` command
       // (client-initiated, the only cancelReply caller) emits `cancelled`
       // itself, so firing it here double-emits the frame. The S2S and
       // pipeline transports follow the same rule.

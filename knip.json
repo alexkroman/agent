@@ -4,7 +4,13 @@
     "examples/**"
   ],
   "ignoreBinaries": [
-    "safe-chain"
+    "safe-chain",
+    // `with-test-pg.mjs` shells out to `supabase status -o env` to resolve the
+    // local stack. It is a developer's own CLI (brew/npx), deliberately not a
+    // dependency: this repo must not install a 100 MB binary to run its tests,
+    // and the script treats an absent one as "no stack resolved" with a printed
+    // reason rather than a failure.
+    "supabase"
   ],
   "ignoreExportsUsedInFile": true,
   // The "exports" check is ON. It was off repo-wide for a long time because
@@ -129,6 +135,13 @@
       "ignoreBinaries": [
         "modal"
       ]
+    },
+    "packages/aai-evals": {
+      "entry": [
+        "**/*.test.ts",
+        "**/*.eval.test.ts"
+      ],
+      "includeEntryExports": true
     },
     "packages/aai-studio-client": {
       "entry": [

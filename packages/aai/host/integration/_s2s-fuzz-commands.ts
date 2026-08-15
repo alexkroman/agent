@@ -424,7 +424,7 @@ export class CancelThenStrayAudio implements Cmd {
   async run(m: ServiceModel, h: Harness): Promise<void> {
     hit(h, "clientCancel");
     h.audioSuppressed = true;
-    h.session.onCancel();
+    h.session.command({ type: "cancel" });
     await drain();
     if (h.audioSuppressed) hit(h, "audioDuringSuppression");
     h.link.current()?.deliver({ type: "reply.audio", data: "AAECAwQF" });
@@ -451,7 +451,7 @@ export class ClientCancel implements Cmd {
   async run(m: ServiceModel, h: Harness): Promise<void> {
     hit(h, "clientCancel");
     h.audioSuppressed = true;
-    h.session.onCancel();
+    h.session.command({ type: "cancel" });
     await drain();
     syncFromReality(m, h);
   }
@@ -470,7 +470,7 @@ export class ClientReset implements Cmd {
     // A reset abandons the conversation, tool calls in flight included — the
     // provider's outstanding calls are the user's to strand.
     for (const id of m.outstanding) h.excused.add(id);
-    h.session.onReset();
+    h.session.command({ type: "reset" });
     await drain();
     syncFromReality(m, h);
   }

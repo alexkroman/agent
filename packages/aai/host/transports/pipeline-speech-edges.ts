@@ -13,6 +13,7 @@
 // The turn orchestration that consumes both lives in pipeline-user-speech.ts.
 
 import { createRestartableTimer } from "../_timer.ts";
+import type { TransportEventBody } from "./types.ts";
 
 /**
  * Edge-detect "user is speaking" from the STT transcript stream: the first
@@ -148,7 +149,12 @@ export interface GatedSpeechEdges {
 }
 
 export function createGatedSpeechEdges(deps: {
-  callbacks: { onSpeechStarted(): void; onSpeechStopped(): void };
+  /**
+   * The transport's report path. The OUTWARD edge, so it speaks the wire
+   * vocabulary; the tracker-to-gate direction above keeps its two method names,
+   * because that pair is this module's own interface rather than the session's.
+   */
+  report: (event: TransportEventBody) => void;
   agentIsSpeaking: () => boolean;
 }): GatedSpeechEdges {
   // `held` is an edge the client has not been told about yet; `emitted` is one
@@ -160,7 +166,7 @@ export function createGatedSpeechEdges(deps: {
   function emit(): void {
     held = false;
     emitted = true;
-    deps.callbacks.onSpeechStarted();
+    deps.report({ type: "speech.started" });
   }
 
   return {
@@ -175,7 +181,7 @@ export function createGatedSpeechEdges(deps: {
       held = false;
       if (!emitted) return;
       emitted = false;
-      deps.callbacks.onSpeechStopped();
+      deps.report({ type: "speech.stopped" });
     },
     release(): void {
       if (held) emit();

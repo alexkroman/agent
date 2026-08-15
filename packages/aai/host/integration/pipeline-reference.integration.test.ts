@@ -97,7 +97,7 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
     });
 
     await session.start();
-    session.onAudioReady();
+    session.command({ type: "audio_ready" });
 
     // 16 kHz PCM16 → 3200 bytes per 100ms.
     const chunkBytes = 3200;

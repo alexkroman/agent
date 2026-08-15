@@ -157,7 +157,9 @@ export async function callbackFlow(input: { label: string }) {
 
   const request = await hook;
   const payload = await request.json();
-  return { label: input.label, echoed: payload.echoed };
+  // \`hook.url\` is returned so a spec can assert WHERE the DevKit points it. Every
+  // reachable path here rests on that answer being guest-local.
+  return { label: input.label, echoed: payload.echoed, hookUrl: hook.url };
 }
 
 async function deliver(url: string, label: string) {
@@ -370,6 +372,31 @@ describe("aai dev serves the workflow HTTP API", () => {
       status: "completed",
       output: { label: "otters", echoed: "OTTERS" },
     });
+  }, 40_000);
+
+  test("the URL the DevKit mints is GUEST-LOCAL — the premise publicWebhookUrl rests on", async () => {
+    // The whole reason `ctx.workflows.publicWebhookUrl` exists, pinned against the
+    // real installed DevKit rather than taken on trust. `createWebhook()` composes
+    // `hook.url` from `getWorkflowMetadata().url`, which is `http://localhost:<port>`
+    // off the running process (its only other branch is `https://$VERCEL_URL`) — so
+    // deployed, it names the inside of a sandbox that has self-exited by the time a
+    // third party calls back. Only this tier can see it: the mint happens inside the
+    // workflow VM, and outside a run `createWebhook()` throws.
+    //
+    // If this ever fails because the URL grew a public origin, the SDK accessor
+    // becomes a supplement to something usable rather than the only usable answer —
+    // read the note in `packages/aai/CLAUDE.md` before deleting anything.
+    const { body } = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({ workflow: "callback", input: { label: "kelp" }, wait: 30_000 }),
+    });
+    const output = (body.run as { output: { hookUrl: string } }).output;
+    expect(output.hookUrl).toMatch(/^http:\/\/localhost:\d+\//);
+    // And the PATH is the one both ends derive from `WORKFLOW_WEBHOOK_PREFIX`, which
+    // is what makes composing a public URL out of a token legitimate rather than a
+    // guess about someone else's routing.
+    expect(output.hookUrl).toContain("/.well-known/workflow/v1/webhook/");
   }, 40_000);
 
   test("the run id it hands back reads the same run afterwards", async () => {

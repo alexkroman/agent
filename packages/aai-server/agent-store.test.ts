@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import type { SqlExec } from "./secret-store.ts";
+import { agentRowsConformance } from "./store-conformance-cases.ts";
 
 const RECORD = {
   slug: "my-agent",
@@ -9,6 +10,18 @@ const RECORD = {
   worker_hash: "abc123",
   client_files: { "index.html": "def456" },
 };
+
+// ── The CONTRACT, over the arm that runs everywhere ─────────────────────────
+//
+// One case list in `store-conformance.ts`, shared with the stack arm in
+// `store-conformance.scenario.test.ts`. The memory arm is unconditional, so this
+// module stays covered on every machine; the stack arm adds what only a real
+// Postgres can hold. The suites below keep whatever each implementation
+// uniquely owes — the statements it issues, and its own edge cases.
+
+describe("AgentRows conformance: memory", () => {
+  agentRowsConformance(() => createMemoryAgentRows());
+});
 
 describe("createMemoryAgentRows", () => {
   test("put/get round-trip with version bump on redeploy", async () => {

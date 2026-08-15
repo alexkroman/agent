@@ -43,7 +43,12 @@ the assertion.**
 | Scenario | `pnpm test:scenario` | a real subprocess, port, bundler, or Postgres | 120s |
 | Scenario + real Postgres | `pnpm test:pg` | the above, `AAI_TEST_PG_URL` resolved | 120s |
 | E2E | `pnpm test:e2e` | full process spawn + Playwright browser | 300s |
+| Eval | `pnpm test:eval` | a live model on a real key, `*.eval.test.ts` | 1800s |
 | Templates | `pnpm test:templates` | template agent example tests | 5s |
+
+**The eval tier REPORTS and does not gate** — absent from `pnpm check` and CI,
+because a measurably noisy instrument must not block a merge. Runs repeat and the
+report carries a spread; `packages/aai-evals/CLAUDE.md` owns it.
 
 They used to be separated by TIMEOUT, a proxy for the rule above that stops being
 one as soon as two tests are slow for unrelated reasons. `pipeline-fuzz` (pure
@@ -52,10 +57,10 @@ policy and serial block, so neither was configured for its own failure mode — 
 `pnpm test:integration` took **721 seconds to evaluate twelve tests**, 50 of 63
 skipping for want of a database. It is 10 seconds now.
 
-**Membership is a NAMING CONVENTION** — `*.integration.test.ts` and
-`*.scenario.test.ts`, excluded by every unit config and selected one each by the
-scripts, so a new test needs no config edit (see "Integration- and scenario-tier
-membership" below for the deliberate exceptions).
+**Membership is a NAMING CONVENTION** — `*.integration.test.ts`,
+`*.scenario.test.ts` and `*.eval.test.ts`, excluded by every unit config and
+selected one each by the scripts, so a new test needs no config edit (see
+"Integration- and scenario-tier membership" below for the deliberate exceptions).
 
 **No tier carries a `retry`** — a tier that retries has classified its own
 failures as noise; `vitest.slow.config.ts` carries the argument.
@@ -71,21 +76,21 @@ if its `$GITHUB_ENV` export ever broke.
 
 - `pnpm test:pg` resolves a local database (the Supabase stack on 54322, a
   server on 5432, or an explicit `AAI_TEST_PG_URL`) and runs the tier against
-  it. With nothing listening it prints the commands that start one rather than
-  starting one itself.
-- A skip ANNOUNCES itself, via `describeWithPg` from
-  `packages/aai-server/_pg-test-utils.ts` — the one spelling for the gate, in
-  place of the five hand-rolled copies of `PG_URL ? describe : describe.skip`.
-- `AAI_REQUIRE_PG` turns a skip into a hard failure. CI's Linux leg sets it
-  (and `pnpm test:pg` sets it for the run it starts), so "the wiring broke" is
-  red rather than quiet. It is declared in the `check:scenario` task's `env`
-  in `turbo.json` — undeclared, strict env mode would strip it and the
-  enforcement would silently do nothing.
+  it. With the stack up it ALSO shells out to `supabase status -o env` and
+  exports the Supabase trio, because a port is not an arm — see "Two arms" in
+  `packages/aai-server/CLAUDE.md`. It starts nothing itself.
+- A skip ANNOUNCES itself, via `describeWithPg` (a database) or
+  `describeWithStack` (the whole stack) from
+  `packages/aai-server/_pg-test-utils.ts` — the one spelling for each gate, in
+  place of hand-rolled copies of `PG_URL ? describe : describe.skip`.
+- `AAI_REQUIRE_PG` and `AAI_REQUIRE_STACK` turn a skip into a hard failure. CI
+  sets each on the leg that provides it (and `pnpm test:pg` sets them for the
+  run it starts), so "the wiring broke" is red rather than quiet. Both are
+  declared in the `check:scenario` task's `env` in `turbo.json` — undeclared,
+  strict env mode would strip them and the enforcement would silently do
+  nothing.
 - **`AAI_REQUIRE_REGISTRY` is the same shape one tier up**, in `check:e2e`'s
-  `env` for the same reason: it turns the e2e suite's "excuse a failed install as
-  a registry-proxy flake" predicate off, and CI sets it so the guess is not
-  trusted where egress is real. See `isRegistryProxyFailure` in
-  `aai-cli/e2e.test.ts`.
+  `env` for the same reason — see `packages/aai-cli/CLAUDE.md`.
 
 Note vitest EXECUTES a `describe.skip` callback (it has to, to enumerate what
 it is skipping), so read `pgUrl()` inside a hook or a test, never at the top of
@@ -307,9 +312,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   pathspec in the repo. A pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so `*`
   already crosses `/` and `scripts/**/*.mjs` parses as "scripts/" + anything +
   "/" + anything + ".mjs" — the literal slash makes a subdirectory MANDATORY. It
-  therefore matched the six files under `scripts/starter-eval/` and not one of
-  the ~29 at the top level, i.e. exactly where this gate's own comment says an
-  unreviewed 900-line harness hides, while printing "all files within caps ✓".
+  therefore matched the three files under `scripts/starter-eval/` and not one of
+  the ~29 at the top level — exactly where an unreviewed harness hides — while
+  printing "all files within caps ✓".
   Adding `scripts/*.mjs`/`scripts/*.ts` took the measured set from 6 files to 35.
   `packages/**/*.ts` is unaffected and not by luck — every source file there is
   at least one directory deep — which is why the miss survived review. Verify any
@@ -430,12 +435,12 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 12 | every guest route literal is in `GUEST_ROUTES` | declare it + its exposure |
   | 13 | no template import escaping its template dir | move it in, or publish it |
   | 14 | no fixture directory nothing reads | delete it, or add the reader |
+  | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
 
-  Rule IDs are **stable**: a deleted rule leaves its number retired rather than
-  letting a later rule inherit it, because the numbers appear in commit messages
-  and in the baseline — rule 6 is the worked example, retired when `ctx.state`
-  stopped existing and the cast it banned became unrepresentable. Rules 1, 7, 10,
-  12, 13 and 14 are at zero and enforced absolutely;
+  Rule IDs are **stable** — the numbers appear in commit messages and in the
+  baseline, so a deleted rule leaves its number retired rather than letting a
+  later rule inherit it (rule 6, retired when `ctx.state` stopped existing; and
+  15, reserved). Rules 1, 7, 10, 12, 13 and 14 are at zero and enforced absolutely;
   the rest carry per-file baselines with the same `--update`-only-lowers
   contract as `check:hatches`. Every baselined occurrence is
   legitimate and says so in the JSON — three spread-ternaries where **the guard
@@ -453,6 +458,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
   drive-relative on Windows — both of which run on a developer's own machine
   under `aai dev`, so the bug was never guest-only. See "Windows is NOT tested,
   and is currently broken".
+
+  **Rule 16 is scoped to an explicit FILE LIST** (role is not derivable from a
+  path), so its gate spec asserts every path exists; it also found
+  `SELF_REFERENTIAL` too blunt to be per-FILE, so exemptions are per rule now.
 
   Two things any new rule must respect. **A pattern that matches nothing prints
   the same checkmark as a rule being upheld**, so
@@ -532,7 +541,7 @@ move to accommodate a PR, so the earlier that is known the cheaper it is. Both
 
 ## Architecture
 
-Eight workspace packages under `packages/`:
+Nine workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
@@ -544,6 +553,7 @@ Eight workspace packages under `packages/`:
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds. Also the composition root — its entry is the one every deployment runs |
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
+| `packages/aai-evals/` | `aai-evals` | Behaviour eval tier (private): the runner, its assertion vocabulary over the session event stream, and its targets |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, `aai-guest`, and `aai-server` all
 depend on `@alexkroman1/aai` (via `workspace:*`). `aai-server` depends on
@@ -582,6 +592,7 @@ rather than here:
 | `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals |
 | `packages/aai-studio-client/CLAUDE.md` | Studio front-end: panes, composer queue, CSP, preview probing |
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
+| `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels |
 
 ### `research/` holds issue-backed plans
 
@@ -1508,7 +1519,8 @@ documented in that package's guide, not here:
 | Pipeline-transport interleaving fuzz, fixture replay (`host/fixtures/`) | `packages/aai/CLAUDE.md` |
 | Template mount correlation (`template-page-mount.test.ts`) | `packages/aai-templates/CLAUDE.md` |
 | Browser session / audio fuzz harnesses (`fuzz-*.test.ts`, worklet stress) | `packages/aai-ui/CLAUDE.md` |
-| Studio starter evals (`scripts/starter-eval/`), studio concurrency fuzz | `packages/aai-studio-server/CLAUDE.md` |
+| Studio starter evals (what they measure), studio concurrency fuzz | `packages/aai-studio-server/CLAUDE.md` |
+| The eval runner, its assertion vocabulary, and both eval targets | `packages/aai-evals/CLAUDE.md` |
 | Sandbox/SSRF boundary tests, and why there is no load or chaos tier | `packages/aai-server/CLAUDE.md` |
 
 #### Vitest config differences per package
@@ -1585,33 +1597,12 @@ about Windows.
 
 #### The e2e suite is pnpm-only in CI
 
-`aai init` scaffolds a project that the e2e suite then installs from a mock
-registry, so the install step can in principle run under any package
-manager. CI used to fan that out (`pm: [pnpm, npm, yarn]` × 2 OSes = 6
-jobs); it now runs pnpm alone.
-
-The npm/yarn legs were paying for themselves in flakes rather than bugs:
-each one is a full cold install of the published tarballs on a shared
-runner, they tripped over resolver-specific quirks unrelated to our code
-(hence `--no-lockfile`, `--no-strict-peer-dependencies`,
-`NPM_CONFIG_MINIMUM_RELEASE_AGE=0`), and the repo itself is pnpm-only, so
-the thing they guarded — "our published `exports` maps resolve under a
-non-pnpm resolver" — is better served by `publint` + `attw`, which run on
-every build and check the package metadata directly.
-
-The `AAI_TEST_PM` switch in `_e2e-test-utils.ts` stays, so an npm or yarn
-install is one env var away when reproducing a user report:
-
-```sh
-AAI_TEST_PM=npm pnpm test:e2e
-```
-
-That line only works because `AAI_TEST_PM` is declared in the `check:e2e`
-task's `env` — under turbo's strict env mode it was stripped before the task
-started, so the documented command ran pnpm and said nothing (see "strict env
-mode" above).
-
-Treat those two branches as a debugging tool, not covered ground.
+Why the npm and yarn legs were retired, and how to reproduce a user report under
+one anyway (`AAI_TEST_PM=npm pnpm test:e2e`), is in
+`packages/aai-cli/CLAUDE.md` — the package owning `e2e.test.ts` and
+`_e2e-test-utils.ts`. The repo-wide half is why that command works at all:
+`AAI_TEST_PM` sits in the `check:e2e` task's **`env`**, because strict env mode
+strips an undeclared variable silently (see "strict env mode" above).
 
 #### Property tests run on fast-check
 
@@ -1937,8 +1928,8 @@ back to the host's `process.env`.
 ### Open testability work
 
 One known gap, found by audit and deliberately left alone because it is a
-refactor in its own right rather than a fix that rides along with something
-else. It is not blocked on a decision; it is sized, not stuck.
+refactor in its own right rather than a fix riding along with something else —
+sized, not stuck.
 
 - **`aai-server` writes to `console.*` directly** — 47 calls, 45 of them
   outside `_debug-log.ts` — with no logger seam, so 39 of the repo's 86

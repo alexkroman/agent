@@ -7,6 +7,7 @@ import {
   createPgStudioSessionRegistry,
   type StudioSessionRecord,
 } from "./studio-session-registry.ts";
+import { studioSessionRegistryConformance } from "./studio-store-conformance.ts";
 
 const SCOPE = "scope";
 const PROJECT = "proj";
@@ -17,6 +18,16 @@ const record = (owner: string): StudioSessionRecord => ({
   guestOrigin: `wss://${owner}.example`,
   sandboxToken: "sandbox-token",
   owner,
+});
+
+// ── The CONTRACT, over the arm that runs everywhere ─────────────────────────
+//
+// One case list in `studio-store-conformance.ts`, shared with the stack arm in
+// `aai-server/store-conformance.scenario.test.ts`. Unconditional here, so the
+// module stays covered on every machine.
+
+describe("StudioSessionRegistry conformance: memory", () => {
+  studioSessionRegistryConformance(() => createMemoryStudioSessionRegistry());
 });
 
 describe("memory studio session registry", () => {

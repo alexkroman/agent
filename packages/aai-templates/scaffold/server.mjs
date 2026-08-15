@@ -111,6 +111,20 @@ function resolveClientDir() {
 
 const env = await resolveAgentEnv();
 
+/**
+ * Where THIS server is reachable from outside — `PUBLIC_URL`, e.g.
+ * `https://agent.example.com`. Set it whenever a durable workflow has to hand a
+ * URL to somebody else: `ctx.workflows.publicWebhookUrl(token)` is built from it,
+ * and without it that call throws rather than minting a `http://localhost:3000`
+ * URL that a payment provider will try, days later, and fail.
+ *
+ * Nothing else reads it, so it is not a startup requirement: an agent with no
+ * webhooks needs no value here. It is deliberately NOT derived from `PORT`/`HOST`
+ * — those describe the socket this process binds, which behind a reverse proxy is
+ * not what the outside world dials.
+ */
+const publicUrl = process.env.PUBLIC_URL?.trim();
+
 const server = createAgentServer({
   agent,
   env,
@@ -119,6 +133,7 @@ const server = createAgentServer({
   // ASSEMBLYAI_API_KEY to a container. Anything in `env` still wins.
   providerEnv: withHostCredentialFallback(env),
   clientDir: resolveClientDir(),
+  ...(publicUrl ? { publicUrl } : {}),
 });
 
 // Loopback by default: this server has no request authentication of its own,

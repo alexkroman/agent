@@ -22,7 +22,8 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
-import { makeOpts, noopToolSchema, partialTranscriptSpy } from "./_pipeline-transport-harness.ts";
+import { makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
+import { partialTranscripts } from "./_transport-recorder.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 describe("PipelineTransport speech vs. record", () => {
@@ -53,16 +54,19 @@ describe("PipelineTransport speech vs. record", () => {
       stt.last()?.fireFinal("how's the weather?");
 
       await vi.waitFor(() => {
-        expect(callbacks.onAgentTranscriptPartial).toHaveBeenCalledWith(DEAD_AIR_OPENING_PHRASE);
+        expect(callbacks.reported("agent-transcript.updated")).toHaveBeenCalledWith({
+          type: "agent-transcript.updated",
+          text: DEAD_AIR_OPENING_PHRASE,
+        });
       });
       // Still cumulative, and still one final transcript for history.
       await vi.waitFor(() => {
-        expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
-          expect.stringContaining("It's sunny."),
-          false,
-        );
+        expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+          type: "agent-transcript.committed",
+          text: expect.stringContaining("It's sunny."),
+        });
       });
-      const lastPartial = partialTranscriptSpy(callbacks).mock.lastCall?.[0];
+      const lastPartial = partialTranscripts(callbacks).at(-1);
       expect(lastPartial).toContain(DEAD_AIR_OPENING_PHRASE);
       expect(lastPartial).toContain("It's sunny.");
       await t.stop();
@@ -79,17 +83,20 @@ describe("PipelineTransport speech vs. record", () => {
       // TTS at once, so an interim copy would be identical) — so that, not a
       // partial, is the signal that the greeting turn is behind us.
       await vi.waitFor(() => {
-        expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Hi there!", false);
+        expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
+          type: "agent-transcript.committed",
+          text: "Hi there!",
+        });
       });
-      partialTranscriptSpy(callbacks).mockClear();
+      const partialsBeforeTurn = partialTranscripts(callbacks).length;
 
       stt.last()?.fireFinal("what time is it?");
       await vi.waitFor(() => {
-        expect(callbacks.onAgentTranscriptPartial).toHaveBeenCalled();
+        expect(callbacks.reported("agent-transcript.updated")).toHaveBeenCalled();
       });
       // Carrying the previous reply's text over would restate the greeting as
       // part of this reply's caption.
-      for (const [text] of partialTranscriptSpy(callbacks).mock.calls) {
+      for (const text of partialTranscripts(callbacks).slice(partialsBeforeTurn)) {
         expect(text).not.toContain("Hi there!");
       }
       await t.stop();
@@ -122,22 +129,21 @@ describe("PipelineTransport speech vs. record", () => {
       stt.last()?.fireFinal("how's the weather?");
 
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalled();
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
       // Heard by the caller...
       expect(tts.last()?.textChunks.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
       // ...and shown live, since the caption is built from what reaches TTS.
       expect(
-        partialTranscriptSpy(callbacks).mock.calls.some(([text]) =>
-          text.includes(DEAD_AIR_OPENING_PHRASE),
-        ),
+        partialTranscripts(callbacks).some((text) => text.includes(DEAD_AIR_OPENING_PHRASE)),
       ).toBe(true);
       // ...but absent from the reply's final transcript, which is what history,
       // ctx.messages, resume, and the STT agent-context hint are built from.
-      const finals = vi
-        .mocked(callbacks.onAgentTranscript)
-        .mock.calls.filter(([, interrupted]) => interrupted === false)
-        .map(([text]) => text);
+      // Every COMMITTED transcript — the interrupted arm is a separate event now
+      // (`agent-transcript.updated`), so there is no flag left to filter on.
+      const finals = callbacks.events
+        .filter((e) => e.type === "agent-transcript.committed")
+        .map((e) => e.text);
       expect(finals.some((text) => text.includes("It's sunny."))).toBe(true);
       for (const text of finals) expect(text).not.toContain(DEAD_AIR_OPENING_PHRASE);
       await t.stop();

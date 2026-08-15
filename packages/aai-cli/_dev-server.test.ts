@@ -129,6 +129,11 @@ describe("startDevServer", () => {
         // The runtime logs through a logger this command chooses, so its
         // diagnostics can be kept off stdout in JSON mode (createDevLogger).
         logger: expect.objectContaining({ info: expect.any(Function) }),
+        // What `ctx.workflows.publicWebhookUrl` mints from. The BACKEND port —
+        // which with no `client.tsx` is the port passed in — because the DevKit's
+        // `/.well-known/workflow/v1/*` routes are deliberately absent from Vite's
+        // proxy table, so a URL naming the Vite port would 404 on delivery.
+        publicUrl: "http://localhost:3000",
       });
       expect(mockCreateServer).toHaveBeenCalledWith(
         expect.objectContaining({

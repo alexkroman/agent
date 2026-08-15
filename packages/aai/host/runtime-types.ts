@@ -120,6 +120,24 @@ export type RuntimeOptions = {
    * @internal
    */
   createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
+  /**
+   * The base URL this agent is reachable at from OUTSIDE — origin plus, on the
+   * managed platform, the agent's slug (`https://<platform>/<slug>`).
+   *
+   * Read by exactly one thing: `ctx.workflows.publicWebhookUrl(token)`, the URL a
+   * durable run hands a third party. It has to be told rather than derived,
+   * because nothing inside the process knows it — a deployed agent's own origin
+   * is a `localhost` port inside a sandbox whose tunnel changes on every
+   * respawn, which is precisely why the DevKit's `hook.url` is unusable off-box.
+   *
+   * Each deployment supplies its own: the platform's broker bakes
+   * `AAI_PUBLIC_BASE_URL` into the guest's exec env and the harness passes it
+   * through, `server.mjs` passes `PUBLIC_URL`, and `aai dev` passes its own
+   * origin. Absent, `publicWebhookUrl` throws naming this option — which is the
+   * intended behaviour, not a gap: a `localhost` URL handed to a payment provider
+   * fails weeks later, at them.
+   */
+  publicUrl?: string | undefined;
   /** Structured logger for runtime and session logs. Defaults to the console. */
   logger?: Logger | undefined;
   /** S2S endpoint URL and audio sample rates. Defaults to `DEFAULT_S2S_CONFIG`. */

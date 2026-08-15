@@ -15,7 +15,7 @@
  */
 
 import type { createFakeLanguageModel, FakeTtsProvider } from "../_pipeline-test-fakes.ts";
-import type { TransportCallbacks } from "../transports/types.ts";
+import type { TransportCallbacks, TransportEventBody } from "../transports/types.ts";
 
 const noop = (): void => undefined;
 
@@ -242,95 +242,125 @@ export function createCallbacks(mon: Monitor, tts: FakeTtsProvider): TransportCa
       mon.flag(`${name} fired after a fatal [${mon.declaredDead}]`);
     }
   };
-  return {
-    onReplyStarted: (id: string) => {
-      mon.hit("replyStarted");
-      afterStop("onReplyStarted");
-      if (replyIds.has(id)) mon.flag(`duplicate reply id ${id}`);
-      replyIds.add(id);
-      started++;
-      // GUARDRAIL 1 as a property: after a reply COMPLETED cleanly, nothing may
-      // synthesize text until the next reply starts. That gap is exactly the
-      // window `isIdle()` lets a speculation run in, so one character reaching
-      // TTS from a speculation lands here — as audible speech for a turn the
-      // client was never told about.
-      //
-      // Only claimed after a CLEAN completion, and that restriction is the
-      // finding this oracle's first draft produced against the flag-OFF arm: an
-      // aborted turn's stream legitimately delivers a part or two after
-      // `onCancelled`, so text reaching TTS in an ABORT's wake belongs to the
-      // reply that was cut, not to whatever runs next. `onReplyDone` is the one
-      // edge with no tail behind it — the TTS drain has already resolved.
-      const chunks = tts.last()?.textChunks.length ?? 0;
-      if (mon.ttsAccountedFor !== null && chunks > mon.ttsAccountedFor) {
-        mon.flag(`TTS text was synthesized between a completed reply and ${id}`);
-      }
-      mon.ttsAccountedFor = null;
-      mon.current = {
-        id,
-        ttsOffset: tts.last()?.textChunks.length ?? 0,
-        expected: id.startsWith("pipeline-greeting") ? GREETING : "",
-        disturbed: false,
-        audioChunks: 0,
-        failed: false,
-        done: false,
-      };
-    },
-    onReplyDone: () => {
-      mon.hit("replyDone");
-      afterStop("onReplyDone");
-      doneCount++;
-      if (doneCount > started) mon.flag("onReplyDone without a matching onReplyStarted");
-      const reply = mon.current;
-      if (reply === null) {
-        mon.flag("onReplyDone with no reply in flight");
+
+  function onReplyStarted(id: string): void {
+    mon.hit("replyStarted");
+    afterStop("reply start");
+    if (replyIds.has(id)) mon.flag(`duplicate reply id ${id}`);
+    replyIds.add(id);
+    started++;
+    // GUARDRAIL 1 as a property: after a reply COMPLETED cleanly, nothing may
+    // synthesize text until the next reply starts. That gap is exactly the
+    // window `isIdle()` lets a speculation run in, so one character reaching
+    // TTS from a speculation lands here — as audible speech for a turn the
+    // client was never told about.
+    //
+    // Only claimed after a CLEAN completion, and that restriction is the
+    // finding this oracle's first draft produced against the flag-OFF arm: an
+    // aborted turn's stream legitimately delivers a part or two after
+    // `reply.cancelled`, so text reaching TTS in an ABORT's wake belongs to the
+    // reply that was cut, not to whatever runs next. `reply.completed` is the one
+    // edge with no tail behind it — the TTS drain has already resolved.
+    const chunks = tts.last()?.textChunks.length ?? 0;
+    if (mon.ttsAccountedFor !== null && chunks > mon.ttsAccountedFor) {
+      mon.flag(`TTS text was synthesized between a completed reply and ${id}`);
+    }
+    mon.ttsAccountedFor = null;
+    mon.current = {
+      id,
+      ttsOffset: tts.last()?.textChunks.length ?? 0,
+      expected: id.startsWith("pipeline-greeting") ? GREETING : "",
+      disturbed: false,
+      audioChunks: 0,
+      failed: false,
+      done: false,
+    };
+  }
+
+  function onReplyCompleted(): void {
+    mon.hit("replyDone");
+    afterStop("reply.completed");
+    doneCount++;
+    if (doneCount > started) mon.flag("reply.completed without a matching reply start");
+    const reply = mon.current;
+    if (reply === null) {
+      mon.flag("reply.completed with no reply in flight");
+      return;
+    }
+    reply.done = true;
+    mon.ttsAccountedFor = tts.last()?.textChunks.length ?? 0;
+    checkReplyIntegrity(reply, tts, mon);
+  }
+
+  function onReplyCancelled(): void {
+    mon.hit("cancelled");
+    if (mon.toolInFlight > 0) mon.hit("cancelledWhileToolInFlight");
+    mon.disturb();
+    // An abort tail may still be in flight — no claim until the next clean
+    // completion.
+    mon.ttsAccountedFor = null;
+    afterStop("reply.cancelled");
+  }
+
+  function onErrorReported(event: Extract<TransportEventBody, { type: "error.reported" }>): void {
+    mon.hit(`error:${event.code}`);
+    if (event.fatal === false) mon.hit(`nonFatal:${event.code}`);
+    else mon.declaredDead ??= event.code;
+    const reply = mon.current;
+    if (reply === null) return;
+    if (event.code === "llm") reply.failed = true;
+    if (event.code === "tts") reply.disturbed = true;
+  }
+
+  /**
+   * Every report, run against the oracles. One function where there were
+   * fourteen callbacks — and the switch is not a translation table between two
+   * vocabularies, because each arm is an oracle only that event can trip.
+   */
+  function report(event: TransportEventBody): void {
+    switch (event.type) {
+      case "reply.completed":
+        onReplyCompleted();
         return;
-      }
-      reply.done = true;
-      mon.ttsAccountedFor = tts.last()?.textChunks.length ?? 0;
-      checkReplyIntegrity(reply, tts, mon);
-    },
-    onCancelled: () => {
-      mon.hit("cancelled");
-      if (mon.toolInFlight > 0) mon.hit("cancelledWhileToolInFlight");
-      mon.disturb();
-      // An abort tail may still be in flight — no claim until the next clean
-      // completion.
-      mon.ttsAccountedFor = null;
-      afterStop("onCancelled");
-    },
+      case "reply.cancelled":
+        onReplyCancelled();
+        return;
+      case "error.reported":
+        onErrorReported(event);
+        return;
+      case "audio.completed":
+      case "speech.stopped":
+      case "tool.completed":
+        // Nothing to claim: `audio.completed` and `speech.stopped` are turn
+        // boundaries the end-of-run oracles cover, and `tool.completed` follows a
+        // `tool.called` that has already been checked.
+        return;
+      default:
+        // Transcripts, tool calls, and the speaking edge. The claim is the same
+        // for all of them and it is `afterStop`'s: nothing conversational may
+        // reach a client that has been told the session is over.
+        afterStop(event.type);
+        return;
+    }
+  }
+
+  return {
+    report,
+    onReplyStarted,
     onAudioChunk: () => {
-      afterStop("onAudioChunk");
+      afterStop("audio chunk");
       // The other half of guardrail 1: a speculation synthesises nothing, so
       // it can forward nothing.
       if (mon.current === null) mon.flag("audio chunk forwarded before any reply started");
       mon.audioTotal++;
       if (mon.current !== null) mon.current.audioChunks++;
-      // session-core emits audio_done together with reply_done, so a chunk
-      // after this reply's own replyDone is audio the client never plays — an
-      // audibly clipped turn in a session that reports itself healthy.
+      // session-core emits `audio.completed` together with `reply.completed`, so a
+      // chunk after this reply's own completion is audio the client never plays —
+      // an audibly clipped turn in a session that reports itself healthy.
       if (mon.current?.done === true) {
-        mon.flag(`audio chunk after replyDone for ${mon.current.id}`);
+        mon.flag(`audio chunk after reply.completed for ${mon.current.id}`);
       }
     },
-    onAudioDone: noop,
-    onUserTranscript: () => afterStop("onUserTranscript"),
-    onUserTranscriptPartial: () => afterStop("onUserTranscriptPartial"),
-    onAgentTranscript: () => afterStop("onAgentTranscript"),
-    onAgentTranscriptPartial: () => afterStop("onAgentTranscriptPartial"),
-    onToolCall: () => afterStop("onToolCall"),
-    onToolCallDone: noop,
-    onError: (code: string, _message: string, errOpts?: { fatal?: boolean }) => {
-      mon.hit(`error:${code}`);
-      if (errOpts?.fatal === false) mon.hit(`nonFatal:${code}`);
-      else mon.declaredDead ??= code;
-      const reply = mon.current;
-      if (reply === null) return;
-      if (code === "llm") reply.failed = true;
-      if (code === "tts") reply.disturbed = true;
-    },
-    onSpeechStarted: () => afterStop("onSpeechStarted"),
-    onSpeechStopped: noop,
     onSessionReady: noop,
   };
 }

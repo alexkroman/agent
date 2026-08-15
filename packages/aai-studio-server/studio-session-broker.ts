@@ -33,7 +33,7 @@ import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { createPreviewDeployer, type PreviewOrigin, type PreviewTarget } from "./studio-preview.ts";
-import { createMemoryPreviewQueue, type PreviewQueue } from "./studio-preview-queue.ts";
+import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
 import { createSessionInstaller } from "./studio-session-ensure.ts";
 import type { SessionEntry } from "./studio-session-entry.ts";
@@ -81,12 +81,20 @@ export type StudioSessionBrokerOptions = BrokerStores & {
   /** Test seam for the peer install (studio-session-adopt.ts). */
   adopt?: typeof adoptPeerSession;
   /**
-   * Durable preview-deploy queue (studio-preview-queue.ts). Defaults to an
-   * in-memory queue, which is correct for dev/tests (one process) and loses
-   * pending previews on restart — exactly what the pgmq implementation exists
-   * to prevent in production.
+   * Durable preview-deploy queue (studio-preview-queue.ts): pgmq over the
+   * platform database in production, `createMemoryPreviewQueue()` in a single
+   * process.
+   *
+   * **REQUIRED, and it used to default to memory** — `options.previewQueue ??
+   * createMemoryPreviewQueue()`, in production source, where every other memory
+   * selection in this codebase announces itself with a `console.info` naming the
+   * tier. The composition root already decides (index.ts picks pgmq when there
+   * is a `sql`), so the `??` was a second decision point that could only ever
+   * disagree with the first, silently, by substituting a queue that loses
+   * pending deploys on restart. One decision, at the root; a missing queue is
+   * now a compile error rather than a quiet downgrade.
    */
-  previewQueue?: PreviewQueue;
+  previewQueue: PreviewQueue;
   /**
    * A studio user's stored AssemblyAI key, so a preview job REDELIVERED to a
    * replica that did not enqueue it can still deploy. Without it, only
@@ -253,7 +261,7 @@ export function createStudioSessionBroker(
   const previews = createPreviewDeployer({
     workspaces: options.workspaces,
     deployWorkspace: deployWorkspaceImpl,
-    queue: options.previewQueue ?? createMemoryPreviewQueue(),
+    queue: options.previewQueue,
     ...(options.resolveApiKey && { resolveApiKey: options.resolveApiKey }),
   });
 

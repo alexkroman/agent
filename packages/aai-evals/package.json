@@ -1,0 +1,28 @@
+{
+  "name": "aai-evals",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:eval": "VITEST_PROFILE=eval VITEST_INCLUDE=**/*.eval.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "check:eval": "pnpm run test:eval",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@alexkroman1/aai": "workspace:*",
+    "eventsource-parser": "catalog:",
+    "undici": "^8.10.0"
+  },
+  "devDependencies": {
+    "aai-studio-client": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "zod": "catalog:"
+  }
+}

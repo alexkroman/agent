@@ -122,7 +122,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     handle?.close();
     handle = null;
     pendingToolResults = [];
-    opts.callbacks.onError("connection", detail);
+    opts.callbacks.report({ type: "error.reported", code: "connection", message: detail });
   }
 
   /**
@@ -169,35 +169,44 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       }),
       onReplyDone: whileLive(() => {
         currentReplyId = null;
-        opts.callbacks.onReplyDone();
+        opts.callbacks.report({ type: "reply.completed" });
       }),
       onCancelled: whileLive(() => {
         currentReplyId = null;
-        opts.callbacks.onCancelled();
+        opts.callbacks.report({ type: "reply.cancelled" });
       }),
       onAudio: whileLive((bytes: Uint8Array) => {
         if (suppressAudioUntilReply) return;
         opts.callbacks.onAudioChunk(bytes);
       }),
-      onUserTranscript: whileLive((text: string) => opts.callbacks.onUserTranscript(text)),
-      onUserTranscriptPartial: whileLive((text: string) =>
-        opts.callbacks.onUserTranscriptPartial?.(text),
+      onUserTranscript: whileLive((text: string) =>
+        opts.callbacks.report({ type: "user-transcript.committed", text }),
       ),
+      onUserTranscriptPartial: whileLive((text: string) =>
+        opts.callbacks.report({ type: "user-transcript.updated", text }),
+      ),
+      // An INTERRUPTED reply is `.updated`, never `.committed`: it enters no
+      // history, because history records what the caller HEARD and the service
+      // trims an interrupted transcript to what was spoken. This is the one call
+      // site in the repo that reports either arm — every pipeline path records.
       onAgentTranscript: whileLive((text: string, interrupted: boolean) =>
-        opts.callbacks.onAgentTranscript(text, interrupted),
+        opts.callbacks.report({
+          type: interrupted ? "agent-transcript.updated" : "agent-transcript.committed",
+          text,
+        }),
       ),
       // `transcript.agent.delta` DOES arrive — re-measured against the live
       // service, see `_s2s-reply.ts`. It is the only carrier of text for a reply
       // that sends no final `transcript.agent`, which is the ordinary shape of a
       // tool-preamble turn.
       onAgentTranscriptPartial: whileLive((text: string) =>
-        opts.callbacks.onAgentTranscriptPartial?.(text),
+        opts.callbacks.report({ type: "agent-transcript.updated", text }),
       ),
       onToolCall: whileLive((callId: string, name: string, args: Record<string, unknown>) =>
-        opts.callbacks.onToolCall(callId, name, args),
+        opts.callbacks.report({ type: "tool.called", toolCallId: callId, toolName: name, args }),
       ),
-      onSpeechStarted: whileLive(() => opts.callbacks.onSpeechStarted()),
-      onSpeechStopped: whileLive(() => opts.callbacks.onSpeechStopped()),
+      onSpeechStarted: whileLive(() => opts.callbacks.report({ type: "speech.started" })),
+      onSpeechStopped: whileLive(() => opts.callbacks.report({ type: "speech.stopped" })),
       onSessionExpired: () => {
         // Server reports session no longer exists (likely session_not_found
         // in response to our resume). Surface as fatal — nothing to resume.
@@ -230,7 +239,13 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       // link is gone. An error that really is terminal is followed by the
       // service closing the socket, so it still surfaces there — with the close
       // code attached, which is strictly more diagnostic than this frame.
-      onError: (err) => opts.callbacks.onError("internal", err.message, { fatal: false }),
+      onError: (err) =>
+        opts.callbacks.report({
+          type: "error.reported",
+          code: "internal",
+          message: err.message,
+          fatal: false,
+        }),
       onClose: (code, reason) => handleClose(code, reason),
     };
   }
@@ -314,7 +329,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     // The in-flight reply is gone; unblock SessionCore's turn promise.
     if (currentReplyId !== null) {
       currentReplyId = null;
-      opts.callbacks.onCancelled();
+      opts.callbacks.report({ type: "reply.cancelled" });
     }
     void resume(prevId).catch((err: unknown) => {
       // Throw-safe: the logger and onError sink are caller-injectable, and a

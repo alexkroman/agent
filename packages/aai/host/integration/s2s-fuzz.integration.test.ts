@@ -71,13 +71,37 @@ import { freshModel } from "./_s2s-fuzz-service.ts";
  * call rarely survived to be answered (the central oracle ran 7 times out of 80
  * executions), and at 0 there are no resumes to redeliver across.
  */
+/**
+ * Run counts are sized by the COVERAGE FLOORS below, not by wall clock, and
+ * they were tripled after measuring what the floors actually see.
+ *
+ * The whole harness is in memory — fake sockets, no timers — so 260 runs cost
+ * 85ms, which made the run counts look generous and made every floor a coin
+ * flip instead. Measured over 40 fresh runs at the old counts, **three failed
+ * (7.5%)**, and on four different counters: `drop.withToolInFlight=0` (floor 1),
+ * `fatalDrop=1` (floor 2), `toolAnsweredAcrossResume=4` (floor 6) and
+ * `resume.withOutstandingTools=9` (floor 10). Two of those were also seen in
+ * CI, on opposite OS legs, which is what prompted the measurement.
+ *
+ * The failure was never one mis-set number: several floors sat one sample above
+ * the left tail of their distribution, and with eight of them the per-run
+ * probability compounds. The fix is therefore to move the DISTRIBUTIONS right
+ * rather than the floors down — a lower floor buys quiet by proving less, and
+ * these floors are the difference between a live oracle and a decorative one
+ * (see `toolAnsweredAcrossResume`). Counts scale about linearly with `runs`
+ * while the relative spread narrows, so tripling puts every floor deep in the
+ * tail at a cost of ~200ms.
+ *
+ * If a floor flakes again, re-measure with `S2S_FUZZ_COVERAGE=1` and raise
+ * these numbers — do not lower the floor.
+ */
 const PROPERTIES = [
   /** Turns, tool calls, batched results — nothing destructive is legal at all. */
-  { label: "turns", runs: 100, faultBudget: 0, retirement: false },
+  { label: "turns", runs: 300, faultBudget: 0, retirement: false },
   /** Drops, resumes, and the tool results that have to survive them. */
-  { label: "reconnects", runs: 120, faultBudget: 2, retirement: false },
+  { label: "reconnects", runs: 360, faultBudget: 2, retirement: false },
   /** Fatal closes and in-band `session_not_found` — retirement must be FINAL. */
-  { label: "retirement", runs: 40, faultBudget: 3, retirement: true },
+  { label: "retirement", runs: 120, faultBudget: 3, retirement: true },
 ] as const;
 
 /** Total generated runs, for the floors below. */

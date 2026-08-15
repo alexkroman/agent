@@ -771,6 +771,33 @@ key↔account mapping — stay in that guide's "Auth" block.
   is the only way a raw key leaves the platform, and only to the terminal
   that minted the code.
 
+## Rate limits
+
+Moved here from `packages/aai-server/CLAUDE.md` when that guide hit its size cap,
+on the same audience split that brought "Studio auth" the other way: the
+MECHANISM is the shared core's (`rate-limit.ts`, `createPgRateLimiter`), and every
+window the platform actually runs is this surface's. The limiter itself lived in
+THIS package while the studio was its only caller, which is why `POST /deploy`
+had none — aai-server cannot import from here.
+
+The windows (`studio-rate-limit.ts`): the chat, project-create, and
+deploy windows are rows in `aai_platform.studio_rate_limits`
+(`createPgRateLimiter`, one atomic upsert per check), so a limit holds
+platform-wide instead of multiplying by the replica count — which for an
+ABUSE limit is the whole point, since `MAX_CONTAINERS = 10` makes a
+per-replica cap a cap of ten times the number written down. Fail-closed: a
+database error propagates rather than silently unmetering the route.
+Expired rows are swept by pg_cron (`pg-cron.ts`), not in-process. The
+`studio_` table name is now a misnomer; `name` namespaces each limiter's
+rows, which is what lets a second consumer share it without a migration.
+
+**Every limited route is keyed TWICE — by scope and by client IP.** The
+scope key is derived from the caller's bearer, so for a raw-key caller it
+was a value they chose: one character's difference minted a fresh window,
+which made both studio limits decorative against exactly the traffic they
+exist to stop. Key verification above is what makes a scope cost an
+account; the IP key is what bounds the damage before one is spent.
+
 ## One studio sandbox per project, fleet-wide
 
 The same problem hit the studio harder, and the fix is shaped differently
@@ -960,17 +987,26 @@ works.
   service ever ships, raise its function timeout rather than adding a cap under
   it.
 
-## Studio starter evals (scripts/starter-eval/)
+## Studio starter evals
 
 The LLM-judge codegen suite (`studio-eval.test.ts`, vitest-evals) was
 removed in favour of a harness that drives the studio's REAL surface —
 create project, broker a sandbox session, stream a chat turn to the guest —
-rather than calling the codegen path directly:
+rather than calling the codegen path directly. It is a case of the repo's
+**eval tier** now (`packages/aai-evals/starter.eval.test.ts`), which owns the
+runner, the repeats and the report:
 
 ```sh
-node scripts/starter-eval/run.mjs [--only <substring>] [--repeat N] [--out f.json]
-node scripts/starter-eval/report.mjs run.json [baseline.json]
+pnpm dev:aai-server                                 # in another shell
+pnpm test:eval                                      # every starter
+AAI_EVAL_ONLY=pizza AAI_EVAL_REPEAT=3 pnpm test:eval
 ```
+
+Its own second runner — `run.mjs`/`report.mjs`/`regrade.mjs`, 745 lines of case
+loop, verdict and reporter — is deleted; what stays in `scripts/starter-eval/` is
+the GRADING (`expectations.mjs`, plus `builtins.mjs` and `tsconfig-ab.mjs`, which
+read a run's JSON). See `packages/aai-evals/CLAUDE.md` for the runner and why the
+tier does not gate.
 
 It spends real tokens on the caller's own key, so it is not in CI. Three
 things it measures that the judge suite did not:
@@ -991,7 +1027,9 @@ things it measures that the judge suite did not:
 **Run-to-run variance is large, and single runs cannot adjudicate a prompt
 change.** Measured on one starter with an identical config: tool calls
 varied 9–14 and repairs 1–4, which is the size of the effect most prompt
-edits produce. Use `--repeat 3` and compare arms, and expect a plausible
+edits produce. Use `AAI_EVAL_REPEAT=3` and compare arms — the runner names the
+assertions that were not unanimous, and one in that list cannot adjudicate
+anything yet. Expect a plausible
 change to show no effect — one A/B of a TypeScript-idioms preamble block
 came back flat and the block was removed rather than kept on the strength
 of a single flattering run.

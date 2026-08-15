@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 11,
-    "supported": [3, 10, 11],
+    "current": 12,
+    "supported": [3, 10, 11, 12],
     "dropped": {
       "1": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "2": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
@@ -43,8 +43,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 8,
-    "supported": [8],
+    "current": 9,
+    "supported": [8, 9],
     "dropped": {
       "1": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
       "2": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
@@ -66,8 +66,8 @@
     "dropped": {}
   },
   "testing": {
-    "current": 13,
-    "supported": [2, 3, 4, 5, 6, 7, 8, 9, 12, 13],
+    "current": 14,
+    "supported": [2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14],
     "dropped": {
       "1": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
       "10": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
@@ -75,8 +75,8 @@
     }
   },
   "tool": {
-    "current": 8,
-    "supported": [3, 4, 5, 6, 8],
+    "current": 9,
+    "supported": [3, 4, 5, 6, 8, 9],
     "dropped": {
       "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false — a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard.",
       "2": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
@@ -99,8 +99,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 7,
-    "supported": [1, 2, 3, 4, 5, 6, 7],
+    "current": 8,
+    "supported": [1, 2, 3, 4, 5, 6, 7, 8],
     "dropped": {}
   },
   "workflow-api": {

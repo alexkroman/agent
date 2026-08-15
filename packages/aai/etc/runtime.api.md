@@ -139,6 +139,7 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     db?: Db | undefined;
     env: AgentEnv;
     providerEnv?: ProviderEnv | undefined;
+    publicUrl?: string | undefined;
 }
 
 // @public
@@ -386,6 +387,11 @@ type DnsLookup = (hostname: string) => Promise<{
 }>;
 
 // @public
+type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
+    type: T;
+}>;
+
+// @public
 export type ExecuteTool = (name: string, args: Readonly<Record<string, unknown>>, sessionId?: string, messages?: readonly Message[], opts?: ExecuteToolOptions) => Promise<string>;
 
 // @internal
@@ -570,6 +576,14 @@ type Message = {
     content: string;
 };
 
+// @public
+export type OpenerRegistryEntry<Opener> = {
+    readonly envVar: string;
+    readonly open: (descriptor: {
+        options: Record<string, unknown>;
+    }) => Opener;
+};
+
 // @internal (undocumented)
 interface OwnedMap<K, V> {
     claim(key: K, value: V): () => boolean;
@@ -686,6 +700,12 @@ const ReadyConfigSchema: z.ZodObject<{
     ttsSampleRate: z.ZodNumber;
 }, z.core.$strip>;
 
+// @public
+export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void;
+
+// @public
+export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void;
+
 // @internal
 export type RelayExecuteTool = {
     executeTool: ExecuteTool;
@@ -771,6 +791,7 @@ export type RuntimeOptions = {
     db?: Db | undefined;
     createWebSocket?: CreateS2sWebSocket | undefined;
     createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
+    publicUrl?: string | undefined;
     logger?: Logger | undefined;
     s2sConfig?: S2SConfig | undefined;
     sessionStartTimeoutMs?: number | undefined;
@@ -864,35 +885,39 @@ export const SESSION_EVENT_TABLE = "aai_session_events";
 // @internal
 export const SESSION_STATE_TABLE = "aai_session_state";
 
+// @public
+type SessionCommand = z.infer<typeof SessionCommandSchema>;
+
+// @public
+const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"audio_ready">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"cancel">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reset">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"playback_progress">;
+    bufferedMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool_result">;
+    toolCallId: z.ZodString;
+    result: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+    error: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>], "type">;
+
 // @internal
 export type SessionCore = {
     readonly id: string;
     configure(config: ReadyConfig): void;
     start(): Promise<void>;
     stop(): Promise<void>;
+    command(cmd: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
-    onAudioReady(): void;
-    onCancel(): void;
-    onReset(): void;
-    onPlaybackProgress(bufferedMs: number): void;
     announce(instruction: string): boolean;
-    onToolResult(toolCallId: string, result: string, error?: string): void;
     restoreHistory(messages: readonly Message[]): void;
+    report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
-    onReplyDone(): void;
-    onCancelled(): void;
     onAudioChunk(bytes: Uint8Array): void;
-    onAudioDone(): void;
-    onUserTranscript(text: string): void;
-    onUserTranscriptPartial(text: string, eotConfidence?: number): void;
-    onAgentTranscript(text: string, interrupted: boolean): void;
-    onAgentTranscriptPartial(text: string): void;
-    onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
-    onError(code: SessionErrorCode, message: string, opts?: {
-        fatal?: boolean;
-    }): void;
-    onSpeechStarted(): void;
-    onSpeechStopped(): void;
 };
 
 // @internal
@@ -916,21 +941,6 @@ export type SessionCoreOptions = {
 type SessionEmitter = {
     emit(body: SessionEventBody): SessionEvent;
 };
-
-// @public
-type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
-
-// @public
-const SessionErrorCodeSchema: z.ZodEnum<{
-    audio: "audio";
-    connection: "connection";
-    internal: "internal";
-    llm: "llm";
-    protocol: "protocol";
-    stt: "stt";
-    tool: "tool";
-    tts: "tts";
-}>;
 
 // @public
 type SessionEvent = z.infer<typeof SessionEventSchema>;
@@ -1294,8 +1304,8 @@ type SttEvents = {
     error: (err: SttError) => void;
 };
 
-// @internal
-interface SttOpener {
+// @public
+export interface SttOpener {
     // (undocumented)
     readonly name: string;
     // (undocumented)
@@ -1448,24 +1458,17 @@ export interface Transport {
 
 // @internal
 export type TransportCallbacks = {
-    onReplyStarted(replyId: string): void;
-    onReplyDone(): void;
-    onCancelled(): void;
+    report(event: TransportEventBody): void;
     onAudioChunk(bytes: Uint8Array): void;
-    onAudioDone(): void;
-    onUserTranscript(text: string): void;
-    onUserTranscriptPartial?(text: string, eotConfidence?: number): void;
-    onAgentTranscript(text: string, interrupted: boolean): void;
-    onAgentTranscriptPartial?(text: string): void;
-    onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
-    onToolCallDone?(callId: string, result: string): void;
-    onError(code: SessionErrorCode, message: string, opts?: {
-        fatal?: boolean;
-    }): void;
-    onSpeechStarted(): void;
-    onSpeechStopped(): void;
+    onReplyStarted(replyId: string): void;
     onSessionReady?(providerSessionId: string): void;
 };
+
+// @internal
+export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+
+// @public
+export type TransportEventType = TransportEventBody["type"];
 
 // @internal
 export type TransportSessionConfig = {
@@ -1488,8 +1491,8 @@ type TtsEvents = {
     error: (err: TtsError) => void;
 };
 
-// @internal
-interface TtsOpener {
+// @public
+export interface TtsOpener {
     // (undocumented)
     readonly name: string;
     // (undocumented)
@@ -1684,6 +1687,7 @@ type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };
 
@@ -1692,6 +1696,7 @@ export type WorkflowClientOptions = {
     workflows: Readonly<Record<string, WorkflowDef>>;
     keys: WorkflowKeyStore;
     wdk: WdkAdapter;
+    publicUrl?: string | undefined;
     logger: Logger;
 };
 

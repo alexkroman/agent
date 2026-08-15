@@ -19,5 +19,18 @@
   },
   "rule11_hardcodedTmp": {
     "packages/aai-server/modal-agent-sandbox.ts": 2
+  },
+  "rule16_sessionCallbackName": {
+    "packages/aai/host/_test-utils.ts": 3,
+    "packages/aai/host/integration/_pipeline-fuzz-model.ts": 3,
+    "packages/aai/host/integration/_s2s-fuzz-harness.ts": 3,
+    "packages/aai/host/runtime-session-callbacks.ts": 2,
+    "packages/aai/host/runtime-types.ts": 5,
+    "packages/aai/host/runtime.ts": 1,
+    "packages/aai/host/session-commands.ts": 1,
+    "packages/aai/host/session-core.ts": 7,
+    "packages/aai/host/transports/_transport-recorder.ts": 3,
+    "packages/aai/host/transports/types.ts": 4,
+    "packages/aai/host/ws-handler.ts": 4
   }
 }

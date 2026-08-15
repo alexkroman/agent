@@ -66,8 +66,8 @@ describe("preemptive generation — guardrail 1: nothing speculative is ever spo
     expect(tts.last()?.sendText).not.toHaveBeenCalled();
     expect(callbacks.onAudioChunk).not.toHaveBeenCalled();
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
-    expect(callbacks.onAgentTranscriptPartial).not.toHaveBeenCalled();
-    expect(callbacks.onToolCall).not.toHaveBeenCalled();
+    expect(callbacks.reported("agent-transcript.updated")).not.toHaveBeenCalled();
+    expect(callbacks.reported("tool.called")).not.toHaveBeenCalled();
     await t.stop();
   });
 });
@@ -140,7 +140,7 @@ describe("preemptive generation — adoption", () => {
 
     stt.last()?.fireFinal("What is my order status?");
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
     });
 
     // The head start was real generation, not a second request.
@@ -171,7 +171,7 @@ describe("preemptive generation — adoption", () => {
       }
       stt.last()?.fireFinal(UTTERANCE);
       await vi.waitFor(() => {
-        expect(callbacks.onReplyDone).toHaveBeenCalledTimes(1);
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
       });
       expect(llmCalls(opts).calls).toHaveLength(1);
       runs.push(llmCalls(opts).calls[0] as Record<string, unknown>);
@@ -209,7 +209,7 @@ describe("preemptive generation — mismatch", () => {
     const final = `${UTTERANCE} please`;
     stt.last()?.fireFinal(final);
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
     });
 
     expect(llmCalls(opts).calls).toHaveLength(2);
@@ -248,7 +248,7 @@ describe("preemptive generation — no trace", () => {
     // history LENGTH could still hold the wrong string.
     stt.last()?.fireFinal("tell me a joke");
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
     });
     const last = llmCalls(opts).calls.at(-1) as { prompt?: unknown };
     expect(userTexts(last)).toEqual(["tell me a joke"]);
@@ -280,7 +280,7 @@ describe("preemptive generation — recovery cannot resume a speculation", () =>
     // And the discarded speculation cannot be adopted by a later, unrelated turn.
     stt.last()?.fireFinal(UTTERANCE);
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
     });
     expect(llmCalls(opts).calls).toHaveLength(2);
     await t.stop();
@@ -312,7 +312,7 @@ describe("preemptive generation — OFF by default", () => {
     // before it, which is the whole difference the default makes.
     stt.last()?.fireFinal(UTTERANCE);
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
     });
     expect(llmCalls(opts).calls).toHaveLength(1);
     await t.stop();
@@ -333,7 +333,7 @@ describe("preemptive generation — OFF by default", () => {
     // And the ordinary turn is byte-identical to what it always was.
     stt.last()?.fireFinal(UTTERANCE);
     await vi.waitFor(() => {
-      expect(callbacks.onReplyDone).toHaveBeenCalledTimes(1);
+      expect(callbacks.reported("reply.completed")).toHaveBeenCalledTimes(1);
     });
     expect(llmCalls(opts).calls).toHaveLength(1);
     expect((tts.last()?.textChunks ?? []).join("")).toContain("Your order shipped.");

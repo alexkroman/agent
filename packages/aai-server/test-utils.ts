@@ -1,5 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
@@ -17,6 +19,24 @@ import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore, type SecretStore, type SqlExec } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-store.ts";
+
+/**
+ * The real-Postgres and Supabase-stack gates, re-exported so a SIBLING package
+ * can reach them.
+ *
+ * They live in `_pg-test-utils.ts`, and the underscore is what makes them
+ * unreachable across a package boundary (Biome's `noPrivateImports`) — which is
+ * exactly why `session-state.scenario.test.ts` hand-rolled its own copy of the
+ * gate. `aai-studio-server` owns two store contracts (the session registry and
+ * the preview queue) whose stack arm needs the same one spelling, and a second
+ * copy of a gate is how a gate stops agreeing with itself. `./test-utils` is
+ * already this package's published-to-siblings test surface, so it is the seam.
+ *
+ * Only what a sibling really uses is re-exported — `describeWithPg` and
+ * `stackEnv` stay behind the underscore, because knip reports an unused export
+ * here and a re-export nobody needs is exactly that.
+ */
+export { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 
 // Deploys preflight the agent's required credentials against the merged env
 // (see `missingCredentials` in deploy.ts); the default S2S test config needs
@@ -241,22 +261,47 @@ export function createRecordingSql(
  * blocks that a statement-level regex cannot safely split, and no suite here
  * depends on one.
  *
- * **It returns early on a database that already has the schema**, so pointing
- * the suite at the local Supabase stack, or at staging, runs no DDL at all.
+ * **On a CLI-built database it VERIFIES instead of assuming.** This used to
+ * return early whenever `aai_platform` existed at all, so pointing the suite at
+ * the local Supabase stack or at staging ran no DDL — and asserted nothing about
+ * the schema being CURRENT, only that *some* `aai_platform` was there. That is
+ * not hypothetical: the stack on this machine held three of nine migrations
+ * (`supabase start` applies them on INIT and nothing since had run
+ * `migration up`), so a suite died on `column w.preview_slug does not exist` —
+ * a `PostgresError` naming a column, whose first reading is "the code is
+ * broken". `supabase_migrations.schema_migrations` is an exact oracle for it,
+ * and cheaper than a column comparison: when the CLI built this database its own
+ * ledger says what it applied, so the check is a set difference against
+ * `readdirSync(supabase/migrations)` and the failure names the pending files and
+ * the command that applies them. When there is no ledger the database was built
+ * by this helper's own DDL, and the replay below is right — which also makes
+ * that replay (a THIRD thing that applies this schema, after `supabase db push`
+ * and `supabase start`) honest about which of the three it is looking at.
+ *
+ * CI is unaffected either way: a fresh container per run cannot drift.
  */
 export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
+  const migrationsDir = path.resolve(import.meta.dirname, "../../supabase/migrations");
+  const repoMigrations = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+
   // `SqlExec` is not generic — the row is `unknown`, which is all this needs.
+  const [ledger] = await sql(
+    "select to_regclass('supabase_migrations.schema_migrations') is not null as present",
+  );
+  if (ledger?.present) {
+    await assertMigrationsApplied(sql, repoMigrations);
+    return;
+  }
+
   const [existing] = await sql(
     "select to_regclass('aai_platform.studio_workspaces') is not null as present",
   );
   if (existing?.present) return;
 
-  const { readdirSync, readFileSync } = await import("node:fs");
-  const path = await import("node:path");
-  const dir = path.resolve(import.meta.dirname, "../../supabase/migrations");
-  const sqlText = readdirSync(dir)
-    .filter((name) => name.endsWith(".sql"))
-    .sort()
+  const dir = migrationsDir;
+  const sqlText = repoMigrations
     .map((name) => readFileSync(path.join(dir, name), "utf-8"))
     .join("\n")
     // COMMENTS FIRST, or prose becomes DDL. These migrations explain
@@ -289,4 +334,77 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
     "select to_regclass('aai_platform.studio_workspaces') is not null as present",
   );
   if (!created?.present) throw new Error("aai_platform tables were not created");
+}
+
+/**
+ * The migrations as they ship, minus the one line a throwaway database cannot
+ * run — with the omission COUNTED.
+ *
+ * pg_cron is single-database by design: its background worker reads job
+ * descriptions from `cron.database_name` (`postgres`), so `create extension
+ * pg_cron` anywhere else raises `can only create extension in database
+ * postgres`. Everything else executes verbatim against the real extensions.
+ *
+ * This is not the `create extension`-stripping regex that used to live in
+ * `platform-schema.scenario.test.ts`. That one removed THREE lines, because the
+ * arm was a stock server on which none of the Supabase extensions could be
+ * installed, and it came with a hand-written plpgsql `pgmq.create` stub — a
+ * fourth implementation of a contract, in SQL. Both are gone; the stack has the
+ * real extensions, and what is left is one structural property of pg_cron.
+ *
+ * Note `supabase_vault` is created by NO migration (Supabase pre-installs it), so
+ * a database built from these files alone has no Vault. A caller that needs it —
+ * anything touching `vault.secrets`, which includes the orphan-preview sweep —
+ * must create it itself.
+ */
+export function platformMigrationSql(): { sql: string; skipped: number } {
+  const dir = path.resolve(import.meta.dirname, "../../supabase/migrations");
+  const files = readdirSync(dir)
+    .filter((n) => n.endsWith(".sql"))
+    .sort();
+  if (files.length === 0) throw new Error(`no migrations in ${dir}`);
+  const raw = files.map((n) => readFileSync(path.join(dir, n), "utf-8")).join("\n");
+  let skipped = 0;
+  const sql = raw.replace(/^create extension if not exists pg_cron;$/gm, () => {
+    skipped += 1;
+    return "-- pg_cron omitted: single-database extension, pinned to cron.database_name";
+  });
+  return { sql, skipped };
+}
+
+/**
+ * A migration filename's version — the digits the Supabase CLI records.
+ *
+ * `20260810020000_preview_slug_column.sql` → `20260810020000`. Exported because
+ * `store-conformance.ts` reports the same set and must agree on the reading.
+ */
+export function migrationVersion(filename: string): string {
+  return /^(\d+)/.exec(filename)?.[1] ?? filename;
+}
+
+/**
+ * Fail naming the pending migrations, when the CLI's ledger is behind the repo.
+ *
+ * The failure a stale database actually produces is a `PostgresError` about a
+ * column, several suites deep, which reads as a code bug — so this trades it for
+ * one sentence naming the files and the command. Deliberately does NOT apply
+ * them: a fixture that migrates the developer's stack would be a FOURTH thing
+ * that applies this schema, and it would do it to a database the developer may
+ * have data in. Fail with the exact command; that is the only outcome that
+ * cannot surprise anybody.
+ */
+async function assertMigrationsApplied(sql: SqlExec, repoMigrations: string[]): Promise<void> {
+  const rows = await sql("select version from supabase_migrations.schema_migrations");
+  const applied = new Set(rows.map((row) => String(row.version)));
+  const pending = repoMigrations.filter((name) => !applied.has(migrationVersion(name)));
+  if (pending.length === 0) return;
+  throw new Error(
+    `This database was built by the Supabase CLI and is ${pending.length} migration(s) ` +
+      `behind supabase/migrations:\n\n${pending.map((n) => `  ${n}`).join("\n")}\n\n` +
+      "Apply them, then re-run:\n\n  supabase migration up      # keeps the data in it\n" +
+      "  supabase db reset          # rebuilds from every migration, discarding it\n\n" +
+      "(Nothing here applies them for you: a fixture that migrated your own stack " +
+      "would be a fourth thing that applies this schema, to a database you may have " +
+      "data in.)",
+  );
 }

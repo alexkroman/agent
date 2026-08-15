@@ -94,6 +94,18 @@
  *             test task must hash JSON. A reference has to RESOLVE rather than
  *             match the name — the string that made the dead directory look read
  *             belonged to a different package's sibling.
+ *   rule 15 — reserved.
+ *   rule 16 — No new `on*` callback on the SESSION's own surfaces. A transport
+ *             reports a `TransportEventBody` and the session takes one, both in
+ *             the protocol's own event vocabulary, so a new thing worth observing
+ *             is a union member in `sdk/protocol-events.ts` rather than a name
+ *             threaded through `session-core.ts`, `transports/types.ts`,
+ *             `runtime-session-callbacks.ts` and four harnesses. That threading
+ *             is what put 157 of these across eleven files, 78 of them in test
+ *             doubles whose only job was to satisfy the shape. A name is
+ *             legitimate exactly when there is NO EVENT for it — binary audio,
+ *             `reply.started` (which the wire does not have), and the lifecycle
+ *             hooks a caller must ACT on — and the baseline is those.
  *
  * Baselines for rules with pre-existing violations live in
  * `guard-invariants-baseline.json`. Counts there may only SHRINK. `--update`
@@ -128,25 +140,42 @@ const BASELINE_PATH = new URL("guard-invariants-baseline.json", import.meta.url)
  *
  * This trap has already cost real time twice in this repo — the escape-hatch
  * gate counted its own pattern list, and then counted its own baseline file.
+ *
+ * **The exemption is PER RULE, not per file**, and that distinction was bought
+ * rather than designed in. This was a flat `Set` of paths skipped by every rule,
+ * which is a different and much broader claim: `host/_test-utils.ts` is on it
+ * because rule 4's doc quotes the `setTimeout(r, 0)` shadowing bug, and that made
+ * the file invisible to rule 16 as well — a rule whose whole subject is the four
+ * test harnesses, one of which is that file. It would have reported `0 ✓` over a
+ * harness free to grow its callback stub back, which is precisely the
+ * silently-blind shape the set exists to prevent. `"*"` still means every rule,
+ * and is right only for the gate's own machinery.
  */
-const SELF_REFERENTIAL = new Set([
-  "scripts/guard-invariants.mjs",
+const SELF_REFERENTIAL = new Map([
+  ["scripts/guard-invariants.mjs", "*"],
   // The rule definitions. Every pattern's `label` and `re` is a description of
   // the thing it bans, so this file matches most of its own rules.
-  "scripts/guard-invariants-rules.mjs",
-  "scripts/guard-invariants-baseline.json",
+  ["scripts/guard-invariants-rules.mjs", "*"],
+  ["scripts/guard-invariants-baseline.json", "*"],
   // The spec that proves each rule still matches. Its samples ARE the
   // anti-patterns, spelled out on purpose — it exists because a pattern
   // matching nothing prints the same checkmark as a rule being upheld.
-  "packages/aai-templates/guard-invariants-gate.test.ts",
-  // The primitives the rules point AT.
-  "packages/aai/sdk/omit-undefined.ts", // rule 2's doc shows the banned spelling
-  "packages/aai/sdk/keyed-lock.ts", // rule 9 IS this file's implementation
-  "packages/aai/sdk/owned-map.ts", // rule 8 IS this file's implementation
-  "packages/aai/sdk/epoch.ts",
-  "packages/aai/sdk/session-slot.ts", // rule 6's doc names the cast it replaces
-  "packages/aai/host/_test-utils.ts", // rule 4's doc quotes the shadowing bug
+  ["packages/aai-templates/guard-invariants-gate.test.ts", "*"],
+  // The primitives the rules point AT — each exempt from ITS OWN rule only.
+  ["packages/aai/sdk/omit-undefined.ts", ["rule2_spreadTernary"]], // its doc shows the banned spelling
+  ["packages/aai/sdk/keyed-lock.ts", ["rule9_handRolledKeyedLock"]], // rule 9 IS this implementation
+  ["packages/aai/sdk/owned-map.ts", ["rule8_handRolledOwnedMap"]], // rule 8 IS this implementation
+  ["packages/aai/sdk/epoch.ts", "*"],
+  ["packages/aai/sdk/session-slot.ts", "*"], // rule 6 (retired) named the cast it replaces
+  ["packages/aai/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
 ]);
+
+/** Is `file` exempt from the rule keyed `ruleKey`? */
+function isSelfReferential(file, ruleKey) {
+  const scope = SELF_REFERENTIAL.get(file);
+  if (scope === undefined) return false;
+  return scope === "*" || scope.includes(ruleKey);
+}
 
 /** Run git, returning stdout. Throws on real failure (not "no matches"). */
 function git(args, { allowNoMatch = false } = {}) {
@@ -179,7 +208,7 @@ function isCommentOnly(text) {
   return text.startsWith("//") || text.startsWith("*") || text.startsWith("/*");
 }
 
-function scanLineRule({ re, paths, skipComments }) {
+function scanLineRule({ key, re, paths, skipComments }) {
   const out = git(["grep", "-nIE", "--untracked", "-e", re, "--", ...paths], {
     allowNoMatch: true,
   });
@@ -188,7 +217,7 @@ function scanLineRule({ re, paths, skipComments }) {
     .split("\n")
     .filter((line) => line.length > 0)
     .map(parseMatch)
-    .filter((m) => !SELF_REFERENTIAL.has(m.file))
+    .filter((m) => !isSelfReferential(m.file, key))
     .filter((m) => !(skipComments && isCommentOnly(m.text)));
 }
 

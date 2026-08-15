@@ -214,25 +214,63 @@ jobs:
       # their unit suites can only assert in prose (see
       # platform-lock.scenario.test.ts).
       #
-      # A step rather than a `services:` container, because those need Docker
-      # and this job's matrix includes macos-latest, where it is unavailable.
-      # The runner image ships the cluster; starting it is enough. The database
-      # behaviour under test is OS-independent, so the ubuntu leg covers it and
-      # the tests skip themselves on macOS, where AAI_TEST_PG_URL is unset.
+      # **The PRODUCTION image, not the runner's stock cluster.** `systemctl
+      # start postgresql` gave a server with no Supabase extension, which is a
+      # deployment nobody has: `platform-schema.scenario.test.ts` had to strip
+      # every `create extension` line with a regex and hand-write a plpgsql
+      # `pgmq.create` stub to make the migration runnable at all, and Vault,
+      # pg_cron and pg_net had no arm anywhere. This is the same image the
+      # production project runs, and all four extensions install in a plain
+      # container of it (verified locally; the amd64 pull is 0.37 GB compressed
+      # across 29 layers, against a tier that runs in ~3s).
+      #
+      # Still a STEP rather than a `services:` container, and the reason the old
+      # comment gave has NOT stopped applying: `services:` is per-JOB, this job's
+      # matrix includes macos-latest, and Docker is unavailable there — so a
+      # `services:` block would fail that leg, which still runs every scenario
+      # suite that needs a subprocess or a port rather than a database. The
+      # database behaviour under test is OS-independent, so the ubuntu leg covers
+      # it and the tests announce their own skip on macOS.
       - name: Start Postgres (Linux)
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          sudo systemctl start postgresql
-          # Fail here rather than let the tests skip: a suite that silently
-          # stops running is the failure mode these tests exist to avoid.
-          pg_isready --host 127.0.0.1 --timeout 30
-          sudo -u postgres psql -c "alter user postgres password 'postgres'"
+          # The runner's own cluster occupies 5432; this image replaces it.
+          sudo systemctl stop postgresql || true
+          docker run -d --name aai-test-pg -p 5432:5432 \
+            -e POSTGRES_PASSWORD=postgres \
+            public.ecr.aws/supabase/postgres:17.6.1.155
+          # **`pg_isready` alone is a FALSE ready on this image.** Its entrypoint
+          # runs an init phase and RESTARTS Postgres, so a probe that answers
+          # once can be answered by a server about to go away — measured
+          # locally, where `create extension pg_cron` immediately after a
+          # first-poll ready failed with "Is the server running locally".
+          # Three consecutive successes a second apart is what distinguishes a
+          # settled server from the init one.
+          ok=0
+          for _ in $(seq 1 90); do
+            if docker exec aai-test-pg pg_isready -U postgres >/dev/null 2>&1; then
+              ok=$((ok + 1))
+            else
+              ok=0
+            fi
+            [ "$ok" -ge 3 ] && break
+            sleep 1
+          done
+          [ "$ok" -ge 3 ] || { docker logs aai-test-pg; exit 1; }
+          # Fail-fast on the WRONG image rather than mid-suite: the whole point
+          # of this image is the four extensions, and a migration dying on
+          # `create extension` several suites in reads as a code bug.
+          docker exec aai-test-pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -Atc \
+            "select case when count(*) = 4 then 'ok'
+                    else 'missing Supabase extensions: ' || count(*)::text || ' of 4' end
+             from pg_available_extensions
+             where name in ('supabase_vault', 'pgmq', 'pg_cron', 'pg_net');" | grep -qx ok
           echo "AAI_TEST_PG_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
-          # And make a SKIP fail here. `pg_isready` above covers the server not
-          # starting; it says nothing about the variable not arriving, and if it
-          # did not arrive all five real-Postgres suites would skip themselves
-          # and this job would pass — the exact "a check that exists without
+          # And make a SKIP fail here. The readiness loop above covers the server
+          # not starting; it says nothing about the variable not arriving, and if
+          # it did not arrive every real-Postgres suite would skip itself and
+          # this job would pass — the exact "a check that exists without
           # running" failure their own comments say they must not become.
           echo "AAI_REQUIRE_PG=1" >> "$GITHUB_ENV"
       # Both slow tiers below e2e, in one job. They are separate TASKS — the
@@ -289,15 +327,70 @@ jobs:
         env:
           AAI_REQUIRE_REGISTRY: "1"
 
+  # The PLATFORM arm: the local Supabase stack, which is the only configuration
+  # anything runs `aai_platform` on.
+  #
+  # A second Linux-only job rather than a step in the one above, because the two
+  # shapes cost differently and the cheap contracts must not be gated behind the
+  # expensive ones: the database image (that job) covers Vault, pgmq, pg_cron and
+  # pg_net in one `docker run`, while walrus/Realtime, Storage and Auth need
+  # containers the database image does not carry — five images, ~4 GB — and they
+  # are the arm for four contracts that had NO real arm at all before
+  # (`realtime-rls.scenario.test.ts` in particular was written against this stack
+  # and ran on no machine anywhere).
+  #
+  # `-x` trims the stack to what the suites use: studio, the edge runtime,
+  # analytics, imgproxy, vector, PostgREST, pg-meta and the mail catcher are all
+  # things no test here dials.
+  platform-stack:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+      - id: workspace-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            packages/*/dist
+            .turbo
+          key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          version: latest
+      # `supabase start` applies supabase/migrations on INIT, so a fresh
+      # container cannot drift the way a developer's long-lived stack does (see
+      # `ensurePlatformTables`, which reports that drift as a sentence).
+      - run: supabase start -x studio,edge-runtime,analytics,imgproxy,vector,rest,meta,inbucket
+      # `pnpm test:pg` is the SAME resolver a developer runs: it shells out to
+      # `supabase status -o env`, exports the Supabase trio beside the database
+      # URL, and sets AAI_REQUIRE_PG + AAI_REQUIRE_STACK — so a variable that
+      # stops arriving is a red job rather than a green one with the only arm for
+      # the platform stores silently absent. Going through it rather than
+      # hand-writing the exports is the point: a second copy of this wiring in
+      # YAML is the thing that rots while looking right.
+      - run: pnpm test:pg
+      - if: always()
+        run: supabase stop --no-backup
+
   # Single gate job for branch protection — add only "ci" as a required check
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, integration-and-scenario, e2e]
+    needs: [lint-typecheck-and-checks, test, integration-and-scenario, platform-stack, e2e]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration-and-scenario.result }} ${{ needs.e2e.result }}"
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration-and-scenario.result }} ${{ needs.platform-stack.result }} ${{ needs.e2e.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"

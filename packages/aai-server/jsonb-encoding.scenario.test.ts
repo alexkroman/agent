@@ -77,6 +77,16 @@ describeWithPg("platform jsonb columns hold jsonb, not strings", () => {
   });
 
   test("a chat is stored as an array", async () => {
+    // The parent workspace FIRST — `studio_chats_workspace_fk`
+    // (`20260810010000_workspace_child_foreign_keys.sql`) makes a chat with no
+    // workspace unrepresentable, which is the shape production has. This test
+    // wrote the chat alone and was green for as long as the only real arm was a
+    // stock Postgres built by `ensurePlatformTables`, whose replay is
+    // deliberately partial: the FK lives in a `do $$` block, and only
+    // `create table` plus `add`/`drop column` are replayed. So the assertion
+    // held against a schema laxer than the migration's — the same class of gap
+    // as the double-encode this file exists for, one rung further out.
+    await createPgWorkspaceStore(sql).put(SCOPE, "chat", { files: {} }, null);
     const store = createPgChatStore(sql);
     await store.putChat(SCOPE, "chat", [
       { id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] },

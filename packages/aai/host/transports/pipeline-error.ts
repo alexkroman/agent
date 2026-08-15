@@ -3,7 +3,8 @@
  * How pipeline mode reports a session error — and above all, when it may say the
  * session is OVER.
  *
- * `TransportCallbacks.onError` defaults to fatal, and a fatal frame is not a
+ * An `error.reported` with no `fatal` key means the session is OVER, and a fatal
+ * frame is not a
  * banner: aai-ui's `handleErrorEvent` calls `cleanupAudio()`, bumps the
  * connection generation, and sets `running: false`. The microphone is RELEASED
  * and the call ends. So only the paths that really terminate the session may omit
@@ -26,21 +27,30 @@
  * (`pipeline-stream.test.ts`, "reports a drain timeout…").
  */
 
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import type { EmitError, TransportCallbacks } from "./types.ts";
 
 /**
  * Bind a transport's error reporter to its callbacks.
  *
- * `errOpts` is forwarded only when there is one, so a terminal report stays a
- * two-argument `onError(code, message)` rather than one carrying an explicit
- * `undefined` — identical to the client either way, and it keeps each call site's
- * intent legible in the specs that assert on it.
+ * The `EmitError` signature survives the collapse of the callback surface, and
+ * deliberately: it is threaded through the transport's own internals at dozens of
+ * call sites, where `emitError("llm", msg, { fatal: false })` is the intent and an
+ * event literal would be noise. This function is the one place the two meet.
+ *
+ * `fatal` is omitted rather than sent as `undefined` — `exactOptionalPropertyTypes`
+ * aside, an absent `fatal` is what the wire schema means by "terminal", so a
+ * terminal report must not carry the key at all.
  *
  * @internal
  */
 export function createEmitError(callbacks: TransportCallbacks): EmitError {
   return (code, message, errOpts) => {
-    if (errOpts === undefined) callbacks.onError(code, message);
-    else callbacks.onError(code, message, errOpts);
+    callbacks.report({
+      type: "error.reported",
+      code,
+      message,
+      ...omitUndefined({ fatal: errOpts?.fatal }),
+    });
   };
 }

@@ -11,7 +11,17 @@
     // real one changed nothing and turbo replayed the previous run. Same class
     // of miss as the root tsconfig above: a root file a task depends on has to
     // be hashed, and `inputs` globs resolve relative to the PACKAGE.
-    "vitest.slow.config.ts"
+    "vitest.slow.config.ts",
+    // The platform schema, read by six suites — including
+    // `platform-schema.test.ts`, which is in the UNIT tier and whose whole job
+    // is to assert every `aai_platform.<table>` the source queries is declared
+    // by a migration. Third instance of the rule two entries up: a repo-root
+    // directory is covered by no package's `inputs`, so editing a migration
+    // could not invalidate the cache of the test that guards migrations, in
+    // either tier. Verified the documented way — capture `turbo run test
+    // --filter aai-server --dry=json`'s hash, touch a migration, capture
+    // again; before this entry `aai-server#test` was byte-identical.
+    "supabase/migrations/**"
   ],
   "globalPassThroughEnv": [
     // Ambient machine config, same class as the proxy/CA vars below. Stripped
@@ -47,9 +57,7 @@
     // The pass/fail is identical either way, which is exactly why this belongs
     // here and not in a task's `env` — putting it there would fragment every
     // task's cache between local and CI runs for a formatting difference.
-    "GITHUB_ACTIONS",
-    "AAI_ORIGIN",
-    "AAI_STEP_CAP_HINT"
+    "GITHUB_ACTIONS"
   ],
   "tasks": {
     // `$TURBO_DEFAULT$` — every git-tracked file in the package — rather than a
@@ -213,6 +221,17 @@
       "env": [
         "AAI_TEST_PG_URL",
         "AAI_REQUIRE_PG",
+        // The whole local Supabase stack, resolved by `with-test-pg.mjs` out of
+        // `supabase status -o env`. Declared for both of AAI_REQUIRE_PG's
+        // reasons and they bite harder here: these are the ONLY arm the platform
+        // stores have (a stock Postgres runs none of Vault, pg_cron or walrus),
+        // so a stripped variable is not a narrower run, it is the platform tier
+        // silently absent. In `env`, so a stack run and a database-only run
+        // cannot share a cache entry.
+        "AAI_TEST_SUPABASE_URL",
+        "AAI_TEST_SUPABASE_SERVICE_KEY",
+        "AAI_TEST_SUPABASE_ANON_KEY",
+        "AAI_REQUIRE_STACK",
         "AAI_FAULT_PROFILE",
         "VITEST_PROFILE",
         "VITEST_INCLUDE",
@@ -256,6 +275,48 @@
         "AAI_TEST_PM",
         "AAI_FAULT_PROFILE",
         "AAI_REQUIRE_REGISTRY"
+      ]
+    },
+    // The behaviour eval tier: a live model, a live key, real tokens. NOT in
+    // `pnpm check` and not in CI — see `packages/aai-evals/CLAUDE.md` for why a
+    // measurably noisy instrument must not be a merge gate.
+    //
+    // Every variable here SELECTS WHAT THE TASK DOES, which is the rule that
+    // puts it in `env` rather than `globalPassThroughEnv`: strict env mode
+    // strips an undeclared one silently, which is the failure that made
+    // `AAI_TEST_PM=npm pnpm test:e2e` run pnpm and say nothing. `AAI_ORIGIN` and
+    // `AAI_STEP_CAP_HINT` used to sit in `globalPassThroughEnv` for want of a
+    // task to own them; the first is `AAI_EVAL_ORIGIN` now, since it names this
+    // tier's target rather than ambient machine config.
+    //
+    // **`cache: false`, which is the one place this repo's `inputs` rule does
+    // not apply.** Everywhere else a task is a pure function of its inputs and
+    // the fix for a replayed green run is to hash more; here two runs of the
+    // SAME tree legitimately differ — that is the documented property the tier
+    // exists to report (0.56 against 0.60 on identical code, 9 of 25 tasks
+    // flipping). A cache hit would therefore replay a measurement rather than
+    // take one, so the second `pnpm test:eval` of a variance check would print
+    // FULL TURBO and the number from the first. There is consequently no input
+    // set to get right, and none is declared rather than declaring one that
+    // nothing reads. If this ever becomes cacheable, note the corpus lives
+    // OUTSIDE the package (`scripts/starter-eval/**`), where a package-relative
+    // `$TURBO_DEFAULT$` cannot see it — the same miss the root `tsconfig.json`
+    // sat in.
+    "check:eval": {
+      "cache": false,
+      "dependsOn": [
+        "build"
+      ],
+      "env": [
+        "AAI_REQUIRE_EVAL",
+        "AAI_EVAL_ORIGIN",
+        "AAI_EVAL_REPEAT",
+        "AAI_EVAL_ONLY",
+        "AAI_EVAL_MIN_SCORE",
+        "AAI_STEP_CAP_HINT",
+        "VITEST_PROFILE",
+        "VITEST_INCLUDE",
+        "VITEST_POOL"
       ]
     },
     "//#check:syncpack": {

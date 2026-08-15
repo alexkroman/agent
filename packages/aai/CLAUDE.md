@@ -194,42 +194,17 @@ present in the `agent()` config:
   making it 8→24 costs nothing. Rate conversion belongs at the edge; the host's
   job is to state the requirement and refuse a client that will not meet it.
 
-  **S2S has no agent captions on tool-call turns, and this is not our bug.**
-  Measured against the live service (2026-08-03) with a standalone WebSocket
-  client, no SDK in the path: `transcript.agent` is emitted for every non-tool
-  reply with a matching `reply_id`, and for NEITHER reply of a tool-call turn —
-  not the one carrying `tool.call`, not the one after `tool.result`. Declaring
-  tools changes nothing; calling one does. So a tool-using agent renders blank
-  reply text for exactly the turns that do the work, `reply.done` logs
-  `agentText: "none"`, and `replyAnomaly` warns "delivered audio with no
-  transcript" once per tool turn. Anything reading reply text (history, evals, a
-  tau2-style harness scoring what the agent *said*) sees silence for a turn the
-  user heard answered.
-
-  The docs contradict each other on whether that is intended: the canonical
-  message-sequence page shows `transcript.agent` inside its `opt tool call`
-  branch and calls it "Per agent reply", while the execution-modes page's
-  `interactive` diagram shows neither tool-turn reply emitting it — the service
-  matches the latter.
-
-  **`transcript.agent.delta` DOES arrive, and it is the remedy.** This guide said
-  the opposite — "not implemented: zero frames arrive even for a plain greeting
-  reply", with an instruction not to re-add the accumulator removed in #a42cdbd3.
-  Re-measured 2026-08-06 against the live service with a standalone client
-  (`tau2-bench/scripts/vaapi_delta_probe.py`, no SDK): a bare greeting reply —
-  the exact case named as producing none — emits one frame per word carrying
-  `start_ms`/`end_ms`. Over one 215s retail session, 511 frames across 20
-  replies, of which **5 sent deltas and never a final `transcript.agent`** (116
-  words, all tool-preamble turns, otherwise unrecoverable). Two properties decide
-  how they are consumed, and neither matches the docs' "streaming ... useful for
-  live captioning in sync with playback": they arrive in a **batch** (every delta
-  for a reply within 0.000-0.031s), and they arrive **before** the final
-  `transcript.agent` (0.4-7.7s earlier). So `s2s.ts` forwards the accumulation as
-  a partial and, on a COMPLETED reply that never sent a final, commits it as the
-  reply's transcript. Never on an interrupted reply: the batch covers the whole
-  composed reply while `transcript.agent` with `interrupted: true` is trimmed to
-  what was spoken, so committing it would put words in history the caller never
-  heard.
+  **S2S has no agent captions on tool-call turns, and `transcript.agent.delta`
+  is the remedy.** Neither reply of a tool-call turn emits `transcript.agent`, so
+  a tool-using agent renders blank reply text for exactly the turns that do the
+  work — measured against the live service, and the vendor's own docs contradict
+  each other on whether it is intended. The per-word deltas DO arrive (511 frames
+  over one 215s session; this guide asserted the opposite for a while), and
+  `s2s.ts` forwards them as a partial and commits them on a COMPLETED reply that
+  sent no final — never on an interrupted one, which would put words in history
+  the caller never heard. **Read `host/_s2s-reply.ts`'s module doc** for both
+  measurements, the two properties that decide how the deltas are consumed, and
+  the anomaly log; this guide is at its cap and that module owns the finding.
 
   **S2S sends Voice Focus, `sttPrompt`, and the three descriptor options
   (`voice`, `languages`, `keyterms`).** `updateSession` pins
@@ -280,8 +255,8 @@ present in the `agent()` config:
   value), and setting `min_silence`/`max_silence` disables both for the session.
 
   **An in-band service error is NOT the end of the session, and a fatal frame
-  is not a banner.** `SessionCore.onError` defaults to `fatal: true`, and
-  aai-ui answers a fatal frame by calling `cleanupAudio()`, bumping the
+  is not a banner.** An `error.reported` with no `fatal` key means the session
+  is over, and aai-ui answers one by calling `cleanupAudio()`, bumping the
   connection generation, and setting `running: false` — the MICROPHONE IS
   RELEASED. Both S2S transports used to report every in-band error that way:
   AssemblyAI's `session.error` with a non-expiry code (a rate limit, a rejected
@@ -637,6 +612,38 @@ this guide is at its cap and the author-facing half lives there.
 `AgentParams`. Same `AgentDef`, refusing the fields a workflow app cannot use;
 that guide's `workflowApp()` section owns the argument.
 
+## A callback URL comes from `publicWebhookUrl`, never from `hook.url`
+
+`createWebhook()` sets `hook.url`, and it is **guest-local**: the DevKit composes
+it from `getWorkflowMetadata().url`, which is `http://localhost:<port>` off the
+running process (its only other branch is `https://$VERCEL_URL`). Deployed, that
+names the inside of a sandbox which has self-exited by the time a payment
+provider calls back. So the SDK mints its own:
+`ctx.workflows.publicWebhookUrl(token)` — `RuntimeOptions.publicUrl` plus the
+same `WORKFLOW_WEBHOOK_PREFIX` the guest's own router parses, so the URL handed
+out and the path that answers it cannot drift.
+
+Three properties are load-bearing:
+
+- **`publicUrl` is an OPTION, never sniffed.** Each deployment supplies it — the
+  platform bakes `AAI_PUBLIC_BASE_URL` into the guest's exec env and the harness
+  passes it through, `server.mjs` reads `PUBLIC_URL`, `aai dev` passes its own
+  BACKEND origin (Vite proxies the browser surface and not the DevKit's
+  `/.well-known/` routes, so the port a developer opens would 404 a delivery).
+  Reading an `AAI_*` variable here would make the SDK depend on the vocabulary of
+  one of its three deployments.
+- **Unconfigured THROWS**, naming the option. A `localhost` URL would be the
+  same bug with the failure moved days later and onto somebody else's server.
+- **It takes the token, because a hook's token is the caller's.** Derive it in one
+  exported helper the body and the tool both import — the rule {@link signal}
+  already states. `createWebhook()`'s own token is random and body-side only,
+  so a URL that has to be minted from a TOOL wants `createHook({ token })`.
+
+Not yet closed: a `"use workflow"` BODY, and a step it hands `hook.token` to,
+have no `ToolContext` and so no way to reach `publicUrl` — a run that must EMAIL
+its own callback URL still composes it from a value the author supplies.
+`stepEnv`'s `Symbol.for` slot is the shape that would close it.
+
 ## A run can tell the caller it finished
 
 `start(def, input, { key, notify })` makes the session that started a run take an
@@ -909,6 +916,36 @@ itself has to get right, as opposed to when it runs:
   `builtin-tools.ts`. Protection is not opt-in per caller; only tests override
   the `fetch` option.
 
+## The session takes two VOCABULARIES, not nineteen callbacks
+
+`SessionCore` takes a `command(cmd)` — one `SessionCommand`, what the CLIENT asks
+for — and a `report(event)` — one `TransportEventBody`, what the TRANSPORT
+observed. `TransportCallbacks` is the same `report` from the other side. That is
+the whole inbound surface, plus the two audio paths. It used to be one method per
+thing, the same names declared on both sides with a forwarding table between them
+and a stub in every harness: **157 `on*` declarations across eleven files, 78 of
+them test scaffolding**, none of which decided anything.
+
+Three rules, and `guard-invariants` rule 16 checks the first per file:
+
+- **A callback survives exactly when there is NO EVENT for it** — binary audio,
+  `onReplyStarted` (the wire has no `reply.started`, and minting one is a protocol
+  change), `onSessionReady`, and the socket-lifecycle hooks a caller must ACT on.
+- **Report `agent-transcript.committed` or `.updated`, never a boolean.** Those
+  two names carry exactly what `onAgentTranscript(text, interrupted)` plus a
+  separate partial callback used to; only the committed one enters history.
+- **`reply.completed` is the PROVIDER's claim, not the turn's end** — the one
+  report whose name and emitted event can come apart. See `session-reply-done.ts`.
+
+**Audio is not joining the hook surface, and not for cost reasons.** A handler
+runs synchronously off `emit` and an async one is never awaited
+(`session-emitter.ts`), so no subscriber can add latency to a turn. What keeps
+audio out is MEMBERSHIP: `playback_progress` is a client→server command and audio
+frames are binary, so neither is in the event vocabulary and neither can be a hook.
+
+**Read `host/transports/types.ts`** for the boundary and the full argument;
+`host/session-core.ts` and `host/session-commands.ts` own the two dispatchers.
+
 ## A `reset` starts a conversation, so it GREETS
 
 The client `reset` frame — aai-ui's "New Conversation" button — discards the
@@ -1027,7 +1064,7 @@ barge-in really fires (alongside `cancelled`) or when the agent stops speaking
 on its own — `createGatedSpeechEdges` in `pipeline-user-speech.ts`. While the
 agent is silent it passes straight through: there is no floor to yield and the
 event just means "listening". Live captions are unaffected either way, because
-`user_transcript_partial` is emitted independently of the gate.
+`user-transcript.updated` is emitted independently of the gate.
 
 The property to preserve — and what the specs in `pipeline-voice-events.test.ts`
 pin — is that **the score no longer depends on how the client reads the event**.
@@ -1056,9 +1093,9 @@ server locally. Audio path depends on the session mode (see above):
   time (cancels the in-flight turn).
 - **Pipeline mode**: user speaks → browser captures PCM → WebSocket →
   server forwards audio to the STT provider → STT partials stream to the
-  client as `user_transcript_partial` (live captions) and drive
-  `speech_started`/`speech_stopped` edges → the committed transcript fires
-  `onUserTranscript` → host runs the LLM loop locally via `streamText`
+  client as `user-transcript.updated` (live captions) and drive the
+  `speech.started`/`speech.stopped` edges → the committed turn is reported as
+  `user-transcript.committed` → host runs the LLM loop via `streamText`
   (tool calls execute on the host just like S2S mode) → assistant text
   chunks stream into the TTS provider → synthesized audio returns over
   the client WebSocket → interrupts cancel the in-flight LLM stream and
@@ -1346,14 +1383,12 @@ it generates.
 
 ## Fixture replay testing (`host/`)
 
-Tests in `packages/aai/host/` use a **hybrid mock** pattern: a real
-`Runtime` and tool executor with mocked S2S WebSocket connections. JSON
-fixtures in `host/fixtures/` contain recorded AssemblyAI API messages
-that are replayed through the real orchestration layer. Key helpers:
-
-- `makeMockHandle()` — creates mock S2S WebSocket using nanoevents
-- `fireFixtureMessage()` — one fixture message as typed callbacks
-- `createFixtureSession()` — wires a real Runtime to mocked S2S
+A **hybrid mock**: a real `Runtime` and tool executor over a mocked S2S socket,
+replaying the recorded AssemblyAI messages in `host/fixtures/` through the real
+orchestration layer. `createFixtureSession` / `fireFixtureMessage` /
+`makeMockHandle` in `host/_test-utils.ts` are the three helpers, documented there.
+Note `fireFixtureMessage` drives `S2sCallbacks` — the S2S WIRE contract, which is
+a provider adapter and deliberately NOT the session's `report` surface.
 
 ## One canonical config schema, deny-list boundaries
 

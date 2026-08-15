@@ -35,7 +35,8 @@ export const HARNESS_ORPHAN_POLL_MS = 30_000;
 /**
  * Version of the AGENT-MODE guest contract: the exec-env boot convention
  * (AAI_GUEST_MODE / AAI_BUNDLE_PATH | AAI_BUNDLE_URL / AAI_BUNDLE_SHA256 /
- * AAI_AGENT_ENV_PATH) plus the token-gated `/manage/*` HTTP surface. Reported
+ * AAI_AGENT_ENV_PATH / AAI_PUBLIC_BASE_URL) plus the token-gated `/manage/*`
+ * HTTP surface. Reported
  * by `GET /manage/status`. Agent sandboxes run the harness image PINNED at
  * deploy time, so the host may be newer than this harness — bump this on any
  * change to the surface, and keep host-side consumers tolerant of older
@@ -49,8 +50,19 @@ export const HARNESS_ORPHAN_POLL_MS = 30_000;
  * image against the one it builds (`guestUnderstandsBundleUrl` in
  * aai-server/sandbox-vm.ts) — this constant is the record of why that check
  * exists, not the mechanism.
+ *
+ * v3 added `AAI_PUBLIC_BASE_URL` — the agent's own public base URL (origin plus
+ * slug), which the harness passes to the bundle's runtime as `publicUrl` so a
+ * durable run can mint a webhook URL a third party can actually reach. **It needs
+ * no image comparison and no host-side check**, and the difference from v2 is the
+ * reason the additive-only rule is worth stating: a v2 harness receiving an
+ * unknown exec-env key ignores it and boots exactly as before, where v2's own
+ * change replaced one key with another and so could fail a boot. The degraded
+ * behaviour on an older pinned guest is that `ctx.workflows.publicWebhookUrl`
+ * throws naming the option — the same answer as an unconfigured deployment, and
+ * cured by a redeploy.
  */
-export const GUEST_CONTRACT_VERSION = 2;
+export const GUEST_CONTRACT_VERSION = 3;
 
 /**
  * Wall-clock cap on fetching the worker bundle from `AAI_BUNDLE_URL`. Bounded

@@ -167,9 +167,8 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `api-key-verify.ts` — raw API-key verification against AssemblyAI (see
   "Auth" below). The one absolute authentication check on the platform
 - `rate-limit.ts` — the shared fixed-window limiter (in-memory + Postgres).
-  It lived in `aai-studio-server` while the studio was its only caller, which
-  is why `POST /deploy` had none: this package cannot import from that one.
-  Policy stays with each consumer; only the mechanism is here
+  Only the MECHANISM is here; policy stays with each consumer, and every window
+  the platform runs is the studio's (`aai-studio-server/CLAUDE.md`, "Rate limits")
 - `client-ip.ts` — the rate-limit key. Reads the **last** `X-Forwarded-For`
   entry (the hop our own proxy appended), not the first — the leftmost is
   client-supplied, and keying on it hands an attacker an unlimited supply of
@@ -177,11 +176,10 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   same header and is right to: it wants what the browser saw, which is the
   opposite end of the same list
 - `_semaphore.ts` — counting semaphore with a bounded wait. Caps how many
-  deploy bodies buffer at once (`DEPLOY_BODY_CONCURRENCY`): the size caps
-  bound ONE request, and peak memory was arrival rate times ~164 MB against a
-  2048 MiB container — a number the caller picks. Measured: 28 KB on the wire
-  inflates to ~164 MB of RSS, so 24 concurrent cost ~812 MB ungated and
-  ~333 MB gated, the gated figure being flat in N rather than smaller
+  deploy bodies buffer at once (`DEPLOY_BODY_CONCURRENCY`): the size caps bound
+  ONE request, so peak memory was arrival rate times a number the CALLER picks.
+  `constants.ts` carries the measurement and the container budget it is sized
+  against
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
 - `bundle-store.ts` — deploy persistence (blob reads AND writes retry
@@ -229,38 +227,20 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   sentinel and retries failures, so conflating them makes a live deploy read
   as absent.
 
-  **Uploads carry a one-year `cacheControl`, and it is inert on purpose.**
-  Nothing reads a blob through a cache today — every read is either an
-  authenticated `download()` (which Supabase's CDN will not cache) or a
-  per-call signed URL (fresh token, fresh cache key). It is set anyway because
-  Storage stamps the directive at UPLOAD time and never revisits it: left at
-  storage-js's 3600 default, every blob already written would carry the wrong
-  one on the day anything IS served through the CDN, and fixing it then means
-  re-uploading the bucket. A year is correct by construction rather than as a
-  guess — the key is the content hash, the same reasoning that lets the asset
-  routes serve `immutable`.
+  **Uploads carry a one-year `cacheControl`, and it is inert on purpose** —
+  correct by construction rather than as a guess, because the key is a content
+  hash. The comment on `cacheControl` in `blob-storage.ts` carries why setting an
+  inert directive now is what avoids re-uploading the bucket later.
 
   **`SUPABASE_SERVICE_ROLE_KEY` must be a SECRET key (`sb_secret_…`), and boot
-  refuses a publishable one** (`assertServiceRoleKey` in `_boot.ts`, called
-  once from `buildServiceConfig` — the only caller of both consumers, so the
-  guard cannot be half-applied). A publishable key authenticates fine and then
-  carries `anon` authority, which breaks both things that share the variable,
-  neither of them legibly. **Storage**: a `blobs/<sha256>` write dies on
-  `storage.objects` RLS with `new row violates row-level security policy`,
-  reading as a broken bucket policy rather than a wrong key — and the
-  `SUPABASE_S3_*` path this replaced went through Supabase's S3 gateway, which
-  bypasses RLS entirely, so the same wrong key was INERT until deploys stopped
-  using it. **Realtime** is worse: nothing surfaces at all. Filter columns are
-  validated against the subscriber's role and the platform schema grants
-  `select` to `service_role` only, so every filtered subscribe fails
-  server-side with `invalid column for filter` and realtime-js retries the
-  join forever — the service boots healthy and merely stops invalidating
-  resident sandboxes on redeploy and stops pushing studio SSE. Only the two
-  definitely-wrong forms throw (the `sb_publishable_` prefix, and a legacy JWT
-  whose `role` claim is `anon`); anything unrecognizable is left to Supabase,
-  which rejects it with a better message than a shape check can. Note
-  `SUPABASE_PUBLISHABLE_KEY` (browser sign-in, `supabase-auth.ts`) is a
-  separate setting and stays publishable.
+  refuses an anon-authority one** — `assertServiceRoleKey` in `_boot.ts`, called
+  once from `buildServiceConfig` (the only caller of both consumers, so the guard
+  cannot be half-applied). **Its doc comment carries the argument**: what a
+  publishable key does to Storage, the worse thing it does to Realtime, and why
+  only the two definitely-wrong forms throw. Read it there rather than here — it
+  was duplicated in both places, and this guide is the copy at a size cap. Note
+  `SUPABASE_PUBLISHABLE_KEY` (browser sign-in, `supabase-auth.ts`) is a separate
+  setting and stays publishable.
 
   Agent env lives in Supabase Vault through the injected `SecretStore`.
 
@@ -272,13 +252,12 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   hashes: the live set is every `worker_hash` plus every value of
   `client_files`, so a blob outside it is unreferenced by construction.
 
-  **`assertBucketPrivate` refuses boot on a MISCONFIGURED bucket and only
-  warns on an unreachable one.** The bucket is the one piece of Supabase state
-  living in the dashboard rather than in `supabase/migrations`, so nothing
-  else would notice it going missing or turning public. But this guard is a
-  network call, unlike `assertServiceRoleKey`/`assertSessionModeUrl` — failing
-  boot on a Storage blip would stop every container at once, a worse outage
-  than the one guarded against.
+  **`assertBucketPrivate` refuses boot on a MISCONFIGURED bucket and only warns
+  on an unreachable one.** The bucket is the one piece of Supabase state living
+  in the dashboard rather than in `supabase/migrations` (a local `supabase start`
+  declares it in `config.toml`), so nothing else would notice it going missing or
+  turning public — but unlike the two guards above this one is a NETWORK call, and
+  failing boot on a Storage blip would stop every container at once.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `secret-store.ts` — `SecretStore` interface: Supabase Vault
@@ -299,15 +278,12 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `deprovisionAppDatabase`, `openAppDb`).
 
   **Deprovision follows the app's stored LOCATOR, never a recomputed
-  placement.** Placement is `hash(slug) % targets.length`, so changing
-  `APP_DB_URLS` re-shuffles every existing app and the `url` in its
-  `app-db:<slug>` meta is the only record that survives it. Recomputing —
-  which this used to do, reasoned as "same deterministic placement" — issues
-  both `if exists` drops against a cluster that never hosted the app (silent
-  no-ops) while the caller deletes the secret holding the real schema's only
-  credential: tenant data left unreachable, nothing raised. Both call sites
-  read the meta BEFORE it is swept; with no meta every target is swept, since
-  a slug-derived drop where the app never lived is a real no-op.
+  placement**, and so does `usage`: changing `APP_DB_URLS` re-shuffles every
+  existing app, so the `url` in its `app-db:<slug>` meta is the only record of
+  where it lives. `AppDatabases.deprovision`'s own doc comment carries what
+  recomputing costs — silent no-op drops beside a deleted credential, i.e. tenant
+  data left unreachable with nothing raised — and why a meta-less sweep of every
+  cluster is safe. Read it there.
 
   **The per-tenant caps differ in strength, and only two are controls.**
   `connection limit` is superuser-only to raise and `temp_file_limit` is
@@ -340,143 +316,45 @@ the bytes to keep the platform's credential out of reach.
 
 ### Where we differ from Supabase's own recommendations
 
-Audited 2026-08 against their docs. Most of the surface is exactly what they
-recommend — direct session-mode connection, Vault's `create_secret` /
-`update_secret`, private-bucket `download()` + `createSignedUrl`, a custom
-schema with explicit grants, migrations applied ahead of deploy. Three places
-differ, and each is a decision rather than an oversight:
+Three deliberate divergences (`postgres_changes` rather than Broadcast, DENY-ALL
+RLS over a schema no role holds a grant on, per-app Postgres roles instead of
+RLS) plus the two operational facts the code depends on and cannot assert
+(IPv4/IPv6 on a direct connection, and the deprecated legacy key forms) are in
+**`supabase/README.md`**, beside the migrations they describe. Read it before
+adding a fourth watched table, a table without RLS, or a publication column
+list — the last is measured, reverted and guarded against.
 
-- **`postgres_changes` instead of Broadcast.** Supabase now steers to
-  `realtime.broadcast_changes` triggers, because `postgres_changes`
-  authorizes every event against every subscriber (100 subscribers = 100
-  authorization checks per change) on a single ordering thread. Their stated
-  threshold is ~3,000 concurrent subscribers on the same changes; ours are
-  REPLICAS, not users, so we are orders of magnitude below it. The documented
-  direction if this ever moves, and worth knowing before adding a fourth
-  watched table.
+### Two arms per store contract, and the stack is the only real one
 
-  **Staying on `postgres_changes` is not cheap, and a publication COLUMN LIST
-  cannot make it cheaper.** These are signal streams — handlers re-read — so
-  every settled edit hands walrus the WHOLE workspace document, detoasted and
-  serialized, for a payload the handler discards. Narrowing the publication to
-  the identity columns is the obvious fix and it is a NO-OP: column lists are a
-  `pgoutput` feature, and Supabase Realtime does not decode with pgoutput.
-  `realtime.list_changes` reads the publication for its TABLE list alone and
-  decodes with **wal2json** (`pg_logical_slot_get_changes(…, 'add-tables', …)`),
-  which has no notion of publications and emits every column regardless —
-  measured on realtime v2.112.6 / PG 17.6, where a publication with
-  `attnames = {id,small}` still emitted the excluded column in full. The lists
-  were written, measured, and reverted; `platform-schema.test.ts` now guards
-  AGAINST them, because the cost of the attempt is not the migration, it is the
-  comment explaining a mechanism that isn't there.
+Every store's memory/Postgres equivalence is ASSERTED, not assumed. One case list
+per contract in `store-conformance-cases.ts` (registry: `store-conformance.ts`);
+the unit suites run it over the MEMORY arm unconditionally, and the two
+`*store-conformance.scenario.test.ts` files run the same list over the local
+Supabase stack behind `describeWithStack`, which `pnpm test:pg` resolves.
+`research/3.5-store-backend-fidelity.md` has the argument; the rules:
 
-  If the decode cost ever has to come down, it takes a different mechanism, not
-  a narrower publication: Broadcast from Database (a trigger calling
-  `realtime.broadcast_changes` with a payload you choose), or moving the signal
-  onto a skinny table that does not carry `doc`.
-- **RLS is enabled and DENY-ALL, which is not what RLS is usually for.**
-  Access is really controlled by the grant: `anon`/`authenticated` hold no
-  privilege on `aai_platform`, and it is not a PostgREST-exposed schema.
-  Policies would add nothing on top — the platform connects as the tables'
-  OWNER (owners bypass RLS) and Realtime subscribes as `service_role`
-  (BYPASSRLS), so every real reader is exempt anyway. What
-  `20260807000000_platform_rls.sql` buys is the failure mode of a mistake:
-  add a grant to `authenticated`, or expose the schema, and the result is zero
-  rows rather than every tenant's workspace. **ENABLE, never FORCE** — forcing
-  applies policies to the owner too, i.e. to every query the platform makes.
-  Three guards in `platform-schema.test.ts` hold all of this, and they exist
-  because NOTHING EXTERNAL WILL: splinter's `rls_disabled_in_public` (0013)
-  and the RLS-disabled email alerts both key on `public`, so a table added
-  here without RLS is invisible to every check Supabase runs on the project.
-- **Per-app Postgres roles instead of RLS.** "Generally you wouldn't use
-  these roles for your own application… use Row Level Security" does not
-  apply: RLS presumes a trusted client presenting a user JWT, and ours is
-  untrusted tenant code holding the credential itself in a sandbox. Their
-  other rule — "create a new user for every service you want to give access
-  to" — is the one that fits, and `APP_DB_CONNECTION_LIMIT` answers the
-  connection-cost objection they raise against many roles.
-
-Two operational facts the code depends on and cannot assert:
-
-- **A direct connection is IPv6-only without the IPv4 add-on**, so production
-  depends on one of the two. The shape is right on the merits ("direct
-  connections remain the best choice for long-lived sessions"), and if IPv4
-  ever becomes necessary the sanctioned fallback is **Supavisor SESSION mode
-  on port 5432**, which still holds advisory locks — `assertSessionModeUrl`
-  already permits it, since it refuses only port 6543 and `pgbouncer=true`.
-- **Legacy `anon`/`service_role` keys are deprecated (end of 2026) and can no
-  longer be rotated.** Boot already requires the new secret form, so we are
-  ahead — but `SUPABASE_SERVICE_ROLE_KEY` now holds an `sb_secret_…` key,
-  which is a naming wart, and the sanctioned placement for a non-JWT secret
-  key is the `apikey` header (the Realtime client does this; the Storage
-  client sends both `apikey` and `Authorization`).
-
-**The schema is DECLARED, in `supabase/migrations`** — not created lazily by
-the store that reads it. Every `aai_platform` store used to call a memoized
-`create schema/table if not exists` on first use (`pg-ensure.ts`), which is
-why pg_cron sweep bodies were wrapped in `to_regclass` guards: on a fresh
-database a job could fire before its table existed. Migrations delete both,
-plus the boot-time publication/grant setup. The trade is deploy ORDERING —
-`supabase db push` before the deploy — and a missed migration now fails
-loudly with "relation does not exist" instead of being papered over by a lazy
-create that runs on whichever connection first noticed.
-`platform-schema.test.ts` guards two things statically: every
-`aai_platform.<table>` the source queries must be declared in a migration, and
-the store suites assert that no store issues DDL.
-
-**`supabase db push` is MANUAL, and nothing tells you when you have forgotten
-it.** No workflow runs it — `.github/workflows/deploy.yml` is checkout →
-`modal deploy`, and there is no migration script in `package.json`. So "the
-trade is deploy ORDERING" is a trade a human has to make on every release that
-adds a migration, and the failure lands in production rather than in CI. It has
-already happened once: `20260808120000_agents_config_default.sql` stopped
-`agents.config` being written but was never pushed, so **every** `POST /deploy`
-died on `null value in column "config" violates not-null constraint` — Publish
-and auto-preview alike — while CI was green and the deploy reported success.
-Push migrations before shipping a release that needs them:
-
-```sh
-supabase db push        # from the repo root, against the linked project
-```
-
-**Jsonb columns must be bound `::text::jsonb`, never a bare `::jsonb`.** The
-stores bind documents as JSON text; with the parameter's type resolved from a
-bare cast, postgres.js JSON-encodes the string we already encoded and the
-column ends up holding a jsonb **string**. See the long note in
-`workspace-store.ts` for the two failures that came out of it (every metadata
-stamp raising `cannot delete from scalar`, and the orphan-preview sweep
-deleting live previews because `doc->>'previewSlug'` reads NULL out of a
-string), and `jsonb-encoding.scenario.test.ts` for the guard. The reason it
-survived so long is worth keeping: **the in-memory stores cannot represent the
-bug.** They hold JS objects, so the encoding has no analogue in them, and every
-unit test passed against a shape production never had. Anything that reaches
-into a jsonb column from inside Postgres — an arrow operator, `-`, `jsonb_set`,
-a predicate in a pg_cron body — needs a test against a real database.
-
-**Those are both the FORWARD direction, and the reverse one cost us three
-tables.** A table that is queried nowhere *and* declared nowhere satisfies
-every check above trivially, and production held exactly that:
-`sandbox_registry`, `slug_epochs`, and `slug_locks`, created at runtime by
-`pg-ensure.ts` before the schema was declared and never dropped — because a
-declared schema has no `drop` for a table it never declared. #950 replaced each
-one (a Modal sandbox NAME, `agents.version`, and `pg_advisory_lock`
-respectively) and correctly declared only what the code still needed, which is
-how they became invisible rather than wrong.
-
-They were not inert. `20260807000000_platform_rls.sql` enables RLS on the five
-tables it names, so leftovers would have been the only tables in the schema
-without it — and nothing reports that, since splinter's
-`rls_disabled_in_public` and the RLS-disabled alerts both key on `public`.
-`20260807120000_drop_orphan_platform_tables.sql` drops them (`slug_epochs` was
-not empty: 21 stale counters superseded by `agents.version`, recorded in that
-migration's header rather than discovered afterwards).
-
-**Drift detection cannot be static** — it is a fact about a database, not the
-repo — so the guard is `schema-drift.scenario.test.ts`, gated on
-`AAI_TEST_PG_URL` and read-only, asserting every table in `aai_platform` is
-declared by a migration. Point it at whatever database you want the claim to
-hold for; `supabase db diff --linked --schema aai_platform` is the ad-hoc
-equivalent and also reports column-level drift.
+- **An arm is legitimate only if something really runs on it.** Memory qualifies
+  (an agent with no `DATABASE_URL`), the stack qualifies (it IS the platform), a
+  STOCK Postgres does not — nothing runs `aai_platform` without Vault, pg_cron and
+  walrus — so the `create extension`-stripping regex and the plpgsql `pgmq.create`
+  stub propping that arm up are deleted. A plain server stays right for the SDK's
+  own stores, where a user brings the database.
+- **The fake `SqlExec` is a RECORDER, not an arm**, and keeps its own spec: the
+  statements a store issues, and the DDL it must not.
+- **A case is arm-independent** — fresh keys from `uniqueKeys`, never `"s"`/`"p"`
+  — and what one arm cannot express is not a shared case (`RateLimiter.check`'s
+  `now` is dropped by the pg implementation on purpose).
+- **Register the pair or the gate fails.** `store-conformance-registry.test.ts`
+  (a TEXT scan, respecting the boundary this package may not import across)
+  refuses an unregistered `createPg*`/`createMemory*` pair, a registered name that
+  does not exist, or a conformable contract not invoked from BOTH a unit and a
+  scenario file; `conformance: false` must say why.
+- **`ensurePlatformTables` VERIFIES a CLI-built database** against
+  `supabase_migrations.schema_migrations`, failing with the pending filenames and
+  the command rather than on a column six migrations later.
+- **`pg-cron.scenario.test.ts` EXECUTES every sweep body**, which nothing did:
+  `pg-cron.test.ts` asserts only that the body reached `cron.schedule` as a
+  string, so a syntax error was green and swallowed hourly by `guarded()`.
 
 The cross-replica coordination that lives in this same Postgres:
 
@@ -537,24 +415,10 @@ The cross-replica coordination that lives in this same Postgres:
   forgets produces no error at all. Only the row caches are dropped: blob
   caches are content-addressed and cannot go stale. The broker path
   deliberately does NOT go through this wrapper — it mutates nothing.
-- **Rate limits** (`rate-limit.ts`; the studio's windows in
-  `aai-studio-server/studio-rate-limit.ts`): the chat, project-create, and
-  deploy windows are rows in `aai_platform.studio_rate_limits`
-  (`createPgRateLimiter`, one atomic upsert per check), so a limit holds
-  platform-wide instead of multiplying by the replica count — which for an
-  ABUSE limit is the whole point, since `MAX_CONTAINERS = 10` makes a
-  per-replica cap a cap of ten times the number written down. Fail-closed: a
-  database error propagates rather than silently unmetering the route.
-  Expired rows are swept by pg_cron (`pg-cron.ts`), not in-process. The
-  `studio_` table name is now a misnomer; `name` namespaces each limiter's
-  rows, which is what lets a second consumer share it without a migration.
-
-  **Every limited route is keyed TWICE — by scope and by client IP.** The
-  scope key is derived from the caller's bearer, so for a raw-key caller it
-  was a value they chose: one character's difference minted a fresh window,
-  which made both studio limits decorative against exactly the traffic they
-  exist to stop. Key verification above is what makes a scope cost an
-  account; the IP key is what bounds the damage before one is spent.
+- **Rate limits** (`rate-limit.ts`): rows in `aai_platform.studio_rate_limits`,
+  one atomic upsert per check, so a limit holds platform-wide rather than
+  multiplying by the replica count. Windows and keying: "Rate limits" in
+  `packages/aai-studio-server/CLAUDE.md`.
 - **Session resume needs no cross-replica store**: sessions live in the guest
   sandbox, not on a replica — a `?sessionId=<id>` reconnect re-brokers via
   `GET /:slug/client-config`. It need not land on the SAME sandbox any more: slot
@@ -1642,14 +1506,34 @@ beside it, so nothing is newly reachable; the body is capped
 (`MAX_WEBHOOK_BODY_BYTES`) before it is buffered, since the route is public
 and boots sandboxes.
 
-**One gap this deliberately leaves open.** The URL the DevKit MINTS still
-names the guest's own origin — `getWorkflowMetadata().url` is
-`http://localhost:<port>` off the running process, and its only override is
-Vercel's, which also switches on a replay watchdog that calls `process.exit(1)`
-inside what is also a voice guest. So an author composes the durable URL from
-the hook's `token` plus their agent's public origin; this route is what answers
-it. (The other gap this section used to name — a parked run that nothing ever
-boots the guest for — is what the wake sweep below closes.)
+**The URL the DevKit MINTS is still guest-local, and the SDK mints the public
+one.** `createWebhook()` sets `hook.url` from `getWorkflowMetadata().url`, which
+is `http://localhost:<port>` off the running process — verified in the installed
+`@workflow/core`, whose only other branch is `https://$VERCEL_URL`, and that one
+also switches on a replay watchdog calling `process.exit(1)` inside what is also
+a voice guest. So `hook.url` names the inside of a container that will not exist
+when the payment provider calls back. The platform therefore CARRIES its own
+answer into the guest: `agentBootEnv` sets **`AAI_PUBLIC_BASE_URL`** (the public
+origin plus the slug — `agentPublicBaseUrl` in `public-origin.ts`), the harness
+passes it to the bundle's runtime as `publicUrl`, and
+`ctx.workflows.publicWebhookUrl(token)` composes the URL this route answers from
+the same `WORKFLOW_WEBHOOK_PREFIX` constant. `WORKFLOW_LOCAL_BASE_URL` is
+untouched and could not have helped: it steers QUEUE dispatch and never reaches
+`hook.url`, and repointing it would 404 the `guest-internal` `flow`/`step`
+callbacks. (The other gap this section used to name — a parked run that nothing
+ever boots the guest for — is what the wake sweep below closes.)
+
+**The value is baked at spawn and there is ONE sandbox per slug fleet-wide, so a
+platform reachable on more than one public origin serves every session from
+whichever origin happened to spawn the guest** — set `AAI_PUBLIC_ORIGIN` on any
+deployment with two live origins, which is already the way to take that choice
+away from callers. A per-request mechanism would buy nothing: a URL handed to a
+payment provider has to outlive the request that minted it anyway. With nothing
+configured, the origin is the one the replica last SERVED a request on
+(`rememberPublicOrigin`, wired into `app-middleware.ts` — the spawn paths that
+matter hold no request: the blue-green handover fires off the change stream, the
+wake sweep off a timer). With neither, the key is omitted and the SDK throws
+naming the option, which is the designed answer.
 
 ### Waking a run whose sandbox is gone — `workflow-wake.ts`
 

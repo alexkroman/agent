@@ -298,10 +298,23 @@ drift can never break a deployed agent**: it runs exactly the runtime
 version it was built and tested against, the same one `aai dev` ran.
 
 - The harness↔bundle contract is deliberately tiny (`CreateGuestRuntime` in
-  `aai-guest/harness-types.ts`): `{ env, db?, runCode? }` in,
+  `aai-guest/harness-types.ts`): `{ env, db?, runCode?, publicUrl? }` in,
   `{ startSession, shutdown }` out. Keep it that way — everything else
   (provider resolution, tool dispatch, session state) is the bundle's SDK's
   business, on the bundle's SDK's version.
+
+  **The membership rule is "a capability or a fact the HARNESS alone holds"**,
+  which is what keeps "tiny" a principle rather than a number. `runCode` is the
+  executor only a sandbox has. `publicUrl` is the URL only the SPAWNER knows —
+  a guest's own origin is a loopback port behind a tunnel that changes on every
+  respawn, which is exactly why the DevKit's `hook.url` is unusable off-box; it
+  arrives as `AAI_PUBLIC_BASE_URL` in the exec env and `ensureRuntime`
+  translates it into the SDK's own option name, so the SDK never learns an
+  `AAI_*` key (see "Durable workflows" in `packages/aai-server/CLAUDE.md`).
+  Every field is OPTIONAL for the same reason it is additive: an older bundle
+  ignores what it does not read, and a newer bundle handed nothing degrades — an
+  absent `publicUrl` makes `ctx.workflows.publicWebhookUrl` throw naming the
+  option rather than failing the boot.
 - A bundle without the factory is rejected at load ("rebuild with a
   current @alexkroman1/aai-cli"); there is no embedded-runtime fallback.
 - Deploy artifacts are therefore ~8 MB minified before user code

@@ -11,6 +11,7 @@ import {
   DEFAULT_SILENCE_PROMPT,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "../../sdk/constants.ts";
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import type { SttTurnMeta } from "../../sdk/providers.ts";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import {
@@ -105,10 +106,7 @@ function createSttEventHandlers(deps: {
   edgeGate: GatedSpeechEdges;
   recovery: FalseInterruptionRecovery;
   nudger: SilenceNudger;
-  callbacks: {
-    onCancelled(): void;
-    onUserTranscriptPartial?: ((text: string, eotConfidence?: number) => void) | undefined;
-  };
+  callbacks: Pick<TransportCallbacks, "report">;
   /** Commit a user turn: emit the transcript and run the chained reply. */
   commitUserTurn: (text: string) => void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
@@ -202,7 +200,13 @@ function createSttEventHandlers(deps: {
       // clears userTranscript — emitting first would blank the caption it just
       // set.
       const emitPartial = (): void => {
-        if (words >= 1) callbacks.onUserTranscriptPartial?.(text, meta?.endOfTurnConfidence);
+        if (words >= 1) {
+          callbacks.report({
+            type: "user-transcript.updated",
+            text,
+            ...omitUndefined({ eotConfidence: meta?.endOfTurnConfidence }),
+          });
+        }
       };
       // Opens the speaking edge and restarts its idle watchdog — which is also
       // what holds an armed resume back while the user keeps talking, since the
@@ -228,7 +232,7 @@ function createSttEventHandlers(deps: {
       // Ordered before `cancelled`: this is the moment the agent yields, which
       // is what `speech_started` promises the client in S2S mode too.
       deps.edgeGate.release();
-      callbacks.onCancelled();
+      callbacks.report({ type: "reply.cancelled" });
       emitPartial();
     },
 
@@ -262,7 +266,7 @@ function createSttEventHandlers(deps: {
       if (deps.isResumeTurnInFlight() && !deps.hasTurnSpoken()) {
         log.info("Pipeline resume mooted by committed user turn", { sid: deps.sid });
         deps.abortInFlightTurn();
-        callbacks.onCancelled();
+        callbacks.report({ type: "reply.cancelled" });
       }
       // A final can arrive without any preceding partial (short utterances on
       // some STT providers) — make sure the speaking edge still fires.
@@ -278,7 +282,7 @@ function createSttEventHandlers(deps: {
         log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
         deps.abortInFlightTurn();
         deps.edgeGate.release();
-        callbacks.onCancelled();
+        callbacks.report({ type: "reply.cancelled" });
       }
       // Commit the turn immediately: endpointing (aggregating a disfluent
       // utterance's pauses into one final) is the STT provider's job — the
@@ -310,14 +314,7 @@ export interface UserActivity {
 export function createUserActivity(deps: {
   log: Logger;
   sid: string;
-  callbacks: Pick<
-    TransportCallbacks,
-    | "onCancelled"
-    | "onUserTranscript"
-    | "onUserTranscriptPartial"
-    | "onSpeechStarted"
-    | "onSpeechStopped"
-  >;
+  callbacks: Pick<TransportCallbacks, "report">;
   /** Silence-nudge window (ms); unset/non-positive disables the nudger. */
   silenceTimeoutMs: number | undefined;
   /** Synthetic user message a nudge injects; defaults to DEFAULT_SILENCE_PROMPT. */
@@ -372,7 +369,7 @@ export function createUserActivity(deps: {
 
   // Hold `speech_started` back while the agent has the floor, so the event
   // means "the agent is yielding" on both transports — see createGatedSpeechEdges.
-  const edgeGate = createGatedSpeechEdges({ callbacks, agentIsSpeaking });
+  const edgeGate = createGatedSpeechEdges({ report: callbacks.report, agentIsSpeaking });
 
   // Pipeline mode has no VAD: speech_started/speech_stopped derive from the
   // STT transcript stream (see createSpeechEdgeTracker above). `onIdle` — the
@@ -445,7 +442,7 @@ export function createUserActivity(deps: {
       // Debug trace (AAI_DEBUG=1): this is verbatim the text the turn prompts
       // the LLM with, so it is the ground truth for "did the model see it?".
       log.debug("Pipeline turn committed", { sid, text });
-      callbacks.onUserTranscript(text);
+      callbacks.report({ type: "user-transcript.committed", text });
       deps.runChainedTurn(text, "Pipeline turn crashed");
     },
     minBargeInWords: deps.minBargeInWords,

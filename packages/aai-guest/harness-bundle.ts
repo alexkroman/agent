@@ -178,12 +178,25 @@ export async function loadBundle(
  * `aai dev` does. ctx.db is the runtime's own connection to the env's
  * DATABASE_URL (the app's scoped credentials, delivered in the
  * agent's boot env); run_code gets this guest's real executor.
+ *
+ * `publicUrl` comes from `AAI_PUBLIC_BASE_URL` in the EXEC env, not from the
+ * agent env file — it is a boot parameter the spawner knows and the agent does
+ * not (see `agentBootEnv` in aai-server/warm-harness.ts). Reading it here is
+ * what keeps the SDK free of the platform's vocabulary: the harness translates
+ * one `AAI_*` key into the SDK's own `publicUrl` option, exactly as it
+ * translates its sandbox executor into `runCode`. Absent under `aai dev`'s
+ * subprocess backend and in tests, where the SDK's own throw names the option.
  */
 export function ensureRuntime(state: HarnessState): GuestRuntime {
   if (!(state.agent && state.createRuntime)) throw new Error("Agent not loaded");
+  // Blank-trimmed rather than passed through: an exec env built from a template
+  // can carry an empty string, and `publicUrl: ""` would mint `/.well-known/…`
+  // — a relative URL nothing can call back on — instead of throwing.
+  const publicUrl = process.env.AAI_PUBLIC_BASE_URL?.trim();
   state.runtime ??= state.createRuntime({
     env: { ...state.env },
     runCode,
+    ...(publicUrl ? { publicUrl } : {}),
   });
   return state.runtime;
 }

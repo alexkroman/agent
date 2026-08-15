@@ -21,6 +21,7 @@ function body(id: string): WorkflowBody {
 
 const digest = workflow({ run: body("workflow//./workflows/digest//digestFlow") });
 const unusedDb: Db = { query: () => Promise.reject(new Error("db not used")) };
+const PUBLIC_URL = "https://agents.test/digest-desk";
 
 function makeLogger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -30,26 +31,34 @@ describe("buildWorkflowClient", () => {
   test("returns undefined for an agent that declares no workflows", () => {
     // Not a rejecting client: the message an unavailable client rejects with has
     // exactly one producer, the tool executor.
-    expect(buildWorkflowClient({}, unusedDb, makeLogger())).toBeUndefined();
+    expect(buildWorkflowClient({}, unusedDb, undefined, makeLogger())).toBeUndefined();
   });
 
   test("returns undefined for an EMPTY workflows record", () => {
     // `agent({ workflows: {} })` is what a scaffold leaves behind, and it means
     // the same thing as declaring none.
-    expect(buildWorkflowClient({ workflows: {} }, unusedDb, makeLogger())).toBeUndefined();
+    expect(
+      buildWorkflowClient({ workflows: {} }, unusedDb, undefined, makeLogger()),
+    ).toBeUndefined();
   });
 
   test("returns a client that lists the declared workflows", () => {
-    const client = buildWorkflowClient({ workflows: { digest } }, unusedDb, makeLogger());
+    const client = buildWorkflowClient(
+      { workflows: { digest } },
+      unusedDb,
+      undefined,
+      makeLogger(),
+    );
     expect(client?.listing().map((w) => w.name)).toEqual(["digest"]);
   });
 
   test("uses the app database for the key index when storage is enabled", () => {
     const logger = makeLogger();
-    buildWorkflowClient({ workflows: { digest } }, unusedDb, logger);
+    buildWorkflowClient({ workflows: { digest } }, unusedDb, PUBLIC_URL, logger);
     expect(logger.info).toHaveBeenCalledWith("Workflows resolved", {
       workflows: ["digest"],
       keyStore: "postgres",
+      publicUrl: PUBLIC_URL,
     });
   });
 
@@ -58,11 +67,25 @@ describe("buildWorkflowClient", () => {
     // break trying a workflow out before deploying it, which is the ordinary way
     // one gets written.
     const logger = makeLogger();
-    const client = buildWorkflowClient({ workflows: { digest } }, undefined, logger);
+    const client = buildWorkflowClient({ workflows: { digest } }, undefined, PUBLIC_URL, logger);
     expect(client).toBeDefined();
     expect(logger.info).toHaveBeenCalledWith("Workflows resolved", {
       workflows: ["digest"],
       keyStore: "memory",
+      publicUrl: PUBLIC_URL,
     });
+  });
+
+  test("names the unset public URL in the boot line rather than omitting it", () => {
+    // Whether a run can hand out a reachable callback URL is a property of the
+    // DEPLOYMENT, and the alternative to saying so at boot is discovering it
+    // from a throw inside a tool weeks later. An omitted field would read as
+    // "nothing to report".
+    const logger = makeLogger();
+    buildWorkflowClient({ workflows: { digest } }, unusedDb, undefined, logger);
+    expect(logger.info).toHaveBeenCalledWith(
+      "Workflows resolved",
+      expect.objectContaining({ publicUrl: "(unset — publicWebhookUrl will throw)" }),
+    );
   });
 });

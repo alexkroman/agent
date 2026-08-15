@@ -1,7 +1,7 @@
 ---
 issue: TODO
-status: proposed
-last_updated: "2026-08-14"
+status: implemented
+last_updated: "2026-08-15"
 ---
 
 # Collapse the session callback surface
@@ -192,17 +192,66 @@ Kept here so the answer is written down once, not so it all lands here:
 | Give back the four harness escape-hatch entries the deletion frees | `scripts/escape-hatch-baseline.json` |
 | Epoch bump as `--drop` for whatever of this is public | `contracts/` |
 
-## Open questions
+## Open questions — all settled
 
-- ~~**Is the ratchet worth a fourth baseline file?**~~ **Settled: no — it is
-  `guard-invariants` rule 14.** See "The count has to be a ratchet" above; the
-  draft of this question said rule 13, which is taken.
-- **Does the hook surface need to be sync?** Several of these callbacks fire on
-  the audio path (`onPlaybackProgress`, `onAudioChunk`) where an async subscriber
-  would add a microtask per frame. Doc 3 excludes audio from the durable stream;
-  this plan has to decide whether those callbacks stay as callbacks for the same
-  reason.
-- **Is `_timer.ts`'s trio (3) in or out?** It looks like a utility rather than
-  either group, and utilities taking `on*` parameters are how the codebase
-  decomposes generally — which is an argument that the target should be scoped by
-  MODULE ROLE rather than by counting every `on*` in the package.
+- ~~**Is the ratchet worth a fourth baseline file?**~~ **No — it is a
+  `guard-invariants` rule.** See "The count has to be a ratchet" above.
+
+  **Its number is 16, not 14.** This document said 14 on the reasoning that "the
+  next rule in this repo is 14 whatever ships first" — and while it sat unshipped,
+  14 shipped: *no fixture directory nothing reads*. 15 was reserved for a parallel
+  plan. Rule IDs are stable, so the number moved rather than the rule. The lesson
+  generalizes to any plan that reserves an identifier: a number claimed in prose
+  is claimed by nothing, and the check is one `grep` of the rules module rather
+  than a re-read of this file.
+
+- ~~**Does the hook surface need to be sync?**~~ **It already is, and the audio
+  path stays out for a better reason than cost.** `runHooks`
+  (`host/session-emitter.ts`) calls a handler synchronously and never awaits a
+  returned promise — it only attaches a rejection handler — so a subscriber cannot
+  add latency to a turn whatever it returns, and the microtask-per-frame worry
+  does not arise for anything in the stream.
+
+  What decides the audio path is MEMBERSHIP, not scheduling. `playback_progress`
+  is a client→server COMMAND (`protocol-commands.ts` settles it: the log records
+  what the session did, and that frame is the client describing itself) and audio
+  frames are binary and outside the event vocabulary by construction. Neither is
+  an event, so neither can be a hook, and no cost argument has to be made. Both
+  survive as callbacks — `SessionCore.command`'s `playback_progress` case and
+  `TransportCallbacks.onAudioChunk`.
+
+- ~~**Is `_timer.ts`'s trio in or out?**~~ **Out, and the scoping ENCODES that
+  rather than asserting it.** The suspicion in the draft was right: the target is
+  scoped by module role, and rule 16 takes an explicit list of the files that
+  declare the session's callback surfaces. `_timer.ts` is not on it — its
+  `onElapsed` is a constructor PARAMETER, which is ordinary function
+  decomposition. Two mechanisms hold the line rather than one: the pattern matches
+  a DECLARATION and not a call, so `_timer.ts`'s own `onWake()` would not count
+  even inside the scope, and the gate spec carries both as negative samples.
+
+  Scoping by role has a cost the plan did not anticipate, and it is worth
+  recording: an explicit list can be emptied by a rename with no symptom, since
+  a `git grep` pathspec matching nothing prints the same `now=0 ✓` as a rule
+  being upheld. `guard-invariants-gate.test.ts` asserts every path exists.
+
+## What the plan got wrong
+
+Three things, none fatal, all worth knowing before reading the numbers above:
+
+- **The measurement was taken before doc 3 landed and does not survive it.**
+  `runtime.ts`'s 19 became 1 (doc 3 split `runtime-session-callbacks.ts` and
+  `session-emitter.ts` out of it), and `session-core.ts`'s 2 became 39 — the doc's
+  count evidently missed method signatures, which is where most of the surface
+  lived. The file the plan does not list at all, `transports/types.ts`, turned out
+  to be the other half of the duplication: 16 names whose own comment admitted
+  they were "one per event the transport produces".
+- **`_s2s-test-utils.ts` is not one of the five harnesses.** It stubs
+  `S2sCallbacks` — the AssemblyAI S2S WIRE dispatch — which is a provider adapter
+  contract by this document's own classification, exactly like `onSttPartial`.
+  Its 15 stay, and so do `_s2s-dispatch.ts`'s.
+- **The escape-hatch entries did not free up.** The plan expected four harness
+  hatches to come back with the deletion; each turned out to be about something
+  else — the fake LLM's `calls` array, a `fetch` double, a late-bound
+  `SessionCore` — and all four are still legitimate. The one that did move went
+  the other way: two of the new doc comments DESCRIBED a cast and scored as one,
+  which is the markdown trap the root guide records, arriving by a third route.

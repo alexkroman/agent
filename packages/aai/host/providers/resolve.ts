@@ -300,12 +300,20 @@ function registerKind<Entry>(
   };
 }
 
-/** Register an STT kind. See {@link registerKind}. */
+/**
+ * Register an STT kind, returning an unregister function.
+ *
+ * The seam a HOST application substitutes a fake speech stage through — the
+ * behaviour eval tier's level-1 target (`packages/aai-evals`) is the in-repo
+ * consumer. Registration rather than a pre-resolved opener for the reason above:
+ * a fake that goes through the registry resolves exactly like a real provider,
+ * its env var included, and production code only ever sees descriptors.
+ */
 export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void {
   return registerKind(STT_REGISTRY, kind, entry);
 }
 
-/** Register a TTS kind. See {@link registerKind}. */
+/** Register a TTS kind. Mirror of {@link registerSttKind}. */
 export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void {
   return registerKind(TTS_REGISTRY, kind, entry);
 }

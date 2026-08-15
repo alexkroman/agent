@@ -8,12 +8,23 @@ import {
   PREVIEW_JOB_VISIBILITY_MS,
   PREVIEW_QUEUE,
 } from "./studio-preview-queue.ts";
+import { previewQueueConformance } from "./studio-store-conformance.ts";
 
 const JOB = {
   scope: "scope",
   project: "contact-form-x7k2mq",
   serverUrl: "https://platform.example",
 };
+
+// ── The CONTRACT, over the arm that runs everywhere ─────────────────────────
+//
+// One case list in `studio-store-conformance.ts`, shared with the stack arm in
+// `aai-server/store-conformance.scenario.test.ts`. Unconditional here, so the
+// module stays covered on every machine.
+
+describe("PreviewQueue conformance: memory", () => {
+  previewQueueConformance(() => createMemoryPreviewQueue());
+});
 
 describe("createMemoryPreviewQueue", () => {
   test("claims an enqueued job once, then hides it for the visibility timeout", async () => {

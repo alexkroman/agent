@@ -18,6 +18,8 @@
     "start": "node dist/index.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:scenario": "VITEST_PROFILE=scenario VITEST_INCLUDE=**/*.scenario.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "check:scenario": "pnpm run test:scenario",
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "lint": "biome check ."
