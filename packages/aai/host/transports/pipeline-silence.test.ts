@@ -91,7 +91,7 @@ describe("silence nudge", () => {
     // Real user speech resets the budget: one reply for the user turn,
     // then nudging resumes.
     stt.last()?.fireFinal("I'm back");
-    const replyDone = callbacks.reported("reply.completed") as ReturnType<typeof vi.fn>;
+    const replyDone = callbacks.reported("reply.completed");
     await vi.waitFor(() => {
       expect(replyDone.mock.calls.length).toBeGreaterThanOrEqual(5);
     });
@@ -110,7 +110,7 @@ describe("silence nudge", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    const replyDone = callbacks.reported("reply.completed") as ReturnType<typeof vi.fn>;
+    const replyDone = callbacks.reported("reply.completed");
     await vi.waitFor(() => {
       expect(replyDone.mock.calls.length).toBeGreaterThanOrEqual(2);
     });

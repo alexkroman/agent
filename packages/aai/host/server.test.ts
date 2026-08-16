@@ -31,16 +31,11 @@ async function get(url: string): Promise<{ status: number; headers: Headers; bod
   return { status: res.status, headers: res.headers, body: await res.text() };
 }
 
-function makeRuntime(opts: { name?: string; shutdownTimeoutMs?: number } = {}) {
+function makeRuntime(opts: { name?: string } = {}) {
   const agent = makeAgent(opts.name ? { name: opts.name } : {});
   return {
     agent,
-    runtime: createRuntime({
-      agent,
-      env: {},
-      logger: silentLogger,
-      ...(opts.shutdownTimeoutMs ? { shutdownTimeoutMs: opts.shutdownTimeoutMs } : {}),
-    }),
+    runtime: createRuntime({ agent, env: {}, logger: silentLogger }),
   };
 }
 
@@ -83,10 +78,7 @@ describe("createServer", () => {
    */
   test("close finishes an in-flight request, then exits without waiting on it", async () => {
     const { runtime } = makeRuntime();
-    let began: (() => void) | undefined;
-    const started = new Promise<void>((resolve) => {
-      began = resolve;
-    });
+    const started = Promise.withResolvers<void>();
     server = createServer({
       runtime,
       logger: silentLogger,
@@ -95,7 +87,7 @@ describe("createServer", () => {
         if (url !== "/slow") return false;
         res.writeHead(200, { "Content-Type": "text/plain" });
         res.write("first-half-");
-        began?.();
+        started.resolve();
         setTimeout(() => res.end("second-half"), 50);
         return true;
       },
@@ -103,7 +95,7 @@ describe("createServer", () => {
     await server.listen(0);
 
     const inFlight = get(`http://localhost:${server.port}/slow`);
-    await started;
+    await started.promise;
     const closeBegan = Date.now();
     await server.close();
     const closeMs = Date.now() - closeBegan;
@@ -179,11 +171,10 @@ describe("createServer", () => {
     server = null;
   });
 
-  test("accepts shutdownTimeoutMs in runtime options", () => {
-    const { runtime } = makeRuntime({ shutdownTimeoutMs: 5000 });
-    server = createServer({ runtime, logger: silentLogger });
-    expect(server).toHaveProperty("close");
-  });
+  // A case called "accepts shutdownTimeoutMs in runtime options" stood here and
+  // asserted `expect(server).toHaveProperty("close")` — nothing about the
+  // option, which is `createRuntime`'s and not this server's. What the deadline
+  // actually does is asserted in `runtime-lifecycle.test.ts`.
 
   test("responses carry security headers", async () => {
     const { runtime } = makeRuntime();

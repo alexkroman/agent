@@ -9,6 +9,7 @@ import { SESSION_RESUME_GRACE_MS } from "../sdk/constants.ts";
 import { openaiRealtime } from "../sdk/providers/s2s/openai-realtime.ts";
 import type { S2sProvider } from "../sdk/providers.ts";
 import { sessionSlot } from "../sdk/session-slot.ts";
+import { MockWebSocket } from "./_mock-ws.ts";
 import {
   createFakeLanguageModel,
   createFakeSttProvider,
@@ -21,24 +22,27 @@ import {
   flush,
   makeAgent,
   makeClientSink,
+  makeLogger,
   makeMockHandle,
   silentLogger,
-  sleep,
+  tick,
 } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
+import type { ConnectS2sOptions, S2sCallbacks } from "./s2s.ts";
 import type { OpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
+import { asSessionWebSocket } from "./ws-handler.ts";
 
-function makeLogger() {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-}
-
-function makeMockWs() {
-  return {
-    readyState: 1,
-    send: vi.fn(),
-    addEventListener: vi.fn(),
-  };
+/**
+ * An already-open socket for `startSession`. `MockWebSocket` rather than the
+ * three-property literal this file used to hold: that one recorded no frames
+ * and needed an `as never` per call. `asSessionWebSocket` is the repo's ONE
+ * narrowing seam for this type (see `ws-frames.ts`).
+ */
+function openMockWs(): MockWebSocket {
+  const ws = new MockWebSocket("ws://test");
+  ws.readyState = MockWebSocket.OPEN;
+  return ws;
 }
 
 describe("createRuntime shutdown", () => {
@@ -47,15 +51,17 @@ describe("createRuntime shutdown", () => {
     const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
-    runtime.startSession(makeMockWs() as never);
+    runtime.startSession(asSessionWebSocket(openMockWs()));
 
     await vi.waitFor(() => {
       expect(connectSpy).toHaveBeenCalled();
     });
     await flush();
-    await sleep(50);
 
     await expect(runtime.shutdown()).resolves.toBeUndefined();
+    // "Gracefully" means the provider link was CLOSED, not merely that
+    // `shutdown()` returned. A bare 50 ms `sleep` stood here instead.
+    expect(mockHandle.close).toHaveBeenCalled();
   });
 
   test("shutdown warns when a session stop rejects", async () => {
@@ -65,8 +71,11 @@ describe("createRuntime shutdown", () => {
     });
     const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
-    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: makeLogger() });
-    runtime.startSession(makeMockWs() as never);
+    // BOUND, not passed as a literal: the warn IS the behaviour under test, and
+    // an unbound logger left `connectSpy` as the only assertion.
+    const logger = makeLogger();
+    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger });
+    runtime.startSession(asSessionWebSocket(openMockWs()));
 
     await vi.waitFor(() => {
       expect(connectSpy).toHaveBeenCalled();
@@ -74,29 +83,55 @@ describe("createRuntime shutdown", () => {
     await flush();
 
     await runtime.shutdown();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Session stop failed during shutdown"),
+    );
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("close failed"));
   });
 
-  test("shutdown warns on timeout when sessions hang", async () => {
-    const mockHandle = makeMockHandle();
-    mockHandle.close = vi.fn(() => {
-      /* no-op */
+  test("shutdown warns on timeout when a session's stop hangs", async () => {
+    // A hung stop needs something that really does not settle; this used a
+    // no-op `close()` that returned at once, so the deadline never fired. Every
+    // in-process path is guarded (a self-hosted tool call is `pTimeout`ed on
+    // the reply's abort signal, the S2S stop is synchronous), so the honest
+    // shape is SANDBOX mode's RPC executor — unwrapped, and a fair model of a
+    // guest that stopped answering.
+    let captured: S2sCallbacks | undefined;
+    vi.spyOn(_internals, "connectS2s").mockImplementation(async (opts: ConnectS2sOptions) => {
+      captured = opts.callbacks;
+      return makeMockHandle();
     });
-    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
+    const logger = makeLogger();
     const runtime = createRuntime({
       agent: makeAgent(),
       env: {},
-      logger: makeLogger(),
+      logger,
       shutdownTimeoutMs: 50,
+      toolSchemas: [
+        { type: "function", name: "park", description: "never answers", parameters: {} },
+      ],
+      executeTool: () => new Promise<string>(() => undefined),
     });
-    runtime.startSession(makeMockWs() as never);
+    runtime.startSession(asSessionWebSocket(openMockWs()));
 
     await vi.waitFor(() => {
-      expect(connectSpy).toHaveBeenCalled();
+      expect(captured).toBeDefined();
     });
+    // The session now owns a turn that never finishes, so only the deadline can
+    // end it. The reply must be open first, or the tool call is refused.
+    captured?.onReplyStarted("reply-1");
+    captured?.onToolCall("call-1", "park", {});
     await flush();
 
     await runtime.shutdown();
+
+    // The CONFIGURED deadline, echoed back: one dropped on the floor would have
+    // waited out the 10 s default instead.
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Shutdown timeout (50ms) exceeded"),
+    );
   });
 
   test("state is not re-initialized when already present for session", async () => {
@@ -322,78 +357,166 @@ describe("createRuntime createSession", () => {
     }
   });
 
-  test("createSession passes skipGreeting option", () => {
-    const agent = makeAgent();
-    const runtime = createRuntime({ agent, env: {} });
-    const client = makeClientSink();
-    const session = runtime.createSession({
-      id: "test-session",
-      agent: agent.name,
-      client,
-      skipGreeting: true,
+  /**
+   * Start a pipeline-mode session with a greeting configured and hand back what
+   * it spoke. The greeting is the only thing `skipGreeting` changes, and the
+   * AssemblyAI S2S transport is never handed the flag at all — so the pipeline
+   * is the branch where the runtime's forwarding of it is observable.
+   */
+  async function startGreetingSession(sessionOpts: { skipGreeting?: boolean }) {
+    const stt = createFakeSttProvider();
+    const tts = createFakeTtsProvider();
+    const llm = createFakeLanguageModel({ script: [] });
+    const fakes = registerFakeProviders({ stt, tts, llm });
+    const runtime = createRuntime({
+      agent: makeAgent({ greeting: "Hello there." }),
+      env: { ...fakes.env, [FAKE_STT_API_KEY_ENV]: "stt-key", [FAKE_TTS_API_KEY_ENV]: "tts-key" },
+      logger: silentLogger,
+      stt: fakes.stt,
+      llm: fakes.llm,
+      tts: fakes.tts,
     });
-    expect(session).toBeDefined();
+    const session = runtime.createSession({
+      id: `greet-${sessionOpts.skipGreeting === true}`,
+      agent: "test-agent",
+      client: makeClientSink(),
+      ...sessionOpts,
+    });
+    await session.start();
+    return { tts, stop: () => session.stop().finally(fakes.unregister) };
+  }
+
+  test("createSession's skipGreeting reaches the transport", async () => {
+    // Dropping this option is the silent-config-drop class: the session still
+    // works, and every reconnect repeats a line the caller already heard.
+    const greeting = await startGreetingSession({});
+    await vi.waitFor(() => {
+      expect(greeting.tts.last()?.textChunks.join("")).toContain("Hello there.");
+    });
+    await greeting.stop();
+
+    const resumed = await startGreetingSession({ skipGreeting: true });
+    await tick(); // the same settling the positive case needed above
+    await tick();
+    expect(resumed.tts.last()?.textChunks ?? []).toEqual([]);
+    await resumed.stop();
   });
 });
 
 describe("createRuntime startSession", () => {
-  test("startSession wires WebSocket and passes options", () => {
-    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
-    const ws = makeMockWs();
+  test("startSession forwards resumeFrom, logContext and the open/close hooks", async () => {
+    vi.spyOn(_internals, "connectS2s").mockResolvedValue(makeMockHandle());
+    const logger = makeLogger();
+    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger });
+    // CONNECTING, so the `open` listener has to actually fire — the old version
+    // asserted only that SOME listener had been registered.
+    const ws = new MockWebSocket("ws://test");
+    const onOpen = vi.fn();
+    const onClose = vi.fn();
 
-    runtime.startSession(ws as never, {
+    runtime.startSession(asSessionWebSocket(ws), {
       skipGreeting: true,
       resumeFrom: "prev-session",
       logContext: { userId: "u1" },
-      onOpen: vi.fn(),
-      onClose: vi.fn(),
+      onOpen,
+      onClose,
     });
 
-    expect(ws.addEventListener).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(onOpen).toHaveBeenCalled();
+    });
+    // `resumeFrom` IS the id this connection continues under, and the handshake
+    // frame is how the client learns it: dropped, the resume silently becomes a
+    // new conversation under a fresh UUID.
+    expect(ws.sentJson()).toContainEqual(
+      expect.objectContaining({ type: "session.configured", sessionId: "prev-session" }),
+    );
+    // `logContext` rides on every line this connection logs.
+    expect(logger.info).toHaveBeenCalledWith(
+      "Session connected",
+      expect.objectContaining({ userId: "u1" }),
+    );
+
+    ws.close();
+    await vi.waitFor(() => {
+      expect(onClose).toHaveBeenCalled();
+    });
   });
 
-  test("startSession works with no options", () => {
+  test("startSession with no options mints a fresh session id", async () => {
+    vi.spyOn(_internals, "connectS2s").mockResolvedValue(makeMockHandle());
     const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
-    const ws = makeMockWs();
+    const ws = new MockWebSocket("ws://test");
 
-    runtime.startSession(ws as never);
-    expect(ws.addEventListener).toHaveBeenCalled();
+    runtime.startSession(asSessionWebSocket(ws));
+
+    await vi.waitFor(() => {
+      expect(ws.sentJson()).toContainEqual(expect.objectContaining({ type: "session.configured" }));
+    });
+    const configured = ws.sentJson().find((frame) => frame.type === "session.configured") as {
+      sessionId: string;
+    };
+    expect(configured.sessionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 });
 
 describe("createRuntime with custom options", () => {
-  test("accepts custom sessionStartTimeoutMs", () => {
+  test("a custom sessionStartTimeoutMs bounds a start that never resolves", async () => {
+    // The only thing between a wedged provider and a client stuck "connecting"
+    // for the 10 s default, so the deadline it configures must be the one used.
+    vi.spyOn(_internals, "connectS2s").mockImplementation(
+      () => new Promise<never>(() => undefined),
+    );
+    const logger = makeLogger();
     const runtime = createRuntime({
       agent: makeAgent(),
       env: {},
-      sessionStartTimeoutMs: 5000,
+      logger,
+      sessionStartTimeoutMs: 50,
     });
-    expect(runtime).toBeDefined();
+
+    runtime.startSession(asSessionWebSocket(new MockWebSocket("ws://test")));
+
+    await vi.waitFor(() => {
+      expect(logger.error).toHaveBeenCalledWith(
+        "Session start failed",
+        expect.objectContaining({
+          error: expect.stringContaining("session.start() timed out after 50ms"),
+        }),
+      );
+    });
   });
 
-  test("accepts custom createWebSocket", () => {
-    const createWebSocket = vi.fn();
+  test("a custom createWebSocket is dialled, carrying ASSEMBLYAI_API_KEY", async () => {
+    // Both options asserted by USE rather than by forwarding — each of them
+    // used to be a `expect(runtime).toBeDefined()`. A runtime that accepted the
+    // factory and dialled its own socket, or that read the credential from
+    // somewhere other than the agent env, looks identical from the options
+    // object. The socket is constructed INSIDE the factory because
+    // `MockWebSocket` opens on the next microtask: one built earlier opens
+    // before `connectS2s` has its listener on and the handshake never completes.
+    const createWebSocket = vi.fn(() => new MockWebSocket("wss://fake"));
     const runtime = createRuntime({
       agent: makeAgent(),
-      env: {},
+      env: { ASSEMBLYAI_API_KEY: "sk-custom" },
+      logger: silentLogger,
       createWebSocket,
     });
-    expect(runtime).toBeDefined();
-  });
-
-  test("uses ASSEMBLYAI_API_KEY from env for sessions", () => {
-    const agent = makeAgent();
-    const runtime = createRuntime({
-      agent,
-      env: { ASSEMBLYAI_API_KEY: "test-api-key" },
-    });
-    const client = makeClientSink();
     const session = runtime.createSession({
-      id: "test-session",
-      agent: agent.name,
-      client,
+      id: "custom-ws",
+      agent: "test-agent",
+      client: makeClientSink(),
     });
-    expect(session).toBeDefined();
+
+    await session.start();
+
+    expect(createWebSocket).toHaveBeenCalledWith(
+      expect.stringContaining("wss://"),
+      expect.objectContaining({ headers: { Authorization: "Bearer sk-custom" } }),
+    );
+    await session.stop();
   });
 
   test("an untouched slot reads as its own default, not as an empty bag", async () => {

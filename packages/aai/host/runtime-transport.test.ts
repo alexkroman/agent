@@ -3,13 +3,75 @@
 // The wire shape of those fields lives in s2s.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
+import { toAgentConfig } from "../sdk/_internal-types.ts";
+import { assemblyAILlm } from "../sdk/providers/llm/assemblyai.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
-import { makeAgent, silentLogger } from "./_test-utils.ts";
+import { assemblyAIStt } from "../sdk/providers/stt/assemblyai.ts";
+import { assemblyAITts } from "../sdk/providers/tts/assemblyai.ts";
+import type { AgentDef } from "../sdk/types.ts";
+import {
+  createFakeLanguageModel,
+  createFakeSttProvider,
+  createFakeTtsProvider,
+  FAKE_STT_API_KEY_ENV,
+  FAKE_TTS_API_KEY_ENV,
+} from "./_pipeline-test-fakes.ts";
+import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
 import { DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
-import { createTransportFactory } from "./runtime-transport.ts";
+import { createTransportFactory, type TransportFactoryDeps } from "./runtime-transport.ts";
 import * as pipelineTransport from "./transports/pipeline-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
-import type { TransportCallbacks } from "./transports/types.ts";
+import type { Transport, TransportCallbacks } from "./transports/types.ts";
+
+/**
+ * The factory's dependencies, TYPED.
+ *
+ * Every call site used to hand `createTransportFactory` an object literal
+ * closed with `as never` — thirteen of them across this file — because two
+ * required keys (`createWebSocket`, `createOpenaiRealtimeWebSocket`) were
+ * absent. `as never` is assignable to every parameter position and, like
+ * `as unknown as`, stops reporting the moment a field is ADDED or renamed: the
+ * exact dropped-field class the specs below exist to catch, on the very builder
+ * under test. One builder instead, so the checker sees the real shape.
+ */
+function transportDeps(overrides: Partial<TransportFactoryDeps> = {}): TransportFactoryDeps {
+  const agent: AgentDef = overrides.agent ?? makeAgent();
+  return {
+    agent,
+    // The REAL mapping, not the AgentDef standing in for it: `agentConfig` is
+    // what the pipeline specs below read their forwarded fields out of.
+    agentConfig: toAgentConfig(agent),
+    toolSchemas: [],
+    executeTool: vi.fn(),
+    env: { ASSEMBLYAI_API_KEY: "k" },
+    s2sConfig: DEFAULT_S2S_CONFIG,
+    pipelineProviders: () => null,
+    createWebSocket: undefined,
+    createOpenaiRealtimeWebSocket: undefined,
+    logger: silentLogger,
+    ...overrides,
+  };
+}
+
+/** One session's build arguments — `sessionOpts.client` is a real `ClientSink`. */
+function buildArgs(): Parameters<ReturnType<typeof createTransportFactory>>[0] {
+  return {
+    sessionOpts: { id: "s1", agent: "a", client: makeClientSink() },
+    systemPrompt: "sp",
+    callbacks: {} as TransportCallbacks,
+  };
+}
+
+/** A `Transport` double for the pipeline builder's return. */
+function fakeTransport(): Transport {
+  return {
+    start: vi.fn(() => Promise.resolve()),
+    stop: vi.fn(() => Promise.resolve()),
+    sendUserAudio: vi.fn(),
+    sendToolResult: vi.fn(),
+    cancelReply: vi.fn(),
+  };
+}
 
 async function buildS2sSessionConfig(agentOverrides: Record<string, unknown>) {
   const handle = {
@@ -21,25 +83,8 @@ async function buildS2sSessionConfig(agentOverrides: Record<string, unknown>) {
   };
   vi.spyOn(_internals, "connectS2s").mockResolvedValue(handle);
   const agent = makeAgent({ s2s: assemblyAIS2s(), ...agentOverrides });
-  const build = createTransportFactory({
-    agent,
-    agentConfig: agent as never,
-    toolSchemas: [],
-    executeTool: vi.fn(),
-    env: { ASSEMBLYAI_API_KEY: "k" },
-    s2sConfig: DEFAULT_S2S_CONFIG,
-    pipelineProviders: () => null,
-    logger: silentLogger,
-  } as never);
-  const transport = build({
-    sessionOpts: {
-      id: "s1",
-      agent: "a",
-      client: { send: vi.fn(), sendAudio: vi.fn() } as never,
-    },
-    systemPrompt: "sp",
-    callbacks: {} as TransportCallbacks,
-  });
+  const build = createTransportFactory(transportDeps({ agent }));
+  const transport = build(buildArgs());
   // The connect is async — `updateSession` runs once it resolves, not at build.
   await transport.start();
   return handle;
@@ -132,31 +177,35 @@ describe("createTransportFactory (pipeline)", () => {
   ])("forwards %s into createPipelineTransport", async (field, value) => {
     const build = vi
       .spyOn(pipelineTransport, "createPipelineTransport")
-      .mockReturnValue({} as never);
-    const agent = makeAgent({ [field]: value });
-    const factory = createTransportFactory({
-      agent,
-      agentConfig: agent as never,
-      toolSchemas: [],
-      executeTool: vi.fn(),
-      env: { ASSEMBLYAI_API_KEY: "k" },
-      s2sConfig: DEFAULT_S2S_CONFIG,
-      pipelineProviders: () => ({
-        stt: { opener: { name: "s", open: vi.fn() }, apiKey: "k" },
-        tts: { opener: { name: "t", open: vi.fn() }, apiKey: "k" },
-        llm: {} as never,
+      .mockReturnValue(fakeTransport());
+    const factory = createTransportFactory(
+      transportDeps({
+        // A genuinely PIPELINE agent. `makeAgent` injects an `s2s` descriptor
+        // unless providers are declared, and `toAgentConfig` refuses these
+        // three fields on an S2S agent — which the old `agentConfig: agent as
+        // never` sailed straight past, mapping nothing at all.
+        agent: makeAgent({
+          stt: assemblyAIStt(),
+          llm: assemblyAILlm(),
+          tts: assemblyAITts(),
+          [field]: value,
+        }),
+        env: {
+          ASSEMBLYAI_API_KEY: "k",
+          [FAKE_STT_API_KEY_ENV]: "stt-key",
+          [FAKE_TTS_API_KEY_ENV]: "tts-key",
+        },
+        // Real `ResolvedOpener`s. The literals here carried an `apiKey` the type
+        // does not have and were MISSING the `envVar` it requires — invisible
+        // for as long as the whole deps object went through `as never`.
+        pipelineProviders: () => ({
+          stt: { opener: createFakeSttProvider(), envVar: FAKE_STT_API_KEY_ENV },
+          tts: { opener: createFakeTtsProvider(), envVar: FAKE_TTS_API_KEY_ENV },
+          llm: createFakeLanguageModel({ script: [] }),
+        }),
       }),
-      logger: silentLogger,
-    } as never);
-    factory({
-      sessionOpts: {
-        id: "s1",
-        agent: "a",
-        client: { send: vi.fn(), sendAudio: vi.fn() } as never,
-      },
-      systemPrompt: "sp",
-      callbacks: {} as TransportCallbacks,
-    });
+    );
+    factory(buildArgs());
     expect(build).toHaveBeenCalledWith(expect.objectContaining({ [field]: value }));
   });
 
@@ -167,47 +216,27 @@ describe("createTransportFactory (pipeline)", () => {
     // (`createServer({ telephony: true })`) then resolves here. Passing a plain
     // `null` for that case would answer "no transport for session" and bury the
     // real cause.
-    const factory = createTransportFactory({
-      agent: makeAgent({ page: "static" }),
-      agentConfig: {} as never,
-      toolSchemas: [],
-      executeTool: vi.fn(),
-      env: {},
-      s2sConfig: DEFAULT_S2S_CONFIG,
-      pipelineProviders: () => {
-        throw new Error(
-          "AssemblyAI LLM: missing API key. Set ASSEMBLYAI_API_KEY in the agent env.",
-        );
-      },
-      logger: silentLogger,
-    } as never);
-    expect(() =>
-      factory({
-        sessionOpts: {
-          id: "s1",
-          agent: "a",
-          client: { send: vi.fn(), sendAudio: vi.fn() } as never,
+    const factory = createTransportFactory(
+      transportDeps({
+        agent: makeAgent({ page: "static" }),
+        env: {},
+        pipelineProviders: () => {
+          throw new Error(
+            "AssemblyAI LLM: missing API key. Set ASSEMBLYAI_API_KEY in the agent env.",
+          );
         },
-        systemPrompt: "sp",
-        callbacks: {} as TransportCallbacks,
       }),
-    ).toThrow(/missing API key/);
+    );
+    expect(() => factory(buildArgs())).toThrow(/missing API key/);
   });
 
   test("is not called at construction — only when a transport is built", () => {
     // The deferral is the whole point: a workflow app builds a runtime, serves
     // its HTTP API, and never resolves a provider credential.
     const pipelineProviders = vi.fn(() => null);
-    createTransportFactory({
-      agent: makeAgent({ page: "static" }),
-      agentConfig: {} as never,
-      toolSchemas: [],
-      executeTool: vi.fn(),
-      env: {},
-      s2sConfig: DEFAULT_S2S_CONFIG,
-      pipelineProviders,
-      logger: silentLogger,
-    } as never);
+    createTransportFactory(
+      transportDeps({ agent: makeAgent({ page: "static" }), env: {}, pipelineProviders }),
+    );
     expect(pipelineProviders).not.toHaveBeenCalled();
   });
 });

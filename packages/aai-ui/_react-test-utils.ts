@@ -5,6 +5,7 @@
  * No dependency on @preact/signals.
  */
 
+import { act } from "react";
 import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
 
 /**
@@ -90,6 +91,50 @@ export function createMockSessionCore(
   };
 
   return core;
+}
+
+/**
+ * Flush pending effects and microtasks inside React's `act()` window.
+ *
+ * The idiom is `await act(async () => {})`, and a bare empty block is
+ * indistinguishable from an unfinished refactor — Biome's
+ * `noEmptyBlockStatements` is right to reject it, and a `biome-ignore` would be
+ * a counted escape hatch. Naming it once says the intent instead, and
+ * de-duplicates the three specs that were reaching for it.
+ *
+ * `act` comes from `react`, not `@testing-library/react`: this module is
+ * imported by the node-environment session specs too, and only the DOM
+ * renderer's entry point belongs behind jsdom.
+ *
+ * Use it where an assertion must land on the SETTLED frame rather than the one
+ * an effect renders optimistically before its first `await` resolves.
+ */
+export function flushEffects(): Promise<void> {
+  return act(async () => {
+    await Promise.resolve();
+  });
+}
+
+/**
+ * Yield a full MACROTASK — drains microtasks and lets already-scheduled
+ * zero-delay timers run.
+ *
+ * The sibling of `tick()` in `aai/host/_test-utils.ts`, spelled again here
+ * because that module is `_`-internal and may not be imported across packages.
+ * Named `tick`, not `flush`, for the reason its doc gives: `flush()` means a
+ * MICROTASK yield repo-wide, and one identifier meaning two different waits is
+ * what that split exists to prevent.
+ *
+ * Reach for this rather than writing the promise out: an inline
+ * `new Promise<void>((r) => setTimeout(r, 0))` is invisible to
+ * `guard-invariants` rules 4 and 19 — the `<void>` type argument breaks the
+ * literal `new Promise(` both patterns require — so the one occurrence in this
+ * package was in no baseline and reported by nothing.
+ */
+export function tick(): Promise<void> {
+  return new Promise<void>((r) => {
+    setTimeout(r, 0);
+  });
 }
 
 // ─── Audio mock utilities ────────────────────────────────────────────────────

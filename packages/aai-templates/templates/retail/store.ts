@@ -38,7 +38,20 @@ export function isGiftCard(method: PaymentMethod): method is GiftCard {
  *  module-level object shared by every session in the process, so a mutation
  *  without it would let one caller's cancellation show up in another's. */
 export function createDefaultState(): RetailState {
-  return { ...emptyRetailState(), store: structuredClone(SEED) };
+  return { ...emptyRetailState(), store: seedStore() };
+}
+
+/**
+ * A pristine deep copy of the seed store.
+ *
+ * Exported so a caller needs no cast of its own. `shared.test.ts` had written
+ * `structuredClone(seedJson) as unknown as Store` twice — a second and third
+ * copy of the narrowing this module already owns, each of which would keep
+ * compiling if `Store` grew a field the JSON does not carry. The one cast is
+ * `SEED`'s above, and `seed.test.ts` is what makes it honest.
+ */
+export function seedStore(): Store {
+  return structuredClone(SEED);
 }
 
 /**

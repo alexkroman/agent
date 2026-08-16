@@ -2,7 +2,7 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
-import { createMemoryAgentRows } from "./agent-store.ts";
+import { type AgentRecordInput, createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryChatStore } from "./chat-store.ts";
 import {
   createMemoryPlatformEvents,
@@ -12,13 +12,16 @@ import {
 } from "./platform-events.ts";
 import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
-const AGENT = {
+// Typed, not `as never`. The cast that used to sit here was carrying a `config`
+// column `20260810030000_drop_agents_config.sql` dropped — the platform stores
+// no description of a bundle at all — and the cast is exactly what stopped the
+// compiler from saying so.
+const AGENT: AgentRecordInput = {
   slug: "a",
   credential_hashes: [],
-  config: { name: "a", systemPrompt: "s", greeting: "", toolSchemas: [] },
   worker_hash: "h",
   client_files: {},
-} as never;
+};
 
 describe("createMemoryPlatformEvents", () => {
   test("agent watchers hear emits until unwatched", async () => {

@@ -61,12 +61,27 @@ const baseline: Record<string, unknown> =
     }),
   )[0] ?? {};
 
+interface RuleSamples {
+  matches: string[];
+  ignores: string[];
+}
+
 interface LineRule {
   id: number;
   key: string;
   label: string;
   re: string;
   paths: string[];
+  /**
+   * Samples carried BY THE RULE, if it carries them.
+   *
+   * A widened pattern and the sample proving it widened otherwise land in two
+   * packages, and rule 3 shipped for months with a single-line positive sample
+   * while the rule was blind to the multi-line form the code is written in.
+   * `SAMPLES` below is this file's table and stays as the fallback for every
+   * rule that does not carry its own; `sampleFor` prefers the rule's.
+   */
+  samples?: RuleSamples;
 }
 
 /**
@@ -102,70 +117,16 @@ const shippedLineRules = (): LineRule[] =>
   )[0] ?? [];
 
 /**
- * Rule 12's decision function, imported as a real value.
- *
- * The scanner rules (1, 7, 10, 12) have no `re` to sample, so the
- * positive/negative discipline the line rules get has to come from exercising
- * the logic directly. Rule 12 is the one worth it: the others ask a single
- * yes/no question of a file, while this one parses two sources and diffs them,
- * and every part of that can go quietly empty — a renamed `GUEST_ROUTES`
- * binding, a pathspec that stops matching, a prefix rule that swallows
- * everything. It is split into a pure half for exactly this.
- */
-const findUndeclaredGuestRoutes = Object.values(
-  import.meta.glob<
-    (
-      literals: { file: string; line: number; literal: string }[],
-      declared: Set<string>,
-    ) => { file: string; line: number; text: string }[]
-  >("../../scripts/guard-invariants-scanners.mjs", {
-    import: "findUndeclaredGuestRoutes",
-    eager: true,
-  }),
-)[0];
-
-/**
- * Rule 13's decision function, imported as a real value — same treatment and
- * same reason as rule 12's above: it is a path computation, and a version that
- * resolved everything to "inside its template" would report the healthiest
- * possible tree while checking nothing.
- */
-const importEscapesTemplate = Object.values(
-  import.meta.glob<(file: string, specifier: string) => boolean>(
-    "../../scripts/guard-invariants-scanners.mjs",
-    { import: "importEscapesTemplate", eager: true },
-  ),
-)[0];
-
-/**
- * Rule 14's two halves, imported as real values for the same reason as 12's and
- * 13's. This rule is the one where the difference between "matches the name" and
- * "resolves to the directory" IS the rule, so a resolver that quietly agreed with
- * every candidate would report a clean tree while the bug it was written for sat
- * in it.
- */
-const resolveAgainstFile = Object.values(
-  import.meta.glob<(readerFile: string, specifier: string) => string>(
-    "../../scripts/guard-invariants-scanners.mjs",
-    { import: "resolveAgainstFile", eager: true },
-  ),
-)[0];
-
-const fixtureDirs = Object.values(
-  import.meta.glob<() => string[]>("../../scripts/guard-invariants-scanners.mjs", {
-    import: "fixtureDirs",
-    eager: true,
-  }),
-)[0];
-
-/**
  * One positive and one negative sample per rule, keyed by the rule's `key`.
  *
  * The positives are written to look like the real anti-pattern rather than
  * minimally satisfying the regex — a sample tuned to the pattern would pass
  * even if the pattern had drifted away from the code it is meant to catch.
  */
-const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
+const SAMPLES: Record<
+  string,
+  { matches: string[]; ignores: string[]; multilineMatches?: string[] }
+> = {
   rule2_spreadTernary: {
     matches: [
       "    ...(body !== undefined ? { body } : {}),",
@@ -195,6 +156,25 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
     matches: [
       "  const won = await Promise.race([work, new Promise((_, r) => setTimeout(r, ms))]);",
     ],
+    // The form Biome actually produces once the race does not fit on one line,
+    // which is how every real occurrence in this tree is written. See the
+    // multi-line assertion that consumes this.
+    multilineMatches: [
+      [
+        "  const won = await Promise.race([",
+        "    work,",
+        "    new Promise((_, reject) => setTimeout(reject, ms)),",
+        "  ]);",
+      ].join("\n"),
+      [
+        "    await Promise.race([",
+        "      settled,",
+        "      new Promise((resolve) => {",
+        "        setTimeout(resolve, GRACE_MS);",
+        "      }),",
+        "    ]);",
+      ].join("\n"),
+    ],
     // The legitimate race this rule must not break: no timer in it.
     ignores: [
       "  const outcome = await Promise.race([work.then((value) => ({ value })), exited]);",
@@ -205,6 +185,15 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
     matches: [
       "    await new Promise((resolve) => setTimeout(resolve, 0));",
       "  return new Promise((r) => setTimeout(r, 0));",
+      // A TYPE ARGUMENT, which a literal `(` after `new Promise` cannot cross —
+      // five live occurrences across aai, aai-ui and the two fuzz harnesses.
+      // Rule 4's own comment celebrates fixing a draft that "reported 0 against
+      // five real occurrences"; the fixed version reports 0 against five
+      // different ones, for an adjacent reason.
+      "  return new Promise<void>((r) => setTimeout(r, 0));",
+      // The OTHER zero-length yield, which neither timer rule knows: eight live
+      // occurrences. It takes no delay, so it can only ever be rule 4's.
+      "    await new Promise((r) => setImmediate(r));",
     ],
     // The 50ms twin is deliberately here AND in rule 19's `matches`: rule 4
     // owns the zero-length yield, rule 19 the nonzero sleep, and the samples
@@ -216,10 +205,11 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
     matches: ['    delete process.env["AAI_API_KEY"];', "    delete process.env.AAI_API_KEY;"],
     ignores: ['    vi.stubEnv("AAI_API_KEY", undefined);'],
   },
-  rule6_templateStateCast: {
-    matches: ["    const state = ctx.state as { count?: number };"],
-    ignores: ["    const state = counterSlot.get(ctx);"],
-  },
+  // No `rule6_templateStateCast` entry: rule 6 was retired when `ctx.state`
+  // stopped existing, and its sample outlived it here for exactly as long as
+  // nothing asserted the converse. "Every rule has samples" leaves dead samples
+  // free to accumulate, each of them a positive/negative pair run against no
+  // rule at all — see "every local sample names a shipped rule" below.
   rule11_hardcodedTmp: {
     matches: ["  const file = `/tmp/aai-bundle.mjs`;", '  harnessPath: "/tmp/harness.mjs",'],
     ignores: [
@@ -307,6 +297,8 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
       "    await new Promise((resolve) => setTimeout(resolve, 250));",
       "  return new Promise((r) => setTimeout(r, ms));",
       "  await new Promise((resolve) => setTimeout(resolve, (8 - index) * 20));",
+      // The type argument again, same gap as rule 4's.
+      '    new Promise<"hung">((r) => setTimeout(r, 5000)),',
       // The other family: the one timer `vi.useFakeTimers()` cannot drive.
       '    import { setTimeout as sleep } from "node:timers/promises";',
       '    import { setTimeout as nodeSleep } from "node:timers/promises";',
@@ -348,6 +340,12 @@ const SAMPLES: Record<string, { matches: string[]; ignores: string[] }> = {
   },
 };
 
+/**
+ * The samples a rule is checked against: the rule's own where it carries them,
+ * this file's table otherwise.
+ */
+const sampleFor = (rule: LineRule): RuleSamples | undefined => rule.samples ?? SAMPLES[rule.key];
+
 describe("guard-invariants gate", () => {
   test("the script and baseline are readable", () => {
     expect(script, "scripts/guard-invariants.mjs not found").toBeTypeOf("string");
@@ -368,44 +366,95 @@ describe("guard-invariants gate", () => {
 
   test("every line rule has samples", () => {
     // A rule added without samples would be untested, which is the state this
-    // suite exists to make impossible.
-    for (const { id, key } of shippedLineRules()) {
-      expect(SAMPLES[key], `rule ${id} (${key}) has no positive/negative samples`).toBeTypeOf(
-        "object",
-      );
+    // suite exists to make impossible. Either source counts.
+    for (const rule of shippedLineRules()) {
+      expect(
+        sampleFor(rule),
+        `rule ${rule.id} (${rule.key}) has no positive/negative samples`,
+      ).toBeTypeOf("object");
     }
   });
 
-  test.each(shippedLineRules())("rule $id ($key) matches its anti-pattern", ({ key, re }) => {
-    const samples = SAMPLES[key];
-    if (samples === undefined) expect.fail(`rule ${key} has no samples`);
+  test("every local sample names a shipped rule", () => {
+    // The converse, and it was missing: `rule6_templateStateCast` sat in
+    // `SAMPLES` after rule 6 was retired, so a positive and a negative sample
+    // were being maintained, read and trusted while matching against nothing.
+    // A dead sample is worse than no sample — it reads as coverage, and only
+    // the "every rule has samples" direction was ever asserted.
+    const keys = new Set(shippedLineRules().map((r) => r.key));
+    expect(keys.size, "no line rules parsed").toBeGreaterThanOrEqual(7);
+    for (const key of Object.keys(SAMPLES)) {
+      expect(keys, `SAMPLES has "${key}", which is not a shipped rule — retired?`).toContain(key);
+    }
+  });
+
+  test.each(shippedLineRules())("rule $id ($key) matches its anti-pattern", (rule) => {
+    const samples = sampleFor(rule);
+    if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
     for (const line of samples.matches) {
       expect(
-        new RegExp(re).test(line),
-        `rule ${key} does NOT match a line it must catch — the pattern is dead:\n  ${line}`,
+        new RegExp(rule.re).test(line),
+        `rule ${rule.key} does NOT match a line it must catch — the pattern is dead:\n  ${line}`,
       ).toBe(true);
     }
   });
 
-  test.each(shippedLineRules())("rule $id ($key) spares its legitimate twin", ({ key, re }) => {
-    const samples = SAMPLES[key];
-    if (samples === undefined) expect.fail(`rule ${key} has no samples`);
+  test.each(
+    shippedLineRules().filter(({ key }) => (SAMPLES[key]?.multilineMatches?.length ?? 0) > 0),
+  )("rule $id ($key) matches a REALISTIC multi-line occurrence", ({ key, re }) => {
+    // The scan is `git grep -nIE`, which is LINE-BASED, so this asserts the
+    // sample the way the gate would really see it: at least one line of it must
+    // match on its own. A JS-side `dotAll` test would pass here and prove
+    // nothing, because the shipped scanner can never look at two lines at once.
+    //
+    // Rule 3 is why this exists. Its only positive sample was a single line, so
+    // the guard was green while the rule was blind to the wrapped form Biome
+    // actually emits — the live occurrences are all written that way.
+    const samples = SAMPLES[key]?.multilineMatches ?? [];
+    for (const sample of samples) {
+      expect(
+        sample.split("\n").some((line) => new RegExp(re).test(line)),
+        `rule ${key} sees NO line of an occurrence it must catch — a line-anchored\n` +
+          `pattern cannot reach this shape:\n${sample}`,
+      ).toBe(true);
+    }
+  });
+
+  test.each(shippedLineRules())("rule $id ($key) spares its legitimate twin", (rule) => {
+    const samples = sampleFor(rule);
+    if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
     for (const line of samples.ignores) {
       expect(
-        new RegExp(re).test(line),
-        `rule ${key} matches a line it must NOT flag:\n  ${line}`,
+        new RegExp(rule.re).test(line),
+        `rule ${rule.key} matches a line it must NOT flag:\n  ${line}`,
       ).toBe(false);
     }
   });
 
-  test("no pattern uses \\b", () => {
-    // `\b` is a GNU extension. `git grep -E` does not implement it, so a
-    // pattern containing one matches nothing and the rule reports success
-    // forever. Two escape-hatch patterns were dead this way for months.
-    for (const { id, re } of shippedLineRules()) {
-      expect(re, `rule ${id} uses \\b, which git's matcher does not implement`).not.toContain(
-        "\\b",
-      );
+  test("no pattern uses a GNU-only regex construct", () => {
+    // The patterns are validated HERE with JavaScript's `new RegExp` and
+    // SHIPPED to `git grep -nIE` — POSIX ERE, whose GNU-extension support
+    // varies by build. `\b` is the one already paid for: two escape-hatch
+    // patterns carried one, matched nothing on the machines where git's matcher
+    // does not implement it, and the gate reported success over a tree holding
+    // 110 violations. So every construct ERE has no answer for is banned, not
+    // just `\b`.
+    const banned = [
+      ["\\b", "a word boundary — git's matcher does not implement it"],
+      ["\\B", "a non-word-boundary — same GNU extension as \\b"],
+      ["\\w", "a GNU character class; POSIX ERE spells it [A-Za-z0-9_]"],
+      ["\\d", "a GNU character class; POSIX ERE spells it [0-9]"],
+      ["\\s", "a GNU character class; POSIX ERE spells it [[:space:]]"],
+      ["(?", "a JS-only group (lookaround or non-capturing); ERE has neither"],
+      ["*?", "a lazy quantifier; ERE quantifiers are always greedy"],
+      ["+?", "a lazy quantifier; ERE quantifiers are always greedy"],
+    ] as const;
+    const rules = shippedLineRules();
+    expect(rules.length, "no line rules parsed").toBeGreaterThanOrEqual(7);
+    for (const { id, re } of rules) {
+      for (const [construct, why] of banned) {
+        expect(re, `rule ${id} uses ${construct} — ${why}`).not.toContain(construct);
+      }
     }
   });
 
@@ -444,156 +493,6 @@ describe("guard-invariants gate", () => {
     // The assertion above now reads `_ratchet.mjs`, so alone it would pass for
     // a gate that had stopped using the engine — checking a file nothing runs.
     expect(script).toContain("_ratchet.mjs");
-  });
-
-  describe("rule 12 — undeclared guest routes", () => {
-    const at = (literal: string) => [{ file: "guest.ts", line: 1, literal }];
-    const declared = new Set(["/ws", "/studio/chat", "/manage/status", "/manage/drain"]);
-
-    test("the pure half is importable", () => {
-      expect(findUndeclaredGuestRoutes, "findUndeclaredGuestRoutes not exported").toBeTypeOf(
-        "function",
-      );
-    });
-
-    test("flags a route the table does not declare", () => {
-      // The real finding this rule was written for: `/studio/tools` served by
-      // the guest and present in neither table.
-      const found = findUndeclaredGuestRoutes?.(at("/studio/tools"), declared) ?? [];
-      expect(found).toHaveLength(1);
-      expect(found[0]?.text).toContain("/studio/tools");
-    });
-
-    test("spares a declared route", () => {
-      expect(findUndeclaredGuestRoutes?.(at("/studio/chat"), declared)).toHaveLength(0);
-    });
-
-    test("spares the bare root, which is the default case and not a route", () => {
-      expect(findUndeclaredGuestRoutes?.(at("/"), declared)).toHaveLength(0);
-    });
-
-    test("spares a prefix gate that has declared routes under it", () => {
-      // `url.startsWith("/manage/")` — legitimate, because manageStatus and
-      // manageDrain are both declared beneath it.
-      expect(findUndeclaredGuestRoutes?.(at("/manage/"), declared)).toHaveLength(0);
-    });
-
-    test("flags a prefix gate with nothing declared under it", () => {
-      // The case a literal-only scan misses: a new `startsWith` dispatch widens
-      // the guest's surface without any single new route literal.
-      const found = findUndeclaredGuestRoutes?.(at("/admin/"), declared) ?? [];
-      expect(found).toHaveLength(1);
-      expect(found[0]?.text).toContain("prefix dispatch");
-    });
-
-    test("an empty declared set flags everything rather than passing", () => {
-      // If the GUEST_ROUTES parse ever returns nothing, the rule must not go
-      // quiet. The scanner throws on a zero-route parse; this pins the
-      // decision function's half of that contract.
-      expect(findUndeclaredGuestRoutes?.(at("/ws"), new Set())).toHaveLength(1);
-    });
-  });
-
-  describe("rule 13 — a template import escaping its template", () => {
-    const PIZZA = "packages/aai-templates/templates/pizza-ordering";
-
-    test("the pure half is importable", () => {
-      expect(importEscapesTemplate, "importEscapesTemplate not exported").toBeTypeOf("function");
-    });
-
-    test("flags the real bug: a spec reaching up to the package's own helper", () => {
-      // Five shipped templates had exactly this. It resolved in-tree, so every
-      // gate passed, and `aai test` / `aai build` / `npm start` were broken for
-      // every user who scaffolded one of them.
-      expect(importEscapesTemplate?.(`${PIZZA}/agent.test.ts`, "../../_discovery.ts")).toBe(true);
-    });
-
-    test("spares a sibling in the same template", () => {
-      expect(importEscapesTemplate?.(`${PIZZA}/agent.ts`, "./shared.ts")).toBe(false);
-    });
-
-    test("spares a tool reaching one level up, which is inside the template", () => {
-      // The case a `../../`-substring rule gets right and a `../`-substring rule
-      // gets wrong — depth is not the question, the boundary is.
-      expect(importEscapesTemplate?.(`${PIZZA}/tools/add_pizza.ts`, "../shared.ts")).toBe(false);
-    });
-
-    test("flags a tool reaching TWO levels up, which is another template's business", () => {
-      // Same number of dots as a legal import from `agent.ts`, one directory
-      // deeper — which is why this is resolved rather than matched.
-      expect(importEscapesTemplate?.(`${PIZZA}/tools/add_pizza.ts`, "../../retail/store.ts")).toBe(
-        true,
-      );
-    });
-
-    test("flags a climb that lands exactly ON the template root", () => {
-      // `templates/pizza-ordering` itself is not `templates/pizza-ordering/…`,
-      // so the prefix check has to reject it — an off-by-one here would silently
-      // admit every escape that stops one segment short.
-      expect(importEscapesTemplate?.(`${PIZZA}/tools/add_pizza.ts`, "../../pizza-ordering")).toBe(
-        true,
-      );
-    });
-  });
-
-  describe("rule 14 — a fixture directory nothing reads", () => {
-    const COMPAT = "packages/aai/sdk/protocol-compat.test.ts";
-
-    test("the pure halves are importable", () => {
-      expect(resolveAgainstFile, "resolveAgainstFile not exported").toBeTypeOf("function");
-      expect(fixtureDirs, "fixtureDirs not exported").toBeTypeOf("function");
-    });
-
-    test("the historical bug: the only `compat-fixtures` string names a DIFFERENT package", () => {
-      // This is the whole rule. `packages/aai-server/compat-fixtures/` outlived
-      // its only reader by five commits while this string sat in the tree the
-      // entire time, pointing at its own sibling — so a scan matching the NAME
-      // finds a reader for the dead directory and reports a clean tree.
-      expect(resolveAgainstFile?.(COMPAT, "compat-fixtures")).toBe(
-        "packages/aai/sdk/compat-fixtures",
-      );
-      expect(resolveAgainstFile?.(COMPAT, "compat-fixtures")).not.toBe(
-        "packages/aai-server/compat-fixtures",
-      );
-    });
-
-    test("a CROSS-PACKAGE reader resolves, so a live directory is not flagged", () => {
-      // aai-cli's e2e suite replays aai-ui's fixtures. A package-scoped scan
-      // would report that directory as unread, which is a false positive on a
-      // rule that carries no baseline — i.e. a blocked push.
-      expect(resolveAgainstFile?.("packages/aai-cli/e2e.test.ts", "../aai-ui/fixtures")).toBe(
-        "packages/aai-ui/fixtures",
-      );
-    });
-
-    test("reading one FILE counts as reading its directory", () => {
-      // `join(here, "fixtures/hello.pcm16")` names a file; the directory is what
-      // the rule is about, so the scan credits every ancestor of the resolved
-      // path and this is the resolution it does that to.
-      expect(
-        resolveAgainstFile?.(
-          "packages/aai/host/integration/pipeline-reference.integration.test.ts",
-          "fixtures/hello-how-are-you.pcm16",
-        ),
-      ).toBe("packages/aai/host/integration/fixtures/hello-how-are-you.pcm16");
-    });
-
-    test("candidate discovery finds the real fixture directories", () => {
-      // A discovery step that found nothing would report "0 ✓" — the same output
-      // as the rule being upheld, which is the failure shape this whole suite
-      // exists for. Nested candidates are separate: `host/fixtures` and
-      // `host/integration/fixtures` are two directories, not one.
-      const dirs = fixtureDirs?.() ?? [];
-      expect(dirs).toContain("packages/aai/sdk/compat-fixtures");
-      expect(dirs).toContain("packages/aai-ui/fixtures");
-      expect(dirs).toContain("packages/aai/host/fixtures");
-      expect(dirs).toContain("packages/aai/host/integration/fixtures");
-    });
-
-    test("the deleted aai-server fixture set is really gone", () => {
-      // The one-time deletion this rule turns into a standing check.
-      expect(fixtureDirs?.() ?? []).not.toContain("packages/aai-server/compat-fixtures");
-    });
   });
 
   test("the gate is wired into both the local check and CI", () => {

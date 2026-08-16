@@ -6,6 +6,8 @@
  * orchestrator-security-validation.test.ts.
  */
 import { describe, expect, test } from "vitest";
+import { loadBundleParts } from "./sandbox-resolve.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey } from "./secrets.ts";
 import {
   authFetch,
@@ -112,48 +114,41 @@ describe("cross-agent auth isolation", () => {
 // ── Platform Credential Handling ────────────────────────────────────────
 
 describe("platform credential handling", () => {
-  test("ASSEMBLYAI_API_KEY is passed through in env to resolveSandbox", async () => {
+  // This used to round-trip the memory store and assert on `store.getEnv`,
+  // which is `bundle-store.test.ts`'s subject and says nothing about the
+  // resolution path its name promises. `loadBundleParts` is the step that
+  // actually assembles what a spawn hands the guest, so a regression that
+  // stopped reading the env there fails here.
+  test("the sandbox resolution path carries the whole stored env to the guest", async () => {
     const store = createTestStore();
+    const env = {
+      ASSEMBLYAI_API_KEY: "platform-secret-key",
+      USER_SECRET: "user-value",
+      ANOTHER_SECRET: "another-value",
+    };
 
     await store.putAgent({
       slug: "cred-agent",
-      env: {
-        ASSEMBLYAI_API_KEY: "platform-secret-key",
-        USER_SECRET: "user-value",
-        ANOTHER_SECRET: "another-value",
-      },
+      env,
       credential_hashes: [await hashApiKey("key1")],
       worker: "console.log('w');",
       clientFiles: {},
     });
 
-    // Verify getEnv returns everything including ASSEMBLYAI_API_KEY
-    const fullEnv = await store.getEnv("cred-agent");
-    expect(fullEnv).toHaveProperty("ASSEMBLYAI_API_KEY", "platform-secret-key");
-    expect(fullEnv).toHaveProperty("USER_SECRET", "user-value");
-    expect(fullEnv).toHaveProperty("ANOTHER_SECRET", "another-value");
+    const parts = await loadBundleParts("cred-agent", { slots: createSlotCache(), store });
+    expect(parts).not.toBeNull();
+    // `toEqual`, not three `toHaveProperty`s: the guest gets exactly the stored
+    // env and nothing the platform invented (a `DATABASE_URL` is injected one
+    // step later, and only when the app has a provisioned database).
+    expect(parts?.env).toEqual(env);
   });
 
-  test("ASSEMBLYAI_API_KEY can be overwritten via secrets API", async () => {
-    const { fetch } = await createTestOrchestrator();
-    await deployAgent(fetch, "my-agent", "key1");
-
-    const res = await authFetch(fetch, "/my-agent/secret", {
-      method: "PUT",
-      body: { ASSEMBLYAI_API_KEY: "new-key" },
-    });
-    expect(res.status).toBe(200);
-  });
-
-  test("ASSEMBLYAI_API_KEY can be deleted via secrets API", async () => {
-    const { fetch } = await createTestOrchestrator();
-    await deployAgent(fetch, "my-agent", "key1");
-
-    const res = await authFetch(fetch, "/my-agent/secret/ASSEMBLYAI_API_KEY", {
-      method: "DELETE",
-    });
-    expect(res.status).toBe(200);
-  });
+  // "ASSEMBLYAI_API_KEY can be overwritten / deleted via secrets API" used to
+  // sit here as two status-only copies of `secret-handler.test.ts`'s "secret
+  // set allows overwriting ASSEMBLYAI_API_KEY" and "secret delete allows
+  // removing ASSEMBLYAI_API_KEY" — same routes, same setup, one assertion
+  // fewer each. The secrets API's own suite owns that surface; this file owns
+  // tenant isolation and what a spawn is handed.
 });
 
 // ── Multi-Tenant Deploy Isolation ──────────────────────────────────────
@@ -206,12 +201,16 @@ describe("multi-tenant deploy isolation", () => {
     await deployAgent(fetch, "agent-alpha", "key-alpha");
     await deployAgent(fetch, "agent-beta", "key-beta");
 
-    // Delete alpha
-    const deleteRes = await authFetch(fetch, "/agent-alpha/", {
+    // Delete alpha. `toBeLessThan(500)` used to stand here, which passes on the
+    // 404 and 403 in which nothing is deleted at all — and then "beta still
+    // exists" is true for the wrong reason. The delete must SUCCEED, and alpha
+    // must really be gone, before the surviving-neighbour claim means anything.
+    const deleteRes = await authFetch(fetch, "/agent-alpha", {
       method: "DELETE",
       key: "key-alpha",
     });
-    expect(deleteRes.status).toBeLessThan(500);
+    expect(deleteRes.status).toBe(200);
+    expect(await store.getAgent("agent-alpha")).toBeNull();
 
     // Beta still exists
     const betaManifest = await store.getAgent("agent-beta");

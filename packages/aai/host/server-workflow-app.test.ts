@@ -19,7 +19,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import WebSocket from "ws";
 import type { WorkflowClient } from "../sdk/workflow.ts";
 import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
-import { silentLogger } from "./_test-utils.ts";
+import { silentLogger, withDeadline } from "./_test-utils.ts";
 import { createServer, type SessionRuntime } from "./server.ts";
 
 /**
@@ -79,10 +79,18 @@ describe("a workflow app's server", () => {
     });
     await server.listen(0);
     const ws = new WebSocket(`ws://127.0.0.1:${server.port}/websocket`);
-    const message = await new Promise<string>((resolve, reject) => {
-      ws.on("message", (data) => resolve(String(data)));
-      ws.on("error", reject);
-    });
+    // Rejects on `close` and carries a deadline: this test's whole premise is
+    // that the decline is WRITTEN before the socket goes away, so a server that
+    // closed silently — or wrote nothing and held the socket — has to fail
+    // naming that, not time the file out at 5 s naming nothing.
+    const message = await withDeadline(
+      new Promise<string>((resolve, reject) => {
+        ws.on("message", (data) => resolve(String(data)));
+        ws.on("error", reject);
+        ws.on("close", (code) => reject(new Error(`closed (${code}) before any frame`)));
+      }),
+      "no frame arrived on a declined /websocket",
+    );
     const closed = new Promise<number>((resolve) => ws.on("close", resolve));
     expect(JSON.parse(message)).toEqual(
       expect.objectContaining({
@@ -99,10 +107,14 @@ describe("a workflow app's server", () => {
     server = createServer({ runtime, logger: silentLogger });
     await server.listen(0);
     const ws = new WebSocket(`ws://127.0.0.1:${server.port}/websocket`);
-    await new Promise<void>((resolve, reject) => {
-      ws.on("open", () => resolve());
-      ws.on("error", reject);
-    });
+    await withDeadline(
+      new Promise<void>((resolve, reject) => {
+        ws.on("open", () => resolve());
+        ws.on("error", reject);
+        ws.on("close", (code) => reject(new Error(`closed (${code}) before opening`)));
+      }),
+      "the voice agent's /websocket never opened",
+    );
     expect(runtime.startSession).toHaveBeenCalled();
     ws.close();
   });

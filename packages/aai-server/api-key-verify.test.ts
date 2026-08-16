@@ -126,11 +126,15 @@ describe("createApiKeyVerifierFromEnv", () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("NOT verified"));
   });
 
-  test("only the exact opt-out value disables it", () => {
-    for (const value of ["", "1", "false", "no", "0 "]) {
+  // `test.each`, not a `for…of` over the cases: the reporter names the value
+  // that failed — which matters most for the two that look like an opt-out and
+  // are not (`"false"`, and `"0 "` with its trailing space).
+  test.each(["", "1", "false", "no", "0 "])(
+    "AAI_VERIFY_API_KEYS=%o does not disable verification — only the exact `0` does",
+    (value) => {
       expect(
         createApiKeyVerifierFromEnv({ AAI_VERIFY_API_KEYS: value }, { localDev: false }),
       ).toBeTypeOf("function");
-    }
-  });
+    },
+  );
 });

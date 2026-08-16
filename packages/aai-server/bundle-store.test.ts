@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
@@ -10,7 +11,7 @@ import {
   createBundleStore,
 } from "./bundle-store.ts";
 import { MAX_ENV_SIZE } from "./constants.ts";
-import { createMemorySecretStore } from "./secret-store.ts";
+import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 
 function makeStore(secrets = createMemorySecretStore()) {
   const storage = createMemoryBlobStorage();
@@ -104,18 +105,53 @@ describe("bundle store (agents rows + content-addressed blobs)", () => {
     expect(await store.getAgent("test-agent")).toBeNull();
   });
 
-  test("concurrent putEnv calls do not lose updates", async () => {
-    const { store } = makeStore();
-    await store.putAgent({ ...BASE_BUNDLE, env: { INITIAL: "value" } });
+  test("concurrent putEnv calls are serialized — the critical sections never overlap", async () => {
+    // `putEnv` is a WHOLESALE replace inside `withLock`, so "the final env is
+    // { B: '2' }" holds with the lock deleted: there is no read-modify-write to
+    // lose. What the lock really buys is that the two critical sections do not
+    // OVERLAP, so this observes the overlap directly — every secret write
+    // yields a macrotask, which is exactly where an unserialized second writer
+    // would slot in.
+    const backing = createMemorySecretStore();
+    const events: string[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const secrets: SecretStore = {
+      get: (name) => backing.get(name),
+      delete: (name) => backing.delete(name),
+      async put(name, value) {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        events.push(`enter:${value}`);
+        await sleep(0);
+        await backing.put(name, value);
+        events.push(`exit:${value}`);
+        inFlight -= 1;
+      },
+    };
+    const store = createBundleStore(createMemoryBlobStorage(), {
+      secrets,
+      agents: createMemoryAgentRows(),
+    });
 
-    // Fire two concurrent putEnv calls — without locking, one would overwrite the other
+    await store.putAgent({ ...BASE_BUNDLE, env: { INITIAL: "value" } });
+    events.length = 0;
+    maxInFlight = 0;
+
     await Promise.all([
       store.putEnv("test-agent", { A: "1" }),
       store.putEnv("test-agent", { B: "2" }),
     ]);
 
-    // With serialization, the second call reads the result of the first,
-    // then overwrites. So the final env should be { B: "2" }.
+    expect(maxInFlight).toBe(1);
+    // The lock is FIFO, so the whole transcript is deterministic: each write
+    // completes before the next one begins, in arrival order.
+    expect(events).toEqual([
+      'enter:{"A":"1"}',
+      'exit:{"A":"1"}',
+      'enter:{"B":"2"}',
+      'exit:{"B":"2"}',
+    ]);
     expect(await store.getEnv("test-agent")).toEqual({ B: "2" });
   });
 

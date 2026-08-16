@@ -295,10 +295,15 @@ describe("work_next_step", () => {
     expect(state.pastSteps.at(-1)?.step).toBe(`Step ${total}`);
   });
 
-  test("two calls never share a plan", async () => {
+  test("two independent contexts never share a plan", async () => {
+    // What this really checks: the state lives in the SLOT and not in a
+    // module-level variable. `createToolContext()` hands each call its own
+    // detached slot store, so the isolation is per CONTEXT — two distinct
+    // session ids would prove nothing extra, and `sessionSlot` could stop
+    // keying by session with this still passing.
     const { generate } = scriptedModel({ steps: ["Only step"] });
-    const first = makeCtx(generate, "call-a");
-    const second = makeCtx(generate, "call-b");
+    const first = makeCtx(generate);
+    const second = makeCtx(generate);
 
     await run("start_plan", { objective: "mine" }, first);
     expect(stateOf(second).objective).toBeNull();

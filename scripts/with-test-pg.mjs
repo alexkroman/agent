@@ -19,7 +19,12 @@
  * pnpm test:pg                        # the whole scenario tier
  * pnpm test:pg pnpm --filter aai-server test:scenario
  * node scripts/with-test-pg.mjs --print
+ * node scripts/with-test-pg.mjs --require-stack pnpm test:scenario
  * ```
+ *
+ * `--require-stack` is CI's flag: it makes "no stack" exit 1 instead of a
+ * printed note. See its declaration below for the green-job-with-no-arm this
+ * closes.
  *
  * It RESOLVES a database; it deliberately does not start one. The candidates
  * are localhost-only and the suites WRITE, so a `DATABASE_URL` from the
@@ -56,8 +61,29 @@ import net from "node:net";
 import path from "node:path";
 
 const args = process.argv.slice(2);
-const PRINT_ONLY = args[0] === "--print";
-const command = (args[0] === "--" ? args.slice(1) : args).filter((a) => a !== "--print");
+const PRINT_ONLY = args.includes("--print");
+/**
+ * `--require-stack`: a stack that was EXPECTED and not resolved is exit 1.
+ *
+ * Without it every failure path here — no CLI, a stack that is down, a
+ * `supabase status -o env` whose output this cannot parse — printed two lines
+ * and let the run continue with `AAI_REQUIRE_STACK` unset. `_pg-test-utils.ts`
+ * then turns `describeWithStack` into `describe.skip`, so the CI job that
+ * exists for the platform arm goes GREEN with
+ * `realtime-rls.scenario.test.ts` — the only walrus/RLS leak test in the
+ * repository — never having run.
+ *
+ * `check.yml`'s platform-stack job claimed the opposite in its own comment
+ * ("so a variable that stops arriving is a red job rather than a green one
+ * with the only arm for the platform stores silently absent") while this
+ * script was its only enforcement. It is a FLAG rather than the default
+ * because a developer running `pnpm test:pg` against a plain 5432 is entitled
+ * to the narrow arm with a printed reason; a job whose whole purpose is the
+ * stack is not.
+ */
+const REQUIRE_STACK = args.includes("--require-stack");
+const FLAGS = new Set(["--print", "--require-stack"]);
+const command = (args[0] === "--" ? args.slice(1) : args).filter((a) => !FLAGS.has(a));
 
 /** The default superuser every candidate below is reached as. */
 const ROLE = "postgres";
@@ -222,6 +248,27 @@ if (stack?.env) {
       "  DATABASE_URL) and NO platform contract — those need Vault, pg_cron and\n" +
       "  walrus, i.e. `supabase start`. They will announce themselves as skipped.",
   );
+}
+
+// `--require-stack` turns "no stack" into a failure, and it has to be checked
+// on BOTH arms: `onStackPort` false means the resolver never even looked, which
+// is the likelier shape when a job's `supabase start` half-succeeded.
+if (REQUIRE_STACK && !stack?.env) {
+  const why = onStackPort
+    ? (stack?.why ?? "unknown")
+    : `nothing answered on ${STACK_PORT}, so the stack was never asked for`;
+  console.error(
+    `\nwith-test-pg: --require-stack was given and no Supabase stack resolved (${why}).\n\n` +
+      "Exiting 1 rather than running the tier without it. With AAI_REQUIRE_STACK\n" +
+      "unset, `describeWithStack` becomes `describe.skip` and the run is GREEN\n" +
+      "with the platform arm — walrus/Realtime, Storage, Auth, and the only\n" +
+      "RLS leak test in the repository — never executed. That is the exact\n" +
+      "check-that-exists-without-running failure this whole resolver is for.\n\n" +
+      "  supabase start                     # from the repo root\n" +
+      "  supabase status -o env             # what this script reads\n\n" +
+      "Drop the flag to accept the narrow arm deliberately.\n",
+  );
+  process.exit(1);
 }
 
 if (PRINT_ONLY) process.exit(0);

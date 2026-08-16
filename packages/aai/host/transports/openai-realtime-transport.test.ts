@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { omitUndefined } from "../../sdk/omit-undefined.ts";
-import { silentLogger } from "../_test-utils.ts";
+import { flush, silentLogger } from "../_test-utils.ts";
 import { makeCallbacks as noopCallbacks } from "./_transport-recorder.ts";
 import {
   createOpenaiRealtimeTransport,
@@ -405,7 +405,7 @@ describe("tool calls", () => {
     expect(m1.item.type).toBe("function_call_output");
     expect(m1.item.call_id).toBe("call_1");
     expect(m1.item.output).toBe('{"ok":true}');
-    await new Promise((r) => queueMicrotask(() => r(undefined)));
+    await flush();
     expect(fake.sent.length).toBe(2);
     const m2 = JSON.parse(fake.sent[1] ?? "{}");
     expect(m2.type).toBe("response.create");
@@ -422,7 +422,7 @@ describe("tool calls", () => {
     // Three function_call_outputs sent immediately, no response.create yet.
     expect(fake.sent.length).toBe(3);
     expect(fake.sent.every((s) => JSON.parse(s).type === "conversation.item.create")).toBe(true);
-    await new Promise((r) => queueMicrotask(() => r(undefined)));
+    await flush();
     // After the microtask, exactly one response.create — second one would be
     // rejected as `conversation_already_has_active_response`.
     expect(fake.sent.length).toBe(4);
@@ -565,10 +565,13 @@ describe("cancel, error, close", () => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     fake.fire("message", { data: JSON.stringify({ type: "error" }) });
+    // The exact string, not `expect.any(String)`: this is the only text a
+    // client operator sees for a message-less service error, and `""` or
+    // `"[object Object]"` would satisfy the loose matcher.
     expect(cbs.reported("error.reported")).toHaveBeenCalledWith({
       type: "error.reported",
       code: "internal",
-      message: expect.any(String),
+      message: "OpenAI Realtime error",
       fatal: false,
     });
   });

@@ -28,6 +28,15 @@ export default defineConfig({
     // `templates/*/*.test.ts` covers each template's own tests, so a new
     // template is picked up on creation.
     include: ["*.test.ts", "templates/*/*.test.ts"],
+    // The slow-tier infixes, excluded here for the reason every other package
+    // excludes them: membership is a NAMING CONVENTION, and the `include` globs
+    // above match both infixes. This package owns no infixed file today, which
+    // is exactly what made the gap latent — it bites the first person who does
+    // the right thing and renames a slow test, because the rename alone would
+    // leave the file running in the unit tier under a 5s budget. Declaring no
+    // `check:integration`/`check:scenario` script is deliberate and separate:
+    // vitest fails a run matching nothing, which beats a green no-op.
+    exclude: ["**/*.integration.test.ts", "**/*.scenario.test.ts", "node_modules", "dist"],
     coverage: {
       exclude: [...sharedCoverageExclude, "scaffold/**"],
       // This package had NO floors at all — the only one in the repo — while

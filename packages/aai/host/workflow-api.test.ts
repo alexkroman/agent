@@ -11,95 +11,20 @@
  * The engine is `ctx.workflows` unchanged, so the double here is a plain
  * `WorkflowClient` — which is the assertion this file makes by construction: a
  * route that needed more than a client would not compile.
+ *
+ * The harness lives in `workflow-api-test-utils.ts`, shared with
+ * `workflow-api-sync.test.ts` (the `?wait=` mode, split out at the 700-line
+ * test cap).
  */
 
-import http from "node:http";
-import type { AddressInfo } from "node:net";
+import type http from "node:http";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { omitUndefined } from "../sdk/omit-undefined.ts";
-import { requestPath } from "../sdk/request-url.ts";
-import type { WorkflowClient } from "../sdk/workflow.ts";
-import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
-import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
+import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "../sdk/workflow-unavailable.ts";
+import { makeLogger } from "./_test-utils.ts";
 import { WorkflowRequestError } from "./_workflow-request-error.ts";
 import { createWorkflowApi, MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api.ts";
+import { chunkStream, fakeClient, type Harness, run, serve } from "./workflow-api-test-utils.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
-
-const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-
-function run(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {
-  return {
-    runId: "wrun_1",
-    workflow: "digest",
-    createdAt: 1_700_000_000_000,
-    status: "running",
-    ...over,
-  } as WorkflowRunSnapshot;
-}
-
-/**
- * A `ctx.workflows` whose every method is a spy, so a route's call is visible.
- *
- * The `rejectingWorkflows` base is load-bearing rather than tidy: this used to be
- * a literal cast with `as WorkflowClient`, and a cast keeps compiling when the
- * client GAINS a method — leaving it `undefined` here, so the route exercising it
- * fails on a `TypeError` that names nothing, or (worse) no test reaches it at all
- * and the route ships uncovered.
- */
-function fakeClient(over: Partial<WorkflowClient> = {}): WorkflowClient {
-  return {
-    ...rejectingWorkflows("not stubbed in this test"),
-    start: vi.fn(async () => "wrun_1"),
-    get: vi.fn(async () => run()),
-    find: vi.fn(async () => [run({ key: "caller-1" })]),
-    recent: vi.fn(async () => [run()]),
-    cancel: vi.fn(async () => true),
-    wakeUp: vi.fn(async () => 1),
-    stream: vi.fn(async () => chunkStream([{ step: 1 }, "halfway"])),
-    streamTail: vi.fn(async () => 1),
-    listing: vi.fn(() => [{ name: "digest", description: "Research a topic" }]),
-    ...over,
-  };
-}
-
-/** A run's written stream, as `ctx.workflows.stream` resolves one. */
-function chunkStream(chunks: readonly unknown[]): ReadableStream<unknown> {
-  return new ReadableStream<unknown>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(chunk);
-      controller.close();
-    },
-  });
-}
-
-type Harness = {
-  url: string;
-  close: () => Promise<void>;
-};
-
-/** Mount the API on a real loopback server, so the tests speak HTTP. */
-async function serve(opts: {
-  engine: () => WorkflowClient | undefined;
-  token?: string;
-  uploads?: UploadStore;
-}): Promise<Harness> {
-  const api = createWorkflowApi({
-    engine: opts.engine,
-    ...omitUndefined({ token: opts.token, uploads: opts.uploads }),
-    logger,
-  });
-  const server = http.createServer((req, res) => {
-    const url = requestPath(req.url);
-    if (api(req, res, url, req.method ?? "GET")) return;
-    res.writeHead(404).end();
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as AddressInfo;
-  return {
-    url: `http://127.0.0.1:${port}`,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  };
-}
 
 let harness: Harness | undefined;
 
@@ -113,7 +38,7 @@ afterEach(async () => {
 
 describe("routing", () => {
   test("does not claim a request outside the prefix", async () => {
-    const claimed = createWorkflowApi({ engine: () => fakeClient(), logger })(
+    const claimed = createWorkflowApi({ engine: () => fakeClient(), logger: makeLogger() })(
       {} as http.IncomingMessage,
       {} as http.ServerResponse,
       "/workflowsomething",
@@ -340,7 +265,10 @@ describe("POST /runs", () => {
     }).then((r) => r.text());
     expect(body).not.toContain("54399");
     expect(body).not.toContain("ECONNREFUSED");
-    expect(logger.error).toHaveBeenCalledWith("Workflow API request failed", {
+    // `harness.logger` is this server's own, not a module singleton: shared,
+    // the preceding test's identical `Workflow API request failed` call
+    // satisfied this on its own, so deleting the log line left it green.
+    expect(harness.logger.error).toHaveBeenCalledWith("Workflow API request failed", {
       error: "connect ECONNREFUSED 127.0.0.1:54399",
     });
   });
@@ -583,115 +511,9 @@ describe("failure handling", () => {
     const res = await fetch(`${harness.url}/workflows/runs/wrun_1`);
     expect(res.status).toBe(500);
     await expect(res.json()).resolves.toEqual({ error: "Internal server error" });
-    expect(logger.error).toHaveBeenCalledWith(
+    expect(harness.logger.error).toHaveBeenCalledWith(
       "Workflow API request failed",
       expect.objectContaining({ error: "boom" }),
     );
-  });
-});
-
-/**
- * The synchronous mode.
- *
- * The property under test is the one a caller branches on: a wait that PRODUCED
- * a finished run is a 200, and a wait that ran out is a 202 carrying the run id
- * — never an error, and never a cancel. `workflow-api-wait.test.ts` owns the
- * loop itself; these assert what the routes do with its answer.
- */
-describe("wait", () => {
-  /** A `get` that answers `running` until the nth read, then `completed`. */
-  function settlesOnRead(nth: number) {
-    let reads = 0;
-    return vi.fn(async () => {
-      reads += 1;
-      return reads >= nth ? run({ status: "completed", output: 7 }) : run({ status: "running" });
-    });
-  }
-
-  test("POST answers 200 with the finished run", async () => {
-    const engine = fakeClient({ start: vi.fn(async () => "wrun_9"), get: settlesOnRead(2) });
-    harness = await serve({ engine: () => engine });
-
-    const res = await fetch(`${harness.url}/workflows/runs`, {
-      method: "POST",
-      body: JSON.stringify({ workflow: "digest", wait: 5000 }),
-    });
-
-    expect(res.status).toBe(200);
-    // `run` rides ALONGSIDE `runId`, so a caller that only reads the id behaves
-    // the same whether or not it asked to wait.
-    expect(await res.json()).toEqual({
-      runId: "wrun_9",
-      run: expect.objectContaining({ status: "completed", output: 7 }),
-    });
-  });
-
-  test("POST with no wait still answers 202 and the id alone", async () => {
-    const get = vi.fn(async () => run({ status: "running" }));
-    harness = await serve({ engine: () => fakeClient({ get }) });
-
-    const res = await fetch(`${harness.url}/workflows/runs`, {
-      method: "POST",
-      body: JSON.stringify({ workflow: "digest" }),
-    });
-
-    expect(res.status).toBe(202);
-    expect(await res.json()).toEqual({ runId: "wrun_1" });
-    // The asynchronous path must not read the run at all — that read is what
-    // waiting IS, and paying for it unasked would make every start slower.
-    expect(get).not.toHaveBeenCalled();
-  });
-
-  test("a wait that runs out is a 202 carrying the running run, not an error", async () => {
-    const engine = fakeClient({
-      start: vi.fn(async () => "wrun_9"),
-      get: vi.fn(async () => run({ status: "running" })),
-    });
-    harness = await serve({ engine: () => engine });
-
-    const res = await fetch(`${harness.url}/workflows/runs`, {
-      method: "POST",
-      body: JSON.stringify({ workflow: "digest", wait: 1 }),
-    });
-
-    expect(res.status).toBe(202);
-    expect(await res.json()).toMatchObject({ runId: "wrun_9", run: { status: "running" } });
-    // The run is real and the caller holds its id; nothing was cancelled.
-    expect(engine.cancel).not.toHaveBeenCalled();
-  });
-
-  test("GET ?wait= holds the read open until the run settles", async () => {
-    const get = settlesOnRead(3);
-    harness = await serve({ engine: () => fakeClient({ get }) });
-
-    const res = await fetch(`${harness.url}/workflows/runs/wrun_1?wait=5000`);
-
-    expect(res.status).toBe(200);
-    // The BODY is a snapshot either way, so waiting is invisible to a parser.
-    expect(await res.json()).toMatchObject({ status: "completed" });
-    expect(get.mock.calls.length).toBeGreaterThan(1);
-  });
-
-  test("GET with no wait reads once", async () => {
-    const get = vi.fn(async () => run({ status: "running" }));
-    harness = await serve({ engine: () => fakeClient({ get }) });
-
-    const res = await fetch(`${harness.url}/workflows/runs/wrun_1`);
-
-    expect(res.status).toBe(200);
-    expect(get).toHaveBeenCalledTimes(1);
-  });
-
-  test("a waited read of an unknown run 404s without spending the budget", async () => {
-    // A run the agent does not know will not start being known.
-    const get = vi.fn(async () => undefined);
-    harness = await serve({ engine: () => fakeClient({ get }) });
-
-    const started = Date.now();
-    const res = await fetch(`${harness.url}/workflows/runs/wrun_gone?wait=30000`);
-
-    expect(res.status).toBe(404);
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(Date.now() - started).toBeLessThan(5000);
   });
 });

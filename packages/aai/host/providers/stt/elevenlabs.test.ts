@@ -2,6 +2,10 @@
 /** Unit test for the ElevenLabs Scribe STT adapter (mocked SDK). */
 
 import { describe, expect, test, vi } from "vitest";
+import {
+  ELEVENLABS_DEFAULT_MODEL,
+  type ElevenLabsOptions,
+} from "../../../sdk/providers/stt/elevenlabs.ts";
 import { flush } from "../../_test-utils.ts";
 import { openElevenLabs } from "./elevenlabs.ts";
 
@@ -11,6 +15,13 @@ interface FakeConnection {
   close(): void;
   _fire(ev: string, data: unknown): void;
   sentAudio: string[];
+  /**
+   * What the adapter DIALLED. The mock used to drop this on the floor, which
+   * left `AUDIO_FORMATS` — a hand-written six-entry rate → enum table —
+   * covered by nothing: a wrong entry declares the wrong rate to the service
+   * and produces garbled transcription with no error anywhere.
+   */
+  connectOpts: Record<string, unknown>;
 }
 
 const captured: { connections: FakeConnection[] } = { connections: [] };
@@ -19,10 +30,11 @@ vi.mock("@elevenlabs/elevenlabs-js", () => ({
   ElevenLabsClient: class {
     speechToText = {
       realtime: {
-        connect: async (_opts: unknown): Promise<FakeConnection> => {
+        connect: async (connectOpts: Record<string, unknown>): Promise<FakeConnection> => {
           const listeners = new Map<string, (data: unknown) => void>();
           const conn: FakeConnection = {
             sentAudio: [],
+            connectOpts,
             on(ev, fn) {
               listeners.set(ev, fn);
             },
@@ -63,9 +75,9 @@ vi.mock("@elevenlabs/elevenlabs-js/wrapper/realtime", () => ({
   },
 }));
 
-async function openSession(sampleRate = 16_000) {
+async function openSession(sampleRate = 16_000, opts: ElevenLabsOptions = {}) {
   captured.connections.length = 0;
-  const opener = openElevenLabs({});
+  const opener = openElevenLabs(opts);
   const controller = new AbortController();
   const session = await opener.open({
     sampleRate,
@@ -83,8 +95,9 @@ describe("ElevenLabs Scribe STT adapter", () => {
   });
 
   test("throws stt_auth_failed when API key is missing", async () => {
-    vi.stubEnv("ELEVENLABS_API_KEY", undefined);
-
+    // No `vi.stubEnv` scrub here: `requireApiKey` reads the key it is HANDED
+    // and never `process.env`, so scrubbing the shell var proved nothing and
+    // read as if a fallback existed. `host-env.test.ts` owns that property.
     const opener = openElevenLabs({});
     const controller = new AbortController();
     await expect(
@@ -175,6 +188,43 @@ describe("ElevenLabs Scribe STT adapter", () => {
 
     await flush();
     expect(finals).toEqual([]);
+  });
+
+  test.each([
+    [8000, "pcm_8000"],
+    [16_000, "pcm_16000"],
+    [22_050, "pcm_22050"],
+    [24_000, "pcm_24000"],
+    [44_100, "pcm_44100"],
+    [48_000, "pcm_48000"],
+  ])("dials %i Hz as %s", async (sampleRate, audioFormat) => {
+    // AUDIO_FORMATS is hand-written and the rate is declared TWICE on the
+    // connect (the enum and the numeric field): a mismatched pair is the
+    // chipmunk/garbled-transcript failure that surfaces no error at all.
+    const { session, fake } = await openSession(sampleRate);
+    expect(fake.connectOpts).toMatchObject({ audioFormat, sampleRate });
+    await session.close();
+  });
+
+  test("dials the default model, VAD commit, and no language unless set", async () => {
+    const { session, fake } = await openSession();
+    expect(fake.connectOpts).toMatchObject({
+      modelId: ELEVENLABS_DEFAULT_MODEL,
+      commitStrategy: "vad",
+    });
+    // Absent means auto-detect, which is NOT "English" — a host-side default
+    // would silently disable multilingual transcription for every agent.
+    expect(fake.connectOpts).not.toHaveProperty("languageCode");
+    await session.close();
+  });
+
+  test("forwards the descriptor's model and languageCode when set", async () => {
+    const { session, fake } = await openSession(16_000, {
+      model: "scribe_v1",
+      languageCode: "es",
+    });
+    expect(fake.connectOpts).toMatchObject({ modelId: "scribe_v1", languageCode: "es" });
+    await session.close();
   });
 
   test("rejects unsupported sample rate at open time", async () => {

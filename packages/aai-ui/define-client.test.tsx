@@ -35,6 +35,7 @@ vi.mock("./session-core.ts", () => {
   };
 });
 
+import { flushEffects } from "./_react-test-utils.ts";
 import { type ToolDisplayConfig, useToolConfig } from "./components/tool-config-context.ts";
 import { client } from "./define-client.tsx";
 import { createSessionCore } from "./session-core.ts";
@@ -51,6 +52,13 @@ describe("client", () => {
   afterEach(() => {
     document.body.textContent = "";
     vi.clearAllMocks();
+    // `unstubAllGlobals` is outside `restoreMocks`/`unstubEnvs`, so it needs an
+    // explicit undo — and it belongs HERE. Four specs used to call it as the
+    // last statement of their body, which is teardown that does not run on
+    // failure: a failed assertion mid-test leaked its `fetch` stub into the
+    // next one, which then stubbed `location` on top of it. Every other file in
+    // the package already does it this way.
+    vi.unstubAllGlobals();
   });
 
   it("throws when target selector does not match", () => {
@@ -141,7 +149,6 @@ describe("client", () => {
     const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
     await vi.waitFor(() => expect(container.textContent).toContain("Server Name"));
     handle.dispose();
-    vi.unstubAllGlobals();
   });
 
   it("stays on the chat shell when the lookup fails", async () => {
@@ -150,11 +157,22 @@ describe("client", () => {
     });
     vi.stubGlobal("fetch", fetchSpy);
     const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
+
+    // `waitFor(fetchSpy called)` settles INSIDE the effect, before the
+    // rejection is handled — so on its own this asserted the shell's optimistic
+    // first frame, which renders whether a lookup happens or not. The degrade
+    // resolves to `{}` and commits it, so flushing to that commit is the gate.
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    await flushEffects();
     expect(container.textContent).toContain("Start Conversation");
-    expect(container.textContent).not.toContain("HTTP turns");
+    // A failed lookup contributes no title — `StartScreen` renders one only
+    // when it has one — which is what "degrades to the empty default" means
+    // here, as against the sibling above where the server names the agent.
+    // (The line this replaced asserted `not.toContain("HTTP turns")`, a string
+    // that has appeared nowhere in `packages/` since text-only mode was
+    // removed, so it could not fail.)
+    expect(container.querySelector("h1")).toBeNull();
     handle.dispose();
-    vi.unstubAllGlobals();
   });
 
   it("does not look up client-config at all when the caller named the agent", async () => {
@@ -167,7 +185,6 @@ describe("client", () => {
     await vi.waitFor(() => expect(container.textContent).toContain("Test"));
     expect(fetchSpy).not.toHaveBeenCalled();
     handle.dispose();
-    vi.unstubAllGlobals();
   });
 
   it("derives platformUrl from location.href when not provided", () => {
@@ -182,7 +199,6 @@ describe("client", () => {
       expect.objectContaining({ platformUrl: "https://example.com/agent/" }),
     );
     handle.dispose();
-    vi.unstubAllGlobals();
   });
 
   /**

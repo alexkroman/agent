@@ -3,7 +3,8 @@
 // stalled turn can be attributed at all, so what matters is that the marks
 // distinguish the causes — not the exact numbers.
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, type vi } from "vitest";
+import { makeLogger } from "../_test-utils.ts";
 import { createTurnTrace } from "./pipeline-llm-trace.ts";
 
 /** A logger that records `info` calls, plus a clock the test drives. */
@@ -12,16 +13,16 @@ function setup(adopted = false): {
   trace: ReturnType<typeof createTurnTrace>;
   advance(ms: number): void;
 } {
-  const info = vi.fn();
+  const log = makeLogger();
   let t = 1000;
   const trace = createTurnTrace({
-    log: { info, debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    log,
     sid: "s1",
     adopted,
     now: () => t,
   });
   return {
-    info,
+    info: log.info,
     trace,
     advance(ms) {
       t += ms;

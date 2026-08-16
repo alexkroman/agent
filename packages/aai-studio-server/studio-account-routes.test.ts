@@ -3,49 +3,33 @@
 // config, key onboarding, the `aai login` device link, and how sessions and
 // raw keys resolve to one studio scope.
 
-import { createDevAuth } from "aai-server/supabase-auth";
-import { authFetch, type TestFetch } from "aai-server/test-utils";
+import { authFetch } from "aai-server/test-utils";
 import { describe, expect, test } from "vitest";
+import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
+import { createProject } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
 
-function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
-  return authFetch(fetch, "/studio/projects", { body: { name }, key });
-}
-
 describe("browser sessions", () => {
-  /** A dev token the way the login screen mints it (see aai-server dev auth). */
-  const token = (email: string) =>
-    `dev.${Buffer.from(JSON.stringify({ id: `dev:${email}`, email }))
-      .toString("base64url")
-      .replace(/=+$/, "")}.dev`;
-
-  const withAuth = () => createTestCombined({ auth: createDevAuth() });
-
   test("GET /studio/auth reports the login mode — 'none' when unconfigured", async () => {
     const plain = await createTestCombined();
     expect(await (await plain.fetch("/studio/auth")).json()).toEqual({ mode: "none" });
-    const { fetch } = await withAuth();
+    const { fetch } = await withDevAuth();
     expect(await (await fetch("/studio/auth")).json()).toEqual({ mode: "dev" });
   });
 
   test("account routes: no key on file until the onboarding PUT stores one", async () => {
-    const { fetch } = await withAuth();
-    const bearer = token("a@b.c");
+    const { fetch } = await withDevAuth();
+    const bearer = devToken("a@b.c");
     const before = await authFetch(fetch, "/studio/account", { method: "GET", key: bearer });
     expect(await before.json()).toEqual({ email: "a@b.c", hasKey: false });
 
-    const put = await authFetch(fetch, "/studio/account/key", {
-      method: "PUT",
-      key: bearer,
-      body: { apiKey: "users-own-key" },
-    });
-    expect(put.status).toBe(200);
+    expect((await onboardKey(fetch, bearer)).status).toBe(200);
     const after = await authFetch(fetch, "/studio/account", { method: "GET", key: bearer });
     expect(await after.json()).toEqual({ email: "a@b.c", hasKey: true });
   });
 
   test("account routes reject raw API keys and invalid sessions", async () => {
-    const { fetch } = await withAuth();
+    const { fetch } = await withDevAuth();
     expect(
       (await authFetch(fetch, "/studio/account", { method: "GET", key: "raw-key" })).status,
     ).toBe(401);
@@ -55,27 +39,19 @@ describe("browser sessions", () => {
   });
 
   test("a session token that looks like a JWT is rejected on key onboarding", async () => {
-    const { fetch } = await withAuth();
-    const res = await authFetch(fetch, "/studio/account/key", {
-      method: "PUT",
-      key: token("a@b.c"),
-      body: { apiKey: "looks.like.jwt" },
-    });
+    const { fetch } = await withDevAuth();
+    const res = await onboardKey(fetch, devToken("a@b.c"), "looks.like.jwt");
     expect(res.status).toBe(400);
   });
 
   test("project routes resolve the session to the stored key; 401 before onboarding", async () => {
-    const { fetch } = await withAuth();
-    const bearer = token("a@b.c");
+    const { fetch } = await withDevAuth();
+    const bearer = devToken("a@b.c");
     // Before the key is stored: project routes refuse the session.
     const early = await authFetch(fetch, "/studio/projects", { method: "GET", key: bearer });
     expect(early.status).toBe(401);
 
-    await authFetch(fetch, "/studio/account/key", {
-      method: "PUT",
-      key: bearer,
-      body: { apiKey: "users-own-key" },
-    });
+    await onboardKey(fetch, bearer);
     await createProject(fetch, "mine", bearer);
     const listed = (await (
       await authFetch(fetch, "/studio/projects", { method: "GET", key: bearer })

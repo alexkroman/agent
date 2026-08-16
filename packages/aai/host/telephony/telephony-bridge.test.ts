@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "../_mock-ws.ts";
-import type { Logger } from "../runtime-config.ts";
+import { makeLogger } from "../_test-utils.ts";
 import type { SessionRuntime } from "../server.ts";
 import { telnyxCodec, twilioCodec } from "./carriers.ts";
 import { mulawToPcm16, pcm16ToMulaw, TELEPHONY_SAMPLE_RATE } from "./mulaw.ts";
@@ -12,10 +12,6 @@ const SESSION_RATE = 16_000;
 const TTS_RATE = 24_000;
 /** One carrier frame: 20 ms of 8 kHz μ-law. */
 const FRAME_SAMPLES = TELEPHONY_SAMPLE_RATE / 50;
-
-function silentLogger(): Logger {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-}
 
 function configFrame(sampleRate = SESSION_RATE, ttsSampleRate = TTS_RATE): string {
   return JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate, ttsSampleRate });
@@ -29,11 +25,17 @@ function mulawPayload(samples: number, frequency = 440): string {
   return Buffer.from(pcm16ToMulaw(pcm)).toString("base64");
 }
 
-/** A bridge over an already-open mock carrier socket, plus the frames it receives. */
+/**
+ * A bridge over an already-open mock carrier socket, plus the frames it receives.
+ *
+ * The logger is `makeLogger()`, NOT the shared `silentLogger` this file used to
+ * shadow by name: that one is plain no-ops precisely so it cannot be asserted
+ * on, and these specs DO assert on theirs (the two `logger.warn` checks below).
+ */
 function setup(carrier = twilioCodec) {
   const socket = new MockWebSocket("ws://carrier.test/phone");
   socket.open();
-  const logger = silentLogger();
+  const logger = makeLogger();
   const bridge = createTelephonyBridge(socket, { carrier, logger });
   const inbound: unknown[] = [];
   bridge.addEventListener("message", (event: { data: unknown }) => inbound.push(event.data));
@@ -182,7 +184,7 @@ describe("createTelephonyBridge", () => {
   test("replays frames that arrived before a listener was attached", () => {
     const socket = new MockWebSocket("ws://carrier.test/phone");
     socket.open();
-    const bridge = createTelephonyBridge(socket, { carrier: twilioCodec, logger: silentLogger() });
+    const bridge = createTelephonyBridge(socket, { carrier: twilioCodec, logger: makeLogger() });
     // A start landing here would otherwise cost the greeting — the opening of
     // every call — to event-loop ordering.
     socket.msg(JSON.stringify({ event: "start", streamSid: "MZ0", start: {} }));
@@ -279,7 +281,7 @@ describe("startTelephonySession", () => {
     const startSession = vi.fn();
     const runtime: SessionRuntime = { startSession, shutdown: () => Promise.resolve() };
 
-    startTelephonySession(socket, runtime, { carrier: twilioCodec, logger: silentLogger() });
+    startTelephonySession(socket, runtime, { carrier: twilioCodec, logger: makeLogger() });
 
     expect(startSession).toHaveBeenCalledTimes(1);
     expect(startSession.mock.calls[0]?.[1]).toEqual({

@@ -147,8 +147,10 @@ describe("agents-row change stream drives sandbox invalidation", () => {
 
   it("a replacement that fails to boot retires the old resident — the failure stays visible", async () => {
     const deps = await seedAgent("bad-redeploy");
-    const first = await resolveSandbox("bad-redeploy", deps);
+    const first = (await resolveSandbox("bad-redeploy", deps)) as Sandbox;
     expect(first).not.toBeNull();
+    const drain = vi.spyOn(first, "drain");
+    const shutdown = vi.spyOn(first, "shutdown");
 
     // The NEW deploy crashes on boot. Blue-green must not cut over to a
     // corpse, and must not keep serving superseded code silently either:
@@ -160,6 +162,15 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     await vi.waitFor(() => {
       expect(deps.slots.get("bad-redeploy")?.sandbox).toBeUndefined();
     });
+    // RETIRED, not killed. An empty slot on its own says nothing about how the
+    // old guest went — a straight `shutdown()` empties it identically — and
+    // cutting a guest that is serving live calls because SOMEONE ELSE's boot
+    // crashed is the failure this branch exists to avoid. Same claim, same
+    // shape, as the success-path handover below.
+    await vi.waitFor(() => {
+      expect(drain).toHaveBeenCalledWith(expect.any(Number));
+    });
+    expect(shutdown).not.toHaveBeenCalled();
     deps.unwatch();
   });
 

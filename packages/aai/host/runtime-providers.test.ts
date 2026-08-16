@@ -11,13 +11,10 @@
  * injected into it.
  */
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import type { AgentDef } from "../sdk/types.ts";
+import { makeLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
-
-function makeLogger() {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-}
 
 describe("createRuntime provider resolution", () => {
   /**

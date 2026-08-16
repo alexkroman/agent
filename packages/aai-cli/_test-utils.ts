@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { vi } from "vitest";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
+import { errorCode } from "./_utils.ts";
 
 /** Create a temp directory, run `fn`, then clean up. */
 export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -12,7 +13,10 @@ export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<v
   try {
     await fn(dir);
   } finally {
-    await fs.rm(dir, { recursive: true });
+    // `force` so a cleanup ENOENT (a test that removed the dir itself) cannot
+    // replace the real assertion error with a filesystem one from the
+    // `finally`.
+    await fs.rm(dir, { recursive: true, force: true });
   }
 }
 
@@ -47,11 +51,36 @@ export function silenced<T>(fn: (dir: string) => Promise<T>) {
  * Symlink this package's node_modules into a fixture project so the worker
  * wrapper's `@alexkroman1/aai/manifest` import (and any fixture import of
  * `zod`) resolves — a real project always has the SDK installed.
+ *
+ * The `"dir"` type argument is a no-op on POSIX and the only correct value on
+ * Windows, where a symlink's kind is fixed at creation. An EEXIST is ignored
+ * (a caller may link twice into the same fixture); anything else is a real
+ * failure and is rethrown, since the alternative is a module-resolution error
+ * several layers away from its cause.
  */
 export async function linkSdkNodeModules(dir: string): Promise<void> {
   await fs
-    .symlink(path.resolve(import.meta.dirname, "node_modules"), path.join(dir, "node_modules"))
-    .catch(() => undefined);
+    .symlink(
+      path.resolve(import.meta.dirname, "node_modules"),
+      path.join(dir, "node_modules"),
+      "dir",
+    )
+    .catch((err: unknown) => {
+      if (errorCode(err) !== "EEXIST") throw err;
+    });
+}
+
+/**
+ * Symlink the REPO ROOT's node_modules instead — where pnpm hoists the
+ * workspace's TypeScript, which this package's own tree does not carry. Only
+ * the typecheck gate's fixtures need it.
+ */
+export async function linkRootNodeModules(dir: string): Promise<void> {
+  await fs.symlink(
+    path.resolve(import.meta.dirname, "../../node_modules"),
+    path.join(dir, "node_modules"),
+    "dir",
+  );
 }
 
 /** Write a map of relative path → content under `rootDir`, creating directories. */

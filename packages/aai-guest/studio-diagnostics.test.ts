@@ -51,14 +51,16 @@ describe("annotateDiagnostics", () => {
     expect(await annotateDiagnostics(err, async () => [])).not.toContain("Exports of");
   });
 
-  test("covers every code the starter evals actually produced", async () => {
-    // Regression lock on the measured failure set: if a code loses its hint,
-    // the repair loop it caused comes back.
-    for (const code of ["TS7053", "TS2538", "TS2339", "TS2345", "TS7006", "TS2304", "TS2880"]) {
+  // Regression lock on the measured failure set: if a code loses its hint, the
+  // repair loop it caused comes back. `test.each` rather than a loop so the
+  // reporter names the code that regressed and the other six still run.
+  test.each(["TS7053", "TS2538", "TS2339", "TS2345", "TS7006", "TS2304", "TS2880"])(
+    "%s — a code the starter evals produced — carries a hint",
+    async (code) => {
       const out = await annotateDiagnostics(`agent.ts(1,1): error ${code}: whatever.`);
-      expect(out, `${code} should carry a hint`).toContain("Hints:");
-    }
-  });
+      expect(out).toContain("Hints:");
+    },
+  );
 });
 
 describe("batched failures", () => {

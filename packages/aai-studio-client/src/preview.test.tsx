@@ -5,22 +5,44 @@
 // (keyed by version), the failed-build banner, and the production
 // fallback for projects published before auto previews existed.
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse } from "./_test-utils.ts";
-import { PreviewPane } from "./preview.tsx";
+import {
+  PROBE_FAILURES_BEFORE_WAKE,
+  PROBE_RETRY_MS,
+  PROBE_SLOW_AFTER,
+  PROBE_SLOW_RETRY_MS,
+  PreviewPane,
+} from "./preview.tsx";
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
-/** Mirror the poll constants in preview.tsx. */
-const PROBE_RETRY_MS = 3000;
-const PROBE_SLOW_AFTER = 10;
-const PROBE_SLOW_RETRY_MS = 30_000;
 const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * How many probes the pane issues in `ms` of poll time against a slug that
+ * never answers — the cadence, replayed from the source's own constants.
+ *
+ * Derived rather than written down because the bound below is only worth
+ * anything if it moves with the cadence: the constants used to be MIRRORED
+ * here, so halving the source's retry interval would have silently loosened
+ * the very assertion that exists to catch it.
+ */
+function expectedProbes(ms: number): number {
+  let at = 0;
+  let failures = 0;
+  let probes = 0;
+  while (at <= ms) {
+    probes += 1;
+    failures += 1;
+    at += failures < PROBE_SLOW_AFTER ? PROBE_RETRY_MS : PROBE_SLOW_RETRY_MS;
+  }
+  return probes;
+}
 
 /**
  * Answer the platform's agent health route (`GET /:slug/health`) — what the
@@ -251,8 +273,8 @@ describe("PreviewPane: reporting a missing preview", () => {
 
   test("reports the preview missing after a few failed probes", async () => {
     const onPreviewMissing = vi.fn(() => Promise.resolve());
-    // Three failures at the fast cadence — the first probe is immediate.
-    await pollFor(PROBE_RETRY_MS * 2, onPreviewMissing);
+    // The first probe is immediate, so the third failure lands two intervals in.
+    await pollFor(PROBE_RETRY_MS * (PROBE_FAILURES_BEFORE_WAKE - 1), onPreviewMissing);
     expect(onPreviewMissing).toHaveBeenCalledTimes(1);
   });
 
@@ -284,15 +306,24 @@ describe("PreviewPane: reporting a missing preview", () => {
   test("the probe backs off, so a stuck preview is not 20 requests a minute", async () => {
     // The fast cadence exists for a deploy landing in the next few seconds;
     // past that it buys nothing. An hour at 3s is ~1200 requests.
-    const fetchMock = await pollFor(HOUR_MS);
-    const fast = PROBE_SLOW_AFTER;
-    const slow = (HOUR_MS - PROBE_RETRY_MS * PROBE_SLOW_AFTER) / PROBE_SLOW_RETRY_MS;
-    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(fast + slow + 1);
+    //
+    // EXACT, not an upper bound. Both assertions here used to cap the count and
+    // neither floored it, so the failure the module's own docblock names — a
+    // loop that ENDS, leaving the pane on "Starting your preview" forever —
+    // yielded one call and satisfied them both. It is driven with a reporter
+    // for the same reason: `report()` runs inside the loop, and a loop that
+    // dies right after it is the shape the sibling floor below cannot see.
+    const onPreviewMissing = vi.fn(() => Promise.resolve());
+    const fetchMock = await pollFor(HOUR_MS, onPreviewMissing);
+    expect(fetchMock.mock.calls.length).toBe(expectedProbes(HOUR_MS));
+    // …and the point of the two speeds: an order of magnitude under the flat
+    // fast cadence, which is what produced 1,061 probes in 50 minutes.
     expect(fetchMock.mock.calls.length).toBeLessThan(HOUR_MS / PROBE_RETRY_MS / 5);
+    expect(onPreviewMissing).toHaveBeenCalledTimes(1);
   });
 
   test("still polls with no reporter — an unopened project has nothing to wake", async () => {
     const fetchMock = await pollFor(PROBE_RETRY_MS * 3);
-    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    expect(fetchMock.mock.calls.length).toBe(expectedProbes(PROBE_RETRY_MS * 3));
   });
 });

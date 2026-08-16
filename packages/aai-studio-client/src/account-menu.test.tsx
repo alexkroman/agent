@@ -4,26 +4,21 @@
 // account's stored AssemblyAI key. Write-only — the browser never reads the
 // key back, so the panel shows `hasKey` and nothing else about it.
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, stubFetch } from "./_test-utils.ts";
+import { button, input, jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
 import { AccountMenu } from "./account-menu.tsx";
 
 function renderMenu(open: boolean, onClose = vi.fn()) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const result = render(
-    <QueryClientProvider client={client}>
-      <AccountMenu open={open} bearer="session-token" onClose={onClose} />
-    </QueryClientProvider>,
+  const result = renderWithClient(
+    <AccountMenu open={open} bearer="session-token" onClose={onClose} />,
   );
-  return { ...result, onClose, client };
+  return { ...result, onClose };
 }
 
 const ACCOUNT = () => jsonResponse({ email: "a@b.c", hasKey: true });
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -49,7 +44,7 @@ describe("AccountMenu", () => {
       "PUT /studio/account/key": () => jsonResponse({ ok: true }),
     });
     renderMenu(true);
-    const field = screen.getByLabelText("New AssemblyAI API key") as HTMLInputElement;
+    const field = input("New AssemblyAI API key");
     // Write-only: the stored key is never fetched, only its existence.
     expect(field.value).toBe("");
     expect(field.getAttribute("type")).toBe("password");
@@ -84,8 +79,7 @@ describe("AccountMenu", () => {
   test("an empty field cannot be submitted", () => {
     stubFetch({ "/studio/account": ACCOUNT });
     renderMenu(true);
-    const button = screen.getByRole("button", { name: "Update key" }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(button("Update key").disabled).toBe(true);
   });
 
   test("a rejected key stays on screen as an error", async () => {

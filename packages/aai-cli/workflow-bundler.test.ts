@@ -16,31 +16,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
-import { withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
 import { buildWorkflows } from "./workflow-bundler.ts";
 
 /**
- * Symlink this package's node_modules into the fixture, the way `_build.test.ts`
- * does — it is what makes `workflow` and `@alexkroman1/aai` resolvable there.
+ * A minimal project with one workflow body and two steps.
  *
- * Not incidental scaffolding for the WDK half: it is marked EXTERNAL in both
- * bundles, but esbuild still resolves an external import to decide it is a
- * package rather than a relative path, and the discovery pass reads the module
- * to check it for directives. A project without it installed fails the build —
- * correctly, which is why a scaffolded project declares it.
+ * `linkSdkNodeModules` is not incidental scaffolding for the WDK half: the
+ * `workflow` package is marked EXTERNAL in both bundles, but esbuild still
+ * resolves an external import to decide it is a package rather than a relative
+ * path, and the discovery pass reads the module to check it for directives. A
+ * project without it installed fails the build — correctly, which is why a
+ * scaffolded project declares it.
  */
-async function linkNodeModules(dir: string): Promise<void> {
-  await fs.symlink(
-    path.resolve(import.meta.dirname, "node_modules"),
-    path.join(dir, "node_modules"),
-    "dir",
-  );
-}
-
-/** A minimal project with one workflow body and two steps. */
 async function writeProject(dir: string): Promise<void> {
-  await linkNodeModules(dir);
+  await linkSdkNodeModules(dir);
   await fs.mkdir(path.join(dir, "workflows"), { recursive: true });
   await fs.writeFile(
     path.join(dir, "workflows", "greet.ts"),
@@ -97,7 +88,7 @@ describe("buildWorkflows", () => {
     timeout: 60_000,
   }, async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.mkdir(path.join(dir, "workflows"), { recursive: true });
       // The real case rather than a stand-in: `@alexkroman1/aai/tools` reaches
       // `host/ssrf.ts`, which imports **undici** — CJS, requiring `node:assert`
@@ -236,7 +227,7 @@ describe("the worker bundle carries the workflow artifacts", () => {
 
   test("omits the exports entirely for a project with no workflows", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(
         path.join(dir, "agent.ts"),
         `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "T" });\n`,

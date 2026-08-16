@@ -226,16 +226,20 @@ function surfaceOf(over: Partial<WorkflowSurface> = {}): WorkflowSurface {
 }
 
 describe("handleWorkflowRequest", () => {
-  test("declines every request when the agent declares no workflows", async () => {
-    // Mounting routes that answer 500 would be worse than not mounting them:
-    // the queue retries a 5xx, so it would retry forever.
-    for (const surface of [undefined, null]) {
+  // Mounting routes that answer 500 would be worse than not mounting them:
+  // the queue retries a 5xx, so it would retry forever.
+  test.each([
+    ["undefined", undefined],
+    ["null", null],
+  ])(
+    "declines every request when the agent declares no workflows (%s)",
+    async (_label, surface) => {
       const s = await serving(surface);
       const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST" });
       expect(res.status).toBe(404);
       await s.close();
-    }
-  });
+    },
+  );
 
   test("routes POST /flow to the flow handler and writes its response back", async () => {
     const surface = surfaceOf();
@@ -315,7 +319,9 @@ describe("handleWorkflowRequest", () => {
     // These run off a node request event, so an unhandled rejection would kill
     // the process mid-run. A 5xx is also what makes the world retry.
     const errors: unknown[] = [];
-    const spy = vi.spyOn(console, "error").mockImplementation((...a) => errors.push(a));
+    // No `mockRestore()` below: `restoreMocks` in `vitest.shared.ts` restores
+    // every `vi.spyOn` before each test, so the call was dead code.
+    vi.spyOn(console, "error").mockImplementation((...a) => errors.push(a));
     const s = await serving(
       surfaceOf({
         flow: async () => {
@@ -326,7 +332,6 @@ describe("handleWorkflowRequest", () => {
     const res = await fetch(`${s.url}${WORKFLOW_FLOW_PATH}`, { method: "POST" });
     expect(res.status).toBe(500);
     expect(errors.length).toBeGreaterThan(0);
-    spy.mockRestore();
     await s.close();
   });
 });

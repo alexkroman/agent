@@ -3,12 +3,11 @@
 // Top bar wiring: brand → home, the project name label, and the Publish
 // menu states.
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
+import { button } from "./_test-utils.ts";
 import { agentUrl } from "./platform-origin.ts";
 import { PublishMenu, TopBar } from "./top-bar.tsx";
-
-afterEach(cleanup);
 
 const noop = (): void => undefined;
 
@@ -70,23 +69,20 @@ describe("TopBar", () => {
     // Settings must never gate on a build or a deploy — the pane holds the
     // Delete project button, which has to work before anything is published.
     render(<TopBar {...barProps} hasBuild={false} />);
-    const publish = screen.getByRole("button", { name: "Publish" });
-    const settings = screen.getByRole("button", { name: "Settings" });
-    expect((publish as HTMLButtonElement).disabled).toBe(true);
-    expect((settings as HTMLButtonElement).disabled).toBe(false);
+    expect(button("Publish").disabled).toBe(true);
+    expect(button("Settings").disabled).toBe(false);
   });
 
   test("Publish locks while a chat turn streams, even with a build", () => {
     render(<TopBar {...barProps} chatBusy={true} />);
-    const publish = screen.getByRole("button", { name: "Publish" });
-    expect((publish as HTMLButtonElement).disabled).toBe(true);
+    const publish = button("Publish");
+    expect(publish.disabled).toBe(true);
     expect(publish.getAttribute("title")).toContain("finishes its turn");
   });
 
   test("Publish unlocks once the turn settles", () => {
     render(<TopBar {...barProps} chatBusy={false} />);
-    const publish = screen.getByRole("button", { name: "Publish" });
-    expect((publish as HTMLButtonElement).disabled).toBe(false);
+    expect(button("Publish").disabled).toBe(false);
   });
 
   test("Publish reads as a closed toggle by default", () => {
@@ -205,15 +201,14 @@ describe("PublishMenu", () => {
 
   test("busy shows progress and disables the button", () => {
     render(<PublishMenu {...menuProps} open={true} busy={true} />);
-    const button = screen.getByRole("button", { name: "Publishing…" });
-    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button("Publishing…").disabled).toBe(true);
   });
 
   test("a streaming chat turn disables Publish inside an already-open menu", () => {
     render(<PublishMenu {...menuProps} open={true} chatBusy={true} />);
-    const button = screen.getByRole("button", { name: "Publish" });
-    expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(button.getAttribute("title")).toContain("finishes its turn");
+    const publish = button("Publish");
+    expect(publish.disabled).toBe(true);
+    expect(publish.getAttribute("title")).toContain("finishes its turn");
   });
 
   test("an error renders as CLI output and suppresses the live link", () => {
@@ -229,9 +224,12 @@ describe("PublishMenu", () => {
       <PublishMenu {...menuProps} open={true} output="deployed" deployedSlug="my-agent" />,
     );
     expect(screen.getByRole("link").getAttribute("href")).toBe(agentUrl("my-agent"));
+    // `querySelector("details")` is already typed HTMLDetailsElement | null by
+    // the tag map, so `.open` needs no cast — only the null check the cast
+    // was standing in for.
     const details = container.querySelector("details");
     expect(details).not.toBeNull();
-    expect((details as HTMLDetailsElement).open).toBe(false);
+    expect(details?.open).toBe(false);
     expect(details?.textContent).toContain("deployed");
   });
 

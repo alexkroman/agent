@@ -40,9 +40,15 @@ describe("SSRF: redirect status boundaries", () => {
       const fetchFn = vi.fn(
         async () => new Response(null, { status, headers: { Location: "http://127.0.0.1/admin" } }),
       );
+      // The message names the branch that must have raised it. `"Blocked"`
+      // alone is shared by every failure mode in the module, DNS included —
+      // see the chain-validation specs below for what that hid.
       await expect(ssrfSafeFetch("https://93.184.216.34/", {}, fakeFetch(fetchFn))).rejects.toThrow(
-        "Blocked",
+        "Blocked request to private address: 127.0.0.1",
       );
+      // Screened BEFORE the hop is requested, so the private target is never
+      // fetched: one call, and it is the start URL.
+      expect(fetchFn).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -57,36 +63,58 @@ describe("SSRF: redirect status boundaries", () => {
 // ── Redirect Chain Validation ──────────────────────────────────────────
 
 describe("SSRF: redirect chain validation", () => {
+  // ── Why these two start from an IP LITERAL, and assert a call count ──
+  //
+  // They used to start from `https://public.example.com/`, which is NXDOMAIN.
+  // `ssrfSafeFetch` resolves the INITIAL url before it ever calls `fetchFn`,
+  // and a resolution failure is wrapped in the same `Blocked request: …`
+  // error the redirect guard raises — so `rejects.toThrow("Blocked")` was
+  // satisfied by the DNS lookup, with **zero** fetch calls made and the
+  // redirect guard never reached. Deleting the re-screen from `ssrfSafeFetch`
+  // left both green, i.e. the two threats this module exists for were covered
+  // by nothing.
+  //
+  // Three things keep that from coming back: a public IP literal (no DNS at
+  // all, so the only reachable rejection is the redirect screen), a message
+  // assertion naming the branch rather than the shared `"Blocked"` prefix,
+  // and a call count — the guard runs BEFORE the hop is requested, so exactly
+  // one fetch happens and it is the start URL.
+  const START = "https://93.184.216.34/";
+
   test("ssrfSafeFetch rejects redirect to private IP", async () => {
     const mockFetch = vi.fn(async (url: string) => {
-      if (url === "https://public.example.com/") {
-        return new Response("", {
+      if (url === START) {
+        return new Response(null, {
           status: 302,
           headers: { Location: "http://127.0.0.1/admin" },
         });
       }
-      return new Response("should not reach");
+      throw new Error(`redirect target must never be fetched: ${url}`);
     });
 
-    await expect(
-      ssrfSafeFetch("https://public.example.com/", {}, fakeFetch(mockFetch)),
-    ).rejects.toThrow("Blocked");
+    await expect(ssrfSafeFetch(START, {}, fakeFetch(mockFetch))).rejects.toThrow(
+      "Blocked request to private address: 127.0.0.1",
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledWith(START, expect.anything());
   });
 
   test("ssrfSafeFetch rejects redirect to cloud metadata", async () => {
     const mockFetch = vi.fn(async (url: string) => {
-      if (url === "https://public.example.com/") {
-        return new Response("", {
+      if (url === START) {
+        return new Response(null, {
           status: 301,
           headers: { Location: "http://169.254.169.254/latest/meta-data/" },
         });
       }
-      return new Response("should not reach");
+      throw new Error(`redirect target must never be fetched: ${url}`);
     });
 
-    await expect(
-      ssrfSafeFetch("https://public.example.com/", {}, fakeFetch(mockFetch)),
-    ).rejects.toThrow("Blocked");
+    await expect(ssrfSafeFetch(START, {}, fakeFetch(mockFetch))).rejects.toThrow(
+      "Blocked request to private address: 169.254.169.254",
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledWith(START, expect.anything());
   });
 
   test("ssrfSafeFetch enforces max redirect limit", async () => {
@@ -104,14 +132,17 @@ describe("SSRF: redirect chain validation", () => {
       ssrfSafeFetch("https://93.184.216.34/start", {}, fakeFetch(mockFetch)),
     ).rejects.toThrow("Too many redirects");
 
-    // MAX_REDIRECTS = 5, so at most 5 fetch calls
-    expect(callCount).toBeLessThanOrEqual(5);
+    // MAX_REDIRECTS = 5, and the contract is an EXACT count: the loop makes
+    // five requests and then gives up. `toBeLessThanOrEqual` also passed at 1,
+    // i.e. it could not tell "follows the chain five deep" from "refuses to
+    // follow at all" — the two behaviours this bound sits between.
+    expect(callCount).toBe(5);
   });
 
   test("ssrfSafeFetch re-validates each hop in redirect chain", async () => {
     let callCount = 0;
     // Use a public IP literal to avoid DNS lookups that cause timeouts
-    const mockFetch = vi.fn(async (_url: string) => {
+    const mockFetch = vi.fn(async (url: string) => {
       callCount++;
       if (callCount <= 2) {
         return new Response("", {
@@ -126,12 +157,14 @@ describe("SSRF: redirect chain validation", () => {
           headers: { Location: "http://192.168.1.1/" },
         });
       }
-      return new Response("should not reach");
+      throw new Error(`redirect target must never be fetched: ${url}`);
     });
 
     await expect(
       ssrfSafeFetch("https://93.184.216.34/start", {}, fakeFetch(mockFetch)),
-    ).rejects.toThrow("Blocked");
+    ).rejects.toThrow("Blocked request to private address: 192.168.1.1");
+    // Three hops requested; the fourth — the private one — never is.
+    expect(callCount).toBe(3);
   });
 
   test("strips credential headers on a cross-origin redirect", async () => {

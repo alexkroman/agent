@@ -16,6 +16,7 @@ import {
   mockResolveServerEnv,
   mockValidateAgentExport,
   primeDevServerMocks,
+  withViteMock,
 } from "./_dev-server-test-utils.ts";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -97,18 +98,22 @@ beforeEach(() => {
   chokidarState.ignored = undefined;
   chokidarState.watchedDir = undefined;
   chokidarState.close = vi.fn().mockResolvedValue(undefined);
-  mockChokidarWatch.mockClear();
   // File watching is opt-in since it defaults OFF (see devWatchEnabled) — these
   // suites exercise the watcher, so they turn it on. `unstubEnvs` in
   // vitest.shared.ts undoes this before each test; no manual cleanup.
   vi.stubEnv("AAI_DEV_WATCH", "1");
+  // Clears the shared mocks' CALL HISTORY as well as re-priming them — see the
+  // note on `primeDevServerMocks`. Without it every `toHaveBeenCalledWith` in
+  // this file could be satisfied by an earlier test's call.
   primeDevServerMocks();
   mockValidateAgentExport.mockImplementation(() => undefined);
 });
 
-// `restoreMocks` does not unstub env vars, and several tests here stub ones the
-// dev server reads (ASSEMBLYAI_API_KEY, AAI_DEV_HOST, AAI_ALLOW_HOST) — one
-// leaking forward would silently change what a later test exercises.
+// Several tests here stub env vars the dev server reads (ASSEMBLYAI_API_KEY,
+// AAI_DEV_HOST, AAI_ALLOW_HOST); `unstubEnvs` in vitest.shared.ts undoes each
+// one before the next test, so no test owns teardown for them. (This comment
+// used to warn that `restoreMocks` does not — true, and not the option that
+// governs env stubs.)
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -185,23 +190,25 @@ describe("startDevServer", () => {
       );
 
       // Mock vite (dynamically imported when client.tsx exists)
-      vi.doMock("vite", () => ({
-        createServer: vi.fn().mockResolvedValue({
-          close: vi.fn().mockResolvedValue(undefined),
-          listen: vi.fn().mockResolvedValue(undefined),
+      await withViteMock(
+        () => ({
+          createServer: vi.fn().mockResolvedValue({
+            close: vi.fn().mockResolvedValue(undefined),
+            listen: vi.fn().mockResolvedValue(undefined),
+          }),
         }),
-      }));
+        async () => {
+          // Fresh import to pick up the vite mock
+          const { startDevServer: freshStart } = await import("./_dev-server.ts");
+          const cleanup = await freshStart({ cwd: dir, port: 3000 });
 
-      // Fresh import to pick up the vite mock
-      const { startDevServer: freshStart } = await import("./_dev-server.ts");
-      const cleanup = await freshStart({ cwd: dir, port: 3000 });
+          // Second arg is the bind host: undefined here (AAI_DEV_HOST unset), so
+          // the server applies its loopback default.
+          expect(mockListen).toHaveBeenCalledWith(3001, undefined);
 
-      // Second arg is the bind host: undefined here (AAI_DEV_HOST unset), so
-      // the server applies its loopback default.
-      expect(mockListen).toHaveBeenCalledWith(3001, undefined);
-
-      await cleanup();
-      vi.doUnmock("vite");
+          await cleanup();
+        },
+      );
     });
   });
 
@@ -216,22 +223,23 @@ describe("startDevServer", () => {
       vi.mocked(existsSync).mockImplementation((p: import("node:fs").PathLike) =>
         String(p).endsWith("client.tsx"),
       );
-      vi.doMock("vite", () => ({
-        createServer: vi.fn().mockResolvedValue({
-          close: vi.fn().mockResolvedValue(undefined),
-          listen: vi.fn().mockRejectedValue(new Error("vite port taken")),
+      await withViteMock(
+        () => ({
+          createServer: vi.fn().mockResolvedValue({
+            close: vi.fn().mockResolvedValue(undefined),
+            listen: vi.fn().mockRejectedValue(new Error("vite port taken")),
+          }),
         }),
-      }));
+        async () => {
+          const { startDevServer: freshStart } = await import("./_dev-server.ts");
 
-      const { startDevServer: freshStart } = await import("./_dev-server.ts");
-      mockClose.mockClear();
+          await expect(freshStart({ cwd: dir, port: 3000 })).rejects.toThrow("vite port taken");
 
-      await expect(freshStart({ cwd: dir, port: 3000 })).rejects.toThrow("vite port taken");
-
-      expect(mockListen).toHaveBeenCalled();
-      expect(mockClose).toHaveBeenCalledTimes(1);
-      expect(chokidarState.close).toHaveBeenCalledTimes(1);
-      vi.doUnmock("vite");
+          expect(mockListen).toHaveBeenCalled();
+          expect(mockClose).toHaveBeenCalledTimes(1);
+          expect(chokidarState.close).toHaveBeenCalledTimes(1);
+        },
+      );
     });
   });
 
@@ -269,7 +277,6 @@ describe("startDevServer", () => {
       await writeAgentTs(dir);
       vi.stubEnv("ASSEMBLYAI_API_KEY", "shell-key");
       mockResolveServerEnv.mockResolvedValue({ OTHER_VAR: "value" });
-      mockEnsureApiKey.mockClear();
 
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
@@ -288,7 +295,6 @@ describe("startDevServer", () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
       mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "already-set" });
-      mockEnsureApiKey.mockClear();
 
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 

@@ -11,9 +11,18 @@
  *       browsers do not follow — that route never recovers).
  *  - R2 every attempt after the first `config` carries the resume id.
  *  - R3 a session the server retired for idleness is never re-dialed.
- *  - R4 the FIRST connection never replays history, and no later attempt
- *       replays it more than once (a duplicated replay doubles the agent's
- *       view of the conversation).
+ *  - R4 NO connection ever replays history — not the first, and not a
+ *       reconnect. The client used to push its own `messages` back on resume;
+ *       the server restores the conversation from its retained event stream
+ *       now (`session-core.ts`), so a `history` frame from here is a second
+ *       mechanism doing that job, with the client's the one that runs.
+ *
+ *       This used to read "and no later attempt replays it more than once",
+ *       which by then could not fail in either direction: `historyFrameCount`
+ *       is 0 for every socket in every run, so `> 1` was unreachable and the
+ *       invariant said nothing about the reconnects it names. Measured across
+ *       five runs of 60 — see `Reached`, which is also what keeps the scan from
+ *       going quiet again by having no reconnect to look at.
  *  - R5 the mirror of R1: an ANSWERED lookup naming no `sessionUrl` DOES latch
  *       ("a server is one or it isn't"), so no later attempt pays for another
  *       lookup — the whole point of the latch.
@@ -26,7 +35,7 @@
  */
 
 import fc from "fast-check";
-import { afterEach, beforeEach, describe, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installAudioMocks } from "./_react-test-utils.ts";
 import { MockWebSocket, makeConfig } from "./_session-core-test-utils.ts";
 import { createSessionCore } from "./session-core.ts";
@@ -109,6 +118,38 @@ const stepArb: fc.Arbitrary<ReconnectStep> = fc.oneof(
   { weight: 5, arbitrary: fc.record({ kind: fc.constant("advanceBackoff" as const) }) },
 );
 
+/**
+ * States the generator must actually reach, asserted as floors after the run.
+ *
+ * fast-check has no coverage-floor mechanism (`fc.statistics` only prints), and
+ * an all-green property proves nothing about a state the generator never
+ * entered — see "Property tests run on fast-check" in the root guide.
+ *
+ * They are load-bearing here because every check in this file is guarded by a
+ * precondition it cannot force: `checkResumeIdCarried` returns when no attempt
+ * ever carried a resume id, and `checkBrokerLatch` — which is R1 AND R5, the
+ * two invariants this harness exists for — has THREE early returns (a session
+ * the server retired, no new attempt, no socket). Any of them taken on every
+ * run leaves the latch untested while 60 runs report green. The floors below
+ * count the runs that reached each assertion, not the runs that skipped it.
+ */
+type Reached = {
+  /** Runs where R2 had a resumed attempt to check. */
+  resumeIdChecks: number;
+  /** Sockets past the first that R4 scanned — i.e. real reconnects. */
+  reconnectsScanned: number;
+  /** Runs where R1 reached its assertion: the broker answered again. */
+  brokerRedials: number;
+  /** Runs where R5 reached its assertion: a non-broker answer had latched. */
+  nonBrokerLatches: number;
+};
+const reached: Reached = {
+  resumeIdChecks: 0,
+  reconnectsScanned: 0,
+  brokerRedials: 0,
+  nonBrokerLatches: 0,
+};
+
 /** One run's mutable state. */
 type Run = {
   core: SessionCore;
@@ -172,17 +213,21 @@ function checkResumeIdCarried(run: Run): void {
   const urls = created.map((s) => s.url);
   const firstResumed = urls.findIndex((u) => u.includes("sessionId="));
   if (firstResumed === -1) return;
+  reached.resumeIdChecks += 1;
   for (const url of urls.slice(firstResumed)) {
     if (!url.includes("sessionId=sess-fuzz")) fail(run, `attempt lost the resume id: ${url}`);
   }
 }
 
-/** R4: history replay is a reconnect-only, once-per-connection frame. */
+/** R4: no connection replays history — the server owns the conversation. */
 function checkHistoryReplay(run: Run): void {
   for (const [index, socket] of created.entries()) {
     const replays = historyFrameCount(socket);
-    if (index === 0 && replays > 0) fail(run, "the first connection replayed history");
-    if (replays > 1) fail(run, `socket ${index} replayed history ${replays}x`);
+    if (replays > 0) fail(run, `socket ${index} replayed history ${replays}x`);
+    // Count the RECONNECTS scanned, not the replays: a replay is a violation,
+    // so a count of them could only ever floor at zero. What can silently go
+    // missing is the reconnect itself, leaving R4 a statement about one socket.
+    if (index > 0) reached.reconnectsScanned += 1;
   }
 }
 
@@ -199,8 +244,13 @@ async function checkBrokerLatch(run: Run): Promise<void> {
   created.at(-1)?.simulateClose(1006);
   await awaitNextAttempt(run, before);
   const attempt = created.at(-1);
+  // Three preconditions this check cannot force, each of which skips R1/R5
+  // silently: the server retired the session (R3 forbids a re-dial), no new
+  // attempt was constructed, or there is no socket at all. `reached` below is
+  // what stops all three being taken on every run without anyone noticing.
   if (run.retiredByServer || created.length === before || !attempt) return;
   if (latchedNonBroker) {
+    reached.nonBrokerLatches += 1;
     if (run.fetchLog.length !== lookupsBefore) {
       fail(run, "kept re-fetching client-config after a non-broker answer");
     }
@@ -209,6 +259,7 @@ async function checkBrokerLatch(run: Run): Promise<void> {
     }
     return;
   }
+  reached.brokerRedials += 1;
   if (!attempt.url.startsWith(SANDBOX_WS_PREFIX)) {
     fail(run, `a failed lookup latched away the broker: ${attempt.url}`);
   }
@@ -288,5 +339,20 @@ describe("fuzz: reconnect + broker resolution", () => {
       ),
       { numRuns: 60 },
     );
+
+    // Coverage floors — see `Reached`. Set well below the measured actuals
+    // noted alongside (five runs of 60), because what a random walk reaches
+    // varies run to run: these catch a precondition that stopped holding, not
+    // a count. Each names the invariant that goes unasserted when it drops.
+    expect(reached.resumeIdChecks, "R2: no attempt ever carried a resume id").toBeGreaterThan(7); // ~21-36
+    expect(reached.reconnectsScanned, "R4: no run ever reconnected").toBeGreaterThan(30); // ~91-148
+    expect(
+      reached.brokerRedials,
+      "R1: the broker never got to answer again — the re-broker path went unchecked",
+    ).toBeGreaterThan(9); // ~27-37
+    expect(
+      reached.nonBrokerLatches,
+      "R5: no run ever latched a non-broker answer — the latch went unchecked",
+    ).toBeGreaterThan(1); // ~4-9
   }, 120_000);
 });

@@ -102,12 +102,16 @@ describe("studioCsp", () => {
     expect(allowsOrigin(csp, "http://127.0.0.1:55251/studio/chat")).toBe(false);
   });
 
-  it("does not permit arbitrary third-party origins", () => {
-    for (const backend of ["modal", "subprocess"]) {
+  // `it.each`, not a `for…of`: the loop reported one failure for both
+  // backends and named neither, so a policy that leaked only under
+  // `subprocess` read as "does not permit arbitrary third-party origins".
+  it.each(["modal", "subprocess"])(
+    "does not permit arbitrary third-party origins under %s",
+    (backend) => {
       const csp = studioCsp({ SANDBOX_BACKEND: backend });
       expect(allowsOrigin(csp, "https://evil.example.com/studio/chat")).toBe(false);
-    }
-  });
+    },
+  );
 
   // The sign-in leg: supabase-js dials the project origin from the page (the
   // OAuth code/token exchange when the GitHub redirect lands), so a

@@ -110,13 +110,18 @@ test("storage disable deprovisions, deletes credentials, and reports disabled", 
   expect(await status.json()).toEqual({ enabled: false });
 });
 
-test("storage routes reject a non-owner key", async () => {
+// `test.each` rather than a loop over the verbs: the reporter names the method
+// that failed, where a loop reports one test and leaves which of the three it
+// was to the line number.
+test.each(["GET", "POST", "DELETE"])("storage %s rejects a non-owner key", async (method) => {
   const appDb = fakeAppDb();
   const { fetch } = await deployWithStorage({ appDb });
-  for (const method of ["GET", "POST", "DELETE"]) {
-    const res = await storageReq(fetch, method, "intruder-key");
-    expect(res.status).toBe(403);
-  }
+
+  const res = await storageReq(fetch, method, "intruder-key");
+
+  expect(res.status).toBe(403);
+  // Refused BEFORE the handler ran — a 403 that had already provisioned would
+  // be a leak rather than a rejection.
   expect(appDb.provision).not.toHaveBeenCalled();
 });
 

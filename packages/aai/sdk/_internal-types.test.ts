@@ -40,9 +40,55 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   };
   const schemas = agentToolsToSchemas(tools);
   expect(schemas.length).toBe(2);
-  expect(schemas[0]?.name).toBe("get_weather");
-  expect(schemas[0]?.description).toBe("Get weather");
+  // `name`/`description` are copied verbatim; `parameters` is the CONVERSION
+  // this function is named for, so it is the field worth pinning — including
+  // `$schema` being stripped, which some Realtime/S2S providers answer with
+  // `args: {}` rather than an error (see `toToolJsonSchema`).
+  expect(schemas[0]).toEqual({
+    type: "function",
+    name: "get_weather",
+    description: "Get weather",
+    parameters: {
+      type: "object",
+      properties: { city: { type: "string", description: "City" } },
+      required: ["city"],
+      additionalProperties: false,
+    },
+  });
+  expect(schemas[0]?.parameters).not.toHaveProperty("$schema");
   expect(schemas[1]?.name).toBe("set_alarm");
+  // The optional field is the one that must NOT be required.
+  expect(schemas[1]?.parameters).toMatchObject({ required: ["time"] });
+});
+
+test("agentToolsToSchemas - a tool with no inputSchema gets the empty object schema", () => {
+  // `EMPTY_PARAMS`, converted like any other schema. A provider handed a bare
+  // `{}` here rejects the tool spec, so the fallback has to be a real JSON
+  // Schema rather than an empty record.
+  const schemas = agentToolsToSchemas({
+    ping: { description: "Ping", execute: async () => undefined },
+  });
+  expect(schemas[0]?.parameters).toEqual({
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  });
+});
+
+test("agentToolsToSchemas - names the removed `parameters` field rather than shipping a no-arg tool", () => {
+  // TypeScript catches the rename for a typed agent; an untypechecked JS one
+  // would otherwise deploy a tool the model can only call with no arguments.
+  // Typed as the intersection rather than cast: the guard's whole subject is a
+  // def carrying the OLD field name, and a widening cast would also stop
+  // reporting if `ToolDef` itself changed shape.
+  const withOldField: ToolDef & { parameters: unknown } = {
+    description: "Get weather",
+    parameters: z.object({ city: z.string() }),
+    execute: async () => undefined,
+  };
+  expect(() => agentToolsToSchemas({ get_weather: withOldField })).toThrow(
+    /Tool "get_weather" uses the removed `parameters` field — rename it to `inputSchema`\./,
+  );
 });
 
 describe("AgentConfigSchema", () => {

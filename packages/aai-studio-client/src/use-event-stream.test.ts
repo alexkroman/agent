@@ -74,6 +74,34 @@ describe("useEventStream backoff", () => {
     expect(gaps(attempts).slice(0, 2)).toEqual([23_000, 23_000]);
   });
 
+  // The two cases that PIN `EVENTS_MIN_UPTIME_MS` (10s) rather than merely its
+  // sign. With only 0ms and 20s under test, lowering the constant to 1ms left
+  // both green while restoring exactly the storm above — a flat attempt every
+  // 3.0s forever. These sit either side of the boundary, so the threshold is
+  // pinned to (9_000, 10_000]. The durations are LITERAL on purpose: derived
+  // from the constant, they would move with it and pin nothing.
+  test("a stream dropped just under the uptime floor is a failure, not a reset", async () => {
+    const { attempts, unmount } = drive((h) => {
+      h.onOpen();
+      setTimeout(() => h.onDown("transport"), 9000);
+    });
+    await vi.advanceTimersByTimeAsync(90_000);
+    unmount();
+    // 9s up, then the backoff GROWS across cycles: 3s, 6s, 12s.
+    expect(gaps(attempts).slice(0, 3)).toEqual([12_000, 15_000, 21_000]);
+  });
+
+  test("a stream that lasted exactly the floor counts as one that served", async () => {
+    const { attempts, unmount } = drive((h) => {
+      h.onOpen();
+      setTimeout(() => h.onDown("transport"), 10_000);
+    });
+    await vi.advanceTimersByTimeAsync(90_000);
+    unmount();
+    // 10s up + the 3s floor, every cycle — no growth.
+    expect(gaps(attempts).slice(0, 2)).toEqual([13_000, 13_000]);
+  });
+
   test("an auth failure refreshes the bearer rather than retrying it", async () => {
     const onAuthFailure = vi.fn(async () => undefined);
     const subscribe = (handlers: StreamHandlers) => {

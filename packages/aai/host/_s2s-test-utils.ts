@@ -99,8 +99,16 @@ export function emitMessage(raw: WebSocketStub, payload: unknown): void {
   raw.emit("message", Buffer.from(JSON.stringify(payload)));
 }
 
+/**
+ * The NEWEST frame this socket was handed.
+ *
+ * It read `calls[0]` — the first — which is correct only while every caller
+ * sends exactly once, and reads at every one of its ~13 call sites as though it
+ * asked for the latest. The first spec to send twice would have asserted
+ * against the wrong frame with nothing to notice.
+ */
 export function lastSent(raw: WebSocketStub): Record<string, unknown> {
-  return JSON.parse(raw.send.mock.calls[0]?.[0] as string);
+  return JSON.parse(raw.send.mock.calls.at(-1)?.[0] as string);
 }
 
 export function errorArg(callbacks: S2sCallbacks): Error {

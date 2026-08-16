@@ -14,7 +14,6 @@ import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   chokidarState,
-  mockChokidarWatch,
   mockClose,
   mockCreateRuntime,
   mockCreateServer,
@@ -82,11 +81,14 @@ beforeEach(() => {
   chokidarState.ignored = undefined;
   chokidarState.watchedDir = undefined;
   chokidarState.close = vi.fn().mockResolvedValue(undefined);
-  mockChokidarWatch.mockClear();
   // File watching is opt-in since it defaults OFF (see devWatchEnabled) — these
   // suites exercise the watcher, so they turn it on. `unstubEnvs` in
   // vitest.shared.ts undoes this before each test; no manual cleanup.
   vi.stubEnv("AAI_DEV_WATCH", "1");
+  // Clears the shared mocks' CALL HISTORY as well as re-priming them — see the
+  // note on `primeDevServerMocks`. The mid-test `mockClear()`s below are a
+  // different job: they cut a test's BOOT phase off from the restart it is
+  // actually asserting on.
   primeDevServerMocks();
   mockValidateAgentExport.mockImplementation(() => undefined);
 });
@@ -133,13 +135,8 @@ describe("startDevServer watch wiring", () => {
       // fire no event at all, and the dev server would serve stale code until
       // the next save. (That the event is then QUEUED rather than raced is the
       // supervisor's invariant, specced in _dev-restart.test.ts.)
-      let releaseListen!: () => void;
-      mockListen.mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            releaseListen = resolve;
-          }),
-      );
+      const initialListen = Promise.withResolvers<void>();
+      mockListen.mockImplementationOnce(() => initialListen.promise);
 
       const startPromise = startDevServer({ cwd: dir, port: 3000 });
       // Reaching the initial listen runs a REAL bundler build, so the 1s
@@ -149,7 +146,7 @@ describe("startDevServer watch wiring", () => {
       await vi.waitFor(() => expect(mockListen).toHaveBeenCalled(), { timeout: 15_000 });
       expect(chokidarState.allCallback).toBeDefined();
 
-      releaseListen();
+      initialListen.resolve();
       await (await startPromise)();
     });
   });

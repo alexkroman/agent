@@ -13,6 +13,7 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { ToolInputSchema } from "../sdk/schema.ts";
 import { type WorkflowBody, type WorkflowDef, workflow } from "../sdk/workflow.ts";
+import { makeLogger } from "./_test-utils.ts";
 import { createWorkflowClient, type WdkAdapter, type WdkRunRecord } from "./workflow-client.ts";
 import { createMemoryKeyStore, type WorkflowKeyStore } from "./workflow-keys.ts";
 
@@ -39,10 +40,11 @@ const digest = workflow({
   run: body<{ topic: string }, { ok: true }>(DIGEST_ID),
 });
 
+/** The `createdAt` every fake run carries — asserted by both spellings WDK reports. */
+const CREATED_AT = Date.UTC(2026, 7, 12);
+
 /** A workflow with no schema, to pin that validation is skipped rather than failed. */
 const bare = workflow({ run: body("workflow//./workflows/bare//bareFlow") });
-
-const silentLogger = { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 function record(over: Partial<WdkRunRecord> = {}): WdkRunRecord {
   return {
@@ -80,6 +82,17 @@ function chunkStream(chunks: readonly unknown[]): ReadableStream<unknown> {
   });
 }
 
+/**
+ * A client and the collaborators it was built with.
+ *
+ * The logger is FRESH per call, not a module singleton: `restoreMocks`
+ * restores `vi.spyOn` mocks and touches neither the history nor the
+ * implementation of a plain `vi.fn()`, so a shared one accumulates calls
+ * across the whole file — and the two `toHaveBeenCalled` assertions below
+ * were then satisfied by a warning an EARLIER test logged. See the doc on
+ * `silentLogger` in `_test-utils.ts`, which is built from plain no-ops for
+ * exactly this reason and is not for asserting on.
+ */
 function makeClient(
   over: {
     workflows?: Record<string, WorkflowDef>;
@@ -90,14 +103,15 @@ function makeClient(
 ) {
   const wdk = makeAdapter(over.wdk);
   const keys = over.keys ?? createMemoryKeyStore();
+  const logger = makeLogger();
   const client = createWorkflowClient({
     workflows: over.workflows ?? { digest, bare },
     keys,
     wdk,
     publicUrl: over.publicUrl,
-    logger: silentLogger,
+    logger,
   });
-  return { client, wdk, keys };
+  return { client, wdk, keys, logger };
 }
 
 describe("starting a run", () => {
@@ -155,11 +169,14 @@ describe("starting a run", () => {
       }),
       lookup: vi.fn(async () => []),
     };
-    const { client } = makeClient({ keys });
+    const { client, logger } = makeClient({ keys });
     // The run is already created at this point. Throwing would tell the caller
     // nothing started while the work proceeds with no handle to it.
     await expect(client.start(digest, { topic: "otters" }, { key: "k" })).resolves.toBe("wrun_1");
-    expect(silentLogger.warn).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Workflow correlation key not recorded",
+      expect.objectContaining({ error: "index unavailable" }),
+    );
   });
 
   test("records no key when the caller passed none", async () => {
@@ -222,12 +239,12 @@ describe("reading a run", () => {
     expect(await client.get("wrun_missing")).toBeUndefined();
   });
 
-  test("createdAt is epoch ms whether WDK reports a Date or a number", async () => {
-    const at = Date.UTC(2026, 7, 12);
-    for (const createdAt of [new Date(at), at]) {
-      const { client } = makeClient({ wdk: { getRun: async () => record({ createdAt }) } });
-      expect((await client.get("wrun_1"))?.createdAt).toBe(at);
-    }
+  test.each([
+    ["a Date", new Date(CREATED_AT)],
+    ["epoch ms", CREATED_AT],
+  ])("createdAt is epoch ms when WDK reports %s", async (_label, createdAt) => {
+    const { client } = makeClient({ wdk: { getRun: async () => record({ createdAt }) } });
+    expect((await client.get("wrun_1"))?.createdAt).toBe(CREATED_AT);
   });
 });
 
@@ -468,10 +485,13 @@ describe("listing declared workflows", () => {
       run: body("workflow//./workflows/x//x"),
       input: unconvertibleInput,
     };
-    const { client } = makeClient({ workflows: { unconvertible } });
+    const { client, logger } = makeClient({ workflows: { unconvertible } });
     expect(() => client.listing()).not.toThrow();
     expect(client.listing()[0]?.inputSchema).toBeUndefined();
-    expect(silentLogger.warn).toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Workflow input schema could not be converted to JSON Schema",
+      expect.objectContaining({ workflow: "unconvertible" }),
+    );
   });
 });
 

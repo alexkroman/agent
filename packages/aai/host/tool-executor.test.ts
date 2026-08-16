@@ -109,17 +109,25 @@ describe("executeToolCall", () => {
   });
 
   test("times out tool that runs longer than TOOL_EXECUTION_TIMEOUT_MS", async () => {
+    // `try`/`finally` is load-bearing here and not the dead structure the root
+    // guide warns about: `restoreMocks` restores spies, and nothing in the
+    // config restores TIMERS. Bare, a failing assertion below skipped
+    // `useRealTimers()` and left the five cancellation specs after it running
+    // on a clock nothing advances. The sibling below already had it.
     vi.useFakeTimers();
-    const tool = makeTool({
-      execute: () =>
-        new Promise<never>(() => {
-          /* never resolves */
-        }),
-    });
-    const promise = run("slow", {}, tool);
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(await promise).toBe(JSON.stringify({ error: 'Tool "slow" timed out after 30000ms' }));
-    vi.useRealTimers();
+    try {
+      const tool = makeTool({
+        execute: () =>
+          new Promise<never>(() => {
+            /* never resolves */
+          }),
+      });
+      const promise = run("slow", {}, tool);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await promise).toBe(JSON.stringify({ error: 'Tool "slow" timed out after 30000ms' }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("ctx.send calls the send callback", async () => {

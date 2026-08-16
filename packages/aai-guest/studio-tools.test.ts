@@ -1,20 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
-import { runTool } from "./_test-utils.ts";
+import { describe, expect, test, vi } from "vitest";
+import { runTool, useTempDirs } from "./_test-utils.ts";
 import { createStudioAgent } from "./studio-agent.ts";
 import { createStudioTools, STUDIO_TOOL_LABELS, type StudioToolDeps } from "./studio-tools.ts";
 import { MUTATING_TOOLS } from "./studio-turn-settle.ts";
 import { materializeWorkspace, snapshotWorkspace } from "./studio-workspace-fs.ts";
 import { createPostWriteDiagnostics, type TypecheckFn } from "./studio-write-diagnostics.ts";
 
-const dirs: string[] = [];
-afterEach(async () => {
-  for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
-});
+const makeDir = useTempDirs("aai-studio-tools-");
 
 async function makeTools(
   files: Record<string, string>,
@@ -22,8 +18,7 @@ async function makeTools(
   typecheck: TypecheckFn = async () => ({ ok: true, skipped: false }),
   overrides: Partial<StudioToolDeps> = {},
 ): Promise<{ tools: ReturnType<typeof createStudioTools>; dir: string }> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "aai-studio-tools-"));
-  dirs.push(dir);
+  const dir = await makeDir();
   await materializeWorkspace(dir, files);
   const deps: StudioToolDeps = {
     dir,

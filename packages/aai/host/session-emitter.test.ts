@@ -59,9 +59,11 @@ describe("session emitter", () => {
 
   test("a send that throws does not stop the event being recorded or hooked", async () => {
     const seen: string[] = [];
-    const { emitter, stream, logger } = setup({
-      handlers: { "*": (e) => seen.push(e.type) },
-    });
+    // Only the stream and the logger: `setup`'s own emitter is never emitted
+    // through here, and building it WITH handlers made the `seen` assertion
+    // below readable as a claim about it — it is satisfied entirely by `boom`'s
+    // handler, which is the one under test.
+    const { stream, logger } = setup();
     const boom = createSessionEmitter({
       sessionId: SID,
       client: {
@@ -86,7 +88,6 @@ describe("session emitter", () => {
       "Session event not delivered",
       expect.objectContaining({ type: "speech.started" }),
     );
-    void emitter;
   });
 });
 

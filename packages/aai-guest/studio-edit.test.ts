@@ -144,12 +144,14 @@ describe("applyEdit", () => {
     // Myers is O(N·D): two mostly-different files at the workspace size cap
     // measure ~7s of synchronous main-thread time. The edit must still apply,
     // with the presentation diff bounded by its budget.
+    // The stall is prevented by the BUDGET, and `diff omitted` is the budget
+    // reporting that it declined the computation — so that assertion is the
+    // invariant. A wall-clock bound next to it measured the runner, and was
+    // the only thing here that could fail for a reason unrelated to the code.
     const n = 6400;
     const before = Array.from({ length: n }, (_, i) => `line ${i} ${"x".repeat(30)}`).join("\n");
     const after = Array.from({ length: n }, (_, i) => `LINE ${n - i} ${"y".repeat(30)}`).join("\n");
-    const start = Date.now();
     const result = applyEdit("f.ts", before, before, after);
-    expect(Date.now() - start).toBeLessThan(5000);
     expect(result.content).toBe(after);
     expect(result.diff).toContain("diff omitted");
   });

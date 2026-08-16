@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type ArgsDef, type CommandDef, runCommand as runCittyCommand } from "citty";
-import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { CliError, fail, ok } from "./_output.ts";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -20,6 +20,15 @@ vi.mock("./_ui.ts", () => ({ log: logMock, silenceOutput }));
 
 const { defineExec, findUnknownFlags, runCommand, setup, sharedArgs, unknownFlagsForArgv } =
   await import("./_cli-common.ts");
+
+// `logMock` and `silenceOutput` are module-level `vi.fn()`s, and
+// `restoreMocks: true` registers only `vi.spyOn` mocks — it clears none of
+// their call history. File-scope rather than inside one describe: an
+// `expect(logMock.error).toHaveBeenCalledWith(…)` in the `defineExec` block is
+// otherwise satisfiable by a `runCommand` case that logged the same sentence.
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("findUnknownFlags", () => {
   const argsDef = {
@@ -157,10 +166,6 @@ describe("runCommand", () => {
       if (typeof cb === "function") (cb as () => void)();
       return true;
     });
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
   });
 
   test("human mode: success runs the body without exiting", async () => {

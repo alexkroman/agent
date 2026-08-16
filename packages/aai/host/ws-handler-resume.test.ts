@@ -4,9 +4,10 @@
 // Split from ws-handler-lifecycle.test.ts for file length.
 
 import { describe, expect, test, vi } from "vitest";
+import { DEFAULT_SESSION_START_TIMEOUT_MS } from "../sdk/constants.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { makeMockCore, silentLogger, sleep } from "./_test-utils.ts";
+import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
 import { defaultConfig, openSocket } from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
@@ -139,51 +140,76 @@ describe("wireSessionSocket resume", () => {
   });
 
   test("start-timeout cleanup after close does not evict a resumed session", async () => {
-    const sessions = createOwnedMap<string, SessionCore>();
-    const stopGate = Promise.withResolvers<void>();
-    const oldCore = makeMockCore({
-      start: vi.fn(
-        () =>
-          new Promise<void>(() => {
-            /* never resolves */
-          }),
-      ),
-      stop: vi.fn(() => stopGate.promise),
-    });
-    const oldWs = openSocket();
+    // Virtual time, and the SHIPPED window. On the wall clock this had to
+    // shrink the start timeout to 30ms — a value the product never uses, and
+    // the same order as a scheduling hiccup, so the flake would name a timing
+    // spec rather than a bug. The two waits were also not synchronizing on
+    // anything: `sleep(60)` guessed at the timeout firing, and the closing
+    // `vi.waitFor` re-asserted an expression the line above had just asserted,
+    // so it passed on its first synchronous poll — BEFORE the settled stop's
+    // cleanup ran, which is the moment the whole spec is about. Both waits now
+    // observe the event they name: the timeout's own log line, and
+    // `onSessionEnd`, which the old connection's cleanup fires last.
+    vi.useFakeTimers();
+    try {
+      const sessions = createOwnedMap<string, SessionCore>();
+      const logger = makeLogger();
+      const onSessionEnd = vi.fn();
+      const stopGate = Promise.withResolvers<void>();
+      const oldCore = makeMockCore({
+        start: vi.fn(
+          () =>
+            new Promise<void>(() => {
+              /* never resolves */
+            }),
+        ),
+        stop: vi.fn(() => stopGate.promise),
+      });
+      const oldWs = openSocket();
 
-    wireSessionSocket(oldWs, {
-      sessions,
-      createSession: () => oldCore,
-      readyConfig: defaultConfig,
-      logger: silentLogger,
-      sessionStartTimeoutMs: 30,
-      resumeFrom: "timeout-race-id",
-    });
+      wireSessionSocket(oldWs, {
+        sessions,
+        createSession: () => oldCore,
+        readyConfig: defaultConfig,
+        logger,
+        onSessionEnd,
+        resumeFrom: "timeout-race-id",
+      });
 
-    // Close before the start timeout fires: endSession runs (pending on the
-    // slow stop) and the timeout's catch later sees session === null.
-    oldWs.close();
+      // Close before the start timeout fires: endSession runs (pending on the
+      // slow stop) and the timeout's catch later sees session === null.
+      oldWs.close();
 
-    const newCore = makeMockCore();
-    const newWs = openSocket();
-    wireSessionSocket(newWs, {
-      sessions,
-      createSession: () => newCore,
-      readyConfig: defaultConfig,
-      logger: silentLogger,
-      resumeFrom: "timeout-race-id",
-    });
-    expect(sessions.get("timeout-race-id")).toBe(newCore);
-
-    // Let the start timeout fire; its cleanup must not key-delete the
-    // resumed session's entry.
-    await sleep(60);
-    expect(sessions.get("timeout-race-id")).toBe(newCore);
-
-    stopGate.resolve();
-    await vi.waitFor(() => {
+      const newCore = makeMockCore();
+      const newWs = openSocket();
+      wireSessionSocket(newWs, {
+        sessions,
+        createSession: () => newCore,
+        readyConfig: defaultConfig,
+        logger: silentLogger,
+        resumeFrom: "timeout-race-id",
+      });
       expect(sessions.get("timeout-race-id")).toBe(newCore);
-    });
+
+      // Let the start timeout fire; its cleanup must not key-delete the
+      // resumed session's entry.
+      await vi.advanceTimersByTimeAsync(DEFAULT_SESSION_START_TIMEOUT_MS);
+      expect(logger.error).toHaveBeenCalledWith(
+        "Session start failed",
+        expect.objectContaining({ error: expect.stringContaining("timed out") }),
+      );
+      expect(sessions.get("timeout-race-id")).toBe(newCore);
+
+      // And neither may the OLD stop settling afterwards. `onSessionEnd` runs
+      // in the same `finally` as the entry release, so it is the signal that
+      // the cleanup under test has actually happened.
+      stopGate.resolve();
+      await vi.waitFor(() => {
+        expect(onSessionEnd).toHaveBeenCalledWith("timeout-race-id", expect.anything());
+      });
+      expect(sessions.get("timeout-race-id")).toBe(newCore);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

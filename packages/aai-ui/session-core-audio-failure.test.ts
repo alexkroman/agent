@@ -10,12 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  findWorkletNode,
-  g,
-  installAudioMocks,
-  type MockAudioWorkletNode,
-} from "./_react-test-utils.ts";
+import { crashWorklet, findWorkletNode, g, installAudioMocks } from "./_react-test-utils.ts";
 import {
   type MockWebSocket,
   makeConfig,
@@ -110,11 +105,13 @@ describe("audio bring-up failures", () => {
       expect(core.getSnapshot().recording).toBe(true);
     });
 
-    const capture = findWorkletNode(
-      audio.workletNodes(),
-      "capture-processor",
-    ) as MockAudioWorkletNode & { onprocessorerror?: () => void };
-    capture.onprocessorerror?.();
+    // `crashWorklet` rather than a local cast plus `?.()`: the cast lives at
+    // one seam in `_react-test-utils.ts` (the escape-hatch ratchet counts every
+    // copy), and it calls the handler UNCONDITIONALLY — so a build that stopped
+    // installing one is a TypeError naming this line, where the optional call
+    // was a silent no-op that left every assertion below passing on the
+    // pre-crash snapshot.
+    crashWorklet(findWorkletNode(audio.workletNodes(), "capture-processor"));
 
     const snap = core.getSnapshot();
     expect(snap.state).toBe("error");

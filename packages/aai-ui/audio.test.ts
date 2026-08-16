@@ -202,18 +202,6 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
-  test("done resolves on the worklet's stop message", async () => {
-    const io = await createVoiceIO(voiceOpts());
-    io.enqueue(new Int16Array([1, 2, 3]).buffer);
-    const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
-
-    const resolved = vi.fn();
-    void io.done().then(resolved);
-    drainStop(playNode);
-    await vi.waitFor(() => expect(resolved).toHaveBeenCalled());
-    await io.close();
-  });
-
   test("reports a turn's concealment stats to the caller", async () => {
     const seen: PlaybackStats[] = [];
     const io = await createVoiceIO(voiceOpts({ onPlaybackStats: (s) => seen.push(s) }));
@@ -405,6 +393,9 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
+  // Subsumes a "done resolves on the worklet's stop message" duplicate that
+  // used to sit up in the flush block: same settle, asserted through a spy
+  // instead of the promise, and without the posted-`done` check below.
   test("done() resolves when the playback worklet reports stop", async () => {
     const io = await createVoiceIO(voiceOpts());
     io.enqueue(new ArrayBuffer(2));
@@ -486,6 +477,9 @@ describe("createVoiceIO", () => {
     // getUserMedia succeeds and hands out real tracks, but worklet
     // registration fails: init must still stop every track (no orphaned
     // "recording" indicator in the browser chrome) and close the context.
+    //
+    // Subsumes a "cleans up on worklet load error" duplicate that re-declared
+    // the same failing-`addModule` subclass to assert only the context close.
     const tracks = [
       {
         stopped: false,
@@ -559,19 +553,5 @@ describe("createVoiceIO", () => {
     await expect(closing).resolves.toBeUndefined();
     expect(onMicData).toHaveBeenCalledWith(tail);
     expect(audio.lastContext().closed).toBe(true);
-  });
-
-  test("cleans up on worklet load error", async () => {
-    let _lastContext!: MockAudioContext;
-    g.AudioContext = class extends MockAudioContext {
-      constructor(opts?: { sampleRate?: number }) {
-        super(opts);
-        _lastContext = this;
-        this.audioWorklet.addModule = () => Promise.reject(new Error("fail"));
-      }
-    };
-
-    await expect(createVoiceIO(voiceOpts())).rejects.toThrow("fail");
-    expect(_lastContext?.closed).toBe(true);
   });
 });

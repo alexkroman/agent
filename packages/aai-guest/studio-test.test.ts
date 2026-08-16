@@ -1,17 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { writeFile } from "node:fs/promises";
-import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import { materialize } from "./_test-utils.ts";
 import { withBuildDir } from "./studio-build.ts";
 import { formatTestRun, runWorkspaceTests } from "./studio-test.ts";
-
-/** Materialize a files record into the scratch dir. */
-async function materialize(dir: string, files: Record<string, string>): Promise<void> {
-  for (const [rel, content] of Object.entries(files)) {
-    await writeFile(path.join(dir, rel), content, "utf-8");
-  }
-}
 
 describe("runWorkspaceTests", () => {
   test("skips a workspace with no test files", async () => {

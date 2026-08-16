@@ -67,11 +67,46 @@ const SOCKET_OPS = ["open", "close", "error_close"] as const;
 /** Snapshot collection cap (`MAX_MESSAGES`/`MAX_CUSTOM_EVENTS` in the core). */
 const SNAPSHOT_CAP = 200;
 
+/**
+ * States the generator must actually reach, asserted as floors after the run.
+ *
+ * fast-check has no coverage-floor mechanism (`fc.statistics` only prints), and
+ * an all-green property proves nothing about a state the generator never
+ * entered — see "Property tests run on fast-check" in the root guide.
+ *
+ * Every frame here is a no-op when `ctx.socket()` is null, and every invariant
+ * in `checkInvariants` is a conditional over a snapshot that may be empty: a
+ * run whose socket never opened satisfies all six of them and reports green.
+ * These count the states that make the invariants say something.
+ *
+ * A SETTLED tool call deliberately gets no floor. Reaching one needs a
+ * `tool_call` and a matching `tool_call_done` to survive to the same snapshot,
+ * which a random 24-step walk over twenty frame kinds effectively never
+ * produces (measured: 0-5 across five runs of 200, zero in two of them) — the
+ * same shape as the archive path in `studio-concurrency-fuzz.test.ts`, and a
+ * floor cannot fix it. Exactly-once tool-call delivery has a property of its
+ * own next door in `fuzz-hooks.test.ts`, which drives the collections directly
+ * and floors them.
+ */
+type Reached = {
+  /** Steps applied against a live socket — the only ones that reach the core. */
+  liveFrames: number;
+  /** Snapshots carrying a committed message, so the ordering scan has input. */
+  orderedMessages: number;
+  /** Snapshots in the fatal-error state, which the teardown check branches on. */
+  fatalStates: number;
+};
+const reached: Reached = { liveFrames: 0, orderedMessages: 0, fatalStates: 0 };
+
 let toolIdSeq = 0;
 
 function serverOp(ctx: Ctx, op: (typeof SERVER_OPS)[number]): void {
   const ws = ctx.socket();
+  // No socket means every server frame below is a no-op. Legitimate — the
+  // script may not have started the session yet — but taken on every step it
+  // would leave the whole core unexercised, so `reached.liveFrames` floors it.
   if (!ws) return;
+  reached.liveFrames += 1;
   const send = (obj: unknown) => {
     ws.simulateMessage(JSON.stringify(obj));
   };
@@ -297,6 +332,8 @@ function checkInvariants(snap: SessionSnapshot, prev: SessionSnapshot, log: stri
     throw new Error(`${why}\nops:\n  ${log.join("\n  ")}\nsnapshot: ${JSON.stringify(snap)}`);
   };
   if (snap.contentVersion < prev.contentVersion) fail("contentVersion went backwards");
+  if (snap.messages.length > 0) reached.orderedMessages += 1;
+  if (snap.state === "error") reached.fatalStates += 1;
   checkOrdering(snap, fail);
   if (snap.customEvents.length > SNAPSHOT_CAP) fail("customEvents grew past the cap");
   if (snap.messages.length > SNAPSHOT_CAP) fail("messages grew past the cap");
@@ -396,5 +433,25 @@ describe("fuzz: session-core interleavings", () => {
       }),
       { numRuns: 200 },
     );
+
+    // Coverage floors — see `Reached`. Set well below the measured actuals
+    // noted alongside (fifteen runs of 200), because what a random walk reaches
+    // varies run to run: these catch a generator that stopped reaching a state,
+    // not a count. `orderedMessages` is the volatile one — a committed message
+    // needs a live socket AND a `user_transcript`/`reply_done` frame after it —
+    // so its range is recorded in full and its floor sits under the low tail
+    // rather than under the mean. A first draft at 10 tripped on a run of 10.
+    expect(
+      reached.liveFrames,
+      "no server frame ever reached a live socket — the whole core went unexercised",
+    ).toBeGreaterThan(130); // ~405-513
+    expect(
+      reached.orderedMessages,
+      "no snapshot ever held a message — the ordering scan had nothing to scan",
+    ).toBeGreaterThan(3); // ~10-65
+    expect(
+      reached.fatalStates,
+      "no run ever reached the error state — the fatal branch of the teardown check went untaken",
+    ).toBeGreaterThan(15); // ~49-104
   }, 120_000);
 });

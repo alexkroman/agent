@@ -24,9 +24,9 @@ import { DEFAULT_GAME_STATE, gameSlot, MAX_HISTORY, REPORTED_HISTORY } from "./s
 const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
   runTool(agentDef, name, args, ctx);
 
-/** Each context is one session — `createToolContext` mints a distinct id per
- *  call, which is what makes two playthroughs independent by construction. */
-const makeCtx = (sessionId?: string) => createToolContext(sessionId ? { sessionId } : {});
+/** Each context owns its OWN slot store, which is what makes two playthroughs
+ *  independent by construction. */
+const makeCtx = () => createToolContext();
 
 // ─── The frozen-vs-draft contract ────────────────────────────────────────────
 //
@@ -178,10 +178,15 @@ describe("the adventure's tools", () => {
   });
 });
 
-describe("the game is per session", () => {
+describe("the game is per context", () => {
   test("a second playthrough starts empty and cannot see the first", async () => {
-    const one = makeCtx("session-a");
-    const two = makeCtx("session-b");
+    // What this really checks: the state lives in the SLOT and not in a
+    // module-level variable. `createToolContext()` hands each call its own
+    // detached slot store, so the isolation is per CONTEXT — two distinct
+    // session ids would prove nothing extra, and `sessionSlot` could stop
+    // keying by session with this still passing.
+    const one = makeCtx();
+    const two = makeCtx();
 
     await run("game_state_take", { value: "lantern" }, one);
     await run("game_state_move", { value: "Echo Chamber" }, one);

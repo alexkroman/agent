@@ -125,11 +125,23 @@ describe("the agent declares its workflow", () => {
   });
 });
 
-/** The options `request_research` starts its run with. */
-function workflowsStartOptions(): unknown {
+/**
+ * The options `request_research` starts its run with.
+ *
+ * AWAITED rather than `void`-ed. Reading a mock's call list off a floating
+ * promise worked only because the tool body happens to reach `start` before its
+ * first `await`; anything async landing ahead of that would have made this
+ * return `undefined` and the reader throw a `TypeError` instead of failing on
+ * the option it is about — and the dropped promise is an unhandled rejection
+ * either way.
+ *
+ * The return type is inferred from the mock, so `notify` arrives typed and the
+ * caller needs no cast.
+ */
+async function workflowsStartOptions() {
   const workflows = stubWorkflows();
   const ctx = createToolContext({ workflows });
-  void run("request_research", { topic: "otters" }, ctx);
+  await run("request_research", { topic: "otters" }, ctx);
   return vi.mocked(workflows.start).mock.calls[0]?.[2];
 }
 
@@ -150,13 +162,14 @@ describe("request_research", () => {
     expect(result).toMatchObject({ started: true, runId: "wrun_stub", topic: "otters" });
   });
 
-  test("asks to be TOLD when the run lands, rather than waiting to be asked", () => {
+  test("asks to be TOLD when the run lands, rather than waiting to be asked", async () => {
     // The gap this closes: the agent promised an update, the run finished, and
     // nothing made it speak — so the caller had to think to ask again. A voice
     // agent that starts durable work and never announces it is the shape to
     // avoid, and one option is the whole fix.
-    const notify = (workflowsStartOptions() as { notify?: unknown }).notify;
-    expect(typeof notify).toBe("string");
+    const options = await workflowsStartOptions();
+    expect(options, "request_research started no run").toBeDefined();
+    expect(typeof options?.notify).toBe("string");
   });
 
   test("passes the definition rather than its name", async () => {

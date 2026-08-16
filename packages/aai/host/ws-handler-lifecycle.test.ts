@@ -5,6 +5,7 @@
 // in ws-handler.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
+import { DEFAULT_SESSION_START_TIMEOUT_MS } from "../sdk/constants.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
@@ -391,39 +392,46 @@ describe("wireSessionSocket lifecycle", () => {
     // Fresh, not the shared `silentLogger`: its call history accumulates
     // across the file, so an identical call from an earlier test would
     // satisfy the assertion below on its own.
-    const logger = makeLogger();
-    const core = makeMockCore({
-      start: vi.fn(
-        () =>
-          new Promise<void>(() => {
-            /* never resolves */
-          }),
-      ),
-    });
-    const ws = openSocket();
-    const sessions = createOwnedMap<string, SessionCore>();
+    //
+    // Virtual time, and the SHIPPED default window rather than a 50ms one.
+    // Waiting out a real 50ms made the effect under test the same size as a
+    // scheduling hiccup, and left the 10s value the product actually uses
+    // exercised by nothing.
+    vi.useFakeTimers();
+    try {
+      const logger = makeLogger();
+      const core = makeMockCore({
+        start: vi.fn(
+          () =>
+            new Promise<void>(() => {
+              /* never resolves */
+            }),
+        ),
+      });
+      const ws = openSocket();
+      const sessions = createOwnedMap<string, SessionCore>();
 
-    wireSessionSocket(ws, {
-      sessions,
-      createSession: () => core,
-      readyConfig: defaultConfig,
-      logger,
-      sessionStartTimeoutMs: 50,
-    });
+      wireSessionSocket(ws, {
+        sessions,
+        createSession: () => core,
+        readyConfig: defaultConfig,
+        logger,
+      });
 
-    expect(sessions.size).toBe(1);
+      expect(sessions.size).toBe(1);
 
-    await vi.waitFor(
-      () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_SESSION_START_TIMEOUT_MS);
+      await vi.waitFor(() => {
         expect(sessions.size).toBe(0);
-      },
-      { timeout: 500 },
-    );
+      });
 
-    expect(logger.error).toHaveBeenCalledWith(
-      "Session start failed",
-      expect.objectContaining({ error: expect.stringContaining("timed out") }),
-    );
+      expect(logger.error).toHaveBeenCalledWith(
+        "Session start failed",
+        expect.objectContaining({ error: expect.stringContaining("timed out") }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("waits for open event when readyState is not OPEN", () => {

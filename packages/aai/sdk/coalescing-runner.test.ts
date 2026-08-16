@@ -2,21 +2,15 @@
 
 import { describe, expect, test } from "vitest";
 import { createCoalescingRunner } from "./coalescing-runner.ts";
+// `sleep(0)` is the macrotask yield these tests need, and it is the SDK's ONE
+// wait — so no local `tick` alias, and no inline
+// `new Promise((r) => setTimeout(r, 0))` (`guard-invariants` rules 4 and 19).
+// Imported from `sdk/` rather than `host/_test-utils.ts`, which re-exports the
+// same helpers while pulling in the Node-only host graph.
+import { sleep } from "./sleep.ts";
 
-/**
- * A manually-settled gate so tests control exactly when a run finishes.
- * `Promise.withResolvers` already returns `{ promise, resolve, reject }`;
- * this alias only names the intent at the call sites.
- */
-const gate = <T>() => Promise.withResolvers<T>();
-
-// A macrotask yield. Named `tick` rather than `flush` because `flush` is an
-// EXPORTED microtask-only helper in host/_test-utils.ts, and two different
-// waits under one name is how a spec ends up draining less than it looks
-// like it does. Defined locally rather than imported: this is an `sdk/`
-// test, and host/_test-utils.ts pulls in the Node-only host graph.
-const tick = () => new Promise<void>((r) => setTimeout(r, 0));
-
+// Runs are gated with `Promise.withResolvers()` directly: the local `gate()`
+// alias it replaces only renamed the tool's own bookkeeping.
 describe("createCoalescingRunner", () => {
   test("an idle trigger runs immediately and resolves with the run's result", async () => {
     let runs = 0;
@@ -40,7 +34,7 @@ describe("createCoalescingRunner", () => {
   });
 
   test("N triggers during a run coalesce into ONE trailing run, shared by all", async () => {
-    const gates = [gate<string>(), gate<string>()];
+    const gates = [Promise.withResolvers<string>(), Promise.withResolvers<string>()];
     let runs = 0;
     const runner = createCoalescingRunner(() => {
       const g = gates[runs];
@@ -50,7 +44,7 @@ describe("createCoalescingRunner", () => {
     });
 
     const first = runner.trigger();
-    await tick();
+    await sleep(0);
     expect(runs).toBe(1);
 
     const t1 = runner.trigger();
@@ -60,12 +54,12 @@ describe("createCoalescingRunner", () => {
     expect(t2).toBe(t1);
     expect(t3).toBe(t1);
     // The trailing run has NOT started while the first is in flight.
-    await tick();
+    await sleep(0);
     expect(runs).toBe(1);
 
     gates[0]?.resolve("first");
     await expect(first).resolves.toBe("first");
-    await tick();
+    await sleep(0);
     expect(runs).toBe(2); // exactly one trailing run for three triggers
 
     gates[1]?.resolve("second");
@@ -75,7 +69,7 @@ describe("createCoalescingRunner", () => {
 
   test("runs never overlap: the trailing run starts only after the current settles", async () => {
     const events: string[] = [];
-    let release = gate<void>();
+    let release = Promise.withResolvers<void>();
     const runner = createCoalescingRunner(async () => {
       events.push("start");
       await release.promise;
@@ -83,16 +77,16 @@ describe("createCoalescingRunner", () => {
     });
 
     const first = runner.trigger();
-    await tick();
+    await sleep(0);
     const trailing = runner.trigger();
-    await tick();
+    await sleep(0);
     expect(events).toEqual(["start"]); // second run not started
 
     const firstRelease = release;
-    release = gate<void>();
+    release = Promise.withResolvers<void>();
     firstRelease.resolve();
     await first;
-    await tick();
+    await sleep(0);
     expect(events).toEqual(["start", "end", "start"]);
 
     release.resolve();
@@ -113,7 +107,7 @@ describe("createCoalescingRunner", () => {
   });
 
   test("a rejected in-flight run still starts the trailing run, whose callers see only their own outcome", async () => {
-    const first = gate<string>();
+    const first = Promise.withResolvers<string>();
     let runs = 0;
     const runner = createCoalescingRunner(async () => {
       runs += 1;
@@ -122,7 +116,7 @@ describe("createCoalescingRunner", () => {
     });
 
     const p1 = runner.trigger();
-    await tick();
+    await sleep(0);
     const p2 = runner.trigger();
 
     first.reject(new Error("first failed"));
@@ -142,7 +136,11 @@ describe("createCoalescingRunner", () => {
   });
 
   test("triggers during the trailing run coalesce into a new trailing run", async () => {
-    const gates = [gate<number>(), gate<number>(), gate<number>()];
+    const gates = [
+      Promise.withResolvers<number>(),
+      Promise.withResolvers<number>(),
+      Promise.withResolvers<number>(),
+    ];
     let runs = 0;
     const runner = createCoalescingRunner(() => {
       const g = gates[runs];
@@ -152,11 +150,11 @@ describe("createCoalescingRunner", () => {
     });
 
     const p1 = runner.trigger();
-    await tick();
+    await sleep(0);
     const p2 = runner.trigger(); // trailing behind run 1
     gates[0]?.resolve(1);
     await p1;
-    await tick();
+    await sleep(0);
     expect(runs).toBe(2); // trailing run in flight
 
     const p3 = runner.trigger(); // trailing behind run 2
@@ -166,7 +164,7 @@ describe("createCoalescingRunner", () => {
 
     gates[1]?.resolve(2);
     await expect(p2).resolves.toBe(2);
-    await tick();
+    await sleep(0);
     expect(runs).toBe(3);
     gates[2]?.resolve(3);
     await expect(p3).resolves.toBe(3);

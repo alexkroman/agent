@@ -22,14 +22,10 @@ import { calculateTotal, orderSlot, orderView, type Pizza, pizzaPrice } from "./
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
 
-/** Each context is one session — the cart is session-scoped by construction,
- *  and `createToolContext` mints a distinct session id per call. Its default
- *  `db` rejects every query, which is right here: this template keeps its cart
- *  in a session slot and must never touch storage. */
-function makeCtx(sessionId?: string) {
-  const ctx = createToolContext(sessionId ? { sessionId } : {});
-  return { ctx, sent: ctx.sent };
-}
+/** Each context owns its OWN slot store, so two contexts are two carts. Its
+ *  default `db` rejects every query, which is right here: this template keeps
+ *  its cart in a session slot and must never touch storage. */
+const makeCtx = (): ToolContext => createToolContext();
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup
  *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
@@ -95,7 +91,7 @@ describe("pricing (shared.ts)", () => {
 
 describe("tool flow (add → update → remove → place_order)", () => {
   test("full ordering round-trip keeps state, totals, and IDs consistent", async () => {
-    const { ctx } = makeCtx();
+    const ctx = makeCtx();
 
     // Empty order guards
     expect(await run("view_order", {}, ctx)).toEqual({ message: "The order is empty." });
@@ -156,31 +152,35 @@ describe("tool flow (add → update → remove → place_order)", () => {
     expect(await run("place_order", {}, ctx)).toEqual({ error: "Cannot place an empty order." });
   });
 
-  test("carts are scoped per session — two sessions never share pizzas or names", async () => {
-    // The slot is keyed per session by construction — each session has its own.
-    const { ctx: sessionA } = makeCtx("session-a");
-    const { ctx: sessionB } = makeCtx("session-b");
+  test("two independent contexts never share pizzas or names", async () => {
+    // What this really checks, and it is worth checking: the cart lives in the
+    // SLOT and not in a module-level variable. `createToolContext()` hands each
+    // call its own detached slot store, so passing two distinct session ids
+    // would prove nothing extra — the isolation is per store, and the store is
+    // per context. A template that cached its order in a module would fail here.
+    const firstCall = makeCtx();
+    const secondCall = makeCtx();
 
     await run(
       "add_pizza",
       { size: "large", crust: "thin", toppings: ["bacon"], quantity: 1 },
-      sessionA,
+      firstCall,
     );
-    await run("set_customer_name", { name: "Alice" }, sessionA);
+    await run("set_customer_name", { name: "Alice" }, firstCall);
 
-    expect(await run("view_order", {}, sessionB)).toEqual({ message: "The order is empty." });
+    expect(await run("view_order", {}, secondCall)).toEqual({ message: "The order is empty." });
 
-    await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, sessionB);
-    const placedB = (await run("place_order", {}, sessionB)) as {
+    await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, secondCall);
+    const placedB = (await run("place_order", {}, secondCall)) as {
       customerName: string;
       pizzas: number;
     };
-    // Session B never sees session A's customer name or pizzas.
+    // The second context never sees the first's customer name or pizzas.
     expect(placedB.customerName).toBe("Guest");
     expect(placedB.pizzas).toBe(1);
 
-    // Session A's cart survives session B's checkout untouched.
-    const viewA = (await run("view_order", {}, sessionA)) as { pizzas: unknown[] };
+    // And the first context's cart survives the second's checkout untouched.
+    const viewA = (await run("view_order", {}, firstCall)) as { pizzas: unknown[] };
     expect(viewA.pizzas).toHaveLength(1);
   });
 });
@@ -193,7 +193,7 @@ describe("tool flow (add → update → remove → place_order)", () => {
 
 describe("orderView projection", () => {
   test("reflects the live cart", async () => {
-    const { ctx } = makeCtx();
+    const ctx = makeCtx();
     await run(
       "add_pizza",
       { size: "large", crust: "stuffed", toppings: ["pepperoni", "extra_cheese"], quantity: 2 },
@@ -218,7 +218,7 @@ describe("orderView projection", () => {
   test("survives checkout, which clears the cart but keeps the confirmation", async () => {
     // The reason `placed` lives in state at all: the cart is emptied on
     // checkout, and the UI still has to show the order that was just placed.
-    const { ctx } = makeCtx();
+    const ctx = makeCtx();
     await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
     await run("place_order", {}, ctx);
 

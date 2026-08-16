@@ -202,14 +202,14 @@ describe("cartesia TTS adapter", () => {
     const { session, controller } = await openSession();
     const turn1 = session._currentContextId();
 
-    const doneEvents: number[] = [];
-    session.on("done", () => doneEvents.push(Date.now()));
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     session.sendText("hello");
     // cancel() must emit `done` synchronously — the orchestrator advances
     // state on `done`, and barge-in response cannot be microtask-deferred.
     session.cancel();
-    expect(doneEvents.length).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
 
     await flush();
 

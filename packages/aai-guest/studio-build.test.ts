@@ -5,9 +5,10 @@
 // formatting and the failure paths the coding agent reads.
 
 import { existsSync } from "node:fs";
-import { readdir, writeFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import { materialize } from "./_test-utils.ts";
 import {
   buildWorkspaceDir,
   formatBuildFailure,
@@ -118,9 +119,7 @@ describe("withBuildDir", () => {
       { "agent.ts": "export {};" },
       async (dir, files) => {
         seen = dir;
-        for (const [rel, content] of Object.entries(files)) {
-          await writeFile(path.join(dir, rel), content, "utf-8");
-        }
+        await materialize(dir, files);
       },
       async (dir) => (await readdir(dir)).sort(),
     );
@@ -149,14 +148,8 @@ describe("withBuildDir", () => {
 
 describe("typecheckWorkspaceDir", () => {
   test("a workspace without a tsconfig skips rather than failing", async () => {
-    const result = await withBuildDir(
-      { "agent.ts": "export {};\n" },
-      async (dir, files) => {
-        for (const [rel, content] of Object.entries(files)) {
-          await writeFile(path.join(dir, rel), content, "utf-8");
-        }
-      },
-      (dir) => typecheckWorkspaceDir(dir),
+    const result = await withBuildDir({ "agent.ts": "export {};\n" }, materialize, (dir) =>
+      typecheckWorkspaceDir(dir),
     );
     expect(result).toEqual({ ok: true, skipped: true });
   });
@@ -171,11 +164,7 @@ describe("typecheckWorkspaceDir", () => {
         }),
         "agent.ts": `export const n: number = "nope";\n`,
       },
-      async (dir, files) => {
-        for (const [rel, content] of Object.entries(files)) {
-          await writeFile(path.join(dir, rel), content, "utf-8");
-        }
-      },
+      materialize,
       (dir) => typecheckWorkspaceDir(dir),
     );
     expect(result.ok).toBe(false);
@@ -197,11 +186,7 @@ describe("buildWorkspaceDir", () => {
         }),
         "agent.ts": `export const n: number = "nope";\n`,
       },
-      async (dir, files) => {
-        for (const [rel, content] of Object.entries(files)) {
-          await writeFile(path.join(dir, rel), content, "utf-8");
-        }
-      },
+      materialize,
       (dir) => buildWorkspaceDir(dir, { worker: true, client: false }),
     );
     expect(result.worker).toBeUndefined();
@@ -226,11 +211,7 @@ describe("buildWorkspaceDir", () => {
         }),
         "agent.ts": `export const n: number = "nope";\n`,
       },
-      async (dir, files) => {
-        for (const [rel, content] of Object.entries(files)) {
-          await writeFile(path.join(dir, rel), content, "utf-8");
-        }
-      },
+      materialize,
       (dir) => buildWorkspaceDir(dir, { worker: true, client: false }),
     );
     expect(result.buildError).toMatch(/^Could not install ms/);

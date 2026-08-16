@@ -1,99 +1,28 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  RIME_DEFAULT_LANGUAGE,
+  RIME_DEFAULT_MODEL,
+  RIME_DEFAULT_VOICE,
+  type RimeOptions,
+} from "../../../sdk/providers/tts/rime.ts";
+import { flush } from "../../_test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
+// The shared TTS fake, not a fourth copy of it — see its module comment for
+// the divergence three hand-rolled copies had already produced.
+import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
 import { openRime, type RimeSession } from "./rime.ts";
 
-type WsEvent = "open" | "message" | "error" | "close";
-type WsListener = (...args: unknown[]) => void;
-
-const { FakeWebSocket } = vi.hoisted(() => {
-  class FakeWebSocket {
-    static OPEN = 1;
-    static CLOSED = 3;
-    static instances: FakeWebSocket[] = [];
-    /** When true, new sockets black-hole: no "open", no "error" — ever. */
-    static neverOpen = false;
-
-    readyState = FakeWebSocket.OPEN;
-    sent: string[] = [];
-    readonly url: string;
-    readonly options: { perMessageDeflate?: boolean } | undefined;
-    private readonly listeners = new Map<string, WsListener[]>();
-
-    constructor(url: string, opts?: { perMessageDeflate?: boolean }) {
-      this.url = url;
-      this.options = opts;
-      FakeWebSocket.instances.push(this);
-      // Real `ws` fires "open" asynchronously; match that timing.
-      if (!FakeWebSocket.neverOpen) queueMicrotask(() => this._fire("open"));
-    }
-
-    on(event: string, fn: WsListener) {
-      const arr = this.listeners.get(event) ?? [];
-      arr.push(fn);
-      this.listeners.set(event, arr);
-    }
-
-    once(event: string, fn: WsListener) {
-      const wrapper = (...args: unknown[]) => {
-        this.removeListener(event, wrapper);
-        fn(...args);
-      };
-      this.on(event, wrapper);
-    }
-
-    removeListener(event: string, fn: WsListener) {
-      const arr = this.listeners.get(event) ?? [];
-      this.listeners.set(
-        event,
-        arr.filter((l) => l !== fn),
-      );
-    }
-
-    off(event: string, fn: WsListener) {
-      this.removeListener(event, fn);
-    }
-
-    removeAllListeners() {
-      this.listeners.clear();
-    }
-
-    listenerCount() {
-      let n = 0;
-      for (const arr of this.listeners.values()) n += arr.length;
-      return n;
-    }
-
-    send(data: string) {
-      this.sent.push(data);
-    }
-
-    close() {
-      this.readyState = FakeWebSocket.CLOSED;
-      this._fire("close");
-    }
-
-    _fire(event: WsEvent, ...args: unknown[]) {
-      for (const fn of this.listeners.get(event) ?? []) fn(...args);
-    }
-
-    _msg(payload: unknown) {
-      this._fire("message", JSON.stringify(payload));
-    }
-  }
-
-  return { FakeWebSocket };
+// Async factory importing an import-free module: the adapter's own "ws"
+// import must not be reachable from the factory (it would re-enter the mock).
+vi.mock("ws", async () => {
+  const { FakeWebSocket } = await import("./_fake-ws-test-utils.ts");
+  return { default: FakeWebSocket, WebSocket: FakeWebSocket };
 });
 
-vi.mock("ws", () => ({
-  default: FakeWebSocket,
-  WebSocket: FakeWebSocket,
-}));
-
 beforeEach(() => {
-  FakeWebSocket.instances.length = 0;
-  FakeWebSocket.neverOpen = false;
+  FakeWebSocket.reset();
   vi.useFakeTimers();
 });
 
@@ -101,26 +30,29 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function openSession(apiKey = "test-key"): Promise<{
+async function openSession(
+  opts: RimeOptions = {},
+  sampleRate = 16_000,
+): Promise<{
   session: RimeSession;
-  ws: InstanceType<typeof FakeWebSocket>;
+  ws: FakeWebSocket;
   controller: AbortController;
 }> {
-  const opener = openRime({ voice: "cove" });
+  const opener = openRime(opts);
   const controller = new AbortController();
 
   const openPromise = opener.open({
-    sampleRate: 16_000,
-    apiKey,
+    sampleRate,
+    apiKey: "test-key",
     signal: controller.signal,
   }) as Promise<RimeSession>;
 
   // Let the queued microtask that fires "open" run.
-  await Promise.resolve();
+  await flush();
 
   const session = await openPromise;
-  // biome-ignore lint/style/noNonNullAssertion: at(-1) is always set after open() resolves
-  const ws = FakeWebSocket.instances.at(-1)!;
+  const ws = FakeWebSocket.instances.at(-1);
+  if (!ws) throw new Error("no WebSocket was constructed");
   return { session, ws, controller };
 }
 
@@ -128,6 +60,34 @@ describe("rime TTS adapter", () => {
   test("openRime returns an opener with name 'rime'", () => {
     const opener = openRime({ voice: "cove" });
     expect(opener.name).toBe("rime");
+  });
+
+  test("dials ws2 with the descriptor's speaker, model, format, rate and language", async () => {
+    // Nothing anywhere asserted what this adapter actually dials, so a dropped
+    // `Bearer ` prefix, a renamed query param, a wrong `samplingRate`
+    // (chipmunk audio at exactly the right byte count) or a two-letter `lang`
+    // where Rime takes ISO 639-3 all passed the suite.
+    const { ws } = await openSession({ voice: "marsh", model: "arcana", language: "spa" }, 24_000);
+    const url = new URL(ws.url);
+    expect(url.host).toBe("users-ws.rime.ai");
+    expect(url.pathname).toBe("/ws2");
+    const params = url.searchParams;
+    expect(params.get("speaker")).toBe("marsh");
+    expect(params.get("modelId")).toBe("arcana");
+    expect(params.get("audioFormat")).toBe("pcm");
+    expect(params.get("samplingRate")).toBe("24000");
+    expect(params.get("lang")).toBe("spa");
+    expect(ws.options?.headers?.Authorization).toBe("Bearer test-key");
+  });
+
+  test("fills the host-side defaults when the descriptor names none", async () => {
+    const { ws } = await openSession();
+    const params = new URL(ws.url).searchParams;
+    expect(params.get("speaker")).toBe(RIME_DEFAULT_VOICE);
+    expect(params.get("modelId")).toBe(RIME_DEFAULT_MODEL);
+    // ISO 639-3, not the 639-1 code most APIs take: Rime rejects `"en"`.
+    expect(params.get("lang")).toBe(RIME_DEFAULT_LANGUAGE);
+    expect(RIME_DEFAULT_LANGUAGE).toHaveLength(3);
   });
 
   test("opens with permessage-deflate disabled", async () => {
@@ -201,10 +161,9 @@ describe("rime TTS adapter", () => {
       throw new Error("listener blew up");
     });
     session.on("audio", listener);
-    const samples = new Int16Array([1, 2]);
-    const base64 = Buffer.from(samples.buffer).toString("base64");
-
-    expect(() => ws._msg({ type: "chunk", data: base64, contextId: null })).not.toThrow();
+    expect(() =>
+      ws._msg({ type: "chunk", data: pcmBase64([1, 2]), contextId: null }),
+    ).not.toThrow();
     // The event really fired — otherwise the assertion above is vacuous.
     expect(listener).toHaveBeenCalledTimes(1);
   });
@@ -226,18 +185,14 @@ describe("rime TTS adapter", () => {
     const audioEvents: Int16Array[] = [];
     session.on("audio", (pcm) => audioEvents.push(pcm));
 
-    const samples = new Int16Array([100, 200, 300, 400]);
-    const base64 = Buffer.from(samples.buffer).toString("base64");
+    ws._msg({ type: "chunk", data: pcmBase64([100, 200, 300, 400]), contextId: null });
 
-    ws._msg({ type: "chunk", data: base64, contextId: null });
-
-    expect(audioEvents.length).toBe(1);
-    // biome-ignore lint/style/noNonNullAssertion: length was asserted to be 1 above
-    const pcm = audioEvents[0]!;
+    expect(audioEvents).toHaveLength(1);
+    const [pcm] = audioEvents;
     expect(pcm).toBeInstanceOf(Int16Array);
-    expect(pcm.length).toBe(4);
-    expect(pcm[0]).toBe(100);
-    expect(pcm[3]).toBe(400);
+    // Byte-for-byte, not just the length: an endianness flip or a wrong
+    // `byteOffset` sends noise at exactly the right size.
+    expect(Array.from(pcm ?? [])).toEqual([100, 200, 300, 400]);
   });
 
   test("sendText forwards the text as a JSON {text} frame", async () => {
@@ -251,8 +206,8 @@ describe("rime TTS adapter", () => {
   test("flush() sends a trailing '.' and emits done after quiescence post-audio", async () => {
     const { session, ws } = await openSession();
 
-    const doneEvents: number[] = [];
-    session.on("done", () => doneEvents.push(Date.now()));
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     session.sendText("Hi there");
     session.flush();
@@ -263,75 +218,70 @@ describe("rime TTS adapter", () => {
 
     // First-audio timer is 5s — short window must not fire `done` yet.
     vi.advanceTimersByTime(500);
-    expect(doneEvents.length).toBe(0);
+    expect(onDone).not.toHaveBeenCalled();
 
     // First chunk arrives, switching to the short quiescence window.
-    const samples = new Int16Array([100, 200, 300, 400]);
-    ws._msg({
-      type: "chunk",
-      data: Buffer.from(samples.buffer).toString("base64"),
-      contextId: null,
-    });
+    ws._msg({ type: "chunk", data: pcmBase64([100, 200, 300, 400]), contextId: null });
 
     vi.advanceTimersByTime(499);
-    expect(doneEvents.length).toBe(0);
+    expect(onDone).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
-    expect(doneEvents.length).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 
   test("flush() falls back to first-audio timeout when no chunk arrives", async () => {
     const { session } = await openSession();
 
-    const doneEvents: number[] = [];
-    session.on("done", () => doneEvents.push(Date.now()));
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     session.sendText("Hi there");
     session.flush();
 
     // No chunk arrives — must wait the full FIRST_AUDIO_TIMEOUT_MS (5s).
     vi.advanceTimersByTime(4999);
-    expect(doneEvents.length).toBe(0);
+    expect(onDone).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
-    expect(doneEvents.length).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 
   test("cancel() sends clear operation and emits done synchronously", async () => {
     const { session, ws } = await openSession();
 
-    const doneEvents: number[] = [];
-    session.on("done", () => doneEvents.push(Date.now()));
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     session.sendText("Hello");
     // Barge-in cannot be deferred — `done` must fire synchronously.
     session.cancel();
 
     expect(ws.sent).toContain(JSON.stringify({ operation: "clear" }));
-    expect(doneEvents.length).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 
   test("cancel() clears pending timers so no stale done leaks into the next turn", async () => {
     const { session } = await openSession();
 
-    const doneEvents: number[] = [];
-    session.on("done", () => doneEvents.push(doneEvents.length));
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     // Turn 1 flushes (arming the first-audio timer), then is barged in.
     session.sendText("turn one");
     session.flush();
     session.cancel();
-    expect(doneEvents.length).toBe(1); // cancel's own synchronous done
+    expect(onDone).toHaveBeenCalledTimes(1); // cancel's own synchronous done
 
     // Turn 2 begins. Turn 1's timer must have been cleared by cancel() —
     // if it survived, it would fire here and end turn 2's flush-wait early
     // (TtsEvents contract: done never fires for a cancelled turn).
     session.sendText("turn two");
     vi.advanceTimersByTime(10_000);
-    expect(doneEvents.length).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
 
     // Turn 2's own flush still completes normally.
     session.flush();
     vi.advanceTimersByTime(5000);
-    expect(doneEvents.length).toBe(2);
+    expect(onDone).toHaveBeenCalledTimes(2);
   });
 
   test("close() closes the WebSocket and is idempotent", async () => {

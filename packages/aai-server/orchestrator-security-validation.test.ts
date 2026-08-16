@@ -5,9 +5,11 @@
  * validation. Cross-agent tenant-isolation tests live in
  * orchestrator-security.test.ts.
  */
+import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
 import { createTestOrchestrator, createTestStore, deploy, deployAgent } from "./test-utils.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
@@ -109,15 +111,16 @@ describe("security headers on all response types", () => {
     );
     expect(trusted.headers.get("Access-Control-Allow-Origin")).toBe("https://trusted.example.com");
 
-    // Untrusted origin is rejected
+    // Untrusted origin is rejected. `toBeNull`, never
+    // `not.toBe("https://evil.example.com")` — a regression to a blanket `*`
+    // satisfies the negative form, on a surface serving every tenant's agent
+    // page.
     const untrusted = await app.fetch(
       new Request("http://localhost/health", {
         headers: { Origin: "https://evil.example.com" },
       }),
     );
-    expect(untrusted.headers.get("Access-Control-Allow-Origin")).not.toBe(
-      "https://evil.example.com",
-    );
+    expect(untrusted.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 
   test("CORS rejects cross-origin when no origins configured", async () => {
@@ -132,37 +135,47 @@ describe("security headers on all response types", () => {
         headers: { Origin: "https://any-site.com" },
       }),
     );
-    // No allowedOrigins configured means reject cross-origin requests
-    const acao = res.headers.get("Access-Control-Allow-Origin");
-    expect(acao).not.toBe("https://any-site.com");
+    // No allowedOrigins configured means reject cross-origin requests — and a
+    // blanket `*` is a rejection of nothing, so the assertion is `toBeNull`.
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
   });
 });
 
 // ── WebSocket URL Validation ───────────────────────────────────────────
 
 describe("websocket URL validation", () => {
-  test("WebSocket path regex rejects invalid slugs", () => {
-    const wsPathRegex = /^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket$/;
+  // Upgrades bypass Hono routing, so `createWsUpgrades` matches the path itself,
+  // composing `^\/(SLUG_PATTERN_SOURCE)\/websocket$` (orchestrator-ws.ts). This
+  // composes from that SAME exported source rather than restating the grammar:
+  // the hand-written copy that used to live here had no length bound
+  // (`[a-z0-9_-]*` against production's `{0,62}`), so it accepted a 200-char
+  // slug the upgrade path rejects, and a grammar change could not fail it.
+  const wsPathRegex = new RegExp(`^\\/(${SLUG_PATTERN_SOURCE})\\/websocket$`);
 
-    // Valid
-    expect(wsPathRegex.test("/my-agent/websocket")).toBe(true);
-    expect(wsPathRegex.test("/agent123/websocket")).toBe(true);
-    expect(wsPathRegex.test("/my_agent/websocket")).toBe(true);
+  test.each([
+    ["a plain slug", "/my-agent/websocket"],
+    ["digits", "/agent123/websocket"],
+    ["an underscore", "/my_agent/websocket"],
+    ["the longest slug the grammar allows", `/${"a".repeat(MAX_SLUG_LENGTH)}/websocket`],
+  ])("accepts %s", (_why, path) => {
+    expect(wsPathRegex.test(path)).toBe(true);
+  });
 
-    // Invalid — path traversal
-    expect(wsPathRegex.test("/../etc/passwd/websocket")).toBe(false);
-    expect(wsPathRegex.test("/my-agent/../other/websocket")).toBe(false);
+  test.each([
+    ["path traversal", "/../etc/passwd/websocket"],
+    ["a traversal segment after a valid slug", "/my-agent/../other/websocket"],
+    ["uppercase", "/MyAgent/websocket"],
+    ["dots", "/my.agent/websocket"],
+    ["no slug", "//websocket"],
+    ["extra path segments", "/agent/extra/websocket"],
+    // The bound the hand-written copy dropped.
+    ["a slug one character over the limit", `/${"a".repeat(MAX_SLUG_LENGTH + 1)}/websocket`],
+    ["a wildly over-long slug", `/${"a".repeat(200)}/websocket`],
+  ])("rejects %s", (_why, path) => {
+    expect(wsPathRegex.test(path)).toBe(false);
+  });
 
-    // Invalid — uppercase
-    expect(wsPathRegex.test("/MyAgent/websocket")).toBe(false);
-
-    // Invalid — dots
-    expect(wsPathRegex.test("/my.agent/websocket")).toBe(false);
-
-    // Invalid — no slug
-    expect(wsPathRegex.test("//websocket")).toBe(false);
-
-    // Invalid — extra path segments
-    expect(wsPathRegex.test("/agent/extra/websocket")).toBe(false);
+  test("the slug it captures is the one the upgrade handler brokers", () => {
+    expect(wsPathRegex.exec("/my-agent/websocket")?.[1]).toBe("my-agent");
   });
 });

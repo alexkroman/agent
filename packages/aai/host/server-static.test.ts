@@ -19,10 +19,9 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
+import { makeLogger } from "./_test-utils.ts";
 import { isPathInside, serveStatic } from "./server-static.ts";
-
-const quietLogger = () => ({ info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() });
 
 let dir: string | null = null;
 let close: (() => Promise<void>) | undefined;
@@ -47,7 +46,7 @@ async function assetDir(): Promise<string> {
  */
 async function serving(clientDir: string): Promise<string> {
   const server = http.createServer((req, res) => {
-    void serveStatic(clientDir, req, res, quietLogger()).then((claimed) => {
+    void serveStatic(clientDir, req, res, makeLogger()).then((claimed) => {
       if (!claimed) res.writeHead(404).end("unclaimed");
     });
   });

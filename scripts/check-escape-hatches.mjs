@@ -64,6 +64,7 @@ import {
   assertNotUniversallyEmpty,
   assertScanCorpus,
   compareToBaseline,
+  isCommentOnly,
   scanGroups,
   totalOf,
   updateBaseline,
@@ -114,7 +115,50 @@ const PATTERNS = [
   // outright by using the tool's own affordance instead — `vi.mocked(fn)`, or
   // typing a recorder with `Parameters<T>` so nothing needs widening.
   { label: "as unknown as", re: "(^|[^A-Za-z0-9_])as unknown as([^A-Za-z0-9_]|$)" },
+  // STRICTLY WORSE than the cast above, and uncounted for even longer. `never`
+  // is assignable to everything, so `{ … } as never` passes any parameter
+  // position at all — and like `as unknown as` it stops reporting the moment a
+  // field is ADDED to the type it is standing in for, which is the whole
+  // failure a cast-free builder exists to prevent.
+  //
+  // It is the DOMINANT type-laundering idiom in this repo's tests: 110
+  // occurrences in test files against 62 of the counted `as unknown as`, and
+  // between 2026-08-12 and 2026-08-15 it went 98 -> 110 while the counted
+  // pattern went 63 -> 62. Uncounted patterns grow; that is the argument for
+  // counting this one, and the campaign to remove them is the same one that
+  // halved `as unknown as` — a TYPED SEAM per concentration, not a cast per
+  // assertion. The two worst are `web-search.test.ts` (13 `{} as never` for a
+  // `ToolContext` that already has a builder at `host/_test-utils.ts`) and
+  // `runtime-transport.test.ts` (13 on whole options objects, so a renamed or
+  // newly required option on the very builder under test compiles silently).
+  { label: "as never", re: "(^|[^A-Za-z0-9_])as never([^A-Za-z0-9_]|$)" },
 ];
+
+/**
+ * Patterns whose hit on a COMMENT-ONLY line is prose, not a hatch.
+ *
+ * The header above spends 25 lines on precisely this hazard — "these patterns
+ * are plain substrings with no notion of code versus prose" — and fixed it for
+ * MARKDOWN only. `guard-invariants` had solved the general case all along, with
+ * a per-rule `skipComments` flag passed as a filter into the shared engine, and
+ * this gate called the same `scanGroups` with no filter at all.
+ *
+ * Measured before the fix: of 119 counted hatches, 25 sat on comment-only
+ * lines. Twenty-one of those are CORRECT — a `biome-ignore` genuinely IS a
+ * comment, and suppressing the rule is what the comment does — which is why
+ * this is a per-pattern set and not a blanket filter. But all four CAST hits on
+ * comment lines were prose, and two of them were the ENTIRE `as any` budget
+ * (`agent-tools.ts` and `agent-tools.test.ts`, both JSDoc sentences). So a real
+ * `export const smuggled = (globalThis as any).x;` could move into that budget
+ * with the gate still printing `as any allowed=2 now=2 … every file within its
+ * baseline ✓`. Demonstrated on the real gate.
+ *
+ * Keyed by LABEL rather than carried as a third field on the entries above,
+ * because `escape-hatch-scope.test.ts` parses `{ label: "…", re: "…" }` out of
+ * this source as an exact shape — one more key in the literal makes it parse
+ * zero patterns.
+ */
+const SKIP_COMMENTS = new Set(["as any", "as unknown as", "as never"]);
 
 // Only count source under packages/ and scripts/, never built output.
 // `scripts/` is included for the same reason it is linted: a `biome-ignore`
@@ -189,8 +233,16 @@ assertScanCorpus({
   minFiles: MIN_SCANNED_FILES,
 });
 
-const groups = PATTERNS.map(({ label, re }) => ({ key: label, label, re, paths: PATHSPECS }));
-const { counts: actual, occurrences } = scanGroups(groups);
+const groups = PATTERNS.map(({ label, re }) => ({
+  key: label,
+  label,
+  re,
+  paths: PATHSPECS,
+  skipComments: SKIP_COMMENTS.has(label),
+}));
+const { counts: actual, occurrences } = scanGroups(groups, {
+  filter: (match, group) => !(group.skipComments && isCommentOnly(match.text)),
+});
 
 // ---------------------------------------------------------------------------
 // --update: lower the baseline to match reality. Never raise it.

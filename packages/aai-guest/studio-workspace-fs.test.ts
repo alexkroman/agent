@@ -3,10 +3,10 @@
 // the SDK (workspace-files.test.ts); what is pinned here is the one place this
 // side deliberately differs from `aai push`.
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
+import { useTempDir } from "./_test-utils.ts";
 import {
   materializeWorkspace,
   resolveInside,
@@ -14,18 +14,10 @@ import {
   walkWorkspace,
 } from "./studio-workspace-fs.ts";
 
-let dir: string;
-
-beforeEach(async () => {
-  dir = await mkdtemp(path.join(tmpdir(), "aai-guest-ws-"));
-});
-
-afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
-});
+const dir = useTempDir("aai-guest-ws-");
 
 const put = async (rel: string, content: string): Promise<void> => {
-  const abs = path.join(dir, rel);
+  const abs = path.join(dir(), rel);
   await mkdir(path.dirname(abs), { recursive: true });
   await writeFile(abs, content, "utf-8");
 };
@@ -40,7 +32,7 @@ describe("snapshotWorkspace", () => {
     await put("package-lock.json", "{}");
     await put("pnpm-lock.yaml", "lockfileVersion: 9");
 
-    expect(Object.keys(await snapshotWorkspace(dir).then((s) => s.files))).toEqual([
+    expect(Object.keys(await snapshotWorkspace(dir()).then((s) => s.files))).toEqual([
       "agent.ts",
       "package.json",
     ]);
@@ -48,7 +40,7 @@ describe("snapshotWorkspace", () => {
 
   test("keeps a .env the coding agent wrote — push's other rule is NOT applied here", async () => {
     await put(".env", "KEY=1");
-    const snap = await snapshotWorkspace(dir);
+    const snap = await snapshotWorkspace(dir());
     expect(snap.files[".env"]).toBe("KEY=1");
   });
 });
@@ -58,7 +50,7 @@ describe("walkWorkspace", () => {
     // Hiding it from the tools would make a file the agent can legitimately
     // inspect invisible; only the SYNC has a reason to drop it.
     await put("package-lock.json", "{}");
-    expect(await walkWorkspace(dir)).toEqual(["package-lock.json"]);
+    expect(await walkWorkspace(dir())).toEqual(["package-lock.json"]);
   });
 });
 
@@ -69,23 +61,23 @@ describe("materializeWorkspace", () => {
     await put("node_modules/date-fns/package.json", "{}");
     await put("stale.ts", "x");
 
-    await materializeWorkspace(dir, { "agent.ts": "fresh" });
+    await materializeWorkspace(dir(), { "agent.ts": "fresh" });
 
-    expect(await walkWorkspace(dir)).toEqual(["agent.ts"]);
+    expect(await walkWorkspace(dir())).toEqual(["agent.ts"]);
   });
 
   test("creates parent directories for nested files", async () => {
-    await materializeWorkspace(dir, { "tools/book.ts": "x" });
-    expect(await walkWorkspace(dir)).toEqual([path.join("tools", "book.ts")]);
+    await materializeWorkspace(dir(), { "tools/book.ts": "x" });
+    expect(await walkWorkspace(dir())).toEqual([path.join("tools", "book.ts")]);
   });
 });
 
 describe("resolveInside", () => {
   test("refuses a path that escapes the workspace", () => {
-    expect(() => resolveInside(dir, "../secrets")).toThrow(/escapes the workspace/);
+    expect(() => resolveInside(dir(), "../secrets")).toThrow(/escapes the workspace/);
   });
 
   test("allows a nested path", () => {
-    expect(resolveInside(dir, "tools/book.ts")).toBe(path.join(dir, "tools", "book.ts"));
+    expect(resolveInside(dir(), "tools/book.ts")).toBe(path.join(dir(), "tools", "book.ts"));
   });
 });

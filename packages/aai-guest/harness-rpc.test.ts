@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { type FakeHostChannel, installFakeHostChannel } from "./_test-utils.ts";
 import {
   handleHostResponse,
   hostRequest,
@@ -16,25 +17,19 @@ import {
   setHostSend,
   writeMessage,
 } from "./harness-rpc.ts";
-import type { JsonRpcMessage } from "./harness-types.ts";
 
-let sent: JsonRpcMessage[];
+let host: FakeHostChannel;
+let sent: FakeHostChannel["sent"];
 
 beforeEach(() => {
-  sent = [];
-  setHostSend((msg) => sent.push(msg));
+  host = installFakeHostChannel();
+  sent = host.sent;
 });
 
 afterEach(() => {
   rejectAllPendingHostRequests("test teardown");
   setHostSend(null);
 });
-
-/** Answer the most recent outbound host request. */
-function answerLast(result?: unknown, error?: { code: number; message: string }): void {
-  const last = sent.at(-1) as { id: number | string };
-  handleHostResponse({ id: last.id, ...(error ? { error } : { result }) });
-}
 
 describe("outbound send path", () => {
   test("writeMessage forwards frames to the installed host socket", () => {
@@ -45,7 +40,7 @@ describe("outbound send path", () => {
   test("messages sent with no host connected are dropped, not queued", () => {
     setHostSend(null);
     expect(() => sendResponse(1, { ok: true })).not.toThrow();
-    setHostSend((msg) => sent.push(msg));
+    sent = installFakeHostChannel().sent;
     sendResponse(2, { ok: true });
     // Only the post-reconnect frame arrives — nothing replayed.
     expect(sent).toEqual([{ jsonrpc: "2.0", id: 2, result: { ok: true } }]);
@@ -64,17 +59,17 @@ describe("outbound send path", () => {
 describe("host request proxy", () => {
   test("hostRequest round-trips a request through the host socket", async () => {
     const pending = hostRequest("studio/sync-workspace", { files: {} });
-    const req = sent.at(-1) as { method: string; params: unknown };
+    const req = host.lastRequest();
     expect(req.method).toBe("studio/sync-workspace");
     expect(req.params).toEqual({ files: {} });
-    answerLast({ ok: true });
+    host.answerLast({ ok: true });
     await expect(pending).resolves.toEqual({ ok: true });
     expect(pendingHostRequests.size).toBe(0);
   });
 
   test("a host error response rejects the pending call", async () => {
     const pending = hostRequest("studio/persist-chat", {});
-    answerLast(undefined, { code: -32_603, message: "store down" });
+    host.answerLast(undefined, { code: -32_603, message: "store down" });
     await expect(pending).rejects.toThrow(/store down/);
   });
 

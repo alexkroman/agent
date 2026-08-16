@@ -4,36 +4,25 @@
 // rather than strand the user on dead requests — and rather than sign them out
 // of a session that was still recoverable (see auth-recovery.ts).
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, sseResponse, stubFetch } from "./_test-utils.ts";
+import {
+  button,
+  installResizeObserver,
+  jsonResponse,
+  renderWithClient,
+  sseResponse,
+  stubFetch,
+  textarea,
+} from "./_test-utils.ts";
 import { App } from "./app.tsx";
-
-// jsdom has no ResizeObserver; use-stick-to-bottom (mounted once a project
-// is selected) requires one.
-class ResizeObserverStub {
-  observe(): void {
-    // jsdom stub — layout never changes.
-  }
-  unobserve(): void {
-    // jsdom stub.
-  }
-  disconnect(): void {
-    // jsdom stub.
-  }
-}
 
 function renderApp(
   onSignOut: () => void,
   refreshAuth: () => Promise<void> = () => Promise.resolve(),
 ) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <App bearer="sk-test" onSignOut={onSignOut} refreshAuth={refreshAuth} />
-    </QueryClientProvider>,
-  );
+  return renderWithClient(<App bearer="sk-test" onSignOut={onSignOut} refreshAuth={refreshAuth} />);
 }
 
 /** Landing always shows the hero — opening a project is a sidebar click. */
@@ -43,13 +32,10 @@ async function openProject(name: string) {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  installResizeObserver();
 });
 
 afterEach(() => {
-  // No vitest globals in this project, so RTL's automatic cleanup never
-  // registers — unmount explicitly or renders leak across tests.
-  cleanup();
   vi.unstubAllGlobals();
   // Selection syncs the URL (v0-style project paths); jsdom keeps the
   // location across tests, so reset it or a later render inherits it.
@@ -85,13 +71,10 @@ describe("App auth handling", () => {
       "/studio/projects": () => jsonResponse({ error: "unauthorized" }, 401),
     });
     const onSignOut = vi.fn();
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     // Each render mints a new bearer, standing in for a refresh that "succeeds"
     // and produces a token the server rejects just the same.
-    const { rerender } = render(
-      <QueryClientProvider client={client}>
-        <App bearer="t1" onSignOut={onSignOut} refreshAuth={() => Promise.resolve()} />
-      </QueryClientProvider>,
+    const { rerender, client } = renderWithClient(
+      <App bearer="t1" onSignOut={onSignOut} refreshAuth={() => Promise.resolve()} />,
     );
     for (const bearer of ["t2", "t3", "t4"]) {
       rerender(
@@ -318,7 +301,7 @@ describe("chat history hydration", () => {
     await waitFor(() => expect(screen.getByText("build a pizza bot")).toBeDefined());
     // The wait is said under the last message, and it is SENDING that waits.
     expect(screen.getByText("Starting sandbox…")).toBeDefined();
-    expect((screen.getByLabelText("Send") as HTMLButtonElement).disabled).toBe(true);
+    expect(button("Send").disabled).toBe(true);
   });
 
   test("a message typed while the sandbox starts is held, then handed to the live composer", async () => {
@@ -336,15 +319,13 @@ describe("chat history hydration", () => {
     });
     renderApp(vi.fn());
     await openProject("demo");
-    const waiting = await waitFor(() => screen.getByPlaceholderText(/Starting sandbox/));
+    const waiting = await waitFor(() => textarea(/Starting sandbox/));
     fireEvent.change(waiting, { target: { value: "make it italian" } });
     fireEvent.keyDown(waiting, { key: "Enter" });
     // Submitting early neither sends nor clears: there is nothing to send to.
-    expect((waiting as HTMLTextAreaElement).value).toBe("make it italian");
+    expect(waiting.value).toBe("make it italian");
 
-    const live = await waitFor(() => screen.getByPlaceholderText("Describe your agent…"), {
-      timeout: 4000,
-    });
-    expect((live as HTMLTextAreaElement).value).toBe("make it italian");
+    const live = await waitFor(() => textarea("Describe your agent…"), { timeout: 4000 });
+    expect(live.value).toBe("make it italian");
   });
 });

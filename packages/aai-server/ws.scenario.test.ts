@@ -117,8 +117,13 @@ function startTestServer(): Promise<{
         port: addr.port,
         server,
         captures,
+        // No argument RESTORES the default, which is the whole reason a test
+        // calls it that way. `if (factory) …` made the reset a silent no-op, so
+        // a failing factory installed by one case stayed installed and the
+        // "server still accepts new connections" check below validated the
+        // broken one.
         makeSession: (factory?: SessionFactory) => {
-          if (factory) sessionFactory = factory;
+          sessionFactory = factory ?? makeStubCore;
         },
         close: () => {
           server.close();
@@ -291,9 +296,18 @@ describe("WebSocket server integration", () => {
     });
     ws.close();
     await waitForClose(ws);
-    // Server should still accept new connections
+    // Server should still accept new connections — with a HEALTHY session, so
+    // this reads the recovery rather than the failure a second time.
     ctx.makeSession();
+    ctx.captures.length = 0;
     const { ws: ws2 } = await connect(ctx.port);
+    await vi.waitFor(() => {
+      expect(ctx.captures).toHaveLength(1);
+      expect(ctx.captures[0]?.session.start).toHaveBeenCalled();
+    });
+    // The restored factory is the healthy DEFAULT rather than the rejecting one
+    // installed above — which is the claim the silent no-op reset hid.
+    await expect(ctx.captures[0]?.session.start()).resolves.toBeUndefined();
     ws2.close();
     await waitForClose(ws2);
   });

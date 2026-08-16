@@ -14,14 +14,13 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { publishStepEnv, requireStepEnv, stepEnv } from "./step-env.ts";
 
-const SLOT = Symbol.for("@alexkroman1/aai.stepEnv");
-
-/** Return the process to "nothing has published", which is how it starts. */
-function unpublish(): void {
-  delete (globalThis as Record<symbol, unknown>)[SLOT];
-}
-
-afterEach(unpublish);
+// Return the process to "nothing has published", which is how it starts.
+// Through the module's own unpublish rather than by hand-copying its private
+// `Symbol.for` key and deleting the global: that copy was load-bearing — it is
+// what made the "falls back to the process env" case reachable — so a rename of
+// `STEP_ENV_SLOT` would have turned this teardown into a silent no-op and the
+// fallback test into one that passes on the previous test's leftovers.
+afterEach(() => publishStepEnv(undefined));
 
 describe("stepEnv", () => {
   test("reads the published agent env", () => {
@@ -44,6 +43,22 @@ describe("stepEnv", () => {
     // step untestable without reaching for the publisher.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "from-the-shell");
     expect(stepEnv("ASSEMBLYAI_API_KEY")).toBe("from-the-shell");
+  });
+
+  test("publishing `undefined` unpublishes, restoring the process-env fallback", () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "from-the-shell");
+    publishStepEnv({ SOMETHING_ELSE: "x" });
+    expect(stepEnv("ASSEMBLYAI_API_KEY")).toBeUndefined();
+    publishStepEnv(undefined);
+    expect(stepEnv("ASSEMBLYAI_API_KEY")).toBe("from-the-shell");
+  });
+
+  test("an EMPTY record is published, and is not the same as nothing published", () => {
+    // The distinction the unpublish above turns on: `{}` still switches off the
+    // per-key fallback, so it cannot stand in for "no host published one".
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "from-the-shell");
+    publishStepEnv({});
+    expect(stepEnv("ASSEMBLYAI_API_KEY")).toBeUndefined();
   });
 
   test("publishing replaces, because a redeploy is not a merge", () => {

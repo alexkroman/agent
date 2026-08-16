@@ -18,8 +18,22 @@
  *
  * Set here rather than per call site so a new suite inherits it: the flake is
  * a property of the runner's load, not of any one assertion.
+ *
+ * It also unmounts everything rendered by a test. Testing Library registers
+ * its own automatic cleanup only when the runner exposes globals, and this
+ * package deliberately does not set `globals: true` — so before this, sixteen
+ * files hand-wrote `afterEach(cleanup)` and the seventeenth
+ * (`use-event-stream.test.ts`) leaned on a per-test `unmount()`, which an
+ * assertion failing above that line skips: the hook stays mounted holding a
+ * pending fake timer into the next test. Registering it here is the only
+ * version a new suite cannot forget. It runs LAST (vitest stacks `afterEach`
+ * hooks, so the setup file's is the outermost), which is what a suite that
+ * restores timers or globals in its own hook wants.
  */
 
-import { configure } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
+import { afterEach } from "vitest";
 
 configure({ asyncUtilTimeout: 10_000 });
+
+afterEach(cleanup);

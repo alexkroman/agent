@@ -36,9 +36,10 @@ describe("attachSessionStream", () => {
     await before.flush(SID);
 
     const stream = createSessionEventStream({ backend });
-    attachSessionStream(makeMockCore(), { stream, sessionId: SID, resumed: true });
     // `start` is what hydrates; a resumed session that appended before it would
-    // otherwise restart at index 0.
+    // otherwise restart at index 0. (An orphan `attachSessionStream` over a core
+    // nobody started stood here, discarded on the next line — it read as setup
+    // that mattered and affected nothing.)
     const core = makeMockCore();
     attachSessionStream(core, { stream, sessionId: SID, resumed: true });
     await core.start();

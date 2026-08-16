@@ -16,6 +16,17 @@ const VOICE_CORE = [PROMPT_ROLE, PROMPT_PERSONALITY, PROMPT_SPEAKING, PROMPT_LIS
   "\n\n",
 );
 const DATE_LINE = "Today's date is Wednesday, January 15, 2025.";
+/**
+ * Frozen in LOCAL time, not `Z`, and that is the whole point.
+ * `buildSystemPrompt` renders the date with `toLocaleDateString("en-US", …)`
+ * and no `timeZone` option, so it reads the runner's zone. A frozen
+ * `12:00:00Z` leaves ±12h of slack — enough for common CI regions and not for
+ * UTC+13/+14 (Auckland in DST, Tonga, Samoa, Kiritimati), where it renders as
+ * the 16th. Local noon on the 15th is the 15th in every zone there is, so
+ * nothing has to pin `TZ`.
+ */
+const LOCAL_NOON = (y: number, monthIndex: number, day: number): Date =>
+  new Date(y, monthIndex, day, 12, 0, 0);
 const AGENT_HEADER =
   "Agent-specific instructions (these override the defaults above where they conflict):";
 
@@ -26,7 +37,7 @@ function countOf(haystack: string, needle: string): number {
 describe("buildSystemPrompt", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2025-01-15T12:00:00Z"));
+    vi.setSystemTime(LOCAL_NOON(2025, 0, 15));
   });
 
   afterEach(() => {
@@ -214,14 +225,15 @@ describe("buildSystemPrompt", () => {
   // single most common tool error in tau2 was "User not found". These are
   // transcript-reading rules, so they live in LISTENING and apply even to a
   // tool-less agent that only has to repeat an identifier back.
-  test("LISTENING writes spoken identifiers in written form, with or without tools", () => {
-    for (const hasTools of [true, false]) {
+  test.each([true, false])(
+    "LISTENING writes spoken identifiers in written form (hasTools: %s)",
+    (hasTools) => {
       const result = buildSystemPrompt(makeConfig(), { hasTools });
       expect(result).toContain('"K dash 2" is K2');
       expect(result).toContain("ZK3FFW, never ZEDK3FFW");
       expect(result).toContain("ordinary title case");
-    }
-  });
+    },
+  );
 
   // Verbose letter-by-letter readbacks make replies long and invite the
   // caller to interrupt mid-sentence (see tau2 turn-taking analysis).
@@ -237,7 +249,7 @@ describe("buildSystemPrompt", () => {
 
   test("date format uses en-US locale with weekday, month, day, and year", () => {
     // Advance to a different date to verify format consistency
-    vi.setSystemTime(new Date("2025-12-31T12:00:00Z"));
+    vi.setSystemTime(LOCAL_NOON(2025, 11, 31));
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
     expect(result).toContain("Today's date is Wednesday, December 31, 2025.");
   });

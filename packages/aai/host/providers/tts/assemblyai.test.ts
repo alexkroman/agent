@@ -4,15 +4,15 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { DEAD_AIR_OPENING_PHRASE } from "../../../sdk/constants.ts";
 import type { AssemblyAITtsLanguage } from "../../../sdk/providers/tts/assemblyai.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
-import { tick } from "../../_test-utils.ts";
-import { FakeWebSocket, pcmBase64 } from "./_assemblyai-fake-ws-test-utils.ts";
+import { flush, tick } from "../../_test-utils.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
+import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
 import { openAssemblyAITts } from "./assemblyai.ts";
 
 // Async factory importing an import-free module: the adapter's own "ws"
 // import must not be reachable from the factory (it would re-enter the mock).
 vi.mock("ws", async () => {
-  const { FakeWebSocket } = await import("./_assemblyai-fake-ws-test-utils.ts");
+  const { FakeWebSocket } = await import("./_fake-ws-test-utils.ts");
   return { default: FakeWebSocket, WebSocket: FakeWebSocket };
 });
 
@@ -153,54 +153,46 @@ describe("AssemblyAI TTS adapter", () => {
 
   test("FlushDone ends the turn exactly once", async () => {
     const { session, ws } = await openSession();
-    let done = 0;
-    session.on("done", () => {
-      done += 1;
-    });
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     session.sendText("hi");
     session.flush();
     ws._msg({ type: "FlushDone" });
     ws._msg({ type: "FlushDone" });
 
-    expect(done).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 
   test("an Audio frame flagged is_final also ends the turn", async () => {
     // Older servers flag the last frame instead of sending FlushDone.
     const { session, ws } = await openSession();
-    let done = 0;
-    session.on("done", () => {
-      done += 1;
-    });
+    const onDone = vi.fn();
+    session.on("done", onDone);
     session.sendText("hi");
     ws._msg({ type: "Audio", audio: pcmBase64([7]), is_final: true });
-    expect(done).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 
   test("a new turn can complete after the previous one finished", async () => {
     const { session, ws } = await openSession();
-    let done = 0;
-    session.on("done", () => {
-      done += 1;
-    });
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     session.sendText("one");
     ws._msg({ type: "FlushDone" });
     session.sendText("two");
     ws._msg({ type: "FlushDone" });
 
-    expect(done).toBe(2);
+    expect(onDone).toHaveBeenCalledTimes(2);
   });
 
   test("no done fires before a turn starts", async () => {
     const { session, ws } = await openSession();
-    let done = 0;
-    session.on("done", () => {
-      done += 1;
-    });
+    const onDone = vi.fn();
+    session.on("done", onDone);
     ws._msg({ type: "FlushDone" });
-    expect(done).toBe(0);
+    expect(onDone).not.toHaveBeenCalled();
   });
 
   describe("mid-stream segment flushing", () => {
@@ -343,21 +335,19 @@ describe("AssemblyAI TTS adapter", () => {
       // last: flushTtsAndWait resolves on it, so a premature one advances the
       // orchestrator while later segments are still synthesizing.
       const { session, ws } = await openSession();
-      let done = 0;
-      session.on("done", () => {
-        done += 1;
-      });
+      const onDone = vi.fn();
+      session.on("done", onDone);
 
       session.sendText(
         "Let me pull up the details on that order for you and check the warehouse status now ",
       );
       ws._msg({ type: "FlushDone" }); // first budget segment
       ws._msg({ type: "FlushDone" }); // second budget segment
-      expect(done).toBe(0);
+      expect(onDone).not.toHaveBeenCalled();
 
       session.flush(); // end of turn — "status now " is still buffered
       ws._msg({ type: "FlushDone" });
-      expect(done).toBe(1);
+      expect(onDone).toHaveBeenCalledTimes(1);
     });
 
     test("flushes a short cover phrase, which must be audible during tool execution", async () => {
@@ -374,19 +364,17 @@ describe("AssemblyAI TTS adapter", () => {
       // flushTtsAndWait resolves on `done`, so a premature one advances the
       // orchestrator while audio is still streaming.
       const { session, ws } = await openSession();
-      let done = 0;
-      session.on("done", () => {
-        done += 1;
-      });
+      const onDone = vi.fn();
+      session.on("done", onDone);
 
       session.sendText("First sentence here. ");
       ws._msg({ type: "FlushDone" }); // the segment's
-      expect(done).toBe(0);
+      expect(onDone).not.toHaveBeenCalled();
 
       session.sendText("And the rest ");
       session.flush(); // end of turn
       ws._msg({ type: "FlushDone" });
-      expect(done).toBe(1);
+      expect(onDone).toHaveBeenCalledTimes(1);
     });
 
     test("accumulates across deltas and flushes once the sentence completes", async () => {
@@ -405,10 +393,8 @@ describe("AssemblyAI TTS adapter", () => {
       // `done` then never fires — flushTtsAndWait would burn its full timeout on
       // every turn, which is worse than the lag this flushing fixes.
       const { session, ws } = await openSession();
-      let done = 0;
-      session.on("done", () => {
-        done += 1;
-      });
+      const onDone = vi.fn();
+      session.on("done", onDone);
 
       session.sendText("The whole reply fits in one sentence. ");
       ws._msg({ type: "FlushDone" });
@@ -417,35 +403,31 @@ describe("AssemblyAI TTS adapter", () => {
       session.flush(); // nothing buffered
       expect(ws._frames()).toHaveLength(before);
       // All synthesis was already acknowledged, so the turn ends here.
-      expect(done).toBe(1);
+      expect(onDone).toHaveBeenCalledTimes(1);
     });
 
     test("an end-of-turn flush with nothing buffered waits for outstanding audio", async () => {
       const { session, ws } = await openSession();
-      let done = 0;
-      session.on("done", () => {
-        done += 1;
-      });
+      const onDone = vi.fn();
+      session.on("done", onDone);
 
       session.sendText("One sentence. ");
       session.flush(); // nothing buffered, but the segment is unacknowledged
-      expect(done).toBe(0);
+      expect(onDone).not.toHaveBeenCalled();
 
       ws._msg({ type: "FlushDone" });
-      expect(done).toBe(1);
+      expect(onDone).toHaveBeenCalledTimes(1);
     });
 
     test("a segment's is_final does not end the turn either", async () => {
       // Older servers flag the last Audio frame instead of sending FlushDone;
       // per segment that signal means the same thing and must be gated the same.
       const { session, ws } = await openSession();
-      let done = 0;
-      session.on("done", () => {
-        done += 1;
-      });
+      const onDone = vi.fn();
+      session.on("done", onDone);
       session.sendText("First sentence here. ");
       ws._msg({ type: "Audio", audio: pcmBase64([1]), is_final: true });
-      expect(done).toBe(0);
+      expect(onDone).not.toHaveBeenCalled();
     });
 
     test("an is_final AND its FlushDone count as one acknowledgement", async () => {
@@ -456,16 +438,14 @@ describe("AssemblyAI TTS adapter", () => {
       // below ("And the rest") is dropped: the voice cuts off before the
       // reply finishes. Exhaustive ack-pairing cases: assemblyai-turn.test.ts.
       const { session, ws } = await openSession();
-      let done = 0;
-      session.on("done", () => {
-        done += 1;
-      });
+      const onDone = vi.fn();
+      session.on("done", onDone);
 
       session.sendText("First sentence here. ");
       session.sendText("And the rest");
       ws._msg({ type: "Audio", audio: pcmBase64([1]), is_final: true }); // segment's final frame
       ws._msg({ type: "FlushDone" }); // same flush, acked again
-      expect(done).toBe(0);
+      expect(onDone).not.toHaveBeenCalled();
 
       session.sendText(" of the reply. ");
       session.flush(); // end of turn — "And the rest of the reply. " must go out
@@ -473,24 +453,22 @@ describe("AssemblyAI TTS adapter", () => {
         type: "Generate",
         text: "And the rest of the reply. ",
       });
-      expect(done).toBe(0);
+      expect(onDone).not.toHaveBeenCalled();
 
       ws._msg({ type: "Audio", audio: pcmBase64([2]), is_final: true });
-      expect(done).toBe(1); // exactly once, on the LAST flush's acknowledgement
+      expect(onDone).toHaveBeenCalledTimes(1); // exactly once, on the LAST flush's acknowledgement
       ws._msg({ type: "FlushDone" });
-      expect(done).toBe(1);
+      expect(onDone).toHaveBeenCalledTimes(1);
     });
 
     test("cancel clears pending segment state so the next turn ends normally", async () => {
       const { session } = await openSession();
-      let done = 0;
-      session.on("done", () => {
-        done += 1;
-      });
+      const onDone = vi.fn();
+      session.on("done", onDone);
 
       session.sendText("Interrupted sentence. ");
       session.cancel(); // emits done for the cancelled turn, drops the socket
-      expect(done).toBe(1);
+      expect(onDone).toHaveBeenCalledTimes(1);
 
       // Let the replacement socket finish connecting so queued frames go out.
       await tick();
@@ -498,7 +476,7 @@ describe("AssemblyAI TTS adapter", () => {
       session.sendText("New turn ");
       session.flush();
       next?._msg({ type: "FlushDone" });
-      expect(done).toBe(2);
+      expect(onDone).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -529,28 +507,24 @@ describe("AssemblyAI TTS adapter", () => {
 
   test("cancel ends the turn synchronously for barge-in", async () => {
     const { session } = await openSession();
-    let done = 0;
-    session.on("done", () => {
-      done += 1;
-    });
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     session.sendText("a long reply");
     session.cancel();
 
     // Synchronous, not microtask-deferred: the orchestrator's state machine
     // advances on `done`.
-    expect(done).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 
   test("an unexpected server close releases a turn in flight", async () => {
     const { session, ws } = await openSession();
-    let done = 0;
-    session.on("done", () => {
-      done += 1;
-    });
+    const onDone = vi.fn();
+    session.on("done", onDone);
     session.sendText("hi");
     ws._fire("close");
-    expect(done).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
   });
 
   test("a server-initiated clean close (1000) fails the session instead of muting it", async () => {
@@ -562,15 +536,13 @@ describe("AssemblyAI TTS adapter", () => {
     const { session, ws } = await openSession();
     const errors: TtsError[] = [];
     session.on("error", (err) => errors.push(err));
-    let done = 0;
-    session.on("done", () => {
-      done += 1;
-    });
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     session.sendText("mid turn");
     ws._fire("close", 1000);
 
-    expect(done).toBe(1); // the in-flight turn is released...
+    expect(onDone).toHaveBeenCalledTimes(1); // the in-flight turn is released...
     expect(errors).toHaveLength(1); // ...and the session fails loudly
     expect(errors[0]?.code).toBe("tts_stream_error");
     expect(errors[0]?.message).toContain("1000");
@@ -621,18 +593,16 @@ describe("AssemblyAI TTS adapter", () => {
       // outstanding flush, so `done` — and the client's audio_done — would
       // overtake the reply's remaining audio and cut it off mid-sentence.
       const { session, ws } = await openSession();
-      let done = 0;
-      session.on("done", () => {
-        done += 1;
-      });
+      const onDone = vi.fn();
+      session.on("done", onDone);
       session.sendText("One thing. ");
       session.sendText("Two things. ");
       session.flush();
       ws._msg({ type: "FlushDone" });
       ws._msg({ type: "WordBoundaries", words: [{ text: "One", audio_start_ms: 0 }] });
-      expect(done).toBe(0);
+      expect(onDone).not.toHaveBeenCalled();
       ws._msg({ type: "FlushDone" });
-      expect(done).toBe(1);
+      expect(onDone).toHaveBeenCalledTimes(1);
     });
 
     test("a frame for a cancelled turn cannot reach the next one", async () => {
@@ -676,7 +646,7 @@ describe("AssemblyAI TTS adapter", () => {
   test("aborting the signal closes the session", async () => {
     const { ws, controller } = await openSession();
     controller.abort();
-    await Promise.resolve();
+    await flush();
     expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
   });
 });

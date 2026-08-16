@@ -295,10 +295,15 @@ describe("answer_question", () => {
     expect(result.error).toContain("knowledge base lookup failed");
   });
 
-  test("two calls never see each other's traces or tickets", async () => {
+  test("two independent contexts never see each other's traces or tickets", async () => {
+    // What this really checks: the state lives in the SLOT and not in a
+    // module-level variable. `createToolContext()` hands each call its own
+    // detached slot store, so the isolation is per CONTEXT — two distinct
+    // session ids would prove nothing extra, and `sessionSlot` could stop
+    // keying by session with this still passing.
     const { generate } = scriptedModel({ relevant: (id) => id === "D2", answers: ["Reboot it."] });
-    const first = makeCtx(generate, "call-a");
-    const second = makeCtx(generate, "call-b");
+    const first = makeCtx(generate);
+    const second = makeCtx(generate);
 
     await run("answer_question", { question: "how do I reboot" }, first);
     expect(supportSlot.get(second).trace).toBeNull();

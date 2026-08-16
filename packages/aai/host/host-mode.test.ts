@@ -6,10 +6,11 @@ import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { SessionEvent } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { makeConfig, makeEmitter, makeLogger, silentLogger } from "./_test-utils.ts";
+import { flush, makeConfig, makeEmitter, makeLogger, silentLogger } from "./_test-utils.ts";
 import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import {
   buildHostAgent,
+  DEFAULT_HOST_MAX_STEPS,
   isHostAllowed,
   startHostSession,
   unknownCredentialName,
@@ -146,9 +147,6 @@ describe("host-supplied credentials", () => {
   });
 });
 
-/** Mirrors the module-private DEFAULT_HOST_MAX_STEPS in host-mode.ts. */
-const DEFAULT_HOST_MAX_STEPS = 30;
-
 describe("buildHostAgent", () => {
   test("maps systemPrompt/greeting and relays tools (no in-process tool defs)", () => {
     const agent = buildHostAgent({
@@ -233,7 +231,7 @@ describe("startHostSession (deferred host handshake)", () => {
     ws.simulateMessage(hostConfigFrame());
     // The env is awaited (it may be a pending Vault fetch); a plain object
     // resolves on the next microtask.
-    await Promise.resolve();
+    await flush();
 
     // Synthetic agent built from the host block.
     expect(captured?.agent.systemPrompt).toBe("You are a host agent.");
@@ -283,7 +281,7 @@ describe("startHostSession (deferred host handshake)", () => {
           host: { systemPrompt: "You are a host agent.", tools: [TOOL_SCHEMA], ...host },
         }),
       );
-      await Promise.resolve();
+      await flush();
       const opts = startSession.mock.calls[0]?.[1] as { audioLeadMs?: unknown } | undefined;
       return { calls: startSession.mock.calls.length, audioLeadMs: opts?.audioLeadMs };
     }
@@ -323,7 +321,7 @@ describe("startHostSession (deferred host handshake)", () => {
           host: { systemPrompt: "s", tools: [], audioLeadMs: 0 },
         }),
       );
-      await Promise.resolve();
+      await flush();
       expect(createRuntime).not.toHaveBeenCalled();
     });
   });
@@ -353,7 +351,7 @@ describe("startHostSession (deferred host handshake)", () => {
         createRuntime,
       });
       ws.simulateMessage(hostConfigFrame()); // declares 8000 / 16000
-      await Promise.resolve();
+      await flush();
 
       expect(createRuntime).not.toHaveBeenCalled();
       const err = ws
@@ -380,7 +378,7 @@ describe("startHostSession (deferred host handshake)", () => {
         createRuntime,
       });
       ws.simulateMessage(hostConfigFrame({ sampleRate: 24_000, ttsSampleRate: 24_000 }));
-      await Promise.resolve();
+      await flush();
 
       expect(createRuntime).toHaveBeenCalledTimes(1);
     });
@@ -398,7 +396,7 @@ describe("startHostSession (deferred host handshake)", () => {
       ws.simulateMessage(
         JSON.stringify({ type: "config", host: { systemPrompt: "s", tools: [] } }),
       );
-      await Promise.resolve();
+      await flush();
 
       expect(createRuntime).toHaveBeenCalledTimes(1);
     });
@@ -416,7 +414,7 @@ describe("startHostSession (deferred host handshake)", () => {
         },
       });
       ws.simulateMessage(hostConfigFrame());
-      await Promise.resolve();
+      await flush();
 
       expect(captured?.s2sConfig).toMatchObject({
         inputSampleRate: 8000,
@@ -435,7 +433,7 @@ describe("startHostSession (deferred host handshake)", () => {
       createRuntime,
     });
     ws.simulateMessage(hostConfigFrame());
-    await Promise.resolve(); // the env gate runs after the env resolves
+    await flush(); // the env gate runs after the env resolves
 
     expect(createRuntime).not.toHaveBeenCalled();
     expect(ws.sentJson()).toContainEqual(
@@ -467,7 +465,7 @@ describe("startHostSession (deferred host handshake)", () => {
         },
       }),
     );
-    await Promise.resolve();
+    await flush();
 
     expect(captured?.env).toMatchObject({ ASSEMBLYAI_API_KEY: "tenant" });
   });
@@ -491,7 +489,7 @@ describe("startHostSession (deferred host handshake)", () => {
         },
       }),
     );
-    await Promise.resolve();
+    await flush();
 
     // No runtime at all — the rejection lands before anything is built, so
     // the smuggled value never reaches provider or db resolution.
@@ -570,7 +568,7 @@ describe("startHostSession (deferred host handshake)", () => {
       },
     });
     ws.simulateMessage(hostConfigFrame());
-    await Promise.resolve();
+    await flush();
     expect(shutdown).toBeDefined();
     expect(shutdown).not.toHaveBeenCalled();
 

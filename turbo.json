@@ -21,7 +21,17 @@
     // either tier. Verified the documented way — capture `turbo run test
     // --filter aai-server --dry=json`'s hash, touch a migration, capture
     // again; before this entry `aai-server#test` was byte-identical.
-    "supabase/migrations/**"
+    "supabase/migrations/**",
+    // `aai-server`'s vitest `globalSetup` (`vitest.config.ts` names it by
+    // repo-relative path), plus `aai-studio-server`'s `predev` and
+    // `aai-server`'s `predeploy:modal`. Fourth instance of the rule above and
+    // the same fix: `inputs` globs resolve relative to the PACKAGE, so a
+    // repo-root file a task depends on belongs here. Verified the documented
+    // way — capture `turbo run test --filter ./packages/aai-server --dry=json`'s
+    // hash, touch this script, capture again; before this entry the hash was
+    // byte-identical, so a change to the harness verify logic replayed a cached
+    // green run.
+    "scripts/ensure-guest-harness.mjs"
   ],
   "globalPassThroughEnv": [
     // Ambient machine config, same class as the proxy/CA vars below. Stripped
@@ -263,18 +273,31 @@
     // undeclared it would leave CI's enforcement inert — a gate reporting success
     // while checking nothing, which is exactly what it exists to prevent. In
     // `env`, so a required run and a skippable one are different cache entries.
+    // VITEST_POOL is the fourth instance, and it was MISSING while the three
+    // above were declared — `VITEST_POOL=forks pnpm test:e2e` was stripped
+    // silently, the same class the paragraph above documents. The other four
+    // test tasks all declare it.
+    //
+    // `../../vitest.shared.ts` likewise: the e2e run reaches `sharedConfig`
+    // through `vitest.slow.config.ts`, and the other four test tasks all hash
+    // it. Verified the documented way — capture
+    // `turbo run check:e2e --filter ./packages/aai-cli --dry=json`'s hash, touch
+    // `vitest.shared.ts`, capture again; before this entry it was
+    // byte-identical at `261096f60c7229f6`.
     "check:e2e": {
       "dependsOn": [
         "build"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",
-        "!**/*.md"
+        "!**/*.md",
+        "../../vitest.shared.ts"
       ],
       "env": [
         "AAI_TEST_PM",
         "AAI_FAULT_PROFILE",
-        "AAI_REQUIRE_REGISTRY"
+        "AAI_REQUIRE_REGISTRY",
+        "VITEST_POOL"
       ]
     },
     // The behaviour eval tier: a live model, a live key, real tokens. NOT in

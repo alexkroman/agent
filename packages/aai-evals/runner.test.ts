@@ -66,7 +66,7 @@ describe("runEval", () => {
     expect(report.unstable).toEqual(["sometimes"]);
   });
 
-  test("unstable labels sort by CODE UNIT, not by locale", () => {
+  test("unstable labels sort by CODE UNIT, not by locale", async () => {
     // `localeCompare` with no explicit locale answers to the runtime's ICU
     // default, so the same run would print a different order on a different
     // machine — and this list goes into a committed report. These four are
@@ -75,7 +75,12 @@ describe("runEval", () => {
     // units put every uppercase letter first. Asserting the code-unit answer
     // is what makes the ordering a property of the data rather than the box.
     let call = 0;
-    return runEval({
+    // `await`, not a returned `.then` — the only test in this file written that
+    // way. It worked because the promise was returned, which is exactly the
+    // fragility: drop the `return` and the assertion moves out of the test, the
+    // body passes having checked nothing, and a failure surfaces as an
+    // unhandled rejection attributed to whatever ran next.
+    const report = await runEval({
       name: "case",
       repeat: 2,
       body: async (t) => {
@@ -83,9 +88,8 @@ describe("runEval", () => {
         const flips = call === 1;
         for (const label of ["b", "B", "a", "A"]) t.check(flips, label);
       },
-    }).then((report) => {
-      expect(report.unstable).toEqual(["A", "B", "a", "b"]);
     });
+    expect(report.unstable).toEqual(["A", "B", "a", "b"]);
   });
 
   test("a harness failure is recorded on its pass and does not lose the others", async () => {

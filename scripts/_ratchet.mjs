@@ -45,7 +45,8 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { compareNames, repoRoot } from "./_fs.mjs";
 
@@ -97,25 +98,127 @@ function parseMatch(raw) {
 }
 
 /**
- * Every work-tree line matching `re` under `pathspecs`.
+ * Every work-tree OCCURRENCE of `re` under `pathspecs`.
  *
  * `--untracked` so a hit in a brand-new, not-yet-added file is counted —
  * otherwise `git add` is all it takes to defer a gate to a later commit.
+ *
+ * **`-o`, and that is the difference between an occurrence and a LINE.** Both
+ * baseline files describe themselves as recording "how many occurrences each
+ * file is allowed", and for as long as this ran without `-o` they recorded
+ * matching lines: three `as unknown as` casts on one line reported `found 1`,
+ * the same three on three lines reported `found 3`. Honest at the moment it was
+ * measured (94 lines against 94 occurrences) and structurally wrong — any file
+ * already at its budget could absorb more hatches by appending them to the line
+ * that bought the budget, and rule 16 was affected identically.
+ *
+ * TWO passes, because `-o` prints the matched FRAGMENT and both callers need
+ * the whole source line: the failure report prints it, and `isCommentOnly`
+ * decides on it. The `-n` pass supplies the text, the `-o` pass the count.
  */
 function grepMatches(re, pathspecs, { cwd } = {}) {
-  const out = git(["grep", "-nIE", "--untracked", "-e", re, "--", ...pathspecs], {
-    allowNoMatch: true,
-    cwd,
-  });
-  if (out === "") return [];
-  return out
+  const tail = ["--untracked", "-e", re, "--", ...pathspecs];
+  const lineOut = git(["grep", "-nIE", ...tail], { allowNoMatch: true, cwd });
+  if (lineOut === "") return [];
+  /** Full source line, keyed `file:line` — restored onto every occurrence below. */
+  const textAt = new Map();
+  for (const raw of lineOut.split("\n")) {
+    if (raw.length === 0) continue;
+    const match = parseMatch(raw);
+    textAt.set(`${match.file}:${match.line}`, match.text);
+  }
+  return git(["grep", "-nIoE", ...tail], { allowNoMatch: true, cwd })
     .split("\n")
     .filter((line) => line.length > 0)
-    .map(parseMatch);
+    .map(parseMatch)
+    .map((match) => ({ ...match, text: textAt.get(`${match.file}:${match.line}`) ?? match.text }));
 }
 
 /**
- * Fail unless `pathspecs` resolves to at least `minFiles` files.
+ * True when the line carries only prose — a `//` or `*` comment.
+ *
+ * Shared, because both gates need it and only one had it. `guard-invariants`
+ * carries a per-rule `skipComments` flag and passes a filter in;
+ * `check-escape-hatches` called `scanGroups` with no filter at all, so its
+ * entire `as any` budget was two sentences of JSDoc — and a genuine
+ * `(globalThis as any).x` could move into that budget with the gate still
+ * printing `as any allowed=2 now=2 … every file within its baseline ✓`.
+ * Demonstrated on the real gate before the flag was added.
+ */
+export function isCommentOnly(text) {
+  return text.startsWith("//") || text.startsWith("*") || text.startsWith("/*");
+}
+
+/**
+ * Extensions whose files are legitimately invisible to `git grep`.
+ *
+ * A DENY-list of known-binary kinds rather than an allow-list of text kinds,
+ * deliberately and for the reason the config schema is deny-listed: a new
+ * source extension then defaults INTO being checked, where an allow-list would
+ * silently exempt it. The whole diff under the gates' own pathspecs today is 8
+ * files — 6 `.woff2` and 2 `.ico`.
+ */
+const KNOWN_BINARY = new Set([
+  "avif",
+  "bin",
+  "eot",
+  "gif",
+  "gz",
+  "ico",
+  "jpeg",
+  "jpg",
+  "mp3",
+  "mp4",
+  "node",
+  "ogg",
+  "otf",
+  "pdf",
+  "png",
+  "ttf",
+  "wasm",
+  "wav",
+  "webm",
+  "webp",
+  "woff",
+  "woff2",
+  "zip",
+]);
+
+/**
+ * Files in the corpus that `git grep` treats as BINARY and therefore skips.
+ *
+ * **The corpus floor cannot catch this, by design** — the file is present in
+ * `git ls-files` and invisible only to `grep`, so both numbers look right and
+ * nothing compared the two lists. It has now cost this repo three times: a
+ * single raw NUL byte in `host/workflow-notify.ts`, then in
+ * `host/workflow-keys.ts`, each silently exempting a shipped module from every
+ * line rule and every escape-hatch pattern. The first two times the response
+ * was to fix the byte and add no detector. This is the detector.
+ *
+ * A zero-byte file has no line for `git grep -lI -e ''` to list either; it is
+ * not binary, and is spared on SIZE rather than on extension.
+ */
+function binaryInCorpus(files, pathspecs, cwd) {
+  const textual = new Set(
+    git(["grep", "-lI", "--untracked", "-e", "", "--", ...pathspecs], { allowNoMatch: true, cwd })
+      .split("\n")
+      .filter(Boolean),
+  );
+  const root = cwd === undefined ? REPO_ROOT : String(cwd);
+  return files.filter((file) => {
+    if (textual.has(file)) return false;
+    if (KNOWN_BINARY.has(file.split(".").pop()?.toLowerCase() ?? "")) return false;
+    try {
+      return statSync(join(root, file)).size > 0;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * Fail unless `pathspecs` resolves to at least `minFiles` files, and unless
+ * every one of those files is VISIBLE to `git grep`.
  *
  * The floor is a real number with headroom rather than `> 0`, because the
  * interesting failure is PARTIAL: an exclusion that swallows one package still
@@ -126,16 +229,36 @@ function grepMatches(re, pathspecs, { cwd } = {}) {
  * @returns {number} the number of files in scope
  */
 export function assertScanCorpus({ gate, what, pathspecs, minFiles, cwd }) {
-  const files = git(
-    ["ls-files", "--cached", "--others", "--exclude-standard", "--", ...pathspecs],
-    {
-      allowNoMatch: true,
-      cwd,
-    },
-  )
-    .split("\n")
-    .filter(Boolean);
-  const unique = new Set(files).size;
+  const files = [
+    ...new Set(
+      git(["ls-files", "--cached", "--others", "--exclude-standard", "--", ...pathspecs], {
+        allowNoMatch: true,
+        cwd,
+      })
+        .split("\n")
+        .filter(Boolean),
+    ),
+  ];
+  const unique = files.length;
+  const opaque = unique === 0 ? [] : binaryInCorpus(files, pathspecs, cwd);
+  if (opaque.length > 0) {
+    console.error(
+      `\n${gate}: ${opaque.length} file(s) in ${what} are BINARY to \`git grep\`, ` +
+        "so every pattern skips them silently:\n",
+    );
+    for (const file of opaque) console.error(`  ${file}`);
+    console.error(
+      "\nAlmost always ONE control character in an otherwise ordinary source file.\n" +
+        "A single raw NUL is enough, and it exempts the whole file from every\n" +
+        "guard-invariants line rule and every check-escape-hatches pattern while\n" +
+        "the corpus floor still counts it — which is why this is checked here and\n" +
+        "not by the floor. Spell the character as an ESCAPE: byte-identical\n" +
+        "behaviour, and the file goes back to being text. Find it with\n" +
+        "`cat -v <file> | grep -n '\\^@'`. If the file is genuinely binary, add its\n" +
+        "extension to KNOWN_BINARY in scripts/_ratchet.mjs.\n",
+    );
+    process.exit(1);
+  }
   if (unique < minFiles) {
     console.error(
       `\n${gate}: ${what} resolves to ${unique} file(s), below the floor of ${minFiles}.\n\n` +

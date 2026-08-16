@@ -106,6 +106,13 @@ describe("POST /deploy body handling", () => {
       }),
     });
     expect(res.status).toBe(200);
+    // The parenthetical in the name is the whole claim, and the status code
+    // does not carry it: a regression that dropped the stored env on an
+    // env-less deploy answered 200 just the same.
+    expect(await store.getEnv("pre-stored")).toEqual({
+      MY_SECRET: "stored-secret",
+      ...VALID_ENV,
+    });
   });
 });
 
@@ -298,13 +305,17 @@ describe("deployAgentBundle preview-slug guard", () => {
 // ── Top-level deploy (POST /deploy) — server generates slug ───────────────
 
 describe("POST /deploy", () => {
-  test("generates slug when not provided in body", async () => {
+  // Was two tests — "generates slug when not provided in body" and "a generated
+  // slug is human-id words plus a suffix" — with byte-identical bodies under
+  // two names.
+  test("a slugless deploy is named human-id words plus a suffix", async () => {
     const { fetch } = await createTestOrchestrator();
     const res = await deploy(fetch);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { slug: string };
-    // Words from human-id plus the shared random suffix (slug-generate.ts) —
-    // nothing about the bundle reaches the name.
+    // Words from human-id plus the shared random suffix (slug-generate.ts).
+    // The platform derives nothing from the bundle, so nothing about the agent
+    // reaches its name.
     expect(body.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{6}$/);
   });
 
@@ -358,16 +369,6 @@ describe("POST /deploy", () => {
     // Original owner's credential_hashes should not be modified
     const afterRecord = await store.getAgent("stolen-agent");
     expect(afterRecord?.credential_hashes).toEqual(originalHashes);
-  });
-
-  test("a generated slug is human-id words plus a suffix", async () => {
-    // The platform derives nothing from the bundle, so a slugless deploy
-    // gets random words rather than the agent's name.
-    const { fetch } = await createTestOrchestrator();
-    const res = await deploy(fetch);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { slug: string };
-    expect(body.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{6}$/);
   });
 
   test("a body-supplied agentConfig is ignored, not stored", async () => {

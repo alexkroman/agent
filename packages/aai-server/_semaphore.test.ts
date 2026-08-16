@@ -1,11 +1,19 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The concurrency bound behind POST /deploy's body handling (_semaphore.ts).
 
-import { describe, expect, test } from "vitest";
+import { sleep } from "@alexkroman1/aai/internal";
+import { describe, expect, test, vi } from "vitest";
 import { createSemaphore } from "./_semaphore.ts";
 
-/** Yield enough turns for queued acquires to settle. */
-const flush = () => new Promise((r) => setImmediate(r));
+/**
+ * Yield a macrotask, so queued acquires settle.
+ *
+ * `sleep` is the repo's ONE wait (`guard-invariants` rule 19). This was
+ * `new Promise((r) => setImmediate(r))` — a fourth spelling of the same thing
+ * that neither rule 4 nor rule 19 can see, and NOT named `flush`, which in this
+ * repo means a microtask yield.
+ */
+const settleQueue = (): Promise<void> => sleep(0);
 
 describe("createSemaphore", () => {
   test("hands out up to `limit` slots immediately", async () => {
@@ -18,17 +26,20 @@ describe("createSemaphore", () => {
   test("a caller past the limit waits, then gets the released slot", async () => {
     const sem = createSemaphore(1);
     const first = await sem.acquire(1000);
-    let granted = false;
+    // A spy rather than a `let granted = false` flipped inside the `.then()`:
+    // it records its own calls and names itself in the failure.
+    const settled = vi.fn();
     const second = sem.acquire(1000).then((slot) => {
-      granted = slot !== null;
+      settled(slot);
       return slot;
     });
-    await flush();
-    expect(granted).toBe(false);
+    await settleQueue();
+    expect(settled).not.toHaveBeenCalled();
     expect(sem.waiting).toBe(1);
 
     first?.();
     expect(await second).toBeTypeOf("function");
+    expect(settled).toHaveBeenCalledTimes(1);
     expect(sem.waiting).toBe(0);
   });
 
@@ -71,7 +82,7 @@ describe("createSemaphore", () => {
         return slot;
       }),
     );
-    await flush();
+    await settleQueue();
     held?.();
     for (const w of waiters) (await w)?.();
     expect(order).toEqual([1, 2, 3]);
@@ -84,7 +95,7 @@ describe("createSemaphore", () => {
       Array.from({ length: 25 }, async () => {
         const slot = await sem.acquire(2000);
         peak = Math.max(peak, sem.active);
-        await flush();
+        await settleQueue();
         slot?.();
       }),
     );
@@ -92,9 +103,12 @@ describe("createSemaphore", () => {
     expect(sem.active).toBe(0);
   });
 
-  test("rejects a nonsense limit rather than silently unbounding", () => {
-    for (const bad of [0, -1, 1.5, Number.NaN]) {
+  // `test.each`, not a `for…of` over the cases: the reporter then names the
+  // limit that failed instead of stopping at the first one.
+  test.each([0, -1, 1.5, Number.NaN])(
+    "rejects the nonsense limit %p rather than silently unbounding",
+    (bad) => {
       expect(() => createSemaphore(bad)).toThrow(/positive integer/);
-    }
-  });
+    },
+  );
 });

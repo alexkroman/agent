@@ -11,6 +11,37 @@ import { makeLogger, silentLogger } from "../_test-utils.ts";
 import { type AdoptedLlmStream, consumeLlmStream, type TapeEntry } from "./pipeline-llm-stream.ts";
 import { createStreamPartHandler, type StreamPart } from "./pipeline-stream-parts.ts";
 
+type ConsumeArgs = Parameters<typeof consumeLlmStream>[0];
+
+/**
+ * `consumeLlmStream` with the inert defaults every spec in this file shares.
+ *
+ * The literal it replaces was fifteen fields copied eight times, of which two
+ * or three ever varied per test — so the field a spec is actually about was
+ * indistinguishable from the twelve that are only there to satisfy the
+ * signature, and a new required parameter meant eight edits.
+ */
+function consume(
+  overrides: Partial<ConsumeArgs> & Pick<ConsumeArgs, "llm" | "sid">,
+): ReturnType<typeof consumeLlmStream> {
+  return consumeLlmStream({
+    systemPrompt: "s",
+    messages: [{ role: "user", content: "hi" }],
+    tools: {},
+    toolChoice: "auto",
+    temperature: undefined,
+    repairToolCall: async () => null,
+    maxSteps: 1,
+    sendTtsText: () => undefined,
+    callbacks: { report: () => undefined },
+    emitError: () => undefined,
+    log: silentLogger,
+    signal: new AbortController().signal,
+    onDelta: () => undefined,
+    ...overrides,
+  });
+}
+
 describe("LLM stream error reporting", () => {
   function apiError(): APICallError {
     return new APICallError({
@@ -83,22 +114,10 @@ describe("LLM stream error reporting", () => {
     // buffer, which is how this went unnoticed in production.
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const log = makeLogger();
-    await consumeLlmStream({
+    await consume({
       llm: createFakeLanguageModel({ script: [{ type: "error", error: apiError() }] }),
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { report: () => undefined },
-      emitError: () => undefined,
       log,
       sid: "sid-3",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
     });
     expect(consoleError).not.toHaveBeenCalled();
     expect(log.error).toHaveBeenCalledWith(
@@ -136,23 +155,7 @@ describe("LLM stream error reporting", () => {
     const llm = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
     (llm as unknown as { doStream: () => Promise<never> }).doStream = () =>
       Promise.reject(new Error("connection reset"));
-    const result = await consumeLlmStream({
-      llm,
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { report: () => undefined },
-      emitError,
-      log: silentLogger,
-      sid: "sid-5",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
-    });
+    const result = await consume({ llm, emitError, sid: "sid-5" });
     expect(result.failed).toBe(true);
     expect(emitError).toHaveBeenCalledWith("llm", "connection reset", { fatal: false });
   });
@@ -162,43 +165,17 @@ describe("LLM stream error reporting", () => {
     // hears silence. The transport speaks `errorPhrase` instead — but it can
     // only do that if it can tell a failed turn from an empty successful one,
     // which the message array alone cannot express.
-    const result = await consumeLlmStream({
+    const result = await consume({
       llm: createFakeLanguageModel({ script: [{ type: "error", error: apiError() }] }),
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { report: () => undefined },
-      emitError: () => undefined,
-      log: silentLogger,
       sid: "sid-4",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
     });
     expect(result.failed).toBe(true);
   });
 
   test("reports failed: false for a turn that completed", async () => {
-    const result = await consumeLlmStream({
+    const result = await consume({
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "all good" }] }),
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { report: () => undefined },
-      emitError: () => undefined,
-      log: silentLogger,
       sid: "sid-5",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
     });
     expect(result.failed).toBe(false);
   });
@@ -208,22 +185,10 @@ describe("LLM stream error reporting", () => {
     // apology on top of a deliberate interruption would be wrong.
     const ctl = new AbortController();
     ctl.abort();
-    const result = await consumeLlmStream({
+    const result = await consume({
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] }),
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
-      callbacks: { report: () => undefined },
-      emitError: () => undefined,
-      log: silentLogger,
       sid: "sid-6",
       signal: ctl.signal,
-      onDelta: () => undefined,
     });
     expect(result.failed).toBe(false);
   });
@@ -254,22 +219,12 @@ describe("preemptive generation: poison arriving AFTER adoption", () => {
   };
 
   function run(adopted: AdoptedLlmStream, spoken: string[], emitError: () => void) {
-    return consumeLlmStream({
+    return consume({
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "restarted reply" }] }),
-      systemPrompt: "s",
       messages: [{ role: "user", content: "where is my order" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
       sendTtsText: (text: string) => spoken.push(text),
-      callbacks: { report: () => undefined },
       emitError,
-      log: silentLogger,
       sid: "sid-late-poison",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
       adopted,
     });
   }
@@ -293,27 +248,15 @@ describe("preemptive generation: poison arriving AFTER adoption", () => {
     // The speculation's call can never be executed, so announcing it would put
     // a tool_call frame on the wire with no result to follow it.
     const onToolCall = vi.fn();
-    await consumeLlmStream({
+    await consume({
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
-      systemPrompt: "s",
-      messages: [{ role: "user", content: "hi" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
-      sendTtsText: () => undefined,
       callbacks: {
         report: (event) => {
           if (event.type === "tool.called")
             onToolCall(event.toolCallId, event.toolName, event.args);
         },
       },
-      emitError: () => undefined,
-      log: silentLogger,
       sid: "sid-late-poison-2",
-      signal: new AbortController().signal,
-      onDelta: () => undefined,
       adopted: adoptedTape([TOOL_CALL], () => undefined),
     });
     expect(onToolCall).not.toHaveBeenCalled();
@@ -328,21 +271,11 @@ describe("preemptive generation: poison arriving AFTER adoption", () => {
     // the transcript and in history.
     let accumulated = "";
     const spoken: string[] = [];
-    await consumeLlmStream({
+    await consume({
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "restarted reply" }] }),
-      systemPrompt: "s",
       messages: [{ role: "user", content: "where is my order" }],
-      tools: {},
-      toolChoice: "auto",
-      temperature: undefined,
-      repairToolCall: async () => null,
-      maxSteps: 1,
       sendTtsText: (text: string) => spoken.push(text),
-      callbacks: { report: () => undefined },
-      emitError: () => undefined,
-      log: silentLogger,
       sid: "sid-late-poison-3",
-      signal: new AbortController().signal,
       onDelta: (delta: string) => {
         accumulated += delta;
       },

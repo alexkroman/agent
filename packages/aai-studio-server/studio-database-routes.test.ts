@@ -4,12 +4,16 @@
 // hook that catches an environment which did not exist when it was flipped.
 // The switch's own behavior lives in studio-database.test.ts.
 
-import { hashApiKey } from "aai-server/secrets";
-import type { BundleStore } from "aai-server/store-types";
-import { authFetch, type TestFetch } from "aai-server/test-utils";
+import { authFetch } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
+import { claimSlug, type FakeAppDb, fakeAppDb } from "./_studio-agents-test-utils.ts";
+import { createProject } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
-import type { StudioSessionBroker, StudioSessionBrokerOptions } from "./studio-session-broker.ts";
+import type {
+  createStudioSessionBroker,
+  StudioSessionBroker,
+  StudioSessionBrokerOptions,
+} from "./studio-session-broker.ts";
 import { getWorkspace, mutateWorkspace, studioScope } from "./studio-workspace.ts";
 
 // The broker is faked: enabling the database schedules a preview deploy, and
@@ -17,7 +21,7 @@ import { getWorkspace, mutateWorkspace, studioScope } from "./studio-workspace.t
 // also how the long-lived `afterDeploy` hook is asserted.
 const schedulePreviewMock = vi.fn();
 const brokerMock = vi.fn(
-  (): StudioSessionBroker => ({
+  (..._args: Parameters<typeof createStudioSessionBroker>): StudioSessionBroker => ({
     ensureSession: async () => ({ url: "https://tunnel.example/studio/chat", token: "t" }),
     refreshSession: async () => true,
     schedulePreview: (...args: Parameters<StudioSessionBroker["schedulePreview"]>) =>
@@ -33,52 +37,23 @@ vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-session-broker.ts")>();
   return {
     ...original,
-    createStudioSessionBroker: (...args: unknown[]) => {
-      brokerOptions = args[0] as StudioSessionBrokerOptions;
-      return brokerMock(...(args as []));
+    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) => {
+      brokerOptions = args[0];
+      return brokerMock(...args);
     },
   };
 });
 
-function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
-  return authFetch(fetch, "/studio/projects", { body: { name }, key });
-}
-
 describe("project database routes", () => {
-  /** Provisioning double — the route's job is reaching it for both slugs. */
-  function fakeAppDb() {
-    return {
-      provision: vi.fn(async (slug: string) => ({
-        role: `app_${slug.replace(/\W/g, "").slice(0, 16).padEnd(16, "0")}`,
-        password: "f".repeat(32),
-      })),
-      deprovision: vi.fn(async (_slug: string) => undefined),
-      connectionUrl: () => "postgres://app@db/app",
-      usage: async () => ({ tables: 0, rows: 0, bytes: 0 }),
-    };
-  }
-
-  /**
-   * Claim a slug for `key1` at the store. The `-preview` slug cannot go
-   * through `POST /deploy` — the deploy boundary rejects that suffix for
-   * everyone but the auto-preview deployer, which passes `allowPreviewSlug`.
-   */
-  function claim(store: BundleStore, slug: string): Promise<void> {
-    return store.putAgent({
-      slug,
-      env: {},
-      worker: "export default {}",
-      clientFiles: {},
-      credential_hashes: [hashApiKey("key1")],
-    });
-  }
-
   /** A project with both agents deployed and owned by the caller. */
-  async function publishedProject(appDb: ReturnType<typeof fakeAppDb>) {
+  async function publishedProject(appDb: FakeAppDb) {
     const combined = await createTestCombined({ appDb });
     await createProject(combined.fetch);
+    // Claimed at the STORE: the `-preview` slug cannot go through
+    // `POST /deploy`, which rejects that suffix for everyone but the
+    // auto-preview deployer (`allowPreviewSlug`).
     for (const slug of ["proj", "proj-preview"]) {
-      await claim(combined.store, slug);
+      await claimSlug(combined.store, slug, "key1");
     }
     await mutateWorkspace(combined.workspaces, studioScope("key1"), "proj", (current) => ({
       ...current,
@@ -179,7 +154,7 @@ describe("project database routes", () => {
     expect(afterDeploy).toBeTypeOf("function");
 
     // A slug claimed by a LATER deploy — the case the hook exists for.
-    await claim(store, "proj-published");
+    await claimSlug(store, "proj-published", "key1");
     await afterDeploy?.(studioScope("key1"), "proj", "proj-published");
     expect(appDb.provision).toHaveBeenCalledWith("proj-published");
     expect(

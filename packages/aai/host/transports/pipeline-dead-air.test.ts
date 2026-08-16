@@ -10,7 +10,7 @@
 // no cover at all and nothing noticed. A spec that overrides an option must be
 // about that option.
 
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
@@ -18,6 +18,7 @@ import {
   DEFAULT_DEAD_AIR_COVER_MS,
 } from "../../sdk/constants.ts";
 import { silentLogger } from "../_test-utils.ts";
+import { useVirtualTime } from "./_pipeline-transport-harness.ts";
 import { createTtsTextCoalescer } from "./pipeline-stream.ts";
 import { createStreamPartHandler } from "./pipeline-stream-parts.ts";
 
@@ -42,12 +43,7 @@ describe("createStreamPartHandler dead-air cover", () => {
     return { spoken, handler, toolCall };
   }
 
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  useVirtualTime();
 
   test("an agent that configures nothing still gets cover", () => {
     // The regression. `deadAirCoverMs` has its own enable now, and its default
@@ -153,7 +149,12 @@ describe("createStreamPartHandler dead-air cover", () => {
     expect(spoken.join("")).toBe("Found it. ");
     toolCall("tc-2");
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 4);
-    expect(spoken.join("")).not.toBe("Found it. ");
+    // Names the phrase, the way every other spec here does. `not.toBe("Found
+    // it. ")` was satisfied by the wrong phrase, an empty string or a duplicate
+    // — it only ruled out "no further output". The model has spoken, so this is
+    // a mid-turn gap and the cycle's first phrase is what covers it (the
+    // opening phrase is for a turn that has said nothing yet).
+    expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);
   });
 
   test("keeps covering a long tool chain, backing off between fillers", () => {

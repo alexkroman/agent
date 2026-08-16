@@ -5,14 +5,15 @@
 // lives in studio-routes-contract.test.ts; shared fakes in
 // _studio-routes-test-utils.ts.
 
-import { createDevAuth } from "aai-server/supabase-auth";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
+import { clientDistFile, clientShellHtml } from "./_studio-client-dist-test-utils.ts";
 import {
   createProject,
   deployMock,
-  devToken,
   ensureSessionMock,
+  lastWake,
   wakePreviewMock,
 } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
@@ -27,7 +28,11 @@ import { studioScope } from "./studio-workspace.ts";
 vi.mock("./studio-deploy.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-deploy.ts")>();
   const { deployMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return { ...original, deployStudioProject: (...args: unknown[]) => mock(...args) };
+  return {
+    ...original,
+    deployStudioProject: (...args: Parameters<typeof original.deployStudioProject>) =>
+      mock(...args),
+  };
 });
 
 vi.mock("./studio-session-broker.ts", async (importOriginal) => {
@@ -35,14 +40,18 @@ vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   const { brokerMock } = await import("./_studio-routes-test-utils.ts");
   return {
     ...original,
-    createStudioSessionBroker: (...args: unknown[]) => brokerMock(...(args as [])),
+    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) =>
+      brokerMock(...args),
   };
 });
 
 vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
   const { wakePreviewMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return { ...original, wakeProjectPreview: (...args: unknown[]) => mock(...args) };
+  return {
+    ...original,
+    wakeProjectPreview: (...args: Parameters<typeof original.wakeProjectPreview>) => mock(...args),
+  };
 });
 
 describe("studio page + routing", () => {
@@ -52,24 +61,32 @@ describe("studio page + routing", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
     expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
-    // The shell is either the built client (whatever dist/studio-client holds
-    // — its content is a build artifact, possibly stale in dev checkouts) or
-    // the not-built fallback. Assert only the invariants shared by both;
-    // asserting on branding text made this test race the client build.
-    expect(await res.text()).toContain("<!DOCTYPE html>");
+    // The body is pinned to the CURRENT client build rather than to
+    // `<!DOCTYPE html>`, which the built shell and the not-built fallback both
+    // satisfy — so it used to hold whichever of the two it got. Derived from
+    // the same bytes the handler reads, so it is deterministic in a checkout
+    // that has built the client and in one that has not.
+    expect(await res.text()).toEqual(
+      clientShellHtml() ?? expect.stringContaining("has not been built"),
+    );
   });
 
-  test("GET /favicon.ico serves the studio icon when built, else 404", async () => {
+  test("GET /favicon.ico serves the studio icon when built, else the handler's own 404", async () => {
     const { fetch } = await createTestCombined();
+    const icon = clientDistFile("favicon.ico");
     const res = await fetch("/favicon.ico");
-    // The icon ships inside the studio client build, which dev checkouts may
-    // not have run — assert the two valid outcomes (never a 500, and never a
-    // match on the agent slug routes).
-    if (res.status === 200) {
-      expect(res.headers.get("Content-Type")).toBe("image/x-icon");
-    } else {
-      expect(res.status).toBe(404);
-    }
+    // Not "200 or 404" — that accepts everything. The expected outcome is
+    // derived from the build output, and the 404 arm names the FAVICON
+    // handler's message, so falling through to the agent slug routes (or to
+    // no route at all) fails in either environment.
+    const served = icon
+      ? { status: res.status, detail: res.headers.get("Content-Type") }
+      : { status: res.status, detail: await res.text() };
+    expect(served).toEqual(
+      icon
+        ? { status: 200, detail: "image/x-icon" }
+        : { status: 404, detail: expect.stringContaining("Favicon not found") },
+    );
   });
 
   test("GET /studio/chat/<project> serves the shell (v0-style project URLs)", async () => {
@@ -78,6 +95,10 @@ describe("studio page + routing", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
     expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
+    // The SAME shell, byte for byte — the client reads the project from the
+    // path, so a project URL that served anything else would be a different
+    // app, not a deep link into this one.
+    expect(await res.text()).toBe(await (await fetch("/")).text());
   });
 
   test("GET /studio and /studio/ redirect to the page", async () => {
@@ -288,13 +309,9 @@ describe("deploy + chat endpoints", () => {
    * into building their own origin and losing the field.
    */
   test("session arms both preview triggers with one origin, naming the caller", async () => {
-    const { fetch: authed } = await createTestCombined({ auth: createDevAuth() });
+    const { fetch: authed } = await withDevAuth();
     const bearer = devToken("a@b.c");
-    await authFetch(authed, "/studio/account/key", {
-      method: "PUT",
-      key: bearer,
-      body: { apiKey: "users-own-key" },
-    });
+    await onboardKey(authed, bearer);
     await createProject(authed, "proj", bearer);
     wakePreviewMock.mockClear();
     ensureSessionMock.mockClear();
@@ -305,9 +322,10 @@ describe("deploy + chat endpoints", () => {
 
     const brokered = ensureSessionMock.mock.calls.at(-1)?.[3];
     expect(brokered).toEqual({ serverUrl: expect.any(String), userId: "dev:a@b.c" });
-    // The wake's target is that same origin plus the credential.
-    const waked = wakePreviewMock.mock.calls.at(-1)?.[0] as { target: unknown };
-    expect(waked.target).toEqual({ ...brokered, apiKey: "users-own-key" });
+    // The wake's target is that same origin plus the credential — read off a
+    // TYPED fake (see _studio-routes-test-utils.ts) rather than re-narrowed
+    // here, so a renamed field on `PreviewTarget` fails to compile.
+    expect(lastWake().target).toEqual({ ...brokered, apiKey: "users-own-key" });
   });
 
   test("session requires a bearer key", async () => {

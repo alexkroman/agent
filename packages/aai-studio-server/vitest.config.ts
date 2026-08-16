@@ -15,7 +15,10 @@ export default defineConfig({
     testTimeout: 20_000,
     // Both slow-tier infixes, per the convention in the root guide — excluded here
     // so a new one lands in its own tier with no config edit. This package owns
-    // none of either today.
+    // one scenario file today (studio-store-conformance.scenario.test.ts, run by
+    // `check:scenario`) and no integration file; the comment used to claim
+    // neither existed, which is the kind of stale note that talks the next
+    // reader out of checking.
     exclude: ["**/*.integration.test.ts", "**/*.scenario.test.ts", "node_modules", "dist"],
     coverage: {
       exclude: [...sharedCoverageExclude, "index.ts", "modal_deploy.py"],

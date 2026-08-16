@@ -142,8 +142,19 @@ async function serve(): Promise<Harness> {
 type Client = {
   ws: WebSocket;
   frames: Frame[];
-  /** Wait for the first frame of a type, or reject on timeout. */
-  waitFor: (type: string, ms?: number) => Promise<Frame>;
+  /**
+   * Wait until `count` frames of `type` have arrived, resolving with the last
+   * one; reject on timeout.
+   *
+   * `count` exists because the recorder is CUMULATIVE — every frame this socket
+   * ever received stays in `frames`. A bare "first frame of this type" scan
+   * therefore returns a frame the test already consumed, so a second call after
+   * an action asserts nothing about that action. That is exactly what happened
+   * in "state ACCUMULATES across the drop": the second wait returned the resume
+   * SNAPSHOT, and the only thing making the post-drop update arrive in time was
+   * a hard-coded `sleep(100)` inside `addItem`.
+   */
+  waitFor: (type: string, opts?: { count?: number; ms?: number }) => Promise<Frame>;
   /** Resolve once the socket closes, with its code. */
   closed: () => Promise<number>;
 };
@@ -165,14 +176,17 @@ async function connect(proxy: SeveringProxy, query = ""): Promise<Client> {
   return {
     ws,
     frames,
-    waitFor: async (type, ms = 5000) => {
+    waitFor: async (type, { count = 1, ms = 5000 } = {}) => {
       const deadline = Date.now() + ms;
       for (;;) {
-        const found = frames.find((frame) => frame.type === type);
-        if (found) return found;
+        const seen = frames.filter((frame) => frame.type === type);
+        const nth = seen[count - 1];
+        if (nth) return nth;
         if (Date.now() > deadline) {
           throw new Error(
-            `no "${type}" frame in ${ms}ms; saw [${frames.map((f) => f.type).join(", ")}]`,
+            `fewer than ${count} "${type}" frame(s) in ${ms}ms; saw [${frames
+              .map((f) => f.type)
+              .join(", ")}]`,
           );
         }
         await sleep(20);
@@ -246,13 +260,14 @@ describe("ctx.state across a severed connection (real runtime)", () => {
     await closed;
 
     const second = await connect(harness.proxy, `?sessionId=${sessionId}`);
+    // The resume snapshot is the FIRST `state.updated` on this socket; the
+    // append is the second. Waiting for the second is what makes the assertion
+    // about the post-drop tool call rather than about the snapshot.
     await second.waitFor("state.updated");
     await addItem(harness, "second", "call-2");
 
-    const after = await second.waitFor("state.updated", 5000);
-    void after;
-    const states = second.frames.filter((frame) => frame.type === "state.updated");
-    expect(states.at(-1)?.state).toEqual({ items: ["first", "second"] });
+    const after = await second.waitFor("state.updated", { count: 2 });
+    expect(after.state).toEqual({ items: ["first", "second"] });
     second.ws.close();
   });
 

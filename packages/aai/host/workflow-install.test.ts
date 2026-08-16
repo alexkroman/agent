@@ -39,6 +39,11 @@ afterEach(async () => {
   publishUploadReader(undefined);
   publishStepReporter(undefined);
   publishStepFetch(undefined);
+  // `vitest.shared.ts` sets `unstubEnvs` but there is no `unstubGlobals`
+  // counterpart, so a `vi.stubGlobal("fetch", …)` outlives its test: the two
+  // specs below the stubbed ones ran `install()` against a `fetch` answering
+  // every request with `Response("global")`.
+  vi.unstubAllGlobals();
   await rm(dir, { recursive: true, force: true });
 });
 

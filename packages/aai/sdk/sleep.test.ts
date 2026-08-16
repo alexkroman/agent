@@ -66,12 +66,22 @@ test("detaches its abort listener when the timer wins", async () => {
   expect(detach).toHaveBeenCalledWith("abort", expect.any(Function));
 });
 
+/**
+ * The other half of the test above, and the one it cannot state: with no signal
+ * there is no `removeEventListener` to observe, so the claim has to be made
+ * about ATTACHMENT. Spied on `EventTarget.prototype` rather than on an instance
+ * — the point is that no target is reached at all — and asserted around the
+ * whole wait, so an `addEventListener` on an internally-minted controller would
+ * be caught too.
+ */
 test("attaches no listener at all without a signal", async () => {
   vi.useFakeTimers();
+  const attach = vi.spyOn(EventTarget.prototype, "addEventListener");
   const done = vi.fn();
   void sleep(10).then(done);
   await vi.advanceTimersByTimeAsync(10);
   expect(done).toHaveBeenCalledOnce();
+  expect(attach).not.toHaveBeenCalled();
 });
 
 /**

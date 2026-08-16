@@ -29,14 +29,18 @@ vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   const { brokerMock } = await import("./_studio-routes-test-utils.ts");
   return {
     ...original,
-    createStudioSessionBroker: (...args: unknown[]) => brokerMock(...(args as [])),
+    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) =>
+      brokerMock(...args),
   };
 });
 
 vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
   const { wakePreviewMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return { ...original, wakeProjectPreview: (...args: unknown[]) => mock(...args) };
+  return {
+    ...original,
+    wakeProjectPreview: (...args: Parameters<typeof original.wakeProjectPreview>) => mock(...args),
+  };
 });
 
 describe("project CRUD", () => {
@@ -211,6 +215,22 @@ describe("project CRUD", () => {
   test("concurrent creates: one wins, the loser cannot reset the files", async () => {
     const [a, b] = await Promise.all([createProject(fetch), createProject(fetch)]);
     expect([a.status, b.status].sort()).toEqual([201, 409]);
+
+    // The status pair alone was the whole test, and it is the half that does
+    // not name the risk: a losing create that answered 409 having ALREADY
+    // written would blow the winner's files away, and nothing here read them
+    // back. Mark the project, race two more creates at it, and the mark has to
+    // survive both.
+    await authFetch(fetch, "/studio/projects/proj/file", {
+      method: "PUT",
+      body: { path: "marker.ts", content: "export const marker = 1;" },
+    });
+    const [c, d] = await Promise.all([createProject(fetch), createProject(fetch)]);
+    expect([c.status, d.status]).toEqual([409, 409]);
+    const { files } = (await (
+      await authFetch(fetch, "/studio/projects/proj", { method: "GET" })
+    ).json()) as { files: Record<string, string> };
+    expect(files["marker.ts"]).toBe("export const marker = 1;");
   });
 
   test("concurrent file writes both survive", async () => {

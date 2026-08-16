@@ -10,6 +10,7 @@
  * between anonymous strangers.
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import { createRateLimiter } from "./rate-limit.ts";
@@ -110,7 +111,9 @@ describe("POST /deploy body concurrency", () => {
 
     const held = deploy(fetch, { key: "k", body: { slug: "holder" } });
     // Let the first request take the slot before the second asks for one.
-    await new Promise((r) => setImmediate(r));
+    // `sleep` is the repo's ONE wait; `new Promise(r => setImmediate(r))` is a
+    // fourth spelling of it that `guard-invariants` rules 4 and 19 cannot see.
+    await sleep(0);
 
     const refused = await deploy(fetch, { key: "k", body: { slug: "queued" } });
     expect(refused.status).toBe(503);
@@ -142,7 +145,7 @@ describe("POST /deploy body concurrency", () => {
     });
 
     const stuck = deploy(fetch, { key: "slow-key", body: { slug: "stuck" } });
-    await new Promise((r) => setImmediate(r));
+    await sleep(0);
 
     // The single slot is still free, because the stalled request has not
     // reached the gate. Under the old order this was a 503.

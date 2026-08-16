@@ -109,11 +109,12 @@ describe("startWorkflowWorldIfDeclared", () => {
     // which is the case under test. A guest whose workflows cannot start must
     // still boot and answer the phone.
     const errors: unknown[] = [];
-    const spy = vi.spyOn(console, "error").mockImplementation((...args) => errors.push(args));
+    // No `mockRestore()`: `restoreMocks` already restores every `vi.spyOn`
+    // before each test, so the call was dead code.
+    vi.spyOn(console, "error").mockImplementation((...args) => errors.push(args));
     await expect(startWorkflowWorldIfDeclared(true, "postgres")).resolves.toBeUndefined();
     // Swallowing it silently would leave an operator with no way to find out.
     expect(errors.length).toBeGreaterThan(0);
-    spy.mockRestore();
   });
 });
 

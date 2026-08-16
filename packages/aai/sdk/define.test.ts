@@ -11,6 +11,7 @@ import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
+import { createToolContext } from "./testing.ts";
 import { type AgentDef, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 import { workflow } from "./workflow.ts";
 
@@ -22,7 +23,13 @@ describe("tool()", () => {
       execute: ({ name }) => `Hello, ${name}!`,
     });
     expect(def.description).toBe("Greet someone");
-    expect(def.execute({ name: "Alice" }, {} as never)).toBe("Hello, Alice!");
+    // The published builder (`@alexkroman1/aai/testing`) rather than an empty
+    // object laundered past the checker: it is what an agent author's own spec
+    // uses, and the cast it replaces stopped reporting the moment `ToolContext`
+    // gained a field the body reads. (Named obliquely on purpose — the
+    // escape-hatch ratchet is a substring scan with no notion of comment versus
+    // code, the same trap the file's note below records.)
+    expect(def.execute({ name: "Alice" }, createToolContext())).toBe("Hello, Alice!");
   });
 
   test("works without parameters", () => {

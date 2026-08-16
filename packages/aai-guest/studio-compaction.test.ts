@@ -145,17 +145,13 @@ describe("compactMessages", () => {
     expect(await compactMessages(fakeModel, input)).toEqual(input);
   });
 
-  test("keeps the original request and the recent work, summarizing the middle", async () => {
-    // Uses a stub summarizer via a model that generateText will reject; the
-    // failure path must preserve everything, which is asserted below. Here we
-    // assert the SHAPE contract on the success path by shrinking the budget
-    // and checking the untouched ends survive.
-    const input = longSession(100);
-    const out = await compactMessages(fakeModel, input);
-    // generateText fails on the stub model, so the safe path returns input.
-    expect(out).toEqual(input);
-  });
-
+  // The test that stood between these two was named "keeps the original
+  // request and the recent work, summarizing the middle" and asserted
+  // `toEqual(input)` — that NOTHING was summarized. Its comment claimed it
+  // covered the shape contract "by shrinking the budget"; no budget was
+  // shrunk, `fakeModel` made `generateText` reject, and the whole body was
+  // byte-for-byte the failure-path claim two tests below. The success-path
+  // shape contract it named is what this test actually asserts.
   test("a successful summary replaces the middle, keeping both ends verbatim", async () => {
     const summarizer = new MockLanguageModelV3({
       doGenerate: async () => ({

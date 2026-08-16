@@ -68,6 +68,52 @@ const scaffoldGuide = import.meta.glob("./scaffold/CLAUDE.md", {
 })["./scaffold/CLAUDE.md"];
 
 /**
+ * The whole markdown corpus the PER-PATTERN liveness assertion is made against:
+ * the root guide, every package guide, and `research/`.
+ *
+ * The scaffold guide alone could not carry that assertion, which is how the
+ * hole got there. Measured against it, `as any` matched one line and the other
+ * six patterns matched ZERO — so an aggregate "some pattern matched" test was
+ * satisfied by one live pattern while six could have been narrowed to something
+ * inert, and the gate would have reported `now=0 ✓` over a tree full of
+ * violations with this file staying green.
+ *
+ * Every guide here is prose that genuinely DISCUSSES suppressions: AGENTS.md's
+ * ratchets section names each pattern, and the review-sweep docs in `research/`
+ * quote them by the dozen. A pattern added without any prose naming it fails
+ * below, and the remedy is to document it — which every pattern here already
+ * is.
+ */
+const proseDocs = (): Record<string, string> => ({
+  ...(import.meta.glob("../../AGENTS.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>),
+  ...(import.meta.glob("../*/CLAUDE.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>),
+  ...(import.meta.glob("./scaffold/CLAUDE.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>),
+  ...(import.meta.glob("../../research/*.md", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>),
+});
+
+/** Every line of that corpus, tagged with the document it came from. */
+const proseLines = (): { doc: string; line: string }[] =>
+  Object.entries(proseDocs()).flatMap(([doc, text]) =>
+    text.split("\n").map((line) => ({ doc, line })),
+  );
+
+/**
  * The committed per-file budgets the gate now checks against.
  *
  * Imported as JSON rather than raw so a syntax error in the baseline fails
@@ -87,14 +133,29 @@ const baseline: Record<string, unknown> =
  * tests what actually ships.
  */
 function shippedPatterns(source: string): { label: string; re: string }[] {
-  const entries = [...source.matchAll(/\{\s*label:\s*"([^"]+)",\s*re:\s*"([^"]*)"\s*\}/g)];
+  // COMMENT LINES ARE DROPPED FIRST. The script's own header explains this
+  // parser by quoting the shape it looks for, so a naive scan reads the
+  // explanation as an extra pattern — one whose `re` is an ellipsis, which then
+  // satisfies every liveness assertion below against any prose containing an
+  // ellipsis. A guard reading a gate's prose as the gate is the same mistake
+  // this file exists to catch, arriving from inside.
+  const code = source
+    .split("\n")
+    .filter((line) => !/^\s*(?:\/\/|\*|\/\*)/.test(line))
+    .join("\n");
+  const entries = [...code.matchAll(/\{\s*label:\s*"([^"]+)",\s*re:\s*"([^"]*)"\s*\}/g)];
   return entries.map(([, label, re]) => ({ label: label ?? "", re: re ?? "" }));
 }
 
 describe("escape-hatch ratchet scope", () => {
-  test("the script and a real guide are readable", () => {
+  test("the script and the prose corpus are readable", () => {
     expect(script, "scripts/check-escape-hatches.mjs not found").toBeTypeOf("string");
     expect(scaffoldGuide, "scaffold/CLAUDE.md not found").toBeTypeOf("string");
+    // A corpus floor, for the reason the ratchets themselves carry one: every
+    // per-pattern assertion below is "this pattern found prose", and an empty
+    // corpus turns all of them into statements about nothing.
+    expect(Object.keys(proseDocs()).length, "no guides found").toBeGreaterThanOrEqual(10);
+    expect(proseLines().length, "the markdown corpus is empty").toBeGreaterThan(2000);
   });
 
   test("the shipped patterns parse", () => {
@@ -108,20 +169,64 @@ describe("escape-hatch ratchet scope", () => {
     }
   });
 
-  test("shipped patterns match this repo's own prose — which is why markdown is excluded", () => {
+  test.each(shippedPatterns(script ?? ""))(
+    "pattern $label matches this repo's own prose — which is why markdown is excluded",
+    ({ label, re }) => {
+      // PER PATTERN, and that is the whole point of this test.
+      //
+      // This used to be one aggregate assertion — "some line matches some
+      // pattern" — over the scaffold guide alone. Measured against that corpus,
+      // `as any` matched one line and the other six matched ZERO, so a single
+      // live pattern satisfied the entire suite: narrow six of them to
+      // something that can never match and the gate reports `now=0 ✓` over a
+      // tree full of violations while this spec stays green. That is the same
+      // dead-pattern failure AGENTS.md records paying for with `\b`, and this
+      // file is its home.
+      //
+      // A failure here is far likelier to be a narrowed pattern than a reworded
+      // guide, but either way the reasoning behind the markdown exclusion needs
+      // re-checking before this is "fixed" by deleting it.
+      const hits = proseLines().filter(({ line }) => new RegExp(re).test(line));
+      expect(
+        hits.length,
+        `pattern "${label}" matches no line of AGENTS.md, a package guide or ` +
+          "research/ — either it has been narrowed to something inert, or the " +
+          "prose that justifies excluding markdown from the scan is gone",
+      ).toBeGreaterThan(0);
+    },
+  );
+
+  test("no pattern uses a GNU-only regex construct", () => {
+    // The engines DIFFER, and this is the mitigation for that.
+    //
+    // These patterns are validated above with JavaScript's `new RegExp`, while
+    // `_ratchet.mjs` ships them to `git grep -nIE` — POSIX ERE, whose support
+    // for GNU extensions varies by build. `\b` is the one already paid for
+    // here: two patterns carried one, matched NOTHING on the machines where
+    // git's matcher does not implement it, and the gate reported success over a
+    // tree holding 110 violations. A JS-side regex test cannot detect that, so
+    // the constructs ERE has no answer for are banned outright.
+    //
+    // `guard-invariants-gate.test.ts` carries the twin ban for the rule
+    // patterns; this file had no `\b` assertion at all, and its two most
+    // complex patterns are the two that historically carried one.
+    const banned = [
+      ["\\b", "a word boundary — git's matcher does not implement it"],
+      ["\\B", "a non-word-boundary — same GNU extension as \\b"],
+      ["\\w", "a GNU character class; POSIX ERE spells it [A-Za-z0-9_]"],
+      ["\\d", "a GNU character class; POSIX ERE spells it [0-9]"],
+      ["\\s", "a GNU character class; POSIX ERE spells it [[:space:]]"],
+      ["(?", "a JS-only group (lookaround or non-capturing); ERE has neither"],
+      ["*?", "a lazy quantifier; ERE quantifiers are always greedy"],
+      ["+?", "a lazy quantifier; ERE quantifiers are always greedy"],
+    ] as const;
     const patterns = shippedPatterns(script ?? "");
-    const lines = (scaffoldGuide ?? "").split("\n");
-
-    const hits = lines.filter((line) => patterns.some(({ re }) => new RegExp(re).test(line)));
-
-    // If this ever drops to zero the hazard has not gone away — far likelier a
-    // pattern was narrowed or the guide reworded. Either way the reasoning
-    // behind the exclusion needs re-checking, so fail loudly rather than let
-    // the next test stand on nothing.
-    expect(
-      hits.length,
-      "no line of the scaffold guide matches any pattern — re-check why markdown is excluded",
-    ).toBeGreaterThan(0);
+    expect(patterns.length, "no patterns parsed").toBeGreaterThanOrEqual(7);
+    for (const { label, re } of patterns) {
+      for (const [construct, why] of banned) {
+        expect(re, `pattern "${label}" uses ${construct} — ${why}`).not.toContain(construct);
+      }
+    }
   });
 
   test("markdown is excluded from the scan", () => {

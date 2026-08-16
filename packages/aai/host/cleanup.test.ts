@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createOwnedMap, type OwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger, sleep } from "./_test-utils.ts";
+import { simulateBinaryFrame } from "./_ws-handler-test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
@@ -60,13 +61,22 @@ describe("wireSessionSocket resource cleanup", () => {
     const ws = makeOpenWs();
     const sessions = wire(ws, core);
 
-    ws.simulateMessage(new ArrayBuffer(4));
+    // Arrives while start() is still in flight, so it is BUFFERED rather than
+    // dispatched — a `Uint8Array` because that is the one frame kind the
+    // handler would forward to the core, which is what makes "the buffer was
+    // dropped" observable at all.
+    simulateBinaryFrame(ws, new Uint8Array([1, 2, 3, 4]));
 
     await vi.waitFor(() => {
       expect(sessions.size).toBe(0);
     });
 
-    ws.simulateMessage(new ArrayBuffer(4));
+    // A frame arriving after the failure has nowhere to go either.
+    simulateBinaryFrame(ws, new Uint8Array([5, 6, 7, 8]));
+
+    // The claimed behaviour: neither frame is ever replayed into a session that
+    // failed to start. Without this the test only restated the case above it.
+    expect(core.onAudio).not.toHaveBeenCalled();
   });
 
   test("multiple rapid closes don't double-invoke stop()", async () => {
@@ -76,11 +86,21 @@ describe("wireSessionSocket resource cleanup", () => {
     const ws = makeOpenWs();
     wire(ws, core);
 
+    // Three close events, the second and third landing while the first stop()
+    // is still in flight (it takes 50 ms) — the guard has to hold DURING the
+    // drain, and the single close this test used to send exercised none of it.
+    ws.close();
+    ws.close();
     ws.close();
 
     await vi.waitFor(() => {
       expect(core.stop).toHaveBeenCalledOnce();
     });
+
+    // And after it: a late close on an already-ended session starts nothing.
+    await sleep(60);
+    ws.close();
+    expect(core.stop).toHaveBeenCalledOnce();
   });
 
   test("close before open does not throw or leak", () => {

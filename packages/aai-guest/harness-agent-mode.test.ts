@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WORKFLOW_FLOW_PATH } from "@alexkroman1/aai/runtime";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   createAgentRequestHandler,
   createIdleController,
@@ -16,7 +16,7 @@ import {
   MANAGE_STATUS_PATH,
   readAgentBoot,
 } from "./harness-agent-mode.ts";
-import { GUEST_CONTRACT_VERSION } from "./limits.ts";
+import { BUNDLE_FETCH_TIMEOUT_MS, GUEST_CONTRACT_VERSION } from "./limits.ts";
 
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf-8").digest("hex");
 
@@ -94,6 +94,26 @@ describe("readAgentBoot", () => {
     });
     expect(boot.code).toBe(code);
     expect(fetchMock).toHaveBeenCalledWith("https://blobs.test/signed", expect.anything());
+  });
+
+  test("the fetch is bounded by BUNDLE_FETCH_TIMEOUT_MS, not left to hang", async () => {
+    // `expect.anything()` used to stand in for the whole init bag, and the
+    // only thing in it is the 60s cap that keeps a hung Storage URL from
+    // parking agent-mode boot against the host's 120s readiness budget —
+    // dropping the signal entirely passed. Spying the timeout factory pins
+    // both halves: that a deadline was minted at the declared duration, and
+    // that THAT signal is the one the request carries.
+    const code = "export default {};";
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(code));
+
+    await readAgentBoot({
+      AAI_BUNDLE_URL: "https://blobs.test/signed",
+      AAI_BUNDLE_SHA256: sha256(code),
+    });
+
+    expect(timeoutSpy).toHaveBeenCalledExactlyOnceWith(BUNDLE_FETCH_TIMEOUT_MS);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(timeoutSpy.mock.results[0]?.value);
   });
 
   test("a fetched bundle whose hash does not match refuses to load", async () => {
@@ -364,161 +384,136 @@ describe("createAgentRequestHandler", () => {
 // ── Idle / drain lifecycle ──────────────────────────────────────────────────
 
 describe("createIdleController", () => {
-  test("exits after the idle window with no sessions", () => {
+  // Virtual time for the whole block. The teardown is needed; declaring it
+  // per test as seven `try`/`finally` pairs was not — and a `finally` around a
+  // whole test body is dead structure the moment a hook can carry it.
+  beforeEach(() => {
     vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("exits after the idle window with no sessions", () => {
     const exit = vi.fn();
-    try {
-      const ctl = createIdleController({
-        activeSessions: () => 0,
-        idleExitMs: 10_000,
-        pollMs: 1000,
-        exit,
-      });
-      vi.advanceTimersByTime(9000);
-      expect(exit).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(3000);
-      expect(exit).toHaveBeenCalledWith(0);
-      ctl.stop();
-    } finally {
-      vi.useRealTimers();
-    }
+    const ctl = createIdleController({
+      activeSessions: () => 0,
+      idleExitMs: 10_000,
+      pollMs: 1000,
+      exit,
+    });
+    vi.advanceTimersByTime(9000);
+    expect(exit).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(3000);
+    expect(exit).toHaveBeenCalledWith(0);
+    ctl.stop();
   });
 
   test("live sessions keep resetting the idle clock", () => {
-    vi.useFakeTimers();
     const exit = vi.fn();
     let sessions = 1;
-    try {
-      const ctl = createIdleController({
-        activeSessions: () => sessions,
-        idleExitMs: 10_000,
-        pollMs: 1000,
-        exit,
-      });
-      vi.advanceTimersByTime(60_000);
-      expect(exit).not.toHaveBeenCalled();
-      sessions = 0;
-      vi.advanceTimersByTime(12_000);
-      expect(exit).toHaveBeenCalledWith(0);
-      ctl.stop();
-    } finally {
-      vi.useRealTimers();
-    }
+    const ctl = createIdleController({
+      activeSessions: () => sessions,
+      idleExitMs: 10_000,
+      pollMs: 1000,
+      exit,
+    });
+    vi.advanceTimersByTime(60_000);
+    expect(exit).not.toHaveBeenCalled();
+    sessions = 0;
+    vi.advanceTimersByTime(12_000);
+    expect(exit).toHaveBeenCalledWith(0);
+    ctl.stop();
   });
 
   test("a drain exits at the next empty poll, ignoring the idle window", () => {
-    vi.useFakeTimers();
     const exit = vi.fn();
     let sessions = 2;
-    try {
-      const ctl = createIdleController({
-        activeSessions: () => sessions,
-        idleExitMs: 0, // idle exit disabled — drain must still work
-        pollMs: 1000,
-        exit,
-      });
-      ctl.startDrain();
-      expect(ctl.isDraining()).toBe(true);
-      vi.advanceTimersByTime(5000);
-      expect(exit).not.toHaveBeenCalled(); // sessions still live
-      sessions = 0;
-      vi.advanceTimersByTime(1000);
-      expect(exit).toHaveBeenCalledWith(0);
-      ctl.stop();
-    } finally {
-      vi.useRealTimers();
-    }
+    const ctl = createIdleController({
+      activeSessions: () => sessions,
+      idleExitMs: 0, // idle exit disabled — drain must still work
+      pollMs: 1000,
+      exit,
+    });
+    ctl.startDrain();
+    expect(ctl.isDraining()).toBe(true);
+    vi.advanceTimersByTime(5000);
+    expect(exit).not.toHaveBeenCalled(); // sessions still live
+    sessions = 0;
+    vi.advanceTimersByTime(1000);
+    expect(exit).toHaveBeenCalledWith(0);
+    ctl.stop();
   });
 
   test("a workflow callback in flight keeps the idle clock reset", () => {
     // Without this a wake buys at most one idle window of progress: the guest
     // the platform woke for a run has no session, so it exits mid-step and the
     // job stays locked until graphile-worker's 4-hour expiry.
-    vi.useFakeTimers();
     const exit = vi.fn();
     let workflows = 1;
-    try {
-      const ctl = createIdleController({
-        activeSessions: () => 0,
-        activeWorkflows: () => workflows,
-        idleExitMs: 10_000,
-        pollMs: 1000,
-        exit,
-      });
-      vi.advanceTimersByTime(60_000);
-      expect(exit).not.toHaveBeenCalled();
-      workflows = 0;
-      vi.advanceTimersByTime(12_000);
-      expect(exit).toHaveBeenCalledWith(0);
-      ctl.stop();
-    } finally {
-      vi.useRealTimers();
-    }
+    const ctl = createIdleController({
+      activeSessions: () => 0,
+      activeWorkflows: () => workflows,
+      idleExitMs: 10_000,
+      pollMs: 1000,
+      exit,
+    });
+    vi.advanceTimersByTime(60_000);
+    expect(exit).not.toHaveBeenCalled();
+    workflows = 0;
+    vi.advanceTimersByTime(12_000);
+    expect(exit).toHaveBeenCalledWith(0);
+    ctl.stop();
   });
 
   test("a drain waits out a workflow callback, then exits", () => {
     // A drain means "finish what you are doing, bounded by the deadline", and a
     // step is exactly that — so workflow work counts for the drain too.
-    vi.useFakeTimers();
     const exit = vi.fn();
     let workflows = 1;
-    try {
-      const ctl = createIdleController({
-        activeSessions: () => 0,
-        activeWorkflows: () => workflows,
-        idleExitMs: 0,
-        pollMs: 1000,
-        exit,
-      });
-      ctl.startDrain();
-      vi.advanceTimersByTime(5000);
-      expect(exit).not.toHaveBeenCalled();
-      workflows = 0;
-      vi.advanceTimersByTime(1000);
-      expect(exit).toHaveBeenCalledWith(0);
-      ctl.stop();
-    } finally {
-      vi.useRealTimers();
-    }
+    const ctl = createIdleController({
+      activeSessions: () => 0,
+      activeWorkflows: () => workflows,
+      idleExitMs: 0,
+      pollMs: 1000,
+      exit,
+    });
+    ctl.startDrain();
+    vi.advanceTimersByTime(5000);
+    expect(exit).not.toHaveBeenCalled();
+    workflows = 0;
+    vi.advanceTimersByTime(1000);
+    expect(exit).toHaveBeenCalledWith(0);
+    ctl.stop();
   });
 
   test("the drain deadline still wins over workflow work", () => {
-    vi.useFakeTimers();
     const exit = vi.fn();
-    try {
-      const ctl = createIdleController({
-        activeSessions: () => 0,
-        activeWorkflows: () => 1, // never settles
-        idleExitMs: 0,
-        pollMs: 1000,
-        exit,
-      });
-      ctl.startDrain(5000);
-      vi.advanceTimersByTime(4000);
-      expect(exit).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(2000);
-      expect(exit).toHaveBeenCalledWith(0);
-      ctl.stop();
-    } finally {
-      vi.useRealTimers();
-    }
+    const ctl = createIdleController({
+      activeSessions: () => 0,
+      activeWorkflows: () => 1, // never settles
+      idleExitMs: 0,
+      pollMs: 1000,
+      exit,
+    });
+    ctl.startDrain(5000);
+    vi.advanceTimersByTime(4000);
+    expect(exit).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2000);
+    expect(exit).toHaveBeenCalledWith(0);
+    ctl.stop();
   });
 
   test("idleExitMs 0 disables idle self-exit", () => {
-    vi.useFakeTimers();
     const exit = vi.fn();
-    try {
-      const ctl = createIdleController({
-        activeSessions: () => 0,
-        idleExitMs: 0,
-        pollMs: 1000,
-        exit,
-      });
-      vi.advanceTimersByTime(3_600_000);
-      expect(exit).not.toHaveBeenCalled();
-      ctl.stop();
-    } finally {
-      vi.useRealTimers();
-    }
+    const ctl = createIdleController({
+      activeSessions: () => 0,
+      idleExitMs: 0,
+      pollMs: 1000,
+      exit,
+    });
+    vi.advanceTimersByTime(3_600_000);
+    expect(exit).not.toHaveBeenCalled();
+    ctl.stop();
   });
 });

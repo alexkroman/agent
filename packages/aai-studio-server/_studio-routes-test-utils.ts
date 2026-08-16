@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Shared scaffolding for the two studio-route suites
- * (studio-routes.test.ts and studio-routes-contract.test.ts).
+ * Shared scaffolding for the studio-route suites. The dev-auth half (session
+ * tokens, the onboarding PUT) lives next door in _studio-auth-test-utils.ts,
+ * which the suites that never mock a route need without these fakes.
  *
  * The mock *state* lives here so both files observe the same fakes; the
  * `vi.mock` calls themselves cannot — they are hoisted per module, so each
@@ -13,11 +14,20 @@
 import type { TestFetch } from "aai-server/test-utils";
 import { authFetch } from "aai-server/test-utils";
 import { vi } from "vitest";
-import type { StudioDeployResult } from "./studio-deploy.ts";
-import type { StudioSessionBroker } from "./studio-session-broker.ts";
+import type { deployStudioProject, StudioDeployResult } from "./studio-deploy.ts";
+import type { wakeProjectPreview } from "./studio-preview-wake.ts";
+import type { createStudioSessionBroker, StudioSessionBroker } from "./studio-session-broker.ts";
 
+/**
+ * Every fake below is declared with `Parameters<typeof …>` of the function it
+ * stands in for — the seam `ensureSessionMock` already had and the others did
+ * not. Untyped `vi.fn()`s pushed the narrowing out to the call sites, where
+ * four of them re-derived it by hand with a cast; a cast at the READ end also
+ * stops reporting when the real signature gains or renames a field, which is
+ * the whole thing these wiring assertions exist to notice.
+ */
 export const deployMock = vi.fn(
-  async (..._args: unknown[]): Promise<StudioDeployResult> => ({
+  async (..._args: Parameters<typeof deployStudioProject>): Promise<StudioDeployResult> => ({
     ok: true,
     slug: "proj",
     url: "/proj/",
@@ -67,22 +77,34 @@ export function fakeBroker(over: Partial<StudioSessionBroker> = {}): StudioSessi
   };
 }
 
-export const brokerMock = vi.fn((): StudioSessionBroker => fakeBroker());
+export const brokerMock = vi.fn(
+  (..._args: Parameters<typeof createStudioSessionBroker>): StudioSessionBroker => fakeBroker(),
+);
 
-/** The options the routes handed the broker factory on its first build. */
-export function brokerOptions(): Record<string, unknown> {
-  return (brokerMock.mock.calls as unknown as unknown[][])[0]?.[0] as Record<string, unknown>;
+/**
+ * The options the routes handed the broker factory on its first build. Throws
+ * rather than returning `undefined`: every caller is asserting ON those
+ * options, so "the factory was never called" is a failure with a name, not a
+ * value for four call sites to re-narrow.
+ */
+export function brokerOptions(): Parameters<typeof createStudioSessionBroker>[0] {
+  const opts = brokerMock.mock.calls[0]?.[0];
+  if (!opts) throw new Error("the studio session broker factory was never called");
+  return opts;
 }
 
 // Preview wake-up: observable fake so the session route's wiring is
 // asserted without real HTTP (behavior lives in studio-preview.test.ts).
-export const wakePreviewMock = vi.fn();
+export const wakePreviewMock = vi.fn(
+  (..._args: Parameters<typeof wakeProjectPreview>): void => undefined,
+);
 
-/** A dev-auth browser session token, the way the login screen mints one. */
-export const devToken = (email: string) =>
-  `dev.${Buffer.from(JSON.stringify({ id: `dev:${email}`, email }))
-    .toString("base64url")
-    .replace(/=+$/, "")}.dev`;
+/** The options of the most recent wake — typed, so no call site re-narrows. */
+export function lastWake(): Parameters<typeof wakeProjectPreview>[0] {
+  const options = wakePreviewMock.mock.calls.at(-1)?.[0];
+  if (!options) throw new Error("wakeProjectPreview was never called");
+  return options;
+}
 
 export function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
   return authFetch(fetch, "/studio/projects", { body: { name }, key });

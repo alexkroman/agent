@@ -10,7 +10,6 @@
  * - `GET /studio/events` — the caller's project list (`projects` frames)
  */
 
-import { sleep } from "@alexkroman1/aai/internal";
 import { authHeaders, type TestFetch } from "aai-server/test-utils";
 import { expect, test } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
@@ -38,21 +37,40 @@ function payloadsOf(buffer: string, event: string): unknown[] {
   return payloads;
 }
 
-/** Read SSE frames off a streamed response until `count` frames of `event`. */
-async function readFrames(res: Response, event: string, count: number): Promise<unknown[]> {
+/**
+ * An INCREMENTAL reader over one streamed response: `take(event, n)` resolves
+ * once `n` frames of `event` have arrived, and the buffer survives the call, so
+ * a test can await the initial frame, act, and then await the next one. The
+ * one-shot `readFrames` below cancels the reader, which is why the read-sharing
+ * test could not synchronize on its own initial frames and reached for a
+ * wall-clock sleep instead.
+ */
+function frameReader(res: Response) {
   const body = res.body;
   if (!body) throw new Error("No response body");
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
-  const deadline = Date.now() + 5000;
-  while (payloadsOf(buffer, event).length < count) {
-    if (Date.now() > deadline) throw new Error("Timed out waiting for SSE frames");
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += value;
-  }
-  await reader.cancel().catch(() => undefined);
-  return payloadsOf(buffer, event);
+  return {
+    async take(event: string, count: number): Promise<unknown[]> {
+      const deadline = Date.now() + 5000;
+      while (payloadsOf(buffer, event).length < count) {
+        if (Date.now() > deadline) throw new Error("Timed out waiting for SSE frames");
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += value;
+      }
+      return payloadsOf(buffer, event);
+    },
+    close: () => reader.cancel().catch(() => undefined),
+  };
+}
+
+/** Read SSE frames off a streamed response until `count` frames of `event`. */
+async function readFrames(res: Response, event: string, count: number): Promise<unknown[]> {
+  const reader = frameReader(res);
+  const frames = await reader.take(event, count);
+  await reader.close();
+  return frames;
 }
 
 function openEvents(fetch: TestFetch, project: string, key = "key1"): Promise<Response> {
@@ -88,9 +106,15 @@ test("the first event is the project's current state", async () => {
   const res = await openEvents(fetch, "proj");
   expect(res.status).toBe(200);
   expect(res.headers.get("Content-Type")).toContain("text/event-stream");
-  const [initial] = await readFrames(res, "project", 1);
+  const [initial] = (await readFrames(res, "project", 1)) as Record<string, unknown>[];
   // A fresh project: empty starter files, no preview yet (stale by design).
-  expect(initial).toMatchObject({ files: {}, previewStale: true });
+  //
+  // `files` is asserted with `toEqual`, not folded into the `toMatchObject`:
+  // an EMPTY expected object matches any object, so `toMatchObject({files:{}})`
+  // said nothing at all about the file map and a populated (or wrong) one in
+  // the first frame passed on `previewStale` alone.
+  expect(initial?.files).toEqual({});
+  expect(initial).toMatchObject({ previewStale: true, kind: "agent" });
 });
 
 test("a workspace write pushes the updated project state", async () => {
@@ -283,16 +307,20 @@ test("streams on one project share a fixed number of reads per change", async ()
     body: JSON.stringify({ name: "proj" }),
   });
 
-  // Drain both initial frames first, so no read is in flight when the change
+  // Drain every initial frame first, so no read is in flight when the change
   // lands — otherwise the count would depend on which reads happened to
   // overlap, and the assertion below would be about scheduling, not sharing.
+  //
+  // Awaited as the OBSERVABLE event, never as a `sleep(50)`: the count is this
+  // test's whole subject, and a wall-clock gate on a loaded box resets the
+  // counter mid-flight and charges a straggling initial read to the change.
   const streams = await Promise.all([
     openEvents(harness.fetch, "proj"),
     openEvents(harness.fetch, "proj"),
     openEvents(harness.fetch, "proj"),
   ]);
-  const pending = streams.map((res) => readFrames(res, "project", 2));
-  await sleep(50);
+  const readers = streams.map(frameReader);
+  await Promise.all(readers.map((reader) => reader.take("project", 1)));
 
   reads = 0;
   // Written straight to the underlying store — so `reads` counts what the
@@ -303,10 +331,13 @@ test("streams on one project share a fixed number of reads per change", async ()
   }));
 
   // Every stream sees the change...
-  for (const frames of await Promise.all(pending)) {
-    expect(frames.at(-1)).toMatchObject({ previewSlug: "proj-preview" });
+  for (const reader of readers) {
+    expect((await reader.take("project", 2)).at(-1)).toMatchObject({
+      previewSlug: "proj-preview",
+    });
   }
   // ...off two queries between the three of them, where they used to make
   // three — one each.
   expect(reads).toBe(2);
+  await Promise.all(readers.map((reader) => reader.close()));
 });

@@ -41,6 +41,51 @@ import { playbackProcessorSource } from "./playback-processor.ts";
 
 const QUANTUM = 128;
 
+/**
+ * States the generators must actually reach, counted after each property and
+ * floored where the state is reliably reached.
+ *
+ * fast-check has no coverage-floor mechanism (`fc.statistics` only prints), and
+ * an all-green property proves nothing about a state the generator never
+ * entered — see "Property tests run on fast-check" in the root guide.
+ *
+ * `interrupts`/`completions` are the pair that matters most: `interruptAfter`
+ * is an `fc.option`, so the barge-in storm's turn counters can legitimately
+ * come out all-done or all-interrupt — and `toHaveLength(0)` compared against
+ * `toHaveLength(0)` is the whole of what an all-done run asserts about
+ * barge-in.
+ *
+ * `concealments` is counted and deliberately NOT floored, which is a finding
+ * rather than an omission. The stall test below is named for concealment and
+ * its comment claims the buffer "underruns repeatedly mid-turn", and it does
+ * not: measured across runs of 25, concealment is reached in 1-5 of them and
+ * `concealedSamples` is 0 in the rest. The cause is the generator's weighting,
+ * not the processor — `sizesArb(3000)` averages ~750 samples a chunk against
+ * 128 consumed per render, so writes outrun renders by an order of magnitude
+ * and the buffer effectively never starves. Lengthening the source, lowering
+ * `jitterMs`/`refillMs`, and adding explicit multi-quantum stall bursts were
+ * each measured and each left it at 1-5 of 25. A floor here would flake; the
+ * fix is a starvation-weighted chunk-size arbitrary, which is its own change.
+ *
+ * What is NOT at risk meanwhile: the concealment path itself has example
+ * coverage in `playback-processor.test.ts`, which reaches it deterministically
+ * with a tuned processor (`jitterMs: 20`) and pins the counters, the fade to
+ * silence, and the resume-where-it-left-off behaviour. This property's own
+ * assertions — a complete, in-order ramp around whatever the concealer
+ * fabricated — hold either way.
+ */
+type Reached = {
+  /** Quanta of concealment the stall property provoked. Reported, not floored. */
+  concealments: number;
+  /** Turns the barge-in storm cut off mid-delivery. */
+  interrupts: number;
+  /** Turns the barge-in storm played out in full. */
+  completions: number;
+  /** Capture press cycles driven, each asserting a sample-exact recording. */
+  pressCycles: number;
+};
+const reached: Reached = { concealments: 0, interrupts: 0, completions: 0, pressCycles: 0 };
+
 /** PCM16 LE bytes for a list of int16 sample values. */
 const toBytes = (values: number[]): Uint8Array => new Uint8Array(new Int16Array(values).buffer);
 
@@ -236,11 +281,16 @@ describe("playback stress", () => {
     expect(stops(w.posted)[0]?.stats.concealedSamples).toBe(0);
   });
 
-  test("random stalls conceal gaps but never lose or reorder real audio", () => {
-    // Writes and renders interleave on a generated pacing script, so the
-    // buffer underruns repeatedly mid-turn (hysteresis + concealment active).
-    // The ramp scan proves every delivered sample still plays exactly once, in
-    // order, around whatever the concealer fabricated.
+  test("interleaved writes and renders never lose or reorder real audio", () => {
+    // Writes and renders interleave on a generated pacing script. The ramp scan
+    // proves every delivered sample still plays exactly once, in order, around
+    // whatever the concealer fabricated.
+    //
+    // It was called "random stalls conceal gaps" and claimed the buffer
+    // "underruns repeatedly mid-turn (hysteresis + concealment active)". It
+    // does not — see `Reached`, which measures it and says why the honest
+    // reading is "renders may land on a filling buffer", not "this is the
+    // concealment test". `playback-processor.test.ts` is the concealment test.
     fc.assert(
       fc.property(sizesArb(3000), pacingArb, (sizes, pacing) => {
         const w = instantiateWorklet(playbackProcessorSource, {}, 24_000);
@@ -265,9 +315,13 @@ describe("playback stress", () => {
         expect(consumeRamp(rendered, 1)).toBe(source.length + 1);
         expect(stops(w.posted)).toHaveLength(1);
         expect(stops(w.posted)[0]?.reason).toBe("done");
+        reached.concealments += stops(w.posted)[0]?.stats.concealedSamples ?? 0;
       }),
       { numRuns: 25 },
     );
+
+    // No floor on `reached.concealments` — see `Reached` for the measurement
+    // and the reason. What IS asserted is the ramp itself, above, per run.
   }, 60_000);
 
   test("a barge-in storm never bleeds audio between turns or double-ends one", () => {
@@ -291,9 +345,20 @@ describe("playback stress", () => {
           expect(seen.filter((s) => s.reason === "interrupt")).toHaveLength(interrupts);
           expect(seen.filter((s) => s.reason === "done")).toHaveLength(dones);
         }
+        reached.interrupts += interrupts;
+        reached.completions += dones;
       }),
       { numRuns: 20 },
     );
+
+    // Coverage floors — see `Reached`. Set well below the measured actuals
+    // noted alongside (five runs of 20). Both directions matter: an all-done
+    // run asserts `toHaveLength(0)` about barge-in, and an all-interrupt run
+    // never reaches `stormTurn`'s full-ramp check.
+    expect(reached.interrupts, "no turn was ever cut off — barge-in went untested").toBeGreaterThan(
+      25,
+    ); // ~80-120
+    expect(reached.completions, "no turn ever played out in full").toBeGreaterThan(4); // ~13-33
   }, 60_000);
 });
 
@@ -369,11 +434,16 @@ describe("capture stress", () => {
             // The final flush precedes the ack — the ordering stop() relies on.
             expect((posted.at(-1) as { event: string }).event).toBe("stopped");
             expect(chunkPcm(posted)).toEqual(expectedPcm(fed));
+            reached.pressCycles += 1;
           }
         },
       ),
       { numRuns: 25 },
     );
+
+    // Coverage floor — see `Reached`. `cycles` is generated, so this catches an
+    // arbitrary that stopped producing press cycles to drive.
+    expect(reached.pressCycles, "no press cycle was ever recorded").toBeGreaterThan(40); // ~106-172
   }, 60_000);
 
   test("a quantum larger than the batch headroom grows the buffer intact", () => {

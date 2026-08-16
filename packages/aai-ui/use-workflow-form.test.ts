@@ -11,7 +11,7 @@
  */
 
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useWorkflowSubmit, useWorkflows } from "./use-workflow-form.ts";
 import { MAX_MISSING_READS } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -19,10 +19,19 @@ import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 /**
  * Poll interval for the specs that watch a run settle.
  *
- * Real time rather than fake timers: these assert React state transitions
- * through `waitFor`, and the default 2s interval would put the second read past
- * every one of its budgets. The interval is not what is under test here — the
- * hook that owns it has its own virtual-time specs.
+ * Most specs here never reach the SECOND read — `repeatUntil` fires its first
+ * step immediately — so they assert React state transitions through `waitFor`
+ * on real time, and shrinking the interval only keeps the default 2s out of
+ * their budgets. The interval is not what those specs are about.
+ *
+ * The give-up spec IS about it: it has to wait out `MAX_MISSING_READS` of
+ * them, and the root guide's rule is that a spec observing a timer runs on
+ * virtual time, never the wall clock — a spec that waits out real milliseconds
+ * to see whether a window elapsed is a race, and the flake then names the
+ * timing spec rather than the bug. It installs fake timers of its own and uses
+ * `act` + `advanceTimersByTimeAsync`, the sibling's pattern in
+ * `use-workflow-run.test.ts`, which sidesteps the `waitFor`-versus-fake-timers
+ * conflict this comment used to give as the reason for real time everywhere.
  */
 const POLL_MS = 5;
 
@@ -72,6 +81,11 @@ beforeEach(() => {
       throw new Error("no test may reach the network");
     }),
   );
+});
+
+afterEach(() => {
+  // `useFakeTimers` is outside `restoreMocks`; one spec below installs them.
+  vi.useRealTimers();
 });
 
 describe("useWorkflows", () => {
@@ -266,12 +280,19 @@ describe("useWorkflowSubmit", () => {
     // `!isTerminal(run)`, and giving up past MAX_MISSING_READS leaves `run`
     // undefined — so the submit button stayed disabled and reading "Working…"
     // for the life of the page, with the correct error directly above it.
+    vi.useFakeTimers();
     const api = fakeApi({ get: vi.fn(async () => undefined) });
     const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
 
-    await act(() => result.current.submit({}));
+    await act(async () => {
+      await result.current.submit({});
+    });
+    // Every remaining read at once, on virtual time — see `POLL_MS`.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_MS * MAX_MISSING_READS);
+    });
 
-    await waitFor(() => expect(result.current.error).toBe("No workflow run wrun_1"));
+    expect(result.current.error).toBe("No workflow run wrun_1");
     expect(api.get).toHaveBeenCalledTimes(MAX_MISSING_READS);
     expect(result.current.run).toBeUndefined();
     expect(result.current.pending).toBe(false);

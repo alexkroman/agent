@@ -1,20 +1,31 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Fake `ws` WebSocket for the AssemblyAI TTS adapter specs. Import-free on
-// purpose: each test file's `vi.mock("ws", ...)` factory imports THIS module,
-// so it must not (transitively) import the adapter — which imports "ws" —
-// or the mock factory would re-enter itself.
+// Fake `ws` WebSocket shared by the TTS adapter specs (AssemblyAI and Rime).
+// Import-free on purpose: each test file's `vi.mock("ws", ...)` factory
+// imports THIS module, so it must not (transitively) import an adapter —
+// which imports "ws" — or the mock factory would re-enter itself.
+//
+// It used to be AssemblyAI's alone while `rime.test.ts` and
+// `stt/soniox.test.ts` each re-implemented it, and the copies had already
+// DIVERGED on the property that matters: soniox's starts CONNECTING and
+// flips to OPEN when it fires "open", the other two were pinned OPEN from
+// the constructor — so a write-before-open regression was catchable in one
+// suite and structurally invisible in the other two. This one matches real
+// `ws`: `readyState` is CONNECTING until the "open" event. (Soniox's copy
+// survives because its adapter speaks binary frames, reads `bufferedAmount`
+// and reads the close CODE, none of which this fake models.)
 
 type WsEvent = "open" | "message" | "error" | "close";
 type WsListener = (...args: unknown[]) => void;
 
 export class FakeWebSocket {
+  static CONNECTING = 0;
   static OPEN = 1;
   static CLOSED = 3;
   static instances: FakeWebSocket[] = [];
   /** When true, new sockets black-hole: no "open", no "error" — ever. */
   static neverOpen = false;
 
-  readyState = FakeWebSocket.OPEN;
+  readyState: number = FakeWebSocket.CONNECTING;
   sent: string[] = [];
   readonly url: string;
   readonly options: { headers?: Record<string, string>; perMessageDeflate?: boolean } | undefined;
@@ -27,8 +38,15 @@ export class FakeWebSocket {
     this.url = url;
     this.options = opts;
     FakeWebSocket.instances.push(this);
-    // Real `ws` fires "open" asynchronously; match that timing.
-    if (!FakeWebSocket.neverOpen) queueMicrotask(() => this._fire("open"));
+    // Real `ws` fires "open" asynchronously and is CONNECTING until then;
+    // match both, so a send-before-open is a test failure rather than a
+    // silently accepted frame.
+    if (!FakeWebSocket.neverOpen) {
+      queueMicrotask(() => {
+        this.readyState = FakeWebSocket.OPEN;
+        this._fire("open");
+      });
+    }
   }
 
   /** Reset the per-test statics — call from beforeEach. */
@@ -65,6 +83,12 @@ export class FakeWebSocket {
 
   removeAllListeners() {
     this.listeners.clear();
+  }
+
+  listenerCount() {
+    let n = 0;
+    for (const arr of this.listeners.values()) n += arr.length;
+    return n;
   }
 
   send(data: string) {

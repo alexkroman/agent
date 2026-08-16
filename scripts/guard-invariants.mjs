@@ -7,7 +7,7 @@
  * hand-rolled `Promise.race`", "reach for `vi.stubEnv(name, undefined)` rather
  * than `delete process.env.X`" — and each story is there because the rule was
  * learned by getting it wrong. But prose is only enforcement while somebody
- * remembers it at review time, and the guide is 78k characters. Every rule here
+ * remembers it at review time, and the guide is ~106k characters. Every rule here
  * is one that used to live only in that file.
  *
  * Each guard prints WHY the invariant exists and what to do instead, so a
@@ -48,12 +48,20 @@ import {
   assertNotUniversallyEmpty,
   assertScanCorpus,
   compareToBaseline,
+  isCommentOnly,
   scanGroups,
   totalOf,
   updateBaseline,
   warnStale,
 } from "./_ratchet.mjs";
-import { LINE_RULES, SESSION_SURFACE_PATHS, SOURCE_PATHSPECS } from "./guard-invariants-rules.mjs";
+import {
+  GUEST_SURFACE_PATHSPECS,
+  LINE_RULES,
+  SESSION_SURFACE_PATHS,
+  SOURCE_PATHSPECS,
+  TEMPLATE_PATHSPECS,
+  TMP_RULE_PATHSPECS,
+} from "./guard-invariants-rules.mjs";
 import {
   scanResearchFrontmatter,
   scanSymlinks,
@@ -97,8 +105,17 @@ const BASELINE_PATH = new URL("guard-invariants-baseline.json", import.meta.url)
 const SELF_REFERENTIAL = new Map([
   ["scripts/guard-invariants.mjs", "*"],
   // The rule definitions. Every pattern's `label` and `re` is a description of
-  // the thing it bans, so this file matches most of its own rules.
+  // the thing it bans, so these files match most of their own rules — and the
+  // set has to name ALL of them. `guard-invariants-rules.mjs` was one 649-line
+  // module until it passed the source cap; the split into a barrel plus an ERE
+  // vocabulary, a scopes module and three rule groups multiplies this trap by
+  // five, which AGENTS.md records having already been paid for four times.
   ["scripts/guard-invariants-rules.mjs", "*"],
+  ["scripts/guard-invariants-ere.mjs", "*"],
+  ["scripts/guard-invariants-scopes.mjs", "*"],
+  ["scripts/guard-invariants-rules-timing.mjs", "*"],
+  ["scripts/guard-invariants-rules-shape.mjs", "*"],
+  ["scripts/guard-invariants-rules-state.mjs", "*"],
   ["scripts/guard-invariants-baseline.json", "*"],
   // The spec that proves each rule still matches. Its samples ARE the
   // anti-patterns, spelled out on purpose — it exists because a pattern
@@ -117,11 +134,6 @@ function isSelfReferential(file, ruleKey) {
   const scope = SELF_REFERENTIAL.get(file);
   if (scope === undefined) return false;
   return scope === "*" || scope.includes(ruleKey);
-}
-
-/** True when the line carries only prose — a `//` or `*` comment. */
-function isCommentOnly(text) {
-  return text.startsWith("//") || text.startsWith("*") || text.startsWith("/*");
 }
 
 /** Drop the matches a rule must not count: its own definition, and prose. */
@@ -289,14 +301,26 @@ function baselineDescription(next) {
 const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
 
 /**
- * The floors under the scan — see `_ratchet.mjs` on why they measure the CORPUS.
+ * The floors under every scan — see `_ratchet.mjs` on why they measure the
+ * CORPUS.
  *
- * Two of them, because the rules walk two different scopes: ~1,530 files under
- * the source pathspecs, and the twelve literal paths rule 16 is scoped to. That
- * second one is `=== paths.length` in spirit: every entry is a literal, so a
- * rename empties the rule, which is the failure a hand-kept file list has.
+ * FIVE of them, because the rules walk five different scopes and only two were
+ * floored. Each number is set well below the measured actual, recorded beside
+ * it, so ordinary movement in the tree does not trip a floor while a scan that
+ * has gone blind does.
+ *
+ * The three that were missing are the interesting ones. Rule 11's is a THIRD
+ * source corpus (shipped source only) that neither existing call covered, and
+ * it is the Windows-portability rule — the one whose regressions are invisible
+ * on every machine that runs CI. Rules 12 and 13 derive their corpus from
+ * `git ls-files`, which exits **0** on a pathspec matching nothing where
+ * `git grep` exits 1: that asymmetry is exactly why the grep-based rules
+ * announced their own blindness and these two could not.
  */
-const MIN_SOURCE_FILES = 800;
+const MIN_SOURCE_FILES = 800; // measured: ~1,530
+const MIN_TMP_RULE_FILES = 600; // measured: ~1,027
+const MIN_GUEST_SURFACE_FILES = 20; // measured: 32
+const MIN_TEMPLATE_FILES = 100; // measured: 175
 
 assertScanCorpus({
   gate: GATE,
@@ -306,9 +330,27 @@ assertScanCorpus({
 });
 assertScanCorpus({
   gate: GATE,
+  what: "rule 11's shipped-source scan",
+  pathspecs: TMP_RULE_PATHSPECS,
+  minFiles: MIN_TMP_RULE_FILES,
+});
+assertScanCorpus({
+  gate: GATE,
   what: "rule 16's session-surface file list",
   pathspecs: SESSION_SURFACE_PATHS,
   minFiles: SESSION_SURFACE_PATHS.length,
+});
+assertScanCorpus({
+  gate: GATE,
+  what: "rule 12's guest HTTP-surface scan",
+  pathspecs: GUEST_SURFACE_PATHSPECS,
+  minFiles: MIN_GUEST_SURFACE_FILES,
+});
+assertScanCorpus({
+  gate: GATE,
+  what: "rule 13's template scan",
+  pathspecs: TEMPLATE_PATHSPECS,
+  minFiles: MIN_TEMPLATE_FILES,
 });
 
 /** Per-baselined-rule `{ file: count }` in the current tree, plus the lines. */

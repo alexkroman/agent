@@ -130,7 +130,12 @@ describe("toAgentConfig — silence nudge", () => {
   });
 
   test("rejects non-positive silenceTimeoutMs", () => {
-    expect(() => config({ ...pipelineFields, silenceTimeoutMs: 0 })).toThrow();
+    // Named rather than bare: a bare `toThrow()` here passes on any throw the
+    // shared `pipelineFields` fixture might start producing, so the guard could
+    // be deleted and this test would stay green on unrelated validation.
+    expect(() => config({ ...pipelineFields, silenceTimeoutMs: 0 })).toThrow(
+      /silenceTimeoutMs[\s\S]*expected number to be >0/,
+    );
   });
 });
 
@@ -181,7 +186,9 @@ describe("toAgentConfig — pipeline voice tuning", () => {
   });
 
   test("rejects minBargeInWords below 1", () => {
-    expect(() => config({ ...pipelineFields, minBargeInWords: 0 })).toThrow();
+    expect(() => config({ ...pipelineFields, minBargeInWords: 0 })).toThrow(
+      /minBargeInWords[\s\S]*expected number to be >=1/,
+    );
   });
 });
 
@@ -204,12 +211,15 @@ describe("assertProviderTriple with s2s", () => {
   });
 
   test("rejects setting s2s alongside any pipeline field", () => {
+    // Every stage names the same rule. A bare `toThrow()` on the second and
+    // third would also pass on the partial-triple error ("stt, llm, and tts
+    // must be set together"), which is a different rule reached by a different
+    // branch — and is exactly what a deleted s2s check would fall through to.
     const d = { kind: "x", options: {} };
-    expect(() => assertProviderTriple(d, undefined, undefined, d)).toThrow(
-      /s2s.*pipeline|cannot.*together/i,
-    );
-    expect(() => assertProviderTriple(undefined, d, undefined, d)).toThrow();
-    expect(() => assertProviderTriple(undefined, undefined, d, d)).toThrow();
+    const together = /s2s and the stt\/llm\/tts pipeline cannot be set together/;
+    expect(() => assertProviderTriple(d, undefined, undefined, d)).toThrow(together);
+    expect(() => assertProviderTriple(undefined, d, undefined, d)).toThrow(together);
+    expect(() => assertProviderTriple(undefined, undefined, d, d)).toThrow(together);
   });
 });
 

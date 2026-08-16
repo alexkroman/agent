@@ -103,8 +103,18 @@ function sourceFiles(repo, pkg) {
     .map((p) => path.join(repo, p));
 }
 
-/** Extract ```ts / ```tsx fences (minus `no-check`) from a markdown string. */
-function extractFences(text, stripPrefix) {
+/**
+ * Extract ```ts / ```tsx fences (minus `no-check`) from a markdown string.
+ *
+ * **An unclosed fence THROWS.** It used to fall off the end of the loop with
+ * `open` still set, silently dropping that block and — because a missing
+ * backtick also swallows every fence after it — everything below it:
+ * demonstrated on a two-example document with one backtick missing, which
+ * extracted 1. That is a discovery failure disguised as a smaller corpus, i.e.
+ * the exact thing `MIN_EXAMPLES` exists to catch, arriving one document at a
+ * time where the floor can only see the total.
+ */
+function extractFences(text, stripPrefix, origin = "<string>") {
   const blocks = [];
   const lines = text.split("\n");
   let open = null; // { lang, start, body: [] }
@@ -125,16 +135,22 @@ function extractFences(text, stripPrefix) {
       open.body.push(raw);
     }
   }
+  if (open !== null) {
+    throw new Error(
+      `check-doc-examples: unclosed \`\`\`${open.lang} fence opened at ${origin}:${open.start} — ` +
+        "the block and every fence after it would be dropped silently. Close it.",
+    );
+  }
   return blocks;
 }
 
 /** Extract fenced examples from every /** ... *\/ comment in a source file. */
-function extractFromSource(text) {
+function extractFromSource(text, origin) {
   const blocks = [];
   const re = /\/\*\*[\s\S]*?\*\//g;
   for (const m of text.matchAll(re)) {
     const startLine = text.slice(0, m.index).split("\n").length;
-    for (const b of extractFences(m[0], true)) {
+    for (const b of extractFences(m[0], true, origin)) {
       blocks.push({ ...b, line: startLine + b.line - 1 });
     }
   }
@@ -144,13 +160,13 @@ function extractFromSource(text) {
 const examples = [];
 for (const pkg of SOURCE_GLOBS) {
   for (const file of sourceFiles(repo, pkg)) {
-    for (const b of extractFromSource(readFileSync(file, "utf-8"))) {
+    for (const b of extractFromSource(readFileSync(file, "utf-8"), path.relative(repo, file))) {
       examples.push({ ...b, origin: path.relative(repo, file) });
     }
   }
 }
 for (const md of MARKDOWN_FILES) {
-  for (const b of extractFences(readFileSync(path.join(repo, md), "utf-8"), false)) {
+  for (const b of extractFences(readFileSync(path.join(repo, md), "utf-8"), false, md)) {
     examples.push({ ...b, origin: md });
   }
 }
@@ -160,7 +176,7 @@ for (const src of PROMPT_SOURCES) {
   const text = readFileSync(path.join(repo, src), "utf-8")
     .replaceAll("\\`", "`")
     .replaceAll("\\${", "${");
-  for (const b of extractFences(text, false)) {
+  for (const b of extractFences(text, false, src)) {
     examples.push({ ...b, origin: src });
   }
 }
@@ -176,11 +192,18 @@ for (const src of PROMPT_SOURCES) {
  * twice in one sitting (49 → 17 on a doubled path prefix, then 49 → 43 on a
  * `**` pathspec that skips package-root files), and both runs reported ✓.
  *
- * Set a few below the current actual (49 at the time of writing). Raise it
- * when the real count rises; never lower it to make a run pass — a drop means
- * examples stopped being discovered, which is the bug.
+ * Set a few below the current actual. Raise it when the real count rises;
+ * never lower it to make a run pass — a drop means examples stopped being
+ * discovered, which is the bug.
+ *
+ * **MEASURED: 98.** The floor sat at 45 against 98 with the comment still
+ * claiming "49 at the time of writing", so more than HALF the corpus could
+ * stop being discovered while the gate printed `all N doc examples compile ✓`
+ * — a floor two doublings behind its actual is not much better than the zero
+ * it replaced. Re-measure and re-raise when the number moves; the run's own
+ * closing line prints it.
  */
-const MIN_EXAMPLES = 45;
+const MIN_EXAMPLES = 85;
 if (examples.length < MIN_EXAMPLES) {
   console.error(
     `check-doc-examples: extracted only ${examples.length} examples, expected at least ` +

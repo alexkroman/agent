@@ -22,6 +22,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import { git } from "./_ratchet.mjs";
+import { GUEST_SURFACE_PATHSPECS, TEMPLATE_PATHSPECS } from "./guard-invariants-scopes.mjs";
 
 /**
  * Read a repo-relative file listed by git, or `undefined` when it is not there.
@@ -174,6 +175,12 @@ export function findUndeclaredGuestRoutes(literals, declared) {
   for (const { file, line, literal } of literals) {
     if (NOT_A_ROUTE.has(literal)) continue;
     if (literal.endsWith("/")) {
+      // A declared route UNDER the prefix, or the prefix itself minus the
+      // slash: `WORKFLOW_WEBHOOK_PREFIX` is `…/webhook/` and the table declares
+      // `…/webhook`, which is the same route with its trailing segment taken by
+      // a token rather than by a path. A `startsWith` alone reads that as an
+      // undeclared prefix gate.
+      if (declared.has(literal.slice(0, -1))) continue;
       if ([...declared].some((route) => route.startsWith(literal))) continue;
       undeclared.push({
         file,
@@ -188,30 +195,33 @@ export function findUndeclaredGuestRoutes(literals, declared) {
   return undeclared;
 }
 
-/** Route-shaped string literals in the guest's own non-test source. */
+/**
+ * Route-shaped string literals in the guest's HTTP surface.
+ *
+ * Whole LINES rather than `-o` fragments, so a comment-only line can be
+ * dropped. That is not cosmetic: widening the scan into `packages/aai/host`
+ * and `sdk/` immediately picked up `new URL("/x", base)` from a JSDoc
+ * paragraph in `workflow-api-client.ts` explaining why an absolute URL is
+ * wrong — prose scored as a route, which is the same code-versus-prose
+ * confusion the escape-hatch gate's comment filter exists for.
+ */
 function guestRouteLiterals() {
-  const out = git([
-    "grep",
-    "-nIoE",
-    '"/[A-Za-z0-9._/-]*"',
-    "--",
-    "packages/aai-guest",
-    ":!packages/aai-guest/dist/**",
-    // Both spellings: the suites sit directly in the package root, which
-    // `**/*.test.ts` does not match on its own.
-    ":!packages/aai-guest/*.test.ts",
-    ":!packages/aai-guest/**/*.test.ts",
-  ]);
-  return out
-    .split("\n")
-    .filter(Boolean)
-    .map((row) => {
-      const file = row.slice(0, row.indexOf(":"));
-      const rest = row.slice(row.indexOf(":") + 1);
-      const line = Number(rest.slice(0, rest.indexOf(":")));
-      const literal = rest.slice(rest.indexOf(":") + 1).replaceAll('"', "");
-      return { file, line, literal };
-    });
+  const out = git(["grep", "-nIE", '"/[A-Za-z0-9._/-]*"', "--", ...GUEST_SURFACE_PATHSPECS], {
+    allowNoMatch: true,
+  });
+  const literals = [];
+  for (const row of out.split("\n").filter(Boolean)) {
+    const fileEnd = row.indexOf(":");
+    const lineEnd = row.indexOf(":", fileEnd + 1);
+    const file = row.slice(0, fileEnd);
+    const line = Number(row.slice(fileEnd + 1, lineEnd));
+    const text = row.slice(lineEnd + 1).trim();
+    if (text.startsWith("//") || text.startsWith("*") || text.startsWith("/*")) continue;
+    for (const [, literal] of text.matchAll(/"(\/[A-Za-z0-9._/-]*)"/g)) {
+      literals.push({ file, line, literal });
+    }
+  }
+  return literals;
 }
 
 /** The paths `GUEST_ROUTES` declares, read as text — never imported. */
@@ -279,7 +289,7 @@ export function importEscapesTemplate(file, specifier) {
 }
 
 export function scanTemplateEscapingImports() {
-  const files = git(["ls-files", "--", "packages/aai-templates/templates"])
+  const files = git(["ls-files", "--", ...TEMPLATE_PATHSPECS])
     .split("\n")
     .filter((f) => /\.(?:m?[jt]s|tsx)$/.test(f));
   const found = [];

@@ -1,6 +1,20 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import { log, notify, parsePort, silenceOutput } from "./_ui.ts";
+import { parsePort } from "./_ui.ts";
+
+/**
+ * A FRESH copy of `_ui.ts`, never silenced.
+ *
+ * `silenceOutput()` sets irreversible module state, so which describe below
+ * observes the un-silenced path used to be decided by declaration order — a
+ * comment saying "declare this first", true of the current file and silently
+ * false under `sequence.shuffle` or a reordering edit. Re-importing makes the
+ * precondition structural instead: each test states which state it wants.
+ */
+async function freshUi(): Promise<typeof import("./_ui.ts")> {
+  vi.resetModules();
+  return await import("./_ui.ts");
+}
 
 describe("parsePort", () => {
   test("parses valid port", () => {
@@ -28,10 +42,9 @@ describe("parsePort", () => {
   });
 });
 
-// NOTE: `silenceOutput()` sets irreversible module state, so everything that
-// depends on the un-silenced path must be declared BEFORE the describe below.
 describe("notify (before silenceOutput)", () => {
-  test("delegates to the styled log in human mode", () => {
+  test("delegates to the styled log in human mode", async () => {
+    const { log, notify } = await freshUi();
     const spy = vi.spyOn(log, "error").mockImplementation(() => undefined);
     const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     notify("error", "boom");
@@ -42,7 +55,8 @@ describe("notify (before silenceOutput)", () => {
 });
 
 describe("silenceOutput", () => {
-  test("replaces log methods with no-ops after silenceOutput()", () => {
+  test("replaces log methods with no-ops after silenceOutput()", async () => {
+    const { log, silenceOutput } = await freshUi();
     silenceOutput();
     // Should not throw — all methods are now no-ops
     expect(() => log.info("test")).not.toThrow();
@@ -63,13 +77,17 @@ describe("silenceOutput", () => {
  * stderr keeps the stdout contract while still reporting.
  */
 describe("notify (after silenceOutput)", () => {
-  test("writes to stderr instead of vanishing", () => {
+  test("writes to stderr instead of vanishing", async () => {
+    const { notify, silenceOutput } = await freshUi();
+    silenceOutput();
     const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     notify("error", "Restart failed: boom");
     expect(stderr).toHaveBeenCalledWith("Restart failed: boom\n");
   });
 
-  test("reports every level, so a rebuild notice is not lost either", () => {
+  test("reports every level, so a rebuild notice is not lost either", async () => {
+    const { notify, silenceOutput } = await freshUi();
+    silenceOutput();
     const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     for (const level of ["error", "warn", "info", "success"] as const) {
       notify(level, `msg-${level}`);

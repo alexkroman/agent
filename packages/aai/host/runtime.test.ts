@@ -16,19 +16,17 @@ import {
 } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { anthropic } from "../sdk/providers/llm/anthropic.ts";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "../sdk/providers/llm/assemblyai.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "../sdk/providers/stt/assemblyai.ts";
+import { ASSEMBLYAI_TTS_DEFAULT_VOICE } from "../sdk/providers/tts/assemblyai.ts";
 import { cartesia } from "../sdk/providers/tts/cartesia.ts";
 import { sessionSlot } from "../sdk/session-slot.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
-import { makeAgent } from "./_test-utils.ts";
+import { makeAgent, makeLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import { executeToolCall } from "./tool-executor.ts";
-
-function makeLogger() {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-}
 
 describe("toAgentConfig", () => {
   test("maps name, systemPrompt, greeting from AgentDef", () => {
@@ -306,10 +304,9 @@ describe("createRuntime", () => {
     await expect(exec.shutdown()).resolves.toBeUndefined();
   });
 
-  test("startSession is a function", () => {
-    const exec = createRuntime({ agent: makeAgent(), env: {} });
-    expect(typeof exec.startSession).toBe("function");
-  });
+  // A `typeof exec.startSession === "function"` case lived here; what it
+  // FORWARDS is asserted over a real socket in `runtime-lifecycle.test.ts`,
+  // which this file's header already defers session lifecycle to.
 });
 
 /**
@@ -675,8 +672,11 @@ describe("createRuntime — provider resolution seams", () => {
       voiceFocus: DEFAULT_VOICE_FOCUS,
       voiceFocusThreshold: DEFAULT_VOICE_FOCUS_THRESHOLD,
     });
-    expect(settings?.llm).toMatchObject({ model: expect.any(String) });
-    expect(settings?.tts).toMatchObject({ voice: expect.any(String) });
+    // The real constants, not `expect.any(String)`: a settings log that can
+    // drift from the wire is worse than no log, because it is believed — and
+    // `any(String)` is satisfied by whatever the log happens to say.
+    expect(settings?.llm).toMatchObject({ model: ASSEMBLYAI_LLM_DEFAULT_MODEL });
+    expect(settings?.tts).toMatchObject({ voice: ASSEMBLYAI_TTS_DEFAULT_VOICE });
   });
 
   test("logs s2s mode for an agent that opts in via the s2s descriptor", () => {

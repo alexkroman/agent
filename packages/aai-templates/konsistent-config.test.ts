@@ -104,6 +104,37 @@ const repoFiles = Object.keys({
     : `packages/aai-templates/${key.replace(/^\.\//, "")}`,
 );
 
+/**
+ * Everything a `paths` pattern could select, FILES and DIRECTORIES both.
+ *
+ * `repoFiles` above is a shallow sample, which is all a literal-prefix check
+ * needs; resolving a whole pattern needs the deep tree — `packages/aai/host/**`
+ * and `packages/aai-ui/worklets/**` are three and two levels down, and two
+ * conventions (`workspace-package-layout`, `agent-templates`) point at
+ * DIRECTORIES, which no file glob returns. Directories are derived from every
+ * ancestor of every file rather than globbed for.
+ *
+ * The pattern is the one `guard-invariants-gate.test.ts` already uses for its
+ * own `repoFiles`, so no new module edge reaches the templates tree — see the
+ * knip note above, which is about the SHALLOW globs and stays true of them.
+ */
+const repoPaths = (() => {
+  // Two key shapes, exactly as the shallow globs above produce: Vite normalizes
+  // to the shortest relative form, so a sibling package arrives as
+  // `../aai/index.ts` and THIS package's own files as `./templates/…/agent.ts`.
+  const files = Object.keys(import.meta.glob("../*/**/*.{ts,tsx,json,md}")).map((key) =>
+    key.startsWith("../")
+      ? `packages/${key.slice("../".length)}`
+      : `packages/aai-templates/${key.replace(/^\.\//, "")}`,
+  );
+  const paths = new Set(files);
+  for (const file of files) {
+    const segments = file.split("/");
+    for (let i = segments.length - 1; i > 0; i--) paths.add(segments.slice(0, i).join("/"));
+  }
+  return paths;
+})();
+
 const config = JSON.parse(raw ?? "{}") as KonsistentConfig;
 
 /**
@@ -119,6 +150,37 @@ const blocksOf = (convention: Convention): MustBlock[] => {
   if (convention.must) block.must = convention.must;
   if (convention.mustNot) block.mustNot = convention.mustNot;
   return [block];
+};
+
+/**
+ * A konsistent `paths` pattern as a regex over repo-relative paths.
+ *
+ * `{placeholder}` is konsistent's per-segment capture, `*` is a single segment
+ * and `**` crosses them — the three kinds of magic these thirteen conventions
+ * use. Leading `!` is stripped by the caller; polarity is not this function's
+ * question.
+ */
+const patternToRegExp = (pattern: string): RegExp => {
+  // The sentinels are spelled `\u0000` and NOT as raw NUL bytes. One literal
+  // NUL makes the whole file BINARY to `git grep`, which silently exempts it
+  // from every guard-invariants line rule and every check-escape-hatches
+  // pattern — and the corpus floor cannot see it, because the file is still
+  // present in `git ls-files`. That has now happened three times in this repo
+  // (`host/workflow-notify.ts`, `host/workflow-keys.ts`, and here); the third
+  // is what `assertScanCorpus`'s `git ls-files` vs `git grep -lI` diff now
+  // catches. The escape is byte-identical at runtime.
+  const body = pattern
+    .replace(/^!/, "")
+    // Escape everything a regex would read, EXCEPT the three magic forms.
+    .replace(/[.+^$()|[\]\\]/g, "\\$&")
+    .replace(/\{[A-Za-z0-9_]+\}/g, "\u0000SEG\u0000")
+    .replace(/\*\*\//g, "\u0000DEEP\u0000")
+    .replace(/\*\*/g, "\u0000ANY\u0000")
+    .replace(/\*/g, "\u0000SEG\u0000")
+    .replaceAll("\u0000SEG\u0000", "[^/]*")
+    .replaceAll("\u0000DEEP\u0000", "(?:[^/]+/)*")
+    .replaceAll("\u0000ANY\u0000", ".*");
+  return new RegExp(`^${body}$`);
 };
 
 /** Literal path prefix of a glob — everything before the first magic character. */
@@ -192,6 +254,44 @@ describe("konsistent.json", () => {
           repoFiles.some((file) => file.startsWith(prefix)),
           `${convention.name}: no file in the repo lives under "${prefix}" (from "${pattern}")`,
         ).toBe(true);
+      }
+    }
+  });
+
+  test("every paths pattern RESOLVES, not just its literal prefix", () => {
+    // The prefix check above stops at the first magic character, so four of the
+    // thirteen conventions reduce to `packages/` and a typo AFTER that point is
+    // invisible to it: `*-barel.ts` for `*-barrel.ts` leaves the prefix intact,
+    // makes konsistent check zero files, prints "No violations found", and
+    // passes. It catches a directory-segment typo, which is the case its own
+    // comment names, and nothing else.
+    //
+    // NEGATIONS are held to a different bar, and the asymmetry is the point. An
+    // exclusion that matches nothing is harmless — it excludes nothing, and a
+    // mistyped one fails LOUDLY, as konsistent flagging the file the exclusion
+    // was meant to spare. Three of the twelve are legitimately inert today
+    // (`stt`, `tts` and `s2s` hold no `*.test.ts`), so requiring them to resolve
+    // would fail on the day somebody writes a provider test. What is worth
+    // checking is that each one names a directory that exists.
+    expect(repoPaths.size, "no repo paths discovered").toBeGreaterThan(800);
+    for (const convention of config.conventions) {
+      const patterns = Array.isArray(convention.paths) ? convention.paths : [convention.paths];
+      for (const pattern of patterns) {
+        if (pattern.startsWith("!")) {
+          const parent = literalPrefix(pattern).replace(/\/$/, "");
+          expect(
+            repoPaths,
+            `${convention.name}: exclusion "${pattern}" names "${parent}", which does not exist`,
+          ).toContain(parent);
+          continue;
+        }
+        const matcher = patternToRegExp(pattern);
+        const matched = [...repoPaths].filter((path) => matcher.test(path));
+        expect(
+          matched.length,
+          `${convention.name}: "${pattern}" selects NOTHING — konsistent would check zero ` +
+            'files and print "No violations found"',
+        ).toBeGreaterThan(0);
       }
     }
   });

@@ -1,12 +1,20 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, it } from "vitest";
-import { sleep } from "../host/_test-utils.ts";
+import pTimeout from "p-timeout";
+import { describe, expect, it, vi } from "vitest";
 import { createKeyedLock, KeyedLockTimeoutError } from "./keyed-lock.ts";
+// `sdk/sleep.ts` rather than `host/_test-utils.ts`: this is an `sdk/` unit test,
+// and that helper module re-exports `sleep` while itself importing
+// `createRuntime`, `assemblyAIS2s` and `node:fs` — the whole host graph, pulled
+// in for one wait.
+import { sleep } from "./sleep.ts";
 
-/** Yield enough microtasks for the lock's internal cleanup chains to run. */
-async function flushMicrotasks(): Promise<void> {
-  for (let i = 0; i < 5; i++) await Promise.resolve();
-}
+// Every drain assertion below is `vi.waitFor`, never a fixed number of
+// `await Promise.resolve()`s: the invariant is "the map drains", not "the map
+// drains within N microtasks". A fixed count matches the cleanup chain's
+// CURRENT depth, so one added `await` inside the lock turns every one of them
+// into a failure that reads as a per-key leak. (Inline rather than behind a
+// helper — Biome's `noMisplacedAssertion` rules an `expect` outside a test
+// body out, and it is right to.)
 
 describe("createKeyedLock", () => {
   it("serializes holders of the same key in acquisition order", async () => {
@@ -32,18 +40,24 @@ describe("createKeyedLock", () => {
     const lock = createKeyedLock();
     const releaseA = await lock("a");
 
-    // "b" must acquire while "a" is held. Raced against a real timer rather
-    // than plainly awaited: a regression that made keys block each other
-    // would hang this `await` until the suite timeout fired on a test whose
-    // name explains nothing, instead of failing here with the reason.
-    const releaseB = await Promise.race([lock("b"), sleep(50).then(() => null)]);
-    expect(releaseB, '"b" blocked behind the "a" lock').not.toBeNull();
+    // "b" must acquire while "a" is held. Bounded rather than plainly awaited: a
+    // regression that made keys block each other would hang this `await` until
+    // the suite timeout fired on a test whose name explains nothing, instead of
+    // failing here with the reason. `p-timeout` rather than a hand-rolled race
+    // against a timer (`guard-invariants` rule 3) — the losing branch's late
+    // rejection and the dangling timer are exactly what gets re-derived wrong.
+    const releaseB = await pTimeout(lock("b"), {
+      milliseconds: 50,
+      message: '"b" blocked behind the "a" lock',
+    });
+    expect(releaseB).toBeTypeOf("function");
 
     expect(lock.size).toBe(2);
-    releaseB?.();
+    releaseB();
     releaseA();
-    await flushMicrotasks();
-    expect(lock.size).toBe(0);
+    await vi.waitFor(() => {
+      expect(lock.size).toBe(0);
+    });
   });
 
   it("empties the map after all locks release (no per-key leak)", async () => {
@@ -54,8 +68,9 @@ describe("createKeyedLock", () => {
     expect(lock.size).toBe(20);
 
     for (const release of releases) release();
-    await flushMicrotasks();
-    expect(lock.size).toBe(0);
+    await vi.waitFor(() => {
+      expect(lock.size).toBe(0);
+    });
   });
 
   it("keeps the entry while a later acquirer is still queued", async () => {
@@ -68,8 +83,9 @@ describe("createKeyedLock", () => {
     expect(lock.size).toBe(1);
 
     release2();
-    await flushMicrotasks();
-    expect(lock.size).toBe(0);
+    await vi.waitFor(() => {
+      expect(lock.size).toBe(0);
+    });
   });
 
   it("release is idempotent", async () => {
@@ -77,14 +93,16 @@ describe("createKeyedLock", () => {
     const release = await lock("k");
     release();
     release();
-    await flushMicrotasks();
-    expect(lock.size).toBe(0);
+    await vi.waitFor(() => {
+      expect(lock.size).toBe(0);
+    });
 
     // The key is fully reusable afterwards.
     const again = await lock("k");
     again();
-    await flushMicrotasks();
-    expect(lock.size).toBe(0);
+    await vi.waitFor(() => {
+      expect(lock.size).toBe(0);
+    });
   });
   describe("acquire deadline", () => {
     it("rejects a waiter that never gets the key", async () => {
@@ -105,8 +123,9 @@ describe("createKeyedLock", () => {
       const second = await queued;
       expect(typeof second).toBe("function");
       second();
-      await flushMicrotasks();
-      expect(lock.size).toBe(0);
+      await vi.waitFor(() => {
+        expect(lock.size).toBe(0);
+      });
     });
 
     /**
@@ -128,8 +147,9 @@ describe("createKeyedLock", () => {
 
       const acquired = await behind;
       acquired();
-      await flushMicrotasks();
-      expect(lock.size).toBe(0);
+      await vi.waitFor(() => {
+        expect(lock.size).toBe(0);
+      });
     });
 
     it("leaks no entry once an abandoned key drains", async () => {
@@ -137,8 +157,9 @@ describe("createKeyedLock", () => {
       const release = await lock("k");
       await expect(lock("k", { timeoutMs: 5 })).rejects.toThrow(KeyedLockTimeoutError);
       release();
-      await flushMicrotasks();
-      expect(lock.size).toBe(0);
+      await vi.waitFor(() => {
+        expect(lock.size).toBe(0);
+      });
     });
 
     it("an uncontended key never waits on the deadline", async () => {
@@ -147,8 +168,9 @@ describe("createKeyedLock", () => {
       // a floor on the common case.
       const release = await lock("free", { timeoutMs: 1 });
       release();
-      await flushMicrotasks();
-      expect(lock.size).toBe(0);
+      await vi.waitFor(() => {
+        expect(lock.size).toBe(0);
+      });
     });
   });
 });

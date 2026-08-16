@@ -88,11 +88,10 @@ describe("Deepgram STT adapter", () => {
   });
 
   test("throws stt_auth_failed when API key is missing", async () => {
-    // `undefined` unsets the var, and vitest restores it after the test — the
-    // hand-rolled restore this replaces wrote back `undefined` directly, which
-    // env coercion turns into the STRING "undefined" for every later test.
-    vi.stubEnv("DEEPGRAM_API_KEY", undefined);
-
+    // No `vi.stubEnv` scrub here (it used to carry one): `requireApiKey` reads
+    // the key it is HANDED and never `process.env`, so scrubbing the shell var
+    // proved nothing and read as if the adapter had an env fallback — which it
+    // deliberately does not. `host-env.test.ts` owns that property centrally.
     const opener = openDeepgram({});
     await expect(
       opener.open({ sampleRate: 16_000, apiKey: "", signal: new AbortController().signal }),

@@ -8,14 +8,14 @@ import { TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
 import { tick } from "../../_test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
-import { FakeWebSocket, pcmBase64 } from "./_assemblyai-fake-ws-test-utils.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
+import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
 import { openAssemblyAITts } from "./assemblyai.ts";
 
 // Async factory importing an import-free module: the adapter's own "ws"
 // import must not be reachable from the factory (it would re-enter the mock).
 vi.mock("ws", async () => {
-  const { FakeWebSocket } = await import("./_assemblyai-fake-ws-test-utils.ts");
+  const { FakeWebSocket } = await import("./_fake-ws-test-utils.ts");
   return { default: FakeWebSocket, WebSocket: FakeWebSocket };
 });
 
@@ -73,24 +73,22 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     // sendText resets doneEmitted; a stale is_final/FlushDone landing after it
     // would otherwise resolve the next turn's flush wait before synthesis ran.
     const { session, ws } = await openSession();
-    let done = 0;
-    session.on("done", () => {
-      done += 1;
-    });
+    const onDone = vi.fn();
+    session.on("done", onDone);
 
     session.sendText("old turn");
     session.cancel();
-    expect(done).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
     await tick();
 
     session.sendText("new turn");
     ws._msg({ type: "Audio", audio: pcmBase64([9]), is_final: true }); // old socket
     ws._msg({ type: "FlushDone" }); // old socket
-    expect(done).toBe(1);
+    expect(onDone).toHaveBeenCalledTimes(1);
 
     const next = FakeWebSocket.instances.at(-1);
     next?._msg({ type: "FlushDone" });
-    expect(done).toBe(2);
+    expect(onDone).toHaveBeenCalledTimes(2);
   });
 
   test("a turn after cancel synthesizes only its own text", async () => {

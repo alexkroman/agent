@@ -92,6 +92,39 @@ type PendingDone = {
   promise: Promise<void>;
 };
 
+/**
+ * States the generator must actually reach, asserted as floors after the run.
+ *
+ * fast-check has no coverage-floor mechanism (`fc.statistics` only prints), and
+ * an all-green property proves nothing about a state the generator never
+ * entered — see "Property tests run on fast-check" in the root guide.
+ *
+ * These are load-bearing rather than decorative, because L2's legitimacy check
+ * short-circuits on `entry.turn === null`. If `playNode()` ever stopped
+ * returning the node the host is driving, `lastDoneTurn()` would yield `null`,
+ * EVERY settle would score as legitimate, L2 would assert nothing, and 200 runs
+ * would report green. `postDrainStop` has the same escape, so the drain-stop
+ * race could go unexercised in every run. A hard failure in `registerDone`
+ * catches the case where the node is there and the turn id is not; these floors
+ * catch the rest — a generator, a weight or a mock that stopped reaching the
+ * state at all.
+ */
+type Reached = {
+  /** `done()` waits registered against a REAL turn id — the ones L2 can judge. */
+  judgedDones: number;
+  /**
+   * Settles where the turn's OWN drain-stop was the only thing making them
+   * legitimate: nothing ended the turn, the context was still rendering, and
+   * the hard cap had not expired. This is the count L2 discriminates on.
+   */
+  ownStopSettles: number;
+  /** Drain-stops the simulated worklet actually delivered. */
+  drainStops: number;
+  /** …of those, the ones whose delivery lagged across at least one later op. */
+  laggedDrainStops: number;
+};
+const reached: Reached = { judgedDones: 0, ownStopSettles: 0, drainStops: 0, laggedDrainStops: 0 };
+
 /** One run's world: the VoiceIO under test plus the bookkeeping L1/L2 need. */
 type World = {
   io: VoiceIO;
@@ -151,6 +184,18 @@ function registerDone(w: World): void {
   const promise = w.io.done();
   const node = w.playNode();
   const turn = node ? lastDoneTurn(node) : null;
+  // A play node with no turn id on it HERE is a broken harness, not a quiet
+  // pass: `done()` posts `{ event: "done", turn }` before returning whenever
+  // the host holds a playback node, so this can only mean `playNode()` is not
+  // returning the node the host is driving — the accumulating-mock-registry bug
+  // this harness was already bitten by once. Unreported, it is exactly what
+  // makes L2's `entry.turn === null` escape excuse every settle in every run.
+  // (`postDrainStop`'s identical escape is legitimate per op — the simulated
+  // worklet only stops a turn a 'done' named — so a floor guards that one.)
+  if (node && turn === null) {
+    w.violations.push("harness: done() left no turn id on the play node");
+  }
+  if (turn !== null) reached.judgedDones += 1;
   w.log.push(`done(turn=${turn})`);
   const entry: PendingDone = {
     turn,
@@ -161,12 +206,12 @@ function registerDone(w: World): void {
   };
   entry.promise = promise.then(() => {
     entry.settled = true;
-    const legitimate =
-      entry.turn === null ||
-      entry.ownStopDelivered ||
-      entry.endedByHost ||
-      !w.contextRunning() ||
-      w.elapsed >= PLAYBACK_DONE_MAX_WAIT_MS;
+    const excused =
+      entry.endedByHost || !w.contextRunning() || w.elapsed >= PLAYBACK_DONE_MAX_WAIT_MS;
+    // The discriminating case: nothing else excuses this settle, so only the
+    // turn's own drain-stop can make it legitimate.
+    if (entry.turn !== null && entry.ownStopDelivered && !excused) reached.ownStopSettles += 1;
+    const legitimate = entry.turn === null || entry.ownStopDelivered || excused;
     if (!legitimate) {
       w.violations.push(`done(turn=${entry.turn}) settled with no stop of its own`);
     }
@@ -178,8 +223,14 @@ function registerDone(w: World): void {
 function postDrainStop(w: World, lag: number | null): void {
   const node = w.playNode();
   const turn = node ? lastDoneTurn(node) : null;
+  // No 'done' yet means the worklet has no turn to drain — a legitimate no-op,
+  // and the reason `reached.drainStops` carries a floor: taken on EVERY op it
+  // would leave the drain-stop race unexercised in every run, silently.
   if (!node || turn === null) return;
+  const postedAt = w.elapsed;
   const deliver = (): void => {
+    reached.drainStops += 1;
+    if (w.elapsed > postedAt) reached.laggedDrainStops += 1;
     for (const p of w.pending) if (p.turn === turn) p.ownStopDelivered = true;
     node.port.simulateMessage({ event: "stop", reason: "done", turn, stats: undefined });
   };
@@ -279,5 +330,23 @@ describe("fuzz: VoiceIO lifecycle", () => {
       }),
       { numRuns: 200 },
     );
+
+    // Coverage floors — see `Reached`. Set well below the measured actuals
+    // noted alongside (ten runs of 200), because what a random walk reaches
+    // varies run to run: these catch a generator or a mock that stopped
+    // reaching a state, not a count. A sudden drop here is a broken harness.
+    expect(
+      reached.judgedDones,
+      "no done() was ever registered against a real turn",
+    ).toBeGreaterThan(55); // ~158-191
+    expect(
+      reached.ownStopSettles,
+      "no settle was ever justified by its OWN drain-stop alone — L2 discriminated nothing",
+    ).toBeGreaterThan(2); // ~5-14
+    expect(reached.drainStops, "the worklet never delivered a drain-stop").toBeGreaterThan(18); // ~43-75
+    expect(
+      reached.laggedDrainStops,
+      "no drain-stop delivery ever lagged across a later op — the in-flight race went unexercised",
+    ).toBeGreaterThan(15); // ~34-66
   }, 120_000);
 });

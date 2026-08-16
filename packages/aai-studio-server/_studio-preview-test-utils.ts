@@ -9,8 +9,8 @@
  * describe two different tenants while reading identically.
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
-import { vi } from "vitest";
 
 export const SCOPE = "scope";
 export const PROJECT = "contact-form-x7k2mq";
@@ -20,8 +20,22 @@ export function makeStore() {
   return createMemoryWorkspaceStore();
 }
 
-/** Wait for the fire-and-forget deploy loop to drain. */
-export async function settled(): Promise<void> {
-  await vi.waitFor(() => Promise.resolve());
-  await new Promise((resolve) => setTimeout(resolve, 0));
+/**
+ * Let the fire-and-forget deploy loop run to a standstill.
+ *
+ * This gates about ten `not.toHaveBeenCalled()` assertions, so what it waits
+ * for is load-bearing — and it used to wait for nothing measurable. The
+ * `await vi.waitFor(() => Promise.resolve())` it opened with succeeds on its
+ * FIRST attempt (a resolved promise is a passing check), and the bare
+ * macrotask behind it is enough only because every step in these paths is a
+ * microtask over in-memory stores: the moment one acquires a real timer or a
+ * second turn, every negative assertion goes vacuous with no signal at all.
+ *
+ * Several turns instead of one, through the SDK's own `sleep` (guard rule 19),
+ * because each macrotask drains the whole microtask queue behind it — so an
+ * N-await chain settles in N turns rather than in the one it happens to need
+ * today.
+ */
+export async function settled(turns = 5): Promise<void> {
+  for (let turn = 0; turn < turns; turn += 1) await sleep(0);
 }

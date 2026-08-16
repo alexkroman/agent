@@ -15,12 +15,29 @@ const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
   animationDelay: `${delay}s`,
 }));
 
-/** Animated three-dot "thinking" indicator. @internal */
+/**
+ * Animated three-dot "thinking" indicator.
+ *
+ * `role="status"` with a label, for the same reason `ConsoleShell` announces
+ * its error banner: three animated dots are the only signal that the agent is
+ * working on a reply, and to a screen reader they are three empty `<div>`s.
+ * It is also the indicator's semantic handle — a spec asserting its presence by
+ * counting `.rounded-full` elements breaks when the three dots become a spinner
+ * (correct behaviour, red test) and again when any sibling row gains a round
+ * badge (wrong behaviour, green test).
+ *
+ * @internal
+ */
 function ThinkingDots(): ReactNode {
   const theme = useTheme();
   const muted = inkTint(theme.text, theme.surface, INK_MUTED_PCT);
   return (
-    <div className="flex items-center gap-2 text-sm font-medium min-h-5" style={{ color: muted }}>
+    <div
+      role="status"
+      aria-label="Thinking"
+      className="flex items-center gap-2 text-sm font-medium min-h-5"
+      style={{ color: muted }}
+    >
       {DOT_STYLES.map((style, i) => (
         <div
           // biome-ignore lint/suspicious/noArrayIndexKey: static array, index as key is safe

@@ -51,6 +51,13 @@ function json(body: unknown, status = 200): Response {
 }
 
 beforeEach(() => {
+  // `mockLog` is module-level, and `restoreMocks: true` registers only
+  // `vi.spyOn` mocks — it clears neither the history nor the implementation of
+  // a plain `vi.fn()`. Without this, an `expect(mockLog.info)
+  // .toHaveBeenCalledWith(…)` below is satisfied by an EARLIER test in this
+  // file: three of the list/runs cases print the same "declares no workflows"
+  // and "No runs of digest yet" lines.
+  vi.clearAllMocks();
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
 });

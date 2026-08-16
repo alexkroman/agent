@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from "vitest";
 import { agent } from "../sdk/define.ts";
-import { silentLogger } from "./_test-utils.ts";
+import { silentLogger, withDeadline } from "./_test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
 
 const ENV = { ASSEMBLYAI_API_KEY: "sk-test" };
@@ -55,13 +55,19 @@ describe("createAgentServer", () => {
 
     await withServer({ agent: myAgent }, async (baseUrl) => {
       const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/websocket`);
-      const first = await new Promise<Record<string, unknown>>((resolve) => {
-        ws.addEventListener("message", (e: MessageEvent) => {
-          if (typeof e.data === "string") resolve(JSON.parse(e.data) as Record<string, unknown>);
-        });
-        ws.addEventListener("close", () => resolve({ type: "closed" }));
-        ws.addEventListener("error", () => resolve({ type: "error" }));
-      });
+      // Deadlined: a server that accepts the upgrade and then sends nothing
+      // satisfies none of these three listeners, and without one the whole
+      // file times out at 5 s naming no assertion.
+      const first = await withDeadline(
+        new Promise<Record<string, unknown>>((resolve) => {
+          ws.addEventListener("message", (e: MessageEvent) => {
+            if (typeof e.data === "string") resolve(JSON.parse(e.data) as Record<string, unknown>);
+          });
+          ws.addEventListener("close", () => resolve({ type: "closed" }));
+          ws.addEventListener("error", () => resolve({ type: "error" }));
+        }),
+        "the session websocket neither answered nor closed",
+      );
       // The handshake frame — a declining facade would have sent a
       // protocol error and closed instead.
       expect(first).toMatchObject({ type: "session.configured" });
@@ -84,10 +90,13 @@ describe("createAgentServer", () => {
       },
       async (baseUrl) => {
         const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/websocket`);
-        await new Promise<void>((resolve) => {
-          ws.addEventListener("close", () => resolve());
-          ws.addEventListener("error", () => resolve());
-        });
+        await withDeadline(
+          new Promise<void>((resolve) => {
+            ws.addEventListener("close", () => resolve());
+            ws.addEventListener("error", () => resolve());
+          }),
+          "the destroyed upgrade left the socket open",
+        );
         expect(sawUpgrade).toBe(true);
       },
     );

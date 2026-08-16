@@ -55,9 +55,11 @@
  */
 
 import fc from "fast-check";
+import pTimeout, { TimeoutError } from "p-timeout";
 import { describe, expect, test } from "vitest";
 import { S2S_MAX_RESUME_ATTEMPTS } from "../../sdk/constants.ts";
 import type { SessionEvent } from "../../sdk/protocol.ts";
+import { errorMessage } from "../../sdk/utils.ts";
 import type { Cmd } from "./_s2s-fuzz-commands.ts";
 import { createHarness, drain, type Harness } from "./_s2s-fuzz-harness.ts";
 import type { CallRecord } from "./_s2s-fuzz-model.ts";
@@ -243,13 +245,19 @@ function checkFinalState(h: Harness): string[] {
   return [...checkToolAnswers(h), ...checkSocketFrames(h), ...checkRetirement(h)];
 }
 
+const STOP_DEADLINE_MS = 5000;
+
 async function stopAndCheckTeardown(h: Harness): Promise<string[]> {
   const problems: string[] = [];
-  const outcome = await Promise.race([
-    h.session.stop().then(() => "stopped" as const),
-    new Promise<"hung">((r) => setTimeout(() => r("hung"), 5000)),
-  ]);
-  if (outcome === "hung") problems.push("stop() did not resolve within 5s");
+  // `pTimeout`, not a hand-rolled race (guard-invariants rule 3): the losing
+  // `setTimeout` was never cleared, so every one of the ~780 generated runs
+  // left a pending 5s timer behind it.
+  try {
+    await pTimeout(h.session.stop(), { milliseconds: STOP_DEADLINE_MS });
+  } catch (err) {
+    if (!(err instanceof TimeoutError)) throw err;
+    problems.push(`stop() did not resolve within ${STOP_DEADLINE_MS}ms`);
+  }
   h.stopped = true;
   await drain();
   for (const sock of h.link.sockets) {
@@ -268,14 +276,23 @@ async function stopAndCheckTeardown(h: Harness): Promise<string[]> {
  * actuals: fast-check reruns are seeded per process, so these have to absorb
  * ordinary generation variance. A run that comes back GREENER is the thing to
  * distrust.
+ *
+ * **Every floor records its measured actual**, which twelve of the thirteen did
+ * not — and a floor with no recorded baseline cannot be re-measured, which is
+ * what this file's own header prescribes doing when one flakes. Each is the
+ * observed MINIMUM over four fresh runs divided by three, per the repo rule
+ * ("~3x below measured actuals, and record the actuals"); re-measure with
+ * `S2S_FUZZ_COVERAGE=1` and raise, never lower.
  */
 const COVERAGE_FLOORS: Record<string, number> = {
-  // One per run, plus one per completed resume.
+  // One per run, plus one per completed resume. Structural rather than
+  // ratio-derived: it says "essentially every run reached ready".
+  // Measured 882-904 over 4 runs (2026-08-16).
   sessionReady: TOTAL_RUNS - 20,
-  toolExecuted: 40,
-  malformedDelivered: 40,
-  clientCancel: 60,
-  resumeCompleted: 20,
+  toolExecuted: 78, // measured 234-273
+  malformedDelivered: 79, // measured 237-263
+  clientCancel: 108, // measured 324-395
+  resumeCompleted: 34, // measured 102-124
   // The tool-answer oracle: calls it CHECKED, and the subset that had to survive
   // a real `session.resume` to be answered. The second is the one that matters,
   // and the one that has been near zero through three separate mistakes — a
@@ -283,22 +300,24 @@ const COVERAGE_FLOORS: Record<string, number> = {
   // destroyed every turn before it finished, and a resume chain too long for
   // uniform picks to complete. It is the floor that stands between a live oracle
   // and a decorative one.
-  toolAnswered: 18,
-  toolAnsweredAcrossResume: 6,
-  "resume.withOutstandingTools": 10,
-  // Thin by nature: it needs a drop to land inside the window where the session
-  // is executing a tool the service is still awaiting. Measured 2-9.
-  "drop.withToolInFlight": 1,
+  toolAnswered: 25, // measured 75-107
+  toolAnsweredAcrossResume: 9, // measured 27-48
+  "resume.withOutstandingTools": 20, // measured 61-75
+  // Thin BY NATURE was the old reading, and it is no longer true: it needs a
+  // drop to land inside the window where the session is executing a tool the
+  // service is still awaiting, and tripling the run counts moved that from the
+  // "Measured 2-9" this comment used to carry (a pre-tripling number, against a
+  // floor of 1 — half its own recorded minimum) to the range below.
+  "drop.withToolInFlight": 18, // measured 56-62
   // The retirement property's two exits: a fatal close code, and the in-band
   // `session_not_found` rejection of a `session.resume` that found the
   // open-socket-after-retirement bug.
-  fatalDrop: 2,
-  sessionErrorExpired: 2,
+  fatalDrop: 5, // measured 15-27
+  sessionErrorExpired: 5, // measured 16-28
   // Audio for a reply the client already cancelled — the one thing
   // `suppressAudioUntilReply` exists to drop.
-  audioDuringSuppression: 15,
+  audioDuringSuppression: 29, // measured 88-137
 };
-
 /** Counters that came in below their floor, for a single assertion. */
 function floorsMissed(cov: Coverage): string[] {
   return Object.entries(COVERAGE_FLOORS)
@@ -318,12 +337,29 @@ describe("S2S stack — property test over event orderings", () => {
     /** One generated run: drive the commands, then check the finished session. */
     const runPlan = async (cmds: Iterable<Cmd>, faultBudget: number): Promise<void> => {
       const h = await createHarness(cov);
-      // The streaming oracles throw from the sink; these are the end-of-run
-      // ones. Both reach fast-check as a failed property, so it shrinks to the
-      // shortest command sequence that still reproduces the finding.
-      await fc.asyncModelRun(() => ({ model: freshModel(faultBudget), real: h }), cmds);
-      await drain();
-      const problems = [...checkFinalState(h), ...(await stopAndCheckTeardown(h))];
+      const problems: string[] = [];
+      try {
+        // The streaming oracles throw from the sink; these are the end-of-run
+        // ones. Both reach fast-check as a failed property, so it shrinks to the
+        // shortest command sequence that still reproduces the finding.
+        await fc.asyncModelRun(() => ({ model: freshModel(faultBudget), real: h }), cmds);
+        await drain();
+        problems.push(...checkFinalState(h));
+      } finally {
+        // Teardown in a `finally`, never on the happy path only. The streaming
+        // oracles throw from INSIDE event delivery, so a hit used to skip
+        // `stop()` altogether and leave that run's SessionCore, transport and
+        // sockets live for the whole of shrinking — dozens of leaked sessions
+        // racing the re-runs, which is the leak AGENTS.md names as converging
+        // the shrinker on the wrong counterexample. A teardown that throws is
+        // recorded rather than rethrown, so it can never mask the oracle hit
+        // that is the actual finding.
+        problems.push(
+          ...(await stopAndCheckTeardown(h).catch((err: unknown) => [
+            `teardown threw: ${errorMessage(err)}`,
+          ])),
+        );
+      }
       if (problems.length > 0) throw new Error(problems.join("; "));
     };
 

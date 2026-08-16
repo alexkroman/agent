@@ -6,14 +6,15 @@
 import { readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
-import { requestPath } from "@alexkroman1/aai/internal";
+import { requestPath, sleep } from "@alexkroman1/aai/internal";
 import type { LanguageModel } from "ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { handleHostResponse, setHostSend } from "./harness-rpc.ts";
-import type { JsonRpcMessage } from "./harness-types.ts";
+import { type FakeHostChannel, installFakeHostChannel } from "./_test-utils.ts";
+import { pendingHostRequests, setHostSend } from "./harness-rpc.ts";
 import { handleStudioRequest, type StudioChatDeps } from "./studio-chat.ts";
 import { initStudioSession, type StudioSession } from "./studio-session.ts";
-import { resetTurnGate } from "./studio-turn-stream.ts";
+import { STUDIO_TOOL_LABELS } from "./studio-tools.ts";
+import { enterTurn, resetTurnGate } from "./studio-turn-stream.ts";
 
 const API_KEY = "caller-key-123";
 
@@ -137,16 +138,61 @@ async function serve(
   };
 }
 
-/** Fake host: answers every guest→host RPC with {} and records the calls. */
-function fakeHost(): { calls: { method: string; params: unknown }[] } {
-  const calls: { method: string; params: unknown }[] = [];
-  setHostSend((msg: JsonRpcMessage) => {
-    if ("method" in msg && "id" in msg) {
-      calls.push({ method: msg.method, params: (msg as { params?: unknown }).params });
-      queueMicrotask(() => handleHostResponse({ id: msg.id, result: {} }));
-    }
-  });
-  return { calls };
+/** The channel installed by the current test, for the teardown drain below. */
+let installedChannel: FakeHostChannel | null = null;
+
+/**
+ * Fake host: answers every guest→host RPC with `{}` and records the calls.
+ *
+ * The channel itself is the shared one (`installFakeHostChannel`) — this fake
+ * was written out three times across the package, twice verbatim. What is
+ * local is the projection the assertions want: the guest→host REQUESTS, in
+ * order, as `{ method, params }`.
+ */
+function fakeHost(): { readonly calls: { method: string; params: unknown }[] } {
+  const channel = installFakeHostChannel({ autoAnswer: true });
+  installedChannel = channel;
+  return {
+    get calls() {
+      return channel.sent.flatMap((msg) =>
+        "method" in msg && "id" in msg ? [{ method: msg.method, params: msg.params }] : [],
+      );
+    },
+  };
+}
+
+/**
+ * Wait out any turn still settling, before unhooking the host channel.
+ *
+ * A turn's settle runs AFTER its response closes — `onFinish` fires, then
+ * `snapshotWorkspace` walks the tree, then two host RPCs go out — and
+ * `serve().close()` does not await it. So a previous test's settle landed in
+ * the NEXT test's `host.calls`, which is what the in-file notes at the
+ * checkpoint and sync assertions describe, and what forced their
+ * `toBeGreaterThanOrEqual` + content-filter shape.
+ *
+ * Quiescent means all three: the process-wide turn claim is free (the response
+ * closed and `runTurn` resolved), no host RPC is outstanding, and no new frame
+ * arrived since the previous poll — the last one is what covers the window
+ * between `onFinish` and the settle's first RPC, which is a filesystem walk
+ * and therefore several macrotasks wide.
+ *
+ * Best-effort and bounded: a turn that never settles (a source error that
+ * skips `onFinish`) must not turn every following test red, and leaving it
+ * un-drained is no worse than the behaviour this replaces.
+ */
+async function drainTurns(): Promise<void> {
+  const deadline = Date.now() + 3000;
+  let previous = -1;
+  while (Date.now() < deadline) {
+    const seen = installedChannel?.sent.length ?? 0;
+    const release = enterTurn();
+    const idle = release !== null && pendingHostRequests.size === 0 && seen === previous;
+    release?.();
+    if (idle) return;
+    previous = seen;
+    await sleep(10);
+  }
 }
 
 const deps = (model: LanguageModel): StudioChatDeps => ({
@@ -192,7 +238,9 @@ async function makeSession(files: Record<string, string>): Promise<StudioSession
   });
 }
 
-afterEach(() => {
+afterEach(async () => {
+  await drainTurns();
+  installedChannel = null;
   setHostSend(null);
   // Process-scoped, like the session identity pin — a turn left in flight by
   // one test would refuse the next one's.
@@ -212,6 +260,62 @@ describe("guest studio chat surface", () => {
     } finally {
       await close();
     }
+  });
+
+  // `GET /studio/tools` is the second half of this surface — public, bearer
+  // gated, declared `{ via: "direct-dial" }` in guest-routes.ts — and had no
+  // test anywhere. Dropping it from the `url ===` disjunction turned it into a
+  // 404 the client reads as a dead sandbox, and moving the labels response
+  // above `verifyBearer` leaked the tool inventory unauthenticated. Both
+  // passed every test in this package.
+  describe("GET /studio/tools", () => {
+    const tools = (url: string, bearer: string | null = CHAT_TOKEN) =>
+      fetch(`${url}/studio/tools`, {
+        headers: bearer ? { authorization: `Bearer ${bearer}` } : {},
+      });
+
+    test("is claimed, and answers the tool inventory to a valid bearer", async () => {
+      const session = await makeSession({ "agent.ts": "x" });
+      const { url, close } = await serve(session, deps(scriptedModel([])));
+      try {
+        const res = await tools(url);
+        // Not a 404: the client treats one as a dead sandbox and re-brokers.
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({
+          tools: Object.entries(STUDIO_TOOL_LABELS).map(([name, label]) => ({ name, label })),
+        });
+      } finally {
+        await close();
+      }
+    });
+
+    test("refuses an unauthenticated read of the inventory", async () => {
+      const session = await makeSession({ "agent.ts": "x" });
+      const { url, close } = await serve(session, deps(scriptedModel([])));
+      try {
+        for (const bearer of [null, "wrong", API_KEY]) {
+          const res = await tools(url, bearer);
+          expect(res.status).toBe(401);
+          expect(await res.text()).not.toContain("Run command");
+        }
+      } finally {
+        await close();
+      }
+    });
+
+    test("a non-GET method is refused rather than treated as a turn", async () => {
+      const session = await makeSession({ "agent.ts": "x" });
+      const { url, close } = await serve(session, deps(scriptedModel([])));
+      try {
+        const res = await fetch(`${url}/studio/tools`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${CHAT_TOKEN}` },
+        });
+        expect(res.status).toBe(405);
+      } finally {
+        await close();
+      }
+    });
   });
 
   test("answers CORS preflight so the browser can call cross-origin", async () => {

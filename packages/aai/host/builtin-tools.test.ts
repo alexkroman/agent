@@ -4,7 +4,15 @@ import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 
-/** Mirrors the module-private SESSION_NOTES_TTL_MS in builtin-tools.ts. */
+/**
+ * Mirrors the module-private `SESSION_NOTES_TTL_MS` in `host/session-notes.ts`
+ * (NOT `builtin-tools.ts`, which is where this comment used to point).
+ *
+ * A hand-mirrored constant is the pattern the package guide records failing
+ * twice with the voices list. It fails loudly on drift today — the TTL test
+ * either expires nothing or expires everything — but the fix is to export it
+ * from `session-notes.ts` and import it here.
+ */
 const SESSION_NOTES_TTL_MS = 86_400_000;
 
 /**
@@ -464,21 +472,40 @@ describe("resolveAllBuiltins defs", () => {
     expect(bad.error).toMatch(/unexpected/i);
   });
 
-  test("visit_webpage follows redirects without re-validating target", async () => {
+  test("visit_webpage adds NO redirect screening of its own", async () => {
+    // A redirect, modelled the way a real `fetch` surfaces one: the hop is
+    // followed inside the fetch implementation, so the caller sees a SINGLE
+    // 200 whose `url` is the final address. Re-screening that address is
+    // `ssrfSafeFetch`'s job (`ssrf-redirects.test.ts`) — what this pins is
+    // that the tool adds none, which the previous version could not see
+    // because its fake returned a plain 200 and no redirect ever happened.
+    const START = "https://evil.com/redirect";
+    const TARGET = "http://169.254.169.254/latest/meta-data/iam/";
+    const requested: string[] = [];
     const mockFetch = vi.fn(async (url: string) => {
-      if (url === "https://evil.com/redirect") {
-        return new Response("<html><body>metadata: leaked-iam-creds</body></html>", {
-          status: 200,
-        });
-      }
-      return new Response("", { status: 404 });
+      requested.push(url);
+      if (url !== START) return new Response("", { status: 404 });
+      const body = new Response("<html><body>metadata: leaked-iam-creds</body></html>", {
+        status: 200,
+      });
+      Object.defineProperty(body, "url", { value: TARGET, configurable: true });
+      return body;
     });
     const { defs } = resolveAllBuiltins(["visit_webpage"], {
       fetch: fakeFetch(mockFetch),
     });
     const ctx = createMockToolContext();
-    const result = await defs.visit_webpage?.execute({ url: "https://evil.com/redirect" }, ctx);
-    expect(result).toHaveProperty("content");
-    expect((result as { content: string }).content).toContain("leaked-iam-creds");
+    const result = (await defs.visit_webpage?.execute({ url: START }, ctx)) as {
+      url: string;
+      content: string;
+    };
+
+    // One request, and no second (re-validating) one.
+    expect(requested).toEqual([START]);
+    // The private target's body comes straight back…
+    expect(result.content).toContain("leaked-iam-creds");
+    // …attributed to the URL the model asked for, so the address the bytes
+    // actually came from is not surfaced to anything downstream either.
+    expect(result.url).toBe(START);
   });
 });

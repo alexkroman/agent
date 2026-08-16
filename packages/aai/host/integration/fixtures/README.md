@@ -44,6 +44,8 @@ VITEST_PROFILE=integration \
     -c ../../vitest.slow.config.ts
 ```
 
-If the fixture is missing, the test throws a clear error pointing here. If
-any of the env vars are missing, the whole suite is skipped via
-`describe.skipIf`.
+The fixture and the three keys are ONE gate. A run missing any of them skips
+the test and prints exactly which ones were missing — a silent skip is
+indistinguishable from a pass, which is how this suite went so long without
+ever executing. Set `AAI_REQUIRE_REFERENCE_STACK=1` to turn that skip into a
+hard failure in a pipeline that means to enforce it.

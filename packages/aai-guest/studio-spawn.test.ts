@@ -9,10 +9,10 @@
 // `npm config get` is local, needs no network, and is the one command that
 // reports back what flags it was given.
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { useTempDir } from "./_test-utils.ts";
 import {
   envWithoutGuestToken,
   NPM_OUTPUT_CAP,
@@ -21,15 +21,7 @@ import {
   runNpm,
 } from "./studio-spawn.ts";
 
-let dir: string;
-
-beforeEach(async () => {
-  dir = await mkdtemp(path.join(tmpdir(), "aai-spawn-"));
-});
-
-afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
-});
+const dir = useTempDir("aai-spawn-");
 
 describe("runNpm", () => {
   test.for([
@@ -37,24 +29,24 @@ describe("runNpm", () => {
     ["fund", "false"],
     ["loglevel", "error"],
   ])("passes --%s through to npm", async ([key, want]) => {
-    const result = await runNpm(dir, ["config", "get", key as string]);
+    const result = await runNpm(dir(), ["config", "get", key as string]);
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trim()).toBe(want);
   });
 
   test("runs in the directory it is given", async () => {
     // `npm prefix` reports the nearest ANCESTOR holding a `package.json` or a
-    // `node_modules`, not the cwd — so without one of those in `dir` the answer
+    // `node_modules`, not the cwd — so without one of those in `dir()` the answer
     // depends on what happens to sit above the temp directory. That is a real
     // flake and not a hypothetical: under `turbo run`, strict env mode strips
     // TMPDIR, `os.tmpdir()` falls back to `/tmp`, and a stray
     // `/tmp/node_modules` makes npm answer `/private/tmp`. Writing a manifest
-    // here stops the walk at `dir` whatever is above it. (TMPDIR is passed
+    // here stops the walk at `dir()` whatever is above it. (TMPDIR is passed
     // through in turbo.json now too — the two fixes are independent.)
-    await writeFile(path.join(dir, "package.json"), '{"name":"probe","version":"1.0.0"}');
-    const result = await runNpm(dir, ["prefix"]);
+    await writeFile(path.join(dir(), "package.json"), '{"name":"probe","version":"1.0.0"}');
+    const result = await runNpm(dir(), ["prefix"]);
     // macOS reports /private/var for /var; compare the resolved leaf instead.
-    expect(result.stdout.trim().endsWith(path.basename(dir))).toBe(true);
+    expect(result.stdout.trim().endsWith(path.basename(dir()))).toBe(true);
   });
 
   test("the timeout and cap are one pair, not two that must be kept in step", () => {

@@ -36,7 +36,7 @@ import {
   type ReservedDb,
   WORKFLOW_WAKE_TABLE,
 } from "@alexkroman1/aai/runtime";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { appDbIdentifier } from "./app-database.ts";
 import type { BrokeredSession } from "./sandbox-broker.ts";
@@ -166,9 +166,9 @@ describeWithPg("durable-run wake over a real Postgres", () => {
     await admin.query(`drop table if exists "${otherSchema}"."${WORKFLOW_WAKE_TABLE}"`);
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  // No `afterEach(vi.restoreAllMocks)`: `restoreMocks: true` in
+  // `vitest.shared.ts` restores every `vi.spyOn` before each test already, so
+  // the hook was dead structure.
 
   test("a job due in the past is published and swept as due", async () => {
     await addJob({ runAt: PAST });
@@ -288,10 +288,14 @@ describeWithPg("durable-run wake over a real Postgres", () => {
 
   test("the one-row invariant is enforced by the table, not by the writer", async () => {
     await publish();
+    // The SQLSTATE, not a bare `rejects.toThrow()`: any rejection satisfies
+    // that — a renamed column, a schema that does not exist, a typo in the
+    // statement — so the claim would survive the `check (id)` being dropped.
+    // 23514 is check_violation, which is the constraint under test.
     await expect(
       admin.query(
         `insert into "${schema}"."${WORKFLOW_WAKE_TABLE}" (id, wake_at) values (false, now())`,
       ),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: "23514" });
   });
 });

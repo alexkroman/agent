@@ -11,9 +11,10 @@
 
 import { type AgentDef, agent, sessionSlot, tool } from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "./_fake-llm.ts";
+import { silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import { createTextAgent } from "./text-agent.ts";
 
@@ -23,13 +24,6 @@ async function drain(result: { textStream: AsyncIterable<string> }): Promise<str
   for await (const delta of result.textStream) out += delta;
   return out;
 }
-
-const silentLogger = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-};
 
 /**
  * A text agent WITH its tools — the def a build produces, in one call.

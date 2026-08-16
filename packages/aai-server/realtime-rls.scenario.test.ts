@@ -46,24 +46,30 @@
  * walrus anywhere skipped on the one machine in the world running walrus, and
  * CI could not cover for it either. `pnpm test:pg` shells out to that command
  * now and sets `AAI_REQUIRE_STACK`, so a dropped variable is red rather than
- * green. The anon key stays optional and gates only the negative control.
+ * green — the anon key included: the leak control below is the only thing here
+ * that can fail on a WORKING stream, so it is part of the stack this suite
+ * needs rather than an optional extra it narrows itself around.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
-import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { describeWithStack, pgUrl, stackEnv } from "./_pg-test-utils.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import { createRealtimePlatformEvents } from "./realtime-events.ts";
 
-// `describeWithStack` IS the conjunction — database plus `AAI_TEST_SUPABASE_URL`
-// plus `_SERVICE_KEY` — and it is now resolved by `pnpm test:pg` rather than
-// pasted by hand out of `supabase status -o env`. This suite spelled that gate
-// itself for as long as nothing in the repo resolved the three values together,
-// which is why the only test of walrus anywhere ran on no machine at all.
-const describeIfAnon = process.env.AAI_TEST_SUPABASE_ANON_KEY ? describe : describe.skip;
+// `describeWithStack` IS the gate, and it is the ONLY one in this file. It is
+// the conjunction — database plus `AAI_TEST_SUPABASE_URL` plus `_SERVICE_KEY`,
+// resolved by `pnpm test:pg` rather than pasted by hand out of `supabase status
+// -o env` — and it ANNOUNCES a skip, which a second hand-rolled
+// `process.env.X ? describe : describe.skip` over the anon key did not. That
+// one gated the leak control, i.e. the one assertion here that a working
+// stream can fail, and it printed nothing and was covered by no
+// `AAI_REQUIRE_*`: the day `supabase status -o env` stops naming `ANON_KEY`,
+// the control would have disappeared under a green run. It is gone, and
+// `anonKey()` throws instead.
 
 /** Realtime join + first frame, locally. Generous: the tier retries twice. */
 const DELIVERY = { timeout: 15_000, interval: 50 } as const;
@@ -109,10 +115,24 @@ describeWithStack("the platform change stream survives RLS being enabled", () =>
     return client;
   }
 
-  /** The anon key, read only inside `describeIfAnon`'s one test. */
+  /**
+   * The anon key, for the leak control below.
+   *
+   * Throws rather than skipping: a stack that resolved the URL and the service
+   * key and not this one is broken WIRING, not a machine without a stack, and
+   * the outcome of that has to be a red test. The skip for "no stack at all" is
+   * `describeWithStack`'s, announced.
+   */
   function anonKey(): string {
     const key = stackEnv().anonKey;
-    if (!key) throw new Error("anonKey() read outside describeIfAnon");
+    if (!key) {
+      throw new Error(
+        "AAI_TEST_SUPABASE_ANON_KEY is unset, so the leak control cannot run.\n" +
+          "`pnpm test:pg` exports it out of `supabase status -o env` beside the URL and\n" +
+          "the service key; if those two arrived and this one did not, the CLI stopped\n" +
+          "naming it ANON_KEY.",
+      );
+    }
     return key;
   }
 
@@ -286,39 +306,31 @@ describeWithStack("the platform change stream survives RLS being enabled", () =>
     }, DELIVERY);
   });
 
-  // Gated on the nested `describe` rather than with `test.runIf`, so the
-  // assertions stay inside a literal `test(` call — Biome's
-  // `noMisplacedAssertion` does not see through `test.runIf(x)(…)`, and
-  // suppressing it inline would be a net-new escape hatch (see the root
-  // CLAUDE.md; `check:hatches` matches plain substrings, so even NAMING the
-  // suppression here would score as one).
-  describeIfAnon("and it does not deliver to anyone else", () => {
-    test("an anon subscriber sees nothing on the same change", async () => {
-      // What the migration BUYS, and the control that makes the tests above
-      // non-vacuous. The two run against ONE write on ONE channel shape: a rig
-      // that delivered nothing would fail the service-role assertion, and a
-      // rig that delivered everything would fail this one. Neither can pass by
-      // accident.
-      //
-      // Unfiltered on purpose — a filtered anon channel fires its watcher once
-      // on join regardless of row visibility, so the absence of frames would
-      // not be readable. Here, any call at all is a leak.
-      const slug = nextId();
-      const anonSaw = vi.fn<(slug: string) => void>();
-      const serviceSaw = vi.fn<(slug: string) => void>();
-      events(anonKey()).watchAgents(anonSaw);
-      events(stackEnv().serviceKey).watchAgents(serviceSaw);
+  test("and it does not deliver to anyone else: an anon subscriber sees nothing", async () => {
+    // What the migration BUYS, and the control that makes the tests above
+    // non-vacuous. The two run against ONE write on ONE channel shape: a rig
+    // that delivered nothing would fail the service-role assertion, and a
+    // rig that delivered everything would fail this one. Neither can pass by
+    // accident.
+    //
+    // Unfiltered on purpose — a filtered anon channel fires its watcher once
+    // on join regardless of row visibility, so the absence of frames would
+    // not be readable. Here, any call at all is a leak.
+    const slug = nextId();
+    const anonSaw = vi.fn<(slug: string) => void>();
+    const serviceSaw = vi.fn<(slug: string) => void>();
+    events(anonKey()).watchAgents(anonSaw);
+    events(stackEnv().serviceKey).watchAgents(serviceSaw);
 
-      await insertAgent(slug);
-      // Delivery to service_role is the window: it proves the write really was
-      // streamed while the anon subscriber was attached, so "anon got nothing"
-      // is about visibility and not about not having waited long enough.
-      await vi.waitFor(async () => {
-        await bumpAgent(slug);
-        expect(serviceSaw).toHaveBeenCalledWith(slug);
-      }, DELIVERY);
+    await insertAgent(slug);
+    // Delivery to service_role is the window: it proves the write really was
+    // streamed while the anon subscriber was attached, so "anon got nothing"
+    // is about visibility and not about not having waited long enough.
+    await vi.waitFor(async () => {
+      await bumpAgent(slug);
+      expect(serviceSaw).toHaveBeenCalledWith(slug);
+    }, DELIVERY);
 
-      expect(anonSaw).not.toHaveBeenCalled();
-    });
+    expect(anonSaw).not.toHaveBeenCalled();
   });
 });
