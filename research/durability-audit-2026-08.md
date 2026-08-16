@@ -1,6 +1,6 @@
 ---
 issue: TODO
-status: proposed
+status: implemented
 last_updated: "2026-08-17"
 ---
 
@@ -13,7 +13,8 @@ An audit of the tests that stand behind this repo's two durability claims —
 property that is invisible until it fails in production: *if durability broke,
 which test goes red?*
 
-Nothing was edited. The document is the deliverable.
+The findings below were written with nothing edited, which is why they read as a
+survey rather than as a changelog.
 
 The short answer is that the two halves are in very different shape. The
 **wake path** and the **session-state backend** are proved against a real
@@ -21,6 +22,82 @@ Postgres, by suites written specifically because a fake cannot answer their
 question. The **Postgres workflow world** — the one production runs — is
 executed by nothing at all, and the **commit point for turn state** survives
 deletion with 2,667 unit tests still green.
+
+**These findings have since been implemented — see below.**
+
+## Implementation
+
+Seven of the nine findings are closed; two are recorded as work for a follow-up,
+each for a stated reason rather than because it ran out of road.
+
+| Finding | Landed | Proof it can fail |
+| --- | --- | --- |
+| F1 | `aai-server/workflow-world.scenario.test.ts` (8) | rethrowing the migration's exit(0) reddens the defect pin, and the process survives |
+| F2, F3 | `session-state-store.test.ts` (26), `runtime-session-state.test.ts` (11) | neutering `flush` kills 10 of 26; moving `hydrate` after `start` kills 3 of 11 |
+| F4, F5 | `aai-server/workflow-keys.scenario.test.ts` (8), `workflow-uploads.scenario.test.ts` (11) | four SQL mutations kill 10 tests between them |
+| F6 | `aai-server/workflow-lock-sweep.scenario.test.ts` (6) | inverting the presence check kills all 6 |
+| F7 | prose, in three files | n/a — the finding was that prose lied |
+| F8 | the GRACEFUL half only, inside F1's suite | a second OS process reads the run back |
+| F9 | recorded; nothing built | n/a |
+
+**The audit's own thesis held against the audit's own work, twice.** F4's first
+ULID-tiebreak test PASSED with `, run_id desc` deleted — the lookup index carries
+the tiebreak, so an index-only scan returns it whether or not the query asks. The
+`ORDER BY` is load-bearing only on a plan that must SORT (a table predating the
+index, a parallel plan, a seq scan), so the suite now runs the lookup a second
+time with index scans disabled and asserts both plans agree. And F1's first draft
+asserted `.workflow-data/` did not exist, which is wrong in principle: the
+directory is gitignored and other suites create it. Both were caught by mutation,
+not by review.
+
+**F1's suite found a live production defect on its first real run**, and two
+agents reached it independently. `@workflow/world-postgres@4.3.3`'s
+`setupDatabase` puts its `process.exit(0)` INSIDE its own `try`, and its `catch`
+exits 1 — so `migratePostgresWorld`'s stand-in throws `MigrationExitedError(0)`,
+`setupDatabase` catches it, reports the migration as failed, and re-exits as 1.
+`migrateAndSubscribe` then throws on a migration that SUCCEEDED, before
+`getWorld().start?.()`. The schema is migrated; the queue is never subscribed and
+`reenqueueActiveRuns` never runs. Runs started in that same process still
+dispatch, which is why nothing noticed — but a run parked in a `sleep` or on a
+webhook is not picked up when its guest is woken, which is the wake-sweep path
+the platform's whole durable-run story rests on. It also makes F6's sweep dead
+code on every Postgres-world boot.
+
+The module doc reasons the interception is safe because "the exit is the last
+statement in both branches". It is, and the success one is the last statement
+inside a `try`.
+
+It is PINNED rather than fixed, by a test written to fail the moment somebody
+fixes it, so the fixer has to come here and invert it — the forcing function
+`RETIRED_COLUMNS` uses. The verified fix is one line: keep the FIRST exit code,
+since a second `exit` is the CLI reacting to our own interception.
+
+What did not land, and why:
+
+- **F8's hard-kill half.** `_fault-mode.ts` is `_`-internal to `aai-cli`, and the
+  dependency graph allows exactly one edge to the CLI (`aai-guest`, four
+  subpaths) — so `aai-server` can reach neither the supervisor nor the WDK
+  transform a parked run needs. It belongs beside `dev-workflow.scenario.test.ts`
+  in `aai-cli`, whose fixture needs one added `DATABASE_URL` to make the world an
+  axis. The edge was not widened and the module was not copied. Note
+  `aai-cli/CLAUDE.md` expects a `restart-mid-step` durability assertion to be RED
+  today for a real reason, which is F6's wedge.
+- **F9's CI leg.** Recorded, not built: one leg setting `AAI_FAULT_PROFILE` is a
+  decision about what CI spends, and it wants F8's home settled first.
+- **Two real bugs, reported and deliberately not fixed**, because each changes
+  shipped behaviour and belongs in its own review: the migration defect above,
+  and the session-state size cap comparing UTF-16 code units against a byte
+  budget (`json.length > MAX_SESSION_STATE_BYTES`, logged as `bytes`). The second
+  is the class `fetchCappedText` already fixed once — measured, a slot of CJK
+  content holds ~3 MiB while the cap reads it as under 1 MiB — and it matters
+  here because the cap's job is bounding what a tenant sees as their own database
+  usage.
+
+Two smaller notes from the same reading, both arguably intended: a slot refused
+by the cap leaves its previously committed, SMALLER value in the backend, so a
+resume hydrates a stale value rather than none; and `has()` counts a VIRTUAL slot
+write, so a session that has only touched a virtual slot reads as "has state" to
+`pushStateSnapshot`.
 
 ## Method
 
