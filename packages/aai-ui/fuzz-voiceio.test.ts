@@ -107,7 +107,14 @@ type PendingDone = {
  * race could go unexercised in every run. A hard failure in `registerDone`
  * catches the case where the node is there and the turn id is not; these floors
  * catch the rest — a generator, a weight or a mock that stopped reaching the
- * state at all.
+ * state at all. *
+ * Each floor sits under the OBSERVED MINIMUM across the runs recorded beside
+ * it, not at a fixed fraction of the mean. These distributions have long left
+ * tails — a counter averaging 38 was measured at 3 on one run — because what a
+ * walk reaches is correlated within a run rather than independent per step, so
+ * a floor placed under the mean flakes. The job of the floor is to catch a
+ * state that is NEVER reached, not to pin how often; a state whose whole range
+ * is small therefore gets `> 0`, which is still the assertion that matters.
  */
 type Reached = {
   /** `done()` waits registered against a REAL turn id — the ones L2 can judge. */
@@ -331,15 +338,12 @@ describe("fuzz: VoiceIO lifecycle", () => {
       { numRuns: 200 },
     );
 
-    console.log("R", JSON.stringify(reached));
-    // Coverage floors — see `Reached`. Set well below the measured actuals
-    // noted alongside (ten runs of 200), because what a random walk reaches
-    // varies run to run: these catch a generator or a mock that stopped
-    // reaching a state, not a count. A sudden drop here is a broken harness.
+    // Coverage floors — see `Reached` for how these are placed. Ranges are
+    // over 22 runs of 200.
     expect(
       reached.judgedDones,
       "no done() was ever registered against a real turn",
-    ).toBeGreaterThan(-1); // ~158-191
+    ).toBeGreaterThan(45); // 158-203
     expect(
       reached.ownStopSettles,
       "no settle was ever justified by its OWN drain-stop alone — L2 discriminated nothing",
@@ -347,14 +351,12 @@ describe("fuzz: VoiceIO lifecycle", () => {
       // drain-stop for the turn's OWN id to land while nothing else excuses the
       // settle — no flush/close/newer done(), context still rendering, cap not
       // expired — which a random 30-op walk produces a handful of times per
-      // 200. Measured over ~25 runs: 5-17 typically, with a tail at 2. A floor
-      // under that tail still fails the thing it is for, which is the run where
-      // L2 discriminated NOTHING at all.
-    ).toBeGreaterThan(-1); // ~2-17
-    expect(reached.drainStops, "the worklet never delivered a drain-stop").toBeGreaterThan(-1); // ~43-75
+      // 200. Measured over 22 runs: 4-17, with a tail at 2 under coverage.
+    ).toBeGreaterThan(0);
+    expect(reached.drainStops, "the worklet never delivered a drain-stop").toBeGreaterThan(12); // 43-75
     expect(
       reached.laggedDrainStops,
       "no drain-stop delivery ever lagged across a later op — the in-flight race went unexercised",
-    ).toBeGreaterThan(-1); // ~34-66
+    ).toBeGreaterThan(10); // 34-66
   }, 120_000);
 });

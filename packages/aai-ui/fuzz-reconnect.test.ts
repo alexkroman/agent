@@ -131,7 +131,14 @@ const stepArb: fc.Arbitrary<ReconnectStep> = fc.oneof(
  * two invariants this harness exists for — has THREE early returns (a session
  * the server retired, no new attempt, no socket). Any of them taken on every
  * run leaves the latch untested while 60 runs report green. The floors below
- * count the runs that reached each assertion, not the runs that skipped it.
+ * count the runs that reached each assertion, not the runs that skipped it. *
+ * Each floor sits under the OBSERVED MINIMUM across the runs recorded beside
+ * it, not at a fixed fraction of the mean. These distributions have long left
+ * tails — a counter averaging 38 was measured at 3 on one run — because what a
+ * walk reaches is correlated within a run rather than independent per step, so
+ * a floor placed under the mean flakes. The job of the floor is to catch a
+ * state that is NEVER reached, not to pin how often; a state whose whole range
+ * is small therefore gets `> 0`, which is still the assertion that matters.
  */
 type Reached = {
   /** Runs where R2 had a resumed attempt to check. */
@@ -340,20 +347,20 @@ describe("fuzz: reconnect + broker resolution", () => {
       { numRuns: 60 },
     );
 
-    console.log("R", JSON.stringify(reached));
-    // Coverage floors — see `Reached`. Set well below the measured actuals
-    // noted alongside (five runs of 60), because what a random walk reaches
-    // varies run to run: these catch a precondition that stopped holding, not
-    // a count. Each names the invariant that goes unasserted when it drops.
-    expect(reached.resumeIdChecks, "R2: no attempt ever carried a resume id").toBeGreaterThan(-1); // ~21-36
-    expect(reached.reconnectsScanned, "R4: no run ever reconnected").toBeGreaterThan(-1); // ~91-148
+    // Coverage floors — see `Reached` for how these are placed. Ranges are
+    // over 17 runs of 60. Each names the invariant that goes unasserted when
+    // its precondition stops holding.
+    expect(reached.resumeIdChecks, "R2: no attempt ever carried a resume id").toBeGreaterThan(5); // 20-36
+    expect(reached.reconnectsScanned, "R4: no run ever reconnected").toBeGreaterThan(25); // 89-148
     expect(
       reached.brokerRedials,
       "R1: the broker never got to answer again — the re-broker path went unchecked",
-    ).toBeGreaterThan(-1); // ~27-37
+    ).toBeGreaterThan(7); // 27-39
     expect(
       reached.nonBrokerLatches,
       "R5: no run ever latched a non-broker answer — the latch went unchecked",
-    ).toBeGreaterThan(-1); // ~4-9
+      // The narrowest: a run must ANSWER "not a broker" and then still produce
+      // a further attempt to check. Measured 1-9.
+    ).toBeGreaterThan(0);
   }, 120_000);
 });

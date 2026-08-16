@@ -86,7 +86,14 @@ const SNAPSHOT_CAP = 200;
  * same shape as the archive path in `studio-concurrency-fuzz.test.ts`, and a
  * floor cannot fix it. Exactly-once tool-call delivery has a property of its
  * own next door in `fuzz-hooks.test.ts`, which drives the collections directly
- * and floors them.
+ * and floors them. *
+ * Each floor sits under the OBSERVED MINIMUM across the runs recorded beside
+ * it, not at a fixed fraction of the mean. These distributions have long left
+ * tails — a counter averaging 38 was measured at 3 on one run — because what a
+ * walk reaches is correlated within a run rather than independent per step, so
+ * a floor placed under the mean flakes. The job of the floor is to catch a
+ * state that is NEVER reached, not to pin how often; a state whose whole range
+ * is small therefore gets `> 0`, which is still the assertion that matters.
  */
 type Reached = {
   /** Steps applied against a live socket — the only ones that reach the core. */
@@ -434,25 +441,24 @@ describe("fuzz: session-core interleavings", () => {
       { numRuns: 200 },
     );
 
-    console.log("R", JSON.stringify(reached));
-    // Coverage floors — see `Reached`. Set well below the measured actuals
-    // noted alongside (fifteen runs of 200), because what a random walk reaches
-    // varies run to run: these catch a generator that stopped reaching a state,
-    // not a count. `orderedMessages` is the volatile one — a committed message
-    // needs a live socket AND a `user_transcript`/`reply_done` frame after it —
-    // so its range is recorded in full and its floor sits under the low tail
-    // rather than under the mean. A first draft at 10 tripped on a run of 10.
+    // Coverage floors — see `Reached` for how these are placed. Ranges are
+    // over 27 runs of 200.
     expect(
       reached.liveFrames,
       "no server frame ever reached a live socket — the whole core went unexercised",
-    ).toBeGreaterThan(-1); // ~405-513
+    ).toBeGreaterThan(110); // 403-513
     expect(
       reached.orderedMessages,
       "no snapshot ever held a message — the ordering scan had nothing to scan",
-    ).toBeGreaterThan(-1); // ~10-65
+      // The long tail these floors were calibrated on: a committed message needs
+      // a live socket AND a `user_transcript`/`reply_done` after it, and whether
+      // the socket opens early is decided once per run rather than per step.
+      // Mean ~38, measured as low as 3. Two earlier drafts (10, then 3) each
+      // tripped on a real run.
+    ).toBeGreaterThan(0);
     expect(
       reached.fatalStates,
       "no run ever reached the error state — the fatal branch of the teardown check went untaken",
-    ).toBeGreaterThan(-1); // ~49-104
+    ).toBeGreaterThan(12); // 44-113
   }, 120_000);
 });

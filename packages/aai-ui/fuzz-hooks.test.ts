@@ -103,7 +103,14 @@ function addEvent(c: Collections, seqs: Seqs, name: string): void {
  * Every assertion in this file compares a delivered set against an expected
  * set, so a run in which nothing was ever settled, emitted or evicted compares
  * two empty sets and passes. These floors are what separate "delivery is
- * exactly-once" from "there was no delivery".
+ * exactly-once" from "there was no delivery". *
+ * Each floor sits under the OBSERVED MINIMUM across the runs recorded beside
+ * it, not at a fixed fraction of the mean. These distributions have long left
+ * tails — a counter averaging 38 was measured at 3 on one run — because what a
+ * walk reaches is correlated within a run rather than independent per step, so
+ * a floor placed under the mean flakes. The job of the floor is to catch a
+ * state that is NEVER reached, not to pin how often; a state whose whole range
+ * is small therefore gets `> 0`, which is still the assertion that matters.
  */
 type Reached = {
   /** Tool calls the script property delivered through `useToolResult`. */
@@ -287,17 +294,14 @@ describe("fuzz: tool-call + custom-event hook delivery", () => {
       { numRuns: 100 },
     );
 
-    console.log("R", JSON.stringify(reached));
-    // Coverage floors — see `Reached`. Set well below the measured actuals
-    // noted alongside (five runs), because what a random walk reaches varies
-    // run to run: these catch a generator that stopped reaching a state, not a
-    // count. Without them the six set comparisons above are satisfied by a
-    // script that never settled a call, never emitted a ping and never reset.
-    expect(reached.scriptDones, "no tool call was ever delivered as done").toBeGreaterThan(-1); // ~175-252
-    expect(reached.scriptEvents, "no matching custom event was ever delivered").toBeGreaterThan(-1); // ~120-143
+    // Coverage floors — see `Reached` for how these are placed. Ranges are
+    // over 17 runs. Without them the six set comparisons above are satisfied by
+    // a script that never settled a call, never emitted a ping, never reset.
+    expect(reached.scriptDones, "no tool call was ever delivered as done").toBeGreaterThan(50); // 175-264
+    expect(reached.scriptEvents, "no matching custom event was ever delivered").toBeGreaterThan(35); // 120-159
     expect(reached.clearingResets, "no reset ever cleared a non-empty snapshot").toBeGreaterThan(
-      -1,
-    ); // ~101-132
+      25,
+    ); // 93-132
   });
 
   it("overflows the cap without dropping or duplicating a delivery", () => {
@@ -329,10 +333,10 @@ describe("fuzz: tool-call + custom-event hook delivery", () => {
     // is satisfied by ten runs that settled nothing at all: `fired` and
     // `everDone` would both be empty and the watermark cursor — the thing under
     // test — would never be asked a question.
-    expect(reached.overflowSettles, "no call was ever settled past the cap").toBeGreaterThan(-1); // ~28-58
+    expect(reached.overflowSettles, "no call was ever settled past the cap").toBeGreaterThan(5); // 28-58
     expect(
       reached.lateSettles,
       "every settle landed on the commit the call arrived on — the window never slid under one",
-    ).toBeGreaterThan(-1); // ~24-51
+    ).toBeGreaterThan(4); // 24-51
   });
 });

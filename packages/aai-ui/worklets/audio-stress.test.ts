@@ -72,7 +72,14 @@ const QUANTUM = 128;
  * with a tuned processor (`jitterMs: 20`) and pins the counters, the fade to
  * silence, and the resume-where-it-left-off behaviour. This property's own
  * assertions — a complete, in-order ramp around whatever the concealer
- * fabricated — hold either way.
+ * fabricated — hold either way. *
+ * Each floor sits under the OBSERVED MINIMUM across the runs recorded beside
+ * it, not at a fixed fraction of the mean. These distributions have long left
+ * tails — a counter averaging 38 was measured at 3 on one run — because what a
+ * walk reaches is correlated within a run rather than independent per step, so
+ * a floor placed under the mean flakes. The job of the floor is to catch a
+ * state that is NEVER reached, not to pin how often; a state whose whole range
+ * is small therefore gets `> 0`, which is still the assertion that matters.
  */
 type Reached = {
   /** Quanta of concealment the stall property provoked. Reported, not floored. */
@@ -351,15 +358,14 @@ describe("playback stress", () => {
       { numRuns: 20 },
     );
 
-    console.log("R", JSON.stringify(reached));
-    // Coverage floors — see `Reached`. Set well below the measured actuals
-    // noted alongside (five runs of 20). Both directions matter: an all-done
-    // run asserts `toHaveLength(0)` about barge-in, and an all-interrupt run
-    // never reaches `stormTurn`'s full-ramp check.
+    // Coverage floors — see `Reached` for how these are placed; ranges are over
+    // 17 runs of 20. Both directions matter: an all-done run asserts
+    // `toHaveLength(0)` about barge-in, and an all-interrupt run never reaches
+    // `stormTurn`'s full-ramp check.
     expect(reached.interrupts, "no turn was ever cut off — barge-in went untested").toBeGreaterThan(
-      -1,
-    ); // ~80-120
-    expect(reached.completions, "no turn ever played out in full").toBeGreaterThan(-1); // ~13-33
+      22,
+    ); // 80-120
+    expect(reached.completions, "no turn ever played out in full").toBeGreaterThan(2); // 9-33
   }, 60_000);
 });
 
@@ -442,10 +448,9 @@ describe("capture stress", () => {
       { numRuns: 25 },
     );
 
-    console.log("R", JSON.stringify(reached));
     // Coverage floor — see `Reached`. `cycles` is generated, so this catches an
     // arbitrary that stopped producing press cycles to drive.
-    expect(reached.pressCycles, "no press cycle was ever recorded").toBeGreaterThan(-1); // ~106-172
+    expect(reached.pressCycles, "no press cycle was ever recorded").toBeGreaterThan(30); // 106-172
   }, 60_000);
 
   test("a quantum larger than the batch headroom grows the buffer intact", () => {
