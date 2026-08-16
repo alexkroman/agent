@@ -69,7 +69,7 @@ const scaffoldGuide = import.meta.glob("./scaffold/CLAUDE.md", {
 
 /**
  * The whole markdown corpus the PER-PATTERN liveness assertion is made against:
- * the root guide, every package guide, and `research/`.
+ * the root guide and every package guide.
  *
  * The scaffold guide alone could not carry that assertion, which is how the
  * hole got there. Measured against it, `as any` matched one line and the other
@@ -79,10 +79,9 @@ const scaffoldGuide = import.meta.glob("./scaffold/CLAUDE.md", {
  * violations with this file staying green.
  *
  * Every guide here is prose that genuinely DISCUSSES suppressions: AGENTS.md's
- * ratchets section names each pattern, and the review-sweep docs in `research/`
- * quote them by the dozen. A pattern added without any prose naming it fails
- * below, and the remedy is to document it — which every pattern here already
- * is.
+ * ratchets section names each pattern by name, several of them repeatedly. A
+ * pattern added without any prose naming it fails below, and the remedy is to
+ * document it — which every pattern here already is.
  */
 const proseDocs = (): Record<string, string> => ({
   ...(import.meta.glob("../../AGENTS.md", {
@@ -96,11 +95,6 @@ const proseDocs = (): Record<string, string> => ({
     eager: true,
   }) as Record<string, string>),
   ...(import.meta.glob("./scaffold/CLAUDE.md", {
-    query: "?raw",
-    import: "default",
-    eager: true,
-  }) as Record<string, string>),
-  ...(import.meta.glob("../../research/*.md", {
     query: "?raw",
     import: "default",
     eager: true,
@@ -189,9 +183,9 @@ describe("escape-hatch ratchet scope", () => {
       const hits = proseLines().filter(({ line }) => new RegExp(re).test(line));
       expect(
         hits.length,
-        `pattern "${label}" matches no line of AGENTS.md, a package guide or ` +
-          "research/ — either it has been narrowed to something inert, or the " +
-          "prose that justifies excluding markdown from the scan is gone",
+        `pattern "${label}" matches no line of AGENTS.md or a package guide — ` +
+          "either it has been narrowed to something inert, or the prose that " +
+          "justifies excluding markdown from the scan is gone",
       ).toBeGreaterThan(0);
     },
   );

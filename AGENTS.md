@@ -494,7 +494,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Seventeen numbered rules, each printing WHY the invariant exists and what to use
+  Sixteen numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -510,7 +510,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 7 | no floating-tag GitHub Action | a 40-char commit SHA |
   | 8 | no `if (m.get(k) === mine) m.delete(k)` | `createOwnedMap()` |
   | 9 | no `tails.get(k) ?? Promise.resolve()` | `createKeyedLock()` / `slot.update` |
-  | 10 | `research/**.md` needs `issue`/`status`/`last_updated` | see `research/README.md` |
+  | ~~10~~ | *retired — `research/` no longer exists* | — |
   | 11 | no hardcoded `/tmp` in shipped source | `join(tmpdir(), …)` |
   | 12 | every guest route literal is in `GUEST_ROUTES` — `aai-guest` AND the `aai/host` modules it bundles | declare it + its exposure |
   | 13 | no template import escaping its template dir | move it in, or publish it |
@@ -522,8 +522,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
-  later rule inherit it (rule 6, retired when `ctx.state` stopped existing; and
-  15, reserved). Rules 1, 7, 9, 10, 12, 13 and 14 are at zero and enforced
+  later rule inherit it (rule 6, retired when `ctx.state` stopped existing;
+  rule 10, retired with the `research/` directory it checked; and 15,
+  reserved). Rules 1, 7, 9, 12, 13 and 14 are at zero and enforced
   absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
   was widened**: `git grep` is line-based, so the wrapped `Promise.race([` form
   Biome emits can only be matched by reporting the OPENING line, which cannot
@@ -751,20 +752,18 @@ rather than here:
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
 | `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels |
 
-### `research/` holds issue-backed plans
+### A guide says what to do in code that EXISTS
 
-A design doc for a change that does not exist yet goes in `research/`, not in a
-guide. `guard-invariants.mjs` rule 10 requires frontmatter with a non-empty
-`issue` and `status` plus an ISO `last_updated`, so a plan can be traced to the
-work that owns it and told apart from a stale one. See `research/README.md`.
-
-The split is by AUDIENCE, not length: a guide says what to do in code that
-exists and is loaded into an agent's context on every task, so everything in it
-competes for that budget; a research doc argues for a change and nobody needs it
-loaded to work on something else. Putting the second kind in the first is
-directly how the root guide reached 233,000 characters. When a plan ships, the
-rule it establishes moves into the owning package's guide as a few lines and the
-doc keeps the argument.
+There used to be a `research/` directory for issue-backed plans — a design doc
+for a change that did not exist yet — kept out of the guides because a guide is
+loaded into an agent's context on every task and everything in it competes for
+that budget. It is gone, along with the rule 10 that checked its frontmatter,
+and the half of the split worth keeping is the one that survives it: a guide
+documents code that exists. A design for a change nobody has made yet belongs on
+the issue that owns it, not in a file an agent reads while working on something
+else — that habit is directly how the root guide reached 233,000 characters. When
+a plan ships, the rule it establishes lands in the owning package's guide as a
+few lines.
 
 ## Conventions
 

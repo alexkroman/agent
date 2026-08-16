@@ -868,7 +868,7 @@ plausibly and wrongly rather than one that visibly cannot do something. An empty
 file is an error too, for the same reason.
 
 **The check compares VALUES, and that is what makes it possible at all.**
-`research/1.5-prose-off-the-agent-def.md` expected to ask rollup's AST whether
+The plan for it expected to ask rollup's AST whether
 `agent.ts` imports the file — the entry is generated BEFORE the build, so there
 is no module graph to ask, and a source scrape is fragile. The resolved prompt
 answers it directly and answers a better question: an AST can only see that a
@@ -931,7 +931,7 @@ agent with **none of its tools and no error anywhere**: `/health` and
 `/client-config` answer perfectly and the agent cannot do the thing. That is the
 same silent absence discovery was introduced to kill, one level worse (every tool
 at once instead of one), which is why self-hosting was moved onto a build rather
-than given a second scanner. See `research/tools-off-the-agent-def.md`.
+than given a second scanner.
 
 Four things follow, and they are what to preserve:
 

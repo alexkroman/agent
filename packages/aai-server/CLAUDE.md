@@ -359,8 +359,8 @@ Every store's memory/Postgres equivalence is ASSERTED, not assumed. One case lis
 per contract in `store-conformance-cases.ts` (registry: `store-conformance.ts`);
 the unit suites run it over the MEMORY arm unconditionally, and the two
 `*store-conformance.scenario.test.ts` files run the same list over the local
-Supabase stack behind `describeWithStack`, which `pnpm test:pg` resolves.
-`research/3.5-store-backend-fidelity.md` has the argument; the rules:
+Supabase stack behind `describeWithStack`, which `pnpm test:pg` resolves. The
+rules:
 
 - **An arm is legitimate only if something really runs on it.** Memory qualifies
   (an agent with no `DATABASE_URL`), the stack qualifies (it IS the platform), a
