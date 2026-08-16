@@ -98,9 +98,15 @@ export function createMockSessionCore(
  *
  * The idiom is `await act(async () => {})`, and a bare empty block is
  * indistinguishable from an unfinished refactor — Biome's
- * `noEmptyBlockStatements` is right to reject it, and a `biome-ignore` would be
- * a counted escape hatch. Naming it once says the intent instead, and
- * de-duplicates the three specs that were reaching for it.
+ * `noEmptyBlockStatements` is right to reject it, and a Biome suppression
+ * comment would be a counted escape hatch. Naming it once says the intent
+ * instead, and de-duplicates the three specs that were reaching for it.
+ *
+ * (The wording matters: `check:hatches` matches plain substrings with no notion
+ * of code versus prose, and unlike the cast patterns it cannot skip
+ * comment-only lines — a suppression directive genuinely IS a comment. So a
+ * doc comment naming the directive literally scores as one, and this file's
+ * budget is zero.)
  *
  * `act` comes from `react`, not `@testing-library/react`: this module is
  * imported by the node-environment session specs too, and only the DOM
