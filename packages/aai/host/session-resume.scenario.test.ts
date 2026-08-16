@@ -20,15 +20,22 @@
  * the upgrade path this exercises for real (`parseWsUpgradeParams` →
  * `runtime.startSession`).
  *
- * The double's per-session counter stands in for `ctx.state`. It is NOT evidence
- * about the real one: that lives in `runtime.ts`'s `stateMap` with the grace-window
- * sweep in `session-state-sweeps.ts`, and those have their own specs. What this
- * adds is the half no unit test covers — that the id a client reconnects with
- * arrives intact through a real severed connection and selects the same session.
+ * The double's per-session counter stands in for a `sessionSlot`'s value. It is
+ * NOT evidence about the real one: that lives in the session-state store
+ * (`session-state-store.ts`), kept across a disconnect by the grace-window sweep
+ * in `session-state-sweeps.ts`, and both have their own specs. What this adds is
+ * the half no unit test covers — that the id a client reconnects with arrives
+ * intact through a real severed connection and selects the same session.
  *
- * And it says nothing about a PROCESS restart, which no amount of testing will
- * make work: `stateMap` is a plain `Map`, so a restart empties it. See
- * `_fault-socket.ts`.
+ * It says nothing about a PROCESS restart, and that is a statement of SCOPE
+ * rather than of impossibility. The store has a Postgres backend, so a slot's
+ * value really can outlive the process that wrote it. What keeps that out of
+ * reach HERE is the setup: the runtime is a double holding its counter in a
+ * plain `Map`, and one process serves every connection from the first test to
+ * the last. The durable case is proved against a real database in
+ * `aai-server/session-state.scenario.test.ts`, whose first case is named "a
+ * slot's value survives a new process" — read it there rather than concluding
+ * from this file that nothing survives a restart.
  */
 
 import { afterEach, describe, expect, test } from "vitest";
