@@ -6,16 +6,14 @@
 // unsaved text with them. Plus the beforeunload guard, which is the only thing
 // covering a reload.
 
-import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { describe, expect, test } from "vitest";
 import { bufferFor, useFileDrafts } from "./file-drafts.ts";
 
+// Every render is unmounted by the package setup file's `afterEach(cleanup)`,
+// which is what keeps one test's `beforeunload` listener from still being
+// installed when the next one asks whether anything is dirty.
 describe("useFileDrafts", () => {
-  // No vitest globals in this package, so testing-library's auto-cleanup never
-  // registers — without this a previous test's `beforeunload` listener is still
-  // installed when the next one asks whether anything is dirty.
-  afterEach(cleanup);
-
   test("an edit survives switching files and coming back", () => {
     const files = { "agent.ts": "server agent", "tools/a.ts": "server tool" };
     const { result } = renderHook(() => useFileDrafts(files));

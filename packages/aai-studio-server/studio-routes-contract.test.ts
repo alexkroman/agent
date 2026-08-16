@@ -11,17 +11,16 @@
  */
 
 import { createMemorySecretStore } from "aai-server/secret-store";
-import { createDevAuth } from "aai-server/supabase-auth";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
 import {
   brokerMock,
   brokerOptions,
   createProject,
   deployMock,
   deployWorkspaceMock,
-  devToken,
   fakeBroker,
 } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
@@ -35,19 +34,31 @@ import type { PreviewQueue } from "./studio-preview-queue.ts";
 vi.mock("./studio-deploy.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-deploy.ts")>();
   const { deployMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return { ...original, deployStudioProject: (...args: unknown[]) => mock(...args) };
+  return {
+    ...original,
+    deployStudioProject: (...args: Parameters<typeof original.deployStudioProject>) =>
+      mock(...args),
+  };
 });
 
 vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-session-broker.ts")>();
   const { brokerMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return { ...original, createStudioSessionBroker: (...args: unknown[]) => mock(...(args as [])) };
+  return {
+    ...original,
+    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) =>
+      mock(...args),
+  };
 });
 
 vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
   const { wakePreviewMock } = await import("./_studio-routes-test-utils.ts");
-  return { ...original, wakeProjectPreview: (...args: unknown[]) => wakePreviewMock(...args) };
+  return {
+    ...original,
+    wakeProjectPreview: (...args: Parameters<typeof original.wakeProjectPreview>) =>
+      wakePreviewMock(...args),
+  };
 });
 
 /**
@@ -144,7 +155,9 @@ describe("response bodies", () => {
 
   test("a rejected push explains why", async () => {
     // Past the workspace file cap the write throws, and the reason has to
-    // reach the CLI rather than a bare 400.
+    // reach the CLI rather than a bare 400. Matched against the message
+    // `assertWorkspaceLimits` actually raises, not merely "non-empty" —
+    // `"Bad Request"` satisfies non-empty, and a bare 400 was the bug.
     const files: Record<string, string> = {};
     for (let i = 0; i < 200; i++) files[`f${i}.ts`] = "x";
     const res = await authFetch(fetch, "/studio/projects/toobig/source", {
@@ -152,7 +165,7 @@ describe("response bodies", () => {
       body: { files },
     });
     expect(res.status).toBe(400);
-    expect(await errorOf(res)).not.toBe("");
+    expect(await errorOf(res)).toMatch(/Too many files \(max \d+\)/);
   });
 
   test("mutations acknowledge with ok:true", async () => {
@@ -213,22 +226,13 @@ describe("browser-session scoping", () => {
   test("two signed-in users do not see each other's projects", async () => {
     // Browser sessions scope by studio USER id, so the scope input must carry
     // it — a constant would collapse every account into one project list.
-    const { fetch } = await createTestCombined({ auth: createDevAuth() });
+    const { fetch } = await withDevAuth();
     const alice = devToken("alice@example.com");
     const bob = devToken("bob@example.com");
     // Each account onboards its own AssemblyAI key first — a session with no
     // stored key cannot reach the project routes at all.
-    const accounts: [string, string][] = [
-      [alice, "alice-key"],
-      [bob, "bob-key"],
-    ];
-    for (const [bearer, apiKey] of accounts) {
-      await authFetch(fetch, "/studio/account/key", {
-        method: "PUT",
-        key: bearer,
-        body: { apiKey },
-      });
-    }
+    await onboardKey(fetch, alice, "alice-key");
+    await onboardKey(fetch, bob, "bob-key");
 
     expect(
       (await authFetch(fetch, "/studio/projects", { body: { name: "alice-proj" }, key: alice }))
@@ -268,8 +272,10 @@ describe("session broker wiring", () => {
     // The drain resolves the user's key from Vault rather than the job
     // carrying one, so the resolver must read the real secret store.
     await secrets.put("user-key:dev:someone", "resolved-key");
-    const resolveApiKey = opts.resolveApiKey as (userId: string) => Promise<string | undefined>;
-    await expect(resolveApiKey("dev:someone")).resolves.toBe("resolved-key");
+    // No hand-written signature: `brokerOptions()` is typed off the real
+    // factory's parameters now, so this is the resolver the routes actually
+    // pass and a change to its shape is a compile error.
+    await expect(opts.resolveApiKey?.("dev:someone")).resolves.toBe("resolved-key");
   });
 
   test("omits the fleet options that were not configured", async () => {
@@ -324,8 +330,10 @@ describe("workspace failure handling", () => {
       body: { path: "one-too-many.ts", content: "x" },
     });
     expect(res.status).toBe(400);
+    // The reason itself, not `/./` — which `"Bad Request"` matches, and a bare
+    // 400 is precisely what this test exists to refuse.
     expect((await res.json()) as { error?: string }).toMatchObject({
-      error: expect.stringMatching(/./),
+      error: expect.stringMatching(/Too many files \(max \d+\)/),
     });
   });
 
@@ -391,19 +399,17 @@ describe("deploy route wiring", () => {
     await createProject(fetch);
     await authFetch(fetch, "/studio/projects/proj/deploy", { body: {} });
 
-    const [deps] = deployMock.mock.calls[0] as unknown[] as [
-      {
-        workspaces?: unknown;
-        deployWorkspace?: (...args: unknown[]) => unknown;
-      },
-    ];
-    expect(deps.workspaces).toBeDefined();
+    // Typed off `deployStudioProject`'s own parameters (see the fakes in
+    // _studio-routes-test-utils.ts), so a renamed or newly required dependency
+    // fails here instead of compiling into a hand-written shape.
+    const deps = deployMock.mock.calls[0]?.[0];
+    expect(deps?.workspaces).toBeDefined();
 
     // Publish runs `aai deploy` inside the project's guest sandbox, so this
     // callback must reach the session broker rather than resolve to nothing.
     deployWorkspaceMock.mockClear();
     const target = { serverUrl: "https://platform.example", apiKey: "key1" };
-    await deps.deployWorkspace?.("scope", "proj", { "agent.ts": "x" }, target);
+    await deps?.deployWorkspace?.("scope", "proj", { "agent.ts": "x" }, target);
     expect(deployWorkspaceMock).toHaveBeenCalledWith("scope", "proj", { "agent.ts": "x" }, target);
   });
 });

@@ -14,29 +14,32 @@
 
 import { sleep } from "@alexkroman1/aai/internal";
 import { endLiveStreams, resetLiveStreams } from "aai-server/live-streams";
-import type { SSEStreamingApi } from "hono/streaming";
+import type { SSEMessage } from "hono/streaming";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSharedReads, createSsePusher } from "./studio-sse.ts";
+import { createSharedReads, createSsePusher, type SseStream } from "./studio-sse.ts";
 
 /**
  * Hono's SSE handle, reduced to what the pusher touches. `writeSSE` records
  * frames; `onAbort` captures the disconnect callback so a test can fire it.
  */
 function makeStream(): {
-  stream: SSEStreamingApi;
+  stream: SseStream;
   frames: { event?: string; data: string }[];
   abort: () => void;
 } {
   const frames: { event?: string; data: string }[] = [];
   let onAbort = (): void => undefined;
-  const stream = {
-    writeSSE: async (frame: { event?: string; data: string }) => {
-      frames.push(frame);
+  // Typed as `SseStream`, never cast to the whole `SSEStreamingApi`: the two
+  // methods are what the pusher takes, so this is a real implementation of
+  // that contract rather than a claim to be a class it is not.
+  const stream: SseStream = {
+    writeSSE: async (frame: SSEMessage) => {
+      frames.push({ ...(frame.event && { event: frame.event }), data: String(frame.data) });
     },
     onAbort: (cb: () => void) => {
       onAbort = cb;
     },
-  } as unknown as SSEStreamingApi;
+  };
   return { stream, frames, abort: () => onAbort() };
 }
 

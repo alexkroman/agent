@@ -13,7 +13,19 @@ export default defineConfig({
     // Tier membership is the `.eval.` infix, excluded here and selected by
     // `test:eval` — the same convention the two other slow tiers use, so a new
     // eval needs no config edit.
-    exclude: ["**/*.eval.test.ts", "node_modules", "dist"],
+    //
+    // The two MIDDLE tiers are excluded for the same reason even though this
+    // package owns no infixed file: a rename is the documented way to move a
+    // test out of the unit tier, and without the exclude the renamed file keeps
+    // running here under a 5s budget — the tier convention silently not
+    // applying. Latent, and it bites whoever first does the right thing.
+    exclude: [
+      "**/*.eval.test.ts",
+      "**/*.integration.test.ts",
+      "**/*.scenario.test.ts",
+      "node_modules",
+      "dist",
+    ],
     coverage: {
       // The two TARGETS are excluded, and this is the one exclusion in the repo
       // that is not "test infrastructure": they only run when a live API key and

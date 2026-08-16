@@ -31,17 +31,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
-import { withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
-
-/** The built worker resolves `@alexkroman1/aai` out of this package's tree. */
-async function linkNodeModules(dir: string): Promise<void> {
-  await fs.symlink(
-    path.resolve(import.meta.dirname, "node_modules"),
-    path.join(dir, "node_modules"),
-    "dir",
-  );
-}
 
 /**
  * Per-case budget for a real bundler pass. The integration tier's number, because
@@ -71,7 +62,7 @@ async function loadWorker(
 describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
   test("a file in tools/ becomes a tool named for the file", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
       await fs.mkdir(path.join(dir, "tools"));
       await fs.writeFile(path.join(dir, "tools", "roll_dice.ts"), toolSource("Roll"), "utf-8");
@@ -85,7 +76,7 @@ describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("a project with no tools/ directory builds and declares none", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
 
       // The ENOENT path: a workflow app has no tools/, and a missing directory
@@ -97,7 +88,7 @@ describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("a co-located spec in tools/ is not a tool", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
       await fs.mkdir(path.join(dir, "tools"));
       await fs.writeFile(path.join(dir, "tools", "roll_dice.ts"), toolSource("Roll"), "utf-8");
@@ -115,7 +106,7 @@ describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("a NESTED file fails the build, naming it, rather than being skipped", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
       await fs.mkdir(path.join(dir, "tools", "billing"), { recursive: true });
       await fs.writeFile(
@@ -135,7 +126,7 @@ describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("a file that does not default-export a tool fails the build, naming it", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
       await fs.mkdir(path.join(dir, "tools"));
       await fs.writeFile(
@@ -156,7 +147,7 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("the file becomes the agent's systemPrompt, with nothing in agent.ts", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
       await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
@@ -167,7 +158,7 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("no file leaves the framework default in place", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
 
       // Five templates deliberately run on DEFAULT_SYSTEM_PROMPT, so an absent
@@ -179,7 +170,7 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("a COMPOSED prompt keeps what the author built", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(
         path.join(dir, "agent.ts"),
         `import { agent } from "@alexkroman1/aai";\n` +
@@ -198,7 +189,7 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("a file nothing reads fails the build, rather than being ignored", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(
         path.join(dir, "agent.ts"),
         `import { agent } from "@alexkroman1/aai";\n` +
@@ -215,7 +206,7 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("a system-prompt/ DIRECTORY is rejected, not ignored", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
       await fs.mkdir(path.join(dir, "system-prompt"));
       await fs.writeFile(path.join(dir, "system-prompt", "intro.md"), PROMPT, "utf-8");
@@ -229,7 +220,7 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
 
   test("an empty file is an error, not a silent fall-through to the default", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
       await fs.writeFile(path.join(dir, "system-prompt.md"), "   \n\n", "utf-8");
 

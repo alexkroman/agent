@@ -21,7 +21,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { sleep } from "@alexkroman1/aai/internal";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import getPort, { portNumbers } from "get-port";
+import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
 import {
   resolveFaultProfile,
   type SupervisedServer,
@@ -105,8 +106,20 @@ let silentBin: string | undefined;
 let tmpDir: string | undefined;
 let server: SupervisedServer | undefined;
 
-/** A port high enough to sit clear of the other servers these suites run. */
-let nextPort = 4861;
+/**
+ * A free port high enough to sit clear of the other servers these suites run.
+ *
+ * `get-port` rather than a hand-incremented counter: an occupied 4861 was an
+ * EADDRINUSE flake that the fake server's bind retry papered over instead of
+ * avoiding, and the retry is there for the SIGKILL race, not for a port
+ * somebody else owns.
+ */
+async function nextFreePort(): Promise<number> {
+  return getPort({ port: portNumbers(4861, 4961) });
+}
+
+/** Discriminates the per-test fixture FILE names; not a port. */
+let fixtureSeq = 0;
 
 async function fake(): Promise<string> {
   if (fakeBin) return fakeBin;
@@ -126,7 +139,7 @@ async function silent(): Promise<string> {
 
 async function dying(): Promise<string> {
   await fake(); // for tmpDir
-  const bin = path.join(tmpDir ?? os.tmpdir(), `dying-dev-${nextPort}.cjs`);
+  const bin = path.join(tmpDir ?? os.tmpdir(), `dying-dev-${++fixtureSeq}.cjs`);
   await fs.writeFile(bin, DYING_SERVER);
   return bin;
 }
@@ -138,7 +151,7 @@ async function supervise(
   return startSupervisedDevServer({
     aaiBin: bin ?? (await fake()),
     cwd: tmpDir ?? os.tmpdir(),
-    port: nextPort++,
+    port: await nextFreePort(),
     env: process.env,
     profile,
   });
@@ -157,6 +170,15 @@ function pids(s: SupervisedServer): string[] {
 afterEach(async () => {
   await server?.stop();
   server = undefined;
+});
+
+// The fixture scripts live in one temp dir shared by the whole file; without
+// this every run left an `aai-fault-*` directory behind in `tmpdir()`.
+afterAll(async () => {
+  if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  tmpDir = undefined;
+  fakeBin = undefined;
+  silentBin = undefined;
 });
 
 describe("resolveFaultProfile", () => {
@@ -277,7 +299,7 @@ describe("supervision", () => {
     // whichever test happens to be running and names the wrong thing. The
     // failure is now recorded when it happens and re-raised here, which is what
     // `stop`'s comment always intended: reported rather than swallowed.
-    const marker = path.join(tmpDir ?? os.tmpdir(), `marker-${nextPort}`);
+    const marker = path.join(tmpDir ?? os.tmpdir(), `marker-${++fixtureSeq}`);
     const unhandled: unknown[] = [];
     const onUnhandled = (err: unknown): void => {
       unhandled.push(err);
@@ -287,7 +309,7 @@ describe("supervision", () => {
       server = await startSupervisedDevServer({
         aaiBin: await dying(),
         cwd: tmpDir ?? os.tmpdir(),
-        port: nextPort++,
+        port: await nextFreePort(),
         env: { ...process.env, AAI_FAULT_TEST_MARKER: marker },
         profile: { description: "kill the one boot it has", points: [{ afterHealthy: 1 }] },
         // Otherwise this assertion costs the shipped 60s health budget.

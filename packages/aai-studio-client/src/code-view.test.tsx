@@ -5,15 +5,11 @@
 // (and its two suites) when they were lifted above this component — see that
 // module for why they could not stay here.
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
 import { FileNav } from "./code-view.tsx";
 
 describe("FileNav", () => {
-  // No vitest globals in this package, so testing-library's auto-cleanup
-  // never registers — without this each render accumulates in the DOM.
-  afterEach(cleanup);
-
   test("groups files by directory and selects by full path", () => {
     const onSelectFile = vi.fn();
     const paths = [

@@ -1,7 +1,6 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
-    "packages/aai-cli/e2e.test.ts": 1,
     "packages/aai-ui/default-client.tsx": 1,
     "packages/aai-ui/types.test.ts": 2
   },
@@ -16,16 +15,10 @@
     "packages/aai-templates/templates/solo-rpg/client.tsx": 2,
     "packages/aai-ui/components/message-list.tsx": 1,
     "packages/aai/host/_mock-ws.ts": 1,
-    "packages/aai/host/integration/pipeline-reference.integration.test.ts": 2,
     "packages/aai/host/providers/_utils.ts": 1,
-    "packages/aai/host/providers/tts/rime.test.ts": 2,
     "packages/aai/host/transports/_pipeline-transport-harness.ts": 1,
     "packages/aai/host/transports/pipeline-transport.ts": 1,
     "packages/aai/index.ts": 1
-  },
-  "as any": {
-    "packages/aai/host/agent-tools.test.ts": 1,
-    "packages/aai/host/agent-tools.ts": 1
   },
   "as unknown as": {
     "packages/aai-cli/_default-html.test.ts": 2,
@@ -47,18 +40,13 @@
     "packages/aai-server/serve-lifecycle.ts": 2,
     "packages/aai-server/supabase-auth.test.ts": 2,
     "packages/aai-server/ws.scenario.test.ts": 1,
-    "packages/aai-studio-client/src/_test-utils.ts": 1,
-    "packages/aai-studio-server/_studio-routes-test-utils.ts": 1,
     "packages/aai-studio-server/_studio-session-test-utils.ts": 2,
-    "packages/aai-studio-server/studio-concurrency-fuzz.test.ts": 1,
     "packages/aai-studio-server/studio-routes-contract.test.ts": 2,
     "packages/aai-studio-server/studio-routes.test.ts": 1,
     "packages/aai-studio-server/studio-session-broker.test.ts": 1,
     "packages/aai-studio-server/studio-session-idle.test.ts": 2,
-    "packages/aai-studio-server/studio-sse.test.ts": 1,
     "packages/aai-studio-server/studio-static.test.ts": 2,
     "packages/aai-templates/templates/retail/agent.test.ts": 1,
-    "packages/aai-templates/templates/retail/shared.test.ts": 2,
     "packages/aai-templates/templates/retail/store.ts": 1,
     "packages/aai-ui/_react-test-utils.ts": 3,
     "packages/aai-ui/_session-core-test-utils.ts": 2,
@@ -91,10 +79,37 @@
     "packages/aai/host/transports/pipeline-llm-stream.test.ts": 1,
     "packages/aai/host/transports/pipeline-openai-replay.test.ts": 2,
     "packages/aai/host/transports/pipeline-smooth.test.ts": 1,
-    "packages/aai/host/transports/pipeline-trace.test.ts": 1,
     "packages/aai/host/transports/s2s-transport.test.ts": 2,
     "packages/aai/host/ws-frames.ts": 1,
-    "packages/aai/sdk/protocol-compat.test.ts": 1,
-    "packages/aai/sdk/testing.ts": 1
+    "packages/aai/sdk/protocol-compat.test.ts": 1
+  },
+  "as never": {
+    "packages/aai-cli/_cli-common.test.ts": 2,
+    "packages/aai-cli/_output.test.ts": 2,
+    "packages/aai-cli/dev.test.ts": 1,
+    "packages/aai-cli/studio.test.ts": 1,
+    "packages/aai-guest/harness-crash-guards.test.ts": 3,
+    "packages/aai-guest/harness.test.ts": 10,
+    "packages/aai-server/delete.test.ts": 2,
+    "packages/aai-server/orchestrator-key-auth.test.ts": 1,
+    "packages/aai-server/realtime-events.test.ts": 1,
+    "packages/aai-server/workflow-wake.test.ts": 1,
+    "packages/aai-studio-client/src/chat-queue.test.ts": 1,
+    "packages/aai-studio-server/_studio-session-test-utils.ts": 1,
+    "packages/aai-studio-server/studio-concurrency-fuzz.test.ts": 4,
+    "packages/aai-studio-server/studio-session-adopt.test.ts": 5,
+    "packages/aai-studio-server/studio-session-broker.test.ts": 2,
+    "packages/aai-studio-server/studio-session-fleet.test.ts": 2,
+    "packages/aai-studio-server/studio-session-publish.test.ts": 1,
+    "packages/aai-templates/templates/solo-rpg/agent.test.ts": 6,
+    "packages/aai/host/agent-tools.ts": 2,
+    "packages/aai/host/transports/pipeline-stream.test.ts": 3,
+    "packages/aai/host/workflow-api-uploads.test.ts": 1,
+    "packages/aai/host/workflow-keys.test.ts": 1,
+    "packages/aai/host/workflow-notify.test.ts": 2,
+    "packages/aai/host/workflow-wake-hint.test.ts": 2,
+    "packages/aai/sdk/_internal-types.test.ts": 2,
+    "packages/aai/sdk/config-rules.test.ts": 9,
+    "packages/aai/sdk/define.test.ts": 2
   }
 }

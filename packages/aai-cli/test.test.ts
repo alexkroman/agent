@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -31,10 +30,14 @@ describe("aai test", () => {
     expect(result).toBe(false);
   });
 
-  test("detects agent.test.ts files", async () => {
-    await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
-    // Just verifying detection - actual execution would need vitest installed
-    expect(existsSync(path.join(tempDir, "agent.test.ts"))).toBe(true);
+  test("detects agent.test.js when there is no agent.test.ts", async () => {
+    // This used to assert `existsSync` on the file it had itself just written,
+    // so it passed with `test.ts` deleted. The `.js` arm is the half of
+    // `runVitest`'s detection the `.ts` test below does not reach.
+    await writeFile(path.join(tempDir, "agent.test.js"), "// test file");
+    expect(runVitest(tempDir)).toBe(true);
+    const [, args] = execaSync.mock.calls[0] as [string, string[]];
+    expect(args.at(-1)).toBe("agent.test.js");
   });
 
   test("runs vitest against agent.test.ts without overriding NODE_OPTIONS", async () => {

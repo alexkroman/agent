@@ -1,11 +1,12 @@
 import { describe, expect, test } from "vitest";
 import seedJson from "./seed.json";
-import type { RetailState, Store } from "./shared.ts";
+import type { RetailState } from "./shared.ts";
 import { buildScriptBullets, DEMO_PERSONAS, emptyRetailState, storeView } from "./shared.ts";
+import { seedStore } from "./store.ts";
 
 function makeState(authenticatedUserId: string | null): RetailState {
   return {
-    store: structuredClone(seedJson) as unknown as Store,
+    store: seedStore(),
     authenticatedUserId,
     callSeq: 3,
     activity: [{ seq: 3, tool: "get_order_details", summary: "read #W5866402", at: 0 }],
@@ -84,7 +85,7 @@ describe("DEMO_PERSONAS", () => {
   });
 
   test("every persona's email, name and zip match its seed record", () => {
-    const users = Object.values((structuredClone(seedJson) as unknown as Store).users);
+    const users = Object.values(seedStore().users);
     for (const persona of DEMO_PERSONAS) {
       const user = users.find((u) => u.email === persona.email);
       expect.soft(user, `no seeded customer has email ${persona.email}`).toBeDefined();

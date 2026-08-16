@@ -3,12 +3,11 @@
 // The Settings pane's "Phone number" card: the per-carrier webhook URLs and
 // the signing-secret hint beside each one.
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { PhoneCard, phoneWebhookUrl, secretState } from "./phone-card.tsx";
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
 });
 

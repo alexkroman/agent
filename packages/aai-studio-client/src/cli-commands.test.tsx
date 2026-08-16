@@ -5,12 +5,11 @@
 // and the `cd`; the commands carry no `--server`, so they target the CLI's
 // own shipped default origin.
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { CliCommands, pullCommands } from "./cli-commands.tsx";
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
 });
 

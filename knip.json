@@ -37,11 +37,42 @@
   ],
   "workspaces": {
     ".": {
+      // WHAT A PIPELINE INVOKES, and nothing else.
+      //
+      // This was `scripts/**/*.{mjs,ts}` — every file in `scripts/` declared an
+      // entry point, which means the repo's one "what is unused" tool could
+      // never report a dead script. It could not have: an entry point is
+      // reachable by definition. Three dead chains were sitting in there
+      // (`starter-eval/builtins.mjs` and `starter-eval/tsconfig-ab.mjs`, both
+      // reading a `run.json` from a producer that was deleted, and
+      // `scripts/aai-dev.sh`, duplicating `pnpm aai`), and they are the same
+      // documented dead-config family as the `.size-limit.json` nothing read,
+      // the `ls-lint` config no pipeline ran, and the `.turbo` path that never
+      // matched `cacheDir`.
+      //
+      // The old comment justified the recursion with "standalone tools live in
+      // their own subdirectory (scripts/starter-eval/), and each file there is
+      // run directly rather than imported" — which was true of the two files
+      // that turned out to be dead, and false of the survivor
+      // (`expectations.mjs`, imported by `packages/aai-evals`).
+      //
+      // A script that is a MODULE (`_*.mjs`, `guard-invariants-rules.mjs`,
+      // `artifact-size-format.mjs`) is deliberately absent: knip reaches it
+      // through the entry that imports it, and losing its last importer is
+      // precisely the finding this glob was suppressing. Add a name here only
+      // when a pipeline runs it — that makes the exception a reviewable line.
       "entry": [
-        // Recursive: standalone tools live in their own subdirectory when they
-        // ship more than one file (scripts/starter-eval/), and each file there
-        // is run directly rather than imported.
-        "scripts/**/*.{mjs,ts}",
+        "scripts/check.sh",
+        "scripts/create-changeset.sh",
+        // Everything a root `package.json` script or a vitest `globalSetup`
+        // names is discovered by knip itself and must NOT be repeated here —
+        // it reports a repeat as a redundant pattern, which is the same
+        // reviewability property working in the other direction.
+        //
+        // `gen-gateway-models.mjs` is the one script a pipeline never runs:
+        // `check:gateway-models` shells out to it, by path, at runtime. Manual
+        // on purpose — see AGENTS.md, "Two manual diagnostics".
+        "scripts/gen-gateway-models.mjs",
         "stryker*.config.mjs"
       ],
       "ignoreDependencies": [

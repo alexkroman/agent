@@ -33,6 +33,13 @@ vi.mock("./_api-client.ts", async (importOriginal) => ({
 const { executeSecretList, executeSecretPut, executeSecretDelete } = await import("./secret.ts");
 
 afterEach(() => {
+  // `mockApiRequest` needs its implementation dropped too, so `mockReset`
+  // rather than `mockClear`. Everything else here (the `_agent.ts` and `_ui.ts`
+  // module mocks) only needs its HISTORY cleared — and it does need it:
+  // `restoreMocks: true` registers only `vi.spyOn` mocks, so an
+  // `expect(getServerInfo).toHaveBeenCalledWith(…)` would otherwise be
+  // satisfied by any earlier test in this file that resolved a server.
+  vi.clearAllMocks();
   mockApiRequest.mockReset();
 });
 

@@ -11,6 +11,7 @@ import { DEAD_AIR_OPENING_PHRASE, DEFAULT_DEAD_AIR_COVER_MS } from "../../sdk/co
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
 import {
   inFlightReplyScript,
+  llmCalls,
   makeOpts,
   noopToolSchema,
   useVirtualTime,
@@ -432,11 +433,8 @@ describe("PipelineTransport", () => {
       stt.last()?.firePartial("stop please");
       // The client's `cancelled` handler clears userTranscript, so the interim
       // must be emitted after onCancelled or the caption is blanked.
-      const partialCall = (
-        callbacks.reported("user-transcript.updated") as ReturnType<typeof vi.fn>
-      ).mock.invocationCallOrder[0];
-      const cancelledCall = (callbacks.reported("reply.cancelled") as ReturnType<typeof vi.fn>).mock
-        .invocationCallOrder[0];
+      const partialCall = callbacks.reported("user-transcript.updated").mock.invocationCallOrder[0];
+      const cancelledCall = callbacks.reported("reply.cancelled").mock.invocationCallOrder[0];
       expect(partialCall).toBeGreaterThan(cancelledCall as number);
       await t.stop();
     });
@@ -462,11 +460,8 @@ describe("PipelineTransport", () => {
       // the other order would blank the message it just set.
       stt.last()?.fireFinal("okay, cool.");
       expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
-      const cancelledCall = (callbacks.reported("reply.cancelled") as ReturnType<typeof vi.fn>).mock
-        .invocationCallOrder[0];
-      const transcriptCalls = (
-        callbacks.reported("user-transcript.committed") as ReturnType<typeof vi.fn>
-      ).mock;
+      const cancelledCall = callbacks.reported("reply.cancelled").mock.invocationCallOrder[0];
+      const transcriptCalls = callbacks.reported("user-transcript.committed").mock;
       const idx = transcriptCalls.calls.findIndex(
         (c) => (c[0] as { text?: string }).text === "okay, cool.",
       );
@@ -493,7 +488,7 @@ describe("PipelineTransport", () => {
         }),
         speechIdleTimeoutMs: 60,
       });
-      const llm = opts.llm as ReturnType<typeof createFakeLanguageModel>;
+      const llm = llmCalls(opts);
       const t = createPipelineTransport(opts);
       await t.start();
 
@@ -550,7 +545,7 @@ describe("PipelineTransport", () => {
         }),
         speechIdleTimeoutMs: 60,
       });
-      const llm = opts.llm as ReturnType<typeof createFakeLanguageModel>;
+      const llm = llmCalls(opts);
       const t = createPipelineTransport(opts);
       await t.start();
 

@@ -7,14 +7,14 @@
 // (that rotates the password a live sandbox is holding), and that a foreign
 // slug named by the workspace is not a lever on someone else's agent.
 
-import { type AppDatabases, type AppDbMeta, appDbIdentifier } from "aai-server/app-database";
+import { appDbIdentifier } from "aai-server/app-database";
 import { localSlugLock } from "aai-server/platform-lock";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
-import { hashApiKey } from "aai-server/secrets";
 import type { BundleStore } from "aai-server/store-types";
 import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
+import { claimSlug, fakeAppDb } from "./_studio-agents-test-utils.ts";
 import {
   type ProjectDatabaseEnv,
   projectDatabaseState,
@@ -26,26 +26,6 @@ import { createWorkspace, getWorkspace, mutateWorkspace } from "./studio-workspa
 const SCOPE = "scope-1";
 const PROJECT = "demo";
 const KEY = "key-1";
-
-/** Provisioning that records its calls and mints a per-slug meta. */
-function fakeAppDb(): AppDatabases & {
-  provision: ReturnType<typeof vi.fn>;
-  deprovision: ReturnType<typeof vi.fn>;
-} {
-  return {
-    provision: vi.fn(
-      async (slug: string): Promise<AppDbMeta> => ({
-        role: appDbIdentifier(slug),
-        // A fresh password every call — the real provisioner rotates too,
-        // which is why an enabled slug must never be re-provisioned.
-        password: Math.random().toString(16).slice(2).padEnd(32, "0"),
-      }),
-    ),
-    deprovision: vi.fn(async () => undefined),
-    connectionUrl: () => "postgres://app@db/app",
-    usage: async () => ({ tables: 0, rows: 0, bytes: 0 }),
-  };
-}
 
 type Harness = {
   env: ProjectDatabaseEnv & { appDb: ReturnType<typeof fakeAppDb> };
@@ -66,7 +46,7 @@ async function harness(
   // Every slug the workspace names is a real deployed agent owned by KEY,
   // unless a test claims one for somebody else.
   for (const slug of [workspace.deployedSlug, workspace.previewSlug].filter(Boolean)) {
-    await claim(store, slug as string, KEY);
+    await claimSlug(store, slug as string, KEY);
   }
   const env = {
     workspaces,
@@ -76,17 +56,6 @@ async function harness(
     slugLock: localSlugLock,
   } as Harness["env"];
   return { env, workspaces, secrets, store };
-}
-
-/** Deploy a slug owned by `key` — what makes `verifySlugOwner` say "owned". */
-function claim(store: BundleStore, slug: string, key: string): Promise<void> {
-  return store.putAgent({
-    slug,
-    env: {},
-    worker: "export default {}",
-    clientFiles: {},
-    credential_hashes: [hashApiKey(key)],
-  });
 }
 
 /** The provisioned-credential record — the platform's own "is it enabled". */
@@ -146,7 +115,7 @@ describe("setProjectDatabase", () => {
     expect((await getWorkspace(h.workspaces, SCOPE, PROJECT))?.databaseEnabled).toBe(true);
 
     // …and the first deploy of either agent picks it up.
-    await claim(h.store, "demo-preview", KEY);
+    await claimSlug(h.store, "demo-preview", KEY);
     await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo-preview" });
     expect(h.env.appDb.provision).toHaveBeenCalledWith("demo-preview");
     expect(await appDbSecret(h.secrets, "demo-preview")).not.toBeNull();
@@ -215,7 +184,7 @@ describe("setProjectDatabase", () => {
   test("a slug the caller does not own is left alone", async () => {
     const h = await harness({ deployedSlug: "demo", previewSlug: "demo-preview" });
     // Someone else's agent, however the workspace came to name it.
-    await claim(h.store, "demo", "other-key");
+    await claimSlug(h.store, "demo", "other-key");
     const state = await enable(h);
     expect(h.env.appDb.provision.mock.calls.map(([slug]) => slug)).toEqual(["demo-preview"]);
     // And its state is reported as "no database here" rather than reading

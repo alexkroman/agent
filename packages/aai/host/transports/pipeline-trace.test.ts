@@ -6,23 +6,25 @@
 // never said. Enabled by AAI_DEBUG=1 (see runtime-config.debugLoggingEnabled).
 
 import { describe, expect, test, vi } from "vitest";
-import { tick } from "../_test-utils.ts";
-import type { Logger } from "../runtime-config.ts";
+import { makeLogger, tick } from "../_test-utils.ts";
 import { makeOpts } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
-function makeSpyLogger(): Logger {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-}
-
-/** Every `log.debug` message + context pair, in call order. */
-function debugCalls(logger: Logger): [string, unknown][] {
-  return (logger.debug as unknown as { mock: { calls: [string, unknown][] } }).mock.calls;
+/**
+ * Every `log.debug` message + context pair, in call order.
+ *
+ * Reads the spy's own call log rather than laundering a `Logger` back into one:
+ * this file used to declare a local spy logger typed as `Logger`, which erased
+ * the spy type and made a double cast the only way back to `.mock.calls`.
+ * `makeLogger()` (the shared one, spy-typed) keeps it a projection.
+ */
+function debugCalls(logger: ReturnType<typeof makeLogger>): [string, unknown][] {
+  return logger.debug.mock.calls.map((call) => [String(call[0]), call[1]]);
 }
 
 describe("PipelineTransport — STT debug trace", () => {
   test("traces each STT final as it arrives, with its text", async () => {
-    const logger = makeSpyLogger();
+    const logger = makeLogger();
     const { opts, stt } = makeOpts({ logger });
     const t = createPipelineTransport(opts);
     await t.start();
@@ -42,7 +44,7 @@ describe("PipelineTransport — STT debug trace", () => {
     // final it is handed. Tracing both ends anyway is what makes the split
     // diagnosable: a commit that matches the finals puts a missing word
     // upstream of the transport, in STT or its settler.
-    const logger = makeSpyLogger();
+    const logger = makeLogger();
     const { opts, stt } = makeOpts({ logger });
     const t = createPipelineTransport(opts);
     await t.start();
@@ -71,7 +73,7 @@ describe("PipelineTransport — STT debug trace", () => {
     // dropped from every final — is not lost: the provider's own turn trace
     // still logs it under AAI_DEBUG, with end_of_turn and the end-of-turn
     // confidence alongside (host/providers/stt/assemblyai.test.ts).
-    const logger = makeSpyLogger();
+    const logger = makeLogger();
     const { opts, stt } = makeOpts({ logger });
     const t = createPipelineTransport(opts);
     await t.start();
@@ -82,7 +84,7 @@ describe("PipelineTransport — STT debug trace", () => {
   });
 
   test("every trace entry carries the session id", async () => {
-    const logger = makeSpyLogger();
+    const logger = makeLogger();
     const { opts, stt } = makeOpts({ logger });
     const t = createPipelineTransport(opts);
     await t.start();

@@ -26,7 +26,7 @@ const sessionNotes = new Map<string, NotesEntry>();
  * timeout — a generous TTL only guarantees abandoned sessions' notes don't
  * accumulate in the host process.
  */
-const SESSION_NOTES_TTL_MS = 86_400_000;
+export const SESSION_NOTES_TTL_MS = 86_400_000;
 /** Hard cap on tracked sessions; oldest entries are evicted past it. */
 const MAX_SESSION_NOTES_ENTRIES = 10_000;
 

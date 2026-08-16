@@ -10,6 +10,14 @@
  * drives the real transcriber against a local TCP server that accepts
  * connections but never answers, so the socket is still CONNECTING when the
  * connect timeout fires — the exact state that triggers the crash.
+ *
+ * SCENARIO tier, by the membership rule rather than by its runtime: it binds a
+ * real TCP port and drives the real vendor SDK, which is the definition of the
+ * tier ("a real subprocess, port, bundler, or Postgres"). It sat in the unit
+ * tier — where "no real network" is the rule — and its wall-clock margins (a
+ * 50 ms connect timeout raced against a real `sleep(50)`) are exactly what
+ * the tiers exist to keep out of a 5-second budget. Run it with
+ * `pnpm --filter @alexkroman1/aai test:scenario`.
  */
 
 import { type AddressInfo, createServer, type Server, type Socket } from "node:net";

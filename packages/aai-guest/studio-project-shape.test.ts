@@ -1,9 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
+import { useTempDir } from "./_test-utils.ts";
 import {
   ensureProjectShape,
   scaffoldDir,
@@ -42,15 +42,18 @@ const scaffold = (file: string) =>
  */
 const NOT_YET_PLATFORM_OWNED = new Set(["workflow", "@workflow/world-postgres"]);
 
-let dir: string;
-
-afterEach(async () => {
-  if (dir) await rm(dir, { recursive: true, force: true });
-});
+/**
+ * One `let dir` used to be shared by both `describe` blocks here, assigned by
+ * exactly one test in the first: the file-level `afterEach` then re-`rm`'d that
+ * one already-deleted path after every test in the second block, and cleaned up
+ * nothing of its own. Creating the directory and its cleanup together is what
+ * removes the possibility.
+ */
+const tempDir = useTempDir("aai-shape-");
 
 describe("ensureProjectShape", () => {
   test("writes the missing project files", async () => {
-    dir = await mkdtemp(path.join(tmpdir(), "aai-shape-"));
+    const dir = tempDir();
     await ensureProjectShape(dir);
     for (const rel of [
       "package.json",

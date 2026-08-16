@@ -2,15 +2,18 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { vi } from "vitest";
+import pTimeout from "p-timeout";
+import { type Mock, vi } from "vitest";
 import type { AgentConfig } from "../sdk/_internal-types.ts";
 import type { ClientSink, SessionEvent } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { createDetachedSlotStore } from "../sdk/session-state.ts";
+import { createUnusedDb } from "../sdk/testing.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
 import { createRuntime } from "./runtime.ts";
+import type { LogFn, Logger, LogLevel } from "./runtime-config.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
 import {
@@ -50,11 +53,45 @@ export function tick(): Promise<void> {
  */
 export { sleep } from "../sdk/sleep.ts";
 
+/**
+ * Settle `promise`, or fail with a sentence naming what never happened.
+ *
+ * A socket helper that resolves only on the frame it is waiting for turns a
+ * regression — an error reported without closing the socket, a handshake frame
+ * silently dropped — into a bare TIER TIMEOUT: the whole file is named, no
+ * assertion is, and the reader learns nothing. Wrap the wait and the failure
+ * says which one it was.
+ *
+ * `p-timeout` rather than a hand-rolled `Promise.race` against a timer
+ * (`guard-invariants` rule 3): the losing branch's late rejection and the
+ * timer cleanup are exactly what gets re-derived wrong.
+ *
+ * `what` may be a thunk, so a message can report what HAD arrived by the
+ * deadline — the half of the diagnosis a fixed string cannot carry.
+ */
+export function withDeadline<T>(
+  promise: Promise<T>,
+  what: string | (() => string),
+  ms = 2000,
+): Promise<T> {
+  return pTimeout(promise, {
+    milliseconds: ms,
+    fallback: () => {
+      throw new Error(`${typeof what === "function" ? what() : what} within ${ms}ms`);
+    },
+  });
+}
+
 export function createMockToolContext(overrides?: Partial<ToolContext>): ToolContext {
   return {
     env: {},
     slots: createDetachedSlotStore(),
-    db: {} as never,
+    // The SDK's own published helper rather than `{} as never`: it REJECTS
+    // naming itself, so a spec that unexpectedly reaches `ctx.db` says so
+    // instead of dying on a TypeError against an empty object. `as never` is
+    // assignable to every position and stops reporting when `Db` grows a
+    // method — the laundering idiom the escape-hatch ratchet now counts.
+    db: createUnusedDb(),
     generate: () => Promise.reject(new Error("generate not mocked")),
     messages: [],
     sessionId: "test-session",
@@ -224,8 +261,21 @@ export function fakeFetch(
   return fn as unknown as typeof globalThis.fetch;
 }
 
+/**
+ * A {@link Logger} whose four methods are spies.
+ *
+ * DECLARED rather than inferred, and that is load-bearing: `vi.fn()`'s type
+ * mentions `Procedure` from `@vitest/spy`, which the declaration emit under
+ * `tsconfig.build.json` cannot name from here (`TS2883`) — so an inferred
+ * return type on an exported helper breaks the BUILD while `tsc --noEmit`
+ * stays green. Both halves of the shape are needed: `Mock<LogFn>` for
+ * `.mock.calls` / `toHaveBeenCalledWith`, and `Logger` so it is assignable to
+ * `createRuntime({ logger })` without a cast.
+ */
+export type TestLogger = Record<LogLevel, Mock<LogFn>> & Logger;
+
 /** Fresh logger with per-call `vi.fn()` spies. Use whenever you assert on log output. */
-export function makeLogger() {
+export function makeLogger(): TestLogger {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 }
 

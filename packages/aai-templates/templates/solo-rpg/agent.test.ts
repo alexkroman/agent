@@ -48,9 +48,10 @@ function makeDb(): { db: Db; rows: Map<string, unknown> } {
 }
 
 /** `send` is a spy rather than the recorder `createToolContext` installs,
- *  because this suite asserts call counts on it. */
-function makeCtx(sessionId = "session-a", db: Db = makeDb().db): ToolContext {
-  return createToolContext({ sessionId, db, send: vi.fn() });
+ *  because this suite asserts call counts on it. Each call gets its own slot
+ *  store, which is what makes two contexts two games. */
+function makeCtx(db: Db = makeDb().db): ToolContext {
+  return createToolContext({ db, send: vi.fn() });
 }
 
 const SETUP_ARGS = {
@@ -139,10 +140,14 @@ describe("setup_character", () => {
     expect(state.wits).toBe(3);
   });
 
-  test("game state is scoped per session — a second session sees a fresh game", async () => {
-    await setupCharacter.execute(SETUP_ARGS, makeCtx("session-a"));
-    // The slot is keyed per session by construction — a new session, a new game.
-    const other = (await checkState.execute({} as never, makeCtx("session-b"))) as {
+  test("a second, independent context sees a fresh game", async () => {
+    // What this really checks: the state lives in the SLOT and not in a
+    // module-level variable. `createToolContext()` hands each call its own
+    // detached slot store, so the isolation is per CONTEXT — two distinct
+    // session ids would prove nothing extra, and `sessionSlot` could stop
+    // keying by session with this still passing.
+    await setupCharacter.execute(SETUP_ARGS, makeCtx());
+    const other = (await checkState.execute({} as never, makeCtx())) as {
       initialized: boolean;
     };
     expect(other.initialized).toBe(false);
@@ -546,7 +551,7 @@ describe("save_game / load_game", () => {
     const { db, rows } = makeDb();
 
     // Session A plays and saves.
-    const sessionA = makeCtx("session-a", db);
+    const sessionA = makeCtx(db);
     const played = playingState();
     played.playerName = "Kael";
     played.sceneCount = 7;
@@ -560,7 +565,7 @@ describe("save_game / load_game", () => {
     expect(rows.get("save:chapter-2")).toMatchObject({ playerName: "Kael", sceneCount: 7 });
 
     // Session B (a fresh game slot, the same app db) resumes it.
-    const sessionB = makeCtx("session-b", db);
+    const sessionB = makeCtx(db);
     const loaded = (await loadGame.execute({ slot: "chapter-2" }, sessionB)) as Record<
       string,
       unknown
@@ -579,7 +584,7 @@ describe("save_game / load_game", () => {
 
   test("saving twice to one slot upserts — the newer save wins", async () => {
     const { db, rows } = makeDb();
-    const ctx = makeCtx("session-a", db);
+    const ctx = makeCtx(db);
     gameSlot.set(ctx, playingState());
     await saveGame.execute({}, ctx); // autosave
     gameSlot.update(ctx, (game) => {

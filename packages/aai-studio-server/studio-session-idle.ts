@@ -12,8 +12,18 @@ import type { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";
 
-/** How often the idle sweep runs; the window itself is `idleMs`. */
-const SWEEP_INTERVAL_MS = 60_000;
+/**
+ * How often the idle sweep runs; the window itself is `idleMs`.
+ *
+ * Exported because the boundary tests have to advance fake timers by exactly
+ * one sweep and place an entry's `lastUsed` relative to it. They used to
+ * hand-copy the number, which is the shape of test that stops testing its own
+ * boundary in silence: halve this and `advanceTimersByTime(60_000)` fires TWO
+ * sweeps at ages the helper never intended, while
+ * "leaves a sandbox idle for exactly the window" — the one assertion pinning
+ * the strict inequality on line 111 — keeps passing without exercising it.
+ */
+export const SWEEP_INTERVAL_MS = 60_000;
 
 type SessionMap = ReturnType<typeof createOwnedMap<string, SessionEntry>>;
 

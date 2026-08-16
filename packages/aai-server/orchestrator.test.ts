@@ -235,16 +235,16 @@ test("agent favicon serves a custom client's stored favicon", async () => {
 test("agent favicon falls back to the default client's icon", async () => {
   const { fetch } = await createTestOrchestrator();
   await deployAgent(fetch);
+  // The fallback reads aai-ui's built default client off disk — the same hard
+  // precondition the agent-page specs above assert on. ASSERTED, never branched
+  // on: an `if (existsSync(…)) … else expect(404)` moves every run onto the
+  // opposite branch, silently, the day an aai-ui build change stops emitting
+  // the icon, and the two halves of this file then disagreed about whether the
+  // build is a given.
+  expect(existsSync(defaultClientFavicon)).toBe(true);
+
   const res = await fetch("/my-agent/favicon.ico");
-  // The fallback reads aai-ui's built default client off disk (same
-  // precondition handleAgentPage has), so the icon only exists once that
-  // build has run — either way the route must answer, never 500.
-  if (existsSync(defaultClientFavicon)) {
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toBe("image/x-icon");
-    const body = Buffer.from(await res.arrayBuffer());
-    expect(body).toEqual(await readFile(defaultClientFavicon));
-  } else {
-    expect(res.status).toBe(404);
-  }
+  expect(res.status).toBe(200);
+  expect(res.headers.get("Content-Type")).toBe("image/x-icon");
+  expect(Buffer.from(await res.arrayBuffer())).toEqual(await readFile(defaultClientFavicon));
 });

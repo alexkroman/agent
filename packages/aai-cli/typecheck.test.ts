@@ -4,23 +4,11 @@
 // declared a type discipline). Failures carry tsc's diagnostics — the
 // message the studio's coding agent acts on.
 
-import { symlink, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { withTempDir } from "./_test-utils.ts";
+import { linkRootNodeModules, withTempDir } from "./_test-utils.ts";
 import { typecheckProject } from "./typecheck.ts";
-
-/**
- * TypeScript resolves from the project like any dep — link the repo root's
- * node_modules (where pnpm hoists the workspace's TypeScript); this
- * package's own node_modules doesn't carry it.
- */
-async function linkNodeModules(dir: string): Promise<void> {
-  await symlink(
-    path.resolve(import.meta.dirname, "../../node_modules"),
-    path.join(dir, "node_modules"),
-  );
-}
 
 const TSCONFIG = JSON.stringify({
   compilerOptions: { strict: true, noEmit: true, skipLibCheck: true, types: [] },
@@ -36,7 +24,7 @@ describe("typecheckProject", () => {
 
   test("passes a well-typed project", { timeout: 60_000 }, async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkRootNodeModules(dir);
       await writeFile(path.join(dir, "tsconfig.json"), TSCONFIG);
       await writeFile(path.join(dir, "agent.ts"), "export const n: number = 1;\n");
       await expect(typecheckProject(dir)).resolves.toEqual({ ok: true, skipped: false });
@@ -45,7 +33,7 @@ describe("typecheckProject", () => {
 
   test("fails with tsc diagnostics on a type error", { timeout: 60_000 }, async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkRootNodeModules(dir);
       await writeFile(path.join(dir, "tsconfig.json"), TSCONFIG);
       await writeFile(path.join(dir, "agent.ts"), `export const n: number = "nope";\n`);
       const result = await typecheckProject(dir);

@@ -79,6 +79,9 @@ const BUNDLES = [
   },
 ];
 
+/** Measured: 3 (`aai`, `aai-ui`, `aai-cli`). See the floor's note in `main`. */
+const MIN_PUBLISHABLE_PACKAGES = 3;
+
 function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -282,11 +285,28 @@ function main() {
     return;
   }
 
+  // FLOOR the scan. `_fs.mjs` documents that the caller is expected to ("an
+  // empty list means the scan stopped matching, never that the repo publishes
+  // nothing") and `api-report.mjs` does; this caller did not, so a rename under
+  // `packages/` produced a report with zero packages, a budget comparison over
+  // nothing, and "no regressions ✓" at exit 0 — verified twice, once by
+  // hand-building a degenerate report and running it through
+  // `artifact-size-budget.mjs`. Three today, and the number is stable: it moves
+  // only when this repo starts or stops publishing something.
+  const packages = publishablePackages(ROOT);
+  if (packages.length < MIN_PUBLISHABLE_PACKAGES) {
+    throw new Error(
+      `artifact-size-report: found ${packages.length} publishable package(s), below the ` +
+        `floor of ${MIN_PUBLISHABLE_PACKAGES}. The scan has stopped matching — a budget ` +
+        "report over an empty package list compares nothing and passes.",
+    );
+  }
+
   const report = {
     kind: REPORT_KIND,
     schemaVersion: REPORT_SCHEMA_VERSION,
     bundles: BUNDLES.map(measureBundle),
-    packages: publishablePackages(ROOT).map(measurePackage),
+    packages: packages.map(measurePackage),
   };
 
   let baselineReport;

@@ -96,9 +96,10 @@ describe("guest workspace/deploy (Publish = aai deploy in the sandbox)", () => {
   let serverUrl: string;
 
   beforeAll(async () => {
-    // A real listening platform: the guest's CLI dials it over HTTP exactly
-    // as a laptop would. `inspect` is injected (the real default would spawn
-    // a Modal sandbox to read the worker's self-description).
+    // A real listening platform: the guest's CLI dials it over HTTP exactly as
+    // a laptop would, through the standard `POST /deploy` route. Nothing is
+    // injected past the slot cache and the store — the `inspect` hook this
+    // comment used to describe no longer exists.
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
@@ -111,8 +112,14 @@ describe("guest workspace/deploy (Publish = aai deploy in the sandbox)", () => {
     serverUrl = `http://127.0.0.1:${port}`;
   });
 
-  afterAll(() => {
-    server.close();
+  afterAll(async () => {
+    // AWAITED: `close()` returns before the listening socket is released, so
+    // an un-awaited teardown leaks a bound port past the end of the file —
+    // which on a runner with a small ephemeral range is the next suite's
+    // EADDRINUSE, reported against the wrong test.
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
   });
 
   async function deployInGuest(files: Record<string, string>): Promise<DeployResult> {

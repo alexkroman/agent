@@ -22,11 +22,9 @@ import { activeAssistant, FLIGHTS, tripSlot, tripView } from "./shared.ts";
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
 
-/** Each context is one call. `createToolContext` mints a distinct session id
- *  per call, which is what the isolation test below rests on. */
-function makeCtx(sessionId?: string) {
-  return createToolContext(sessionId ? { sessionId } : {});
-}
+/** Each context owns its OWN slot store, which is what the isolation test
+ *  below rests on. */
+const makeCtx = (): ToolContext => createToolContext();
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup
  *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
@@ -216,9 +214,14 @@ describe("sensitive tools stage rather than act", () => {
     expect(staged.awaitingConfirmation).toBe(true);
   });
 
-  test("two calls never share a stack, a ticket or an itinerary", async () => {
-    const first = makeCtx("call-a");
-    const second = makeCtx("call-b");
+  test("two independent contexts never share a stack, a ticket or an itinerary", async () => {
+    // What this really checks: the state lives in the SLOT and not in a
+    // module-level variable. `createToolContext()` hands each call its own
+    // detached slot store, so the isolation is per CONTEXT — two distinct
+    // session ids would prove nothing extra, and `sessionSlot` could stop
+    // keying by session with this still passing.
+    const first = makeCtx();
+    const second = makeCtx();
 
     await run("to_hotel_assistant", { request: "a room" }, first);
     await run("book_hotel", { hotelId: "H3", nights: 1 }, first);

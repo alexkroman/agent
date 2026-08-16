@@ -1,10 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Session-open helper shared by the AssemblyAI TTS adapter specs. Separate
-// from _assemblyai-fake-ws-test-utils.ts because this module imports the
+// from _fake-ws-test-utils.ts because this module imports the
 // adapter (which imports "ws"), and the mock factory must not.
 
 import type { AssemblyAITtsOptions } from "../../../sdk/providers/tts/assemblyai.ts";
-import { FakeWebSocket } from "./_assemblyai-fake-ws-test-utils.ts";
+import { flush } from "../../_test-utils.ts";
+import { FakeWebSocket } from "./_fake-ws-test-utils.ts";
 import { type AssemblyAITtsSession, openAssemblyAITts } from "./assemblyai.ts";
 
 export async function openSession(
@@ -22,7 +23,7 @@ export async function openSession(
     apiKey,
     signal: controller.signal,
   }) as Promise<AssemblyAITtsSession>;
-  await Promise.resolve(); // let the queued "open" microtask run
+  await flush(); // let the queued "open" microtask run
   const session = await openPromise;
   const ws = FakeWebSocket.instances.at(-1);
   if (!ws) throw new Error("no WebSocket was constructed");

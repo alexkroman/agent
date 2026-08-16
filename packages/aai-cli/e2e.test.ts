@@ -17,17 +17,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { sleep } from "@alexkroman1/aai/internal";
 import { errorDetail } from "@alexkroman1/aai/utils";
 import { ofetch } from "ofetch";
-import type { Browser } from "playwright";
+import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { hasPlaywrightBrowser, setupEventInjector } from "./_e2e-browser-test-utils.ts";
 import {
   aai,
   aaiEnv,
   buildCli,
   detachedCli,
-  dir,
   installDeps,
   isRegistryProxyFailure,
   startRegistry,
@@ -36,17 +35,6 @@ import {
 } from "./_e2e-test-utils.ts";
 import { startSupervisedDevServer } from "./_fault-mode.ts";
 import type { MockRegistry } from "./_mock-registry.ts";
-
-const { chromium } = await import("playwright");
-
-/** Check if Playwright browsers are installed (chromium). */
-function hasPlaywrightBrowser(): boolean {
-  try {
-    return fs.existsSync(chromium.executablePath());
-  } catch {
-    return false;
-  }
-}
 
 // Representative subset: minimal baseline, external tools + custom UI, and
 // durable workflows. This tier only builds these end-to-end. Config-level
@@ -303,90 +291,7 @@ describe("bundled templates", () => {
 });
 
 // --- Browser tests (Playwright) ---
-
-/** Set up a page with a WebSocket capture hook and event injector. */
-async function setupEventInjector(browser: Browser, port: number) {
-  const page = await browser.newPage();
-
-  await page.addInitScript(() => {
-    const OrigWS = globalThis.WebSocket;
-    // @ts-expect-error -- overriding native class for test
-    globalThis.WebSocket = class extends OrigWS {
-      constructor(url: string | URL, protocols?: string | string[]) {
-        super(url, protocols);
-        (globalThis as Record<string, unknown>).__aai_test_ws = this;
-      }
-    };
-  });
-
-  await page.goto(`http://localhost:${port}`);
-
-  const clientFrames: string[] = [];
-  const wsConnected = new Promise<void>((resolve) => {
-    page.on("websocket", (ws) => {
-      ws.on("framesent", (frame) => {
-        if (typeof frame.payload === "string") clientFrames.push(frame.payload);
-      });
-      resolve();
-    });
-  });
-
-  await page.getByRole("button", { name: "Start" }).click();
-  await wsConnected;
-
-  // Wait for the WebSocket reference to be available
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    const ready = await page.evaluate(() =>
-      Boolean((globalThis as Record<string, unknown>).__aai_test_ws),
-    );
-    if (ready) break;
-    await sleep(50);
-  }
-  // Wait for the session to settle after the config message. In headless
-  // Chromium, initAudioCapture fails (no microphone), which sets state to
-  // "error" asynchronously. If we inject events before that completes, the
-  // audio error can overwrite test-driven state transitions.
-  await page.locator('[data-state="error"]').waitFor({ timeout: 10_000 });
-
-  /**
-   * Inject a server->client event via the captured WebSocket.
-   *
-   * `meta` is STAMPED here rather than written into the fixtures, because that
-   * is where it comes from in production: the server mints an event id when it
-   * writes the event (`evt_` + a ULID) and the client only validates the
-   * prefix. Freezing forty invented ids into six JSON files would read as data
-   * the assertions care about, and none of them do — while a fixture that
-   * omits `meta` is rejected by `ServerMessageSchema` before any handler runs,
-   * which is the shape of the failure this replaced.
-   */
-  let injected = 0;
-  const inject = (msg: Record<string, unknown>) =>
-    page.evaluate(
-      (json) => {
-        const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
-        ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
-      },
-      { meta: { id: `evt_e2e${++injected}`, at: Date.now() }, ...msg },
-    );
-
-  /** Replay a fixture file (from aai-ui/fixtures/). */
-  const replayFixture = async (fixtureName: string) => {
-    const fixturePath = path.resolve(dir, "../aai-ui/fixtures", fixtureName);
-    const messages = JSON.parse(fs.readFileSync(fixturePath, "utf-8")) as Record<string, unknown>[];
-    for (const msg of messages) {
-      // Skip the handshake frame: the test server already sent one on connect,
-      // and re-injecting one re-runs initAudioCapture, whose async failure
-      // (headless Chromium has no microphone) races later fixture events and
-      // can overwrite state they set — e.g. the error-recovery banner.
-      if (msg.type === "session.configured") continue;
-      await inject(msg);
-      await sleep(50);
-    }
-  };
-
-  return { page, inject, replayFixture, clientFrames };
-}
+// Page/WebSocket scaffolding lives in _e2e-browser-test-utils.ts.
 
 describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   let browser: Browser;
@@ -629,10 +534,19 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     await replayFixture("greeting-session.json");
     await page.getByText("Hello! How can I help you today?").waitFor();
 
-    // Verify a Stop or Resume button exists — on CI the WebSocket may
-    // already be closed so the initial state is non-deterministic.
+    // The initial label is non-deterministic — on CI the WebSocket may already
+    // be closed — so the assertion is the TOGGLE rather than a fixed name:
+    // whichever it starts on, one click must land it on the other. Waiting for
+    // the button to exist proved nothing about the toggle this test is named
+    // for, and passed with `Controls`' onClick removed entirely.
     const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
     await toggleBtn.waitFor({ timeout: 30_000 });
+    const before = ((await toggleBtn.textContent()) ?? "").trim();
+    expect(["Stop", "Resume"]).toContain(before);
+
+    await toggleBtn.click();
+    const after = before === "Stop" ? "Resume" : "Stop";
+    await page.getByRole("button", { name: after, exact: true }).waitFor({ timeout: 30_000 });
 
     await page.close();
   });

@@ -7,6 +7,7 @@
  * audio module is mocked so tests control exactly when each init resolves.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { tick } from "./_react-test-utils.ts";
 import {
   lastSocket,
   type MockWebSocket,
@@ -155,7 +156,7 @@ describe("initAudioCapture races", () => {
 
     // The stale greeting drain resolving late must not flip state back.
     greetingDrain.resolve();
-    await new Promise<void>((r) => setTimeout(r, 0));
+    await tick();
     expect(core.getSnapshot().state).toBe("thinking");
   });
 });

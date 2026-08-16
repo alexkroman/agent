@@ -14,14 +14,13 @@
 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { requestPath } from "../sdk/request-url.ts";
 import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
+import { silentLogger } from "./_test-utils.ts";
 import { createWorkflowApi } from "./workflow-api.ts";
 import { parseRange } from "./workflow-api-uploads.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
-
-const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 /** An engine that answers nothing: these routes must not touch it. */
 const engine = () => ({
@@ -41,7 +40,10 @@ async function serve(opts: { uploads?: UploadStore | undefined } = {}): Promise<
   // for an explicit `undefined` too, which is exactly the case the "no store"
   // spec below needs to reach.
   const uploads = "uploads" in opts ? opts.uploads : memoryStore();
-  const api = createWorkflowApi({ engine, uploads, logger });
+  // The shared no-op logger, not a module-level bag of `vi.fn()`s: nothing
+  // here asserts on log output, and a spy singleton is what lets a later
+  // `toHaveBeenCalled` pass on an earlier test's call.
+  const api = createWorkflowApi({ engine, uploads, logger: silentLogger });
   const server = http.createServer((req, res) => {
     const url = requestPath(req.url);
     if (api(req, res, url, req.method ?? "GET")) return;

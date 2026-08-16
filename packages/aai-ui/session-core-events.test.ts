@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installAudioMocks } from "./_react-test-utils.ts";
+import { findWorkletNode, installAudioMocks } from "./_react-test-utils.ts";
 import {
   lastSocket,
   type MockWebSocket,
@@ -394,16 +394,39 @@ describe("session-core server events", () => {
       expect(core.getSnapshot().state).not.toBe("speaking");
     });
 
-    it("caps the pre-init buffer instead of growing without bound", () => {
+    it("caps the pre-init buffer, keeping the OLDEST chunks and dropping the overflow", async () => {
       // Audio arrives before the worklet is up (mic permission still
       // pending). The buffer is a bounded cushion, not a queue.
+      //
+      // This used to assert only `state === "speaking"` and `error === null`,
+      // with a comment conceding that "nothing observable grows past the cap" —
+      // and both held with the cap deleted, because the overflow path writes no
+      // error and leaves the state alone. What IS observable is the drain: the
+      // buffered chunks reach the playback worklet as `write` messages once it
+      // comes up, so the retained set can be read back and named.
       const socket = connect();
-      for (let i = 0; i < MAX_PREINIT_AUDIO_CHUNKS + 25; i += 1) {
-        socket.simulateMessage(chunk());
+      const OVERFLOW = 25;
+      // Distinguishable chunks, so this can assert WHICH ones survived rather
+      // than only how many — the cap keeps the first N and drops what follows,
+      // which a length check alone cannot tell from the opposite policy.
+      for (let i = 0; i < MAX_PREINIT_AUDIO_CHUNKS + OVERFLOW; i += 1) {
+        socket.simulateMessage(new Uint8Array([i & 0xff, (i >> 8) & 0xff]).buffer);
       }
       expect(core.getSnapshot().state).toBe("speaking");
-      // Nothing observable grows past the cap: the session stays healthy and
-      // never errors on the overflow.
+
+      await vi.waitFor(() => {
+        expect(audio.workletNodes().some((n) => n.name === "playback-processor")).toBe(true);
+      });
+      const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+      const written = playNode.port.posted
+        .filter(
+          (p): p is { event: "write"; buffer: Uint8Array } =>
+            (p as { event?: string }).event === "write",
+        )
+        .map((w) => (w.buffer[0] as number) | ((w.buffer[1] as number) << 8));
+
+      expect(written).toEqual(Array.from({ length: MAX_PREINIT_AUDIO_CHUNKS }, (_, i) => i));
+      // …and the overflow is dropped silently: a bounded cushion, not an error.
       expect(core.getSnapshot().error).toBeNull();
     });
   });

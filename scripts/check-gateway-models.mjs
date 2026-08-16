@@ -29,13 +29,32 @@ const fresh = execFileSync(process.execPath, [GENERATOR.pathname], { encoding: "
 const committed = readFileSync(TARGET, "utf-8");
 
 /**
+ * The floor under both parses. ~50 models are advertised today.
+ *
+ * This gate had NO floor, and it is the one where that is worst: its whole
+ * success line is a pair of counts, so a parse that stopped matching drops the
+ * committed AND the generated map to zero, the diff between two empty maps is
+ * empty, and it prints `catalog current — 0 advertised, 0 usable ✓`. The
+ * regression it exists to catch is a model silently removed from the gateway,
+ * which its own closing line says "reaches users as a retried 500, not a clear
+ * error" — so a blind pass here is indistinguishable from the healthiest
+ * possible catalog.
+ */
+const MIN_MODELS = 15;
+
+/**
  * Compare the model DATA, not the file bytes. The committed copy is
  * biome-formatted and the generator's output is not, so a byte comparison
  * reports a difference on every run and teaches everyone to ignore it.
+ *
+ * `(\{(?:[^{}]|\{[^{}]*\})*\})` and not `\{[^}]*\}`: the flat class cannot
+ * cross a NESTED `}`, so one entry gaining a nested object would silently drop
+ * every entry after it on that line — and, since both sides are parsed the same
+ * way, would drop both maps together rather than reporting a diff.
  */
 const entries = (text) =>
   new Map(
-    [...text.matchAll(/^\s*"([^"]+)": (\{[^}]*\}),$/gm)].map(([, id, info]) => [
+    [...text.matchAll(/^\s*"([^"]+)": (\{(?:[^{}]|\{[^{}]*\})*\}),$/gm)].map(([, id, info]) => [
       id,
       info
         // Biome rewrites `200000` as `200_000` and adds a trailing comma, so
@@ -46,8 +65,22 @@ const entries = (text) =>
         .replace(/\s+/g, " "),
     ]),
   );
-const before = entries(committed);
-const after = entries(fresh);
+
+/** Fail rather than diff two maps that are empty for the same reason. */
+function floored(map, what) {
+  if (map.size >= MIN_MODELS) return map;
+  console.error(
+    `\ncheck-gateway-models: parsed ${map.size} model(s) from ${what}, ` +
+      `below the floor of ${MIN_MODELS}.\n\n` +
+      "Both sides go through the same parser, so a parser that stopped matching\n" +
+      "empties both and prints `catalog current — 0 advertised, 0 usable ✓`.\n" +
+      "Check the entry regex against the file's current formatting.\n",
+  );
+  process.exit(1);
+}
+
+const before = floored(entries(committed), "the committed catalog");
+const after = floored(entries(fresh), "the freshly generated catalog");
 
 const changes = [];
 for (const [id, info] of after) {

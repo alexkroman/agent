@@ -1,6 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Shared fetch-mocking helpers for the studio client's test suites.
+// Shared helpers for the studio client's test suites: fetch mocking, the
+// TanStack wrapper every card is rendered under, and the DOM seams that keep
+// `as HTML*Element` out of the assertions.
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { type RenderResult, render, screen } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
 import { vi } from "vitest";
 
 /**
@@ -61,22 +66,123 @@ export function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/** A `vi.fn()` standing in for `fetch`, with `fetch`'s own parameter types. */
+export type FetchMock = ReturnType<typeof vi.fn<typeof fetch>>;
+
 /**
  * Stub the global `fetch`. Pass a single factory to answer every request, or
  * a route table keyed `"METHOD /path"` (or just `"/path"` for any method).
  * Factories, not Responses: a Response body is single-use, so each call must
  * mint a fresh one.
  */
-export function stubFetch(routes: (() => Response) | Record<string, () => Response>) {
-  const fetchMock = vi
-    .fn()
-    .mockImplementation((input: RequestInfo | URL, init?: RequestInit | undefined) => {
-      if (typeof routes === "function") return Promise.resolve(routes());
-      const path = new URL(String(input), "http://studio.test").pathname;
-      const make = routes[`${init?.method ?? "GET"} ${path}`] ?? routes[path];
-      if (!make) throw new Error(`Unexpected fetch: ${init?.method ?? "GET"} ${path}`);
-      return Promise.resolve(make());
-    });
+export function stubFetch(routes: (() => Response) | Record<string, () => Response>): FetchMock {
+  // Typed as `fetch` itself, exactly as `fakeFetch` above is: untyped, every
+  // caller either cast `mock.calls[n]` back to `[string, RequestInit]` or read
+  // an unchecked `any` off it — and the second is the worse half, since a
+  // renamed field on an assertion nothing type-checks stays green.
+  const fetchMock = vi.fn<typeof fetch>((input, init) => {
+    if (typeof routes === "function") return Promise.resolve(routes());
+    const path = new URL(String(input), "http://studio.test").pathname;
+    const make = routes[`${init?.method ?? "GET"} ${path}`] ?? routes[path];
+    if (!make) throw new Error(`Unexpected fetch: ${init?.method ?? "GET"} ${path}`);
+    return Promise.resolve(make());
+  });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
+}
+
+/**
+ * One recorded request, read the way the assertions want it: the URL as a
+ * string, and the method defaulted the way `fetch` defaults it. Throws rather
+ * than returning `undefined` for a call that was never made, so a test that
+ * asserts on request #1 fails saying so instead of on a property of nothing.
+ */
+export function fetchCall(
+  mock: FetchMock,
+  index = 0,
+): { url: string; method: string; init: RequestInit } {
+  const call = mock.mock.calls[index];
+  if (!call) throw new Error(`No fetch call #${index} — ${mock.mock.calls.length} were made`);
+  const [input, init] = call;
+  return { url: String(input), method: init?.method ?? "GET", init: init ?? {} };
+}
+
+/** Every recorded request as `"METHOD /url"`, in order. */
+export function fetchLines(mock: FetchMock): string[] {
+  return mock.mock.calls.map((_call, index) => {
+    const { url, method } = fetchCall(mock, index);
+    return `${method} ${url}`;
+  });
+}
+
+/**
+ * Render `ui` under its own `QueryClient`, and hand back the client so a test
+ * can spy on it.
+ *
+ * One client per render (never a module-level one) so no test inherits
+ * another's cache, and `retry: false` so a test asserting an error state gets
+ * it on the first answer rather than waiting out three backoffs. Five suites
+ * had rebuilt this same pair by hand.
+ */
+export function renderWithClient(ui: ReactNode): RenderResult & { client: QueryClient } {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return { ...render(createElement(QueryClientProvider, { client }, ui)), client };
+}
+
+/**
+ * The one button with this accessible name, typed — so `.disabled` reads off
+ * it without an `as HTMLButtonElement` at each assertion. The `instanceof` is
+ * the check that cast skipped: a role that resolved to an `<a>` or a `<div
+ * role="button">` has no `disabled`, and `undefined === true` is a quiet
+ * false rather than a failure that names the reason.
+ */
+export function button(name: string | RegExp): HTMLButtonElement {
+  const found = screen.getByRole("button", { name });
+  if (!(found instanceof HTMLButtonElement)) {
+    throw new Error(`Expected a <button> named ${String(name)}, got <${found.localName}>`);
+  }
+  return found;
+}
+
+/**
+ * The `<input>` with this accessible name, typed so `.value` / `.checked`
+ * read off it without a cast. `by` picks how it is named — a labelled field
+ * ("label", the default) or a role's accessible name, which is how the
+ * segmented control's radios are found.
+ */
+export function input(name: string, by: "label" | "radio" = "label"): HTMLInputElement {
+  const found = by === "label" ? screen.getByLabelText(name) : screen.getByRole("radio", { name });
+  if (!(found instanceof HTMLInputElement)) {
+    throw new Error(`Expected an <input> named ${name}, got <${found.localName}>`);
+  }
+  return found;
+}
+
+/** The textarea carrying this placeholder, typed so `.value` needs no cast. */
+export function textarea(placeholder: string | RegExp): HTMLTextAreaElement {
+  const found = screen.getByPlaceholderText(placeholder);
+  if (!(found instanceof HTMLTextAreaElement)) {
+    throw new Error(`Expected a <textarea> placeholdered ${String(placeholder)}`);
+  }
+  return found;
+}
+
+/**
+ * jsdom has no `ResizeObserver`, and `use-stick-to-bottom` — mounted with the
+ * chat transcript — constructs one. Layout never changes here, so every method
+ * is a no-op; what matters is that the constructor exists.
+ */
+export function installResizeObserver(): void {
+  class ResizeObserverStub {
+    observe(): void {
+      // jsdom stub — layout never changes.
+    }
+    unobserve(): void {
+      // jsdom stub.
+    }
+    disconnect(): void {
+      // jsdom stub.
+    }
+  }
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
 }

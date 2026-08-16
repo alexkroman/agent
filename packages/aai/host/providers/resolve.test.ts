@@ -23,7 +23,13 @@ import { OPENROUTER_KIND } from "../../sdk/providers/llm/openrouter.ts";
 import { XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import { ASSEMBLYAI_S2S_KIND } from "../../sdk/providers/s2s/assemblyai.ts";
 import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
-import type { LlmProvider, SttOpener } from "../../sdk/providers.ts";
+import type {
+  LlmProvider,
+  SttOpener,
+  SttSession,
+  TtsSession,
+  Unsubscribe,
+} from "../../sdk/providers.ts";
 import { PROVIDER_CREDENTIAL_ENVS } from "./host-env.ts";
 import {
   ALL_PROVIDER_ENV_VARS,
@@ -41,6 +47,14 @@ type ProviderCase = {
   provider: LlmProvider;
   envVar: string;
   label: string;
+  /**
+   * The AI SDK's own provider id on the resolved model — the observable
+   * handle on WHICH vendor client (and, where it matters, which of that
+   * vendor's two APIs) the registry entry dispatched to.
+   */
+  sdkProvider: string;
+  /** The descriptor's model id, as it must arrive at the client. */
+  modelId: string;
 };
 
 const cases: ProviderCase[] = [
@@ -48,62 +62,122 @@ const cases: ProviderCase[] = [
     provider: { kind: ANTHROPIC_KIND, options: { model: "claude-haiku-4-5" } },
     envVar: "ANTHROPIC_API_KEY",
     label: "Anthropic",
+    sdkProvider: "anthropic.messages",
+    modelId: "claude-haiku-4-5",
   },
   {
     provider: { kind: OPENAI_KIND, options: { model: "gpt-4o" } },
     envVar: "OPENAI_API_KEY",
     label: "OpenAI",
+    sdkProvider: "openai.responses",
+    modelId: "gpt-4o",
   },
   {
     provider: { kind: GOOGLE_KIND, options: { model: "gemini-2.0-flash" } },
     envVar: "GOOGLE_GENERATIVE_AI_API_KEY",
     label: "Google",
+    sdkProvider: "google.generative-ai",
+    modelId: "gemini-2.0-flash",
   },
   {
     provider: { kind: MISTRAL_KIND, options: { model: "mistral-large-latest" } },
     envVar: "MISTRAL_API_KEY",
     label: "Mistral",
+    sdkProvider: "mistral.chat",
+    modelId: "mistral-large-latest",
   },
   {
     provider: { kind: XAI_KIND, options: { model: "grok-2-1212" } },
     envVar: "XAI_API_KEY",
     label: "xAI",
+    sdkProvider: "xai.responses",
+    modelId: "grok-2-1212",
   },
   {
     provider: { kind: GROQ_KIND, options: { model: "llama-3.3-70b-versatile" } },
     envVar: "GROQ_API_KEY",
     label: "Groq",
+    sdkProvider: "groq.chat",
+    modelId: "llama-3.3-70b-versatile",
   },
   {
     provider: { kind: ASSEMBLYAI_LLM_KIND, options: { model: "claude-sonnet-4-6" } },
     envVar: "ASSEMBLYAI_API_KEY",
     label: "AssemblyAI",
+    sdkProvider: "assemblyai.chat",
+    modelId: "claude-sonnet-4-6",
   },
   {
     provider: { kind: OPENROUTER_KIND, options: { model: "meta-llama/llama-3.3-70b-instruct" } },
     envVar: "OPENROUTER_API_KEY",
     label: "OpenRouter",
+    sdkProvider: "openrouter.chat",
+    modelId: "meta-llama/llama-3.3-70b-instruct",
   },
   {
     provider: { kind: GATEWAY_KIND, options: { model: "zai/glm-4.6" } },
     envVar: "AI_GATEWAY_API_KEY",
     label: "Vercel AI Gateway",
+    sdkProvider: "gateway",
+    modelId: "zai/glm-4.6",
   },
 ];
+
+/**
+ * Minimal REAL provider sessions for the registry fakes below.
+ *
+ * These four call sites used to launder `{}` and a bare string through the
+ * `never` type — the dominant type-laundering idiom in this repo's tests, and
+ * strictly worse than the casts the escape-hatch ratchet already counts:
+ * `never` is assignable to every parameter position, AND it stops reporting
+ * when a field is ADDED to the interface it stands in for. That is what a
+ * shared, typed builder prevents — adding a member to `SttSession` is a
+ * compile error HERE rather than a fake that silently stops resembling the
+ * thing it doubles.
+ */
+const unsubscribe: Unsubscribe = () => undefined;
+
+function stubSttSession(): SttSession {
+  return {
+    sendAudio: () => undefined,
+    on: () => unsubscribe,
+    close: async () => undefined,
+  };
+}
+
+function stubTtsSession(): TtsSession {
+  return {
+    sendText: () => undefined,
+    flush: () => undefined,
+    cancel: () => undefined,
+    on: () => unsubscribe,
+    close: async () => undefined,
+  };
+}
 
 describe("resolveLlm", () => {
   for (const tc of cases) {
     describe(tc.label, () => {
-      it("returns a LanguageModel when the API key is present", () => {
+      it("dispatches to this vendor's client, carrying the descriptor's model id", () => {
         const model = resolveLlm(tc.provider, { [tc.envVar]: "fake-key" });
-        // `specificationVersion` is the cheapest stable handle on a Vercel AI SDK
-        // LanguageModel — confirms resolve dispatched to the right factory.
-        expect(model).toBeTypeOf("object");
-        expect(model).toHaveProperty("specificationVersion");
+        // This used to assert only `toHaveProperty("specificationVersion")`,
+        // which every AI SDK LanguageModel has — so swapping two registry
+        // `create` entries, or dropping the `(model(d))` application so the
+        // descriptor's model id never reached the client, passed for six of
+        // the nine kinds. `provider` names the client that was built and
+        // `modelId` proves the id got there.
+        expect(model).toMatchObject({
+          provider: tc.sdkProvider,
+          modelId: tc.modelId,
+          specificationVersion: expect.any(String),
+        });
       });
 
       it("throws a friendly error when the API key is missing", () => {
-        vi.stubEnv(tc.envVar, undefined);
+        // No `vi.stubEnv` here on purpose: `resolveApiKey` reads the env
+        // record it is HANDED and never `process.env`, so scrubbing the shell
+        // var proved nothing and read as if a fallback existed.
+        // `host-env.test.ts` owns that property centrally.
         expect(() => resolveLlm(tc.provider, {})).toThrowError(
           new RegExp(`${tc.label} LLM: missing API key\\. Set ${tc.envVar} in the agent env\\.`),
         );
@@ -434,7 +508,7 @@ describe("ALL_PROVIDER_ENV_VARS", () => {
     expect(ALL_PROVIDER_ENV_VARS).not.toContain("LATE_STT_KEY");
     const unregister = registerSttKind("late-stt", {
       envVar: "LATE_STT_KEY",
-      open: () => ({ name: "late", open: async () => ({}) as never }),
+      open: () => ({ name: "late", open: async () => stubSttSession() }),
     });
     try {
       expect(ALL_PROVIDER_ENV_VARS).toContain("LATE_STT_KEY");
@@ -449,7 +523,7 @@ describe("ALL_PROVIDER_ENV_VARS", () => {
 
 describe("registerSttKind / registerTtsKind / registerLlmKind", () => {
   it("makes a fake resolvable through the normal descriptor path, env var included", () => {
-    const opener: SttOpener = { name: "spec", open: async () => ({}) as never };
+    const opener: SttOpener = { name: "spec", open: async () => stubSttSession() };
     const unregister = registerSttKind("spec-stt", { envVar: "SPEC_STT_KEY", open: () => opener });
     try {
       const resolved = resolveStt({ kind: "spec-stt", options: {} });
@@ -465,7 +539,7 @@ describe("registerSttKind / registerTtsKind / registerLlmKind", () => {
   it("unregister restores the registry, so kinds do not leak between specs", () => {
     const unregister = registerTtsKind("spec-tts", {
       envVar: "SPEC_TTS_KEY",
-      open: () => ({ name: "spec", open: async () => ({}) as never }),
+      open: () => ({ name: "spec", open: async () => stubTtsSession() }),
     });
     expect(() => resolveTts({ kind: "spec-tts", options: {} })).not.toThrow();
     unregister();
@@ -478,7 +552,7 @@ describe("registerSttKind / registerTtsKind / registerLlmKind", () => {
     const unregister = registerLlmKind(ANTHROPIC_KIND, {
       envVar: "SHADOW_KEY",
       label: "Shadow",
-      create: () => "shadow-model" as never,
+      create: () => "shadow-model",
     });
     expect(resolveLlm({ kind: ANTHROPIC_KIND, options: { model: "m" } }, { SHADOW_KEY: "k" })).toBe(
       "shadow-model",

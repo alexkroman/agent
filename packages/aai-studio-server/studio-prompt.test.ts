@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import { afterEach, describe, expect, test } from "vitest";
+import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
 import {
   _resetStudioPromptCache,
   composeStudioPrompt,
@@ -70,9 +71,13 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("assemblyAIPipeline");
     // Real gateway ids are interpolated so the agent can't invent one
     // (a made-up id only fails at runtime, with a 400 "model not found").
-    // gpt-5.2 appears nowhere in the preamble literal, so it can only be here
-    // if the ASSEMBLYAI_GATEWAY_MODELS interpolation ran.
-    expect(prompt).toContain("gpt-5.2");
+    // Read from the roster, never a hardcoded `gpt-5.2`: that literal failed
+    // this test the day the model was retired with no defect behind it, and a
+    // STALE roster still containing it passed just as happily. The floor is
+    // what stops an EMPTY roster satisfying the filter vacuously — the
+    // assertion beside it at `ASSEMBLYAI_LLM_DEFAULT_MODEL` gets this right.
+    expect(ASSEMBLYAI_GATEWAY_MODELS.length).toBeGreaterThan(1);
+    expect(ASSEMBLYAI_GATEWAY_MODELS.filter((model) => !prompt.includes(model))).toEqual([]);
     // The default gateway model for generated pipeline agents, read from the
     // SDK constant rather than spelled out: the preamble interpolates it, so
     // changing the SDK default can no longer leave the prompt naming the old

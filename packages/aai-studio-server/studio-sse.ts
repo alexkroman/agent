@@ -150,8 +150,17 @@ export function createSharedReads(): SharedReads {
  * one), the keepalive heartbeat, and the hold-open-until-disconnect
  * lifecycle. `push` takes a producer that re-reads its row and returns the
  * frame to send — or null to end the stream (the watched thing vanished).
+ *
+ * It takes {@link SseStream} — the two methods it calls — rather than the
+ * whole `SSEStreamingApi`. A real handle is assignable to it, and the two test
+ * suites that drive this with a fake stop needing an `as unknown as` to claim
+ * they implement a class they implement two members of: a cast that also stops
+ * reporting when `writeSSE`'s own signature moves, which is the one thing a
+ * fake of it must track.
  */
-export function createSsePusher(stream: SSEStreamingApi): {
+export type SseStream = Pick<SSEStreamingApi, "writeSSE" | "onAbort">;
+
+export function createSsePusher(stream: SseStream): {
   write(event: string, data: string): Promise<void>;
   push(produce: () => Promise<{ event: string; data: string } | null>): void;
   /** Hold open until disconnect (or a null push); then run `cleanup`. */

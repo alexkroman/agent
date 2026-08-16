@@ -149,7 +149,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [aai, aai-ui, aai-cli, aai-guest, aai-server, aai-studio-server, aai-studio-client, aai-templates]
+        # Every workspace package with a `test:coverage` script. `aai-evals`
+        # was absent, so its seven unit suites and its four coverage floors
+        # were gated by nothing in CI while passing locally (`scripts/check.sh`
+        # runs `turbo run test:coverage` unfiltered) — the "green locally, red
+        # in CI" asymmetry running backwards, and fully green for a PR that
+        # breaks them. This is NOT the documented eval-tier exemption: that is
+        # scoped to `check:eval`, which is separately and deliberately absent.
+        package: [aai, aai-ui, aai-cli, aai-guest, aai-server, aai-studio-server, aai-studio-client, aai-templates, aai-evals]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -371,29 +378,50 @@ jobs:
       # container cannot drift the way a developer's long-lived stack does (see
       # `ensurePlatformTables`, which reports that drift as a sentence).
       - run: supabase start -x studio,edge-runtime,analytics,imgproxy,vector,rest,meta,inbucket
-      # `pnpm test:pg` is the SAME resolver a developer runs: it shells out to
+      # The SAME resolver a developer runs: it shells out to
       # `supabase status -o env`, exports the Supabase trio beside the database
       # URL, and sets AAI_REQUIRE_PG + AAI_REQUIRE_STACK — so a variable that
       # stops arriving is a red job rather than a green one with the only arm for
       # the platform stores silently absent. Going through it rather than
       # hand-writing the exports is the point: a second copy of this wiring in
       # YAML is the thing that rots while looking right.
-      - run: pnpm test:pg
+      #
+      # **`--require-stack` is what makes the sentence above TRUE**, and it was
+      # missing. The script exported AAI_REQUIRE_STACK only when `resolveStack()`
+      # succeeded and let every failure path continue at exit 0, so
+      # `supabase start` succeeding while `supabase status -o env` changes shape
+      # yielded a green job in which `realtime-rls.scenario.test.ts` — the only
+      # walrus/RLS leak test in the repository — never ran at all. Not
+      # `pnpm test:pg`, because the flag must not reach a developer's own
+      # invocation, where the narrow arm is a legitimate choice.
+      - run: node scripts/with-test-pg.mjs --require-stack pnpm test:scenario
       - if: always()
         run: supabase stop --no-backup
 
   # Single gate job for branch protection — add only "ci" as a required check
+  #
+  # `setup` MUST be in `needs`, and `"skipped"` MUST NOT be accepted. Both
+  # halves were missing, and together they made this gate green on a failing
+  # build: all five real jobs declare `needs: setup`, so a broken lockfile or a
+  # failing `turbo run build` fails `setup`, GitHub reports every downstream job
+  # as `skipped`, and a loop that accepts `skipped` under `if: always()` printed
+  # "All CI jobs passed" and exited 0 — on the one check protecting main.
+  #
+  # No downstream job carries an `if:` condition of any kind, so `skipped` here
+  # can only ever mean "a dependency failed". Accepting it buys nothing and
+  # costs the entire workflow. Keep it that way: a job that legitimately skips
+  # ITSELF would need its own accepted-result list, never a blanket `skipped`.
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, integration-and-scenario, platform-stack, e2e]
+    needs: [setup, lint-typecheck-and-checks, test, integration-and-scenario, platform-stack, e2e]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration-and-scenario.result }} ${{ needs.platform-stack.result }} ${{ needs.e2e.result }}"
+          results="${{ needs.setup.result }} ${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration-and-scenario.result }} ${{ needs.platform-stack.result }} ${{ needs.e2e.result }}"
           for r in $results; do
-            if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
-              echo "CI failed: one or more jobs did not succeed"
+            if [ "$r" != "success" ]; then
+              echo "CI failed: one or more jobs did not succeed ($results)"
               exit 1
             fi
           done

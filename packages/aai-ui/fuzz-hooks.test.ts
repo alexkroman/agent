@@ -67,14 +67,20 @@ function addToolCall(c: Collections, seqs: Seqs, name: string): void {
   );
 }
 
-/** Complete one pending call — often out of arrival order. */
-function completePending(c: Collections, pick: number): void {
+/**
+ * Complete one pending call — often out of arrival order. Returns the call id
+ * it settled, or `null` when there was nothing pending: `pick` indexes a
+ * state-dependent set, so the no-op is normal and is exactly why
+ * {@link Reached} floors the settles that DID happen.
+ */
+function completePending(c: Collections, pick: number): string | null {
   const pending = c.toolCalls.filter((tc) => tc.status === "pending");
   const chosen = pending[pick % pending.length];
-  if (!chosen) return;
+  if (!chosen) return null;
   c.toolCalls = c.toolCalls.map((tc) =>
     tc.callId === chosen.callId ? { ...tc, status: "done" as const, result: '{"ok":true}' } : tc,
   );
+  return chosen.callId;
 }
 
 function addEvent(c: Collections, seqs: Seqs, name: string): void {
@@ -86,6 +92,49 @@ function addEvent(c: Collections, seqs: Seqs, name: string): void {
   );
 }
 
+/**
+ * States the generator must actually reach, asserted as floors after each
+ * property.
+ *
+ * fast-check has no coverage-floor mechanism (`fc.statistics` only prints), and
+ * an all-green property proves nothing about a state the generator never
+ * entered — see "Property tests run on fast-check" in the root guide.
+ *
+ * Every assertion in this file compares a delivered set against an expected
+ * set, so a run in which nothing was ever settled, emitted or evicted compares
+ * two empty sets and passes. These floors are what separate "delivery is
+ * exactly-once" from "there was no delivery". *
+ * Each floor sits under the OBSERVED MINIMUM across the runs recorded beside
+ * it, not at a fixed fraction of the mean. These distributions have long left
+ * tails — a counter averaging 38 was measured at 3 on one run — because what a
+ * walk reaches is correlated within a run rather than independent per step, so
+ * a floor placed under the mean flakes. The job of the floor is to catch a
+ * state that is NEVER reached, not to pin how often; a state whose whole range
+ * is small therefore gets `> 0`, which is still the assertion that matters.
+ */
+type Reached = {
+  /** Tool calls the script property delivered through `useToolResult`. */
+  scriptDones: number;
+  /** Ping events delivered through `useEvent` (the name filter really matched). */
+  scriptEvents: number;
+  /** `reset` mutations that cleared a NON-empty collection. */
+  clearingResets: number;
+  /** Settles in the overflow property that found a pending call. */
+  overflowSettles: number;
+  /**
+   * …of those, ones settling a call that arrived at an EARLIER commit, so the
+   * snapshot window had slid since — the watermark cursor's actual job.
+   */
+  lateSettles: number;
+};
+const reached: Reached = {
+  scriptDones: 0,
+  scriptEvents: 0,
+  clearingResets: 0,
+  overflowSettles: 0,
+  lateSettles: 0,
+};
+
 function applyMutation(c: Collections, seqs: Seqs, m: Mutation): void {
   if (m.kind === "addToolCall") {
     addToolCall(c, seqs, m.name);
@@ -95,6 +144,7 @@ function applyMutation(c: Collections, seqs: Seqs, m: Mutation): void {
     addEvent(c, seqs, m.name);
   } else {
     // Session reset: the server `reset` frame clears both collections.
+    if (c.toolCalls.length > 0 || c.customEvents.length > 0) reached.clearingResets += 1;
     c.toolCalls = [];
     c.customEvents = [];
   }
@@ -177,7 +227,26 @@ function runScript(script: Mutation[][]): Run {
     }
     for (const ce of c.customEvents) if (ce.event === "ping") expected.events.add(ce.id);
   }
+  reached.scriptDones += fired.done.length;
+  reached.scriptEvents += fired.events.length;
   return { fired, expected };
+}
+
+/**
+ * Record what one overflow settle exercised, for {@link Reached}.
+ *
+ * Its own function rather than a branch inside `runOverflow`'s loop: that put a
+ * conditional inside a loop inside a loop and took the driver past Biome's
+ * cognitive-complexity cap, which is the right signal — the loop should read as
+ * "add a call, settle what the script names, commit".
+ */
+function noteSettle(settled: string | null, step: number): void {
+  if (settled === null) return;
+  reached.overflowSettles += 1;
+  // One call is added per step, so `tc-N` arrived at step N-1. Settling later
+  // than that is the case this property exists for: the snapshot window has
+  // slid since the call was delivered as pending.
+  if (Number(settled.slice("tc-".length)) - 1 < step) reached.lateSettles += 1;
 }
 
 /**
@@ -203,7 +272,7 @@ function runOverflow(settles: readonly { at: number; pick: number }[]): {
   const everDone = new Set<string>();
   for (let step = 0; step < OVERFLOW_STEPS; step++) {
     addToolCall(c, seqs, "alpha");
-    for (const pick of byStep.get(step) ?? []) completePending(c, pick);
+    for (const pick of byStep.get(step) ?? []) noteSettle(completePending(c, pick), step);
     act(() => core.update({ toolCalls: c.toolCalls }));
     for (const tc of c.toolCalls) if (tc.status === "done") everDone.add(tc.callId);
   }
@@ -224,6 +293,15 @@ describe("fuzz: tool-call + custom-event hook delivery", () => {
       }),
       { numRuns: 100 },
     );
+
+    // Coverage floors — see `Reached` for how these are placed. Ranges are
+    // over 17 runs. Without them the six set comparisons above are satisfied by
+    // a script that never settled a call, never emitted a ping, never reset.
+    expect(reached.scriptDones, "no tool call was ever delivered as done").toBeGreaterThan(50); // 175-264
+    expect(reached.scriptEvents, "no matching custom event was ever delivered").toBeGreaterThan(35); // 120-159
+    expect(reached.clearingResets, "no reset ever cleared a non-empty snapshot").toBeGreaterThan(
+      25,
+    ); // 93-132
   });
 
   it("overflows the cap without dropping or duplicating a delivery", () => {
@@ -249,5 +327,16 @@ describe("fuzz: tool-call + custom-event hook delivery", () => {
       // the interesting variation is which calls settle late, not how many runs.
       { numRuns: 10 },
     );
+
+    // Coverage floors — see `Reached`. `settleArb` may generate an empty list,
+    // and `pick` indexes a state-dependent set, so with no floor this property
+    // is satisfied by ten runs that settled nothing at all: `fired` and
+    // `everDone` would both be empty and the watermark cursor — the thing under
+    // test — would never be asked a question.
+    expect(reached.overflowSettles, "no call was ever settled past the cap").toBeGreaterThan(5); // 28-58
+    expect(
+      reached.lateSettles,
+      "every settle landed on the commit the call arrived on — the window never slid under one",
+    ).toBeGreaterThan(4); // 24-51
   });
 });

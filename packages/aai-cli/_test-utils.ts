@@ -12,7 +12,10 @@ export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<v
   try {
     await fn(dir);
   } finally {
-    await fs.rm(dir, { recursive: true });
+    // `force` so a cleanup ENOENT (a test that removed the dir itself) cannot
+    // replace the real assertion error with a filesystem one from the
+    // `finally`.
+    await fs.rm(dir, { recursive: true, force: true });
   }
 }
 
@@ -44,14 +47,56 @@ export function silenced<T>(fn: (dir: string) => Promise<T>) {
 }
 
 /**
+ * `err` is a filesystem EEXIST.
+ *
+ * Spelled out here rather than imported from `_utils.ts`, which has the same
+ * predicate: `_dev-server.test.ts` and `_dev-server-restart.test.ts` MOCK
+ * `./_utils.ts` with a factory that imports `_dev-server-test-utils.ts`, which
+ * imports THIS file — so importing `_utils.ts` from here closes a cycle
+ * through the mock registry, and that HANGS the run rather than failing it
+ * (see `aaiRuntimeModule`'s note on the same trap). Four lines of duplication
+ * against a hang with no error message is the right trade.
+ */
+function isEexist(err: unknown): boolean {
+  return err instanceof Error && "code" in err && typeof err.code === "string"
+    ? err.code === "EEXIST"
+    : false;
+}
+
+/**
  * Symlink this package's node_modules into a fixture project so the worker
  * wrapper's `@alexkroman1/aai/manifest` import (and any fixture import of
  * `zod`) resolves — a real project always has the SDK installed.
+ *
+ * The `"dir"` type argument is a no-op on POSIX and the only correct value on
+ * Windows, where a symlink's kind is fixed at creation. An EEXIST is ignored
+ * (a caller may link twice into the same fixture); anything else is a real
+ * failure and is rethrown, since the alternative is a module-resolution error
+ * several layers away from its cause.
  */
 export async function linkSdkNodeModules(dir: string): Promise<void> {
   await fs
-    .symlink(path.resolve(import.meta.dirname, "node_modules"), path.join(dir, "node_modules"))
-    .catch(() => undefined);
+    .symlink(
+      path.resolve(import.meta.dirname, "node_modules"),
+      path.join(dir, "node_modules"),
+      "dir",
+    )
+    .catch((err: unknown) => {
+      if (!isEexist(err)) throw err;
+    });
+}
+
+/**
+ * Symlink the REPO ROOT's node_modules instead — where pnpm hoists the
+ * workspace's TypeScript, which this package's own tree does not carry. Only
+ * the typecheck gate's fixtures need it.
+ */
+export async function linkRootNodeModules(dir: string): Promise<void> {
+  await fs.symlink(
+    path.resolve(import.meta.dirname, "../../node_modules"),
+    path.join(dir, "node_modules"),
+    "dir",
+  );
 }
 
 /** Write a map of relative path → content under `rootDir`, creating directories. */

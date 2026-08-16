@@ -4,18 +4,10 @@
 // the account's stored API key. See studio-routes.ts.
 
 import { createMemorySecretStore } from "aai-server/secret-store";
-import { createDevAuth, userApiKeySecretName } from "aai-server/supabase-auth";
+import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
-import { createTestCombined } from "./_test-combined.ts";
-
-/** A dev token the way the login screen mints it (see aai-server dev auth). */
-const token = (email: string) =>
-  `dev.${Buffer.from(JSON.stringify({ id: `dev:${email}`, email }))
-    .toString("base64url")
-    .replace(/=+$/, "")}.dev`;
-
-const withAuth = () => createTestCombined({ auth: createDevAuth() });
+import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
 
 describe("CLI device link (aai login)", () => {
   // The grammar the CLI mints: 32 random bytes, base64url (43 chars).
@@ -26,18 +18,10 @@ describe("CLI device link (aai login)", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: exchangeCode }),
     });
-  const onboard = async (fetch: TestFetch, bearer: string) => {
-    await authFetch(fetch, "/studio/account/key", {
-      method: "PUT",
-      key: bearer,
-      body: { apiKey: "users-own-key" },
-    });
-  };
-
   test("approve grants exactly one exchange for the stored key", async () => {
-    const { fetch } = await withAuth();
-    const bearer = token("a@b.c");
-    await onboard(fetch, bearer);
+    const { fetch } = await withDevAuth();
+    const bearer = devToken("a@b.c");
+    await onboardKey(fetch, bearer);
 
     // Unapproved: the CLI's poll sees pending.
     expect((await exchange(fetch)).status).toBe(404);
@@ -63,8 +47,8 @@ describe("CLI device link (aai login)", () => {
   // browser is showing.
   test("approval backfills the key→user mapping for a pre-existing account", async () => {
     const secrets = createMemorySecretStore();
-    const { fetch } = await createTestCombined({ auth: createDevAuth(), secrets });
-    const bearer = token("a@b.c");
+    const { fetch } = await withDevAuth({ secrets });
+    const bearer = devToken("a@b.c");
     // Stored the way onboarding did before it wrote the reverse mapping.
     await secrets.put(userApiKeySecretName("dev:a@b.c"), "users-own-key");
     await authFetch(fetch, "/studio/projects", { body: { name: "mine" }, key: bearer });
@@ -90,8 +74,8 @@ describe("CLI device link (aai login)", () => {
   });
 
   test("approval requires a session with a stored key", async () => {
-    const { fetch } = await withAuth();
-    const bearer = token("a@b.c");
+    const { fetch } = await withDevAuth();
+    const bearer = devToken("a@b.c");
     // No session at all (a raw API-key bearer is not a session).
     expect(
       (await authFetch(fetch, "/studio/cli-link/approve", { method: "POST", body: { code } }))
@@ -110,9 +94,9 @@ describe("CLI device link (aai login)", () => {
   });
 
   test("rejects short (guessable) codes", async () => {
-    const { fetch } = await withAuth();
-    const bearer = token("a@b.c");
-    await onboard(fetch, bearer);
+    const { fetch } = await withDevAuth();
+    const bearer = devToken("a@b.c");
+    await onboardKey(fetch, bearer);
     const res = await authFetch(fetch, "/studio/cli-link/approve", {
       method: "POST",
       key: bearer,
@@ -125,9 +109,9 @@ describe("CLI device link (aai login)", () => {
   test("an expired approval is refused and consumed", async () => {
     vi.useFakeTimers();
     try {
-      const { fetch } = await withAuth();
-      const bearer = token("a@b.c");
-      await onboard(fetch, bearer);
+      const { fetch } = await withDevAuth();
+      const bearer = devToken("a@b.c");
+      await onboardKey(fetch, bearer);
       await authFetch(fetch, "/studio/cli-link/approve", {
         method: "POST",
         key: bearer,

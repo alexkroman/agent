@@ -15,16 +15,16 @@ afterEach(() => publishStepReporter(undefined));
 describe("report", () => {
   test("hands the line to the published reporter and waits for it", async () => {
     const written: string[] = [];
-    let settled = false;
     publishStepReporter(async (line) => {
       await Promise.resolve();
       written.push(line);
-      settled = true;
     });
     await report("Transcribing 0:00–0:58.");
     // Awaited rather than fired: a step that awaits `report()` must not race
-    // the chunk it just wrote against the request reading it back.
-    expect(settled).toBe(true);
+    // the chunk it just wrote against the request reading it back. The push
+    // happens AFTER the reporter's own await, so this one assertion carries
+    // both claims — a `let settled` flag flipped in the same continuation said
+    // nothing the line below does not.
     expect(written).toEqual(["Transcribing 0:00–0:58."]);
   });
 

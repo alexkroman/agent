@@ -13,7 +13,7 @@ import { describe, expect, test } from "vitest";
 import { createOwnedMap, type OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink, SessionEvent } from "../sdk/protocol.ts";
 import { sessionSlot } from "../sdk/session-slot.ts";
-import type { AgentDef } from "../sdk/types.ts";
+import type { AgentDef, ToolContext } from "../sdk/types.ts";
 import { makeAgent } from "./_test-utils.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
@@ -61,17 +61,23 @@ function claimConnection(emitters: OwnedMap<string, SessionEmitter>, events: Ses
 function parkedToolRuntime(agentOverrides: Partial<AgentDef>) {
   const { promise: parked, resolve: release } = Promise.withResolvers<void>();
   const emitters = createOwnedMap<string, SessionEmitter>();
-  const agent = makeAgent({ ...agentOverrides } as Partial<AgentDef>);
+  const agent = makeAgent(agentOverrides);
+  // No `as never` on the deps: the two keys that were missing (`llm`,
+  // `workflows`) are spelled here instead. A cast over the whole object is the
+  // dropped-field class — it keeps compiling when `ToolSetupDeps` grows a
+  // required member, and the tool surface then quietly loses it.
   const { executeTool } = setupTools({
     agent,
     opts: { agent, env: {} },
+    llm: undefined,
     env: {},
     providerEnv: {},
     resolvedDb: undefined,
+    workflows: undefined,
     logger: consoleLogger,
     emitters,
     stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
-  } as never);
+  });
   return { executeTool, emitters, release, parked };
 }
 
@@ -98,14 +104,14 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
       tools: {
         bump: {
           description: "bump the counter",
-          execute: async (_args: unknown, ctx: never) => {
+          execute: async (_args: unknown, ctx: ToolContext) => {
             await parked;
             countSlot.update(ctx, (state) => ++state.count);
             return "ok";
           },
         },
       },
-    } as never);
+    });
 
     claimConnection(emitters, supersededEvents);
     const call = executeTool("bump", {}, SID, []);
@@ -130,14 +136,14 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
       tools: {
         ping: {
           description: "emit a custom event",
-          execute: async (_args: unknown, ctx: { send: (e: string, d: unknown) => void }) => {
+          execute: async (_args: unknown, ctx: ToolContext) => {
             await parked;
             ctx.send("progress", { done: true });
             return "ok";
           },
         },
       },
-    } as never);
+    });
 
     claimConnection(emitters, supersededEvents);
     const call = executeTool("ping", {}, SID, []);
@@ -159,14 +165,14 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
       tools: {
         bump: {
           description: "bump the counter",
-          execute: (_args: unknown, ctx: never) => {
+          execute: (_args: unknown, ctx: ToolContext) => {
             countSlot.update(ctx, (state) => ++state.count);
-            (ctx as { send: (e: string, d: unknown) => void }).send("progress", 1);
+            ctx.send("progress", 1);
             return "ok";
           },
         },
       },
-    } as never);
+    });
     release();
 
     claimConnection(emitters, events);

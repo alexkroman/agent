@@ -87,7 +87,12 @@ describe("runDeploy", () => {
     expect(decodeBody(init).worker).toContain("test-agent");
   });
 
-  test("sends worker and clientFiles in body (no agentConfig — the server extracts it)", async () => {
+  // The parenthetical used to read "the server extracts it", which stopped
+  // being true when the platform stopped storing agent config at all (see
+  // "The platform stores no agent config" in packages/aai-server/CLAUDE.md).
+  // The assertion is unchanged and still right; only the reason a reader uses
+  // to judge a failure was wrong.
+  test("sends worker and clientFiles in body (no agentConfig — the platform stores none)", async () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch));
     const [, init] = mockFetch.mock.calls[0] ?? [];

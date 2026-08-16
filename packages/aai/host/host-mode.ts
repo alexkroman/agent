@@ -40,8 +40,13 @@ import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
  * Default `maxSteps` for a host agent. Host tasks (e.g. tau2 simulations) may
  * chain several tool calls per turn, so this is more generous than a typical
  * conversational agent.
+ *
+ * Exported so `host-mode.test.ts` can import it rather than hand-mirroring the
+ * literal: a copied constant is the pattern the package guide records failing
+ * twice with the voices list. Not re-exported from `runtime-barrel.ts`, so this
+ * widens no published surface.
  */
-const DEFAULT_HOST_MAX_STEPS = 30;
+export const DEFAULT_HOST_MAX_STEPS = 30;
 
 /**
  * Translate `HostConfig.audioLeadMs` into the session-start override.

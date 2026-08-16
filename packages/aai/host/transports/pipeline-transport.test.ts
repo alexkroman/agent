@@ -9,14 +9,15 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
-import { firstCallArg, makeOpts, useVirtualTime } from "./_pipeline-transport-harness.ts";
+import { firstCallArg, llmCalls, makeOpts, useVirtualTime } from "./_pipeline-transport-harness.ts";
 import { makeCallbacks } from "./_transport-recorder.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 // Turn-processing specs (STT final → LLM stream → TTS) live in
 // pipeline-turn.test.ts; barge-in/interruption specs live in
-// pipeline-transport-barge-in.test.ts; the greeting turn (at start and on
-// reset) in pipeline-greeting.test.ts; shared helpers in
+// pipeline-transport-barge-in.test.ts; what the caller hears when the LLM
+// stream fails in pipeline-transport-error-phrase.test.ts; the greeting turn
+// (at start and on reset) in pipeline-greeting.test.ts; shared helpers in
 // _pipeline-transport-harness.ts.
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -343,11 +344,14 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
+      // The literal, not `expect.any(Object)`: `toArgsRecord` answers `{}` for a
+      // non-record and `{}` satisfies that matcher, so the one documented
+      // coercion on this path is exactly what it cannot see.
       expect(callbacks.reported("tool.called")).toHaveBeenCalledWith({
         type: "tool.called",
         toolCallId: "tc-1",
         toolName: "get_weather",
-        args: expect.any(Object),
+        args: { city: "SF" },
       });
       await t.stop();
     });
@@ -518,7 +522,7 @@ describe("PipelineTransport", () => {
       // The chain must survive both: a rejected turnPromise would mean no
       // turn ever runs again.
       const callbacks = makeCallbacks();
-      (callbacks.onReplyStarted as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+      vi.mocked(callbacks.onReplyStarted).mockImplementationOnce(() => {
         throw new Error("reply sink broken");
       });
       const throwingLogger = {
@@ -547,7 +551,10 @@ describe("PipelineTransport", () => {
 
   describe("history seeding", () => {
     test("sessionConfig.history is used as initial conversation messages", async () => {
-      const { opts } = makeOpts({
+      // On the PROMPT the first turn assembles, not on `start()` resolving:
+      // checking only that start did not reject left this green with
+      // `createPipelineHistory(sessionConfig.history)` deleted.
+      const { opts, stt } = makeOpts({
         sessionConfig: {
           systemPrompt: "s",
           greeting: "",
@@ -559,131 +566,14 @@ describe("PipelineTransport", () => {
       });
       const t = createPipelineTransport(opts);
       await expect(t.start()).resolves.toBeUndefined();
+      const llm = llmCalls(opts);
+      stt.last()?.fireFinal("still there?");
+      await vi.waitFor(() => {
+        expect(llm.calls.length).toBeGreaterThan(0);
+      });
+      const prompt = JSON.stringify(llm.calls[0]?.prompt);
+      for (const text of ["hi", "hello", "still there?"]) expect(prompt).toContain(text);
       await t.stop();
     });
-  });
-});
-
-describe("PipelineTransport — recovery when the LLM stream fails", () => {
-  // A gateway 429/500 leaves the turn with no text, so nothing reaches TTS and
-  // the caller hears silence — the only trace being a `llm` session error the
-  // browser surfaces without a sound. The agent says so instead.
-  const failingLlm = () =>
-    createFakeLanguageModel({
-      script: [{ type: "error", error: new Error("Internal Server Error") }],
-    });
-
-  test("speaks the error phrase", async () => {
-    const { opts, stt, tts } = makeOpts({ llm: failingLlm() });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("are you there?");
-
-    await vi.waitFor(() => {
-      expect(tts.last()?.textChunks.join("")).toContain("Sorry, I had a problem");
-    });
-    await t.stop();
-  });
-
-  test("flushes TTS so the phrase is actually synthesized", async () => {
-    // `runReply` skips drainTts for a turn that did not speak, and the drain is
-    // what flushes the provider. AssemblyAI TTS synthesizes nothing until it is
-    // flushed, so without this the "recovery" would itself be silence.
-    const { opts, stt, tts } = makeOpts({ llm: failingLlm() });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("are you there?");
-
-    await vi.waitFor(() => {
-      expect(tts.last()?.flush).toHaveBeenCalled();
-    });
-    await t.stop();
-  });
-
-  test("emits the phrase as an agent transcript so the UI matches what was heard", async () => {
-    const { opts, stt, callbacks } = makeOpts({ llm: failingLlm() });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("are you there?");
-
-    await vi.waitFor(() => {
-      expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
-        type: "agent-transcript.committed",
-        text: expect.stringContaining("Sorry, I had a problem"),
-      });
-    });
-    await t.stop();
-  });
-
-  test("still reports the error to the client, NON-fatally", async () => {
-    // Speaking to the caller is additive: a programmatic client must still see
-    // that the turn failed rather than a normal-looking reply.
-    //
-    // And non-fatally, because the very next thing this transport does is speak
-    // `errorPhrase` — "Could you say that again?" — and invite another turn.
-    // `onError` defaults to fatal, which aai-ui answers by releasing the
-    // microphone and ending the call, so the caller was asked to repeat
-    // themselves into a session the client had already torn down.
-    const { opts, stt, callbacks } = makeOpts({ llm: failingLlm() });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("are you there?");
-
-    await vi.waitFor(() => {
-      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
-        type: "error.reported",
-        code: "llm",
-        message: expect.any(String),
-        fatal: false,
-      });
-    });
-    await t.stop();
-  });
-
-  test("errorPhrase: '' disables the phrase but keeps the error", async () => {
-    const { opts, stt, tts, callbacks } = makeOpts({ llm: failingLlm(), errorPhrase: "" });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("are you there?");
-
-    await vi.waitFor(() => {
-      expect(callbacks.reported("error.reported")).toHaveBeenCalledWith({
-        type: "error.reported",
-        code: "llm",
-        message: expect.any(String),
-        fatal: false,
-      });
-    });
-    expect(tts.last()?.textChunks.join("")).toBe("");
-    await t.stop();
-  });
-
-  test("a custom errorPhrase is used verbatim", async () => {
-    const { opts, stt, tts } = makeOpts({
-      llm: failingLlm(),
-      errorPhrase: "My brain just went offline.",
-    });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("are you there?");
-
-    await vi.waitFor(() => {
-      expect(tts.last()?.textChunks.join("")).toContain("My brain just went offline.");
-    });
-    await t.stop();
-  });
-
-  test("does not speak the phrase for a successful turn", async () => {
-    const script: ScriptedPart[] = [{ type: "text", text: "I am here." }];
-    const { opts, stt, tts } = makeOpts({ llm: createFakeLanguageModel({ script }) });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("are you there?");
-
-    await vi.waitFor(() => {
-      expect(tts.last()?.textChunks.join("")).toContain("I am here.");
-    });
-    expect(tts.last()?.textChunks.join("")).not.toContain("Sorry, I had a problem");
-    await t.stop();
   });
 });

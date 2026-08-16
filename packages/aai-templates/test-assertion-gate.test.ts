@@ -29,6 +29,13 @@ const script = import.meta.glob("../../scripts/check-test-assertions.mjs", {
  * re-typing them, so this suite cannot pass against a copy that has drifted
  * from the file CI runs.
  */
+/** Read a numeric constant out of the script rather than restating it here. */
+function constant(name: string): number {
+  const found = new RegExp(`const ${name} = ([\\d._]+)`).exec(script ?? "");
+  if (!found?.[1]) throw new Error(`check-test-assertions.mjs no longer declares ${name}`);
+  return Number(found[1].replaceAll("_", ""));
+}
+
 function patternFrom(name: string): RegExp {
   const line = new RegExp(`const ${name} = (/.*/)([a-z]*);`).exec(script ?? "");
   if (!line?.[1]) throw new Error(`check-test-assertions.mjs no longer declares ${name}`);
@@ -89,6 +96,27 @@ describe("check-test-assertions parser", () => {
       opener.lastIndex = 0;
       expect(opener.test(form), form).toBe(true);
     }
+  });
+
+  test("both corpus floors are declared and enforced", () => {
+    // The floors ARE the gate's only defence against going quiet, and until now
+    // no assertion mentioned either — so deleting both left this guard green
+    // while restoring exactly the failure mode it was written for. The module
+    // doc above says a broken parser "would print 'all 0 test(s) assert
+    // something ✓'"; `MIN_TEST_FILES` and `MIN_TESTS_SCANNED` are what makes
+    // that a red run instead.
+    expect(constant("MIN_TEST_FILES"), "the test-FILE floor is gone").toBeGreaterThanOrEqual(200);
+    expect(constant("MIN_TESTS_SCANNED"), "the test-COUNT floor is gone").toBeGreaterThanOrEqual(
+      2000,
+    );
+    // Declared is not enforced. Both comparisons must exist, and both must exit
+    // non-zero — a floor that only warns is a floor that is not a floor.
+    for (const name of ["MIN_TEST_FILES", "MIN_TESTS_SCANNED"]) {
+      expect(script, `${name} is declared but never compared against`).toMatch(
+        new RegExp(`<\\s*${name}`),
+      );
+    }
+    expect(script, "a floor breach no longer fails the process").toContain("below the floor of");
   });
 
   test("the gate is wired into both the local check and CI", () => {

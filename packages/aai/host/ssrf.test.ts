@@ -141,48 +141,30 @@ describe("SSRF: protocol validation", () => {
     await expect(resolveAndAssertPublic("data:text/html,<h1>test</h1>")).rejects.toThrow();
   });
 
-  // These tests require real DNS resolution — skip when DNS is unavailable
-  // (e.g., sandboxed CI environments without internet access).
-  async function requireDns() {
-    const dns = await import("node:dns/promises");
-    await Promise.race([
-      dns.lookup("example.com"),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
-    ]);
-  }
-
-  test("allows http:// protocol", async () => {
-    try {
-      await requireDns();
-    } catch {
-      return;
-    }
-    await expect(resolveAndAssertPublic("http://example.com/")).resolves.toEqual(
-      expect.any(String),
-    );
-  }, 15_000);
-
-  test("allows https:// protocol", async () => {
-    try {
-      await requireDns();
-    } catch {
-      return;
-    }
-    await expect(resolveAndAssertPublic("https://example.com/")).resolves.toEqual(
-      expect.any(String),
-    );
-  }, 15_000);
-
-  test("allows valid public URLs", async () => {
-    try {
-      await requireDns();
-    } catch {
-      return;
-    }
-    await expect(resolveAndAssertPublic("https://api.brave.com/search")).resolves.toEqual(
-      expect.any(String),
-    );
-  }, 15_000);
+  // ── The allow half, on the INJECTED resolver rather than on real DNS ──
+  //
+  // These three used to open `try { await requireDns() } catch { return }` and
+  // then hit the network. In a leg without DNS all three RETURNED before their
+  // single assertion and reported green — a silent skip nothing announced and
+  // no `AAI_REQUIRE_*` covered — and where DNS did work the assertion was
+  // `resolves.toEqual(expect.any(String))`, which `""` satisfies. The helper
+  // itself was also a hand-rolled `Promise.race` against a `setTimeout`, the
+  // shape `guard-invariants` rule 3 bans (and, spanning three lines, could not
+  // see).
+  //
+  // `lookupFn` is the seam this module already publishes for exactly this: the
+  // protocol check, the hostname rules and the private-address screen all still
+  // run, and the RESOLVED ADDRESS — the value the caller pins the socket to —
+  // is asserted by identity instead of by "is a string".
+  test.each([
+    ["http://example.com/", "93.184.216.34"],
+    ["https://example.com/", "93.184.216.34"],
+    ["https://api.brave.com/search", "23.55.190.15"],
+  ])("allows %s and returns the address to pin", async (url, address) => {
+    const lookup = vi.fn(async () => ({ address }));
+    await expect(resolveAndAssertPublic(url, lookup)).resolves.toBe(address);
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ── DNS Failure Handling ───────────────────────────────────────────────

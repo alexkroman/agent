@@ -7,10 +7,9 @@
 // data, and that every change is announced to the coding agent — which
 // otherwise has no way to know it may build on ctx.db.
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, stubFetch } from "./_test-utils.ts";
+import { jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
 import { DatabaseCard } from "./database-card.tsx";
 
 const PATH = "/studio/projects/demo/database";
@@ -27,17 +26,11 @@ const ON = {
 };
 
 function renderCard(onNotifyChat = vi.fn()) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={client}>
-      <DatabaseCard bearer="sk-test" project="demo" onNotifyChat={onNotifyChat} />
-    </QueryClientProvider>,
-  );
+  renderWithClient(<DatabaseCard bearer="sk-test" project="demo" onNotifyChat={onNotifyChat} />);
   return onNotifyChat;
 }
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -48,9 +41,12 @@ afterEach(() => {
  */
 function settledSwitch(label: string): Promise<HTMLButtonElement> {
   return waitFor(() => {
-    const button = screen.getByText(label) as HTMLButtonElement;
-    if (button.disabled) throw new Error(`${label} is still loading`);
-    return button;
+    const found = screen.getByText(label);
+    if (!(found instanceof HTMLButtonElement)) {
+      throw new Error(`Expected a <button> labelled ${label}, got <${found.localName}>`);
+    }
+    if (found.disabled) throw new Error(`${label} is still loading`);
+    return found;
   });
 }
 

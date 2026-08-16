@@ -27,9 +27,11 @@
  * fix and the faithful model: at the database level, "another replica" IS
  * just another session.
  *
- * Runs in the integration tier (`pnpm test:integration`) against
- * `AAI_TEST_PG_URL`. No pgmq/pg_cron needed — advisory locks are core
- * Postgres, so any server will do.
+ * Runs in the SCENARIO tier (`pnpm test:scenario`, or `pnpm test:pg` to resolve
+ * a database first) against `AAI_TEST_PG_URL`. No pgmq/pg_cron needed —
+ * advisory locks are core Postgres, so any server will do. This package
+ * declares no `check:integration`; `AAI_REQUIRE_PG` — the variable that turns a
+ * skip into a failure — is declared under `check:scenario` in `turbo.json`.
  */
 
 import { sleep } from "@alexkroman1/aai/internal";

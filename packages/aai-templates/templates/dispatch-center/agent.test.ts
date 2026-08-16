@@ -9,12 +9,10 @@ import incidentUpdateStatus from "./tools/incident_update_status.ts";
 import resourcesDispatch from "./tools/resources_dispatch.ts";
 import resourcesUpdateStatus from "./tools/resources_update_status.ts";
 
-/** The dispatch board lives in one session slot, one board per session — and
- *  `createToolContext` gives each call its own session id, so two contexts are
- *  two boards by construction. */
-function makeCtx(): { ctx: ToolContext } {
-  return { ctx: createToolContext() };
-}
+/** The dispatch board lives in a session slot, and `createToolContext` gives
+ *  each call its own slot store — so two contexts are two boards by
+ *  construction. */
+const makeCtx = (): ToolContext => createToolContext();
 
 async function createIncidentFor(
   ctx: ToolContext,
@@ -29,7 +27,7 @@ async function createIncidentFor(
 
 describe("dispatch-center template", () => {
   test("resolving an incident does not yank a reassigned unit off its new incident", async () => {
-    const { ctx } = makeCtx();
+    const ctx = makeCtx();
 
     const inc1 = await createIncidentFor(ctx);
     await resourcesDispatch.execute({ incidentId: inc1, callsigns: ["Medic-1"] }, ctx);
@@ -51,7 +49,7 @@ describe("dispatch-center template", () => {
   });
 
   test("callsigns: ['auto'] triggers auto-dispatch as the description promises", async () => {
-    const { ctx } = makeCtx();
+    const ctx = makeCtx();
     const incidentId = await createIncidentFor(ctx, "cardiac arrest, patient not breathing");
 
     const result = (await resourcesDispatch.execute({ incidentId, callsigns: ["auto"] }, ctx)) as {
@@ -64,7 +62,7 @@ describe("dispatch-center template", () => {
   });
 
   test("concurrent tool calls are serialized — no lost updates", async () => {
-    const { ctx } = makeCtx();
+    const ctx = makeCtx();
 
     // Parallel tool calls in one LLM turn run concurrently. The per-session
     // mutex in updateState makes each one run against the previous one's
@@ -102,7 +100,7 @@ describe("dispatch-center template", () => {
   });
 
   test("mutual-aid units get unique ids and callsigns across escalations", async () => {
-    const { ctx } = makeCtx();
+    const ctx = makeCtx();
     const incidentId = await createIncidentFor(ctx);
 
     await incidentEscalate.execute(
@@ -122,7 +120,7 @@ describe("dispatch-center template", () => {
   });
 
   test("resolved is terminal: no escalation, re-resolution, or dispatch", async () => {
-    const { ctx } = makeCtx();
+    const ctx = makeCtx();
     const incidentId = await createIncidentFor(ctx);
     await incidentUpdateStatus.execute({ incidentId, status: "resolved" }, ctx);
 

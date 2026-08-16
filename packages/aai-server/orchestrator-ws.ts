@@ -29,6 +29,28 @@ import { brokerSessionUrl } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
 
+/**
+ * The upgrade path grammar: `/<slug>/websocket`.
+ *
+ * Enforced here (not just in middleware) because WebSocket upgrades bypass
+ * Hono routing. Composed from the shared slug grammar (SLUG_PATTERN_SOURCE)
+ * so the pattern has a single source of truth.
+ *
+ * Exported at module scope so a spec can bind to the PRODUCTION regex rather
+ * than recomposing it: a recomposed copy passes whether or not this one still
+ * exists, which is the failure `orchestrator-security-validation.test.ts`
+ * exists to catch.
+ */
+export const SLUG_WS_RE = new RegExp(`^\\/(${SLUG_PATTERN_SOURCE})\\/websocket$`);
+
+/**
+ * The slug an upgrade path names, or `undefined` when the path is not a
+ * well-formed `/<slug>/websocket`.
+ */
+export function wsSlugFromPath(pathOnly: string): string | undefined {
+  return SLUG_WS_RE.exec(pathOnly)?.[1];
+}
+
 export type WsUpgradeOpts = {
   /**
    * Broker dependencies, the same object the `GET /:slug/client-config`
@@ -80,25 +102,19 @@ async function answerRedirectUpgrade(
 }
 
 export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
-  // Enforced here (not just in middleware) because WebSocket upgrades bypass
-  // Hono routing. Composed from the shared slug grammar (SLUG_PATTERN_SOURCE)
-  // so the pattern has a single source of truth.
-  const SLUG_WS_RE = new RegExp(`^\\/(${SLUG_PATTERN_SOURCE})\\/websocket$`);
-
   async function handleUpgradeRequest(
     req: import("node:http").IncomingMessage,
     socket: import("node:stream").Duplex,
   ): Promise<void> {
     const rawUrl = req.url ?? "";
     const pathOnly = requestPath(rawUrl);
-    const slugMatch = pathOnly.match(SLUG_WS_RE);
-    if (!slugMatch) {
+    const slug = wsSlugFromPath(pathOnly);
+    if (slug === undefined) {
       // No other upgrade consumer exists on this server: an unmatched
       // upgrade socket would otherwise dangle forever.
       socket.destroy();
       return;
     }
-    const slug = slugMatch[1] as string;
     // Every upgrade is answered with a handshake response (redirect or a
     // real error status), never a completed session. Answering the handshake
     // (rather than a bare RST) is what keeps failures diagnosable.

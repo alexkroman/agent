@@ -1,31 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { ToolDef } from "@alexkroman1/aai";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { runTool } from "./_test-utils.ts";
+import { describe, expect, test } from "vitest";
+import { runTool, useTempDir } from "./_test-utils.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 
-let dir: string;
+const dir = useTempDir("studio-project-tools-");
 
 function makeTools(): Record<string, ToolDef> {
-  return createProjectTools({ dir });
-}
-
-beforeEach(async () => {
-  dir = await mkdtemp(path.join(tmpdir(), "studio-project-tools-"));
-});
-
-afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
-});
-
-function execute(tools: Record<string, ToolDef>, name: string, args: unknown): Promise<unknown> {
-  const t = tools[name];
-  if (!t?.execute) throw new Error(`no such tool: ${name}`);
-  return runTool({ [name]: t }, name, args as Record<string, unknown>);
+  return createProjectTools({ dir: dir() });
 }
 
 describe("add_dependency / remove_dependency", () => {
@@ -41,9 +26,9 @@ describe("add_dependency / remove_dependency", () => {
     "UPPER/case",
   ])("rejects invalid spec %s without spawning", async (spec) => {
     const tools = makeTools();
-    const result = await execute(tools, "add_dependency", { package: spec });
+    const result = await runTool(tools, "add_dependency", { package: spec });
     expect(result).toContain("not a valid npm package spec");
-    const removed = await execute(tools, "remove_dependency", { package: spec });
+    const removed = await runTool(tools, "remove_dependency", { package: spec });
     expect(removed).toContain("not a valid npm package spec");
   });
 });
@@ -54,13 +39,13 @@ describe("update_dependencies", () => {
   test.each(["-g", "date-fns@2", "; rm -rf /", "../escape", "UPPER/case"])(
     "rejects %s without spawning",
     async (name) => {
-      const result = await execute(makeTools(), "update_dependencies", { packages: [name] });
+      const result = await runTool(makeTools(), "update_dependencies", { packages: [name] });
       expect(result).toContain("not valid npm package name");
     },
   );
 
   test("a missing package.json is an error, not a spawn", async () => {
-    const result = await execute(makeTools(), "update_dependencies", {});
+    const result = await runTool(makeTools(), "update_dependencies", {});
     expect(result).toContain("package.json is missing");
   });
 });
@@ -69,16 +54,20 @@ describe("npm_info", () => {
   test.each(["-g", "; rm -rf /", "https://evil.example/pkg.tgz"])(
     "rejects invalid spec %s without spawning",
     async (spec) => {
-      const result = await execute(makeTools(), "npm_info", { package: spec });
+      const result = await runTool(makeTools(), "npm_info", { package: spec });
       expect(result).toContain("not a valid npm package spec");
     },
   );
 });
 
 describe("download_to_workspace", () => {
-  test("refuses paths that escape the workspace before fetching", async () => {
+  // The ORDERING this name claims — refused BEFORE the outbound request — is
+  // asserted in studio-project-tools-mocked.test.ts, which has the `safeFetch`
+  // spy to prove nothing was fetched. Here the collaborator is real, so the
+  // most this can say is that the refusal happens at all.
+  test("refuses paths that escape the workspace", async () => {
     const tools = makeTools();
-    const result = await execute(tools, "download_to_workspace", {
+    const result = await runTool(tools, "download_to_workspace", {
       url: "https://example.com/data.json",
       path: "../outside.json",
     });
@@ -87,11 +76,30 @@ describe("download_to_workspace", () => {
 
   test("reports an unfetchable URL as an error string", async () => {
     const tools = makeTools();
-    const result = await execute(tools, "download_to_workspace", {
+    const result = await runTool(tools, "download_to_workspace", {
       url: "not-a-url",
       path: "data.json",
     });
     expect(result).toMatch(/^Error: fetch failed/);
+  });
+
+  // This used to be a "workspace round-trip" test that branched on whether the
+  // download succeeded: `safeFetch` refuses `data:` outright, so the success
+  // branch — the only one that read the file back — was dead code, and the
+  // refusal branch accepted ANY `Error:` string, including a bug. The
+  // fetch → cap → decode → write path is covered with the fetch mocked, in
+  // studio-project-tools-mocked.test.ts; what this file can say with the real
+  // collaborator is that the screen refuses, and WHY.
+  test("refuses a non-HTTP protocol, naming it, as an error string", async () => {
+    const result = await runTool(makeTools(), "download_to_workspace", {
+      url: "data:application/json,%7B%22ok%22%3Atrue%7D",
+      path: "data/menu.json",
+    });
+    // Named, not just "some refusal": every failure mode in the screen shares
+    // the `Blocked request` prefix, and a DNS miss is not this test's subject.
+    expect(result).toBe("Error: fetch failed: Blocked request with disallowed protocol: data:");
+    // And a refusal writes nothing — the tool must not create the path first.
+    await expect(readFile(path.join(dir(), "data/menu.json"), "utf-8")).rejects.toThrow();
   });
 });
 
@@ -115,24 +123,5 @@ describe("generate_design_inspiration", () => {
       goal: "anything",
     });
     expect(result).toMatch(/^Error: /);
-  });
-});
-
-describe("workspace round-trip", () => {
-  test("writes a downloaded text body into the workspace", async () => {
-    // data: URLs never touch the network but still exercise the full
-    // fetch → decode → write path.
-    const tools = makeTools();
-    const result = await execute(tools, "download_to_workspace", {
-      url: "data:application/json,%7B%22ok%22%3Atrue%7D",
-      path: "data/menu.json",
-    });
-    if (typeof result === "string" && result.startsWith("Downloaded")) {
-      expect(await readFile(path.join(dir, "data/menu.json"), "utf-8")).toBe('{"ok":true}');
-    } else {
-      // safeFetch may refuse non-HTTP protocols — that refusal is the SSRF
-      // screen working, and it must arrive as an error string, not a throw.
-      expect(result).toMatch(/^Error: /);
-    }
   });
 });

@@ -29,9 +29,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { sleep } from "@alexkroman1/aai/internal";
 import getPort, { portNumbers } from "get-port";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { createWorkerEvaluator } from "./_bundler.ts";
 import { loadWorker, startDevServer } from "./_dev-server.ts";
 
@@ -264,11 +263,25 @@ let stop: (() => Promise<void>) | undefined;
 let workflowId: string | undefined;
 let origin = "";
 
+/**
+ * A provider key has to be resolvable or `resolveAgentEnv` reaches for the
+ * logged-in one; the value is never dialled, since no session is opened.
+ *
+ * SET, not defaulted. This tier runs under `vitest.slow.config.ts`, which
+ * declares no `setupFiles` — so `_test-setup.ts` never runs here and the
+ * `??=` this replaces left a developer's REAL key in the fixture server's
+ * runtime env. Nothing dials it, so it was not a leak; it was exactly the
+ * machine-dependence that setup file exists to remove. Re-stubbed per test
+ * because `unstubEnvs` reverts it before each one.
+ */
+const FAKE_PROVIDER_KEY = "not-used-by-this-test";
+beforeEach(() => {
+  vi.stubEnv("ASSEMBLYAI_API_KEY", FAKE_PROVIDER_KEY);
+});
+
 beforeAll(async () => {
   await writeFixture();
-  // A provider key has to be resolvable or `resolveAgentEnv` reaches for the
-  // logged-in one; the value is never dialled, since no session is opened.
-  process.env.ASSEMBLYAI_API_KEY ??= "not-used-by-this-test";
+  vi.stubEnv("ASSEMBLYAI_API_KEY", FAKE_PROVIDER_KEY);
   const port = await getPort({ port: portNumbers(4700, 4799) });
   // The fixture has no `client.tsx`, so the backend owns the port directly — no
   // Vite in front, and the HTTP API below is reached without a proxy.
@@ -528,15 +541,18 @@ describe("aai dev serves the workflow HTTP API", () => {
     // Poll until the run is actually asleep — `wake` on a run that has not
     // reached its `sleep` yet has nothing to interrupt, and asserting a count
     // before then would be a race dressed as a finding.
-    let woken = 0;
-    for (let attempt = 0; attempt < 40 && woken === 0; attempt += 1) {
-      const result = await api(`/workflows/runs/${runId}/wake`, { method: "POST" });
-      expect(result.status).toBe(200);
-      woken = Number(result.body.woken);
-      if (woken === 0) await sleep(50);
-    }
-
-    expect(woken).toBeGreaterThan(0);
+    let lastWakeStatus = 0;
+    await expect
+      .poll(
+        async () => {
+          const result = await api(`/workflows/runs/${runId}/wake`, { method: "POST" });
+          lastWakeStatus = result.status;
+          return Number(result.body.woken);
+        },
+        { timeout: 10_000, interval: 50 },
+      )
+      .toBeGreaterThan(0);
+    expect(lastWakeStatus).toBe(200);
     const finished = await api(`/workflows/runs/${runId}?wait=30000`);
     expect(finished.body).toMatchObject({ status: "completed", output: { topic: "kelp beds" } });
   }, 40_000);

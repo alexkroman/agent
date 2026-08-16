@@ -892,3 +892,69 @@ stored env at sandbox creation time and kept host-side only.
 - Each sandbox communicates over its own authenticated WebSocket.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
+
+## Testing this package
+
+`_test-utils.ts` owns everything more than one suite here needs, and each entry
+exists because the thing it replaces had gone wrong at least once:
+
+- **`useTempDir(prefix)` / `useTempDirs(prefix)`** — a scratch directory (or a
+  pool of them) that registers its own `beforeEach`/`afterEach`. Six suites
+  open-coded `mkdtemp` + `rm` in three styles and one leaked: a single `let dir`
+  shared by two `describe` blocks meant the file-level `afterEach` re-`rm`'d the
+  first block's already-deleted path after every test in the second, and cleaned
+  up none of its own. Creating the directory and its cleanup together is what
+  makes that unrepresentable.
+- **`installFakeHostChannel({ autoAnswer })`** — the fake host control channel,
+  written out three times before this and twice verbatim. It also carries the
+  **typed frame accessors**: `lastRequest()` / `lastResponse()` narrow a
+  `JsonRpcMessage` by RUNTIME CHECK, where every reader used to re-narrow
+  `sent.at(-1)` to its own ad-hoc shape and would silently read `undefined` off
+  the wrong half of the union.
+- **`runTool`** — the one way to call a coding-agent tool (see "The coding agent
+  is an ordinary `agent()`"). A spec must not reach past it to `execute`.
+- **`materialize(dir, files)`** — `withBuildDir`'s middle argument, inlined five
+  times in one file and defined a sixth in another.
+
+**A turn's settle outlives its response, so `studio-chat.test.ts` drains before
+unhooking the host channel.** `onFinish` fires, then `snapshotWorkspace` walks
+the tree, then two host RPCs go out — all after `serve().close()` has returned.
+`setHostSend` is a process singleton, so a previous test's settle landed in the
+NEXT test's recorder, and the assertions were weakened to tolerate it
+(`toBeGreaterThanOrEqual(2)` plus a content filter, with the flake message they
+produced recorded in-file). `drainTurns()` waits for all three of: the
+process-wide turn claim free, `pendingHostRequests` empty, and no new frame
+since the previous poll — the last one covering the filesystem walk between
+`onFinish` and the settle's first RPC. It is bounded and best-effort, because a
+turn that never reaches `onFinish` must not redden every following test.
+
+**A test's TIER is what it touches, and this package is the worst offender.**
+Eleven files here still write to the filesystem, bind a port, or spawn a
+subprocess while sitting in the 5s unit tier, and `studio-chat.test.ts` stubs out
+the real `typecheck` because of it.
+
+The scenario tier is REACHABLE now — `vitest.config.ts` excludes both slow-tier
+globs (without which a rename left a file in BOTH tiers), and `package.json`
+declares the `test:scenario`/`check:scenario` pair that turbo's `check:scenario`
+task fans out to. `studio-build` and `studio-test` are the worked example, and
+what they taught is worth copying:
+
+- **A moved file gives up its unit coverage, and the fix is a SPLIT, not a
+  floor.** Moving both files whole took the package from 83.88/75.58/84.49/85.79
+  to 81.26/72.97/82.27/83.03 — still over every floor, but with 0.03 points of
+  line headroom, which is a landmine rather than a pass. Splitting each file on
+  what it TOUCHES put it back: `studio-build.test.ts` keeps `scrubDir`,
+  `formatBuildFailure` and `toolchainModules` (a filesystem READ is unit-legal),
+  `studio-test.test.ts` keeps `formatTestRun`, and only the build-dir lifecycle,
+  the typecheck gate and the real vitest spawns are scenario. That is the tier
+  rule applied properly, and it lands at 81.73/74.41/82.59/83.48. Floors do not
+  move.
+- **Delete the hand-written `timeout: 120_000`s.** Five of them, which WERE the
+  scenario tier's timeout re-declared because the tier was not used.
+- **A shared PID is not a shared module registry.** Both files ran green in the
+  unit tier and one failed reliably once they were the only two in a run: vitest's
+  `threads` pool gives each file its own module instance inside the SAME process,
+  so `withBuildDir`'s module-scoped counter handed both `build-1` under a
+  `workspacesRoot()` keyed by `process.pid`, and one file's cleanup deleted the
+  other's live directory. It surfaces as `ENOENT: uv_cwd` from inside rolldown,
+  naming nothing. The directory name carries a random token now.

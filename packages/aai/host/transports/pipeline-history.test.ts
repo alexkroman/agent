@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import type { ModelMessage } from "ai";
+import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import { DEFAULT_MAX_HISTORY } from "../../sdk/constants.ts";
 import type { Message } from "../../sdk/types.ts";
@@ -218,29 +219,109 @@ describe("createPipelineHistory — LLM history cap and tool-call pairing", () =
     expect(orphanToolResults(h.llm)).toEqual([]);
   });
 
-  test("a long conversation of mixed turn shapes never orphans a tool result", () => {
-    // Turn sizes vary — a text-only turn is 2 messages, a one-tool turn 4, a
-    // tool chain more — so the window drifts out of alignment with turn
-    // boundaries on its own. A uniform turn size hides this entirely: 4
-    // divides DEFAULT_MAX_HISTORY, so every trim lands on a turn boundary.
-    let state = 12_345;
-    const rnd = (): number => {
-      state = (state * 1_103_515_245 + 12_345) & 0x7f_ff_ff_ff;
-      return state / 0x7f_ff_ff_ff;
-    };
-    const h = createPipelineHistory();
-    let callNo = 0;
-    for (let turn = 0; turn < 400; turn++) {
-      h.pushLlm({ role: "user", content: `question ${turn}` });
-      const toolCalls = Math.floor(rnd() * 3);
-      for (let k = 0; k < toolCalls; k++) {
-        const id = `c${callNo++}`;
-        h.pushLlm(toolCallMsg(id), toolResultMsg(id));
-      }
-      h.pushLlm({ role: "assistant", content: `reply ${turn}` });
-      expect(orphanToolResults(h.llm)).toEqual([]);
-      expect(h.llm.length).toBeLessThanOrEqual(DEFAULT_MAX_HISTORY);
+  // Turn sizes vary — a text-only turn is 2 messages, a one-tool turn 4, a tool
+  // chain more — so the window drifts out of alignment with turn boundaries on
+  // its own. A uniform turn size hides this entirely: 4 divides
+  // DEFAULT_MAX_HISTORY, so every trim lands on a turn boundary.
+  //
+  // A SHORT generated list of tool-call counts, consumed CYCLICALLY over a
+  // fixed number of turns (AGENTS.md, "Property tests run on fast-check"). The
+  // run makes `TURNS` decisions, and generating one entry per decision would
+  // shrink to a wall of numbers rather than to a readable turn-shape cycle.
+  // This replaced a hand-rolled LCG over a single fixed walk, which forfeited
+  // shrinking on the one bug class the property exists for — a `capLlm` trim
+  // orphaning a `tool` message — so a hit reported "iteration 287" instead of
+  // the minimal cycle.
+  const turnShapesArb = fc.array(fc.integer({ min: 0, max: 3 }), {
+    minLength: 1,
+    maxLength: 10,
+  });
+  // Enough turns that the window (200) overflows several times over at every
+  // generated shape, including the all-text-turns cycle (2 messages/turn), and
+  // no more: this is a UNIT test on a 5s budget shared with 169 other files,
+  // and 400x40 timed out under `pnpm test` while passing in ~500 ms alone.
+  const TURNS = 120;
+  const NUM_RUNS = 25;
+
+  type Coverage = {
+    textOnlyTurn: number;
+    toolTurn: number;
+    multiToolTurn: number;
+    healedTrim: number;
+  };
+
+  /** One turn's messages. Returns the next tool-call id counter. */
+  function pushTurn(
+    h: ReturnType<typeof createPipelineHistory>,
+    turn: number,
+    toolCalls: number,
+    callNo: number,
+  ): number {
+    let next = callNo;
+    h.pushLlm({ role: "user", content: `question ${turn}` });
+    for (let k = 0; k < toolCalls; k++) {
+      const id = `c${next++}`;
+      h.pushLlm(toolCallMsg(id), toolResultMsg(id));
     }
+    h.pushLlm({ role: "assistant", content: `reply ${turn}` });
+    return next;
+  }
+
+  function recordTurn(cov: Coverage, toolCalls: number, healed: boolean): void {
+    if (toolCalls === 0) cov.textOnlyTurn++;
+    else cov.toolTurn++;
+    if (toolCalls >= 2) cov.multiToolTurn++;
+    if (healed) cov.healedTrim++;
+  }
+
+  test("a long conversation of mixed turn shapes never orphans a tool result", () => {
+    // Coverage floors, per AGENTS.md: an all-green property proves nothing
+    // about a state the generator never entered, and `healedTrim` — a trim that
+    // actually landed between a call and its result, so `capLlm` had to shift a
+    // leading `tool` message off — is the only state this property is really
+    // about. Accumulated across every run (a floor is about the whole run).
+    const cov: Coverage = { textOnlyTurn: 0, toolTurn: 0, multiToolTurn: 0, healedTrim: 0 };
+    fc.assert(
+      fc.property(turnShapesArb, (shapes) => {
+        const h = createPipelineHistory();
+        let callNo = 0;
+        let pushed = 0;
+        let overCap = 0;
+        // Collected and asserted ONCE per run rather than per turn: shrinking
+        // re-runs the property dozens of times, and an `expect` per turn is
+        // most of the cost. Sliced on report, the way `pipeline-fuzz` does it —
+        // a systemic break should print a readable sample, not 150 lines of the
+        // same thing.
+        const orphans: string[] = [];
+        for (let turn = 0; turn < TURNS; turn++) {
+          const toolCalls = shapes[turn % shapes.length] ?? 0;
+          callNo = pushTurn(h, turn, toolCalls, callNo);
+          pushed += 2 + toolCalls * 2;
+          // Once the window is full it holds exactly DEFAULT_MAX_HISTORY unless
+          // the heal shifted a leading `tool` message off the front.
+          const healed = pushed >= DEFAULT_MAX_HISTORY && h.llm.length < DEFAULT_MAX_HISTORY;
+          recordTurn(cov, toolCalls, healed);
+          orphans.push(...orphanToolResults(h.llm));
+          if (h.llm.length > DEFAULT_MAX_HISTORY) overCap++;
+        }
+        expect(orphans.slice(0, 8)).toEqual([]);
+        expect(overCap).toBe(0);
+      }),
+      { numRuns: NUM_RUNS },
+    );
+
+    // `HISTORY_FUZZ_COVERAGE=1` prints the table, the way the pipeline and S2S
+    // properties do. It is how the actuals below were taken, and how the next
+    // person re-takes them.
+    if (process.env.HISTORY_FUZZ_COVERAGE === "1") console.log(JSON.stringify(cov));
+    // Floors ~3x below the lowest of seven measured runs (ranges in the trailing
+    // comments), on the same rule the other property suites here use:
+    // fast-check draws a fresh seed per run, so a floor is here to catch a
+    // generator that stopped reaching a state, never to pin a count.
+    expect(cov.textOnlyTurn, "no turn was ever text-only").toBeGreaterThan(170); // 511-984
+    expect(cov.toolTurn, "no turn ever called a tool").toBeGreaterThan(670); // 2016-2489
+    expect(cov.multiToolTurn, "no turn ever chained two tool calls").toBeGreaterThan(390); // 1180-1585
+    expect(cov.healedTrim, "no trim ever split a tool-call pair").toBeGreaterThan(200); // 609-1125
   });
 
   test("healing the split never strands a call whose result survived", () => {

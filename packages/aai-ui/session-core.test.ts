@@ -491,7 +491,12 @@ describe("createSessionCore", () => {
 
       // audio chunk should be ignored when in error+disconnected state
       lastSocket?.simulateMessage(new Uint8Array(320).buffer);
-      // Error state should remain
+      // The STATE is what the guard protects. `error` alone proves nothing:
+      // `fatalError` latches it (see "A FATAL error must survive the frames
+      // that follow it"), so deleting the guard flips the state to "speaking"
+      // while leaving the banner up — a dead session reading as live, which is
+      // exactly the failure, and the old assertion held through it.
+      expect(core.getSnapshot().state).toBe("error");
       expect(core.getSnapshot().error).not.toBe(null);
     });
   });

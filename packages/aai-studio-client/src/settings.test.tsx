@@ -9,10 +9,9 @@
 // and they run in a fixed order (Work locally, Phone number, Database,
 // Secrets, Danger zone) that the Phone card's copy points into.
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, stubFetch } from "./_test-utils.ts";
+import { jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
 import { SettingsPane } from "./settings.tsx";
 
 /**
@@ -32,23 +31,19 @@ function callsTo(fetchMock: ReturnType<typeof stubFetch>, path: string): number 
 }
 
 function renderPanel(onNotifyChat = vi.fn(), onDeleteProject = vi.fn()) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={client}>
-      <SettingsPane
-        bearer="sk-test"
-        project="demo"
-        onNotifyChat={onNotifyChat}
-        onDeleteProject={onDeleteProject}
-        deleting={false}
-      />
-    </QueryClientProvider>,
+  renderWithClient(
+    <SettingsPane
+      bearer="sk-test"
+      project="demo"
+      onNotifyChat={onNotifyChat}
+      onDeleteProject={onDeleteProject}
+      deleting={false}
+    />,
   );
   return onNotifyChat;
 }
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
 });
 

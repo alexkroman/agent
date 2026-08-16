@@ -64,6 +64,23 @@ export default defineConfig({
     testTimeout: profile.timeout,
     hookTimeout: profile.hookTimeout,
     include: process.env.VITEST_INCLUDE?.split(",") ?? ["**/*.test.ts"],
+    /**
+     * Setup files are SELECTED per run, the same way `include` is, because this
+     * one config serves every package's slow tiers and a package's setup file is
+     * not safe to impose on the others. `aai-cli/_test-setup.ts` deletes every
+     * `*API_KEY` and `DATABASE_URL` from the environment — correct for the CLI
+     * suite, and it would silently disarm `pipeline-reference.integration.test.ts`
+     * (which needs three real keys) and the whole Postgres arm.
+     *
+     * Declaring none was the bug: the unit tiers each set `setupFiles` in their
+     * own `vitest.config.ts`, and NOTHING carried that into integration/scenario/
+     * e2e. So `aai-cli`'s scenario and e2e suites ran without the
+     * `AAI_CONFIG_DIR` redirect, i.e. against the developer's real
+     * `~/.config/aai/config.json` — the exact machine-contamination that file
+     * exists to prevent, and the reason its scenario suite had to re-implement
+     * the credential scrub by hand.
+     */
+    setupFiles: process.env.VITEST_SETUP?.split(",") ?? [],
     pool: process.env.VITEST_POOL === "forks" ? "forks" : "threads",
   },
 });

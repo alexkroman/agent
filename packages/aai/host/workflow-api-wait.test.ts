@@ -82,13 +82,16 @@ describe("waitForRun", () => {
     // The last interval is TRIMMED to what is left, so a 100ms budget answers
     // in 100ms rather than at the next 250ms tick.
     const runs = reader([snapshot({ status: "running" })]);
-    let settled = false;
-    void waitForRun(runs, "wrun_1", 100, link()).then(() => {
-      settled = true;
-    });
+    // A spy rather than a `let settled = false` flipped in a `.then()`: it
+    // records its own calls and names itself in the failure. And the promise is
+    // AWAITED at the end instead of `void`ed, so a rejection fails this test
+    // rather than surfacing as an unhandled rejection somewhere later.
+    const settled = vi.fn();
+    const waiting = waitForRun(runs, "wrun_1", 100, link()).then(settled);
 
     await vi.advanceTimersByTimeAsync(120);
-    expect(settled).toBe(true);
+    expect(settled).toHaveBeenCalled();
+    await waiting;
   });
 
   test("stops when the caller goes away", async () => {

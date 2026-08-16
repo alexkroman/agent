@@ -6,19 +6,28 @@
 // position is not decoration: it decides which system prompt the project's
 // coding agent runs under, so it has to reach `onStart` with every submit.
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { input } from "./_test-utils.ts";
 import { HomeHero } from "./home.tsx";
 import { AGENT_STARTERS, WORKFLOW_STARTERS } from "./starters.ts";
 
 const noop = (): void => undefined;
 
+/**
+ * The first starter chip. Found by class rather than by role: every chip is a
+ * button and the assertions are about WHICH prompt one carries, not its name.
+ */
+function starterChip(): HTMLButtonElement {
+  const chip = document.querySelector("button.starter");
+  if (!(chip instanceof HTMLButtonElement)) throw new Error("no starter chip rendered");
+  return chip;
+}
+
 const heroProps = { creating: false, onStart: noop };
 
 const status = { provider: "assemblyai", model: "gpt-5.5" };
-
-afterEach(cleanup);
 
 describe("HomeHero states", () => {
   test("shows the prompt box and starters once the status has landed", () => {
@@ -96,8 +105,7 @@ describe("HomeHero submit", () => {
   test("a starter chip forwards its full prompt, not its label", () => {
     const onStart = vi.fn();
     render(<HomeHero creating={false} status={status} onStart={onStart} />);
-    const chip = document.querySelector("button.starter") as HTMLButtonElement;
-    fireEvent.click(chip);
+    fireEvent.click(starterChip());
     expect(onStart).toHaveBeenCalledTimes(1);
     const [prompt, kind] = onStart.mock.calls[0] ?? [];
     expect(AGENT_STARTERS.map((s) => s.prompt)).toContain(prompt);
@@ -110,7 +118,7 @@ describe("HomeHero kind switcher", () => {
   const chooseWorkflow = () => fireEvent.click(screen.getByRole("radio", { name: "Workflow" }));
 
   /** The switcher's radios, by label. */
-  const radio = (name: string) => screen.getByRole("radio", { name }) as HTMLInputElement;
+  const radio = (name: string) => input(name, "radio");
 
   test("starts on Voice agent — the default and the common case", () => {
     render(<HomeHero {...heroProps} status={status} />);
@@ -147,7 +155,7 @@ describe("HomeHero kind switcher", () => {
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
     expect(onStart).toHaveBeenLastCalledWith("transcribe uploads", "workflow");
 
-    fireEvent.click(document.querySelector("button.starter") as HTMLButtonElement);
+    fireEvent.click(starterChip());
     const [prompt, kind] = onStart.mock.calls[1] ?? [];
     expect(WORKFLOW_STARTERS.map((s) => s.prompt)).toContain(prompt);
     expect(kind).toBe("workflow");

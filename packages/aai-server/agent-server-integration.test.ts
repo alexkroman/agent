@@ -9,11 +9,21 @@
  * with no mocks: what breaks here breaks deployed agents.
  */
 
-import { afterAll, describe, expect, test } from "vitest";
+import pTimeout from "p-timeout";
+import { afterAll, describe, expect, test, vi } from "vitest";
 import { resolveHarnessPath } from "./constants.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
+import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { spawnSubprocessAgentServer } from "./subprocess-sandbox.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
+
+/**
+ * How long the drain spec waits for the guest to notice and exit — many
+ * lifecycle polls (`AGENT_IDLE_POLL_MS`, 5s in aai-guest/limits.ts), so a slow
+ * CI box is not a failure, while a guest that never exits reports the broken
+ * drain instead of the suite's 60s ceiling.
+ */
+const DRAIN_EXIT_BUDGET_MS = 30_000;
 
 // A minimal but REAL bundle: the harness contract demands the
 // __aaiCreateRuntime factory; the inert runtime is all agent-mode boot needs.
@@ -90,19 +100,47 @@ describe("agent-server contract (real harness, no mocks)", () => {
 
   test("drain flips the guest to draining and it self-exits when empty", async () => {
     const handle = await spawnAgent();
+    // Registered BEFORE the drain: `onExit` is one-shot and fires immediately
+    // when the guest is already dead, so there is no window to miss.
+    const exited = Promise.withResolvers<void>();
+    handle.onExit(() => exited.resolve());
+
     await handle.drain();
 
     // Draining with zero sessions: the guest exits on its next lifecycle
     // poll (AGENT_IDLE_POLL_MS), which the host observes as process exit.
-    await new Promise<void>((resolve) => {
-      handle.onExit(resolve);
+    // BOUNDED — a bare `await` on the exit promise let a guest that stopped
+    // self-exiting hang to the file's 60s budget and then blame the timeout
+    // rather than naming the broken drain.
+    await pTimeout(exited.promise, {
+      milliseconds: DRAIN_EXIT_BUDGET_MS,
+      message:
+        `the guest did not exit within ${DRAIN_EXIT_BUDGET_MS}ms of drain() — ` +
+        "drain-then-self-exit is broken",
     });
     expect(handle.alive()).toBe(false);
   }, 60_000);
 
   test("a bundle hash mismatch is a hard boot failure, not a silent agent", async () => {
+    // The HOST's error is the wrapper every spawn failure carries
+    // (`Subprocess agent-server spawn failed: guest exited before ready …`), so
+    // `/not ready|spawn failed/i` matched a bad harness path just as happily.
+    // The guest's own refusal is what discriminates, and it reaches the host on
+    // the stderr `startGuestLogging` relays through `console.warn`.
+    const relayed: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      relayed.push(args.map(String).join(" "));
+    });
+
     await expect(spawnAgent({ workerSha256: "0".repeat(64) })).rejects.toThrow(
-      /not ready|spawn failed/i,
+      SandboxUnavailableError,
     );
+    // The relay is a stream drain racing the spawn's rejection, so the line can
+    // land a tick late.
+    await vi.waitFor(() => {
+      expect(relayed.join("\n")).toMatch(
+        new RegExp(`bundle hash mismatch: expected sha256 ${"0".repeat(64)}`),
+      );
+    });
   }, 60_000);
 });

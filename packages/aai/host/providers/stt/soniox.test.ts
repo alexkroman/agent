@@ -23,6 +23,12 @@ interface FakeWSInstance {
 
 type Listener = (...args: unknown[]) => void;
 
+// A local fake rather than `tts/_fake-ws-test-utils.ts`: this adapter speaks
+// BINARY frames, reads `bufferedAmount` for backpressure, and reads the close
+// CODE — none of which that fake models. It does share the property that
+// matters, and the shared one was fixed to match it: `readyState` is
+// CONNECTING until "open" fires, so a send-before-open is catchable here.
+//
 // `vi.mock` is hoisted above top-level decls, so share state via `vi.hoisted`.
 const { latest, FakeWS } = vi.hoisted(() => {
   const latestRef: { ws: FakeWSInstance | undefined } = { ws: undefined };
@@ -142,8 +148,9 @@ describe("Soniox real-time STT adapter", () => {
   });
 
   test("throws stt_auth_failed when API key is missing", async () => {
-    vi.stubEnv("SONIOX_API_KEY", undefined);
-
+    // No `vi.stubEnv` scrub: `requireApiKey` reads the key it is HANDED and
+    // never `process.env`, so scrubbing the shell var proved nothing and read
+    // as if a fallback existed. `host-env.test.ts` owns that property.
     const opener = openSoniox({});
     const controller = new AbortController();
     await expect(
@@ -412,13 +419,19 @@ describe("Soniox real-time STT adapter", () => {
     const { session, ws } = await openSession();
     const before = ws.sent.length;
 
+    // Byte-for-byte, not just the byte COUNT: an endianness flip, a wrong
+    // `byteOffset` or a zeroed buffer each send silence or noise at exactly
+    // the right length, and a length-only assertion sees none of them.
     const pcm = new Int16Array([1, 2, 3, 4]);
     session.sendAudio(pcm);
 
     expect(ws.sent.length).toBe(before + 1);
     const sent = ws.sent.at(-1);
     expect(sent).toBeInstanceOf(Uint8Array);
-    expect((sent as Uint8Array).byteLength).toBe(pcm.byteLength);
+    const sentView = sent as Uint8Array;
+    expect(new Uint8Array(sentView.buffer, sentView.byteOffset, sentView.byteLength)).toEqual(
+      new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength),
+    );
     await session.close();
   });
 

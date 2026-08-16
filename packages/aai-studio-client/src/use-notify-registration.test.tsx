@@ -6,8 +6,8 @@
 // the end-of-turn sync persists. So the busy case must not reach the transcript
 // at all; it waits for the settle.
 
-import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
 import type { NotifyChat } from "./chat-notify.ts";
 import { useNotifyRegistration } from "./use-notify-registration.ts";
 
@@ -44,9 +44,6 @@ function harness(initialPending = false): Harness {
 }
 
 describe("useNotifyRegistration", () => {
-  // No vitest globals here, so testing-library's auto-cleanup never registers.
-  afterEach(cleanup);
-
   test("an idle chat takes a plain note straight into the transcript", () => {
     const h = harness();
     h.notify("published fine");

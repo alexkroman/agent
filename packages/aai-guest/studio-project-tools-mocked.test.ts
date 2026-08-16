@@ -4,13 +4,12 @@
 // covers the gates themselves with the real collaborators; this file covers
 // what each tool does with a success, a failure, a kill, and a bad body.
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ToolDef } from "@alexkroman1/aai";
 import { safeFetch } from "@alexkroman1/aai/runtime";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { npmResult, runTool } from "./_test-utils.ts";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { npmResult, runTool, useTempDir } from "./_test-utils.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import { runNpm } from "./studio-spawn.ts";
@@ -28,23 +27,17 @@ vi.mock("@alexkroman1/aai/runtime", async (importOriginal) => {
 const runNpmMock = vi.mocked(runNpm);
 const safeFetchMock = vi.mocked(safeFetch);
 
+const tempDir = useTempDir("studio-project-tools-mocked-");
 let dir: string;
 let tools: Record<string, ToolDef>;
 
-beforeEach(async () => {
-  dir = await mkdtemp(path.join(tmpdir(), "studio-project-tools-mocked-"));
+beforeEach(() => {
+  dir = tempDir();
   tools = createProjectTools({ dir });
 });
 
-afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
-});
-
-function execute(name: string, args: unknown): Promise<unknown> {
-  const t = tools[name];
-  if (!t?.execute) throw new Error(`no such tool: ${name}`);
-  return runTool({ [name]: t }, name, args as Record<string, unknown>);
-}
+const execute = (name: string, args: Record<string, unknown>): Promise<string> =>
+  runTool(tools, name, args);
 
 describe("add_dependency / remove_dependency (spawn mocked)", () => {
   test("a clean install reports success with npm's output", async () => {
@@ -119,7 +112,7 @@ describe("update_dependencies (spawn mocked)", () => {
     await manifest({ "date-fns": "^2.0.0", zod: "4.1.0" }, { "fake-timers": "^1.0.0" });
     installsTo({ "date-fns": "^4.1.0", zod: "4.1.0", "fake-timers": "^1.0.0" });
 
-    const result = String(await execute("update_dependencies", {}));
+    const result = await execute("update_dependencies", {});
 
     // One invocation for the whole set, each name pinned to @latest by us.
     expect(runNpmMock).toHaveBeenCalledTimes(1);
@@ -140,7 +133,7 @@ describe("update_dependencies (spawn mocked)", () => {
     await manifest({ "date-fns": "^2.0.0", nanoid: "^3.0.0" });
     installsTo({ "date-fns": "^4.1.0", nanoid: "^3.0.0" });
 
-    const result = String(await execute("update_dependencies", { packages: ["date-fns"] }));
+    const result = await execute("update_dependencies", { packages: ["date-fns"] });
 
     expect(runNpmMock.mock.calls[0]?.[1]).toEqual(["install", "date-fns@latest"]);
     expect(result).toContain("date-fns: ^2.0.0 → ^4.1.0");
@@ -151,9 +144,9 @@ describe("update_dependencies (spawn mocked)", () => {
     await manifest({ "date-fns": "^2.0.0" });
     installsTo({ "date-fns": "^4.1.0" });
 
-    const result = String(
-      await execute("update_dependencies", { packages: ["date-fns", "never-installed"] }),
-    );
+    const result = await execute("update_dependencies", {
+      packages: ["date-fns", "never-installed"],
+    });
 
     expect(runNpmMock.mock.calls[0]?.[1]).not.toContain("never-installed@latest");
     expect(result).toContain("use add_dependency to install: never-installed");
@@ -162,9 +155,9 @@ describe("update_dependencies (spawn mocked)", () => {
   test("a request for only toolchain-owned packages updates nothing", async () => {
     await manifest({ "@alexkroman1/aai": "1.2.3", react: "19.0.0" });
 
-    const result = String(
-      await execute("update_dependencies", { packages: ["@alexkroman1/aai", "react"] }),
-    );
+    const result = await execute("update_dependencies", {
+      packages: ["@alexkroman1/aai", "react"],
+    });
 
     // Bumping these shadows the baked toolchain with an untested build, and
     // the next ensureProjectShape reconcile would revert the pins anyway.
@@ -177,7 +170,7 @@ describe("update_dependencies (spawn mocked)", () => {
     await manifest({ "date-fns": "^2.0.0" });
     runNpmMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "ERESOLVE conflict\n" }));
 
-    const result = String(await execute("update_dependencies", {}));
+    const result = await execute("update_dependencies", {});
 
     expect(result).toContain("nothing was updated");
     expect(result).toContain("ERESOLVE conflict");
@@ -194,7 +187,7 @@ describe("update_dependencies (spawn mocked)", () => {
       return npmResult({ exitCode: 1, stdout: "postinstall failed\n" });
     });
 
-    const result = String(await execute("update_dependencies", {}));
+    const result = await execute("update_dependencies", {});
 
     expect(result).toContain("npm install failed [exit code 1], but package.json changed:");
     expect(result).toContain("date-fns: ^2.0.0 → ^4.1.0");
@@ -204,7 +197,7 @@ describe("update_dependencies (spawn mocked)", () => {
   test("an unparseable manifest is refused rather than reified by npm", async () => {
     await writeFile(path.join(dir, "package.json"), "{ not json");
 
-    const result = String(await execute("update_dependencies", {}));
+    const result = await execute("update_dependencies", {});
 
     expect(runNpmMock).not.toHaveBeenCalled();
     expect(result).toContain("not valid JSON");
@@ -249,6 +242,29 @@ describe("npm_info (spawn mocked)", () => {
 });
 
 describe("download_to_workspace (fetch mocked)", () => {
+  // `restoreMocks` restores `vi.spyOn` mocks; it does not clear a `vi.fn()`'s
+  // call history, so a "was never fetched" assertion would otherwise be
+  // satisfied — or falsified — by an earlier test in this file.
+  beforeEach(() => {
+    safeFetchMock.mockReset();
+  });
+
+  // The sibling asserts that a path escape is REFUSED; what it cannot see is
+  // the ordering its own test name claims. Swapping the two blocks in
+  // `downloadToWorkspace` would still refuse and still produce this string —
+  // after issuing a model-controlled outbound request.
+  test("a path escape is refused BEFORE the model-controlled URL is fetched", async () => {
+    safeFetchMock.mockResolvedValue(new Response("should never be fetched", { status: 200 }));
+
+    const result = await execute("download_to_workspace", {
+      url: "https://example.com/data.json",
+      path: "../outside.json",
+    });
+
+    expect(result).toContain("escapes the workspace");
+    expect(safeFetchMock).not.toHaveBeenCalled();
+  });
+
   test("writes a utf-8 body into the workspace", async () => {
     safeFetchMock.mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
 

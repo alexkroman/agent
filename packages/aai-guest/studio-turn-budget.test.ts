@@ -28,7 +28,10 @@ describe("createTurnBudget", () => {
     const b = createTurnBudget(c.now);
     c.advance(SOFT_TURN_MS);
     const notice = b.takeWrapUpNotice();
-    expect(notice).toBeDefined();
+    // `toBeDefined()` was the assertion here, and `null` is defined — the
+    // return type is `string | null`, so it held for a budget that never
+    // offered a notice at all.
+    expect(notice).toEqual(expect.any(String));
     // It must rank verified-partial above unverified-complete, and require
     // an honest report — a rushed agent claiming success is the failure
     // this is meant to prevent, not just a slow one.
@@ -41,7 +44,7 @@ describe("createTurnBudget", () => {
     const c = clock();
     const b = createTurnBudget(c.now);
     c.advance(SOFT_TURN_MS);
-    expect(b.takeWrapUpNotice()).toBeDefined();
+    expect(b.takeWrapUpNotice()).toEqual(expect.any(String));
     c.advance(30_000);
     expect(b.takeWrapUpNotice()).toBeNull();
   });
@@ -67,7 +70,10 @@ describe("createTurnBudget", () => {
     const c = clock();
     const b = createTurnBudget(c.now);
     c.advance(HARD_TURN_MS);
-    expect(b.takeFinalNotice()).toBeDefined();
+    // Same trap as the wrap-up notice above: the whole point of this test is
+    // that a closing step WAS offered before `expired()` latches, and
+    // `toBeDefined()` is satisfied by the `null` that means it was not.
+    expect(b.takeFinalNotice()).toEqual(expect.any(String));
     c.advance(60_000);
     expect(b.takeFinalNotice()).toBeNull();
     expect(b.expired()).toBe(true);

@@ -119,11 +119,12 @@ describe("normalizeSpeechText", () => {
   // `text.length` (pipeline-heard.ts), and that index decides what history
   // records as heard and where a resume picks up. A substitution that changed
   // length would silently shift both.
-  test("is length-preserving, which the heard cursor depends on", () => {
-    for (const s of ["You’re “done”", "‘’‚‛ʼ′“”„″", "no typography here"]) {
+  test.each(["You’re “done”", "‘’‚‛ʼ′“”„″", "no typography here"])(
+    "is length-preserving, which the heard cursor depends on: %j",
+    (s) => {
       expect(normalizeSpeechText(s)).toHaveLength(s.length);
-    }
-  });
+    },
+  );
 
   // Prosody, not typography: TTS engines already render these as pauses, and
   // folding them would also break the length invariant above.

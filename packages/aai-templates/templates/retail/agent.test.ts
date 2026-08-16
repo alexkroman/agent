@@ -1,4 +1,4 @@
-import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
+import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
@@ -27,27 +27,41 @@ function makeCtx(): ToolContext {
   return createToolContext();
 }
 
+/**
+ * The success half of a tool result, or a thrown failure carrying the tool's
+ * own message.
+ *
+ * `ToolDef["execute"]`'s public signature always returns `unknown` — the wire
+ * type is fixed so any tool is assignable to `ToolDef`, whatever its body
+ * really returns — so every test that reads a field back off a result needed a
+ * cast. There were EIGHTEEN of them here, each the same three lines, which is
+ * the shape the repo's guides call a missing typed seam: a concentration of
+ * identical casts is one narrowing that belongs in one helper, not a cast per
+ * assertion. This is that helper, and it is the file's only cast.
+ *
+ * It also removes the second half of the boilerplate: a `ToolFailure` fails the
+ * test HERE, naming what the tool refused, rather than surfacing three lines
+ * later as `undefined` on a field nobody assigned.
+ */
+function ok<T>(result: unknown): T {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  return result as T;
+}
+
 /** A context already authenticated as `userId`, via the real tool. */
 async function authedCtx(email: string): Promise<ToolContext> {
   const ctx = makeCtx();
-  // `ToolDef["execute"]`'s public signature always returns `unknown` (the
-  // wire type is fixed so any tool is assignable to `ToolDef`, regardless of
-  // what its own `execute` body actually returns), so a cast is needed
-  // anywhere a test reads a success field back off the result — matching the
-  // `as {...}` convention other templates already use for the same reason.
-  const result = (await findUserIdByEmail.execute({ email }, ctx)) as AuthResult | ToolFailure;
-  if (isToolFailure(result)) throw new Error(`fixture failed to authenticate: ${result.error}`);
+  ok<AuthResult>(await findUserIdByEmail.execute({ email }, ctx));
   return ctx;
 }
 
 describe("authentication", () => {
   test("find_user_id_by_email is case-insensitive and authenticates the session", async () => {
     const ctx = makeCtx();
-    const result = (await findUserIdByEmail.execute(
-      { email: "OLIVIA.ITO5204@EXAMPLE.COM" },
-      ctx,
-    )) as AuthResult | ToolFailure;
-    expect(isToolFailure(result) ? null : result.user_id).toBe("olivia_ito_3591");
+    const result = ok<AuthResult>(
+      await findUserIdByEmail.execute({ email: "OLIVIA.ITO5204@EXAMPLE.COM" }, ctx),
+    );
+    expect(result.user_id).toBe("olivia_ito_3591");
     expect(retailSlot.get(ctx).authenticatedUserId).toBe("olivia_ito_3591");
   });
 
@@ -60,11 +74,13 @@ describe("authentication", () => {
 
   test("find_user_id_by_name_zip is case-insensitive on names and exact on zip", async () => {
     const ctx = makeCtx();
-    const ok = (await findUserIdByNameZip.execute(
-      { first_name: "aarav", last_name: "ANDERSON", zip: "19031" },
-      ctx,
-    )) as AuthResult | ToolFailure;
-    expect(isToolFailure(ok) ? null : ok.user_id).toBe("aarav_anderson_8794");
+    const found = ok<AuthResult>(
+      await findUserIdByNameZip.execute(
+        { first_name: "aarav", last_name: "ANDERSON", zip: "19031" },
+        ctx,
+      ),
+    );
+    expect(found.user_id).toBe("aarav_anderson_8794");
 
     const wrongZip = await findUserIdByNameZip.execute(
       { first_name: "Aarav", last_name: "Anderson", zip: "78268" },
@@ -74,16 +90,20 @@ describe("authentication", () => {
   });
 
   test("two customers share a first name — the zip is what separates them", async () => {
-    const a = (await findUserIdByNameZip.execute(
-      { first_name: "Aarav", last_name: "Anderson", zip: "19031" },
-      makeCtx(),
-    )) as AuthResult | ToolFailure;
-    const b = (await findUserIdByNameZip.execute(
-      { first_name: "Aarav", last_name: "Gonzalez", zip: "78268" },
-      makeCtx(),
-    )) as AuthResult | ToolFailure;
-    expect(isToolFailure(a) ? null : a.user_id).toBe("aarav_anderson_8794");
-    expect(isToolFailure(b) ? null : b.user_id).toBe("aarav_gonzalez_5113");
+    const a = ok<AuthResult>(
+      await findUserIdByNameZip.execute(
+        { first_name: "Aarav", last_name: "Anderson", zip: "19031" },
+        makeCtx(),
+      ),
+    );
+    const b = ok<AuthResult>(
+      await findUserIdByNameZip.execute(
+        { first_name: "Aarav", last_name: "Gonzalez", zip: "78268" },
+        makeCtx(),
+      ),
+    );
+    expect(a.user_id).toBe("aarav_anderson_8794");
+    expect(b.user_id).toBe("aarav_gonzalez_5113");
   });
 
   test("re-authenticating as the same customer is a no-op success", async () => {
@@ -142,10 +162,9 @@ interface ProductTypesResult {
 describe("read tools", () => {
   test("get_user_details returns the caller's profile with gift-card balances", async () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
-    const result = (await getUserDetails.execute({ user_id: "olivia_ito_3591" }, ctx)) as
-      | UserDetailsResult
-      | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<UserDetailsResult>(
+      await getUserDetails.execute({ user_id: "olivia_ito_3591" }, ctx),
+    );
     expect(result.email).toBe("olivia.ito5204@example.com");
     expect(result.orders).toHaveLength(5);
     const card = result.payment_methods.find((m) => m.payment_method_id === "gift_card_7794233");
@@ -160,10 +179,9 @@ describe("read tools", () => {
 
   test("get_order_details resolves shorthand and sets focus", async () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
-    const result = (await getOrderDetails.execute({ order_id: "the delivered one" }, ctx)) as
-      | OrderDetailsResult
-      | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<OrderDetailsResult>(
+      await getOrderDetails.execute({ order_id: "the delivered one" }, ctx),
+    );
     expect(result.order_id).toBe("#W5866402");
     expect(retailSlot.get(ctx).focus.orderId).toBe("#W5866402");
   });
@@ -175,10 +193,9 @@ describe("read tools", () => {
   });
 
   test("get_product_details lists variants and needs no authentication", async () => {
-    const result = (await getProductDetails.execute({ product_id: "9832717871" }, makeCtx())) as
-      | ProductDetailsResult
-      | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<ProductDetailsResult>(
+      await getProductDetails.execute({ product_id: "9832717871" }, makeCtx()),
+    );
     expect(result.name).toBe("Tea Kettle");
     expect(result.variants.length).toBeGreaterThan(1);
     expect(result.variants[0]).toHaveProperty("item_id");
@@ -190,19 +207,15 @@ describe("read tools", () => {
   });
 
   test("get_item_details resolves an item without knowing its product", async () => {
-    const result = (await getItemDetails.execute({ item_id: "3909406921" }, makeCtx())) as
-      | ItemDetailsResult
-      | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<ItemDetailsResult>(
+      await getItemDetails.execute({ item_id: "3909406921" }, makeCtx()),
+    );
     expect(result.price).toBe(98.25);
     expect(result.product_name).toBe("Tea Kettle");
   });
 
   test("list_all_product_types returns all 50, sorted by name", async () => {
-    const result = (await listAllProductTypes.execute({}, makeCtx())) as
-      | ProductTypesResult
-      | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<ProductTypesResult>(await listAllProductTypes.execute({}, makeCtx()));
     expect(Object.keys(result.products)).toHaveLength(50);
     const names = Object.keys(result.products);
     // localeCompare, not the default lexicographic sort — the tool sorts for a
@@ -224,11 +237,12 @@ interface CancelOrderResult {
 describe("cancel_pending_order", () => {
   test("cancels a pending order and credits a gift card immediately", async () => {
     const ctx = await authedCtx("aarav.anderson9752@example.com");
-    const result = (await cancelPendingOrder.execute(
-      { order_id: "#W9300146", reason: "ordered by mistake" },
-      ctx,
-    )) as CancelOrderResult | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<CancelOrderResult>(
+      await cancelPendingOrder.execute(
+        { order_id: "#W9300146", reason: "ordered by mistake" },
+        ctx,
+      ),
+    );
     expect(result.status).toBe("cancelled");
     expect(result.refund_immediate).toBe(true);
 
@@ -254,11 +268,9 @@ describe("cancel_pending_order", () => {
 
   test("a non-gift-card refund takes 5-7 days and moves no balance", async () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
-    const result = (await cancelPendingOrder.execute(
-      { order_id: "#W5442520", reason: "no longer needed" },
-      ctx,
-    )) as CancelOrderResult | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<CancelOrderResult>(
+      await cancelPendingOrder.execute({ order_id: "#W5442520", reason: "no longer needed" }, ctx),
+    );
     expect(result.refund_immediate).toBe(false);
     expect(result.message).toContain("5 to 7");
     const card = retailSlot.get(ctx).store.users.olivia_ito_3591?.payment_methods.gift_card_7794233;
@@ -312,11 +324,13 @@ describe("cancel_pending_order", () => {
 
   test("resolves spoken shorthand to the single pending order", async () => {
     const ctx = await authedCtx("aarav.anderson9752@example.com");
-    const result = (await cancelPendingOrder.execute(
-      { order_id: "my pending order", reason: "ordered by mistake" },
-      ctx,
-    )) as CancelOrderResult | ToolFailure;
-    expect(isToolFailure(result) ? null : result.order_id).toBe("#W9300146");
+    const result = ok<CancelOrderResult>(
+      await cancelPendingOrder.execute(
+        { order_id: "my pending order", reason: "ordered by mistake" },
+        ctx,
+      ),
+    );
+    expect(result.order_id).toBe("#W9300146");
   });
 
   test("refuses ambiguous shorthand rather than cancelling the wrong order", async () => {
@@ -350,11 +364,9 @@ interface AddressToolResult {
 describe("modify_pending_order_address", () => {
   test("rewrites a pending order's shipping address", async () => {
     const ctx = await authedCtx("aarav.anderson9752@example.com");
-    const result = (await modifyPendingOrderAddress.execute(
-      { order_id: "#W9300146", ...NEW_ADDRESS },
-      ctx,
-    )) as AddressToolResult | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<AddressToolResult>(
+      await modifyPendingOrderAddress.execute({ order_id: "#W9300146", ...NEW_ADDRESS }, ctx),
+    );
     expect(result.address).toEqual(NEW_ADDRESS);
     expect(retailSlot.get(ctx).store.orders["#W9300146"]?.address).toEqual(NEW_ADDRESS);
   });
@@ -401,11 +413,7 @@ describe("modify_pending_order_address", () => {
 describe("modify_user_address", () => {
   test("rewrites the customer's default address", async () => {
     const ctx = await authedCtx("emma.smith3991@example.com");
-    const result = await modifyUserAddress.execute(
-      { user_id: "emma_smith_8564", ...NEW_ADDRESS },
-      ctx,
-    );
-    if (isToolFailure(result)) throw new Error(result.error);
+    ok(await modifyUserAddress.execute({ user_id: "emma_smith_8564", ...NEW_ADDRESS }, ctx));
     expect(retailSlot.get(ctx).store.users.emma_smith_8564?.address).toEqual(NEW_ADDRESS);
   });
 
@@ -446,16 +454,17 @@ interface ModifyItemsResult {
 describe("modify_pending_order_items", () => {
   test("swaps an item, charges the difference to a gift card, and goes terminal", async () => {
     const ctx = await authedCtx("emma.smith3991@example.com");
-    const result = (await modifyPendingOrderItems.execute(
-      {
-        order_id: "#W2417020",
-        item_ids: ["8997785118"],
-        new_item_ids: ["6017636844"],
-        payment_method_id: "gift_card_8541487",
-      },
-      ctx,
-    )) as ModifyItemsResult | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<ModifyItemsResult>(
+      await modifyPendingOrderItems.execute(
+        {
+          order_id: "#W2417020",
+          item_ids: ["8997785118"],
+          new_item_ids: ["6017636844"],
+          payment_method_id: "gift_card_8541487",
+        },
+        ctx,
+      ),
+    );
     expect(result.price_difference).toBe(-382.03);
     expect(result.status).toBe("pending (item modified)");
 
@@ -556,16 +565,17 @@ describe("modify_pending_order_items", () => {
 
   test("the same upgrade succeeds on a payment method with no balance to run out of", async () => {
     const ctx = await authedCtx("anya.garcia2061@example.com");
-    const result = (await modifyPendingOrderItems.execute(
-      {
-        order_id: "#W6436609",
-        item_ids: ["6017636844"],
-        new_item_ids: ["9844888101"],
-        payment_method_id: "credit_card_8955149",
-      },
-      ctx,
-    )) as ModifyItemsResult | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<ModifyItemsResult>(
+      await modifyPendingOrderItems.execute(
+        {
+          order_id: "#W6436609",
+          item_ids: ["6017636844"],
+          new_item_ids: ["9844888101"],
+          payment_method_id: "credit_card_8955149",
+        },
+        ctx,
+      ),
+    );
     expect(result.price_difference).toBe(167.37);
     const history = retailSlot.get(ctx).store.orders["#W6436609"]?.payment_history ?? [];
     expect(history[1]).toMatchObject({
@@ -618,11 +628,12 @@ describe("modify_pending_order_payment", () => {
   test("moves an order to a different method, refunding the old one", async () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
     // #W5442520 is $663.85 on credit_card_9753331. Pay by PayPal instead.
-    const result = (await modifyPendingOrderPayment.execute(
-      { order_id: "#W5442520", payment_method_id: "paypal_8049766" },
-      ctx,
-    )) as ModifyPaymentResult | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<ModifyPaymentResult>(
+      await modifyPendingOrderPayment.execute(
+        { order_id: "#W5442520", payment_method_id: "paypal_8049766" },
+        ctx,
+      ),
+    );
     expect(result.status).toBe("pending");
 
     const history = retailSlot.get(ctx).store.orders["#W5442520"]?.payment_history ?? [];
@@ -733,15 +744,16 @@ interface ExchangeResult {
 describe("return_delivered_order_items", () => {
   test("requests a return refunded to the original method", async () => {
     const ctx = await authedCtx("harper.brown3965@example.com");
-    const result = (await returnDeliveredOrderItems.execute(
-      {
-        order_id: "#W1840144",
-        item_ids: ["8590708195"],
-        payment_method_id: "paypal_2306935",
-      },
-      ctx,
-    )) as ReturnResult | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<ReturnResult>(
+      await returnDeliveredOrderItems.execute(
+        {
+          order_id: "#W1840144",
+          item_ids: ["8590708195"],
+          payment_method_id: "paypal_2306935",
+        },
+        ctx,
+      ),
+    );
     expect(result.status).toBe("return requested");
     const order = retailSlot.get(ctx).store.orders["#W1840144"];
     expect(order?.return_items).toEqual(["8590708195"]);
@@ -835,16 +847,17 @@ describe("return_delivered_order_items", () => {
 describe("exchange_delivered_order_items", () => {
   test("records an exchange with a positive price difference", async () => {
     const ctx = await authedCtx("aarav.anderson9752@example.com");
-    const result = (await exchangeDeliveredOrderItems.execute(
-      {
-        order_id: "#W4316152",
-        item_ids: ["7292993796"],
-        new_item_ids: ["3909406921"],
-        payment_method_id: "gift_card_7245904",
-      },
-      ctx,
-    )) as ExchangeResult | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<ExchangeResult>(
+      await exchangeDeliveredOrderItems.execute(
+        {
+          order_id: "#W4316152",
+          item_ids: ["7292993796"],
+          new_item_ids: ["3909406921"],
+          payment_method_id: "gift_card_7245904",
+        },
+        ctx,
+      ),
+    );
     expect(result.price_difference).toBe(3.45);
     expect(result.exchanges).toEqual([
       { item_id: "7292993796", new_item_id: "3909406921", price_difference: 3.45 },
@@ -865,16 +878,17 @@ describe("exchange_delivered_order_items", () => {
     // result has to report the pairing that was priced, not the one the sort
     // produced.
     const ctx = await authedCtx("olivia.ito5204@example.com");
-    const result = (await exchangeDeliveredOrderItems.execute(
-      {
-        order_id: "#W5866402",
-        item_ids: ["6242772310", "9727387530"],
-        new_item_ids: ["7407838442", "2509076505"],
-        payment_method_id: "paypal_8049766",
-      },
-      ctx,
-    )) as ExchangeResult | ToolFailure;
-    if (isToolFailure(result)) throw new Error(result.error);
+    const result = ok<ExchangeResult>(
+      await exchangeDeliveredOrderItems.execute(
+        {
+          order_id: "#W5866402",
+          item_ids: ["6242772310", "9727387530"],
+          new_item_ids: ["7407838442", "2509076505"],
+          payment_method_id: "paypal_8049766",
+        },
+        ctx,
+      ),
+    );
 
     expect(result.exchanges).toEqual([
       { item_id: "6242772310", new_item_id: "7407838442", price_difference: 85.88 },
@@ -929,30 +943,34 @@ describe("exchange_delivered_order_items", () => {
 
   test("exchanges both copies of a duplicate and doubles the difference", async () => {
     const ctx = await authedCtx("aarav.anderson9752@example.com");
-    const result = (await exchangeDeliveredOrderItems.execute(
-      {
-        order_id: "#W4316152",
-        item_ids: ["7292993796", "7292993796"],
-        new_item_ids: ["3909406921", "3909406921"],
-        payment_method_id: "gift_card_7245904",
-      },
-      ctx,
-    )) as ExchangeResult | ToolFailure;
-    expect(isToolFailure(result) ? null : result.price_difference).toBe(6.9);
+    const result = ok<ExchangeResult>(
+      await exchangeDeliveredOrderItems.execute(
+        {
+          order_id: "#W4316152",
+          item_ids: ["7292993796", "7292993796"],
+          new_item_ids: ["3909406921", "3909406921"],
+          payment_method_id: "gift_card_7245904",
+        },
+        ctx,
+      ),
+    );
+    expect(result.price_difference).toBe(6.9);
   });
 
   test("records a negative difference as a refund direction", async () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
-    const result = (await exchangeDeliveredOrderItems.execute(
-      {
-        order_id: "#W5866402",
-        item_ids: ["6242772310"],
-        new_item_ids: ["6200867091"],
-        payment_method_id: "gift_card_7794233",
-      },
-      ctx,
-    )) as ExchangeResult | ToolFailure;
-    expect(isToolFailure(result) ? null : result.price_difference).toBe(-40.86);
+    const result = ok<ExchangeResult>(
+      await exchangeDeliveredOrderItems.execute(
+        {
+          order_id: "#W5866402",
+          item_ids: ["6242772310"],
+          new_item_ids: ["6200867091"],
+          payment_method_id: "gift_card_7794233",
+        },
+        ctx,
+      ),
+    );
+    expect(result.price_difference).toBe(-40.86);
   });
 
   test("refuses a gift card that cannot cover the difference", async () => {
@@ -1063,11 +1081,13 @@ interface TransferResult {
 
 describe("transfer_to_human_agents", () => {
   test("works without authentication — the escape hatch cannot be gated", async () => {
-    const result = (await transferToHumanAgents.execute(
-      { summary: "Caller wants to dispute a charge from 2019." },
-      makeCtx(),
-    )) as TransferResult | ToolFailure;
+    const result = ok<TransferResult>(
+      await transferToHumanAgents.execute(
+        { summary: "Caller wants to dispute a charge from 2019." },
+        makeCtx(),
+      ),
+    );
     expect(isToolFailure(result)).toBe(false);
-    expect(isToolFailure(result) ? null : result.transferred).toBe(true);
+    expect(result.transferred).toBe(true);
   });
 });

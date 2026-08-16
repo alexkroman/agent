@@ -25,6 +25,7 @@
  * the normal node_modules walk-up, exactly as in a user project.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -236,13 +237,23 @@ let buildSeq = 0;
  * Materialize `files` into a fresh directory under the workspaces root, run
  * `fn`, and clean up. Used by the host's `workspace/deploy` RPC (Publish) so
  * a store-snapshot build never clobbers the live chat session's workspace.
+ *
+ * **The directory name carries a random token as well as the counter**, because
+ * `workspacesRoot()` is keyed by PID and a counter is only unique within one
+ * module instance. Two instances sharing a pid — vitest's `threads` pool runs
+ * every test file in a worker thread of the SAME process, each with its own
+ * module registry — both hand out `build-1`, so one file's `finally` `rm -rf`
+ * deletes the directory the other is still building in. The symptom is not a
+ * missing file: the victim's own `process.cwd()` stops existing, and the child
+ * it spawned dies inside rolldown with `ENOENT: uv_cwd`, naming nothing about
+ * this. The counter stays because it keeps the names ordered and readable.
  */
 export async function withBuildDir<T>(
   files: Record<string, string>,
   materialize: (dir: string, files: Record<string, string>) => Promise<void>,
   fn: (dir: string) => Promise<T>,
 ): Promise<T> {
-  const dir = path.join(workspacesRoot(), `build-${++buildSeq}`);
+  const dir = path.join(workspacesRoot(), `build-${++buildSeq}-${randomUUID().slice(0, 8)}`);
   await mkdir(dir, { recursive: true });
   try {
     await materialize(dir, files);

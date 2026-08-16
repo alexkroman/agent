@@ -1,8 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
-// `limits.ts` is bundled into the guest and must therefore keep zero imports,
-// so it cannot import the SDK constants it mirrors. These assertions are what
-// stops the two sides drifting: they are the reason the duplication is safe.
+// `limits.ts` is bundled into the guest, so most of it MIRRORS the SDK
+// constants rather than importing them. These assertions are what stops the
+// two sides drifting: they are the reason the duplication is safe. The last
+// test is the other half — what the file is allowed to depend on at all.
 
+import { readFile } from "node:fs/promises";
 import { STORAGE_DISABLED_MESSAGE, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import * as limits from "./limits.ts";
@@ -35,10 +37,23 @@ describe("guest limits mirror the SDK constants", () => {
     expect(limits.HARNESS_ORPHAN_POLL_MS).toBeLessThanOrEqual(limits.HARNESS_ORPHAN_TIMEOUT_MS / 2);
   });
 
-  test("limits.ts stays import-free so it can be bundled into the guest", async () => {
-    const source = await import("node:fs/promises").then((fs) =>
-      fs.readFile(new URL("./limits.ts", import.meta.url), "utf8"),
+  test("limits.ts depends on nothing the guest bundle does not already carry", async () => {
+    // The old form of this asserted `/^\s*import\s/m` — "zero imports" — and
+    // could not see the one dependency the file actually has, because it
+    // arrives as `export { … } from "@alexkroman1/aai/workspace-files"`. Both
+    // the assertion and the module doc were false for as long as the caps were
+    // re-exported, and a new `export … from "@alexkroman1/aai-cli/…"` (kept
+    // EXTERNAL by the harness build) would have broken guest bundling with
+    // this test green. Read every module specifier instead, whichever clause
+    // carries it.
+    const source = await readFile(new URL("./limits.ts", import.meta.url), "utf8");
+    const specifiers = [...source.matchAll(/\bfrom\s*["']([^"']+)["']/g)].map(
+      (m) => m[1] as string,
     );
-    expect(source).not.toMatch(/^\s*import\s/m);
+    expect(specifiers).toEqual(["@alexkroman1/aai/workspace-files"]);
+    // Belt and braces on the regex itself: a pattern that stopped matching
+    // would report an empty list, which `toEqual` above would call a failure
+    // only while the one real dependency exists.
+    expect(source).toContain('from "@alexkroman1/aai/workspace-files"');
   });
 });

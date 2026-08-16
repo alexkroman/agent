@@ -1,8 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Limits enforced in the guest harness. One definition so the guest and any
- * host-side mirror cannot drift. Dependency-free: this file is bundled into
- * the guest, so it must keep zero imports (workspace or otherwise).
+ * host-side mirror cannot drift.
+ *
+ * This file is bundled into the guest, so its dependencies are restricted to
+ * what the harness bundle already contains: `@alexkroman1/aai` subpaths, and
+ * nothing else. Everything above the workspace caps is therefore ASSERTED
+ * against the SDK rather than imported from it (see `limits.test.ts`); the
+ * caps themselves are re-exported from `@alexkroman1/aai/workspace-files`,
+ * which tsdown bundles in. A dependency on `@alexkroman1/aai-cli` — which the
+ * harness build keeps EXTERNAL — or on any other package would break guest
+ * bundling, which is what `limits.test.ts` guards.
  */
 
 /**

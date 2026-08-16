@@ -562,6 +562,44 @@ so every piece of per-project state resets on a switch with no effect to do it.
   twin of the 401 storm the module header describes. A stream that stayed up
   10s still resets, so the promptness the reset exists for is intact.
 
+## Testing this package
+
+**node is the default and jsdom is a per-file pragma.** 18 of the 26 suites
+carry `// @vitest-environment jsdom` on line 1; the other eight are pure logic
+(`file-drafts`, `chat-queue`, `stale-build`, the `api` reads) plus
+`chat.test.tsx`, which asserts markup through `react-dom/server` and says so.
+Interaction behaviour — clicks, effects, timers, `beforeunload`, clipboard,
+fake-timer poll loops — belongs in a pragma'd file. The split costs nothing in
+coverage: a `.tsx` test that forgets the pragma fails loudly on `document is
+not defined`, never silently.
+
+**`src/_test-utils.ts` is the shared seam, and reaching past it is the smell.**
+It holds the fetch stubs (`stubFetch`, `fakeFetch`, `jsonResponse`,
+`sseResponse`, `settle`), the readers over a recorded request (`fetchCall`,
+`fetchLines`), the TanStack wrapper (`renderWithClient` — one client per
+render, `retry: false`), the typed DOM seams (`button`, `input`, `textarea`)
+and `installResizeObserver()`. Each replaced a shape that had been rebuilt per
+suite: the QueryClient pair in five files, the `ResizeObserver` stub in two,
+and 21 `as HTML*Element` casts — a cast that also silently answers `undefined
+=== true` when the query resolves to something with no `.disabled`.
+
+**`afterEach(cleanup)` lives in `src/_test-setup.ts`, not in the suites.**
+Testing Library registers its own only under `globals: true`, which this
+package does not set, so sixteen files hand-wrote it and the seventeenth
+(`use-event-stream.test.ts`) relied on a per-test `unmount()` that an earlier
+assertion failure skips. The setup file also raises Testing Library's async
+ceiling to 10s — which `vitest.config.ts` has to back with a matching
+`testTimeout` (20s), or the 5000ms default aborts the wait first and throws
+away the message.
+
+**Constants a test asserts a cadence against are IMPORTED, never mirrored.**
+`preview.tsx` exports `PROBE_RETRY_MS`, `PROBE_SLOW_AFTER`,
+`PROBE_SLOW_RETRY_MS` and `PROBE_FAILURES_BEFORE_WAKE` for that reason: the
+probe test used to copy them, so halving the source cadence would have
+loosened the very bound written to catch it. The bound is also EXACT rather
+than an upper one — a capped-only assertion is satisfied by a poll loop that
+STOPS, which is the failure the module's own docblock names.
+
 ## Surviving a platform deploy (`stale-build.ts`)
 
 A chunk URL is only valid while the container image holding it is running,

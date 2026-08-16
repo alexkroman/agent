@@ -131,6 +131,14 @@ describe("stepFetch", () => {
   });
 });
 
+/** First offset at which `needle` occurs in `haystack`, or -1. */
+function indexOfBytes(haystack: Uint8Array, needle: Uint8Array): number {
+  for (let i = 0; i + needle.length <= haystack.length; i++) {
+    if (needle.every((byte, j) => haystack[i + j] === byte)) return i;
+  }
+  return -1;
+}
+
 describe("multipartBody", () => {
   const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 
@@ -183,15 +191,21 @@ describe("multipartBody", () => {
   test("binary bytes survive verbatim — the whole reason this is not a string builder", () => {
     // 0x80-0xff is where a naive string round trip loses: decoded as UTF-8 and
     // re-encoded, every invalid byte becomes U+FFFD, and an audio payload is
-    // mostly invalid UTF-8. Located by scanning rather than by offset arithmetic,
-    // so the test does not encode the header's exact length.
+    // mostly invalid UTF-8. Located by scanning for the header terminator rather
+    // than by offset arithmetic, so the test does not encode the header's exact
+    // length — and then compared BYTE FOR BYTE at that offset. A `toContain` over
+    // the comma-joined runs is not an identity check: `"0,128,255,254,127"` is a
+    // substring of `"10,128,255,254,127"`, so the first byte could be wrong.
     const bytes = new Uint8Array([0x00, 0x80, 0xff, 0xfe, 0x7f]);
     const { body } = multipartBody({ name: "f", filename: "x.bin", bytes });
-    expect([...body].join(",")).toContain([...bytes].join(","));
+    const start = indexOfBytes(body, new TextEncoder().encode("\r\n\r\n"));
+    expect(start).toBeGreaterThan(-1);
+    const payloadAt = start + 4;
+    expect(body.subarray(payloadAt, payloadAt + bytes.length)).toEqual(bytes);
     // And the round trip really would have lost them, so the assertion above is
     // testing something.
     const roundTripped = new TextEncoder().encode(new TextDecoder().decode(bytes));
-    expect([...roundTripped].join(",")).not.toBe([...bytes].join(","));
+    expect(roundTripped).not.toEqual(bytes);
   });
 
   test("the boundary differs per call, so two concurrent bodies cannot collide", () => {

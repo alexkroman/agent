@@ -14,9 +14,8 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { WorkflowRunSnapshot } from "../sdk/workflow.ts";
+import { makeLogger } from "./_test-utils.ts";
 import { createRunNotifier, instructionFor } from "./workflow-notify.ts";
-
-const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 function run(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {
   return {
@@ -36,9 +35,17 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** A notifier over a scripted sequence of reads, with a recording announcer. */
+/**
+ * A notifier over a scripted sequence of reads, with a recording announcer.
+ *
+ * The logger is per-harness: `restoreMocks` restores `vi.spyOn` mocks and
+ * clears neither the history nor the implementation of a plain `vi.fn()`, so a
+ * module singleton would let an earlier test's identical call satisfy the
+ * `logger.info` assertion below.
+ */
 function harness(reads: (WorkflowRunSnapshot | undefined)[], opts: { spoke?: boolean } = {}) {
   const spoken: { sessionId: string; instruction: string }[] = [];
+  const logger = makeLogger();
   let at = 0;
   const get = vi.fn(async () => reads[Math.min(at++, reads.length - 1)]);
   const notifier = createRunNotifier({
@@ -53,7 +60,7 @@ function harness(reads: (WorkflowRunSnapshot | undefined)[], opts: { spoke?: boo
     pollMs: 10,
     maxMs: 10_000,
   });
-  return { notifier, spoken, get };
+  return { notifier, spoken, get, logger };
 }
 
 describe("createRunNotifier", () => {
@@ -126,7 +133,7 @@ describe("createRunNotifier", () => {
           return true;
         },
       },
-      logger,
+      logger: makeLogger(),
       pollMs: 10,
     });
     notifier.watch({ sessionId: "sid-1", runId: "wrun_1" });
@@ -153,7 +160,7 @@ describe("createRunNotifier", () => {
     // What an S2S agent gets for every run: the transport has no injected-turn
     // verb, so `announce` is false — and an author whose agent never speaks up
     // needs that in the log rather than inferred from silence.
-    const { notifier, spoken } = harness([run({ status: "completed" })], { spoke: false });
+    const { notifier, spoken, logger } = harness([run({ status: "completed" })], { spoke: false });
     notifier.watch({ sessionId: "sid-1", runId: "wrun_1" });
     await vi.advanceTimersByTimeAsync(10);
 

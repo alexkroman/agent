@@ -27,8 +27,13 @@
  *
  * ```sh
  * AAI_TEST_PG_URL='postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
- *   pnpm --filter aai-server test:integration
+ *   pnpm --filter aai-server test:scenario
  * ```
+ *
+ * (`pnpm test:pg` resolves a local database and runs the whole tier for you.
+ * This package declares no `check:integration` — every slow suite it owns is a
+ * SCENARIO one, and `AAI_REQUIRE_PG` is declared under `check:scenario` in
+ * `turbo.json`.)
  */
 
 import { createPostgresDb } from "@alexkroman1/aai/runtime";

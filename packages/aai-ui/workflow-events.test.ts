@@ -15,6 +15,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
+import { tick } from "./_react-test-utils.ts";
 import { type RunWatcher, watchRunEvents } from "./workflow-events.ts";
 
 /** A response whose body yields `chunks` in order and then ends. */
@@ -189,10 +190,16 @@ describe("watchRunEvents", () => {
   test("stopping aborts and reports NEITHER outcome", async () => {
     // A teardown is not a fallback: the caller is gone, so starting a poll for
     // it would be a request nobody reads.
+    // The abort reaching the in-flight watch is the GATE for the negative
+    // assertions below.
+    const aborted = Promise.withResolvers<void>();
     const watch = vi.fn(
       (_id: string, signal?: AbortSignal) =>
         new Promise<Response>((_resolve, reject) => {
-          signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          signal?.addEventListener("abort", () => {
+            reject(new Error("aborted"));
+            aborted.resolve();
+          });
         }),
     );
     let settled = 0;
@@ -209,7 +216,13 @@ describe("watchRunEvents", () => {
       },
     );
     stop();
-    for (let i = 0; i < 20; i++) await Promise.resolve();
+    // Awaiting the outcome rather than draining a fixed 20 microtasks — the
+    // budget `collect`'s doc above retired, for the reason it gives: a fixed
+    // count is a statement about how many frames the pump spends, not about
+    // whether the thing under test happened. Here the claim is that the abort
+    // unwinds and neither callback fires, so the abort is what to wait for.
+    await aborted.promise;
+    await tick();
     expect(settled).toBe(0);
     expect(fallback).toBe(0);
   });

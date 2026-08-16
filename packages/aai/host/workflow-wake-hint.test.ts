@@ -14,6 +14,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import type { Db } from "../sdk/db.ts";
+import { silentLogger } from "./_test-utils.ts";
 import {
   createWakeHintPublisher,
   GRAPHILE_JOB_EXPIRY,
@@ -42,8 +43,6 @@ function recordingDb(opts: { queuePresent?: boolean; fail?: RegExp } = {}): Db &
 function matching(db: { sql: string[] }, re: RegExp): string[] {
   return db.sql.filter((statement) => re.test(statement));
 }
-
-const silentLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
 describe("createWakeHintPublisher", () => {
   test("is inert with no database, rather than deciding what to do without one", async () => {
@@ -89,6 +88,9 @@ describe("createWakeHintPublisher", () => {
 
   test("a failure warns once and resolves, so a queue callback never replays over it", async () => {
     const db = recordingDb({ fail: /^insert into/ });
+    // Spread over the shared NO-OP logger and spy on the one method under
+    // test: a module-level bag of `vi.fn()`s accumulates across the file, so
+    // `toHaveBeenCalledTimes(1)` would be a statement about file order.
     const logger = { ...silentLogger, warn: vi.fn() };
     const publisher = createWakeHintPublisher({ db, logger, intervalMs: 0 });
 

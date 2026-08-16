@@ -18,10 +18,10 @@
  */
 
 import { createRateLimiter } from "aai-server/rate-limit";
-import { createDevAuth } from "aai-server/supabase-auth";
 import { authFetch } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
-import { createProject, devToken, wakePreviewMock } from "./_studio-routes-test-utils.ts";
+import { devToken, onboardKey, withDevAuth } from "./_studio-auth-test-utils.ts";
+import { createProject, lastWake, wakePreviewMock } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
 import { CHAT_RATE_LIMIT, PROJECT_CREATE_RATE_LIMIT } from "./studio-rate-limit.ts";
 import { studioScope } from "./studio-workspace.ts";
@@ -35,14 +35,18 @@ vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   const { brokerMock } = await import("./_studio-routes-test-utils.ts");
   return {
     ...original,
-    createStudioSessionBroker: (...args: unknown[]) => brokerMock(...(args as [])),
+    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) =>
+      brokerMock(...args),
   };
 });
 
 vi.mock("./studio-preview-wake.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-preview-wake.ts")>();
   const { wakePreviewMock: mock } = await import("./_studio-routes-test-utils.ts");
-  return { ...original, wakeProjectPreview: (...args: unknown[]) => mock(...args) };
+  return {
+    ...original,
+    wakeProjectPreview: (...args: Parameters<typeof original.wakeProjectPreview>) => mock(...args),
+  };
 });
 
 describe("opening a project wakes its preview", () => {
@@ -80,14 +84,10 @@ describe("opening a project wakes its preview", () => {
    * into building their own origin and losing the field.
    */
   test("session arms both preview triggers with one origin, naming the caller", async () => {
-    const { fetch: authed } = await createTestCombined({ auth: createDevAuth() });
+    const { fetch: authed } = await withDevAuth();
     const { ensureSessionMock } = await import("./_studio-routes-test-utils.ts");
     const bearer = devToken("a@b.c");
-    await authFetch(authed, "/studio/account/key", {
-      method: "PUT",
-      key: bearer,
-      body: { apiKey: "users-own-key" },
-    });
+    await onboardKey(authed, bearer);
     await createProject(authed, "proj", bearer);
     wakePreviewMock.mockClear();
     ensureSessionMock.mockClear();
@@ -98,9 +98,9 @@ describe("opening a project wakes its preview", () => {
 
     const brokered = ensureSessionMock.mock.calls.at(-1)?.[3];
     expect(brokered).toEqual({ serverUrl: expect.any(String), userId: "dev:a@b.c" });
-    // The wake's target is that same origin plus the credential.
-    const waked = wakePreviewMock.mock.calls.at(-1)?.[0] as { target: unknown };
-    expect(waked.target).toEqual({ ...brokered, apiKey: "users-own-key" });
+    // The wake's target is that same origin plus the credential — off the
+    // typed fake, so no call site re-narrows it by hand.
+    expect(lastWake().target).toEqual({ ...brokered, apiKey: "users-own-key" });
   });
 });
 
@@ -130,19 +130,14 @@ describe("the Preview pane can wake the preview", () => {
   });
 
   test("names the caller, so a redelivered job can still deploy", async () => {
-    const { fetch: authed } = await createTestCombined({ auth: createDevAuth() });
+    const { fetch: authed } = await withDevAuth();
     const bearer = devToken("a@b.c");
-    await authFetch(authed, "/studio/account/key", {
-      method: "PUT",
-      key: bearer,
-      body: { apiKey: "users-own-key" },
-    });
+    await onboardKey(authed, bearer);
     await createProject(authed, "proj", bearer);
     wakePreviewMock.mockClear();
 
     expect((await authFetch(authed, wakeUrl, { body: {}, key: bearer })).status).toBe(202);
-    const waked = wakePreviewMock.mock.calls.at(-1)?.[0] as { target: unknown };
-    expect(waked.target).toEqual({
+    expect(lastWake().target).toEqual({
       serverUrl: expect.any(String),
       userId: "dev:a@b.c",
       apiKey: "users-own-key",
@@ -170,7 +165,7 @@ describe("the Preview pane can wake the preview", () => {
     await authFetch(fetch, wakeUrl, { body: {} });
     await authFetch(fetch, wakeUrl, { body: {}, key: "key2" });
     expect(wakePreviewMock).toHaveBeenCalledTimes(2);
-    const scopes = wakePreviewMock.mock.calls.map((call) => (call[0] as { scope: string }).scope);
+    const scopes = wakePreviewMock.mock.calls.map((call) => call[0].scope);
     expect(new Set(scopes).size).toBe(2);
   });
 

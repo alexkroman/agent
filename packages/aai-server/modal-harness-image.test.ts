@@ -1,11 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
 import type { App, Image, ModalClient } from "modal";
 import { describe, expect, test, vi } from "vitest";
@@ -23,6 +20,14 @@ import {
   toolchainFingerprint,
   toolchainImage,
 } from "./modal-harness-image.ts";
+
+// Everything except the digest primitive stays real. `createHash` is the one
+// observable that says whether the resolver re-paid the SHA-256 over the ~13 MB
+// harness — see "computes the tag once per distinct code" below.
+vi.mock("node:crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:crypto")>();
+  return { ...actual, createHash: vi.fn(actual.createHash) };
+});
 
 describe("harnessImageTag", () => {
   test("is a pure function of base image, harness code, and toolchain", () => {
@@ -366,41 +371,22 @@ describe("createHarnessImageResolver", () => {
   test("computes the tag once per distinct code, not once per spawn", async () => {
     const { resolve } = make();
     await resolve("harness code");
-    const spy = vi.spyOn(JSON, "parse");
+
+    // The cost the memo exists to avoid is the STREAMING SHA-256 over the
+    // ~13 MB harness inside `harnessImageTag` — 13-15ms, synchronous, on every
+    // spawn. Spying the global `JSON.parse` stood here, and was neither
+    // necessary nor sufficient: a resolver that stopped memoizing the digest
+    // but happened not to re-read a manifest passed, and any unrelated parse on
+    // the path failed. `createHash` names the actual expense.
+    const digest = vi.mocked(createHash);
+    digest.mockClear();
     await resolve("harness code");
-    // Cached by code: the second call re-reads no package.json, so a spawn
-    // never pays SHA-256 over the ~13 MB bundle plus a handful of reads.
-    expect(spy.mock.calls).toHaveLength(0);
+    expect(digest).not.toHaveBeenCalled();
+
+    // ...and the memo is per CODE, not a blanket "compute once": a different
+    // harness has to mint its own tag, or a redeploy would resolve the previous
+    // build's image.
+    await resolve("other harness code");
+    expect(digest).toHaveBeenCalled();
   });
-});
-
-// The host half above proves the build ASKS for a warm-up. This proves the
-// guest HONOURS it, against the real built harness — the half a fake cannot
-// check, and the half that silently rots: warm-up mode has to be reached
-// before the `AAI_GUEST_TOKEN` requirement (it is handed no token), so moving
-// that check earlier would leave the image snapshotting an empty cache with
-// every test still green.
-describe("harness warm-up mode (real spawn)", () => {
-  const run = promisify(execFile);
-
-  test("exits 0 with no token and populates the compile cache", async () => {
-    const cacheDir = await mkdtemp(path.join(tmpdir(), "harness-warmup-"));
-    try {
-      const { stderr } = await run(process.execPath, [resolveHarnessPath()], {
-        env: {
-          PATH: process.env.PATH ?? "",
-          AAI_GUEST_WARMUP: "1",
-          NODE_COMPILE_CACHE: cacheDir,
-        },
-        timeout: 60_000,
-      });
-      // A zero exit is execFile resolving rather than rejecting. The message
-      // is what an image build greps for when the cache comes out empty.
-      expect(stderr).toContain("harness warm-up complete");
-      // The point of the whole exercise: bytecode on disk for the snapshot.
-      expect(await readdir(cacheDir)).not.toHaveLength(0);
-    } finally {
-      await rm(cacheDir, { recursive: true, force: true });
-    }
-  }, 90_000);
 });

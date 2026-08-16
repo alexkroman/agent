@@ -6,11 +6,11 @@
 // own record and each deploy claims what it is owed.
 import { localSlugLock } from "aai-server/platform-lock";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
-import { hashApiKey } from "aai-server/secrets";
 import type { BundleStore } from "aai-server/store-types";
 import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { claimSlug } from "./_studio-agents-test-utils.ts";
 import {
   deleteProjectSecret,
   deleteProjectSecrets,
@@ -33,15 +33,7 @@ let workspaces: WorkspaceStore;
 let secrets: SecretStore;
 
 /** Claim a slug for `apiKey`, so ownership checks pass for it. */
-async function deployAgent(slug: string, apiKey = KEY): Promise<void> {
-  await store.putAgent({
-    slug,
-    env: {},
-    worker: "export default {};",
-    clientFiles: {},
-    credential_hashes: [hashApiKey(apiKey)],
-  });
-}
+const deployAgent = (slug: string, apiKey = KEY): Promise<void> => claimSlug(store, slug, apiKey);
 
 /** Replace the workspace doc, whatever version it is on. */
 async function writeWorkspace(doc: Record<string, unknown>): Promise<void> {

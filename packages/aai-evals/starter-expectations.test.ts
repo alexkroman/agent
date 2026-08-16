@@ -73,4 +73,37 @@ describe("starter expectations", () => {
     expect(starters.length).toBeGreaterThan(5);
     expect(EXPECTATIONS.length).toBeGreaterThan(0);
   });
+
+  test("each sweep above has cases to sweep", () => {
+    // The floor the three `offenders == []` tests need and did not have.
+    //
+    // Every one of them filters on a FIELD and then asserts the survivors are
+    // clean. Rename `ui` to `requiresUi`, or `builtins` to `requiredBuiltins`,
+    // and all three filter down to nothing, assert `[] == []`, and print green
+    // — in the file whose own doc says "a grader that says yes to everything
+    // measures nothing". `EXPECTATIONS.length > 0` above cannot see it, because
+    // the catalog is still full; what emptied is the SELECTION.
+    //
+    // Floors rather than exact counts, so adding a starter never fails this,
+    // and each is well under today's number (7 / 3 / 3 / 3 of 12).
+    const withUi = EXPECTATIONS.filter((e) => e.ui);
+    const withBuiltins = EXPECTATIONS.filter(
+      (e) => (e.builtins ?? []).length > 0 || (e.builtinDelegation ?? []).length > 0,
+    );
+    const withDelegation = EXPECTATIONS.filter(
+      (e) => e.builtinDelegation && (e.capabilities ?? []).length > 0,
+    );
+    expect(withUi.length, "no expectation declares `ui` — was the field renamed?").toBeGreaterThan(
+      2,
+    );
+    expect(
+      withBuiltins.length,
+      "no expectation declares `builtins`/`builtinDelegation` — was a field renamed?",
+    ).toBeGreaterThan(1);
+    expect(
+      withDelegation.length,
+      "no expectation pairs `builtinDelegation` with `capabilities`, so the " +
+        "prose-alone test checks nothing",
+    ).toBeGreaterThan(1);
+  });
 });

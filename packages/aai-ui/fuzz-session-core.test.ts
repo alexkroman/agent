@@ -67,11 +67,53 @@ const SOCKET_OPS = ["open", "close", "error_close"] as const;
 /** Snapshot collection cap (`MAX_MESSAGES`/`MAX_CUSTOM_EVENTS` in the core). */
 const SNAPSHOT_CAP = 200;
 
+/**
+ * States the generator must actually reach, asserted as floors after the run.
+ *
+ * fast-check has no coverage-floor mechanism (`fc.statistics` only prints), and
+ * an all-green property proves nothing about a state the generator never
+ * entered — see "Property tests run on fast-check" in the root guide.
+ *
+ * Every frame here is a no-op when `ctx.socket()` is null, and every invariant
+ * in `checkInvariants` is a conditional over a snapshot that may be empty: a
+ * run whose socket never opened satisfies all six of them and reports green.
+ * These count the states that make the invariants say something.
+ *
+ * A SETTLED tool call deliberately gets no floor. Reaching one needs a
+ * `tool_call` and a matching `tool_call_done` to survive to the same snapshot,
+ * which a random 24-step walk over twenty frame kinds effectively never
+ * produces (measured: 0-5 across five runs of 200, zero in two of them) — the
+ * same shape as the archive path in `studio-concurrency-fuzz.test.ts`, and a
+ * floor cannot fix it. Exactly-once tool-call delivery has a property of its
+ * own next door in `fuzz-hooks.test.ts`, which drives the collections directly
+ * and floors them. *
+ * Each floor sits under the OBSERVED MINIMUM across the runs recorded beside
+ * it, not at a fixed fraction of the mean. These distributions have long left
+ * tails — a counter averaging 38 was measured at 3 on one run — because what a
+ * walk reaches is correlated within a run rather than independent per step, so
+ * a floor placed under the mean flakes. The job of the floor is to catch a
+ * state that is NEVER reached, not to pin how often; a state whose whole range
+ * is small therefore gets `> 0`, which is still the assertion that matters.
+ */
+type Reached = {
+  /** Steps applied against a live socket — the only ones that reach the core. */
+  liveFrames: number;
+  /** Snapshots carrying a committed message, so the ordering scan has input. */
+  orderedMessages: number;
+  /** Snapshots in the fatal-error state, which the teardown check branches on. */
+  fatalStates: number;
+};
+const reached: Reached = { liveFrames: 0, orderedMessages: 0, fatalStates: 0 };
+
 let toolIdSeq = 0;
 
 function serverOp(ctx: Ctx, op: (typeof SERVER_OPS)[number]): void {
   const ws = ctx.socket();
+  // No socket means every server frame below is a no-op. Legitimate — the
+  // script may not have started the session yet — but taken on every step it
+  // would leave the whole core unexercised, so `reached.liveFrames` floors it.
   if (!ws) return;
+  reached.liveFrames += 1;
   const send = (obj: unknown) => {
     ws.simulateMessage(JSON.stringify(obj));
   };
@@ -297,6 +339,8 @@ function checkInvariants(snap: SessionSnapshot, prev: SessionSnapshot, log: stri
     throw new Error(`${why}\nops:\n  ${log.join("\n  ")}\nsnapshot: ${JSON.stringify(snap)}`);
   };
   if (snap.contentVersion < prev.contentVersion) fail("contentVersion went backwards");
+  if (snap.messages.length > 0) reached.orderedMessages += 1;
+  if (snap.state === "error") reached.fatalStates += 1;
   checkOrdering(snap, fail);
   if (snap.customEvents.length > SNAPSHOT_CAP) fail("customEvents grew past the cap");
   if (snap.messages.length > SNAPSHOT_CAP) fail("messages grew past the cap");
@@ -396,5 +440,25 @@ describe("fuzz: session-core interleavings", () => {
       }),
       { numRuns: 200 },
     );
+
+    // Coverage floors — see `Reached` for how these are placed. Ranges are
+    // over 27 runs of 200.
+    expect(
+      reached.liveFrames,
+      "no server frame ever reached a live socket — the whole core went unexercised",
+    ).toBeGreaterThan(110); // 403-513
+    expect(
+      reached.orderedMessages,
+      "no snapshot ever held a message — the ordering scan had nothing to scan",
+      // The long tail these floors were calibrated on: a committed message needs
+      // a live socket AND a `user_transcript`/`reply_done` after it, and whether
+      // the socket opens early is decided once per run rather than per step.
+      // Mean ~38, measured as low as 3. Two earlier drafts (10, then 3) each
+      // tripped on a real run.
+    ).toBeGreaterThan(0);
+    expect(
+      reached.fatalStates,
+      "no run ever reached the error state — the fatal branch of the teardown check went untaken",
+    ).toBeGreaterThan(12); // 44-113
   }, 120_000);
 });

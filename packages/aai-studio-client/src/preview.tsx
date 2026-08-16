@@ -17,7 +17,7 @@ import { api } from "./api.ts";
  * stops on the first success, so this only ticks while the pane has nothing
  * to frame anyway.
  */
-const PROBE_RETRY_MS = 3000;
+export const PROBE_RETRY_MS = 3000;
 
 /**
  * After this many failures the cadence drops to {@link PROBE_SLOW_RETRY_MS}.
@@ -33,10 +33,10 @@ const PROBE_RETRY_MS = 3000;
  * cadence exactly where it matters (a preview landing at 25s is noticed at
  * 45s), which trades the common case for the pathological one.
  */
-const PROBE_SLOW_AFTER = 10;
+export const PROBE_SLOW_AFTER = 10;
 
 /** The cadence once a missing preview is clearly not a deploy in flight. */
-const PROBE_SLOW_RETRY_MS = 30_000;
+export const PROBE_SLOW_RETRY_MS = 30_000;
 
 /**
  * Consecutive failures before the pane reports the preview missing (see
@@ -45,7 +45,7 @@ const PROBE_SLOW_RETRY_MS = 30_000;
  * but a couple of probes' grace costs ~9s and covers a transient blip
  * without asking the server to go looking.
  */
-const PROBE_FAILURES_BEFORE_WAKE = 3;
+export const PROBE_FAILURES_BEFORE_WAKE = 3;
 
 /** Fast while a deploy could plausibly be landing, slow once it clearly isn't. */
 function probeRetryMs(failures: number): number {

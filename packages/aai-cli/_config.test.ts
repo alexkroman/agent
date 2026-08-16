@@ -332,7 +332,11 @@ describe("global config concurrent updates", () => {
       await approveServer("https://example.com", dir);
 
       // Bounded acquisition, then the documented degrade-to-unlocked path.
-      expect(Date.now() - started).toBeLessThan(10_000);
+      // An unbreakable lock is detected on the FIRST turn, so this must come
+      // back well inside the 2s acquisition budget — the old `< 10_000` bound
+      // could not tell "returned at once" from "spun until the vitest timeout
+      // was nearly up", which is the bug the test exists for.
+      expect(Date.now() - started).toBeLessThan(1000);
       expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
       // The directory is not ours, so teardown must leave it alone.
       expect((await fs.stat(lockPath)).isDirectory()).toBe(true);
@@ -352,7 +356,16 @@ describe("global config concurrent updates", () => {
       const started = Date.now();
       await approveServer("https://example.com", dir);
 
-      expect(Date.now() - started).toBeLessThan(10_000);
+      // The behaviour is "wait out the 2s budget, THEN proceed unlocked", so
+      // the bound is two-sided: `< 10_000` alone passed for an implementation
+      // that gave up instantly as well as for one that nearly hit the runner's
+      // 5s timeout. This is the one test in the file that deliberately spends
+      // real wall clock; the budget is a module constant with no injection
+      // seam, so shortening it would mean a production knob that exists only
+      // for a test.
+      const elapsed = Date.now() - started;
+      expect(elapsed).toBeGreaterThanOrEqual(1500);
+      expect(elapsed).toBeLessThan(4000);
       expect((await readGlobalConfig(dir)).approvedServers).toEqual(["https://example.com"]);
     });
   });

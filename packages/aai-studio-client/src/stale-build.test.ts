@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settle } from "./_test-utils.ts";
 import { installStaleBuildRecovery, lazyRetry, reloadForStaleBuild } from "./stale-build.ts";
 
 /** A `sessionStorage` stand-in — these tests run in the node environment. */
@@ -117,22 +118,17 @@ describe("lazyRetry", () => {
 
   it("reloads when both attempts fail", async () => {
     const factory = vi.fn(() => Promise.reject(new Error("404")));
-    let settled = false;
+    // A spy rather than a `let settled = false` flipped inside a `.then()`: it
+    // records its own calls and names itself in the failure.
+    const onSettled = vi.fn();
 
-    void lazyRetry(factory)().then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
+    void lazyRetry(factory)().then(onSettled, onSettled);
     await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
-    await Promise.resolve();
+    await settle();
 
     // The page is navigating away: settling would flash an error boundary
     // over a document about to be replaced.
-    expect(settled).toBe(false);
+    expect(onSettled).not.toHaveBeenCalled();
     expect(factory).toHaveBeenCalledTimes(2);
   });
 

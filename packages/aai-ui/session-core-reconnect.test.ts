@@ -270,7 +270,13 @@ describe("session-core handshake deadline", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(core.getSnapshot().state).toBe("connecting");
     const socket = await waitForNextSocket(1);
-    expect(socket).toBeDefined();
+    // `waitForNextSocket` throws when no attempt arrives, so `toBeDefined()`
+    // here was unreachable as a failure while reading as if the re-dial were
+    // being verified. What the re-dial owes is a SECOND, DISTINCT socket: the
+    // URL provider is re-evaluated per attempt, which is what lands the next
+    // one on a replacement sandbox rather than the wedged peer.
+    expect(created).toHaveLength(2);
+    expect(socket).not.toBe(created[0]);
   });
 
   it("gives up with a real error rather than re-dialing a wedged peer forever", async () => {

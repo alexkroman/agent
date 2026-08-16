@@ -496,11 +496,17 @@ describe("S2sTransport reconnect", () => {
     });
   });
 
-  // S2S has no incremental agent transcript to forward — `transcript.agent.delta`
-  // is documented but unimplemented (see `_s2s-reply.ts`), so the only producer
-  // of `onAgentTranscriptPartial` is pipeline mode. Pinned so a reintroduced
-  // forwarder has to come with a real wire event behind it.
-  test("S2S never emits agent transcript partials", async () => {
+  // The reply-text fork, all three arms. A COMPLETED reply commits (it is what
+  // the caller heard, so it enters history); an INTERRUPTED one is `.updated`
+  // only, because the service trims it to what was actually spoken and history
+  // records the heard prefix; and `transcript.agent.delta` DOES arrive from the
+  // live service (re-measured — see `_s2s-reply.ts`), forwarded as `.updated`
+  // since it is the only carrier of text for a tool-preamble reply that sends no
+  // final. This spec used to be titled "S2S never emits agent transcript
+  // partials" and fired only the completed arm, so both `.updated` producers —
+  // which is to say the whole delta path the transport exists to relay — were
+  // covered by nothing, under a name telling the next reader not to look.
+  test("a completed agent transcript is committed", async () => {
     const { callbacks, capturedCallbacks } = setupSpiedTransport();
     const t = createS2sTransport(makeTransportOptions({ callbacks }));
     await t.start();
@@ -515,5 +521,44 @@ describe("S2sTransport reconnect", () => {
       text: "It's sunny.",
     });
     expect(callbacks.reported("agent-transcript.updated")).not.toHaveBeenCalled();
+  });
+
+  test("an INTERRUPTED agent transcript is updated, never committed", async () => {
+    const { callbacks, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb = expectAt(capturedCallbacks, 0, "callbacks");
+    cb.onSessionReady("sess");
+    cb.onReplyStarted("r1");
+    cb.onAgentTranscript("It's sun", true);
+
+    expect(callbacks.reported("agent-transcript.updated")).toHaveBeenCalledWith({
+      type: "agent-transcript.updated",
+      text: "It's sun",
+    });
+    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
+  });
+
+  test("forwards agent transcript deltas as interim updates", async () => {
+    const { callbacks, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb = expectAt(capturedCallbacks, 0, "callbacks");
+    cb.onSessionReady("sess");
+    cb.onReplyStarted("r1");
+    cb.onAgentTranscriptPartial("It's");
+    cb.onAgentTranscriptPartial("It's sunny");
+
+    expect(callbacks.reported("agent-transcript.updated")).toHaveBeenNthCalledWith(1, {
+      type: "agent-transcript.updated",
+      text: "It's",
+    });
+    expect(callbacks.reported("agent-transcript.updated")).toHaveBeenNthCalledWith(2, {
+      type: "agent-transcript.updated",
+      text: "It's sunny",
+    });
+    expect(callbacks.reported("agent-transcript.committed")).not.toHaveBeenCalled();
   });
 });

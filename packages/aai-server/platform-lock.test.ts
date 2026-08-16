@@ -229,39 +229,40 @@ describe("createPgSlugLock", () => {
     const { db, counts } = fakeAdvisoryDb();
     const lock = createPgSlugLock(db);
     const order: string[] = [];
-    let peakLive = 0;
-    const watch = setInterval(() => {
-      peakLive = Math.max(peakLive, counts().live);
-    }, 0);
+    // Sampled from INSIDE each critical section, which is the only place the
+    // reading discriminates. A `setInterval(…, 0)` sampler taking the max was
+    // satisfied by taking no samples at all: `peakLive` started at 0 and
+    // `toBeLessThanOrEqual(1)` held whether or not the loser ever reserved.
+    const live: number[] = [];
     await Promise.all([
       lock("my-agent", async () => {
         order.push("first-start");
+        live.push(counts().live);
         await new Promise((resolve) => setImmediate(resolve));
+        live.push(counts().live);
         order.push("first-end");
       }),
       lock("my-agent", async () => {
         order.push("second-start");
+        live.push(counts().live);
         order.push("second-end");
       }),
     ]);
-    clearInterval(watch);
     expect(order).toEqual(["first-start", "first-end", "second-start", "second-end"]);
     // The local mutex is what keeps the loser from holding a reserved
-    // connection open while blocked on the same lock.
-    expect(peakLive).toBeLessThanOrEqual(1);
+    // connection open while blocked on the same lock — including across the
+    // holder's await, which is exactly when it would be queued in Postgres.
+    expect(live).toEqual([1, 1, 1]);
     expect(counts().reservations).toBe(2);
   });
 
   test("different slugs do not block each other", async () => {
     const { db } = fakeAdvisoryDb();
     const lock = createPgSlugLock(db);
-    let aRelease: (() => void) | undefined;
-    const held = new Promise<void>((resolve) => {
-      aRelease = resolve;
-    });
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
     const a = lock("agent-a", () => held);
     await expect(lock("agent-b", async () => "b")).resolves.toBe("b");
-    aRelease?.();
+    release();
     await a;
   });
 

@@ -27,10 +27,10 @@
  * ```sh
  * # the local stack — proves the migrations are self-consistent
  * AAI_TEST_PG_URL='postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
- *   pnpm --filter aai-server test:integration
+ *   pnpm --filter aai-server test:scenario
  *
  * # a staging or production connection — proves THAT database has not drifted
- * AAI_TEST_PG_URL="$SUPABASE_DB_URL" pnpm --filter aai-server test:integration
+ * AAI_TEST_PG_URL="$SUPABASE_DB_URL" pnpm --filter aai-server test:scenario
  * ```
  *
  * Read-only: it queries `pg_class` and writes nothing, so it is safe to point

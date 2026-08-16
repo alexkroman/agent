@@ -13,8 +13,27 @@ export default defineConfig({
     // (app.test.tsx, code-view.test.tsx) opt into jsdom with a per-file
     // `@vitest-environment` pragma.
     include: ["**/*.test.{ts,tsx}"],
-    exclude: ["node_modules", "dist"],
-    // Raises Testing Library's 1000ms async-utility ceiling — see the file.
+    // Both slow-tier infixes, per the convention in the root guide — excluded
+    // here so a new one lands in its own tier with no config edit. This
+    // package owns none of either today, which is exactly when the gap is
+    // invisible: without these, renaming a file to `*.scenario.test.tsx`
+    // leaves it running in the unit tier under a 20s budget instead.
+    exclude: [
+      "**/*.integration.test.{ts,tsx}",
+      "**/*.scenario.test.{ts,tsx}",
+      "node_modules",
+      "dist",
+    ],
+    // Same contended-check-run headroom rationale as aai-server and
+    // aai-studio-server. Without it vitest's 5000ms default applies and the
+    // setup file's 10s Testing Library ceiling is unreachable: a `waitFor`
+    // that needs 5-10s aborts as "Test timed out in 5000 ms", discarding the
+    // assertion message the setup file exists to preserve — and two tests in
+    // app.test.tsx already ask for 4000ms waits on top of an `openProject`
+    // wait in the same test.
+    testTimeout: 20_000,
+    // Raises Testing Library's 1000ms async-utility ceiling, and unmounts
+    // every render — see the file.
     setupFiles: ["./src/_test-setup.ts"],
     coverage: {
       // The pane components are browser-heavy (CodeMirror, useChat

@@ -1,7 +1,14 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, settle, sseResponse, stubFetch } from "./_test-utils.ts";
+import {
+  fetchCall,
+  fetchLines,
+  jsonResponse,
+  settle,
+  sseResponse,
+  stubFetch,
+} from "./_test-utils.ts";
 import {
   api,
   CHAT_SESSION_ATTEMPT_TIMEOUT_MS,
@@ -10,6 +17,16 @@ import {
   STATUS_ATTEMPT_TIMEOUT_MS,
 } from "./api.ts";
 import { ApiError, isTransientError } from "./api-error.ts";
+
+// FILE-scoped, not block-scoped. Four of the five `describe`s below install a
+// global `fetch` and only this one used to remove it, so the last stub of a
+// block outlived it — most recently a rejecting `TimeoutError`. Nothing failed
+// only because every later block happened to re-stub first; a test appended to
+// `isTransientError`, or a block inserted between two of them, would have run
+// against whatever the previous block abandoned.
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("parseSecrets", () => {
   test("parses KEY=value lines", () => {
@@ -62,16 +79,12 @@ describe("parseSecrets", () => {
 });
 
 describe("api", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   test("authConfig is public (no bearer) and returns the login mode", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ mode: "dev" }));
     await expect(api.authConfig()).resolves.toEqual({ mode: "dev" });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit?];
+    const { url, init } = fetchCall(fetchMock);
     expect(url).toBe("/studio/auth");
-    expect(new Headers(init?.headers).get("Authorization")).toBeNull();
+    expect(new Headers(init.headers).get("Authorization")).toBeNull();
   });
 
   test("getAccount sends the session bearer", async () => {
@@ -80,7 +93,7 @@ describe("api", () => {
       email: "a@b.c",
       hasKey: false,
     });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, init } = fetchCall(fetchMock);
     expect(url).toBe("/studio/account");
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer session.jwt.tok");
   });
@@ -88,9 +101,9 @@ describe("api", () => {
   test("putAccountKey PUTs the key as JSON under the session bearer", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true }));
     await expect(api.putAccountKey("session.jwt.tok", "users-key")).resolves.toEqual({ ok: true });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, method, init } = fetchCall(fetchMock);
     expect(url).toBe("/studio/account/key");
-    expect(init.method).toBe("PUT");
+    expect(method).toBe("PUT");
     expect(init.body).toBe(JSON.stringify({ apiKey: "users-key" }));
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer session.jwt.tok");
   });
@@ -98,7 +111,7 @@ describe("api", () => {
   test("sends the bearer key and parses the response", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ projects: ["a", "b"] }));
     await expect(api.listProjects("sk-123")).resolves.toEqual(["a", "b"]);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, init } = fetchCall(fetchMock);
     expect(url).toBe("/studio/projects");
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer sk-123");
   });
@@ -106,8 +119,8 @@ describe("api", () => {
   test("POST bodies are JSON with Content-Type set", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ name: "contact-form-x7k2mq", files: {} }));
     await api.createProject("k", { prompt: "build a contact form" });
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.method).toBe("POST");
+    const { method, init } = fetchCall(fetchMock);
+    expect(method).toBe("POST");
     // The prompt seeds the server-generated name — the client never names.
     expect(init.body).toBe(JSON.stringify({ prompt: "build a contact form" }));
     expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
@@ -116,15 +129,13 @@ describe("api", () => {
   test("createProject with no prompt sends an empty body (server picks words)", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ name: "brave-cats-fly-a1b2c3", files: {} }));
     await api.createProject("k", {});
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.body).toBe("{}");
+    expect(fetchCall(fetchMock).init.body).toBe("{}");
   });
 
   test("project segments are URL-encoded", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true }));
     await api.getProject("k", "my project");
-    const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toBe("/studio/projects/my%20project");
+    expect(fetchCall(fetchMock).url).toBe("/studio/projects/my%20project");
   });
 
   test("getProject / writeFile / deploy hit their routes", async () => {
@@ -132,11 +143,7 @@ describe("api", () => {
     await api.getProject("k", "p");
     await api.writeFile("k", "p", "agent.ts", "code");
     await api.deploy("k", "p");
-    const calls = fetchMock.mock.calls.map((c) => {
-      const [url, init] = c as [string, RequestInit | undefined];
-      return `${init?.method ?? "GET"} ${url}`;
-    });
-    expect(calls).toEqual([
+    expect(fetchLines(fetchMock)).toEqual([
       "GET /studio/projects/p",
       "PUT /studio/projects/p/file",
       "POST /studio/projects/p/deploy",
@@ -147,9 +154,9 @@ describe("api", () => {
     const history = [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }];
     const fetchMock = stubFetch(() => jsonResponse({ messages: history }));
     await expect(api.getChat("sk-123", "my project")).resolves.toEqual(history);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, method, init } = fetchCall(fetchMock);
     expect(url).toBe("/studio/projects/my%20project/chat");
-    expect(init.method ?? "GET").toBe("GET");
+    expect(method).toBe("GET");
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer sk-123");
   });
 
@@ -158,7 +165,7 @@ describe("api", () => {
     // deadline is what lets the query layer ever retry it.
     const fetchMock = stubFetch(() => jsonResponse({ url: "http://s/studio/chat" }));
     await api.createChatSession("k", "p");
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, init } = fetchCall(fetchMock);
     expect(url).toBe("/studio/projects/p/session");
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
@@ -175,12 +182,12 @@ describe("api", () => {
     });
     await api.authConfig();
     await api.getAccount("k");
-    for (const call of fetchMock.mock.calls) {
-      const [, init] = call as [string, RequestInit | undefined];
-      expect(init?.signal).toBeInstanceOf(AbortSignal);
-      expect(init?.signal?.aborted).toBe(false);
-    }
     expect(fetchMock.mock.calls).toHaveLength(2);
+    for (let index = 0; index < 2; index += 1) {
+      const { init } = fetchCall(fetchMock, index);
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      expect(init.signal?.aborted).toBe(false);
+    }
   });
 
   test("secret endpoints hit the PROJECT routes, which write both agents", async () => {
@@ -188,26 +195,22 @@ describe("api", () => {
     await api.listSecrets("k", "my-project");
     await api.putSecrets("k", "my-project", { OPENAI_API_KEY: "x" });
     await api.deleteSecret("k", "my-project", "OPENAI_API_KEY");
-    const calls = fetchMock.mock.calls.map((c) => {
-      const [url, init] = c as [string, RequestInit | undefined];
-      return `${init?.method ?? "GET"} ${url}`;
-    });
     // The per-slug routes stay the platform primitive; this client no longer
     // knows a project has two agents (see studio-project-slugs.ts).
-    expect(calls).toEqual([
+    expect(fetchLines(fetchMock)).toEqual([
       "GET /studio/projects/my-project/secret",
       "PUT /studio/projects/my-project/secret",
       "DELETE /studio/projects/my-project/secret/OPENAI_API_KEY",
     ]);
     // Bearer-authenticated like the studio project routes.
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { init } = fetchCall(fetchMock);
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer k");
   });
 
   test("status is unauthenticated and returns the body", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ provider: "assemblyai" }));
     await expect(api.status()).resolves.toEqual({ provider: "assemblyai" });
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, init } = fetchCall(fetchMock);
     expect(url).toBe("/studio/status");
     expect(new Headers(init.headers).get("Authorization")).toBeNull();
   });
@@ -222,9 +225,10 @@ describe("api", () => {
     await api.listProjects("k");
     await api.getProject("k", "p");
     await api.wakePreview("k", "p");
-    const signals = fetchMock.mock.calls.map((c) => (c[1] as RequestInit | undefined)?.signal);
-    expect(signals).toHaveLength(4);
-    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
+    expect(fetchMock.mock.calls).toHaveLength(4);
+    for (let index = 0; index < 4; index += 1) {
+      expect(fetchCall(fetchMock, index).init.signal).toBeInstanceOf(AbortSignal);
+    }
   });
 
   test("the broker's deadline is LONGER than the default, not shorter", async () => {
@@ -293,8 +297,7 @@ describe("api.agentPageReady", () => {
     // preview" stays up even after the preview deployed.
     const fetchMock = stubFetch({ "/p-preview/health": () => jsonResponse({ status: "ok" }) });
     await api.agentPageReady("p-preview");
-    const signal = fetchMock.mock.calls[0]?.[1]?.signal;
-    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(fetchCall(fetchMock).init.signal).toBeInstanceOf(AbortSignal);
   });
 
   test("a timed-out probe reads as not-ready, which is what re-arms the poll", async () => {
@@ -339,13 +342,16 @@ describe("api.watchProject", () => {
     const seen: unknown[] = [];
     const down = vi.fn();
     api.watchProject("k", "proj", { onData: (d) => seen.push(d), onDown: down });
-    await settle();
+    // Wait for the CONDITION, not for one macrotask: `sseResponse` happens to
+    // pre-enqueue every frame today, so a tick is enough — but any transform
+    // added to `api-events.ts` would turn each of these into a comparison
+    // against a partially-delivered array. The closed stream reporting down is
+    // what says the whole body was read.
+    await vi.waitFor(() => expect(down).toHaveBeenCalledOnce());
     expect(seen).toEqual([
       { files: {}, previewStale: true },
       { files: {}, previewStale: false, previewVersion: "abc" },
     ]);
-    // The server closed the stream — the caller resubscribes.
-    expect(down).toHaveBeenCalledOnce();
   });
 
   test("chat frames reach onChat", async () => {
@@ -361,7 +367,7 @@ describe("api.watchProject", () => {
       onChat: (m) => chats.push(m),
       onDown: () => undefined,
     });
-    await settle();
+    await vi.waitFor(() => expect(chats).toHaveLength(1));
     expect(chats).toEqual([[{ id: "m1", role: "user", parts: [] }]]);
   });
 
@@ -369,8 +375,7 @@ describe("api.watchProject", () => {
     stubFetch(() => jsonResponse({ error: "nope" }, 503));
     const down = vi.fn();
     api.watchProject("k", "proj", { onData: () => undefined, onDown: down });
-    await settle();
-    expect(down).toHaveBeenCalledExactlyOnceWith("transport");
+    await vi.waitFor(() => expect(down).toHaveBeenCalledExactlyOnceWith("transport"));
   });
 
   test.for([401, 403])("a %i reports down as an AUTH failure, not transport", async (status) => {
@@ -381,20 +386,18 @@ describe("api.watchProject", () => {
     stubFetch(() => jsonResponse({ error: "unauthorized" }, status));
     const down = vi.fn();
     api.watchProject("k", "proj", { onData: () => undefined, onDown: down });
-    await settle();
-    expect(down).toHaveBeenCalledExactlyOnceWith("auth");
+    await vi.waitFor(() => expect(down).toHaveBeenCalledExactlyOnceWith("auth"));
   });
 
   test("onOpen fires only when the server accepted the stream", async () => {
     // It is the caller's backoff reset, so it must not fire for a rejection.
     stubFetch(() => jsonResponse({ error: "unauthorized" }, 401));
     const open = vi.fn();
-    api.watchProject("k", "proj", {
-      onData: () => undefined,
-      onOpen: open,
-      onDown: () => undefined,
-    });
-    await settle();
+    const down = vi.fn();
+    api.watchProject("k", "proj", { onData: () => undefined, onOpen: open, onDown: down });
+    // The rejection reaching `onDown` is the sync point — the negative below
+    // is only meaningful once the attempt has actually settled.
+    await vi.waitFor(() => expect(down).toHaveBeenCalled());
     expect(open).not.toHaveBeenCalled();
 
     stubFetch(() => sseResponse(['event: project\ndata: {"files":{}}\n\n']));
@@ -403,13 +406,16 @@ describe("api.watchProject", () => {
       onOpen: open,
       onDown: () => undefined,
     });
-    await settle();
-    expect(open).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
   });
 
   test("aborting via the returned unsubscribe does NOT report down", async () => {
-    // A never-ending stream: unsubscribe is the only way out.
-    stubFetch(
+    // A never-ending stream: unsubscribe is the only way out. Nothing is
+    // delivered, so the open request is the only condition to wait on; the
+    // `settle()` after `stop()` bounds the abort's own propagation, which is
+    // the one thing here a condition cannot express (the assertion is that
+    // nothing happens).
+    const fetchMock = stubFetch(
       () =>
         new Response(new ReadableStream<Uint8Array>(), {
           status: 200,
@@ -418,7 +424,7 @@ describe("api.watchProject", () => {
     );
     const down = vi.fn();
     const stop = api.watchProject("k", "proj", { onData: () => undefined, onDown: down });
-    await settle();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     stop();
     await settle();
     expect(down).not.toHaveBeenCalled();
@@ -433,8 +439,8 @@ describe("api.watchProjects", () => {
     const lists: string[][] = [];
     const down = vi.fn();
     api.watchProjects("k", { onData: (names) => lists.push(names), onDown: down });
-    await settle();
+    // The closed stream reporting down is what says every frame was read.
+    await vi.waitFor(() => expect(down).toHaveBeenCalledOnce());
     expect(lists).toEqual([["a"], ["a", "b"]]);
-    expect(down).toHaveBeenCalledOnce();
   });
 });

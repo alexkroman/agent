@@ -46,45 +46,23 @@
  * store issued DDL.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
-import path from "node:path";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import { createPgChatStore } from "./chat-store.ts";
 import type { SqlExec } from "./secret-store.ts";
+import { platformMigrationSql } from "./test-utils.ts";
 import { createPgWorkspaceStore } from "./workspace-store.ts";
 
-const migrationsDir = path.resolve(import.meta.dirname, "../../supabase/migrations");
-
-/**
- * The migration as it ships, minus the one line a throwaway database cannot run.
- *
- * pg_cron is single-database by design: the background worker reads job
- * descriptions from `cron.database_name` (`postgres`), and `create extension
- * pg_cron` anywhere else raises `can only create extension in database
- * postgres`. Everything else — supabase_vault, pgmq, pg_net, every table, index,
- * the publication block, the grants, the foreign keys, and the pgmq queue
- * creation — executes VERBATIM against the real extensions.
- *
- * The substitution is COUNTED so this can never quietly cover less: a second
- * omitted line fails the assertion in the first test rather than silently
- * widening what is skipped.
- */
-function migrationForThrowawayDatabase(): { sql: string; skipped: number } {
-  const files = readdirSync(migrationsDir)
-    .filter((n) => n.endsWith(".sql"))
-    .sort();
-  if (files.length === 0) throw new Error(`no migrations in ${migrationsDir}`);
-  const raw = files.map((n) => readFileSync(path.join(migrationsDir, n), "utf-8")).join("\n");
-  let skipped = 0;
-  const sql = raw.replace(/^create extension if not exists pg_cron;$/gm, () => {
-    skipped += 1;
-    return "-- pg_cron omitted: single-database extension, pinned to cron.database_name";
-  });
-  return { sql, skipped };
-}
+// The migration as it ships, minus the one line a throwaway database cannot
+// run, comes from `platformMigrationSql()` in `test-utils.ts` — the reader
+// `pg-cron.scenario.test.ts` already uses, and whose own doc says the regex no
+// longer lives in this file. It did: a second copy, down to the `skipped`
+// counter. pg_cron is single-database by design (its worker reads job
+// descriptions from `cron.database_name`, i.e. `postgres`, so `create extension
+// pg_cron` anywhere else raises), and the omission is COUNTED — see the first
+// test below, which is what stops a second omitted line arriving silently.
 
 describeWithStack("the platform migration applies and the stores work against it", () => {
   /**
@@ -119,7 +97,7 @@ describeWithStack("the platform migration applies and the stores work against it
     // The whole migration in one statement — as `supabase db push` sends it,
     // `do $$ … $$` blocks and all, so a statement-splitting bug in this test
     // cannot make a broken migration look fine.
-    await sql(migrationForThrowawayDatabase().sql);
+    await sql(platformMigrationSql().sql);
   });
 
   afterAll(async () => {
@@ -135,7 +113,7 @@ describeWithStack("the platform migration applies and the stores work against it
   test("only pg_cron is omitted, and the other extensions are REAL", async () => {
     // Guards the substitution above: a second omitted line means deciding
     // whether it is testable rather than quietly skipping it.
-    expect(migrationForThrowawayDatabase().skipped).toBe(1);
+    expect(platformMigrationSql().skipped).toBe(1);
     // And the two the migration CREATES are really installed here, by the
     // migration itself — which is what makes the pgmq queue block executable
     // rather than something a hand-written plpgsql stub stood in for.
@@ -159,7 +137,7 @@ describeWithStack("the platform migration applies and the stores work against it
   test("re-applying the migration is a no-op, not an error", async () => {
     // Every statement is `if not exists`-guarded or wrapped in an existence
     // check, and `supabase db push` may legitimately re-run it.
-    const { sql: migration } = migrationForThrowawayDatabase();
+    const { sql: migration } = platformMigrationSql();
     await expect(sql(migration)).resolves.toBeDefined();
   });
 

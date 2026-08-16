@@ -11,6 +11,7 @@ import { createMemoryChatStore } from "aai-server/chat-store";
 import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clientDistFile, clientShellHtml } from "./_studio-client-dist-test-utils.ts";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 import type { createStudioRoutes } from "./studio-routes.ts";
@@ -102,31 +103,43 @@ describe("createStudioApp", () => {
     const res = await fetch("/");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
+    // Tied to the CURRENT client build, so a `dist` that is absent, stale, or
+    // from another branch is not all the same answer here.
+    expect(await res.text()).toEqual(
+      clientShellHtml() ?? expect.stringContaining("has not been built"),
+    );
   });
 
   it("serves the same shell for a project URL", async () => {
     // `/studio/chat/<project>` is a shareable link; the client reads the
-    // project from the path, so the server hands back the plain shell.
+    // project from the path, so the server hands back the plain shell —
+    // asserted as byte-identical to `GET /`, which is what "the same" means.
     const { fetch } = makeApp();
     const res = await fetch("/studio/chat/contact-form-x7k2mq");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/html");
+    expect(await res.text()).toBe(await (await fetch("/")).text());
   });
 
   it("routes /favicon.ico to the favicon handler", async () => {
     // The not-built fallback page and non-browser clients request the icon at
-    // the root, so it needs its own path. Whether the client happens to be
-    // built here decides the status, so the assertion keys off WHICH 404 —
-    // the handler's own ("Favicon not found") rather than the router's.
+    // the root, so it needs its own path. Whether the client is built decides
+    // the status — read from the build output rather than accepted either way,
+    // since `if (200) … else expect(404)` is satisfied by both and so by
+    // nothing. The 404 arm keys off WHICH 404: the handler's own message
+    // ("Favicon not found"), never the router's.
     const { fetch } = makeApp();
+    const icon = clientDistFile("favicon.ico");
     const res = await fetch("/favicon.ico");
 
-    if (res.status === 200) {
-      expect(res.headers.get("content-type")).toBe("image/x-icon");
-    } else {
-      expect(res.status).toBe(404);
-      expect(await res.text()).toContain("Favicon not found");
-    }
+    const served = icon
+      ? { status: res.status, detail: res.headers.get("content-type") }
+      : { status: res.status, detail: await res.text() };
+    expect(served).toEqual(
+      icon
+        ? { status: 200, detail: "image/x-icon" }
+        : { status: 404, detail: expect.stringContaining("Favicon not found") },
+    );
   });
 
   it.each(["/studio", "/studio/"])("redirects %s to the studio page", async (path) => {
@@ -138,6 +151,13 @@ describe("createStudioApp", () => {
   });
 
   describe("option forwarding", () => {
+    // Three structurally identical `{}` sentinels, asserted by IDENTITY below
+    // rather than with `toEqual`. Structural comparison cannot see the one
+    // thing this suite exists to pin: pass the rate limiters as
+    // `sessionRegistry` and the registry as `rateLimiters` and the whole
+    // forwarded object is still `{rateLimiters:{}, sessionRegistry:{}, …}`.
+    // Distinct object literals have distinct identities, so `toBe` per key is
+    // the assertion that discriminates a swapped wiring.
     const registry = {} as NonNullable<StudioAppOpts["studioSessionRegistry"]>;
     const previewQueue = {} as NonNullable<StudioAppOpts["previewQueue"]>;
     const rateLimiters = {} as NonNullable<StudioAppOpts["studioRateLimiters"]>;
@@ -149,12 +169,18 @@ describe("createStudioApp", () => {
         previewQueue,
         replicaId: "replica-7",
       });
-      expect(routeOpts.last).toEqual({
-        rateLimiters,
-        sessionRegistry: registry,
-        previewQueue,
-        replicaId: "replica-7",
-      });
+      // Per key, by IDENTITY: a swapped wiring is the failure mode here.
+      expect(routeOpts.last?.rateLimiters).toBe(rateLimiters);
+      expect(routeOpts.last?.sessionRegistry).toBe(registry);
+      expect(routeOpts.last?.previewQueue).toBe(previewQueue);
+      expect(routeOpts.last?.replicaId).toBe("replica-7");
+      // …and nothing else was invented alongside them.
+      expect(Object.keys(routeOpts.last ?? {}).sort()).toEqual([
+        "previewQueue",
+        "rateLimiters",
+        "replicaId",
+        "sessionRegistry",
+      ]);
     });
 
     it("omits an absent dependency rather than passing undefined", () => {
@@ -164,13 +190,15 @@ describe("createStudioApp", () => {
       // composition root always chooses one, so its absence is a compile error
       // rather than a silent downgrade to a queue that loses pending previews.
       const { previewQueue: chosen } = makeApp();
-      expect(routeOpts.last).toEqual({ previewQueue: chosen });
+      expect(routeOpts.last?.previewQueue).toBe(chosen);
       expect(Object.keys(routeOpts.last ?? {})).toEqual(["previewQueue"]);
     });
 
     it("forwards one dependency without inventing the others", () => {
       const { previewQueue: chosen } = makeApp({ replicaId: "replica-7" });
-      expect(routeOpts.last).toEqual({ previewQueue: chosen, replicaId: "replica-7" });
+      expect(routeOpts.last?.previewQueue).toBe(chosen);
+      expect(routeOpts.last?.replicaId).toBe("replica-7");
+      expect(Object.keys(routeOpts.last ?? {}).sort()).toEqual(["previewQueue", "replicaId"]);
     });
   });
 });

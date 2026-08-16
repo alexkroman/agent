@@ -7,23 +7,11 @@
 // a time, in submit order — which is the only place that guarantee is visible.
 // The ordering rules themselves are unit-tested in chat-queue.test.ts.
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { installResizeObserver, textarea } from "./_test-utils.ts";
 import type { ChatSession } from "./api.ts";
 import { ChatPanel } from "./chat.tsx";
-
-// jsdom has no ResizeObserver; use-stick-to-bottom needs one.
-class ResizeObserverStub {
-  observe(): void {
-    // jsdom stub — layout never changes.
-  }
-  unobserve(): void {
-    // jsdom stub.
-  }
-  disconnect(): void {
-    // jsdom stub.
-  }
-}
 
 const SANDBOX_URL = "http://sandbox.test/studio/chat";
 
@@ -121,9 +109,7 @@ function renderPanel(
 }
 
 function composer(): HTMLTextAreaElement {
-  return screen.getByPlaceholderText(
-    /Describe your agent|Queue a follow-up/,
-  ) as HTMLTextAreaElement;
+  return textarea(/Describe your agent|Queue a follow-up/);
 }
 
 function type(text: string) {
@@ -133,11 +119,10 @@ function type(text: string) {
 }
 
 beforeEach(() => {
-  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  installResizeObserver();
 });
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
 });
 

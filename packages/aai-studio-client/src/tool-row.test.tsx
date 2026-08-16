@@ -4,12 +4,10 @@
 // the deployed agent UI's (aai-ui ToolCallBlock) — outlined TOOL chip, mono
 // name, truncated args preview, rotating chevron.
 
-import { cleanup, fireEvent, render as renderDom, screen } from "@testing-library/react";
+import { fireEvent, render as renderDom, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { prettyToolName, summarizeArgs, ToolRow } from "./tool-row.tsx";
-
-afterEach(cleanup);
 
 const render = (part: Record<string, unknown> & { type: string }): string =>
   renderToStaticMarkup(<ToolRow part={part} />);

@@ -18,7 +18,7 @@
  */
 
 import { afterEach, describe, expect, test } from "vitest";
-import { silentLogger } from "./_test-utils.ts";
+import { silentLogger, withDeadline } from "./_test-utils.ts";
 import { createHostServer } from "./host-server.ts";
 
 type Frame = Record<string, unknown>;
@@ -40,12 +40,18 @@ async function startServer(options: Parameters<typeof createHostServer>[0] = {})
  * Connect, optionally handshake, and collect JSON frames until the socket
  * settles. Resolves on `error` too: a connection the `upgrade` hook destroys
  * never completes its handshake, so it never reaches `close`.
+ *
+ * DEADLINED, because this file's whole premise is that a rejected handshake
+ * writes a frame *and closes*. A change that reports the error and leaves the
+ * socket open satisfies neither listener, and without a deadline all five
+ * tests become 5 s tier timeouts naming the file and no assertion. The failure
+ * now says which socket never settled and what it had received by then.
  */
 function connect(port: number, opts: { host?: boolean; frame?: Frame } = {}): Promise<Frame[]> {
   const query = opts.host === false ? "" : "?host=1";
   const ws = new WebSocket(`ws://127.0.0.1:${port}/websocket${query}`);
   const frames: Frame[] = [];
-  return new Promise((resolve) => {
+  const settled = new Promise<Frame[]>((resolve) => {
     const done = (): void => resolve(frames);
     ws.addEventListener("open", () => {
       if (opts.frame) ws.send(JSON.stringify(opts.frame));
@@ -56,6 +62,10 @@ function connect(port: number, opts: { host?: boolean; frame?: Frame } = {}): Pr
     ws.addEventListener("close", done);
     ws.addEventListener("error", done);
   });
+  return withDeadline(
+    settled,
+    () => `socket never closed or errored (frames so far: ${JSON.stringify(frames)})`,
+  ).finally(() => ws.close());
 }
 
 function handshake(host: Frame = {}): Frame {

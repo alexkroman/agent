@@ -5,10 +5,10 @@
 // in aai-server's workspace-build-integration.test.ts); these tests pin the
 // parsing, the project-shape/side-file writes, and the failure surfaces.
 
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { useTempDirs } from "./_test-utils.ts";
 import { deployWorkspaceDir, resolveCliEntry } from "./studio-publish.ts";
 import { ensureWorkspaceDependencies } from "./studio-workspace-deps.ts";
 
@@ -20,13 +20,7 @@ vi.mock("./studio-workspace-deps.ts", async (importOriginal) => {
   return { ...mod, ensureWorkspaceDependencies: vi.fn(() => Promise.resolve(null)) };
 });
 
-let dirs: string[] = [];
-
-async function makeDir(): Promise<string> {
-  const dir = await mkdtemp(path.join(tmpdir(), "aai-publish-"));
-  dirs.push(dir);
-  return dir;
-}
+const makeDir = useTempDirs("aai-publish-");
 
 /**
  * Write a stub "CLI" that prints canned stdout/stderr and exits with a
@@ -80,11 +74,6 @@ async function makeArgvRecordingCli(): Promise<{
     readArgv: async () => JSON.parse(await readFile(argvFile, "utf-8")) as string[],
   };
 }
-
-afterEach(async () => {
-  await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })));
-  dirs = [];
-});
 
 describe("resolveCliEntry", () => {
   test("locates a runnable aai CLI entry from the toolchain", async () => {

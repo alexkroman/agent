@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
-import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
-import { describe, expect, test } from "vitest";
+import type { SessionEvent, SessionEventBody, SessionEventMeta } from "@alexkroman1/aai/protocol";
+import { beforeEach, describe, expect, test } from "vitest";
 import { eventScope } from "./assertions.ts";
 import type { EvalCheck, EvalRecorder } from "./runner.ts";
 
@@ -18,11 +18,27 @@ function recorder(): EvalRecorder & { failed(): string[]; held(): string[] } {
 }
 
 let stamped = 0;
-/** Stamp an event body the way the session's emitter would. */
-function ev(body: SessionEventBody): SessionEvent {
+/**
+ * Stamp an event body the way the session's emitter would.
+ *
+ * GENERIC, so the result is the body's own member intersected with the
+ * envelope, and no cast is needed. The `as SessionEvent` this replaces is the
+ * shape that stops reporting when the type GROWS — the same failure
+ * `createToolContext` exists to prevent for `ToolContext`. Here the constraint
+ * does the work: add a required field to `SessionEvent` and every call below
+ * fails to type-check, because the argument no longer satisfies
+ * `SessionEventBody`.
+ */
+function ev<B extends SessionEventBody>(body: B): B & { meta: SessionEventMeta } {
   stamped += 1;
-  return { ...body, meta: { id: `evt_${stamped}`, at: stamped } } as SessionEvent;
+  return { ...body, meta: { id: `evt_${stamped}`, at: stamped } };
 }
+
+// The counter is module-level so ids are unique within a file, and reset per
+// test so a case's event ids do not depend on how many tests ran before it.
+beforeEach(() => {
+  stamped = 0;
+});
 
 const called = (id: string, toolName: string, args: Record<string, unknown> = {}): SessionEvent =>
   ev({ type: "tool.called", toolCallId: id, toolName, args });

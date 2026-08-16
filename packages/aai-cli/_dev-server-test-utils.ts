@@ -39,10 +39,38 @@ export const mockValidateAgentExport = vi.fn();
 mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
 
 /**
- * Re-prime the default implementations. `restoreMocks: true` wipes them
- * between tests, so call this from `beforeEach` (both files already do).
+ * Reset the shared mocks to a known state: CALL HISTORY CLEARED, then the
+ * default implementations re-primed. Call it from `beforeEach` (both files
+ * already do).
+ *
+ * The history half is the load-bearing one and it is this function's job, not
+ * the runner's. `restoreMocks: true` registers only `vi.spyOn` mocks — it
+ * touches neither the call history nor the implementation of a plain
+ * `vi.fn()`, so without the `mockClear()` below every one of these mocks
+ * accumulates calls for the whole FILE. An
+ * `expect(mockListen).toHaveBeenCalledWith(3000, undefined)` is then satisfied
+ * by any earlier test that happened to listen on 3000, which is a statement
+ * about file order rather than about the case under test. (This comment used
+ * to claim `restoreMocks` did the wiping; it does not, and the tests that
+ * believed it were passing on their predecessors' calls.)
  */
 export function primeDevServerMocks(): void {
+  // Read lazily rather than from a module-scope array: `mockChokidarWatch` is
+  // declared below this function, so an eager list would be evaluated inside
+  // its temporal dead zone.
+  for (const mock of [
+    mockListen,
+    mockClose,
+    mockCreateRuntime,
+    mockCreateServer,
+    mockRequiredProviderEnvVars,
+    mockEnsureApiKey,
+    mockResolveServerEnv,
+    mockValidateAgentExport,
+    mockChokidarWatch,
+  ]) {
+    mock.mockClear();
+  }
   mockListen.mockResolvedValue(undefined);
   mockClose.mockResolvedValue(undefined);
   mockCreateRuntime.mockReturnValue({ runtime: "mock" });

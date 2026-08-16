@@ -2,10 +2,9 @@
 
 import { InvalidToolInputError, type ModelMessage, NoSuchToolError, parsePartialJson } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
+import { makeLogger, silentLogger } from "./_test-utils.ts";
 import { createToolCallRepair, salvageJson } from "./tool-call-repair.ts";
-
-const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 /** Salvage a payload and parse it back to an object for shape assertions. */
 async function parsed(input: string): Promise<Record<string, unknown>> {
@@ -152,6 +151,17 @@ describe("what the SDK already covers", () => {
   });
 });
 
+/**
+ * `createToolCallRepair` end to end, over a REAL `NoSuchToolError`, a real
+ * `InvalidToolInputError` and a real `MockLanguageModelV3`.
+ *
+ * This absorbed `tool-call-repair.test.ts`, which drove the same four branches
+ * through `vi.mock("ai")` — a module mock that replaced `NoSuchToolError` with
+ * a `__noSuchTool` sentinel, so the "unknown tool" spec exercised the stub
+ * rather than the SDK's own predicate, and every options object had to be
+ * laundered through `as never`. Nothing was lost in the fold: the two
+ * abort-signal specs below are the only ones that file uniquely covered.
+ */
 describe("createToolCallRepair over a real model", () => {
   const model = {} as Parameters<typeof createToolCallRepair>[0];
   const inputSchema = async () => ({ type: "object" as const });
@@ -174,12 +184,19 @@ describe("createToolCallRepair over a real model", () => {
       cause: new Error("parse failed"),
     });
 
-  /** A tier-2 model that answers with fixed JSON, counting its calls. */
-  function fixerModel(json: string): { model: MockLanguageModelV3; calls: () => number } {
-    let calls = 0;
+  /**
+   * A tier-2 model that answers with fixed JSON, recording every call it is
+   * handed — the request is what the abort-signal specs below assert on.
+   */
+  function fixerModel(json: string): {
+    model: MockLanguageModelV3;
+    calls: () => number;
+    signals: () => (AbortSignal | undefined)[];
+  } {
+    const seen: (AbortSignal | undefined)[] = [];
     const model = new MockLanguageModelV3({
-      doGenerate: async () => {
-        calls++;
+      doGenerate: async (options) => {
+        seen.push(options.abortSignal);
         return {
           content: [{ type: "text" as const, text: json }],
           finishReason: { unified: "stop" as const, raw: undefined },
@@ -191,12 +208,12 @@ describe("createToolCallRepair over a real model", () => {
         };
       },
     });
-    return { model, calls: () => calls };
+    return { model, calls: () => seen.length, signals: () => seen };
   }
 
   test("leaves an unknown tool name alone", async () => {
     // Guessing which tool was meant risks turning a delete into a write.
-    const repair = createToolCallRepair(model, log);
+    const repair = createToolCallRepair(model, silentLogger);
     const result = await repair({
       toolCall: { type: "tool-call", toolCallId: "t0", toolName: "nope", input: "{}" },
       error: new NoSuchToolError({ toolName: "nope", availableTools: ["write_file"] }),
@@ -208,7 +225,7 @@ describe("createToolCallRepair over a real model", () => {
 
   test("tier 1 salvages malformed input without spending any tokens", async () => {
     const { model: fixer, calls } = fixerModel('{"never":"used"}');
-    const repair = createToolCallRepair(fixer, log);
+    const repair = createToolCallRepair(fixer, silentLogger);
     const broken = '{"path":"a.ts","content":"line one\nline two"}';
 
     const result = await repair({
@@ -228,7 +245,7 @@ describe("createToolCallRepair over a real model", () => {
 
   test("tier 2 asks the model to rewrite input that cannot be salvaged", async () => {
     const { model: fixer, calls } = fixerModel('{"path":"a.ts","content":"x"}');
-    const repair = createToolCallRepair(fixer, log);
+    const repair = createToolCallRepair(fixer, silentLogger);
     const hopeless = "write a.ts with content x please";
 
     const result = await repair({
@@ -251,6 +268,10 @@ describe("createToolCallRepair over a real model", () => {
         throw new Error("model unavailable");
       },
     });
+    // Fresh per test: `restoreMocks` clears neither the history nor the
+    // implementation of a plain `vi.fn()`, so a shared logger would let an
+    // earlier test's warning satisfy this one.
+    const log = makeLogger();
     const repair = createToolCallRepair(failing, log);
     const hopeless = "not json";
 
@@ -262,5 +283,46 @@ describe("createToolCallRepair over a real model", () => {
     });
 
     expect(result).toBeNull();
+    // Silently returning null would leave a repair that never worked
+    // indistinguishable from one that was never needed.
+    expect(log.warn).toHaveBeenCalledWith(
+      "tool-call repair failed",
+      expect.objectContaining({ tool: "write_file", error: "model unavailable" }),
+    );
+  });
+
+  // The turn's abort signal has to reach the tier-2 request, or a barged-in
+  // turn keeps paying for a rewrite nobody will read. `getAbortSignal` is
+  // OPTIONAL and the option is omitted rather than passed as `undefined`, so
+  // both arms are pinned.
+  test("threads the turn's abort signal into the tier-2 request", async () => {
+    const { model: fixer, signals } = fixerModel('{"path":"a.ts","content":"x"}');
+    const ctl = new AbortController();
+    const repair = createToolCallRepair(fixer, silentLogger, () => ctl.signal);
+    const hopeless = "write a.ts with content x please";
+
+    await repair({
+      toolCall: { type: "tool-call", toolCallId: "t3", toolName: "write_file", input: hopeless },
+      error: invalidInput(hopeless),
+      inputSchema,
+      ...rest,
+    });
+
+    expect(signals()).toEqual([ctl.signal]);
+  });
+
+  test("omits abortSignal when the getter returns undefined", async () => {
+    const { model: fixer, signals } = fixerModel('{"path":"a.ts","content":"x"}');
+    const repair = createToolCallRepair(fixer, silentLogger, () => undefined);
+    const hopeless = "write a.ts with content x please";
+
+    await repair({
+      toolCall: { type: "tool-call", toolCallId: "t4", toolName: "write_file", input: hopeless },
+      error: invalidInput(hopeless),
+      inputSchema,
+      ...rest,
+    });
+
+    expect(signals()).toEqual([undefined]);
   });
 });

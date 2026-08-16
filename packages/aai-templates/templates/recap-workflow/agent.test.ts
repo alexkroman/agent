@@ -508,14 +508,6 @@ describe("summarize", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
-  /**
-   * A gateway answering with `content`.
-   *
-   * The SDK's, not a fourth hand-rolled one: every workflow template had written
-   * the same OpenAI-shaped envelope, and this one records the prompt, the system
-   * instruction and the headers besides.
-   */
-
   test("returns the recap the model produced, with the recording's length in minutes", async () => {
     stubGateway('{"headline":"Smoke","points":["a","b","c"],"spoken":"Smoke drifted east."}');
     expect(await summarize("https://example.com/a.mp3", transcript())).toEqual({

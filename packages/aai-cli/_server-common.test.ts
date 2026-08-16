@@ -11,12 +11,19 @@ describe("resolveServerEnv", () => {
     expect(env).toEqual({});
   });
 
-  test("only includes keys declared in .env file", async () => {
-    const env = await resolveServerEnv(undefined, {
-      ASSEMBLYAI_API_KEY: "key",
-      PATH: "/usr/bin",
+  test("only includes keys the .env file declares, never the rest of baseEnv", async () => {
+    // With `cwd: undefined` this returned `{}` for ANY `baseEnv` — `fileEntries`
+    // stays empty and the loop has nothing to iterate — so it was
+    // indistinguishable from the two no-directory cases and passed however the
+    // filter behaved. A real `.env` is what makes the filter observable.
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=from-file\n");
+      const env = await resolveServerEnv(dir, {
+        ASSEMBLYAI_API_KEY: "from-shell",
+        PATH: "/usr/bin",
+      });
+      expect(env).toEqual({ ASSEMBLYAI_API_KEY: "from-shell" });
     });
-    expect(env).toEqual({});
   });
 
   test("loads only declared keys from .env file", async () => {

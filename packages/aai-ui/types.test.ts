@@ -31,8 +31,22 @@ describe("ToolCallInfo", () => {
 });
 
 describe("AgentState", () => {
-  it("includes all expected states", () => {
-    const states: AgentState[] = [
+  it("is exactly the seven states a client switches on", () => {
+    // This used to be an `AgentState[]` literal followed by `toHaveLength(7)`,
+    // which counted the array on the line above it. That catches a REMOVED
+    // member — the literal stops being assignable — and a member ADDED to the
+    // union was caught by nothing, which is the direction that matters: a
+    // client exhaustively switching on this compiles against seven arms and
+    // silently falls through the eighth. `toEqualTypeOf` is exact in both
+    // directions, and `tsc` is what runs it (see "Type-level tests" in the root
+    // guide — a mismatch is a hard compile error, not a skipped assertion).
+    expectTypeOf<AgentState>().toEqualTypeOf<
+      "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error"
+    >();
+
+    // The same seven as values, so the list stays readable as a list and a
+    // rename fails here too.
+    const states = [
       "disconnected",
       "connecting",
       "ready",
@@ -40,8 +54,8 @@ describe("AgentState", () => {
       "thinking",
       "speaking",
       "error",
-    ];
-    expect(states).toHaveLength(7);
+    ] as const satisfies readonly AgentState[];
+    expect(new Set(states).size).toBe(states.length);
   });
 });
 

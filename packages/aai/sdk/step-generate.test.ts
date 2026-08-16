@@ -9,91 +9,77 @@
  * whether a step retries or gives up — the `retryable` split.
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
 } from "./providers/llm/assemblyai.ts";
 import { StepGenerateError, stepGenerate } from "./step-generate.ts";
+import { stubGateway } from "./testing-gateway.ts";
 
-const SLOT = Symbol.for("@alexkroman1/aai.stepEnv");
-
-afterEach(() => {
-  delete (globalThis as Record<symbol, unknown>)[SLOT];
-});
-
-/** A gateway answering `content`, recording every request. */
-function stubGateway(content: string, status = 200) {
-  const calls: { url: string; init: RequestInit }[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string, init: RequestInit) => {
-      calls.push({ url, init });
-      return new Response(
-        status === 200 ? JSON.stringify({ choices: [{ message: { content } }] }) : "denied",
-        { status, headers: { "Content-Type": "application/json" } },
-      );
-    }),
-  );
-  return calls;
-}
-
-/** What one recorded request actually sent. */
-function sent(call: { url: string; init: RequestInit } | undefined) {
-  return {
-    headers: (call?.init.headers ?? {}) as Record<string, string>,
-    body: JSON.parse(String(call?.init.body)) as Record<string, unknown>,
-  };
+/**
+ * The SDK's own fake gateway, installed — see `sdk/testing-gateway.ts`, which
+ * is published as `@alexkroman1/aai/testing` precisely so a spec for a step
+ * that calls this module does not re-implement one. It decodes the request
+ * body and lower-cases the headers, so the local `sent()` re-parse this file
+ * used to carry is its job now. `step-generate-json.test.ts` uses it the same
+ * way.
+ */
+function install(replies: string | readonly string[], status?: number) {
+  const gateway = stubGateway(replies, status === undefined ? {} : { status });
+  vi.stubGlobal("fetch", gateway.fetch);
+  return gateway;
 }
 
 describe("stepGenerate", () => {
   test("asks the gateway and returns the trimmed reply", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const calls = stubGateway("  Otters use tools.  ");
+    const gateway = install("  Otters use tools.  ");
 
     expect(await stepGenerate("Tell me about otters")).toBe("Otters use tools.");
-    expect(calls[0]?.url).toBe(`${ASSEMBLYAI_LLM_GATEWAY_URL}/chat/completions`);
+    expect(gateway.calls[0]?.url).toBe(`${ASSEMBLYAI_LLM_GATEWAY_URL}/chat/completions`);
   });
 
   test("sends the key as a BEARER, which is what this endpoint takes", async () => {
     // AssemblyAI's streaming sockets take the key raw; getting the two the wrong
     // way round is a 401 that reads like a wrong key.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const calls = stubGateway("hi");
+    const gateway = install("hi");
     await stepGenerate("hi");
-    expect(sent(calls[0]).headers.Authorization).toBe("Bearer sk-test");
+    expect(gateway.calls[0]?.headers.authorization).toBe("Bearer sk-test");
   });
 
   test("defaults to the model an agent's own pipeline resolves", async () => {
     // So a workflow and the agent that owns it cannot silently run on different
     // models.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const calls = stubGateway("hi");
+    const gateway = install("hi");
     await stepGenerate("hi");
-    expect(sent(calls[0]).body.model).toBe(ASSEMBLYAI_LLM_DEFAULT_MODEL);
+    expect(gateway.calls[0]?.body.model).toBe(ASSEMBLYAI_LLM_DEFAULT_MODEL);
   });
 
   test("turns reasoning off, the same as the shipped voice pipeline", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const calls = stubGateway("hi");
+    const gateway = install("hi");
     await stepGenerate("hi");
-    expect(sent(calls[0]).body.reasoning_effort).toBe("none");
+    expect(gateway.calls[0]?.body.reasoning_effort).toBe("none");
   });
 
   test("drops an unset system message rather than sending an empty one", async () => {
     // An empty system message is a message the model still reads.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const calls = stubGateway("hi");
+    const gateway = install("hi");
     await stepGenerate("hi");
-    expect(sent(calls[0]).body.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(gateway.calls[0]?.body.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(gateway.calls[0]?.system).toBeUndefined();
   });
 
   test("sends the system message ahead of the prompt when there is one", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const calls = stubGateway("hi");
+    const gateway = install("hi");
     await stepGenerate("hi", { system: "Be brief." });
-    expect(sent(calls[0]).body.messages).toEqual([
+    expect(gateway.calls[0]?.body.messages).toEqual([
       { role: "system", content: "Be brief." },
       { role: "user", content: "hi" },
     ]);
@@ -101,33 +87,32 @@ describe("stepGenerate", () => {
 
   test("omits an unset knob entirely rather than sending it undefined", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const calls = stubGateway("hi");
+    const gateway = install("hi");
     await stepGenerate("hi", { temperature: 0.2 });
-    const { body } = sent(calls[0]);
-    expect(body.temperature).toBe(0.2);
-    expect("max_tokens" in body).toBe(false);
+    expect(gateway.calls[0]?.body).toMatchObject({ temperature: 0.2 });
+    expect(gateway.calls[0]?.body).not.toHaveProperty("max_tokens");
   });
 
   test("honours an overridden gateway, model and key name", async () => {
     // The EU endpoint is the case this exists for; the key name is the one an
     // agent with a second account would need.
     vi.stubEnv("SECOND_KEY", "sk-eu");
-    const calls = stubGateway("hi");
+    const gateway = install("hi");
     await stepGenerate("hi", {
       gatewayUrl: ASSEMBLYAI_LLM_GATEWAY_EU_URL,
       model: "gpt-5.6-luna",
       apiKeyEnv: "SECOND_KEY",
     });
-    expect(calls[0]?.url).toBe(`${ASSEMBLYAI_LLM_GATEWAY_EU_URL}/chat/completions`);
-    expect(sent(calls[0]).body.model).toBe("gpt-5.6-luna");
-    expect(sent(calls[0]).headers.Authorization).toBe("Bearer sk-eu");
+    expect(gateway.calls[0]?.url).toBe(`${ASSEMBLYAI_LLM_GATEWAY_EU_URL}/chat/completions`);
+    expect(gateway.calls[0]?.body.model).toBe("gpt-5.6-luna");
+    expect(gateway.calls[0]?.headers.authorization).toBe("Bearer sk-eu");
   });
 });
 
 describe("what a failure tells the step to do", () => {
   test("a rate limit is RETRYABLE, which is what the DevKit's retries are for", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    stubGateway("", 429);
+    install("", 429);
     await expect(stepGenerate("hi")).rejects.toMatchObject({
       name: "StepGenerateError",
       status: 429,
@@ -135,33 +120,34 @@ describe("what a failure tells the step to do", () => {
     });
   });
 
-  test("a 5xx and a 408 are retryable too", async () => {
+  // `test.each` rather than a `for…of`: the reporter names the status that
+  // failed, where a loop reports the whole case as one anonymous failure.
+  test.each([408, 500, 503])("a %i is retryable too", async (status) => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    for (const status of [408, 500, 503]) {
-      stubGateway("", status);
-      await expect(stepGenerate("hi")).rejects.toMatchObject({ retryable: true, status });
-    }
+    install("", status);
+    await expect(stepGenerate("hi")).rejects.toMatchObject({ retryable: true, status });
   });
 
-  test("a rejected request is NOT, so the caller can stop rather than burn five attempts", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    for (const status of [400, 401, 404]) {
-      stubGateway("", status);
+  test.each([400, 401, 404])(
+    "a %i is NOT, so the caller can stop rather than burn five attempts",
+    async (status) => {
+      vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+      install("", status);
       await expect(stepGenerate("hi")).rejects.toMatchObject({ retryable: false, status });
-    }
-  });
+    },
+  );
 
   test("quotes what the gateway said, so the failure is diagnosable", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    stubGateway("", 401);
-    await expect(stepGenerate("hi")).rejects.toThrow(/HTTP 401 — denied/);
+    install("", 401);
+    await expect(stepGenerate("hi")).rejects.toThrow(/HTTP 401 — .*stub gateway: HTTP 401/);
   });
 
   test("a 200 carrying no completion is a failure, and a retryable one", async () => {
     // A step returning `""` here would file a blank report and report success,
     // which is the worst shape this can take.
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    stubGateway("   ");
+    install("   ");
     await expect(stepGenerate("hi")).rejects.toMatchObject({
       retryable: true,
       message: expect.stringContaining("empty completion"),
@@ -169,7 +155,7 @@ describe("what a failure tells the step to do", () => {
   });
 
   test("a missing key fails by name, and never retryably", async () => {
-    stubGateway("hi");
+    install("hi");
     const error = await stepGenerate("hi").catch((err: unknown) => err);
     expect(error).toBeInstanceOf(StepGenerateError);
     expect(error).toMatchObject({ retryable: false });
@@ -177,9 +163,9 @@ describe("what a failure tells the step to do", () => {
   });
 
   test("a missing key does not reach the network at all", async () => {
-    const calls = stubGateway("hi");
+    const gateway = install("hi");
     await expect(stepGenerate("hi")).rejects.toThrow();
-    expect(calls).toHaveLength(0);
+    expect(gateway.calls).toHaveLength(0);
   });
 });
 

@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const { mockCleanup, mockStartDevServer, mockNotify } = vi.hoisted(() => {
   const mockCleanup = vi.fn();
@@ -21,6 +21,15 @@ vi.mock("./_ui.ts", async (importOriginal) => ({
 }));
 
 import { executeDev } from "./dev.ts";
+
+// `mockCleanup`, `mockStartDevServer` and `mockNotify` are module-level
+// `vi.fn()`s. `restoreMocks: true` registers only `vi.spyOn` mocks, so it
+// clears none of their call history — without this, the
+// `toHaveBeenCalledTimes(1)` assertions below count every call since the file
+// started rather than the ones this test made.
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 /**
  * Run executeDev with process.on intercepted, so signal/error handlers are
@@ -62,12 +71,8 @@ describe("executeDev", () => {
   // noise and a double runtime shutdown.
   test("second signal joins the in-flight cleanup instead of re-running it", async () => {
     await withCapturedHandlers(async (handlers) => {
-      let releaseCleanup!: () => void;
-      mockCleanup.mockReturnValue(
-        new Promise<void>((resolve) => {
-          releaseCleanup = resolve;
-        }),
-      );
+      const inFlight = Promise.withResolvers<void>();
+      mockCleanup.mockReturnValue(inFlight.promise);
 
       await executeDev({ cwd: "/tmp/agent", port: "3123" });
       const sigint = handlers.get("SIGINT");
@@ -80,7 +85,7 @@ describe("executeDev", () => {
       sigint?.();
       expect(mockCleanup).toHaveBeenCalledTimes(1);
 
-      releaseCleanup();
+      inFlight.resolve();
       await vi.waitFor(() => expect(process.exit).toHaveBeenCalledWith(0));
       expect(process.exit).toHaveBeenCalledTimes(1);
     });

@@ -7,6 +7,7 @@
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { type FakeHostChannel, installFakeHostChannel } from "./_test-utils.ts";
 import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
 import { bearerToken } from "./harness-auth.ts";
 import {
@@ -20,11 +21,12 @@ import { rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";
 import type { AgentDef, JsonRpcMessage } from "./harness-types.ts";
 import { executeTool, runCode } from "./trial.ts";
 
-let sent: JsonRpcMessage[];
+let host: FakeHostChannel;
+let sent: FakeHostChannel["sent"];
 
 beforeEach(() => {
-  sent = [];
-  setHostSend((msg) => sent.push(msg));
+  host = installFakeHostChannel();
+  sent = host.sent;
 });
 
 afterEach(() => {
@@ -174,13 +176,15 @@ describe("executeTool (one-shot trial)", () => {
   // stop it could not be reached to fire, and the guest burned to Modal's
   // lifetime cap with `/health` unanswered.
   test("run_code terminates code that never yields, instead of wedging the guest", async () => {
-    const started = Date.now();
     const res = await runCode("while (true) {}", 250);
     expect(res).toMatchObject({ error: expect.stringContaining("timed out") });
     // A promise race would have "returned" here too — and left the loop running.
     // The proof that the thread is gone is that the next call still answers.
+    // (A wall-clock `Date.now()` bound used to sit here as well. It asserted
+    // nothing this line does not: a surviving spin loop starves the pool and
+    // the second call never resolves, which the suite timeout reports. What it
+    // added was a failure mode of its own on a loaded runner.)
     expect(await runCode("console.log('still alive')", 5000)).toBe("still alive");
-    expect(Date.now() - started).toBeLessThan(4000);
   });
 
   test("run_code output survives the hop back from the worker", async () => {
@@ -351,7 +355,7 @@ describe("control-channel dispatch", () => {
   test("unknown methods answer -32601", async () => {
     const state = makeState();
     await handleRequest({ jsonrpc: "2.0", id: 6, method: "bundle/load" }, state);
-    expect((sent.at(-1) as { error: { code: number } }).error.code).toBe(-32_601);
+    expect(host.lastResponse().error?.code).toBe(-32_601);
   });
 
   test("dispatchMessage settles a rejecting handler as -32603", async () => {
@@ -369,10 +373,10 @@ describe("control-channel dispatch", () => {
       state,
     );
     await vi.waitFor(() => {
-      const last = sent.at(-1) as { id?: number; error?: { code: number; message: string } };
-      expect(last?.id).toBe(7);
-      expect(last?.error?.code).toBe(-32_603);
-      expect(last?.error?.message).toContain("escapes the workspace");
+      const last = host.lastResponse();
+      expect(last.id).toBe(7);
+      expect(last.error?.code).toBe(-32_603);
+      expect(last.error?.message).toContain("escapes the workspace");
     });
   });
 
@@ -394,10 +398,10 @@ describe("control-channel param validation", () => {
       { jsonrpc: "2.0", id: 8, method: "workspace/deploy", params: { files: "not-a-map" } },
       state,
     );
-    const last = sent.at(-1) as { id: number; error: { code: number; message: string } };
+    const last = host.lastResponse();
     expect(last.id).toBe(8);
-    expect(last.error.code).toBe(-32_602);
-    expect(last.error.message).toContain("workspace/deploy: invalid params");
+    expect(last.error?.code).toBe(-32_602);
+    expect(last.error?.message).toContain("workspace/deploy: invalid params");
   });
 
   test("studio/session-init with invalid params answers -32602 without installing a session", async () => {
@@ -420,10 +424,10 @@ describe("control-channel param validation", () => {
       },
       state,
     );
-    const last = sent.at(-1) as { id: number; error: { code: number; message: string } };
+    const last = host.lastResponse();
     expect(last.id).toBe(9);
-    expect(last.error.code).toBe(-32_602);
-    expect(last.error.message).toContain("studio/session-init: invalid params");
+    expect(last.error?.code).toBe(-32_602);
+    expect(last.error?.message).toContain("studio/session-init: invalid params");
     expect(state.studio).toBeNull();
   });
 });

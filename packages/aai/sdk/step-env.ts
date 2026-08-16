@@ -76,10 +76,26 @@ function processEnv(): Record<string, string | undefined> {
  * meaning — the same rule `resolveServerEnv` applies to a declared-but-unset
  * `.env` entry.
  *
+ * Passing `undefined` for the whole record UNPUBLISHES — the slot returns to
+ * "nothing has published at all", which is a different state from an empty
+ * record (that one publishes, and so switches off the `process.env` fallback).
+ * It is the same shape as `publishStepFetch(undefined)` /
+ * `publishStepReporter(undefined)` / `publishUploadReader(undefined)`, and it
+ * exists because without it the only way back was for a caller to hand-copy
+ * this module's private `Symbol.for` key and `delete` the global — which two
+ * specs did, and which a rename of the constant would have turned into a
+ * silent no-op.
+ *
  * @internal — a host concern, exported from `@alexkroman1/aai/runtime`. An
  * agent author calls {@link stepEnv}.
  */
-export function publishStepEnv(env: Readonly<Record<string, string | undefined>>): void {
+export function publishStepEnv(
+  env: Readonly<Record<string, string | undefined>> | undefined,
+): void {
+  if (env === undefined) {
+    delete (globalThis as StepEnvSlot)[STEP_ENV_SLOT];
+    return;
+  }
   const published: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     if (value !== undefined) published[key] = value;

@@ -275,11 +275,20 @@ describe("assemblyai LLM gateway wiring", () => {
   }
 
   it("streams an id-less gateway tool call through resolveLlm without throwing", async () => {
+    // `unstubAllGlobals` in a `finally`, not left to the end of the file:
+    // `restoreMocks`/`unstubEnvs` do not cover globals, so a stub left in
+    // place leaks the fake `fetch` into every later test — harmless here only
+    // because this happens to be the second-to-last one. `resolve.test.ts`
+    // carries the same try/finally.
     vi.stubGlobal("fetch", sseFetch(toolCallStream));
-    const calls = await collectToolCalls();
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.toolName).toBe("list_files");
-    expect(calls[0]?.toolCallId).toBeTruthy();
+    try {
+      const calls = await collectToolCalls();
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.toolName).toBe("list_files");
+      expect(calls[0]?.toolCallId).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("documents the raw SDK failure the wrapper exists to fix", async () => {

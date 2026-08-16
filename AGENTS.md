@@ -6,7 +6,11 @@ The root `CLAUDE.md` is a one-line import of this file (`@AGENTS.md`) and
 carries no content of its own — `AGENTS.md` is the name every other agent tool
 looks for, so keeping the guide here means one canonical copy rather than a
 per-tool set that drifts. Edit THIS file; never paste content into
-`CLAUDE.md` (`agents-md-shim.test.ts` fails if you do). Package guides stay
+`CLAUDE.md` (`check-claude-md.mjs` and
+`packages/aai-templates/claude-md-limit.test.ts` both fail if you do — this
+line used to cite an `agents-md-shim.test.ts` that has never existed in the
+tree, which mattered because the parenthetical is the whole reason an author
+believes the rule is checked). Package guides stay
 named `CLAUDE.md`: Claude Code auto-loads a package's guide when you work in
 that directory, which is the behaviour those files exist for, and
 `konsistent.json` requires one per package.
@@ -72,7 +76,15 @@ database and runs the tier against it; a skip ANNOUNCES itself via
 `describeWithPg` / `describeWithStack`; and `AAI_REQUIRE_PG` / `AAI_REQUIRE_STACK`
 turn a skip into a hard failure, declared in the `check:scenario` task's `env` in
 `turbo.json` because strict env mode would otherwise strip them and the
-enforcement would silently do nothing. **`AAI_REQUIRE_REGISTRY` is the same shape
+enforcement would silently do nothing. **`AAI_REQUIRE_STACK` is only exported
+when a stack really resolved, so `scripts/with-test-pg.mjs --require-stack` is
+what makes "no stack" a FAILURE** — without the flag every failure path (no
+CLI, stack down, unparsable `supabase status -o env`) printed two lines and
+exited 0, so `supabase start` succeeding while that output changes shape gave a
+green platform-stack job in which `realtime-rls.scenario.test.ts`, the only
+walrus/RLS leak test in the repository, never ran. CI passes the flag; `pnpm
+test:pg` deliberately does not, because a developer on a plain 5432 is entitled
+to the narrow arm with a printed reason. **`AAI_REQUIRE_REGISTRY` is the same shape
 one tier up**, in `check:e2e`'s `env` — see `packages/aai-cli/CLAUDE.md`. The
 whole gate, including the vitest collection trap that makes `pgUrl()` illegal at
 the top of a gated `describe` body, is in `packages/aai-server/CLAUDE.md`,
@@ -98,6 +110,28 @@ pnpm vitest run packages/aai/types.test.ts      # Single file
 pnpm vitest run session                         # All files matching "session"
 pnpm --filter @alexkroman1/aai test             # Single package via pnpm filter
 ```
+
+### The required check is one job, and it must NOT accept `skipped`
+
+`.github/workflows/check.yml`'s `ci` job is the only required check on `main`.
+Two things about it are load-bearing, and both were missing:
+
+- **`setup` is in its `needs`.** Every other job declares `needs: setup`, and
+  `setup` is what runs `pnpm install --frozen-lockfile` and `turbo run build`.
+- **Only `"success"` passes.** Under `if: always()`, a loop that also accepted
+  `"skipped"` meant a failing build failed `setup`, GitHub reported all five
+  downstream jobs as `skipped`, and the gate printed **"All CI jobs passed"**
+  and exited 0. No downstream job carries an `if:` of any kind, so `skipped`
+  can only ever mean "a dependency failed"; a job that legitimately skips
+  ITSELF would need its own accepted-result list, never a blanket `skipped`.
+
+**The test matrix names every package with a `test:coverage` script**, which
+now includes `aai-evals` — absent for a long time, so its seven unit suites and
+its four coverage floors were gated by nothing in CI while passing locally
+(`check.sh` runs `turbo run test:coverage` unfiltered). That is the
+green-locally/red-in-CI asymmetry running backwards, and it made a PR that
+breaks those suites fully green. It is NOT the documented eval-tier exemption,
+which is scoped to `check:eval`.
 
 ### Full CI check (`pnpm check`)
 
@@ -164,6 +198,13 @@ shipped product, and `aai-templates`, whose suites read repo-root files —
 served from cache exactly when the file they check changed. Prove any of this
 the same way: capture `turbo run <task> --filter <pkg> --dry=json`'s hash,
 touch the file, capture again. An identical hash is the bug.
+
+Three live instances of both rules were found by the documented A/B and fixed
+together: `scripts/ensure-guest-harness.mjs` is `aai-server#test`'s own vitest
+`globalSetup` and was in neither `inputs` nor `globalDependencies` (it is a
+repo-root file, so it is in the global list now); `check:e2e` hashed neither
+`vitest.shared.ts`, which it reaches through the slow config, nor `VITEST_POOL`,
+which the other four test tasks all declare.
 
 Relatedly, **`cacheDir` and the CI cache path have to name the same
 directory.** They did not: `turbo.json` set
@@ -233,9 +274,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
 - **`pnpm check:hatches`** (`scripts/check-escape-hatches.mjs`) — counts
   static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
   `@ts-nocheck`, `biome-ignore`, `eslint-disable`, `as any`,
-  `as unknown as`) across `packages/` and `scripts/` and holds each FILE to the
-  count recorded in `scripts/escape-hatch-baseline.json`. A file may hold
-  fewer; it may never hold more; a file absent from a pattern may hold none.
+  `as unknown as`, `as never`) across `packages/` and `scripts/` and holds each
+  FILE to the count recorded in `scripts/escape-hatch-baseline.json`. A file
+  may hold fewer; it may never hold more; a file absent from a pattern may
+  hold none.
   Fix the underlying type/lint error instead of suppressing it. On failure it
   **names the offending lines** (`file:line` plus the source line) under each
   file over budget.
@@ -244,6 +286,47 @@ one commit of history. A file in the tree has no merge base and no such modes.
   ratchet: the old total-based version passed a branch that removed one hatch
   and added another somewhere else — verified by A/B, the total stayed at 122
   and the per-file gate caught it.
+  **The engine counts OCCURRENCES, not matching lines** — `git grep -o`. Both
+  baselines describe themselves as recording occurrences and for a long time
+  recorded lines: three casts on one line reported `found 1`, the same three on
+  three lines reported `found 3`. Honest when it was measured (94 lines against
+  94 occurrences) and structurally wrong, because a file at its budget could
+  absorb more by appending them to the line that bought the budget. The scan is
+  two passes: `-n` for the source line the report prints and the comment filter
+  decides on, `-o` for the count.
+
+  **And `assertScanCorpus` diffs `git ls-files` against `git grep -lI`, because
+  ONE control character makes a whole file invisible.** A single raw NUL makes
+  a file BINARY to `git grep`, which silently exempts it from every line rule
+  and every hatch pattern — and the corpus floor cannot catch it BY DESIGN,
+  since the file is still in `git ls-files`. It has cost this repo three times
+  now (`host/workflow-notify.ts`, `host/workflow-keys.ts`, and
+  `konsistent-config.test.ts`, which used raw NULs as regex placeholder
+  sentinels); the first two were fixed one byte at a time with no detector
+  added, which is the argument for the detector. Spell the character as an
+  escape — byte-identical behaviour, and the file is text again. A genuinely
+  binary extension goes in `KNOWN_BINARY` in `scripts/_ratchet.mjs`, which is a
+  DENY-list so a new source extension defaults into being checked.
+
+  **The three CAST patterns skip COMMENT-ONLY lines; the five suppression
+  patterns do not.** A `biome-ignore` genuinely is a comment, and suppressing
+  the rule is what the comment does — but a cast named in prose is prose. Of
+  119 counted hatches, 25 sat on comment lines; 21 were correct and all four
+  cast hits were JSDoc, two of them the ENTIRE `as any` budget. So a real
+  `export const smuggled = (globalThis as any).x;` could move into that budget
+  with the gate still printing `as any allowed=2 now=2 … ✓`, demonstrated on
+  the real gate. `guard-invariants` had solved this all along with a per-rule
+  `skipComments` flag; this gate called the same `scanGroups` with no filter.
+
+  **`as never` is counted, and it is strictly worse than `as unknown as`.**
+  `never` is assignable to everything, so `{ … } as never` passes any parameter
+  position, and like the double cast it stops reporting the moment a field is
+  ADDED to the type it stands in for. It was the dominant type-laundering idiom
+  here while uncounted — 110 occurrences in tests against 62 of the counted
+  `as unknown as`, and 98 -> 110 over three days while the counted pattern went
+  63 -> 62. Uncounted patterns grow; that is the argument. The campaign to
+  remove them is the one that halved `as unknown as`: a TYPED SEAM per
+  concentration, never a cast per assertion.
 
   `node scripts/check-escape-hatches.mjs --update` lowers the baseline to match
   the tree and **refuses to raise anything**, so recording a removal is one
@@ -303,7 +386,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   pathspec in the repo. A pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so `*`
   already crosses `/` and `scripts/**/*.mjs` parses as "scripts/" + anything +
   "/" + anything + ".mjs" — the literal slash makes a subdirectory MANDATORY. It
-  therefore matched the three files under `scripts/starter-eval/` and not one of
+  therefore matched the files under `scripts/starter-eval/` and not one of
   the ~29 at the top level — exactly where an unreviewed harness hides — while
   printing "all files within caps ✓".
   Adding `scripts/*.mjs`/`scripts/*.ts` took the measured set from 6 files to 35.
@@ -420,8 +503,8 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | --- | --- | --- |
   | 1 | no symlinks anywhere | a real file, or a module that re-exports |
   | 2 | no conditional spread of an object literal — the ternary, the inverted ternary, or the `&&` form | `omitUndefined()` |
-  | 3 | no `Promise.race` against a `setTimeout` | `p-timeout` |
-  | 4 | no inline `new Promise(r => setTimeout(r, 0))` | `flush()` / `tick()` |
+  | 3 | no `Promise.race` against a `setTimeout`, WRAPPED FORM INCLUDED | `p-timeout` |
+  | 4 | no inline `new Promise(r => setTimeout(r, 0))`, `setImmediate` and `<T>` included | `flush()` / `tick()` |
   | 5 | no `delete process.env.X` | `vi.stubEnv(name, undefined)` |
   | ~~6~~ | *retired — `ctx.state` no longer exists* | `sessionSlot()` |
   | 7 | no floating-tag GitHub Action | a 40-char commit SHA |
@@ -429,26 +512,57 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 9 | no `tails.get(k) ?? Promise.resolve()` | `createKeyedLock()` / `slot.update` |
   | 10 | `research/**.md` needs `issue`/`status`/`last_updated` | see `research/README.md` |
   | 11 | no hardcoded `/tmp` in shipped source | `join(tmpdir(), …)` |
-  | 12 | every guest route literal is in `GUEST_ROUTES` | declare it + its exposure |
+  | 12 | every guest route literal is in `GUEST_ROUTES` — `aai-guest` AND the `aai/host` modules it bundles | declare it + its exposure |
   | 13 | no template import escaping its template dir | move it in, or publish it |
   | 14 | no fixture directory nothing reads | delete it, or add the reader |
   | 16 | no new `on*` on a SESSION callback surface | an event + `report(event)` |
   | 17 | no open-coded record guard, in either polarity | `isRecord()` |
   | 18 | no `req.url.split("?")` | `requestPath()` / `requestQuery()` |
-  | 19 | no hand-rolled sleep (or `node:timers/promises`) | `sleep()` |
+  | 19 | no hand-rolled sleep (or `node:timers/promises`), `<T>` included | `sleep()` |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
   later rule inherit it (rule 6, retired when `ctx.state` stopped existing; and
-  15, reserved). Rules 1, 3, 7, 9, 10, 12, 13 and 14 are at zero and enforced
-  absolutely; the rest carry per-file baselines.
+  15, reserved). Rules 1, 7, 9, 10, 12, 13 and 14 are at zero and enforced
+  absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
+  was widened**: `git grep` is line-based, so the wrapped `Promise.race([` form
+  Biome emits can only be matched by reporting the OPENING line, which cannot
+  see whether a timer is among the elements — so a timer-free wrapped race is a
+  legitimate baseline entry (`aai-server/guest-readiness.ts` is the one).
+  Over-reporting a race is the cheap error; every finding in this family is a
+  guard that under-reports silently.
+
+  **Five scopes, five corpus FLOORS**, and three of the five were missing —
+  rule 11's shipped-source corpus (~1,027 files, covered by neither existing
+  call, and the Windows-portability rule whose regressions are invisible on
+  every machine that runs CI), rule 12's guest HTTP surface, and rule 13's 175
+  template files. The last two derive their corpus from `git ls-files`, which
+  exits **0** on a pathspec matching nothing where `git grep` exits 1 — that
+  asymmetry is exactly why the grep-based rules announced their own blindness
+  and these two could not.
+
+  **The rule definitions are five modules behind one barrel.**
+  `guard-invariants-rules.mjs` re-exports `LINE_RULES` (sorted by id) and the
+  five scope constants, so nothing downstream changed; under it sit
+  `-ere.mjs` (the regex vocabulary), `-scopes.mjs` (the five corpora), and
+  `-rules-timing.mjs` / `-rules-shape.mjs` / `-rules-state.mjs`. **Every one of
+  them is in the gate's `SELF_REFERENTIAL` set**, because each `label` and `re`
+  is a description of the thing it bans — a split that forgot one file would be
+  the fifth time this repo pays for that trap. A rule may also carry its own
+  `samples: { matches, ignores }`, which is where a widened pattern's proof
+  belongs: rule 3 shipped for months with a single-line positive sample in
+  another package while the rule was blind to the multi-line form.
   `node scripts/guard-invariants.mjs --rules` prints the whole catalogue,
   DERIVED from the rule definitions — the prose copy that used to live in the
   script's header went three rules stale (17, 18 and 19 were absent) while the
   one computed line, the printed count, stayed right. The per-file baselines
-  carry the same `--update`-only-lowers contract as `check:hatches`. Every
-  baselined occurrence is
-  legitimate and says so in the JSON — three spread-ternaries where **the guard
+  carry the same `--update`-only-lowers contract as `check:hatches`.
+
+  **Every baselined occurrence is legitimate, and the JSON is NOT where it says
+  so** — that file is a bare `{path: count}` map written by `--update`, with
+  `_description` its only prose, so a reason recorded there would be erased by
+  the next regeneration. A reason lives at the OCCURRENCE, in a comment beside
+  the line, and the roster is here: three spread-ternaries where **the guard
   is not the value** (`String(params.port)` would stringify `undefined` into
   `"undefined"`; `{ mode: 0o700 }` sets a different value from the one it
   tests), the CLI test setup's env scrub, one hand-rolled owned-map in
@@ -459,6 +573,13 @@ one commit of history. A file in the tree has no merge base and no such modes.
   user's own agent may not import an SDK internal, so the hand-rolled form is
   what that fixture is demonstrating), and the two `scripts/*.mjs` guards that a
   plain-node gate cannot replace with an SDK import.
+
+  Rule 4's nine are zero-delay yields that cannot use `flush()`/`tick()`:
+  `tool-executor.ts`'s `setImmediate` between tool calls (shipped source, where
+  a test helper is not the remedy), the S2S fuzz harness's `drain()` — its own
+  doc has the measurement, `setTimeout(0)`'s ~1 ms floor costing that suite
+  ~60 s across tens of thousands of yields with no timer in the path to jump
+  ahead of — and six in packages not importing `aai/host/_test-utils.ts`.
 
   **The frozen `contracts/compatibility/**` examples are no longer baselined at
   all** — they are excluded from every line rule by a pathspec in
@@ -519,6 +640,19 @@ one commit of history. A file in the tree has no merge base and no such modes.
   script resolves the catalog now and, separately, refuses any workspace
   protocol left in the shipped manifest — `sharedDepSources` is hand-kept, so a
   dependency outside it is synced by nothing and caught by nothing.
+
+**Every gate whose success output is a COUNT now carries a floor**, set from
+the measured actual and recorded beside it, because a scan that stops matching
+prints the same checkmark as a healthy tree. Five were added at once:
+`check-gateway-models` had none at all and its `[^}]*` entry parser could not
+cross a nested `}`, so one reformatted entry dropped BOTH the committed and the
+generated map to zero, made the diff empty, and printed `catalog current — 0
+advertised, 0 usable ✓`; `artifact-size-report` did not floor
+`publishablePackages()` though `_fs.mjs` documents that the caller must;
+`check-doc-examples`'s `MIN_EXAMPLES` sat at 45 against a measured 98, so more
+than half the corpus could vanish silently (its `extractFences` also dropped
+every block after an unclosed fence, which now throws); and `guard-invariants`
+rules 11, 12 and 13 had no corpus floor.
 
 These are pure fs checks (no build needed), so they run up front and
 fail fast. To tighten quality over time, lower the entries in the
@@ -688,6 +822,9 @@ Each package has distinct test helpers tailored to its domain:
   developer's real `~/.config/aai/config.json` (API key + approved servers).
 - **`aai-ui/_react-test-utils.ts`** — `createMockSessionCore()`,
   `MockAudioContext`, `installAudioMocks()`
+- **`aai-studio-client/src/_test-utils.ts`** — typed `fetch` stubs plus their
+  readers, `renderWithClient()`, the `button`/`input`/`textarea` element seams,
+  and `installResizeObserver()`.
 - **`aai-server/test-utils.ts`** — (no underscore) `createTestStore()`
   (in-memory BundleStore), `createTestOrchestrator()`, `authHeaders()` /
   `authFetch()` / `deploy()` / `deployAgent()` / `deployPayload()` /
@@ -866,7 +1003,7 @@ it was added — the same genre as the `ls-lint` config no pipeline ran and the
 
 `scripts/artifact-size-report.mjs` measures what actually ships:
 
-- **`aai-guest/dist/harness.mjs` — 13 MB, and nothing was watching it.** It is
+- **`aai-guest/dist/harness.mjs` — 17.6 MB, and nothing was watching it.** It is
   baked into the Modal guest snapshot image, so it is on the cold-start path of
   every sandbox the platform starts. Reported raw and gzip, because the image
   layer is compressed.
@@ -906,9 +1043,9 @@ label that does not exist is an API error.
 ### Published type signatures are a committed report
 
 `pnpm api-report` writes `packages/*/etc/<subpath>.api.md` — the rolled-up
-public `.d.ts` for each of the 20 published entry points — plus **`API.md` at
-the repo root, the same 20 reports concatenated**, and **`API-EXPORTS.json`, the
-same 20 entry points' export NAMES**; `pnpm check:api-report` fails when any of
+public `.d.ts` for each of the 23 published entry points — plus **`API.md` at
+the repo root, the same 23 reports concatenated**, and **`API-EXPORTS.json`, the
+same 23 entry points' export NAMES**; `pnpm check:api-report` fails when any of
 them is stale.
 
 **`API-EXPORTS.json` is a second artifact over the same reports, and the split
@@ -960,7 +1097,7 @@ a `typedoc.json` list a new subpath must remember to join). A new subpath export
 therefore gets a report on its first run, and `--check` fails until it is
 committed, which is correct: a new subpath IS a public API change.
 
-**`API.md` is for READERS; the twenty reports are for reviewers.** Twenty files
+**`API.md` is for READERS; the per-entry-point reports are for reviewers.** 23 files
 is the right shape for a diff — a signature change lands in the one report that
 owns it — and the wrong shape for answering "what does this SDK expose?", which
 is twenty reads plus knowing which twenty. API Extractor cannot produce the
@@ -970,7 +1107,7 @@ synthetic barrel (`export * as stt from "./dist/…"`) does work and yields one
 DEDUPLICATED rollup, but only per package — the repo would still have three — and
 every symbol trades its `export` keyword for a `declare namespace` block.
 Deduplication also buys almost nothing here: 573 top-level declarations across
-the twenty reports are 539 distinct names, so 34 lines, 6%. So `API.md` is a
+the reports are 539 distinct names, so 34 lines, 6%. So `API.md` is a
 plain concatenation, generated in the same pass and gated by the same `--check`,
 which makes it derived rather than a second source of truth.
 
@@ -1005,8 +1142,9 @@ and the section above admits how it gets made: a judgement from memory, where a
 
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
 `check:api-report` in `scripts/check.sh` and in the CI check job) closes that.
-Twenty-two **capabilities** — named slices of the authoring API, each declared by
-a file under `<package>/contracts/entrypoints/` that may contain nothing but
+Twenty-five **capabilities** — named slices of the authoring API, each
+declared by a file under `<package>/contracts/entrypoints/` that may contain
+nothing but
 `export { … } from "<a published subpath>"` — get a report of their own, and what
 is committed is that report's hash plus its export list, at
 `contracts/epochs/<capability>/v<N>.json`. When a capability's shape moves the
@@ -1113,7 +1251,7 @@ a stale report would be believed.
 and it has the same shape as `api-surface-file.test.ts` for the same reason: the
 gate compares two things the script derives, so an extraction that stopped
 finding anything would hash nothing, agree with a committed nothing, and print
-"22 capability contract(s) up to date ✓". The suite reads the contract tree
+"25 capability contract(s) up to date ✓". The suite reads the contract tree
 independently — every package's, by the same discovery rule, so a second package
 is not unguarded by the guard — and asserts every name a capability root selects
 appears in that capability's current epoch, which an empty extraction cannot
@@ -1326,6 +1464,29 @@ you only need to list one package.
   "Quality ratchets" above). CI runs it for every package in the test
   matrix, so a PR that drops coverage below a package's floor fails.
 
+#### Two manual diagnostics, and a knip glob that could not see a dead script
+
+`knip.json`'s root `entry` names WHAT A PIPELINE INVOKES. It used to be
+`scripts/**/*.{mjs,ts}` — every file in `scripts/` an entry point by
+declaration, so the repo's one "what is unused" tool could never report a dead
+script, because an entry point is reachable by definition. Three dead chains
+were sitting in there (`starter-eval/builtins.mjs` and
+`starter-eval/tsconfig-ab.mjs`, both reading a `run.json` from a producer that
+was deleted, and `scripts/aai-dev.sh`, duplicating `pnpm aai`), all deleted.
+A script that is a MODULE is deliberately absent from the list: knip reaches it
+through the entry that imports it, and losing its last importer is precisely
+the finding the glob was suppressing. Anything a root `package.json` script or
+a vitest `globalSetup` names is discovered by knip itself and must not be
+repeated — it reports a repeat as a redundant pattern.
+
+`check:gateway-models` is the one script in `package.json` that no pipeline
+runs, and it stays that way: it spends real tokens on the caller's own key and
+depends on a third-party service being reachable, so a gateway blip would
+redden unrelated pull requests. Same argument as the mutation score below, and
+the same rule — a threshold or a gate that nothing enforces reads as a gate.
+It shells out to `gen-gateway-models.mjs` by path, which is why that generator
+is the single named `entry` in `knip.json`.
+
 #### Mutation score is a manual DIAGNOSTIC, not a tier and not a gate
 
 `pnpm test:mutate:sdk` mutates the schema core (689 lines) and you read the score
@@ -1361,10 +1522,10 @@ documented in that package's guide, not here:
 | Package | Pool | Environment | Special setup | Notes |
 | --- | --- | --- | --- | --- |
 | aai | threads (default) | node | — | Excludes pentest, sandbox, integration tests; `restoreMocks: true` |
-| aai-ui | threads | **jsdom** | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true` so `describe`/`test`/`expect` don't need imports |
+| aai-ui | threads | **node**, jsdom per file | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true` so `describe`/`test`/`expect` don't need imports. 22 of 42 files opt into jsdom with a `// @vitest-environment jsdom` pragma; the config declares NO `environment`, so the other 20 run in node |
 | aai-cli | threads | node | — | `restoreMocks: true` |
 | aai-server | **forks** | node | — | Forks for process isolation; excludes integration tests |
-| aai-studio-client | threads | node | — | `.tsx` tests via `react-dom/server` (no jsdom) |
+| aai-studio-client | threads | **node**, jsdom per file | — | 18 of 26 files carry `// @vitest-environment jsdom` on line 1 — effects, clicks, timers, `beforeunload`, clipboard and fake-timer poll loops are all genuinely exercised. `testTimeout: 20_000`, because the 5s default made a 10s async ceiling in the source unreachable by any test |
 | aai-templates | threads | node | — | Also matches `templates.test.ts` + `template-api-coverage.test.ts` |
 
 #### Test environment variables
@@ -1474,8 +1635,31 @@ What that buys, and the rules that come with it:
   (`fc.statistics` only prints), and an all-green property proves nothing about
   a state the generator never entered. They are also LOOSER than the fixed-seed
   versions they replaced, by design: a fixed seed list produced near-constant
-  counts, while fast-check draws a fresh seed per run. Set them ~3x below
-  measured actuals and record the actuals in a comment.
+  counts, while fast-check draws a fresh seed per run.
+
+  **Set the floor under the OBSERVED MINIMUM across many runs, and record the
+  RANGE plus the run count in the comment — not one actual, never a fraction of
+  the mean.** This guide said "~3x below measured actuals" and that is wrong,
+  measured: three drafts calibrated that way tripped on real runs while flooring
+  `aai-ui`'s five property suites (22-27 runs each). What a walk reaches is
+  correlated WITHIN a run rather than independent per step, so these
+  distributions have long left tails — one counter averaging **38** came out at
+  **3** on a single run, an order of magnitude under any multiple of its mean.
+  Only the observed minimum is evidence about the unluckiest run, and one run is
+  not a range.
+
+  The five `aai-ui` suites are the worked example — `fuzz-voiceio`'s
+  `judgedDones` at `> 45` against a measured 158-203, `fuzz-hooks`'s
+  `lateSettles` at `4` against 24-51 — each with its range in a trailing comment.
+  Two corollaries: a state whose whole range is small gets `> 0`, the floor being
+  there to catch a state NEVER reached rather than to pin how often; and a state
+  measured but deliberately left UNFLOORED says so in place —
+  `studio-concurrency-fuzz`'s unreachable archive path,
+  `fuzz-session-core`'s settled tool call (0-5 of 200 runs, owned by
+  `fuzz-hooks`), and `audio-stress`'s `concealments` (1-5 of 25 runs; longer
+  sources, `jitterMs`/`refillMs` tuning and stall bursts were each measured and
+  each left it unchanged — `playback-processor.test.ts` covers concealment
+  deterministically).
 - **A generator must not break its own contract.** The failure looks like a
   finding and is not. An all-false pacing script in `audio-stress` never
   delivered a chunk, so the delivery loop rendered forever and died on

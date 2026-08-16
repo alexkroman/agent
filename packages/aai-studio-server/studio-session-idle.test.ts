@@ -5,10 +5,15 @@ import type { WarmHarness } from "aai-server/sandbox-vm";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";
-import { createSessionReaper } from "./studio-session-idle.ts";
+import { createSessionReaper, SWEEP_INTERVAL_MS } from "./studio-session-idle.ts";
 
-/** The sweep cadence in studio-session-idle.ts — not exported. */
-const SWEEP_INTERVAL_MS = 60_000;
+/**
+ * The sweep cadence is IMPORTED, never re-declared: `addEntry` positions
+ * `lastUsed` relative to the next sweep and every boundary test advances by
+ * exactly one, so a copy that drifted from the module would move both — the
+ * ages the helper intends and the moment they are read — and the assertions
+ * would go on passing while measuring something else.
+ */
 const IDLE_MS = 300_000;
 
 type Harness = {

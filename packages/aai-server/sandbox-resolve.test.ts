@@ -297,8 +297,12 @@ describe("cross-replica registry keeps one sandbox per slug fleet-wide", () => {
   beforeEach(() => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    // `restoreMocks` (vitest.shared.ts) restores every spy before each test,
-    // which strips the hoisted factory's default — so re-arm it here.
+    // Re-arm the hoisted factory's default. NOT because of `restoreMocks`,
+    // which this comment used to blame: that registers `vi.spyOn` mocks only
+    // and touches neither the history nor the implementation of a plain
+    // `vi.fn()`. What strips the default is the `afterEach(mockReset)` in the
+    // "broker readiness cap" describe above — and the `mockReset()` here is
+    // what clears the calls `restoreMocks` likewise leaves behind.
     mockSpawnAgentServer.mockReset().mockResolvedValue({
       sessionUrl: "wss://tunnel.test:443/websocket",
       guestOrigin: "wss://tunnel.test:443",

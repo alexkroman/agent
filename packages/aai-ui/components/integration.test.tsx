@@ -12,7 +12,7 @@
  */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Profiler, type ReactNode } from "react";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createMockSessionCore } from "../_react-test-utils.ts";
 import { SessionProvider, ThemeProvider } from "../context.ts";
 import type { SessionCore } from "../session-core-types.ts";
@@ -34,30 +34,28 @@ function renderWithProvider(children: ReactNode, session: SessionCore) {
 describe("Controls: click interactions", () => {
   test("clicking Stop calls toggle and switches to Resume", () => {
     const core = createMockSessionCore({ started: true, running: true });
-    const calls: string[] = [];
-    const origToggle = core.toggle.bind(core);
-    core.toggle = () => {
-      calls.push("toggle");
-      origToggle();
-    };
+    // `vi.spyOn` rather than a `calls: string[]` recorder plus hand-assignment:
+    // it keeps the real implementation (which is what flips `running` below),
+    // names itself in the failure, and comes off under `restoreMocks` instead
+    // of leaving a patched method on the mock core.
+    const toggle = vi.spyOn(core, "toggle");
 
     renderWithProvider(<Controls />, core);
     const stopBtn = screen.getByText("Stop");
     fireEvent.click(stopBtn);
 
-    expect(calls).toEqual(["toggle"]);
+    expect(toggle).toHaveBeenCalledOnce();
     expect(core.getSnapshot().running).toBe(false);
     expect(screen.getByText("Resume")).toBeDefined();
   });
 
   test("clicking New Conversation calls reset", () => {
     const core = createMockSessionCore({ started: true, running: true });
-    const calls: string[] = [];
-    core.reset = () => calls.push("reset");
+    const reset = vi.spyOn(core, "reset");
 
     renderWithProvider(<Controls />, core);
     fireEvent.click(screen.getByText("New Conversation"));
-    expect(calls).toEqual(["reset"]);
+    expect(reset).toHaveBeenCalledOnce();
   });
 });
 
@@ -218,10 +216,13 @@ describe("MessageList: messages + tool calls interleaved", () => {
       messages: [{ id: 1, role: "user", content: "Tell me a joke" }],
     });
 
-    const { container } = renderWithProvider(<MessageList />, core);
-    // ThinkingIndicator renders 3 dots
-    const dots = container.querySelectorAll(".rounded-full");
-    expect(dots.length).toBe(3);
+    renderWithProvider(<MessageList />, core);
+    // By ROLE, not by counting `.rounded-full` elements: that count broke when
+    // the three dots became anything else (correct behaviour, red test) and
+    // when any sibling row gained a round badge (wrong behaviour, green test).
+    // The class-assertion argument this package makes elsewhere is about
+    // cascade and layout, which does not apply to element presence.
+    expect(screen.getByRole("status", { name: "Thinking" })).toBeDefined();
   });
 
   test("hides thinking indicator when a tool call is pending", () => {
@@ -241,10 +242,10 @@ describe("MessageList: messages + tool calls interleaved", () => {
       ],
     });
 
-    const { container } = renderWithProvider(<MessageList />, core);
-    // When a tool call is pending, thinking dots should not show
-    const thinkingDots = container.querySelectorAll(".rounded-full");
-    expect(thinkingDots.length).toBe(0);
+    renderWithProvider(<MessageList />, core);
+    // The pending tool row IS the progress signal, so the dots must not double
+    // it. Asserted by role for the reason the sibling above gives.
+    expect(screen.queryByRole("status", { name: "Thinking" })).toBeNull();
   });
 
   test("shows pending tool call with shimmer animation", () => {

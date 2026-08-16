@@ -10,10 +10,9 @@
 // reads very differently from a 404 for an agent that declares none), and that
 // only a LIVE run offers a Stop button.
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, stubFetch } from "./_test-utils.ts";
+import { fetchCall, jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
 import { WorkflowsCard } from "./workflows-card.tsx";
 
 const LIST = "/demo/workflows";
@@ -30,16 +29,10 @@ function run(over: Record<string, unknown> = {}) {
 }
 
 function renderCard(props: { deployedSlug?: string; previewSlug?: string } = {}) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={client}>
-      <WorkflowsCard {...props} />
-    </QueryClientProvider>,
-  );
+  renderWithClient(<WorkflowsCard {...props} />);
 }
 
 afterEach(() => {
-  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -74,7 +67,13 @@ describe("WorkflowsCard", () => {
     });
     renderCard({ previewSlug: "demo-preview" });
     await waitFor(() => expect(screen.getByText(/declares no workflows/)).toBeTruthy());
-    expect(screen.getByText(/preview/).textContent).toContain("preview");
+    // The whole sentence, not "an element containing the word preview" — the
+    // slug `demo-preview` and the fallback copy both contain it, so the
+    // previous shape (`getByText(/preview/).textContent` contains "preview")
+    // could not fail once the query returned, whatever the note said.
+    expect(screen.getByText(/Showing the/).textContent).toBe(
+      "Showing the preview agent — it has its own runs, separate from production.",
+    );
   });
 
   test("prefers the published slug when both exist", async () => {
@@ -83,7 +82,10 @@ describe("WorkflowsCard", () => {
     });
     renderCard({ deployedSlug: "demo", previewSlug: "demo-preview" });
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/demo/workflows");
+    expect(fetchCall(fetchMock).url).toContain("/demo/workflows");
+    // …and the preview note is the OTHER half of that claim: reading
+    // production must not be labelled as showing the preview.
+    expect(screen.queryByText(/Showing the/)).toBeNull();
   });
 
   test("quotes the agent's own error sentence", async () => {

@@ -1,20 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { symlink, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
-import { silenced, withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 import { executeBuild, WORKER_ARTIFACT_REL } from "./build.ts";
-
-/**
- * Symlink this package's node_modules into the fixture project so the
- * worker wrapper's `@alexkroman1/aai/manifest` import (and any fixture
- * import of `zod`) resolves — a real project has the SDK installed.
- */
-async function linkNodeModules(dir: string): Promise<void> {
-  await symlink(path.resolve(import.meta.dirname, "node_modules"), path.join(dir, "node_modules"));
-}
 
 /** Import a built worker and return its `__aaiConfig` self-description. */
 async function extractConfig(worker: string): Promise<Record<string, unknown>> {
@@ -32,7 +23,7 @@ async function extractConfig(worker: string): Promise<Record<string, unknown>> {
 describe("buildAgentBundle", () => {
   test("throws when no agent.ts found", async () => {
     await withTempDir(async (dir) => {
-      await linkNodeModules(dir);
+      await linkSdkNodeModules(dir);
       await expect(silenced(() => buildAgentBundle(dir))(dir)).rejects.toThrow("agent.ts");
     });
   });
@@ -40,7 +31,7 @@ describe("buildAgentBundle", () => {
   test("bundles minimal agent with a self-describing config export", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        await linkNodeModules(dir);
+        await linkSdkNodeModules(dir);
         await writeFile(
           path.join(dir, "agent.ts"),
           `export default { name: "build-test-agent", systemPrompt: "Test prompt", greeting: "Hello", maxSteps: 5, tools: {} };`,
@@ -61,7 +52,7 @@ describe("buildAgentBundle", () => {
   test("bundles agent with tools and self-describes their schemas", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        await linkNodeModules(dir);
+        await linkSdkNodeModules(dir);
         await writeFile(
           path.join(dir, "agent.ts"),
           `
@@ -103,7 +94,7 @@ export default {
   test("minify option produces a smaller worker that still evaluates", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        await linkNodeModules(dir);
+        await linkSdkNodeModules(dir);
         await writeFile(
           path.join(dir, "agent.ts"),
           `const longDescriptiveVariableName = "Test prompt";
@@ -124,7 +115,7 @@ export default { name: "minify-test-agent", systemPrompt: longDescriptiveVariabl
   test("Vite-bundled worker is valid ESM with default export", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        await linkNodeModules(dir);
+        await linkSdkNodeModules(dir);
         await writeFile(
           path.join(dir, "agent.ts"),
           `export default { name: "vite-test", systemPrompt: "Test", greeting: "Hi", maxSteps: 5, tools: {} };`,
@@ -143,7 +134,7 @@ describe("deploy-shaped build (runtime included)", () => {
   test("ships a working __aaiCreateRuntime factory", { timeout: 120_000 }, async () => {
     await withTempDir(
       silenced(async (dir) => {
-        await linkNodeModules(dir);
+        await linkSdkNodeModules(dir);
         await writeFile(
           path.join(dir, "agent.ts"),
           `export default { name: "runtime-ship", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
@@ -177,7 +168,7 @@ describe("executeBuild", () => {
   test("returns the agent name and worker size", { timeout: 120_000 }, async () => {
     await withTempDir(
       silenced(async (dir) => {
-        await linkNodeModules(dir);
+        await linkSdkNodeModules(dir);
         await writeFile(
           path.join(dir, "agent.ts"),
           `export default { name: "exec-build", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
@@ -204,7 +195,7 @@ describe("executeBuild", () => {
     // that runs both as a user does.
     await withTempDir(
       silenced(async (dir) => {
-        await linkNodeModules(dir);
+        await linkSdkNodeModules(dir);
         await writeFile(
           path.join(dir, "agent.ts"),
           `export default { name: "on-disk", systemPrompt: "Test", greeting: "Hi", tools: {} };`,

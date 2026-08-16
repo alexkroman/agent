@@ -7,24 +7,57 @@
  * interim transcript must reach the client as the words become audible rather
  * than all at once when the reply ends.
  *
- * These specs drive the cover with a tiny `deadAirCoverMs` and a slowed LLM,
- * so the filler lands in the turn's opening gap. They used to drive it with
- * `holdPhrase: "One moment."`, which fired at t=0 on the turn's shape; there is
- * no such mechanism now — filler follows MEASURED silence.
+ * These specs drive the cover at the SHIPPED window on VIRTUAL time, with a
+ * tool that outlasts it — the only shape that produces real dead air at 5s.
+ * They used to drive it with `holdPhrase: "One moment."`, which fired at t=0 on
+ * the turn's shape; there is no such mechanism now — filler follows MEASURED
+ * silence.
+ *
+ * They then spent a while as the one pipeline spec file left on the WALL CLOCK,
+ * squeezing `deadAirCoverMs: 1` against `delayMs: 15` — which tests the wiring
+ * and says nothing about the window a caller actually waits out, and is a race
+ * besides. See `useVirtualTime`'s doc and the worked conversion in
+ * `pipeline-voice-events.test.ts` ("The SHIPPED window, not a 1ms stand-in").
  *
  * Split out of `pipeline-transport.test.ts` for file length.
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { DEAD_AIR_OPENING_PHRASE } from "../../sdk/constants.ts";
+import { DEAD_AIR_OPENING_PHRASE, DEFAULT_DEAD_AIR_COVER_MS } from "../../sdk/constants.ts";
+import { sleep } from "../../sdk/sleep.ts";
 import {
   createFakeLanguageModel,
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
-import { makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
+import { makeOpts, noopToolSchema, useVirtualTime } from "./_pipeline-transport-harness.ts";
 import { partialTranscripts } from "./_transport-recorder.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
+
+useVirtualTime();
+
+/**
+ * The tool-first turn every cover spec here needs: the model calls a tool and
+ * says nothing until it answers, and the tool takes twice the cover window.
+ */
+const TOOL_FIRST_STEPS: ScriptedPart[][] = [
+  [
+    {
+      type: "tool-call",
+      toolCallId: "tc-1",
+      toolName: "get_weather",
+      input: JSON.stringify({ city: "SF" }),
+    },
+  ],
+  [{ type: "text", text: "It's sunny." }],
+];
+
+/** A tool that outlasts the cover window, so the turn is genuinely silent. */
+const slowTool = () =>
+  vi.fn(async () => {
+    await sleep(DEFAULT_DEAD_AIR_COVER_MS * 2);
+    return "sunny";
+  });
 
 describe("PipelineTransport speech vs. record", () => {
   describe("interim agent transcript", () => {
@@ -33,33 +66,28 @@ describe("PipelineTransport speech vs. record", () => {
       // minutes) before `onAgentTranscript` fires with the whole reply. A
       // client that pairs text with audio has played that audio by then, so the
       // words have to go out when they become audible.
-      const script: ScriptedPart[] = [
-        {
-          type: "tool-call",
-          toolCallId: "tc-1",
-          toolName: "get_weather",
-          input: JSON.stringify({ city: "SF" }),
-        },
-        { type: "tool-result", toolCallId: "tc-1", toolName: "get_weather", result: "sunny" },
-        { type: "text", text: "It's sunny." },
-      ];
       const { opts, stt, callbacks } = makeOpts({
-        llm: createFakeLanguageModel({ script, delayMs: 15 }),
-        deadAirCoverMs: 1,
-        executeTool: vi.fn(async () => "sunny"),
+        llm: createFakeLanguageModel({ steps: TOOL_FIRST_STEPS, delayMs: 20 }),
+        deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
+        executeTool: slowTool(),
         toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
       });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("how's the weather?");
 
-      await vi.waitFor(() => {
-        expect(callbacks.reported("agent-transcript.updated")).toHaveBeenCalledWith({
-          type: "agent-transcript.updated",
-          text: DEAD_AIR_OPENING_PHRASE,
-        });
+      // Nothing yet: the caller is in an ordinary pause, and covering it here
+      // would cost the reply's opening sentence.
+      await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS - 1);
+      expect(callbacks.reported("agent-transcript.updated")).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(callbacks.reported("agent-transcript.updated")).toHaveBeenCalledWith({
+        type: "agent-transcript.updated",
+        text: DEAD_AIR_OPENING_PHRASE,
       });
       // Still cumulative, and still one final transcript for history.
+      await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS * 2);
       await vi.waitFor(() => {
         expect(callbacks.reported("agent-transcript.committed")).toHaveBeenCalledWith({
           type: "agent-transcript.committed",
@@ -108,26 +136,17 @@ describe("PipelineTransport speech vs. record", () => {
       // The filler is a timing artifact, not something the agent said. Left in
       // the record it costs context on every later turn and shows the model its
       // own filler as an example of what its turns look like.
-      const script: ScriptedPart[] = [
-        {
-          type: "tool-call",
-          toolCallId: "tc-1",
-          toolName: "get_weather",
-          input: JSON.stringify({ city: "SF" }),
-        },
-        { type: "tool-result", toolCallId: "tc-1", toolName: "get_weather", result: "sunny" },
-        { type: "text", text: "It's sunny." },
-      ];
       const { opts, stt, tts, callbacks } = makeOpts({
-        llm: createFakeLanguageModel({ script, delayMs: 15 }),
-        deadAirCoverMs: 1,
-        executeTool: vi.fn(async () => "sunny"),
+        llm: createFakeLanguageModel({ steps: TOOL_FIRST_STEPS, delayMs: 20 }),
+        deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
+        executeTool: slowTool(),
         toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
       });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("how's the weather?");
 
+      await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS * 3);
       await vi.waitFor(() => {
         expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
@@ -158,23 +177,13 @@ describe("filler never talks over the caller", () => {
     // interruption (1.5s of simultaneous speech measured 0.13 out of 1). This is
     // the gap `interruptionMinDurationMs` leaves open on purpose: a continuation
     // too short to be a barge-in does not cancel the reply.
-    const script: ScriptedPart[] = [
-      {
-        type: "tool-call",
-        toolCallId: "tc-1",
-        toolName: "get_weather",
-        input: JSON.stringify({ city: "SF" }),
-      },
-      { type: "tool-result", toolCallId: "tc-1", toolName: "get_weather", result: "sunny" },
-      { type: "text", text: "It's sunny." },
-    ];
     const tts = createFakeTtsProvider();
     const { opts, stt } = makeOpts(
       {
-        llm: createFakeLanguageModel({ script, delayMs: 15 }),
-        deadAirCoverMs: 1,
+        llm: createFakeLanguageModel({ steps: TOOL_FIRST_STEPS, delayMs: 20 }),
+        deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
         tts,
-        executeTool: vi.fn(async () => "sunny"),
+        executeTool: slowTool(),
         toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
       },
       { tts },
@@ -182,10 +191,20 @@ describe("filler never talks over the caller", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    // Commit a turn, then have the caller keep talking: a partial arrives, which
-    // opens the speech edge while the reply is still being produced.
+    // Commit a turn, then have the caller keep talking: partials arrive, which
+    // hold the speech edge open while the reply is still being produced. They
+    // have to KEEP arriving — the edge goes idle DEFAULT_SPEECH_IDLE_TIMEOUT_MS
+    // (4s) after the last one, which is INSIDE the 5s cover window, so a single
+    // partial would let the filler through legitimately. No audio is fired, so
+    // nothing here is a barge-in: the agent is not audibly speaking.
     stt.last()?.fireFinal("how's the weather?");
     stt.last()?.firePartial("and also");
+    for (let elapsed = 0; elapsed < DEFAULT_DEAD_AIR_COVER_MS * 2; elapsed += 1000) {
+      await vi.advanceTimersByTimeAsync(1000);
+      stt.last()?.firePartial("and also");
+    }
+    // Two whole cover windows have passed with the caller holding the floor.
+    expect(tts.last()?.textChunks.join("")).not.toContain(DEAD_AIR_OPENING_PHRASE);
 
     await vi.waitFor(() => {
       expect(tts.last()?.textChunks.join("")).toContain("It's sunny.");

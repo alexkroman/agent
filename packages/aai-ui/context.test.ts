@@ -3,7 +3,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import React, { type ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockSessionCore } from "./_react-test-utils.ts";
 import {
   SessionProvider,
@@ -129,6 +129,17 @@ describe("useSessionSelector", () => {
 });
 
 describe("useTheme", () => {
+  afterEach(() => {
+    // The jsdom document is shared by every test in this file and `document` is
+    // outside `restoreMocks`, so these have to be undone by hand. `ThemeProvider`
+    // restores on unmount what it FOUND — which is correct behaviour and exactly
+    // why the leak happens: the spec below deliberately pre-sets a host
+    // background, so the value the provider faithfully puts back outlives the
+    // test and becomes the starting state of every spec after it.
+    document.body.style.background = "";
+    document.documentElement.style.background = "";
+  });
+
   it("returns default theme when no provider", () => {
     const { result } = renderHook(() => useTheme());
     // Every field, not a sample: an unset one reaches components as

@@ -3,11 +3,10 @@
 // itself with the spawn mocked out — the same split
 // studio-project-tools.test.ts / studio-project-tools-mocked.test.ts uses.
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { npmResult } from "./_test-utils.ts";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { npmResult, useTempDir } from "./_test-utils.ts";
 import { runNpm } from "./studio-spawn.ts";
 import {
   ensureWorkspaceDependencies,
@@ -22,36 +21,29 @@ vi.mock("./studio-spawn.ts", async (importOriginal) => {
 
 const runNpmMock = vi.mocked(runNpm);
 
-let dir: string;
-let toolchain: string;
+const workspace = useTempDir("aai-workspace-");
+const toolchainDir = useTempDir("aai-toolchain-");
 
-beforeEach(async () => {
+beforeEach(() => {
   // `restoreMocks` covers `vi.spyOn`, not a `vi.fn()` installed by a module
   // mock factory — without this, a previous test's implementation and call
   // count leak into the ones asserting npm was never spawned.
   runNpmMock.mockReset();
-  dir = await mkdtemp(path.join(tmpdir(), "aai-workspace-"));
-  toolchain = await mkdtemp(path.join(tmpdir(), "aai-toolchain-"));
 });
 
-afterEach(async () => {
-  await rm(dir, { recursive: true, force: true });
-  await rm(toolchain, { recursive: true, force: true });
-});
-
-const opts = () => ({ toolchainModules: toolchain });
+const opts = () => ({ toolchainModules: toolchainDir() });
 
 /** Write the workspace manifest. */
 const manifest = (contents: unknown): Promise<void> =>
-  writeFile(path.join(dir, "package.json"), JSON.stringify(contents), "utf-8");
+  writeFile(path.join(workspace(), "package.json"), JSON.stringify(contents), "utf-8");
 
 /** What a successful `npm install` leaves in the workspace. */
 const installed = (name: string): Promise<string | undefined> =>
-  mkdir(path.join(dir, "node_modules", name), { recursive: true });
+  mkdir(path.join(workspace(), "node_modules", name), { recursive: true });
 
-/** Put `name` in the baked toolchain, where a bare import resolves by walk-up. */
+/** Put `name` in the baked toolchainDir(), where a bare import resolves by walk-up. */
 const inToolchain = (name: string): Promise<string | undefined> =>
-  mkdir(path.join(toolchain, name), { recursive: true });
+  mkdir(path.join(toolchainDir(), name), { recursive: true });
 
 /** npm succeeds and lands `name`'s files, as a real run would. */
 const npmLands = (name: string, over: Partial<Awaited<ReturnType<typeof runNpm>>> = {}) =>
@@ -70,8 +62,8 @@ describe("missingDependencies", () => {
     ).toEqual(["ms"]);
   });
 
-  test("ignores devDependencies — the toolchain supplies those", () => {
-    // A project pushed from a laptop carries the scaffold's whole toolchain
+  test("ignores devDependencies — the toolchainDir() supplies those", () => {
+    // A project pushed from a laptop carries the scaffold's whole toolchainDir()
     // block (vite, typescript, vitest); `--omit=dev` is why it stays out.
     expect(missingDependencies({ devDependencies: { vite: "^8.0.0" } }, () => false)).toEqual([]);
   });
@@ -89,12 +81,12 @@ describe("ensureWorkspaceDependencies", () => {
     await installed("ms");
     await inToolchain("react");
 
-    await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
+    await expect(ensureWorkspaceDependencies(workspace(), opts())).resolves.toBeNull();
     expect(runNpmMock).not.toHaveBeenCalled();
   });
 
   test("does not spawn npm when there is no manifest to reify", async () => {
-    await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
+    await expect(ensureWorkspaceDependencies(workspace(), opts())).resolves.toBeNull();
     expect(runNpmMock).not.toHaveBeenCalled();
   });
 
@@ -107,25 +99,29 @@ describe("ensureWorkspaceDependencies", () => {
     await inToolchain("react");
     npmLands("ms", { stdout: "added 1 package\n" });
 
-    await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
-    expect(runNpmMock).toHaveBeenCalledWith(dir, ["install", "--omit=dev"], expect.any(Number));
+    await expect(ensureWorkspaceDependencies(workspace(), opts())).resolves.toBeNull();
+    expect(runNpmMock).toHaveBeenCalledWith(
+      workspace(),
+      ["install", "--omit=dev"],
+      expect.any(Number),
+    );
   });
 
-  test("a package the toolchain provides is never installed", async () => {
+  test("a package the toolchainDir() provides is never installed", async () => {
     // The platform owns these versions; a workspace-local copy would shadow
     // the baked one the harness resolved.
     await manifest({ dependencies: { "@alexkroman1/aai": "5.14.0" } });
     await inToolchain("@alexkroman1/aai");
 
-    await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
+    await expect(ensureWorkspaceDependencies(workspace(), opts())).resolves.toBeNull();
     expect(runNpmMock).not.toHaveBeenCalled();
   });
 
-  test("an unresolvable toolchain dir means nothing is provided", async () => {
+  test("an unresolvable toolchainDir() workspace() means nothing is provided", async () => {
     await manifest({ dependencies: { react: "19.2.8" } });
     runNpmMock.mockResolvedValue(npmResult());
 
-    await ensureWorkspaceDependencies(dir, { toolchainModules: null });
+    await ensureWorkspaceDependencies(workspace(), { toolchainModules: null });
 
     expect(runNpmMock).toHaveBeenCalledOnce();
   });
@@ -134,7 +130,7 @@ describe("ensureWorkspaceDependencies", () => {
     await manifest({ dependencies: { nope: "^1.0.0" } });
     runNpmMock.mockResolvedValue(npmResult({ exitCode: 1, stdout: "E404 not found\n" }));
 
-    const warning = await ensureWorkspaceDependencies(dir, opts());
+    const warning = await ensureWorkspaceDependencies(workspace(), opts());
 
     expect(warning).toContain("Could not install nope");
     expect(warning).toContain("E404 not found");
@@ -146,21 +142,23 @@ describe("ensureWorkspaceDependencies", () => {
     await manifest({ dependencies: { ms: "^2.1.3" } });
     npmLands("ms", { exitCode: 1, stdout: "postinstall failed\n" });
 
-    await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toBeNull();
+    await expect(ensureWorkspaceDependencies(workspace(), opts())).resolves.toBeNull();
   });
 
   test("a killed install names the signal rather than reporting silence", async () => {
     await manifest({ dependencies: { nope: "^1.0.0" } });
     runNpmMock.mockResolvedValue(npmResult({ signal: "SIGTERM", stdout: "" }));
 
-    await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toContain("SIGTERM");
+    await expect(ensureWorkspaceDependencies(workspace(), opts())).resolves.toContain("SIGTERM");
   });
 
   test("a spawn that throws is a warning, never a rejection", async () => {
     await manifest({ dependencies: { nope: "^1.0.0" } });
     runNpmMock.mockRejectedValue(new Error("npm: not found"));
 
-    await expect(ensureWorkspaceDependencies(dir, opts())).resolves.toContain("npm: not found");
+    await expect(ensureWorkspaceDependencies(workspace(), opts())).resolves.toContain(
+      "npm: not found",
+    );
   });
 
   test("the budget the caller passes is the one npm gets", async () => {
@@ -168,9 +166,9 @@ describe("ensureWorkspaceDependencies", () => {
     await manifest({ dependencies: { ms: "^2.1.3" } });
     npmLands("ms");
 
-    await ensureWorkspaceDependencies(dir, { ...opts(), budgetMs: 20_000 });
+    await ensureWorkspaceDependencies(workspace(), { ...opts(), budgetMs: 20_000 });
 
-    expect(runNpmMock).toHaveBeenCalledWith(dir, expect.any(Array), 20_000);
+    expect(runNpmMock).toHaveBeenCalledWith(workspace(), expect.any(Array), 20_000);
   });
 
   test("two overlapping builds install once, not twice", async () => {
@@ -180,8 +178,8 @@ describe("ensureWorkspaceDependencies", () => {
     npmLands("ms");
 
     const results = await Promise.all([
-      ensureWorkspaceDependencies(dir, opts()),
-      ensureWorkspaceDependencies(dir, opts()),
+      ensureWorkspaceDependencies(workspace(), opts()),
+      ensureWorkspaceDependencies(workspace(), opts()),
     ]);
 
     expect(results).toEqual([null, null]);

@@ -1,7 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, expectTypeOf, test } from "vitest";
 import type { z } from "zod";
-import { type AgentConfig, AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
+import {
+  type AgentConfig,
+  AgentConfigSchema,
+  type ToolSchema,
+  ToolSchemaSchema,
+} from "./_internal-types.ts";
 import { type ReadyConfig, ReadyConfigSchema } from "./protocol.ts";
 import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
 import type { BuiltinTool, ToolChoice } from "./types.ts";
@@ -63,17 +68,21 @@ describe("ToolSchemaSchema", () => {
   });
 
   test("ToolSchema is assignable from schema inference", () => {
-    // ToolSchema uses JSONSchema7 for parameters (narrower than the runtime
-    // Record<string, unknown>); verify a parsed result satisfies the wider shape.
+    // ToolSchema uses JSONSchema7 for `parameters`, where the schema infers
+    // `Record<string, unknown>` — so the claim is a TYPE one and has to be made
+    // at the type level. Three `toHaveProperty` calls on a value zod had just
+    // parsed with those three keys could not fail without the parse test above
+    // failing first, and narrowing `ToolSchema["parameters"]` past what a parse
+    // result satisfies went straight through them.
     const parsed = ToolSchemaSchema.parse({
       type: "function",
       name: "test",
       description: "test",
       parameters: { type: "object" },
     });
-    expect(parsed).toHaveProperty("name");
-    expect(parsed).toHaveProperty("description");
-    expect(parsed).toHaveProperty("parameters");
+    expectTypeOf(parsed).toExtend<ToolSchema>();
+    expectTypeOf<z.infer<typeof ToolSchemaSchema>>().toExtend<ToolSchema>();
+    expect(parsed.parameters).toEqual({ type: "object" });
   });
 });
 

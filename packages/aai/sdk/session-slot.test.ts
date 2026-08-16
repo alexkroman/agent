@@ -470,15 +470,28 @@ describe("sessionSlot", () => {
     });
 
     test("two concurrent calls cannot lose an append", async () => {
-      // Under a read-then-mutate both bodies would read length 0 and the second
-      // write would win. The window is synchronous, so the second body's draft
-      // is cloned from the first body's committed value.
+      // Real interleaving, which `Promise.all([execute(…), execute(…)])` cannot
+      // produce: the bodies are enforced synchronous, so both would run to
+      // completion during array-literal evaluation and the test would be the
+      // sequential one above under another name. Both callers park on ONE gate
+      // instead, so they are genuinely in flight together and each mutation
+      // happens in its own JS turn — which is the shape the LLM loop produces,
+      // since it runs a step's tool calls concurrently.
+      //
+      // Under a read-then-mutate across an await both would read length 0 and
+      // the second write would win, giving `[1, 1]` and a one-item cart. The
+      // window is synchronous, so the second body's draft is cloned from the
+      // first body's committed value.
       const ctx = createToolContext();
-      const results = await Promise.all([
-        append.execute({ item: "a" }, ctx),
-        append.execute({ item: "b" }, ctx),
-      ]);
-      expect(results).toEqual([1, 2]);
+      const gate = Promise.withResolvers<void>();
+      const call = async (item: string): Promise<unknown> => {
+        await gate.promise;
+        return await append.execute({ item }, ctx);
+      };
+      const both = Promise.all([call("a"), call("b")]);
+      gate.resolve();
+
+      expect(await both).toEqual([1, 2]);
       expect(cartSlot.get(ctx).items).toEqual(["a", "b"]);
     });
 

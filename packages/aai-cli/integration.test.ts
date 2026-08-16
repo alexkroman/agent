@@ -207,14 +207,22 @@ describe("secrets against mock API", () => {
     api.secrets.SECRET_A = "a";
     api.secrets.SECRET_B = "b";
 
+    // The RESULT is the subject, not the request: a regression that answered
+    // `{ secrets: [] }` still sends a GET, so asserting only that a GET
+    // happened is a test of the mock server rather than of the command.
+    let result: Awaited<ReturnType<typeof executeSecretList>> | undefined;
     await withProjectDir(
       silenced(async (dir) => {
-        await executeSecretList(dir, api.url);
+        result = await executeSecretList(dir, api.url);
       }),
     );
 
     const listReq = api.requests.find((r) => r.method === "GET" && r.path.includes("/secret"));
     expect(listReq).toBeDefined();
+    expect(result?.ok).toBe(true);
+    expect(result?.ok === true ? result.data.secrets : undefined).toEqual(
+      expect.arrayContaining(["SECRET_A", "SECRET_B"]),
+    );
   });
 
   test("secret delete sends DELETE with name in path", async () => {

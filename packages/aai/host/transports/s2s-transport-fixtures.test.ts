@@ -27,6 +27,9 @@ function firstToolResult(ctx: FixtureSession): [string, string] {
   return vi.mocked(ctx.fakeHandle.sendToolResult).mock.calls[0] as [string, string];
 }
 
+/** The `call_id` recorded in `fixtures/tool-call-sequence.json`. */
+const FIXTURE_TOOL_CALL_ID = "chatcmpl-tool-9793a062159342bb8e221cbab79229e3";
+
 const weatherAgent: AgentDef = {
   name: "weather-agent",
   systemPrompt: "You are a weather assistant.",
@@ -84,7 +87,10 @@ describe("fixture replay with real executor (transport layer)", () => {
     await vi.waitFor(() => expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalled());
 
     const [callId, resultStr] = firstToolResult(ctx);
-    expect(callId).toBeTruthy();
+    // The id the fixture recorded, not merely a non-empty string: correlating a
+    // result to the RIGHT call is the property that matters on a multi-call
+    // reply (see "multiple tool calls in one reply" below).
+    expect(callId).toBe(FIXTURE_TOOL_CALL_ID);
     const result = JSON.parse(resultStr);
     expect(result.city).toBe("San Francisco");
     expect(result.temperature).toBe("72°F");

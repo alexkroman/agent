@@ -1,15 +1,20 @@
 {
-  "_description": "Per-file baselines for the mechanical invariants in scripts/guard-invariants.mjs. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a rule may hold none. Counts only ratchet DOWN — `node scripts/guard-invariants.mjs --update` lowers them to match the tree and refuses to raise any, so blessing an addition needs a hand edit that lands in a reviewable diff. Rules 1, 7 and 10 appear nowhere here: they are at zero and enforced absolutely.",
+  "_description": "Per-file budgets for guard-invariants' line rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 10, rule 12, rule 13, rule 14.",
   "rule2_spreadTernary": {
     "packages/aai-cli/_utils.ts": 1,
     "packages/aai-server/subprocess-sandbox.ts": 1,
     "packages/aai-server/test-utils.ts": 1
   },
+  "rule3_raceTimeout": {
+    "packages/aai-server/guest-readiness.ts": 1
+  },
   "rule4_inlineTickPromise": {
+    "packages/aai-server/platform-lock.test.ts": 3,
+    "packages/aai-server/slug-lock.test.ts": 1,
     "packages/aai-studio-client/src/_test-utils.ts": 1,
-    "packages/aai-studio-server/_studio-preview-test-utils.ts": 1,
-    "packages/aai-studio-server/studio-concurrency-fuzz.test.ts": 2,
-    "packages/aai-studio-server/studio-session-broker.test.ts": 2
+    "packages/aai-studio-server/studio-session-broker.test.ts": 2,
+    "packages/aai/host/integration/_s2s-fuzz-harness.ts": 1,
+    "packages/aai/host/tool-executor.ts": 1
   },
   "rule5_deleteProcessEnv": {
     "packages/aai-cli/_test-setup.ts": 1
