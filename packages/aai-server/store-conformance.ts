@@ -121,11 +121,19 @@ export const STORE_CONTRACTS = [
     why: "SDK tier: its arm is a user's own Postgres, and packages/aai may import no sibling",
   },
   {
+    // Same structural exemption as session-state above, and the same remedy: the
+    // shared CASE LIST cannot serve this pair (the memory arm's unit spec lives
+    // in `packages/aai`, which may import no sibling and so cannot reach one
+    // declared here), while the real arm can be — and is — driven from this
+    // package. `workflow-keys.scenario.test.ts` executes the DDL, the four-column
+    // index, `on conflict (run_id) do nothing`, and the ULID tiebreak against a
+    // real server. Read the exemption as "not one shared table of cases", never
+    // as "no real Postgres runs this".
     contract: "workflow-keys",
     memory: "createMemoryKeyStore",
     pg: "createPostgresKeyStore",
     conformance: false,
-    why: "SDK tier: same package boundary as session-state above",
+    why: "SDK tier: one case list cannot span the boundary; real arm is workflow-keys.scenario.test.ts",
   },
   {
     contract: "platform-lock",

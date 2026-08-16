@@ -3165,6 +3165,9 @@ export type CarrierInbound =
 // @public
 export type CarrierName = keyof typeof CARRIER_CODECS;
 
+// @internal
+export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;
+
 // @public
 interface ClientSink {
     close?(reason?: string): void;
@@ -3613,6 +3616,20 @@ interface PipelineVoiceTuning {
     resumeFalseInterruption?: boolean;
     startFailurePhrase?: string;
 }
+
+// @internal
+export type PoolPresence = {
+    swept: readonly string[];
+    skipped: SweepSkip | undefined;
+    held: boolean;
+    release: () => Promise<void>;
+};
+
+// @internal
+export const PRESENCE_LOCK_CLASS = 1094797655;
+
+// @internal (undocumented)
+export const PRESENCE_LOCK_OBJECT = 1;
 
 // @internal
 export const PROVIDER_CREDENTIAL_ENVS: readonly string[];
@@ -4302,6 +4319,19 @@ interface SttSession {
 type SttTurnMeta = {
     endOfTurnConfidence?: number;
 };
+
+// @public
+type SweepDeps = {
+    createDb?: (url: string) => CloseableDb;
+    log?: (message: string) => void;
+};
+
+// @public
+export type SweepSkip =
+/** Another pool holds presence, so its locks are live and not ours to clear. */
+"another-pool-is-live"
+/** Presence is ours and there was nothing locked. The healthy case. */
+| "no-orphaned-locks";
 
 // @public
 export const TELEPHONY_PATH = "/phone";

@@ -8,9 +8,22 @@
  * hold presence afterwards so the next pool to start reads us as live.
  *
  * The one thing a fake cannot check is that `graphile_worker.force_unlock_workers`
- * exists and does what its name says. That is verified against a real database —
- * see the module doc; `packages/aai` has no Postgres-gated tier, since
- * `describeWithPg` lives in `aai-server`, which this package may not import.
+ * exists and does what its name says. That runs in
+ * `aai-server/workflow-lock-sweep.scenario.test.ts`, against a real Postgres
+ * carrying the real graphile-worker schema — it lives there because
+ * `describeWithPg` does, and `packages/aai` may not import it. Alongside the
+ * function, that suite covers what only a server can answer: that a swept job is
+ * `is_available` again (the column the runner selects on, and the one a
+ * `locked_by is null` assertion would miss), that `attempts` survives the sweep,
+ * that the QUEUE row is unlocked in the same call, and that the presence lock
+ * really excludes a second SESSION and is released by the connection ENDING
+ * rather than by an unlock.
+ *
+ * What stays MANUAL is the measurement the module doc records — the hard-kill
+ * soak that established the wedge exists at all (one kill strands every
+ * in-flight step; a repeated-kill soak wedged 4 of 4 runs). Nothing here or in
+ * the scenario suite kills a process, so read those numbers as history rather
+ * than as a check that runs.
  */
 
 import { describe, expect, test, vi } from "vitest";

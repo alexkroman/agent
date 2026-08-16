@@ -320,15 +320,30 @@ function serializeForCommit(
   // which is the answer to retail's ~106 KB of state being touched on nearly
   // every tool call.
   if (json === entry.committed.get(key)) return undefined;
-  if (json.length > MAX_SESSION_STATE_BYTES) {
+  // BYTES, never `String.length` — the same rule `_fetch-capped.ts` states, and
+  // the same bug this had. `length` counts UTF-16 code units, so a slot holding
+  // CJK or emoji passed the cap at up to ~3x its real size: `{"blob":"あ"×1048570}`
+  // is 1,048,581 units and 3,145,721 bytes, i.e. under a 1 MiB cap while writing
+  // 3 MiB into the tenant's schema. It mattered more here than for a transient
+  // HTTP read, because bounding what `appDatabaseUsage` shows an author as THEIR
+  // own usage is the cap's whole job — and the log said `bytes` of a number that
+  // was not one.
+  const bytes = Buffer.byteLength(json);
+  if (bytes > MAX_SESSION_STATE_BYTES) {
     // A durability failure, reported, rather than a correctness one: the model
     // already has its result and the in-memory value is right. The cap is what
     // stops one runaway slot filling the tenant's own schema — which the studio
     // shows as THEIR database usage.
+    //
+    // Note what the refusal LEAVES: a previously committed, smaller value stays
+    // in the backend, so a resume hydrates a stale value rather than none. That
+    // is the better of the two — the alternative is discarding what the caller
+    // last had — but it is a different failure from "absent", and a reader of
+    // the log line above should know which one they have.
     logger?.error?.("Session state too large to store", {
       sessionId,
       slot: key,
-      bytes: json.length,
+      bytes,
       cap: MAX_SESSION_STATE_BYTES,
     });
     return undefined;
@@ -423,6 +438,14 @@ export function createSessionStateStore(opts: {
         },
       };
     },
+    // Counts a VIRTUAL slot's write too, and that is right rather than an
+    // oversight worth chasing. `pushStateSnapshot` is the caller, and what it
+    // asks is "has this session anything to SHOW a reconnecting client" — which a
+    // `syncState` projection answers from `values`, where a virtual slot's value
+    // also lives. Narrowing this to durable slots would leave a session whose
+    // only state is virtual rendering empty on a resume, which is the very bug
+    // that call exists to prevent. It is deliberately NOT "has anything to
+    // COMMIT": `flush` reads the dirty set, and nothing else.
     has: (sessionId) => (sessions.get(sessionId)?.values.size ?? 0) > 0,
     async hydrate(sessionId) {
       const stored = await backend.load(sessionId);

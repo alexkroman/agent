@@ -106,11 +106,22 @@ export function createMemoryKeyStore(): WorkflowKeyStore {
  * the first — and "the newest run for this caller" is a read, not a write
  * constraint.
  *
- * Ordering is by `created_at` DESC with `run_id` DESC as the tiebreak, and the
- * tiebreak is load-bearing rather than decorative: run ids are ULIDs, which sort
- * lexicographically by generation time, so two runs recorded in the same
- * millisecond still come back in the order they were started instead of in
- * whatever order the planner happened to emit.
+ * Ordering is by `created_at` DESC with `run_id` DESC as the tiebreak: run ids
+ * are ULIDs, which sort lexicographically by generation time, so two runs
+ * recorded in the same millisecond come back in the order they were started
+ * instead of in whatever order the planner happened to emit.
+ *
+ * **The tiebreak and the index are load-bearing TOGETHER, and neither can be
+ * simplified by testing the other.** The lookup index below already carries
+ * `created_at desc, run_id desc`, so an index-only scan returns the tiebreak
+ * whether or not the query asks for it — deleting `, run_id desc` from the
+ * `ORDER BY` leaves the deployed happy path passing, which is exactly what the
+ * first draft of `aai-server/workflow-keys.scenario.test.ts` discovered. The
+ * clause earns its place on any plan that has to SORT instead: a table created
+ * by a version predating the index (it is a separate `create index if not
+ * exists`), a parallel plan, or a sequential scan. That suite therefore runs the
+ * lookup a second time with index scans disabled, and it is that arm which fails
+ * when the tiebreak goes.
  */
 export function createPostgresKeyStore(db: Db): WorkflowKeyStore {
   /**

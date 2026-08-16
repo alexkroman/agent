@@ -265,6 +265,20 @@ export {
   MAX_WORKFLOW_FIND_LIMIT,
   type WorkflowKeyStore,
 } from "./workflow-keys.ts";
+// The startup sweep that clears queue locks no live pool owns, and the advisory
+// lock it contends for. Exported for a SPEC: what a fake cannot check is that
+// `graphile_worker.force_unlock_workers` exists and does what its name says, and
+// the constants' own doc says they exist "so a test or a verification script can
+// contend for the SAME lock without restating the number" — which nothing outside
+// this package could do while they stopped here. See
+// `aai-server/workflow-lock-sweep.scenario.test.ts`.
+export {
+  claimPoolPresenceAndSweep,
+  type PoolPresence,
+  PRESENCE_LOCK_CLASS,
+  PRESENCE_LOCK_OBJECT,
+  type SweepSkip,
+} from "./workflow-lock-sweep.ts";
 export { createStepReporter } from "./workflow-report.ts";
 export {
   createWorkflowSurface,

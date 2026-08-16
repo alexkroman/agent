@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `ctx.state` survives a severed connection — the REAL runtime, over a real
- * socket that is really cut.
+ * A `sessionSlot`'s value survives a severed connection — the REAL runtime, over
+ * a real socket that is really cut.
  *
  * This exists because the two halves of the resume contract were each covered
  * and never together. `ws-handler-resume.test.ts` drives the real machinery
@@ -12,17 +12,19 @@
  * `createRuntime`, a real `createServer`, a real WebSocket, and
  * `_fault-socket.ts` destroying it.
  *
- * What it pins is `pushStateSnapshot(id, client)` at `runtime.ts`'s
- * `createSession`: the surviving state pushed to a socket that has never seen it.
+ * What it pins is `pushStateSnapshot(sessionId, emitter)` — wired in by
+ * `runtime.ts`'s `createSession` and called by `attachSessionState`
+ * (`runtime-session-state.ts`) once the session's slots have hydrated: the
+ * surviving state pushed to a socket that has never seen it.
  * Without that line a resumed client renders EMPTY until some later tool call
  * happens to change something, which it may never do — verified by disabling it,
  * which fails three of these four specs and correctly leaves the negative one
  * green.
  *
- * It does NOT pin the other two lines beside it, and the distinction is worth
- * keeping straight:
+ * It does NOT pin the other two things `createSession` does for a resume, and the
+ * distinction is worth keeping straight:
  *
- * - `stateSweeps.cancel(id)` is unreachable from here. The sweep fires
+ * - `sessionState.sweeps.cancel(id)` is unreachable from here. The sweep fires
  *   `SESSION_RESUME_GRACE_MS` (120s) after the old session stops, so a test that
  *   reconnects in 50ms passes whether or not the cancel happens. Its coverage is
  *   `runtime-lifecycle.test.ts`'s two grace-window specs, on fake timers.
@@ -36,8 +38,15 @@
  * live provider socket, and the tool call only has to HAPPEN — what is under test
  * is what becomes of its state when the connection dies.
  *
- * Still out of scope, and unfixable by testing: surviving a PROCESS restart.
- * `stateMap` is a plain `Map`, so a restart empties it.
+ * Still out of scope: surviving a PROCESS restart — out of scope for this file,
+ * not out of reach. The runtime here is built with no `db`, so its session-state
+ * store runs the MEMORY backend (`session-state-store.ts`), and every connection
+ * above is served by one process, so there is no restart for these four specs to
+ * be run against. The store's Postgres backend is the durable tier and it really
+ * does carry a slot's value across processes:
+ * `aai-server/session-state.scenario.test.ts` proves it against a real database,
+ * starting with the case named "a slot's value survives a new process". This
+ * file is silent on that half rather than evidence against it.
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -218,7 +227,7 @@ async function addItem(h: Harness, item: string, callId: string): Promise<void> 
   callbacks.onReplyDone();
 }
 
-describe("ctx.state across a severed connection (real runtime)", () => {
+describe("a sessionSlot's value across a severed connection (real runtime)", () => {
   test("state written before the drop is PUSHED to the resumed socket", async () => {
     harness = await serve();
     const first = await connect(harness.proxy);
