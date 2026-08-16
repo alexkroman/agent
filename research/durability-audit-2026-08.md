@@ -1,7 +1,7 @@
 ---
 issue: TODO
 status: proposed
-last_updated: "2026-08-16"
+last_updated: "2026-08-17"
 ---
 
 # Do the tests prove durability? Turns and workflows, audited
@@ -306,6 +306,62 @@ runs on restart by design. So the single most load-bearing sentence in the
 durable-workflow feature — a run outlives its guest — can only be tested on the
 Postgres world, and F1 is why it is not tested at all.
 
+### F9 — The chaos tier already exists, is well built, and nothing runs it
+
+**Severity: medium, and the cheapest finding here to act on.** Found while
+answering a question this audit's first draft did not ask — whether a
+regular/chaos test matrix would be worth adding. It would; it is already
+written.
+
+`packages/aai-cli/_fault-mode.ts` re-runs a suite against a dev server that is
+**hard-killed and restarted at declared points**, switched on by
+`AAI_FAULT_PROFILE=<name>`. Its own module doc has already settled the three
+decisions that make chaos testing a test rather than a flake generator:
+
+- **The kill is a SIGKILL, and that is the only faithful option.** A graceful
+  stop lets graphile-worker's runner release its queue locks, "so a fault mode
+  built on SIGTERM would exercise the recovery path that already works and never
+  the one that does not."
+- **There is no seed and no PRNG.** A profile is an ORDERED LIST of fault points
+  keyed on logical events, so the Nth kill lands after the same observed event on
+  every machine at every speed. The doc contrasts this with a wall-clock killer
+  in `tmp/`, whose "runs cannot be compared to each other."
+- **A profile that never fired FAILS**, via `assertPlanConsumed` /
+  `awaitSettled` — which is the guard against the exact "green while testing
+  nothing" outcome the rest of this document is about.
+
+It is correctly declared in `turbo.json`'s task `env`, so strict env mode cannot
+strip it. It has **one** consumer, `aai-cli/e2e.test.ts:237`, and
+`grep -rn FAULT .github/` returns **nothing**: no CI leg sets the variable, so
+the mode has never run anywhere but by hand.
+
+That is the fourth instance in this repo of a mechanism that exists, is wired,
+and is evaluated by nothing — after the `.size-limit.json` no script referenced,
+the `ls-lint` config no pipeline ran, and the `.turbo` cache path that never
+matched `cacheDir`. It is listed here rather than as an aside because the two
+findings it bears on are the two hardest ones: F8's restart case is precisely
+what `startSupervisedDevServer` was built for, and F6's hard-kill soak is the
+measurement its SIGKILL rationale cites.
+
+**What this does NOT argue for is a chaos MATRIX.** Multiplying every suite by a
+chaos axis is the wrong shape: most tests have no meaningful behaviour under a
+kill, so the run doubles and the signal does not. Chaos belongs as a profile over
+the short list of suites whose subject IS survival. And it belongs **outside the
+merge gate** — `aai-server/CLAUDE.md` already sets that bar from the deleted
+load/adversarial tier, a catalogue of chaos tests that passed while testing
+nothing (`aliveCount > 0` — 1 of 14 sandboxes working was a pass; hostile tool
+bodies that were never invoked). Its stated conditions for reintroduction are
+that the hostile code must actually execute, that thresholds must tie to
+constants the server really reads, and that it must not block merges.
+
+Note the repo already does randomized fault injection where it fits: the S2S
+property test spends a per-run `faultBudget` on generated `drop.transient` /
+`drop.fatal` commands, and its value comes from SHRINKING a failure to a command
+list (`[drop.transient, openSocket, session.error(session_not_found)]`) that
+pastes into a regression test. Ordered fault points and generated fault commands
+are two solutions to the same replayability problem; between them there is no
+gap a wall-clock killer would fill.
+
 ## Part III — How vercel/eve tests the same thing
 
 `vercel/eve` runs on the same Workflow DevKit and has the same two nouns —
@@ -412,11 +468,24 @@ Ordered by what unblocks what, not by severity.
    hazard and covers the migration stand-in's success path at once. The larger
    version is eve's: make the world an axis `dev-workflow.scenario.test.ts` runs
    on twice, which is what F8 needs.
-5. **F8 after F1**, since a restart test is a second server against the same
-   database and is meaningless on the Local World.
-6. **F6 last, and possibly as a script rather than a suite.** The claim needs a
+5. **F8 after F1, through the fault mode rather than a killer of its own.**
+   A restart test is a second server against the same database and is meaningless
+   on the Local World, which is why it waits for F1 — but it should be written on
+   `startSupervisedDevServer` (F9), not on a fresh process-killer. That gives it
+   the SIGKILL rationale, the event-keyed fault points that make a kill land at
+   the same moment on every machine, and `assertPlanConsumed`, which fails a run
+   whose kill never fired. Mind the dependency direction: the mode lives in
+   `aai-cli` and `aai-server` may not import it, so where the restart case lives
+   is a real question that answering F9 has to settle.
+6. **F9 is the cheapest of these and can go first or last.** Nothing has to be
+   built — one CI leg setting `AAI_FAULT_PROFILE` over the suites whose subject
+   is survival, kept off the merge gate. Doing it before F8 means F8 has a home;
+   doing it after means F8 defines what the profile has to cover.
+7. **F6 last, and possibly as a script rather than a suite.** The claim needs a
    real graphile-worker schema and a killed pool, so it is the most expensive
    thing here; a committed, documented verification script that contends for
    `PRESENCE_LOCK_CLASS` would at least make the module doc's "verified against
    a real database" true of something repeatable. Whatever it becomes, the test
-   file's cross-reference should stop pointing at a measurement.
+   file's cross-reference should stop pointing at a measurement. Note the fault
+   mode's SIGKILL rationale CITES this finding's hard-kill soak, so F9 and F6 are
+   the same measurement approached from two directions.
