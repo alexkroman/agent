@@ -1,7 +1,7 @@
 ---
-issue: TODO
-status: proposed
-last_updated: "2026-08-15"
+issue: "https://github.com/alexkroman/agent/pull/1120"
+status: implemented
+last_updated: "2026-08-16"
 
 ---
 
@@ -11,8 +11,9 @@ A combined correctness (`/code-review`) and quality (`/simplify`) pass over
 **every test file in the repository** (482 files, ~106,000 lines across the nine
 workspace packages), and then over **the gates, configs and helpers that decide
 whether those tests mean anything** (~99 files, ~12,800 lines). Part I is the
-tests; Part II is the machinery. Nothing was edited — this document is the whole
-deliverable.
+tests; Part II is the machinery. Nothing was edited when this was written — the
+document was the whole deliverable. **It has since been implemented; see
+"Implementation" directly below.**
 
 This is the direct sequel to `code-review-sweep-2026-08.md`, which covered every
 **non-test** source file (869 files, ~118,000 lines) and whose findings landed
@@ -20,6 +21,80 @@ in PRs #1117 and #1118. Tests were explicitly out of scope there, which left the
 larger half of the repo's assertions unreviewed: the source sweep asked "is this
 code right?", and this one asks the question that has to come second — **"and
 would we find out if it stopped being right?"**
+
+## Implementation
+
+Landed in **PR #1120**, in the "Revised order of work" this document ends with.
+Everything in Part I and Part II is fixed except the two items named under "What
+did not land" below. Per the rule in "Why this is in `research/`", each fixed
+finding's *rule* moved into the owning package's `CLAUDE.md` (or into a
+`guard-invariants` rule, which is cheaper than prose); this file keeps the
+argument.
+
+**Three of this document's own recommendations were wrong**, found by verifying
+rather than implementing, and the record is worth more than the tidiness:
+
+1. **Finding 1's proposed SSRF fix was wrong twice.** The call count is **1**,
+   not 2 — `ssrf.ts:227-228` re-screens *before* the hop is fetched, so
+   asserting 2 would assert the bug. And asserting the error *type* fixes
+   nothing, because `resolveAndAssertPublic` throws the same `SsrfBlockedError`
+   for a DNS failure; it is the branch-specific *message* that discriminates.
+   `ssrf.ts` therefore needed no change at all. Proved by mutation: with the
+   guard removed the original tests passed and the replacements fail.
+2. **M7's premise about rule 12 was right, its scope was not.** Widening the
+   corpus to `packages/aai-guest` wholesale made the rule read
+   `"extends": ["//"]` in a `turbo.json` — turbo's workspace-root sentinel — as
+   an undeclared route prefix. A route literal is code, never config.
+3. **M12's baseline advice could not be followed.** `guard-invariants-baseline.json`
+   is a bare `{path: count}` map rewritten by `--update`, so a per-entry reason
+   recorded there is erased on the next regeneration. Reasons live at the
+   occurrence. AGENTS.md claimed otherwise and was corrected.
+
+**And four defects nobody had found were surfaced by the work itself**, each one
+a case of this document's own thesis holding somewhere it had not looked: a raw
+NUL byte hiding a *gate-under-the-gate* spec from all 17 rules and all 8 hatch
+patterns (the third occurrence, caught by M2's new detector on its first run); an
+SSE fuzz property that called its subject **zero times across 200 runs**;
+`withBuildDir` keying temp directories on `process.pid` where vitest's `threads`
+pool gives one process many module registries, so two suites deleted each other's
+live directory; and `aai-cli`'s slow tiers running against the developer's real
+`~/.config/aai/config.json`, because `vitest.slow.config.ts` declared no
+`setupFiles` and nothing carried them out of the unit tier.
+
+One rule in AGENTS.md was corrected as *wrong* rather than stale: property
+coverage floors set "~3x below measured actuals" trip on real runs, because what
+a walk reaches is correlated **within** a run rather than independent per step,
+giving long left tails — one counter averaging 38 came out at **3**. Floors go
+under the observed *minimum* over a recorded run count, with the range in the
+comment.
+
+### What did not land
+
+Both are blocked on the same thing — a coverage plan — and neither should be
+picked up without one.
+
+1. **The tier-membership gate (finding 3, recommended-order item 5).** Designed,
+   with its scanner shape, baseline and samples specified, and deliberately not
+   landed: its own remedy is currently unavailable. Several packages now carry
+   the slow-tier `exclude` globs without a `check:scenario` script, so a file
+   renamed to `*.scenario.test.ts` there is excluded from the unit run and
+   selected by nothing — it runs in **no tier at all**, silently, which is
+   strictly worse than the drift the gate reports. Land the missing scripts
+   first. (`aai-guest` got one in #1120; `aai-studio-client`, `aai-templates`
+   and `aai-evals` were measured and own zero infixed files, so a script there
+   would be a run matching nothing.)
+2. **Roughly a dozen unit-tier files that still bind a real port or spawn a
+   subprocess**, in `packages/aai` and `packages/aai-cli`. Moving them out of
+   the unit tier drops measured coverage below the packages' floors —
+   `aai-cli`'s `_dev-server-serve.test.ts` is the only mock-free cover of
+   `_dev-server.ts`, and `aai-server`'s `agent-server-integration.test.ts` is
+   the documented precedent for exactly this trade. The remedy is restoring the
+   coverage first, never lowering a floor.
+
+The `aai-guest` half of finding 3 *did* land, and is the worked example of what
+these two cost: two suites moved to the scenario tier, and doing it whole would
+have left 0.03 points of line-coverage headroom, so each file was split on what
+it touches — formatting and reads stay unit, writes and spawns go scenario.
 
 ## Why this is in `research/` and not a guide
 
