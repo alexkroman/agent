@@ -39,7 +39,7 @@ import { GUEST_SURFACE_PATHSPECS, TEMPLATE_PATHSPECS } from "./guard-invariants-
  * content to check, and `git ls-files` stops listing it the moment the deletion
  * is staged.
  */
-function readRepoFile(file) {
+export function readRepoFile(file) {
   const path = new URL(`../${file}`, import.meta.url);
   if (!existsSync(path)) return;
   return readFileSync(path, "utf8");

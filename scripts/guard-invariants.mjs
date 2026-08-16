@@ -54,6 +54,7 @@ import {
   updateBaseline,
   warnStale,
 } from "./_ratchet.mjs";
+import { scanChangesetPackageNames } from "./guard-invariants-changesets.mjs";
 import {
   GUEST_SURFACE_PATHSPECS,
   LINE_RULES,
@@ -207,6 +208,23 @@ const ABSOLUTE_RULES = [
       "`join(import.meta.dirname, …)` from its own sibling, and that string is why\n" +
       "a name-only scan called the dead directory read. A cross-package reader\n" +
       "counts — aai-cli's e2e suite reads aai-ui's fixtures.",
+  },
+  {
+    id: 20,
+    label: "changeset names an unknown package",
+    scan: scanChangesetPackageNames,
+    remedy:
+      "Use the package's real name from its package.json, and one of\n" +
+      "`patch` / `minor` / `major`.\n\n" +
+      "A changeset whose key is a typo is IGNORED rather than rejected:\n" +
+      "`pnpm changeset status --since=origin/main` — the pre-push hook's own\n" +
+      "check — prints an empty bump list and exits 0. The release then silently\n" +
+      "does not happen, and it is found after merge on a branch that is gone.\n\n" +
+      "The fixed group is what makes this easy to mistype: a changeset lists one\n" +
+      "of `@alexkroman1/aai`, `/aai-ui`, `/aai-cli` and the other two follow, so\n" +
+      "the name gets typed from memory. `pnpm changeset:create` does not check it.\n\n" +
+      "An EMPTY frontmatter block is fine — `pnpm changeset add --empty` is the\n" +
+      "documented way to say a change needs no release.",
   },
   {
     id: 13,

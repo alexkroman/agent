@@ -502,7 +502,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Sixteen numbered rules, each printing WHY the invariant exists and what to use
+  Seventeen numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -527,12 +527,13 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 17 | no open-coded record guard, in either polarity | `isRecord()` |
   | 18 | no `req.url.split("?")` | `requestPath()` / `requestQuery()` |
   | 19 | no hand-rolled sleep (or `node:timers/promises`), `<T>` included | `sleep()` |
+  | 20 | no changeset naming a package or bump type that does not exist | the real name from its package.json |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
   later rule inherit it (rule 6, retired when `ctx.state` stopped existing;
   rule 10, retired with the `research/` directory it checked; and 15,
-  reserved). Rules 1, 7, 9, 12, 13 and 14 are at zero and enforced
+  reserved). Rules 1, 7, 9, 12, 13, 14 and 20 are at zero and enforced
   absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
   was widened**: `git grep` is line-based, so the wrapped `Promise.race([` form
   Biome emits can only be matched by reporting the OPENING line, which cannot
@@ -607,6 +608,15 @@ one commit of history. A file in the tree has no merge base and no such modes.
   under `aai dev`, so the bug was never guest-only. See "Windows is NOT tested,
   and is currently broken".
 
+  **Rule 20 (from vercel/eve's rule 29) closes a gate that reported success over
+  a mistake**, in the release path. A changeset whose package key is a typo is
+  IGNORED rather than rejected: `pnpm changeset status --since=origin/main` —
+  what the pre-push hook already runs — prints an empty bump list and exits 0,
+  verified by adding `"@alexkroman1/aai-typo": patch`. The release silently does
+  not happen and it surfaces after merge, on a branch that is gone. The rest of
+  the argument, including why it is its own module, is in
+  `scripts/guard-invariants-changesets.mjs`.
+
   Rule 19 found a **sixth** hand-rolled `sleep` that no gate here could see:
   `host/workflow-notify.ts` held a raw NUL byte, which makes a file BINARY to
   `git grep` — so it was silently exempt from all nineteen rules and from
@@ -638,17 +648,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   workspace. Third file in this committed-copy shape and the only one that
   SHIPS, so it is where a catalogued bump is applied twice.
 
-  Enforced by nothing until it broke: the script ran only from `version`,
-  unchecked, DURING a release — and the catalog migration had left it copying
-  the literal `"catalog:"` there, having read a range out of a package.json
-  without resolving it. npm has no such protocol, so the next release would
-  have shipped a scaffold that cannot install and `aai init` would have failed
-  at its own install step. `check:publish-protocols` cannot see this: it PACKS
-  the three publishable packages and reads the manifest pnpm rewrote, and this
-  file is DATA inside the aai-cli tarball, not a manifest pnpm packs. The
-  script resolves the catalog now and, separately, refuses any workspace
-  protocol left in the shipped manifest — `sharedDepSources` is hand-kept, so a
-  dependency outside it is synced by nothing and caught by nothing.
+  It was enforced by nothing until it broke, and `check:publish-protocols`
+  structurally cannot cover it — see "`check:scaffold` exists because the sync
+  ran only during a release" in `packages/aai-templates/CLAUDE.md`.
 
 **Every gate whose success output is a COUNT now carries a floor**, set from
 the measured actual and recorded beside it, because a scan that stops matching
@@ -1761,8 +1763,21 @@ fixed by reaching for those subpaths.
 
 ### Git hooks (lefthook)
 
-- **pre-commit**: runs `biome check --write` on staged files and
-  `syncpack lint` when package.json changes.
+- **pre-commit**: runs `biome check --write` on staged files (via
+  `scripts/pre-commit-format.mjs`) and `syncpack lint` when package.json
+  changes.
+
+  **A PARTIALLY-staged file is skipped, and that is the whole reason the script
+  exists** (from vercel/eve's `pre-commit-fmt.mjs`). The hook was
+  `biome check --write {staged_files} && git add {staged_files}`. Biome rewrites
+  the WORKING TREE file, so on a file with some hunks staged and the rest not,
+  that `git add` staged the whole thing and the author's unstaged work went into
+  a commit they never chose — reproduced on a scratch repo, one staged and one
+  unstaged line, and the unstaged line was in the index afterwards. It is
+  silent, and `git add -p` / `git commit -p` are exactly the workflows that
+  produce it. Skipping is the conservative half: an unformatted file fails CI
+  loudly, where the alternative rewrites a commit nobody can see. The skip is
+  ANNOUNCED — a silent one reads as "biome found nothing".
 - **pre-push**: blocks pushes to main/master, **blocks pushes when branch
   is behind origin/main** (must rebase first), checks for merge conflicts
   with main, **verifies changeset exists for changed packages**, and runs
@@ -1913,9 +1928,8 @@ back to the host's `process.env`.
 
 ### Open testability work
 
-One known gap, found by audit and deliberately left alone because it is a
-refactor in its own right rather than a fix riding along with something else:
-**`aai-server` writes to `console.*` directly**, with no logger seam, so 39 of
-the repo's 86 `spyOn(console, …)` calls exist purely to keep test output quiet.
-Sized, not stuck — see "The missing logger seam" in
-`packages/aai-server/CLAUDE.md`.
+One known gap: **`aai-server` writes to `console.*` directly**, with no logger
+seam, so most of the repo's `spyOn(console, …)` calls exist purely to keep test
+output quiet. Sized, not stuck — the count and the plan are in "The missing
+logger seam" in `packages/aai-server/CLAUDE.md`, which is where they stay: the
+copy that used to be here had drifted to a different pair of numbers.
