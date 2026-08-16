@@ -234,7 +234,37 @@ describe("the size cap", () => {
     expect(logger.error).toHaveBeenCalledWith("Session state too large to store", {
       sessionId: SID,
       slot: "transcript",
-      bytes: JSON.stringify(runaway).length,
+      // ASCII, so units and bytes agree here — which is exactly why this case
+      // cannot see the bug the next one covers.
+      bytes: Buffer.byteLength(JSON.stringify(runaway)),
+      cap: MAX_SESSION_STATE_BYTES,
+    });
+  });
+
+  test("the cap counts BYTES, not UTF-16 code units", async () => {
+    // The bug this pins: `json.length > MAX_SESSION_STATE_BYTES` compared code
+    // units against a byte budget, so multi-byte content passed at up to ~3x its
+    // real size — a slot the cap read as under 1 MiB writing 3 MiB into the
+    // tenant's own schema, with the log calling the wrong number `bytes`. Same
+    // class as the one `_fetch-capped.ts` was written for.
+    //
+    // A third of the cap in 3-byte characters: comfortably UNDER by `length` and
+    // comfortably OVER in bytes, so it passes the old comparison and fails the
+    // new one. Every other case in this file is ASCII and cannot discriminate.
+    const { store, backend, logger } = makeStore();
+    const cjk = { blob: "あ".repeat(Math.floor(MAX_SESSION_STATE_BYTES / 2)) };
+    const json = JSON.stringify(cjk);
+    expect(json.length).toBeLessThan(MAX_SESSION_STATE_BYTES);
+    expect(Buffer.byteLength(json)).toBeGreaterThan(MAX_SESSION_STATE_BYTES);
+
+    store.viewFor(SID).write("transcript", cjk, true);
+    await expect(store.flush(SID)).resolves.toBeUndefined();
+
+    await expect(backend.load(SID)).resolves.toEqual(new Map());
+    expect(logger.error).toHaveBeenCalledWith("Session state too large to store", {
+      sessionId: SID,
+      slot: "transcript",
+      bytes: Buffer.byteLength(json),
       cap: MAX_SESSION_STATE_BYTES,
     });
   });

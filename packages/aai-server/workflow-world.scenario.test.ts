@@ -21,17 +21,23 @@
  *    before anything listened, and a deployed guest did the same before
  *    `server.listen`, so the platform's readiness poll never got an answer and
  *    every spawn failed. That the stand-in INTERCEPTS the exit is proved here —
- *    this process survives `setupDatabase` and goes on to run six more cases.
- *    That the SUCCESS code is then read as success is **not** true today: see
- *    "the migration's own exit(0) is reported as a failure", which pins a live
- *    defect and must be inverted by whoever fixes it.
+ *    this process survives `setupDatabase` and goes on to run six more cases —
+ *    and that the SUCCESS code is then read as success is proved by "a
+ *    SUCCESSFUL migration is not reported as a failure". That case was written
+ *    INVERTED, pinning a live defect: `setupDatabase` puts its `process.exit(0)`
+ *    inside its own `try`, so the stand-in's throw landed in its `catch`, which
+ *    exited 1 — every successful migration reported as `exit 1`. Fixed by having
+ *    the stand-in keep the FIRST exit code.
  * 2. **The queue subscription.** `getWorld().start?.()` is what makes
  *    graphile-worker poll; without it "a run sits `pending` forever with no
  *    error anywhere". Both halves of that mechanism are exercised — a
  *    subscribed runner really dials the flow route ("enqueueing a run
  *    subscribes the queue…"), and `start()` really re-enqueues an active run
- *    ("a second process reads the run back…") — but the BOOT-time call is
- *    unreachable while defect 1 stands, because the migration throws first.
+ *    ("a second process reads the run back…"). The BOOT-time call was
+ *    unreachable while defect 1 stood, because the migration threw first; with
+ *    that fixed, `startWorkflowWorldIfDeclared` reaches it in this suite's own
+ *    `beforeAll`, which is what the absence of a "failed to start" line above
+ *    now asserts.
  * 3. **A silent fallback to the local world.** The module doc names this as the
  *    hazard the configure-before-import ordering exists for — "a guest that
  *    silently uses the local world in production, writing runs to a
@@ -421,36 +427,55 @@ describeWithPg("the Postgres workflow world, against a real database", () => {
     expect(queue?.present).toBe(true);
   });
 
-  test("the migration's own exit(0) is reported as a FAILURE — live defect", () => {
-    // THIS CASE PINS A BUG. Invert it in the same commit that fixes
-    // `migratePostgresWorld`; it is written to fail the moment the fix lands so
-    // nobody can fix it and leave this file claiming otherwise.
+  test("a SUCCESSFUL migration is not reported as a failure", () => {
+    // This case was written inverted, as a pin on a live defect, and is the half
+    // of that bargain the fix owes: it now asserts the cure and fails if the bug
+    // comes back. Keep it that way round.
     //
-    // `migratePostgresWorld`'s doc reasons that the stand-in's throw unwinds
-    // `setupDatabase`'s own await chain harmlessly because "the exit is the last
-    // statement in both branches". It is — but the SUCCESS one is the last
-    // statement inside a `try` whose `catch` calls `process.exit(1)`:
+    // The defect: `migratePostgresWorld`'s doc reasons that the stand-in's throw
+    // unwinds `setupDatabase`'s own await chain harmlessly because "the exit is
+    // the last statement in both branches". It is — but the SUCCESS one is the
+    // last statement inside a `try` whose `catch` calls `process.exit(1)`:
     //
     //     try  { …; console.log('✅ …'); await pool.end(); process.exit(0); }
     //     catch (error) { …; console.error('❌ Failed to setup database:', error);
     //                     process.exit(1); }
     //
-    // So the stand-in throws, `setupDatabase` catches its own interception,
-    // reports the migration as failed, and exits 1 — and `exitCode` is 1 by the
-    // time `migratePostgresWorld` reads it. Reproduced against
+    // So the stand-in threw, `setupDatabase` caught its own interception,
+    // reported the migration as failed, and exited 1 — and `exitCode` was 1 by
+    // the time `migratePostgresWorld` read it. Reproduced against
     // `@workflow/world-postgres@4.3.3` outside vitest as well as here.
     //
-    // What it costs: the schema IS migrated (the case above), but
-    // `migrateAndSubscribe` throws before `getWorld().start?.()`, so a booting
-    // guest NEVER subscribes its queue and never runs `reenqueueActiveRuns`. A
-    // run parked in a `sleep` or on a webhook is therefore not picked up when
-    // its guest is woken — which is hazard 2, live, and exactly what the wake
-    // sweep exists to trigger.
+    // What it cost: the schema IS migrated, but `migrateAndSubscribe` threw
+    // before `getWorld().start?.()`, so a booting guest never subscribed its
+    // queue and never ran `reenqueueActiveRuns`. A run parked in a `sleep` or on
+    // a webhook was not picked up when its guest was woken — hazard 2, live, and
+    // exactly what the wake sweep exists to trigger. It also made the
+    // orphaned-lock sweep dead code on every boot, since that runs between the
+    // migration and the subscribe.
+    //
+    // The fix is that the stand-in keeps the FIRST exit code: a second `exit` is
+    // the CLI reacting to our own interception, never a decision of its own.
     expect(logged.join("\n")).toContain("Database schema created successfully");
+    expect(reported).toContain("harness starting postgres workflow world");
+
+    // THE symptom, and the whole of what the fix cures: the world starts.
+    // `startWorkflowWorldIfDeclared` reports a failure rather than throwing one,
+    // so its absence from the log IS the assertion that `migrateAndSubscribe`
+    // ran to the end — through the orphaned-lock sweep and `getWorld().start?.()`
+    // rather than throwing before either.
+    expect(reported.join("\n")).not.toContain("failed to start");
+    expect(reported.join("\n")).not.toContain("the Postgres world migration failed");
+
+    // What the fix CANNOT remove, asserted so nobody reads it as a regression:
+    // `setupDatabase` catches our own interception on its way out and logs its
+    // own ❌ line before exiting a second time. That line is emitted by the CLI,
+    // not by us, and it is harmless — the migration had already committed and
+    // closed its pool by then, the exit being the last statement in that `try`.
+    // An operator WILL see it on every boot, and it looks exactly like a failed
+    // migration, so it is pinned here rather than left to alarm whoever greps
+    // the logs next. Removing it means an upstream that stops exiting.
     expect(reported.join("\n")).toContain("Failed to setup database: MigrationExitedError");
-    expect(reported).toContain(
-      "Workflow world (postgres) failed to start: the Postgres world migration failed (exit 1)",
-    );
   });
 
   test("a run started through the SDK's own adapter is written to Postgres", async () => {

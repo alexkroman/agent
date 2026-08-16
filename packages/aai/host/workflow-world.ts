@@ -245,7 +245,21 @@ async function migratePostgresWorld(): Promise<void> {
   const realExit = process.exit;
   let exitCode: number | undefined;
   process.exit = ((code?: number | string | null): never => {
-    exitCode = typeof code === "number" ? code : 0;
+    // FIRST exit wins, and that is the whole fix for a defect this shipped with.
+    // `setupDatabase` puts its `process.exit(0)` INSIDE its own `try`, and its
+    // `catch` exits 1 — so the throw below lands in that `catch`, which logs
+    // "❌ Failed to setup database" and exits again. Recording the second code
+    // reported every SUCCESSFUL migration as `exit 1`, and the caller then threw
+    // before `getWorld().start?.()`: the schema was migrated, the queue was never
+    // subscribed, `reenqueueActiveRuns` never ran, and the orphaned-lock sweep was
+    // dead code on every boot. Runs started in that same process still dispatched
+    // (the world's `queue()` awaits its own `start()`), which is exactly why it
+    // went unnoticed — what broke is a run parked in a `sleep` or on a webhook,
+    // which is never picked up when its guest is woken.
+    //
+    // A second `exit` is therefore the CLI reacting to OUR interception, never a
+    // second decision of its own, and it must not overwrite the first.
+    exitCode ??= typeof code === "number" ? code : 0;
     throw new MigrationExitedError(exitCode);
   }) as typeof process.exit;
   try {

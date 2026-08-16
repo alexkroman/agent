@@ -67,10 +67,20 @@ The module doc reasons the interception is safe because "the exit is the last
 statement in both branches". It is, and the success one is the last statement
 inside a `try`.
 
-It is PINNED rather than fixed, by a test written to fail the moment somebody
-fixes it, so the fixer has to come here and invert it — the forcing function
-`RETIRED_COLUMNS` uses. The verified fix is one line: keep the FIRST exit code,
-since a second `exit` is the CLI reacting to our own interception.
+It was PINNED first, by a test written to fail the moment somebody fixed it — the
+forcing function `RETIRED_COLUMNS` uses — and then FIXED in this branch, with
+that case inverted in the same commit to assert the cure. The fix is one line:
+the stand-in keeps the FIRST exit code, since a second `exit` is the CLI reacting
+to our own interception.
+
+Inverting it turned up one thing worth keeping. The ❌ `Failed to setup database:
+MigrationExitedError` line **cannot** be removed and is now asserted as expected
+noise: `setupDatabase` catches our interception on its way out and logs it before
+exiting again. It is harmless — the migration had committed and closed its pool,
+the exit being the last statement in that `try` — but it looks exactly like a
+failed migration to whoever greps the logs, so it is pinned rather than left to
+alarm. The first draft of the inverted test asserted its absence and failed for
+that reason; the symptom the fix actually cures is the world not starting.
 
 What did not land, and why:
 
@@ -84,20 +94,27 @@ What did not land, and why:
   today for a real reason, which is F6's wedge.
 - **F9's CI leg.** Recorded, not built: one leg setting `AAI_FAULT_PROFILE` is a
   decision about what CI spends, and it wants F8's home settled first.
-- **Two real bugs, reported and deliberately not fixed**, because each changes
-  shipped behaviour and belongs in its own review: the migration defect above,
-  and the session-state size cap comparing UTF-16 code units against a byte
-  budget (`json.length > MAX_SESSION_STATE_BYTES`, logged as `bytes`). The second
-  is the class `fetchCappedText` already fixed once — measured, a slot of CJK
-  content holds ~3 MiB while the cap reads it as under 1 MiB — and it matters
-  here because the cap's job is bounding what a tenant sees as their own database
-  usage.
+Both real bugs the audit found ARE fixed here, each with a test that dies without
+the fix. The migration defect is above. The second is the session-state size cap,
+which compared UTF-16 code units against a byte budget
+(`json.length > MAX_SESSION_STATE_BYTES`, logged as `bytes`) — the class
+`fetchCappedText` already fixed once, and it matters more here because the cap's
+job is bounding what a tenant sees as their own database usage. Measured: a slot
+of CJK content held ~3 MiB while the cap read it as under 1 MiB. It is
+`Buffer.byteLength` now, and the new case is the only one in that file that can
+discriminate, every other being ASCII where units and bytes agree.
 
-Two smaller notes from the same reading, both arguably intended: a slot refused
-by the cap leaves its previously committed, SMALLER value in the backend, so a
-resume hydrates a stale value rather than none; and `has()` counts a VIRTUAL slot
-write, so a session that has only touched a virtual slot reads as "has state" to
-`pushStateSnapshot`.
+Both were pinned before they were fixed rather than fixed on sight, which is what
+made the A/B possible in each direction — and in the migration's case is what
+caught the first fix asserting the wrong symptom.
+
+Two smaller notes from the same reading are NOT changed, both arguably intended
+and now documented where they bite: a slot refused by the cap leaves its
+previously committed, SMALLER value in the backend, so a resume hydrates a stale
+value rather than none (recorded on the refusal itself — it is the better of the
+two behaviours, but a reader of that log line should know which one they have);
+and `has()` counts a VIRTUAL slot write, so a session that has only touched a
+virtual slot reads as "has state" to `pushStateSnapshot`.
 
 ## Method
 
