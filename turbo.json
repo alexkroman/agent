@@ -306,6 +306,7 @@
         "AAI_TEST_PM",
         "AAI_FAULT_PROFILE",
         "AAI_REQUIRE_REGISTRY",
+        "AAI_REQUIRE_BROWSER",
         "VITEST_POOL"
       ]
     },
