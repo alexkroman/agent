@@ -184,14 +184,14 @@ like the codegen being broken.
 
 ## Level 1 does NOT drive `?host=1`, and the plan expected it to
 
-`research/5-behaviour-eval-tier.md` left "does level 1 use host mode?" open, and
-the answer is that it CANNOT: **the client protocol has no text command.**
+The plan this tier came from left "does level 1 use host mode?" open, and the
+answer is that it CANNOT: **the client protocol has no text command.**
 `sdk/protocol-commands.ts` carries five commands (`audio_ready`, `cancel`,
 `reset`, `playback_progress`, `tool_result`) and a user turn reaches a session as
 PCM and nothing else — so a text-driven level 1 has no socket to speak down.
-Host mode is unaffected and unblocked (see `research/6-dynamic-agent-definition
-.md`, which concluded the per-session resolver cannot be built safely); it is
-simply the wrong seam for a text target, and the right seam is below the wire.
+Host mode is unaffected and unblocked (the per-session agent-definition resolver
+that would have needed it cannot be built safely); it is simply the wrong seam
+for a text target, and the right seam is below the wire.
 
 So `session-target.ts` drives `runtime.createSession()` with a recording
 `ClientSink`, the agent's own `events` hooks feeding the assertions, and the two

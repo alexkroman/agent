@@ -14,14 +14,14 @@
  * violation is self-correcting and a reviewer never has to re-explain it. The
  * numeric IDs are stable identifiers: a rule that is deleted leaves its number
  * retired rather than letting a later rule inherit it, because the numbers show
- * up in commit messages and in `guard-invariants-baseline.json`. Rules 6 and 15
- * are retired and reserved respectively; nothing may reuse them.
+ * up in commit messages and in `guard-invariants-baseline.json`. Rules 6 and 10
+ * are retired and 15 is reserved; nothing may reuse them.
  *
  * ## The catalogue is DERIVED — `node scripts/guard-invariants.mjs --rules`
  *
  * This header used to carry the rule list in prose, and it went stale exactly
  * the way a hand-kept list of anything does here: rules 17, 18 and 19 were
- * absent, and a missing newline had run rule 10's paragraph into rule 11's. The
+ * absent, and a missing newline had run two rules' paragraphs together. The
  * one line that did NOT drift was the printed count, because it is computed from
  * `ABSOLUTE_RULES.length + LINE_RULES.length`. So the catalogue is computed the
  * same way now, from the `id`/`label`/`remedy` every rule already carries, and
@@ -63,7 +63,6 @@ import {
   TMP_RULE_PATHSPECS,
 } from "./guard-invariants-rules.mjs";
 import {
-  scanResearchFrontmatter,
   scanSymlinks,
   scanTemplateEscapingImports,
   scanUndeclaredGuestRoutes,
@@ -192,20 +191,6 @@ const ABSOLUTE_RULES = [
       "gets wider than the table without any one literal being new.",
   },
   {
-    id: 10,
-    label: "research/ frontmatter",
-    scan: scanResearchFrontmatter,
-    remedy:
-      "Every research doc needs `issue`, `status`, and an ISO `last_updated`:\n" +
-      "  ---\n" +
-      "  issue: https://github.com/alexkroman/agent/issues/123\n" +
-      "  status: proposed\n" +
-      '  last_updated: "2026-08-12"\n' +
-      "  ---\n" +
-      "A plan with no issue is an unowned parallel backlog; a plan with no date\n" +
-      "cannot be told from a stale one.",
-  },
-  {
     id: 14,
     label: "fixture directory nothing reads",
     scan: scanUnreadFixtureDirs,
@@ -264,7 +249,7 @@ function ruleCatalogue() {
     for (const line of remedy.split("\n")) lines.push(`    ${line}`);
     lines.push("");
   }
-  lines.push("Rules 6 (retired) and 15 (reserved) have no definition; the numbers");
+  lines.push("Rules 6 and 10 (retired) and 15 (reserved) have no definition; the numbers");
   lines.push("stay retired rather than being reused — they appear in commit messages");
   lines.push("and in the baseline's history.");
   return lines.join("\n");

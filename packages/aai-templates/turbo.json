@@ -19,14 +19,13 @@
     // one). Touching any of them left
     // `aai-templates#test` at an identical hash.
     //
-    // Four more joined with the 2026-08 test sweep, each because a spec here
+    // Two more joined with the 2026-08 test sweep, each because a spec here
     // started READING it: `lefthook.yml` (`file-length-gate.test.ts` pins the
-    // pre-commit headroom line), `research/*.md` and every workflow rather than
-    // just `check.yml` (`guard-invariants-gate.test.ts` re-derives the corpora
-    // for rules 7 and 10, whose scanners return only `found` and so cannot tell
+    // pre-commit headroom line), and every workflow rather than just
+    // `check.yml` (`guard-invariants-scanner-rules.test.ts` re-derives the
+    // corpus for rule 7, whose scanner returns only `found` and so cannot tell
     // an upheld rule from an empty scan — and `ci-gate-job.test.ts` reads the
-    // required gate job), and the guides + `research/` again for
-    // `escape-hatch-scope.test.ts`'s per-pattern prose liveness check.
+    // required gate job).
     //
     // Markdown is re-included (the root task drops it) because a CLAUDE.md IS
     // the input here, not documentation about it.
@@ -45,7 +44,6 @@
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/lefthook.yml",
-        "$TURBO_ROOT$/research/*.md",
         "$TURBO_ROOT$/scripts/**",
         "$TURBO_ROOT$/.github/workflows/*.yml"
       ],
@@ -66,7 +64,6 @@
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/lefthook.yml",
-        "$TURBO_ROOT$/research/*.md",
         "$TURBO_ROOT$/scripts/**",
         "$TURBO_ROOT$/.github/workflows/*.yml"
       ],

@@ -121,9 +121,8 @@ let observedOrigin: string | undefined;
  * production answer is not a better check — it is refusing to guess. With
  * nothing observed, `agentPublicBaseUrl` returns `undefined`, the boot env omits
  * the key, and the SDK throws naming `publicUrl` the first time an author asks
- * for a durable URL. That is the failure the shipped plan designed for
- * (`research/3.75-guest-public-origin.md`), it is loud, and it is one env var to
- * fix: `AAI_PUBLIC_ORIGIN`.
+ * for a durable URL. That is the failure this was designed for, it is loud, and
+ * it is one env var to fix: `AAI_PUBLIC_ORIGIN`.
  *
  * Local dev keeps the observation because there is no tenant boundary to cross
  * there and no attacker to cross it — the same `isLocalDev` premise that lets

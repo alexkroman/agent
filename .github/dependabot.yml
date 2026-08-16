@@ -16,7 +16,7 @@ updates:
     open-pull-requests-limit: 10
 
   # Every `uses:` in .github/workflows is pinned to a commit SHA with the
-  # release in a trailing comment, and `guard-invariants.mjs` rule 10 fails a
+  # release in a trailing comment, and `guard-invariants.mjs` rule 7 fails a
   # workflow that reuses a floating tag.
   #
   # A tag is mutable: `@v7` is a pointer the action's own maintainers (or

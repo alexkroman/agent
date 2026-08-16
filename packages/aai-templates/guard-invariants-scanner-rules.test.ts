@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /// <reference types="vite/client" />
 /**
- * The SCANNER half of `scripts/guard-invariants.mjs` — rules 7, 10, 12, 13 and
- * 14, the ones with no `re` to sample.
+ * The SCANNER half of `scripts/guard-invariants.mjs` — rules 7, 12, 13 and 14,
+ * the ones with no `re` to sample.
  *
  * Split out of `guard-invariants-gate.test.ts` when that file passed the
  * 700-line test cap, along the seam the rules themselves already have. A LINE
@@ -19,10 +19,9 @@
  * What both files share is that failure mode: a scan finding nothing prints the
  * same checkmark as a rule being upheld. Rules 12, 13 and 14 are split into
  * PURE halves that can be exercised directly, so they get positive/negative
- * pairs of their own. Rules 7 and 10 are not — their scanners return only
- * `found`, never the file count — so their corpora are re-derived here
- * independently, which is the only way a renamed directory fails rather than
- * reporting zero.
+ * pairs of their own. Rule 7 is not — its scanner returns only `found`, never
+ * the file count — so its corpus is re-derived here independently, which is the
+ * only way a renamed directory fails rather than reporting zero.
  *
  * It lives in aai-templates for the reason its siblings do: this package owns
  * the tests for repo-level scripts, and raw imports reach them with no node
@@ -34,7 +33,7 @@ import { describe, expect, test } from "vitest";
 /**
  * Rule 12's decision function, imported as a real value.
  *
- * The scanner rules (1, 7, 10, 12) have no `re` to sample, so the
+ * The scanner rules (1, 7, 12) have no `re` to sample, so the
  * positive/negative discipline the line rules get has to come from exercising
  * the logic directly. Rule 12 is the one worth it: the others ask a single
  * yes/no question of a file, while this one parses two sources and diffs them,
@@ -89,10 +88,10 @@ const fixtureDirs = Object.values(
 )[0];
 
 /**
- * The two SCANNER corpora that no floor and no sample protects.
+ * The SCANNER corpus that no floor and no sample protects.
  *
- * Rules 1, 7 and 10 have no `re` to sample, and unlike 12/13/14 their scanners
- * are not split into a pure half — each derives its corpus from `git ls-files`
+ * Rules 1 and 7 have no `re` to sample, and unlike 12/13/14 their scanners are
+ * not split into a pure half — each derives its corpus from `git ls-files`
  * and returns only `found`, never the file count. So a directory rename, a
  * moved workflow or a changed extension makes the scanner report zero findings,
  * which is byte-identical to the rule being upheld.
@@ -101,9 +100,9 @@ const fixtureDirs = Object.values(
  * keeps a floating `@v7` tag — and therefore every future version of somebody
  * else's code — out of the release job's npm token.
  *
- * These re-derive both corpora independently of the scanners (the same
- * discipline `api-surface-file.test.ts` uses), so an empty one fails HERE even
- * while the gate prints its checkmark.
+ * This re-derives the corpus independently of the scanner (the same discipline
+ * `api-surface-file.test.ts` uses), so an empty one fails HERE even while the
+ * gate prints its checkmark.
  */
 const workflowFiles = import.meta.glob("../../.github/workflows/*.yml", {
   query: "?raw",
@@ -111,15 +110,6 @@ const workflowFiles = import.meta.glob("../../.github/workflows/*.yml", {
   eager: true,
 }) as Record<string, string>;
 
-const researchDocs = Object.fromEntries(
-  Object.entries(
-    import.meta.glob("../../research/*.md", {
-      query: "?raw",
-      import: "default",
-      eager: true,
-    }) as Record<string, string>,
-  ).filter(([path]) => !path.endsWith("/README.md")),
-);
 describe("rule 7 — every GitHub Action is SHA-pinned", () => {
   /** `uses:` lines naming a third-party action, i.e. ones with a ref to pin. */
   const pinnable = (): { file: string; spec: string }[] =>
@@ -147,34 +137,6 @@ describe("rule 7 — every GitHub Action is SHA-pinned", () => {
     for (const { file, spec } of pinnable()) {
       const ref = spec.split("@")[1] ?? "";
       expect(/^[0-9a-f]{40}$/.test(ref), `${file}: "${spec}" is not pinned to a SHA`).toBe(true);
-    }
-  });
-});
-
-describe("rule 10 — research docs carry issue/status/last_updated", () => {
-  test("the corpus is not empty", () => {
-    // Same shape as rule 7's floor: `git ls-files -- research` returning
-    // nothing is indistinguishable from every doc being well-formed.
-    expect(Object.keys(researchDocs).length, "no research docs found").toBeGreaterThanOrEqual(5);
-  });
-
-  test("every doc declares all three fields", () => {
-    for (const [file, text] of Object.entries(researchDocs)) {
-      const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
-      expect(block, `${file}: no YAML frontmatter block`).not.toBeNull();
-      const fields = new Map(
-        (block?.[1] ?? "")
-          .split(/\r?\n/)
-          .map((line) => /^([A-Za-z_]+):\s*(.*)$/.exec(line))
-          .filter((m): m is RegExpExecArray => m !== null)
-          .map((m) => [m[1] ?? "", (m[2] ?? "").trim().replace(/^["']|["']$/g, "")]),
-      );
-      for (const key of ["issue", "status"]) {
-        expect(fields.get(key), `${file}: frontmatter has no non-empty \`${key}\``).toBeTruthy();
-      }
-      expect(fields.get("last_updated") ?? "", `${file}: last_updated is not an ISO date`).toMatch(
-        /^\d{4}-\d{2}-\d{2}$/,
-      );
     }
   });
 });

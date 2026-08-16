@@ -1,9 +1,9 @@
 /**
  * The invariants that are not a line scan.
  *
- * Rules 1, 7, 10, 12, 13 and 14 each read a different shape — git's index, the
- * workflow files, YAML frontmatter, two dispatch tables as text, import
- * specifiers, and resolved fixture paths — so none of them fits the
+ * Rules 1, 7, 12, 13 and 14 each read a different shape — git's index, the
+ * workflow files, two dispatch tables as text, import specifiers, and resolved
+ * fixture paths — so none of them fits the
  * `git grep -E` pattern every other rule uses. Split out of
  * `guard-invariants.mjs` at that seam because the gate was 34 lines under the
  * 500-line cap, and `check:file-length` warns before the cap precisely so the
@@ -31,9 +31,9 @@ import { GUEST_SURFACE_PATHSPECS, TEMPLATE_PATHSPECS } from "./guard-invariants-
  * file deleted-but-not-yet-staged is listed and absent. Reading it blind throws
  * an uncaught ENOENT out of the gate, which kills every OTHER rule with it and
  * names a file the author already deleted — a failure that reads as a bug in the
- * gate rather than as a dirty tree. `scanResearchFrontmatter` had guarded this
- * for a while, with a comment recording having been bitten; the three sibling
- * scanners had not, so they all go through here now.
+ * gate rather than as a dirty tree. The retired rule 10's scanner had guarded
+ * this, with a comment recording having been bitten; its sibling scanners had
+ * not, so they all go through here now.
  *
  * Skipping is the right answer rather than a silent pass: a deleted file has no
  * content to check, and `git ls-files` stops listing it the moment the deletion
@@ -76,49 +76,6 @@ export function scanUnpinnedActions() {
       if (ref !== undefined && SHA_PINNED.test(ref)) return;
       found.push({ file, line: index + 1, text: text.trim() });
     });
-  }
-  return found;
-}
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-export function scanResearchFrontmatter() {
-  const files = git(["ls-files", "--", "research"])
-    .split("\n")
-    .filter((f) => f.endsWith(".md") && f !== "research/README.md");
-  const found = [];
-  for (const file of files) {
-    const source = readRepoFile(file);
-    if (source === undefined) continue;
-    // Deliberately not a YAML parser: the three fields are scalars, and a
-    // dependency here would be one more thing that can be absent when a gate
-    // runs. A malformed block fails the shape check below, which is the answer
-    // either way.
-    const block = /^---\r?\n([\s\S]*?)\r?\n---/.exec(source);
-    if (block === null) {
-      found.push({ file, line: 1, text: "no YAML frontmatter block" });
-      continue;
-    }
-    const fields = new Map(
-      block[1]
-        .split(/\r?\n/)
-        .map((line) => /^([A-Za-z_]+):\s*(.*)$/.exec(line))
-        .filter((m) => m !== null)
-        .map((m) => [m[1], m[2].trim().replace(/^["']|["']$/g, "")]),
-    );
-    for (const key of ["issue", "status"]) {
-      if ((fields.get(key) ?? "") === "") {
-        found.push({ file, line: 1, text: `frontmatter \`${key}\` is missing or empty` });
-      }
-    }
-    const updated = fields.get("last_updated") ?? "";
-    if (!ISO_DATE.test(updated)) {
-      found.push({
-        file,
-        line: 1,
-        text: `frontmatter \`last_updated\` is not an ISO date: ${updated || "(missing)"}`,
-      });
-    }
   }
   return found;
 }

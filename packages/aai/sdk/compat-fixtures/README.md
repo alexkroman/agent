@@ -35,8 +35,8 @@ sharing one union with events, no `meta` envelope, and a `history` frame the
 client used to push its own conversation back in.
 
 Every one of those changed at once, so **no deployed code speaks v1** — nothing
-published is depended on yet, which is the standing rule in `research/README.md`
-— and "never delete a fixture unless you're certain no deployed code depends on
+published is depended on yet — and "never delete a fixture unless you're certain
+no deployed code depends on
 that version" is satisfied rather than bent. Keeping it would have meant a suite
 asserting that the current schemas still accept a vocabulary they deliberately
 do not, i.e. a red gate with no reader.
