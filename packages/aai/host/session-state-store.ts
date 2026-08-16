@@ -438,6 +438,14 @@ export function createSessionStateStore(opts: {
         },
       };
     },
+    // Counts a VIRTUAL slot's write too, and that is right rather than an
+    // oversight worth chasing. `pushStateSnapshot` is the caller, and what it
+    // asks is "has this session anything to SHOW a reconnecting client" — which a
+    // `syncState` projection answers from `values`, where a virtual slot's value
+    // also lives. Narrowing this to durable slots would leave a session whose
+    // only state is virtual rendering empty on a resume, which is the very bug
+    // that call exists to prevent. It is deliberately NOT "has anything to
+    // COMMIT": `flush` reads the dirty set, and nothing else.
     has: (sessionId) => (sessions.get(sessionId)?.values.size ?? 0) > 0,
     async hydrate(sessionId) {
       const stored = await backend.load(sessionId);

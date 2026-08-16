@@ -108,13 +108,27 @@ Both were pinned before they were fixed rather than fixed on sight, which is wha
 made the A/B possible in each direction — and in the migration's case is what
 caught the first fix asserting the wrong symptom.
 
-Two smaller notes from the same reading are NOT changed, both arguably intended
-and now documented where they bite: a slot refused by the cap leaves its
-previously committed, SMALLER value in the backend, so a resume hydrates a stale
-value rather than none (recorded on the refusal itself — it is the better of the
-two behaviours, but a reader of that log line should know which one they have);
-and `has()` counts a VIRTUAL slot write, so a session that has only touched a
-virtual slot reads as "has state" to `pushStateSnapshot`.
+Two smaller notes from the same reading are behaviour changes NOBODY should
+make, and both are now documented at the line that would tempt someone:
+
+- A slot refused by the cap leaves its previously committed, SMALLER value in
+  the backend, so a resume hydrates a stale value rather than none. Recorded on
+  the refusal itself: it is the better of the two behaviours, but a reader of
+  that log line should know which one they have.
+- `has()` counts a VIRTUAL slot write, so a session that has only touched a
+  virtual slot reads as "has state". Investigated rather than assumed, and it is
+  RIGHT: `pushStateSnapshot` is the only caller, and what it asks is "has this
+  session anything to SHOW", which a `syncState` projection answers from the same
+  map a virtual slot writes into. Narrowing it to durable slots would leave such
+  a session rendering empty on a resume — the exact bug that call exists to
+  prevent.
+
+A third belongs with them, from F4's tiebreak catch: `workflow-keys.ts` called
+its `ORDER BY` tiebreak "load-bearing rather than decorative", which is true of
+the query and false of the deployed happy path, since the index carries the
+tiebreak and an index-only scan returns it regardless. That doc now says the two
+are load-bearing TOGETHER and names the arm that proves it, because the original
+wording would have blessed deleting either one.
 
 ## Method
 
