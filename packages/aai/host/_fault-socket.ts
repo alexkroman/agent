@@ -24,15 +24,26 @@
  *
  * The advertised contract for a reconnect inside {@link SESSION_RESUME_GRACE_MS}
  * is: the same `?sessionId=` resumes that session, the greeting is suppressed
- * (`skipGreeting`), server-side history is kept, and `ctx.state` is still there —
- * the state sweep waits the grace window out before dropping it.
+ * (`skipGreeting`), server-side history is kept, and its slot values are still
+ * there — the state sweep waits the grace window out before dropping them.
  *
- * All of that is per PROCESS. `ctx.state` lives in a plain `Map` in
- * `runtime.ts`, and so do the session and sink maps, so a session cannot survive
- * the process restarting — that is the boundary between this mode and the other
- * one, and it is a property of the architecture rather than a gap in the test:
- * a workflow survives a restart because its state is in Postgres, a voice session
- * does not because its state is in a Map.
+ * What this mode reaches is the PROCESS-LOCAL half of that, and the boundary is
+ * one of SETUP rather than of architecture. The session and sink maps really are
+ * per process, so a severed socket is the most a proxy in front of one server can
+ * simulate. A slot's VALUE is a different matter: it lives in the session-state
+ * store (`session-state-store.ts`), whose Postgres backend commits at the end of
+ * every tool call, so it outlives the process that wrote it — which is what lets
+ * a redeploy, a crash or `handoverSlot`'s blue-green swap hand a reconnecting
+ * caller their cart back. `aai-server/session-state.scenario.test.ts` proves that
+ * against a real database, starting with the case named "a slot's value survives
+ * a new process".
+ *
+ * So the honest split between the two fault modes is which FAILURE each one
+ * injects — a severed connection here, a hard-killed process in
+ * `aai-cli/_fault-mode.ts` — and not a claim that state cannot survive one of
+ * them. This doc said the opposite for a long time ("a voice session does not
+ * because its state is in a Map"), which stopped being true when the store
+ * replaced the runtime's `stateMap` and was the reason not to go looking.
  */
 
 import net from "node:net";

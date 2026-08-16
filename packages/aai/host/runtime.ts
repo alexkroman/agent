@@ -413,7 +413,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
       ...(startOpts?.onSinkCreated ? { onSinkCreated: startOpts.onSinkCreated } : {}),
       ...omitUndefined({ audioLeadMs: startOpts?.audioLeadMs }),
-      // sinkMap/stateMap cleanup lives in the identity-guarded stop() wrapper
+      // sinkMap/session-state cleanup lives in the identity-guarded stop() wrapper
       // (createSession) — a key delete here would hit the resumed session's
       // entries when an old session's stop settles after a reconnect.
       onSessionEnd: (sid, sink) => {
