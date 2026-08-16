@@ -1,0 +1,314 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Does the Postgres upload store return the same bytes the file store does?
+ *
+ * `createUploadStore` (`aai/host/workflow-uploads.ts`) has two backends, and its
+ * own module doc names the Postgres one "the one that matters, because a durable
+ * run is precisely the thing that outlives the container that started it". Its
+ * unit spec drives the FILE backend for real — reasoning that the subject is byte
+ * offsets, "which a fake would only restate" — and drives the Postgres backend
+ * against a recording `Db`. But the Postgres backend's subject is byte offsets
+ * too. They are just written in SQL, and every one of them is driver-level:
+ *
+ * ```sql
+ * substring(bytes
+ *   from (greatest(byte_offset, $2) - byte_offset + 1)::int
+ *   for  (least(byte_offset + octet_length(bytes), $3) - greatest(byte_offset, $2))::int)
+ * ```
+ *
+ * Postgres string positions are **1-based**, so that `+ 1` is the whole
+ * difference between a correct read and one shifted by a byte; the bounds are
+ * per ROW, so one statement answers a range spanning several chunks and each
+ * covering chunk contributes a different slice; `byte_offset` is `bigint`
+ * compared against JS numbers; `bytes` is `bytea`, arriving as something the code
+ * wraps in `new Uint8Array`; and `size` is coerced with `Number(row.size)`
+ * because bigint comes back from the driver as a string. A recorder holds JS
+ * values and can represent none of it. A header probe returning the wrong 64 KB
+ * reads to every caller as a corrupt file — no error anywhere.
+ *
+ * **So the two arms are compared directly.** The same body goes into both, the
+ * same windows come out of both, and every window is additionally checked against
+ * the bytes it is supposed to be — the body is a ramp, so its CONTENT identifies
+ * its own offset and "these two agree" cannot be satisfied by two identical
+ * off-by-ones.
+ *
+ * `UPLOAD_CHUNK_BYTES` is not on a published subpath, so the chunk size is
+ * DISCOVERED from the chunk table the store itself wrote rather than imported.
+ * That is what makes the boundary windows real: they are cut at the offsets this
+ * build actually chunks on, not at a number this file believes.
+ *
+ * Self-cleaning: one schema, created and dropped here, plus one temp directory.
+ *
+ * ```sh
+ * AAI_TEST_PG_URL='postgresql://postgres:postgres@127.0.0.1:5432/postgres' \
+ *   pnpm --filter aai-server test:scenario
+ * ```
+ */
+
+import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  createPostgresDb,
+  createUploadStore,
+  UPLOAD_CHUNKS_TABLE,
+  UPLOADS_TABLE,
+  type UploadStore,
+} from "@alexkroman1/aai/runtime";
+import { afterAll, beforeAll, expect, test } from "vitest";
+import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+
+/** Distinct from every other scenario suite's schema, and not app-shaped. */
+const SCHEMA = "wf_uploads_scenario";
+
+/**
+ * Big enough to be several chunks at any plausible chunk size, and small enough
+ * that the whole body crosses the wire in a test. The suite asserts it really
+ * produced more than one chunk rather than assuming.
+ */
+const BODY_BYTES = 3 * 1024 * 1024;
+
+/** `n` bytes counting up, so a window's CONTENT identifies its offset. */
+function ramp(n: number, from = 0): Uint8Array {
+  return Uint8Array.from({ length: n }, (_, at) => (from + at) % 251);
+}
+
+/** One body, as the routes hand it over: an async iterable of chunks. */
+async function* body(...pieces: Uint8Array[]): AsyncGenerator<Uint8Array> {
+  for (const piece of pieces) yield piece;
+}
+
+/** A window's bytes, for an assertion that names megabytes without printing them. */
+function digest(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+describeWithPg("the workflow upload store over a real Postgres", () => {
+  let db: ReturnType<typeof createPostgresDb>;
+  let sql: <T = Record<string, unknown>>(q: string, p?: unknown[]) => Promise<T[]>;
+  /** A handle whose search_path is the test schema, as a guest's own role is. */
+  let appDb: ReturnType<typeof createPostgresDb>;
+  let dir: string;
+  let pg: UploadStore;
+  let files: UploadStore;
+  /** The same body in both backends. */
+  let pgId: string;
+  let fileId: string;
+  /** Read off the chunk rows the store wrote — see the module doc. */
+  let chunkBytes: number;
+  /** How many rows the body split into; floored by a test, not assumed. */
+  let chunkCount: number;
+
+  beforeAll(async () => {
+    db = createPostgresDb({ url: pgUrl() });
+    sql = db.query;
+    await sql(`drop schema if exists ${SCHEMA} cascade`);
+    await sql(`create schema ${SCHEMA}`);
+    // `search_path` rather than a qualified table name: that is how the platform
+    // provisions an app role, so the store's unqualified SQL is exercised the way
+    // a guest runs it.
+    appDb = createPostgresDb({ url: `${pgUrl()}?options=-c%20search_path%3D${SCHEMA}` });
+    dir = await mkdtemp(join(tmpdir(), "aai-uploads-scenario-"));
+
+    // The SAME factory both ways: `createUploadStore` picks the backend by
+    // whether it was handed a database, which is the split a deployment makes.
+    pg = createUploadStore({ db: appDb, dir });
+    files = createUploadStore({ dir });
+
+    const meta = { name: "call.wav", type: "audio/wav" };
+    pgId = (await pg.create(meta, body(ramp(BODY_BYTES)))).id;
+    fileId = (await files.create(meta, body(ramp(BODY_BYTES)))).id;
+
+    const chunks = await sql<{ seq: number; len: number }>(
+      `select seq, octet_length(bytes) as len from ${SCHEMA}.${UPLOAD_CHUNKS_TABLE}
+       where upload_id = $1 order by seq`,
+      [pgId],
+    );
+    chunkCount = chunks.length;
+    chunkBytes = chunks[0]?.len ?? 0;
+  });
+
+  afterAll(async () => {
+    await appDb.close();
+    await sql(`drop schema if exists ${SCHEMA} cascade`);
+    await db.close();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /**
+   * One window, three ways: what Postgres returns, what the file backend
+   * returns, and what the ramp says those bytes must be.
+   *
+   * Comparing all three is what makes an off-by-one falsifiable — two arms
+   * agreeing proves only that they are wrong the same way, and the ramp is the
+   * independent answer. The comparison is left to the CALLER so the assertions
+   * sit inside the test that owns them.
+   */
+  type Window = { label: string; pg: string; file: string; expected: string };
+  const windows = async (ranges: readonly (readonly [number, number])[]): Promise<Window[]> =>
+    Promise.all(
+      ranges.map(async ([start, end]) => ({
+        label: `[${start}, ${end})`,
+        pg: digest(await pg.read(pgId, start, end)),
+        file: digest(await files.read(fileId, start, end)),
+        expected: digest(ramp(Math.max(0, Math.min(end, BODY_BYTES) - start), start)),
+      })),
+    );
+
+  test("a create round-trips through info, with size as a NUMBER", async () => {
+    const info = await pg.info(pgId);
+    expect(info).toEqual({ id: pgId, name: "call.wav", type: "audio/wav", size: BODY_BYTES });
+    // `bigint` arrives from the driver as a string, so the coercion in `info` is
+    // the only thing between a byte count and a value that stringifies right and
+    // arithmetics wrong. The unit tier's recorder hands back a JS number and
+    // cannot pose the question.
+    expect(typeof info?.size).toBe("number");
+    const raw = await sql<{ t: string }>(
+      `select pg_typeof(size)::text as t from ${SCHEMA}.${UPLOADS_TABLE} where id = $1`,
+      [pgId],
+    );
+    expect(raw[0]?.t).toBe("bigint");
+  });
+
+  test("an unknown id is absent rather than an error", async () => {
+    expect(await pg.info("upl_nosuchupload")).toBeUndefined();
+    expect(await files.info("upl_nosuchupload")).toBeUndefined();
+  });
+
+  test("the chunk rows carry the offsets a range read selects on", async () => {
+    // `byte_offset` is bigint and every predicate in `read` compares it against a
+    // JS number. The offsets must be exact and contiguous, or a window lands
+    // between two chunks and comes back short with no error.
+    const rows = await sql<{ seq: number; byte_offset: string; len: number; t: string }>(
+      `select seq, byte_offset, octet_length(bytes) as len, pg_typeof(byte_offset)::text as t
+         from ${SCHEMA}.${UPLOAD_CHUNKS_TABLE} where upload_id = $1 order by seq`,
+      [pgId],
+    );
+    // A one-chunk body would make every boundary case below vacuous while still
+    // passing, which is the failure a floor exists to prevent.
+    expect(chunkCount).toBeGreaterThan(1);
+    expect(rows.map((r) => r.seq)).toEqual(rows.map((_, at) => at));
+    expect(rows.every((r) => r.t === "bigint")).toBe(true);
+    let at = 0;
+    for (const row of rows) {
+      expect(Number(row.byte_offset)).toBe(at);
+      at += row.len;
+    }
+    expect(at).toBe(BODY_BYTES);
+  });
+
+  test("a window wholly inside one chunk", async () => {
+    // The easy case, and the one the 1-based `+ 1` is still load-bearing for: a
+    // read at offset 1000 of the first chunk starts at `substring` position 1001.
+    for (const w of await windows([
+      [1000, 1064],
+      [0, 16],
+    ])) {
+      expect.soft(w.pg, `postgres ${w.label}`).toBe(w.expected);
+      expect.soft(w.file, `file ${w.label}`).toBe(w.expected);
+    }
+  });
+
+  test("a window SPANNING a chunk boundary", async () => {
+    // The case the whole `substring` arithmetic lives or dies on: two rows match,
+    // the first contributes its tail and the second its head, and the per-row
+    // bounds are what decide how much of each. Change `+ 1` to `+ 0` and both
+    // halves shift by a byte.
+    //
+    // The last two sit exactly on the seam in each direction, where an
+    // inclusive/exclusive slip costs a whole byte at one end and nothing at the
+    // other.
+    for (const w of await windows([
+      [chunkBytes - 4, chunkBytes + 4],
+      [chunkBytes - 1, chunkBytes + 1],
+      [chunkBytes, chunkBytes + 8],
+      [chunkBytes - 8, chunkBytes],
+    ])) {
+      expect.soft(w.pg, `postgres ${w.label}`).toBe(w.expected);
+      expect.soft(w.file, `file ${w.label}`).toBe(w.expected);
+    }
+  });
+
+  test("a window spanning a WHOLE chunk, so a middle row contributes all of itself", async () => {
+    // Three rows match and the middle one is wholly inside the range, which is
+    // the only case where `greatest`/`least` both pick the row's own bounds.
+    const [w] = await windows([[chunkBytes - 3, 2 * chunkBytes + 3]]);
+    expect(w?.pg, `postgres ${w?.label}`).toBe(w?.expected);
+    expect(w?.file, `file ${w?.label}`).toBe(w?.expected);
+  });
+
+  test("the whole body reads back byte for byte, in both backends", async () => {
+    const [w] = await windows([[0, BODY_BYTES]]);
+    expect(w?.pg, "postgres, whole body").toBe(w?.expected);
+    expect(w?.file, "file, whole body").toBe(w?.expected);
+  });
+
+  test("a zero-length window and an out-of-range one are empty, not an error", async () => {
+    // `read` is reached from a Range header, so both are ordinary requests. An
+    // empty `substring` result and a `where` matching no row have to look the
+    // same to the caller.
+    expect(await pg.read(pgId, chunkBytes, chunkBytes)).toHaveLength(0);
+    expect(await files.read(fileId, chunkBytes, chunkBytes)).toHaveLength(0);
+    expect(await pg.read(pgId, BODY_BYTES + 10, BODY_BYTES + 20)).toHaveLength(0);
+    expect(await files.read(fileId, BODY_BYTES + 10, BODY_BYTES + 20)).toHaveLength(0);
+  });
+
+  test("a window running PAST the end returns what exists and stops", async () => {
+    // The last chunk is short, so `least(byte_offset + octet_length(bytes), $3)`
+    // is the bound that decides — the one case where the row's own length wins
+    // over the caller's request.
+    const [w] = await windows([[BODY_BYTES - 4, BODY_BYTES + 100]]);
+    expect(w?.pg, `postgres ${w?.label}`).toBe(w?.expected);
+    expect(w?.file, `file ${w?.label}`).toBe(w?.expected);
+  });
+
+  test("an interrupted body leaves NO upload, and no orphan chunks", async () => {
+    // The metadata row is written LAST precisely so "does this upload exist" is
+    // answerable by one row that only appears when the bytes are all in. There is
+    // no transaction around a multi-megabyte stream, so this is the only thing
+    // standing between a caller and a file that is silently short.
+    const before = await sql<{ n: number }>(
+      `select count(*)::int as n from ${SCHEMA}.${UPLOADS_TABLE}`,
+    );
+
+    async function* interrupted(): AsyncGenerator<Uint8Array> {
+      yield ramp(chunkBytes);
+      throw new Error("connection reset mid-upload");
+    }
+    await expect(pg.create({ name: "half.wav" }, interrupted())).rejects.toThrow(
+      "connection reset mid-upload",
+    );
+
+    const after = await sql<{ n: number }>(
+      `select count(*)::int as n from ${SCHEMA}.${UPLOADS_TABLE}`,
+    );
+    expect(after[0]?.n).toBe(before[0]?.n);
+    // And the chunks it did write are gone: best-effort, but they are unreachable
+    // either way, so an orphan is space nobody can name.
+    const orphans = await sql<{ n: number }>(
+      `select count(*)::int as n from ${SCHEMA}.${UPLOAD_CHUNKS_TABLE} c
+        where not exists (select 1 from ${SCHEMA}.${UPLOADS_TABLE} u where u.id = c.upload_id)`,
+    );
+    expect(orphans[0]?.n).toBe(0);
+  });
+
+  test("a body past its cap is refused as it ARRIVES, in both backends", async () => {
+    // The cap is counted as the bytes arrive rather than from a declared length,
+    // so the refusal has to happen with chunk rows already written — which is the
+    // same cleanup path as the interruption above, reached by the store's own
+    // error rather than the caller's.
+    const half = ramp(chunkBytes);
+    await expect(pg.create({}, body(half, half), { limit: chunkBytes + 1 })).rejects.toBeInstanceOf(
+      Error,
+    );
+    await expect(
+      files.create({}, body(half, half), { limit: chunkBytes + 1 }),
+    ).rejects.toBeInstanceOf(Error);
+    const orphans = await sql<{ n: number }>(
+      `select count(*)::int as n from ${SCHEMA}.${UPLOAD_CHUNKS_TABLE} c
+        where not exists (select 1 from ${SCHEMA}.${UPLOADS_TABLE} u where u.id = c.upload_id)`,
+    );
+    expect(orphans[0]?.n).toBe(0);
+  });
+});
