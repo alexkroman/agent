@@ -38,7 +38,24 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          # `fetch-depth: 0`, and it is load-bearing. `changeset version`
+          # writes each CHANGELOG entry by finding the commit that ADDED the
+          # changeset file (`getCommitsThatAddChangesets` →
+          # `getCommitsThatAddFiles`), which walks history backwards and calls
+          # `deepenCloneBy` to extend a shallow clone as it goes. Against the
+          # `fetch-depth: 2` that used to sit here that deepening races itself
+          # and the job dies on
+          #
+          #     Error: fatal: shallow file has changed since we read it
+          #         at deepenCloneBy (@changesets/git/dist/index.mjs:101:32)
+          #
+          # before a Version Packages PR can be opened or anything published —
+          # 20 of 30 consecutive pushes to main, including HEAD. Every other
+          # checkout in this repo already uses depth 0; the two shallow ones
+          # were `release.yml` and `deploy.yml`, which are exactly the two
+          # workflows NO pull request runs, so nothing could report it. (The
+          # `deploy.yml` one is correct — that job wants precisely `HEAD^..HEAD`.)
+          fetch-depth: 0
           # Use RELEASE_TOKEN so git push triggers the Check workflow.
           # The default GITHUB_TOKEN cannot trigger other workflows.
           token: ${{ steps.release-token.outputs.ok == 'true' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
