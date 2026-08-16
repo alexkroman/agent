@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import { vi } from "vitest";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
-import { errorCode } from "./_utils.ts";
 
 /** Create a temp directory, run `fn`, then clean up. */
 export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -48,6 +47,23 @@ export function silenced<T>(fn: (dir: string) => Promise<T>) {
 }
 
 /**
+ * `err` is a filesystem EEXIST.
+ *
+ * Spelled out here rather than imported from `_utils.ts`, which has the same
+ * predicate: `_dev-server.test.ts` and `_dev-server-restart.test.ts` MOCK
+ * `./_utils.ts` with a factory that imports `_dev-server-test-utils.ts`, which
+ * imports THIS file — so importing `_utils.ts` from here closes a cycle
+ * through the mock registry, and that HANGS the run rather than failing it
+ * (see `aaiRuntimeModule`'s note on the same trap). Four lines of duplication
+ * against a hang with no error message is the right trade.
+ */
+function isEexist(err: unknown): boolean {
+  return err instanceof Error && "code" in err && typeof err.code === "string"
+    ? err.code === "EEXIST"
+    : false;
+}
+
+/**
  * Symlink this package's node_modules into a fixture project so the worker
  * wrapper's `@alexkroman1/aai/manifest` import (and any fixture import of
  * `zod`) resolves — a real project always has the SDK installed.
@@ -66,7 +82,7 @@ export async function linkSdkNodeModules(dir: string): Promise<void> {
       "dir",
     )
     .catch((err: unknown) => {
-      if (errorCode(err) !== "EEXIST") throw err;
+      if (!isEexist(err)) throw err;
     });
 }
 

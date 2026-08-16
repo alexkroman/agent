@@ -16,7 +16,6 @@ import {
   mockResolveServerEnv,
   mockValidateAgentExport,
   primeDevServerMocks,
-  withViteMock,
 } from "./_dev-server-test-utils.ts";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -76,6 +75,32 @@ describe("watchDirectory", () => {
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * Install a `vite` module mock for the duration of `fn`, then unmock it.
+ *
+ * The unmock is in a `finally` and that is the whole point: written inline, a
+ * failed assertion above `vi.doUnmock("vite")` leaves the mock installed for
+ * every LATER test that reaches the client-build branch, so one red test turns
+ * into a cascade that names the wrong cause.
+ *
+ * It stays in THIS file rather than in `_dev-server-test-utils.ts`, even
+ * though both callers are here: that module is the factory source for every
+ * `vi.mock(...)` above, and adding a `vi.doMock` to it makes the mock registry
+ * reach back into a module it is mocking from — which HANGS the run rather
+ * than failing it (the same trap `aaiRuntimeModule`'s comment records).
+ */
+async function withViteMock(
+  factory: () => Record<string, unknown>,
+  fn: () => Promise<void>,
+): Promise<void> {
+  vi.doMock("vite", factory);
+  try {
+    await fn();
+  } finally {
+    vi.doUnmock("vite");
+  }
+}
 
 /** Write a minimal agent.ts in the given directory. */
 async function writeAgentTs(dir: string, name = "test-agent"): Promise<void> {
