@@ -929,15 +929,32 @@ since the previous poll — the last one covering the filesystem walk between
 turn that never reaches `onFinish` must not redden every following test.
 
 **A test's TIER is what it touches, and this package is the worst offender.**
-Thirteen files here write to the filesystem, bind a port, or spawn a subprocess
-while sitting in the 5s unit tier; `studio-build.test.ts` and
-`studio-test.test.ts` hand-write `timeout: 120_000` per test, which is the
-SCENARIO tier's timeout re-declared because the tier was not used, and
-`studio-chat.test.ts` stubs out the real `typecheck` for the same reason.
-`vitest.config.ts` now excludes `**/*.integration.test.ts` and
-`**/*.scenario.test.ts`, so a rename actually relocates a file — that exclude
-was missing, and without it a rename left the file in BOTH tiers. Relocating one
-still needs the other half: a `check:scenario` script in this package's
-`package.json` (`vitest run -c ../../vitest.slow.config.ts`, with
-`VITEST_PROFILE=scenario` and a `VITEST_INCLUDE` naming the files), since turbo's
-`check:scenario` task fans out to a per-package script and there is none here.
+Eleven files here still write to the filesystem, bind a port, or spawn a
+subprocess while sitting in the 5s unit tier, and `studio-chat.test.ts` stubs out
+the real `typecheck` because of it.
+
+The scenario tier is REACHABLE now — `vitest.config.ts` excludes both slow-tier
+globs (without which a rename left a file in BOTH tiers), and `package.json`
+declares the `test:scenario`/`check:scenario` pair that turbo's `check:scenario`
+task fans out to. `studio-build` and `studio-test` are the worked example, and
+what they taught is worth copying:
+
+- **A moved file gives up its unit coverage, and the fix is a SPLIT, not a
+  floor.** Moving both files whole took the package from 83.88/75.58/84.49/85.79
+  to 81.26/72.97/82.27/83.03 — still over every floor, but with 0.03 points of
+  line headroom, which is a landmine rather than a pass. Splitting each file on
+  what it TOUCHES put it back: `studio-build.test.ts` keeps `scrubDir`,
+  `formatBuildFailure` and `toolchainModules` (a filesystem READ is unit-legal),
+  `studio-test.test.ts` keeps `formatTestRun`, and only the build-dir lifecycle,
+  the typecheck gate and the real vitest spawns are scenario. That is the tier
+  rule applied properly, and it lands at 81.73/74.41/82.59/83.48. Floors do not
+  move.
+- **Delete the hand-written `timeout: 120_000`s.** Five of them, which WERE the
+  scenario tier's timeout re-declared because the tier was not used.
+- **A shared PID is not a shared module registry.** Both files ran green in the
+  unit tier and one failed reliably once they were the only two in a run: vitest's
+  `threads` pool gives each file its own module instance inside the SAME process,
+  so `withBuildDir`'s module-scoped counter handed both `build-1` under a
+  `workspacesRoot()` keyed by `process.pid`, and one file's cleanup deleted the
+  other's live directory. It surfaces as `ENOENT: uv_cwd` from inside rolldown,
+  naming nothing. The directory name carries a random token now.

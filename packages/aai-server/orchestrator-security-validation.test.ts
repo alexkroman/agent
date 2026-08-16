@@ -8,8 +8,8 @@
 import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
+import { SLUG_WS_RE, wsSlugFromPath } from "./orchestrator-ws.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
 import { createTestOrchestrator, createTestStore, deploy, deployAgent } from "./test-utils.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
@@ -144,13 +144,14 @@ describe("security headers on all response types", () => {
 // ── WebSocket URL Validation ───────────────────────────────────────────
 
 describe("websocket URL validation", () => {
-  // Upgrades bypass Hono routing, so `createWsUpgrades` matches the path itself,
-  // composing `^\/(SLUG_PATTERN_SOURCE)\/websocket$` (orchestrator-ws.ts). This
-  // composes from that SAME exported source rather than restating the grammar:
-  // the hand-written copy that used to live here had no length bound
+  // Upgrades bypass Hono routing, so `createWsUpgrades` matches the path
+  // itself. This binds to the PRODUCTION regex (`SLUG_WS_RE`, orchestrator-ws.ts)
+  // rather than recomposing the pattern: a recomposed copy had no length bound
   // (`[a-z0-9_-]*` against production's `{0,62}`), so it accepted a 200-char
-  // slug the upgrade path rejects, and a grammar change could not fail it.
-  const wsPathRegex = new RegExp(`^\\/(${SLUG_PATTERN_SOURCE})\\/websocket$`);
+  // slug the upgrade path rejects — and even after that was fixed by composing
+  // from `SLUG_PATTERN_SOURCE`, deleting the production regex outright would
+  // not have failed this file.
+  const wsPathRegex = SLUG_WS_RE;
 
   test.each([
     ["a plain slug", "/my-agent/websocket"],
@@ -176,6 +177,8 @@ describe("websocket URL validation", () => {
   });
 
   test("the slug it captures is the one the upgrade handler brokers", () => {
-    expect(wsPathRegex.exec("/my-agent/websocket")?.[1]).toBe("my-agent");
+    // `wsSlugFromPath` is the function the upgrade handler itself calls.
+    expect(wsSlugFromPath("/my-agent/websocket")).toBe("my-agent");
+    expect(wsSlugFromPath("/../etc/passwd/websocket")).toBeUndefined();
   });
 });

@@ -1,33 +1,18 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Guest build helpers: diagnostic scrubbing, build-dir lifecycle, and the
-// typecheck-first gate. Full builds through the real bundlers are covered by
-// aai-server's workspace-build-integration.test.ts; here we pin the pure
-// formatting and the failure paths the coding agent reads.
+// Guest build helpers, UNIT tier: the pure formatting the coding agent reads
+// (`scrubDir`, `formatBuildFailure`) and the toolchain search, which only
+// READS the filesystem.
+//
+// The build-dir lifecycle and the typecheck-first gate WRITE files and spawn
+// `tsc`, so they are the scenario tier's — `studio-build.scenario.test.ts`.
+// Splitting on what a test TOUCHES is the membership rule; it also keeps these
+// three functions' coverage in the tier `test:coverage` measures.
 
 import { existsSync } from "node:fs";
-import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test, vi } from "vitest";
-import { materialize } from "./_test-utils.ts";
-import {
-  buildWorkspaceDir,
-  formatBuildFailure,
-  scrubDir,
-  toolchainModules,
-  typecheckWorkspaceDir,
-  withBuildDir,
-  workspacesRoot,
-} from "./studio-build.ts";
+import { describe, expect, test } from "vitest";
+import { formatBuildFailure, scrubDir, toolchainModules } from "./studio-build.ts";
 import { toolchainPromptSection } from "./studio-session.ts";
-import { ensureWorkspaceDependencies } from "./studio-workspace-deps.ts";
-
-// Mocked for both directions: it keeps a build here from ever spawning a real
-// `npm install`, and it is the only way to drive the warning path without one.
-// Its own behaviour is covered in studio-workspace-deps.test.ts.
-vi.mock("./studio-workspace-deps.ts", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("./studio-workspace-deps.ts")>();
-  return { ...mod, ensureWorkspaceDependencies: vi.fn(() => Promise.resolve(null)) };
-});
 
 describe("toolchainModules", () => {
   // The prompt section the guest appends names these paths outright, and
@@ -109,111 +94,5 @@ describe("formatBuildFailure", () => {
 
   test("a non-Error value is stringified", () => {
     expect(formatBuildFailure("weird", dir)).toBe("Build failed:\nweird");
-  });
-});
-
-describe("withBuildDir", () => {
-  test("materializes into a fresh dir under the workspaces root and cleans up", async () => {
-    let seen: string | undefined;
-    const result = await withBuildDir(
-      { "agent.ts": "export {};" },
-      async (dir, files) => {
-        seen = dir;
-        await materialize(dir, files);
-      },
-      async (dir) => (await readdir(dir)).sort(),
-    );
-    expect(result).toEqual(["agent.ts"]);
-    expect(seen).toContain(workspacesRoot());
-    // Cleaned up even on success — a Publish build never lingers.
-    await expect(readdir(seen as string)).rejects.toThrow();
-  });
-
-  test("cleans up when the build throws", async () => {
-    let seen: string | undefined;
-    await expect(
-      withBuildDir(
-        {},
-        async (dir) => {
-          seen = dir;
-        },
-        async () => {
-          throw new Error("build exploded");
-        },
-      ),
-    ).rejects.toThrow("build exploded");
-    await expect(readdir(seen as string)).rejects.toThrow();
-  });
-});
-
-describe("typecheckWorkspaceDir", () => {
-  test("a workspace without a tsconfig skips rather than failing", async () => {
-    const result = await withBuildDir({ "agent.ts": "export {};\n" }, materialize, (dir) =>
-      typecheckWorkspaceDir(dir),
-    );
-    expect(result).toEqual({ ok: true, skipped: true });
-  });
-
-  test("type errors come back scrubbed and annotated, like a build's", {
-    timeout: 120_000,
-  }, async () => {
-    const result = await withBuildDir(
-      {
-        "tsconfig.json": JSON.stringify({
-          compilerOptions: { strict: true, noEmit: true, skipLibCheck: true, types: [] },
-        }),
-        "agent.ts": `export const n: number = "nope";\n`,
-      },
-      materialize,
-      (dir) => typecheckWorkspaceDir(dir),
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.output).toContain("agent.ts");
-      expect(result.output).not.toContain(workspacesRoot());
-    }
-  });
-});
-
-describe("buildWorkspaceDir", () => {
-  test("type errors fail the build with scrubbed diagnostics, before bundling", {
-    timeout: 120_000,
-  }, async () => {
-    const result = await withBuildDir(
-      {
-        "tsconfig.json": JSON.stringify({
-          compilerOptions: { strict: true, noEmit: true, skipLibCheck: true, types: [] },
-        }),
-        "agent.ts": `export const n: number = "nope";\n`,
-      },
-      materialize,
-      (dir) => buildWorkspaceDir(dir, { worker: true, client: false }),
-    );
-    expect(result.worker).toBeUndefined();
-    expect(result.buildError).toContain("Type check failed");
-    expect(result.buildError).toContain("agent.ts");
-    // The scratch path never reaches the coding agent.
-    expect(result.buildError).not.toContain(workspacesRoot());
-  });
-
-  test("a dependency that would not install is named ahead of the failure it causes", {
-    timeout: 120_000,
-  }, async () => {
-    // Without this the agent reads only the bundler's "failed to resolve
-    // import", naming a package its own package.json plainly declares.
-    vi.mocked(ensureWorkspaceDependencies).mockResolvedValueOnce("Could not install ms");
-    const result = await withBuildDir(
-      {
-        // Same tsconfig as the test above, so this fails at the typecheck
-        // gate rather than paying for a full (doomed) bundle.
-        "tsconfig.json": JSON.stringify({
-          compilerOptions: { strict: true, noEmit: true, skipLibCheck: true, types: [] },
-        }),
-        "agent.ts": `export const n: number = "nope";\n`,
-      },
-      materialize,
-      (dir) => buildWorkspaceDir(dir, { worker: true, client: false }),
-    );
-    expect(result.buildError).toMatch(/^Could not install ms/);
   });
 });

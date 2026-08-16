@@ -203,7 +203,16 @@
       "env": [
         "VITEST_PROFILE",
         "VITEST_INCLUDE",
-        "VITEST_POOL"
+        "VITEST_POOL",
+        // `pipeline-reference.integration.test.ts` SKIPS without a reference
+        // stack and this turns that skip into a hard failure. Same shape and
+        // same reason as `AAI_REQUIRE_PG` / `AAI_REQUIRE_STACK` on
+        // `check:scenario` below: strict env mode strips an undeclared variable
+        // before the task starts, so the enforcement would be silently inert —
+        // which is the exact failure it exists to prevent. In `env` rather than
+        // `globalPassThroughEnv` because it selects what the task DOES: a
+        // required run and a skippable one must not share a cache entry.
+        "AAI_REQUIRE_REFERENCE_STACK"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",

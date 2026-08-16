@@ -1,7 +1,6 @@
 {
   "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
-    "packages/aai-cli/e2e.test.ts": 1,
     "packages/aai-ui/default-client.tsx": 1,
     "packages/aai-ui/types.test.ts": 2
   },
@@ -16,16 +15,10 @@
     "packages/aai-templates/templates/solo-rpg/client.tsx": 2,
     "packages/aai-ui/components/message-list.tsx": 1,
     "packages/aai/host/_mock-ws.ts": 1,
-    "packages/aai/host/integration/pipeline-reference.integration.test.ts": 2,
     "packages/aai/host/providers/_utils.ts": 1,
-    "packages/aai/host/providers/tts/rime.test.ts": 2,
     "packages/aai/host/transports/_pipeline-transport-harness.ts": 1,
     "packages/aai/host/transports/pipeline-transport.ts": 1,
     "packages/aai/index.ts": 1
-  },
-  "as any": {
-    "packages/aai/host/agent-tools.test.ts": 1,
-    "packages/aai/host/agent-tools.ts": 1
   },
   "as unknown as": {
     "packages/aai-cli/_default-html.test.ts": 2,
@@ -47,18 +40,13 @@
     "packages/aai-server/serve-lifecycle.ts": 2,
     "packages/aai-server/supabase-auth.test.ts": 2,
     "packages/aai-server/ws.scenario.test.ts": 1,
-    "packages/aai-studio-client/src/_test-utils.ts": 1,
-    "packages/aai-studio-server/_studio-routes-test-utils.ts": 1,
     "packages/aai-studio-server/_studio-session-test-utils.ts": 2,
-    "packages/aai-studio-server/studio-concurrency-fuzz.test.ts": 1,
     "packages/aai-studio-server/studio-routes-contract.test.ts": 2,
     "packages/aai-studio-server/studio-routes.test.ts": 1,
     "packages/aai-studio-server/studio-session-broker.test.ts": 1,
     "packages/aai-studio-server/studio-session-idle.test.ts": 2,
-    "packages/aai-studio-server/studio-sse.test.ts": 1,
     "packages/aai-studio-server/studio-static.test.ts": 2,
     "packages/aai-templates/templates/retail/agent.test.ts": 1,
-    "packages/aai-templates/templates/retail/shared.test.ts": 2,
     "packages/aai-templates/templates/retail/store.ts": 1,
     "packages/aai-ui/_react-test-utils.ts": 3,
     "packages/aai-ui/_session-core-test-utils.ts": 2,
@@ -91,11 +79,9 @@
     "packages/aai/host/transports/pipeline-llm-stream.test.ts": 1,
     "packages/aai/host/transports/pipeline-openai-replay.test.ts": 2,
     "packages/aai/host/transports/pipeline-smooth.test.ts": 1,
-    "packages/aai/host/transports/pipeline-trace.test.ts": 1,
     "packages/aai/host/transports/s2s-transport.test.ts": 2,
     "packages/aai/host/ws-frames.ts": 1,
-    "packages/aai/sdk/protocol-compat.test.ts": 1,
-    "packages/aai/sdk/testing.ts": 1
+    "packages/aai/sdk/protocol-compat.test.ts": 1
   },
   "as never": {
     "packages/aai-cli/_cli-common.test.ts": 2,

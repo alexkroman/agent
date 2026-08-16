@@ -200,11 +200,11 @@ describe("check-file-length", () => {
     // this suite could not tell — the same shape as the fnmatch bug above, one
     // level up.
     //
-    // It matters more here than in the sibling gates because `check-file-length`
-    // carries NO corpus floor of its own (its three siblings all do): an empty
-    // `git ls-files` result makes it print `all files within caps ✓` and exit 0.
-    // Until that floor lands in the script, this is the only thing standing
-    // between a renamed directory and a gate measuring nothing.
+    // The script carries a corpus floor of its own now (`MIN_CORPUS`, pinned by
+    // the test below), which catches the case where the WHOLE tree stops
+    // resolving. This assertion is the finer-grained half it cannot replace: one
+    // dead pathspec among six leaves the total far above any floor, so only a
+    // per-spec check can tell "this glob is broken" from "the tree shrank".
     const specs = listAllPathspecs();
     expect(specs.length, "no pathspecs parsed out of listAll()").toBeGreaterThanOrEqual(5);
     expect(corpus.length, "the file corpus is empty").toBeGreaterThan(800);
@@ -229,12 +229,35 @@ describe("check-file-length", () => {
     }
   });
 
-  test("the measured set is not empty, which is what the gate cannot tell you", () => {
-    // The floor `check-file-length.mjs` does not have, asserted from the outside.
+  test("the gate carries a corpus floor of its own", () => {
     // `git ls-files` exits 0 on a pathspec that matches nothing, so a package
-    // rename or a typo'd glob leaves the gate walking zero files and printing a
-    // checkmark — the same silent-zero shape `check:hatches`, `check:invariants`
-    // and `check:test-assertions` each carry a floor against.
+    // rename or a typo'd glob leaves the gate walking zero files and printing
+    // `all files within caps ✓` — the same silent-zero shape `check:hatches`,
+    // `check:invariants` and `check:test-assertions` each carry a floor against,
+    // and the one this gate was missing.
+    //
+    // Pinned here rather than trusted because the floor is itself a thing that
+    // can be deleted while every run stays green: it only ever fires on a broken
+    // tree, so nothing else would notice its absence.
+    expect(
+      script,
+      "MIN_CORPUS is gone — the gate can print a checkmark over an empty tree",
+    ).toMatch(/const MIN_CORPUS = \d+;/);
+    expect(script).toContain("files.length < MIN_CORPUS");
+    // Not applied to `--staged`, which measures the subset one commit touches
+    // and is legitimately zero on most commits.
+    expect(script).toContain("!STAGED && files.length < MIN_CORPUS");
+
+    // Read through the same helper the caps use, so the floor cannot be a
+    // number this spec invented.
+    const declared = constant("MIN_CORPUS");
+    expect(declared, "the floor must be a real number, well under the corpus").toBeGreaterThan(0);
+    expect(declared).toBeLessThan(corpus.length);
+  });
+
+  test("the measured set is not empty, which is what the gate cannot tell you", () => {
+    // The same floor from the outside, over an independently-built corpus — so
+    // the script agreeing with itself is not what makes this pass.
     const patterns = listAllPathspecs().map(pathspecToRegExp);
     const measured = corpus.filter(
       (file) =>

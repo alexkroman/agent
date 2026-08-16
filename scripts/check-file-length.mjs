@@ -66,6 +66,31 @@ const TEST_MAX = 700;
  */
 const WARN_RATIO = 0.9;
 
+/**
+ * Corpus floor: below this many measured files the run is a FAILURE, not a pass.
+ *
+ * `git ls-files` exits 0 both for "no matches" and for "that pathspec matched
+ * nothing", and the two are indistinguishable from the exit code — so a package
+ * rename, a moved directory, or a typo'd glob leaves this gate walking zero
+ * files and printing `all files within caps ✓`. That is the silent-zero shape
+ * every sibling gate carries a floor against (`check-escape-hatches.mjs` and
+ * `guard-invariants.mjs` share one at 800 via `_ratchet.mjs`;
+ * `check-test-assertions.mjs` carries its own pair), and this was the one
+ * without — the reason `file-length-gate.test.ts` had to assert it from the
+ * outside instead.
+ *
+ * Measured 2026-08: **1222** files after the `/dist/` and template exclusions
+ * (1258 `packages/**\/*.ts`, 102 `.tsx`, 38 `scripts/*.mjs`, 1
+ * `scripts/**\/*.mjs`; the two `scripts/**\/*.ts` globs are empty by
+ * construction and declared as such in that spec). 800 is well under it and is
+ * deliberately the same number the siblings use — it is a floor against the
+ * corpus VANISHING, not a target, so it should not be tuned to the tree.
+ *
+ * Not applied in `--staged` mode, which measures the subset one commit touches
+ * and is legitimately zero on most commits.
+ */
+const MIN_CORPUS = 800;
+
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const STAGED = flag("--staged");
@@ -138,6 +163,19 @@ const listStaged = () =>
   git(["diff", "--cached", "--name-only", "--diff-filter=ACM"]).filter(isMeasured);
 
 const files = [...new Set(STAGED ? listStaged() : listAll())].sort();
+
+if (!STAGED && files.length < MIN_CORPUS) {
+  console.error(
+    `check-file-length: only ${files.length} file(s) matched, under the floor of ${MIN_CORPUS}.\n` +
+      "\nThis is not a pass. `git ls-files` exits 0 on a pathspec that matches nothing,\n" +
+      "so a renamed package or a typo'd glob makes this gate measure an empty tree and\n" +
+      "print a checkmark. Check the pathspecs in `listAll()` with\n" +
+      '`git ls-files "<glob>"` — a pathspec is fnmatch WITHOUT FNM_PATHNAME, so\n' +
+      "`scripts/**/*.mjs` requires a subdirectory and `scripts/*.mjs` is a separate\n" +
+      "entry. If the tree really did shrink this far, lower MIN_CORPUS deliberately.",
+  );
+  process.exit(1);
+}
 
 const violations = [];
 const staleAllowlist = [];

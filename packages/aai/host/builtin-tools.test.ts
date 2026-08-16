@@ -3,17 +3,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext, fakeFetch } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
-
-/**
- * Mirrors the module-private `SESSION_NOTES_TTL_MS` in `host/session-notes.ts`
- * (NOT `builtin-tools.ts`, which is where this comment used to point).
- *
- * A hand-mirrored constant is the pattern the package guide records failing
- * twice with the voices list. It fails loudly on drift today — the TTL test
- * either expires nothing or expires everything — but the fix is to export it
- * from `session-notes.ts` and import it here.
- */
-const SESSION_NOTES_TTL_MS = 86_400_000;
+import { SESSION_NOTES_TTL_MS } from "./session-notes.ts";
 
 /**
  * Invoke the host-side run_code def. run_code no longer executes on the host —

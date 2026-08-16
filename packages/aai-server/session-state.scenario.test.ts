@@ -22,7 +22,7 @@
  *
  * ```sh
  * AAI_TEST_PG_URL='postgresql://postgres:postgres@127.0.0.1:54322/postgres' \
- *   pnpm --filter aai-server test:integration
+ *   pnpm --filter aai-server test:scenario
  * ```
  */
 

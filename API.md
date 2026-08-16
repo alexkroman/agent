@@ -3631,7 +3631,7 @@ export type ProviderEnv = Record<string, string> & {
 };
 
 // @internal
-export function publishStepEnv(env: Readonly<Record<string, string | undefined>>): void;
+export function publishStepEnv(env: Readonly<Record<string, string | undefined>> | undefined): void;
 
 // @internal
 export function publishStepFetch(fetchFn: StepFetch | undefined): void;

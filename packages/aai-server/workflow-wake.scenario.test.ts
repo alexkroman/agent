@@ -25,7 +25,7 @@
  * hint reads), because installing the DevKit's world would pull its whole
  * migration set for a query that only needs the shape.
  *
- * Runs in the integration tier (`pnpm test:integration`) against
+ * Runs in the scenario tier (`pnpm test:scenario`) against
  * `AAI_TEST_PG_URL`. Core Postgres only — no extensions.
  */
 

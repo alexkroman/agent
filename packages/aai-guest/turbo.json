@@ -1,0 +1,54 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // `studio-project-shape.test.ts` is a DRIFT GATE over files in another
+    // package: it reads `aai-templates/scaffold/package.json` and
+    // `scaffold/tsconfig.json` to hold `WORKSPACE_DEPENDENCIES` and
+    // `workspaceTsconfig()` against the scaffold a laptop project is built
+    // from. Neither file is named by any input glob this package owns.
+    //
+    // It is NOT currently being served from cache, and the reason is worth
+    // recording because it is not a property of this gate: `aai-guest` depends
+    // on `@alexkroman1/aai-cli`, which depends on `aai-templates`, so a scaffold
+    // change reaches this task's hash through `^build`. Measured — a content
+    // change to `scaffold/package.json` moved `aai-guest#test` from
+    // `42b897009ad2e1c1` to `1b91b7c4b8fdb099` with no file here at all.
+    //
+    // That is INCIDENTAL. The edge exists because the CLI bundles the templates
+    // as shipped product, not because this gate reads the scaffold, and it
+    // evaporates the moment either coupling changes — the CLI stops vendoring
+    // the templates, or its `build` inputs narrow. Naming the two files makes
+    // the gate's real inputs its own, which is what the same rule in
+    // `packages/aai-templates/turbo.json` says. Verified from the other side
+    // too: with these globs, `0766f2de438c1233` → `6799467bdebf7bbc` → back.
+    //
+    // `inputs` globs resolve relative to the PACKAGE, so a repo-root file needs
+    // the `$TURBO_ROOT$` prefix. A task named here REPLACES the root's
+    // definition rather than merging with it, so `env` and `outputs` are
+    // restated verbatim — dropping either is silent.
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "../../vitest.shared.ts",
+        "$TURBO_ROOT$/packages/aai-templates/scaffold/package.json",
+        "$TURBO_ROOT$/packages/aai-templates/scaffold/tsconfig.json"
+      ],
+      "env": ["CI", "VITEST_POOL"]
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "../../vitest.shared.ts",
+        "$TURBO_ROOT$/packages/aai-templates/scaffold/package.json",
+        "$TURBO_ROOT$/packages/aai-templates/scaffold/tsconfig.json"
+      ],
+      "outputs": ["coverage/**"],
+      "env": ["CI", "VITEST_POOL"]
+    }
+  }
+}

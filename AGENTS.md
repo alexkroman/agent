@@ -275,8 +275,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
   `@ts-nocheck`, `biome-ignore`, `eslint-disable`, `as any`,
   `as unknown as`, `as never`) across `packages/` and `scripts/` and holds each
-  FILE to the count recorded in `scripts/escape-hatch-baseline.json`. A file may hold
-  fewer; it may never hold more; a file absent from a pattern may hold none.
+  FILE to the count recorded in `scripts/escape-hatch-baseline.json`. A file
+  may hold fewer; it may never hold more; a file absent from a pattern may
+  hold none.
   Fix the underlying type/lint error instead of suppressing it. On failure it
   **names the offending lines** (`file:line` plus the source line) under each
   file over budget.
@@ -306,7 +307,6 @@ one commit of history. A file in the tree has no merge base and no such modes.
   escape — byte-identical behaviour, and the file is text again. A genuinely
   binary extension goes in `KNOWN_BINARY` in `scripts/_ratchet.mjs`, which is a
   DENY-list so a new source extension defaults into being checked.
-
 
   **The three CAST patterns skip COMMENT-ONLY lines; the five suppression
   patterns do not.** A `biome-ignore` genuinely is a comment, and suppressing
@@ -556,9 +556,13 @@ one commit of history. A file in the tree has no merge base and no such modes.
   DERIVED from the rule definitions — the prose copy that used to live in the
   script's header went three rules stale (17, 18 and 19 were absent) while the
   one computed line, the printed count, stayed right. The per-file baselines
-  carry the same `--update`-only-lowers contract as `check:hatches`. Every
-  baselined occurrence is
-  legitimate and says so in the JSON — three spread-ternaries where **the guard
+  carry the same `--update`-only-lowers contract as `check:hatches`.
+
+  **Every baselined occurrence is legitimate, and the JSON is NOT where it says
+  so** — that file is a bare `{path: count}` map written by `--update`, with
+  `_description` its only prose, so a reason recorded there would be erased by
+  the next regeneration. A reason lives at the OCCURRENCE, in a comment beside
+  the line, and the roster is here: three spread-ternaries where **the guard
   is not the value** (`String(params.port)` would stringify `undefined` into
   `"undefined"`; `{ mode: 0o700 }` sets a different value from the one it
   tests), the CLI test setup's env scrub, one hand-rolled owned-map in
@@ -569,6 +573,13 @@ one commit of history. A file in the tree has no merge base and no such modes.
   user's own agent may not import an SDK internal, so the hand-rolled form is
   what that fixture is demonstrating), and the two `scripts/*.mjs` guards that a
   plain-node gate cannot replace with an SDK import.
+
+  Rule 4's nine are zero-delay yields that cannot use `flush()`/`tick()`:
+  `tool-executor.ts`'s `setImmediate` between tool calls (shipped source, where
+  a test helper is not the remedy), the S2S fuzz harness's `drain()` — its own
+  doc has the measurement, `setTimeout(0)`'s ~1 ms floor costing that suite
+  ~60 s across tens of thousands of yields with no timer in the path to jump
+  ahead of — and six in packages not importing `aai/host/_test-utils.ts`.
 
   **The frozen `contracts/compatibility/**` examples are no longer baselined at
   all** — they are excluded from every line rule by a pathspec in
@@ -1131,8 +1142,9 @@ and the section above admits how it gets made: a judgement from memory, where a
 
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
 `check:api-report` in `scripts/check.sh` and in the CI check job) closes that.
-Twenty-five **capabilities** — named slices of the authoring API, each declared by
-a file under `<package>/contracts/entrypoints/` that may contain nothing but
+Twenty-five **capabilities** — named slices of the authoring API, each
+declared by a file under `<package>/contracts/entrypoints/` that may contain
+nothing but
 `export { … } from "<a published subpath>"` — get a report of their own, and what
 is committed is that report's hash plus its export list, at
 `contracts/epochs/<capability>/v<N>.json`. When a capability's shape moves the
@@ -1623,8 +1635,31 @@ What that buys, and the rules that come with it:
   (`fc.statistics` only prints), and an all-green property proves nothing about
   a state the generator never entered. They are also LOOSER than the fixed-seed
   versions they replaced, by design: a fixed seed list produced near-constant
-  counts, while fast-check draws a fresh seed per run. Set them ~3x below
-  measured actuals and record the actuals in a comment.
+  counts, while fast-check draws a fresh seed per run.
+
+  **Set the floor under the OBSERVED MINIMUM across many runs, and record the
+  RANGE plus the run count in the comment — not one actual, never a fraction of
+  the mean.** This guide said "~3x below measured actuals" and that is wrong,
+  measured: three drafts calibrated that way tripped on real runs while flooring
+  `aai-ui`'s five property suites (22-27 runs each). What a walk reaches is
+  correlated WITHIN a run rather than independent per step, so these
+  distributions have long left tails — one counter averaging **38** came out at
+  **3** on a single run, an order of magnitude under any multiple of its mean.
+  Only the observed minimum is evidence about the unluckiest run, and one run is
+  not a range.
+
+  The five `aai-ui` suites are the worked example — `fuzz-voiceio`'s
+  `judgedDones` at `> 45` against a measured 158-203, `fuzz-hooks`'s
+  `lateSettles` at `4` against 24-51 — each with its range in a trailing comment.
+  Two corollaries: a state whose whole range is small gets `> 0`, the floor being
+  there to catch a state NEVER reached rather than to pin how often; and a state
+  measured but deliberately left UNFLOORED says so in place —
+  `studio-concurrency-fuzz`'s unreachable archive path,
+  `fuzz-session-core`'s settled tool call (0-5 of 200 runs, owned by
+  `fuzz-hooks`), and `audio-stress`'s `concealments` (1-5 of 25 runs; longer
+  sources, `jitterMs`/`refillMs` tuning and stall bursts were each measured and
+  each left it unchanged — `playback-processor.test.ts` covers concealment
+  deterministically).
 - **A generator must not break its own contract.** The failure looks like a
   finding and is not. An all-false pacing script in `audio-stress` never
   delivered a chunk, so the delivery loop rendered forever and died on

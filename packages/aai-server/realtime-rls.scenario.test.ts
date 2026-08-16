@@ -68,8 +68,9 @@ import { createRealtimePlatformEvents } from "./realtime-events.ts";
 // one gated the leak control, i.e. the one assertion here that a working
 // stream can fail, and it printed nothing and was covered by no
 // `AAI_REQUIRE_*`: the day `supabase status -o env` stops naming `ANON_KEY`,
-// the control would have disappeared under a green run. It is gone, and
-// `anonKey()` throws instead.
+// the control would have disappeared under a green run. It is gone: the anon
+// key is part of the gate's own conjunction now, so `stackEnv().anonKey` is a
+// non-optional `string` past it and needs no second check of its own.
 
 /** Realtime join + first frame, locally. Generous: the tier retries twice. */
 const DELIVERY = { timeout: 15_000, interval: 50 } as const;
@@ -118,22 +119,14 @@ describeWithStack("the platform change stream survives RLS being enabled", () =>
   /**
    * The anon key, for the leak control below.
    *
-   * Throws rather than skipping: a stack that resolved the URL and the service
-   * key and not this one is broken WIRING, not a machine without a stack, and
-   * the outcome of that has to be a red test. The skip for "no stack at all" is
-   * `describeWithStack`'s, announced.
+   * No check of its own: `describeWithStack`'s gate is the conjunction of the
+   * database URL, the Supabase URL, the service key AND this one, so past the
+   * gate `stackEnv().anonKey` is a non-optional `string`. A stack that resolved
+   * three of the four never reaches here — it fails the gate, announced, and
+   * `AAI_REQUIRE_STACK` turns that announcement into a red run.
    */
   function anonKey(): string {
-    const key = stackEnv().anonKey;
-    if (!key) {
-      throw new Error(
-        "AAI_TEST_SUPABASE_ANON_KEY is unset, so the leak control cannot run.\n" +
-          "`pnpm test:pg` exports it out of `supabase status -o env` beside the URL and\n" +
-          "the service key; if those two arrived and this one did not, the CLI stopped\n" +
-          "naming it ANON_KEY.",
-      );
-    }
-    return key;
+    return stackEnv().anonKey;
   }
 
   async function insertAgent(slug: string): Promise<void> {
