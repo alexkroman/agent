@@ -53,6 +53,25 @@ function jobNames(): string[] {
     .filter((name): name is string => name !== undefined);
 }
 
+/** Everything above `jobs:` — the triggers and the concurrency block. */
+function header(): string {
+  const all = lines();
+  const end = all.indexOf("jobs:");
+  if (end === -1) throw new Error("check.yml has no top-level `jobs:` block");
+  return all.slice(0, end).join("\n");
+}
+
+/** The `branches: [...]` list belonging to the `push:` trigger. */
+function pushBranches(): string[] {
+  const found = /^\s*push:\s*\n\s*branches:\s*\[([^\]]*)\]/m.exec(header());
+  if (found === null)
+    throw new Error("check.yml declares no `push:` trigger with a bracketed `branches:`");
+  return (found[1] ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 /** The body of one job, from its key to the next job key (or end of file). */
 function jobBody(name: string): string {
   const all = lines();
@@ -124,6 +143,38 @@ describe("the ci gate job", () => {
       jobBody("ci"),
       'the ci gate accepts "skipped" again — a failed `setup` makes every other job skip',
     ).not.toContain('"skipped"');
+  });
+
+  test("it runs on a push to main, so something evaluates the branch itself", () => {
+    // The gate above is about a run REACHING a verdict. This is about a run
+    // happening at all: with `main` absent from the push list every run of this
+    // workflow was a `pull_request` evaluating a MERGE REF, so nothing anywhere
+    // evaluated main — and `release.yml` / `deploy.yml` / `docs.yml`, which no
+    // pull request runs, broke unreported (Release: 20 of 30 consecutive
+    // pushes). Same silent-absence shape as the rest of this package's gates:
+    // a green PR history that says nothing about the branch it merged into.
+    expect(
+      pushBranches(),
+      "check.yml no longer runs on a push to main — nothing evaluates the branch, only merge refs",
+    ).toContain("main");
+  });
+
+  test("it does not cancel superseded runs on a push", () => {
+    // Cancelling is right for a pull request, where only the newest push is a
+    // candidate. On a push it drops the verdict for a commit that is already on
+    // the branch, which is worst exactly when merges are landing fastest — so
+    // the setting has to be an expression scoped to pull requests, never a bare
+    // `true`.
+    const found = /^\s*cancel-in-progress:\s*(.+)$/m.exec(header());
+    expect(found, "check.yml declares no `cancel-in-progress`").not.toBeNull();
+    const value = found?.[1]?.trim() ?? "";
+    expect(
+      value,
+      "cancel-in-progress is unconditional again — a push to main cancels the previous commit's verdict",
+    ).not.toBe("true");
+    expect(value, "cancel-in-progress is no longer scoped to pull requests").toContain(
+      "pull_request",
+    );
   });
 
   test("it fails the run rather than only reporting", () => {
