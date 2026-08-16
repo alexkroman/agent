@@ -129,9 +129,24 @@ export const TEMPLATE_PATHSPECS = ["packages/aai-templates/templates"];
  * in the gate is what stops a rename emptying it silently.
  */
 export const GUEST_SURFACE_PATHSPECS = [
-  "packages/aai-guest",
+  // TypeScript only. A route literal is code, never config, and the bare
+  // `packages/aai-guest` this replaced matched every file in the package —
+  // including `turbo.json`, whose `"extends": ["//"]` is turbo's workspace-root
+  // sentinel and which this rule read as a prefix dispatch with no declared
+  // route under it. A false positive on a config file is how a rule gets
+  // muted rather than fixed.
+  //
+  // Both spellings, and NOT as a style choice: a git pathspec is fnmatch
+  // WITHOUT FNM_PATHNAME, so the literal slash in `**/*.ts` makes a
+  // subdirectory mandatory. Every source file in this package sits at the top
+  // level, so `packages/aai-guest/**/*.ts` alone resolves to ZERO files —
+  // verified with `git ls-files`. That is the same trap `check-file-length`'s
+  // `scripts/**/*.mjs` fell into; the corpus floor below is what turns a
+  // future recurrence into a failure instead of a checkmark.
+  "packages/aai-guest/*.ts",
+  "packages/aai-guest/**/*.ts",
   ":!packages/aai-guest/dist/**",
-  // Both spellings: the suites sit directly in the package root, which
+  // Both spellings again: the suites sit directly in the package root, which
   // `**/*.test.ts` does not match on its own.
   ":!packages/aai-guest/*.test.ts",
   ":!packages/aai-guest/**/*.test.ts",
