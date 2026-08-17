@@ -1,5 +1,56 @@
 # @alexkroman1/aai-ui
 
+## 6.0.0
+
+### Patch Changes
+
+- 16bec88: Workflow hooks report a failure's own message rather than `[object Object]` when a rejection is message-bearing without being an `Error` — `useWorkflowRun` and `useWorkflows`/`useWorkflowSubmit` now unwrap it with the SDK's `errorMessage` instead of a local `instanceof Error` ternary.
+- Updated dependencies [d81c752]
+- Updated dependencies [4afb67c]
+- Updated dependencies [0e99e1d]
+- Updated dependencies [ae9e607]
+- Updated dependencies [3df649f]
+- Updated dependencies [263d86a]
+- Updated dependencies [9fe4d07]
+- Updated dependencies [b5fdd60]
+- Updated dependencies [8c3c835]
+- Updated dependencies [a9497a3]
+- Updated dependencies [e923c72]
+- Updated dependencies [8cf6ffa]
+- Updated dependencies [3df649f]
+- Updated dependencies [d325a71]
+- Updated dependencies [a9497a3]
+- Updated dependencies [0f7c4da]
+- Updated dependencies [e923c72]
+- Updated dependencies [d5667c4]
+- Updated dependencies [0f7c4da]
+- Updated dependencies [49ac025]
+- Updated dependencies [f086dfe]
+- Updated dependencies [d2a6b0d]
+- Updated dependencies [0c411f4]
+- Updated dependencies [d764fc6]
+- Updated dependencies [d764fc6]
+- Updated dependencies [cd03641]
+- Updated dependencies [714cb82]
+- Updated dependencies [eb0da5f]
+- Updated dependencies [5e568e0]
+- Updated dependencies [304347b]
+- Updated dependencies [f037d0b]
+- Updated dependencies [50282d6]
+- Updated dependencies [6182917]
+- Updated dependencies [0f7c4da]
+- Updated dependencies [8ecbe38]
+- Updated dependencies [02d90e3]
+- Updated dependencies [9f74c34]
+- Updated dependencies [61c6630]
+- Updated dependencies [16bec88]
+- Updated dependencies [97339d9]
+- Updated dependencies [742bebf]
+- Updated dependencies [c48f243]
+- Updated dependencies [d5667c4]
+- Updated dependencies [e4fd8c5]
+  - @alexkroman1/aai@6.0.0
+
 ## 5.14.0
 
 ### Patch Changes

@@ -1,5 +1,251 @@
 # @alexkroman1/aai
 
+## 6.0.0
+
+### Major Changes
+
+- 0e99e1d: Fix 79 correctness findings and 133 cleanups from a whole-repo review sweep. BREAKING: slot.get() and the slot reading half now return DeepReadonly<T> rather than a shallow Readonly<T>. freezeStorable already deep-froze the value on every write, so mutating one always threw at runtime; the type simply did not say so, which moved the failure from compile time to first call. Two shipped templates were mutating a frozen slot value on every invocation, and the stricter type surfaced 37 more sites across the template suite. A domain helper typed over the mutable shape will now fail to compile: type it over DeepReadonly<T> (exported from the root). slot.set() also stores a copy rather than freezing the caller's own object in place.
+- ae9e607: Cut the root entry point down to the authoring API, and give `sessionSlot` the
+  two methods a slot-backed tool module was writing by hand.
+  
+  **Breaking.** `@alexkroman1/aai` exported 175 symbols, 71 of them `@internal`,
+  and 160 of them unused by any of the fourteen shipped templates — eleven
+  distinct symbols covered every one. It exports 92 now, and none is `@internal`.
+  Nothing is deleted; everything subtracted moved to the subpath that owns it:
+  
+  - Framework budgets with no `agent()` field to set (the client-audio constants,
+    provider connect deadlines, wire caps, `AGENT_CSP`, `WS_OPEN`, the
+    `WS_NORMAL_CLOSURE`/`MAX_*_BYTES` family) → `@alexkroman1/aai/internal`.
+  - The slug contract (`VALID_SLUG_RE`, `RESERVED_SLUGS`, `MAX_SLUG_LENGTH`,
+    `PREVIEW_SLUG_SUFFIX`), `linkConfirmationCode`, and the wire helpers
+    (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`,
+    `omitUndefined`) → `@alexkroman1/aai/utils`, where the CLI and the platform
+    already read them.
+  - `StandardSchemaV1`, `StandardSchemaResult` and `StandardSchemaIssue` are the
+    ecosystem spec `tool()` accepts rather than something an agent declares;
+    `ToolInputSchema` and `InferSchemaOutput` stay on the root.
+  
+  **`toolError` is renamed `serializeToolFailure` and is `@internal` on
+  `/utils`.** It returns the pre-serialized wire string, so
+  `isToolFailure(toolError(m))` was `false` — a trap under a name that read as
+  the constructor for the shape the guard tests, and used by none of the
+  templates despite its own doc pointing authors at it. The new `toolFailure(message)`
+  is that constructor, and pairs with `isToolFailure`.
+  
+  **New:** `slot.tool()` and `slot.updateTool()` hand `execute` the live slot
+  value as its second argument, so a tool in its own module needs neither a
+  `ToolContext<SlotStateOf<typeof slot>>` annotation nor an opening
+  `slot.get(ctx)` — the two lines that opened every tool in every stateful
+  template. `updateTool` runs the body inside `slot.update`, for a body that
+  awaits. `slot.state` is the `AgentDef.state` factory, so
+  `state: cartSlot.state` replaces the hand-written
+  `() => ({ [slot.key]: slot.create() })` that four of the five slot-backed
+  templates had omitted.
+  
+  Three capability epochs move with it (`pnpm check:api-contracts`): `tool` and
+  `defaults` to v2 with v1 DROPPED — their frozen examples no longer compile, and
+  the recorded reasons say why — and `state` to v2 with **v1 retained**, since
+  `slot.state`/`slot.tool`/`slot.updateTool` are additions and the epoch-1 example
+  still compiles beside the epoch-2 one. The `internal-surface` ratchet falls from
+  74 to 3: the only `@internal` names still reachable from a public subpath are
+  `capToolResult`, `isTextAssetPath` and `toArgsRecord` on `/utils`.
+- 3df649f: The three network builtins (`fetchJson`, `visitWebpage`, `webSearch` on `@alexkroman1/aai/tools`) now return `T | ToolFailure`. Their failure has always been an ANSWER rather than a throw — a model-facing contract that is not changing — but `Promise<T>` hid it, and all three callers in this repo wrote `?? []` / `?? ""`, which turns a refusal into an empty answer. Measured: DuckDuckGo answered 403 to both endpoints, so `research-workflow` and `plan-and-execute` reported "No results." for every search with the refusal nowhere; research-workflow even had a `catch` for it, which a returned value never reaches. Narrow with `isToolFailure`. An UNTYPED call is unaffected (`DefaultToolResult` is `any`), so only call sites precise enough to name a shape are asked to handle the failure they were already receiving. `aai:builtins` epoch 1 is dropped.
+- e923c72: A tool is only ever a FILE: `agent({ tools })` is gone. `tools/incident_create.ts` that default-exports `tool({ … })` IS the tool `incident_create`, enumerated where the bundle is assembled and named by nothing. The parameter now types `tools` as a message naming the file to create, and `agent()` throws on the key as well — neither bundler type-checks user code, so the type alone would leave the rule true of this repo and of no user's project. A resolved registry attaches with `withTools`, which is what the build and `withDiscoveredTools` both call; `sessionSlot()` is what carries the state shape into a tool's own module now that a map no longer checks it.
+- 0f7c4da: A session takes two vocabularies, not nineteen callbacks. `SessionCore` and `TransportCallbacks` (on `@alexkroman1/aai/runtime`) replace their per-event `on*` methods with `command(cmd)` for the client's command vocabulary and `report(event)` for the transport's event vocabulary — the same names `sdk/protocol-commands.ts` and `sdk/protocol-events.ts` already carry. Breaking for anything implementing either type; the authoring surface is untouched. `TransportEventBody`/`TransportEventType` are new exports, `host/session-commands.ts` is a new internal module, and `guard-invariants` rule 16 holds the per-file count.
+- 02d90e3: Session state is durable: a sessionSlot owns its own value and stores it, over Postgres when the app has a database and memory otherwise. `ctx.state` and its `any` are gone, along with `AgentDef.state`, the state type parameter on `ToolContext`/`ToolDef`/`AgentDef`, `InferAgentState` and `SlotState`/`SlotStateOf`. `slot.update` is synchronous and hands the body a mutable draft that is committed when it returns; `slot.get` returns a frozen `Readonly<T>`; `syncState` takes `slot.projection(view)`, which is callable so a client derives its own empty state from the same function.
+- 61c6630: A session's events are one vocabulary, one stream, and an agent can observe them. The wire is renamed onto a single discriminated union of stamped events — `config` is `session.configured`, `audio_done` is `audio.completed`, `speech_started` is `speech.started`, `user_transcript` is `user-transcript.committed` — each carrying a `meta` envelope with a stable id, and the `history` client command is gone: a reconnecting client no longer pushes its own memory back, because the server restores from its own retained stream. `ServerMessage` and `ClientMessage` remain as aliases of the schemas that now declare the two unions, `SessionEventSchema` and `SessionCommandSchema`. `agent({ events })` is the new authoring surface over that stream: a handler per event type plus a `"*"` catch-all, observe-only, non-fatal on throw, keyed on `meta.id` for at-least-once delivery — the first time an agent author could observe their own agent at all. `SessionEventHandlers`, `SessionEventHandler` and `SessionEventContext` are exported from the root, so a handler extracted out of the object literal into a function of its own has a type to name.
+
+### Minor Changes
+
+- d81c752: Workflow apps can take a FILE. `POST /workflows/uploads` stores one, `readUpload` reads a byte window of it from inside a `"use step"` function, and `workflow({ uploads })` is what makes a form render a picker and store the file before the run starts — a run's input is journaled and replayed, so bytes may never travel in it. Steps also narrate now: `report()` writes to the run's stream AND the server log, with the attempt number appended past the first, and `isTransientStatus`/`retryAfter` let a rate-limited step retry when the provider asked to be called back.
+- 3df649f: Add `stepFetch`/`multipartBody` — a step's HTTP, pinned to HTTP/1.1. Node's `fetch` offers h2 in ALPN, so a workflow fan-out multiplexes every concurrent request onto one connection: measured at 8 concurrent 17.66 MB uploads it lost 2 of 16 to NGHTTP2 stream resets at p50 8094ms, against 16 of 16 at p50 3037ms over HTTP/1.1. A reset carries no HTTP status, so `isTransientStatus`/`retryAfter` cannot classify it and a bounded batch retries in lockstep until the run dies. `stepGenerate` routes through it, `StepTransportError` names the whole cause chain, and `stubStepFetch` (`/testing`) is how a spec answers it.
+- 263d86a: Wake durable workflow runs whose sandbox has exited: guests publish the earliest time their queue needs a process, and the platform boots one when it comes due.
+- b5fdd60: Replace three hand-rolled parsers with the libraries already in the tree: the workflow run event stream now parses with `eventsource-parser` (the parser aai-studio-client already uses, and a transitive dependency besides), `web_search` extracts DuckDuckGo results with `htmlparser2` instead of six regexes, and tool-call argument salvage repairs with `jsonrepair` in place of a hand-written control-character escaper and fence regex.
+  
+  This fixes three silent failures. A CRLF event stream parsed as zero frames, so every workflow run fell back to polling; `web_search` dropped results whose markup used single quotes and could lift `<script>` text into a description; and tool-call arguments with an unquoted key were handed to the tool as an EMPTY object, reported as success, because `parsePartialJson` calls that a repaired parse. Repairing now also covers single-quoted strings, unquoted keys, Python `None`/`True`/`False`, comments, and fences that are not anchored to the whole payload.
+  
+  The `entities` dependency is removed from `@alexkroman1/aai` — htmlparser2 decodes text and attributes itself.
+- 8c3c835: Extract the step-authoring helpers the workflow templates had duplicated: `@alexkroman1/aai/step-errors` (`toStepError`/`throwStepError`/`throwFatalStepError`) turns a Response or a StepGenerateError into the FatalError/RetryableError the Workflow DevKit reads — and reads the retryAfter the gateway already reported, which nothing did before; `stepGenerateJson` on /utils asks a model for JSON and validates it against a Standard Schema; and `stubGateway` on /testing is the fake LLM gateway for testing a step that calls one.
+- e923c72: `system-prompt.md` beside `agent.ts` IS the system prompt. The build discovers it, so an agent declares no `systemPrompt` and writes no import — a prompt is markdown, and inline it becomes that document spelled as escaped newlines inside one string literal, which diffs as a single line no matter which bullet changed. Declaring a DIFFERENT prompt while the file sits unread is a build error, because "I edited the prompt and nothing changed" is the silent-absence failure tool discovery exists to kill, pointing the other way; an empty file is an error too. Composing stays legal and is the one case you write the import — the build sees its own text inside your prompt and leaves what you built alone. `greeting` and `sttPrompt` stay fields: a document goes in a file, a value stays in the call.
+- 8cf6ffa: Publish the workflow HTTP API's client as `@alexkroman1/aai/workflow-api`.
+  
+  `createWorkflowApiClient({ baseUrl, token?, timeoutMs? })` is one implementation of
+  all ten routes — `streamOutput` and `wake` included — that the browser client,
+  `aai workflow` and the studio's Workflows card had each written a different subset
+  of — disagreeing on whether a 404 from `GET /runs/:id` is an answer, whether an
+  absent `limit` is encoded, and whether the agent's own `{ error }` sentence is
+  unwrapped or reported still wrapped in its JSON.
+  `timeoutMs` is new to all three: a per-request deadline that exempts the event
+  stream and adds a waiting read's own `wait` budget on top of itself.
+  
+  `WORKFLOW_API_PREFIX` is declared beside the client so the server, the `aai dev`
+  proxy table and the client all resolve one literal; `@alexkroman1/aai/runtime`
+  re-exports it unchanged.
+  
+  `createWorkflowApi` in `@alexkroman1/aai-ui` is now a wrapper that supplies the
+  page's own base URL, and its public surface is unchanged — `WorkflowApi` is
+  re-exported from the SDK rather than declared, so a client from either factory is
+  the same type (`aai-ui:workflow` epoch 5, epochs 1-4 retained).
+  
+  Two message changes: a failure whose body is not the API's `{ error }` shape is now
+  labelled (`Workflow API 502: <html>` rather than `502: <html>`), and
+  `aai workflow show` reports `No run <id>` for a 404 instead of the agent's
+  sentence, which cannot distinguish an unknown id from an agent that serves no
+  workflow API.
+- 0f7c4da: Export registerSttKind/registerTtsKind (plus OpenerRegistryEntry, SttOpener, TtsOpener) from @alexkroman1/aai/runtime: the speech-stage substitution seam a host application needs to drive a real pipeline session with faked STT and TTS. SttOpener and TtsOpener lose their @internal tags, being that seam's parameter type.
+- d5667c4: workflow() no longer throws when its body carries no compiler workflowId; the check moved to ctx.workflows.start, where the id is needed. A declaration-time throw made an agent module unimportable wherever the Workflow DevKit transform had not run — including its own unit tests.
+- 0f7c4da: Add ctx.workflows.publicWebhookUrl(token) — the PUBLIC callback URL a durable run hands a third party, built from a new publicUrl option on createRuntime/createAgentServer. The Workflow DevKit's own hook.url is composed from getWorkflowMetadata().url, which is http://localhost:<port> off the running process, so a deployed agent was handing out the inside of a sandbox that has self-exited by the time the callback arrives. Unconfigured, the accessor throws naming the option rather than minting a localhost URL that fails days later at somebody else's server.
+- f086dfe: Add mapInBatches, the replay-safe bounded fan-out a workflow body needs, and let WorkflowFields resolve a workflow by name so a page no longer plumbs the listing itself.
+- d2a6b0d: Add `isRecord` to `@alexkroman1/aai/utils` — a type predicate narrowing an unknown to `Record<string, unknown>`, so the `typeof v === "object" && v !== null` check no longer needs a follow-up cast to read a field. Arrays are excluded.
+- 0c411f4: Ship the agent-authoring guide and an agent skill inside the package, so guidance is version-matched to the installed SDK rather than frozen at scaffold time. Adds AGENT_GUIDE.md and skills/aai/SKILL.md to the tarball.
+- d764fc6: A durable run can now tell the caller it finished: `ctx.workflows.start(def, input, { notify })` makes the session that started it take an unprompted, interruptible turn built from the run's own output — the promise a voice agent used to make ("I'll let you know") with no way to keep it. Pipeline mode only; S2S has no verb for an unprompted turn and logs a no-op. Uploads now accept 2 GiB by default (`AAI_MAX_UPLOAD_BYTES` moves it) — the old 256 MB cap refused an ordinary stereo recording — and `useWorkflowRuns` renders a workflow's history so a page need not ask for a run id.
+- d764fc6: research-workflow is a real deep-research pass: a brief, a planned fan-out, one researcher step per angle that searches and reads the web through the SDK's own builtins, a gap pass, then a written report. `host/ssrf.ts` no longer reads `dispatcher` off the ambient `RequestInit`, so `@alexkroman1/aai/tools` compiles in a project whose tsconfig includes the DOM lib.
+- cd03641: Durable workflow steps can do real work. A `"use step"` body is handed no tool context, so until now nothing in one could authenticate an outbound call and every workflow template's I/O was a fixture. Two additions on `@alexkroman1/aai/utils` close it: `stepEnv`/`requireStepEnv` read the agent env (published by the guest at bundle load and by `aai dev` on every rebuild), and `stepGenerate` is `ctx.generate`'s counterpart for a step — one request to the AssemblyAI LLM Gateway on the agent's own key and default model, with `StepGenerateError.retryable` saying whether another attempt is worth it. All three workflow templates are real on top of them: `transcription-workflow` splits a WAV recording into chunks the sync transcription API accepts, transcribes each chunk in its own step and stitches the overlapping results together; `research-workflow` plans angles, investigates each one and writes them up; `link-digest` fetches a page and reduces it.
+- 714cb82: One sleep, not six: sleep(ms, { signal, unref }) on @alexkroman1/aai/internal replaces six spellings across five packages at 22 call sites. The families differed in whether vi.useFakeTimers() could drive them — the global setTimeout can be faked, node:timers/promises cannot — so the spelling silently decided whether a poll loop was testable, and one caller had already grown an injectable seam to work around it. unref is now opt-in rather than a shared default, which surfaced a shutdown grace that could skip its own drains. Also escapes a raw NUL byte in host/workflow-notify.ts that made the file binary to git grep, exempting it from every gate in the repo.
+- eb0da5f: Add testing fakes for a tool's collaborators (stubGenerate, createRunSnapshot, createProgressStream, toolOf/runTool), installStubGateway on the new @alexkroman1/aai/testing/vitest subpath, spoken-reference resolution (resolveOne, spokenDigits, spokenOrdinal) on the root, and WorkflowProgress + useUserTranscript in aai-ui.
+- 5e568e0: Add `ctx.workflows.signal(token, payload?)` — deliver an answer to a durable run
+  parked on `createHook({ token })`, resolving `false` when no hook holds the
+  token.
+  
+  This is the half of the Workflow DevKit's waitpoint mechanism a voice agent
+  could not reach. A run that has to wait for a PERSON — an approval, a choice, a
+  "yes, go ahead" — parks on a hook, and the only way to feed one was the public
+  URL `createWebhook()` mints, which is addressed to a third party with a callback
+  to make rather than to the caller already on the line. `wakeUp` is not the same
+  thing: it ends a pending `sleep()`, where a signal carries a payload, and a body
+  that races a hook against a `sleep` — a decision with a deadline — needs both.
+  
+  `false` is an answer rather than a failure, matching `cancel` resolving false
+  and `wakeUp` resolving `0`: the run has moved past its hook, finished, or was
+  never started.
+- 304347b: Fix the test review sweep: correctness and quality findings across every
+  package, plus the gates that decide whether the tests mean anything.
+  
+  The one published behaviour change: `publishStepEnv(undefined)` now
+  unpublishes the step env instead of publishing an undefined record, so a
+  test teardown can restore the unpublished state. An empty record and an
+  unpublished env are now distinguishable, and both are pinned.
+  
+  The rest is tests and repo machinery. Highlights, all of which were
+  false-green before: the two flagship SSRF redirect tests made zero fetch
+  calls (both were satisfied by an NXDOMAIN lookup, so redirect
+  re-screening to 127.0.0.1 and 169.254.169.254 was covered by nothing);
+  an SSE fuzz property called its subject zero times across 200 runs; the
+  `as any` escape-hatch budget was entirely JSDoc prose because the gate
+  had no comment filter; and the required CI check reported success when
+  the build failed, because it omitted `setup` from its `needs` and
+  accepted `skipped` as a pass.
+- 50282d6: Add workflow apps: agent({ page: "static" }), the workflow HTTP API (/workflows/*), page()/createWorkflowApi()/useWorkflowRun() in the browser client, and `aai workflow` for reading and steering runs from a terminal.
+- 6182917: Add workflowApp() and a workflow-app arm to AgentParams. A page: "static" agent has no session and no LLM loop, so systemPrompt, tools, maxSteps, state, syncState, the provider triple and the voice knobs were all accepted and inert on one; they are now compile errors naming the rule, and the three voice arms refuse page: "static" from their side. workflowApp({ name, workflows }) is agent() with the discriminant set, returning the same AgentDef.
+- 9f74c34: Add a text session mode to the agent API, and drive the studio coding agent through it.
+  
+  `agent({ text: true })` declares an agent with no audio path — an LLM, a system prompt and its tools — and `createTextAgent` (`@alexkroman1/aai/runtime`) runs it over a message list, returning the AI SDK's own `streamText` result. Every other `AgentDef` field means what it means in a voice agent, so a tool runs unchanged in either; `stt`/`tts`/`s2s`, `sttPrompt` and the voice-UX knobs are compile errors on it. The mode is explicit for the same reason `s2s` is, and `createRuntime`/`createTextAgent` refuse each other's agents by name.
+  
+  The studio's coding agent is now such an agent rather than a hand-assembled `streamText` call, so model resolution, the keyless web builtins, the tool executor and its `ctx`, the per-call deadline, the reserved final-answer step and tool-call repair all come from the SDK. Tool-call repair gained the studio's cheap JSON-salvage tier, which now benefits the voice pipeline too, and `executeToolCall` takes a `timeoutMs`.
+- 16bec88: Add `responseErrorMessage(res, label?)` to `@alexkroman1/aai/utils`: read a failed `Response`'s `{ error }` sentence — the shape every route this SDK serves answers with — falling back to the status plus a capped preview of any other body. Four callers had hand-written it, and none of the four agreed: two never unwrapped `{ error }` at all, and one dropped the body whenever it was valid JSON that was not that shape.
+- 97339d9: Add a synchronous wait mode to the workflow HTTP API, and form components for workflow apps.
+  
+  `POST /workflows/runs` accepts a `wait` budget and `GET /workflows/runs/:id` a `?wait=` query: the request is answered when the run reaches a terminal status or when the budget expires, whichever is first. An expired budget answers the running snapshot at 202 rather than an error, so waiting degrades to the asynchronous behaviour that was already there. On the client this is `api.startAndWait()` and `api.get(runId, { wait })`.
+  
+  aai-ui gains `Form` and its field components (`TextField`, `NumberField`, `TextAreaField`, `SelectField`, `CheckboxField`, `FileField`, `SubmitButton`, `Field`), `WorkflowFields` — one control per scalar property of a workflow's declared input schema — and the `useWorkflows` / `useWorkflowSubmit` hooks.
+  
+  The `transcription-workflow` template is now a workflow app: an upload form over a run that parks on `createWebhook()` and fans out over what the callback delivered.
+- c48f243: Default the AssemblyAI LLM Gateway model to qwen3-next-80b-a3b (was gpt-5.6-terra). qwen is outside TOOLS_REQUIRE_NO_REASONING, so a bare assemblyAILlm() no longer carries an implicit reasoningEffort none and sends no reasoning_effort at all; the default pipeline is unchanged because assemblyAIPipeline() passes it explicitly.
+- d5667c4: Add durable workflows built on the Vercel Workflow Development Kit: workflow() declares a schema, description and a "use workflow" body, and ctx.workflows starts and inspects runs. Correlation keys (start(wf, input, { key })) are indexed by the SDK so a voice agent can find a run again after the session that started it is gone.
+- e4fd8c5: Durable runs gain two capabilities the Workflow DevKit already had and this SDK did not expose, plus a gateway fix.
+  
+  `ctx.workflows.wakeUp(runId, options?)` interrupts a run's pending `sleep()` calls and reports how many it ended, so "send it now" stops being the same button as `cancel`. `ctx.workflows.stream(runId, options?)` reads what a run has WRITTEN through `getWritable()` — the only way a long run can report progress, since a snapshot carries a status and, once terminal, an output, and nothing in between — and `ctx.workflows.streamTail(runId, options?)` says how far that stream currently goes. All three are served over HTTP too (`POST /workflows/runs/:id/wake`, `GET /workflows/runs/:id/stream`) and reachable from a page through `api.wake()` / `api.streamOutput()`; the platform already proxies both verbs, so no deployment change is needed. `research-workflow` is the worked example for each.
+  
+  `streamTail` is what makes reading a progress stream terminate, and it is not an optimization. A workflow stream reports its end only once CLOSED, and a progress channel written by one step after another is never closed — no step knows it is the last one — so a reader that waits for the end waits forever, *including on a finished run*. Every reader here bounds itself by the tail instead: the HTTP route serves the chunks that existed when the request arrived and then ends, reporting on its `done` frame whether the RUN was terminal.
+  
+  `useWorkflowProgress(runId)` is the browser half, and the sibling of `useWorkflowRun`: that hook reports where a run got to, this one reports what it said. Because each read is bounded, it re-opens from the index it reached until a read comes back complete — a cheap poll, since a quiet run answers with a bare `done` rather than the whole log again. `supported` goes false when the agent serves no stream at all, which is what lets a page hide the section rather than wait forever on something absent, and chunks replay, so a reload mid-run catches up. Both page templates now render progress (`link-digest` the newest line, `transcription-workflow` the whole log) and `link-digest` grows a "File it now" button over `wake`.
+  
+  `createStubWorkflows()` joins `@alexkroman1/aai/testing`: a complete `ctx.workflows` whose unstubbed methods reject by name. A hand-written stub of an eight-method client is a type assertion, which keeps compiling when the client gains a method and leaves it missing at runtime — which is exactly what these two additions surfaced in two shipped templates.
+  
+  The AssemblyAI LLM Gateway's Gemini tool-schema repair is now `transformParams` middleware instead of a `fetch` wrapper. It used to parse and re-serialize every request body containing `"tools"` — the whole conversation, on every step of every turn — to delete two keywords from the tool schemas near the end of it. Middleware is handed those schemas as structured parameters before anything is serialized. The gateway's response-side repairs stay in the `fetch` wrapper, where bytes are genuinely the only place to catch them.
+
+### Patch Changes
+
+- 4afb67c: Fix two durability bugs found by the turn/workflow durability audit.
+  
+  **The Postgres workflow world never started.** `@workflow/world-postgres`'s
+  `setupDatabase` puts its `process.exit(0)` inside its own `try`, so the
+  `process.exit` stand-in's throw landed in that function's own `catch`, which
+  reported the migration as failed and exited 1 — every SUCCESSFUL migration read
+  as `exit 1`. The caller then threw before `getWorld().start?.()`, so a booting
+  guest never subscribed its queue and never ran `reenqueueActiveRuns`: a run
+  parked in a `sleep` or on a webhook was not picked up when its guest was woken,
+  and the orphaned-lock sweep was dead code on every boot. Runs started in the same
+  process still dispatched, which is why it went unnoticed. The stand-in now keeps
+  the FIRST exit code — a second `exit` is the CLI reacting to our own
+  interception.
+  
+  **The session-state size cap counted UTF-16 code units against a byte budget.**
+  `json.length > MAX_SESSION_STATE_BYTES` let multi-byte content through at up to
+  ~3x its real size — a slot the cap read as under 1 MiB writing 3 MiB into the
+  tenant's own schema, with the log naming the wrong number `bytes`. Now
+  `Buffer.byteLength`, the rule `_fetch-capped.ts` already states. Slots holding
+  CJK or emoji within ~3x of the cap that previously stored will now be refused and
+  reported, which is the cap doing what it documents.
+- 9fe4d07: Remove duplication between the agent and workflow subsystems: share one JSON/500 responder across both HTTP surfaces, bound workflow run listings with mapInBatches instead of an unbounded Promise.all, and give both workflow Postgres stores one create-table memo that no longer caches a failure as done.
+- a9497a3: Clear orphaned workflow queue locks at startup. A hard-killed process (or one whose Postgres died) left its in-flight steps `locked_by` graphile-worker pool workers that no longer exist, and `get_job` selects on `is_available = true` — so the replacement pool polled straight past them and recovery waited on graphile-worker's four-hour reclaim, with the run sitting `running` and a page showing "Working…" indefinitely. One kill was enough. The world now clears those locks between its migration and the runner starting, gated on a session advisory lock so it only ever runs when no other pool is alive: unlocking a job a live worker is executing would run that step twice, which is worse than the wedge.
+- d325a71: Fix workflow run listings and let a workflow app run without a provider credential. `ctx.workflows.recent()` (and `GET /workflows/runs` with no key, and `aai workflow runs`) filtered the DevKit's run store by the declared workflow name where it stores the compiler's identifier, so it reported no runs for every workflow; run snapshots reported that identifier as their `workflow` instead of the declared key. An agent with `page: "static"` no longer requires a provider credential it never dials — it was demanding an AssemblyAI key, which stopped `aai dev` from starting a workflow app at all.
+- a9497a3: Stop the workflow HTTP API answering 400 with raw internal errors. `POST /workflows/runs` and `GET /workflows/runs` wrapped their whole engine call in a catch that returned the error text at 400, so a database outage answered a form submission with the connection string (`connect ECONNREFUSED host:port`) and a run listing with its full SQL statement — on a surface that is unauthenticated unless AAI_WORKFLOW_API_TOKEN is set, and with a status that tells clients not to retry. Caller mistakes (an unknown workflow name, input failing the schema) now throw a distinct type and keep their 400 and their message; everything else reaches the router, which logs the cause and answers an opaque 500.
+- 49ac025: Install a studio workspace's own package.json dependencies before building it.
+  
+  A workspace's declared runtime dependencies only existed on disk as a side
+  effect of `add_dependency` having run in that exact directory, so they were
+  lost whenever the directory was rebuilt: `materializeWorkspace` opens with
+  `rm -rf` (session refresh, replica takeover), and Publish builds a fresh
+  directory from the store snapshot. Because the worker bundle is built with
+  `noExternal`, the absent package was not externalized but a hard build failure
+  naming a dependency the manifest plainly declares — so an agent could test fine
+  and then fail to publish, and a project pushed from a laptop could not build at
+  all. `npm install --omit=dev` now runs in the workspace whenever something it
+  declares is missing.
+  
+  That is viable because the workspace manifest no longer declares the platform's
+  own packages. It used to pin them so they could be read, and npm reifies
+  whatever manifest it reads — so every install re-fetched the whole SDK tree.
+  Dropping them takes adding one package from 25s/156 MB to 451ms/28 KB, takes
+  `add_dependency` from 28s/202 MB to 3.8s/28 MB, and retires
+  `reconcileWorkspacePins`, whose only job was keeping those pins fresh. Both
+  readers the declaration served are covered elsewhere: the studio prompt lists
+  what is preinstalled, and `aai pull` fills the manifest in per entry from the
+  scaffold.
+  
+  Also: `Cannot find module` (TS2307) now carries a hint pointing at
+  `add_dependency`, and the guest no longer syncs package-manager lockfiles into
+  the project — `npm install` leaves a ~100 KB `package-lock.json` that was the
+  bulk of every turn's sync payload and landed in pnpm projects via `aai pull`.
+- f037d0b: `sttPrompt` defaults to empty again — contextual biasing stays opt-in in both session modes. The generic spelled-identifier default (added after the last release, never shipped) is reverted: its measured FDB-v3 win does not transfer to a line whose callers never spell anything, where the same prose biases the transcript toward alphanumeric codes that were never said. Only the agent author knows the vocabulary, so only they can set a prompt that helps — `DEFAULT_STT_PROMPT` documents what an effective one looks like.
+- 8ecbe38: Update dependencies, and fix the scaffold manifest a release would have shipped
+  unusable.
+  
+  `aai init` writes `packages/aai-templates/scaffold/package.json` into every new
+  project, and it is bundled into the `@alexkroman1/aai-cli` tarball to do it.
+  `scripts/sync-scaffold-versions.mjs` keeps it matching the workspace — and since
+  shared versions moved into the pnpm catalog, it had been copying the literal
+  `"catalog:"` into that manifest instead of the range the catalog holds. `catalog:`
+  is a pnpm workspace protocol with no meaning to npm, so the next release to run
+  it would have shipped a scaffold that cannot install, failing `aai init` at its
+  own install step. It resolves the catalog now, refuses any workspace protocol
+  left in the shipped manifest, and `pnpm check:scaffold` runs in `pnpm check` and
+  CI — previously the only thing that ran the script at all was the release.
+  
+  Dependency updates: the six `@ai-sdk/*` providers, `ai` 7.0.62, `assemblyai`,
+  `@deepgram/sdk`, `@elevenlabs/elevenlabs-js`, `@cartesia/cartesia-js`, `undici`,
+  `ws`, `hono`, `@hono/node-server`, the three `@supabase/*` clients, `vite` 8.2.1,
+  and the React type packages; `eventsource-parser` 4, `htmlparser2` 12, and
+  `jsdom` 30 across the majors.
+  
+  `ctx.generate`'s structured-output path moved from the AI SDK's `generateObject`,
+  which `ai` 7.0.62 deprecates, to `generateText` with an `output` setting. The
+  resolved object and the `{ text, object }` result are unchanged; a generation
+  that produces no parsable object now surfaces the SDK's `NoOutputGeneratedError`
+  rather than `NoObjectGeneratedError`.
+- 742bebf: One spelling for splitting a request target, and it is the correct one. `req.url` was cut three different ways at fourteen sites, and the most common of the three — `split("?")[1]` — keeps only the segment between the first and second question mark, so a query value carrying a literal `?` was silently truncated. `requestPath`/`requestQuery` on `@alexkroman1/aai/internal` replace all of them, along with the four different dead `?? "/"` fallbacks that only ever existed to satisfy `noUncheckedIndexedAccess`. The workflow API's two SSE routes also share one header block and one frame encoder instead of byte-identical copies.
+
 ## 5.14.0
 
 ### Minor Changes
