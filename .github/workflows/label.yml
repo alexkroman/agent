@@ -12,6 +12,24 @@ jobs:
   label:
     runs-on: ubuntu-latest
     steps:
+      # labeler looks for its config ON DISK first and only falls back to the
+      # contents API, at `github.context.sha` — which for a pull_request event
+      # is the ephemeral MERGE commit, not the head. GitHub recomputes that ref
+      # whenever the base moves, so the fallback is an availability dependency
+      # on a commit no branch points at. It failed on the Version Packages PR
+      # (#1114): `Not Found` for a labeler.yml present on main, on the head
+      # branch, and at the run's head SHA, then green on a re-run nine minutes
+      # later with nothing changed. That PR is authored by github-actions[bot],
+      # so its runs sit in `action_required` until a human approves — 13 hours
+      # here — which is exactly how long a merge ref gets to go stale.
+      #
+      # Checking the file out closes it: git fetches refs/pull/N/merge, which
+      # is a different mechanism from the contents API and was working in the
+      # same batch (every other job checked out fine while this one 404'd).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/labeler.yml
+          sparse-checkout-cone-mode: false
       - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
         with:
           configuration-path: .github/labeler.yml
