@@ -1,5 +1,0 @@
----
-"@alexkroman1/aai": major
----
-
-A session's events are one vocabulary, one stream, and an agent can observe them. The wire is renamed onto a single discriminated union of stamped events — `config` is `session.configured`, `audio_done` is `audio.completed`, `speech_started` is `speech.started`, `user_transcript` is `user-transcript.committed` — each carrying a `meta` envelope with a stable id, and the `history` client command is gone: a reconnecting client no longer pushes its own memory back, because the server restores from its own retained stream. `ServerMessage` and `ClientMessage` remain as aliases of the schemas that now declare the two unions, `SessionEventSchema` and `SessionCommandSchema`. `agent({ events })` is the new authoring surface over that stream: a handler per event type plus a `"*"` catch-all, observe-only, non-fatal on throw, keyed on `meta.id` for at-least-once delivery — the first time an agent author could observe their own agent at all. `SessionEventHandlers`, `SessionEventHandler` and `SessionEventContext` are exported from the root, so a handler extracted out of the object literal into a function of its own has a type to name.

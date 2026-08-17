@@ -1,5 +1,94 @@
 # @alexkroman1/aai-cli
 
+## 6.0.0
+
+### Major Changes
+
+- e923c72: Rename the four `-desk` templates. The three that declare a durable workflow become `recap-workflow`, `research-workflow` and `transcription-workflow`, so the suffix says what the template demonstrates. `plan-desk` becomes `plan-and-execute` rather than `plan-workflow`: it declares no workflow at all — it is the LangGraph plan-and-execute port, a voice agent whose loop is driven one tool call at a time — so naming it after a mechanism it does not use would mislead, and naming it after the pattern it ports is what a reader arriving with that mental model will look for. `aai init -t <name>` and the studio's starter list take the new names; the agents' spoken greetings still say "desk", which is a thing a caller reaches rather than a template name.
+
+### Minor Changes
+
+- d5667c4: aai build and aai deploy now compile a project's workflows/ directory into the two artifacts a guest needs to run durable workflows, with the Workflow DevKit left external so both stay small enough to ride the agent bundle.
+- 8cb603d: Self-hosting runs the built worker, and a template's `tools/` reach a user's own project.
+  
+  `npm start` now builds first (a `prestart` script) and `server.mjs` boots
+  `.aai/worker.mjs` — the same artifact `aai publish` uploads — instead of importing
+  `agent.ts`. A tool is registered by existing, and that enumeration happens where the
+  bundle is assembled, so the old entrypoint served an agent with none of its tools and
+  no error anywhere. `aai build` therefore leaves its worker on disk, `aai eject` writes
+  `prestart` alongside `start`, and the `registerHooks` shim is gone (the bundle inlines
+  the `?raw` and attribute-less JSON imports it existed to teach Node).
+  
+  Fixes five templates — `pizza-ordering`, `plan-and-execute`, `retail`, `support-line`,
+  `travel-concierge` — whose specs imported a monorepo-internal path that does not exist
+  in a scaffolded project, breaking `aai test` and `aai build` for anyone who scaffolded
+  them. `@alexkroman1/aai/testing` gains **`withDiscoveredTools(def, modules)`**, which is
+  how a spec in any project gets the def a deployed agent runs:
+  
+  ```ts
+  const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+  ```
+  
+  Removes the unused `loadToolModules` from `@alexkroman1/aai/manifest`: there is one way
+  to build a tool registry, over already-loaded modules, and no runtime directory scan.
+- 8cb603d: A file in `tools/` is now the tool. Tool files default-export their tool and are discovered at build time — `worker-bundler.ts` enumerates `tools/*.ts` and emits static imports, so a file that exists is a tool the model can call and there is no registration step to forget. Forgetting a `tools:` map line used to be silent: the file compiled, every check passed, and the tool never reached the model. The six shipped templates drop 62 map entries and their imports; `toolRegistry`/`withTools` (`@alexkroman1/aai/manifest`) own the name grammar, the default-export requirement, the flat-only rule and duplicate detection, each a build error naming the file. Retires the `template-tools` konsistent convention, which checked an export name nothing reads any more.
+- c46e8ad: Add four templates ported from popular LangChain/LangGraph agents. Three are voice agents: travel-concierge (the customer-support bot's specialist-desk delegation, with every booking staged for a spoken confirmation before it applies), support-line (self-RAG/CRAG document grading, query rewriting and a groundedness check before anything is said out loud), and plan-and-execute (plan-and-execute, one step per tool call so the caller can redirect between them, with real web search in the executor). The fourth, redline, is a workflow app: the reflection agent's write/critique/revise loop as a page over a durable run, exiting on the critic's journaled verdict.
+
+### Patch Changes
+
+- d764fc6: The workflow step bundle carries a `createRequire` shim, so a step importing a package with a CommonJS dependency loads instead of throwing `Dynamic require of "node:assert" is not supported` before its first line runs.
+- f086dfe: Simplify the three workflow templates: research-workflow types its run snapshot with WorkflowOutputOf, transcription-workflow drops two single-use result types and a hand-rolled hash, and every file step now agrees on one shape.
+- 549b5db: Proxy the workflow HTTP API and dedupe React in `aai dev`, so a `page: "static"` workflow app works locally
+- 16bec88: Workflow hooks report a failure's own message rather than `[object Object]` when a rejection is message-bearing without being an `Error` — `useWorkflowRun` and `useWorkflows`/`useWorkflowSubmit` now unwrap it with the SDK's `errorMessage` instead of a local `instanceof Error` ternary.
+- e923c72: Enforce the two flatness rules that were documented and unenforced. A nested tool file (`tools/billing/refund.ts`) was SKIPPED by a one-level readdir, so the project built an agent with none of its tools and no error anywhere; discovery is recursive now and `toolRegistry` rejects the nested path naming the file, keeping one implementation of the rule. A `system-prompt/` DIRECTORY fell through to the framework default with nothing saying why the prompt had no effect; it is refused, naming the file to rename it to. Both were verified broken before the fix — the same silent absence discovery exists to kill, arriving through the discoverer rather than the registry.
+- Updated dependencies [d81c752]
+- Updated dependencies [4afb67c]
+- Updated dependencies [0e99e1d]
+- Updated dependencies [ae9e607]
+- Updated dependencies [3df649f]
+- Updated dependencies [263d86a]
+- Updated dependencies [9fe4d07]
+- Updated dependencies [b5fdd60]
+- Updated dependencies [8c3c835]
+- Updated dependencies [a9497a3]
+- Updated dependencies [e923c72]
+- Updated dependencies [8cf6ffa]
+- Updated dependencies [3df649f]
+- Updated dependencies [d325a71]
+- Updated dependencies [a9497a3]
+- Updated dependencies [0f7c4da]
+- Updated dependencies [e923c72]
+- Updated dependencies [d5667c4]
+- Updated dependencies [0f7c4da]
+- Updated dependencies [49ac025]
+- Updated dependencies [f086dfe]
+- Updated dependencies [d2a6b0d]
+- Updated dependencies [0c411f4]
+- Updated dependencies [d764fc6]
+- Updated dependencies [d764fc6]
+- Updated dependencies [cd03641]
+- Updated dependencies [714cb82]
+- Updated dependencies [eb0da5f]
+- Updated dependencies [5e568e0]
+- Updated dependencies [304347b]
+- Updated dependencies [f037d0b]
+- Updated dependencies [50282d6]
+- Updated dependencies [6182917]
+- Updated dependencies [0f7c4da]
+- Updated dependencies [8ecbe38]
+- Updated dependencies [02d90e3]
+- Updated dependencies [9f74c34]
+- Updated dependencies [61c6630]
+- Updated dependencies [16bec88]
+- Updated dependencies [97339d9]
+- Updated dependencies [742bebf]
+- Updated dependencies [c48f243]
+- Updated dependencies [d5667c4]
+- Updated dependencies [16bec88]
+- Updated dependencies [e4fd8c5]
+  - @alexkroman1/aai@6.0.0
+  - @alexkroman1/aai-ui@6.0.0
+
 ## 5.14.0
 
 ### Patch Changes
