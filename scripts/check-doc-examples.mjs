@@ -36,9 +36,24 @@ const scratch = path.join(repo, `packages/aai-templates/.doc-examples-scratch-${
 /** Doc-comment sources: published packages' source trees. */
 const SOURCE_GLOBS = ["packages/aai", "packages/aai-ui", "packages/aai-cli"];
 
-/** Markdown sources users and coding agents read examples from. */
+/**
+ * Markdown sources users and coding agents read examples from.
+ *
+ * **The three PUBLISHED packages' READMEs are the ones npm renders**, so they
+ * are the first examples a new user copies — and they were the one user-facing
+ * markdown this list omitted, while the same packages' doc COMMENTS were
+ * checked through `SOURCE_GLOBS`. `aai-ui/README.md` had carried
+ * `client({ sidebar: <OrderSidebar /> })` for exactly that long: `sidebar` is a
+ * `ComponentType`, so the element form is a `TS2322` in the reader's build and
+ * in no build of ours. The root README hit the identical mistake and this gate
+ * named it there in seconds, which is the argument — the corpus, not the care
+ * taken, is what makes the difference.
+ */
 const MARKDOWN_FILES = [
   "README.md",
+  "packages/aai/README.md",
+  "packages/aai-ui/README.md",
+  "packages/aai-cli/README.md",
   "packages/aai-templates/scaffold/CLAUDE.md",
   "examples/self-hosted-server/README.md",
 ];
@@ -196,14 +211,17 @@ for (const src of PROMPT_SOURCES) {
  * never lower it to make a run pass — a drop means examples stopped being
  * discovered, which is the bug.
  *
- * **MEASURED: 98.** The floor sat at 45 against 98 with the comment still
+ * **MEASURED: 104**, with the three published packages' READMEs in
+ * `MARKDOWN_FILES`. The floor once sat at 45 against 98 with the comment still
  * claiming "49 at the time of writing", so more than HALF the corpus could
  * stop being discovered while the gate printed `all N doc examples compile ✓`
  * — a floor two doublings behind its actual is not much better than the zero
- * it replaced. Re-measure and re-raise when the number moves; the run's own
- * closing line prints it.
+ * it replaced. The count is deterministic (same tree, same number), so the
+ * margin here is only for fences legitimately deleted, not for run-to-run
+ * spread. Re-measure and re-raise when the number moves; the run's own closing
+ * line prints it.
  */
-const MIN_EXAMPLES = 85;
+const MIN_EXAMPLES = 100;
 if (examples.length < MIN_EXAMPLES) {
   console.error(
     `check-doc-examples: extracted only ${examples.length} examples, expected at least ` +
