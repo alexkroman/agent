@@ -87,8 +87,10 @@ That is a working agent.
 
 ## The voice problems you'd otherwise solve yourself
 
-Every default below is on unless the table says otherwise, and every one is
-a field on `agent()`:
+All of this is on by default unless the table says otherwise — and where
+there is something to tune, the knob is named, on `agent()` or on the
+provider descriptor. The numbers are measured, not guessed; each constant's
+own doc carries the run behind it:
 
 | Problem | What the runtime does | Field (default) |
 | --- | --- | --- |
