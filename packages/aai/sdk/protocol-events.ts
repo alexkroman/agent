@@ -128,6 +128,27 @@ const ev = <T extends string>(t: T) =>
   z.object({ type: z.literal(t), meta: SessionEventMetaSchema });
 
 /** Zod schema for {@link SessionEvent}. */
+/**
+ * One tool call as a RESUME reports it — see `history.restored`.
+ *
+ * Its own schema because the host builds these (`historyFromEvents`) and the
+ * client reads them, so the shape wants one name on both sides. It is deliberately
+ * NOT `tool.called` plus `tool.completed`: those are two live events, and what a
+ * restore sends is their settled JOIN.
+ */
+export const RestoredToolCallSchema = z.object({
+  callId: z.string(),
+  name: z.string(),
+  args: z.record(z.string(), z.unknown()),
+  status: z.enum(["pending", "done"]),
+  result: z.string().max(MAX_TOOL_RESULT_CHARS).optional(),
+  /** Index into the frame's own `messages`; `-1` for "before any message". */
+  afterMessageIndex: z.number().int().min(-1),
+});
+
+/** One tool call as a resume reports it. @internal */
+export type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
+
 export const SessionEventSchema = z.discriminatedUnion("type", [
   /**
    * The handshake: audio negotiation plus the session's own id.
@@ -337,6 +358,20 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
         }),
       )
       .max(DEFAULT_MAX_HISTORY),
+    /**
+     * The tool calls interleaved through those messages.
+     *
+     * Anchored by INDEX into `messages` above, never by id: the client mints its
+     * own render keys, so an id here would be a second numbering scheme over one
+     * list. `-1` means "before any message", the same sentinel the live path
+     * uses when a tool call arrives with no message yet.
+     *
+     * Without these a resumed conversation comes back as plain dialogue with
+     * every tool row missing, which reads as the agent having done less than it
+     * did. A call with no completion stays `pending` — it may really have been in
+     * flight when the process died.
+     */
+    toolCalls: z.array(RestoredToolCallSchema).max(DEFAULT_MAX_HISTORY),
   }),
 ]);
 

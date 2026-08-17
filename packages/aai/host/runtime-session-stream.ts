@@ -27,7 +27,7 @@
 import type { SessionEvent } from "../sdk/protocol.ts";
 import { SESSION_EVENT_READ_LIMIT } from "../sdk/session-event-constants.ts";
 import type { SessionCore } from "./session-core.ts";
-import { messagesFromEvents } from "./session-event-history.ts";
+import { historyFromEvents } from "./session-event-history.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
 import type { ResumeFindings } from "./session-resume-found.ts";
 
@@ -88,9 +88,11 @@ export function attachSessionStream(
     // inferring it from a count.
     if (resumed) {
       const events = await readAllEvents(stream, sessionId);
-      const messages = messagesFromEvents(events);
-      if (messages.length > 0) {
-        core.restoreHistory(messages);
+      // ONE walk for both, so a tool call's anchor and the message it points at
+      // cannot disagree — see `historyFromEvents`.
+      const { messages, toolCalls } = historyFromEvents(events);
+      if (messages.length > 0 || toolCalls.length > 0) {
+        core.restoreHistory(messages, toolCalls);
         // Recorded only when there was something to restore: an EMPTY log is
         // exactly the case that must fall through to a greeting.
         findings?.record();

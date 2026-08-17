@@ -262,7 +262,7 @@ type SessionEventHandlers = {
     "*"?: SessionEventHandler;
 };
 
-// @public
+// @public (undocumented)
 const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
@@ -406,6 +406,17 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
             user: "user";
         }>;
         content: z.ZodString;
+    }, z.core.$strip>>;
+    toolCalls: z.ZodArray<z.ZodObject<{
+        callId: z.ZodString;
+        name: z.ZodString;
+        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+        status: z.ZodEnum<{
+            done: "done";
+            pending: "pending";
+        }>;
+        result: z.ZodOptional<z.ZodString>;
+        afterMessageIndex: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
 

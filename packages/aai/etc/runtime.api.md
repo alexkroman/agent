@@ -784,6 +784,22 @@ export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
 // @public
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
 
+// @internal
+type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
+
+// @public
+const RestoredToolCallSchema: z.ZodObject<{
+    callId: z.ZodString;
+    name: z.ZodString;
+    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    status: z.ZodEnum<{
+        done: "done";
+        pending: "pending";
+    }>;
+    result: z.ZodOptional<z.ZodString>;
+    afterMessageIndex: z.ZodNumber;
+}, z.core.$strip>;
+
 // @public
 export type RunCodeExecutor = (code: string) => Promise<string | {
     error: string;
@@ -932,7 +948,7 @@ export type SessionCore = {
     command(cmd: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
-    restoreHistory(messages: readonly Message[]): void;
+    restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
     report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
@@ -991,7 +1007,7 @@ export type SessionEventPage = {
     tail: number;
 };
 
-// @public
+// @public (undocumented)
 const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
@@ -1135,6 +1151,17 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
             user: "user";
         }>;
         content: z.ZodString;
+    }, z.core.$strip>>;
+    toolCalls: z.ZodArray<z.ZodObject<{
+        callId: z.ZodString;
+        name: z.ZodString;
+        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+        status: z.ZodEnum<{
+            done: "done";
+            pending: "pending";
+        }>;
+        result: z.ZodOptional<z.ZodString>;
+        afterMessageIndex: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
 

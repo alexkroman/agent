@@ -23,10 +23,94 @@ describe("attachSessionStream", () => {
 
     await core.start();
 
-    expect(core.restoreHistory).toHaveBeenCalledWith([
-      { role: "user", content: "my order is 4471" },
-      { role: "assistant", content: "Found it." },
-    ]);
+    expect(core.restoreHistory).toHaveBeenCalledWith(
+      [
+        { role: "user", content: "my order is 4471" },
+        { role: "assistant", content: "Found it." },
+      ],
+      // The tool-call half, empty for a conversation that used none.
+      [],
+    );
+  });
+
+  test("a resume restores the TOOL CALLS interleaved through it, anchored", async () => {
+    // Without these a resumed conversation comes back as plain dialogue with
+    // every tool row missing, which reads as the agent having done less than it
+    // did. The anchor is an INDEX into the messages of the same restore, built by
+    // the same walk so the two cannot disagree.
+    const backend = createMemoryStateBackend();
+    const before = createSessionEventStream({ backend });
+    before.append(SID, { type: "user-transcript.committed", text: "where is order 4471" });
+    before.append(SID, {
+      type: "tool.called",
+      toolCallId: "c1",
+      toolName: "lookup_order",
+      args: { id: "4471" },
+    });
+    before.append(SID, { type: "tool.completed", toolCallId: "c1", result: '{"eta":"tue"}' });
+    before.append(SID, { type: "agent-transcript.committed", text: "Tuesday." });
+    await before.flush(SID);
+
+    const stream = createSessionEventStream({ backend });
+    const core = makeMockCore();
+    attachSessionStream(core, { stream, sessionId: SID, resumed: true });
+
+    await core.start();
+
+    expect(core.restoreHistory).toHaveBeenCalledWith(
+      [
+        { role: "user", content: "where is order 4471" },
+        { role: "assistant", content: "Tuesday." },
+      ],
+      [
+        {
+          callId: "c1",
+          name: "lookup_order",
+          args: { id: "4471" },
+          // The settled JOIN of the two live events, not the events themselves.
+          status: "done",
+          result: '{"eta":"tue"}',
+          // It followed the user turn and PRECEDED the reply, which is the
+          // interleaving an index preserves and a flat list would lose.
+          afterMessageIndex: 0,
+        },
+      ],
+    );
+  });
+
+  test("a call with no completion stays PENDING", async () => {
+    // It may genuinely have been in flight when the process died; reporting it as
+    // done would invent a result.
+    const backend = createMemoryStateBackend();
+    const before = createSessionEventStream({ backend });
+    before.append(SID, {
+      type: "tool.called",
+      toolCallId: "c9",
+      toolName: "charge_card",
+      args: {},
+    });
+    await before.flush(SID);
+
+    const stream = createSessionEventStream({ backend });
+    const core = makeMockCore();
+    attachSessionStream(core, { stream, sessionId: SID, resumed: true });
+
+    await core.start();
+
+    // Restored even with NO messages: a turn that died mid-chain still has a row
+    // to render, and `-1` puts it ahead of the transcript.
+    expect(core.restoreHistory).toHaveBeenCalledWith(
+      [],
+      [
+        {
+          callId: "c9",
+          name: "charge_card",
+          args: {},
+          status: "pending",
+          afterMessageIndex: -1,
+        },
+      ],
+    );
   });
 
   test("the log CONTINUES after a resume rather than overwriting itself", async () => {

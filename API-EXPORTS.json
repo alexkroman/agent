@@ -237,6 +237,8 @@
     "HostConfigSchema",
     "ReadyConfig",
     "ReadyConfigSchema",
+    "RestoredToolCall",
+    "RestoredToolCallSchema",
     "SESSION_COMMAND_TYPES",
     "SESSION_EVENT_TYPES",
     "ServerMessage",

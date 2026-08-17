@@ -134,6 +134,22 @@ export const ReadyConfigSchema: z.ZodObject<{
     ttsSampleRate: z.ZodNumber;
 }, z.core.$strip>;
 
+// @internal
+export type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
+
+// @public
+export const RestoredToolCallSchema: z.ZodObject<{
+    callId: z.ZodString;
+    name: z.ZodString;
+    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    status: z.ZodEnum<{
+        done: "done";
+        pending: "pending";
+    }>;
+    result: z.ZodOptional<z.ZodString>;
+    afterMessageIndex: z.ZodNumber;
+}, z.core.$strip>;
+
 // @public
 export type ServerMessage = SessionEvent;
 
@@ -282,6 +298,17 @@ export const ServerMessageSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         }>;
         content: z.ZodString;
     }, z.core.$strip>>;
+    toolCalls: z.ZodArray<z.ZodObject<{
+        callId: z.ZodString;
+        name: z.ZodString;
+        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+        status: z.ZodEnum<{
+            done: "done";
+            pending: "pending";
+        }>;
+        result: z.ZodOptional<z.ZodString>;
+        afterMessageIndex: z.ZodNumber;
+    }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
 
 // @public
@@ -342,7 +369,7 @@ export const SessionEventMetaSchema: z.ZodObject<{
     at: z.ZodNumber;
 }, z.core.$strip>;
 
-// @public
+// @public (undocumented)
 export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
@@ -486,6 +513,17 @@ export const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
             user: "user";
         }>;
         content: z.ZodString;
+    }, z.core.$strip>>;
+    toolCalls: z.ZodArray<z.ZodObject<{
+        callId: z.ZodString;
+        name: z.ZodString;
+        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+        status: z.ZodEnum<{
+            done: "done";
+            pending: "pending";
+        }>;
+        result: z.ZodOptional<z.ZodString>;
+        afterMessageIndex: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
 

@@ -64,6 +64,18 @@ describe("server→client event wire format", () => {
         { role: "user", content: "two large pepperoni" },
         { role: "assistant", content: "Got it." },
       ],
+      // Anchored to the user turn it followed, settled with its result — the
+      // JOIN of `tool.called` and `tool.completed` a restore sends.
+      toolCalls: [
+        {
+          callId: "c1",
+          name: "place_order",
+          args: { size: "large" },
+          status: "done",
+          result: '{"ok":true}',
+          afterMessageIndex: 0,
+        },
+      ],
     },
   ];
 
