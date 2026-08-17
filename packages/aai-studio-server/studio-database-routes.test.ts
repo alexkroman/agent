@@ -69,13 +69,15 @@ describe("project database routes", () => {
     expect((await fetch("/studio/projects/proj/database", { method: "POST" })).status).toBe(401);
   });
 
-  test("GET reports both environments, off, before anything is deployed", async () => {
+  test("GET reports the project ON by default, with both environments still off", async () => {
     const { fetch } = await createTestCombined({ appDb: fakeAppDb() });
     await createProject(fetch);
     const res = await authFetch(fetch, "/studio/projects/proj/database", { method: "GET" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      enabled: false,
+      // Absent means ON — the project has a database; each ENVIRONMENT is off
+      // until its slug exists to provision.
+      enabled: true,
       configured: true,
       environments: [
         { environment: "production", enabled: false },

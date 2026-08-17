@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { assertServiceRoleKey, isLocalDev, requireEnv } from "./_boot.ts";
+import { assertServiceRoleKey, hasPlatformDb, isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
@@ -121,8 +121,8 @@ export type ServiceConfig = OrchestratorOpts & {
  * every construction of a storage handle paying a round trip.
  */
 export async function assertStorageBucket(env: NodeJS.ProcessEnv): Promise<void> {
-  // Local dev is the memory blob store — there is no bucket to check.
-  if (isLocalDev(env)) return;
+  // No platform database is the memory blob store — there is no bucket to check.
+  if (!hasPlatformDb(env)) return;
   const required = requireEnv(env, [
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
@@ -136,8 +136,11 @@ export async function assertStorageBucket(env: NodeJS.ProcessEnv): Promise<void>
 }
 
 export function buildStorage(env: NodeJS.ProcessEnv): BlobStorage {
-  if (isLocalDev(env)) {
-    console.info("Local dev mode: in-memory blob storage for deploy artifacts");
+  if (!hasPlatformDb(env)) {
+    console.info(
+      "No SUPABASE_DB_URL: in-memory blob storage for deploy artifacts — " +
+        "deploys are LOST on restart",
+    );
     return createMemoryBlobStorage();
   }
   // Storage authenticates with the SAME service-role key the Realtime socket
@@ -213,13 +216,17 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
  * Platform Postgres surface: Supabase Vault for secrets, studio workspaces,
  * per-app database provisioning, and the Realtime change streams — all over
  * `SUPABASE_DB_URL` (service-role connection string) plus `SUPABASE_URL` /
- * `SUPABASE_SERVICE_ROLE_KEY` for the Realtime socket. Required in
- * production; local dev falls back to in-memory stores and the in-process
- * event emitter (and no per-app databases unless SUPABASE_DB_URL is set).
+ * `SUPABASE_SERVICE_ROLE_KEY` for the Realtime socket.
+ *
+ * **`SUPABASE_DB_URL` decides the whole tier, and there are exactly two.** Set,
+ * every store here is Supabase's and the companions are REQUIRED; unset, every
+ * store is memory and nothing survives a restart. See {@link hasPlatformDb} for
+ * why the third state — memory stores beside real per-app databases — is gone
+ * rather than merely discouraged.
  */
 export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   secrets: SecretStore;
-  /** The agents table (deploy records). Postgres in production, memory in dev. */
+  /** The agents table (deploy records). Postgres with a platform db, else memory. */
   agents: AgentRows;
   workspaces: WorkspaceStore;
   chats: ChatStore;
@@ -228,7 +235,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   appDb?: AppDatabases;
   /** Cross-replica slug mutation lock; in-process without a platform db. */
   slugLock: SlugMutationLock;
-  /** Platform admin SQL executor (production only) — see ServiceConfig.sql. */
+  /** Platform admin SQL executor, with a platform db — see ServiceConfig.sql. */
   sql?: SqlExec;
   /**
    * The admin pool itself, for the one consumer that needs a RESERVED
@@ -242,11 +249,9 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
 } {
   const url = env.SUPABASE_DB_URL;
   if (!url) {
-    if (!isLocalDev(env)) {
-      requireEnv(env, ["SUPABASE_DB_URL"]); // throws with the standard message
-    }
     console.info(
-      "Local dev mode: in-memory secret + studio workspace/chat stores; per-app databases disabled",
+      "No SUPABASE_DB_URL: in-memory secret/agents/workspace/chat stores, no per-app " +
+        "databases — DEPLOYED AGENTS ARE LOST ON RESTART. `supabase start` for the durable tier.",
     );
     return {
       secrets: createMemorySecretStore(),
@@ -258,29 +263,23 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // is a Postgres advisory lock, which needs connection affinity to mean
   // anything (see platform-lock.ts). Checked before the pool is built so the
   // failure names the setting rather than surfacing as lost exclusion later.
-  if (!isLocalDev(env)) assertSessionModeUrl(url);
+  // Asserted on every tier, local included: the local stack's 54322 is a direct
+  // session-mode port, and a `[db.pooler]` port pasted here is exactly the
+  // silent loss of exclusion this refuses — nothing about it is safer on a
+  // laptop.
+  assertSessionModeUrl(url);
   // The pools live for the process; connections drain when the process exits
   // (no explicit close() hook on the shutdown path today), and postgres.js
   // opens them lazily, so an idle replica pays for none of this.
   const admin = createPostgresDb({ url, max: ADMIN_POOL_MAX });
   const exec: SqlExec = (query, params) => admin.query(query, params);
-  const localDev = isLocalDev(env);
   const extraTargets = parseExtraAppDbTargets(env.APP_DB_URLS);
-  if (localDev) {
-    return {
-      secrets: createMemorySecretStore(),
-      ...buildMemoryStores(),
-      appDb: createAppDatabases({ url, sql: exec, extraTargets }),
-      slugLock: localSlugLock,
-      // Local dev with SUPABASE_DB_URL set really does have per-app schemas, so
-      // a durable run parked there is wakeable exactly as it is in production.
-      adminDb: admin,
-      extraAppDbClusters: extraTargets.length,
-    };
-  }
-  // Production: change notifications ride Supabase Realtime — the Postgres
-  // rows are the emitters (postgres_changes), so unlike the memory path the
-  // stores need no write-side wrapping.
+  // Change notifications ride Supabase Realtime — the Postgres rows are the
+  // emitters (postgres_changes), so unlike the memory path the stores need no
+  // write-side wrapping. Required rather than optional: a platform database with
+  // no Realtime credential is a server that never invalidates a resident sandbox
+  // on redeploy and never pushes studio SSE, and BOTH of those failures are
+  // silent (see realtime-events.ts on the channel that rejoins forever).
   const realtime = requireEnv(env, ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]);
   bootstrapPlatformDb(exec, env);
   return {
@@ -331,9 +330,13 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   // reports an anon key as a credential problem — see assertServiceRoleKey.
   // Checked here rather than at each consumer because this is the only caller
   // of both, so one guard cannot be half-applied.
-  if (!isLocalDev(env) && env.SUPABASE_SERVICE_ROLE_KEY) {
-    assertServiceRoleKey(env.SUPABASE_SERVICE_ROLE_KEY);
-  }
+  //
+  // Checked wherever the key is SET, local runs included. It used to be skipped
+  // in local dev, which exempted the one tier where a developer is most likely
+  // to have pasted the publishable key by mistake — and both symptoms there are
+  // the misleading ones the assertion exists to pre-empt (a deploy that fails on
+  // `storage.objects` RLS; a Realtime channel that rejoins in silence forever).
+  if (env.SUPABASE_SERVICE_ROLE_KEY) assertServiceRoleKey(env.SUPABASE_SERVICE_ROLE_KEY);
   const storage = buildStorage(env);
   const {
     secrets,
@@ -358,20 +361,21 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   // nothing to heartbeat. Only the Modal backend has a control plane to ask.
   const directory =
     resolveSandboxBackend(env) === "modal" ? createModalSandboxDirectory() : undefined;
-  // Browser-session auth: Supabase when configured, the dev-token
-  // implementation in local dev (same policy as the in-memory stores —
-  // production can never resolve it). Unconfigured production still serves
-  // CLI (raw-key) traffic, so warn rather than fail.
-  const auth = createStudioAuthFromEnv(env, { localDev: isLocalDev(env) });
+  // Browser-session auth: Supabase when configured, the no-auth dev-token
+  // implementation only on a run that has NO platform database (see
+  // createStudioAuthFromEnv — a platform database refuses dev tokens outright).
+  // Unconfigured production still serves CLI (raw-key) traffic, so warn rather
+  // than fail.
+  const auth = createStudioAuthFromEnv(env);
   if (!auth) {
     console.warn(
       "[auth] SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY not set — studio browser login is disabled",
     );
   }
   // Raw API-key bearers are verified against AssemblyAI before they can claim
-  // a slug or spawn a sandbox (api-key-verify.ts). Undefined only in local dev
-  // or under an explicit opt-out, so a production boot that forgot a variable
-  // gets verification rather than a hole.
+  // a slug or spawn a sandbox (api-key-verify.ts). Undefined only under an
+  // explicit `AAI_LOCAL_DEV=1` or `AAI_VERIFY_API_KEYS=0`, so a boot that forgot
+  // a variable gets verification rather than a hole.
   const keyVerifier = createApiKeyVerifierFromEnv(env, { localDev: isLocalDev(env) });
   return {
     slots,

@@ -325,6 +325,48 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   check is INSIDE the slug lock, and having it here means neither caller can
   forget it
 
+## Two questions, two sentinels
+
+**`SUPABASE_DB_URL` decides where platform state lives; `AAI_LOCAL_DEV=1`
+decides whether tenant code gets a real boundary.** They are independent, and
+one variable used to answer both — `isLocalDev` was `!SUPABASE_STORAGE_BUCKET`
+and gated the stores, the sandbox backend, key verification, the session-mode
+and service-role-key assertions, dev auth, and origin retention together.
+
+| Question | Sentinel | Set | Unset |
+| --- | --- | --- | --- |
+| Where is platform state? | `SUPABASE_DB_URL` (`hasPlatformDb`) | Postgres/Vault/Realtime/Storage, companions REQUIRED | memory, everywhere |
+| Is this a local run? | `AAI_LOCAL_DEV=1` (`isLocalDev`) | `subprocess` backend, key verification optional, origin retained | production defaults |
+
+Three things the split fixed, all of them measured on a morning it cost:
+
+- **There is no third tier.** `buildPlatformDb` used to have a
+  local-dev-with-a-database branch giving memory stores beside REAL per-app
+  schemas. So `pnpm dev:aai-server` against the local stack lost every deployed
+  agent on restart while its app schema sat in Postgres — a published slug 404s
+  and nothing about the failure names the store that dropped it. With a platform
+  database every store is Supabase's, and `SUPABASE_URL` /
+  `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_STORAGE_BUCKET` are required rather
+  than optional: half-configured is refused at boot, because a platform database
+  with no Realtime credential is a server that silently stops invalidating
+  sandboxes and pushing SSE.
+- **The safe branch is the default.** The old sentinel made an EMPTY environment
+  resolve the isolation-free `subprocess` backend and skip AssemblyAI key
+  verification. `AAI_LOCAL_DEV=1` inverts that; `sandbox-backend.test.ts` asserts
+  it on `{}` for exactly this reason.
+- **Local is no longer an excuse.** `assertSessionModeUrl` and
+  `assertServiceRoleKey` run on every tier now — a laptop is where a publishable
+  key gets pasted by mistake, and both of that key's symptoms (a deploy dying on
+  `storage.objects` RLS, a Realtime channel rejoining in silence) are the
+  misleading ones those assertions exist to pre-empt. Dev auth is refused outright
+  once a platform database is configured, with no `AAI_LOCAL_DEV=1` escape: if
+  state is in Supabase, identity is too (`createStudioAuthFromEnv`).
+
+`scripts/dev-server.mjs` supplies both, so `pnpm dev:aai-server` needs no
+exported variables — it sets the declaration and resolves the stack from
+`supabase status -o env`, layered under a repo-root `.env` and under the shell.
+`supabase/README.md` is the setup walkthrough, GitHub OAuth app included.
+
 ## Stateless server
 
 The platform server holds no cross-request durable or coordination state in
@@ -373,6 +415,18 @@ rules:
 - **A case is arm-independent** — fresh keys from `uniqueKeys`, never `"s"`/`"p"`
   — and what one arm cannot express is not a shared case (`RateLimiter.check`'s
   `now` is dropped by the pg implementation on purpose).
+- **A case REMOVES what it wrote, and a QUEUE makes that load-bearing.** Unique
+  keys stop collisions, not accumulation, and the stack arm's pgmq queue is the
+  real one a dev server drains: four `previewQueueConformance` cases used to
+  leave their job claimed-but-unacked, so it came back after the visibility
+  timeout and stayed. Measured — 24 conformance jobs from runs two days earlier,
+  drained by `pnpm dev:aai-server` the first time it had a platform database,
+  each printing `Archiving preview job with no resolvable credential
+  { project: 'p' }` against a `user:abc` no Vault can resolve. Nothing in that
+  log names a test, which is what makes a left-behind row worse than a noisy
+  one. The cleanup is per CASE rather than an `afterAll` sweep, because a claim
+  hides a job for its visibility timeout and a suite-level drain cannot see the
+  very set that needs removing.
 - **Register the pair or the gate fails.** `store-conformance-registry.test.ts`
   (a TEXT scan, respecting the boundary this package may not import across)
   refuses an unregistered `createPg*`/`createMemory*` pair, a registered name that
@@ -520,11 +574,18 @@ Two rules from it that a reader of THIS package needs in front of them:
   three rules: an explicit `SANDBOX_BACKEND` (`modal` | `subprocess`) always
   wins (unknown values throw — a silent fallback would look like the override
   not working); otherwise not-local-dev → `modal`, unconditionally; otherwise
-  → `subprocess`. `isLocalDev` is false whenever `SUPABASE_STORAGE_BUCKET` is
-  set, so **production can never resolve the host-local backend**, and fails
-  loudly without `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (or a `~/.modal.toml`
-  profile) rather than degrading. There is **no fallback between backends at
-  spawn time**: a failed spawn is a failed spawn.
+  → `subprocess`. `isLocalDev` is an explicit **`AAI_LOCAL_DEV=1`** and nothing
+  else, so `modal` is the DEFAULT and **production can never resolve the
+  host-local backend** — it fails loudly without
+  `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (or a `~/.modal.toml` profile) rather
+  than degrading. There is **no fallback between backends at spawn time**: a
+  failed spawn is a failed spawn.
+
+  That sentinel was `!SUPABASE_STORAGE_BUCKET`, which inverted the rule it
+  exists for: the isolation-free branch was what a FORGOTTEN variable selected.
+  It also tied the backend to where platform state lives, so pointing a dev
+  server at the local Supabase stack silently demanded Modal credentials — see
+  "Two questions, two sentinels" below.
 - **Every spawn failure is a `SandboxUnavailableError`** (`sandbox-errors.ts`)
   — both Modal spawners, both subprocess spawners. It is a marker class, not a
   message: the message stays the backend's technical one (`Modal sandbox spawn
@@ -902,14 +963,15 @@ Host↔guest control traffic is JSON-RPC over a WebSocket the host dials
 through the same tunnel (`/ws`), authenticated by a per-sandbox bearer
 token.
 
-**In production.** Local dev defaults to the `subprocess` backend, which has
-**none** of the properties described below — the harness is a child process
-of the server, sharing its uid, filesystem, and network — see "Modal sandbox
-notes". Selection (`sandbox-backend.ts`) makes it unreachable outside local
-dev: any environment with `SUPABASE_STORAGE_BUCKET` set resolves `modal`
-unconditionally. When reasoning about the security model, the backend is the
-first thing to establish, and the boot log names it (with a warning when
-there is no boundary at all).
+**In production.** A run declaring `AAI_LOCAL_DEV=1` defaults to the
+`subprocess` backend, which has **none** of the properties described below —
+the harness is a child process of the server, sharing its uid, filesystem, and
+network — see "Modal sandbox notes". Selection (`sandbox-backend.ts`) makes it
+unreachable without that declaration: every other environment resolves `modal`
+unconditionally, so the boundary is what a deployment gets by DEFAULT rather
+than by remembering a variable. When reasoning about the security model, the
+backend is the first thing to establish, and the boot log names it (with a
+warning when there is no boundary at all).
 
 Key properties:
 
@@ -989,10 +1051,12 @@ the two undici-version traps in the pinned dispatcher are in
     wait for. `supabase-auth.ts` draws the same line for sessions.
   - **Negatives are cached**, or one unauthenticated request becomes one
     upstream request — a traffic amplifier pointed at AssemblyAI.
-  - **The verifier is ABSENT in local dev and tests** (`isLocalDev`, plus an
-    explicit `AAI_VERIFY_API_KEYS=0`), and present otherwise — so a
-    production boot that merely forgot a variable gets verification, not a
-    hole. The endpoint is `AAI_KEY_VERIFY_URL`-overridable.
+  - **Both ways to switch it off are DECLARATIONS** — `AAI_LOCAL_DEV=1`
+    (`isLocalDev`) or an explicit `AAI_VERIFY_API_KEYS=0` — and it is present
+    otherwise, so a boot that merely forgot a variable gets verification, not a
+    hole. Neither is inferred from where platform state lives, so a dev server
+    on the local Supabase stack is unaffected by which is set. The endpoint is
+    `AAI_KEY_VERIFY_URL`-overridable.
   - **The browser path is verified at STORAGE, not per request**
     (`PUT /studio/account/key`): a session never presents a key, so the
     stored string would otherwise skip the check and then BE the credential

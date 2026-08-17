@@ -179,7 +179,11 @@ describe("agentBootEnv", () => {
   // origin is what those spawns have; this is the path that makes the feature
   // work on a deployment that never set AAI_PUBLIC_ORIGIN.
   it("falls back to the origin a request was last served on", () => {
-    rememberPublicOrigin(new Request("https://agents.test/digest-desk/client-config"), {});
+    // Retention needs a DECLARED local run; an empty env is production, where
+    // nothing is remembered on purpose.
+    rememberPublicOrigin(new Request("https://agents.test/digest-desk/client-config"), {
+      AAI_LOCAL_DEV: "1",
+    });
     expect(agentBootEnv(boot, {})).toMatchObject({
       AAI_PUBLIC_BASE_URL: "https://agents.test/digest-desk",
     });

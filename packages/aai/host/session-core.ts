@@ -29,6 +29,7 @@ import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { createCommandDispatcher } from "./session-commands.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
+import { stampSessionEvent } from "./session-event-stream.ts";
 import { createIdleWatchdog } from "./session-idle.ts";
 import { dispatchReplyDone } from "./session-reply-done.ts";
 import { type ReplyToolState, runToolStep } from "./session-tool-steps.ts";
@@ -407,6 +408,27 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       // Forward to the transport so pipeline mode's LLM sees the restored
       // context on resume (S2S restores context service-side via resume).
       opts.transport.seedHistory?.(messages);
+      // And to the CLIENT, which is the half that was missing: everything above
+      // restores the conversation for the MODEL, and a reconnecting browser
+      // stopped replaying its own on the grounds that the server had taken this
+      // over. It had not — the transcript came back empty next to an agent that
+      // remembered every word, with the greeting suppressed because the resume
+      // was genuine. See `history.restored` in `sdk/protocol-events.ts`.
+      //
+      // Through the SINK with its own stamp, never `emit`: the emitter RECORDS
+      // first, so emitting the history just read out of the log would append it
+      // back — doubling the log on every resume.
+      const visible = messages.filter(
+        (m): m is Message & { role: "user" | "assistant" } => m.role !== "tool",
+      );
+      if (visible.length > 0 && opts.client.open) {
+        opts.client.event(
+          stampSessionEvent({
+            type: "history.restored",
+            messages: visible.map(({ role, content }) => ({ role, content })),
+          }),
+        );
+      }
     },
 
     // ─── Inbound from transport ───────────────────────────────────────────

@@ -386,12 +386,33 @@ const CRON_JOB_PREFIX = "aai-sweep-";
  * the platform no longer declares. Runs at boot on the platform admin
  * connection; failures propagate to the caller, which logs loudly — a missing
  * sweep degrades to table growth, never to wrong answers.
+ *
+ * **It VERIFIES pg_cron rather than creating it**, the same way
+ * `ensurePlatformTables` verifies a CLI-built database. `create extension if not
+ * exists pg_cron` used to run here, and it was three things at once: redundant
+ * (the platform-schema migration declares it, and migrations are applied before
+ * any code runs), noisy (Postgres answers an already-installed extension with a
+ * `42710` NOTICE, which postgres.js surfaces — a warning object on every single
+ * boot, in a log where a real NOTICE then reads as routine), and DDL executed by
+ * every replica on the admin connection, which is exactly the class the migration
+ * consolidation removed. An absent extension now reports ONE sentence naming what
+ * will not happen, which is strictly more use than a stack of notices: the caller
+ * treats a scheduling failure as non-fatal, so the database is left as it is
+ * rather than being altered by a process that only wanted to read it.
  */
 export async function schedulePlatformSweeps(
   sql: SqlExec,
   jobs: readonly CronJob[] = platformCronJobs(),
 ): Promise<void> {
-  await sql("create extension if not exists pg_cron");
+  const [installed] = await sql("select 1 as ok from pg_extension where extname = 'pg_cron'");
+  if (!installed) {
+    throw new Error(
+      "pg_cron is not installed, so the janitorial sweeps (dead rate-limit windows, " +
+        "orphaned -preview agents, unreferenced deploy blobs, runaway tenant queries) will " +
+        "not run. It is declared in supabase/migrations/*_platform_schema.sql — apply " +
+        "migrations against this database (`supabase db push`, or `supabase start` locally).",
+    );
+  }
   for (const job of jobs) {
     await sql("select cron.schedule($1, $2, $3)", [job.name, job.schedule, job.command]);
   }

@@ -318,6 +318,20 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         // state, and only the newest one is meaningful.
         updateState({ agentState: e.state });
         break;
+      case "history.restored":
+        // Replace, for the same reason and one more: the server is authoritative
+        // about the conversation on a resume, and a frame delivered twice (a
+        // second reconnect) must not double the transcript. The ids are minted
+        // HERE because they are this client's render keys — `messageSeq` keeps
+        // counting from the restored tail, so a message spoken after the resume
+        // cannot collide with a restored one.
+        messageSeq = 0;
+        updateState({
+          messages: e.messages
+            .slice(-MAX_MESSAGES)
+            .map((m) => ({ id: ++messageSeq, role: m.role, content: m.content })),
+        });
+        break;
       case "error.reported":
         handleErrorEvent(e);
         break;

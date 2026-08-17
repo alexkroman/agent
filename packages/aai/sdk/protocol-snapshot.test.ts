@@ -58,6 +58,13 @@ describe("server→client event wire format", () => {
     { type: "error.reported", code: "stt", message: "Speech recognition failed" },
     { type: "custom.emitted", event: "game_state", data: { hp: 10 } },
     { type: "state.updated", state: { items: [] } },
+    {
+      type: "history.restored",
+      messages: [
+        { role: "user", content: "two large pepperoni" },
+        { role: "assistant", content: "Got it." },
+      ],
+    },
   ];
 
   test.each(valid.map((body) => [body.type, body] as const))(

@@ -73,7 +73,20 @@ export type StudioWorkspace = {
   /**
    * The project wants a database (`ctx.db`) — see studio-database.ts. Intent
    * rather than state: it can be set before either agent is deployed, and each
-   * environment's schema is provisioned as its slug appears. Absent means off.
+   * environment's schema is provisioned as its slug appears.
+   *
+   * **Absent means ON.** A studio project gets a database by default, so the
+   * agent the coding agent writes can call `ctx.db` in its first tool without
+   * anyone finding a settings pane first — reaching for storage and getting the
+   * enablement error is the wrong first experience, and the switch was
+   * discoverable only to someone who already knew it existed. An explicit
+   * `false` is the opt-out, which is why disabling STORES that rather than
+   * clearing the field: the convention used to be the other way round, and
+   * under it a cleared field would silently re-enable on the next read.
+   *
+   * Every reader therefore tests `!== false`, never `=== true`. Defaulting at
+   * READ time rather than stamping the flag at project creation is what makes
+   * this hold for projects that already exist — there is nothing to backfill.
    */
   databaseEnabled?: boolean;
   updatedAt: number;

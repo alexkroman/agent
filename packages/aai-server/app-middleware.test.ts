@@ -28,11 +28,14 @@ describe("applyPlatformMiddleware", () => {
   });
 
   test("records the public origin of every request it serves (local dev)", async () => {
+    // The middleware reads `process.env`, and retention needs a DECLARED local
+    // run — an unstubbed environment is production (see `isLocalDev`).
+    vi.stubEnv("AAI_LOCAL_DEV", "1");
     const app = appWithMiddleware();
     // Cleartext with a public Host, which is what Modal forwards: the resolver
     // is what turns that into https, and this asserts the middleware ran it.
     await app.request(new Request("http://agent.example.modal.run/ok"));
-    expect(agentPublicBaseUrl("digest-desk", {})).toBe(
+    expect(agentPublicBaseUrl("digest-desk", { AAI_LOCAL_DEV: "1" })).toBe(
       "https://agent.example.modal.run/digest-desk",
     );
   });
@@ -42,7 +45,11 @@ describe("applyPlatformMiddleware", () => {
     // before any auth, so an unauthenticated `GET /health` carrying
     // `Host: evil.example` set the origin baked into the next sandbox this
     // replica spawned — for any slug, any tenant. See `rememberPublicOrigin`.
-    vi.stubEnv("SUPABASE_STORAGE_BUCKET", "aai-deploys");
+    // Stubbed OFF rather than left unstubbed: "production" is the absence of the
+    // declaration, and a developer with `AAI_LOCAL_DEV=1` exported in their
+    // shell would otherwise turn this security assertion into a failing test
+    // (or, in the mirror-image case, into one that passes for the wrong reason).
+    vi.stubEnv("AAI_LOCAL_DEV", undefined);
     const app = appWithMiddleware();
     const res = await app.request(new Request("http://evil.example/ok"));
     expect(res.status).toBe(200);
@@ -52,9 +59,12 @@ describe("applyPlatformMiddleware", () => {
   test("records it for a request that 404s too", async () => {
     // The recording sits ahead of routing on purpose — a replica whose only
     // traffic so far was a probe or a stray path still knows its own origin.
+    vi.stubEnv("AAI_LOCAL_DEV", "1");
     const app = appWithMiddleware();
     await app.request(new Request("http://agent.example.modal.run/nope"));
-    expect(agentPublicBaseUrl("x", {})).toBe("https://agent.example.modal.run/x");
+    expect(agentPublicBaseUrl("x", { AAI_LOCAL_DEV: "1" })).toBe(
+      "https://agent.example.modal.run/x",
+    );
   });
 
   test("still answers the request it recorded", async () => {

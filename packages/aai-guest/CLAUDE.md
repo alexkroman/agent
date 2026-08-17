@@ -626,6 +626,41 @@ this package's.
   keeps the path covered on any runner by spawning the harness there directly
   and publishing through the real CLI to a real listening orchestrator.
 
+## A `neverBundle` package must be INSTALLED beside the harness
+
+`tsdown.config.ts` bundles everything except a `neverBundle` list, and the
+harness ships as ONE file — so every entry there becomes a runtime resolution
+against the `node_modules` next to it (`/opt/aai` baked, this package's own in
+dev). Two halves have to agree, and for `@workflow/world-postgres` neither did:
+
+- **It has to be external in the ARTIFACT**, which is a property of the build
+  rather than of the config.
+- **Something has to install it beside the harness** — the locked toolchain
+  (`toolchain/package.json`, via `LOCKED_PACKAGES` in
+  `scripts/sync-guest-toolchain.mjs`), or `modal-harness-image.ts`'s separate
+  `@alexkroman1/*` install.
+
+**Bundling is not always safe, and the reason is DATA.** A package whose code
+reads files beside itself cannot be bundled at all: `@workflow/world-postgres`'s
+Drizzle migrator reads `drizzle/migrations/meta/_journal.json`, resolved relative
+to its own module location, and tsdown carries modules rather than the
+directories around them. Bundled, a guest holding a `DATABASE_URL` died on
+`Can't find meta/_journal.json` before running one migration, and the workflow
+API's runtime `require` of it failed from the temp dir steps dispatch in — so the
+**durable Postgres workflow world had never worked anywhere, production
+included**. Nothing noticed because the prerequisite (an agent with storage
+enabled) had never been met; enabling the database by default for studio projects
+is what surfaced it. Ask of any new dependency whether it reads its own
+directory.
+
+`harness-externals.test.ts` pins both halves, and `aai-guest#test` declares its
+own `build` so it asserts on the real artifact — a suite that skipped itself
+without one would be the silent skip that let this ship. Verified by A/B:
+removing the `neverBundle` entry fails the import assertion. Note the
+journal-resolves assertion does NOT fail there (the package is installed either
+way; the bug was the bundled copy not using it) — it guards the other direction,
+a package that stops shipping its migrations.
+
 ## Fetching its own bundle
 
 The guest pulls its own worker bundle from a signed Storage URL rather than

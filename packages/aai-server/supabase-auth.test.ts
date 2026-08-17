@@ -262,36 +262,50 @@ describe("dev auth", () => {
 });
 
 describe("createStudioAuthFromEnv", () => {
-  test("Supabase env wins; local dev falls back to dev auth; else undefined", () => {
-    const supa = createStudioAuthFromEnv(
-      {
-        SUPABASE_URL: "https://p.supabase.co",
-        SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
-      } as NodeJS.ProcessEnv,
-      { localDev: true },
-    );
-    expect(supa?.clientConfig.mode).toBe("supabase");
-    expect(
-      createStudioAuthFromEnv({} as NodeJS.ProcessEnv, { localDev: true })?.clientConfig,
-    ).toEqual({ mode: "dev" });
-    expect(createStudioAuthFromEnv({} as NodeJS.ProcessEnv, { localDev: false })).toBeUndefined();
-  });
+  const env = (extra: Record<string, string>) => extra as NodeJS.ProcessEnv;
+  const SUPABASE = {
+    SUPABASE_URL: "https://p.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
+  };
 
-  test("refuses dev auth when production markers are configured without explicit local dev", () => {
-    // Dev auth is no auth: a deploy with real platform backing but missing
-    // Supabase auth vars must fail boot, not serve mint-any-identity tokens.
-    expect(() =>
-      createStudioAuthFromEnv({ SUPABASE_DB_URL: "postgres://x" } as NodeJS.ProcessEnv, {
-        localDev: true,
-      }),
-    ).toThrow("Refusing no-auth dev tokens");
-    // Explicit AAI_LOCAL_DEV=1 is user intent — dev auth stays available.
+  test("Supabase env wins over every other consideration", () => {
+    expect(createStudioAuthFromEnv(env(SUPABASE))?.clientConfig.mode).toBe("supabase");
+    // Including on a declared local run against a platform database, which is
+    // the whole shape `pnpm dev:aai-server` now resolves.
     expect(
       createStudioAuthFromEnv(
-        { SUPABASE_DB_URL: "postgres://x", AAI_LOCAL_DEV: "1" } as NodeJS.ProcessEnv,
-        { localDev: true },
-      )?.clientConfig,
-    ).toEqual({ mode: "dev" });
+        env({ ...SUPABASE, AAI_LOCAL_DEV: "1", SUPABASE_DB_URL: "postgres://x" }),
+      )?.clientConfig.mode,
+    ).toBe("supabase");
+  });
+
+  test("dev auth needs an explicit local-dev declaration and no platform database", () => {
+    expect(createStudioAuthFromEnv(env({ AAI_LOCAL_DEV: "1" }))?.clientConfig).toEqual({
+      mode: "dev",
+    });
+    // Neither declared nor configured: raw-key bearers keep working, the studio
+    // login is simply unavailable.
+    expect(createStudioAuthFromEnv(env({}))).toBeUndefined();
+  });
+
+  test("a platform database refuses dev tokens, declaration or not", () => {
+    // Dev auth is NO auth, and `user-key:<uid>` is where every account's
+    // AssemblyAI key lives — so serving it against real stores lets any caller
+    // claim any user id and read that key. There is deliberately no escape: the
+    // `AAI_LOCAL_DEV=1` one used to make this reachable on purpose.
+    for (const extra of [{}, { AAI_LOCAL_DEV: "1" }]) {
+      expect(() =>
+        createStudioAuthFromEnv(env({ SUPABASE_DB_URL: "postgres://x", ...extra })),
+      ).toThrow("SUPABASE_DB_URL is set but Supabase auth is not");
+    }
+  });
+
+  test("the refusal names both ways out", () => {
+    // A boot failure whose message does not say what to do is a boot failure
+    // somebody works around by reverting.
+    expect(() => createStudioAuthFromEnv(env({ SUPABASE_DB_URL: "postgres://x" }))).toThrow(
+      /pnpm dev:aai-server|unset SUPABASE_DB_URL/,
+    );
   });
 });
 

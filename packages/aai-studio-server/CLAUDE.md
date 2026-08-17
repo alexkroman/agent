@@ -779,8 +779,22 @@ studio-specific — a raw bearer is verified against AssemblyAI before it means
 anything, the two bearer forms and their one resolution point, and the
 key↔account mapping — stay in that guide's "Auth" block.
 
-- **Browser sessions are Supabase Auth** (`supabase-auth.ts`): GitHub
-  OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client.
+- **Browser sessions are Supabase Auth** (`supabase-auth.ts`), and **which
+  sign-in methods exist is asked of GoTrue, never declared here**
+  (`GET /auth/v1/settings`, read by the client's `auth-methods.ts`): GitHub OAuth
+  wherever the project enables it, email+password wherever it enables that — the
+  local stack has the email provider on with `mailer_autoconfirm`, which is what
+  makes a local dev server usable with no OAuth app registered. A hand-kept list
+  on this side would be a button GoTrue answers `provider is not enabled` to,
+  after a round trip through somebody else's site; an unreadable answer falls
+  back to GitHub-only rather than to nothing.
+
+  **A platform database refuses the no-auth dev tokens outright**
+  (`createStudioAuthFromEnv`, no `AAI_LOCAL_DEV=1` escape) — dev auth lets any
+  caller claim any user id, and `user-key:<uid>` is where every account's
+  AssemblyAI key lives. See "Two questions, two sentinels" in
+  `packages/aai-server/CLAUDE.md`.
+
   The server verifies access tokens **two ways, and which one a route gets is
   a security decision**:
   - `verifyAccessToken` — the request path. `getClaims` (`@supabase/auth-js`),

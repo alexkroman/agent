@@ -18,7 +18,13 @@ import {
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import { createEmitError } from "./pipeline-error.ts";
-import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
+import {
+  type SkipGreeting,
+  shouldSkipGreeting,
+  type Transport,
+  type TransportCallbacks,
+  type TransportSessionConfig,
+} from "./types.ts";
 
 const DEFAULT_MODEL = "gpt-realtime-2";
 const DEFAULT_VOICE = "alloy";
@@ -40,8 +46,13 @@ type OpenaiRealtimeTransportOptions = {
   inputSampleRate: number;
   /** PCM sample rate (Hz) for synthesized output audio. */
   outputSampleRate: number;
-  /** Skip the initial greeting (used for session resume). */
-  skipGreeting?: boolean;
+  /**
+   * Skip the initial greeting (used for session resume) — a boolean, or a thunk
+   * resolved when the greeting would fire. See {@link SkipGreeting}: the runtime
+   * cannot answer this at construction, because whether a resume recovered
+   * anything is only known once its lookups have run.
+   */
+  skipGreeting?: SkipGreeting;
   createWebSocket?: CreateOpenaiRealtimeWebSocket;
   logger?: Logger;
 };
@@ -84,7 +95,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   }
 
   function sendGreeting(): void {
-    if (opts.skipGreeting) return;
+    // Resolved at the moment it matters, like the pipeline's `onAudioReady`.
+    if (shouldSkipGreeting(opts.skipGreeting)) return;
     const greeting = opts.sessionConfig.greeting;
     if (!greeting) return;
     // OpenAI Realtime has no native greeting field — trigger it as a one-shot

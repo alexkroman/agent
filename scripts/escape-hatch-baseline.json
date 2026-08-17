@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
     "packages/aai-ui/default-client.tsx": 1,
     "packages/aai-ui/types.test.ts": 2
@@ -51,7 +51,7 @@
     "packages/aai-ui/_react-test-utils.ts": 3,
     "packages/aai-ui/_session-core-test-utils.ts": 2,
     "packages/aai-ui/define-client-smoke.test.tsx": 1,
-    "packages/aai-ui/session-core.ts": 1,
+    "packages/aai-ui/session-core-reconnect.ts": 1,
     "packages/aai/host/_fake-llm.ts": 1,
     "packages/aai/host/_test-utils.ts": 1,
     "packages/aai/host/_undici.ts": 2,

@@ -219,6 +219,11 @@ export {
 // this package import it from the module directly.
 export { createS2sTransport, type S2sTransportOptions } from "./transports/s2s-transport.ts";
 export type {
+  // `PipelineTransportOptions.skipGreeting` names this, so the same rule as
+  // `TransportEventBody` below applies: a caller passing the THUNK form — which
+  // is how a resume that recovered nothing gets greeted — would otherwise have a
+  // type to satisfy and no way to name it.
+  SkipGreeting,
   Transport,
   TransportCallbacks,
   // `TransportCallbacks.report` names this, so anything implementing the one

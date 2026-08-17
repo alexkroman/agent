@@ -9,22 +9,19 @@
 
 import pTimeout, { TimeoutError } from "p-timeout";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
-import { assertProviderTriple, type SessionMode } from "../sdk/config-rules.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
-import { defaultProviders } from "../sdk/providers/_default-providers.ts";
-import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
-import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 import { describeResolvedProviders } from "./providers/_provider-settings.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
+import { resolveEffectiveProviders } from "./runtime-providers.ts";
 import { buildSessionCallbacks } from "./runtime-session-callbacks.ts";
 import { attachSessionState, createRuntimeSessionState } from "./runtime-session-state.ts";
 import { attachSessionStream } from "./runtime-session-stream.ts";
@@ -37,7 +34,7 @@ import {
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "./session-emitter.ts";
-import { textAgentHasNoSession } from "./text-agent.ts";
+import { createResumeFindings, resolveSkipGreeting } from "./session-resume-found.ts";
 import { buildRunNotifier, buildWorkflowClient } from "./workflow-runtime.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
@@ -49,49 +46,6 @@ export type {
 } from "./runtime-types.ts";
 
 // ─── Runtime implementation ──────────────────────────────────────────────────
-
-/**
- * Determine the effective STT/LLM/TTS providers and session mode. Providers
- * come from RuntimeOptions (platform path) or fall back to the agent's own
- * fields (the `aai dev` path passes no provider opts), so a declared pipeline
- * agent isn't silently downgraded to S2S.
- */
-function resolveEffectiveProviders(
-  opts: RuntimeOptions,
-  agent: AgentDef,
-): {
-  stt: SttProvider | undefined;
-  llm: LlmProvider | undefined;
-  tts: TtsProvider | undefined;
-  s2s: AgentDef["s2s"];
-  /** Never `"text"` — a text agent is refused below, before any of this. */
-  mode: Exclude<SessionMode, "text">;
-} {
-  const stt = opts.stt ?? agent.stt;
-  const llm = opts.llm ?? agent.llm;
-  const tts = opts.tts ?? agent.tts;
-  // A full provider triple passed as RuntimeOptions replaces the agent's
-  // session-mode declaration entirely, `s2s` field included — the platform
-  // path uses opts as an override, not a merge.
-  const s2s = stt && llm && tts ? undefined : agent.s2s;
-  // Pipeline stages not declared anywhere → filled from the all-AssemblyAI
-  // pipeline, matching toAgentConfig. S2S requires an explicit
-  // `s2s` descriptor (`assemblyAIS2s()`), so a config that loses its
-  // providers can no longer silently run S2S — this mirrors, not replaces,
-  // the "never let S2S be a fallback" rule in runtime-transport.ts.
-  if (agent.text === true) throw textAgentHasNoSession(agent.name);
-  const defaults = defaultProviders({ stt, llm, tts, s2s });
-  if (defaults) {
-    return {
-      stt: stt ?? defaults.stt,
-      llm: llm ?? defaults.llm,
-      tts: tts ?? defaults.tts,
-      s2s: undefined,
-      mode: "pipeline",
-    };
-  }
-  return { stt, llm, tts, s2s, mode: assertProviderTriple(stt, llm, tts, s2s) };
-}
 
 /**
  * Create an agent runtime — the execution engine for a voice agent.
@@ -338,8 +292,16 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // three different right answers — see `runtime-session-callbacks.ts`.
     const callbacks = buildSessionCallbacks({ bindCore, emitter, isPipeline, isRelay });
 
+    // What this resume recovered, written by the two lookups below and read by
+    // the greeting — it must exist BEFORE the transport; `session-resume-found.ts`
+    // carries why, and owns the decision `skipGreeting` becomes.
+    const findings = createResumeFindings();
+    const { skipGreeting, resumed } = sessionOpts;
     const transport = buildTransport({
-      sessionOpts,
+      sessionOpts: {
+        ...sessionOpts,
+        skipGreeting: resolveSkipGreeting(skipGreeting, resumed, findings),
+      },
       systemPrompt,
       callbacks,
     });
@@ -372,6 +334,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         return owned;
       },
       pushStateSnapshot,
+      findings,
     });
 
     // The event log's own bookends: continue it on the way in (and restore the
@@ -382,6 +345,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       stream: sessionState.stream,
       sessionId: sessionOpts.id,
       resumed: sessionOpts.resumed === true,
+      findings,
     });
 
     return core;

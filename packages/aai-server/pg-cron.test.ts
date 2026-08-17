@@ -6,11 +6,20 @@ import { describe, expect, test } from "vitest";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
 import { AGENT_ENV_SECRET_PREFIX, APP_DB_SECRET_PREFIX, type SqlExec } from "./secret-store.ts";
 
-/** Capture every statement; `scheduled` is what `cron.job` already holds. */
-function captureSql(scheduled: string[] = []) {
+/**
+ * Capture every statement; `scheduled` is what `cron.job` already holds.
+ *
+ * `hasCron` answers the extension PROBE, because that probe is what decides
+ * whether anything else runs at all — a fake that answered `[]` to every read
+ * would make every test here exercise the missing-extension path.
+ */
+function captureSql(scheduled: string[] = [], hasCron = true) {
   const calls: { query: string; params?: unknown[] }[] = [];
   const sql: SqlExec = (query, params) => {
     calls.push({ query, ...(params && { params }) });
+    if (query.includes("from pg_extension")) {
+      return Promise.resolve(hasCron ? [{ ok: 1 }] : []);
+    }
     if (query.includes("from cron.job")) {
       return Promise.resolve(scheduled.map((jobname) => ({ jobname })));
     }
@@ -19,16 +28,32 @@ function captureSql(scheduled: string[] = []) {
   return { sql, calls };
 }
 
-test("installs the extension then upserts every job by name", async () => {
+test("verifies the extension then upserts every job by name", async () => {
   const { sql, calls } = captureSql();
   await schedulePlatformSweeps(sql, platformCronJobs());
 
-  expect(calls[0]?.query).toBe("create extension if not exists pg_cron");
+  // A READ, not DDL. `create extension if not exists pg_cron` used to run here
+  // and was redundant with the platform-schema migration, emitted a `42710`
+  // NOTICE on every boot, and had every replica altering the database on the
+  // admin connection to learn something it could ask.
+  expect(calls[0]?.query).toBe("select 1 as ok from pg_extension where extname = 'pg_cron'");
+  expect(calls.some((c) => c.query.startsWith("create extension"))).toBe(false);
   const scheduled = calls.slice(1, 1 + platformCronJobs().length);
   for (const [i, job] of platformCronJobs().entries()) {
     expect(scheduled[i]?.query).toBe("select cron.schedule($1, $2, $3)");
     expect(scheduled[i]?.params).toEqual([job.name, job.schedule, job.command]);
   }
+});
+
+test("a database with no pg_cron is reported, and nothing is scheduled", async () => {
+  // The caller treats this as non-fatal, so the value of throwing is the
+  // SENTENCE: it names what will not happen and how to fix it, where the old
+  // path silently altered the database instead.
+  const { sql, calls } = captureSql([], false);
+  await expect(schedulePlatformSweeps(sql, platformCronJobs())).rejects.toThrow(
+    /pg_cron is not installed.*will\s+not run/s,
+  );
+  expect(calls.some((c) => c.query.includes("cron.schedule"))).toBe(false);
 });
 
 /**

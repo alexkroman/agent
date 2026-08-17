@@ -51,6 +51,7 @@
 import { z } from "zod";
 
 import {
+  DEFAULT_MAX_HISTORY,
   MAX_AUDIO_SAMPLE_RATE,
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_ERROR_MESSAGE_CHARS,
@@ -299,6 +300,43 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
     type: z.literal("state.updated"),
     meta: SessionEventMetaSchema,
     state: z.unknown(),
+  }),
+  /**
+   * The conversation this session already had, sent when a RESUME restores one.
+   *
+   * **The frame that closes a hand-off neither side was making.** A reconnecting
+   * client stopped replaying its own history on the stated grounds that "the
+   * server restores the conversation from its own retained event stream now" —
+   * and the server does, into the LLM's context (`restoreHistory` →
+   * `seedHistory`). Nothing put it on the WIRE. So a page reload resumed
+   * correctly by every server-side measure, with the greeting suppressed because
+   * the resume was real, and rendered an EMPTY transcript: the agent remembered
+   * the conversation and the person looking at it could not see it. Both halves
+   * were individually right, which is why nothing failed loudly.
+   *
+   * Shaped like `state.updated` above rather than like a transcript event: the
+   * client REPLACES its list from this, so the server stays authoritative and a
+   * frame delivered twice (a second reconnect) cannot double the conversation.
+   * That is also why it carries no ids — the client owns `ChatMessage.id`, which
+   * is a render key assigned at append time, and minting them here would put two
+   * numbering schemes on one list.
+   *
+   * NOT recorded in the retained stream, and that is load-bearing: it is sent
+   * through the sink with a stamp of its own (`stampSessionEvent`), because
+   * emitting it would append the whole restored history to the log it was just
+   * read from — doubling the log on every resume, unboundedly.
+   */
+  z.object({
+    type: z.literal("history.restored"),
+    meta: SessionEventMetaSchema,
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string().max(MAX_TRANSCRIPT_CHARS),
+        }),
+      )
+      .max(DEFAULT_MAX_HISTORY),
   }),
 ]);
 

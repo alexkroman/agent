@@ -66,3 +66,41 @@ enabled = true
 
 [storage.buckets.blobs]
 public = false
+
+# GoTrue, which is the local arm of the studio's BROWSER auth.
+#
+# It is declared here because a platform database now REFUSES no-auth dev tokens
+# (`createStudioAuthFromEnv`): if platform state is in Supabase, identity is too.
+# So the local stack has to be able to sign somebody in, and this is where that
+# is stated — the dashboard settings this file otherwise stays out of are
+# production's, and this section describes the local stack's own shape.
+#
+# `site_url` and `additional_redirect_urls` are the allow-list GoTrue validates
+# `redirect_to` against, and `signInWithOAuth` sends `window.location.href` — so
+# the studio's own origin has to be in it or the round trip comes back rejected
+# with nothing on the page saying why. Port 8080 is `DEFAULT_PORT`
+# (`aai-server/constants.ts`); both spellings of loopback are listed because a
+# browser will use whichever the developer typed.
+[auth]
+enabled = true
+site_url = "http://localhost:8080"
+additional_redirect_urls = ["http://127.0.0.1:8080"]
+
+# The studio signs in with GitHub and nothing else (`auth.tsx`), so a local stack
+# with no GitHub provider has no sign-in at all. Point a GitHub OAuth app at the
+# local callback below and export the pair; `supabase start` interpolates `env()`
+# at stack start, so a missing value leaves the provider disabled rather than
+# failing the stack.
+#
+#   https://github.com/settings/developers → New OAuth App
+#   Homepage URL:               http://localhost:8080
+#   Authorization callback URL: http://127.0.0.1:54321/auth/v1/callback
+#
+# The callback is GOTRUE's, not the studio's: GitHub redirects to Supabase, which
+# then redirects to `redirect_to` above. Pointing it at :8080 is the mistake this
+# comment exists to pre-empt — it fails with GitHub's own opaque error page.
+[auth.external.github]
+enabled = true
+client_id = "env(AAI_LOCAL_GITHUB_CLIENT_ID)"
+secret = "env(AAI_LOCAL_GITHUB_SECRET)"
+redirect_uri = "http://127.0.0.1:54321/auth/v1/callback"

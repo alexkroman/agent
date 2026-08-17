@@ -14,6 +14,7 @@ import type { Logger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream, type SessionEventStream } from "./session-event-stream.ts";
+import type { ResumeFindings } from "./session-resume-found.ts";
 import { createPostgresStateBackend } from "./session-state-postgres.ts";
 import {
   createMemoryStateBackend,
@@ -113,12 +114,21 @@ export function attachSessionState(
     release: () => boolean;
     /** `pushStateSnapshot`, absent on the sandbox path where the runtime holds no state. */
     pushStateSnapshot?: ((sessionId: string, emitter: SessionEmitter) => void) | undefined;
+    /**
+     * Where "this resume hydrated real state" is recorded — see
+     * `session-resume-found.ts`. The same question `pushStateSnapshot` gates on,
+     * read one line later so the greeting can use the answer too.
+     */
+    findings?: ResumeFindings | undefined;
   },
 ): void {
-  const { state, sessionId, emitter, release, pushStateSnapshot } = opts;
+  const { state, sessionId, emitter, release, pushStateSnapshot, findings } = opts;
   const startCore = core.start.bind(core);
   core.start = async () => {
     await state.store.hydrate(sessionId);
+    // AFTER the hydrate, for the same reason the push below is: before it the
+    // cache is empty on a replacement process and this would report nothing.
+    if (state.store.has(sessionId)) findings?.record();
     // AFTER hydration, which is the whole ordering. A resume onto a REPLACEMENT
     // process has an empty cache until the load lands, so pushing before it would
     // find no state, report nothing, and leave the reconnected client rendering

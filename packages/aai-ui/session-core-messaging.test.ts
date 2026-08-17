@@ -28,6 +28,12 @@ describe("createSessionCore", () => {
 
   beforeEach(() => {
     resetLastSocket();
+    // A stored session id survives a RELOAD, which within one jsdom document
+    // means it survives from one test to the next: without this, the id a
+    // resume test's `config` frame stores makes the "first connect" cases below
+    // resume instead. Clearing it is what makes each test a fresh TAB, which is
+    // the unit the store is scoped to (session-resume-store.ts).
+    sessionStorage.clear();
     core = createSessionCore({
       platformUrl: "ws://localhost:3000",
       WebSocket: MockWebSocketConstructor,
@@ -285,6 +291,81 @@ describe("createSessionCore", () => {
 
   // ─── Reconnection with history ──────────────────────────────────────────
 
+  describe("history.restored", () => {
+    /** Connect and hand the client a config frame, as a resume does. */
+    function connected() {
+      core.connect();
+      lastSocket?.simulateOpen();
+      lastSocket?.simulateMessage(makeConfig());
+      return lastSocket;
+    }
+
+    it("populates the transcript a resumed session cannot see otherwise", () => {
+      // The whole point: a page RELOAD builds a fresh core with no messages, and
+      // the server's retained log is the only copy left.
+      const socket = connected();
+      expect(core.getSnapshot().messages).toHaveLength(0);
+
+      socket?.simulateMessage(
+        JSON.stringify({
+          type: "history.restored",
+          messages: [
+            { role: "user", content: "two large pepperoni" },
+            { role: "assistant", content: "Got it." },
+          ],
+        }),
+      );
+
+      expect(core.getSnapshot().messages).toEqual([
+        { id: 1, role: "user", content: "two large pepperoni" },
+        { id: 2, role: "assistant", content: "Got it." },
+      ]);
+    });
+
+    it("REPLACES rather than appends, so a second delivery cannot double it", () => {
+      // A reconnect can restore twice — once per connection — and the server is
+      // authoritative about the conversation either way.
+      const socket = connected();
+      const frame = JSON.stringify({
+        type: "history.restored",
+        messages: [{ role: "user", content: "only once" }],
+      });
+      socket?.simulateMessage(frame);
+      socket?.simulateMessage(frame);
+      expect(core.getSnapshot().messages).toEqual([{ id: 1, role: "user", content: "only once" }]);
+    });
+
+    it("keeps ids unique for messages spoken AFTER the restore", () => {
+      // The ids are render keys, so a restored message and a live one colliding
+      // would have React reuse a row for different content.
+      const socket = connected();
+      socket?.simulateMessage(
+        JSON.stringify({
+          type: "history.restored",
+          messages: [{ role: "user", content: "prior" }],
+        }),
+      );
+      socket?.simulateMessage(JSON.stringify({ type: "user-transcript.committed", text: "now" }));
+      const ids = core.getSnapshot().messages.map((m) => m.id);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("bumps contentVersion, so a subscriber re-renders", () => {
+      // `contentVersion` is what `useSession` selectors key off — a restore that
+      // did not bump it would populate the snapshot and leave the UI blank, which
+      // is the bug this frame exists to fix, one layer up.
+      const socket = connected();
+      const before = core.getSnapshot().contentVersion;
+      socket?.simulateMessage(
+        JSON.stringify({
+          type: "history.restored",
+          messages: [{ role: "assistant", content: "restored" }],
+        }),
+      );
+      expect(core.getSnapshot().contentVersion).toBeGreaterThan(before);
+    });
+  });
+
   describe("reconnection", () => {
     it("does NOT replay history on reconnect — the server is authoritative", () => {
       // First connection
@@ -307,9 +388,10 @@ describe("createSessionCore", () => {
 
       // The client used to push its own `messages` back here, which made it the
       // authority on what the agent remembered. The server restores the
-      // conversation from its retained event stream now — so this frame is gone
-      // from the protocol, and sending it would be a second mechanism doing the
-      // same job with the client's the one that actually ran.
+      // conversation from its retained event stream now and SENDS it back as
+      // `history.restored` (covered below) — so this frame is gone from the
+      // protocol, and sending it would be a second mechanism doing the same job
+      // with the client's the one that actually ran.
       const sentTypes = (reconnectSocket?.send.mock.calls ?? [])
         .map((c) => c[0])
         .filter((frame): frame is string => typeof frame === "string")

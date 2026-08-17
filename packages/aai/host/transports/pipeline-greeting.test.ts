@@ -84,6 +84,40 @@ describe("pipeline greeting", () => {
       expect(tts.last()?.textChunks).toHaveLength(0);
       await t.stop();
     });
+
+    test("a skipGreeting THUNK is resolved when the greeting would fire, not at construction", async () => {
+      // The runtime cannot answer this at construction: `?sessionId=` suppresses
+      // the greeting on the id's mere presence, and whether that resume recovered
+      // anything is only known once the event log and slot store have been read
+      // — inside the `session.start()` window, i.e. after the transport exists.
+      // So the answer is a thunk, and this is the property that makes it work.
+      let recovered = false;
+      const { opts, tts, callbacks } = greetingOpts({ skipGreeting: () => recovered });
+      const t = createPipelineTransport(opts);
+      // Flipped AFTER construction and before the audio-ready edge — exactly
+      // where `attachSessionStream`/`attachSessionState` land.
+      recovered = true;
+      await t.start();
+      await vi.advanceTimersByTimeAsync(20);
+      expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
+      expect(tts.last()?.textChunks).toHaveLength(0);
+      await t.stop();
+    });
+
+    test("a resume that recovered NOTHING greets", async () => {
+      // The failure this closes: a well-formed id naming a session whose state is
+      // gone — a reload past SESSION_RESUME_GRACE_MS, or a guest that self-exited
+      // on idle — used to give a connected, mic-live, HISTORYLESS session with the
+      // greeting suppressed. An agent that is silent for no stated reason.
+      const { opts, tts, callbacks } = greetingOpts({ skipGreeting: () => false });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      await vi.waitFor(() => {
+        expect(callbacks.reported("reply.completed")).toHaveBeenCalledOnce();
+      });
+      expect(tts.last()?.textChunks).toContain(GREETING);
+      await t.stop();
+    });
   });
 
   describe("on reset()", () => {

@@ -136,13 +136,12 @@ export function createAssemblyAiKeyVerifier(
 /**
  * Build the verifier from the environment.
  *
- * Absent means "accept any bearer as a key", which is why the two ways to get
- * there are both deliberate acts: local dev (the same `isLocalDev` policy
- * that selects the in-memory stores and the dev auth, so production can never
- * resolve it) and an explicit `AAI_VERIFY_API_KEYS=0`. A production boot that
- * merely FORGOT something gets a verifier, not a hole — the inverse of how
- * `SUPABASE_STORAGE_BUCKET` gates the sandbox backend, and for the same
- * reason: the safe branch has to be the default one.
+ * Absent means "accept any bearer as a key", which is why both ways to get there
+ * are explicit DECLARATIONS: `AAI_LOCAL_DEV=1` and `AAI_VERIFY_API_KEYS=0`. A
+ * boot that merely FORGOT something gets a verifier, not a hole — the same shape
+ * as the sandbox backend, and for the same reason: the safe branch has to be the
+ * default one. Neither of these is inferred from where platform state lives, so
+ * a dev server on the local Supabase stack is unaffected by which of them is set.
  */
 export function createApiKeyVerifierFromEnv(
   env: NodeJS.ProcessEnv,

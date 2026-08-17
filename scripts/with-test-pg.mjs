@@ -56,9 +56,9 @@
  *   announce their own absence through `describeWithStack`.
  */
 
-import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
-import path from "node:path";
+import { runChild } from "./_run-child.mjs";
+import { readSupabaseStack } from "./_supabase-stack.mjs";
 
 const args = process.argv.slice(2);
 const PRINT_ONLY = args.includes("--print");
@@ -107,16 +107,15 @@ const CANDIDATES = [STACK_PORT, 5432].map((port) => ({
   what: port === STACK_PORT ? "Supabase local stack" : "local Postgres server",
 }));
 
-/** The repo root, where `supabase status` finds `supabase/config.toml`. */
-const REPO_ROOT = path.resolve(import.meta.dirname, "..");
-
 /**
  * The stack's own values, out of `supabase status -o env`.
  *
  * Derived rather than guessed: the keys are stable, but the anon and
  * service-role JWTs are the CLI's to mint, and a hand-copied pair is a thing
  * that rots silently — the suite skips and the run stays green, which is the
- * failure this whole file exists to make impossible.
+ * failure this whole file exists to make impossible. The parse itself is
+ * `scripts/_supabase-stack.mjs`, shared with `scripts/dev-server.mjs`; what is
+ * local to here is which keys the scenario tier reads.
  *
  * Every way this can fail (no CLI, a stack that is down, output this cannot
  * parse) resolves to `undefined` with a printed reason. It must NOT abort the
@@ -128,45 +127,22 @@ function resolveStack() {
   if (explicit && process.env.AAI_TEST_SUPABASE_SERVICE_KEY) {
     return { source: "AAI_TEST_SUPABASE_* from the environment", env: {} };
   }
-  const run = spawnSync("supabase", ["status", "-o", "env"], {
-    cwd: REPO_ROOT,
-    encoding: "utf-8",
-    // stderr carries a "Stopped services" line and an update notice on a
-    // healthy stack, so it is noise here rather than a signal; the exit code and
-    // the parse are what decide.
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  if (run.error || run.status !== 0) {
-    const why = run.error?.code === "ENOENT" ? "no `supabase` CLI on PATH" : "the command failed";
-    return { why: `could not read \`supabase status -o env\` (${why})` };
-  }
-  // `KEY="value"` per line. Only the four the suites read are forwarded — the
-  // output also carries S3 credentials and a JWT secret, and a resolver that
-  // exported everything would be putting them in the environment of every test
-  // process for no reason.
-  const values = new Map(
-    run.stdout
-      .split("\n")
-      .map((line) => /^([A-Z0-9_]+)="?(.*?)"?$/.exec(line.trim()))
-      .filter((m) => m !== null)
-      .map((m) => [m[1], m[2]]),
-  );
-  const url = values.get("API_URL");
-  const serviceKey = values.get("SERVICE_ROLE_KEY");
+  const stack = readSupabaseStack();
+  if (!stack.values) return { why: stack.why };
+  const url = stack.values.get("API_URL");
+  const serviceKey = stack.values.get("SERVICE_ROLE_KEY");
   if (!(url && serviceKey)) {
     return { why: "`supabase status -o env` named no API_URL/SERVICE_ROLE_KEY" };
   }
-  const anonKey = values.get("ANON_KEY");
-  return {
-    source: "supabase status -o env",
-    env: {
-      AAI_TEST_SUPABASE_URL: url,
-      AAI_TEST_SUPABASE_SERVICE_KEY: serviceKey,
-      // Only gates the negative control (does a filtered subscribe deliver to
-      // ANYONE else?), so its absence narrows the suite rather than skipping it.
-      ...(anonKey ? { AAI_TEST_SUPABASE_ANON_KEY: anonKey } : {}),
-    },
-  };
+  // Only the three the suites read are forwarded — the output also carries S3
+  // credentials and a JWT secret, and a resolver that exported everything would
+  // be putting them in the environment of every test process for no reason.
+  const env = { AAI_TEST_SUPABASE_URL: url, AAI_TEST_SUPABASE_SERVICE_KEY: serviceKey };
+  // Only gates the negative control (does a filtered subscribe deliver to
+  // ANYONE else?), so its absence narrows the suite rather than skipping it.
+  const anonKey = stack.values.get("ANON_KEY");
+  if (anonKey) env.AAI_TEST_SUPABASE_ANON_KEY = anonKey;
+  return { source: stack.source, env };
 }
 
 /** Does something accept TCP on this host:port? */
@@ -285,18 +261,16 @@ if (command.length === 0) {
 // AAI_REQUIRE_STACK is the same contract one rung up, and is set ONLY when a
 // stack was really resolved: it must mean "the stack is here and a skip is a
 // wiring bug", never "please have a stack".
-const child = spawn(command[0], command.slice(1), {
-  stdio: "inherit",
+// A stop here exits NON-zero, unlike the dev server's: an interrupted test run
+// verified nothing, and reporting it as a pass is how a Ctrl-C during
+// `pnpm test:pg` becomes a green branch. The wrapper still waits for the child
+// rather than dying with it — see `_run-child.mjs`.
+runChild(command, {
   env: {
-    ...process.env,
     AAI_TEST_PG_URL: resolved.url,
     AAI_REQUIRE_PG: "1",
     ...(stack?.env ? { ...stack.env, AAI_REQUIRE_STACK: "1" } : {}),
   },
-  shell: process.platform === "win32",
-});
-child.on("exit", (code, signal) => process.exit(signal ? 1 : (code ?? 1)));
-child.on("error", (err) => {
-  console.error(`with-test-pg: could not run \`${command.join(" ")}\`: ${err.message}`);
-  process.exit(1);
+  label: "with-test-pg",
+  interruptExitCode: 1,
 });

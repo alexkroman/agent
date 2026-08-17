@@ -284,6 +284,7 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
 export type CreatePostgresDbOptions = {
     url: string;
     max?: number;
+    onNotice?: (notice: unknown) => void;
 };
 
 // @public
@@ -639,7 +640,7 @@ export interface PipelineTransportOptions {
     sid: string;
     silencePrompt?: string | undefined;
     silenceTimeoutMs?: number | undefined;
-    skipGreeting?: boolean | undefined;
+    skipGreeting?: SkipGreeting | undefined;
     speechIdleTimeoutMs?: number | undefined;
     startFailurePhrase?: string | undefined;
     stt: SttOpener;
@@ -1122,6 +1123,19 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     state: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"history.restored">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    messages: z.ZodArray<z.ZodObject<{
+        role: z.ZodEnum<{
+            assistant: "assistant";
+            user: "user";
+        }>;
+        content: z.ZodString;
+    }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
 
 // @public
@@ -1194,6 +1208,9 @@ export type SessionWebSocket = {
         message?: string;
     }) => void): void;
 };
+
+// @public
+export type SkipGreeting = boolean | (() => boolean);
 
 // @public
 type SlotStore = {

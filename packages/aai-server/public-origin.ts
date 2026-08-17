@@ -126,8 +126,10 @@ let observedOrigin: string | undefined;
  *
  * Local dev keeps the observation because there is no tenant boundary to cross
  * there and no attacker to cross it — the same `isLocalDev` premise that lets
- * the isolation-free `subprocess` sandbox backend be selected at all — and
- * because requiring config for `pnpm dev:aai-server` would be pure friction.
+ * the isolation-free `subprocess` sandbox backend be selected at all, and it is
+ * an explicit `AAI_LOCAL_DEV=1` rather than an inference, so nothing a
+ * deployment forgets can reach this branch — and because requiring config for
+ * `pnpm dev:aai-server` would be pure friction.
  */
 export function rememberPublicOrigin(req: Request, env: NodeJS.ProcessEnv = process.env): string {
   const origin = resolvePublicOrigin(req, env);

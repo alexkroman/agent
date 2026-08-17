@@ -11,6 +11,30 @@
 import postgres from "postgres";
 import type { Db } from "../sdk/db.ts";
 import { MAX_DB_RESULT_ROWS } from "../sdk/db.ts";
+import { consoleLogger } from "./runtime-config.ts";
+
+/**
+ * The default notice sink: quiet, but not swallowed.
+ *
+ * `consoleLogger.debug` is itself a no-op unless `AAI_DEBUG=1`, so a NOTICE
+ * prints nothing in an ordinary run and one line under a debug flag. That split
+ * is the whole point: `42P07` ("relation … already exists, skipping") is one we
+ * cause deliberately on every boot (`create table if not exists`, memoized by
+ * `ensureOnce`), so it must not be in the log an operator reads to diagnose a
+ * session — while a notice that MATTERS (a truncated identifier, a deprecated
+ * cast, a constraint silently declined) is still recoverable rather than
+ * discarded by a sink that ignores its argument.
+ */
+function logNotice(notice: unknown): void {
+  const { severity, code, message } = (notice ?? {}) as {
+    severity?: unknown;
+    code?: unknown;
+    message?: unknown;
+  };
+  consoleLogger.debug?.(`postgres ${String(severity ?? "NOTICE")} ${String(code ?? "")}`.trim(), {
+    message: String(message ?? notice),
+  });
+}
 
 /** Options for {@link createPostgresDb}. */
 export type CreatePostgresDbOptions = {
@@ -18,6 +42,19 @@ export type CreatePostgresDbOptions = {
   url: string;
   /** Maximum pooled connections. Defaults to 4. */
   max?: number;
+  /**
+   * Where Postgres NOTICEs go. Defaults to one `debug` line each.
+   *
+   * postgres.js has no silent default: with this unset it prints the whole
+   * notice OBJECT to the console, so the session-state backend's own
+   * `create table if not exists` — idempotent by design, run once per boot per
+   * table (`ensureOnce`) — dumped an eight-field `42P07` blob into a guest's
+   * stdout on every single boot. Two costs, and the second is the real one: it
+   * is noise in the log an operator reads to diagnose a session, and it trains
+   * that reader to skip NOTICEs, which is where a notice that MATTERS would
+   * arrive.
+   */
+  onNotice?: (notice: unknown) => void;
 };
 
 /**
@@ -59,7 +96,11 @@ export type CloseableDb = Db & {
  * @public
  */
 export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
-  const sql = postgres(opts.url, { max: opts.max ?? 4, prepare: false });
+  const sql = postgres(opts.url, {
+    max: opts.max ?? 4,
+    prepare: false,
+    onnotice: opts.onNotice ?? logNotice,
+  });
 
   /** The one query implementation, over the pool or a reserved connection. */
   const queryOn =

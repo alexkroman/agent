@@ -1,21 +1,54 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { assertServiceRoleKey, isLocalDev, requireEnv, resolvePort } from "./_boot.ts";
+import {
+  assertServiceRoleKey,
+  hasPlatformDb,
+  isLocalDev,
+  requireEnv,
+  resolvePort,
+} from "./_boot.ts";
 
 // ── isLocalDev ─────────────────────────────────────────────────────────
 
 describe("isLocalDev", () => {
-  test("true when AAI_LOCAL_DEV=1", () => {
+  test("true only on an explicit AAI_LOCAL_DEV=1", () => {
+    expect(isLocalDev({ AAI_LOCAL_DEV: "1" })).toBe(true);
     expect(isLocalDev({ AAI_LOCAL_DEV: "1", SUPABASE_STORAGE_BUCKET: "blobs" })).toBe(true);
   });
 
-  test("true when SUPABASE_STORAGE_BUCKET is unset", () => {
-    expect(isLocalDev({})).toBe(true);
+  // The whole point of the declaration: the DANGEROUS branch (an isolation-free
+  // sandbox backend, an unverified bearer) must never be what a forgotten
+  // variable selects. The old sentinel was `!SUPABASE_STORAGE_BUCKET`, i.e. the
+  // exact inverse.
+  test("false for an empty environment — the safe branch is the default", () => {
+    expect(isLocalDev({})).toBe(false);
+    expect(isLocalDev({ AAI_LOCAL_DEV: "0" })).toBe(false);
+    expect(isLocalDev({ AAI_LOCAL_DEV: "true" })).toBe(false);
   });
 
-  test("false when SUPABASE_STORAGE_BUCKET is set and AAI_LOCAL_DEV is not 1", () => {
-    expect(isLocalDev({ SUPABASE_STORAGE_BUCKET: "aai-blobs" })).toBe(false);
+  test("says nothing about where platform state lives", () => {
+    // The two questions are independent: a dev server on the local Supabase
+    // stack is local AND durable, which the single sentinel could not express.
+    expect(isLocalDev({ AAI_LOCAL_DEV: "1", SUPABASE_DB_URL: "postgres://x" })).toBe(true);
+    expect(hasPlatformDb({ AAI_LOCAL_DEV: "1", SUPABASE_DB_URL: "postgres://x" })).toBe(true);
+  });
+});
+
+// ── hasPlatformDb ──────────────────────────────────────────────────────
+
+describe("hasPlatformDb", () => {
+  test("keys on SUPABASE_DB_URL alone", () => {
+    expect(hasPlatformDb({ SUPABASE_DB_URL: "postgres://x" })).toBe(true);
+    expect(hasPlatformDb({})).toBe(false);
+    // Set-but-empty is not a connection string.
+    expect(hasPlatformDb({ SUPABASE_DB_URL: "" })).toBe(false);
+  });
+
+  test("the storage bucket alone does not make a platform tier", () => {
+    // It used to be the sentinel for everything, so a run with a bucket and no
+    // database read as "production" and got memory stores anyway.
+    expect(hasPlatformDb({ SUPABASE_STORAGE_BUCKET: "blobs" })).toBe(false);
   });
 });
 

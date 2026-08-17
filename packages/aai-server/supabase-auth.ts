@@ -32,16 +32,19 @@
  * `aai deploy` Publish runs) authenticate with the key itself, and a key
  * never contains dots, so the JWT shape test cleanly splits the two.
  *
- * Local dev (`createDevAuth`, selected by the same `isLocalDev` policy that
- * picks the in-memory stores — production can never resolve it) accepts
- * self-describing `dev.<base64url({id,email})>.dev` tokens the login screen
- * mints client-side, so `pnpm dev:aai-server` needs no Supabase project, no
- * GitHub OAuth app, and no Docker while exercising the same middleware, key
- * onboarding, and scoping as real sessions.
+ * `createDevAuth` accepts self-describing `dev.<base64url({id,email})>.dev`
+ * tokens the login screen mints client-side, so a server with NO Supabase at all
+ * still exercises the same middleware, key onboarding, and scoping as real
+ * sessions. It is reachable only on a run that has no platform database and
+ * declares `AAI_LOCAL_DEV=1`; the moment platform state is in Supabase, identity
+ * is too (see {@link createStudioAuthFromEnv}). The local stack runs GoTrue, so
+ * "local" no longer implies "no real auth" — `supabase/README.md` carries the
+ * GitHub OAuth app the local callback needs.
  */
 
 import { hash } from "node:crypto";
 import { GoTrueClient, isAuthRetryableFetchError } from "@supabase/auth-js";
+import { hasPlatformDb, isLocalDev } from "./_boot.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 
 /** SecretStore name for one studio user's AssemblyAI API key. */
@@ -275,9 +278,9 @@ export function parseDevToken(token: string): StudioAuthUser | null {
 /**
  * Local-dev auth: trusts self-describing dev tokens. NO authentication at
  * all — anyone who can reach the (loopback-bound) dev server can claim any
- * identity. Only `buildServiceConfig` may construct it, under the same
- * `isLocalDev` policy that selects the in-memory stores, so production can
- * never resolve it.
+ * identity. Only `buildServiceConfig` may construct it, and only on a run with
+ * no platform database whatsoever, so there is nothing durable behind the
+ * identity it hands out.
  */
 export function createDevAuth(): StudioAuth {
   // Both verifications are the same parse: a dev token carries its own
@@ -293,35 +296,34 @@ export function createDevAuth(): StudioAuth {
 }
 
 /**
- * Build the auth binding from `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`, falling
- * back to dev auth in local dev. Undefined (no auth configured outside local
- * dev) leaves raw-key bearers working and the studio login unconfigured.
+ * Build the auth binding from `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`,
+ * falling back to dev auth ONLY on a run with no platform database at all.
+ * Undefined (no auth configured, no platform database, no local-dev
+ * declaration) leaves raw-key bearers working and the studio login
+ * unconfigured.
+ *
+ * **A platform database refuses dev tokens outright, with no escape hatch.**
+ * Dev auth is NO auth — any caller can mint `dev.<base64url({id})>.dev` for any
+ * user id — and `user-key:<uid>` is where every account's AssemblyAI key lives,
+ * so serving it against real stores lets any caller who can reach the port read
+ * any user's key. That used to be reachable deliberately, via `AAI_LOCAL_DEV=1`,
+ * on the reasoning that pointing a dev server at a real database is user intent.
+ * It is — and the tier that intent selects now includes real Supabase Auth,
+ * which is the whole point of the local stack running GoTrue. So the escape is
+ * gone: if state is in Supabase, identity is too.
  */
-export function createStudioAuthFromEnv(
-  env: NodeJS.ProcessEnv,
-  opts: { localDev: boolean },
-): StudioAuth | undefined {
+export function createStudioAuthFromEnv(env: NodeJS.ProcessEnv): StudioAuth | undefined {
   const { SUPABASE_URL: supabaseUrl, SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey } = env;
   if (supabaseUrl && supabasePublishableKey)
     return createSupabaseAuth({ supabaseUrl, supabasePublishableKey });
-  if (opts.localDev) {
-    // Dev auth is NO auth — any caller can mint `dev.<base64url({id})>.dev`
-    // for any user id. `isLocalDev` keys off a *storage* variable
-    // (SUPABASE_STORAGE_BUCKET), so a deploy that configures other platform
-    // backing but forgets that one var would otherwise serve dev auth
-    // against real stores, letting any internet caller read any user's
-    // stored key. A production marker alongside "local dev" is a
-    // misconfiguration: fail boot loudly unless local dev is EXPLICIT
-    // (AAI_LOCAL_DEV=1 is user intent, e.g. pointing dev at a real
-    // database on purpose).
-    const markers = ["SUPABASE_DB_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"] as const;
-    const present = markers.filter((k) => env[k]);
-    if (present.length > 0 && env.AAI_LOCAL_DEV !== "1") {
-      throw new Error(
-        `Refusing no-auth dev tokens: ${present.join(", ")} configured but Supabase auth is not ` +
-          "(SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY). Set both, or set AAI_LOCAL_DEV=1 for local dev.",
-      );
-    }
-    return createDevAuth();
+  if (hasPlatformDb(env)) {
+    throw new Error(
+      "SUPABASE_DB_URL is set but Supabase auth is not (SUPABASE_URL + " +
+        "SUPABASE_PUBLISHABLE_KEY). Refusing to serve no-auth dev tokens against real stores: " +
+        "any caller could then claim any user id and read that account's stored AssemblyAI key. " +
+        "Set both — `pnpm dev:aai-server` resolves them from the local stack — or unset " +
+        "SUPABASE_DB_URL to run entirely on memory stores.",
+    );
   }
+  if (isLocalDev(env)) return createDevAuth();
 }

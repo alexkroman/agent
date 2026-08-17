@@ -32,7 +32,7 @@ import type { ExecuteTool } from "./tool-executor.ts";
 import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
-import type { Transport, TransportCallbacks } from "./transports/types.ts";
+import type { SkipGreeting, Transport, TransportCallbacks } from "./transports/types.ts";
 
 /**
  * Read the author-set `assemblyAIS2s({ voice, languages, keyterms })` options
@@ -68,7 +68,7 @@ export type TransportSessionOpts = {
   id: string;
   agent: string;
   client: ClientSink;
-  skipGreeting?: boolean;
+  skipGreeting?: SkipGreeting;
   /**
    * True when this connection presented an existing session id (`?sessionId=`),
    * so the session continues rather than begins.

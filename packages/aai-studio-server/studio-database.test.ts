@@ -135,7 +135,7 @@ describe("setProjectDatabase", () => {
     expect(await appDbSecret(h.secrets, "demo")).toEqual(credentials);
   });
 
-  test("disabling drops both schemas and clears the intent", async () => {
+  test("disabling drops both schemas and RECORDS the opt-out", async () => {
     const h = await harness({ deployedSlug: "demo", previewSlug: "demo-preview" });
     await enable(h);
     const state = await setProjectDatabase(h.env, {
@@ -151,8 +151,10 @@ describe("setProjectDatabase", () => {
       "demo-preview",
     ]);
     expect(await appDbSecret(h.secrets, "demo")).toBeNull();
-    expect((await getWorkspace(h.workspaces, SCOPE, PROJECT))?.databaseEnabled).toBeUndefined();
-    // Cleared intent means a later deploy must NOT hand the agent a database
+    // RECORDED as `false`, not cleared: absent means ON, so a cleared field
+    // would have the next read — and the next deploy — re-enable it.
+    expect((await getWorkspace(h.workspaces, SCOPE, PROJECT))?.databaseEnabled).toBe(false);
+    // A recorded opt-out means a later deploy must NOT hand the agent a database
     // back — the switch is off.
     h.env.appDb.provision.mockClear();
     await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo" });
@@ -238,12 +240,15 @@ describe("setProjectDatabase", () => {
 });
 
 describe("projectDatabaseState", () => {
-  test("reports off, configured, and both environments before anything is deployed", async () => {
+  test("reports ON by default, configured, and both environments before anything is deployed", async () => {
+    // A studio project HAS a database unless it said otherwise — the flag being
+    // absent is the default-on case, and each environment is still off until its
+    // slug exists to provision (provisioning follows the SLUG).
     const h = await harness();
     expect(
       await projectDatabaseState(h.env, { scope: SCOPE, project: PROJECT, apiKey: KEY }),
     ).toEqual({
-      enabled: false,
+      enabled: true,
       configured: true,
       environments: [
         { environment: "production", enabled: false },
@@ -271,8 +276,20 @@ describe("projectDatabaseState", () => {
 });
 
 describe("reconcileProjectDatabase", () => {
-  test("does nothing when the project never asked for a database", async () => {
+  test("provisions a project that never touched the switch — absent means ON", async () => {
     const h = await harness({ deployedSlug: "demo" });
+    await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo" });
+    expect(h.env.appDb.provision).toHaveBeenCalled();
+  });
+
+  test("does nothing when the project OPTED OUT", async () => {
+    // The opt-out is an explicit `false`, which is why disabling stores it rather
+    // than clearing the field: a cleared field reads as the default, i.e. on.
+    const h = await harness({ deployedSlug: "demo" });
+    await mutateWorkspace(h.workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      databaseEnabled: false,
+    }));
     await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo" });
     expect(h.env.appDb.provision).not.toHaveBeenCalled();
   });

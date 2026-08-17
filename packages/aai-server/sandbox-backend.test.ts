@@ -7,9 +7,9 @@
 import { describe, expect, it } from "vitest";
 import { describeSandboxBackend, resolveSandboxBackend } from "./sandbox-backend.ts";
 
-/** Env shape where local dev is on (no SUPABASE_STORAGE_BUCKET). */
-const DEV_ENV: NodeJS.ProcessEnv = {};
-const PROD_ENV: NodeJS.ProcessEnv = { SUPABASE_STORAGE_BUCKET: "aai-blobs" };
+/** A local run is DECLARED; anything else — an empty env included — is not. */
+const DEV_ENV: NodeJS.ProcessEnv = { AAI_LOCAL_DEV: "1" };
+const PROD_ENV: NodeJS.ProcessEnv = {};
 
 describe("resolveSandboxBackend", () => {
   it.each(["modal", "subprocess"] as const)(
@@ -43,16 +43,26 @@ describe("resolveSandboxBackend", () => {
     );
   });
 
-  it("defaults local dev to the subprocess backend", () => {
+  it("gives a declared local run the subprocess backend", () => {
     expect(resolveSandboxBackend(DEV_ENV)).toBe("subprocess");
   });
 
-  it("never selects a host-local backend outside local dev", () => {
+  it("never selects a host-local backend without that declaration", () => {
+    // An EMPTY env is the case that matters: the isolation-free backend must be
+    // what someone asks for, never what a forgotten variable selects. The old
+    // sentinel (`!SUPABASE_STORAGE_BUCKET`) made this exact env resolve
+    // `subprocess`.
     expect(resolveSandboxBackend(PROD_ENV)).toBe("modal");
+    expect(resolveSandboxBackend({ AAI_LOCAL_DEV: "0" })).toBe("modal");
   });
 
-  it("treats AAI_LOCAL_DEV=1 as local dev even with storage configured", () => {
-    expect(resolveSandboxBackend({ ...PROD_ENV, AAI_LOCAL_DEV: "1" })).toBe("subprocess");
+  it("is independent of where platform state lives", () => {
+    // Running against the local Supabase stack must not demand Modal
+    // credentials, and configuring no database must not hand out a host guest.
+    expect(resolveSandboxBackend({ AAI_LOCAL_DEV: "1", SUPABASE_DB_URL: "postgres://x" })).toBe(
+      "subprocess",
+    );
+    expect(resolveSandboxBackend({ SUPABASE_STORAGE_BUCKET: "aai-blobs" })).toBe("modal");
   });
 });
 

@@ -100,6 +100,11 @@ exports[`protocol schema shapes > SessionEventSchema option shapes 1`] = `
     "meta",
     "type",
   ],
+  "history.restored": [
+    "messages",
+    "meta",
+    "type",
+  ],
   "reply.cancelled": [
     "meta",
     "type",
