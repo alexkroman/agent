@@ -37,7 +37,8 @@ function OrderSidebar() {
   );
 }
 
-client({ sidebar: <OrderSidebar /> });
+// `sidebar` takes the COMPONENT, not an element — the shell renders it.
+client({ sidebar: OrderSidebar });
 ```
 
 ## Hooks

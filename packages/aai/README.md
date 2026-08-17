@@ -13,24 +13,36 @@ scaffolds a project with it wired up.
 
 ## Defining an agent
 
-```ts
-import { agent, tool } from "@alexkroman1/aai";
-import { z } from "zod";
+`agent.ts` — the definition, plus the slot that owns this session's state:
 
-const addNote = tool({
-  description: "Save a note for the caller",
-  inputSchema: z.object({ text: z.string() }),
-  execute: ({ text }, ctx) => {
-    ctx.state.notes.push(text);
-    return { saved: ctx.state.notes.length };
-  },
-});
+```ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
+
+export const notesSlot = sessionSlot("notes", () => ({ items: [] as string[] }));
 
 export default agent({
   name: "Notes",
   systemPrompt: "You take short notes for the caller.",
-  state: () => ({ notes: [] as string[] }),
-  tools: { add_note: addNote },
+  // Show the slot to the browser client, read there with `useAgentState`.
+  syncState: notesSlot.projection((notes) => ({ count: notes.items.length })),
+});
+```
+
+`tools/add_note.ts` — **a tool is a FILE**, named by its own filename, and
+`agent()` takes no `tools` field. Nothing registers it:
+
+```ts no-check
+import { z } from "zod";
+import { notesSlot } from "../agent.ts";
+
+export default notesSlot.updateTool({
+  description: "Save a note for the caller",
+  inputSchema: z.object({ text: z.string() }),
+  // `updateTool` hands the body a mutable draft, stored when it returns.
+  execute: ({ text }, notes) => {
+    notes.items.push(text);
+    return { saved: notes.items.length };
+  },
 });
 ```
 
@@ -39,10 +51,15 @@ export default agent({
   fields it runs the default all-AssemblyAI STT → LLM → TTS pipeline,
   billed to one `ASSEMBLYAI_API_KEY`; `voice: "michael"` picks its TTS
   voice.
-- `tool()` — a typed tool: Zod `inputSchema`, an `execute(args, ctx)` that
-  runs server-side with access to `ctx.state`, `ctx.env`, `ctx.db` (opt-in
-  SQL storage), `ctx.generate` (one-shot LLM calls), and `ctx.send`
-  (push events to the browser client).
+- `tool()` — a typed tool for the stateless case: Zod `inputSchema` and an
+  `execute(args, ctx)` that runs server-side with `ctx.env`, `ctx.db`
+  (opt-in SQL storage), `ctx.generate` (one-shot LLM calls), `ctx.workflows`
+  (start and watch durable runs), and `ctx.send` (push events to the
+  browser client).
+- `sessionSlot()` — a typed named slot owning a session's state. `slot.tool()`
+  reads it (the value is deeply frozen), `slot.updateTool()` writes it
+  synchronously, and it persists through the app database when one is
+  enabled. There is no `ctx.state`.
 - `assemblyAIPipeline()` — the same default pipeline as an explicit spread
   (`...assemblyAIPipeline({ region: "eu" })`), for when you want the three
   stages visible in the config or an EU region across STT and the gateway.
