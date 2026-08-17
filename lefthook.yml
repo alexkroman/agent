@@ -1,8 +1,13 @@
 pre-commit:
   commands:
+    # Formats staged files and re-stages them, SKIPPING any file that is only
+    # partially staged. Formatting rewrites the working tree, so the `git add`
+    # that follows would stage the author's unstaged hunks too — see the script's
+    # header for the reproduction. This was a plain
+    # `biome check --write {staged_files} && git add {staged_files}`.
     lint-staged:
       glob: "packages/**/*.{ts,tsx,js,mjs}"
-      run: npx biome check --write --no-errors-on-unmatched {staged_files} && git add {staged_files}
+      run: node scripts/pre-commit-format.mjs {staged_files}
     syncpack:
       glob: "**/package.json"
       run: pnpm run check:syncpack

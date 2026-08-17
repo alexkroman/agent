@@ -34,6 +34,23 @@ documentation for this repo.
     deliberately sets no `AAI_TEMPLATES_DIR` — that override used to pin
     every e2e run to the workspace sources.
 
+## `check:scaffold` exists because the sync ran only during a release
+
+`scripts/sync-scaffold-versions.mjs --check` asserts `scaffold/package.json`
+still matches the workspace, and it was enforced by nothing until it broke. The
+script ran only from `version`, unchecked, DURING a release — and the catalog
+migration had left it copying the literal `"catalog:"` there, having read a
+range out of a package.json without resolving it. npm has no such protocol, so
+the next release would have shipped a scaffold that cannot install and
+`aai init` would have failed at its own install step.
+
+`check:publish-protocols` cannot see this: it PACKS the three publishable
+packages and reads the manifest pnpm rewrote, and this file is DATA inside the
+aai-cli tarball, not a manifest pnpm packs. The script resolves the catalog now
+and, separately, refuses any workspace protocol left in the shipped manifest —
+`sharedDepSources` is hand-kept, so a dependency outside it is synced by nothing
+and caught by nothing.
+
 ## The scaffold pins `^<newest>`, so it must opt out of release-age quarantine
 
 `scripts/sync-scaffold-versions.mjs` resyncs `scaffold/package.json` to the

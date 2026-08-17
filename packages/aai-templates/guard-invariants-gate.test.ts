@@ -521,3 +521,64 @@ describe("guard-invariants gate", () => {
     }
   });
 });
+
+/**
+ * Rule 20 is a SCANNER, not a line rule, so the sample table above cannot reach
+ * it — and a scanner is where the silent-blindness failure is worst: it reads
+ * the real tree, and a healthy tree is exactly a tree with nothing to find. Its
+ * whole success output is `0 ✓`, which is also what a scanner that had stopped
+ * parsing frontmatter, or stopped finding `.changeset/*.md`, would print.
+ *
+ * So the per-file half is split out as `checkChangeset(file, source, known)` and
+ * driven here with real samples. Rule 20's own subject is a gate that reports
+ * success over a mistake — `pnpm changeset status` exits 0 on a typo'd package
+ * name — so shipping it with a spec that could do the same would be the joke
+ * writing itself.
+ */
+const changesets = Object.values(
+  import.meta.glob<{
+    checkChangeset: (
+      file: string,
+      source: string,
+      known: Set<string>,
+    ) => { file: string; line: number; text: string }[];
+    workspacePackageNames: () => Set<string>;
+  }>("../../scripts/guard-invariants-changesets.mjs", { eager: true }),
+)[0];
+
+describe("guard-invariants rule 20 (changeset package names)", () => {
+  const known = new Set(["@alexkroman1/aai", "aai-server"]);
+  const check = (source: string) => changesets?.checkChangeset("c.md", source, known) ?? [];
+
+  test.each([
+    ["a package that does not exist", '---\n"@alexkroman1/aai-typo": patch\n---\n\nx\n'],
+    ["a bump type that does not exist", '---\n"@alexkroman1/aai": pathc\n---\n\nx\n'],
+    ["an unquoted unknown package", "---\naai-servr: patch\n---\n\nx\n"],
+    ["no frontmatter at all", "just a summary\n"],
+    ["frontmatter that never closes", '---\n"@alexkroman1/aai": patch\n\nx\n'],
+  ])("flags %s", (_label, source) => {
+    expect(check(source).length, "rule 20 found nothing in a bad changeset").toBeGreaterThan(0);
+  });
+
+  test.each([
+    ["a valid single-package changeset", '---\n"@alexkroman1/aai": patch\n---\n\nx\n'],
+    ["a private workspace package", '---\n"aai-server": minor\n---\n\nx\n'],
+    ["an unquoted valid package", "---\naai-server: major\n---\n\nx\n"],
+    // `pnpm changeset add --empty` is the documented way to say "no release".
+    ["an empty frontmatter block", "---\n---\n\n"],
+  ])("spares %s", (_label, source) => {
+    expect(check(source), "rule 20 flagged a legitimate changeset").toEqual([]);
+  });
+
+  test("the workspace-name corpus is floored", () => {
+    // Every name is checked by MEMBERSHIP in this set, so a derivation that has
+    // gone blind must throw rather than let the comparison run against nothing.
+    const names = changesets?.workspacePackageNames() ?? new Set();
+    expect(names.size, "too few workspace packages discovered").toBeGreaterThanOrEqual(9);
+    expect(names, "the SDK is not among the discovered packages").toContain("@alexkroman1/aai");
+  });
+
+  test("the rule is wired into the gate", () => {
+    expect(script).toContain("scanChangesetPackageNames");
+  });
+});
