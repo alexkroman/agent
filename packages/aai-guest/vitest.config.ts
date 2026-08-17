@@ -17,7 +17,22 @@ export default defineConfig({
     // `timeout: 120_000`s in studio-build/studio-test were written instead of
     // the tier being used. The package owns no infixed file yet; the excludes
     // are what make writing one possible.
-    exclude: ["node_modules", "dist", "**/*.integration.test.ts", "**/*.scenario.test.ts"],
+    exclude: [
+      "node_modules",
+      "dist",
+      // Guest session SCRATCH. `workspacesRoot()` materializes a workspace here,
+      // and the studio's coding agent writes `*.test.ts` into it — so a leftover
+      // workspace (from a dev-server run, or a suite that died before its
+      // cleanup) is COLLECTED by the glob above and fails this package's suite
+      // with somebody else's assertion. It happened: a stray
+      // `.workspaces/<pid>/build-4-<token>/sample.test.ts` — a fixture whose whole
+      // job is to fail — turned `pnpm check` red with `expected 'cart' to be
+      // 'basket'`, naming a file no commit contains. The directory is gitignored,
+      // which is exactly why nothing else notices it.
+      ".workspaces/**",
+      "**/*.integration.test.ts",
+      "**/*.scenario.test.ts",
+    ],
     coverage: {
       exclude: [...sharedCoverageExclude],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals

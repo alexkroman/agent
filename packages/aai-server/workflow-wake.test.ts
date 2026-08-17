@@ -14,27 +14,31 @@
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { WORKFLOW_WAKE_NAMESPACE } from "./_workflow-wake-read.ts";
-import { appDbIdentifier } from "./app-database.ts";
+import { type AppDatabases, appDbIdentifier } from "./app-database.ts";
 import { type AdminDb, SLUG_LOCK_NAMESPACE } from "./platform-lock.ts";
 import type { BrokeredSession } from "./sandbox-broker.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestStore } from "./test-utils.ts";
+import { APP_DB_SECRET_PREFIX, type SqlExec } from "./secret-store.ts";
+import { createTestStore, fakeAppDatabases } from "./test-utils.ts";
 import { createWorkflowWakeSweep } from "./workflow-wake.ts";
 
 /**
- * A reserved connection that answers the pass's four statement shapes.
+ * The two halves of a pass, faked separately — because they are now two
+ * CONNECTIONS.
  *
- * `hints` maps a slug to what its schema's read returns: a Date (due), null (not
- * due), or an Error (a tenant table this platform cannot read).
+ * The admin connection elects a leader and reads every app's stored credential
+ * out of Vault in one query; each app's hint then comes off a connection into
+ * that app's OWN database. `hints` maps a slug to what its read returns: a Date
+ * (due), null (has the table, nothing due), `undefined` (no hint table — has a
+ * database but runs no workflows), or an Error (a tenant table this platform
+ * cannot read).
  */
 function fakeAdminDb(opts: {
-  hints?: Record<string, Date | null | Error>;
+  hints?: Record<string, Date | null | undefined | Error>;
   locked?: boolean;
+  vault?: boolean;
 }): AdminDb & { statements: string[] } {
-  const hints = opts.hints ?? {};
-  const bySchema = new Map(
-    Object.entries(hints).map(([slug, value]) => [appDbIdentifier(slug), value] as const),
-  );
+  const slugs = Object.keys(opts.hints ?? {});
   const statements: string[] = [];
   return {
     statements,
@@ -46,19 +50,50 @@ function fakeAdminDb(opts: {
           if (sql.includes("pg_try_advisory_xact_lock")) {
             return [{ locked: opts.locked ?? true }];
           }
-          if (sql.includes("information_schema.tables")) {
-            return [...bySchema.keys()].map((table_schema) => ({ table_schema }));
+          if (sql.includes("to_regclass('vault.secrets')")) {
+            return [{ present: opts.vault ?? true }];
           }
-          const schema = /"(app_[a-f0-9]{16})"/.exec(sql)?.[1];
-          if (schema !== undefined) {
-            const hint = bySchema.get(schema);
-            if (hint instanceof Error) throw hint;
-            return [{ wake_at: hint ?? null }];
+          if (sql.includes("vault.decrypted_secrets")) {
+            return slugs.map((slug) => ({
+              name: `${APP_DB_SECRET_PREFIX}${slug}`,
+              decrypted_secret: JSON.stringify({
+                role: appDbIdentifier(slug),
+                password: "0".repeat(32),
+              }),
+            }));
           }
           return [];
         }) as never,
       }),
   };
+}
+
+/** Serves each app's hint from its own database, and records which were opened. */
+function fakeWakeAppDb(hints: Record<string, Date | null | undefined | Error>): AppDatabases & {
+  opened: string[];
+} {
+  const byRole = new Map(
+    Object.entries(hints).map(([slug, value]) => [appDbIdentifier(slug), value] as const),
+  );
+  const opened: string[] = [];
+  return Object.assign(
+    fakeAppDatabases({
+      withAppDb: async (meta, fn) => {
+        opened.push(meta.role);
+        const hint = byRole.get(meta.role);
+        // Typed as the real `SqlExec` rather than cast: the contract is what a
+        // spec is standing in for, and a cast stops reporting the moment it moves.
+        const sql: SqlExec = async (query) => {
+          if (query.startsWith("set ")) return [];
+          if (query.includes("to_regclass")) return [{ present: hint !== undefined }];
+          if (hint instanceof Error) throw hint;
+          return [{ wake_at: hint ?? null }];
+        };
+        return await fn(sql);
+      },
+    }),
+    { opened },
+  );
 }
 
 /** A store whose `listSlugs` answers what the agents table would. */
@@ -76,7 +111,7 @@ const OK: BrokeredSession = {
 
 function sweepWith(
   opts: {
-    hints?: Record<string, Date | null | Error>;
+    hints?: Record<string, Date | null | undefined | Error>;
     locked?: boolean;
     slugs?: string[];
     wake?: (slug: string) => Promise<BrokeredSession>;
@@ -89,8 +124,10 @@ function sweepWith(
   const hints = opts.hints ?? {};
   const wake = vi.fn(opts.wake ?? (() => Promise.resolve(OK)));
   const adminDb = fakeAdminDb({ ...omitUndefined({ locked: opts.locked }), hints });
+  const appDb = fakeWakeAppDb(hints);
   const sweep = createWorkflowWakeSweep({
     adminDb,
+    appDb,
     store: storeWithSlugs(opts.slugs ?? Object.keys(hints)),
     broker: { slots: createSlotCache(), store: createTestStore() },
     wake,
@@ -98,7 +135,7 @@ function sweepWith(
     ...(opts.now && { now: opts.now }),
     ...omitUndefined({ retryMs: opts.retryMs, maxPerTick: opts.maxPerTick }),
   });
-  return { sweep, wake, adminDb };
+  return { sweep, wake, adminDb, appDb };
 }
 
 const past = new Date("2026-08-12T09:00:00Z");
@@ -243,6 +280,7 @@ describe("createWorkflowWakeSweep", () => {
     const adminDb: AdminDb = { reserve: () => Promise.reject(new Error("no connections")) };
     const sweep = createWorkflowWakeSweep({
       adminDb,
+      appDb: fakeWakeAppDb({}),
       store: storeWithSlugs(["sleepy-agent"]),
       broker: { slots: createSlotCache(), store: createTestStore() },
       wake: () => Promise.resolve(OK),

@@ -22,10 +22,10 @@
  */
 
 import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
-import { SWEEP_SESSION_STATE } from "./_session-state-sweep.ts";
 import {
   AGENT_ENV_SECRET_PREFIX,
   APP_DB_SECRET_PREFIX,
+  PLATFORM_DB_DSN_SECRET,
   PLATFORM_STORAGE_KEY_SECRET,
   type SqlExec,
 } from "./secret-store.ts";
@@ -54,6 +54,11 @@ for (const [name, value] of [
   ["PREVIEW_SLUG_SUFFIX", PREVIEW_SLUG_SUFFIX],
   ["AGENT_ENV_SECRET_PREFIX", AGENT_ENV_SECRET_PREFIX],
   ["APP_DB_SECRET_PREFIX", APP_DB_SECRET_PREFIX],
+  // Both Vault NAMES the bodies look secrets up by. Neither was on this list
+  // while both were already interpolated — the same class of hazard as the
+  // prefixes above, and a `'` in either would close its literal identically.
+  ["PLATFORM_STORAGE_KEY_SECRET", PLATFORM_STORAGE_KEY_SECRET],
+  ["PLATFORM_DB_DSN_SECRET", PLATFORM_DB_DSN_SECRET],
 ] as const) {
   assertSqlLiteralSafe(value, name);
 }
@@ -126,13 +131,27 @@ const SWEEP_STUDIO_SESSIONS = "delete from aai_platform.studio_sessions where ex
  * measurement and the reason an expression index does not fix it.
  *
  * Each reaped slug is cleaned up the way the delete route would: its app
- * database is deprovisioned FIRST (schema + role, named by the `role` in the
- * stored `app-db:` meta — dropping the secret before the schema would strand
- * an unreachable schema whose credentials are gone), then its Vault secrets
+ * database is deprovisioned FIRST (database + role, named by the `role` in the
+ * stored `app-db:` meta — dropping the secret before the database would strand
+ * an unreachable database whose credentials are gone), then its Vault secrets
  * (`agent-env:`/`app-db:`) go. Deprovisioning is best-effort per slug and
  * primary-cluster only — pg_cron runs here, and an app sharded to an extra
- * APP_DB_URLS cluster has no local schema/role, so the drops no-op there.
+ * APP_DB_URLS cluster has no local database/role, so the drops no-op there.
  * Content-addressed blobs are accepted orphans, as everywhere else.
+ *
+ * **The drops go out through `dblink`, because `drop database` cannot run in
+ * pg_cron's transaction** (`25001`). `dblink` opens a second connection, so the
+ * statement executes outside the caller's transaction — which is what makes it
+ * work and also why the drops are the LAST thing each iteration does: the remote
+ * commit is independent, so a drop that has happened stays happened even if the
+ * surrounding transaction rolls back. The connection string comes from Vault
+ * (`PLATFORM_DB_DSN_SECRET`), never from `inet_server_addr()` — inside a cron job
+ * that is the loopback address, which dblink refuses (see that constant's doc).
+ *
+ * When no DSN is stored the body still sweeps rows and secrets and RAISES A
+ * WARNING per slug rather than skipping quietly: the databases are then genuinely
+ * leaked, and an operator has to be able to find out from the log rather than by
+ * noticing disk growth.
  *
  * The `-preview` suffix is therefore studio-owned: a CLI deploy that claims
  * a `*-preview` slug with no workspace referencing it will be swept.
@@ -141,6 +160,7 @@ const SWEEP_ORPHAN_PREVIEWS = `do $$
 declare
   target record;
   app_id text;
+  admin_dsn text;
 begin
   -- The suffix and the two Vault prefixes below are INTERPOLATED from the
   -- constants that define them (PREVIEW_SLUG_SUFFIX in the SDK's slug contract,
@@ -155,6 +175,11 @@ begin
   if to_regclass('vault.secrets') is null then
     return;
   end if;
+  -- Read once per pass, not per slug. Null is a legitimate state (a platform
+  -- booted without a resolvable dblink host) and is reported per reaped slug
+  -- below rather than here, so the message names what was actually leaked.
+  select decrypted_secret into admin_dsn from vault.decrypted_secrets
+  where name = '${PLATFORM_DB_DSN_SECRET}';
   for target in
     with deleted as (
       delete from aai_platform.agents a
@@ -171,21 +196,36 @@ begin
        where s.name = '${APP_DB_SECRET_PREFIX}' || d.slug) as app_db_meta
     from deleted d
   loop
+    -- Secrets go BEFORE the drops, reversing the old order deliberately. The
+    -- drops are non-transactional (dblink commits independently), so they cannot
+    -- be undone by a later failure in this iteration — which makes "drop last"
+    -- the only ordering where a mid-iteration failure leaves a state the next
+    -- pass can still finish. The stranding this used to guard against is gone
+    -- with it: the meta is already in the loop record, read before the delete.
+    delete from vault.secrets s
+    where s.name in ('${AGENT_ENV_SECRET_PREFIX}' || target.slug,
+                     '${APP_DB_SECRET_PREFIX}' || target.slug);
     begin
       app_id := (target.app_db_meta::jsonb)->>'role';
       -- Same identifier shape assertion as app-database.ts, so a corrupt
-      -- meta can never steer the drops at an arbitrary schema/role.
+      -- meta can never steer the drops at an arbitrary database/role.
       if app_id ~ '^app_[a-f0-9]{16}$' then
-        execute format('drop schema if exists %I cascade', app_id);
-        execute format('drop role if exists %I', app_id);
+        if admin_dsn is null then
+          raise warning 'orphan-preview sweep: no dblink DSN, LEAKING database % for slug %',
+            app_id, target.slug;
+        else
+          -- drop database cannot run here directly (25001): pg_cron wraps this
+          -- body in a transaction. dblink runs it on its own connection.
+          perform aai_admin.dblink_exec(admin_dsn,
+            format('drop database if exists %I with (force)', app_id));
+          perform aai_admin.dblink_exec(admin_dsn,
+            format('drop role if exists %I', app_id));
+        end if;
       end if;
     exception when others then
       raise warning 'orphan-preview sweep: deprovision failed for %: %',
         target.slug, sqlerrm;
     end;
-    delete from vault.secrets s
-    where s.name in ('${AGENT_ENV_SECRET_PREFIX}' || target.slug,
-                     '${APP_DB_SECRET_PREFIX}' || target.slug);
   end loop;
 end $$`;
 
@@ -351,9 +391,12 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
       schedule: "*/5 * * * *",
       command: SWEEP_APP_DB_RUNAWAYS,
     },
-    // Session state a dead guest left behind — `_session-state-sweep.ts` carries
-    // the argument, including why this is not the wake sweep's reader.
-    { name: "aai-sweep-session-state", schedule: "17 5 * * *", command: SWEEP_SESSION_STATE },
+    // Session state a dead guest left behind is NOT swept from here any more: it
+    // lives in each app's own database, so the job is scheduled INTO that database
+    // per app at provisioning time (`_session-state-sweep.ts`, and
+    // `scheduleAppSweeps` in app-database.ts). A statement here would iterate this
+    // database's catalog and find nothing — which is why it is deleted rather than
+    // left in place.
     ...(opts.storage
       ? [
           {
@@ -379,7 +422,7 @@ export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): 
  * exactly why it went unnoticed — the job just sat in `cron.job` looking
  * current in every operator's listing. Diffing cannot be forgotten.
  */
-const CRON_JOB_PREFIX = "aai-sweep-";
+export const CRON_JOB_PREFIX = "aai-sweep-";
 
 /**
  * Install (or update) the sweep jobs, and unschedule every `aai-sweep-*` job

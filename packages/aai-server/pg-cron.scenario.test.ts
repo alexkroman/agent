@@ -106,8 +106,17 @@ describeWithStack("the pg_cron sweep bodies", () => {
     // file exists to end. The blob GC is named because it is the one that is
     // CONDITIONAL on a storage config — with none, `platformCronJobs()` omits it
     // and every assertion below would quietly cover one sweep less.
-    expect(JOBS.length).toBeGreaterThanOrEqual(8);
+    // 7 since the session-state sweep left this list: it is one job per APP now,
+    // scheduled into that app's own database by `provisionAppDatabase`, because
+    // per-app databases put a tenant's tables outside this database's catalog
+    // entirely (`_session-state-sweep.ts`). Lowered deliberately — a floor is only
+    // a floor while it matches the real count.
+    expect(JOBS.length).toBeGreaterThanOrEqual(7);
     expect(JOBS.map((j) => j.name)).toContain("aai-sweep-blob-gc");
+    // And the one that left is really gone from here, rather than renamed: a
+    // platform job sweeping a catalog that no longer holds tenant tables would run
+    // daily and reclaim nothing.
+    expect(JOBS.map((j) => j.name)).not.toContain("aai-sweep-session-state");
   });
 
   test.each(JOBS.filter((j) => !NEEDS_CRON_SCHEMA(j)).map((j) => [j.name, j.command] as const))(

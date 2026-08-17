@@ -362,7 +362,15 @@ describeWithPg("the Postgres workflow world, against a real database", () => {
     // fallback.
     const env: NodeJS.ProcessEnv = {};
     expect(configureWorkflowWorld({ databaseUrl: worldUrl, port: 4711, env })).toBe("postgres");
-    expect(env.WORKFLOW_TARGET_WORLD).toBe("@workflow/world-postgres");
+    // A RESOLVED ABSOLUTE PATH, never the bare specifier. The DevKit `require`s
+    // this value from its own compiled artifacts, which land in `tmpdir()` where
+    // no `node_modules` sits above them — so a bare name fails naming a package
+    // that is plainly installed (`aai/host/workflow-resolve.ts` owns the rule and
+    // the error text). This expected the bare specifier for as long as the
+    // resolution existed, and passed nowhere: it is a scenario test, so it only
+    // runs where a database is resolved.
+    expect(env.WORKFLOW_TARGET_WORLD).toMatch(/[/\\]@workflow[/\\]world-postgres[/\\]/);
+    expect(env.WORKFLOW_TARGET_WORLD?.startsWith("/")).toBe(true);
     expect(env.WORKFLOW_POSTGRES_URL).toBe(worldUrl);
     // A local world's callback base URL has no meaning here and must not be
     // invented: setting it would repoint the queue's own dispatch.
@@ -467,15 +475,23 @@ describeWithPg("the Postgres workflow world, against a real database", () => {
     expect(reported.join("\n")).not.toContain("failed to start");
     expect(reported.join("\n")).not.toContain("the Postgres world migration failed");
 
-    // What the fix CANNOT remove, asserted so nobody reads it as a regression:
-    // `setupDatabase` catches our own interception on its way out and logs its
-    // own ❌ line before exiting a second time. That line is emitted by the CLI,
-    // not by us, and it is harmless — the migration had already committed and
-    // closed its pool by then, the exit being the last statement in that `try`.
-    // An operator WILL see it on every boot, and it looks exactly like a failed
-    // migration, so it is pinned here rather than left to alarm whoever greps
-    // the logs next. Removing it means an upstream that stops exiting.
-    expect(reported.join("\n")).toContain("Failed to setup database: MigrationExitedError");
+    // And a successful migration says NOTHING about failing.
+    //
+    // This assertion used to be its own inverse, pinning the ❌ line as something
+    // "the fix CANNOT remove … removing it means an upstream that stops exiting".
+    // That reasoning was wrong, and the fix is smaller than the workaround it
+    // replaced: the stand-in no longer THROWS. `process.exit` is the last
+    // statement in both of `setupDatabase`'s branches, so recording the code and
+    // RETURNING lets the function resolve — nothing reaches its `catch`, so there
+    // is no interception for it to report as a database failure. A real failure
+    // still logs its own genuine error and still sets `exitCode` to 1.
+    //
+    // Kept as an assertion rather than deleted because the misleading line is the
+    // symptom an operator would actually act on: a red "Failed to setup database"
+    // with a stack trace, printed directly under "✅ … created successfully!", on
+    // every workflow guest boot.
+    expect(reported.join("\n")).not.toContain("Failed to setup database");
+    expect(logged.join("\n")).not.toContain("Failed to setup database");
   });
 
   test("a run started through the SDK's own adapter is written to Postgres", async () => {

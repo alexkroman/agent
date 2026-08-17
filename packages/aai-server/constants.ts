@@ -311,6 +311,25 @@ export const SLUG_LOCK_POOL_MAX = 4;
 export const APP_DB_TARGET_POOL_MAX = 4;
 
 /**
+ * Connections one SHORT-LIVED connection into a single app's own database opens.
+ *
+ * One, and the number is the whole point. Per-app databases mean the admin pool
+ * cannot reach a tenant's tables — a Postgres connection is bound to one
+ * database — so the platform opens a connection per app database for
+ * provisioning's in-database steps, the usage read, and the wake-hint read.
+ * Retaining a pool per app would make the fleet's connection count a function of
+ * the number of APPS, which is the one variable `MAX_PLATFORM_DB_CONNECTIONS`
+ * cannot bound. These are opened, used, and closed.
+ *
+ * The concurrency bound therefore lives at the CALLER: the wake sweep reads at
+ * most `WORKFLOW_WAKE_MAX_PER_TICK` app databases per tick, and provisioning is
+ * serialized per slug by the mutation lock. That is why this does not appear in
+ * `platformDbConnectionsPerReplica` — it is a transient, bounded by a policy
+ * above it, not a resident pool.
+ */
+export const APP_DB_ADMIN_POOL_MAX = 1;
+
+/**
  * The platform's own ceiling on DIRECT Postgres connections, fleet-wide.
  *
  * These are session-mode connections by construction — `assertSessionModeUrl`
@@ -334,14 +353,58 @@ export const APP_DB_TARGET_POOL_MAX = 4;
  * instead of failing in production. The tenant-facing half of this concern was
  * always reasoned explicitly (`APP_DB_CONNECTION_LIMIT`, "so one hot app
  * cannot starve the shared cluster"); the platform's own half was not.
+ *
+ * **It was 80 against a provisioned instance that has 60**, which is exactly the
+ * unchecked claim the paragraph above warns about — the dashboard reports
+ * `max_connections` 60 on the `t3a.micro` this runs on, so the fleet ceiling
+ * promised more than the database could give and the "control-plane outage at
+ * peak" above was reachable. 40 leaves 20 for what else needs the instance:
+ * Supabase's own Realtime / PostgREST / Storage workers (~17 in use at idle),
+ * `supabase db push`, the dashboard, and Supavisor's server-side connections.
+ *
+ * **Neither per-app databases NOR the admin pool are in this number, and both
+ * are routing decisions rather than omissions** — see
+ * {@link platformDbConnectionsPerReplica} for what may be pooled and why the slug
+ * lock may not. They are reached through Supavisor in SESSION mode
+ * (`APP_DB_POOLER_URL`, applied by `withPoolerHost` in app-database.ts), so they
+ * consume pooler capacity rather than `max_connections` — which is what makes
+ * them boundable at all, since a direct connection per app scales with the number
+ * of APPS and no fleet-wide ceiling can bound that. Their governing limits are
+ * Supavisor's instead: a pool per `user+db+mode` triple, each entitled to the
+ * configured pool size, against a default `max_pools` of 50 per tenant. With
+ * `APP_DB_POOLER_URL` unset the connections are DIRECT and this budget
+ * understates the fleet by one per replica, which is why boot announces it.
  */
-export const MAX_PLATFORM_DB_CONNECTIONS = 80;
+export const MAX_PLATFORM_DB_CONNECTIONS = 40;
 
 /**
- * Direct connections one replica may open, given `extraAppDbTargets` extra
- * placement clusters. The admin and slug-lock pools are deliberately separate
- * (see `slugLock` below), so they add.
+ * DIRECT connections one replica may open, given `extraAppDbTargets` extra
+ * placement clusters.
+ *
+ * **The ADMIN pool is not in this sum, because it is POOLED**
+ * (`PLATFORM_POOLER_URL`, transaction mode). What decides whether a pool may be
+ * pooled is whether anything on it needs SESSION affinity, and only one thing
+ * does — measured against a real Supavisor in transaction mode:
+ *
+ * - `pg_advisory_lock`, the SLUG lock, is session-scoped and held across a whole
+ *   deploy. Through the pooler a RIVAL connection acquired the same lock while it
+ *   was held: mutual exclusion silently gone. That is the bug
+ *   `assertSessionModeUrl` exists to prevent, and it stays DIRECT.
+ * - `pg_try_advisory_xact_lock`, the wake sweep's leader election, is the only
+ *   lock on the ADMIN pool and lives inside `begin … commit`. A transaction
+ *   pooler pins one backend for a transaction, which is exactly that lock's
+ *   lifetime: verified correct end to end — acquired, a rival refused while held,
+ *   released by the commit.
+ *
+ * Everything else on the admin pool is a single short query (Vault, agents rows,
+ * workspaces, chats, the sweeps' scheduling), `createPostgresDb` already sets
+ * `prepare: false`, and nothing on it ever `LISTEN`s — the three things that make
+ * transaction pooling unusable for the Workflow DevKit all fail to apply here.
+ *
+ * With `PLATFORM_POOLER_URL` unset the admin pool is DIRECT and this understates
+ * a replica by `ADMIN_POOL_MAX`, so boot announces it rather than leaving the
+ * budget quietly wrong.
  */
 export function platformDbConnectionsPerReplica(extraAppDbTargets = 0): number {
-  return ADMIN_POOL_MAX + SLUG_LOCK_POOL_MAX + extraAppDbTargets * APP_DB_TARGET_POOL_MAX;
+  return SLUG_LOCK_POOL_MAX + extraAppDbTargets * APP_DB_TARGET_POOL_MAX;
 }

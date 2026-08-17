@@ -79,7 +79,7 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `workflow-wake.ts` — the durable-run wake sweep (see "Waking a run whose
   sandbox is gone" below): the one thing here that boots a sandbox on a
   SCHEDULE rather than for a caller. Leader-elected per tick, reads a
-  guest-published wake hint out of each app's own schema, and wakes through
+  guest-published wake hint out of each app's own database, and wakes through
   `brokerSessionUrl` like every other caller
 - `phone-handler.ts` / `phone-signature.ts` — `GET/POST /:slug/phone`: the
   carrier call-answering webhook (see "Telephony" below) and its webhook
@@ -130,9 +130,34 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   since the causes are project-wide and every replica would leave rotation at
   once, turning a feature outage into a total one.
 - `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
-  orphaned `-preview` agents + their app database schema/role and Vault
-  secrets, unreferenced deploy blobs, runaway tenant queries, pg_cron's own
-  run log), installed idempotently at boot. `cron.schedule` upserts by name,
+  orphaned `-preview` agents + their app database/role and Vault secrets,
+  unreferenced deploy blobs, runaway tenant queries, pg_cron's own run log),
+  installed idempotently at boot.
+
+  **The orphan sweep drops its databases through `dblink`, because `DROP
+  DATABASE` cannot run in pg_cron's transaction** (`25001`, from a function and
+  from an explicit `BEGIN` alike). dblink runs it on a second connection, so it
+  is outside the caller's transaction — and it SURVIVES a rollback of that
+  transaction, which is what makes it work and why the drops must be the LAST
+  thing a job body does. Three things it needs, each verified: a non-loopback
+  host (pg_cron's worker connects over loopback, where a `trust` rule means the
+  password is never used and dblink answers `2F003` — hence `AAI_DBLINK_HOST`,
+  which carries an optional `:port`); the credential from Vault
+  (`PLATFORM_DB_DSN_SECRET`, never the job text, where it would be plaintext in
+  every `select * from cron.job`); and the extension in a schema NOTHING has
+  `USAGE` on (`aai_admin`, `20260817000000_dblink_admin.sql`) — dblink ships 41
+  functions, 39 executable by `PUBLIC`, and a tenant that can reach any of them
+  executes as the ADMIN. That escalation was reproduced; revoking the overloads
+  by name does not work, the schema is the only chokepoint that holds.
+
+  **Per-app maintenance is `cron.schedule_in_database` instead** — pg_cron 1.6.4,
+  usable by Supabase's non-superuser `postgres`, and it really fires into a
+  database whose `CONNECT` is revoked from `PUBLIC` (the admin owns it). The
+  session-state sweep is one job per app, created at provision time and
+  unscheduled before the drop; `_session-state-sweep.ts` carries why, including
+  the trap that its job-name prefix must stay disjoint from the one
+  `schedulePlatformSweeps` DIFFS — a shared prefix would silently unschedule
+  every app's sweep on the next boot. `cron.schedule` upserts by name,
   so a job DELETED from `platformCronJobs()` keeps firing on any database that
   already has it — and `guarded()` makes that silent. Boot therefore DIFFS:
   every `aai-sweep-*` job in `cron.job` that the code no longer declares is
@@ -293,9 +318,28 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `POST /studio/cli-link/approve` can write the same name at once. A `23505`
   is retried as an update exactly once, which is sufficient by construction:
   after it the name exists. Read the SQLSTATE, never the message.
-- `app-database.ts` — per-app Postgres schema/role provisioning in the
-  platform Supabase database (`provisionAppDatabase`,
-  `deprovisionAppDatabase`, `openAppDb`).
+- `app-database.ts` — per-app Postgres DATABASE/role provisioning in the
+  platform's Supabase instance (`provisionAppDatabase`,
+  `deprovisionAppDatabase`, `withAppDb`).
+
+  **A DATABASE per app, not a schema, and the Workflow DevKit is why.**
+  `@workflow/world-postgres` puts its run journal in a `workflow` schema and its
+  queue in `graphile_worker` — DATABASE-level names it cannot nest inside
+  `app_<hex>`. Creating them needs `CREATE ON DATABASE`, which a shared database
+  cannot grant a tenant, so the DevKit's migration failed
+  `42501 permission denied for database postgres` and every durable workflow
+  silently had nowhere to live. Measured on PG 17.6: under the old grants both
+  `create schema` statements are denied; inside the app's own database both
+  succeed. It also closes a catalog leak for free — an app role could enumerate
+  every other tenant's schema and role name out of `pg_namespace`/`pg_roles`.
+
+  Three properties the module doc argues in full, each learned by getting it
+  wrong: the database is owned by the ADMIN role (a non-superuser cannot drop a
+  database it does not own — `42501 must be owner of database` — even one it
+  created); **`revoke connect … from public` IS the tenant boundary** now, since
+  Postgres grants `CONNECT` on a new database to `PUBLIC`; and `grant … on schema
+  public` is required because PG15+ makes `public` writable by nobody else.
+  `search_path` pinning is gone — an app owns `public` in its own database.
 
   **Deprovision follows the app's stored LOCATOR, never a recomputed
   placement**, and so does `usage`: changing `APP_DB_URLS` re-shuffles every
@@ -343,7 +387,7 @@ Three things the split fixed, all of them measured on a morning it cost:
 - **There is no third tier.** `buildPlatformDb` used to have a
   local-dev-with-a-database branch giving memory stores beside REAL per-app
   schemas. So `pnpm dev:aai-server` against the local stack lost every deployed
-  agent on restart while its app schema sat in Postgres — a published slug 404s
+  agent on restart while its app database sat in Postgres — a published slug 404s
   and nothing about the failure names the store that dropped it. With a platform
   database every store is Supabase's, and `SUPABASE_URL` /
   `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_STORAGE_BUCKET` are required rather
@@ -471,10 +515,33 @@ The cross-replica coordination that lives in this same Postgres:
   must RESOLVE ITS PLACE IN THE CHAIN or everyone behind it blocks forever.
 
   **The connection budget is fleet-wide** (`MAX_PLATFORM_DB_CONNECTIONS`,
-  pinned by `platform-db-budget.test.ts`): these are DIRECT session-mode
-  connections, so `MAX_CONTAINERS` × the per-replica pools consumes
-  `max_connections` outright — a product spanning two files that never referred
-  to each other, whose ceiling is an outage rather than degradation.
+  pinned by `platform-db-budget.test.ts`): these are DIRECT connections, so
+  `MAX_CONTAINERS` × the per-replica pools consumes `max_connections` outright —
+  whose ceiling is an outage rather than degradation.
+
+  **Only the SLUG-LOCK pool is in that number, and what decides membership is
+  whether a connection needs SESSION affinity.** Measured against a real
+  Supavisor in transaction mode: `pg_advisory_lock` (the slug lock, held for a
+  whole deploy) LOSES exclusion — a rival connection acquired the same lock while
+  it was held, which is the bug `assertSessionModeUrl` exists to prevent and had
+  never been reproduced before. `pg_try_advisory_xact_lock` (the wake sweep's
+  leader election, inside `begin … commit`) is correct throughout, because a
+  transaction pooler pins one backend for exactly that lock's lifetime. So:
+  - `SUPABASE_DB_URL` — direct, session mode. The slug-lock pool, and the app-db
+    locator. `assertSessionModeUrl` still refuses a pooler here.
+  - `PLATFORM_POOLER_URL` — Supavisor TRANSACTION mode, for the admin pool.
+    Refuses a session-mode URL, which multiplexes nothing while looking set.
+  - `APP_DB_POOLER_URL` — Supavisor SESSION mode. Every app-database connection,
+    the guest's own `DATABASE_URL` included. Refuses transaction mode, which
+    breaks the DevKit three ways (graphile-worker's named prepared statements,
+    `world-postgres`'s `LISTEN` with no polling fallback, and
+    `workflow-lock-sweep.ts`'s session-scoped advisory lock).
+
+  Session mode does not multiplex, so app databases still cost real connections
+  at peak — bounded by Supavisor's pool sizing (a pool per `user+db+mode` triple,
+  `max_pools` defaulting to 50 per tenant) rather than by this formula. Unset,
+  either pooler variable means DIRECT and the budget understates a replica, so
+  boot announces it. `platform-connection-config.test.ts` pins all three rules.
 
   **`SUPABASE_DB_URL` must be the direct, SESSION-mode connection string.** A
   transaction-mode pooler (Supavisor's port 6543, `pgbouncer=true`) returns
@@ -505,7 +572,7 @@ The cross-replica coordination that lives in this same Postgres:
 - **Session resume needs no cross-replica store**: sessions live in the guest
   sandbox, not on a replica — a `?sessionId=<id>` reconnect re-brokers via
   `GET /:slug/client-config`. It need not land on the SAME sandbox any more: slot
-  state is durable in the app's own schema when storage is on, so a REPLACEMENT
+  state is durable in the app's own database when storage is on, so a REPLACEMENT
   guest (redeploy, `handoverSlot`, the peer route) recovers it.
   `_session-state-sweep.ts` reclaims what a dead guest left.
 
@@ -1014,10 +1081,11 @@ keeps `withHostCredentialFallback` out of `ctx.env` are in
 `packages/aai-guest/CLAUDE.md`, "Credential separation, and what reaches a
 guest".**
 
-**Cross-agent isolation:** app databases are separate Postgres schemas with
-per-app login roles, each sandbox communicates over its own authenticated
-WebSocket, sessions are per-sandbox, and there is no shared mutable state
-between sandboxes.
+**Cross-agent isolation:** app databases are separate Postgres DATABASES with
+per-app login roles and `CONNECT` revoked from `PUBLIC` (verified: a neighbour's
+database answers `42501 permission denied`), each sandbox communicates over its
+own authenticated WebSocket, sessions are per-sandbox, and there is no shared
+mutable state between sandboxes.
 
 **`run_code`**: executes only inside the guest sandbox — see "The
 `run_code` executor" in `packages/aai-guest/CLAUDE.md` for its authority
@@ -1475,7 +1543,7 @@ sandboxes; the lever is `AAI_GUEST_IDLE_EXIT_MS`, not the sweep.
 "which of these jobs is agent X's" is answerable only inside the process whose
 world it is. Each workflow guest therefore reduces its whole queue to one
 timestamp — the earliest moment a job could be claimed — and upserts it into
-`aai_workflow_wake` in the app's own `ctx.db` schema
+`aai_workflow_wake` in the app's own `ctx.db` database
 (`aai/host/workflow-wake-hint.ts` owns that contract, including why a locked job
 is dated from graphile-worker's 4-hour job expiry and why a job past
 `max_attempts` counts for nothing). The sweep reads that one column on the
@@ -1501,10 +1569,17 @@ Four properties, each the answer to a way this could go wrong:
   interval, indefinitely.
 - **One replica sweeps per tick**, via a transaction-scoped advisory try-lock on
   the reserved admin connection that also carries the pass's `set local
-  statement_timeout` — so neither can leak onto a pooled connection (the hazard
-  `platform-lock.ts` documents). Efficiency, not correctness:
-  `brokerSessionUrl` is idempotent fleet-wide, which is why a lost lock is a
-  silent skip.
+  statement_timeout`. Efficiency, not correctness: `brokerSessionUrl` is
+  idempotent fleet-wide, which is why a lost lock is a silent skip.
+- **The per-app reads are one SHORT-LIVED connection each, taken SERIALLY.** A
+  Postgres connection is bound to one database, so the admin connection cannot
+  read a tenant's hint however it is qualified. Serial keeps a pass at one extra
+  connection at a time however many apps exist. The SAVEPOINT per tenant is gone
+  with the shared transaction and so is its reason: a read that throws now takes
+  down a connection nothing else is using, so one broken tenant cannot deny
+  every later one its wake. The candidate filter changed too — the old catalog
+  query is per-database now, so the cheap filter is the `app-db:` credential
+  itself, read for the fleet in one query over the same Vault view the sweeps use.
 
 **Each tenant's read sits in a SAVEPOINT, and that is not tidiness.** The hint
 table is tenant-owned, so a dropped, reshaped, or hugely-grown one makes that

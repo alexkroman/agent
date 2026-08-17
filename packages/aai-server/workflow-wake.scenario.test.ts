@@ -33,14 +33,20 @@ import {
   type CloseableDb,
   createPostgresDb,
   createWakeHintPublisher,
-  type ReservedDb,
   WORKFLOW_WAKE_TABLE,
 } from "@alexkroman1/aai/runtime";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import { appDbIdentifier } from "./app-database.ts";
+import {
+  APP_DB_SCHEMA,
+  type AppDatabases,
+  type AppDbMeta,
+  appDbIdentifier,
+  createAppDatabases,
+} from "./app-database.ts";
 import type { BrokeredSession } from "./sandbox-broker.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { APP_DB_SECRET_PREFIX, createVaultSecretStore } from "./secret-store.ts";
 import { createTestStore } from "./test-utils.ts";
 import { createWorkflowWakeSweep } from "./workflow-wake.ts";
 
@@ -65,22 +71,38 @@ const OK: BrokeredSession = {
 };
 
 describeWithPg("durable-run wake over a real Postgres", () => {
+  /** The PLATFORM database's connection — what elects the leader. */
   let admin: CloseableDb;
-  /** A session pinned to the app's schema — what the GUEST's connection is. */
-  let guest: ReservedDb;
+  /** A connection into the APP's OWN database — what the GUEST's connection is. */
+  let guest: CloseableDb;
+  /** The sweep's way into any app's database. */
+  let appDb: AppDatabases;
   let url: string;
 
-  const schema = appDbIdentifier(SLUG);
-  const otherSchema = appDbIdentifier(OTHER_SLUG);
+  /** Database names, which are also the role names (`app-database.ts`). */
+  const appName = appDbIdentifier(SLUG);
+  const otherName = appDbIdentifier(OTHER_SLUG);
 
-  /** Insert one job into the fake queue. */
+  /** Swap a database name into the platform admin URL. */
+  function urlFor(database: string): string {
+    const parsed = new URL(url);
+    parsed.pathname = `/${database}`;
+    return parsed.toString();
+  }
+
+  /** A meta pointing at one app's real database on this cluster. */
+  function metaFor(slug: string): AppDbMeta {
+    return { role: appDbIdentifier(slug), password: "unused-by-admin-reads", url };
+  }
+
+  /** Insert one job into the fake queue — INSIDE the app's own database. */
   async function addJob(job: {
     runAt: string;
     lockedAt?: string | null;
     attempts?: number;
     maxAttempts?: number;
   }): Promise<void> {
-    await admin.query(
+    await guest.query(
       `insert into graphile_worker.jobs (run_at, locked_at, attempts, max_attempts)
        values ($1::timestamptz, $2::timestamptz, $3, $4)`,
       [job.runAt, job.lockedAt ?? null, job.attempts ?? 0, job.maxAttempts ?? 3],
@@ -89,7 +111,12 @@ describeWithPg("durable-run wake over a real Postgres", () => {
 
   /** What the guest would publish right now. */
   async function publish(): Promise<void> {
-    await createWakeHintPublisher({ db: guest, intervalMs: 0 }).publish();
+    const reserved = await guest.reserve();
+    try {
+      await createWakeHintPublisher({ db: reserved, intervalMs: 0 }).publish();
+    } finally {
+      reserved.release();
+    }
   }
 
   /**
@@ -99,12 +126,12 @@ describeWithPg("durable-run wake over a real Postgres", () => {
    * absence is read here rather than thrown.
    */
   async function storedHint(): Promise<string | null | undefined> {
-    const present = await admin.query<{ present: boolean }>(
-      `select to_regclass('"${schema}"."${WORKFLOW_WAKE_TABLE}"') is not null as present`,
+    const present = await guest.query<{ present: boolean }>(
+      `select to_regclass('${APP_DB_SCHEMA}.${WORKFLOW_WAKE_TABLE}') is not null as present`,
     );
     if (present[0]?.present !== true) return;
-    const rows = await admin.query<{ wake_at: Date | null }>(
-      `select wake_at from "${schema}"."${WORKFLOW_WAKE_TABLE}"`,
+    const rows = await guest.query<{ wake_at: Date | null }>(
+      `select wake_at from ${APP_DB_SCHEMA}.${WORKFLOW_WAKE_TABLE}`,
     );
     if (rows.length === 0) return;
     return rows[0]?.wake_at?.toISOString() ?? null;
@@ -117,6 +144,7 @@ describeWithPg("durable-run wake over a real Postgres", () => {
     store.listSlugs = () => Promise.resolve(slugs);
     const result = await createWorkflowWakeSweep({
       adminDb: admin,
+      appDb,
       store,
       broker: { slots: createSlotCache(), store: createTestStore() },
       wake,
@@ -131,39 +159,80 @@ describeWithPg("durable-run wake over a real Postgres", () => {
     return result.woken;
   }
 
+  /**
+   * The REAL Supabase Vault, not a stand-in.
+   *
+   * This stack has one (`supabase_vault` is in the local image), and the sweep
+   * reads `vault.decrypted_secrets` directly — so a hand-rolled table would test
+   * a view of our own shape rather than the one production queries. It is also
+   * not creatable here: `create schema vault` fails `permission denied` against
+   * the schema Supabase already owns.
+   */
+  async function seedVault(slugs: string[]): Promise<void> {
+    const vault = createVaultSecretStore((query, params) => admin.query(query, params));
+    for (const slug of slugs) {
+      await vault.put(`${APP_DB_SECRET_PREFIX}${slug}`, JSON.stringify(metaFor(slug)));
+    }
+  }
+
   beforeAll(async () => {
     url = pgUrl();
     admin = createPostgresDb({ url, max: 4 });
-    await admin.query(`create schema if not exists "${schema}"`);
-    await admin.query(`create schema if not exists "${otherSchema}"`);
-    // The four columns the hint query reads, as graphile-worker's own `jobs`
-    // view exposes them.
-    await admin.query("create schema if not exists graphile_worker");
-    await admin.query(`create table if not exists graphile_worker.jobs (
+
+    // Real per-app DATABASES — the whole point of the change under test. Owned by
+    // the admin role, exactly as `provisionAppDatabase` creates them, so the
+    // sweep's own connection can read them and the drop needs no ownership dance.
+    for (const name of [appName, otherName]) {
+      await admin.query(`drop database if exists "${name}" with (force)`);
+      await admin.query(`create database "${name}"`);
+    }
+    await seedVault([SLUG, OTHER_SLUG]);
+
+    guest = createPostgresDb({ url: urlFor(appName), max: 2 });
+    // graphile_worker lives in the APP's database now — which is exactly what the
+    // per-schema model could not express, since `graphile_worker` is a
+    // database-level name (see app-database.ts).
+    await guest.query("create schema if not exists graphile_worker");
+    await guest.query(`create table if not exists graphile_worker.jobs (
       id bigserial primary key,
       run_at timestamptz not null default now(),
       locked_at timestamptz,
       attempts int not null default 0,
       max_attempts int not null default 3
     )`);
-    guest = await admin.reserve();
-    // What the platform pins on the app role at provisioning time, so the
-    // guest's unqualified DDL lands in its own schema (app-database.ts).
-    await guest.query(`set search_path = "${schema}"`);
+
+    appDb = createAppDatabases({
+      url,
+      sql: (query, params) => admin.query(query, params),
+      open: (appUrl) => {
+        const db = createPostgresDb({ url: appUrl, max: 1 });
+        return { query: (query, params) => db.query(query, params), close: () => db.close() };
+      },
+    });
   });
 
   afterAll(async () => {
-    guest.release();
-    await admin.query(`drop schema if exists "${schema}" cascade`);
-    await admin.query(`drop schema if exists "${otherSchema}" cascade`);
-    await admin.query("drop schema if exists graphile_worker cascade");
-    await admin.close();
+    // Defensive: a failure in `beforeAll` still runs this, and an unclosed pool
+    // or a leftover database would leak into every later run on this stack.
+    await guest?.close();
+    if (admin !== undefined) {
+      const vault = createVaultSecretStore((query, params) => admin.query(query, params));
+      for (const slug of [SLUG, OTHER_SLUG]) {
+        await vault.delete(`${APP_DB_SECRET_PREFIX}${slug}`).catch(() => undefined);
+      }
+      for (const name of [appName, otherName]) {
+        await admin.query(`drop database if exists "${name}" with (force)`).catch(() => undefined);
+      }
+      await admin.close();
+    }
   });
 
   beforeEach(async () => {
-    await admin.query("delete from graphile_worker.jobs");
-    await admin.query(`drop table if exists "${schema}"."${WORKFLOW_WAKE_TABLE}"`);
-    await admin.query(`drop table if exists "${otherSchema}"."${WORKFLOW_WAKE_TABLE}"`);
+    await guest.query("delete from graphile_worker.jobs");
+    await guest.query(`drop table if exists ${APP_DB_SCHEMA}.${WORKFLOW_WAKE_TABLE}`);
+    const other = createPostgresDb({ url: urlFor(otherName), max: 1 });
+    await other.query(`drop table if exists ${APP_DB_SCHEMA}.${WORKFLOW_WAKE_TABLE}`);
+    await other.close();
   });
 
   // No `afterEach(vi.restoreAllMocks)`: `restoreMocks: true` in
@@ -228,7 +297,7 @@ describeWithPg("durable-run wake over a real Postgres", () => {
     await publish();
     expect(await sweep()).toEqual([SLUG]);
 
-    await admin.query("delete from graphile_worker.jobs");
+    await guest.query("delete from graphile_worker.jobs");
     await publish();
 
     // Null rather than a deleted row: an absent row and "nothing pending" would
@@ -239,13 +308,13 @@ describeWithPg("durable-run wake over a real Postgres", () => {
 
   test("no queue in the database means no hint table at all", async () => {
     // The Local World under `aai dev`, or a world that failed to start.
-    await admin.query("alter schema graphile_worker rename to graphile_worker_hidden");
+    await guest.query("alter schema graphile_worker rename to graphile_worker_hidden");
     try {
       await publish();
       expect(await storedHint()).toBeUndefined();
       expect(await sweep()).toEqual([]);
     } finally {
-      await admin.query("alter schema graphile_worker_hidden rename to graphile_worker");
+      await guest.query("alter schema graphile_worker_hidden rename to graphile_worker");
     }
   });
 
@@ -261,9 +330,8 @@ describeWithPg("durable-run wake over a real Postgres", () => {
     // A savepoint per read is what makes this true. Without one, the neighbour's
     // failing statement aborts the pass's transaction and every later tenant is
     // skipped — a cross-tenant denial of the one mechanism a parked run has.
-    await admin.query(
-      `create table "${otherSchema}"."${WORKFLOW_WAKE_TABLE}" (nothing_useful int)`,
-    );
+    const other = createPostgresDb({ url: urlFor(otherName), max: 1 });
+    await other.query(`create table ${APP_DB_SCHEMA}.${WORKFLOW_WAKE_TABLE} (nothing_useful int)`);
     await addJob({ runAt: PAST });
     await publish();
 
@@ -277,10 +345,10 @@ describeWithPg("durable-run wake over a real Postgres", () => {
     await addJob({ runAt: PAST });
     await publish();
     await publish();
-    await createWakeHintPublisher({ db: guest, intervalMs: 0 }).publish();
+    await publish();
 
-    const rows = await admin.query<{ count: string }>(
-      `select count(*) as count from "${schema}"."${WORKFLOW_WAKE_TABLE}"`,
+    const rows = await guest.query<{ count: string }>(
+      `select count(*) as count from ${APP_DB_SCHEMA}.${WORKFLOW_WAKE_TABLE}`,
     );
     // One row, whatever happens: the table's primary key admits only `true`.
     expect(Number(rows[0]?.count)).toBe(1);
@@ -293,8 +361,8 @@ describeWithPg("durable-run wake over a real Postgres", () => {
     // statement — so the claim would survive the `check (id)` being dropped.
     // 23514 is check_violation, which is the constraint under test.
     await expect(
-      admin.query(
-        `insert into "${schema}"."${WORKFLOW_WAKE_TABLE}" (id, wake_at) values (false, now())`,
+      guest.query(
+        `insert into ${APP_DB_SCHEMA}.${WORKFLOW_WAKE_TABLE} (id, wake_at) values (false, now())`,
       ),
     ).rejects.toMatchObject({ code: "23514" });
   });

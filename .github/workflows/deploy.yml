@@ -30,15 +30,18 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       deploy: ${{ steps.diff.outputs.deploy }}
+      migrate: ${{ steps.diff.outputs.migrate }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
       - id: diff
-        name: Detect changeset version bumps
+        name: Detect changeset version bumps and schema changes
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "deploy=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
+            # A manual deploy still needs its migrations applied first.
+            echo "migrate=${{ inputs.deploy }}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           bumped() {
@@ -46,14 +49,76 @@ jobs:
             # the changesets release commit is the only thing that moves it.
             git diff HEAD^ HEAD -- "packages/$1/package.json" | grep -q '^+.*"version":'
           }
+          deploy=false
+          migrate=false
           if bumped aai-server || bumped aai-studio-server; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            deploy=true
+            # Deploying implies migrating: the code being shipped is entitled to
+            # assume the schema it was written against. This is why the deploy job
+            # can simply `needs: migrate` — when it runs at all, migrate ran too.
+            migrate=true
           fi
+          # ...and a migration merged WITHOUT a version bump still has to be
+          # applied. Otherwise a schema-only PR lands, deploys nothing, migrates
+          # nothing, and the next unrelated release is what discovers it.
+          if git diff --name-only HEAD^ HEAD -- 'supabase/migrations/**' | grep -q .; then
+            migrate=true
+          fi
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          echo "migrate=$migrate" >> "$GITHUB_OUTPUT"
+
+  # Applied with `--db-url` rather than `--linked`, which is what keeps this to ONE
+  # secret: linking needs a SUPABASE_ACCESS_TOKEN plus a project ref plus the db
+  # password, and a connection string carries all three facts.
+  #
+  # WHICH string, though, is not simply "the one the Modal secret holds" — a
+  # RUNNER is not a Modal container:
+  #
+  # - A GitHub-hosted runner is IPv4-ONLY, and `supabase/README.md` records that a
+  #   Supabase direct connection is IPv6-only without the IPv4 add-on. So a direct
+  #   `db.<ref>.supabase.co:5432` URL works from Modal and can fail here with a
+  #   bare connection error that names nothing about IP families.
+  # - The sanctioned fallback is the one that README already names: **Supavisor
+  #   SESSION mode, port 5432** (`postgres.<ref>@…pooler.supabase.com:5432`),
+  #   which is IPv4-reachable and still a real session.
+  #
+  # NEVER the transaction pooler (6543 / `pgbouncer=true`) for this: migrations run
+  # DDL in transactions and take locks, which is exactly what transaction pooling
+  # will not hold. Either of the other two is fine — set whichever actually
+  # connects from a runner.
+  migrate:
+    needs: changed
+    if: needs.changed.outputs.migrate == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: supabase/setup-cli@46f7f98c7f948ad727d22c1e67fab04c223a0520 # v3.0.0
+        with:
+          # Pinned, not `latest`: the CLI decides how migrations are applied and
+          # what counts as pending, so letting it float means the schema step
+          # changes without a commit. This is the version the migrations in this
+          # repo were applied with locally.
+          version: 2.109.1
+      - name: Apply Supabase migrations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "::error::SUPABASE_DB_URL is not set on the production environment." \
+                 "Add it as an environment secret — the DIRECT session-mode" \
+                 "connection string, percent-encoded. Without it the deploy would" \
+                 "ship code against an unmigrated schema."
+            exit 1
+          fi
+          # `--yes` because there is no TTY to confirm at; the CLI otherwise
+          # prompts before applying and would hang the job.
+          supabase db push --db-url "$SUPABASE_DB_URL" --yes
 
   deploy:
-    needs: changed
+    # `migrate` as well as `changed`: a failed or skipped migration must stop the
+    # deploy rather than let it ship against a schema that was never applied.
+    needs: [changed, migrate]
     if: needs.changed.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment: production

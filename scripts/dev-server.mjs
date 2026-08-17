@@ -109,6 +109,63 @@ const PLATFORM_ENV = {
 };
 
 /**
+ * The two settings a local stack needs that `supabase status -o env` does not
+ * report — DERIVED from `supabase/config.toml` and the stack's own DB_URL, so
+ * local dev exercises the SAME code paths production does.
+ *
+ * Both exist because a name that is right from OUTSIDE the compose network is
+ * wrong from inside it, which is the one way local and production genuinely
+ * differ here:
+ *
+ * - **`AAI_DBLINK_HOST`** — the orphan-preview sweep's deprovision is `drop
+ *   database`, which pg_cron cannot run in its transaction, so it goes out
+ *   through dblink. pg_cron's worker connects over LOOPBACK, and dblink refuses a
+ *   non-superuser connection whose password was never used (`2F003`) — which is
+ *   what a `trust` rule on 127.0.0.1 produces. `db` is the compose service name,
+ *   a non-loopback path that hits a scram rule; verified by dropping a database
+ *   from inside a real cron job. The `:5432` matters — that is the port inside the
+ *   compose network, where the admin URL's published 54322 answers nothing.
+ *   Production needs no override: its `SUPABASE_DB_URL` host is already
+ *   non-loopback and its port is the real one.
+ * - **`PLATFORM_POOLER_URL`** — Supavisor's TRANSACTION-mode URL, which the admin
+ *   pool uses so its connections do not count against the instance's
+ *   `max_connections` (see `platformDbConnectionsPerReplica`). The stack publishes
+ *   the pooler on `[db.pooler].port` and the CLI's tenant is `pooler-dev`, neither
+ *   of which `supabase status -o env` reports.
+ *
+ * Skipped when the pooler stanza is disabled, so a developer who turns it off
+ * gets the direct path and the boot warning that names it, rather than a URL
+ * nothing is listening on.
+ */
+function localStackExtras(dbUrl) {
+  const file = path.join(REPO_ROOT, "supabase", "config.toml");
+  const config = existsSync(file) ? readFileSync(file, "utf-8") : "";
+  // `db:5432` — the compose service name AND the port Postgres listens on INSIDE
+  // the network. The host alone would be paired with the admin URL's published
+  // port (54322), which nothing inside the network answers on.
+  const env = { AAI_DBLINK_HOST: "db:5432" };
+  const pooler = /^\[db\.pooler\]([\s\S]*?)(?=^\[|Z)/m.exec(config)?.[1] ?? "";
+  const enabled = /^enabled\s*=\s*true/m.test(pooler);
+  const port = /^port\s*=\s*(\d+)/m.exec(pooler)?.[1];
+  if (enabled && port && dbUrl) {
+    const url = new URL(dbUrl);
+    // Supavisor identifies the tenant by a username SUFFIX and refuses a bare
+    // role with `(ENOIDENTIFIER) no tenant identifier provided`; the CLI stack's
+    // tenant is `pooler-dev`.
+    url.username = encodeURIComponent(`${decodeURIComponent(url.username)}.pooler-dev`);
+    url.port = port;
+    // `pgbouncer=true` DECLARES the mode, which is the only thing that works here:
+    // `isTransactionModePooler` also accepts port 6543, but that is Supavisor's
+    // port INSIDE the compose network — the CLI publishes it on
+    // `[db.pooler].port` (54329), so the port says nothing about the mode once it
+    // has been remapped. The same is true of any pooler behind a port forward.
+    url.searchParams.set("pgbouncer", "true");
+    env.PLATFORM_POOLER_URL = url.toString();
+  }
+  return env;
+}
+
+/**
  * The deploy-artifact bucket, out of `supabase/config.toml`.
  *
  * DERIVED rather than a `"blobs"` literal here, because the stanza in that file
@@ -153,6 +210,12 @@ function resolvePlatformEnv() {
   const missing = wanted.filter((name) => !env[name]);
   if (missing.length > 0) {
     return { env: {}, why: `\`supabase status -o env\` named no ${missing.join(", ")}` };
+  }
+  // Layered under the shell like everything else above: an exported value wins.
+  for (const [name, value] of Object.entries(
+    localStackExtras(env.SUPABASE_DB_URL ?? process.env.SUPABASE_DB_URL),
+  )) {
+    if (!process.env[name]) env[name] = value;
   }
   return { env, note: `local Supabase stack resolved (${stack.source})` };
 }

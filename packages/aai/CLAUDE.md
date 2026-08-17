@@ -829,10 +829,10 @@ are silently dropped by `on conflict do nothing`. **Both backends must answer
 call, awaited, once per changed slot), the fail-open rule for shape drift on
 redeploy, and the size cap; `host/runtime-session-state.ts` for where a session
 hydrates and where it is reclaimed; `host/session-state-postgres.ts` for the table
-and what the app schema guarantees. **Persistence is reliable across crashes and
+and what the app database guarantees. **Persistence is reliable across crashes and
 best-effort across redeploys.**
 
-**The tables come WITH the schema, and this backend creates none.**
+**The tables come WITH the database, and this backend creates none.**
 `sessionStateDdl` is the shape; the platform applies it when it provisions an
 app's database (`aai-server/app-database.ts`), because the tables are part of
 what "this app has a database" means, exactly as its role and grants are. The
@@ -899,11 +899,14 @@ enabling storage for an app (CLI `aai storage enable <slug>`; the studio's
 Settings pane → Database, which switches BOTH of a project's agents at once —
 see the Database-card note in `packages/aai-studio-client/CLAUDE.md`; or
 `DATABASE_URL` in the project `.env` under `aai dev`) gives its tools `ctx.db` —
-a SQL handle (`query<T>(sql, params?)`, `$1` placeholders) backed by a per-app
-schema in the platform's Supabase Postgres. Accessing `ctx.db` without storage
+a SQL handle (`query<T>(sql, params?)`, `$1` placeholders) backed by the app's own
+DATABASE in the platform's Supabase instance. Accessing `ctx.db` without storage
 enabled throws with that enablement guidance. On the platform each app gets its
-own schema + login role (search_path pinned, 10s statement_timeout);
-credentials live in Supabase Vault.
+own DATABASE + login role (its tables in `public`, no `search_path` pin needed,
+10s statement_timeout, `CONNECT` revoked from `PUBLIC`); credentials live in
+Supabase Vault. A schema per app could not host a durable workflow at all — the
+Workflow DevKit's `workflow` and `graphile_worker` are database-level names — so
+`aai-server/app-database.ts` is the argument.
 
 **`ctx.db` connects DIRECTLY from the guest** — the app's own scoped Postgres
 credentials ride in as `DATABASE_URL` in the agent's boot env and the bundle's

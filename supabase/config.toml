@@ -32,23 +32,38 @@ project_id = "aai-platform"
 # supabase_vault, pgmq, pg_cron and pg_net are all in it.
 major_version = 17
 
-# The TRANSACTION-mode pooler, off by default and declared here so it can be
-# turned on deliberately.
+# The TRANSACTION-mode pooler, ON, because local dev now runs the same path
+# production does: the platform's ADMIN pool connects through Supavisor
+# (`PLATFORM_POOLER_URL`, which `scripts/dev-server.mjs` derives from this stanza
+# and the stack's own DB_URL). A production-only connection path is exactly the
+# arm this repo keeps finding broken — nothing local runs it, so nothing notices.
+#
+# It costs one more container on every `supabase start`, which was the whole
+# argument for leaving it off. Setting `enabled = false` gives that back: the
+# admin pool then opens DIRECT connections and boot warns, naming the trade.
+#
+# ── WHAT IT IS FOR, AND WHAT A RUN THROUGH IT MEASURED (2026-08-17) ──────────
 #
 # `assertSessionModeUrl` refuses a transaction-mode `SUPABASE_DB_URL` at boot
 # because an advisory lock taken through one is not held by whoever thinks it
 # holds it — the pooler returns the server connection between statements, so
 # `platform-lock.ts`'s whole mutual-exclusion premise evaporates silently. That
-# is one of the three bugs this repo has shipped and the only one never
-# reproduced anywhere, and the reason is that no test had a transaction-mode port
-# to take a lock through. Enabling this gives it one: take a lock on 54329 and
-# show it is not held.
+# was described here as one of the three bugs this repo has shipped and the only
+# one NEVER REPRODUCED, for want of a transaction-mode port to take a lock
+# through. There is one now, and it is reproduced:
 #
-# Left `enabled = false` because the container is one more thing every
-# `supabase start` waits for, and only a test that is deliberately about the
-# pooler wants it. Flip it, `supabase stop && supabase start`, and 54329 answers.
+# - The tenant is `postgres.pooler-dev`. A bare `postgres` is refused
+#   `(ENOIDENTIFIER) no tenant identifier provided` — Supavisor reads the tenant
+#   from a username SUFFIX, because its hostname is shared across projects.
+# - `pg_advisory_lock` (SESSION-scoped): a RIVAL connection acquired the same lock
+#   while it was held. Silent loss of mutual exclusion, confirmed. This is why the
+#   SLUG-LOCK pool keeps the direct URL.
+# - `pg_try_advisory_xact_lock` inside `begin … commit`: correct throughout — one
+#   pinned backend for the transaction, a rival's try-lock refused while held, and
+#   released by the commit. That is what makes the wake sweep's leader election
+#   safe through this pooler, and so what lets the admin pool use it.
 [db.pooler]
-enabled = false
+enabled = true
 port = 54329
 pool_mode = "transaction"
 

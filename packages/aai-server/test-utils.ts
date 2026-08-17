@@ -3,6 +3,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createMemoryAgentRows } from "./agent-store.ts";
+import { type AppDatabases, appDbIdentifier } from "./app-database.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
@@ -64,6 +65,37 @@ export function createTestStore(secrets?: SecretStore, events?: MemoryPlatformEv
     // watchers exactly like production's postgres_changes stream.
     agents: events ? withAgentEvents(agents, events.emitAgent) : agents,
   });
+}
+
+/**
+ * An inert {@link AppDatabases}, with only the methods a spec cares about
+ * overridden.
+ *
+ * The five-method surface was hand-built as an object literal in four specs
+ * (`delete`, `sandbox-resolve`, `storage-handler`, `app-database`), so ADDING a
+ * method broke all four at once while telling us nothing — which is what
+ * `withAppDb` did when per-app databases arrived. That is the typed-seam case
+ * this repo argues for: one narrowing every call site goes through, rather than a
+ * literal repeated per spec.
+ *
+ * Every default is deliberately inert and LOUD rather than plausible: a spec that
+ * reaches a method it did not stub is a spec whose subject did something
+ * unexpected, and returning a cheerful empty value hides exactly that. `provision`
+ * is the one exception — it returns a well-formed meta, because several specs need
+ * a provision to succeed without caring what it produced.
+ */
+export function fakeAppDatabases(overrides?: Partial<AppDatabases>): AppDatabases {
+  const unstubbed = (name: string) => (): never => {
+    throw new Error(`fakeAppDatabases: ${name} was called but not stubbed`);
+  };
+  return {
+    provision: async (slug) => ({ role: appDbIdentifier(slug), password: "0".repeat(32) }),
+    deprovision: async () => undefined,
+    connectionUrl: unstubbed("connectionUrl"),
+    usage: unstubbed("usage"),
+    withAppDb: unstubbed("withAppDb"),
+    ...overrides,
+  };
 }
 
 export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {

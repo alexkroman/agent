@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The durable half of the session-state store: one row per `(session, slot)` in
- * the app's own schema.
+ * the app's own database.
  *
  * ## Why the table is created here rather than provisioned
  *
@@ -146,10 +146,11 @@ const CREATE_EVENT_TABLE_SQL = (table: string) => `create table if not exists ${
  * - **It was two round trips and a `42P07` NOTICE per guest boot**, dumped into
  *   the log an operator reads to diagnose a session.
  *
- * `schema` qualifies the names for a caller whose `search_path` is not the app's
- * — which is every platform caller, since the admin connection is pinned
- * nowhere. The guest's own role IS pinned (`alter role … set search_path`), so it
- * would need no qualification; it no longer runs this at all.
+ * `schema` qualifies the names for a caller that is not already IN the app's
+ * schema. The platform passes `public` and runs it on a connection into the app's
+ * own DATABASE, where that is simply the default — there is no `search_path` pin
+ * any more, because an app owning its own database needs none (see
+ * `aai-server/app-database.ts`). The guest does not run this at all.
  *
  * @internal
  */

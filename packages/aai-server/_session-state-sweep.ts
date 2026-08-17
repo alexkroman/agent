@@ -1,22 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The pg_cron sweep for session state whose guest is GONE.
- *
- * Its own module because the SQL is a plpgsql block over every app schema and
- * `pg-cron.ts` is already at the length where one more of those hurts; that file
- * declares the job, this one holds the statement and the argument for it.
+ * The pg_cron sweep for session state whose guest is GONE — one job per app,
+ * running INSIDE that app's own database.
  *
  * ## What it is for
  *
- * A session's slot state is durable now (`aai/host/session-state-store.ts`), so
- * a crash or a redeploy no longer costs a caller their cart. The guest reclaims
- * its own rows after the resume grace window
- * (`aai/host/session-state-sweeps.ts`) — and by construction it cannot reclaim
- * the case durability exists for: an agent guest SELF-EXITS on idle, so rows
- * belonging to a session nobody resumed are left behind by a process that is no
- * longer running. Exactly the gap `workflow-wake.ts` was built for, stated there
- * as "a durable run outlives the call that started it, and on the platform the
- * SANDBOX does not."
+ * A session's slot state is durable (`aai/host/session-state-store.ts`), so a
+ * crash or a redeploy no longer costs a caller their cart. The guest reclaims its
+ * own rows after the resume grace window (`aai/host/session-state-sweeps.ts`) —
+ * and by construction it cannot reclaim the case durability exists for: an agent
+ * guest SELF-EXITS on idle, so rows belonging to a session nobody resumed are
+ * left behind by a process that is no longer running.
  *
  * The retention window is far above the guest's own
  * {@link SESSION_RESUME_GRACE_MS} (120 s), because this is the backstop for a
@@ -24,95 +18,145 @@
  * while a caller was still reconnecting is the one failure worth avoiding, being
  * indistinguishable to them from the loss the whole mechanism removes.
  *
- * ## Why a cron job rather than the wake sweep's cross-tenant reader
+ * ## Why it is one job PER APP now
  *
- * `_workflow-wake-read.ts` already walks every app schema with three hazards
- * solved — a transaction-scoped leader lock, `set local` for the statement
- * timeout, and a SAVEPOINT per tenant so one broken schema cannot deny every
- * later one — and reusing it was the obvious move. It buys nothing here, on
- * three counts. That pass runs on the platform's admin connection, which reaches
- * the same one cluster this job does. It is READ-ONLY under a leader lock on the
- * request-serving process, and a DELETE does not belong inside it. And a sweep
- * that needs no replica running at all is strictly more reliable than one that
- * does.
+ * This was a single platform-database job iterating `information_schema.tables`
+ * for every `app_<hex>` schema. Per-app DATABASES (see `app-database.ts`) make
+ * that statement find nothing at all: the catalog is per-database, and the
+ * platform's connection cannot see a tenant's tables however they are qualified.
  *
- * What IS shared is the part that can disagree: the table name is the SDK
- * constant both ends derive from, and the identifier assertion is the same
- * `^app_[a-f0-9]{16}$` shape every other statement in `pg-cron.ts` re-asserts.
+ * `cron.schedule_in_database` is the native answer, and it is available here —
+ * pg_cron 1.6.4, callable by Supabase's non-superuser `postgres` role, and it
+ * really fires into a database whose `CONNECT` is revoked from `PUBLIC` (the admin
+ * OWNS the database, so it has implicit `CONNECT`). Verified end to end on the
+ * local stack. The job runs entirely within one tenant's database, needs no
+ * cross-database mechanism, no `dblink`, and no replica to be alive — which is
+ * strictly more reliable than a server-side timer and was the reason to keep this
+ * in pg_cron at all.
  *
- * ## The limitation, stated because its siblings state theirs
+ * The statement is correspondingly simpler: no schema iteration, no `format(%I)`
+ * identifier assertion, and no per-tenant exception block. A tenant's wedged table
+ * can only cost that tenant its own sweep, because the job IS that tenant's.
  *
- * **Apps placed on an extra `APP_DB_URLS` cluster are not swept.** pg_cron runs
- * on the platform database and those clusters have no local schema — the same
- * note the orphan-preview sweep and the wake sweep both carry. Their rows are
- * reclaimed by the guest's own grace sweep whenever a guest is alive to run it,
- * and otherwise accumulate: bounded per session by `MAX_SESSION_STATE_BYTES`,
- * and visible to the author as their own database usage (`appDatabaseUsage`
- * counts every base table in the app schema), which is the pressure that would
- * make a per-cluster executor worth writing.
+ * ## The prefix is disjoint from the platform's, and that is load-bearing
+ *
+ * `schedulePlatformSweeps` DIFFS: every `aai-sweep-*` job in `cron.job` that
+ * `platformCronJobs()` no longer declares is unscheduled at boot. Per-app jobs are
+ * declared nowhere in that list — they belong to a provision, not to a release —
+ * so a name matching that prefix would be silently unscheduled by the next boot,
+ * and session state would then accumulate forever with nothing reporting it.
+ * Hence {@link APP_CRON_JOB_PREFIX}, and `pg-cron.test.ts` asserts the two cannot
+ * collide.
  */
 
 import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
+import type { SqlExec } from "./secret-store.ts";
 
 /**
  * How long a row outlives the last write to it.
  *
  * Two days rather than hours: the cost of keeping one is a few KB in the
- * tenant's own schema, and the cost of dropping one early is a caller who
+ * tenant's own database, and the cost of dropping one early is a caller who
  * reconnects to an agent that has forgotten them — which is the failure this
  * whole path exists to remove, arriving by a new route.
  */
 const RETENTION = "2 days";
 
 /**
- * One delete per (app schema, table) pair, each in its own plpgsql block.
+ * Prefix for every job scheduled INTO an app's own database.
  *
- * The per-tenant `begin ... exception` is this file's equivalent of the wake
- * read's SAVEPOINT, and for the same reason: the table is TENANT-OWNED, so a
- * schema whose copy was reshaped, locked or dropped must cost only itself. The
- * `~ '^app_...'` filter in the cursor and `format(%I)` in the execute are the
- * two halves of the identifier rule — a schema name is never interpolated raw,
- * and only the provisioned shape is ever considered.
+ * Deliberately not `aai-sweep-` — see the module doc. It is still prefixed at all
+ * so that "what has this platform scheduled for this app" is one `like` query,
+ * which is what a deprovision needs.
+ */
+export const APP_CRON_JOB_PREFIX = "aai-app-";
+
+/** The per-app session-state job's name. `id` is an `app_<hex>` identifier. */
+export function appSessionStateJobName(id: string): string {
+  return `${APP_CRON_JOB_PREFIX}session-state-${id}`;
+}
+
+/**
+ * The sweep, as it runs inside one app's database.
  *
- * ## BOTH tables, and they age by different columns
+ * Two statements in one command, because pg_cron takes a single command. Both
+ * tables are swept: a session's durable footprint is its slot values AND its
+ * retained event log (`session-state-store.ts` is one store with two consumers),
+ * so reclaiming one would leave the other growing without bound in a database
+ * `appDatabaseUsage` reports to the AUTHOR as their own usage.
  *
- * A session's durable footprint is its slot values AND its retained event log
- * (`session-state-store.ts` is one store with two consumers), so a sweep
- * reclaiming one would leave the other growing without bound in a schema
- * `appDatabaseUsage` reports to the AUTHOR as their own database usage.
+ * They age by different columns, which is worth stating rather than looking like
+ * an inconsistency: a slot row is UPSERTED, so `updated_at` is maintained and is
+ * genuinely the last write to it, while an event row is append-only and never
+ * rewritten, so `created_at` is the only time it has. Both are therefore "when
+ * this row last meant anything".
  *
- * The timestamp differs because the write pattern does, which is worth stating
- * rather than looking like an inconsistency: a slot row is UPSERTED, so
- * `updated_at` is maintained and is genuinely the last write to it, while an
- * event row is append-only and never rewritten, so `created_at` is the only time
- * it has. Both are therefore "when this row last meant anything".
- *
- * Kept as ONE statement, iterating a `values` list: pg_cron takes a single
- * command, and the per-pair exception block gives the same blast radius a
- * statement per table would — a tenant whose event table is wedged still has its
- * slot rows reclaimed.
+ * `if exists` on neither: the tables come WITH the database
+ * (`provisionAppDatabase` applies `sessionStateDdl`), so their absence is a real
+ * fault worth seeing in `cron.job_run_details` rather than one to paper over.
  *
  * @internal
  */
-export const SWEEP_SESSION_STATE = `do $$
-declare
-  target record;
-begin
-  for target in
-    select t.table_schema, swept.tbl, swept.col
-    from (values ('${SESSION_STATE_TABLE}', 'updated_at'), ('${SESSION_EVENT_TABLE}', 'created_at'))
-      as swept(tbl, col)
-    join information_schema.tables t
-      on t.table_name = swept.tbl
-     and t.table_type = 'BASE TABLE'
-     and t.table_schema ~ '^app_[a-f0-9]{16}$'
-  loop
-    begin
-      execute format(
-        'delete from %I.%I where %I < now() - interval ''${RETENTION}''',
-        target.table_schema, target.tbl, target.col);
-    exception when others then
-      raise warning 'session-state sweep: %.% failed: %', target.table_schema, target.tbl, sqlerrm;
-    end;
-  end loop;
-end $$`;
+export const SWEEP_APP_SESSION_STATE =
+  `delete from public.${SESSION_STATE_TABLE} where updated_at < now() - interval '${RETENTION}'; ` +
+  `delete from public.${SESSION_EVENT_TABLE} where created_at < now() - interval '${RETENTION}'`;
+
+/**
+ * A daily schedule STAGGERED by the app's identifier.
+ *
+ * Every app on a cluster sharing one minute is a thundering herd against a
+ * t3a.micro's connection budget — 50 apps' sweeps at 05:17 is 50 concurrent
+ * background connections. The identifier is a hex digest, so slicing it gives a
+ * stable, uniformly distributed slot: the same app always sweeps at the same
+ * time (so a run is findable in `cron.job_run_details`) and no two adjacent
+ * provisions collide.
+ */
+export function appSweepSchedule(id: string): string {
+  const hex = id.slice("app_".length);
+  const minute = Number.parseInt(hex.slice(0, 4), 16) % 60;
+  const hour = Number.parseInt(hex.slice(4, 8), 16) % 24;
+  return `${minute} ${hour} * * *`;
+}
+
+/**
+ * Schedule the per-app jobs that run INSIDE the app's own database.
+ *
+ * `cron.schedule_in_database` rather than a platform-database statement, because
+ * the catalog and the tables are per-database now — see `_session-state-sweep.ts`
+ * for why this is pg_cron rather than a server-side timer, and why its job-name
+ * prefix must stay disjoint from `schedulePlatformSweeps`'s.
+ *
+ * The `username` argument is left at its default (the current role), so the job
+ * runs as the platform admin — which OWNS the app database and therefore holds
+ * `CONNECT` on it even though `PUBLIC` does not.
+ */
+export async function scheduleAppSweeps(sql: SqlExec, id: string): Promise<void> {
+  await sql("select cron.schedule_in_database($1, $2, $3, $4)", [
+    appSessionStateJobName(id),
+    appSweepSchedule(id),
+    SWEEP_APP_SESSION_STATE,
+    id,
+  ]);
+}
+
+/**
+ * Unschedule every job this platform scheduled into one app's database.
+ *
+ * Must run BEFORE the database is dropped: a cron job naming a database that no
+ * longer exists does not clean itself up, it fails on every tick forever and
+ * fills `cron.job_run_details` — which is the table `aai-sweep-cron-history`
+ * exists to keep small.
+ *
+ * Tolerant of every failure, because it runs on the deprovision path: pg_cron may
+ * be absent, and a job may already be gone. What must not happen is a delete
+ * failing over its janitorial bookkeeping.
+ */
+export async function unscheduleAppSweeps(sql: SqlExec, id: string): Promise<void> {
+  const jobs = await sql("select jobname from cron.job where jobname like $1", [
+    `${APP_CRON_JOB_PREFIX}%${id}`,
+  ]).catch(() => []);
+  for (const row of jobs) {
+    // The `::text` cast picks the by-name overload over `unschedule(bigint)`.
+    await sql("select cron.unschedule($1::text)", [String(row.jobname)]).catch(() => undefined);
+  }
+}

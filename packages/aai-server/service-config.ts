@@ -25,6 +25,7 @@ import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import {
   ADMIN_POOL_MAX,
+  APP_DB_ADMIN_POOL_MAX,
   APP_DB_TARGET_POOL_MAX,
   resolveHarnessPath,
   SLUG_LOCK_POOL_MAX,
@@ -34,6 +35,7 @@ import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-con
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
+import { appDbPoolerUrl, platformDbDsn, platformPoolerUrl } from "./platform-connection-config.ts";
 import {
   createMemoryPlatformEvents,
   type PlatformEvents,
@@ -45,15 +47,18 @@ import {
   type AdminDb,
   assertSessionModeUrl,
   createPgSlugLock,
+  isTransactionModePooler,
   localSlugLock,
   type SlugMutationLock,
 } from "./platform-lock.ts";
+import { buildStorage } from "./platform-storage-config.ts";
 import { createRealtimePlatformEvents } from "./realtime-events.ts";
 import { describeSandboxBackend, resolveSandboxBackend } from "./sandbox-backend.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
   createMemorySecretStore,
   createVaultSecretStore,
+  PLATFORM_DB_DSN_SECRET,
   PLATFORM_STORAGE_KEY_SECRET,
   type SecretStore,
   type SqlExec,
@@ -79,6 +84,8 @@ function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
 }
 
 /** buildOpts plus what service entries need beyond the orchestrator's opts. */
+export { assertStorageBucket, buildStorage } from "./platform-storage-config.ts";
+
 export type ServiceConfig = OrchestratorOpts & {
   /**
    * Studio project workspaces and chat histories. Built here because this is
@@ -113,52 +120,6 @@ export type ServiceConfig = OrchestratorOpts & {
 };
 
 /**
- * Verify the deploy-artifact bucket at boot — see {@link assertBucketPrivate}
- * for what is fatal and what merely warns.
- *
- * Separate from {@link buildStorage} because it is ASYNC and that one is not:
- * the entry awaits this once, beside the other boot assertions, rather than
- * every construction of a storage handle paying a round trip.
- */
-export async function assertStorageBucket(env: NodeJS.ProcessEnv): Promise<void> {
-  // No platform database is the memory blob store — there is no bucket to check.
-  if (!hasPlatformDb(env)) return;
-  const required = requireEnv(env, [
-    "SUPABASE_URL",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "SUPABASE_STORAGE_BUCKET",
-  ]);
-  await assertBucketPrivate({
-    url: required.SUPABASE_URL,
-    serviceRoleKey: required.SUPABASE_SERVICE_ROLE_KEY,
-    bucket: required.SUPABASE_STORAGE_BUCKET,
-  });
-}
-
-export function buildStorage(env: NodeJS.ProcessEnv): BlobStorage {
-  if (!hasPlatformDb(env)) {
-    console.info(
-      "No SUPABASE_DB_URL: in-memory blob storage for deploy artifacts — " +
-        "deploys are LOST on restart",
-    );
-    return createMemoryBlobStorage();
-  }
-  // Storage authenticates with the SAME service-role key the Realtime socket
-  // uses — no separate S3 credential pair for a project we already hold two
-  // credentials for (see blob-storage.ts).
-  const required = requireEnv(env, [
-    "SUPABASE_URL",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "SUPABASE_STORAGE_BUCKET",
-  ]);
-  return createSupabaseBlobStorage({
-    url: required.SUPABASE_URL,
-    serviceRoleKey: required.SUPABASE_SERVICE_ROLE_KEY,
-    bucket: required.SUPABASE_STORAGE_BUCKET,
-  });
-}
-
-/**
  * Memory stores + the in-process event emitter, paired so a write and its
  * change notification cannot drift — the dev/test equivalent of Postgres
  * rows streaming through Supabase Realtime.
@@ -190,6 +151,7 @@ function buildMemoryStores(): {
  * runs; only the SCHEDULING stays here, because the sweep bodies are defined
  * in TypeScript (pg-cron.ts) and change with the code that owns them.
  */
+
 function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
   // The blob GC sweep deletes through the Storage API from inside Postgres,
   // so it needs a credential no SQL-only job can otherwise hold. Stored in
@@ -203,8 +165,27 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
   const key = env.SUPABASE_SERVICE_ROLE_KEY;
   const storage = url && bucket && key ? { url, bucket } : undefined;
 
+  // The orphan sweep's deprovision is `drop database`, which pg_cron cannot run
+  // in its transaction, so it goes out through dblink — see PLATFORM_DB_DSN_SECRET.
+  // Announced when it cannot be built: without it the sweep still runs and still
+  // deletes agents rows, it just reclaims no databases, and that is invisible.
+  const dbUrl = env.SUPABASE_DB_URL;
+  const dsn = dbUrl ? platformDbDsn(dbUrl, env.AAI_DBLINK_HOST) : { reason: "no SUPABASE_DB_URL" };
+  if ("reason" in dsn) {
+    console.warn(
+      `Orphan-preview sweep cannot deprovision app databases: ${dsn.reason} ` +
+        "Agents rows and Vault secrets will still be swept; the databases will be left behind.",
+    );
+  }
+
   const bootstrap = async (): Promise<void> => {
-    if (storage && key) await createVaultSecretStore(sql).put(PLATFORM_STORAGE_KEY_SECRET, key);
+    const vault = createVaultSecretStore(sql);
+    if (storage && key) await vault.put(PLATFORM_STORAGE_KEY_SECRET, key);
+    // Re-written every boot, like the Storage key, so a rotated admin password
+    // reaches the sweep with the next deploy.
+    if ("dsn" in dsn) await vault.put(PLATFORM_DB_DSN_SECRET, dsn.dsn);
+    // No flag for the DSN: the sweep body reads it from Vault at run time, so a
+    // boot-time boolean would be a second source of truth for the same fact.
     await schedulePlatformSweeps(sql, platformCronJobs({ ...(storage && { storage }) }));
   };
   bootstrap().catch((err: unknown) => {
@@ -271,7 +252,23 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // The pools live for the process; connections drain when the process exits
   // (no explicit close() hook on the shutdown path today), and postgres.js
   // opens them lazily, so an idle replica pays for none of this.
-  const admin = createPostgresDb({ url, max: ADMIN_POOL_MAX });
+  //
+  // The ADMIN pool goes through Supavisor when one is configured, which is what
+  // keeps `ADMIN_POOL_MAX x MAX_CONTAINERS` out of the instance's
+  // `max_connections` (see `platformDbConnectionsPerReplica` for the measurement
+  // that says it may be pooled and the one lock that may not). Unset, it is
+  // direct and the budget understates a replica — announced below rather than
+  // left quietly wrong.
+  const poolerUrl = platformPoolerUrl(env);
+  if (poolerUrl === undefined) {
+    console.warn(
+      "No PLATFORM_POOLER_URL: the admin pool is opening DIRECT connections, so this " +
+        `replica costs ${ADMIN_POOL_MAX} more of the instance's max_connections than ` +
+        "MAX_PLATFORM_DB_CONNECTIONS accounts for. Set it to Supavisor's " +
+        "TRANSACTION-mode URL (port 6543).",
+    );
+  }
+  const admin = createPostgresDb({ url: poolerUrl ?? url, max: ADMIN_POOL_MAX });
   const exec: SqlExec = (query, params) => admin.query(query, params);
   const extraTargets = parseExtraAppDbTargets(env.APP_DB_URLS);
   // Change notifications ride Supabase Realtime — the Postgres rows are the
@@ -294,6 +291,23 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     appDb: createAppDatabases({
       url,
       sql: exec,
+      // Per-app DATABASES mean the admin pool above cannot reach a tenant's
+      // tables at all: a Postgres connection is bound to one database, so
+      // provisioning's in-database steps, the usage read and the wake-hint read
+      // each need a connection of their own. Short-lived and single, rather than
+      // a retained pool per app: these are per-app-lifecycle or per-tick
+      // operations, and N retained pools is exactly the arithmetic
+      // MAX_PLATFORM_DB_CONNECTIONS exists to bound.
+      open: (appUrl) => {
+        const db = createPostgresDb({ url: appUrl, max: APP_DB_ADMIN_POOL_MAX });
+        return { query: (query, params) => db.query(query, params), close: () => db.close() };
+      },
+      // Every app-database connection — the guest's `DATABASE_URL` and the
+      // platform's own reads alike — goes through Supavisor, which is what keeps
+      // a per-app connection out of the DIRECT budget (see `withPoolerHost`).
+      // Session mode only: transaction mode breaks graphile-worker's prepared
+      // statements and world-postgres's LISTEN.
+      ...omitUndefined({ poolerUrl: appDbPoolerUrl(env) }),
       // Cellular sharding: APP_DB_URLS lists additional Supabase clusters
       // new apps may be placed on. Each app's cluster is recorded in its
       // app-db:<slug> locator, so agent code never notices placement.

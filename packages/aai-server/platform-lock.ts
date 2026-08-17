@@ -185,6 +185,20 @@ export type PgSlugLockOptions = {
  * Throwing at construction is the point — the alternative is a lock that
  * appears to work and silently stops excluding anything.
  */
+/**
+ * Does this URL name a TRANSACTION-mode pooler?
+ *
+ * One spelling, because two callers need the same answer for opposite reasons:
+ * {@link assertSessionModeUrl} REFUSES such a URL for the connection that takes
+ * session-scoped advisory locks, and `platformPoolerUrl` REQUIRES one for the
+ * admin pool, where transaction mode is the only mode that multiplexes. Two
+ * copies of the predicate would let those two drift into disagreeing about what
+ * a pooler URL is, which is unresolvable by reading either site.
+ */
+export function isTransactionModePooler(url: URL): boolean {
+  return url.port === "6543" || url.searchParams.get("pgbouncer") === "true";
+}
+
 export function assertSessionModeUrl(url: string): void {
   let parsed: URL;
   try {
@@ -194,8 +208,7 @@ export function assertSessionModeUrl(url: string): void {
     // will reject an unusable one with a better message than we can.
     return;
   }
-  const transactionMode = parsed.port === "6543" || parsed.searchParams.get("pgbouncer") === "true";
-  if (transactionMode) {
+  if (isTransactionModePooler(parsed)) {
     throw new Error(
       "SUPABASE_DB_URL points at a TRANSACTION-mode pooler (port 6543 / pgbouncer=true). " +
         "The platform admin connection must be the direct session-mode string: per-slug " +

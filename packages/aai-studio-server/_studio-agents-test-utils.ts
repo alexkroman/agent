@@ -20,6 +20,7 @@
 import { type AppDatabases, type AppDbMeta, appDbIdentifier } from "aai-server/app-database";
 import { hashApiKey } from "aai-server/secrets";
 import type { BundleStore } from "aai-server/store-types";
+import { fakeAppDatabases } from "aai-server/test-utils";
 import { vi } from "vitest";
 
 /** Deploy `slug` owned by `key` — what makes `verifySlugOwner` say "owned". */
@@ -41,7 +42,7 @@ export type FakeAppDb = AppDatabases & {
 /** Provisioning that records its calls and mints a per-slug meta. */
 export function fakeAppDb(): FakeAppDb {
   let issued = 0;
-  return {
+  return fakeAppDatabases({
     provision: vi.fn(async (slug: string): Promise<AppDbMeta> => {
       // A FRESH password per call — the real provisioner rotates, which is
       // exactly why an enabled slug must never be re-provisioned. Counted
@@ -51,7 +52,9 @@ export function fakeAppDb(): FakeAppDb {
       return { role: appDbIdentifier(slug), password: `pw${issued}`.padEnd(32, "0") };
     }),
     deprovision: vi.fn(async () => undefined),
-    connectionUrl: () => "postgres://app@db/app",
+    // The app's own database in the path — see app-database.ts on why a schema
+    // could not host the Workflow DevKit.
+    connectionUrl: (meta) => `postgres://app@db/${meta.role}`,
     usage: async () => ({ tables: 0, rows: 0, bytes: 0 }),
-  };
+  }) as FakeAppDb;
 }

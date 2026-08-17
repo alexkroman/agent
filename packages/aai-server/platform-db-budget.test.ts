@@ -26,6 +26,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   ADMIN_POOL_MAX,
+  APP_DB_ADMIN_POOL_MAX,
   APP_DB_TARGET_POOL_MAX,
   MAX_PLATFORM_DB_CONNECTIONS,
   platformDbConnectionsPerReplica,
@@ -59,27 +60,64 @@ describe("platform database connection budget", () => {
     ).toBeLessThanOrEqual(MAX_PLATFORM_DB_CONNECTIONS);
   });
 
+  /**
+   * The exclusion above is only legitimate while app-database connections are
+   * POOLED: Supavisor capacity is not `max_connections`. A direct connection per
+   * app would make the fleet total scale with the number of APPS, which no
+   * fleet-wide ceiling can bound — so losing the pooler routing does not make this
+   * budget wrong by one, it stops it being a bound at all.
+   *
+   * A TEXT scan, because the property is "the routing exists", and the alternative
+   * (asserting a URL) would pass against a helper nothing calls.
+   */
+  test("per-app connections are excluded because they are POOLED", () => {
+    // `app-db-url.ts` owns how an app database is ADDRESSED; the resolver that
+    // decides whether a pooler is used at all lives with the other connection
+    // settings. Both are named here because the exclusion above depends on the
+    // two of them together — and if either file moves, this fails rather than
+    // quietly scanning nothing.
+    const url = readFileSync(path.join(REPO_ROOT, "packages/aai-server/app-db-url.ts"), "utf-8");
+    expect(url).toContain("withPoolerHost");
+    // Applied on BOTH app-database URLs: the tenant's own (`ctx.db`) and the
+    // platform's way in (the wake sweep, the usage read).
+    expect(url).toMatch(/appDbConnectionUrl[\s\S]{0,200}withPoolerHost/);
+    expect(url).toMatch(/appDbAdminUrl[\s\S]{0,300}withPoolerHost/);
+    expect(
+      readFileSync(
+        path.join(REPO_ROOT, "packages/aai-server/platform-connection-config.ts"),
+        "utf-8",
+      ),
+    ).toContain("APP_DB_POOLER_URL");
+  });
+
   test("extra APP_DB_URLS clusters are counted, because each pools its own", () => {
     // The budget is per REPLICA x containers, so a second placement cluster
     // adds MAX_CONTAINERS connections fleet-wide, not four. Adding one today
     // would exceed the budget — which is the point of counting it here rather
     // than discovering it when the cluster is added.
-    expect(platformDbConnectionsPerReplica(1)).toBe(
-      ADMIN_POOL_MAX + SLUG_LOCK_POOL_MAX + APP_DB_TARGET_POOL_MAX,
-    );
+    expect(platformDbConnectionsPerReplica(1)).toBe(SLUG_LOCK_POOL_MAX + APP_DB_TARGET_POOL_MAX);
     expect(platformDbConnectionsPerReplica(2)).toBe(
       platformDbConnectionsPerReplica(1) + APP_DB_TARGET_POOL_MAX,
     );
   });
 
-  test("the admin and slug-lock pools stay SEPARATE", () => {
+  test("only the SESSION-affine pool is counted as direct", () => {
     // Sharing one pool let a handful of concurrent distinct-slug deploys hold
     // every connection and starve Vault reads, workspace writes, and the
     // agents-row lookups the broker makes — on a replica that was otherwise
     // healthy. They add rather than overlap, so the budget must count both.
-    expect(platformDbConnectionsPerReplica()).toBe(ADMIN_POOL_MAX + SLUG_LOCK_POOL_MAX);
+    // The two pools still EXIST separately — a held slug lock pins its
+    // connection for a whole deploy while every admin statement is short, and
+    // sharing one pool let a handful of concurrent deploys starve Vault reads.
     expect(ADMIN_POOL_MAX).toBeGreaterThan(0);
     expect(SLUG_LOCK_POOL_MAX).toBeGreaterThan(0);
+    // ...but only the SLUG-LOCK pool is direct, so only it is in the budget. The
+    // admin pool is pooled (transaction mode), and per-app connections are pooled
+    // (session mode); neither consumes `max_connections` the way a direct pool
+    // does. See `platformDbConnectionsPerReplica` for which locks decide that.
+    expect(platformDbConnectionsPerReplica()).toBe(SLUG_LOCK_POOL_MAX);
+    expect(platformDbConnectionsPerReplica()).not.toBe(ADMIN_POOL_MAX + SLUG_LOCK_POOL_MAX);
+    expect(APP_DB_ADMIN_POOL_MAX).toBeGreaterThan(0);
   });
 
   test("the connection string is direct, not a transaction-mode pooler", () => {
