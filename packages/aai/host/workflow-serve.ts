@@ -54,6 +54,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "../sdk/utils.ts";
 import { decodePathSegment } from "./_path-decode.ts";
+import { resolveImportSpecifier } from "./workflow-resolve.ts";
 
 /** Distinct temp file per load — Node's module registry caches by URL. */
 let moduleSeq = 0;
@@ -87,17 +88,11 @@ export function rewriteWorkflowImports(code: string): string {
     /(\bfrom\s*|\bimport\s*)(["'])([^"']+)\2/g,
     (whole, prefix: string, quote: string, specifier: string) => {
       if (!REWRITABLE.test(specifier)) return whole;
-      try {
-        // `import.meta.resolve`, NOT `createRequire(...).resolve`. The two apply
-        // different export conditions, and `workflow`'s root entry maps
-        // `require` to its TYPESCRIPT PLUGIN — so the require form rewrites
-        // `import … from "workflow"` to a CJS plugin that then fails loading
-        // `typescript/lib/tsserverlibrary`. The step bundle is ESM and its
-        // imports must resolve the way an import does.
-        return `${prefix}${quote}${import.meta.resolve(specifier)}${quote}`;
-      } catch {
-        return whole;
-      }
+      // One helper for the whole class — see `workflow-resolve.ts`. It keeps the
+      // import/require distinction in one place rather than at each call site,
+      // which is where it was got wrong before.
+      const resolved = resolveImportSpecifier(specifier);
+      return resolved === undefined ? whole : `${prefix}${quote}${resolved}${quote}`;
     },
   );
 }

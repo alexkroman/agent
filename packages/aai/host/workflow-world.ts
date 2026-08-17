@@ -33,6 +33,7 @@
 
 import { errorMessage } from "../sdk/utils.ts";
 import { claimPoolPresenceAndSweep } from "./workflow-lock-sweep.ts";
+import { resolveWorldSpecifier } from "./workflow-resolve.ts";
 
 /** What the DevKit reads to pick a world. */
 const TARGET_WORLD_ENV = "WORKFLOW_TARGET_WORLD";
@@ -93,7 +94,10 @@ export function configureWorkflowWorld(opts: {
   if (supplied) return classifySuppliedWorld(supplied);
 
   if (opts.databaseUrl) {
-    env[TARGET_WORLD_ENV] = POSTGRES_WORLD;
+    // RESOLVED, never the bare name: the DevKit `require`s this value from its own
+    // compiled artifact in `tmpdir()`, where nothing resolves — see
+    // `workflow-resolve.ts` for the failure and why every fix for it is this move.
+    env[TARGET_WORLD_ENV] = resolveWorldSpecifier(POSTGRES_WORLD);
     // Set explicitly rather than relying on the world's `DATABASE_URL`
     // fallback: that fallback is a convenience for a standalone app, and here
     // the two happening to be equal would be a coincidence the next change

@@ -513,6 +513,49 @@ this guide is at its cap and the author-facing half lives there.
 `AgentParams`. Same `AgentDef`, refusing the fields a workflow app cannot use;
 that guide's `workflowApp()` section owns the argument.
 
+## The DevKit is never handed a BARE specifier
+
+`host/workflow-resolve.ts` is the one helper, and the rule is one sentence: the
+DevKit loads code from files whose LOCATION we do not choose, so a bare specifier
+we pass it resolves against a directory with no `node_modules` above it and fails
+naming a package that is plainly installed. Its own compiled artifacts land in
+`tmpdir()`; so do the route modules `workflow-serve.ts` writes.
+
+```text
+Cannot find module '@workflow/world-postgres'
+Require stack:
+- /private/var/folders/…/T/index.js
+```
+
+Two call sites, one move, and the split between them is the MECHANISM the DevKit
+will use — which is the part that has been got wrong:
+
+- **`resolveWorldSpecifier`** for `WORKFLOW_TARGET_WORLD`, which the DevKit
+  `require`s: an absolute PATH, resolved with `createRequire`.
+- **`resolveImportSpecifier`** for the static specifiers `rewriteWorkflowImports`
+  rewrites, which are ESM: a file URL, resolved with `import.meta.resolve`. Not
+  interchangeable — `workflow`'s root entry maps `require` to its TypeScript
+  PLUGIN, so the require form rewrote an ESM import to a CJS plugin that then
+  failed loading `typescript/lib/tsserverlibrary`.
+
+A specifier that will not resolve is left ALONE in both directions, so the load
+fails with Node's own error naming the module rather than on an absolute path
+that resolves to nothing.
+
+**Writing those files somewhere with a usable `node_modules` above them is the
+weaker fix** — it bets on a writable install directory, and it cannot work at all
+for the DevKit's own artifacts, whose path is not ours to pick. (The guest does
+anchor its WORKER bundle beside the harness, which is a different problem: that
+file's requires are the tenant bundle's, and it falls back with a warning.)
+
+**What no unit test here can check is the resolution itself.** Vitest patches
+`createRequire`, so a bare specifier resolves from any directory in that tier —
+verified: a negative control asserting the bare form fails from `tmpdir()` did
+not throw. So the tests pin the SHAPE (absolute, and of the right kind), and both
+assertions fail when the resolution is removed. Measured outside vitest, which is
+where the property is real: the resolved path resolves from `tmpdir()` and the
+bare specifier does not.
+
 ## A callback URL comes from `publicWebhookUrl`, never from `hook.url`
 
 `createWebhook()` sets `hook.url`, and it is **guest-local**: the DevKit composes
