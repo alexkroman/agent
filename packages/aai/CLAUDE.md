@@ -789,6 +789,18 @@ hydrates and where it is reclaimed; `host/session-state-postgres.ts` for the tab
 and what the app schema guarantees. **Persistence is reliable across crashes and
 best-effort across redeploys.**
 
+**The tables come WITH the schema, and this backend creates none.**
+`sessionStateDdl` is the shape; the platform applies it when it provisions an
+app's database (`aai-server/app-database.ts`), because the tables are part of
+what "this app has a database" means, exactly as its role and grants are. The
+backend used to `create table if not exists` on its own read and write paths,
+behind two memos — and the argument for that (the shape belongs to the BUNDLE's
+SDK version) does not survive inspection: `if not exists` is a no-op once the
+table exists, so a newer SDK expecting an added column was broken either way.
+What it cost was two round trips and a `42P07` NOTICE per guest boot, in the log
+an operator reads to diagnose a session. A missing table now surfaces as the
+honest error it is — this app's schema was never provisioned with one.
+
 **A slot is also the only thing carrying a state TYPE into a tool, because a tool
 is a FILE.** `agent()` takes no `tools` argument — `tools/incident_create.ts` that
 default-exports `tool({ … })` IS the tool `incident_create`, and the table is

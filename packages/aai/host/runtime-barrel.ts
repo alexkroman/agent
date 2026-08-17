@@ -151,6 +151,11 @@ export {
   createPostgresStateBackend,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
+  // The tables' DDL, applied by whoever CREATES an app schema — the platform, at
+  // provisioning. Exported for the same reason the two names above are: the
+  // shape is the SDK's and there must be one copy of it, or the schema the
+  // platform creates and the tables this backend queries can disagree.
+  sessionStateDdl,
 } from "./session-state-postgres.ts";
 export {
   createMemoryStateBackend,

@@ -1,4 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
+import { sessionStateDdl } from "@alexkroman1/aai/runtime";
 import { describe, expect, test, vi } from "vitest";
 import {
   appDatabaseUsage,
@@ -39,8 +40,11 @@ describe("provisionAppDatabase", () => {
     expect(meta.role).toBe(id);
     expect(meta.password).toMatch(/^[a-f0-9]{32}$/);
 
-    // A single multi-statement round trip, no bind params.
-    expect(calls).toHaveLength(1);
+    // The provisioning BATCH is one multi-statement round trip with no bind
+    // params; the session-state DDL follows as its own statements (see
+    // `ensureSessionTables` — kept out of the batch that interpolates a
+    // password, so a failure there cannot carry the credential into a log).
+    expect(calls).toHaveLength(3);
     const call = calls[0];
     expect(call?.params).toBeUndefined();
     const query = call?.query ?? "";
@@ -61,6 +65,28 @@ describe("provisionAppDatabase", () => {
     expect(query).toContain("insufficient_privilege");
     // The locator records which cluster the app was placed on.
     expect(meta.url).toBe("postgres://admin@primary/db");
+  });
+
+  test("provisions the session-state tables, qualified by the app's schema", async () => {
+    // The invariant: a provisioned app schema HAS its tables. They used to be
+    // created by the guest on first use, which cost two round trips and a `42P07`
+    // NOTICE on every boot for a guarantee `if not exists` cannot give — a newer
+    // SDK expecting an added column was broken either way.
+    const { sql, calls } = captureSql();
+    await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db");
+    const id = appDbIdentifier("my-agent");
+
+    const ddl = calls.slice(1).map((c) => c.query);
+    expect(ddl).toHaveLength(2);
+    // QUALIFIED, because this runs on the platform admin connection whose
+    // `search_path` is pinned nowhere — the app's own role is, which is why the
+    // guest never had to qualify and this does.
+    expect(ddl[0]).toContain(`create table if not exists "${id}".aai_session_state`);
+    expect(ddl[1]).toContain(`create table if not exists "${id}".aai_session_events`);
+    // The DDL text is the SDK's, so neither side can drift from the other.
+    for (const statement of sessionStateDdl(id)) {
+      expect(ddl).toContain(statement);
+    }
   });
 
   test("two provisions issue distinct random passwords", async () => {

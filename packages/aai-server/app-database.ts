@@ -17,6 +17,7 @@
 
 import { hash, randomBytes } from "node:crypto";
 import { safeJsonParse } from "@alexkroman1/aai";
+import { sessionStateDdl } from "@alexkroman1/aai/runtime";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
@@ -115,7 +116,39 @@ $$`,
   );
   if (failure !== null) throw scrubSecret(failure, password);
 
+  await ensureSessionTables(sql, id);
   return { role: id, password, url: targetUrl };
+}
+
+/**
+ * Create the session-state tables in an app's schema.
+ *
+ * **Part of what "this app has a database" MEANS**, alongside its role and its
+ * grants — so it belongs where the schema is created rather than in the guest
+ * that later queries it. The DDL itself is the SDK's (`sessionStateDdl`), applied
+ * here rather than known here: one source of truth for a shape both ends derive
+ * from, which is the same rule `SESSION_STATE_TABLE` already follows.
+ *
+ * SEPARATE from the provisioning batch above rather than folded into it: that
+ * batch is one multi-statement string built around an interpolated password, and
+ * `scrubSecret` exists because a failure in it must never reach a log with the
+ * credential attached. These statements carry no secret and no interpolation
+ * beyond the schema identifier, so keeping them out of that blast radius costs
+ * two round trips on a route called once per app.
+ *
+ * The invariant it buys: **a provisioned app schema has its tables.** There is no
+ * second path, because there is nothing to be backward compatible with — an app
+ * enabled before this moved out of the guest already HAS its tables, created by
+ * the guest that used to do it.
+ *
+ * Qualified with the app's own schema: this runs on the platform ADMIN
+ * connection, whose `search_path` is pinned nowhere (the app's own role is, which
+ * is why the guest never needed to qualify).
+ */
+async function ensureSessionTables(sql: SqlExec, schema: string): Promise<void> {
+  for (const statement of sessionStateDdl(assertIdentifier(schema))) {
+    await sql(statement);
+  }
 }
 
 /**

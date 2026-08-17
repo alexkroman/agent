@@ -41,7 +41,6 @@
  */
 
 import type { Db } from "../sdk/db.ts";
-import { ensureOnce } from "./_ensure-once.ts";
 import type { SessionStateBackend } from "./session-state-store.ts";
 
 /**
@@ -73,7 +72,7 @@ export const SESSION_STATE_TABLE = "aai_session_state";
  * `updated_at` is what the platform's TTL sweep reads, so it is maintained on
  * every upsert rather than only on insert.
  */
-const CREATE_TABLE_SQL = `create table if not exists ${SESSION_STATE_TABLE} (
+const CREATE_TABLE_SQL = (table: string) => `create table if not exists ${table} (
   session_id text not null,
   slot text not null,
   value jsonb not null,
@@ -119,13 +118,48 @@ export const SESSION_EVENT_TABLE = "aai_session_events";
  * anything that is not JSON at write time, which is the one check the process
  * above cannot fake.
  */
-const CREATE_EVENT_TABLE_SQL = `create table if not exists ${SESSION_EVENT_TABLE} (
+const CREATE_EVENT_TABLE_SQL = (table: string) => `create table if not exists ${table} (
   session_id text not null,
   event_index bigint not null,
   event jsonb not null,
   created_at timestamptz not null default now(),
   primary key (session_id, event_index)
 )`;
+
+/**
+ * The DDL an app's schema needs before a session can store anything.
+ *
+ * **The platform applies this at PROVISIONING time**
+ * (`aai-server/app-database.ts`), which is the one place an app schema is
+ * created — the tables are part of what "this app has a database" means, exactly
+ * as its role and grants are. It lives HERE because the shape is the SDK's; the
+ * platform executes it rather than knowing it, so there is one source of truth
+ * and no second copy to drift.
+ *
+ * It used to run in the GUEST, `create table if not exists` on the read and write
+ * paths behind two `ensureOnce` memos. Two reasons that went:
+ *
+ * - **It bought nothing it appeared to.** The argument for guest-side DDL was
+ *   that the table shape belongs to the bundle's own SDK version — but
+ *   `if not exists` is a no-op once the table exists, so a newer SDK expecting an
+ *   added column was broken either way. The property was never there to protect.
+ * - **It was two round trips and a `42P07` NOTICE per guest boot**, dumped into
+ *   the log an operator reads to diagnose a session.
+ *
+ * `schema` qualifies the names for a caller whose `search_path` is not the app's
+ * — which is every platform caller, since the admin connection is pinned
+ * nowhere. The guest's own role IS pinned (`alter role … set search_path`), so it
+ * would need no qualification; it no longer runs this at all.
+ *
+ * @internal
+ */
+export function sessionStateDdl(schema?: string): string[] {
+  const qualify = (table: string) => (schema ? `"${schema}".${table}` : table);
+  return [
+    CREATE_TABLE_SQL(qualify(SESSION_STATE_TABLE)),
+    CREATE_EVENT_TABLE_SQL(qualify(SESSION_EVENT_TABLE)),
+  ];
+}
 
 const APPEND_EVENTS_SQL = `insert into ${SESSION_EVENT_TABLE} (session_id, event_index, event)
 select $1, s.event_index::bigint, s.event::jsonb
@@ -158,44 +192,31 @@ const DISCARD_EVENTS_SQL = `delete from ${SESSION_EVENT_TABLE} where session_id 
  */
 export function createPostgresStateBackend(opts: { db: Db }): SessionStateBackend {
   const { db } = opts;
-  /**
-   * `ensureOnce` owns the memo AND the clear-on-rejection: a failed DDL must not
-   * be remembered as done, so a transient privilege or connection fault is
-   * recoverable without a redeploy. Same reasoning as the wake hint's.
-   */
-  const ensureTable = ensureOnce(() => db.query(CREATE_TABLE_SQL).then(() => undefined));
-  /**
-   * A SECOND memo, not one DDL call creating both tables: an agent that never
-   * resumes and never streams still pays the slot table, and an event append
-   * must not be able to fail because the slot table's DDL is what raced.
-   */
-  const ensureEventTable = ensureOnce(() => db.query(CREATE_EVENT_TABLE_SQL).then(() => undefined));
+  // No DDL here, deliberately: the tables come with the schema
+  // (`sessionStateDdl`, applied by the platform when an app's database is
+  // provisioned). This backend used to `create table if not exists` on both the
+  // read and write paths behind two memos — two round trips and a `42P07` NOTICE
+  // on every guest boot, for a guarantee `if not exists` cannot give (see
+  // `sessionStateDdl`). A missing table now surfaces as the honest error it is:
+  // this app's schema was never provisioned with one.
 
   return {
     name: "postgres",
     durable: true,
     async load(sessionId) {
-      // The table may not exist yet — this session may be the agent's first
-      // ever. Creating it on the READ path as well as the write path is what
-      // keeps a hydrate from failing the session start of a fresh deploy.
-      await ensureTable();
       const rows = await db.query<{ slot: string; value: string }>(LOAD_SQL, [sessionId]);
       return new Map(rows.map((row) => [row.slot, row.value]));
     },
     async commit(sessionId, values) {
-      await ensureTable();
       await db.query(COMMIT_SQL, [sessionId, [...values.keys()], [...values.values()]]);
     },
     async discard(sessionId) {
-      await ensureTable();
-      await ensureEventTable();
       // Both, in one call, because one session's durable footprint is both
       // tables — see the backend type's doc.
       await db.query(DISCARD_SQL, [sessionId]);
       await db.query(DISCARD_EVENTS_SQL, [sessionId]);
     },
     async appendEvents(sessionId, pending) {
-      await ensureEventTable();
       await db.query(APPEND_EVENTS_SQL, [
         sessionId,
         pending.map((event) => event.index),
@@ -203,7 +224,6 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
       ]);
     },
     async readEvents(sessionId, startIndex, limit) {
-      await ensureEventTable();
       const rows = await db.query<{ event_index: number; event: string }>(READ_EVENTS_SQL, [
         sessionId,
         startIndex,
@@ -212,7 +232,6 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
       return rows.map((row) => ({ index: Number(row.event_index), json: row.event }));
     },
     async countEvents(sessionId) {
-      await ensureEventTable();
       const rows = await db.query<{ count: number }>(NEXT_EVENT_INDEX_SQL, [sessionId]);
       return rows[0]?.count ?? 0;
     },

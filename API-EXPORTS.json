@@ -420,6 +420,7 @@
     "safeSend",
     "salvageJson",
     "serveStatic",
+    "sessionStateDdl",
     "ssrfSafeFetch",
     "stampSessionEvent",
     "startHostSession",

@@ -4183,6 +4183,9 @@ export type SessionStateBackend = {
     countEvents(sessionId: string): Promise<number>;
 };
 
+// @internal
+export function sessionStateDdl(schema?: string): string[];
+
 // @public
 export type SessionStateStore = {
     viewFor(sessionId: string): SlotStore;

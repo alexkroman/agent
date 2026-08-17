@@ -34,6 +34,7 @@ import {
   createSessionStateStore,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
+  sessionStateDdl,
 } from "@alexkroman1/aai/runtime";
 import { createToolContext } from "@alexkroman1/aai/testing";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -63,6 +64,14 @@ describeWithPg("session state over a real Postgres", () => {
     sql = db.query;
     await sql(`drop schema if exists ${SCHEMA} cascade`);
     await sql(`create schema ${SCHEMA}`);
+    // The TABLES come with the schema, exactly as `provisionAppDatabase` gives
+    // them to a real app — the backend creates none of its own any more (see
+    // `sessionStateDdl`). Applying the SDK's own DDL rather than a copy of it is
+    // what keeps this suite testing the shipped shape: a hand-written `create
+    // table` here would go on passing after the real one changed.
+    for (const statement of sessionStateDdl(SCHEMA)) {
+      await sql(statement);
+    }
     // `search_path` rather than a qualified table name: that is how the platform
     // provisions an app role, so the backend's unqualified SQL is exercised the
     // way a guest runs it.

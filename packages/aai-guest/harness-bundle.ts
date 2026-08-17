@@ -30,6 +30,65 @@ import { runCode } from "./trial.ts";
 let bundleSeq = 0;
 
 /**
+ * Where a bundle file is written — and it is a RESOLUTION ANCHOR, not scratch
+ * space.
+ *
+ * It used to be `tmpdir()`, under a comment asserting that "the bundle is fully
+ * inlined (`ssr.noExternal: true`), so the directory carries no resolution
+ * meaning here". That was true of the bundler's own output and false of what the
+ * bundle DOES at runtime: the Workflow DevKit selects its world adapter by
+ * `require`ing a package NAME, which no bundler can inline, and the bundled SDK's
+ * CJS interop anchors that require on `createRequire(import.meta.url)` — i.e. on
+ * this file's directory. From `tmpdir()` there is no `node_modules` above it, so
+ * a durable workflow agent died on `Cannot find module
+ * '@workflow/world-postgres'` with a require stack naming a path in `/T/`.
+ *
+ * The harness's OWN directory is the anchor that works, in both deployments and
+ * for the same reason each: `/opt/aai/harness.mjs` sits beside
+ * `/opt/aai/node_modules` in the baked image, and `dist/harness.mjs` is one level
+ * under `aai-guest/node_modules` in dev. That is the same walk-up the harness
+ * itself relies on for every `neverBundle` package (see this package's guide).
+ *
+ * A directory that cannot be written falls back to `tmpdir()` and SAYS SO,
+ * naming what will not work. Silence there would be the works-here/fails-there
+ * asymmetry this package's own parity table exists to enumerate — and the
+ * fallback is still strictly better than failing the load, because an agent with
+ * no workflows never needs the anchor at all.
+ */
+
+/**
+ * The directory a bundle is written into: this module's own, which after bundling
+ * is the one holding `harness.mjs`.
+ *
+ * Exported so a spec can assert the anchor without recomputing it — the failure
+ * this guards is a bundle landing somewhere with no `node_modules` above it, and
+ * a test that derived the expected path the same way the code does would agree
+ * with a wrong answer.
+ */
+export function harnessBundleDir(): string {
+  return import.meta.dirname;
+}
+
+async function writeBundleFile(name: string, code: string): Promise<string> {
+  const beside = join(harnessBundleDir(), name);
+  try {
+    await writeFile(beside, code, "utf-8");
+    return beside;
+  } catch (err) {
+    // `tmpdir()`, never a literal `/tmp`: this runs on the DEVELOPER's machine
+    // under `aai dev` too, where that literal is drive-relative on Windows.
+    const fallback = join(tmpdir(), name);
+    console.warn(
+      `Bundle written to ${tmpdir()} rather than beside the harness ` +
+        `(${errorMessage(err)}). A workflow world resolved by runtime require ` +
+        "will not load from there.",
+    );
+    await writeFile(fallback, code, "utf-8");
+    return fallback;
+  }
+}
+
+/**
  * Import raw JS source as an ES module (no Function() evaluation, top-level
  * await supported). The code lands in a uniquely named temp file and is
  * imported by file URL — the unique name matters because Node's module
@@ -37,13 +96,8 @@ let bundleSeq = 0;
  * load → try loop) must load the NEW code.
  */
 async function importBundleModule(code: string): Promise<Record<string, unknown>> {
-  // `tmpdir()`, not a literal `/tmp`. The guest itself is always Linux, but this
-  // same function runs on the DEVELOPER's machine under `aai dev`, where the
-  // literal is drive-relative on Windows and resolves to a `D:\tmp` that does
-  // not exist. The bundle is fully inlined (`ssr.noExternal: true`), so the
-  // directory carries no resolution meaning here.
-  const path = join(tmpdir(), `aai-bundle-${process.pid}-${++bundleSeq}.mjs`);
-  await writeFile(path, code, "utf-8");
+  const name = `aai-bundle-${process.pid}-${++bundleSeq}.mjs`;
+  const path = await writeBundleFile(name, code);
   try {
     return await import(pathToFileURL(path).href);
   } finally {
