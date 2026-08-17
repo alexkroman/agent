@@ -6,6 +6,11 @@
 // deploy does, that an already-provisioned database is never re-provisioned
 // (that rotates the password a live sandbox is holding), and that a foreign
 // slug named by the workspace is not a lever on someone else's agent.
+//
+// Plus the DEFAULT, which is on: a project that has never touched the switch
+// reports enabled and provisions each environment as its deploy claims the
+// slug, and a project that switched it off stays off across later deploys —
+// the direction that breaks if a disable ever goes back to REMOVING the flag.
 
 import { appDbIdentifier } from "aai-server/app-database";
 import { localSlugLock } from "aai-server/platform-lock";
@@ -63,14 +68,20 @@ function appDbSecret(secrets: SecretStore, slug: string): Promise<string | null>
   return secrets.get(`app-db:${slug}`);
 }
 
-const enable = (h: Harness, extra: { schedulePreview?: () => void } = {}) =>
+const setEnabled = (h: Harness, enabled: boolean, extra: { schedulePreview?: () => void } = {}) =>
   setProjectDatabase(h.env, {
     scope: SCOPE,
     project: PROJECT,
     apiKey: KEY,
-    enabled: true,
+    enabled,
     ...extra,
   });
+
+const enable = (h: Harness, extra: { schedulePreview?: () => void } = {}) =>
+  setEnabled(h, true, extra);
+
+/** The opt-out — the only thing that turns a project's database off. */
+const disable = (h: Harness) => setEnabled(h, false);
 
 describe("setProjectDatabase", () => {
   test("provisions both environments, each with its OWN schema", async () => {
@@ -135,15 +146,10 @@ describe("setProjectDatabase", () => {
     expect(await appDbSecret(h.secrets, "demo")).toEqual(credentials);
   });
 
-  test("disabling drops both schemas and clears the intent", async () => {
+  test("disabling drops both schemas and records the opt-out", async () => {
     const h = await harness({ deployedSlug: "demo", previewSlug: "demo-preview" });
     await enable(h);
-    const state = await setProjectDatabase(h.env, {
-      scope: SCOPE,
-      project: PROJECT,
-      apiKey: KEY,
-      enabled: false,
-    });
+    const state = await disable(h);
     expect(state?.enabled).toBe(false);
     expect(state?.environments.every((row) => row.enabled === false)).toBe(true);
     expect(h.env.appDb.deprovision.mock.calls.map(([slug]) => slug)).toEqual([
@@ -151,8 +157,10 @@ describe("setProjectDatabase", () => {
       "demo-preview",
     ]);
     expect(await appDbSecret(h.secrets, "demo")).toBeNull();
-    expect((await getWorkspace(h.workspaces, SCOPE, PROJECT))?.databaseEnabled).toBeUndefined();
-    // Cleared intent means a later deploy must NOT hand the agent a database
+    // Stored as an explicit `false`, NOT removed: absent means on, so removing
+    // it would hand the project back to the default it just opted out of.
+    expect((await getWorkspace(h.workspaces, SCOPE, PROJECT))?.databaseEnabled).toBe(false);
+    // Recorded intent means a later deploy must NOT hand the agent a database
     // back — the switch is off.
     h.env.appDb.provision.mockClear();
     await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo" });
@@ -238,18 +246,31 @@ describe("setProjectDatabase", () => {
 });
 
 describe("projectDatabaseState", () => {
-  test("reports off, configured, and both environments before anything is deployed", async () => {
+  test("a project that never touched the switch reports ENABLED — that is the default", async () => {
     const h = await harness();
     expect(
       await projectDatabaseState(h.env, { scope: SCOPE, project: PROJECT, apiKey: KEY }),
     ).toEqual({
-      enabled: false,
+      // The project's intent. Neither environment has a schema yet because
+      // neither has deployed — provisioning follows the slug.
+      enabled: true,
       configured: true,
       environments: [
         { environment: "production", enabled: false },
         { environment: "preview", enabled: false },
       ],
     });
+  });
+
+  test("reports off only for a project that switched it off", async () => {
+    const h = await harness();
+    await disable(h);
+    const state = await projectDatabaseState(h.env, {
+      scope: SCOPE,
+      project: PROJECT,
+      apiKey: KEY,
+    });
+    expect(state?.enabled).toBe(false);
   });
 
   test("reports an unconfigured platform, so the client can hide the switch", async () => {
@@ -271,9 +292,28 @@ describe("projectDatabaseState", () => {
 });
 
 describe("reconcileProjectDatabase", () => {
-  test("does nothing when the project never asked for a database", async () => {
+  test("provisions for a project that never touched the switch", async () => {
+    // The path almost every project takes: nobody flips anything, so the first
+    // deploy of each environment is where its schema comes from.
     const h = await harness({ deployedSlug: "demo" });
     await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo" });
+    expect(h.env.appDb.provision).toHaveBeenCalledWith("demo");
+    expect(await appDbSecret(h.secrets, "demo")).not.toBeNull();
+  });
+
+  test("does nothing when the project switched the database off", async () => {
+    const h = await harness({ deployedSlug: "demo" });
+    await disable(h);
+    h.env.appDb.provision.mockClear();
+    await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo" });
+    expect(h.env.appDb.provision).not.toHaveBeenCalled();
+  });
+
+  test("does nothing for a slug no project names", async () => {
+    // A bare `aai deploy` reaches the hook with no workspace behind it: there
+    // is no project default to apply, only the per-slug `aai storage enable`.
+    const h = await harness({ deployedSlug: "demo" });
+    await reconcileProjectDatabase(h.env, { scope: SCOPE, project: "ghost", slug: "demo" });
     expect(h.env.appDb.provision).not.toHaveBeenCalled();
   });
 

@@ -28,6 +28,23 @@
  * them. The invariant that buys: an app database exists only for a deployed,
  * owned slug.
  *
+ * **Every project has one by DEFAULT** ({@link projectDatabaseEnabled}: an
+ * absent flag reads as on, and only an explicit `false` turns it off). It was
+ * opt-in, and opt-in put a wall exactly where the interesting agents are:
+ * `ctx.db` THROWS until it is provisioned, the coding agent cannot provision
+ * it, and a workflow app cannot start a run at all without one — so the
+ * failure landed on the user as a broken agent plus an instruction to go find
+ * a switch. Nothing about the switch itself changes: an unclaimed slug is
+ * still not provisioned, and the schema still arrives with the deploy that
+ * claims it, which is what keeps the default from creating anything for a
+ * project nobody deploys.
+ *
+ * The cost of the default is a Postgres schema + login role per deployed
+ * agent — two per published project — where the opt-in only ever paid for the
+ * projects that asked. That is the trade; `disableStorage` (Settings →
+ * Database, or `aai storage disable <slug>`) is how a project opts back out,
+ * and it drops the schemas with their data.
+ *
  * **It takes effect on the agent's next DEPLOY.** `DATABASE_URL` is read from
  * the `app-db:` secret when a sandbox is BUILT (sandbox-resolve.ts), and
  * deploy/delete are the only mutations that move sandboxes — the same trade
@@ -98,6 +115,19 @@ function storageEnvOf(env: ProjectDatabaseEnv): StorageEnv {
   return { secrets: env.secrets, appDb: env.appDb, slugLock: env.slugLock };
 }
 
+/**
+ * Does this project want a database? The ONE reader of `databaseEnabled`, so
+ * "absent means on" is stated once rather than at each of the three sites that
+ * used to spell `=== true`.
+ *
+ * Every project that has never touched the switch — which is every project
+ * predating this default, and every one created since — is enabled. Only the
+ * user switching it off (an explicit `false`) says otherwise.
+ */
+export function projectDatabaseEnabled(workspace: StudioWorkspace): boolean {
+  return workspace.databaseEnabled !== false;
+}
+
 async function environmentState(
   env: ProjectDatabaseEnv,
   owned: ReadonlySet<string>,
@@ -132,7 +162,7 @@ async function stateFor(
     PROJECT_ENVIRONMENTS.map((environment) => environmentState(env, owned, workspace, environment)),
   );
   return {
-    enabled: workspace.databaseEnabled === true,
+    enabled: projectDatabaseEnabled(workspace),
     configured: env.appDb !== undefined,
     environments,
   };
@@ -188,9 +218,11 @@ export async function setProjectDatabase(
 ): Promise<SetProjectDatabaseResult | null> {
   const { scope, project, apiKey, enabled } = params;
   const workspace = await stampWorkspaceMeta(env.workspaces, scope, project, {
-    // Absent means off (see StudioWorkspace.databaseEnabled), so disabling
-    // REMOVES the field rather than storing `false`.
-    databaseEnabled: enabled ? true : undefined,
+    // BOTH directions are stored, because absent now means ON (see
+    // StudioWorkspace.databaseEnabled): removing the field on a disable would
+    // hand the project straight back to the default it just opted out of, and
+    // the next deploy would provision the schemas this call dropped.
+    databaseEnabled: enabled,
   });
   if (!workspace) return null;
 
@@ -251,9 +283,11 @@ async function applyToSlug(env: ProjectDatabaseEnv, slug: string, enabled: boole
  *
  * This is what makes "enable the database" hold for an environment that did
  * not exist when the switch was flipped — the common case, since a project
- * normally has a preview agent and no production deploy. Called from the
- * broker's one deploy path, so Publish and the auto preview deploy are both
- * covered by one hook.
+ * normally has a preview agent and no production deploy. With the database on
+ * by default it is also the path that provisions almost every project: nobody
+ * flips a switch, so the first deploy of each environment is where its schema
+ * comes from. Called from the broker's one deploy path, so Publish and the
+ * auto preview deploy are both covered by one hook.
  *
  * No ownership check: the deploy that just succeeded on the caller's key IS
  * the proof of ownership. Already-provisioned slugs are left alone (see
@@ -265,6 +299,10 @@ export async function reconcileProjectDatabase(
 ): Promise<void> {
   if (!env.appDb) return;
   const workspace = await getWorkspace(env.workspaces, params.scope, params.project);
-  if (workspace?.databaseEnabled !== true) return;
+  // A deploy for a slug no workspace names (a bare `aai deploy`) reaches this
+  // hook with no project behind it: there is no default to apply, only the
+  // per-slug `aai storage enable`.
+  if (!workspace) return;
+  if (!projectDatabaseEnabled(workspace)) return;
   await applyToSlug(env, params.slug, true);
 }

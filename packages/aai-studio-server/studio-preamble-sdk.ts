@@ -29,12 +29,14 @@ export const STUDIO_SDK_GUIDANCE = `## Data Persistence and Storage
   \`ctx.db\` (SQL with $1 placeholders); NEVER fake durable storage in
   session state.
 - Parameterize every query — never interpolate user input into SQL.
-- You cannot enable the database yourself, but the USER can, with one
-  click: Settings pane → Database → Enable database. It covers both the
-  preview and published agents (separate schemas). Build with ctx.db, then
-  tell them to turn it on there — \`ctx.db\` throws until they do.
-  (\`aai storage enable <slug>\` is the CLI equivalent; the pane is the
-  answer for someone with no terminal.)
+- The database is ON by default for every project, covering both the
+  preview and published agents (separate schemas), and it reaches an agent
+  when that agent next deploys. So build on \`ctx.db\` freely and do not ask
+  the user to enable anything. Create tables lazily
+  (\`create table if not exists\`) — the schema starts empty.
+- If \`ctx.db\` reports storage is not enabled, the user has switched it off
+  in the Settings pane → Database; say so and ask them to switch it back on
+  there. You cannot switch it yourself.
 
 ## AI, Models, and Providers
 

@@ -311,8 +311,9 @@ callback. Reach for `agent()` when someone is on the line — a voice agent can
 also START a workflow from a tool (`ctx.workflows.start(def, input)`) and
 answer the turn, which is the other shape.
 
-**Requires storage** (`aai storage enable`, or `DATABASE_URL` under
-`aai dev`): runs live in the database.
+**Requires storage** — on by default for a studio project; `aai storage
+enable` for a slug deployed from the CLI, or `DATABASE_URL` under `aai dev`:
+runs live in the database.
 
 ### Workflow bodies live in `workflows/`
 
@@ -1161,9 +1162,11 @@ A query returning more than 1000 rows throws — always bound reads with
 
 **The database must be enabled** or accessing `ctx.db` throws:
 
-- CLI: `aai storage enable`
-- Studio: Settings pane → Database → Enable database (covers both the
-  preview and published agents, each with its own schema)
+- Studio: nothing to do — every project has one by default, covering both the
+  preview and published agents, each with its own schema. It reaches an agent
+  when that agent next deploys. Settings pane → Database is where it can be
+  switched OFF, which drops both schemas and their data.
+- CLI: `aai storage enable` (per deployed slug)
 - `aai dev`: set `DATABASE_URL` in the project `.env`
 
 Create tables lazily from tool code and upsert with `on conflict`:
@@ -1496,11 +1499,12 @@ Common mistakes when working in aai projects:
   platform's Modal/Deno sandbox; the self-hosted `aai dev` server has no
   sandbox, so there `run_code` refuses with an error result. Deploy to test
   it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
-- **`ctx.db` throws until the database is enabled.** Enable it with
-  `aai storage enable` (CLI), Settings → Database (studio), or
-  `DATABASE_URL` in `.env` (`aai dev`) before shipping tools that persist
-  data. In the studio it takes effect when each agent next deploys — the
-  preview redeploys itself, production on the next publish.
+- **`ctx.db` throws until the database is enabled.** A studio project has one
+  by default (it takes effect when each agent next deploys — the preview
+  redeploys itself, production on the next publish), so this is the CLI and
+  `aai dev` case: `aai storage enable` for a deployed slug, `DATABASE_URL` in
+  `.env` locally. It also fires on a studio project whose Settings pane →
+  Database switch has been turned off.
 - **The database is per-app.** Rows are shared by every session of one
   deployment — key them yourself if sessions must not see each other's data
   (or keep session-scoped data in a `sessionSlot`).

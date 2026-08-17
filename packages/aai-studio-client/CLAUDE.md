@@ -112,6 +112,15 @@ so every piece of per-project state resets on a switch with no effect to do it.
   promise either way. Each environment gets its OWN schema: the preview is
   where half-finished tool code runs, and a shared one would let a preview
   turn drop the production table.
+  - **It is ON by default**, so the card is normally a report plus an off
+    switch rather than the way the feature gets turned on — which is why
+    neither blurb says "off by default" any more, and the disabled one
+    describes a switch the user themselves flipped. Absent
+    `databaseEnabled` reads as enabled server-side; see "The project database
+    is ON by default" in `packages/aai-studio-server/CLAUDE.md`. A new project
+    therefore reports `enabled: true` with both environment rows `false`,
+    which is not a contradiction: the schema arrives with the deploy that
+    claims the slug.
   - **Intent is stamped on the workspace (`databaseEnabled`); provisioning
     follows the SLUG.** The switch is reachable before either agent exists
     (the usual state — a project has a preview long before a publish), and

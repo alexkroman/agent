@@ -73,7 +73,13 @@ export type StudioWorkspace = {
   /**
    * The project wants a database (`ctx.db`) — see studio-database.ts. Intent
    * rather than state: it can be set before either agent is deployed, and each
-   * environment's schema is provisioned as its slug appears. Absent means off.
+   * environment's schema is provisioned as its slug appears.
+   *
+   * **Absent means ON.** Every project gets a database by default, so only an
+   * explicit `false` — the user switching it off in Settings → Database —
+   * turns it off. Read it through `projectDatabaseEnabled`, never as a bare
+   * truthiness check: `undefined` and `true` are the same answer here, and
+   * `=== true` was the shape this field had while the default was off.
    */
   databaseEnabled?: boolean;
   updatedAt: number;

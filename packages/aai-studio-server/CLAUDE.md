@@ -26,9 +26,9 @@ The browser studio's server side (documented below):
   scratch dir — eval-suite only now), `studio-errors.ts`
   (`StudioBuildError`), `studio-deploy.ts` (guest build → validate config →
   deploy), `studio-database.ts` + `studio-database-routes.ts` (the project
-  database switch across both environments, and the post-deploy hook that
-  provisions a newly claimed slug), `studio-workspace.ts` (project file
-  store), `studio-prompt.ts`
+  database — ON by default, see below — across both environments, and the
+  post-deploy hook that provisions a newly claimed slug),
+  `studio-workspace.ts` (project file store), `studio-prompt.ts`
   (system prompt from the scaffold CLAUDE.md, one per project kind),
   `studio-project-kind.ts` (voice agent vs static workflow app — the
   new-project switcher's choice), `studio-preamble-mode.ts` (the five preamble
@@ -526,6 +526,23 @@ voice agents without the CLI:
   hash rather than a timestamp for two reasons: deploys themselves write
   the workspace (which bumps `updatedAt`), and editing a file then undoing
   it should not leave the project permanently "stale".
+
+  **The project database is ON by default** (`projectDatabaseEnabled` in
+  `studio-database.ts` — an absent `databaseEnabled` reads as enabled, and it
+  is the ONE reader of that flag, so "absent means on" is stated once rather
+  than at each `=== true` it replaced). Opt-in put a wall exactly where the
+  interesting agents are: `ctx.db` throws until a schema is provisioned, the
+  coding agent cannot provision one, and a workflow app cannot start a run at
+  all without it — so the failure reached the user as a broken agent plus an
+  instruction to go find a switch. Three consequences. A DISABLE now stores an
+  explicit `false` instead of removing the field, or the next deploy would
+  reconcile the project straight back to the default it just opted out of (and
+  re-provision the schemas the disable dropped). `reconcileProjectDatabase` is
+  the path almost every project takes, since nobody flips a switch — which
+  changes nothing about the invariant, because an unclaimed slug is still not
+  provisioned and the schema still arrives with the deploy that claims it. And
+  the cost is a Postgres schema + login role per deployed agent, two per
+  published project, where opt-in only paid for the projects that asked.
 
   **Secrets are a PROJECT switch, not a per-slug one**
   (`studio-secrets.ts` + `studio-secret-routes.ts`): a project deploys

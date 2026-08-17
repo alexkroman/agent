@@ -14,6 +14,12 @@
 // reads DATABASE_URL at boot), so the preview redeploys itself while
 // production waits for a Publish; and disabling drops the schemas with all
 // their data.
+//
+// It is ON by default now (aai-studio-server/studio-database.ts), so the card
+// is normally a report plus an off switch rather than the way the feature gets
+// turned on. The blurbs split accordingly: the enabled one describes what the
+// project HAS, and the disabled one describes a switch the user themselves
+// flipped — never "off by default", which stopped being true.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type DatabaseEnvironment, type DatabaseState } from "./api.ts";
@@ -201,9 +207,9 @@ function Blurb({ enabled, unavailable }: { enabled: boolean; unavailable: boolea
   }
   return (
     <>
-      Give this project's tools a SQL database, reached as <code className="font-mono">ctx.db</code>{" "}
-      — for anything that has to outlive a single call. Off by default; scratch that only one call
-      needs belongs in <code className="font-mono">ctx.state</code>.
+      This project's database is switched off, so <code className="font-mono">ctx.db</code> throws
+      and workflow runs cannot start. Turn it back on for anything that has to outlive a single call
+      — scratch that only one call needs belongs in <code className="font-mono">ctx.state</code>.
     </>
   );
 }

@@ -69,13 +69,14 @@ describe("project database routes", () => {
     expect((await fetch("/studio/projects/proj/database", { method: "POST" })).status).toBe(401);
   });
 
-  test("GET reports both environments, off, before anything is deployed", async () => {
+  test("GET reports a new project as enabled, with neither environment deployed", async () => {
     const { fetch } = await createTestCombined({ appDb: fakeAppDb() });
     await createProject(fetch);
     const res = await authFetch(fetch, "/studio/projects/proj/database", { method: "GET" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      enabled: false,
+      // On by default; each environment's schema arrives with its deploy.
+      enabled: true,
       configured: true,
       environments: [
         { environment: "production", enabled: false },

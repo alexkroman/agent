@@ -76,8 +76,8 @@ form-fronted workflow app instead.`,
   runs inline with no durability and nothing reporting it. The body replays
   from the top on every resume (no fetch, no clock, no randomness — those go
   in a \`"use step"\` function), and a step gets no ctx: no ctx.env, no ctx.db.
-- A workflow app NEEDS the database on, same as ctx.db: build it, then tell
-  the user to enable it in Settings → Database. A voice agent can also start
+- A workflow app NEEDS the database, which every project has on by default —
+  so just build it. A voice agent can also start
   a run from a tool (\`ctx.workflows.start\`) and answer the turn — that is the
   other shape, and it stays an \`agent()\`.
 - The reference below has the full section ("Workflow apps — workflowApp()"):
@@ -211,9 +211,10 @@ unless they ask outright for a voice agent instead.`,
   work-stealing pool is not — it diverges on replay.
 - **The page is the product, so it is not optional here.** See the design
   section below.
-- **It NEEDS the database.** Runs live there, so \`ctx.db\`'s rule applies to
-  the whole app: build it, then tell the user to switch it on in
-  Settings → Database. Until they do, starting a run fails.
+- **It NEEDS the database**, and every project has one on by default, so
+  \`ctx.db\`'s rule applies to the whole app: build it. Starting a run fails
+  only if the user has switched the database off in Settings → Database, in
+  which case ask them to switch it back on.
 - **If the user actually wants someone on the line** — a phone number, a
   microphone, a conversation — that is the OTHER shape: an \`agent()\` whose
   tool calls \`ctx.workflows.start(def, input)\` and answers the turn. Say

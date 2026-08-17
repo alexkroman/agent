@@ -71,8 +71,11 @@ export type DatabaseEnvironment = {
 
 /**
  * The project's `ctx.db` database, across both deployed agents. `enabled` is
- * the project's setting — what the next deploy of either agent provisions —
- * while each environment row says whether it has a database RIGHT NOW.
+ * the project's setting — what the next deploy of either agent provisions,
+ * and ON unless the project switched it off — while each environment row says
+ * whether it has a database RIGHT NOW. So a new project reports
+ * `enabled: true` with both rows `false`, which is not a contradiction: the
+ * schema arrives with the deploy that claims the slug.
  * `configured: false` means this server cannot provision at all.
  */
 export type DatabaseState = {

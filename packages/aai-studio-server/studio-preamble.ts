@@ -349,10 +349,11 @@ right control:
   and ask the user to publish again.
 - The **Secrets panel** (top bar, after the first publish) manages the
   project's env keys, on both the published and preview agents.
-- The **Settings pane → Database** switches \`ctx.db\` on for the project,
-  across both the preview and published agents. It reaches an agent when
-  that agent next deploys: the preview redeploys itself, production needs
-  a publish.
+- The **Settings pane → Database** reports \`ctx.db\` for the project, across
+  both the preview and published agents, and can switch it OFF (dropping
+  every schema and its data). It is on by default, and it reaches an agent
+  when that agent next deploys: the preview redeploys itself, production
+  needs a publish.
 - Users have no terminal here. Anything still CLI-only means they install
   the aai CLI on their own machine.
 
