@@ -431,8 +431,10 @@ type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 // @public (undocumented)
 interface AssemblyAITtsOptions {
     apiKeyEnv?: string;
+    // @deprecated
     host?: string;
     language?: AssemblyAITtsLanguage;
+    streamingUrl?: string;
     voice?: AssemblyAITtsVoice;
 }
 

@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 12,
-    "supported": [3, 10, 11, 12],
+    "current": 13,
+    "supported": [3, 10, 11, 12, 13],
     "dropped": {
       "1": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "2": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
@@ -84,8 +84,8 @@
     }
   },
   "tts": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "uploads": {

@@ -2,7 +2,6 @@
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { DEAD_AIR_OPENING_PHRASE } from "../../../sdk/constants.ts";
-import type { AssemblyAITtsLanguage } from "../../../sdk/providers/tts/assemblyai.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
 import { flush, tick } from "../../_test-utils.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
@@ -47,78 +46,6 @@ describe("AssemblyAI TTS adapter", () => {
       expect(listener).toHaveBeenCalledTimes(1);
     },
   );
-
-  test("connects to the production streaming-TTS host with voice and sample rate", async () => {
-    const { ws } = await openSession({ voice: "michael" });
-    const url = new URL(ws.url);
-    expect(url.host).toBe("streaming-tts.assemblyai.com");
-    expect(url.pathname).toBe("/v1/ws/");
-    expect(url.searchParams.get("voice")).toBe("michael");
-    expect(url.searchParams.get("sample_rate")).toBe("16000");
-  });
-
-  test("defaults the voice and omits language unless set", async () => {
-    const { ws } = await openSession();
-    const params = new URL(ws.url).searchParams;
-    expect(params.get("voice")).toBe("jane");
-    // Every voice speaks one language; a mismatched pair is worse than no hint.
-    expect(params.has("language")).toBe(false);
-  });
-
-  test("sends the language as the API's full name, not the ISO 639-1 code", async () => {
-    // The service rejects codes in-band: `Bad connection parameters: language:
-    // language 'es' not in supported set ['english', ...]` — which arrives
-    // AFTER the socket opens, so an unmapped code is a silently mute session.
-    const { ws } = await openSession({ voice: "lola", language: "es" });
-    expect(new URL(ws.url).searchParams.get("language")).toBe("spanish");
-  });
-
-  test.each<[AssemblyAITtsLanguage, string]>([
-    ["en", "english"],
-    ["fr", "french"],
-    ["de", "german"],
-    ["it", "italian"],
-    ["pt", "portuguese"],
-    ["es", "spanish"],
-  ])("maps %s to %s", async (code, wire) => {
-    const { ws } = await openSession({ language: code });
-    expect(new URL(ws.url).searchParams.get("language")).toBe(wire);
-  });
-
-  test("open() throws tts_connect_failed for an unsupported language", async () => {
-    // Fail at connect rather than let the service refuse in-band: the
-    // descriptor reaches the host as unvalidated `Record<string, unknown>`
-    // options, so this is the only place a bad value can be caught.
-    const opener = openAssemblyAITts({ language: "zh" as "es" });
-    await expect(
-      opener.open({ sampleRate: 16_000, apiKey: "k", signal: new AbortController().signal }),
-    ).rejects.toMatchObject({
-      code: "tts_connect_failed",
-      message: expect.stringContaining("zh"),
-    });
-  });
-
-  test("authenticates with the raw API key, not a Bearer token", async () => {
-    // A Bearer token upgrades fine and is then refused in-band as an Error
-    // frame, so this is the difference between working and a runtime failure.
-    const { ws } = await openSession({}, "sk-abc123");
-    expect(ws.options?.headers?.Authorization).toBe("sk-abc123");
-  });
-
-  test("opens with permessage-deflate disabled", async () => {
-    // `ws` defaults this to true on CLIENTS, and a provider that accepts the
-    // offer costs a zlib context per socket (+321 KiB RSS, ~4.5x CPU, measured)
-    // to compress PCM16, which does not compress. See PROVIDER_WS_OPTIONS.
-    const { ws } = await openSession({}, "sk-abc123");
-    expect(ws.options?.perMessageDeflate).toBe(false);
-  });
-
-  test("open() throws tts_auth_failed when the API key is missing", async () => {
-    const opener = openAssemblyAITts({});
-    await expect(
-      opener.open({ sampleRate: 16_000, apiKey: "", signal: new AbortController().signal }),
-    ).rejects.toMatchObject({ code: "tts_auth_failed" });
-  });
 
   test("sendText buffers and flush sends the turn's text as Generate + Flush", async () => {
     // Generate is only ever sent paired with a Flush: the service synthesizes

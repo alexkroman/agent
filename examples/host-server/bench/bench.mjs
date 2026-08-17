@@ -137,7 +137,7 @@ async function main() {
     env: {
       ...process.env,
       BENCH_STT_URL: stt.url(),
-      BENCH_TTS_HOST: tts.host(),
+      BENCH_TTS_URL: tts.url(),
       BENCH_PORT: String(PORT),
       // The fake TTS is wss with a self-signed cert; trust it alongside
       // whatever CA bundle the environment already needs.

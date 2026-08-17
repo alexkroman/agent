@@ -32,6 +32,19 @@ export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
 
 /**
+ * Versioned path the streaming-TTS socket answers on.
+ *
+ * Part of the endpoint rather than of the host, which is why
+ * {@link AssemblyAITtsOptions.streamingUrl} takes a whole URL: a sandbox
+ * cluster is the same service behind a different subdomain, so the path is the
+ * half an author must not be asked to remember.
+ */
+export const ASSEMBLYAI_TTS_PATH = "/v1/ws/";
+
+/** Production streaming-TTS endpoint — host plus the versioned path. */
+export const ASSEMBLYAI_TTS_URL = `wss://${ASSEMBLYAI_TTS_HOST}${ASSEMBLYAI_TTS_PATH}`;
+
+/**
  * Default voice when `assemblyAITts()` is called with no `voice` — a
  * US-accented English voice, since most agents face US callers (it was
  * `"vera"` for a while, which put a UK accent on every agent that never
@@ -222,16 +235,37 @@ export interface AssemblyAITtsOptions {
    */
   language?: AssemblyAITtsLanguage;
   /**
-   * Streaming-TTS host to dial, replacing the production `ASSEMBLYAI_TTS_HOST`. A bare
-   * host (`streaming-tts.sandbox000.assemblyai-labs.com`), not a URL — the
-   * adapter owns the `wss://` scheme and the `/v1/ws/` path, so a full URL here
-   * would be wrong in a way that only shows up at connect.
+   * Streaming-TTS WebSocket endpoint override, replacing the production
+   * `wss://streaming-tts.assemblyai.com/v1/ws/`. A whole URL including the path
+   * (`wss://streaming-tts.sandbox025.assemblyai-labs.com/v1/ws/`) — the same
+   * shape, and the same option name, as `assemblyAIStt({ streamingUrl })`,
+   * because a sandbox account is one cluster reached at one URL per stage and
+   * the two stages differ only in the subdomain. Query params already on the URL
+   * are kept; the ones this stage owns (`voice`, `sample_rate`, `language`) win
+   * on collision.
    *
-   * Intended for pre-release/staging clusters, and it is the TTS half of the
-   * same A/B `assemblyAIStt({ streamingUrl })` gives STT. A staging cluster
-   * generally issues its own keys, so point every AssemblyAI stage at the same
-   * environment or the ones left on production reject the key. Leave unset in
-   * production.
+   * Takes precedence over {@link AssemblyAITtsOptions.host}, and a URL that is
+   * not `ws:`/`wss:` fails at connect rather than in-band.
+   *
+   * Intended for pre-release/sandbox clusters and A/B measurement against
+   * production; leave unset in production. A sandbox cluster issues its own
+   * keys and carries its own voice catalog — point every AssemblyAI stage at the
+   * same environment (`apiKeyEnv` is how one stage takes a different key), or
+   * the ones left on production reject it, and verify `voice` against that
+   * cluster rather than {@link ASSEMBLYAI_TTS_VOICES}.
+   */
+  streamingUrl?: string;
+  /**
+   * Streaming-TTS host to dial, replacing the production
+   * `streaming-tts.assemblyai.com`. A bare host
+   * (`streaming-tts.sandbox025.assemblyai-labs.com`), with the `/v1/ws/` path
+   * supplied by the adapter.
+   *
+   * @deprecated Use {@link AssemblyAITtsOptions.streamingUrl}, which takes the
+   * URL a sandbox is handed out as. Still honoured, and still the shorter
+   * spelling when the path is the default one — but one concept under two names
+   * is what made pointing STT and TTS at the same sandbox a
+   * strip-the-scheme-and-path exercise on one of them only.
    */
   host?: string;
   /**
@@ -284,11 +318,35 @@ export function assemblyAITts(opts: AssemblyAITtsOptions = {}): AssemblyAITtsPro
 export function resolveAssemblyAITtsSettings(opts: AssemblyAITtsOptions): {
   voice: string;
   language?: string;
+  streamingUrl?: string;
 } {
+  const streamingUrl = resolveAssemblyAITtsUrl(opts);
   return {
     voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
     // Omitted unless set: every voice speaks one language, so the server
     // infers it, and a mismatched pair is worse than no hint.
     ...(opts.language ? { language: opts.language } : {}),
+    // Reported only when the agent moved off production, so the common line
+    // stays short — but reported as the RESOLVED url whichever option set it,
+    // including the `host` shorthand, which used to reach the wire with nothing
+    // anywhere naming the cluster a session was dialing.
+    ...(streamingUrl === ASSEMBLYAI_TTS_URL ? {} : { streamingUrl }),
   };
+}
+
+/**
+ * The streaming-TTS endpoint this descriptor will dial, before query params.
+ *
+ * The one place the two overrides are ordered, so the opener and the
+ * "Session mode resolved" log cannot disagree about which cluster a session is
+ * on. An empty string is treated as unset for both: a misconfiguration that
+ * yields `wss:///v1/ws/` fails at connect with nothing naming the cause, where
+ * falling through to production at least runs.
+ */
+export function resolveAssemblyAITtsUrl(opts: AssemblyAITtsOptions): string {
+  if (opts.streamingUrl !== undefined && opts.streamingUrl.length > 0) return opts.streamingUrl;
+  if (opts.host !== undefined && opts.host.length > 0) {
+    return `wss://${opts.host}${ASSEMBLYAI_TTS_PATH}`;
+  }
+  return ASSEMBLYAI_TTS_URL;
 }

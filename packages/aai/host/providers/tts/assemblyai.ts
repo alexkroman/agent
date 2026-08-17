@@ -3,8 +3,10 @@
  * AssemblyAI streaming TTS opener (host-only).
  *
  * One long-lived WebSocket per session against
- * `wss://streaming-tts.assemblyai.com/v1/ws/`. Voice, language, and sample
- * rate are fixed at connect time as query params.
+ * `wss://streaming-tts.assemblyai.com/v1/ws/` — or the cluster
+ * `assemblyAITts({ streamingUrl })` names, which a sandbox account is reached
+ * through. Voice, language, and sample rate are fixed at connect time as query
+ * params.
  *
  * **Auth.** The streaming sockets (STT and TTS) authenticate with the **raw**
  * API key in `Authorization` — *not* `Bearer <key>`, which is what the Voice
@@ -96,11 +98,12 @@ import WebSocket from "ws";
 import { TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
 import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
-  ASSEMBLYAI_TTS_HOST,
+  ASSEMBLYAI_TTS_URL,
   type AssemblyAITtsOptions,
   assemblyAITtsLanguageCodes,
   resolveAssemblyAITtsLanguage,
   resolveAssemblyAITtsSettings,
+  resolveAssemblyAITtsUrl,
 } from "../../../sdk/providers/tts/assemblyai.ts";
 import {
   makeTtsError,
@@ -157,15 +160,45 @@ function formatErrorFrame(msg: AssemblyAITtsMessage): string {
   return `(${msg.error_code ?? ""}): ${reason}`;
 }
 
+/**
+ * Parse the resolved endpoint, refusing anything that is not a WebSocket URL.
+ *
+ * `streamingUrl` is an author-supplied string (and reaches the host as
+ * unvalidated descriptor options), so the two plausible mistakes — a bare host
+ * with no scheme, and an `https://` paste — must fail HERE. `new WebSocket` on
+ * either throws a bare `SyntaxError` from inside the adapter's own open path,
+ * which reads as a bug in the adapter rather than as a value to fix.
+ */
+function parseEndpoint(endpoint: string, fail: (message: string) => Error): URL {
+  // `URL.parse` rather than `new URL` in a try: the constructor's `TypeError`
+  // carries nothing this message wants, and discarding it is a lint finding.
+  const url = URL.parse(endpoint);
+  if (url === null) {
+    throw fail(
+      `AssemblyAI TTS: streamingUrl ${JSON.stringify(endpoint)} is not a URL ` +
+        `(expected e.g. ${JSON.stringify(ASSEMBLYAI_TTS_URL)})`,
+    );
+  }
+  if (url.protocol !== "wss:" && url.protocol !== "ws:") {
+    throw fail(
+      `AssemblyAI TTS: streamingUrl ${JSON.stringify(endpoint)} must be a ws:// or wss:// URL`,
+    );
+  }
+  return url;
+}
+
 function buildUrl(
   opts: AssemblyAITtsOptions,
   sampleRate: number,
   fail: (message: string) => Error,
 ): string {
-  const params = new URLSearchParams({
-    voice: resolveAssemblyAITtsSettings(opts).voice,
-    sample_rate: String(sampleRate),
-  });
+  // A sandbox cluster is the same service behind another subdomain, so the
+  // endpoint is an override of the whole URL and the params below are set ON it
+  // — anything the author already put in the query survives.
+  const url = parseEndpoint(resolveAssemblyAITtsUrl(opts), fail);
+  const params = url.searchParams;
+  params.set("voice", resolveAssemblyAITtsSettings(opts).voice);
+  params.set("sample_rate", String(sampleRate));
   // Omitted unless set: every voice speaks one language, so the server infers
   // it, and a mismatched pair is worse than no hint.
   if (opts.language) {
@@ -182,10 +215,7 @@ function buildUrl(
     }
     params.set("language", language);
   }
-  // Length-checked rather than `??`: an empty `host` is a misconfiguration, and
-  // treating it as "unset" beats building `wss:///v1/ws/` and failing at connect.
-  const host = (opts.host?.length ?? 0) > 0 ? opts.host : ASSEMBLYAI_TTS_HOST;
-  return `wss://${host}/v1/ws/?${params.toString()}`;
+  return url.toString();
 }
 
 /**

@@ -115,7 +115,7 @@ export function startFakeTts({ key, cert, sampleRate = 16000 }) {
   return new Promise((resolve) => {
     httpsServer.listen(0, "127.0.0.1", () => {
       resolve({
-        host: () => `127.0.0.1:${httpsServer.address().port}`,
+        url: () => `wss://127.0.0.1:${httpsServer.address().port}/v1/ws/`,
         stats: () => ({ flushes }),
         close: () => new Promise((r) => httpsServer.close(r)),
       });

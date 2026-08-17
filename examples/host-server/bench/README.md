@@ -17,8 +17,9 @@ audio pacer.
 
 The two AssemblyAI providers are replaced by local fakes, reached through the
 documented staging overrides (`assemblyAIStt({ streamingUrl })`,
-`assemblyAITts({ host })`). Both speak TLS, because the vendor STT SDK refuses a
-`ws://` endpoint outright and the TTS adapter hardcodes `wss://`. The fakes run
+`assemblyAITts({ streamingUrl })`). Both speak TLS, because the vendor STT SDK
+refuses a `ws://` endpoint outright; the TTS adapter would accept one, and
+matching the STT leg keeps one CA trust decision rather than two. The fakes run
 in the *driver* process, so their cost never lands in the measurement — which
 also matches production, where the providers are somebody else's machines.
 

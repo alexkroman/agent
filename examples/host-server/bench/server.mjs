@@ -2,7 +2,7 @@
 // straight from /proc without the load driver's cost mixed in.
 //
 // Providers are pointed at the local fakes via the documented staging
-// overrides (`assemblyAIStt({ streamingUrl })`, `assemblyAITts({ host })`), so
+// overrides (`assemblyAIStt({ streamingUrl })`, `assemblyAITts({ streamingUrl })`), so
 // every layer above the provider socket is the real one: the real handshake,
 // the real per-connection runtime, the real pipeline transport, the real
 // audio pacer.
@@ -12,7 +12,7 @@ import { createHostServer } from "@alexkroman1/aai/runtime";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 
-const { BENCH_STT_URL, BENCH_TTS_HOST, BENCH_PORT } = process.env;
+const { BENCH_STT_URL, BENCH_TTS_URL, BENCH_PORT } = process.env;
 
 const log = (...a) => process.stderr.write(`${a.map(String).join(" ")}\n`);
 const quiet = process.env.BENCH_DEBUG
@@ -24,7 +24,7 @@ const server = createHostServer({
   defaults: {
     stt: assemblyAIStt({ streamingUrl: BENCH_STT_URL }),
     llm: assemblyAILlm({}),
-    tts: assemblyAITts({ host: BENCH_TTS_HOST }),
+    tts: assemblyAITts({ streamingUrl: BENCH_TTS_URL }),
   },
 });
 
