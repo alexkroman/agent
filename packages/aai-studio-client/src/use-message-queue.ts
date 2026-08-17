@@ -4,11 +4,9 @@
  *
  * `chat-queue.ts` owns the RULES (a pure reducer, testable without a chat);
  * this owns the wiring — the flush effect, the busy mirror, and what a Stop
- * does. It is its own module because `ProjectChat` was holding six concerns in
- * one ~200-line body (the transport, the queue, the busy mirror, the notify
- * registration, the initial prompt, and the render) and the two that interlock
- * — this and the notify registration — are the two that had a bug between
- * them: see use-notify-registration.ts.
+ * does. It is its own module because `ProjectChat` was holding five concerns
+ * in one ~200-line body (the transport, the queue, the busy mirror, the
+ * initial prompt, and the render).
  */
 
 import type { ChatStatus } from "ai";

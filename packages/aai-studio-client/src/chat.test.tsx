@@ -7,7 +7,6 @@ import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { ChatPanel } from "./chat.tsx";
-import { notifyDispatch } from "./chat-notify.ts";
 import { Composer } from "./composer.tsx";
 import { toBlocks } from "./tool-row.tsx";
 
@@ -196,39 +195,5 @@ describe("ChatPanel session failure", () => {
     );
     expect(html).toContain("Loading conversation…");
     expect(html).not.toContain("Welcome to AssemblyAI Build");
-  });
-});
-
-describe("notifyDispatch", () => {
-  const ready = { busy: false, chatReady: true };
-
-  test("a plain note is appended, never a turn", () => {
-    // Publish success and secret changes: visible in the transcript and
-    // carried into the next turn, but not worth spending a turn on.
-    expect(notifyDispatch(undefined, ready)).toBe("append");
-    expect(notifyDispatch({}, ready)).toBe("append");
-    expect(notifyDispatch({ respond: false }, ready)).toBe("append");
-  });
-
-  test("respond runs a turn so the agent engages with a failed publish", () => {
-    expect(notifyDispatch({ respond: true }, ready)).toBe("turn");
-  });
-
-  test("a busy chat DEFERS — appending mid-turn corrupts the transcript", () => {
-    // The regression this replaced: `"append"` was chosen as the safe fallback
-    // for a turn in flight, and it is the one case where it is not. The SDK's
-    // streaming writer compares its message id against `lastMessage`, so a note
-    // pushed underneath a streaming message makes the NEXT chunk push the
-    // assistant message a second time — one object at two indices under one
-    // React key, in the array that gets persisted.
-    expect(notifyDispatch({ respond: true }, { busy: true, chatReady: true })).toBe("defer");
-    expect(notifyDispatch(undefined, { busy: true, chatReady: true })).toBe("defer");
-    expect(notifyDispatch({ respond: true }, { busy: true, chatReady: false })).toBe("defer");
-  });
-
-  test("an LLM that isn't up appends rather than dropping the message", () => {
-    // Nothing is streaming, so the transcript is safe to write to — and a
-    // publish failure still reaches the agent on its next turn.
-    expect(notifyDispatch({ respond: true }, { busy: false, chatReady: false })).toBe("append");
   });
 });

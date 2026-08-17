@@ -6,22 +6,13 @@
 
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
-import {
-  type Dispatch,
-  type SetStateAction,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type Dispatch, type SetStateAction, useEffect, useRef, useState } from "react";
 import type { ChatSession, StudioStatus } from "./api.ts";
 import { errorText } from "./api-error.ts";
-import type { NotifyChat } from "./chat-notify.ts";
 import { EmptyStateBody, Transcript } from "./chat-transcript.tsx";
 import { Composer } from "./composer.tsx";
 import { createSandboxTransport } from "./sandbox-transport.ts";
 import { useMessageQueue } from "./use-message-queue.ts";
-import { useNotifyRegistration } from "./use-notify-registration.ts";
 
 type ChatPanelProps = {
   /**
@@ -72,13 +63,6 @@ type ChatPanelProps = {
    * no turn is in flight and the tree is still mid-edit.
    */
   onBusyChange?: ((busy: boolean) => void) | undefined;
-  /**
-   * Hands the app a function that posts a message into the conversation —
-   * how publish output and secret changes reach the coding agent. See
-   * {@link NotifyChat} for what a note is, and use-notify-registration.ts for
-   * the three ways one can arrive (and why the mid-turn one has to wait).
-   */
-  registerNotify?: ((fn: NotifyChat | null) => void) | undefined;
 };
 
 /**
@@ -178,7 +162,6 @@ function ProjectChat({
   onWorkspaceChanged,
   onBusyChange,
   onSessionStale,
-  registerNotify,
   input,
   onInputChange,
 }: Omit<ChatPanelProps, "chatHistory" | "chatSession" | "sessionError"> & {
@@ -217,7 +200,7 @@ function ProjectChat({
     }),
   );
 
-  const { messages, sendMessage, setMessages, status, error, stop } = useChat({
+  const { messages, sendMessage, status, error, stop } = useChat({
     transport,
     messages: initialMessages,
     onFinish: onWorkspaceChanged,
@@ -246,35 +229,6 @@ function ProjectChat({
     onBusyChange?.(pending);
     return () => onBusyChange?.(false);
   }, [pending, onBusyChange]);
-
-  // Publish output and secret changes arrive as injected user messages —
-  // visible in the transcript, carried into the agent's next turn, and
-  // persisted with the conversation when that turn settles. A note that
-  // arrives mid-turn WAITS (see use-notify-registration.ts): appending
-  // underneath a streaming message corrupts the transcript it is written into.
-  const appendMessage = useCallback(
-    (text: string) => {
-      setMessages((current) => [
-        ...current,
-        {
-          id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          role: "user",
-          parts: [{ type: "text", text }],
-        },
-      ]);
-    },
-    [setMessages],
-  );
-  useNotifyRegistration({
-    registerNotify,
-    // `pending`, not `busy`: a note sent as its own turn while follow-ups are
-    // queued would jump the line, and the transcript is unsafe to append to
-    // through the dispatch window as well as the stream.
-    pending,
-    chatReady,
-    sendMessage,
-    appendMessage,
-  });
 
   const handleStop = () => {
     queue.drainToComposer();
@@ -387,7 +341,6 @@ export function ChatPanel(props: ChatPanelProps) {
           onWorkspaceChanged={props.onWorkspaceChanged}
           onBusyChange={props.onBusyChange}
           onSessionStale={props.onSessionStale}
-          registerNotify={props.registerNotify}
           input={input}
           onInputChange={setInput}
         />

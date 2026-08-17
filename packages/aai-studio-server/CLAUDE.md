@@ -716,8 +716,12 @@ voice agents without the CLI:
     reserved slugs, and the ASSEMBLYAI_API_KEY env floor are therefore
     byte-for-byte the laptop path. The CLI's output — success, build
     diagnostics, deploy errors, preflight warnings — returns to the client,
-    which **posts it into the chat** so the coding agent sees and can fix
-    failures.
+    which renders it **in the Publish menu that started it**. It used to be
+    injected into the chat as a user message so the coding agent could fix a
+    failed deploy; no studio action writes into the transcript any more (see
+    "No studio action writes into the transcript" in
+    `packages/aai-studio-client/CLAUDE.md`), so the preamble tells the agent it
+    will not see a publish and to ask the user what the menu said.
     Missing credentials only ever WARN, which is what a first publish needs:
     the Secrets panel has nowhere to attach a secret until a slug is deployed,
     so a hard preflight failure would deadlock every agent needing a

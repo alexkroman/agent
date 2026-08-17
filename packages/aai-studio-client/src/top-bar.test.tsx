@@ -218,8 +218,8 @@ describe("PublishMenu", () => {
   });
 
   test("a successful deploy leads with the live URL and folds the CLI output away", () => {
-    // The transcript repeats the URL twice more and also lands in the chat,
-    // so it is a disclosure rather than a third copy of the same line.
+    // The transcript repeats the URL twice more, so it is a disclosure rather
+    // than a third copy of the same line.
     const { container } = render(
       <PublishMenu {...menuProps} open={true} output="deployed" deployedSlug="my-agent" />,
     );

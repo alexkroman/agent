@@ -75,9 +75,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
   that names a neighbour's direction.
 - **Secrets have their own section; storage has none.** Agent secrets are
   managed in the Settings pane's Secrets card, which talks to the project
-  route (`/studio/projects/:project/secret`) and posts a note into the chat on
-  every change (key names only, values withheld) so the coding agent knows
-  which keys exist.
+  route (`/studio/projects/:project/secret`). Every card on this pane reports
+  its own outcome and writes NOTHING into the conversation — see "No studio
+  action writes into the transcript" below.
 
   **The card is UNGATED — no publish first.** It used to render "Publish the
   project first" until `deployedSlug` existed, which asks for the one order
@@ -506,28 +506,6 @@ so every piece of per-project state resets on a switch with no effect to do it.
   pushed underneath it gets pushed a second time). Hence a queue held OUTSIDE
   `messages`, flushed on the settle.
 
-  **A NOTE posted into the chat waits the same way**
-  (`chat-notify.ts`, `use-notify-registration.ts`). Publish output, secret
-  changes and the Database toggle reach the coding agent as injected user
-  messages, and `notifyDispatch` used to fall back to `"append"` whenever a turn
-  was in flight — chosen as the *safe* option, on the reasoning that a publish
-  failure has to survive either way. It is the one case where appending is not
-  safe. The SDK's streaming writer (`ai@7`, `Chat.makeRequest`) compares
-  `response.state.message.id` against `this.lastMessage?.id` on every chunk and
-  takes `pushMessage` when they differ, so a note appended UNDER a streaming
-  assistant message becomes `lastMessage` and the next chunk pushes the
-  assistant message a second time instead of replacing it: one object at two
-  indices, under one React key, in the array the end-of-turn sync PERSISTS.
-  Saving a secret while the agent worked was enough. So the third mode is
-  `"defer"` — held outside `messages`, exactly as the queue holds a mid-turn
-  submit, and flushed on the settle. Two properties of the flush: it gates on
-  `pending` rather than `busy` (the dispatch window is unsafe too, and a note
-  sent as its own turn while follow-ups are queued would jump the line), and it
-  delivers **at most one deferred note as a turn** — a later `respond` note
-  degrades to an append rather than running a second turn against one guest
-  session, and loses nothing, since an appended message rides the turn just
-  started.
-
   Three rules the reducer exists to hold, each covering a bug that is invisible
   without it: the flush is **latched** from dispatch until the turn is observed
   (`sendMessage` awaits before flipping the status, so a re-render in that
@@ -540,6 +518,40 @@ so every piece of per-project state resets on a switch with no effect to do it.
   comes back); and a **failed turn drains the same way**, because an `error`
   status never flushes while every submit joins a non-empty queue — parking it
   there wedges the composer permanently.
+
+- **No studio action writes into the transcript.** Publish (success AND
+  failure), a secret save or delete, and the Database toggle each used to
+  inject a first-person user message — "I set the secret X…", "I published the
+  project with the Publish button. aai deploy output: …" — so that the coding
+  agent would know what changed. It is deleted (`chat-notify.ts`,
+  `use-notify-registration.ts`, `NotifyChat`, `registerNotify`, and the
+  `appendMessage` seam over `setMessages`), on the user's call: the transcript
+  is a record of a conversation, and every one of those messages put words in
+  the user's mouth for something a pane already reports beside the control that
+  did it. Each surface now answers for itself — the PublishMenu renders
+  `publish.data.output` and `publish.error`, the Secrets card clears its
+  textarea only on a successful save, the Database card seeds the new state
+  from its own response.
+
+  What that gives up, stated because it is real: **the coding agent cannot see
+  a secret, a database switch, or a failed deploy**, and the preamble tells it
+  so rather than claiming a note will arrive (`studio-preamble.ts` — the
+  Secrets section, and the Publish bullet under "AssemblyAI Build
+  Capabilities"). A failed publish is the one with a cost: the user has to
+  relay the error instead of the agent reading it. That is the trade that was
+  chosen; the fix if it bites is a pane that offers "send this to the agent" as
+  a BUTTON, never an automatic injection.
+
+  Anything re-adding one owes the hazard the deleted module existed for: the
+  SDK's streaming writer (`ai@7`, `Chat.makeRequest`) compares
+  `response.state.message.id` against `this.lastMessage?.id` on every chunk and
+  takes `pushMessage` when they differ, so a message appended UNDER a streaming
+  assistant message becomes `lastMessage` and the next chunk pushes the
+  assistant message a second time instead of replacing it — one object at two
+  indices, under one React key, in the array the end-of-turn sync PERSISTS.
+  Saving a secret while the agent worked was enough to corrupt a stored
+  conversation. An injection therefore has to wait for a settled turn, exactly
+  as the follow-up queue does.
 
 - **Requests are deadlined BY DEFAULT; the SSE streams deliberately are NOT.**
   A browser fetch has no timeout of its own and a hung request is not a failure

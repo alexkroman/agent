@@ -3,9 +3,9 @@
 // The Settings pane's Database card: one switch for the project's `ctx.db`
 // across both deployed agents. What matters here is that it reaches the
 // PROJECT route (never a per-slug storage route), that it is usable before
-// anything has been published, that disabling asks first because it drops
-// data, and that every change is announced to the coding agent — which
-// otherwise has no way to know it may build on ctx.db.
+// anything has been published, and that disabling asks first because it drops
+// data. A change writes nothing into the conversation: the card's own state IS
+// the report, and the transcript belongs to the user.
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -25,9 +25,8 @@ const ON = {
   ],
 };
 
-function renderCard(onNotifyChat = vi.fn()) {
-  renderWithClient(<DatabaseCard bearer="sk-test" project="demo" onNotifyChat={onNotifyChat} />);
-  return onNotifyChat;
+function renderCard() {
+  renderWithClient(<DatabaseCard bearer="sk-test" project="demo" />);
 }
 
 afterEach(() => {
@@ -61,21 +60,21 @@ describe("DatabaseCard", () => {
     expect(screen.queryByText("Production")).toBeNull();
   });
 
-  test("enabling POSTs the project route and tells the coding agent", async () => {
+  test("enabling POSTs the project route and flips to the new state", async () => {
     const fetchMock = stubFetch({
       [`GET ${PATH}`]: () => jsonResponse(OFF),
       [`POST ${PATH}`]: () => jsonResponse(ON),
     });
-    const notify = renderCard();
+    renderCard();
     fireEvent.click(await settledSwitch("Enable database"));
-    await waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
+    // The response IS the new state, so the card reports it without a re-read.
+    await waitFor(() => expect(screen.getByText("Disable database")).toBeTruthy());
     // The PROJECT route, not the platform's per-slug /:slug/storage: a project
     // is two deployed agents and the server fans the switch out.
     const posted = fetchMock.mock.calls.find(
       ([, init]) => (init as RequestInit)?.method === "POST",
     );
     expect(String(posted?.[0])).toBe(PATH);
-    expect(notify.mock.calls[0]?.[0]).toContain("ctx.db");
   });
 
   test("both environments' state is listed once enabled", async () => {
@@ -169,7 +168,7 @@ describe("DatabaseCard", () => {
       [`GET ${PATH}`]: () => jsonResponse(ON),
       [`DELETE ${PATH}`]: () => jsonResponse(OFF),
     });
-    const notify = renderCard();
+    renderCard();
     const button = await settledSwitch("Disable database");
     vi.stubGlobal(
       "confirm",
@@ -179,15 +178,17 @@ describe("DatabaseCard", () => {
     expect(fetchMock.mock.calls.some(([, i]) => (i as RequestInit)?.method === "DELETE")).toBe(
       false,
     );
-    expect(notify).not.toHaveBeenCalled();
 
     vi.stubGlobal(
       "confirm",
       vi.fn(() => true),
     );
     fireEvent.click(button);
-    await waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
-    expect(notify.mock.calls[0]?.[0]).toContain("disabled the database");
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([, i]) => (i as RequestInit)?.method === "DELETE")).toBe(
+        true,
+      ),
+    );
     // The response is the new state, so the card flips without a re-read.
     await waitFor(() => expect(screen.getByText("Enable database")).toBeTruthy());
   });
@@ -203,17 +204,17 @@ describe("DatabaseCard", () => {
     expect(screen.queryByText("Enable database")).toBeNull();
   });
 
-  test("a failed switch surfaces the error and posts no note", async () => {
+  test("a failed switch surfaces the error and stays off", async () => {
     stubFetch({
       [`GET ${PATH}`]: () => jsonResponse(OFF),
       [`POST ${PATH}`]: () => jsonResponse({ error: "database unavailable" }, 503),
     });
-    const notify = renderCard();
+    renderCard();
     fireEvent.click(await settledSwitch("Enable database"));
     await waitFor(() => {
       expect(screen.getByText("database unavailable")).toBeTruthy();
     });
-    expect(notify).not.toHaveBeenCalled();
+    expect(screen.getByText("Enable database")).toBeTruthy();
   });
 
   test("a partial switch shows the server's warning beside the real state", async () => {

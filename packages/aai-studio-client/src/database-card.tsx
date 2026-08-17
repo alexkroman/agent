@@ -83,22 +83,9 @@ function EnvironmentRow({ row }: { row: DatabaseEnvironment }) {
 type DatabaseCardProps = {
   bearer: string;
   project: string;
-  /** Post a note into the chat so the coding agent knows what it may build on. */
-  onNotifyChat: (text: string) => void;
 };
 
-/** The chat note for each direction — the agent's only signal that this changed. */
-const ENABLED_NOTE =
-  "I enabled the database for this project from the Settings pane. `ctx.db` is available to " +
-  "the preview agent, and to the production agent after the next publish — each environment " +
-  "has its own schema. Build anything that must outlive a call on it (create tables lazily " +
-  "with `create table if not exists`).";
-
-const DISABLED_NOTE =
-  "I disabled the database for this project from the Settings pane. `ctx.db` now throws — " +
-  "move any persistence off it, or ask me to turn it back on.";
-
-export function DatabaseCard({ bearer, project, onNotifyChat }: DatabaseCardProps) {
+export function DatabaseCard({ bearer, project }: DatabaseCardProps) {
   const queryClient = useQueryClient();
 
   const database = useQuery<DatabaseState>({
@@ -109,11 +96,10 @@ export function DatabaseCard({ bearer, project, onNotifyChat }: DatabaseCardProp
   const set = useMutation({
     mutationFn: (next: boolean) =>
       next ? api.enableDatabase(bearer, project) : api.disableDatabase(bearer, project),
-    onSuccess: (state, next) => {
+    onSuccess: (state) => {
       // The response IS the new state, so seed the cache with it rather than
       // invalidating: a re-read costs a credential lookup per environment.
       queryClient.setQueryData(queryKeys.database(project), state);
-      onNotifyChat(next ? ENABLED_NOTE : DISABLED_NOTE);
     },
   });
 

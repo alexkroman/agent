@@ -6,8 +6,8 @@
  * the ASSEMBLYAI_API_KEY floor, and the credential preflight all happen on
  * the exact laptop-deploy path — this module only stamps the workspace's
  * deploy metadata and shapes the result for the client, whose job is to
- * show the CLI output and post it into the chat so the coding agent can
- * act on failures.
+ * show the CLI output in the Publish menu that started it — the only place
+ * a publish reports itself, since nothing is written into the chat.
  */
 
 import type { WorkspaceStore } from "aai-server/workspace-store";
