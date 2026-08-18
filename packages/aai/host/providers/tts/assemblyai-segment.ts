@@ -96,9 +96,11 @@ export interface Segment {
  * closing quotes/brackets, then whitespace or the end of the buffer. The
  * trailing-whitespace requirement is what keeps "3.5" and "v1.2" from matching.
  *
- * Deliberately narrower than the pipeline coalescer's CLAUSE_BOUNDARY_RE, which
- * also breaks on `,;:` — a comma is mid-sentence, and flushing there hands the
- * server a fragment to synthesize with a falling final intonation.
+ * The pipeline coalescer's TERMINAL_BOUNDARY_RE now draws the same line for the
+ * same reason — a comma is mid-sentence, and flushing there hands the server a
+ * fragment to synthesize with a falling final intonation. This one still
+ * matches ANYWHERE in the buffer rather than only at its end, and carries the
+ * {@link MIN_SEGMENT_WORDS} floor, so the two are not interchangeable.
  */
 const SEGMENT_BOUNDARY_RE = /[.!?…]["')\]]*(?:\s|$)/g;
 

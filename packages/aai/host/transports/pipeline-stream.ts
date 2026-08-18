@@ -108,11 +108,20 @@ export type TtsTextCoalescer = {
 };
 
 /**
- * Trailing clause boundary — punctuation (optionally inside closing
+ * Trailing sentence boundary — TERMINAL punctuation (optionally inside closing
  * quotes/brackets) at the end of the buffered text. Word-granularity chunks
  * carry their trailing whitespace ("Sure, "), so allow it after the mark.
+ *
+ * `,;:` are deliberately absent: a comma is mid-sentence, so flushing there
+ * hands the provider a fragment to synthesize on its own — and a fragment is
+ * given a falling final intonation and its own utterance padding, which is
+ * heard as a clipped, over-punctuated read of a sentence the model wrote as
+ * one. `assemblyai-segment.ts` had already reached the same conclusion on the
+ * provider side of the same text; this is the pipeline half of it. The
+ * {@link TTS_COALESCE_MAX_CHARS} cap still bounds how long an unterminated
+ * batch waits, so a comma-heavy reply cannot stall time-to-audio.
  */
-const CLAUSE_BOUNDARY_RE = /[.,;:!?…]["')\]]*\s*$/;
+const TERMINAL_BOUNDARY_RE = /[.!?…]["')\]]*\s*$/;
 
 /**
  * Coalesce word-granularity LLM text into fewer, larger TTS provider sends.
@@ -123,7 +132,7 @@ const CLAUSE_BOUNDARY_RE = /[.,;:!?…]["')\]]*\s*$/;
  * unaffected — this only batches what reaches `sendText`.
  *
  * The first chunk is forwarded immediately (preserves time-to-first-byte);
- * subsequent text batches until a clause/punctuation boundary or
+ * subsequent text batches until a sentence-terminal punctuation boundary or
  * {@link TTS_COALESCE_MAX_CHARS} characters accumulate. Callers must
  * `flush()` when the stream ends so a trailing fragment is still spoken.
  */
@@ -151,7 +160,7 @@ export function createTtsTextCoalescer(sendRaw: SendTtsText): TtsTextCoalescer {
         return;
       }
       pending += text;
-      if (pending.length >= TTS_COALESCE_MAX_CHARS || CLAUSE_BOUNDARY_RE.test(pending)) flush();
+      if (pending.length >= TTS_COALESCE_MAX_CHARS || TERMINAL_BOUNDARY_RE.test(pending)) flush();
     },
     flush,
     boundary(): void {
