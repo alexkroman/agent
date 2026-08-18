@@ -529,24 +529,41 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     await page.close();
   });
 
-  test.concurrent("stop/resume toggle works after fixture replay", async () => {
+  test.concurrent("the Resume button redials the session after fixture replay", async () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("greeting-session.json");
     await page.getByText("Hello! How can I help you today?").waitFor();
 
-    // The initial label is non-deterministic — on CI the WebSocket may already
-    // be closed — so the assertion is the TOGGLE rather than a fixed name:
-    // whichever it starts on, one click must land it on the other. Waiting for
-    // the button to exist proved nothing about the toggle this test is named
-    // for, and passed with `Controls`' onClick removed entirely.
-    const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
+    // The label is DETERMINISTICALLY "Resume", not "non-deterministic" as this
+    // test used to claim: `setupEventInjector` does not return until the session
+    // reaches `data-state="error"`, and the `initAudioCapture` failure that puts
+    // it there (no microphone in headless chromium) clears `running` in the same
+    // update — see session-core-audio-setup.ts. Only `start`/`toggle` set
+    // `running` back, so no injected fixture frame can move it.
+    const toggleBtn = page.getByRole("button", { name: "Resume", exact: true });
     await toggleBtn.waitFor({ timeout: 30_000 });
-    const before = ((await toggleBtn.textContent()) ?? "").trim();
-    expect(["Stop", "Resume"]).toContain(before);
+
+    // **Assert the DIAL, not the label**, because the label is a TRANSIENT.
+    // `toggle()` sets `running` synchronously, so the button reads "Stop" — and
+    // then the new socket's `config` frame fails `initAudioCapture` all over
+    // again and it reads "Resume" once more. Its lifetime is one socket round
+    // trip plus a `getUserMedia` rejection, so waiting for "Stop" to be VISIBLE
+    // is a race a locator loses whenever the machine is quick: it lost on
+    // ubuntu CI while passing on macOS, 30s of polling then finding only the
+    // label it started from. Playwright records `websocket` as an EVENT, which
+    // cannot be missed however brief the label was.
+    //
+    // It still covers the regression this test exists for — an unwired
+    // `Controls` onClick dials nothing at all — while the label toggle itself
+    // is pinned deterministically by unit tests (components/controls.test.tsx,
+    // components/integration.test.tsx).
+    const dials: string[] = [];
+    page.on("websocket", (ws) => {
+      dials.push(ws.url());
+    });
 
     await toggleBtn.click();
-    const after = before === "Stop" ? "Resume" : "Stop";
-    await page.getByRole("button", { name: after, exact: true }).waitFor({ timeout: 30_000 });
+    await expect.poll(() => dials.length, { timeout: 30_000, interval: 50 }).toBeGreaterThan(0);
 
     await page.close();
   });
