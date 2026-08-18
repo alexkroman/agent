@@ -136,6 +136,12 @@ export const SHUTDOWN_CLOSE_FALLBACK_MS = 3000;
  * the container's stop grace, and a SIGKILL orphans the guest anyway while
  * cutting every teardown that would otherwise have finished.
  *
+ * **That argument is about RECLAIM, and it was read as though it were about
+ * running.** So lapsing here no longer means giving up: `Sandbox.shutdown`
+ * terminates the sandbox outright (`BackendAgentSpawn.onSpawned`), and this
+ * bound decides only how long a GRACEFUL drain is waited for. Read the `28P01`
+ * note on `Sandbox.shutdown` for the delete that made it necessary.
+ *
  * Five seconds, so a boot that is nearly done is still drained.
  * Override with `SANDBOX_TEARDOWN_READY_MS`. Unlike the two constants above,
  * 0 is NOT a distinct behaviour here — it is clamped to 1ms at the call site,

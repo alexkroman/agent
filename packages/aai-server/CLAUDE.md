@@ -938,6 +938,25 @@ Two rules from it that a reader of THIS package needs in front of them:
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
 
+## A teardown may not depend on the boot it is tearing down
+
+`createSandbox` returns SYNCHRONOUSLY with a pending `vmReady`, so a spawn's
+Modal create, boot writes and readiness probe all run OUTSIDE the slug lock the
+broker took — and `deleteAgentResources` drops the app's Postgres role and
+database FIRST. So a DELETE landing in that window completes while a guest is
+still coming up, which reached production as `28P01 password authentication
+failed for user "app_<hex>"` out of `@workflow/world-postgres`'s migration.
+**28P01 is also what a MISSING role reports**, so it reads as a
+storage-credential bug and is a lifecycle race.
+
+**The rule, because this shape recurs: a capability a TEARDOWN needs must never
+be published on the RESOLVED handle.** `terminate` was, so the one operation
+that must not require a healthy guest was gated on having one — `shutdown()`
+waited 5s on `vmReady` and swallowed the lapse, which `DrainingError` had
+already guarded the shutdown-time version of. Both backends hand a kill over the
+moment the sandbox exists now (`BackendAgentSpawn.onSpawned`, which carries the
+full account) and `shutdown()` falls back to it.
+
 ## A new guest route must declare how the PLATFORM exposes it
 
 `aai dev` serves the guest's own routes directly, so a feature is developed

@@ -83,6 +83,12 @@ export type Sandbox = {
    * installed.
    */
   alive(): boolean;
+  /**
+   * End this sandbox. Asks the guest to shut itself down when it is (or
+   * becomes) ready inside `SANDBOX_TEARDOWN_READY_MS`, and TERMINATES the
+   * sandbox outright when it does not — a teardown may not depend on the boot
+   * it is tearing down. Never rejects: every caller is already tearing down.
+   */
   shutdown(): Promise<void>;
 };
 
@@ -91,8 +97,19 @@ export type Sandbox = {
 export function createSandbox(opts: SandboxOptions): Sandbox {
   const { worker, env, slug } = opts;
 
+  /**
+   * Kill the guest without waiting for it to become ready — published by the
+   * backend as soon as the sandbox exists (see `BackendAgentSpawn.onSpawned`),
+   * which is what makes `shutdown()` below able to end a boot it is not
+   * willing to wait out.
+   */
+  let terminateUnready: (() => Promise<void>) | undefined;
+
   const vmReady = spawnAgentServer({
     slug,
+    onSpawned: (terminate) => {
+      terminateUnready = terminate;
+    },
     version: opts.version,
     worker,
     env,
@@ -138,8 +155,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   //
   // Bounded because `vmReady` carries the BOOT budget (120s), which is the
   // right wait for a broker and the wrong one for a process that is exiting —
-  // see SANDBOX_TEARDOWN_READY_MS for why walking away cannot orphan the
-  // guest. `sessionUrl`/`guestOrigin` deliberately keep the unbounded promise:
+  // see SANDBOX_TEARDOWN_READY_MS. Lapsing is not walking away any more:
+  // `shutdown` kills the sandbox when this wait runs out, and `drain` reports
+  // the lapse so retirement terminates. `sessionUrl`/`guestOrigin`
+  // deliberately keep the unbounded promise:
   // the broker caps its own wait (BROKER_READY_TIMEOUT_MS) and the boot must
   // continue behind it.
   //
@@ -182,10 +201,31 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       try {
         const handle = await readyForTeardown();
         await handle.shutdown();
+        return;
       } catch {
         // VM failed to start, still booting past the budget, or already shut
-        // down. The first and last are nothing to do; the middle one is left
-        // to the guest's own idle self-exit and Modal's sandbox timeout.
+        // down. No graceful path remains in any of the three, so fall through
+        // to the kill.
+      }
+      // **A teardown may not depend on the boot it is tearing down.** This
+      // used to be where shutdown GAVE UP: the `catch` was empty, and a guest
+      // still booting past `SANDBOX_TEARDOWN_READY_MS` was "left to the
+      // guest's own idle self-exit and Modal's sandbox timeout". A ~17s Modal
+      // boot racing a project DELETE is what that costs — the delete drops the
+      // app's Postgres role and database, the abandoned guest boots anyway,
+      // and its workflow-world migration fails `28P01 password authentication
+      // failed for user "app_<hex>"` on credentials that were valid when its
+      // env was composed. Observed in production; the log reads like a storage
+      // bug and is this. (Modal's own idle reclaim is the fallback under the
+      // fallback, and it bills until it fires.)
+      //
+      // Swallowed rather than thrown, because every caller of `shutdown` is
+      // already tearing down: `terminateSlot` logs and moves on, and a kill
+      // that cannot be delivered leaves nothing this process can still do.
+      try {
+        await terminateUnready?.();
+      } catch (err: unknown) {
+        debug("Failed to terminate a still-booting sandbox", { slug, error: errorMessage(err) });
       }
     },
   };

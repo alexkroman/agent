@@ -64,11 +64,17 @@ describe("spawnAgentServer", () => {
     // The Modal-only fields must not reach a backend that has no meaning for
     // them; asserting it here keeps the drop deliberate rather than a
     // side effect of the callee's signature.
+    //
+    // `onSpawned` is deliberately on the other side of that line — it is the
+    // mid-boot kill `Sandbox.shutdown()` falls back to, which both backends owe
+    // and which the entry in SANDBOX_BACKENDS must therefore forward rather
+    // than drop alongside `imageTag`/`name`.
     vi.stubEnv("SANDBOX_BACKEND", "subprocess");
     const handle = fakeHandle();
     const spawn = vi.spyOn(subprocessSandbox, "spawnSubprocessAgentServer");
     spawn.mockResolvedValue(handle);
-    const opts = baseOpts({ imageTag: "aai-guest-harness:abcd1234" });
+    const onSpawned = vi.fn();
+    const opts = baseOpts({ imageTag: "aai-guest-harness:abcd1234", onSpawned });
 
     await spawnAgentServer(opts);
 
@@ -77,6 +83,7 @@ describe("spawnAgentServer", () => {
       slug: opts.slug,
       worker: opts.worker,
       agentEnv: opts.env,
+      onSpawned,
     });
   });
 });

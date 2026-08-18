@@ -66,6 +66,11 @@ export async function spawnModalAgentServer(
      * spawner needs no error handling of its own.
      */
     name: string;
+    /**
+     * See `BackendAgentSpawn.onSpawned` — a kill for a guest that is not ready
+     * yet, published as soon as the sandbox exists.
+     */
+    onSpawned?: ((terminate: () => Promise<void>) => void) | undefined;
   },
   ctx?: ModalSpawnContext,
   fetchFn?: GuestFetch,
@@ -83,12 +88,23 @@ export async function spawnModalAgentServer(
   // the sandbox's whole life. Same trap sandbox.ts documents; a `.catch` here
   // reintroduced it once. The name goes into a local for that reason.
   const sandboxName = opts.name;
+  const onSpawned = opts.onSpawned;
   const sb = await context.createGuestSandbox(
     code,
     guestSandboxCreateParams({ role, slug: opts.slug, name: sandboxName }),
     opts.imageTag,
   );
   try {
+    // Publish the kill the moment the sandbox EXISTS, not when it is ready:
+    // from here it is scheduled and billing, and a delete arriving mid-boot
+    // has to be able to end it (see BackendAgentSpawn.onSpawned for the
+    // production race this closes). Inside the `try`, so a caller that throws
+    // from the callback terminates the sandbox below rather than leaking it —
+    // and `sb` is the only capture, which is what keeps this off the `opts`
+    // trap the comment above describes.
+    onSpawned?.(async () => {
+      await sb.terminate();
+    });
     // The tunnel lookup depends on nothing but the sandbox existing, so it
     // starts HERE rather than beside the exec below, running its round trip
     // inside the boot writes' window instead of after them. That mattered most
