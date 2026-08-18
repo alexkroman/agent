@@ -611,6 +611,7 @@
   "@alexkroman1/aai/workflow-api": [
     "UploadBody",
     "UploadOptions",
+    "UploadProgress",
     "UploadRef",
     "WORKFLOW_API_PREFIX",
     "WorkflowApi",
@@ -711,6 +712,8 @@
     "ToolConfigContext",
     "ToolDisplayConfig",
     "UiUrlChip",
+    "UploadProgressBar",
+    "UploadStatus",
     "UseUserTranscriptResult",
     "UseWorkflowProgressResult",
     "UseWorkflowRunResult",

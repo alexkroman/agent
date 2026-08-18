@@ -47,6 +47,9 @@ export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 // Tool display config context — installed by `client()` from
 // `ClientConfig.tools`; not something component-tier users pass themselves.
 export { ToolConfigContext } from "./components/tool-config-context.ts";
+// The bar over the one wait a run cannot describe — storing a form's files, which
+// happens BEFORE the run that carries their ids exists.
+export { UploadProgressBar } from "./components/upload-progress.tsx";
 export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";
 // A form generated from a workflow's own declared input schema.
 export { WorkflowFields } from "./components/workflow-fields.tsx";
@@ -106,6 +109,7 @@ export {
   useUserTranscript,
 } from "./use-user-transcript.ts";
 export {
+  type UploadStatus,
   type UseWorkflowSubmitOptions,
   type UseWorkflowsOptions,
   type UseWorkflowsResult,

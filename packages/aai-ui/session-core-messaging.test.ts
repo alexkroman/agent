@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * session-core tests: audio buffering, message parsing, config handling,

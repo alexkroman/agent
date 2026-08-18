@@ -15,6 +15,14 @@ export type UploadOptions = {
     name?: string | undefined;
     type?: string | undefined;
     signal?: AbortSignal | undefined;
+    onProgress?: ((progress: UploadProgress) => void) | undefined;
+};
+
+// @public
+export type UploadProgress = {
+    loaded: number;
+    total: number | undefined;
+    fraction: number | undefined;
 };
 
 // @public

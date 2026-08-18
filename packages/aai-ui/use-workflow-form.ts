@@ -36,6 +36,7 @@
 
 import { errorMessage, type WorkflowSummary } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import type { UploadProgress } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
@@ -117,34 +118,85 @@ export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult
 }
 
 /**
- * Replace every `File` in a submitted form with the id of a stored upload.
+ * What {@link WorkflowSubmission.upload} reports while the bytes are going.
+ *
+ * The SDK's per-request {@link UploadProgress} plus WHICH file it describes,
+ * because a form is allowed more than one and a bar over "the upload" would
+ * restart at zero partway through with nothing to say why.
+ *
+ * @public
+ */
+export type UploadStatus = UploadProgress & {
+  /** The file being sent, by the name the picker gave it. */
+  name: string;
+  /** Which file of the submission this is, counting from 1. */
+  index: number;
+  /** How many files this submission sends in total. */
+  count: number;
+};
+
+/**
+ * The files a submitted field carries, if that is what it carries.
+ *
+ * An array counts only when it is files ALL the way through — a mixed array is
+ * some other field's value that happens to contain one, and turning half of it
+ * into ids would corrupt it silently.
+ */
+function filesOf(value: unknown): File[] {
+  if (value instanceof File) return [value];
+  if (!Array.isArray(value)) return [];
+  const files = value.filter((one): one is File => one instanceof File);
+  return files.length > 0 && files.length === value.length ? files : [];
+}
+
+/**
+ * Replace every `File` in a submitted form with the id of a stored upload,
+ * reporting how far each one has got.
  *
  * Sequential rather than `Promise.all`: these are large bodies, and a form with
  * two 200 MB recordings should send them one after another rather than compete
- * for the same connection.
+ * for the same connection. That is also what makes a single bar honest — one
+ * file is in flight at a time, and `index`/`count` say which.
  *
  * Anything that is not a `File` (or an array of them) passes through untouched,
  * so this is invisible to every form that has none — including one whose values
  * are not an object at all, which `submit` accepts.
  */
-async function uploadFiles(api: WorkflowApi, input: unknown): Promise<unknown> {
+async function uploadFiles(
+  api: WorkflowApi,
+  input: unknown,
+  report: (status: UploadStatus) => void,
+): Promise<unknown> {
   if (!isRecord(input)) return input;
   const entries = Object.entries(input);
+  // Counted before the first byte leaves, because "1 of 3" needs the 3 and the
+  // last field is where it becomes known.
+  const count = entries.reduce((total, [, value]) => total + filesOf(value).length, 0);
+  let index = 0;
+  const store = async (file: File): Promise<string> => {
+    index += 1;
+    const position = { name: file.name, index, count };
+    const ref = await api.upload(file, {
+      onProgress: (progress) => report({ ...position, ...progress }),
+    });
+    return ref.id;
+  };
   const out: Record<string, unknown> = {};
   for (const [name, value] of entries) {
     if (value instanceof File) {
-      out[name] = (await api.upload(value)).id;
-    } else if (
-      Array.isArray(value) &&
-      value.length > 0 &&
-      value.every((one) => one instanceof File)
-    ) {
-      const ids: string[] = [];
-      for (const file of value) ids.push((await api.upload(file)).id);
-      out[name] = ids;
-    } else {
-      out[name] = value;
+      out[name] = await store(value);
+      continue;
     }
+    const chosen = filesOf(value);
+    if (chosen.length === 0) {
+      out[name] = value;
+      continue;
+    }
+    const ids: string[] = [];
+    for (const file of chosen) ids.push(await store(file));
+    // The SHAPE follows the field, not the count: a `multiple` field carrying
+    // one file still submits a list, because that is what its schema declares.
+    out[name] = ids;
   }
   return out;
 }
@@ -169,6 +221,19 @@ export type WorkflowSubmission<R = unknown> = {
    * already in flight.
    */
   pending: boolean;
+  /**
+   * How far the submission's files have got, while any are still going.
+   *
+   * Undefined before the first byte and again from the moment the last one
+   * lands, so a page can render `{upload && <UploadProgressBar upload={upload} />}`
+   * and the bar exists exactly for as long as there is an upload to describe. A
+   * form with no files never sets it at all.
+   *
+   * The wait it covers is the one `run` cannot: a run does not EXIST until its
+   * input is stored, so `pending` is true and there is nothing to poll — which
+   * for a 200 MB recording is minutes of a page that looks stuck.
+   */
+  upload: UploadStatus | undefined;
   /** The submit's own failure (a rejected input), or the watch's. */
   error: string | undefined;
 };
@@ -221,6 +286,7 @@ export function useWorkflowSubmit<R = unknown>(
   const [runId, setRunId] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | undefined>(undefined);
+  const [upload, setUpload] = useState<UploadStatus | undefined>(undefined);
 
   // The caller's client through a ref — see `_workflow-api-ref.ts`.
   const getClient = useWorkflowApiRef(api);
@@ -245,7 +311,7 @@ export function useWorkflowSubmit<R = unknown>(
         // can store it. A form using `<FileField upload>` (which is what
         // `<WorkflowFields>` renders for a declared upload property) therefore
         // needs no upload code of its own.
-        const started = await uploadFiles(client, input);
+        const started = await uploadFiles(client, input, setUpload);
         // Both paths end in a run id — the difference is only whether the agent
         // held the request open — so the watch below is identical either way.
         setRunId(
@@ -257,6 +323,10 @@ export function useWorkflowSubmit<R = unknown>(
         setStartError(errorMessage(err));
       } finally {
         setStarting(false);
+        // Dropped whichever way it went. From here the wait belongs to the RUN,
+        // which `run` and `pending` describe, and a bar left at 100% under a
+        // running workflow reads as the thing that is taking the time.
+        setUpload(undefined);
       }
     },
     [workflow, key, wait, getClient],
@@ -265,6 +335,7 @@ export function useWorkflowSubmit<R = unknown>(
   const reset = useCallback(() => {
     setRunId(undefined);
     setStartError(undefined);
+    setUpload(undefined);
   }, []);
 
   return {
@@ -282,6 +353,7 @@ export function useWorkflowSubmit<R = unknown>(
     // POST returning and the first read landing, which is otherwise a frame
     // with no run and no spinner.
     pending: starting || tracked.polling,
+    upload,
     error: startError ?? tracked.error,
   };
 }

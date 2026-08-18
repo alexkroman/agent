@@ -22,6 +22,7 @@ export {
   createWorkflowApiClient,
   type UploadBody,
   type UploadOptions,
+  type UploadProgress,
   type UploadRef,
   WORKFLOW_API_PREFIX,
   type WorkflowApi,

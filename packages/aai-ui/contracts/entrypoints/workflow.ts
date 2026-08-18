@@ -24,6 +24,8 @@ export {
   DEFAULT_WORKFLOW_POLL_MS,
   isTerminal,
   MAX_MISSING_READS,
+  UploadProgressBar,
+  type UploadStatus,
   type UseWorkflowProgressResult,
   type UseWorkflowRunResult,
   type UseWorkflowRunsOptions,
