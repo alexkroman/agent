@@ -217,7 +217,7 @@ describe("interrupted-speech persistence", () => {
     stt.last()?.fireFinal("look up my account");
     // Wait until step 1 finished (tool ran) and step 2's stream has started
     // (its doStream call was made). TTS chunks are no longer a reliable
-    // mid-step signal: sends coalesce to clause boundaries, so step 2's text
+    // mid-step signal: sends coalesce to sentence boundaries, so step 2's text
     // may only reach TTS at the end of the step.
     await vi.waitFor(() => {
       expect(executeTool).toHaveBeenCalled();

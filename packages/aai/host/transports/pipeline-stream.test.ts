@@ -67,15 +67,38 @@ describe("createTtsTextCoalescer", () => {
     expect(sent).toEqual([]);
   });
 
-  test("batches subsequent words to a clause/punctuation boundary", () => {
+  test("batches subsequent words to a sentence-terminal punctuation boundary", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
     for (const word of ["Sure, ", "I ", "can ", "help, ", "what's ", "up? ", "Ask ", "away."]) {
       c.send(word);
     }
-    // First word immediate; then batches flush at each trailing punctuation mark.
-    expect(sent).toEqual(["Sure, ", "I can help, ", "what's up? ", "Ask away."]);
+    // First word immediate; then batches flush only at `.!?…`, so the comma
+    // after "help" stays inside the sentence it punctuates.
+    expect(sent).toEqual(["Sure, ", "I can help, what's up? ", "Ask away."]);
     expect(sent.join("")).toBe("Sure, I can help, what's up? Ask away.");
+  });
+
+  test("does not flush on a mid-sentence clause mark", () => {
+    const { sent, send } = collect();
+    const c = createTtsTextCoalescer(send);
+    // Each of `,;:` used to end a batch, handing the provider a fragment to
+    // synthesize with a falling final intonation.
+    c.send("Well ");
+    for (const word of ["one, ", "two; ", "three: "]) c.send(word);
+    expect(sent).toEqual(["Well "]);
+    c.send("four. ");
+    expect(sent).toEqual(["Well ", "one, two; three: four. "]);
+  });
+
+  test("a clause mark inside closing quotes does not flush either", () => {
+    const { sent, send } = collect();
+    const c = createTtsTextCoalescer(send);
+    c.send("He ");
+    c.send('said "hi," ');
+    expect(sent).toEqual(["He "]);
+    c.send('and "left." ');
+    expect(sent).toEqual(["He ", 'said "hi," and "left." ']);
   });
 
   test("flushes once the pending batch reaches TTS_COALESCE_MAX_CHARS without punctuation", () => {

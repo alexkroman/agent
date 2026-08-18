@@ -57,7 +57,7 @@
  * head of a `Generate`+`Flush` pair, which has two consequences worth keeping.
  * First, the segment split is exact and owned here: matching only on the *end*
  * of each incoming delta would outsource segmentation to the pipeline
- * coalescer's own chunking (whose `CLAUSE_BOUNDARY_RE` and 32-char cap can put
+ * coalescer's own chunking (whose `TERMINAL_BOUNDARY_RE` and 32-char cap can put
  * a sentence end mid-chunk), and a boundary missed that way silently restores
  * the whole-turn lag. Buffering costs nothing because the server does no work
  * before a `Flush` anyway. Second, the server never holds unflushed text, so at
