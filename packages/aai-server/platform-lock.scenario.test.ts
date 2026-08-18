@@ -37,7 +37,7 @@
 import { sleep } from "@alexkroman1/aai/internal";
 import type { CloseableDb, ReservedDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
-import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import {
   createPgSlugLock,
@@ -223,7 +223,7 @@ describeWithPg("slug mutation lock over real Postgres advisory locks", () => {
       await other.query("select pg_terminate_backend($1::int)", [pid]);
       // Lock release is part of backend teardown, so it is prompt but not
       // synchronous with the terminate returning.
-      await expect.poll(() => isHeld(slug)).toBe(false);
+      await vi.waitFor(async () => expect(await isHeld(slug)).toBe(false));
 
       // A survivor can take the slug straight away — no lease to outlast.
       await expect(lock(slug, () => Promise.resolve("recovered"))).resolves.toBe("recovered");

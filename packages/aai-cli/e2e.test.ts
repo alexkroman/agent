@@ -557,13 +557,25 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     // `Controls` onClick dials nothing at all — while the label toggle itself
     // is pinned deterministically by unit tests (components/controls.test.tsx,
     // components/integration.test.tsx).
-    const dials: string[] = [];
-    page.on("websocket", (ws) => {
-      dials.push(ws.url());
+    //
+    // **`waitForEvent` with a PREDICATE, not an array polled by `expect.poll`.**
+    // The poll was a hard failure in a `test.concurrent` — `guard-invariants`
+    // rule 21 carries that argument and keeps the spelling out of the tree. The
+    // predicate is the second half: this suite's stub attaches its
+    // `WebSocketServer` to the http server, so it upgrades on EVERY path and
+    // `dials.length > 0` never said the click dialed the SESSION.
+    //
+    // Armed BEFORE the click, so a dial that lands during `click()` is caught.
+    const redial = page.waitForEvent("websocket", {
+      predicate: (ws) => new URL(ws.url()).pathname === "/websocket",
+      timeout: 30_000,
     });
 
     await toggleBtn.click();
-    await expect.poll(() => dials.length, { timeout: 30_000, interval: 50 }).toBeGreaterThan(0);
+    const dial = await redial;
+    // The predicate matched the PATH; this pins the ORIGIN, so a dial at some
+    // other server's `/websocket` cannot pass for the dev server's.
+    expect(new URL(dial.url()).port).toBe(String(port));
 
     await page.close();
   });
@@ -622,5 +634,61 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     await page.getByText("Connection lost").waitFor({ timeout: 30_000 });
 
     await page.close();
+  });
+});
+
+/**
+ * The same client, served by the REAL `aai dev`. One test, deliberately.
+ *
+ * The stub above is what makes the fifteen fixture tests deterministic — no
+ * live session emits frames of its own, and `/__sever` cuts a socket without
+ * the server going away — so it stays. The cost is that none of them touches
+ * the stack a user runs: delete `viteDevConfig`'s `"/websocket": { ws: true }`
+ * proxy entry and all fifteen still pass. This one fails.
+ *
+ * `session.configured` is the assertion because `ws-handler.ts` sends it the
+ * moment the socket opens, before any provider is dialled, and it cannot
+ * arrive unless the upgrade really crossed Vite into the backend.
+ */
+describe.skipIf(!hasPlaywrightBrowser())("browser: the real aai dev server", () => {
+  test("Vite serves the client and proxies the session upgrade", async () => {
+    const projectDir = path.join(tmpDir, "_browser-vite");
+    initProject("pizza-ordering", projectDir);
+    const server = await startSupervisedDevServer({
+      aaiBin,
+      cwd: projectDir,
+      // Fixed, and clear of the workflow leg's 4820: with a client.tsx present
+      // Vite owns this port and picks the backend's itself.
+      port: 4830,
+      env: { ...aaiEnv(), ASSEMBLYAI_API_KEY: "e2e-not-dialled" },
+    });
+    const browser = await chromium.launch();
+    try {
+      // A no-op unless AAI_FAULT_PROFILE is set; under one it is what stops the
+      // navigation below racing a restart window.
+      await server.awaitSettled();
+
+      const page = await browser.newPage();
+      // Armed before `goto`, and PREDICATED because an unpredicated wait here
+      // resolves on the WRONG SOCKET. Measured against a scaffolded project:
+      // Vite's HMR client opens `ws://<host>/?token=…` twice, both BEFORE the
+      // session dial, so "whichever websocket appears first" is the HMR one.
+      // (The stub suite above has no HMR socket, which is why it can be loose.)
+      const dial = page.waitForEvent("websocket", {
+        predicate: (ws) => new URL(ws.url()).pathname === "/websocket",
+        timeout: 30_000,
+      });
+      await page.goto(server.url);
+      await page.getByRole("button", { name: "Start" }).click();
+
+      // Measured: `session.configured` lands first even though this key is
+      // rejected — the provider failures (`AssemblyAI STT: connect failed`)
+      // arrive after it, so nothing here depends on a live credential.
+      const frame = await (await dial).waitForEvent("framereceived", { timeout: 30_000 });
+      expect(JSON.parse(String(frame.payload))).toMatchObject({ type: "session.configured" });
+    } finally {
+      await browser.close();
+      await server.stop();
+    }
   });
 });
