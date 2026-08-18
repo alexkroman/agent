@@ -1,16 +1,36 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
+import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
 import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
-import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
-import { AGENT_ENV_SECRET_PREFIX, APP_DB_SECRET_PREFIX, type SqlExec } from "./secret-store.ts";
+import {
+  APP_CRON_JOB_PREFIX,
+  appSessionStateJobName,
+  appSweepSchedule,
+  SWEEP_APP_SESSION_STATE,
+} from "./_session-state-sweep.ts";
+import { CRON_JOB_PREFIX, platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
+import {
+  AGENT_ENV_SECRET_PREFIX,
+  APP_DB_SECRET_PREFIX,
+  PLATFORM_DB_DSN_SECRET,
+  type SqlExec,
+} from "./secret-store.ts";
 
-/** Capture every statement; `scheduled` is what `cron.job` already holds. */
-function captureSql(scheduled: string[] = []) {
+/**
+ * Capture every statement; `scheduled` is what `cron.job` already holds.
+ *
+ * `hasCron` answers the extension PROBE, because that probe is what decides
+ * whether anything else runs at all — a fake that answered `[]` to every read
+ * would make every test here exercise the missing-extension path.
+ */
+function captureSql(scheduled: string[] = [], hasCron = true) {
   const calls: { query: string; params?: unknown[] }[] = [];
   const sql: SqlExec = (query, params) => {
     calls.push({ query, ...(params && { params }) });
+    if (query.includes("from pg_extension")) {
+      return Promise.resolve(hasCron ? [{ ok: 1 }] : []);
+    }
     if (query.includes("from cron.job")) {
       return Promise.resolve(scheduled.map((jobname) => ({ jobname })));
     }
@@ -19,16 +39,32 @@ function captureSql(scheduled: string[] = []) {
   return { sql, calls };
 }
 
-test("installs the extension then upserts every job by name", async () => {
+test("verifies the extension then upserts every job by name", async () => {
   const { sql, calls } = captureSql();
   await schedulePlatformSweeps(sql, platformCronJobs());
 
-  expect(calls[0]?.query).toBe("create extension if not exists pg_cron");
+  // A READ, not DDL. `create extension if not exists pg_cron` used to run here
+  // and was redundant with the platform-schema migration, emitted a `42710`
+  // NOTICE on every boot, and had every replica altering the database on the
+  // admin connection to learn something it could ask.
+  expect(calls[0]?.query).toBe("select 1 as ok from pg_extension where extname = 'pg_cron'");
+  expect(calls.some((c) => c.query.startsWith("create extension"))).toBe(false);
   const scheduled = calls.slice(1, 1 + platformCronJobs().length);
   for (const [i, job] of platformCronJobs().entries()) {
     expect(scheduled[i]?.query).toBe("select cron.schedule($1, $2, $3)");
     expect(scheduled[i]?.params).toEqual([job.name, job.schedule, job.command]);
   }
+});
+
+test("a database with no pg_cron is reported, and nothing is scheduled", async () => {
+  // The caller treats this as non-fatal, so the value of throwing is the
+  // SENTENCE: it names what will not happen and how to fix it, where the old
+  // path silently altered the database instead.
+  const { sql, calls } = captureSql([], false);
+  await expect(schedulePlatformSweeps(sql, platformCronJobs())).rejects.toThrow(
+    /pg_cron is not installed.*will\s+not run/s,
+  );
+  expect(calls.some((c) => c.query.includes("cron.schedule"))).toBe(false);
 });
 
 /**
@@ -120,8 +156,8 @@ test("the sweep's suffix and Vault prefixes come from the constants, not literal
 test("the orphan-preview sweep deprovisions the app database like the delete route", () => {
   const orphans = platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews");
   const command = orphans?.command ?? "";
-  // Schema + role go the way deprovisionAppDatabase drops them…
-  expect(command).toContain("drop schema if exists %I cascade");
+  // Database + role go the way deprovisionAppDatabase drops them…
+  expect(command).toContain("drop database if exists %I with (force)");
   expect(command).toContain("drop role if exists %I");
   // …named by the stored app-db meta, shape-asserted like app-database.ts
   // so a corrupt meta can never steer the drops at an arbitrary identifier.
@@ -129,6 +165,38 @@ test("the orphan-preview sweep deprovisions the app database like the delete rou
   expect(command).toContain("'^app_[a-f0-9]{16}$'");
   // Best-effort: a failed drop must not abort the sweep (or the row delete).
   expect(command).toContain("exception when others");
+});
+
+test("the orphan-preview sweep drops the database through dblink, not directly", () => {
+  // `drop database` cannot run in pg_cron's transaction (25001), so it goes out
+  // on dblink's own connection. Asserted as a shape because the failure mode is
+  // an hourly warning swallowed by the body's own exception handler — i.e. a
+  // sweep that deletes rows and reclaims nothing.
+  const command =
+    platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews")?.command ?? "";
+  expect(command).toContain("aai_admin.dblink_exec");
+  // Qualified with the schema the migration installs it into, and NOT reachable
+  // unqualified: dblink ships 39 PUBLIC-executable functions, so a tenant that
+  // can resolve them can execute as the admin.
+  expect(command).not.toMatch(/(?<!aai_admin\.)\bdblink_exec\(/);
+  // The DSN comes from Vault, never from the job text (plaintext in cron.job)
+  // and never from inet_server_addr() — inside a cron job that is the LOOPBACK
+  // address, which dblink refuses with 2F003.
+  expect(command).toContain(PLATFORM_DB_DSN_SECRET);
+  expect(command).not.toContain("inet_server_addr");
+  // A missing DSN is announced per leaked database rather than skipped quietly.
+  expect(command).toContain("LEAKING database");
+});
+
+test("the orphan-preview sweep deletes secrets BEFORE the non-transactional drops", () => {
+  // dblink commits independently, so a drop cannot be undone by a later failure
+  // in the same iteration. That makes "drop last" the only ordering where a
+  // mid-iteration failure leaves a state the next pass can finish.
+  const command =
+    platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews")?.command ?? "";
+  expect(command.indexOf("delete from vault.secrets")).toBeLessThan(
+    command.indexOf("drop database if exists"),
+  );
 });
 
 test("lease sweeps delete only expired rows", () => {
@@ -224,42 +292,65 @@ describe("blob GC", () => {
   });
 });
 
-describe("the session-state sweep", () => {
-  const command = (): string =>
-    platformCronJobs().find((j) => j.name === "aai-sweep-session-state")?.command ?? "";
-
-  test("is declared", () => {
-    expect(command()).not.toBe("");
+describe("the per-app session-state sweep", () => {
+  test("is NOT a platform job any more", () => {
+    // It used to iterate this database's catalog for every `app_<hex>` schema.
+    // Per-app DATABASES make that find nothing — the catalog is per-database — so
+    // the job moved into each app's own database (`cron.schedule_in_database`, at
+    // provisioning time). A leftover platform job would run daily and sweep
+    // nothing, which is the shape of dead sweep this file's diffing exists to
+    // stop.
+    expect(platformCronJobs().map((j) => j.name)).not.toContain("aai-sweep-session-state");
   });
 
-  test("only touches provisioned app schemas, and never interpolates one raw", () => {
-    // The identifier rule this file states for every other statement: the cursor
-    // filters to the provisioned shape, and `format(%I)` is what quotes it. A
-    // schema name reaching a statement unquoted is the failure worth preventing.
-    expect(command()).toContain("'^app_[a-f0-9]{16}$'");
-    expect(command()).toContain("format(");
-    expect(command()).toContain("%I.%I");
-  });
-
-  test("reads the table name from the SDK, so a rename cannot be two edits", () => {
-    // The guest writes this table and the sweep reads it; one spelling is what
+  test("reads both table names from the SDK, so a rename cannot be two edits", () => {
+    // The guest writes these tables and the sweep reads them; one spelling is what
     // keeps them from disagreeing.
-    expect(command()).toContain(SESSION_STATE_TABLE);
+    expect(SWEEP_APP_SESSION_STATE).toContain(SESSION_STATE_TABLE);
+    expect(SWEEP_APP_SESSION_STATE).toContain(SESSION_EVENT_TABLE);
   });
 
   test("keeps a row far longer than the in-process grace window", () => {
     // A backstop for a guest that is GONE, not a second opinion about a live one:
     // deleting a row while a caller is still reconnecting is indistinguishable,
     // to them, from the loss durable state exists to remove.
-    // Doubled quotes: the delete is a `format()` argument, so its own literals
-    // are escaped inside the outer plpgsql string.
-    expect(command()).toContain("interval ''2 days''");
+    expect(SWEEP_APP_SESSION_STATE).toContain("interval '2 days'");
   });
 
-  test("isolates each tenant, so one broken schema costs only itself", () => {
-    // The plpgsql equivalent of the wake read's SAVEPOINT — the table is
-    // tenant-owned, so a reshaped or locked copy must not end the sweep.
-    expect(command()).toContain("exception when others then");
-    expect(command()).toContain("raise warning");
+  test("needs no identifier quoting, because it names no tenant identifier", () => {
+    // The `format(%I)` + `'^app_[a-f0-9]{16}$'` pair existed because one statement
+    // addressed every tenant's schema by name. A job running INSIDE one app's
+    // database addresses `public`, so there is no identifier to interpolate and
+    // nothing to assert the shape of — the isolation is structural now.
+    expect(SWEEP_APP_SESSION_STATE).not.toContain("format(");
+    expect(SWEEP_APP_SESSION_STATE).not.toContain("app_");
+    expect(SWEEP_APP_SESSION_STATE).toContain("public.");
+  });
+
+  test("its job-name prefix cannot collide with the platform's diffed prefix", () => {
+    // THE trap. `schedulePlatformSweeps` unschedules every `aai-sweep-*` job that
+    // `platformCronJobs()` does not declare, and a per-app job is declared nowhere
+    // in that list — it belongs to a provision, not to a release. Sharing the
+    // prefix would mean every boot silently unschedules every app's sweep, after
+    // which session state accumulates forever with nothing reporting it.
+    expect(APP_CRON_JOB_PREFIX.startsWith(CRON_JOB_PREFIX)).toBe(false);
+    expect(CRON_JOB_PREFIX.startsWith(APP_CRON_JOB_PREFIX)).toBe(false);
+    const name = appSessionStateJobName("app_0123456789abcdef");
+    expect(name.startsWith(APP_CRON_JOB_PREFIX)).toBe(true);
+    expect(name.startsWith(CRON_JOB_PREFIX)).toBe(false);
+  });
+
+  test("staggers apps across the day rather than firing them together", () => {
+    // 50 apps sweeping in the same minute is 50 concurrent background connections
+    // on an instance whose whole budget is 60. Derived from the identifier, so an
+    // app's slot is stable and findable in `cron.job_run_details`.
+    const slots = new Set(
+      ["app_0123456789abcdef", "app_fedcba9876543210", "app_00112233445566aa"].map(
+        appSweepSchedule,
+      ),
+    );
+    expect(slots.size).toBe(3);
+    for (const slot of slots) expect(slot).toMatch(/^\d{1,2} \d{1,2} \* \* \*$/);
+    expect(appSweepSchedule("app_0123456789abcdef")).toBe(appSweepSchedule("app_0123456789abcdef"));
   });
 });

@@ -51,6 +51,27 @@ export function appDbSecretName(slug: string): string {
  */
 export const PLATFORM_STORAGE_KEY_SECRET = "platform:storage-key";
 
+/**
+ * SecretStore name for the libpq connection string the orphan sweep opens with
+ * `dblink`.
+ *
+ * Same argument as the Storage key above, for the same reason: the sweep's
+ * deprovision is now `drop database`, which cannot run inside pg_cron's
+ * transaction, so it goes out through `dblink` on a second connection — and that
+ * connection string carries the admin PASSWORD, which must not be plaintext in
+ * `cron.job.command`.
+ *
+ * **It cannot be derived in SQL, which is why the server writes it.** The obvious
+ * form is `host(inet_server_addr())`, and it does not work: pg_cron's background
+ * worker connects over LOOPBACK, so inside a job body that function returns
+ * `127.0.0.1`, which matches a `trust` rule — and dblink refuses a non-superuser
+ * connection whose password was never actually used (`2F003 password or GSSAPI
+ * delegated credentials required`). Measured from inside a real cron job:
+ * `host=127.0.0.1` fails that way, an explicit non-loopback host drops the
+ * database. So the host has to come from configuration, not introspection.
+ */
+export const PLATFORM_DB_DSN_SECRET = "platform:db-dsn";
+
 /** Minimal SQL executor: one parameterized statement, resolves with rows. */
 export type SqlExec = (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;
 

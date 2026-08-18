@@ -18,10 +18,10 @@ import { createStudioSessionBroker } from "./studio-session-broker.ts";
 import { createWorkspace } from "./studio-workspace.ts";
 
 describe("studio publish (workspace/deploy)", () => {
-  // Publish output is posted into the chat for the coding agent to read, so a
-  // sandbox that dies mid-build (an OOM at the bundler's peak is the
-  // realistic one) has to come back as deploy OUTPUT. Thrown, it reached the
-  // route as a bare 500 with nothing anyone could act on.
+  // Publish output is the only report the user gets, so a sandbox that dies
+  // mid-build (an OOM at the bundler's peak is the realistic one) has to come
+  // back as deploy OUTPUT. Thrown, it reached the route as a bare 500 with
+  // nothing anyone could act on.
   test("a sandbox that dies mid-publish returns failure output, not a throw", async () => {
     const guest = fakeGuest();
     // No live chat session for this project, so Publish spawns its own

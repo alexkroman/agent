@@ -54,8 +54,6 @@ type SettingsPaneProps = {
    * publish, and the preview agent is the only thing running until then.
    */
   previewSlug?: string | undefined;
-  /** Post a note into the chat so the coding agent knows what changed. */
-  onNotifyChat: (text: string) => void;
   /** Delete the project (workspace + chat). The app navigates home after. */
   onDeleteProject: () => void;
   deleting: boolean;
@@ -66,7 +64,6 @@ export function SettingsPane({
   project,
   deployedSlug,
   previewSlug,
-  onNotifyChat,
   onDeleteProject,
   deleting,
 }: SettingsPaneProps) {
@@ -91,23 +88,16 @@ export function SettingsPane({
 
   const save = useMutation({
     mutationFn: (updates: Record<string, string>) => api.putSecrets(bearer, project, updates),
-    onSuccess: (_data, updates) => {
+    onSuccess: () => {
       invalidate();
       setDraft("");
-      const names = Object.keys(updates);
-      onNotifyChat(
-        `I set the secret${names.length > 1 ? "s" : ""} ${names.join(", ")} on this ` +
-          "project from the Secrets panel (values hidden). They are available to both " +
-          "the preview and production agents as environment variables via ctx.env.",
-      );
     },
   });
 
   const remove = useMutation({
     mutationFn: (name: string) => api.deleteSecret(bearer, project, name),
-    onSuccess: (_data, name) => {
+    onSuccess: () => {
       invalidate();
-      onNotifyChat(`I deleted the secret ${name} from this project via the Secrets panel.`);
     },
   });
 
@@ -167,7 +157,7 @@ export function SettingsPane({
         {/* Unconditional, like the cards above and below: a database is
             provisioned per environment as each one deploys, so it can be
             switched on before the project has ever been published. */}
-        <DatabaseCard bearer={bearer} project={project} onNotifyChat={onNotifyChat} />
+        <DatabaseCard bearer={bearer} project={project} />
         <WorkflowsCard deployedSlug={deployedSlug} previewSlug={previewSlug} />
 
         <Card

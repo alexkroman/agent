@@ -39,6 +39,8 @@ export {
 } from "./protocol-commands.ts";
 export {
   EVENT_ID_PREFIX,
+  type RestoredToolCall,
+  RestoredToolCallSchema,
   SESSION_EVENT_TYPES,
   type SessionErrorCode,
   SessionErrorCodeSchema,

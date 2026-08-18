@@ -55,7 +55,12 @@ export default defineConfig({
       ],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      // Actuals (2026-08): lines 98.96, functions 98.13, branches 94.53, statements 98.04.
+      // Actuals (2026-08): lines 98.98, functions 98.14, branches 94.57, statements 98.07.
+      // `auth.tsx` is NOT excluded and is deliberately never LOADED by a test:
+      // it is supabase-js, an auth-state subscription and an OAuth redirect. Its
+      // testable half lives in `auth-methods.ts`, which the floors do govern —
+      // which is why a test importing a value from `auth.tsx` would drop the
+      // whole package ~11 points without covering anything new.
       thresholds: { lines: 96, functions: 94, branches: 93, statements: 95 },
     },
   },

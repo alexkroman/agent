@@ -10,9 +10,9 @@
  * {@link WorkspaceDeployOutcome}.
  *
  * **Everything here reports failure as an OUTCOME, never as a throw.**
- * Publish output is posted into the chat for the coding agent to read and
- * act on, so an unhandled rejection reaches it as a bare 500 with nothing
- * actionable in it. The `console.warn`s keep the real diagnosis in the
+ * Publish output is the only thing the user sees about a publish — it is
+ * rendered by the menu they pressed — so an unhandled rejection reaches
+ * them as a bare 500 with nothing actionable in it. The `console.warn`s keep the real diagnosis in the
  * server log, where monitoring can still see an infrastructure problem for
  * what it is.
  *

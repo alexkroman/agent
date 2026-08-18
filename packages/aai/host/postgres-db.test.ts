@@ -11,6 +11,19 @@ const unsafeMock = vi.fn();
 const endMock = vi.fn(() => Promise.resolve());
 const postgresMock = vi.fn((..._args: unknown[]) => ({ unsafe: unsafeMock, end: endMock }));
 
+/**
+ * The options `createPostgresDb` built its client with.
+ *
+ * A typed reader rather than `mock.calls[0]?.[1]` re-narrowed per assertion: the
+ * mock takes `unknown[]`, so every read of a named option was an error the
+ * alternative to which is a cast — and `onnotice` is a FUNCTION three tests
+ * invoke, which is exactly where an unchecked read stops being cheap.
+ */
+function clientOptions(): { max?: number; prepare?: boolean; onnotice?: (n: unknown) => void } {
+  const [, options] = postgresMock.mock.calls[0] ?? [];
+  return (options ?? {}) as { max?: number; prepare?: boolean; onnotice?: (n: unknown) => void };
+}
+
 vi.mock("postgres", () => ({ default: (...args: unknown[]) => postgresMock(...args) }));
 
 beforeEach(() => {
@@ -20,10 +33,55 @@ beforeEach(() => {
 describe("createPostgresDb", () => {
   test("builds the client with the url, a bounded pool, and prepare disabled", () => {
     createPostgresDb({ url: "postgres://db.example/app" });
+    // `onnotice` is asserted as PRESENT rather than by identity: postgres.js has
+    // no silent default, so leaving it unset is what dumped a whole `42P07`
+    // notice object into every guest's stdout on every boot.
     expect(postgresMock).toHaveBeenCalledExactlyOnceWith("postgres://db.example/app", {
       max: 4,
       prepare: false,
+      onnotice: expect.any(Function),
     });
+  });
+
+  test("a NOTICE prints nothing by default, and does not throw", () => {
+    // The fix, stated as the thing an operator sees: postgres.js's own default
+    // dumps the whole notice OBJECT, and ours routes it to `consoleLogger.debug`,
+    // which is a no-op unless `AAI_DEBUG=1`. So the channel is quiet by default
+    // and recoverable on demand — rather than swallowed, which is how the next
+    // notice that MATTERS (a truncated identifier, a constraint silently
+    // declined) would go unseen.
+    const spies = (["debug", "info", "warn", "error", "log"] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation(() => undefined),
+    );
+    createPostgresDb({ url: "postgres://db.example/app" });
+    const { onnotice } = clientOptions();
+    expect(() =>
+      onnotice?.({
+        severity: "NOTICE",
+        code: "42P07",
+        message: 'relation "aai_session_events" already exists, skipping',
+        file: "parse_utilcmd.c",
+      }),
+    ).not.toThrow();
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+  });
+
+  test("a malformed notice cannot take a session down", () => {
+    // It is a callback the DRIVER invokes, so a throw here escapes into the
+    // driver's own event handling rather than to any caller.
+    createPostgresDb({ url: "postgres://db.example/app" });
+    const { onnotice } = clientOptions();
+    for (const bad of [undefined, null, "a string", 42]) {
+      expect(() => onnotice?.(bad)).not.toThrow();
+    }
+  });
+
+  test("an explicit onNotice wins, so an embedder can route notices itself", () => {
+    const onNotice = vi.fn();
+    createPostgresDb({ url: "postgres://db.example/app", onNotice });
+    const { onnotice: wired } = clientOptions();
+    wired?.({ code: "42P07" });
+    expect(onNotice).toHaveBeenCalledOnce();
   });
 
   test("honors an explicit max", () => {
@@ -31,6 +89,7 @@ describe("createPostgresDb", () => {
     expect(postgresMock).toHaveBeenCalledExactlyOnceWith("postgres://db.example/app", {
       max: 1,
       prepare: false,
+      onnotice: expect.any(Function),
     });
   });
 

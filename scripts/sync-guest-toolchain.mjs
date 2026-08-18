@@ -63,6 +63,12 @@ const lockPath = join(toolchainDir, "package-lock.json");
  */
 const LOCKED_PACKAGES = [
   "@tailwindcss/vite",
+  // Not a build tool: it is here because it ships DATA the harness bundle cannot
+  // carry — its Drizzle migrator reads `drizzle/migrations/meta/_journal.json`
+  // off disk, so it is `neverBundle`d (aai-guest/tsdown.config.ts) and has to be
+  // installed beside the harness like the toolchain proper. Without it a guest
+  // holding a DATABASE_URL cannot start its durable workflow world at all.
+  "@workflow/world-postgres",
   "@types/node",
   "@types/react",
   "@types/react-dom",

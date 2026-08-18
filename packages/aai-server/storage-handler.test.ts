@@ -2,7 +2,13 @@
 import { expect, test, vi } from "vitest";
 import type { AppDatabases, AppDbMeta } from "./app-database.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
-import { authFetch, createTestOrchestrator, deployAgent, type TestFetch } from "./test-utils.ts";
+import {
+  authFetch,
+  createTestOrchestrator,
+  deployAgent,
+  fakeAppDatabases,
+  type TestFetch,
+} from "./test-utils.ts";
 
 // Carries a `url`, because that locator is the point of the two deprovision
 // assertions below: it names the cluster this app was placed on, and a
@@ -18,13 +24,13 @@ function fakeAppDb(): AppDatabases & {
   provision: ReturnType<typeof vi.fn>;
   deprovision: ReturnType<typeof vi.fn>;
 } {
-  return {
+  return fakeAppDatabases({
     provision: vi.fn(async () => META),
     deprovision: vi.fn(async () => undefined),
-    connectionUrl: () => {
-      throw new Error("connectionUrl not expected in these tests");
-    },
     usage: async () => ({ tables: 0, rows: 0, bytes: 0 }),
+  }) as AppDatabases & {
+    provision: ReturnType<typeof vi.fn>;
+    deprovision: ReturnType<typeof vi.fn>;
   };
 }
 

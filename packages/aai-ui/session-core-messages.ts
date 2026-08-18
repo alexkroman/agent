@@ -17,7 +17,7 @@ import {
   ServerMessageSchema,
   type SessionEvent,
 } from "@alexkroman1/aai/protocol";
-import { toArgsRecord } from "@alexkroman1/aai/utils";
+import { omitUndefined, toArgsRecord } from "@alexkroman1/aai/utils";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
 
 /** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
@@ -318,6 +318,36 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         // state, and only the newest one is meaningful.
         updateState({ agentState: e.state });
         break;
+      case "history.restored": {
+        // Replace both lists, for the same reason and one more: the server is
+        // authoritative about the conversation on a resume, and a frame delivered
+        // twice (a second reconnect) must not double it. The ids are minted HERE
+        // because they are this client's render keys — both counters keep going
+        // from the restored tail, so anything said after the resume cannot
+        // collide with something restored.
+        messageSeq = 0;
+        toolCallSeq = 0;
+        const restored = e.messages
+          .slice(-MAX_MESSAGES)
+          .map((m) => ({ id: ++messageSeq, role: m.role, content: m.content }));
+        updateState({
+          messages: restored,
+          // The anchor arrives as an INDEX into the frame's own messages and is
+          // resolved to the id just minted for it. `-1` (before any message, or an
+          // anchor the server's own window slid past) stays `-1`, which is what
+          // makes the row render ahead of the transcript rather than vanish.
+          toolCalls: e.toolCalls.slice(-MAX_MESSAGES).map((tc) => ({
+            callId: tc.callId,
+            name: tc.name,
+            args: toArgsRecord(tc.args),
+            status: tc.status,
+            ...omitUndefined({ result: tc.result }),
+            seq: ++toolCallSeq,
+            afterMessageId: restored[tc.afterMessageIndex]?.id ?? -1,
+          })),
+        });
+        break;
+      }
       case "error.reported":
         handleErrorEvent(e);
         break;

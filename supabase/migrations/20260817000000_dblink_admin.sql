@@ -1,0 +1,62 @@
+-- `dblink`, so a pg_cron job can run a statement that CANNOT run in a
+-- transaction — specifically `DROP DATABASE`.
+--
+-- ── WHY A SWEEP NEEDS THIS AT ALL ────────────────────────────────────────────
+--
+-- Each app that enables storage now gets its own Postgres DATABASE rather than a
+-- schema in the platform database (see app-database.ts for why: the Workflow
+-- DevKit's `workflow` and `graphile_worker` schemas are database-level names it
+-- cannot create inside `app_<hex>`). That turns the orphan-preview sweep's
+-- deprovision from `drop schema … cascade` into `drop database`, and pg_cron
+-- wraps every job body in a transaction:
+--
+--   DO block      DROP DATABASE -> 25001 cannot be executed from a function
+--   BEGIN … END   DROP DATABASE -> 25001 cannot run inside a transaction block
+--   bare statement              -> OK
+--
+-- `dblink` is the bridge, and it is the same shape the blob GC already uses with
+-- `pg_net`: the DETECTION is a pure SQL question, the ACT is not. dblink opens a
+-- second connection, so the remote statement is not inside the caller's
+-- transaction — verified on PG 17.6, including that the drop SURVIVES a rollback
+-- of the calling transaction. That independence is what makes it work and is
+-- also why the drops must be the LAST thing a job body does: a job that drops a
+-- database and then fails has still dropped it.
+--
+-- The alternative was a server-side timer. It was rejected because this keeps
+-- detection and reclamation in one place that survives a replica dying, and
+-- because `cron.schedule_in_database` (pg_cron 1.6.4, usable by Supabase's
+-- non-superuser `postgres` role) already covers the routine per-app maintenance
+-- beside it.
+--
+-- ── WHY ITS OWN SCHEMA, AND WHY NOTHING IS GRANTED ON IT ─────────────────────
+--
+-- dblink ships **41 functions, 39 of them executable by PUBLIC**, and every one
+-- runs the connection as whatever role the connection string names. A tenant app
+-- role can open a connection to this database (Postgres grants `CONNECT` on it
+-- to PUBLIC, and revoking that would lock out Supabase's own roles), so with
+-- dblink in `public` a tenant can call `dblink_exec` and execute as the platform
+-- ADMIN. That was reproduced, not theorised.
+--
+-- Revoking the overloads by name does not work — there are four spellings of
+-- `dblink_exec` alone, and a tenant simply picks another. The schema is the only
+-- chokepoint that holds: with the extension in a schema no one has `USAGE` on,
+-- an unqualified call fails to resolve (`42883`) and a qualified one is refused
+-- (`42501 permission denied for schema aai_admin`), while the owner still works.
+--
+-- A DEDICATED schema rather than Supabase's `extensions`, deliberately: on a
+-- real project `extensions` carries grants that other things depend on, so
+-- revoking PUBLIC there is a change with a blast radius. `aai_admin` is ours,
+-- starts with no grants, and satisfies the same `extension_in_public` advisor
+-- that `20260810040000_pg_net.sql` cites.
+--
+-- Note this schema holds no TABLES and is therefore not part of the
+-- `aai_platform` surface `platform-schema.test.ts` scans; it is a privilege
+-- boundary, not a data one.
+create schema if not exists aai_admin;
+
+-- No `grant` of any kind. The owner (the platform's admin role) reaches these
+-- functions; nothing else may. `revoke` is belt-and-braces for a re-run against
+-- a database where someone granted something by hand.
+revoke all on schema aai_admin from public;
+
+create extension if not exists dblink with schema aai_admin;

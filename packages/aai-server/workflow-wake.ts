@@ -50,9 +50,12 @@
  * - **Latency is one interval plus a boot** ({@link WORKFLOW_WAKE_INTERVAL_MS}).
  *   A `sleep()`-scale workflow does not notice; a workflow that wants
  *   sub-second resumption is not a workflow.
- * - **One reserved admin connection for the read phase of a tick.** No new pool,
- *   so the fleet-wide connection budget (`MAX_PLATFORM_DB_CONNECTIONS`, which is
- *   currently exactly at its ceiling) is unchanged.
+ * - **One reserved admin connection for the read phase of a tick, plus one POOLED
+ *   connection per candidate app.** The reservation comes out of the existing
+ *   admin pool, so the fleet-wide DIRECT budget
+ *   (`MAX_PLATFORM_DB_CONNECTIONS`) is unchanged; the per-app reads go through
+ *   Supavisor and are serialized, so a pass costs one pooled connection at a time
+ *   however many apps exist. See `_workflow-wake-read.ts` on why serial.
  *
  * ## How "due" is known without reading tenant queue state
  *
@@ -60,21 +63,21 @@
  * per-DATABASE and its rows carry no tenant column, so "which of these jobs is
  * agent X's" is answerable only inside the process whose world it is. So the
  * guest answers it, reducing its whole queue to one timestamp and writing it
- * into a table in the app's own schema (`aai/host/workflow-wake-hint.ts`, which
+ * into a table in the app's own database (`aai/host/workflow-wake-hint.ts`, which
  * owns that contract). This sweep reads that one column.
  *
  * The hint is tenant-writable, and the platform treats it as a HINT: the only
  * thing it can cause is a boot of the tenant's OWN agent, which the tenant can
  * already cause by fetching its own public `/client-config`. Forging another
- * tenant's wake is impossible by construction rather than by check — the schema
- * name is `appDbIdentifier(slug)` and the slug comes from the agents table, so a
- * hint is only ever read as belonging to the schema it sits in.
+ * tenant's wake is impossible by construction rather than by check — the DATABASE
+ * is `appDbIdentifier(slug)` and the slug comes from the agents table, so a hint
+ * is only ever read as belonging to the app whose database it sits in.
  *
  * ## The three things a wake must not do
  *
  * - **It must not resurrect a deleted agent.** Two independent guards, and the
  *   first is structural: candidates come from the agents TABLE, so an agent
- *   deleted between ticks is not in the list at all (its schema may briefly
+ *   deleted between ticks is not in the list at all (its database may briefly
  *   outlive the row — the orphan sweep is asynchronous — and is skipped for
  *   having no slug). Behind that, `brokerSessionUrl` answers 404 for a slug with
  *   no bundle, so a row deleted mid-tick still boots nothing.
@@ -106,6 +109,7 @@
 
 import { debug } from "./_debug-log.ts";
 import { type DueRead, NOT_LOCKED, readDueWork } from "./_workflow-wake-read.ts";
+import type { AppDatabases } from "./app-database.ts";
 import {
   WORKFLOW_WAKE_INTERVAL_MS,
   WORKFLOW_WAKE_MAX_PER_TICK,
@@ -126,9 +130,18 @@ export type WorkflowWakeOptions = {
    * reservation.
    *
    * Absent means no platform database (local dev, tests), where there are no
-   * per-app schemas to read and nothing to sweep.
+   * per-app databases to read and nothing to sweep.
    */
   adminDb: AdminDb;
+  /**
+   * Opens a connection into one app's OWN database — where its hint now lives.
+   *
+   * Required alongside `adminDb` rather than optional: the two arrive together
+   * (both come from a configured `SUPABASE_DB_URL`), and a sweep holding an admin
+   * connection with no way to reach a tenant's database can read nothing at all,
+   * so making it optional would only buy a pass that silently finds no work.
+   */
+  appDb: AppDatabases;
   /** Slug enumeration (`listSlugs`) — see the doc there for why it is uncached. */
   store: BundleStore;
   /** What `brokerSessionUrl` needs to boot a sandbox. */
@@ -263,6 +276,7 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
     const read: DueRead = await readDueWork({
       adminDb: opts.adminDb,
       store: opts.store,
+      appDb: opts.appDb,
       readTimeoutMs,
     }).catch((err: unknown) => {
       // The pass, not the sweep: the interval keeps ticking. Warn rather than
@@ -338,16 +352,21 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
  * @internal
  */
 export function startWorkflowWakeSweep(
-  opts: Omit<WorkflowWakeOptions, "adminDb"> & {
+  opts: Omit<WorkflowWakeOptions, "adminDb" | "appDb"> & {
     adminDb?: AdminDb | undefined;
+    appDb?: AppDatabases | undefined;
     intervalMs?: number | undefined;
     extraAppDbClusters?: number | undefined;
   },
 ): () => void {
   const intervalMs = opts.intervalMs ?? WORKFLOW_WAKE_INTERVAL_MS;
-  if (!opts.adminDb || intervalMs <= 0) {
+  // Both bindings come from a configured `SUPABASE_DB_URL`, so in practice they
+  // are present or absent together — but the sweep needs BOTH to do anything
+  // (the admin connection elects a leader, the app connections hold the hints),
+  // and a pass with one of them reads nothing while looking healthy.
+  if (!(opts.adminDb && opts.appDb) || intervalMs <= 0) {
     debug("Workflow wake sweep not started", {
-      reason: opts.adminDb ? "interval is 0" : "no platform database",
+      reason: opts.adminDb && opts.appDb ? "interval is 0" : "no platform database",
     });
     return () => undefined;
   }
@@ -360,7 +379,11 @@ export function startWorkflowWakeSweep(
         "there are NOT woken (see workflow-wake.ts, Known gaps).",
     );
   }
-  const sweep = createWorkflowWakeSweep({ ...opts, adminDb: opts.adminDb });
+  const sweep = createWorkflowWakeSweep({
+    ...opts,
+    adminDb: opts.adminDb,
+    appDb: opts.appDb,
+  });
   console.info(`[workflow-wake] sweeping for due durable runs every ${intervalMs}ms`);
   return sweep.start(intervalMs);
 }

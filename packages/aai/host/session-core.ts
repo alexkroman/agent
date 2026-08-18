@@ -23,12 +23,13 @@
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
-import type { ClientSink, ReadyConfig, SessionCommand } from "../sdk/protocol.ts";
+import type { ClientSink, ReadyConfig, RestoredToolCall, SessionCommand } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import { createCommandDispatcher } from "./session-commands.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
+import { stampSessionEvent } from "./session-event-stream.ts";
 import { createIdleWatchdog } from "./session-idle.ts";
 import { dispatchReplyDone } from "./session-reply-done.ts";
 import { type ReplyToolState, runToolStep } from "./session-tool-steps.ts";
@@ -151,7 +152,16 @@ export type SessionCore = {
    * this module's, and the transport's own LLM history, which is
    * `seedHistory`'s.
    */
-  restoreHistory(messages: readonly Message[]): void;
+  /**
+   * Put a resumed session's conversation back — into the model's context, and
+   * onto the WIRE for the client.
+   *
+   * `toolCalls` is the client's half only: the LLM history in the event log is
+   * transcripts (see `session-event-history.ts`), so nothing here reaches the
+   * model. Defaulted, because a caller that has only messages is a legitimate
+   * one — the platform's own `attachSessionStream` passes both.
+   */
+  restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
   /**
    * One thing the TRANSPORT observed, in the protocol's own event vocabulary
    * (`sdk/protocol-events.ts`, narrowed by `TransportEventBody`).
@@ -402,11 +412,35 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       opts.transport.injectTurn(instruction);
       return true;
     },
-    restoreHistory(messages) {
+    restoreHistory(messages, toolCalls = []) {
       pushMessages(...messages);
       // Forward to the transport so pipeline mode's LLM sees the restored
       // context on resume (S2S restores context service-side via resume).
       opts.transport.seedHistory?.(messages);
+      // And to the CLIENT, which is the half that was missing: everything above
+      // restores the conversation for the MODEL, and a reconnecting browser
+      // stopped replaying its own on the grounds that the server had taken this
+      // over. It had not — the transcript came back empty next to an agent that
+      // remembered every word, with the greeting suppressed because the resume
+      // was genuine. See `history.restored` in `sdk/protocol-events.ts`.
+      //
+      // Through the SINK with its own stamp, never `emit`: the emitter RECORDS
+      // first, so emitting the history just read out of the log would append it
+      // back — doubling the log on every resume.
+      const visible = messages.filter(
+        (m): m is Message & { role: "user" | "assistant" } => m.role !== "tool",
+      );
+      // Sent when there is EITHER to show: a conversation that was only tool
+      // calls (a turn that died mid-chain) still has rows to render.
+      if ((visible.length > 0 || toolCalls.length > 0) && opts.client.open) {
+        opts.client.event(
+          stampSessionEvent({
+            type: "history.restored",
+            messages: visible.map(({ role, content }) => ({ role, content })),
+            toolCalls: [...toolCalls],
+          }),
+        );
+      }
     },
 
     // ─── Inbound from transport ───────────────────────────────────────────

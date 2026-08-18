@@ -18,7 +18,7 @@ import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
-import { createTestStore } from "./test-utils.ts";
+import { createTestStore, fakeAppDatabases } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => {
   const mockSpawnAgentServer = vi.fn().mockResolvedValue({
@@ -121,12 +121,14 @@ describe("storage (ctx.db) delivery", () => {
       clientFiles: {},
       credential_hashes: ["hash"],
     });
-    const appDb = {
-      provision: () => Promise.reject(new Error("not expected")),
-      deprovision: () => Promise.reject(new Error("not expected")),
-      connectionUrl: vi.fn(() => "postgres://app_0123456789abcdef:pw@db.example:6543/postgres"),
-      usage: () => Promise.reject(new Error("not expected")),
-    };
+    // The app's OWN database in the path, not the platform's — and session-mode
+    // 5432 rather than the transaction pooler, which the Workflow DevKit cannot
+    // use (prepared statements + LISTEN). See app-database.ts.
+    const appDb = fakeAppDatabases({
+      connectionUrl: vi.fn(
+        () => "postgres://app_0123456789abcdef:pw@db.example:5432/app_0123456789abcdef",
+      ),
+    });
     mockSpawnAgentServer.mockClear();
 
     const sandbox = await resolveSandbox("stored-app", {
@@ -144,7 +146,7 @@ describe("storage (ctx.db) delivery", () => {
     };
     expect(vmOpts.env).toEqual({
       OTHER: "x",
-      DATABASE_URL: "postgres://app_0123456789abcdef:pw@db.example:6543/postgres",
+      DATABASE_URL: "postgres://app_0123456789abcdef:pw@db.example:5432/app_0123456789abcdef",
     });
     await sandbox?.shutdown();
   });

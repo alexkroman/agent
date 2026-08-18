@@ -58,6 +58,25 @@ describe("server→client event wire format", () => {
     { type: "error.reported", code: "stt", message: "Speech recognition failed" },
     { type: "custom.emitted", event: "game_state", data: { hp: 10 } },
     { type: "state.updated", state: { items: [] } },
+    {
+      type: "history.restored",
+      messages: [
+        { role: "user", content: "two large pepperoni" },
+        { role: "assistant", content: "Got it." },
+      ],
+      // Anchored to the user turn it followed, settled with its result — the
+      // JOIN of `tool.called` and `tool.completed` a restore sends.
+      toolCalls: [
+        {
+          callId: "c1",
+          name: "place_order",
+          args: { size: "large" },
+          status: "done",
+          result: '{"ok":true}',
+          afterMessageIndex: 0,
+        },
+      ],
+    },
   ];
 
   test.each(valid.map((body) => [body.type, body] as const))(

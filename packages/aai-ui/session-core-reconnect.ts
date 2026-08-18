@@ -7,6 +7,7 @@
  */
 
 import ReconnectingWebSocket from "partysocket/ws";
+import type { WebSocketConstructor } from "./types.ts";
 
 /**
  * Backoff for automatic reconnects after an unexpected close (partysocket):
@@ -27,8 +28,22 @@ const RECONNECT_OPTIONS = {
  * the current broker-named endpoint and resume URL rather than the ones the
  * session started with.
  */
-export function openReconnectingSocket(urlProvider: () => Promise<string>): ReconnectingWebSocket {
-  return new ReconnectingWebSocket(urlProvider, undefined, RECONNECT_OPTIONS);
+export function openReconnectingSocket(
+  urlProvider: () => Promise<string>,
+): InstanceType<WebSocketConstructor> {
+  // The ONE structural bridge between partysocket and the socket shape the
+  // session speaks, and it lives here because adapting partysocket is this
+  // module's whole job — the alternative is the same cast at the call site, where
+  // it reads as the session core distrusting its own types. `ReconnectingWebSocket`
+  // implements the interface the core uses (open/message/error/close listeners,
+  // `send`, `close`, `binaryType`, `bufferedAmount`) and differs from the DOM
+  // declaration in its `addEventListener` overloads, which is not something
+  // narrowing can express.
+  return new ReconnectingWebSocket(
+    urlProvider,
+    undefined,
+    RECONNECT_OPTIONS,
+  ) as unknown as InstanceType<WebSocketConstructor>;
 }
 
 /**

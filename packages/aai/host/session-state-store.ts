@@ -17,7 +17,7 @@
  * {@link SessionStateBackend}:
  *
  * - **Postgres** when the app has a database (`DATABASE_URL`), one row per
- *   `(sessionId, slot)` in the app's own schema.
+ *   `(sessionId, slot)` in the app's own database.
  * - **Memory** otherwise, which is what `aai dev` against a project with no
  *   `DATABASE_URL` gets, and what a deployed agent nobody enabled storage for
  *   gets. This REPLACES the runtime's old `stateMap` rather than sitting beside

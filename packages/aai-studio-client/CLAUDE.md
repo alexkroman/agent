@@ -75,9 +75,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
   that names a neighbour's direction.
 - **Secrets have their own section; storage has none.** Agent secrets are
   managed in the Settings pane's Secrets card, which talks to the project
-  route (`/studio/projects/:project/secret`) and posts a note into the chat on
-  every change (key names only, values withheld) so the coding agent knows
-  which keys exist.
+  route (`/studio/projects/:project/secret`). Every card on this pane reports
+  its own outcome and writes NOTHING into the conversation — see "No studio
+  action writes into the transcript" below.
 
   **The card is UNGATED — no publish first.** It used to render "Publish the
   project first" until `deployedSlug` existed, which asks for the one order
@@ -265,9 +265,10 @@ so every piece of per-project state resets on a switch with no effect to do it.
   fetch"** and the server logs NOTHING, because no request was ever made.
   (1) the project's guest sandbox — chat + tool labels, keyed by sandbox
   backend so a production policy never trusts loopback; (2) the Supabase
-  project, which supabase-js dials for GitHub OAuth sign-in (the session
-  restore and the code/token exchange after the redirect — GitHub itself is
-  reached by top-level navigation, which connect-src does not govern). Both
+  project, which the page dials for the provider read
+  (`auth-methods.ts`), password sign-in, the session restore, and the
+  code/token exchange after an OAuth redirect — GitHub itself is
+  reached by top-level navigation, which connect-src does not govern. Both
   are derived
   from what the server really hands the client (`chatUrlForGuest`'s shape,
   the auth binding's own `clientConfig`) rather than hand-copied literals,
@@ -275,6 +276,46 @@ so every piece of per-project state resets on a switch with no effect to do it.
   project on the internet. The sign-in case is the one that hides best:
   the page loads and `GET /studio/auth` succeeds (both `'self'`), so
   everything looks healthy until the button is clicked.
+
+- **The sign-in screen offers what the BACKEND has, read from GoTrue**
+  (`auth-methods.ts` → `GET /auth/v1/settings`; `SignInGate` renders it). One
+  screen therefore serves a hosted project on GitHub OAuth and a local stack on
+  email+password with no second code path and no environment check — which is
+  what makes a local dev server usable without registering an OAuth app, now
+  that a platform database refuses the no-auth dev tokens. Four rules:
+  - **An unknown answer falls back to GitHub-only, never to nothing.** A failed
+    or unparsable read must not remove the method production actually uses; the
+    mirror-image default (assume everything is on) offers a button GoTrue
+    answers `provider is not enabled` to, after a round trip through GitHub.
+  - **A backend with NEITHER method renders as such.** It is a real state (a
+    project that disabled both), and a card saying so beats dead controls.
+  - **"Create account" is its own action, never a fallback from a failed
+    sign-in.** Signing up because a password was MISTYPED leaves the user
+    authenticated as somebody new with an empty project list, which reads as
+    data loss and cannot be seen.
+  - **The email is trimmed and the password is not.** Leading and trailing
+    spaces are legitimate characters in a password, and stripping them makes a
+    correct one fail with the message a wrong one gets.
+
+  `readSignInMethods` lives in its own module rather than in `auth.tsx`, and the
+  reason is the coverage split this package already documents: it is a plain
+  fetch-and-parse the floors should govern, while the hook beside it is
+  supabase-js plus an auth-state subscription plus an OAuth redirect and is
+  deliberately never LOADED by a test. Importing a VALUE from `auth.tsx` in a
+  spec drops the package ~11 points without covering anything new.
+
+- **The session lives in `localStorage`, and the origin split is owed**
+  (`auth.tsx`, and the threat-model note in `main.tsx`). Closing the tab no
+  longer signs the user out. Tenant agent pages are served from this same origin
+  (`/:slug/`) and their JS is attacker-controlled, so one can read that key —
+  **moving them to a dedicated origin is a precondition of real users**, recorded
+  in both places rather than assumed. What per-tab `sessionStorage` bought was
+  narrower than it looks: the Live pane iframes `/:slug/` SAME-ORIGIN, and a
+  same-origin iframe shares the tab's storage and can script the parent either
+  way, so a hostile `client.tsx` already owned the session. The delta given up is
+  a malicious agent page opened in a separately-opened tab. The dev-token path
+  moved with it, deliberately — a dev-mode developer signed out on every restart
+  while a Supabase one stayed in would be a difference nothing intends.
 
 - **A gate screen never sits on an unexplained wait** (`gate-card.tsx`, the
   pre-app cards in `main.tsx` and the `unavailable` phase in `auth.tsx`). A
@@ -465,28 +506,6 @@ so every piece of per-project state resets on a switch with no effect to do it.
   pushed underneath it gets pushed a second time). Hence a queue held OUTSIDE
   `messages`, flushed on the settle.
 
-  **A NOTE posted into the chat waits the same way**
-  (`chat-notify.ts`, `use-notify-registration.ts`). Publish output, secret
-  changes and the Database toggle reach the coding agent as injected user
-  messages, and `notifyDispatch` used to fall back to `"append"` whenever a turn
-  was in flight — chosen as the *safe* option, on the reasoning that a publish
-  failure has to survive either way. It is the one case where appending is not
-  safe. The SDK's streaming writer (`ai@7`, `Chat.makeRequest`) compares
-  `response.state.message.id` against `this.lastMessage?.id` on every chunk and
-  takes `pushMessage` when they differ, so a note appended UNDER a streaming
-  assistant message becomes `lastMessage` and the next chunk pushes the
-  assistant message a second time instead of replacing it: one object at two
-  indices, under one React key, in the array the end-of-turn sync PERSISTS.
-  Saving a secret while the agent worked was enough. So the third mode is
-  `"defer"` — held outside `messages`, exactly as the queue holds a mid-turn
-  submit, and flushed on the settle. Two properties of the flush: it gates on
-  `pending` rather than `busy` (the dispatch window is unsafe too, and a note
-  sent as its own turn while follow-ups are queued would jump the line), and it
-  delivers **at most one deferred note as a turn** — a later `respond` note
-  degrades to an append rather than running a second turn against one guest
-  session, and loses nothing, since an appended message rides the turn just
-  started.
-
   Three rules the reducer exists to hold, each covering a bug that is invisible
   without it: the flush is **latched** from dispatch until the turn is observed
   (`sendMessage` awaits before flipping the status, so a re-render in that
@@ -499,6 +518,40 @@ so every piece of per-project state resets on a switch with no effect to do it.
   comes back); and a **failed turn drains the same way**, because an `error`
   status never flushes while every submit joins a non-empty queue — parking it
   there wedges the composer permanently.
+
+- **No studio action writes into the transcript.** Publish (success AND
+  failure), a secret save or delete, and the Database toggle each used to
+  inject a first-person user message — "I set the secret X…", "I published the
+  project with the Publish button. aai deploy output: …" — so that the coding
+  agent would know what changed. It is deleted (`chat-notify.ts`,
+  `use-notify-registration.ts`, `NotifyChat`, `registerNotify`, and the
+  `appendMessage` seam over `setMessages`), on the user's call: the transcript
+  is a record of a conversation, and every one of those messages put words in
+  the user's mouth for something a pane already reports beside the control that
+  did it. Each surface now answers for itself — the PublishMenu renders
+  `publish.data.output` and `publish.error`, the Secrets card clears its
+  textarea only on a successful save, the Database card seeds the new state
+  from its own response.
+
+  What that gives up, stated because it is real: **the coding agent cannot see
+  a secret, a database switch, or a failed deploy**, and the preamble tells it
+  so rather than claiming a note will arrive (`studio-preamble.ts` — the
+  Secrets section, and the Publish bullet under "AssemblyAI Build
+  Capabilities"). A failed publish is the one with a cost: the user has to
+  relay the error instead of the agent reading it. That is the trade that was
+  chosen; the fix if it bites is a pane that offers "send this to the agent" as
+  a BUTTON, never an automatic injection.
+
+  Anything re-adding one owes the hazard the deleted module existed for: the
+  SDK's streaming writer (`ai@7`, `Chat.makeRequest`) compares
+  `response.state.message.id` against `this.lastMessage?.id` on every chunk and
+  takes `pushMessage` when they differ, so a message appended UNDER a streaming
+  assistant message becomes `lastMessage` and the next chunk pushes the
+  assistant message a second time instead of replacing it — one object at two
+  indices, under one React key, in the array the end-of-turn sync PERSISTS.
+  Saving a secret while the agent worked was enough to corrupt a stored
+  conversation. An injection therefore has to wait for a settled turn, exactly
+  as the follow-up queue does.
 
 - **Requests are deadlined BY DEFAULT; the SSE streams deliberately are NOT.**
   A browser fetch has no timeout of its own and a hung request is not a failure

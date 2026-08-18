@@ -1,86 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
-import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
+import type { ExecuteTool } from "../sdk/_internal-types.ts";
 import type { ClientSink, SessionEvent } from "../sdk/protocol.ts";
-import { DEFAULT_SYSTEM_PROMPT, type Message } from "../sdk/types.ts";
+import type { Message } from "../sdk/types.ts";
+import { makeAgentConfig, makeCore, makeSink } from "./_session-core-harness.ts";
 import { flush, makeEmitter } from "./_test-utils.ts";
-import type { SessionCore, SessionCoreOptions } from "./session-core.ts";
-import { createSessionCore } from "./session-core.ts";
-import type { SessionEventStream } from "./session-event-stream.ts";
+import { createSessionCore, type SessionCore } from "./session-core.ts";
 import type { Transport } from "./transports/types.ts";
-
-// `playAudioDone` / `start` / `stop` are plain `vi.fn()`s like every other
-// member here: a spy already records its own call count, so the hand-rolled
-// `let audioDoneCount = 0` + getter + `readonly` field triple (and the same
-// for starts/stops) was 18 lines of bookkeeping duplicating `mock.calls`.
-function makeSink(): {
-  events: SessionEvent[];
-  audioChunks: Uint8Array[];
-  closeReasons: (string | undefined)[];
-  sink: ClientSink;
-} {
-  const events: SessionEvent[] = [];
-  const audioChunks: Uint8Array[] = [];
-  const closeReasons: (string | undefined)[] = [];
-  return {
-    events,
-    audioChunks,
-    closeReasons,
-    sink: {
-      open: true,
-      event: (e) => {
-        events.push(e);
-      },
-      playAudioChunk: (chunk) => {
-        audioChunks.push(chunk);
-      },
-      close: (reason) => {
-        closeReasons.push(reason);
-      },
-    },
-  };
-}
-
-function makeTransport(): Transport {
-  return {
-    start: vi.fn(async () => undefined),
-    stop: vi.fn(async () => undefined),
-    sendUserAudio: vi.fn(),
-    sendToolResult: vi.fn(),
-    cancelReply: vi.fn(),
-  };
-}
-
-function makeAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
-  return { name: "test", systemPrompt: DEFAULT_SYSTEM_PROMPT, greeting: "", ...overrides };
-}
-
-function makeCore(overrides: Partial<SessionCoreOptions> = {}): {
-  core: SessionCore;
-  sink: ReturnType<typeof makeSink>;
-  transport: ReturnType<typeof makeTransport>;
-  stream: SessionEventStream;
-} {
-  const sink = makeSink();
-  const transport = makeTransport();
-  // Over the client a spec actually passed, not `sink.sink` — an override that
-  // wraps the sink (the idle-ordering spec below) has to see the events.
-  const client = overrides.client ?? sink.sink;
-  // A real emitter over a real stream — see `makeEmitter`'s doc for why the seam
-  // is not stubbed. `stream` comes back so a spec can assert on what was
-  // RECORDED, which is a different question from what the sink saw.
-  const { emitter, stream } = makeEmitter(client, { sessionId: "s-test" });
-  const core = createSessionCore({
-    id: "s-test",
-    agent: "test-agent",
-    client,
-    emitter,
-    agentConfig: makeAgentConfig(),
-    executeTool: vi.fn(async () => "ok"),
-    transport,
-    ...overrides,
-  });
-  return { core, sink, transport, stream };
-}
 
 describe("createSessionCore — lifecycle", () => {
   test("start/stop calls transport", async () => {
@@ -548,11 +473,11 @@ describe("createSessionCore — idle timeout", () => {
       const sink = makeSink();
       const tracking: ClientSink = {
         ...sink.sink,
-        event: (e) => {
+        event: (e: SessionEvent) => {
           order.push(`event:${e.type}`);
           sink.sink.event(e);
         },
-        close: (reason) => {
+        close: (reason?: string) => {
           order.push("close");
           sink.sink.close?.(reason);
         },
@@ -600,44 +525,6 @@ describe("createSessionCore — the handshake", () => {
     const page = await stream.read("s-test", 0);
     expect(page.events.map((e) => e.type)).toEqual(["session.configured"]);
     expect(page.tail).toBe(1);
-  });
-});
-
-describe("createSessionCore — history", () => {
-  // History is private state, but it is not unobservable: every tool call is
-  // handed a snapshot of it (`executeTool`'s 4th argument), which is the same
-  // view the agent's own tools get. Asserting through that seam is what makes
-  // "appends" and "pushes" claims rather than a sequence of calls that merely
-  // did not throw.
-  test("restoreHistory appends and onUserTranscript pushes user messages", async () => {
-    const executeTool = vi.fn<ExecuteTool>(async () => "ok");
-    const { core } = makeCore({ executeTool });
-    await core.start();
-
-    core.restoreHistory([{ role: "user", content: "prior" }]);
-    core.report({ type: "user-transcript.committed", text: "now" });
-
-    core.onReplyStarted("r1");
-    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
-    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
-    expect(executeTool.mock.calls[0]?.[3]).toEqual([
-      { role: "user", content: "prior" },
-      { role: "user", content: "now" },
-    ]);
-  });
-
-  test("onReset clears the history the next tool call sees", async () => {
-    const executeTool = vi.fn<ExecuteTool>(async () => "ok");
-    const { core } = makeCore({ executeTool });
-    await core.start();
-    core.restoreHistory([{ role: "user", content: "prior" }]);
-
-    core.command({ type: "reset" });
-
-    core.onReplyStarted("r1");
-    core.report({ type: "tool.called", toolCallId: "c1", toolName: "lookup", args: {} });
-    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
-    expect(executeTool.mock.calls[0]?.[3]).toEqual([]);
   });
 });
 

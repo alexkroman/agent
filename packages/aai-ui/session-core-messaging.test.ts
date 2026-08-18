@@ -28,6 +28,12 @@ describe("createSessionCore", () => {
 
   beforeEach(() => {
     resetLastSocket();
+    // A stored session id survives a RELOAD, which within one jsdom document
+    // means it survives from one test to the next: without this, the id a
+    // resume test's `config` frame stores makes the "first connect" cases below
+    // resume instead. Clearing it is what makes each test a fresh TAB, which is
+    // the unit the store is scoped to (session-resume-store.ts).
+    sessionStorage.clear();
     core = createSessionCore({
       platformUrl: "ws://localhost:3000",
       WebSocket: MockWebSocketConstructor,
@@ -307,9 +313,10 @@ describe("createSessionCore", () => {
 
       // The client used to push its own `messages` back here, which made it the
       // authority on what the agent remembered. The server restores the
-      // conversation from its retained event stream now — so this frame is gone
-      // from the protocol, and sending it would be a second mechanism doing the
-      // same job with the client's the one that actually ran.
+      // conversation from its retained event stream now and SENDS it back as
+      // `history.restored` (covered below) — so this frame is gone from the
+      // protocol, and sending it would be a second mechanism doing the same job
+      // with the client's the one that actually ran.
       const sentTypes = (reconnectSocket?.send.mock.calls ?? [])
         .map((c) => c[0])
         .filter((frame): frame is string => typeof frame === "string")

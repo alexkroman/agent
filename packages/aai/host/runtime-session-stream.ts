@@ -27,8 +27,9 @@
 import type { SessionEvent } from "../sdk/protocol.ts";
 import { SESSION_EVENT_READ_LIMIT } from "../sdk/session-event-constants.ts";
 import type { SessionCore } from "./session-core.ts";
-import { messagesFromEvents } from "./session-event-history.ts";
+import { historyFromEvents } from "./session-event-history.ts";
 import type { SessionEventStream } from "./session-event-stream.ts";
+import type { ResumeFindings } from "./session-resume-found.ts";
 
 /**
  * Read a session's whole log, one page at a time.
@@ -65,9 +66,19 @@ export async function readAllEvents(
  */
 export function attachSessionStream(
   core: SessionCore,
-  opts: { stream: SessionEventStream; sessionId: string; resumed: boolean },
+  opts: {
+    stream: SessionEventStream;
+    sessionId: string;
+    resumed: boolean;
+    /**
+     * Where "this resume restored a conversation" is recorded, so the greeting
+     * can tell a real resume from an id that named nothing — see
+     * `session-resume-found.ts`.
+     */
+    findings?: ResumeFindings | undefined;
+  },
 ): void {
-  const { stream, sessionId, resumed } = opts;
+  const { stream, sessionId, resumed, findings } = opts;
   const startCore = core.start.bind(core);
   core.start = async () => {
     await stream.hydrate(sessionId);
@@ -77,8 +88,15 @@ export function attachSessionStream(
     // inferring it from a count.
     if (resumed) {
       const events = await readAllEvents(stream, sessionId);
-      const messages = messagesFromEvents(events);
-      if (messages.length > 0) core.restoreHistory(messages);
+      // ONE walk for both, so a tool call's anchor and the message it points at
+      // cannot disagree — see `historyFromEvents`.
+      const { messages, toolCalls } = historyFromEvents(events);
+      if (messages.length > 0 || toolCalls.length > 0) {
+        core.restoreHistory(messages, toolCalls);
+        // Recorded only when there was something to restore: an EMPTY log is
+        // exactly the case that must fall through to a greeting.
+        findings?.record();
+      }
     }
     await startCore();
   };

@@ -27,8 +27,15 @@
     // the `$TURBO_ROOT$` prefix. A task named here REPLACES the root's
     // definition rather than merging with it, so `env` and `outputs` are
     // restated verbatim — dropping either is silent.
+    // `build` (own, not just `^build`): `harness-externals.test.ts` asserts on
+    // `dist/harness.mjs` — that a `neverBundle` package is really external in the
+    // ARTIFACT, which a config assertion cannot show. A test that skipped itself
+    // when the harness was absent would be the silent-skip failure this repo
+    // keeps paying for: the one check standing between a shipped guest and a
+    // workflow world that cannot start, quietly not running. Declaring the build
+    // is the rule the root guide states for exactly this.
     "test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "build"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "!**/*.md",
@@ -39,7 +46,7 @@
       "env": ["CI", "VITEST_POOL"]
     },
     "test:coverage": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "build"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "!**/*.md",

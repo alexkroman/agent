@@ -90,6 +90,11 @@ describe("platform schema migrations", () => {
     // pg_cron runs the janitorial sweeps; pgmq backs the preview-deploy queue;
     // pg_net is how the blob GC sweep reaches the Storage API from inside a
     // pg_cron job (a Storage object's bytes cannot be deleted in SQL).
+    //
+    // The pg_cron line is LOAD-BEARING for boot, not just documentation of it:
+    // `schedulePlatformSweeps` verifies the extension and refuses to install it
+    // (see its doc), so this migration is the only thing that puts it there. Drop
+    // it and every deployment boots reporting that the sweeps will not run.
     expect(sql).toContain("create extension if not exists pg_cron");
     expect(sql).toContain("create extension if not exists pgmq");
     expect(sql).toContain("create extension if not exists pg_net");

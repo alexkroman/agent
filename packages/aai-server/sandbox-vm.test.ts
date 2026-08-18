@@ -36,7 +36,11 @@ describe("spawnAgentServer", () => {
     const modal = vi.fn(async () => handle);
     const opts = baseOpts({ imageTag: "aai-guest-harness:abcd1234" });
 
-    // Test env resolves the subprocess backend (no SUPABASE_STORAGE_BUCKET).
+    // Named rather than inherited from an ambient default: the subject here is
+    // WHICH backend the dispatcher reaches for, so the answer has to be stated.
+    // The test env used to resolve `subprocess` by having no storage bucket,
+    // which made this assertion depend on an unrelated variable being absent.
+    vi.stubEnv("SANDBOX_BACKEND", "subprocess");
     const result = await spawnAgentServer(opts, { modal, subprocess });
 
     expect(result).toBe(handle);
@@ -60,6 +64,7 @@ describe("spawnAgentServer", () => {
     // The Modal-only fields must not reach a backend that has no meaning for
     // them; asserting it here keeps the drop deliberate rather than a
     // side effect of the callee's signature.
+    vi.stubEnv("SANDBOX_BACKEND", "subprocess");
     const handle = fakeHandle();
     const spawn = vi.spyOn(subprocessSandbox, "spawnSubprocessAgentServer");
     spawn.mockResolvedValue(handle);
@@ -98,7 +103,9 @@ describe("guestUnderstandsBundleUrl", () => {
 
   it("says no for a pin that is not the tag this process builds", async () => {
     // The subprocess backend has no image at all (`harnessImageTag` → null),
-    // so any tag is by definition not the current one.
+    // so any tag is by definition not the current one. Named, because that is
+    // the premise of the assertion rather than an ambient default.
+    vi.stubEnv("SANDBOX_BACKEND", "subprocess");
     expect(await guestUnderstandsBundleUrl("/tmp/foreign.mjs", "aai-guest-harness:old", {})).toBe(
       false,
     );

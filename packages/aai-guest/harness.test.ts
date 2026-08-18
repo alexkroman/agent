@@ -14,6 +14,7 @@ import {
   emptyHarnessState,
   ensureRuntime,
   type HarnessState,
+  harnessBundleDir,
   lazyRuntime,
   loadBundle,
 } from "./harness-bundle.ts";
@@ -275,6 +276,40 @@ describe("loadBundle", () => {
       { env: state.env },
     );
     expect(res).toEqual({ result: "hello world", state: {} });
+  });
+
+  test("the bundle is written beside the HARNESS, which is what anchors its requires", async () => {
+    // WHY the location matters: the bundled SDK's CJS interop anchors
+    // `createRequire` on the bundle file's own URL, and the Workflow DevKit picks
+    // its world by `require`ing a package NAME, which no bundler can inline. From
+    // `tmpdir()`, as this used to be, there is no `node_modules` above it — a
+    // durable workflow agent died on `Cannot find module
+    // '@workflow/world-postgres'` with a require stack naming a path in `/T/`.
+    //
+    // The LOCATION is asserted rather than the resolution, and the reason is a
+    // property of this tier rather than a preference: vitest patches
+    // `createRequire`, so `resolve` succeeds from ANY directory here and the real
+    // failure cannot be provoked (the same trap this package's guide records for
+    // `loadTransformer`). A resolve-based version of this test passed with the fix
+    // reverted — verified — so it would have been decoration. What is provable
+    // here is where the file goes, which is the half under our control.
+    //
+    // The bundle reports its own `import.meta.dirname` through `__aaiConfig`: a
+    // path the test computed would only prove what the loader was told, where this
+    // proves what the loaded module sees.
+    const state = makeState();
+    const code = `
+      export const __aaiConfig = { dir: import.meta.dirname };
+      ${FAKE_RUNTIME_EXPORT}
+      export default { name: "x", systemPrompt: "p", greeting: "g" };`;
+
+    const loaded = await loadBundle(state, { code, env: {} });
+
+    // The directory `harness-bundle.ts` itself lives in — `dist/` beside
+    // `harness.mjs` once bundled, this package's root when running from source.
+    const { dir } = (loaded as { config: { dir: string } }).config;
+    expect(dir).toBe(harnessBundleDir());
+    expect(dir).not.toBe(tmpdir());
   });
 
   test("a repeat load replaces the loaded agent", async () => {

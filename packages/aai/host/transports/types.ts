@@ -229,3 +229,33 @@ export interface Transport {
    */
   onPlaybackProgress?(bufferedMs: number): void;
 }
+
+/**
+ * Whether to suppress a session's opening greeting: the answer, or a THUNK that
+ * knows it later.
+ *
+ * A boolean is what a caller with the whole picture passes, and what every spec
+ * here passes. The thunk exists because the runtime does NOT have the whole
+ * picture when it builds a transport: `?sessionId=` suppresses the greeting on
+ * the id's mere presence, and whether that resume recovered anything is only
+ * known once the event log and the slot store have been read, inside the
+ * `session.start()` window — after construction. Both transports already read
+ * this field LAZILY (pipeline in `onAudioReady`, OpenAI Realtime in
+ * `sendGreeting`), which is what makes a late answer work at all.
+ *
+ * See `host/session-resume-found.ts` for what the runtime's thunk reads, and why
+ * a resume that found nothing has to greet.
+ */
+export type SkipGreeting = boolean | (() => boolean);
+
+/**
+ * Resolve a {@link SkipGreeting} at the moment the greeting would fire.
+ *
+ * One spelling, because the alternative is `typeof x === "function" ? x() : x`
+ * written at each read site — and a site that forgot the call would test a
+ * FUNCTION for truthiness and suppress every greeting, which is a silent agent
+ * rather than an error.
+ */
+export function shouldSkipGreeting(skip: SkipGreeting | undefined): boolean {
+  return typeof skip === "function" ? skip() : skip === true;
+}

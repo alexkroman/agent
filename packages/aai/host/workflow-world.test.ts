@@ -9,6 +9,7 @@
  * the real contract — the DevKit reads exactly these variables.
  */
 
+import { isAbsolute } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { configureWorkflowWorld, startWorkflowWorldIfDeclared } from "./workflow-world.ts";
 
@@ -23,8 +24,45 @@ describe("configureWorkflowWorld", () => {
     expect(configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 3000, env: e })).toBe(
       "postgres",
     );
-    expect(e.WORKFLOW_TARGET_WORLD).toBe("@workflow/world-postgres");
+    expect(e.WORKFLOW_TARGET_WORLD).toContain("@workflow/world-postgres");
     expect(e.WORKFLOW_POSTGRES_URL).toBe("postgres://x/y");
+  });
+
+  test("the world it names is an ABSOLUTE PATH, not a bare specifier", () => {
+    // The bug this pins, in the terms it fails in. The DevKit `require`s this
+    // value from its OWN compiled artifact in `tmpdir()` — a path we do not pick —
+    // so a bare `"@workflow/world-postgres"` resolves against `$TMPDIR/node_modules`
+    // and dies with `Cannot find module` naming a package that is plainly
+    // installed. An absolute path is resolvable from any directory.
+    //
+    // The assertion is the SHAPE rather than a resolution, and that is a property
+    // of this tier: vitest patches `createRequire`, so
+    // `resolve("@workflow/world-postgres")` succeeds even from `tmpdir()` and the
+    // real failure cannot be provoked here — verified, the negative control did
+    // not throw. Same trap the guest guide records for `loadTransformer`, and the
+    // same reason `harness-externals.test.ts` asserts a file's location rather
+    // than what it can require.
+    const e = env();
+    configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 3000, env: e });
+    const world = e.WORKFLOW_TARGET_WORLD ?? "";
+
+    expect(isAbsolute(world)).toBe(true);
+    expect(world.endsWith(".js") || world.endsWith(".mjs") || world.endsWith(".cjs")).toBe(true);
+  });
+
+  test("the resolved path still CLASSIFIES as the Postgres world", () => {
+    // An absolute path is a new spelling, and a spelling this classifier misses is
+    // a Postgres world reported as `local`: loaded by the DevKit and never
+    // migrated, which the classifier's own doc records as a shipped failure. The
+    // round trip is what pins it — a guest that inherits the variable it set on a
+    // previous boot takes the `supplied` branch.
+    const first = env();
+    configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 3000, env: first });
+    const inherited = env({ WORKFLOW_TARGET_WORLD: first.WORKFLOW_TARGET_WORLD });
+
+    expect(
+      configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 3000, env: inherited }),
+    ).toBe("postgres");
   });
 
   test("sets the connection string explicitly rather than leaning on the DATABASE_URL fallback", () => {

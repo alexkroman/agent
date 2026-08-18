@@ -142,7 +142,13 @@ PORT = 8080
 #   per-container concurrency crosses it.
 # - MAX_INPUTS caps what one container absorbs while scale-up is in flight.
 MIN_CONTAINERS = 1  # always-warm floor: session brokering is latency-sensitive
-MAX_CONTAINERS = 10  # cost guard; raise deliberately, not by incident
+# Cost guard AND the multiplier on the platform's direct-connection budget:
+# MAX_CONTAINERS x platformDbConnectionsPerReplica() must fit
+# MAX_PLATFORM_DB_CONNECTIONS, which `platform-db-budget.test.ts` asserts.
+# 10 x 4 = 40. Raise deliberately, not by incident, and check the instance's real
+# `max_connections` first — the failure at the ceiling is every platform read
+# failing at once, not degradation (see that constant).
+MAX_CONTAINERS = 10
 BUFFER_CONTAINERS = 0  # no pre-warmed spare; bursts wait on container cold start
 TARGET_INPUTS = 75  # scale-out set point
 MAX_INPUTS = 150  # concurrent-request cap per container

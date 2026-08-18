@@ -17,7 +17,7 @@
  * rather than the hand-written plpgsql stub that used to stand in for it.
  */
 
-import { expect, test } from "vitest";
+import { afterEach, expect, test } from "vitest";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { StudioSessionRecord, StudioSessionRegistry } from "./studio-session-registry.ts";
 
@@ -139,12 +139,39 @@ export function studioSessionRegistryConformance(
 export function previewQueueConformance(make: () => PreviewQueue): void {
   const uid = uniqueKeys("q");
 
+  /**
+   * Every job id this suite has claimed, so `afterEach` can take them back out.
+   *
+   * **The stack arm's queue is the REAL one a dev server drains**, and four of
+   * these cases used to leave their job in it — claimed but never acked, so it
+   * became visible again after the visibility timeout and stayed there. Measured
+   * on a local stack: 24 conformance jobs from a run two days earlier, drained by
+   * `pnpm dev:aai-server` the first time it had a platform database, each one
+   * printing `Archiving preview job with no resolvable credential { project: 'p' }`
+   * — a fake `user:abc` no Vault can resolve. Nothing about that log names a test
+   * as the cause, which is what makes leaving rows behind worse than noisy.
+   *
+   * Per-case rather than one `afterAll` sweep, because a claim HIDES a job for
+   * its visibility timeout: a suite-level drain cannot see what the cases just
+   * took, which is precisely the set that needs removing.
+   */
+  const claimed: { queue: PreviewQueue; id: string }[] = [];
+
   /** Claim until this scope's job shows up — the stack queue is shared. */
   async function claimMine(queue: PreviewQueue, scope: string) {
     for (const job of await queue.claim(20)) {
-      if (job.job.scope === scope) return job;
+      if (job.job.scope !== scope) continue;
+      claimed.push({ queue, id: job.id });
+      return job;
     }
   }
+
+  afterEach(async () => {
+    // `archive` on an already-acked or already-archived id is a no-op on both
+    // arms, so the cases that settle their own job need no exemption here.
+    const pending = claimed.splice(0);
+    await Promise.all(pending.map(({ queue, id }) => queue.archive(id).catch(() => undefined)));
+  });
 
   test("an enqueued job comes back from claim, intact", async () => {
     const queue = make();
@@ -213,6 +240,9 @@ export function previewQueueConformance(make: () => PreviewQueue): void {
     // ONE claim, not two: a second `claim` cannot see what the first hid, so
     // asserting across two calls would fail on a queue that behaved correctly.
     const mine = (await queue.claim(20)).filter((c) => c.job.scope === scope);
+    // Recorded for the cleanup above: this case claims directly rather than
+    // through `claimMine`, so it has to hand its ids over itself.
+    for (const c of mine) claimed.push({ queue, id: c.id });
     expect(mine).toHaveLength(2);
     expect(new Set(mine.map((c) => c.id)).size).toBe(2);
   });

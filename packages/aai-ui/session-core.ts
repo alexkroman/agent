@@ -15,23 +15,23 @@
 
 import { createEpoch, WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
-import { loadClientConfig } from "./client-config.ts";
 import { initAudioCapture, loadAudioModules } from "./session-core-audio-setup.ts";
+import { createDialer } from "./session-core-dial.ts";
 import { createHandshakeGuard, HANDSHAKE_ERROR } from "./session-core-handshake.ts";
 import {
   CLEARED_SESSION_STATE,
   createMessageHandlers,
   type SessionConfigMessage,
 } from "./session-core-messages.ts";
-import { openReconnectingSocket, reconnectPending } from "./session-core-reconnect.ts";
+import { reconnectPending } from "./session-core-reconnect.ts";
 import type {
   ConnState,
   SessionCore,
   SessionCoreOptions,
   SessionSnapshot,
 } from "./session-core-types.ts";
-import { buildBrokeredWsUrl, buildWsUrl } from "./session-core-url.ts";
-import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.ts";
+import { buildWsUrl } from "./session-core-url.ts";
+import { MIC_SEND_MAX_BUFFERED_BYTES } from "./types.ts";
 
 // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -125,26 +125,11 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     preInitDone: false,
   };
   let connectionController: AbortController | null = null;
-  let hasConnected = false;
-  /**
-   * The session ID to resume: seeded from `options.resumeSessionId`, then
-   * kept current from every `config` frame. Reconnect URLs carry it as
-   * `?sessionId=<id>` so the server re-registers the SAME session id —
-   * that key is what the session's slot state lives under, so a reconnect
-   * that omits it gets a fresh session with none of the agent's context,
-   * greeting suppression aside.
-   */
-  let sessionId: string | undefined = options.resumeSessionId;
 
-  /**
-   * Whether `platformUrl` is a broker (its `client-config` names a
-   * `sessionUrl`). A server is one or it isn't — it never flips mid-session
-   * — so once a non-broker is observed, later reconnects skip the
-   * `client-config` re-fetch that would only fall through to `buildWsUrl`
-   * (every reconnect on `aai dev` / self-hosted otherwise pays a wasted GET).
-   * `undefined` until the first fetch settles.
-   */
-  let serverIsBroker: boolean | undefined;
+  // The resume identity and the address of the next attempt — see
+  // `session-core-dial.ts`, which owns the session id, the storage that carries
+  // it across a page RELOAD, the handshake flag, and the broker latch.
+  const dialer = createDialer(options);
 
   function cleanupAudio(): void {
     conn.audioSetupInFlight = false;
@@ -220,62 +205,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
    * snapshot's `messages` are untouched: nothing clears the transcript on screen.
    */
   function onServerConfig(config: SessionConfigMessage): void {
-    if (config.sid) {
-      sessionId = config.sid;
-      options.onSessionId?.(config.sid);
-    }
-    hasConnected = true;
+    dialer.configured(config.sid);
+    if (config.sid) options.onSessionId?.(config.sid);
     // initAudioCapture handles its own failures (sets error state internally).
     void initAudioCapture(conn, config, audioDeps);
-  }
-
-  /**
-   * The WebSocket URL for the *next* connection attempt. Evaluated per
-   * attempt (partysocket takes it as an async URL provider):
-   *
-   * - `GET client-config` is re-fetched every attempt. When it names a
-   *   `sessionUrl` — the platform's broker pointing at the agent's live
-   *   sandbox — the session connects DIRECTLY there. The URL changes when
-   *   the sandbox is replaced (idle eviction, redeploy), which is exactly
-   *   when a reconnect happens, so per-attempt brokering is what makes
-   *   reconnects land on the replacement. Without one (`aai dev`, older
-   *   servers), the same-origin `websocket` path is used.
-   * - Once the first `config` arrives, every reconnect carries
-   *   `?sessionId=<id>` and the server resumes the SAME session (id, tool
-   *   state) instead of minting a new one. `resume=1` remains only as the
-   *   greeting-suppression fallback for a server whose config carried no id.
-   */
-  async function currentWsUrl(): Promise<string> {
-    // Known non-broker: skip the fetch and go straight to the same-origin
-    // path (the fetch could only return no `sessionUrl` again).
-    const cfg = serverIsBroker === false ? null : await loadClientConfig(options.platformUrl);
-    // Only an ANSWERED lookup says anything about the server. A failed one
-    // (the broker 503s while the sandbox boots, or a network blip) must not
-    // latch `serverIsBroker = false`: that skips brokering on every later
-    // attempt and pins the client to the platform's `/:slug/websocket` —
-    // browsers don't follow its WebSocket redirect, so that route never
-    // recovers even after the agent does. Only an answered lookup may latch.
-    if (cfg) serverIsBroker = cfg.sessionUrl !== undefined;
-    const url = cfg?.sessionUrl
-      ? buildBrokeredWsUrl(cfg.sessionUrl, hasConnected, sessionId)
-      : buildWsUrl(options.platformUrl, hasConnected, sessionId);
-    // `apiUrl` deliberately stays the long-living platform endpoint set at
-    // construction — never the brokered sandbox tunnel URL, which is
-    // ephemeral (dies on idle eviction/redeploy) and useless to share.
-    return url.toString();
-  }
-
-  /** Open a socket: an injected constructor as-is (tests — connects to the
-   *  same-origin path, no brokering), or partysocket's reconnecting
-   *  WebSocket — same interface, plus reconnect-on-close. */
-  function openSocket(): InstanceType<WebSocketConstructor> {
-    if (options.WebSocket) {
-      return new options.WebSocket(
-        buildWsUrl(options.platformUrl, hasConnected, sessionId).toString(),
-      );
-    }
-    const socket = openReconnectingSocket(currentWsUrl);
-    return socket as unknown as InstanceType<WebSocketConstructor>;
   }
 
   function connect(opts?: { signal?: AbortSignal }): void {
@@ -308,7 +241,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       });
     }
 
-    const socket = openSocket();
+    const socket = dialer.open();
     socket.binaryType = "arraybuffer";
     conn.ws = socket;
 
@@ -468,11 +401,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   function end(): void {
     teardownConnection();
-    // A later start() must be a NEW session, not a resume: drop the resume id
-    // and the reconnect flag so the next connect carries no `?sessionId=`
-    // (fresh per-session tool state) and the greeting plays again.
-    sessionId = undefined;
-    hasConnected = false;
+    // A later start() must be a NEW session, not a resume: the next connect
+    // carries no `?sessionId=` (fresh per-session tool state) and the greeting
+    // plays again.
+    dialer.forget();
     updateState({
       ...CLEARED_SESSION_STATE,
       state: "disconnected",

@@ -14,6 +14,15 @@ function behindTls(path = "/deploy", headers: Record<string, string> = {}): Requ
   return new Request(`http://agent.example.modal.run${path}`, { headers });
 }
 
+/**
+ * A DECLARED local run — the only env in which an observed origin is retained.
+ *
+ * Spelled out rather than `{}`, which is what these tests used to pass: the
+ * sentinel is `AAI_LOCAL_DEV=1` now, so an empty env is production and the
+ * retention this file is about does not happen at all.
+ */
+const LOCAL: NodeJS.ProcessEnv = { AAI_LOCAL_DEV: "1" };
+
 describe("resolvePublicOrigin", () => {
   test("a public host reached over cleartext resolves to https", () => {
     // The regression: Modal forwards plain HTTP to the container and sets no
@@ -100,9 +109,9 @@ describe("agentPublicBaseUrl", () => {
     // Three of the four spawn paths hold no request (blue-green handover, the
     // wake sweep, the peer route), so the value has to outlive the request that
     // established it — which is only acceptable where there is no tenant
-    // boundary to cross. `{}` is local dev: no SUPABASE_STORAGE_BUCKET.
-    rememberPublicOrigin(behindTls("/digest-desk/client-config"), {});
-    expect(agentPublicBaseUrl("digest-desk", {})).toBe(
+    // boundary to cross.
+    rememberPublicOrigin(behindTls("/digest-desk/client-config"), LOCAL);
+    expect(agentPublicBaseUrl("digest-desk", LOCAL)).toBe(
       "https://agent.example.modal.run/digest-desk",
     );
   });
@@ -110,23 +119,25 @@ describe("agentPublicBaseUrl", () => {
   test("configuration wins over what was observed", () => {
     // A deployment reachable on more than one origin is why the operator lever
     // exists: whichever request happened to spawn the guest must not decide.
-    rememberPublicOrigin(behindTls(), {});
-    expect(agentPublicBaseUrl("x", { AAI_PUBLIC_ORIGIN: "https://aai.example" })).toBe(
+    rememberPublicOrigin(behindTls(), LOCAL);
+    expect(agentPublicBaseUrl("x", { ...LOCAL, AAI_PUBLIC_ORIGIN: "https://aai.example" })).toBe(
       "https://aai.example/x",
     );
   });
 
   test("a blank AAI_PUBLIC_ORIGIN falls through rather than yielding '/slug'", () => {
-    rememberPublicOrigin(behindTls(), {});
-    expect(agentPublicBaseUrl("x", { AAI_PUBLIC_ORIGIN: "   " })).toBe(
+    rememberPublicOrigin(behindTls(), LOCAL);
+    expect(agentPublicBaseUrl("x", { ...LOCAL, AAI_PUBLIC_ORIGIN: "   " })).toBe(
       "https://agent.example.modal.run/x",
     );
   });
 
   describe("in production, no request teaches this replica an origin", () => {
-    // Production = anything that is not `isLocalDev`, whose sentinel is the
-    // deploy artifact bucket (see _boot.ts).
-    const PROD: NodeJS.ProcessEnv = { SUPABASE_STORAGE_BUCKET: "aai-deploys" };
+    // Production is anything that has not DECLARED itself a local run — an
+    // empty environment included, which is the property that matters: the
+    // retention below must be something someone asked for, never what a
+    // forgotten variable leaves on (see `isLocalDev` in _boot.ts).
+    const PROD: NodeJS.ProcessEnv = {};
 
     test("an attacker's Host header cannot poison another tenant's guest", () => {
       // The attack, end to end. `rememberPublicOrigin` runs from the shared

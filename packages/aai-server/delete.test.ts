@@ -1,10 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test, vi } from "vitest";
-import type { AppDatabases } from "./app-database.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { authFetch, createTestStore, deployAgent, makeSlot, type TestFetch } from "./test-utils.ts";
+import {
+  authFetch,
+  createTestStore,
+  deployAgent,
+  fakeAppDatabases,
+  makeSlot,
+  type TestFetch,
+} from "./test-utils.ts";
 
 async function setup() {
   // Store + event bus are a pair: the delete route only removes the row, and
@@ -96,14 +102,7 @@ test("a failed app-database deprovision fails the delete instead of stranding it
   const memoryEvents = createMemoryPlatformEvents();
   const store = createTestStore(undefined, memoryEvents);
   const deprovision = vi.fn().mockRejectedValue(new Error("cluster unreachable"));
-  const appDb: AppDatabases = {
-    deprovision,
-    provision: () => Promise.reject(new Error("not expected")),
-    connectionUrl: () => {
-      throw new Error("not expected");
-    },
-    usage: () => Promise.reject(new Error("not expected")),
-  };
+  const appDb = fakeAppDatabases({ deprovision });
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,

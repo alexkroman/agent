@@ -25,7 +25,13 @@ import type { TurnChain, TurnGate } from "./pipeline-turn-gate.ts";
 import type { TurnOutcome } from "./pipeline-turn-outcome.ts";
 import type { TurnMachine } from "./pipeline-turn-state.ts";
 import type { UserActivity } from "./pipeline-user-speech.ts";
-import type { EmitError, SendTtsText, TransportCallbacks } from "./types.ts";
+import {
+  type EmitError,
+  type SendTtsText,
+  type SkipGreeting,
+  shouldSkipGreeting,
+  type TransportCallbacks,
+} from "./types.ts";
 
 /** What {@link createPipelineLifecycle} hands back to the transport. */
 export interface PipelineLifecycle {
@@ -67,7 +73,7 @@ export interface PipelineLifecycleDeps {
   /** Session-lifetime abort — combined into every turn's own signal. */
   sessionAbort: AbortController;
   greeting: string | undefined;
-  skipGreeting: boolean | undefined;
+  skipGreeting: SkipGreeting | undefined;
 
   gate: TurnGate;
   turns: TurnMachine;
@@ -205,7 +211,12 @@ export function createPipelineLifecycle(deps: PipelineLifecycleDeps): PipelineLi
     // there would repeat a line the caller has heard. It deliberately does not
     // reach `greet()`, because a later `reset()` is the opposite case — the
     // conversation is discarded and the next one begins.
-    if (deps.skipGreeting) return;
+    //
+    // RESOLVED here rather than read as a boolean, and this call site is why the
+    // field may be a thunk: by now the resume's lookups have run, so "the caller
+    // presented an id" has become "the id named something". A resume that found
+    // nothing greets — see `host/session-resume-found.ts`.
+    if (shouldSkipGreeting(deps.skipGreeting)) return;
     greet();
   }
 

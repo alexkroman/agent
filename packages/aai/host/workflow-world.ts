@@ -6,7 +6,7 @@
  * Two of them, and the split is the same one `ctx.db` already makes:
  *
  * - **Postgres** when the agent has a database. Runs, events and the job queue
- *   live in the app's own schema, which is why creating a workflow app switches
+ *   live in the app's own database, which is why creating a workflow app switches
  *   storage on. This is production.
  * - **Local** otherwise — `aai dev` against a project with no `DATABASE_URL`.
  *   State goes in `.workflow-data/` and the queue is in memory, so a restart
@@ -33,11 +33,39 @@
 
 import { errorMessage } from "../sdk/utils.ts";
 import { claimPoolPresenceAndSweep } from "./workflow-lock-sweep.ts";
+import { resolveWorldSpecifier } from "./workflow-resolve.ts";
 
 /** What the DevKit reads to pick a world. */
 const TARGET_WORLD_ENV = "WORKFLOW_TARGET_WORLD";
 /** The Postgres world's connection string. */
 const POSTGRES_URL_ENV = "WORKFLOW_POSTGRES_URL";
+const POSTGRES_POOL_ENV = "WORKFLOW_POSTGRES_MAX_POOL_SIZE";
+const POSTGRES_CONCURRENCY_ENV = "WORKFLOW_POSTGRES_WORKER_CONCURRENCY";
+
+/**
+ * How many connections the DevKit's world may hold, and how many steps it runs
+ * at once.
+ *
+ * **Both are PINNED because the world's defaults do not fit a tenant role.** Left
+ * alone, `@workflow/world-postgres` builds its `pg.Pool` with no `max`, so
+ * node-postgres defaults to **10**, and `queueConcurrency` defaults to **10** —
+ * then `listenChannel` opens a DEDICATED `pg.Client` on top (`+1`, outside the
+ * pool). Against a role with `connection limit 4` beside `ctx.db`'s own pool of
+ * 4, that is up to 15 connections asking for 4: every workflow request failed
+ * `too many connections for role "app_…"`.
+ *
+ * It could not have surfaced earlier. Under the per-schema model the DevKit's
+ * migration could not run at all (`app-database.ts` has the measurement), so
+ * nothing but `ctx.db` ever used that role — making workflows work is what made
+ * the tenant's connection footprint real.
+ *
+ * `APP_DB_CONNECTION_LIMIT` on the platform side is sized against exactly this
+ * sum, so the two move together: pool + LISTEN + `ctx.db` + one spare. Concurrency
+ * is kept AT the pool size rather than above it — a worker that cannot get a
+ * connection is a step waiting on a pool timeout, which reads as a hung run.
+ */
+const POSTGRES_MAX_POOL = 4;
+const POSTGRES_WORKER_CONCURRENCY = 4;
 /** Full base URL override for the local world's callbacks. */
 const LOCAL_BASE_URL_ENV = "WORKFLOW_LOCAL_BASE_URL";
 /** Where the local world keeps its run state. */
@@ -93,12 +121,20 @@ export function configureWorkflowWorld(opts: {
   if (supplied) return classifySuppliedWorld(supplied);
 
   if (opts.databaseUrl) {
-    env[TARGET_WORLD_ENV] = POSTGRES_WORLD;
+    // RESOLVED, never the bare name: the DevKit `require`s this value from its own
+    // compiled artifact in `tmpdir()`, where nothing resolves — see
+    // `workflow-resolve.ts` for the failure and why every fix for it is this move.
+    env[TARGET_WORLD_ENV] = resolveWorldSpecifier(POSTGRES_WORLD);
     // Set explicitly rather than relying on the world's `DATABASE_URL`
     // fallback: that fallback is a convenience for a standalone app, and here
     // the two happening to be equal would be a coincidence the next change
     // breaks.
     env[POSTGRES_URL_ENV] = opts.databaseUrl;
+    // `??=`, so an operator running their own Postgres can still tune these; what
+    // must not happen is INHERITING the world's defaults, which do not fit a
+    // per-app role (see the constants).
+    env[POSTGRES_POOL_ENV] ??= String(POSTGRES_MAX_POOL);
+    env[POSTGRES_CONCURRENCY_ENV] ??= String(POSTGRES_WORKER_CONCURRENCY);
     return "postgres";
   }
 
@@ -196,23 +232,6 @@ function classifySuppliedWorld(supplied: string): WorldKind {
 }
 
 /**
- * Thrown by the `process.exit` stand-in below, and caught by its only caller.
- *
- * A class rather than a sentinel value so an unrelated throw from inside
- * `setupDatabase` is still reported as itself.
- */
-class MigrationExitedError extends Error {
-  /** Declared rather than a parameter property — `erasableSyntaxOnly` bans those. */
-  readonly code: number;
-
-  constructor(code: number) {
-    super(`the world migration called process.exit(${code})`);
-    this.name = "MigrationExitedError";
-    this.code = code;
-  }
-}
-
-/**
  * Run the Postgres world's migration WITHOUT letting it end the process.
  *
  * **`setupDatabase` is `@workflow/world-postgres/cli`'s own entry point, and it
@@ -231,11 +250,26 @@ class MigrationExitedError extends Error {
  * an exception, so the "a failure must not take the guest down" rule it exists
  * to enforce was unenforceable.
  *
- * The stand-in THROWS rather than returning, so `setupDatabase`'s own await
- * chain unwinds at the call instead of running on past it. By then the function
- * has already migrated and closed its pool — the exit is the last statement in
- * both branches — so nothing is left half-done. A version that stops exiting
- * needs no change here: returning normally is read as success.
+ * **The stand-in RECORDS and RETURNS; it does not throw.** `process.exit` is the
+ * LAST statement in both of `setupDatabase`'s branches, after its `pool.end()` —
+ * so returning simply lets the function fall out of the branch it is in and
+ * resolve, with nothing left half-done and nothing after it to run.
+ *
+ * It threw at first, and a throw is what made this loud in the wrong direction:
+ * the exception landed in `setupDatabase`'s OWN `catch`, which logged
+ * `❌ Failed to setup database: <our sentinel>` with a stack trace and exited
+ * again — directly under `✅ Database schema created successfully!`, on the happy
+ * path, on every workflow guest boot. Suppressing that line was the first fix and
+ * the wrong one: it needed a sentinel class, an outer catch, an "ignore the
+ * second exit code" rule, and a `console.error` filter, all to undo a reaction to
+ * our own interception. Not throwing means none of that exists.
+ *
+ * A REAL failure is unaffected: its `catch` has already run (pool closed, the
+ * genuine error logged as itself), `exitCode` is 1, and the check below turns
+ * that into an exception the caller reports.
+ *
+ * A version that stops exiting needs no change here either — returning normally
+ * is read as success either way.
  *
  * Not a general-purpose wrapper, deliberately. It is installed for the duration
  * of ONE call at boot, where nothing else in the process is trying to exit.
@@ -244,28 +278,19 @@ async function migratePostgresWorld(): Promise<void> {
   const { setupDatabase } = await import("@workflow/world-postgres/cli");
   const realExit = process.exit;
   let exitCode: number | undefined;
-  process.exit = ((code?: number | string | null): never => {
-    // FIRST exit wins, and that is the whole fix for a defect this shipped with.
-    // `setupDatabase` puts its `process.exit(0)` INSIDE its own `try`, and its
-    // `catch` exits 1 — so the throw below lands in that `catch`, which logs
-    // "❌ Failed to setup database" and exits again. Recording the second code
-    // reported every SUCCESSFUL migration as `exit 1`, and the caller then threw
-    // before `getWorld().start?.()`: the schema was migrated, the queue was never
-    // subscribed, `reenqueueActiveRuns` never ran, and the orphaned-lock sweep was
-    // dead code on every boot. Runs started in that same process still dispatched
-    // (the world's `queue()` awaits its own `start()`), which is exactly why it
-    // went unnoticed — what broke is a run parked in a `sleep` or on a webhook,
-    // which is never picked up when its guest is woken.
-    //
-    // A second `exit` is therefore the CLI reacting to OUR interception, never a
-    // second decision of its own, and it must not overwrite the first.
+  // A single assertion below, never `as unknown as`: the stub RETURNS where the
+  // real `process.exit` is typed `never`, and that is the one difference. `never`
+  // is assignable to `void`, so the two signatures still have to be comparable —
+  // widen through `unknown` and a genuinely wrong parameter list stops being
+  // reported (verified: it becomes a TS2352).
+  process.exit = ((code?: number | string | null): void => {
+    // FIRST exit wins. With the throw gone there is normally only one — but the
+    // rule is kept because it is what makes a genuine `exit(1)` legible: whatever
+    // the CLI decides FIRST is its decision, and nothing later may soften it.
     exitCode ??= typeof code === "number" ? code : 0;
-    throw new MigrationExitedError(exitCode);
   }) as typeof process.exit;
   try {
     await setupDatabase();
-  } catch (err: unknown) {
-    if (!(err instanceof MigrationExitedError)) throw err;
   } finally {
     process.exit = realExit;
   }

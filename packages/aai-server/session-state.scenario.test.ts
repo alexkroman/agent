@@ -34,53 +34,108 @@ import {
   createSessionStateStore,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
+  sessionStateDdl,
 } from "@alexkroman1/aai/runtime";
 import { createToolContext } from "@alexkroman1/aai/testing";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
-import { SWEEP_SESSION_STATE } from "./_session-state-sweep.ts";
+import { SWEEP_APP_SESSION_STATE } from "./_session-state-sweep.ts";
+import { APP_DB_SCHEMA } from "./app-database.ts";
 
 /**
- * An app-SHAPED schema, because the sweep only considers `app_` + 16 hex — the
- * identifier rule every statement over a tenant schema re-asserts. A test schema
- * named anything else would be skipped by the sweep and the case would pass
- * vacuously.
+ * A real per-app DATABASE, named the way `appDbIdentifier` names one.
+ *
+ * It was an app-shaped SCHEMA in the platform database with the connection's
+ * `search_path` pinned to it, which is how the platform used to provision an app.
+ * It no longer is (see `app-database.ts`): an app gets its own database and its
+ * tables sit in `public`, with no pin. Keeping the schema shape here would test a
+ * layout production does not have — and the sweep, whose statement now names
+ * `public`, would find nothing and pass vacuously.
  */
-const SCHEMA = "app_0123456789abcdef";
+const APP_DB = "app_0123456789abcdef";
+/** The app role's password. Fixed — a test double has no business being random. */
+const APP_PASSWORD = "scenario-app-role-pw";
 
 type Cart = { items: string[]; total: number; note: string | null };
 
 const cartSlot = sessionSlot("cart", (): Cart => ({ items: [], total: 0, note: null }));
 
 describeWithPg("session state over a real Postgres", () => {
-  let db: ReturnType<typeof createPostgresDb>;
-  let sql: <T = Record<string, unknown>>(q: string, p?: unknown[]) => Promise<T[]>;
-  /** A handle whose search_path is the test schema, as a guest's own role is. */
+  /** The PLATFORM connection — what creates and drops the app's database. */
+  let platform: ReturnType<typeof createPostgresDb>;
+  /** A connection INTO the app's own database, as the ADMIN — what provisions it. */
   let appDb: ReturnType<typeof createPostgresDb>;
+  /** The same database as the APP's own role — what a guest really connects as. */
+  let tenantDb: ReturnType<typeof createPostgresDb>;
+  let sql: <T = Record<string, unknown>>(q: string, p?: unknown[]) => Promise<T[]>;
+
+  /** Swap the app's database into the platform URL, keeping the admin's credentials. */
+  function appUrl(): string {
+    const parsed = new URL(pgUrl());
+    parsed.pathname = `/${APP_DB}`;
+    return parsed.toString();
+  }
+
+  /** The same URL as the app's OWN role — `DATABASE_URL` as a guest receives it. */
+  function tenantUrl(): string {
+    const parsed = new URL(appUrl());
+    parsed.username = APP_DB;
+    parsed.password = APP_PASSWORD;
+    return parsed.toString();
+  }
 
   beforeAll(async () => {
-    db = createPostgresDb({ url: pgUrl() });
-    sql = db.query;
-    await sql(`drop schema if exists ${SCHEMA} cascade`);
-    await sql(`create schema ${SCHEMA}`);
-    // `search_path` rather than a qualified table name: that is how the platform
-    // provisions an app role, so the backend's unqualified SQL is exercised the
-    // way a guest runs it.
-    appDb = createPostgresDb({ url: `${pgUrl()}?options=-c%20search_path%3D${SCHEMA}` });
+    platform = createPostgresDb({ url: pgUrl() });
+    await platform.query(`drop database if exists "${APP_DB}" with (force)`);
+    await platform.query(`drop role if exists "${APP_DB}"`);
+    await platform.query(`create database "${APP_DB}"`);
+    // The APP's own login role, because the store must be exercised as the TENANT
+    // and not as the admin. This suite connected as the admin for everything,
+    // which made it structurally blind to the bug that shipped:
+    // `provisionAppDatabase` creates the session-state tables as the ADMIN, so the
+    // app role — holding only `usage, create` on the schema — had no privileges on
+    // them at all, and every session failed
+    // `42501 permission denied for table aai_session_events`. No admin connection
+    // can see that, however real the database behind it is.
+    await platform.query(
+      `create role "${APP_DB}" login password '${APP_PASSWORD}' connection limit 10`,
+    );
+    appDb = createPostgresDb({ url: appUrl() });
+    // `sql` addresses the APP's database, because that is where the tables are —
+    // every assertion below reads the tenant's own rows, not the platform's.
+    sql = appDb.query;
+    // The TABLES come with the database, exactly as `provisionAppDatabase` gives
+    // them to a real app — the backend creates none of its own any more (see
+    // `sessionStateDdl`). Applying the SDK's own DDL rather than a copy of it is
+    // what keeps this suite testing the shipped shape: a hand-written `create
+    // table` here would go on passing after the real one changed.
+    for (const statement of sessionStateDdl(APP_DB_SCHEMA)) {
+      await sql(statement);
+    }
+    // The grants `provisionAppDatabase` issues alongside that DDL, spelled the
+    // same way — so a change to what the platform grants fails here.
+    await sql(`grant usage, create on schema ${APP_DB_SCHEMA} to "${APP_DB}"`);
+    await sql(
+      `grant select, insert, update, delete on ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE},` +
+        ` ${APP_DB_SCHEMA}.${SESSION_EVENT_TABLE} to "${APP_DB}"`,
+    );
+    tenantDb = createPostgresDb({ url: tenantUrl() });
   });
 
   afterAll(async () => {
+    await tenantDb?.close();
     await appDb.close();
-    await sql(`drop schema if exists ${SCHEMA} cascade`);
-    await db.close();
+    await platform.query(`drop database if exists "${APP_DB}" with (force)`);
+    await platform.query(`drop role if exists "${APP_DB}"`);
+    await platform.close();
   });
 
   const storeFor = () =>
-    createSessionStateStore({ backend: createPostgresStateBackend({ db: appDb }) });
+    createSessionStateStore({ backend: createPostgresStateBackend({ db: tenantDb }) });
 
   /** The event stream over the SAME backend — one store, two consumers. */
   const streamFor = () =>
-    createSessionEventStream({ backend: createPostgresStateBackend({ db: appDb }) });
+    createSessionEventStream({ backend: createPostgresStateBackend({ db: tenantDb }) });
 
   test("a slot's value survives a new process", async () => {
     // The whole point: the second store shares nothing with the first but the
@@ -120,7 +175,7 @@ describeWithPg("session state over a real Postgres", () => {
     await store.flush("s-jsonb");
 
     const rows = await sql<{ t: string }>(
-      `select jsonb_typeof(value) as t from ${SCHEMA}.${SESSION_STATE_TABLE}
+      `select jsonb_typeof(value) as t from ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE}
        where session_id = $1`,
       ["s-jsonb"],
     );
@@ -162,7 +217,7 @@ describeWithPg("session state over a real Postgres", () => {
     cartSlot.update(ctx, (cart) => cart.items.push("a"));
     await store.flush("s-unchanged");
     const first = await sql<{ updated_at: string }>(
-      `select updated_at from ${SCHEMA}.${SESSION_STATE_TABLE} where session_id = $1`,
+      `select updated_at from ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE} where session_id = $1`,
       ["s-unchanged"],
     );
 
@@ -170,7 +225,7 @@ describeWithPg("session state over a real Postgres", () => {
     cartSlot.update(ctx, (cart) => cart.items);
     await store.flush("s-unchanged");
     const second = await sql<{ updated_at: string }>(
-      `select updated_at from ${SCHEMA}.${SESSION_STATE_TABLE} where session_id = $1`,
+      `select updated_at from ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE} where session_id = $1`,
       ["s-unchanged"],
     );
     expect(second[0]?.updated_at).toEqual(first[0]?.updated_at);
@@ -189,7 +244,7 @@ describeWithPg("session state over a real Postgres", () => {
     await store.flush("s-rows");
 
     const rows = await sql<{ slot: string }>(
-      `select slot from ${SCHEMA}.${SESSION_STATE_TABLE} where session_id = $1 order by slot`,
+      `select slot from ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE} where session_id = $1 order by slot`,
       ["s-rows"],
     );
     expect(rows.map((r) => r.slot)).toEqual(["cart", "flags"]);
@@ -206,7 +261,7 @@ describeWithPg("session state over a real Postgres", () => {
     await expect
       .poll(async () => {
         const rows = await sql<{ session_id: string }>(
-          `select session_id from ${SCHEMA}.${SESSION_STATE_TABLE}
+          `select session_id from ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE}
            where session_id in ('s-keep', 's-drop')`,
         );
         return rows.map((r) => r.session_id);
@@ -225,15 +280,17 @@ describeWithPg("session state over a real Postgres", () => {
       await store.flush(sid);
     }
     await sql(
-      `update ${SCHEMA}.${SESSION_STATE_TABLE} set updated_at = now() - interval '3 days'
+      `update ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE} set updated_at = now() - interval '3 days'
        where session_id = $1`,
       ["s-old"],
     );
 
-    await sql(SWEEP_SESSION_STATE);
+    // The shipped statement, verbatim, run where it really runs: inside the app's
+    // own database. pg_cron dispatches it there via `cron.schedule_in_database`.
+    await sql(SWEEP_APP_SESSION_STATE);
 
     const rows = await sql<{ session_id: string }>(
-      `select session_id from ${SCHEMA}.${SESSION_STATE_TABLE}
+      `select session_id from ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE}
        where session_id in ('s-old', 's-new')`,
     );
     expect(rows.map((r) => r.session_id)).toEqual(["s-new"]);
@@ -265,11 +322,11 @@ describeWithPg("session state over a real Postgres", () => {
     stream.append("s-retry", { type: "speech.started" });
     await stream.flush("s-retry");
     // The same index again — what a retry after a partial failure sends.
-    const backend = createPostgresStateBackend({ db: appDb });
+    const backend = createPostgresStateBackend({ db: tenantDb });
     await backend.appendEvents("s-retry", [{ index: 0, json: '{"type":"speech.stopped"}' }]);
 
     const rows = await sql<{ count: number }>(
-      `select count(*)::int as count from ${SCHEMA}.${SESSION_EVENT_TABLE} where session_id = $1`,
+      `select count(*)::int as count from ${APP_DB_SCHEMA}.${SESSION_EVENT_TABLE} where session_id = $1`,
       ["s-retry"],
     );
     expect(rows[0]?.count).toBe(1);
@@ -287,15 +344,17 @@ describeWithPg("session state over a real Postgres", () => {
     // Aged by `created_at`, not `updated_at`: an event row is append-only and
     // never rewritten, so that is the only time it has.
     await sql(
-      `update ${SCHEMA}.${SESSION_EVENT_TABLE} set created_at = now() - interval '3 days'
+      `update ${APP_DB_SCHEMA}.${SESSION_EVENT_TABLE} set created_at = now() - interval '3 days'
        where session_id = $1`,
       ["e-old"],
     );
 
-    await sql(SWEEP_SESSION_STATE);
+    // The shipped statement, verbatim, run where it really runs: inside the app's
+    // own database. pg_cron dispatches it there via `cron.schedule_in_database`.
+    await sql(SWEEP_APP_SESSION_STATE);
 
     const rows = await sql<{ session_id: string }>(
-      `select distinct session_id from ${SCHEMA}.${SESSION_EVENT_TABLE}
+      `select distinct session_id from ${APP_DB_SCHEMA}.${SESSION_EVENT_TABLE}
        where session_id in ('e-old', 'e-new')`,
     );
     expect(rows.map((r) => r.session_id)).toEqual(["e-new"]);

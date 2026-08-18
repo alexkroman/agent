@@ -13,12 +13,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
-import { lazy, Suspense, useCallback, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useState } from "react";
 import { api, type ChatSession, type ProjectData, type StudioStatus } from "./api.ts";
 import { errorText, isTransientError } from "./api-error.ts";
 import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
 import { ChatPanel } from "./chat.tsx";
-import type { NotifyChat } from "./chat-notify.ts";
 import { bufferFor, useFileDrafts } from "./file-drafts.ts";
 import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
@@ -206,39 +205,19 @@ export function ProjectView(props: ProjectViewProps) {
     },
   });
 
-  // Injected by the mounted ProjectChat: posts a message into the live
-  // conversation — how publish output and secret changes reach the coding
-  // agent. Silent by default; `{ respond: true }` runs a turn (see NotifyChat).
-  const notifyChatRef = useRef<NotifyChat | null>(null);
-  const notifyChat: NotifyChat = (text, opts) => notifyChatRef.current?.(text, opts);
-  // Stable identity: ProjectChat's registration effect depends on this, and
-  // it only writes to a ref, so empty deps are correct.
-  const registerNotify = useCallback((fn: NotifyChat | null) => {
-    notifyChatRef.current = fn;
-  }, []);
-
+  // A studio action never writes into the conversation. The CLI's output —
+  // success, warnings, a failed build — is reported by the PublishMenu that
+  // started it (`publish.data` / `publish.error`), not injected as a user
+  // message: the transcript is the user's, and a pane that reports its own
+  // outcome does not need the agent to relay it.
   const publish = useMutation({
     mutationFn: () => api.deploy(bearer, project),
-    onSuccess: (result) => {
+    onSuccess: () => {
       invalidateWorkspace();
       // The PRODUCTION agent changed — reload the pane's production-fallback
       // iframe (projects that predate auto previews frame production).
       setPreviewNonce((n) => n + 1);
       setTab("preview");
-      // The CLI's output goes to the chat so the agent knows what shipped
-      // (warnings included — e.g. the missing-credential preflight).
-      notifyChat(
-        `I published the project with the Publish button. aai deploy output:\n\n${result.output}`,
-      );
-    },
-    onError: (err) => {
-      // Deploy errors are CLI output too — the coding agent is the one who
-      // can fix a failed build or deploy, so it must see them AND act. This
-      // one runs a turn rather than waiting to be noticed on the next.
-      notifyChat(
-        `I tried to publish with the Publish button, but aai deploy failed:\n\n${errorText(err)}`,
-        { respond: true },
-      );
     },
   });
 
@@ -325,7 +304,6 @@ export function ProjectView(props: ProjectViewProps) {
           onInitialPromptSent={props.onInitialPromptSent}
           onWorkspaceChanged={invalidateWorkspace}
           onBusyChange={setChatBusy}
-          registerNotify={registerNotify}
         />
         {tab === "preview" && (
           <PreviewPane
@@ -364,7 +342,6 @@ export function ProjectView(props: ProjectViewProps) {
             project={project}
             deployedSlug={deployedSlug}
             previewSlug={workspace.data?.previewSlug}
-            onNotifyChat={notifyChat}
             onDeleteProject={() => deleteProject.mutate()}
             deleting={deleteProject.isPending}
           />

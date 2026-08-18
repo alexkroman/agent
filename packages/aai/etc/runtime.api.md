@@ -284,6 +284,7 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
 export type CreatePostgresDbOptions = {
     url: string;
     max?: number;
+    onNotice?: (notice: unknown) => void;
 };
 
 // @public
@@ -639,7 +640,7 @@ export interface PipelineTransportOptions {
     sid: string;
     silencePrompt?: string | undefined;
     silenceTimeoutMs?: number | undefined;
-    skipGreeting?: boolean | undefined;
+    skipGreeting?: SkipGreeting | undefined;
     speechIdleTimeoutMs?: number | undefined;
     startFailurePhrase?: string | undefined;
     stt: SttOpener;
@@ -782,6 +783,22 @@ export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
 
 // @public
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
+
+// @internal
+type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
+
+// @public
+const RestoredToolCallSchema: z.ZodObject<{
+    callId: z.ZodString;
+    name: z.ZodString;
+    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    status: z.ZodEnum<{
+        done: "done";
+        pending: "pending";
+    }>;
+    result: z.ZodOptional<z.ZodString>;
+    afterMessageIndex: z.ZodNumber;
+}, z.core.$strip>;
 
 // @public
 export type RunCodeExecutor = (code: string) => Promise<string | {
@@ -931,7 +948,7 @@ export type SessionCore = {
     command(cmd: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
-    restoreHistory(messages: readonly Message[]): void;
+    restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
     report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
@@ -990,7 +1007,7 @@ export type SessionEventPage = {
     tail: number;
 };
 
-// @public
+// @public (undocumented)
 const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"session.configured">;
     meta: z.ZodObject<{
@@ -1122,6 +1139,30 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         at: z.ZodNumber;
     }, z.core.$strip>;
     state: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"history.restored">;
+    meta: z.ZodObject<{
+        id: z.ZodString;
+        at: z.ZodNumber;
+    }, z.core.$strip>;
+    messages: z.ZodArray<z.ZodObject<{
+        role: z.ZodEnum<{
+            assistant: "assistant";
+            user: "user";
+        }>;
+        content: z.ZodString;
+    }, z.core.$strip>>;
+    toolCalls: z.ZodArray<z.ZodObject<{
+        callId: z.ZodString;
+        name: z.ZodString;
+        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+        status: z.ZodEnum<{
+            done: "done";
+            pending: "pending";
+        }>;
+        result: z.ZodOptional<z.ZodString>;
+        afterMessageIndex: z.ZodNumber;
+    }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
 
 // @public
@@ -1163,6 +1204,9 @@ export type SessionStateBackend = {
     countEvents(sessionId: string): Promise<number>;
 };
 
+// @internal
+export function sessionStateDdl(schema?: string): string[];
+
 // @public
 export type SessionStateStore = {
     viewFor(sessionId: string): SlotStore;
@@ -1194,6 +1238,9 @@ export type SessionWebSocket = {
         message?: string;
     }) => void): void;
 };
+
+// @public
+export type SkipGreeting = boolean | (() => boolean);
 
 // @public
 type SlotStore = {

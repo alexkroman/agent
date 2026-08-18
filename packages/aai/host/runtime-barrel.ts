@@ -151,6 +151,11 @@ export {
   createPostgresStateBackend,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
+  // The tables' DDL, applied by whoever CREATES an app schema — the platform, at
+  // provisioning. Exported for the same reason the two names above are: the
+  // shape is the SDK's and there must be one copy of it, or the schema the
+  // platform creates and the tables this backend queries can disagree.
+  sessionStateDdl,
 } from "./session-state-postgres.ts";
 export {
   createMemoryStateBackend,
@@ -219,6 +224,11 @@ export {
 // this package import it from the module directly.
 export { createS2sTransport, type S2sTransportOptions } from "./transports/s2s-transport.ts";
 export type {
+  // `PipelineTransportOptions.skipGreeting` names this, so the same rule as
+  // `TransportEventBody` below applies: a caller passing the THUNK form — which
+  // is how a resume that recovered nothing gets greeted — would otherwise have a
+  // type to satisfy and no way to name it.
+  SkipGreeting,
   Transport,
   TransportCallbacks,
   // `TransportCallbacks.report` names this, so anything implementing the one

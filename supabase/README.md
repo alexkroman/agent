@@ -10,6 +10,88 @@ the code depends on and cannot assert. It lives here rather than in
 directory, and because that guide is at its 120,000-char cap; the pointer there
 names this file.
 
+## Running a local dev server against this stack
+
+`pnpm dev:aai-server` resolves the whole stack itself
+(`scripts/dev-server.mjs`) — nothing needs exporting. What it supplies, and the
+one thing it cannot:
+
+```sh
+supabase start          # once; keeps its data across supabase stop/start
+pnpm dev:aai-server     # resolves DB_URL/API_URL/keys + AAI_LOCAL_DEV=1
+```
+
+**`SUPABASE_DB_URL` decides the tier, and there are exactly two.** With it,
+every platform store is Supabase's — the agents table, deploy blobs, Vault
+secrets, studio workspaces, per-app databases, Realtime. Without it, all of them
+are in this process's heap and **a restart erases every deployed agent**, so a
+published URL 404s and a browser session cannot resume onto it. The boot log says
+which tier it is; there is no third state.
+
+**A repo-root `.env` is read by BOTH**, which is the property that makes the
+setup below one file: Node's `process.loadEnvFile` for the dev server, and the
+Supabase CLI's own `env()` interpolation for `config.toml`. A variable exported
+in the shell beats the file in both. It is gitignored.
+
+### Browser sign-in needs a GitHub OAuth app
+
+The studio signs in with GitHub and nothing else (`aai-studio-client/auth.tsx`),
+and a platform database **refuses** the no-auth dev tokens
+(`createStudioAuthFromEnv`) — if state is in Supabase, identity is too. So the
+local stack needs the provider really enabled, or GoTrue answers:
+
+```json
+{ "code": 400, "error_code": "validation_failed",
+  "msg": "Unsupported provider: provider is not enabled" }
+```
+
+That message means the RUNNING stack has no GitHub provider, which is two
+separate causes and usually both:
+
+1. **Create the OAuth app** — <https://github.com/settings/developers> → *New
+   OAuth App*:
+   - Homepage URL: `http://localhost:8080`
+   - Authorization callback URL: `http://127.0.0.1:54321/auth/v1/callback`
+
+   The callback is **GoTrue's, not the studio's**. GitHub redirects to Supabase,
+   which then redirects to `redirect_to`; pointing it at `:8080` fails on
+   GitHub's own opaque error page.
+2. **Put the pair in `.env`** and **restart the stack**, because `config.toml` is
+   applied at `supabase start` and interpolated from the environment as it starts
+   — editing either one changes nothing about a stack already running:
+
+   ```sh
+   cat >> .env <<'EOF'
+   AAI_LOCAL_GITHUB_CLIENT_ID=Ov23li…
+   AAI_LOCAL_GITHUB_SECRET=…
+   EOF
+   supabase stop && supabase start     # data volumes survive; --no-backup deletes them
+   ```
+
+   `supabase status` WARNS by name (`environment variable is unset:
+   AAI_LOCAL_GITHUB_CLIENT_ID`) when the pair is missing, which is the cheapest
+   way to tell "I forgot the file" from "I forgot the restart".
+
+`site_url` / `additional_redirect_urls` in `config.toml` are the allow-list
+GoTrue validates `redirect_to` against, and `signInWithOAuth` sends
+`window.location.href` — so a studio served on a port other than 8080 needs its
+origin added there, or the round trip comes back rejected with nothing on the
+page saying why.
+
+### The `blobs` bucket is applied at stack INIT
+
+`[storage.buckets.blobs]` is created by `supabase start` on a stack that has
+never had it, so a stack first started before that stanza landed has no bucket
+and boot is fatal (`assertBucketPrivate`: `bucket "blobs" does not exist`).
+Either restart the stack or create it once:
+
+```sh
+set -a; eval "$(supabase status -o env)"; set +a
+curl -X POST "$API_URL/storage/v1/bucket" -H "apikey: $SERVICE_ROLE_KEY" \
+  -H "Authorization: Bearer $SERVICE_ROLE_KEY" -H 'Content-Type: application/json' \
+  -d '{"id":"blobs","name":"blobs","public":false}'
+```
+
 ## Where we differ from Supabase's own recommendations
 
 Audited 2026-08 against their docs, and most of the surface is exactly what they

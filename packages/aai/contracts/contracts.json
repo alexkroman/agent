@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 12,
-    "supported": [3, 10, 11, 12],
+    "current": 14,
+    "supported": [3, 10, 11, 12, 13, 14],
     "dropped": {
       "1": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "2": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
@@ -66,8 +66,8 @@
     "dropped": {}
   },
   "testing": {
-    "current": 14,
-    "supported": [2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14],
+    "current": 16,
+    "supported": [2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16],
     "dropped": {
       "1": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
       "10": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",

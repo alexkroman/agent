@@ -46,9 +46,16 @@ type PublishMenuProps = {
  * state is the dismiss control (so there is no Close button), and a
  * successful deploy is reported as the production LINK alone — the raw
  * `aai deploy` transcript repeats that URL twice more, so it is folded away
- * behind a disclosure. It also lands in the chat, which is where the coding
- * agent reads it from. A FAILED deploy stays expanded: the error is the
+ * behind a disclosure. A FAILED deploy stays expanded: the error is the
  * result, not a detail.
+ *
+ * This panel is the ONLY place a publish reports itself. The output used to be
+ * injected into the chat as well, for the coding agent to read; nothing a
+ * studio action does writes into the transcript any more, so an error here is
+ * what the user has to read (and relay, if they want the agent to fix it). It
+ * survives a dismissal — the mutation holds it, so re-opening shows it again.
+ *
+ * @see "No studio action writes into the transcript" in the package guide.
  */
 export function PublishMenu(props: PublishMenuProps) {
   const panel = useRef<HTMLDivElement>(null);
@@ -74,8 +81,8 @@ export function PublishMenu(props: PublishMenuProps) {
     >
       <p className="m-0 text-[13px] leading-5 text-muted">
         Ships the current workspace to production with <code className="font-mono">aai deploy</code>
-        . The preview updates on its own as you edit — only this touches production. Output lands in
-        the chat so the agent can fix any errors; third-party keys live under Settings.
+        . The preview updates on its own as you edit — only this touches production. Any build or
+        deploy error shows up here; third-party keys live under Settings.
       </p>
       <button
         type="button"

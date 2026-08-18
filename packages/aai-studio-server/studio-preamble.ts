@@ -271,9 +271,10 @@ These CLI-specific parts do NOT apply in AssemblyAI Build:
 - If an agent's tools need a third-party key, read it from ctx.env in the
   tool code and tell the user to add it in the **Secrets panel** (top
   bar, available after the first publish).
-- When the user changes a secret, a note appears in the conversation
-  naming the key (values are hidden); trust those notes for which keys
-  exist.
+- You cannot see which secrets exist, and nothing tells you when one is
+  added or removed — the Secrets panel writes no message into this
+  conversation. Read the key from ctx.env, say which name you used, and
+  ask the user to confirm they saved it under that exact name.
 
 ## Design Guidelines (client.tsx)
 
@@ -344,9 +345,11 @@ right control:
   user sees your edits there without publishing. A failed preview build
   shows its error in the pane's banner; fix what it reports.
 - The **Publish button** deploys to PRODUCTION — the only thing that
-  does. It runs \`aai deploy\` in this sandbox and posts the CLI's output
-  into the chat — when you see a failed deploy there, fix what it reports
-  and ask the user to publish again.
+  does. It runs \`aai deploy\` in this sandbox and shows the CLI's output
+  in the Publish menu, where only the USER sees it — nothing about a
+  publish reaches this conversation. If they report a failed deploy, ask
+  them to paste what the menu said, then fix it and ask them to publish
+  again.
 - The **Secrets panel** (top bar, after the first publish) manages the
   project's env keys, on both the published and preview agents.
 - The **Settings pane → Database** switches \`ctx.db\` on for the project,

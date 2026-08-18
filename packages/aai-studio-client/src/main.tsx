@@ -13,20 +13,24 @@
 // USER'S OWN key — the platform holds none of its own — and it is stored
 // server-side against the account, so this tab never sees it again.
 //
-// Threat model for what lives in this tab's storage: deployed tenant agents
+// Threat model for what lives in this browser's storage: deployed tenant agents
 // are served from the SAME web origin (`/:slug/`), and that HTML/JS is
-// attacker-controlled. `sessionStorage` (not `localStorage`) limits the
-// blast radius: the session never persists across restarts and is
-// unreadable from a separately-opened tab, so a phishing link to a
-// malicious agent page cannot read a studio user's session. It does NOT
-// protect against the studio's own Live pane: the preview iframes `/:slug/`
-// same-origin (preview.tsx), and a same-origin iframe shares this tab's
-// sessionStorage and can script the parent, so a hostile published
-// client.tsx owns the studio session regardless of where it lives. The
-// complete fix is serving tenant agent pages from a dedicated origin; until
-// then the preview trusts the user's own published agent and nothing else
-// is ever framed. (What a stolen session yields is now a revocable ~1h
-// token rather than the raw AssemblyAI key this gate used to store.)
+// attacker-controlled. The session lives in `localStorage` (auth.tsx), so a
+// published agent page can read it — **the fix is a dedicated origin for tenant
+// agent pages, and it is owed before there are real users.**
+//
+// What per-tab `sessionStorage` bought here, and why it was given up: it did NOT
+// protect against the studio's own Live pane, which iframes `/:slug/`
+// same-origin (preview.tsx) — a same-origin iframe shares the tab's storage
+// either way and can script the parent, so a hostile published client.tsx owned
+// the studio session under both. The delta was a malicious agent page opened in
+// a SEPARATELY-opened tab, and a session that did not survive a tab close.
+// Signing every developer out on every restart is a real cost paid every day;
+// the origin split closes the whole class rather than this slice of it. Until
+// then the preview trusts the user's own published agent and nothing else is
+// ever framed. (What a stolen session yields is a revocable ~1h access token
+// plus its refresh token — never the raw AssemblyAI key this gate used to
+// store, which lives server-side against the account.)
 
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrictMode, useState } from "react";
@@ -152,7 +156,7 @@ function Root() {
     );
   }
   if (auth.phase === "signedOut") {
-    return <SignInGate mode={auth.mode} onSignIn={auth.signIn} />;
+    return <SignInGate mode={auth.mode} methods={auth.methods} onSignIn={auth.signIn} />;
   }
   return (
     <AccountGate

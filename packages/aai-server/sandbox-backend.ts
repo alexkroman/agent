@@ -2,21 +2,27 @@
 /**
  * Which backend guest sandboxes run on, and why.
  *
- * | Backend      | Guest runs in               | Isolation | Selected           |
- * | ------------ | --------------------------- | --------- | ------------------ |
- * | `modal`      | a remote Modal Sandbox      | full      | always, in prod    |
- * | `subprocess` | a child process on the host | **none**  | default, local dev |
+ * | Backend      | Guest runs in               | Isolation | Selected            |
+ * | ------------ | --------------------------- | --------- | ------------------- |
+ * | `modal`      | a remote Modal Sandbox      | full      | the DEFAULT         |
+ * | `subprocess` | a child process on the host | **none**  | `AAI_LOCAL_DEV=1`   |
  *
  * ## The policy
  *
  * 1. An explicit `SANDBOX_BACKEND` always wins. An unknown value throws —
  *    silently falling back would look exactly like the override not working.
- * 2. Not local dev → `modal`. This is the production path and it is
- *    unconditional: `isLocalDev` is false whenever `SUPABASE_STORAGE_BUCKET` is
- *    set, so a production replica can never resolve a host-local backend, and
- *    fails loudly without Modal credentials rather than quietly running tenant
+ * 2. Not local dev → `modal`. This is the production path and it is the DEFAULT:
+ *    `isLocalDev` is an explicit `AAI_LOCAL_DEV=1` and nothing else, so a
+ *    deployment that sets no variable at all still gets real sandboxes, and one
+ *    without Modal credentials fails loudly rather than quietly running tenant
  *    code on the host.
- * 3. Local dev → `subprocess`.
+ * 3. `AAI_LOCAL_DEV=1` → `subprocess`.
+ *
+ * That sentinel used to be `!SUPABASE_STORAGE_BUCKET`, which inverts rule 2's
+ * whole point — it made the isolation-free branch the one a FORGOTTEN variable
+ * lands on. It also tied the backend to where platform state lives, so running
+ * a dev server against the local Supabase stack silently demanded Modal
+ * credentials; `scripts/dev-server.mjs` sets the declaration instead.
  *
  * ## Two tiers, deliberately — no middle one
  *
@@ -42,9 +48,9 @@
  * does not reproduce.
  *
  * It trades away the entire security boundary to do that, which is only
- * acceptable because rule 2 makes it unreachable in production. Note this
- * includes the studio coding agent's `bash` and `run_code` tools: under
- * `subprocess` those run on the dev machine with the server's uid.
+ * acceptable because rule 2 makes it unreachable unless someone declares it.
+ * Note this includes the studio coding agent's `bash` and `run_code` tools:
+ * under `subprocess` those run on the dev machine with the server's uid.
  *
  *     SANDBOX_BACKEND=modal   # remote sandboxes, needs credentials
  */

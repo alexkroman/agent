@@ -17,20 +17,55 @@ export function requireEnv<const K extends string>(
 }
 
 /**
- * Whether this process is a local-dev run: in-memory stores, and the one
- * environment where the isolation-free `subprocess` sandbox backend can be
- * selected (see sandbox-backend.ts).
+ * Whether platform state lives in Supabase — the one question every STORE
+ * selection asks (`service-config.ts`), and the one auth answers too.
  *
- * The sentinel is the deploy artifact BUCKET — the one setting that is
- * meaningless without real object storage behind it, so production always has
- * it and a laptop never does. Deliberately not `SUPABASE_URL` or
- * `SUPABASE_DB_URL`: both are legitimately set in local dev (against a
- * scratch project, or to exercise per-app databases), and either one as the
- * sentinel would silently promote such a run to "production" — memory stores
- * off, and Modal credentials suddenly mandatory.
+ * `SUPABASE_DB_URL` is the sentinel because it is the connection the platform
+ * tier IS: Vault secrets, the agents table, studio workspaces and chats, the
+ * per-app databases, and the Realtime change streams all ride it. Set means
+ * everything is in Supabase, and the three settings that travel with it
+ * (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`) are
+ * REQUIRED rather than optional — a half-configured platform tier is refused at
+ * boot instead of silently resolving to a mixture.
+ *
+ * Unset is the memory tier, and it is a whole tier rather than a fallback per
+ * store: agents rows, deploy blobs, secrets and studio workspaces all live in
+ * this process's heap, so a restart erases every deployed agent. There used to
+ * be a THIRD state — memory stores beside real per-app databases, reached by
+ * setting this variable in local dev — and it is the state that cost a morning:
+ * a published agent's slug 404s after a restart with its app schema still
+ * sitting in Postgres, so nothing about the failure names the store that lost
+ * it.
+ *
+ * Deliberately NOT the same question as {@link isLocalDev}. Which stores a
+ * process uses and whether tenant code gets a real sandbox are independent
+ * decisions, and conflating them meant "run against local Supabase" also meant
+ * "resolve the Modal backend and verify every API key" — which is why the
+ * documented recipe for it carried `SANDBOX_BACKEND=subprocess` and
+ * `AAI_VERIFY_API_KEYS=0`.
+ */
+export function hasPlatformDb(env: NodeJS.ProcessEnv): boolean {
+  return Boolean(env.SUPABASE_DB_URL);
+}
+
+/**
+ * Whether this is an explicitly declared LOCAL run.
+ *
+ * It gates exactly two things, both about trust rather than about storage: the
+ * isolation-free `subprocess` sandbox backend (`sandbox-backend.ts`), and
+ * skipping AssemblyAI key verification (`api-key-verify.ts`). A third, narrower
+ * one rides along — remembering an observed public origin
+ * (`public-origin.ts`).
+ *
+ * **`AAI_LOCAL_DEV=1` and nothing else**, so the safe branch is the DEFAULT one:
+ * a deployment that sets no variable at all still gets real sandboxes and real
+ * key verification. The previous sentinel was `!SUPABASE_STORAGE_BUCKET`, which
+ * inverts that — it makes the dangerous branch the one a forgotten variable
+ * lands on. `scripts/dev-server.mjs` sets this, so `pnpm dev:aai-server` needs
+ * no flags.
  */
 export function isLocalDev(env: NodeJS.ProcessEnv): boolean {
-  return env.AAI_LOCAL_DEV === "1" || !env.SUPABASE_STORAGE_BUCKET;
+  return env.AAI_LOCAL_DEV === "1";
 }
 
 /**
