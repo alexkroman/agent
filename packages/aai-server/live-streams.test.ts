@@ -10,10 +10,13 @@
  */
 
 import { afterEach, describe, expect, test } from "vitest";
+import { MAX_LIVE_STREAMS_PER_SCOPE } from "./constants.ts";
 import {
   endLiveStreams,
   liveStreamCount,
   registerLiveStream,
+  reservedLiveStreams,
+  reserveLiveStream,
   resetLiveStreams,
 } from "./live-streams.ts";
 
@@ -72,5 +75,64 @@ describe("registry", () => {
     });
     expect(endLiveStreams()).toBe(2);
     expect(reached).toBe(true);
+  });
+});
+
+describe("per-scope reservations", () => {
+  test("hands out slots up to the cap, then refuses", () => {
+    const slots = Array.from({ length: MAX_LIVE_STREAMS_PER_SCOPE }, () =>
+      reserveLiveStream("scope-a"),
+    );
+    expect(slots.every((s) => s !== null)).toBe(true);
+    expect(reservedLiveStreams("scope-a")).toBe(MAX_LIVE_STREAMS_PER_SCOPE);
+    // The refusal is the whole point: the route turns null into a 429 rather
+    // than becoming a stream it cannot account for.
+    expect(reserveLiveStream("scope-a")).toBeNull();
+  });
+
+  test("a release frees exactly one slot", () => {
+    const first = reserveLiveStream("scope-a");
+    for (let i = 1; i < MAX_LIVE_STREAMS_PER_SCOPE; i++) reserveLiveStream("scope-a");
+    expect(reserveLiveStream("scope-a")).toBeNull();
+
+    first?.();
+
+    expect(reservedLiveStreams("scope-a")).toBe(MAX_LIVE_STREAMS_PER_SCOPE - 1);
+    expect(reserveLiveStream("scope-a")).not.toBeNull();
+  });
+
+  test("releasing twice frees only one slot", () => {
+    // Both cleanup paths can run (`stream.onAbort` beside the `finally`), so a
+    // non-idempotent release would decrement a slot this caller no longer owns
+    // — surfacing much later as a scope that can never reach its cap.
+    const slot = reserveLiveStream("scope-a");
+    reserveLiveStream("scope-a");
+    slot?.();
+    slot?.();
+    expect(reservedLiveStreams("scope-a")).toBe(1);
+  });
+
+  test("scopes are counted independently", () => {
+    for (let i = 0; i < MAX_LIVE_STREAMS_PER_SCOPE; i++) reserveLiveStream("scope-a");
+    expect(reserveLiveStream("scope-a")).toBeNull();
+    // One abusive caller must not refuse everybody else.
+    expect(reserveLiveStream("scope-b")).not.toBeNull();
+  });
+
+  test("a fully released scope leaves no entry behind", () => {
+    // The keys are caller scopes, so an entry retained at 0 is a slow leak
+    // keyed by user identity.
+    const slot = reserveLiveStream("scope-a");
+    expect(reservedLiveStreams("scope-a")).toBe(1);
+    slot?.();
+    expect(reservedLiveStreams("scope-a")).toBe(0);
+  });
+
+  test("reservations are independent of the shutdown registry", () => {
+    // Two different jobs: one refuses new streams, the other ends live ones.
+    // A reservation is not a registration, so shutdown must not report it.
+    reserveLiveStream("scope-a");
+    expect(liveStreamCount()).toBe(0);
+    expect(endLiveStreams()).toBe(0);
   });
 });

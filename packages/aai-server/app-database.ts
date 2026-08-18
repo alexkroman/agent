@@ -53,6 +53,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { scheduleAppSweeps, unscheduleAppSweeps } from "./_session-state-sweep.ts";
 import { appDbAdminUrl, appDbUrlFor, withDatabase } from "./app-db-url.ts";
 import { type AppDbUsage, appDatabaseUsage } from "./app-db-usage.ts";
+import { APP_DB_CONNECTION_LIMIT } from "./constants.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
@@ -88,28 +89,16 @@ const IDENTIFIER_RE = /^app_[a-f0-9]{16}$/;
 export const APP_DB_SCHEMA = "public";
 
 /**
- * Per-tenant caps so one hot app cannot starve the shared instance: a role
- * connection ceiling and a bound on scratch disk from pathological sorts/hash
- * joins.
+ * A bound on scratch disk from one tenant's pathological sorts and hash joins.
  *
- * **10, and the number is a SUM a workflow guest really needs**, not a round
- * figure. It was 4, sized when `ctx.db` was the only thing that ever used the
- * role — which was true only because the Workflow DevKit could not connect at all
- * under the per-schema model. Now that it can, one guest holds:
- *
- * | what | how many |
- * | --- | --- |
- * | the DevKit's world pool (`WORKFLOW_POSTGRES_MAX_POOL_SIZE`) | 4 |
- * | its dedicated `LISTEN` client, outside that pool | 1 |
- * | `ctx.db`'s own pool (`APP_DB_POOL_MAX`) | 4 |
- * | one spare, for the world's migration on boot | 1 |
- *
- * At 4 the symptom was every workflow request failing `too many connections for
- * role "app_…"`. The two sides are pinned against each other on purpose —
- * `aai/host/workflow-world.ts` sets the DevKit's half and carries the same table
- * — so raising one without the other reintroduces exactly that error.
+ * The other half of the per-tenant caps; its companion, the role's connection
+ * ceiling, moved to `constants.ts` because it is a term in the fleet-wide
+ * connection budget and this is not — disk is per-instance and reclaimed when
+ * the query ends, where a connection is a slot nobody else can have meanwhile.
+ * Best-effort: `temp_file_limit` is a superuser GUC on vanilla Postgres, so
+ * provisioning swallows `insufficient_privilege` rather than failing over a
+ * tenant nicety (see the DDL below).
  */
-const APP_DB_CONNECTION_LIMIT = 10;
 const APP_DB_TEMP_FILE_LIMIT = "64MB";
 
 /** Deterministic database/role identifier for one app slug. */

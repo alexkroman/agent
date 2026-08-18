@@ -37,7 +37,14 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   different filters. **A header crossing this hop reaches TENANT CODE**, so
   `Cookie`, `Authorization` and `X-Forwarded-*` never do; the API routes take
   an allow-list and the webhook route deliberately passes the rest through. Its
-  module doc has the argument
+  module doc has the argument.
+
+  **A route forwarding a STREAMING request body needs `bound: "activity"`; the
+  other two bounds are a trap for it.** Both bound the response HEAD, so a
+  guest that answers only after consuming the whole body has the entire upload
+  inside its deadline — `POST /workflows/uploads` did, and a 500 MB file was a
+  503 at 30.3s while working under `aai dev`, which has no forward at all. The
+  `bound` doc in that module carries the arithmetic and why no TOTAL is right
 - `modal-context.ts` — the shared Modal context every spawn path needs
   first: the client, the App, the harness-baked snapshot image (built once
   per harness version, published under a content-addressed tag), and the
@@ -518,6 +525,37 @@ The cross-replica coordination that lives in this same Postgres:
   pinned by `platform-db-budget.test.ts`): these are DIRECT connections, so
   `MAX_CONTAINERS` × the per-replica pools consumes `max_connections` outright —
   whose ceiling is an outage rather than degradation.
+
+  **The budget counts APP DATABASES now, and excluding them was an accounting
+  error rather than a routing decision.** The test excluded them because they
+  are POOLED — but the pooler is Supavisor in SESSION mode, mandatory for the
+  Workflow DevKit and multiplexing NOTHING, so one client connection is one real
+  backend. Routing them through it changes which limits apply, never how many
+  connections exist. So the bound was on the term that does not grow
+  (`MAX_CONTAINERS`, which an operator sets) while the term that scales with
+  TENANTS went uncounted, and the two always competed for the same
+  `max_connections`. `MAX_ACTIVE_APP_DATABASES` is that term, and its value is
+  the finding: at `MAX_CONTAINERS = 5` the platform's own pools take 20 of the
+  40, leaving room for **two** apps at their entitlement. Raising it needs a
+  larger instance or `APP_DB_URLS` sharding — no code change can buy it —
+  which is why the number is deliberately small enough to fail the test when
+  growth outruns the provisioning.
+
+  Measured, for calibration: the admin pool genuinely multiplexes (4 client
+  connections cost 2–3 backends, fleet-wide rather than per replica), the
+  slug-lock pool reaches exactly its 4 under concurrent distinct-slug mutations,
+  and one provisioned workflow app holds 6 backends at rest against its 10.
+
+  **And boot CHECKS the claim** (`platform-db-capacity.ts`): `show
+  max_connections` plus a `pg_stat_activity` count against `platformDbBudget()`,
+  warning with the arithmetic on an overrun. The constant's doc used to say
+  "nothing in the repo can check it", which was the reason it went unchecked
+  rather than a property of the problem — this process holds a connection. Other
+  load is **measured, not declared**, which the laziness above is what makes
+  sound (ONE direct backend at idle here, on pools sized 4 and 4); it is a FLOOR,
+  since a replica booting into a warm fleet counts its peers, so it errs toward
+  warning. It never blocks boot — refusing to start over a projection turns a
+  future degradation into a present outage.
 
   **Only the SLUG-LOCK pool is in that number, and what decides membership is
   whether a connection needs SESSION affinity.** Measured against a real
