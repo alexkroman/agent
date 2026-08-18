@@ -3,6 +3,25 @@ name: Release
 on:
   push:
     branches: [main]
+  # Manual publish, for when the automatic path could not run.
+  #
+  # `changesets/action` only invokes `publish:` when there are NO pending
+  # changesets — with any pending it takes the version path instead. So a
+  # version bump that lands on main while new changesets are already queued is
+  # never published by the normal flow, and until it is, every guest image build
+  # runs `npm install @alexkroman1/aai@<bumped>` against a version that does not
+  # exist and fails: no agent and no studio session can spawn. That is not
+  # hypothetical, it is what happened on 6.1.0.
+  #
+  # This bypasses the action and runs `changeset publish` directly, which
+  # publishes only versions MISSING from the registry and skips the rest — so it
+  # is safe to run at any time, and safe to re-run after a partial publish.
+  workflow_dispatch:
+    inputs:
+      publish_only:
+        description: Publish any package version missing from npm (skips the version PR)
+        type: boolean
+        default: true
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -79,7 +98,18 @@ jobs:
             tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-
             tsbuildinfo-build-${{ runner.os }}-
 
+      # Runs INSTEAD of the changesets action on a manual dispatch — see the
+      # `workflow_dispatch` comment above for why the action cannot do this.
+      - name: Publish versions missing from npm
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_only
+        run: pnpm release
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true
+
       - name: Create Release PR or Publish
+        # Skipped on a manual publish-only run, which the step above handled.
+        if: github.event_name == 'push' || !inputs.publish_only
         id: changesets
         uses: changesets/action@3841a0683d3cfa6dae0f9bb335290003010fe3f0 # v1.9.0
         with:
