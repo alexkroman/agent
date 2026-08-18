@@ -13,8 +13,8 @@
     "publish:agent": "aai publish"
   },
   "dependencies": {
-    "@alexkroman1/aai": "^6.3.0",
-    "@alexkroman1/aai-ui": "^6.3.0",
+    "@alexkroman1/aai": "^6.3.1",
+    "@alexkroman1/aai-ui": "^6.3.1",
     "@workflow/world-postgres": "4.3.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
@@ -23,7 +23,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@alexkroman1/aai-cli": "^6.3.0",
+    "@alexkroman1/aai-cli": "^6.3.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
