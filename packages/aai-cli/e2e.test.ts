@@ -21,7 +21,11 @@ import { errorDetail } from "@alexkroman1/aai/utils";
 import { ofetch } from "ofetch";
 import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { hasPlaywrightBrowser, setupEventInjector } from "./_e2e-browser-test-utils.ts";
+import {
+  hasPlaywrightBrowser,
+  setupEventInjector,
+  startStubClientServer,
+} from "./_e2e-browser-test-utils.ts";
 import {
   aai,
   aaiEnv,
@@ -303,67 +307,10 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     initProject("pizza-ordering", projectDir);
     aai(aaiBin, ["build", "--skip-tests"], projectDir);
 
-    // Serve the built client with a simple static server (faster than vite dev)
-    const clientDir = path.join(projectDir, ".aai", "client");
-    child = spawn(
-      process.execPath,
-      [
-        "-e",
-        `const http = require("http"); const fs = require("fs"); const path = require("path");
-       const { WebSocketServer } = require("ws");
-       const mimes = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
-       const root = ${JSON.stringify(clientDir)};
-       const live = new Set();
-       const s = http.createServer((req, res) => {
-         const url = new URL(req.url, "http://localhost");
-         // Sever every live session socket ABRUPTLY — destroy, never close(1000).
-         // A clean close is the "user hung up" case aai-ui deliberately does not
-         // reconnect from, so a reconnect test built on one proves nothing.
-         if (url.pathname === "/__sever") {
-           let cut = 0;
-           for (const sock of live) { sock.destroy(); cut++; }
-           live.clear();
-           res.writeHead(200, { "Content-Type": "application/json" });
-           res.end(JSON.stringify({ severed: cut }));
-           return;
-         }
-         const f = path.join(root, url.pathname === "/" ? "index.html" : url.pathname);
-         if (!f.startsWith(root)) { res.writeHead(403); res.end(); return; }
-         try {
-           const data = fs.readFileSync(f);
-           const ct = mimes[path.extname(f)] || "application/octet-stream";
-           res.writeHead(200, { "Content-Type": ct });
-           res.end(data);
-         } catch { res.writeHead(404); res.end("not found"); }
-       });
-       const wss = new WebSocketServer({ server: s });
-       wss.on("connection", (ws, req) => {
-         live.add(ws._socket);
-         ws.on("close", () => live.delete(ws._socket));
-         // Echo the id the client asked to resume, so a redial that carries one
-         // is answered as the SAME session rather than a fresh one.
-         const asked = new URL(req.url, "http://localhost").searchParams.get("sessionId");
-         ws.send(JSON.stringify({ type: "session.configured", meta: { id: "evt_e2ehandshake", at: Date.now() }, audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: asked || "resumed-e2e-7" }));
-       });
-       s.listen(0, () => console.log("PORT:" + s.address().port));`,
-      ],
-      { stdio: "pipe" },
-    );
-
-    // Read the OS-assigned port from child stdout to avoid EADDRINUSE
-    port = await new Promise<number>((resolve, reject) => {
-      let buf = "";
-      child.stdout?.on("data", (chunk: Buffer) => {
-        buf += chunk.toString();
-        const match = buf.match(/PORT:(\d+)/);
-        if (match) resolve(Number(match[1]));
-      });
-      child.on("error", reject);
-      child.on("exit", (code) =>
-        reject(new Error(`Child exited with code ${code} before reporting port`)),
-      );
-    });
-
+    // A stub http+ws server over the built client, not `aai dev` — see the
+    // helper's doc for why, and the last describe in this file for the one test
+    // that does drive the real thing.
+    ({ child, port } = await startStubClientServer(path.join(projectDir, ".aai", "client")));
     await waitForHealth(`http://localhost:${port}`, child);
     browser = await chromium.launch();
   });
@@ -634,5 +581,64 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     await page.getByText("Connection lost").waitFor({ timeout: 30_000 });
 
     await page.close();
+  });
+});
+
+/**
+ * The same client, served by the REAL `aai dev`. One test, deliberately.
+ *
+ * The stub above is what makes the fifteen fixture tests deterministic — no
+ * live session emits frames of its own, and `/__sever` cuts a socket without
+ * the server going away — so it stays. The cost is that none of them touches
+ * the stack a user runs: delete `viteDevConfig`'s `"/websocket": { ws: true }`
+ * proxy entry and all fifteen still pass. This one fails.
+ *
+ * `session.configured` is the assertion because `ws-handler.ts` sends it the
+ * moment the socket opens, before any provider is dialled, and it cannot
+ * arrive unless the upgrade really crossed Vite into the backend.
+ */
+describe.skipIf(!hasPlaywrightBrowser())("browser: the real aai dev server", () => {
+  test("Vite serves the client and proxies the session upgrade", async () => {
+    const projectDir = path.join(tmpDir, "_browser-vite");
+    initProject("pizza-ordering", projectDir);
+    const server = await startSupervisedDevServer({
+      aaiBin,
+      cwd: projectDir,
+      // Fixed, and clear of the workflow leg's 4820: with a client.tsx present
+      // Vite owns this port and picks the backend's itself.
+      port: 4830,
+      // `localhost`, never `127.0.0.1` — Vite binds the NAME and lands on `::1`
+      // here. The option's doc carries the `lsof` measurement.
+      host: "localhost",
+      env: { ...aaiEnv(), ASSEMBLYAI_API_KEY: "e2e-not-dialled" },
+    });
+    const browser = await chromium.launch();
+    try {
+      // A no-op unless AAI_FAULT_PROFILE is set; under one it is what stops the
+      // navigation below racing a restart window.
+      await server.awaitSettled();
+
+      const page = await browser.newPage();
+      // Armed before `goto`, and PREDICATED because an unpredicated wait here
+      // resolves on the WRONG SOCKET. Measured against a scaffolded project:
+      // Vite's HMR client opens `ws://<host>/?token=…` twice, both BEFORE the
+      // session dial, so "whichever websocket appears first" is the HMR one.
+      // (The stub suite above has no HMR socket, which is why it can be loose.)
+      const dial = page.waitForEvent("websocket", {
+        predicate: (ws) => new URL(ws.url()).pathname === "/websocket",
+        timeout: 30_000,
+      });
+      await page.goto(server.url);
+      await page.getByRole("button", { name: "Start" }).click();
+
+      // Measured: `session.configured` lands first even though this key is
+      // rejected — the provider failures (`AssemblyAI STT: connect failed`)
+      // arrive after it, so nothing here depends on a live credential.
+      const frame = await (await dial).waitForEvent("framereceived", { timeout: 30_000 });
+      expect(JSON.parse(String(frame.payload))).toMatchObject({ type: "session.configured" });
+    } finally {
+      await browser.close();
+      await server.stop();
+    }
   });
 });

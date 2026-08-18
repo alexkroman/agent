@@ -14,6 +14,7 @@
  * setup twice, in parallel, against the same working tree.
  */
 
+import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { sleep } from "@alexkroman1/aai/internal";
@@ -171,4 +172,83 @@ export async function setupEventInjector(browser: Browser, port: number) {
   };
 
   return { page, inject, replayFixture, clientFrames };
+}
+
+/**
+ * Serve a built `.aai/client` over http, with a WebSocket server on the same
+ * listener that answers `session.configured`.
+ *
+ * **A stub rather than `aai dev`, and that is the trade this file exists to
+ * make.** It is what lets the fixture suites be deterministic: no live session
+ * emits frames of its own, and `/__sever` cuts a socket without the server
+ * going away. It is also faster than vite dev. The cost is that nothing here
+ * exercises the real dev server — `e2e.test.ts` carries one test for that.
+ *
+ * Extracted from a `beforeAll` where it was 60 lines of embedded program in a
+ * test file that had reached 99% of the 700-line cap. It is scaffolding, not a
+ * test.
+ */
+export async function startStubClientServer(
+  clientDir: string,
+): Promise<{ child: ChildProcess; port: number }> {
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `const http = require("http"); const fs = require("fs"); const path = require("path");
+     const { WebSocketServer } = require("ws");
+     const mimes = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
+     const root = ${JSON.stringify(clientDir)};
+     const live = new Set();
+     const s = http.createServer((req, res) => {
+       const url = new URL(req.url, "http://localhost");
+       // Sever every live session socket ABRUPTLY — destroy, never close(1000).
+       // A clean close is the "user hung up" case aai-ui deliberately does not
+       // reconnect from, so a reconnect test built on one proves nothing.
+       if (url.pathname === "/__sever") {
+         let cut = 0;
+         for (const sock of live) { sock.destroy(); cut++; }
+         live.clear();
+         res.writeHead(200, { "Content-Type": "application/json" });
+         res.end(JSON.stringify({ severed: cut }));
+         return;
+       }
+       const f = path.join(root, url.pathname === "/" ? "index.html" : url.pathname);
+       if (!f.startsWith(root)) { res.writeHead(403); res.end(); return; }
+       try {
+         const data = fs.readFileSync(f);
+         const ct = mimes[path.extname(f)] || "application/octet-stream";
+         res.writeHead(200, { "Content-Type": ct });
+         res.end(data);
+       } catch { res.writeHead(404); res.end("not found"); }
+     });
+     const wss = new WebSocketServer({ server: s });
+     wss.on("connection", (ws, req) => {
+       live.add(ws._socket);
+       ws.on("close", () => live.delete(ws._socket));
+       // Echo the id the client asked to resume, so a redial that carries one
+       // is answered as the SAME session rather than a fresh one.
+       const asked = new URL(req.url, "http://localhost").searchParams.get("sessionId");
+       ws.send(JSON.stringify({ type: "session.configured", meta: { id: "evt_e2ehandshake", at: Date.now() }, audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: asked || "resumed-e2e-7" }));
+     });
+     s.listen(0, () => console.log("PORT:" + s.address().port));`,
+    ],
+    { stdio: "pipe" },
+  );
+
+  // Read the OS-assigned port from child stdout to avoid EADDRINUSE
+  const port = await new Promise<number>((resolve, reject) => {
+    let buf = "";
+    child.stdout?.on("data", (chunk: Buffer) => {
+      buf += chunk.toString();
+      const match = buf.match(/PORT:(\d+)/);
+      if (match) resolve(Number(match[1]));
+    });
+    child.on("error", reject);
+    child.on("exit", (code) =>
+      reject(new Error(`Child exited with code ${code} before reporting port`)),
+    );
+  });
+
+  return { child, port };
 }
