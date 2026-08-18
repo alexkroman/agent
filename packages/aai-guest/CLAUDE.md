@@ -614,6 +614,31 @@ this package's.
     closing that residual gap needs a post-publish regeneration step, not a
     lockfile in this repo.
 
+  **Neither step runs a dependency's install scripts** (`--ignore-scripts` on
+  both), and the npm that made that explicit is the npm in `node:26-slim`:
+  11.19 REPORTS unreviewed install scripts and then runs them anyway — the skip
+  in arborist is gated on an explicit deny — so `npm warn install-scripts 3
+  packages have install scripts not yet covered by allowScripts` was a notice
+  about code that had already executed in the build that produces every
+  tenant's guest image. The second step is the sharp one, being deliberately
+  unlocked: a hijacked transitive release arrives there with no integrity hash
+  to fail against and none of the workspace's `minimumReleaseAge` quarantine.
+  Skipping is safe and was MEASURED rather than assumed — all three packages
+  that wanted scripts (`esbuild`, `@swc/core`, `cbor-extract`) ship prebuilt
+  platform binaries resolved at REQUIRE time, so their scripts only validate
+  what is already installed; on a scripts-skipped `node:26-slim`/x86_64 install
+  the toolchain typechecked and built a workspace (10.45 MB worker, seven client
+  files) and all three packages worked when exercised. `--strict-allow-scripts`
+  with an `allowScripts` policy is the loud alternative and is WORSE here: the
+  unlocked step can acquire a new script-carrying transitive with no commit to
+  review it in, so the failure would land as a failed image build — a failed
+  spawn for every cold session. The locked half gets the loudness instead, at
+  commit time: `toolchain-install-scripts.test.ts` fails when this lockfile
+  grows an install-script package nobody has vouched for, naming it (verified by
+  injecting one). Note the flags are deliberately absent from the image TAG's
+  fingerprint, which is pinned on agents rows, so an existing snapshot serves
+  until the next harness bump — which every server code change is.
+
   Both files are written by the RUN itself, gzipped and base64'd (~20 KB), for
   the same reason the harness cannot be `COPY`'d: `dockerfileCommands` carries
   no build context. The image TAG hashes the lockfile's content, not the
