@@ -1,5 +1,14 @@
 # @alexkroman1/aai-ui
 
+## 6.1.0
+
+### Patch Changes
+
+- Updated dependencies [c4791cc]
+- Updated dependencies [c4791cc]
+- Updated dependencies [296b6c3]
+  - @alexkroman1/aai@6.1.0
+
 ## 6.0.0
 
 ### Patch Changes
