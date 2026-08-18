@@ -59,6 +59,8 @@ import { elapsed, timed, transcribeWav } from "./sync-api.ts";
 import {
   parseWav,
   planSegments,
+  SEGMENT_OVERLAP_SECONDS,
+  SEGMENT_SECONDS,
   type Segment,
   UnsupportedRecordingError,
   type WavFormat,
@@ -66,11 +68,32 @@ import {
 } from "./wav.ts";
 
 /**
- * Segments in flight at once.
+ * Audio-seconds the desk keeps in flight, which is what {@link SEGMENT_CONCURRENCY}
+ * is DERIVED from rather than a request count.
  *
- * Bounded because the far side has a capacity limit, and it is MEASURED now —
- * 65 segments (1h37m of 48 kHz stereo, 17.66 MB each) through this workflow,
- * one concurrency per run, from one laptop and one account:
+ * The far side's capacity tracks how much audio is being decoded at once, not how
+ * many sockets are open, and the two measurements that say so were taken against
+ * different payload shapes. 320 concurrent requests of a 5-second clip — 1,600
+ * audio-seconds, 51 MB — drew zero `429`s and zero `503`s: the endpoint QUEUES
+ * rather than rejecting, and latency grew linearly with depth (p50 0.4s at 5, 1.9s
+ * at 80, 5.2s at 320) while throughput plateaued at ~25-30 req/s. But 64 concurrent
+ * 92-second segments — 5,888 audio-seconds — drew 20 `503 Capacity Exceeded`, and 48
+ * of them (4,416) drew 0-4. A request count cannot explain both; audio-seconds can.
+ *
+ * 3,000 is under the 4,416 where limiting began and comfortably over the 2,944 that
+ * came back clean. Keeping it as the declared quantity is what makes the derivation
+ * worth having: lowering {@link SEGMENT_SECONDS} to 30 would otherwise TRIPLE the
+ * audio in flight at a fixed concurrency of 32, silently, and the symptom would be
+ * `503`s on a change that never mentioned concurrency.
+ */
+const AUDIO_SECONDS_IN_FLIGHT = 3000;
+
+/**
+ * Segments in flight at once — 32 at the segment length above.
+ *
+ * Bounded because the far side has a capacity limit, and it is MEASURED — 65
+ * segments (1h37m of 48 kHz stereo, 17.66 MB each) through this workflow, one
+ * concurrency per run, from one laptop and one account:
  *
  * | in flight | wall | vs realtime | `503`s |
  * | --- | --- | --- | --- |
@@ -79,23 +102,37 @@ import {
  * | 48 | 26.1-28.5s | 204-223x | 0-4 |
  * | 64 | 31.9s | 182x | 20 |
  *
- * Two readings, and the second is why this is 8 and not 32. Throughput
- * PLATEAUS around 32: past it the uplink is the bottleneck, every request just
- * gets a thinner share of it (p50 4.2s at 8, 10.0s at 32, 12.5s at 64), and at
- * 64 the far side starts answering `503 Capacity Exceeded` — so the extra
- * concurrency buys retries rather than speed. And the number the plateau sits
- * at belongs to the machine, not to this code: a deployed guest reserves one
- * CPU and has neither this uplink nor its ~47 MB/s, so a default measured here
- * would be an overcommit there.
+ * 32 is the KNEE and this used to be 8, which cost 37% of the wall clock for
+ * headroom the endpoint turns out not to need — see {@link AUDIO_SECONDS_IN_FLIGHT}
+ * for the 320-concurrent run that drew no throttling at all. Past 32 there is
+ * nothing to buy: 48 is within noise of it while starting to pay retries, and 64 is
+ * outright SLOWER than 32.
  *
- * So 8 is a floor with headroom, and the ceiling is known: raise it toward 32
- * against your own account and watch `503`s in the log. Overshooting is no
- * longer expensive — a `503` carries `retry-after` and `toStepError` below
- * honours it, so the run completes having paid one extra request per limited
- * segment (measured: 20 `503`s at 64, each retried exactly once, run
- * completed). That is only true over HTTP/1.1, which is what `stepFetch` pins.
+ * Why the ceiling is real, and it is not the rate limit. `mapInBatches` is a
+ * barrier rather than a work-stealing pool — deliberately, because the DevKit
+ * correlates a journal entry to a step call by the order the call was issued in — so
+ * a batch's wall time is its SLOWEST request, and a run's is the sum of those. Depth
+ * widens the tail it therefore pays in full: p95/p50 measured 1.1x at 20 concurrent
+ * and 1.5x at 320, with max/p50 reaching 6.7x (5.2s against 35.0s). One straggler
+ * stalls every sibling that already finished, and a `503` carrying `retry-after: 1`
+ * is exactly such a straggler — which is why overshooting is cheap in BILLING and
+ * not in latency.
+ *
+ * Two things this number does not cover. It is inert below a threshold: at 90-second
+ * segments, 32 only binds past 48 minutes of audio, so for a typical recording the
+ * whole fan-out is in flight either way. And the plateau belongs to the machine,
+ * not to this code — a deployed guest reserves one CPU and has neither this uplink
+ * nor its ~47 MB/s, and at 17.66 MB a segment, 32 in flight is 565 MB of concurrent
+ * upload. Re-measure there before trusting it; the symptom of getting it wrong on a
+ * guest is latency, not an error. Overshooting stays SAFE either way: a `503` carries
+ * `retry-after` and `toStepError` below honours it, so the run completes having paid
+ * one extra request per limited segment (measured: 20 `503`s at 64, each retried
+ * exactly once, run completed). That is only true over HTTP/1.1, which is what
+ * `stepFetch` pins.
  */
-export const SEGMENT_CONCURRENCY = 8;
+export const SEGMENT_CONCURRENCY = Math.floor(
+  AUDIO_SECONDS_IN_FLIGHT / (SEGMENT_SECONDS + SEGMENT_OVERLAP_SECONDS),
+);
 
 /**
  * Bytes probed for the WAV header.
