@@ -1,5 +1,15 @@
 # @alexkroman1/aai
 
+## 6.3.0
+
+### Minor Changes
+
+- 2e103d8: Report upload progress from the workflow API client and render it with the new <UploadProgressBar>, so a form storing a large file shows a bar instead of a disabled button.
+
+### Patch Changes
+
+- b04af38: Flush pipeline-mode TTS sends only on sentence-terminal punctuation (.!?…). Clause marks (,;:) no longer end a batch: a comma is mid-sentence, and flushing there handed the provider a fragment to synthesize with a falling final intonation. The 32-character coalescing cap still bounds how long an unterminated batch waits.
+
 ## 6.2.0
 
 ### Minor Changes

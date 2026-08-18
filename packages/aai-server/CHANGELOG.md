@@ -1,5 +1,16 @@
 # @alexkroman1/aai-server
 
+## 3.5.10
+
+### Patch Changes
+
+- 5d99fa4: Terminate a sandbox that is still booting, so a delete cannot strand a guest against the database it just dropped
+- Updated dependencies [b04af38]
+- Updated dependencies [2e103d8]
+  - @alexkroman1/aai@6.3.0
+  - aai-guest@0.4.17
+  - @alexkroman1/aai-ui@6.3.0
+
 ## 3.5.9
 
 ### Patch Changes
