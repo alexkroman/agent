@@ -1,5 +1,16 @@
 # @alexkroman1/aai
 
+## 6.1.0
+
+### Minor Changes
+
+- c4791cc: A page reload now resumes its voice session: the default client remembers the session id per tab, so the server's syncState push reconstitutes the UI instead of coming back empty. A resume that recovers no history and no slot state is treated as a new session and greets, rather than connecting silently — PipelineTransportOptions.skipGreeting accepts a thunk for that late decision.
+- c4791cc: Give every app its own Postgres database instead of a schema, so durable workflows work at all: the Workflow DevKit's `workflow` and `graphile_worker` are database-level schema names it cannot create inside a shared database, and its migration was failing with a permission error. Session state and the wake hint move to the app's own `public`; per-app maintenance runs as a cron job inside that database.
+
+### Patch Changes
+
+- 296b6c3: Fix the README examples: the SDK README documented `ctx.state`, `agent({ state })` and `agent({ tools })`, none of which exist — a reader following it wrote code that does not compile and that `agent()` throws on. Replaced with the `sessionSlot` + tool-is-a-file shape. The aai-ui README passed an ELEMENT to `client({ sidebar })`, which takes a component.
+
 ## 6.0.0
 
 ### Major Changes
