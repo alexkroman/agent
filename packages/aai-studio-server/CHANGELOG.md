@@ -1,5 +1,25 @@
 # aai-studio-server
 
+## 0.7.0
+
+### Minor Changes
+
+- 320268c: Studio: switch between building a voice agent and a static workflow app on the new-project screen. The hero's position picks the starter examples and is stamped on the project, where it selects the coding agent's system prompt — workflow projects default to a workflowApp() in the shape of the transcription-workflow template.
+
+### Patch Changes
+
+- c4791cc: Studio actions no longer write into the chat: Publish, secret changes and the Database switch each posted a first-person user message into the conversation ("I set the secret X…", "I published the project with the Publish button…"). Each pane reports its own outcome instead — the Publish menu renders the CLI output, the Secrets card clears its draft only on success — and the coding agent's preamble now says it will not see a publish or a secret change rather than promising a note.
+- 16bec88: The studio's Workflows card reads the SDK's `WorkflowRunSnapshot`, `WorkflowSummary` and `isTerminal` instead of a local restatement, so a field added to a run snapshot reaches the card and a new run status cannot be silently classified as live. `errorText` unwraps message-bearing non-`Error` rejections through the SDK's `errorMessage`. (aai-studio-server is named so the client's `dist/` actually ships — it has no release of its own.)
+- c4791cc: Split the local-dev sentinel in two: SUPABASE_DB_URL decides where platform state lives (no memory tier beside a real database), AAI_LOCAL_DEV=1 declares a local run. pnpm dev:aai-server resolves the local Supabase stack and a repo-root .env itself; studio sign-in offers the methods GoTrue reports, so email+password works locally with no OAuth app; boot verifies pg_cron instead of creating it. Studio projects get a database by DEFAULT (absent means on; the opt-out is an explicit false), and `@workflow/world-postgres` is no longer bundled into the guest harness — it ships on-disk Drizzle migrations the bundle cannot carry, so the durable Postgres workflow world could never start.
+- 4f5d9eb: Reorder the studio Settings pane: Work locally, Phone number, Database, Secrets, then Danger zone
+- bb54679: Count app databases in the platform connection budget, check it against the real instance at boot, and cap concurrent SSE streams per caller scope. MAX_CONTAINERS drops to 5 while the per-container input caps rise to 200/400 — measured, one replica holds 2,000 concurrent streams with no degradation and they cost zero database connections, so a replica is cheap in the scarce resource.
+- Updated dependencies [320268c]
+- Updated dependencies [16bec88]
+- Updated dependencies [c4791cc]
+- Updated dependencies [bb54679]
+  - aai-studio-client@0.5.0
+  - aai-server@3.5.8
+
 ## 0.6.8
 
 ### Patch Changes
