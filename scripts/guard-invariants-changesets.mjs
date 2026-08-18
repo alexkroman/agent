@@ -1,5 +1,6 @@
 /**
- * Rule 20 — a changeset names a real workspace package and a real bump type.
+ * Rule 20 — a changeset names a real workspace package, a real bump type, and at
+ * least one package changesets will actually VERSION.
  *
  * Its own module rather than a sixth scanner in `guard-invariants-scanners.mjs`,
  * on that file's own stated seam: the scanners there read source (git's index,
@@ -149,10 +150,126 @@ export function checkChangeset(file, source, known) {
 }
 
 /**
+ * Every workspace package, with whether its manifest marks it private.
+ *
+ * Separate from {@link workspacePackageNames} rather than folded into it: that
+ * one answers "is this a real package", which is a question about the NAME, and
+ * this one answers "will changesets version it", which is a question about the
+ * manifest and the config together.
+ *
+ * @returns {{name: string, private: boolean}[]}
+ */
+function workspacePackages() {
+  const dirs = readdirSync(new URL("../packages", import.meta.url), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => `packages/${entry.name}`);
+
+  const packages = [];
+  for (const dir of [...dirs, "docs"]) {
+    const source = readRepoFile(`${dir}/package.json`);
+    if (source === undefined) continue;
+    const { name, private: isPrivate } = JSON.parse(source);
+    if (typeof name === "string" && name.length > 0) {
+      packages.push({ name, private: isPrivate === true });
+    }
+  }
+  return packages;
+}
+
+/**
+ * The packages `changeset version` will actually bump, per `.changeset/config.json`.
+ *
+ * Two things take a package out of this set: membership in `ignore`, and being
+ * PRIVATE while `privatePackages.version` is not enabled. Read from the config
+ * rather than assumed, so the rule stays correct if either setting changes —
+ * the point is to compare changesets against what versioning really does, and a
+ * hardcoded answer here would be a second source of truth for it.
+ *
+ * @returns {Set<string>}
+ */
+export function versionablePackageNames() {
+  const source = readRepoFile(".changeset/config.json");
+  if (source === undefined)
+    throw new Error("guard-invariants: rule 20 cannot read .changeset/config.json");
+  const config = JSON.parse(source);
+  const ignored = new Set(Array.isArray(config.ignore) ? config.ignore : []);
+  // `privatePackages` may be `false`, absent, or `{version?, tag?}`. Absent and
+  // `false` both mean private packages are NOT versioned.
+  const privateVersion =
+    config.privatePackages === true ||
+    (config.privatePackages !== null &&
+      typeof config.privatePackages === "object" &&
+      config.privatePackages.version === true);
+
+  const names = new Set();
+  for (const { name, private: isPrivate } of workspacePackages()) {
+    if (ignored.has(name)) continue;
+    if (isPrivate && !privateVersion) continue;
+    names.add(name);
+  }
+  return names;
+}
+
+/**
+ * A changeset naming ONLY packages changesets will not version can never be
+ * consumed, and it takes the whole release pipeline down with it.
+ *
+ * Measured on this repo, which is how the rule exists. Six changesets naming
+ * only private packages sat on main with `privatePackages` unset. Every push
+ * then ran `changesets/action`, which saw pending changesets and took the
+ * VERSION path — where `changeset version` printed "All files have been updated"
+ * and changed NOTHING: no bump, and the changeset files not even deleted. The
+ * action committed nothing, force-pushed an empty `changeset-release/main`, and
+ * died on
+ *
+ *     HttpError: Validation Failed: "No commits between main and
+ *     changeset-release/main"
+ *
+ * Two consequences, and the second is the expensive one. The changesets can
+ * never be consumed, so this repeats on every push to main forever. And because
+ * the action only invokes `publish:` when there are NO pending changesets, the
+ * already-bumped version is never published — while the guest snapshot image
+ * installs the SDK from npm at exactly that version, so every sandbox spawn
+ * fails `npm install @alexkroman1/aai@<version>` and no agent and no studio
+ * session can start. A wedged release metadata file took production down.
+ *
+ * An EMPTY changeset is still legitimate and still spared: it names no package,
+ * so it is consumed and bumps nothing, which is what `--empty` is for. What this
+ * flags is a changeset that names packages and still cannot move any of them.
+ *
+ * @param {string} file
+ * @param {string} source
+ * @param {Set<string>} versionable
+ * @returns {{file: string, line: number, text: string}[]}
+ */
+export function checkChangesetConsumable(file, source, versionable) {
+  const parsed = parseChangesetFrontmatter(source);
+  // A malformed changeset is checkChangeset's finding, not this one's — one
+  // mistake should not be reported twice.
+  if ("error" in parsed || parsed.entries.length === 0) return [];
+  if (parsed.entries.some(({ name }) => versionable.has(name))) return [];
+
+  const named = parsed.entries.map(({ name }) => name).join(", ");
+  return [
+    {
+      file,
+      line: parsed.entries[0].line,
+      text:
+        `names only packages changesets will not version (${named}), so it can never be ` +
+        "consumed: `changeset version` changes nothing, the release action pushes an empty " +
+        'branch and fails on "No commits between", and nothing is ever published again. ' +
+        "Enable `privatePackages.version` in .changeset/config.json, or name a package it " +
+        "will bump.",
+    },
+  ];
+}
+
+/**
  * @returns {{file: string, line: number, text: string}[]}
  */
 export function scanChangesetPackageNames() {
   const known = workspacePackageNames();
+  const versionable = versionablePackageNames();
   const files = git(["ls-files", "--", ".changeset"])
     .split("\n")
     .filter((file) => file.endsWith(".md") && !file.endsWith("/README.md"));
@@ -162,6 +279,7 @@ export function scanChangesetPackageNames() {
     const source = readRepoFile(file);
     if (source === undefined) continue;
     found.push(...checkChangeset(file, source, known));
+    found.push(...checkChangesetConsumable(file, source, versionable));
   }
   return found;
 }

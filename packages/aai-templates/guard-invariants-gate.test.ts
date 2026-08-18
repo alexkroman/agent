@@ -542,7 +542,13 @@ const changesets = Object.values(
       source: string,
       known: Set<string>,
     ) => { file: string; line: number; text: string }[];
+    checkChangesetConsumable: (
+      file: string,
+      source: string,
+      versionable: Set<string>,
+    ) => { file: string; line: number; text: string }[];
     workspacePackageNames: () => Set<string>;
+    versionablePackageNames: () => Set<string>;
   }>("../../scripts/guard-invariants-changesets.mjs", { eager: true }),
 )[0];
 
@@ -580,5 +586,60 @@ describe("guard-invariants rule 20 (changeset package names)", () => {
 
   test("the rule is wired into the gate", () => {
     expect(script).toContain("scanChangesetPackageNames");
+  });
+
+  /**
+   * The second half of rule 20: a changeset that names real packages and STILL
+   * cannot move any of them. It wedges the release pipeline permanently and,
+   * because the action only publishes when nothing is pending, stops publishing
+   * altogether — which took production down, since the guest image installs the
+   * SDK from npm at the version this repo declares.
+   *
+   * Driven with an explicit `versionable` set rather than the real config, so the
+   * samples keep asserting the same thing after somebody flips
+   * `privatePackages.version`.
+   */
+  describe("consumability", () => {
+    // What it looks like with `privatePackages.version` off: the private ones
+    // are real packages and are not versionable.
+    const versionable = new Set(["@alexkroman1/aai"]);
+    const consumable = (source: string) =>
+      changesets?.checkChangesetConsumable("c.md", source, versionable) ?? [];
+
+    test.each([
+      ["only a non-versionable package", '---\n"aai-server": patch\n---\n\nx\n'],
+      ["several, none versionable", '---\n"aai-server": patch\n"aai-guest": patch\n---\n\nx\n'],
+    ])("flags a changeset naming %s", (_label, source) => {
+      expect(consumable(source).length, "an inert changeset was not flagged").toBeGreaterThan(0);
+      expect(consumable(source)[0]?.text).toContain("never be consumed");
+    });
+
+    test.each([
+      ["a versionable package", '---\n"@alexkroman1/aai": patch\n---\n\nx\n'],
+      [
+        "a mix, at least one versionable",
+        '---\n"@alexkroman1/aai": patch\n"aai-server": patch\n---\n\nx\n',
+      ],
+      // `--empty` names nothing, is consumed, and bumps nothing by design.
+      ["nothing at all (--empty)", "---\n---\n\n"],
+      // A malformed changeset is checkChangeset's finding; reporting it twice
+      // would make one mistake look like two.
+      ["malformed frontmatter", "no frontmatter here\n"],
+    ])("spares a changeset naming %s", (_label, source) => {
+      expect(consumable(source), "a legitimate changeset was flagged").toEqual([]);
+    });
+
+    test("the real config versions private packages, so nothing in the tree is inert", () => {
+      // The fix for the incident, asserted as a property rather than trusted:
+      // this repo writes changesets for its private packages (aai-server,
+      // aai-studio-server, aai-guest…), so versioning them is what keeps those
+      // changesets consumable.
+      const real = changesets?.versionablePackageNames() ?? new Set<string>();
+      expect(real, "the SDK is not versionable").toContain("@alexkroman1/aai");
+      expect(
+        real,
+        "private packages are not versionable — changesets naming them would wedge the release",
+      ).toContain("aai-server");
+    });
   });
 });

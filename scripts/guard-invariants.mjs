@@ -211,7 +211,7 @@ const ABSOLUTE_RULES = [
   },
   {
     id: 20,
-    label: "changeset names an unknown package",
+    label: "changeset release metadata is inert",
     scan: scanChangesetPackageNames,
     remedy:
       "Use the package's real name from its package.json, and one of\n" +
@@ -223,6 +223,14 @@ const ABSOLUTE_RULES = [
       "The fixed group is what makes this easy to mistype: a changeset lists one\n" +
       "of `@alexkroman1/aai`, `/aai-ui`, `/aai-cli` and the other two follow, so\n" +
       "the name gets typed from memory. `pnpm changeset:create` does not check it.\n\n" +
+      "The rule also covers a changeset naming only packages `changeset version`\n" +
+      "will not bump (private, with `privatePackages.version` off, or `ignore`d).\n" +
+      "That one cannot be consumed at all: version changes nothing, the release\n" +
+      'action force-pushes an empty branch and dies on "No commits between", and\n' +
+      "since it only publishes when NO changesets are pending, nothing is ever\n" +
+      "released again. The guest image installs the SDK from npm at the version\n" +
+      "this repo declares, so that took production down — every sandbox spawn\n" +
+      "failed on a version that was never published.\n\n" +
       "An EMPTY frontmatter block is fine — `pnpm changeset add --empty` is the\n" +
       "documented way to say a change needs no release.",
   },
