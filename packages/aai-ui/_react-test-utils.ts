@@ -6,6 +6,7 @@
  */
 
 import { act } from "react";
+import { vi } from "vitest";
 import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
 
 /**
@@ -349,4 +350,57 @@ export function crashWorklet(node: MockAudioWorkletNode): void {
  */
 export function fakeMediaStream(...tracks: { stop: () => void }[]): MediaStream {
   return { getTracks: () => tracks } as unknown as MediaStream;
+}
+
+/**
+ * A `WorkflowApi` whose every method is a spy with an inert default.
+ *
+ * Three suites had written this same object — and by the time a new method arrived,
+ * each of the three was a separate compile error saying the same thing. Defaults are
+ * chosen so the OMITTED half of the surface never decides a test: `watch` and
+ * `streamOutput` decline with a 404 so a hook falls through to its poll (the path a
+ * test can drive), the reads answer empty, and `wake` reports nothing woken.
+ *
+ * Override exactly the methods the test is about; everything else stays a spy, so
+ * "was this called?" is answerable without wiring one up.
+ */
+export function createMockWorkflowApi(
+  over: Partial<import("./workflow-client.ts").WorkflowApi> = {},
+): import("./workflow-client.ts").WorkflowApi {
+  const snapshot = {
+    runId: "wrun_1",
+    workflow: "digest",
+    createdAt: 0,
+    status: "running",
+  } as import("./workflow-client.ts").WorkflowRun;
+  const ref = (id: string) => ({
+    id,
+    name: "",
+    type: "",
+    size: 0,
+    complete: true,
+    url: `/u/${id}`,
+  });
+  return {
+    upload: vi.fn(async () => ref("upl_1")),
+    uploadStream: vi.fn(async (id: string) => ref(id)),
+    uploadInfo: vi.fn(async (id: string) => ({
+      id,
+      name: "",
+      type: "",
+      size: 0,
+      complete: true,
+    })),
+    list: vi.fn(async () => []),
+    start: vi.fn(async () => "wrun_1"),
+    startAndWait: vi.fn(async () => snapshot),
+    get: vi.fn(async () => snapshot),
+    find: vi.fn(async () => []),
+    recent: vi.fn(async () => []),
+    cancel: vi.fn(async () => true),
+    watch: vi.fn(async () => new Response(null, { status: 404 })),
+    streamOutput: vi.fn(async () => new Response(null, { status: 404 })),
+    wake: vi.fn(async () => 0),
+    ...over,
+  };
 }

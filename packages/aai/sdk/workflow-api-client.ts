@@ -62,6 +62,7 @@ import {
   readApiJson as readJson,
 } from "./_workflow-api-envelope.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import type { UploadInfo } from "./step-uploads.ts";
 import type { WorkflowSummary } from "./workflow.ts";
 import {
   clampWorkflowWait,
@@ -69,6 +70,8 @@ import {
   type WorkflowRunSnapshot,
 } from "./workflow-run.ts";
 import {
+  readUploadInfo,
+  streamUploadFile,
   type UploadBody,
   type UploadOptions,
   type UploadRef,
@@ -239,11 +242,36 @@ export type WorkflowApi = {
    * same reason: two tabs pressing "send it now" is ordinary.
    */
   wake(runId: string): Promise<number>;
+  /**
+   * Store a file under an id YOU chose, so a run can start before it is all in.
+   *
+   * The counterpart of {@link WorkflowApi.upload}, and the difference is the order
+   * it makes possible: `upload` answers with an id once the last byte is stored, so
+   * a run that needs the id in its input has to wait for the whole upload. Here the
+   * caller already has the id.
+   *
+   * `id` must be 1-64 characters of letters, digits, `-` and `_` (a
+   * `crypto.randomUUID()` qualifies) and must not already exist — a second call on
+   * one id is a 409, never an append.
+   */
+  uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
+  /**
+   * Read an upload's record: its name, how much has ARRIVED, and `complete`.
+   *
+   * What a page watches a streamed upload with. `complete` is the field to branch
+   * on — a `size` that stopped growing means only that nothing arrived recently,
+   * which a slow link and a dead client both produce.
+   */
+  uploadInfo(id: string): Promise<UploadInfo>;
 };
 
 // The prefix is declared beside the resolver that joins it and re-exported here,
 // so every importer still reads it from the one public place.
 export { WORKFLOW_API_PREFIX } from "./_workflow-api-envelope.ts";
+// The record a caller reads back. Declared beside the STEP reader, because a body
+// and a browser look at the same thing from two sides and a second shape for it is
+// how the two would come to disagree about `complete`.
+export type { UploadInfo } from "./step-uploads.ts";
 // One import path for the whole surface. NAMED, not `type *` — that also
 // re-exports `uploadFile`, putting an `@internal` name on a public subpath.
 export type {
@@ -414,6 +442,11 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
         ...omitUndefined({ signal: options?.signal }),
       });
     },
+
+    uploadStream: (id: string, file: UploadBody, options?: UploadOptions) =>
+      streamUploadFile(base, auth, failure, id, file, options),
+
+    uploadInfo: (id: string) => readUploadInfo(base, auth, failure, id),
 
     async wake(runId: string): Promise<number> {
       const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}/wake`, {

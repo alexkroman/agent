@@ -138,6 +138,11 @@ export {
   useWorkflowRuns,
 } from "./use-workflow-runs.ts";
 export {
+  type UseWorkflowStreamOptions,
+  useWorkflowStream,
+  type WorkflowStreamSubmission,
+} from "./use-workflow-stream.ts";
+export {
   createWorkflowApi,
   isTerminal,
   type WorkflowApi,

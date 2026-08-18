@@ -95,7 +95,20 @@ export type StepFetchInit = {
   method?: string | undefined;
   /** Plain record, not a `Headers` — see the type's own doc for why. */
   headers?: Record<string, string> | undefined;
-  body?: Uint8Array | string | undefined;
+  /**
+   * The request body: bytes, a string, or an async iterable of chunks.
+   *
+   * The iterable form is what lets a step send a file it must not hold in memory —
+   * a stored upload read window by window, which is the only way a step can hand a
+   * multi-gigabyte recording to another service. It requires `duplex: "half"`, which
+   * the published fetch adds; the caller passes only the iterable.
+   *
+   * Note a streaming body cannot be RETRIED by the transport, because an iterable is
+   * consumed once. That is a property of streaming rather than of this option, and it
+   * is why a step sending one should be the step the DevKit retries — a fresh attempt
+   * re-reads the upload from the start.
+   */
+  body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
   signal?: AbortSignal | undefined;
 };
 

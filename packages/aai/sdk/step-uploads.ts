@@ -34,6 +34,64 @@
  *
  * ## Why a published slot rather than an HTTP call
  *
+ * ## An upload can be read WHILE it is still arriving
+ *
+ * Everything above describes a finished file, and it forces a strict order —
+ * store all the bytes, then start the run — because for a long recording the
+ * upload is most of the wall clock. A STREAMED upload inverts that: the client
+ * names the id itself and `PUT`s the file in one request, the record appears
+ * immediately with `complete: false`, and its `size` grows as bytes land.
+ *
+ * The reader needs almost nothing for this, which is the point:
+ *
+ * - {@link uploadInfo} reports `size` — what has ARRIVED — and `complete`.
+ * - {@link readUpload} already clamps its window to `size`, so a step asking for
+ *   bytes that have not arrived yet gets what has, and says so in the `end` it
+ *   returns. That was true before streaming existed and is what makes it work.
+ *
+ * So a body polls `uploadInfo` in a step and transcribes whatever windows are
+ * fully present, exactly as it would over a finished file:
+ *
+ * ```ts no-check
+ * import { readUpload, uploadInfo } from "@alexkroman1/aai/utils";
+ * import { sleep } from "workflow";
+ *
+ * async function arrived(id: string) {
+ *   "use step";
+ *   const { size, complete } = await uploadInfo(id);
+ *   return { size, complete };
+ * }
+ *
+ * export async function transcribeStream(input: { recording: string }) {
+ *   "use workflow";
+ *   for (;;) {
+ *     const { size, complete } = await arrived(input.recording);
+ *     // … work on every segment whose `end` is inside `size` …
+ *     if (complete) break;
+ *     await sleep("5s");
+ *   }
+ * }
+ * ```
+ *
+ * **`complete` is the field to branch on, never `size`.** A size that stopped
+ * growing means "nothing arrived recently", which is what a slow link and a dead
+ * client both look like; only `complete` says the file is all there. A body that
+ * treated a stalled size as the end would return a transcript of most of a
+ * recording and report success.
+ *
+ * Two rules a body written on this has to keep, and neither is enforceable here:
+ *
+ * - **Poll in a STEP, loop in the body.** `uploadInfo` is I/O, so a body may not
+ *   call it; and the result must be journaled, because what the body does next is
+ *   derived from it. A body reading it directly would take a different branch on
+ *   every replay.
+ * - **A `sleep` between polls is what a wake shortens.** `POST /workflows/runs/
+ *   :id/wake` ends a pending `sleep`, so a client that wakes the run when its
+ *   upload finishes gets the tail for free — and one that does not still works,
+ *   one poll interval behind.
+ *
+ * ## Why a published slot rather than an HTTP call
+ *
  * A step runs in the SAME process as the server that stored the upload: the
  * DevKit's queue dispatches it to that server's own `/step` route. So the
  * reader is handed over in-process through a `Symbol.for` slot — the mechanism
@@ -44,16 +102,40 @@
  * bytes that are already local.
  */
 
+import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
+
 /** What a stored upload is, minus its bytes. */
 export type UploadInfo = {
-  /** The handle a run input carries. Opaque; mint one only by uploading. */
+  /**
+   * The handle a run input carries.
+   *
+   * Minted by the store for an ordinary upload, and CHOSEN BY THE CALLER for a
+   * streamed one — see `UPLOAD_TOKEN_RE`, which is what a chosen id has to satisfy.
+   */
   id: string;
   /** Filename the uploader gave, or `""` when it named none. */
   name: string;
   /** MIME type the uploader declared, or `""`. Never sniffed from the bytes. */
   type: string;
-  /** Total size in bytes. */
+  /**
+   * Bytes STORED so far.
+   *
+   * The whole file for a finished upload, and a growing number for one still
+   * arriving — which is why {@link readUpload} clamps to it rather than to
+   * anything the uploader declared. Never trust it as a total: see
+   * {@link UploadInfo.complete}.
+   */
   size: number;
+  /**
+   * Whether every byte is in.
+   *
+   * The one field a body waiting on a streamed upload may branch on. `false` means
+   * more may arrive; a `size` that has stopped growing means only that nothing
+   * arrived recently, which a slow link and a dead client both produce. An
+   * ordinary upload is `true` from the moment it exists, because it does not exist
+   * until it is finished.
+   */
+  complete: boolean;
 };
 
 /** One window of an upload, as {@link readUpload} resolves it. */
@@ -141,10 +223,16 @@ function requireReader(): UploadReader {
 }
 
 /**
- * Read one upload's metadata.
+ * Read one upload's metadata: its name, what has ARRIVED, and whether that is all
+ * of it.
+ *
+ * The poll a body waiting on a streamed upload runs — see the module doc, including
+ * why `complete` is the only field an exit may be decided on.
  *
  * @throws when the id names no upload — a step that reaches for one and finds
- *   nothing has been handed a stale or invented id, which no retry fixes.
+ *   nothing has been handed a stale or invented id, which no retry fixes. Note a
+ *   streamed upload EXISTS from its first byte, so this answers for one that is
+ *   still arriving.
  * @public
  */
 export async function uploadInfo(id: string): Promise<UploadInfo> {
@@ -162,7 +250,10 @@ export async function uploadInfo(id: string): Promise<UploadInfo> {
  *
  * Bounds are CLAMPED rather than rejected — a plan computed from a file's own
  * header can legitimately end one byte past it, and the returned `start`/`end`
- * say what was actually read.
+ * say what was actually read. That is also exactly what makes a STREAMED upload
+ * readable: the clamp is to what has ARRIVED, so a window that runs past the
+ * bytes stored so far comes back short rather than failing, and `end` is how a
+ * caller learns which it got.
  *
  * @public
  */
@@ -190,4 +281,24 @@ export async function readUpload(id: string, opts: ReadUploadOptions = {}): Prom
 function clamp(value: number, low: number, high: number): number {
   if (Number.isNaN(value)) return low;
   return Math.min(Math.max(Math.trunc(value), low), high);
+}
+
+/**
+ * Refuse an id no store may be handed.
+ *
+ * Here rather than in `host/` because everything that touches a CHOSEN id needs the
+ * same answer and one of them is a browser-safe module: the HTTP route, both store
+ * backends, and any test reaching a backend directly. A token one of them accepts
+ * and another refuses is an upload that can be written and never read — or, in the
+ * file backend, a filename outside the store.
+ *
+ * @internal
+ */
+export function assertUploadToken(id: string): void {
+  if (!UPLOAD_TOKEN_RE.test(id)) {
+    throw new Error(
+      `Invalid upload id ${JSON.stringify(id)}. A caller-chosen id is 1-64 characters of ` +
+        "letters, digits, `-` and `_` — a `crypto.randomUUID()` already qualifies.",
+    );
+  }
 }

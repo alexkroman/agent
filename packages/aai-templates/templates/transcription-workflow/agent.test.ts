@@ -18,10 +18,14 @@
  */
 
 import { stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
+import { readUpload } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { RetryableError } from "workflow";
+import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
-import agentDef, { transcribe } from "./agent.ts";
+import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
+import { createJob, pollTranscript, readTranscript, uploadToProvider } from "./workflows/batch.ts";
+import { planStreamed, probeUpload } from "./workflows/stream.ts";
+
 import {
   clock,
   mergeTranscript,
@@ -48,6 +52,16 @@ const SYNC_ORIGIN = "https://sync.assemblyai.com";
 
 /** The id every spec below uploads under. */
 const UPLOAD_ID = "upl_test";
+
+/**
+ * A fixed run-start epoch, so `elapsedMs` is assertable at all.
+ *
+ * `startClock` is a step in production; a spec supplies the value directly, which is
+ * the point of threading it as an argument rather than reading a clock inside the
+ * merge — the duration is then a function of journaled values and not of how long the
+ * test took.
+ */
+const STARTED_AT = 1_000_000;
 
 /**
  * Publish one in-memory upload, the way `createServer` publishes a real store.
@@ -109,10 +123,28 @@ function wavFile(
   return head;
 }
 
-describe("the agent declares its workflow and nothing else", () => {
-  test("under the name the REST route resolves it by", () => {
-    expect(Object.keys(agentDef.workflows ?? {})).toEqual(["transcribe"]);
+describe("the agent declares its three workflows and nothing else", () => {
+  test("under the names the REST route resolves them by", () => {
+    // The page starts a run by these strings, so a rename is a runtime 400 rather
+    // than a compile error — which is what makes pinning them worth a test.
+    expect(Object.keys(agentDef.workflows ?? {})).toEqual([
+      "transcribe",
+      "transcribeStream",
+      "transcribeBatch",
+    ]);
     expect(agentDef.workflows?.transcribe).toBe(transcribe);
+    expect(agentDef.workflows?.transcribeStream).toBe(transcribeStream);
+    expect(agentDef.workflows?.transcribeBatch).toBe(transcribeBatch);
+  });
+
+  test("all three take `recording` as an UPLOAD, which is what makes one picker serve them", () => {
+    // There is no second kind of declaration: `recording` carries an upload id in
+    // every flow, and the streaming one differs only in that the CLIENT chose the id
+    // and PUT the file to it. A divergence here would mean the form had to ask a
+    // person how the bytes should travel.
+    for (const flow of [transcribe, transcribeStream, transcribeBatch]) {
+      expect(flow.uploads).toEqual(["recording"]);
+    }
   });
 
   test("with no tools, because the interface is the page and the API", () => {
@@ -538,10 +570,15 @@ describe("transcribeSegment", () => {
 describe("mergeTranscript", () => {
   test("stitches the segments in index order, whatever order they arrive in", async () => {
     publishRecording(new Uint8Array(1));
-    const merged = await mergeTranscript(UPLOAD_ID, 12_000, [
-      { index: 1, text: "on Friday if the tests pass" },
-      { index: 0, text: "we ship on Friday" },
-    ]);
+    const merged = await mergeTranscript(
+      UPLOAD_ID,
+      12_000,
+      [
+        { index: 1, text: "on Friday if the tests pass" },
+        { index: 0, text: "we ship on Friday" },
+      ],
+      STARTED_AT,
+    );
     expect(merged.transcript).toBe("we ship on Friday if the tests pass");
     expect(merged.words).toBe(8);
     expect(merged).toMatchObject({ segments: 2, durationMs: 12_000 });
@@ -549,7 +586,7 @@ describe("mergeTranscript", () => {
 
   test("names the FILE it transcribed, not the id the run carried", async () => {
     publishRecording(new Uint8Array(1), "standup.wav");
-    const merged = await mergeTranscript(UPLOAD_ID, 1000, [{ index: 0, text: "hi" }]);
+    const merged = await mergeTranscript(UPLOAD_ID, 1000, [{ index: 0, text: "hi" }], STARTED_AT);
     expect(merged.source).toBe("standup.wav");
   });
 });
@@ -561,3 +598,207 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
   out.set(b, a.length);
   return out;
 }
+
+/**
+ * The STREAMING flow's own steps.
+ *
+ * Same honest line as the classic half above: the steps are driven directly and the
+ * body is not, because imported through vitest a `"use step"` function is an ordinary
+ * async function. Almost nothing here is new — the transcribing and the merging are
+ * `transcribe.ts`'s own steps, called unchanged — so what is worth asserting is the
+ * two things this flow adds: reading how far the upload has got, and planning from a
+ * header while most of the file is still missing.
+ */
+describe("the streaming flow", () => {
+  const FORMAT: WavFormat = { ...MONO_16K, dataStart: 44, dataEnd: 44 + 320_000 };
+
+  /** Publish a partially-arrived upload: `stored` bytes of a `declared`-byte file. */
+  function publishPartial(stored: number, declared: number, complete = false) {
+    const bytes = new Uint8Array(44 + stored);
+    bytes.set(wavFile(MONO_16K, declared), 0);
+    restore = stubUploads({
+      [UPLOAD_ID]: { bytes, name: "standup.wav", type: "audio/wav", complete },
+    });
+  }
+
+  test("probeUpload reports what has ARRIVED and whether that is all", async () => {
+    publishPartial(1000, 320_000);
+    // The poll the body runs. `complete` is separate from `size` because a size that
+    // stopped growing is not a claim that the file is finished.
+    await expect(probeUpload(UPLOAD_ID)).resolves.toEqual({ size: 44 + 1000, complete: false });
+  });
+
+  test("probeUpload reports complete once it is", async () => {
+    publishPartial(320_000, 320_000, true);
+    await expect(probeUpload(UPLOAD_ID)).resolves.toMatchObject({ complete: true });
+  });
+
+  test("planStreamed plans the WHOLE recording from a header that arrived alone", async () => {
+    // The one real difference from `splitRecording`: only 1000 bytes of audio are
+    // stored, and the plan still covers the 320,000 the header declares. Planning
+    // from what has arrived would fan out over a fraction of the recording and report
+    // success — which is the failure this argument exists to prevent.
+    publishPartial(1000, 320_000);
+    const plan = await planStreamed(UPLOAD_ID);
+    expect(plan.format.dataEnd).toBe(44 + 320_000);
+    expect(plan.segments.at(-1)?.end).toBe(44 + 320_000);
+    expect(plan.segments.length).toBe(planSegments(FORMAT).length);
+  });
+
+  test("planStreamed refuses a WAV that declares no length, naming the other flow", async () => {
+    // `0` means "unknown", and there is nothing to compute a segment list from until
+    // the file has finished — which is exactly what `transcribe` is for.
+    const bytes = new Uint8Array(44 + 100);
+    bytes.set(wavFile(MONO_16K, 100, { declaredDataSize: 0 }), 0);
+    restore = stubUploads({ [UPLOAD_ID]: { bytes, complete: false } });
+    await expect(planStreamed(UPLOAD_ID)).rejects.toThrow(/declares no data length/);
+  });
+
+  test("planStreamed refuses a file that is not a WAV, terminally", async () => {
+    restore = stubUploads({ [UPLOAD_ID]: { bytes: new Uint8Array(2000), complete: false } });
+    // Fatal, not retryable: three more attempts read the same bytes.
+    await expect(planStreamed(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
+  });
+
+  test("a segment reads SHORT rather than failing when its bytes have not landed", async () => {
+    // The property the whole flow rests on, and it predates streaming: `readUpload`
+    // clamps its window to what is stored. So a body that asks slightly early gets
+    // what exists — which is why the body checks `end <= size` and can trust the
+    // clamp for the final segment of a file that came up short.
+    publishPartial(1000, 320_000);
+    const slice = await readUpload(UPLOAD_ID, { start: 44, end: 44 + 320_000 });
+    expect(slice.bytes.length).toBe(1000);
+    expect(slice.end).toBe(44 + 1000);
+  });
+});
+
+/**
+ * The ASYNC flow's steps.
+ *
+ * Driven against a stubbed `stepFetch`, like the sync flow's — and note what that
+ * makes assertable: the three calls this flow makes are the whole of it, so the
+ * assertions are about the CONTRACT with the provider (an id survives, a failed job
+ * is terminal, the file is streamed rather than buffered) rather than about
+ * arithmetic this flow does not do.
+ */
+describe("the async flow", () => {
+  beforeEach(() => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+  });
+
+  const batchStubs: (() => void)[] = [];
+  afterEach(() => {
+    for (const undo of batchStubs.splice(0)) undo();
+  });
+
+  /** Answer the async API, recording what was sent. */
+  function stubBatch(answer: (url: string) => { status?: number; body?: unknown }) {
+    const stub = stubStepFetch((req) => answer(req.url));
+    batchStubs.push(stub.restore);
+    return stub.calls;
+  }
+
+  test("uploadToProvider streams the file and answers with the provider's URL", async () => {
+    publishRecording(new Uint8Array(5000), "standup.wav");
+    const calls = stubBatch(() => ({ body: { upload_url: "https://cdn.example/abc" } }));
+    await expect(uploadToProvider(UPLOAD_ID)).resolves.toEqual({
+      audioUrl: "https://cdn.example/abc",
+    });
+    expect(calls.map((one) => one.url)).toEqual(["https://api.assemblyai.com/v2/upload"]);
+  });
+
+  test("the file is STREAMED, so a step never holds a whole recording", async () => {
+    publishRecording(new Uint8Array(5000), "standup.wav");
+    const calls = stubBatch(() => ({ body: { upload_url: "https://cdn.example/abc" } }));
+    await uploadToProvider(UPLOAD_ID);
+    // `stubStepFetch` drains a streaming body into bytes, so what this asserts is that
+    // every byte went out — the streaming is what keeps a gigabyte off the heap, and
+    // the bytes arriving intact is what says the windowing is right.
+    const sent = calls[0]?.body;
+    expect(sent).toBeInstanceOf(Uint8Array);
+    expect(sent instanceof Uint8Array ? sent.length : -1).toBe(5000);
+  });
+
+  test("the upload is a SEPARATE step, so a failed submit does not re-send the file", async () => {
+    // Found by running it: as one step, a 400 on the create call retried the whole
+    // thing five times and re-uploaded 24 MB on each attempt. The split is what makes
+    // a retry of the cheap half cost the cheap half.
+    publishRecording(new Uint8Array(5000));
+    const calls = stubBatch(() => ({ status: 400, body: { error: "bad field" } }));
+    await expect(createJob("https://cdn.example/abc")).rejects.toBeInstanceOf(FatalError);
+    // One call, and it is not the upload.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("https://api.assemblyai.com/v2/transcript");
+  });
+
+  test("createJob asks for `speech_models`, plural — the singular field is a 400", async () => {
+    publishRecording(new Uint8Array(10));
+    const calls = stubBatch(() => ({ body: { id: "tr_1" } }));
+    await expect(createJob("https://cdn.example/abc")).resolves.toEqual({ id: "tr_1" });
+    const sent = JSON.parse(String(calls[0]?.body)) as Record<string, unknown>;
+    // The async API deprecated `speech_model` and answers 400 for any current model
+    // name passed to it — which is how the first live run of this flow failed. The
+    // STREAMING API still uses the singular field, so neither is "the" spelling.
+    expect(sent).toMatchObject({ speech_models: ["universal-3-5-pro"] });
+    expect(sent.speech_model).toBeUndefined();
+  });
+
+  test("a job the provider gave up on is TERMINAL, not polled forever", async () => {
+    publishRecording(new Uint8Array(10));
+    stubBatch(() => ({ body: { status: "error", error: "audio too quiet" } }));
+    // The provider has decided; no number of polls changes it, so this must not come
+    // back as "not done yet".
+    await expect(pollTranscript("tr_1")).rejects.toBeInstanceOf(FatalError);
+  });
+
+  test("pollTranscript answers `done` on completed and not before", async () => {
+    publishRecording(new Uint8Array(10));
+    stubBatch(() => ({ body: { status: "processing" } }));
+    await expect(pollTranscript("tr_1")).resolves.toEqual({ done: false, status: "processing" });
+  });
+
+  test("an unknown status is NOT done, so a new one cannot end a run early", async () => {
+    publishRecording(new Uint8Array(10));
+    stubBatch(() => ({ body: {} }));
+    await expect(pollTranscript("tr_1")).resolves.toMatchObject({ done: false });
+  });
+
+  test("readTranscript reports the provider's own duration and ONE segment", async () => {
+    publishRecording(new Uint8Array(10), "standup.wav");
+    stubBatch(() => ({ body: { text: "  hello there  ", audio_duration: 12.5 } }));
+    await expect(readTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toMatchObject({
+      source: "standup.wav",
+      // Not a fudge: the async API transcribed the recording in one piece, which is
+      // the difference this flow is here to show.
+      segments: 1,
+      durationMs: 12_500,
+      words: 2,
+      transcript: "hello there",
+    });
+  });
+
+  test("a rate limit is RETRYABLE, so a busy minute does not fail the run", async () => {
+    publishRecording(new Uint8Array(10));
+    stubBatch(() => ({ status: 429, body: { error: "slow down" } }));
+    await expect(pollTranscript("tr_1")).rejects.toBeInstanceOf(RetryableError);
+  });
+
+  test("all three flows report the same SHAPE, which is what lets one page render any", async () => {
+    publishRecording(new Uint8Array(10), "standup.wav");
+    stubBatch(() => ({ body: { text: "hi", audio_duration: 1 } }));
+    const batched = await readTranscript(UPLOAD_ID, "tr_1", STARTED_AT);
+    // One key set, so the page's summary line renders every flow's output. A field on
+    // one flow and not the others is a panel that shows it for some runs and not
+    // others, with nothing saying why.
+    expect(Object.keys(batched).sort()).toEqual([
+      "durationMs",
+      "elapsedMs",
+      "segments",
+      "source",
+      "transcript",
+      "words",
+    ]);
+    // And the wall clock really is measured from what it was handed.
+    expect(batched.elapsedMs).toBeGreaterThan(0);
+  });
+});

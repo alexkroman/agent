@@ -1668,10 +1668,10 @@ Without it every request falls through to `app.notFound` and reads as a failure
 of the feature. Shaped like the first routing point: broker and forward,
 streaming the body, with `brokerSessionUrl`'s taxonomy. Three decisions:
 
-- **DELETE as well as GET and POST**, straight off
-  `GUEST_ROUTE_EXPOSURE.workflows` — `api.cancel(runId)` is a DELETE, so a
-  platform answering only the first two 404s every Stop button on a DEPLOYED
-  agent while the same page works under `aai dev`.
+- **PUT and DELETE too**, off `GUEST_ROUTE_EXPOSURE.workflows` — `cancel` is a
+  DELETE, `uploadStream` a PUT, and a platform serving only GET and POST 404s both
+  on a DEPLOYED agent while the page works under `aai dev`. Each shipped once;
+  that file's comment carries both.
 - **The timeout bounds the response HEADERS, not the body**, because
   `GET /runs/:id/events` legitimately holds a stream open for minutes; that
   stream also registers with `live-streams.ts`.

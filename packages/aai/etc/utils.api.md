@@ -160,7 +160,7 @@ export function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
 export type StepFetchInit = {
     method?: string | undefined;
     headers?: Record<string, string> | undefined;
-    body?: Uint8Array | string | undefined;
+    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
     signal?: AbortSignal | undefined;
 };
 
@@ -227,6 +227,7 @@ export type UploadInfo = {
     name: string;
     type: string;
     size: number;
+    complete: boolean;
 };
 
 // @public

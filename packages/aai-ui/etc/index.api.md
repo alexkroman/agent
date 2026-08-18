@@ -517,6 +517,16 @@ export type UseWorkflowsResult = {
 };
 
 // @public
+export function useWorkflowStream<R = unknown>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<R>;
+
+// @public
+export type UseWorkflowStreamOptions = {
+    api?: WorkflowApi;
+    key?: string;
+    intervalMs?: number;
+};
+
+// @public
 export function useWorkflowSubmit<R = unknown>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<R>;
 
 // @public
@@ -569,6 +579,16 @@ export function WorkflowProgress(input: {
 
 // @public
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
+
+// @public
+export type WorkflowStreamSubmission<R = unknown> = {
+    submit: (input: unknown) => Promise<void>;
+    reset: () => void;
+    run: WorkflowRun<R> | undefined;
+    pending: boolean;
+    upload: UploadStatus | undefined;
+    error: string | undefined;
+};
 
 // @public
 export type WorkflowSubmission<R = unknown> = {

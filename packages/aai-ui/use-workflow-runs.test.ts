@@ -13,6 +13,7 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
+import { createMockWorkflowApi } from "./_react-test-utils.ts";
 import { useWorkflowRuns } from "./use-workflow-runs.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
@@ -36,20 +37,13 @@ function run(over: Partial<WorkflowRun> = {}): WorkflowRun {
  * plain substrings, so naming that cast in prose scores as one too.
  */
 function fakeApi(over: Partial<WorkflowApi> = {}): WorkflowApi {
-  return {
-    upload: vi.fn(async () => ({ id: "upl_1", name: "", type: "", size: 0, url: "/u/upl_1" })),
-    list: vi.fn(async () => []),
-    start: vi.fn(async () => "wrun_1"),
+  return createMockWorkflowApi({
     startAndWait: vi.fn(async () => run()),
     get: vi.fn(async () => run()),
     find: vi.fn(async () => [run({ runId: "wrun_keyed" })]),
     recent: vi.fn(async () => [run()]),
-    cancel: vi.fn(async () => true),
-    watch: vi.fn(async () => new Response(null, { status: 404 })),
-    streamOutput: vi.fn(async () => new Response(null, { status: 404 })),
-    wake: vi.fn(async () => 0),
     ...over,
-  };
+  });
 }
 
 describe("useWorkflowRuns", () => {

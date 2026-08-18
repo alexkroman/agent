@@ -610,6 +610,7 @@
   ],
   "@alexkroman1/aai/workflow-api": [
     "UploadBody",
+    "UploadInfo",
     "UploadOptions",
     "UploadProgress",
     "UploadRef",
@@ -719,6 +720,7 @@
     "UseWorkflowRunResult",
     "UseWorkflowRunsOptions",
     "UseWorkflowRunsResult",
+    "UseWorkflowStreamOptions",
     "UseWorkflowSubmitOptions",
     "UseWorkflowsOptions",
     "UseWorkflowsResult",
@@ -731,6 +733,7 @@
     "WorkflowOutputOf",
     "WorkflowProgress",
     "WorkflowRun",
+    "WorkflowStreamSubmission",
     "WorkflowSubmission",
     "WorkflowSummary",
     "buildAgentUrl",
@@ -752,6 +755,7 @@
     "useWorkflowProgress",
     "useWorkflowRun",
     "useWorkflowRuns",
+    "useWorkflowStream",
     "useWorkflowSubmit",
     "useWorkflows"
   ]

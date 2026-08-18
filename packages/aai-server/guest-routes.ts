@@ -187,12 +187,20 @@ export const GUEST_ROUTE_EXPOSURE = {
   // which only the host and Modal's readiness probe ever call.
   health: { via: "host-only" },
   clientConfig: { via: "proxied", methods: ["GET"] },
-  // DELETE as well as GET and POST, because the guest answers all three:
-  // `api.cancel(runId)` is a DELETE, and a platform declaring only the first
-  // two would 404 every Stop button on a DEPLOYED agent while the same page
-  // worked under `aai dev`. That is the second failure recorded in this table's
-  // own header, written down here rather than discovered again.
-  workflows: { via: "proxied", methods: ["GET", "POST", "DELETE"] },
+  // All four methods, because the guest answers all four — and each of the last
+  // two was added only after the exact failure this table's header describes.
+  //
+  // DELETE: `api.cancel(runId)` is a DELETE, and a platform declaring only GET
+  // and POST 404s every Stop button on a DEPLOYED agent while the same page
+  // works under `aai dev`.
+  //
+  // PUT: `api.uploadStream(id, file)` is a PUT — the call that lets a run start
+  // before its file has finished arriving. Same failure, third time: the streaming
+  // upload worked against `aai dev` (which serves the guest's own routes) and 404d
+  // in a studio preview, where the hook read the 404 as a failed upload and
+  // CANCELLED the run half a second after starting it. The symptom names nothing:
+  // the log says `Workflow run cancelled` and the page says the upload failed.
+  workflows: { via: "proxied", methods: ["GET", "POST", "PUT", "DELETE"] },
   // Nothing outside the sandbox calls these two: the DevKit's queue lives in
   // the guest (graphile-worker polling the app database from inside this
   // container) and dials its own server on loopback, so there is no caller to

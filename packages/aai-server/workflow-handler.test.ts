@@ -88,14 +88,30 @@ beforeEach(() => {
 });
 
 describe("routing", () => {
-  test("the exposure declares the three methods the guest answers", () => {
-    // DELETE is the one that matters: `api.cancel(runId)` is a DELETE, and a
-    // platform serving only GET and POST 404s every Stop button on a DEPLOYED
-    // agent while the same page works under `aai dev`.
+  test("the exposure declares the four methods the guest answers", () => {
+    // The last two are each a bug that shipped. `api.cancel(runId)` is a DELETE and
+    // `api.uploadStream(id, file)` is a PUT, and a platform serving only GET and POST
+    // 404s them on a DEPLOYED agent while the same page works under `aai dev` — which
+    // for the PUT presented as a run that cancelled itself half a second after
+    // starting, because the hook read the 404 as a failed upload.
     expect(GUEST_ROUTE_EXPOSURE.workflows).toEqual({
       via: "proxied",
-      methods: ["GET", "POST", "DELETE"],
+      methods: ["GET", "POST", "PUT", "DELETE"],
     });
+  });
+
+  test("forwards a PUT, which is how a streamed upload reaches the guest", async () => {
+    const guest = recordingGuest(() => json({ id: "abc", size: 3, complete: true }, 201));
+    const harness = await residentHarness(guest.fetchFn);
+    const res = await harness.fetch(
+      new Request("https://platform.test/my-agent/workflows/uploads/abc?name=a.wav", {
+        method: "PUT",
+        body: "hi!",
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(guest.calls[0]?.url).toBe("https://tunnel.test/workflows/uploads/abc?name=a.wav");
+    expect(guest.calls[0]?.method).toBe("PUT");
   });
 
   test("forwards the bare collection path", async () => {

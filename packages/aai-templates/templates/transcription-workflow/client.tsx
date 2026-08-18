@@ -33,6 +33,25 @@
  * never travel in one; this page contains no upload code because the SDK owns
  * that.
  *
+ * ## Two modes, and the toggle is the template's subject
+ *
+ * The desk offers both flows the agent declares, and the page is where the
+ * difference is legible: pick "while it uploads" and there is a run to watch
+ * before any bytes are in, pick "after it uploads" and there is not. They share
+ * everything else — one `<Form>`, one picker, one progress log, one transcript —
+ * because they take the same input and return the same shape, and the only thing
+ * the page chooses is which HOOK submits it.
+ *
+ * `useWorkflowStream` is the streaming half: it cuts the file with the cutter this
+ * template supplies (`cut-wav.ts`, which is `workflows/wav.ts` run in the browser),
+ * uploads each part under one group token, and wakes the run as each lands.
+ * `useWorkflowSubmit` is the classic half and is unchanged.
+ *
+ * Streaming is the DEFAULT because it is faster on any real recording. The classic
+ * path stays selectable because it is the shape to read first, and because it is
+ * the one that works on a file this browser cannot parse — the cutter needs a WAV
+ * header, where the server-side flow reaches the same conclusion in its first step.
+ *
  * ## Two waits, two bars
  *
  * A recording is the one input big enough that STORING it is itself a wait, and
@@ -59,6 +78,7 @@ import {
   SubmitButton,
   UploadProgressBar,
   useWorkflowRuns,
+  useWorkflowStream,
   useWorkflowSubmit,
   WorkflowFields,
   WorkflowProgress,
@@ -66,6 +86,7 @@ import {
 } from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
 import type { transcribe } from "./agent.ts";
+import { ApiHelp } from "./api-help.tsx";
 
 /**
  * What a finished run reports.
@@ -76,15 +97,66 @@ import type { transcribe } from "./agent.ts";
  */
 type Transcript = WorkflowOutputOf<typeof transcribe>;
 
-/** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
-const WORKFLOW = "transcribe";
+/**
+ * The three workflows this page drives, keyed by the mode that picks one.
+ *
+ * The STRINGS matter: a page starts a run by name, so a rename in `agent.ts` is a
+ * runtime 400 rather than a compile error. `agent.test.ts` pins all three.
+ */
+const WORKFLOWS = {
+  streaming: "transcribeStream",
+  classic: "transcribe",
+  batch: "transcribeBatch",
+} as const;
+
+/** Which flow the form submits through. */
+type Mode = keyof typeof WORKFLOWS;
+
+/**
+ * What each mode is called, and what picking it changes.
+ *
+ * The notes are the template's actual subject, so they say what the trade IS rather
+ * than which is "best" — the answer depends on the file and the link, and the whole
+ * reason all three ship is that a reader can run them over the same recording.
+ */
+const MODES: readonly { mode: Mode; label: string; note: string }[] = [
+  {
+    mode: "streaming",
+    label: "While it uploads",
+    note: "Sync API. The run starts first and transcribes each segment as its bytes land, so progress is visible while the file is still moving.",
+  },
+  {
+    mode: "classic",
+    label: "After it uploads",
+    note: "Sync API. Store the whole recording, then fan out over it. The simplest shape, and the quickest on a fast link.",
+  },
+  {
+    mode: "batch",
+    label: "Let the provider do it",
+    note: "Async API. One job, no cutting, no seams — and it accepts MP3 and M4A, which the two above refuse.",
+  },
+];
 
 /** Most past runs the history list shows. */
 const HISTORY_LIMIT = 10;
 
 function TranscriptionDesk() {
-  const { submit, run, upload, pending, error, reset } = useWorkflowSubmit<Transcript>(WORKFLOW);
-  const history = useWorkflowRuns<Transcript>(WORKFLOW, { limit: HISTORY_LIMIT });
+  const [mode, setMode] = useState<Mode>("streaming");
+  // ALL THREE hooks are called every render, because a hook may not be conditional —
+  // and that costs nothing here: none of them does anything until its `submit` is
+  // called, and `useWorkflowRun` underneath them holds no id until then either.
+  const streamed = useWorkflowStream<Transcript>(WORKFLOWS.streaming);
+  const stored = useWorkflowSubmit<Transcript>(WORKFLOWS.classic);
+  const batched = useWorkflowSubmit<Transcript>(WORKFLOWS.batch);
+  // The batch flow uploads the same way the classic one does — the id comes from the
+  // store — so it is the SAME hook against a different workflow. Only the streaming
+  // mode needs the other one, because only it needs the id before the bytes.
+  const active = mode === "streaming" ? streamed : mode === "batch" ? batched : stored;
+  const { submit, run, upload, pending, error, reset } = active;
+  // History is per WORKFLOW, so the list follows the mode: two flows that produce
+  // the same output are still two different things to have run, and merging them
+  // would put a run under a heading that cannot explain it.
+  const history = useWorkflowRuns<Transcript>(WORKFLOWS[mode], { limit: HISTORY_LIMIT });
   // Which past run the reader is looking at, if any. Its own state rather than
   // a route, because a workflow app is one page and a run id is not a place.
   const [openId, setOpenId] = useState<string | undefined>(undefined);
@@ -110,10 +182,14 @@ function TranscriptionDesk() {
         </p>
       </header>
 
-      {/* No mapping: the collected values already match the input schema. */}
+      <ModePicker mode={mode} onPick={setMode} disabled={pending} />
+
+      {/* No mapping: the collected values already match the input schema. All three
+          workflows declare `recording` as an upload, so the same picker serves every
+          mode — how the bytes travel is not a question to ask a person. */}
       <Form onSubmit={(values) => submit(values)} error={error}>
         {/* The NAME, so the schema is fetched here rather than by this page. */}
-        <WorkflowFields workflow={WORKFLOW} />
+        <WorkflowFields workflow={WORKFLOWS[mode]} />
         {/* Unguarded on purpose: it renders nothing until there are bytes in
             flight, and nothing again once they have landed. */}
         <UploadProgressBar upload={upload} />
@@ -128,7 +204,55 @@ function TranscriptionDesk() {
         openId={openId}
         onOpen={(runId) => setOpenId((current) => (current === runId ? undefined : runId))}
       />
+
+      {/* The most useful thing about a workflow app is the least discoverable:
+          this page is one caller of an ordinary HTTP API. See `api-help.tsx`. */}
+      <ApiHelp />
     </main>
+  );
+}
+
+/**
+ * Which flow submits, as two radios.
+ *
+ * Radios rather than a toggle or a select, because the choice has a REASON per
+ * option and a radio group is the one control with room to show it — the note
+ * under each label is what makes this a decision rather than a switch somebody
+ * flips to see what happens.
+ *
+ * Disabled while a submission is in flight: the two hooks hold separate run state,
+ * so switching mid-run would swap the panel for the other hook's (empty) one and
+ * read as the run having vanished.
+ */
+function ModePicker({
+  mode,
+  onPick,
+  disabled,
+}: {
+  mode: Mode;
+  onPick: (next: Mode) => void;
+  disabled: boolean;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-3" disabled={disabled}>
+      <legend className="text-sm font-medium uppercase tracking-[1.2px]">Transcribe</legend>
+      {MODES.map((option) => (
+        <label key={option.mode} className="flex items-start gap-3 text-sm">
+          <input
+            type="radio"
+            name="mode"
+            className="mt-1"
+            value={option.mode}
+            checked={mode === option.mode}
+            onChange={() => onPick(option.mode)}
+          />
+          <span className="flex flex-col gap-0.5">
+            <span>{option.label}</span>
+            <span className="text-xs opacity-70">{option.note}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
   );
 }
 
@@ -220,7 +344,8 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
       {run.status === "completed" && (
         <>
           <p className="text-xs opacity-60">
-            {run.output.segments} segments · {Math.round(run.output.durationMs / 1000)}s ·{" "}
+            {run.output.segments} {run.output.segments === 1 ? "segment" : "segments"} ·{" "}
+            {duration(run.output.durationMs)} of audio · took {duration(run.output.elapsedMs)} ·{" "}
             {run.output.words} words
           </p>
           <pre className="whitespace-pre-wrap text-sm leading-relaxed">{run.output.transcript}</pre>
@@ -229,6 +354,27 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
       {run.status === "failed" && <p className="text-red-600">{run.error}</p>}
     </section>
   );
+}
+
+/**
+ * A duration a person can read.
+ *
+ * `${Math.round(ms / 1000)}s` was what this printed, and an hour-long recording came
+ * out as `3746s` — which a reader asked whether they should parse as 37.46 seconds.
+ * A raw second count stops being readable at about ninety of them, and the recordings
+ * this desk is FOR are the ones past that.
+ *
+ * The hours component is omitted when it is zero rather than padded to `0:02:26`, so
+ * a two-minute clip reads as `2:26` and only a long one grows a field.
+ */
+function duration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const seconds = String(total % 60).padStart(2, "0");
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3600);
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
+    : `${minutes}:${seconds}`;
 }
 
 /**

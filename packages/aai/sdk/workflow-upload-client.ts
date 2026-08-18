@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The client half of `POST /workflows/uploads`.
+ * The client half of the `/workflows/uploads` routes.
  *
  * Its own module rather than another method body inside
  * `workflow-api-client.ts`, because it is the one call on that surface that is
@@ -10,6 +10,19 @@
  *
  * Why an upload exists at all is in `sdk/step-uploads.ts`: a run's input is
  * journaled and replayed, so bytes may not travel in it.
+ *
+ * ## Two writers, and the difference is who names the upload
+ *
+ * `uploadFile` POSTs and is answered with an id once the last byte is stored —
+ * which is all a `POST` can honestly do, and it means a form needing that id in a
+ * run input has to wait for the whole upload. `streamUploadFile` PUTs to an id the
+ * CALLER chose, so the id exists before the bytes leave: start the run, then send
+ * the file, and the run reads what has arrived. `readUploadInfo` is how anything
+ * that is not a step watches that happen.
+ *
+ * Both go through the same transport, the same headers and the same failures. The
+ * only thing that differs is the method and the URL, which is why they share
+ * `sendUpload` rather than being two request builders.
  *
  * ## Why there are TWO transports here
  *
@@ -27,6 +40,7 @@
 
 import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
+import type { UploadInfo } from "./step-uploads.ts";
 
 /**
  * Names the surface in a failure that was not the agent's own `{ error }`
@@ -103,6 +117,8 @@ export type UploadRef = {
   type: string;
   /** Size in bytes. */
   size: number;
+  /** Whether every byte is in — always true for a call that resolved. */
+  complete: boolean;
   /** Absolute URL the bytes can be read back from, `Range` included. */
   url: string;
 };
@@ -190,6 +206,7 @@ const MAX_RESPONSE_STATUS = 599;
  */
 function sendViaXhr(
   Xhr: new () => UploadXhr,
+  method: "POST" | "PUT",
   url: string,
   headers: Record<string, string>,
   file: UploadBody,
@@ -199,7 +216,7 @@ function sendViaXhr(
 ): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     const xhr = new Xhr();
-    xhr.open("POST", url);
+    xhr.open(method, url);
     for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
     xhr.upload.addEventListener("progress", (event) => {
       // The event's own total when it has one — it is the encoded length, which
@@ -261,6 +278,7 @@ function abortError(): Error {
  * per path is what stops a bar resting at 99% on one of them.
  */
 async function sendUpload(
+  method: "POST" | "PUT",
   url: string,
   headers: Record<string, string>,
   file: UploadBody,
@@ -274,7 +292,7 @@ async function sendUpload(
   // `omitUndefined` is this repo's one spelling of an optional field
   // (`guard-invariants` rule 2), and it is the same one
   // `workflow-api-client.ts` uses for this exact key.
-  const init: RequestInit = { method: "POST", headers, body, ...omitUndefined({ signal }) };
+  const init: RequestInit = { method, headers, body, ...omitUndefined({ signal }) };
   const onProgress = options?.onProgress;
   if (!onProgress) return await fetch(url, init);
 
@@ -287,7 +305,7 @@ async function sendUpload(
   report(progressOf(0, total));
   const Xhr = uploadXhrClass();
   const res = Xhr
-    ? await sendViaXhr(Xhr, url, headers, file, total, report, signal)
+    ? await sendViaXhr(Xhr, method, url, headers, file, total, report, signal)
     : await fetch(url, init);
   report(progressOf(total ?? sent, total));
   return res;
@@ -318,6 +336,7 @@ export async function uploadFile(
       ? described.type
       : "application/octet-stream");
   const res = await sendUpload(
+    "POST",
     `${base}/uploads?name=${encodeURIComponent(name)}`,
     { ...headers, "Content-Type": type },
     file,
@@ -327,12 +346,75 @@ export async function uploadFile(
   // Guarded like every other read on this surface: a 2xx whose body is not
   // JSON is a proxy answering, not the agent, and `res.json()` would reject
   // with a bare `SyntaxError` for a file that has already been stored.
-  const stored = await readJsonBody<{ id: string; name: string; type: string; size: number }>(
-    res,
-    UPLOAD_ERROR_LABEL,
-  );
+  const stored = await readJsonBody<Omit<UploadRef, "url">>(res, UPLOAD_ERROR_LABEL);
   // The URL is built from THIS client's base, not from the `url` the agent
   // answered with: the agent knows its own paths and not the origin it was
   // reached on, which on the platform is `/:slug/workflows/…`.
   return { ...stored, url: `${base}/uploads/${encodeURIComponent(stored.id)}` };
+}
+
+/**
+ * Store one file under an id the CALLER chose, so a run can be started on it
+ * before the bytes are in.
+ *
+ * The whole difference from {@link uploadFile} is the method and the URL — same
+ * transport, same headers, same progress, same failures. What it buys is the
+ * ORDER: the caller already has the id, so it can go in a run input, and the run
+ * reads what has arrived while the rest is still on the wire.
+ *
+ * The id must satisfy `UPLOAD_TOKEN_RE` (a `crypto.randomUUID()` does) and must
+ * not already exist — a second PUT to the same id is a 409 rather than an append,
+ * which is what makes a chosen id safe.
+ *
+ * @internal
+ */
+export async function streamUploadFile(
+  base: string,
+  headers: Record<string, string>,
+  fail: (res: Response) => Promise<Error>,
+  id: string,
+  file: UploadBody,
+  options?: UploadOptions,
+): Promise<UploadRef> {
+  const described = file as { name?: unknown; type?: unknown };
+  const name = options?.name ?? (typeof described.name === "string" ? described.name : "");
+  const type =
+    options?.type ??
+    (typeof described.type === "string" && described.type
+      ? described.type
+      : "application/octet-stream");
+  const res = await sendUpload(
+    "PUT",
+    `${base}/uploads/${encodeURIComponent(id)}?name=${encodeURIComponent(name)}`,
+    { ...headers, "Content-Type": type },
+    file,
+    options,
+  );
+  if (!res.ok) throw await fail(res);
+  const stored = await readJsonBody<Omit<UploadRef, "url">>(res, UPLOAD_ERROR_LABEL);
+  // Built from THIS client's base, not from the `url` the agent answered with: the
+  // agent knows its own paths and not the origin it was reached on.
+  return { ...stored, url: `${base}/uploads/${encodeURIComponent(stored.id)}` };
+}
+
+/**
+ * Read one upload's record — its name, how much has ARRIVED, and whether that is
+ * all of it.
+ *
+ * What a client watches its own streamed upload with, and what answers "why is
+ * this run still waiting". A step reads the same record in-process
+ * (`uploadInfo` on `@alexkroman1/aai/utils`), so this is for everything that is
+ * not one: a script, a dashboard, a person with `curl`.
+ *
+ * @internal
+ */
+export async function readUploadInfo(
+  base: string,
+  headers: Record<string, string>,
+  fail: (res: Response) => Promise<Error>,
+  id: string,
+): Promise<UploadInfo> {
+  const res = await fetch(`${base}/uploads/${encodeURIComponent(id)}/info`, { headers });
+  if (!res.ok) throw await fail(res);
+  return await readJsonBody<UploadInfo>(res, UPLOAD_ERROR_LABEL);
 }

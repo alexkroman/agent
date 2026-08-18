@@ -38,6 +38,25 @@
  * None of that is this template's code. Uploads are the SDK's, for the reason
  * every workflow app hits this wall on its first form.
  *
+ * ## Three flows over one job, so they can be compared
+ *
+ * | | `transcribe` | `transcribeStream` | `transcribeBatch` |
+ * | --- | --- | --- | --- |
+ * | provider API | sync | sync | **async** |
+ * | run starts | after the upload | **before** it | after the upload |
+ * | client sends | `POST /uploads` | `PUT /uploads/<id>` | `POST /uploads` |
+ * | shape | plan, fan out, merge | poll, fan out, merge | submit, poll, read |
+ * | client hook | `useWorkflowSubmit` | `useWorkflowStream` | `useWorkflowSubmit` |
+ * | accepts | linear-PCM WAV | linear-PCM WAV | **any audio** |
+ * | segments | 7 for 10 minutes | 7 | **1** |
+ *
+ * The first two are the same fan-out arranged two ways, and the difference between
+ * them is measured rather than claimed — see `workflows/stream.ts`, which records
+ * what overlapping the upload actually saves (bounded by the transcription, not
+ * proportional to the file). The third does none of that work and is what a real
+ * product would probably ship; it is here because a template that only showed the
+ * clever option would be hiding the simple one.
+ *
  * ## It is scriptable, which is the other half of having an API
  *
  * The page is one caller. Two requests do the same thing from a shell — upload,
@@ -52,10 +71,17 @@
  *   -d "{\"workflow\":\"transcribe\",\"wait\":30000,\"input\":{
  *        \"recording\":\"$ID\"}}"
  * ```
+ *
+ * The streaming flow is the same three verbs in a different order — start, then
+ * upload parts, then seal — and the page renders the whole recipe under "Use the
+ * API without this page". `AGENT.md` in this template is the copy a script author
+ * reads.
  */
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
 import { z } from "zod";
+import { transcribeBatchFlow } from "./workflows/batch.ts";
+import { transcribeStreamFlow } from "./workflows/stream.ts";
 import { transcribeFlow } from "./workflows/transcribe.ts";
 
 /**
@@ -83,9 +109,58 @@ export const transcribe = workflow({
   run: transcribeFlow,
 });
 
+/**
+ * The same work, started BEFORE the recording has finished uploading.
+ *
+ * Declared beside `transcribe` rather than replacing it, because the two are worth
+ * reading against each other: this one shows the transcript growing while the bytes
+ * are still moving, and the other is the shape to understand first — three steps in a
+ * straight line, with no polling.
+ *
+ * **The declaration is IDENTICAL, including `uploads`.** That is the point of the
+ * mechanism: `recording` carries an upload id either way, and what differs is only
+ * that the client CHOSE the id and `PUT` the file to it, so the id was valid before
+ * the bytes were. `useWorkflowStream` is the client half; `workflows/stream.ts` is
+ * the body, and it reuses this file's own `transcribeSegment` unchanged.
+ */
+export const transcribeStream = workflow({
+  description: "Transcribe a recording while it is still uploading",
+  input: z.object({
+    recording: z.string().describe("A linear-PCM WAV recording (16-bit or 8-bit, any rate)"),
+  }),
+  uploads: ["recording"],
+  run: transcribeStreamFlow,
+});
+
+/**
+ * The same work again, handed to AssemblyAI's ASYNC API instead of cut up.
+ *
+ * The third desk, and the one a real product would probably ship. Both flows above
+ * exist because the SYNC endpoint answers inside the request and pays for it with a
+ * 120-second, 40 MB cap — so a long recording has to be planned, fanned out and
+ * stitched. The async API has no cap: submit a job, poll, read the text.
+ *
+ * It is declared here so the page can run all three over the same file and show what
+ * each costs. What this one gives up is the inside of the work — the latency is the
+ * provider's queue rather than a fan-out you can tune — and what it gains is
+ * everything the other two spend code on, plus formats they refuse: the async API
+ * takes compressed audio, so an m4a off a phone works where a WAV-only cut does not.
+ *
+ * `workflows/batch.ts` carries the rest, including why the wait is what makes this a
+ * workflow rather than a request.
+ */
+export const transcribeBatch = workflow({
+  description: "Transcribe a recording through the async API, polling until it is done",
+  input: z.object({
+    recording: z.string().describe("Any recording the async API accepts — WAV, MP3, M4A"),
+  }),
+  uploads: ["recording"],
+  run: transcribeBatchFlow,
+});
+
 export default workflowApp({
   name: "Transcription Desk",
-  workflows: { transcribe },
+  workflows: { transcribe, transcribeStream, transcribeBatch },
   // Checked at deploy time, so a missing key is a warning naming it rather than
   // a run that fails on its second step.
   requiredEnv: ["ASSEMBLYAI_API_KEY"],

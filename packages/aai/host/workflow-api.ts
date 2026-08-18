@@ -20,8 +20,10 @@
  * GET    /workflows/runs/:id/stream → SSE: chunk | done | missing
  *                                     ?namespace=&startIndex=
  * POST   /workflows/runs/:id/wake   → { runId, woken }
- * POST   /workflows/uploads         → { id, name, type, size, url }   body: the file
+ * POST   /workflows/uploads         → { id, …, complete }   body: the file
+ * PUT    /workflows/uploads/:id     → the same, under an id the CALLER chose
  * GET    /workflows/uploads/:id     → the bytes, `Range` honoured
+ * GET    /workflows/uploads/:id/info → { id, name, type, size, complete }
  * ```
  *
  * ## The uploads pair is the one part that is not about runs
@@ -99,7 +101,13 @@ import {
   wakeRun,
 } from "./workflow-api-runs.ts";
 import { streamRunOutput } from "./workflow-api-stream.ts";
-import { createUpload, readUploadRoute, UPLOADS_PATH } from "./workflow-api-uploads.ts";
+import {
+  createUpload,
+  readUploadInfoRoute,
+  readUploadRoute,
+  streamUpload,
+  UPLOADS_PATH,
+} from "./workflow-api-uploads.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
 
 /**
@@ -196,6 +204,21 @@ function requireUploads(res: http.ServerResponse, ctx: RouteContext): UploadStor
   return undefined;
 }
 
+/**
+ * The upload id in this path, or `undefined` having ALREADY answered 400.
+ *
+ * The same shape as `runIdOr400` below and for the same reason: a path segment is
+ * percent-decoded, `decodeURIComponent` throws on a malformed escape, and no decode
+ * site in this package may let that reach the router's catch as a 500.
+ */
+function uploadIdOr400(res: http.ServerResponse, url: string, suffix = ""): string | undefined {
+  const id = decodePathSegment(
+    url.slice(UPLOADS_PATH.length + 1, suffix ? -suffix.length : undefined),
+  );
+  if (id === undefined) sendJson(res, 400, { error: "Malformed upload id" });
+  return id;
+}
+
 /** Prefix every `/runs/:id` route matches under. */
 const RUNS_PREFIX = `${WORKFLOW_API_PREFIX}/runs/`;
 
@@ -217,7 +240,7 @@ function runIdOr400(res: http.ServerResponse, url: string, suffix = ""): string 
 /**
  * The routes, as a table rather than an if/else chain.
  *
- * Eight routes × (method, path shape) is well past the lint ceiling for
+ * Eleven routes × (method, path shape) is well past the lint ceiling for
  * cognitive complexity as a chain, and a table also makes the PREFIX matches
  * visibly different from the exact ones.
  *
@@ -251,18 +274,37 @@ const ROUTES: readonly Route[] = [
       if (store) await createUpload(req, res, store, ctx.logger);
     },
   },
+  // BEFORE the bare `/uploads/:id` rule below, which is a PREFIX match — listed
+  // the other way round it reads `"<id>/info"` as an upload id and 404s an upload
+  // that exists. Same order-is-load-bearing rule as `/runs/:id/events`.
+  {
+    method: "GET",
+    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`) && url.endsWith("/info"),
+    run: async (_req, res, ctx, url) => {
+      const store = requireUploads(res, ctx);
+      if (!store) return;
+      const id = uploadIdOr400(res, url, "/info");
+      if (id !== undefined) await readUploadInfoRoute(res, store, id);
+    },
+  },
   {
     method: "GET",
     matches: (url) => url.startsWith(`${UPLOADS_PATH}/`),
     run: async (req, res, ctx, url) => {
       const store = requireUploads(res, ctx);
       if (!store) return;
-      const id = decodePathSegment(url.slice(UPLOADS_PATH.length + 1));
-      if (id === undefined) {
-        sendJson(res, 400, { error: "Malformed upload id" });
-        return;
-      }
-      await readUploadRoute(req, res, store, id);
+      const id = uploadIdOr400(res, url);
+      if (id !== undefined) await readUploadRoute(req, res, store, id);
+    },
+  },
+  {
+    method: "PUT",
+    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`),
+    run: async (req, res, ctx, url) => {
+      const store = requireUploads(res, ctx);
+      if (!store) return;
+      const id = uploadIdOr400(res, url);
+      if (id !== undefined) await streamUpload(req, res, store, id, ctx.logger);
     },
   },
   // Before the `/runs/:id` prefix matches below, and distinct from them: the

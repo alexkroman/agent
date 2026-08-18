@@ -16,6 +16,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockWorkflowApi } from "./_react-test-utils.ts";
 import { DEFAULT_WORKFLOW_POLL_MS, MAX_MISSING_READS, useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
@@ -59,27 +60,13 @@ describe("useWorkflowRun", () => {
    * The stream half is specced in `workflow-events.test.ts`.
    */
   function pollingApi(get: WorkflowApi["get"]): WorkflowApi {
-    return {
-      upload: vi.fn(async () => ({
-        id: "upl_1",
-        name: "",
-        type: "",
-        size: 0,
-        url: "/uploads/upl_1",
-      })),
-      list: vi.fn(async () => []),
-      start: vi.fn(async () => "wrun_1"),
+    return createMockWorkflowApi({
+      get,
       startAndWait: vi.fn(async () => {
         throw new Error("not used by the poll fallback");
       }),
-      get,
-      find: vi.fn(async () => []),
-      recent: vi.fn(async () => []),
       cancel: vi.fn(async () => false),
-      watch: vi.fn(async () => new Response(null, { status: 404 })),
-      streamOutput: vi.fn(async () => new Response(null, { status: 404 })),
-      wake: vi.fn(async () => 0),
-    };
+    });
   }
 
   beforeEach(() => {
