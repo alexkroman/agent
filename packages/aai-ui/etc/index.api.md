@@ -21,6 +21,7 @@ import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
 import type { TextareaHTMLAttributes } from 'react';
+import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai';
@@ -399,6 +400,19 @@ export function UiUrlChip(input: {
 }): JSX.Element;
 
 // @public
+export function UploadProgressBar(input: {
+    upload?: UploadStatus | undefined;
+    className?: string | undefined;
+}): ReactNode;
+
+// @public
+export type UploadStatus = UploadProgress & {
+    name: string;
+    index: number;
+    count: number;
+};
+
+// @public
 export function useAgentState<S = DefaultToolResult>(): S | null;
 
 // @public
@@ -562,6 +576,7 @@ export type WorkflowSubmission<R = unknown> = {
     reset: () => void;
     run: WorkflowRun<R> | undefined;
     pending: boolean;
+    upload: UploadStatus | undefined;
     error: string | undefined;
 };
 

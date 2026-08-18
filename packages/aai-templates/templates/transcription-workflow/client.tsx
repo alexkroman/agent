@@ -33,6 +33,17 @@
  * never travel in one; this page contains no upload code because the SDK owns
  * that.
  *
+ * ## Two waits, two bars
+ *
+ * A recording is the one input big enough that STORING it is itself a wait, and
+ * it is a wait nothing else on this page can describe: the run does not EXIST
+ * until the bytes are in, so there is no run id, no status and nothing for
+ * `<WorkflowProgress>` to read. `<UploadProgressBar>` covers exactly that
+ * stretch — `useWorkflowSubmit` reports the bytes as they go and drops the
+ * report the moment the last one lands — and `<WorkflowProgress>` takes over
+ * from there with what the run itself says. A page with only the second showed a
+ * disabled button and nothing else for the length of the upload.
+ *
  * That works because this workflow's input is scalars all the way down. A page
  * whose schema has an object or array property writes those fields itself, in
  * the same `<Form>` — every field in `@alexkroman1/aai-ui` is a plain named
@@ -46,6 +57,7 @@ import {
   isTerminal,
   page,
   SubmitButton,
+  UploadProgressBar,
   useWorkflowRuns,
   useWorkflowSubmit,
   WorkflowFields,
@@ -71,7 +83,7 @@ const WORKFLOW = "transcribe";
 const HISTORY_LIMIT = 10;
 
 function TranscriptionDesk() {
-  const { submit, run, pending, error, reset } = useWorkflowSubmit<Transcript>(WORKFLOW);
+  const { submit, run, upload, pending, error, reset } = useWorkflowSubmit<Transcript>(WORKFLOW);
   const history = useWorkflowRuns<Transcript>(WORKFLOW, { limit: HISTORY_LIMIT });
   // Which past run the reader is looking at, if any. Its own state rather than
   // a route, because a workflow app is one page and a run id is not a place.
@@ -102,6 +114,9 @@ function TranscriptionDesk() {
       <Form onSubmit={(values) => submit(values)} error={error}>
         {/* The NAME, so the schema is fetched here rather than by this page. */}
         <WorkflowFields workflow={WORKFLOW} />
+        {/* Unguarded on purpose: it renders nothing until there are bytes in
+            flight, and nothing again once they have landed. */}
+        <UploadProgressBar upload={upload} />
         <SubmitButton pending={pending}>Transcribe</SubmitButton>
       </Form>
 

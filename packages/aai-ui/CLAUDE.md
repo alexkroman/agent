@@ -560,6 +560,32 @@ the SDK's:
   `<FileField upload>` contributes the `File` UNREAD for the same reason
   (describing a 200 MB recording would mean holding it in memory).
 
+**Storing the file is a WAIT nothing else on the page can describe, and
+`<UploadProgressBar>` is what draws it.** A run does not EXIST until its input is
+stored, so from submit until the last byte lands there is no run id, no status
+and nothing for `<WorkflowProgress>` to read — which for a 200 MB recording is
+minutes of a page showing a disabled button and no other sign of life.
+`useWorkflowSubmit` therefore reports the bytes as they go
+(`WorkflowSubmission.upload`) and drops the report the moment the last one lands,
+so the two bars are disjoint by construction: this one covers the upload, the
+progress component covers the run. Three rules are baked into the component
+rather than left to each page — it renders NOTHING when there is nothing to
+describe (so a form with no files never shows a bar, and the prop can be passed
+unguarded), an unknown total is INDETERMINATE rather than a bar pinned at 0%, and
+the file is NAMED and counted, because files are stored one after another and an
+unlabelled bar appears to restart from zero partway through.
+
+**The byte counts come from `XMLHttpRequest`, and that is not a legacy
+accident.** `fetch` cannot observe a request body — the streaming request form
+(`duplex: "half"`) is one engine's extension that rejects outright on the others
+— so `UploadOptions.onProgress` is what makes the SDK's upload call swap
+transports, and only where an `XMLHttpRequest` exists. Everywhere else (Node, a
+worker without it) the call stays on `fetch` and the reports degrade to the two
+ends: sending, then sent. `sdk/workflow-upload-client.ts` owns that, including
+why the XHR answer is converted back into a `Response` at the boundary — one
+error vocabulary and one JSON guard above both paths, rather than two ways for
+this route to describe the same 413.
+
 A file input is also the one control whose BUTTON the browser draws, and left
 to the user agent it inherits the field's colours — which can come out as
 invisible text on the surface it sits on. `<FileField>` therefore styles

@@ -161,12 +161,91 @@ describe("useWorkflowSubmit", () => {
 
     await act(() => result.current.submit({ recording: file, languageCode: "en" }));
 
-    expect(api.upload).toHaveBeenCalledWith(file);
+    expect(api.upload).toHaveBeenCalledWith(file, { onProgress: expect.any(Function) });
     expect(api.start).toHaveBeenCalledWith(
       "digest",
       { recording: "upl_1", languageCode: "en" },
       {},
     );
+  });
+
+  test("reports the bytes as they go, then drops the report once the run starts", async () => {
+    // Two files, each held open, so what a bar would draw is observed at each
+    // step rather than inferred from whatever React last committed.
+    const gates = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+    let call = 0;
+    const api = fakeApi({
+      upload: vi.fn(async (_file, options) => {
+        const gate = gates[call++];
+        options?.onProgress?.({ loaded: 0, total: 400, fraction: 0 });
+        options?.onProgress?.({ loaded: 200, total: 400, fraction: 0.5 });
+        await gate?.promise;
+        return { id: `upl_${call}`, name: "", type: "", size: 400, url: "/uploads" };
+      }),
+    });
+    const files = [new File(["a"], "one.wav"), new File(["b"], "two.wav")];
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+    expect(result.current.upload).toBeUndefined();
+
+    let submitted: Promise<void> = Promise.resolve();
+    await act(async () => {
+      submitted = result.current.submit({ recordings: files });
+      await Promise.resolve();
+    });
+
+    // `count` is 2 on the FIRST report: every file is counted before the first
+    // byte leaves, so a bar never says "1 of 1" and then changes its mind.
+    expect(result.current.upload).toEqual({
+      name: "one.wav",
+      index: 1,
+      count: 2,
+      loaded: 200,
+      total: 400,
+      fraction: 0.5,
+    });
+
+    gates[0]?.resolve();
+    await waitFor(() =>
+      expect(result.current.upload).toMatchObject({ name: "two.wav", index: 2, count: 2 }),
+    );
+
+    gates[1]?.resolve();
+    await act(async () => {
+      await submitted;
+    });
+    // The bytes are gone, so the bar goes: from here the wait is the RUN's, and
+    // one left at 100% under a running workflow reads as the slow part.
+    expect(result.current.upload).toBeUndefined();
+    expect(api.start).toHaveBeenCalledWith("digest", { recordings: ["upl_1", "upl_2"] }, {});
+  });
+
+  test("drops the report when the upload FAILS, so no bar sits under the error", async () => {
+    const api = fakeApi({
+      upload: vi.fn(async (_file, options) => {
+        options?.onProgress?.({ loaded: 8, total: 64, fraction: 0.125 });
+        throw new Error("upload exceeds 268435456 bytes");
+      }),
+    });
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({ recording: new File(["a"], "big.wav") }));
+
+    await waitFor(() => expect(result.current.error).toMatch(/268435456/));
+    expect(result.current.upload).toBeUndefined();
+  });
+
+  test("leaves a MIXED array alone rather than storing half of it", async () => {
+    // An array that is not files all the way through is some other field's
+    // value that happens to contain one; turning half of it into ids would
+    // corrupt it with nothing reporting so.
+    const api = fakeApi();
+    const mixed = [new File(["a"], "one.wav"), "two.wav"];
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({ recordings: mixed }));
+
+    expect(api.upload).not.toHaveBeenCalled();
+    expect(api.start).toHaveBeenCalledWith("digest", { recordings: mixed }, {});
   });
 
   test("stores every file of a multiple field, in order", async () => {

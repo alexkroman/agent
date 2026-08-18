@@ -271,6 +271,7 @@
     "ToolConfigContext",
     "ToolDisplayConfig",
     "UiUrlChip",
+    "UploadStatus",
     "UseUserTranscriptResult",
     "UseWorkflowProgressResult",
     "UseWorkflowRunResult",

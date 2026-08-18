@@ -299,7 +299,11 @@ Three things in it are load-bearing:
   each step reads its own window with `readUpload`. Sixty steps therefore move
   the recording once between them, not sixty times. See "Uploads" in
   `packages/aai-ui/CLAUDE.md` for the mechanism; the template contains no upload
-  code at all, which is the point.
+  code at all, which is the point. It DOES render `<UploadProgressBar>`, which is
+  not upload code but the other half of the same argument: storing a two-hour
+  recording is minutes long, and until the bytes are in there is no run for
+  `<WorkflowProgress>` to narrate — so the page shows two bars covering two
+  disjoint waits.
 - **It is linear-PCM WAV only, and it says so by name.** The cutting is
   arithmetic over byte offsets — a sample is a fixed size, so an offset IS a
   timestamp and any frame boundary is a clean cut. An MP3 or M4A frame boundary
