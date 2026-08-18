@@ -278,12 +278,17 @@ async function migratePostgresWorld(): Promise<void> {
   const { setupDatabase } = await import("@workflow/world-postgres/cli");
   const realExit = process.exit;
   let exitCode: number | undefined;
+  // A single assertion below, never `as unknown as`: the stub RETURNS where the
+  // real `process.exit` is typed `never`, and that is the one difference. `never`
+  // is assignable to `void`, so the two signatures still have to be comparable —
+  // widen through `unknown` and a genuinely wrong parameter list stops being
+  // reported (verified: it becomes a TS2352).
   process.exit = ((code?: number | string | null): void => {
     // FIRST exit wins. With the throw gone there is normally only one — but the
     // rule is kept because it is what makes a genuine `exit(1)` legible: whatever
     // the CLI decides FIRST is its decision, and nothing later may soften it.
     exitCode ??= typeof code === "number" ? code : 0;
-  }) as unknown as typeof process.exit;
+  }) as typeof process.exit;
   try {
     await setupDatabase();
   } finally {

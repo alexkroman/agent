@@ -15,12 +15,6 @@ import { assertServiceRoleKey, hasPlatformDb, isLocalDev, requireEnv } from "./_
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
-import {
-  assertBucketPrivate,
-  type BlobStorage,
-  createMemoryBlobStorage,
-  createSupabaseBlobStorage,
-} from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import {
@@ -47,7 +41,6 @@ import {
   type AdminDb,
   assertSessionModeUrl,
   createPgSlugLock,
-  isTransactionModePooler,
   localSlugLock,
   type SlugMutationLock,
 } from "./platform-lock.ts";
