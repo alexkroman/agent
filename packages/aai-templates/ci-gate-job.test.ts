@@ -231,6 +231,16 @@ describe("the Postgres image pull", () => {
     );
   });
 
+  test("a SUCCESSFUL pull reports which attempt it took", () => {
+    // The output is captured so it can be classified, so a green log says
+    // nothing on its own — and the attempt count is the only evidence that
+    // throttling is getting worse, on the step whose reason for existing is
+    // throttling. Silence on the happy path is the wrong silence here.
+    expect(pgStep(), "a successful pull no longer reports its attempt number").toMatch(
+      /succeeded on attempt \$\{attempt\}/,
+    );
+  });
+
   test("exhausting the retries FAILS the job", () => {
     // The trap this guards is a loop that falls out and carries on, leaving
     // `docker run` to fail later with an error naming the container rather than

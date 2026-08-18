@@ -292,6 +292,12 @@ jobs:
           delay=5
           for attempt in 1 2 3 4; do
             if out=$(docker pull "$PG_IMAGE" 2>&1); then
+              # Announced on SUCCESS too, and not as noise: the output is
+              # captured so it can be classified, so a green log would otherwise
+              # say nothing about whether a retry was needed. That number is the
+              # only evidence of throttling getting worse, on the one step whose
+              # reason for existing is throttling.
+              echo "docker pull succeeded on attempt ${attempt}/4"
               pulled=1
               break
             fi
