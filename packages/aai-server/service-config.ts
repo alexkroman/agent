@@ -30,6 +30,7 @@ import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
 import { appDbPoolerUrl, platformDbDsn, platformPoolerUrl } from "./platform-connection-config.ts";
+import { announcePlatformDbCapacity } from "./platform-db-capacity.ts";
 import {
   createMemoryPlatformEvents,
   type PlatformEvents,
@@ -275,6 +276,9 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // silent (see realtime-events.ts on the channel that rejoins forever).
   const realtime = requireEnv(env, ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]);
   bootstrapPlatformDb(exec, env);
+  // The budget in `MAX_PLATFORM_DB_CONNECTIONS` is a claim about provisioned
+  // hardware; this is the one place holding a connection to check it against.
+  announcePlatformDbCapacity(exec);
   return {
     secrets: createVaultSecretStore(exec),
     agents: createPgAgentRows(exec),

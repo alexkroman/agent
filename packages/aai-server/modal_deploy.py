@@ -145,13 +145,37 @@ MIN_CONTAINERS = 1  # always-warm floor: session brokering is latency-sensitive
 # Cost guard AND the multiplier on the platform's direct-connection budget:
 # MAX_CONTAINERS x platformDbConnectionsPerReplica() must fit
 # MAX_PLATFORM_DB_CONNECTIONS, which `platform-db-budget.test.ts` asserts.
-# 10 x 4 = 40. Raise deliberately, not by incident, and check the instance's real
+# 5 x 4 = 20. Raise deliberately, not by incident, and check the instance's real
 # `max_connections` first — the failure at the ceiling is every platform read
 # failing at once, not degradation (see that constant).
-MAX_CONTAINERS = 10
+#
+# It was 10, and lowering it RAISES capacity, which is only a paradox if the
+# two limits are conflated. A replica is cheap in the scarce resource and
+# expensive in nothing: it costs 4 direct connections and serves thousands of
+# streams, so the fleet's serving capacity is set by the per-container input
+# caps below, never by this number. The 20 connections given back are the only
+# headroom per-app databases have — they are session-mode pooled, i.e. one real
+# backend each, and they are what actually scales with tenants (see
+# MAX_ACTIVE_APP_DATABASES). This does NOT bound how many AGENTS run: guest
+# sandboxes are Modal Sandboxes under a different Modal app
+# (DEFAULT_MODAL_APP_NAME in modal-context.ts), not containers of this function.
+MAX_CONTAINERS = 5
 BUFFER_CONTAINERS = 0  # no pre-warmed spare; bursts wait on container cold start
-TARGET_INPUTS = 75  # scale-out set point
-MAX_INPUTS = 150  # concurrent-request cap per container
+# Measured, not guessed — one replica, 2,000 concurrent SSE streams held open:
+# zero refusals, ~100 KB of RSS each (292 MB total), CPU ~0%, and a fresh
+# request's p50 unchanged (1 ms /health, 3 ms /studio/projects). Those streams
+# also cost ZERO extra database connections: they are fed by Realtime change
+# events, not by polling, so a held stream acquires nothing from a pool. The
+# previous 75/150 pair was therefore ~13x under what a replica can hold, which
+# mattered because SSE streams are long-lived INPUTS — one per open studio tab.
+#
+# 400 keeps ~5x headroom against that measurement, deliberately, because the
+# cap also covers short DB-backed requests whose latency does grow with
+# concurrency (measured: p99 49 ms at 200 concurrent, 92 ms at 400, 246 ms at
+# 800) and because the measurement was taken on a multi-core dev machine while
+# this function runs at cpu=1. Re-measure on a real container before raising.
+TARGET_INPUTS = 200  # scale-out set point
+MAX_INPUTS = 400  # concurrent-input cap per container (SSE streams included)
 
 # ── Input timeout ────────────────────────────────────────────────────────────
 #
@@ -193,9 +217,13 @@ SANDBOX_CPU_LIMIT = 4  # hard per-guest core cap, for builds (Modal cpuLimit)
 SANDBOX_MEMORY_MB = 1024  # per-guest memory reservation (Modal memoryMiB)
 SANDBOX_MEMORY_LIMIT_MB = 4096  # hard per-guest memory cap (Modal memoryLimitMiB)
 
-# The studio service deploys as its OWN Modal app from its own package —
-# see packages/aai-studio-server/modal_deploy.py. CI deploys each app only
-# when its package version changed (changeset-driven).
+# The studio service has no deploy recipe of its own: it is composed into THIS
+# process (see "Two packages, ONE deployment" in CLAUDE.md), so the autoscaler
+# numbers above govern the studio surface too. This comment used to point at
+# `packages/aai-studio-server/modal_deploy.py`, which does not exist — a
+# leftover from when the two were separate deployments, and misleading in the
+# one way that costs real time: it sends a reader looking for a second set of
+# these knobs.
 
 image = build_image(
     port=PORT,

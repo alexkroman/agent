@@ -867,8 +867,8 @@ The windows (`studio-rate-limit.ts`): the chat, project-create, and
 deploy windows are rows in `aai_platform.studio_rate_limits`
 (`createPgRateLimiter`, one atomic upsert per check), so a limit holds
 platform-wide instead of multiplying by the replica count — which for an
-ABUSE limit is the whole point, since `MAX_CONTAINERS = 10` makes a
-per-replica cap a cap of ten times the number written down. Fail-closed: a
+ABUSE limit is the whole point, since `MAX_CONTAINERS` (5) makes a
+per-replica cap a cap of five times the number written down. Fail-closed: a
 database error propagates rather than silently unmetering the route.
 Expired rows are swept by pg_cron (`pg-cron.ts`), not in-process. The
 `studio_` table name is now a misnomer; `name` namespaces each limiter's
@@ -1021,6 +1021,37 @@ works.
   - **The crash path ends them too** (`installProcessSafetyNets` in
     `service-config.ts`): `uncaughtException` → `process.exit(1)` destroys
     sockets exactly as a scale-in does.
+- **A caller's concurrent streams are CAPPED per scope**
+  (`MAX_LIVE_STREAMS_PER_SCOPE`, enforced by `reserveLiveStream` in
+  `aai-server/live-streams.ts`; both routes answer **429** when a scope is at
+  it). These are the only unbounded resource a single caller could hold on this
+  surface: they were capped by nothing — `liveStreamCount()` was computed and
+  gated on nowhere — and metered by nothing, since the studio's limiters cover
+  chat, project-create and preview-wake only.
+
+  **A cap, not a rate limit, and the distinction is why the limiters were the
+  wrong tool.** A stream is a concurrent resource, so what matters is how many
+  are held at once; a fixed-window limiter meters ARRIVALS and would punish
+  exactly the honest client this protects, because every tab reconnects at once
+  after a deploy or a scale-in (`endLiveStreams`) — a window sized for steady
+  state refuses the reconnect storm the system itself caused.
+
+  50 is far above legitimate use (a tab holds two: the scope list plus one
+  project) and far below where streams cost a replica anything — measured, one
+  replica held **2,000** concurrent streams at ~100 KB each with CPU at ~0% and
+  a fresh request's p50 unchanged, and those streams consumed **zero** database
+  connections, being fed by Realtime rather than by polling.
+
+  Two properties, both load-bearing. The reservation is taken BEFORE
+  `streamSSE` — like the project route's 404, since once the response is a
+  stream there is no status left to send — and released in a **`finally`**
+  around the whole callback, not in `sse.wait`'s cleanup: everything between
+  the pusher and `wait` can throw (a reader, a watcher subscribe), and a slot
+  leaked that way is not a slow leak but one scope permanently answered 429
+  until the replica restarts. And the key is the SCOPE, never the project: a
+  per-project key would let a caller cycling project names hold unlimited
+  streams, the same evasion that made the scope-keyed rate limits decorative
+  before they were paired with an IP key.
 - **A long-lived connection is ONE Modal input, so the function `timeout`
   bounds CALL DURATION** — not request latency. The app therefore sets it
   explicitly (`FUNCTION_TIMEOUT_SECS` = 4h, matching

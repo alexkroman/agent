@@ -28,10 +28,20 @@
  * a parameter on a dozen signatures to express "the process is going away".
  */
 
+import { MAX_LIVE_STREAMS_PER_SCOPE } from "./constants.ts";
+
 /** Ends one live response. Must be idempotent — shutdown may race a natural end. */
 type EndStream = () => void;
 
 const live = new Set<EndStream>();
+
+/**
+ * How many streams each reserved key is holding. Only keys with a live
+ * reservation are present — a release that would leave a 0 DELETES the entry,
+ * because the keys are caller scopes and a map that keeps one forever is a slow
+ * leak keyed by user identity.
+ */
+const perKey = new Map<string, number>();
 
 /**
  * Latched by {@link endLiveStreams}: once shutdown has drained the registry,
@@ -90,9 +100,47 @@ export function endLiveStreams(): number {
   return enders.length;
 }
 
+/**
+ * Reserve one of a key's stream slots, or refuse.
+ *
+ * Returns the release when the key is under {@link MAX_LIVE_STREAMS_PER_SCOPE},
+ * and `null` when it is at the cap — the caller answers 429 and never becomes a
+ * stream. Separate from {@link registerLiveStream} on purpose: that one is about
+ * SHUTDOWN (end this response cleanly) and cannot refuse anything, because by
+ * the time it runs the response is already streaming.
+ *
+ * **Check and increment are one synchronous step**, which is what makes the cap
+ * hold: a caller that read a count and registered after an await could be
+ * overtaken between the two, and the overshoot would be as large as the arrival
+ * burst. Nothing here awaits, so there is no interleaving to reason about.
+ *
+ * **The release is idempotent.** A stream can settle and abort, and the two
+ * cleanup paths race by design (`stream.onAbort(finish)` beside `sse.wait`'s
+ * cleanup) — a double release would decrement a slot the caller no longer owns,
+ * which shows up much later as a scope that can never reach its cap.
+ */
+export function reserveLiveStream(key: string): (() => void) | null {
+  const held = perKey.get(key) ?? 0;
+  if (held >= MAX_LIVE_STREAMS_PER_SCOPE) return null;
+  perKey.set(key, held + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const now = perKey.get(key) ?? 1;
+    if (now <= 1) perKey.delete(key);
+    else perKey.set(key, now - 1);
+  };
+}
+
 /** Test seam: number of registered streams. */
 export function liveStreamCount(): number {
   return live.size;
+}
+
+/** Test seam: slots currently reserved for one key. */
+export function reservedLiveStreams(key: string): number {
+  return perKey.get(key) ?? 0;
 }
 
 /**
@@ -102,5 +150,6 @@ export function liveStreamCount(): number {
  */
 export function resetLiveStreams(): void {
   live.clear();
+  perKey.clear();
   closed = false;
 }
