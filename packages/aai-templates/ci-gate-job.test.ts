@@ -186,3 +186,67 @@ describe("the ci gate job", () => {
     expect(body, "the ci gate no longer compares against success").toMatch(/!=\s*"success"/);
   });
 });
+
+/**
+ * The Postgres image pull, which is the one network fetch on the required path.
+ *
+ * Guarded because a retry loop that has stopped retrying looks EXACTLY like one
+ * that works — the job is green either way until the registry throttles, and
+ * then it is a red on the only required check with no test executed. That
+ * happened three times across two PRs on 2026-08-18, all cleared by a rerun.
+ */
+describe("the Postgres image pull", () => {
+  const pgStep = (): string => jobBody("integration-and-scenario");
+
+  test("the pull is its own command, so it can be retried", () => {
+    // `docker run` pulls implicitly and cannot be retried without also
+    // re-creating the container, which is why the two are separate.
+    expect(pgStep(), "the image is no longer pulled before `docker run`").toContain("docker pull");
+  });
+
+  test("it retries more than once, with a growing delay", () => {
+    const body = pgStep();
+    const loop = /for attempt in ([^\n]+); do/.exec(body);
+    expect(loop, "the pull is not wrapped in an attempt loop").not.toBeNull();
+    const attempts = (loop?.[1] ?? "").trim().split(/\s+/).filter(Boolean);
+    expect(
+      attempts.length,
+      "one attempt is not a retry — a rate limit needs a second request",
+    ).toBeGreaterThan(1);
+    // Backoff, not a fixed delay: the quota is per unit TIME, so equal short
+    // waits spend the same exhausted budget again.
+    expect(body, "the delay no longer grows between attempts").toMatch(
+      /delay=\$\(\(delay \* \d+\)\)/,
+    );
+  });
+
+  test("a non-transient failure is NOT retried", () => {
+    const body = pgStep();
+    // A wrong tag must stay fast and loud. Blanket retries would spend the whole
+    // backoff in front of an error nobody reads — the same argument as the
+    // extension check in that step.
+    expect(body, "the retry no longer classifies the failure text").toContain("toomanyrequests");
+    expect(body, "a non-transient pull failure is retried instead of failing fast").toMatch(
+      /NON-transient|not retrying/,
+    );
+  });
+
+  test("a SUCCESSFUL pull reports which attempt it took", () => {
+    // The output is captured so it can be classified, so a green log says
+    // nothing on its own — and the attempt count is the only evidence that
+    // throttling is getting worse, on the step whose reason for existing is
+    // throttling. Silence on the happy path is the wrong silence here.
+    expect(pgStep(), "a successful pull no longer reports its attempt number").toMatch(
+      /succeeded on attempt \$\{attempt\}/,
+    );
+  });
+
+  test("exhausting the retries FAILS the job", () => {
+    // The trap this guards is a loop that falls out and carries on, leaving
+    // `docker run` to fail later with an error naming the container rather than
+    // the pull — or worse, a suite that skips itself.
+    expect(pgStep(), "a pull that never succeeded no longer exits non-zero").toMatch(
+      /pulled:-0.*\n?[\s\S]{0,200}?exit 1/,
+    );
+  });
+});

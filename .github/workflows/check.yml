@@ -265,11 +265,61 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
+          PG_IMAGE=public.ecr.aws/supabase/postgres:17.6.1.155
           # The runner's own cluster occupies 5432; this image replaces it.
           sudo systemctl stop postgresql || true
+          # **The pull is its own RETRIED command, because `docker run`'s
+          # implicit pull has no retry and this registry throttles.**
+          # public.ecr.aws rate-limits unauthenticated pulls per source IP, and
+          # hosted runners share theirs — so the quota is spent by strangers and
+          # nothing about this repo's own traffic predicts a hit.
+          #
+          # Measured 2026-08-18: three runs across two PRs died on
+          # `docker: toomanyrequests: Rate exceeded` at exit 125, BEFORE a single
+          # test executed, and every one passed on a plain rerun. That is a false
+          # RED on the only required check — the failure this file's header is
+          # most emphatic about — arriving through the cheapest possible cause,
+          # a request that only ever needed making twice.
+          #
+          # Retried on TRANSIENT text ONLY, never blanket. A wrong tag has to
+          # stay fast and loud, which is the same argument the extension check
+          # below is built on; retrying everything would turn a typo into a
+          # minute of waiting in front of an error nobody reads.
+          #
+          # 5s, 15s, 45s rather than a fixed delay: the quota is per unit TIME,
+          # so the value of a retry is how far it lands into a new window. Three
+          # attempts 5s apart spend the same exhausted budget three times.
+          delay=5
+          for attempt in 1 2 3 4; do
+            if out=$(docker pull "$PG_IMAGE" 2>&1); then
+              # Announced on SUCCESS too, and not as noise: the output is
+              # captured so it can be classified, so a green log would otherwise
+              # say nothing about whether a retry was needed. That number is the
+              # only evidence of throttling getting worse, on the one step whose
+              # reason for existing is throttling.
+              echo "docker pull succeeded on attempt ${attempt}/4"
+              pulled=1
+              break
+            fi
+            printf '%s\n' "$out"
+            if ! printf '%s' "$out" | grep -qiE 'toomanyrequests|rate exceeded|timeout|connection reset|TLS handshake|unexpected EOF|unexpected status: 5'; then
+              echo "::error::docker pull failed for a NON-transient reason — not retrying"
+              exit 1
+            fi
+            [ "$attempt" -eq 4 ] && break
+            echo "transient pull failure (attempt ${attempt}/4) — retrying in ${delay}s"
+            sleep "$delay"
+            delay=$((delay * 3))
+          done
+          # `${pulled:-0}` because `set -u` is on and the happy path is the only
+          # one that assigns it.
+          [ "${pulled:-0}" = 1 ] || {
+            echo "::error::docker pull still failing after 4 attempts — see the output above"
+            exit 1
+          }
           docker run -d --name aai-test-pg -p 5432:5432 \
             -e POSTGRES_PASSWORD=postgres \
-            public.ecr.aws/supabase/postgres:17.6.1.155
+            "$PG_IMAGE"
           # **`pg_isready` alone is a FALSE ready on this image.** Its entrypoint
           # runs an init phase and RESTARTS Postgres, so a probe that answers
           # once can be answered by a server about to go away — measured
