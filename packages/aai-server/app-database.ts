@@ -72,11 +72,9 @@ export type AppDbMeta = {
   url?: string;
 };
 
-export {
-  appDbAdminUrl,
-  appDbConnectionUrl,
-  appDbUrlFor,
-} from "./app-db-url.ts";
+// `appDbAdminUrl` is deliberately absent: this module is its only caller (the
+// wake sweep's way in), so re-exporting it would widen the surface to nothing.
+export { appDbConnectionUrl, appDbUrlFor } from "./app-db-url.ts";
 export { type AppDbUsage, appDatabaseUsage } from "./app-db-usage.ts";
 
 const IDENTIFIER_RE = /^app_[a-f0-9]{16}$/;

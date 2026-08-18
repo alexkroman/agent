@@ -76,9 +76,12 @@ function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
     });
 }
 
-/** buildOpts plus what service entries need beyond the orchestrator's opts. */
-export { assertStorageBucket, buildStorage } from "./platform-storage-config.ts";
+// Re-exported for the studio entry, which calls it at boot; `buildStorage` is
+// NOT re-exported — this module is its only caller, and the studio reaches the
+// rest of storage wiring through `buildServiceConfig`.
+export { assertStorageBucket } from "./platform-storage-config.ts";
 
+/** buildOpts plus what service entries need beyond the orchestrator's opts. */
 export type ServiceConfig = OrchestratorOpts & {
   /**
    * Studio project workspaces and chat histories. Built here because this is
