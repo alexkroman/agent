@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { DEAD_AIR_OPENING_PHRASE } from "../../../sdk/constants.ts";
 import type { AssemblyAITtsLanguage } from "../../../sdk/providers/tts/assemblyai.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
-import { flush, tick } from "../../_test-utils.ts";
+import { flush } from "../../_test-utils.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
 import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
 import { openAssemblyAITts } from "./assemblyai.ts";
@@ -462,20 +462,18 @@ describe("AssemblyAI TTS adapter", () => {
     });
 
     test("cancel clears pending segment state so the next turn ends normally", async () => {
-      const { session } = await openSession();
+      const { session, ws } = await openSession();
       const onDone = vi.fn();
       session.on("done", onDone);
 
       session.sendText("Interrupted sentence. ");
-      session.cancel(); // emits done for the cancelled turn, drops the socket
+      session.cancel(); // emits done for the cancelled turn; the socket survives
       expect(onDone).toHaveBeenCalledTimes(1);
 
-      // Let the replacement socket finish connecting so queued frames go out.
-      await tick();
-      const next = FakeWebSocket.instances.at(-1);
+      ws._msg({ type: "Cancelled" }); // boundary — the next turn's frames count
       session.sendText("New turn ");
       session.flush();
-      next?._msg({ type: "FlushDone" });
+      ws._msg({ type: "FlushDone" });
       expect(onDone).toHaveBeenCalledTimes(2);
     });
   });
