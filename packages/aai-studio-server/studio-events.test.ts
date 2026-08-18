@@ -13,7 +13,7 @@
 import { MAX_LIVE_STREAMS_PER_SCOPE } from "aai-server/constants";
 import { reservedLiveStreams, reserveLiveStream, resetLiveStreams } from "aai-server/live-streams";
 import { authHeaders, type TestFetch } from "aai-server/test-utils";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
 import {
   createWorkspace,
@@ -386,5 +386,5 @@ test("closing a stream gives its slot back", async () => {
   // The anti-leak property, and the reason the release sits in a `finally`: a
   // slot that outlives its stream is not a slow leak, it is one scope
   // permanently answered 429 until the replica restarts.
-  await expect.poll(() => reservedLiveStreams(scope)).toBe(0);
+  await vi.waitFor(() => expect(reservedLiveStreams(scope)).toBe(0));
 });

@@ -502,7 +502,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Seventeen numbered rules, each printing WHY the invariant exists and what to use
+  Eighteen numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -528,12 +528,13 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 18 | no `req.url.split("?")` | `requestPath()` / `requestQuery()` |
   | 19 | no hand-rolled sleep (or `node:timers/promises`), `<T>` included | `sleep()` |
   | 20 | no changeset naming a package or bump type that does not exist | the real name from its package.json |
+  | 21 | no `expect.poll` — a `test.concurrent` sibling clears the pointer it reads | `vi.waitFor()` |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
   later rule inherit it (rule 6, retired when `ctx.state` stopped existing;
   rule 10, retired with the `research/` directory it checked; and 15,
-  reserved). Rules 1, 7, 9, 12, 13, 14 and 20 are at zero and enforced
+  reserved). Rules 1, 7, 9, 12, 13, 14, 20 and 21 are at zero and enforced
   absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
   was widened**: `git grep` is line-based, so the wrapped `Promise.race([` form
   Biome emits can only be matched by reporting the OPENING line, which cannot

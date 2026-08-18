@@ -557,13 +557,25 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     // `Controls` onClick dials nothing at all — while the label toggle itself
     // is pinned deterministically by unit tests (components/controls.test.tsx,
     // components/integration.test.tsx).
-    const dials: string[] = [];
-    page.on("websocket", (ws) => {
-      dials.push(ws.url());
+    //
+    // **`waitForEvent` with a PREDICATE, not an array polled by `expect.poll`.**
+    // The poll was a hard failure in a `test.concurrent` — `guard-invariants`
+    // rule 21 carries that argument and keeps the spelling out of the tree. The
+    // predicate is the second half: this suite's stub attaches its
+    // `WebSocketServer` to the http server, so it upgrades on EVERY path and
+    // `dials.length > 0` never said the click dialed the SESSION.
+    //
+    // Armed BEFORE the click, so a dial that lands during `click()` is caught.
+    const redial = page.waitForEvent("websocket", {
+      predicate: (ws) => new URL(ws.url()).pathname === "/websocket",
+      timeout: 30_000,
     });
 
     await toggleBtn.click();
-    await expect.poll(() => dials.length, { timeout: 30_000, interval: 50 }).toBeGreaterThan(0);
+    const dial = await redial;
+    // The predicate matched the PATH; this pins the ORIGIN, so a dial at some
+    // other server's `/websocket` cannot pass for the dev server's.
+    expect(new URL(dial.url()).port).toBe(String(port));
 
     await page.close();
   });

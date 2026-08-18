@@ -1,10 +1,16 @@
 /**
- * The TIMING rules — 3, 4 and 19. One family, three remedies.
+ * The TIMING rules — 3, 4, 19 and 21. One family, four remedies.
  *
- * They are grouped because they are the same question asked three ways ("how
- * is this code waiting?") and because they share a failure history: all three
+ * They are grouped because they are the same question asked four ways ("how
+ * is this code waiting?") and because they share a failure history: all of them
  * are substring guards over a language with syntax, and every gap found in
  * this gate has been in one of them.
+ *
+ * Rule 21 is the newest and the only one whose hazard is not the wait itself:
+ * `expect.poll` waits correctly and reads the RUNNER's current test to do it,
+ * which under `test.concurrent` a sibling has already cleared. It sits here
+ * because the remedy is the same shape as the other three — a different wait
+ * primitive, named.
  *
  * Three widenings landed together, each against LIVE occurrences the previous
  * pattern could not see:
@@ -169,5 +175,58 @@ export const TIMING_RULES = [
       "\n" +
       "A zero-length wait is NOT this: that is rule 4, and the remedy there\n" +
       "names which of the two yields you meant.",
+  },
+  {
+    id: 21,
+    key: "rule21_expectPoll",
+    label: "expect.poll (bound to the runner's current test)",
+    // No prefix beyond the literal, because the point is the SPELLING: a
+    // context-bound `expect` destructured from the test arguments is spelled
+    // identically at the call site. No regex can tell the two apart, which is
+    // the argument for banning the API rather than for policing where it is
+    // reached from.
+    re: "expect\\.poll\\(",
+    paths: SOURCE_PATHSPECS,
+    skipComments: true,
+    // Every sample here is SHORT on purpose: spelled out at call-site length,
+    // biome's `noSecrets` entropy heuristic scores them as credentials — the
+    // same trap this module's header records rule 19 paying for.
+    samples: {
+      matches: ["    await expect.poll(() => n).toBe(0);", "  await expect.poll(read).toEqual(1);"],
+      ignores: [
+        "    await vi.waitFor(() => expect(n).toBe(0));",
+        "    await vi.waitUntil(() => n > 0, { interval: 50 });",
+        "    expect(n).toBe(0);",
+        // The name is a hazard only on `expect`. A poll of one's own is fine.
+        "    await pollUntilReady(url);",
+      ],
+    },
+    remedy:
+      "Use `vi.waitFor()` (retry an assertion) or `vi.waitUntil()` (retry a\n" +
+      "predicate) — which is what AGENTS.md already asks for when polling for an\n" +
+      "async result, so this rule only makes the existing preference mechanical.\n" +
+      "Where the thing awaited is an EVENT the tool already records, take the\n" +
+      "tool's own affordance instead: `page.waitForEvent(name, { predicate })`\n" +
+      "cannot miss an event however brief it was, and needs no array to poll.\n" +
+      "\n" +
+      "`expect.poll` reads the runner's CURRENT TEST, which is a single\n" +
+      "module-level variable in @vitest/runner — set before a test body runs and\n" +
+      "cleared after. Under `test.concurrent` the siblings run interleaved, so\n" +
+      "the first one to FINISH clears the pointer for every test still running,\n" +
+      "and the global `expect.poll` throws `expect.poll() must be called inside\n" +
+      "a test` rather than polling anything.\n" +
+      "\n" +
+      "That failure is INVISIBLE until it is not: it depends on which concurrent\n" +
+      "sibling finishes first, so it passes locally and on the leg that happens\n" +
+      "to schedule kindly. It took out both e2e legs of a Version Packages PR\n" +
+      "and of main (`aai-cli/e2e.test.ts`, 20 concurrent tests) while the run\n" +
+      "before it was green on the same code. `vi.waitFor` reads no such state,\n" +
+      "so it is correct in a concurrent test and in a serial one alike.\n" +
+      "\n" +
+      "The context `expect` (`async ({ expect }) => …`) IS bound correctly and is\n" +
+      "the upstream remedy — it is not the one here, because the two are spelled\n" +
+      "the same at the call site. A rule that cannot see the difference would\n" +
+      "have to trust a destructuring one screen up, and this repo has paid four\n" +
+      "times for a guard that reports success over the shape it cannot see.",
   },
 ];
