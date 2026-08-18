@@ -57,6 +57,7 @@ import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { mapInBatches, readUpload, report, uploadInfo } from "@alexkroman1/aai/utils";
 import { elapsed, timed, transcribeWav } from "./sync-api.ts";
 import {
+  bytesPerSecond,
   parseWav,
   planSegments,
   SEGMENT_OVERLAP_SECONDS,
@@ -68,32 +69,65 @@ import {
 } from "./wav.ts";
 
 /**
- * Audio-seconds the desk keeps in flight, which is what {@link SEGMENT_CONCURRENCY}
- * is DERIVED from rather than a request count.
+ * Bytes the desk keeps uploading at once, which is what {@link segmentConcurrency}
+ * divides to get a width.
  *
- * The far side's capacity tracks how much audio is being decoded at once, not how
- * many sockets are open, and the two measurements that say so were taken against
- * different payload shapes. 320 concurrent requests of a 5-second clip — 1,600
- * audio-seconds, 51 MB — drew zero `429`s and zero `503`s: the endpoint QUEUES
- * rather than rejecting, and latency grew linearly with depth (p50 0.4s at 5, 1.9s
- * at 80, 5.2s at 320) while throughput plateaued at ~25-30 req/s. But 64 concurrent
- * 92-second segments — 5,888 audio-seconds — drew 20 `503 Capacity Exceeded`, and 48
- * of them (4,416) drew 0-4. A request count cannot explain both; audio-seconds can.
+ * A `503` from this endpoint says `queue wait timed out; server at capacity`, and
+ * that sentence is the whole model: requests are QUEUED rather than refused, and one
+ * fails only when it waited out the queue's own deadline. So what limits the fan-out
+ * is total work in flight, and at this segment length that is dominated by BYTES —
+ * not by the request count and not by the audio duration. Five arms, one account, one
+ * laptop, `curl` straight at the endpoint:
  *
- * 3,000 is under the 4,416 where limiting began and comfortably over the 2,944 that
- * came back clean. Keeping it as the declared quantity is what makes the derivation
- * worth having: lowering {@link SEGMENT_SECONDS} to 30 would otherwise TRIPLE the
- * audio in flight at a fixed concurrency of 32, silently, and the symptom would be
- * `503`s on a change that never mentioned concurrency.
+ * | requests | per request | bytes in flight | audio-s | `503`s |
+ * | --- | --- | --- | --- | --- |
+ * | 320 | 160 KB (5s) | 51 MB | 1,600 | 0 |
+ * | 64 | 2.94 MB (92s, 16 kHz mono) | 188 MB | 5,888 | 0 |
+ * | 48 | 17.66 MB (92s, 48 kHz stereo) | 848 MB | 4,416 | 0 |
+ * | 56 | 17.66 MB | 989 MB | 5,152 | 6 |
+ * | 64 | 17.66 MB | 1.13 GB | 5,888 | 20 |
+ * | 320 | 2.94 MB | 941 MB | 29,440 | 64 |
+ *
+ * Read the columns against each other, because each one rules something out. Request
+ * COUNT cannot be the cap: 320 tiny requests were admitted whole, and so were 64 at
+ * 2.94 MB, where a flat ceiling of ~50 would have refused the excess. Audio DURATION
+ * cannot be it either: 5,888 audio-seconds passed cleanly at 2.94 MB a request and
+ * drew 20 `503`s at 17.66 MB — same audio, six times the bytes. What tracks is the
+ * byte column, and it tracks in ADMITTED bytes too, tightly, across request counts
+ * that differ by 5x: 848 MB clean, then 883 MB / 777 MB / 753 MB admitted on the
+ * three arms that limited. The last row is the proof, since it reaches the same
+ * ceiling with 320 small requests as 64 big ones do.
+ *
+ * 640 MB sits between the largest clean run (848 MB) and the smallest limited one
+ * (941 MB), nearer the clean side. It is the declared quantity because the WIDTH is
+ * not the durable fact — this desk cuts whatever format it is handed, and the same
+ * 32 segments are 565 MB of 48 kHz stereo, 94 MB of 16 kHz mono, or 1.28 GB of a
+ * format at the {@link MAX_SEGMENT_BYTES} ceiling. Only one of those three is safe,
+ * and a constant cannot tell them apart.
+ *
+ * The threshold is this machine's, and one caveat sharpens which half. Bytes in
+ * flight is bytes UPLOADING, so it is also the number that saturated a ~65 MB/s
+ * uplink — a deployed guest reserving one CPU has neither, and a slower uplink holds
+ * every request open LONGER, which is the direction that makes a queue deadline
+ * easier to hit rather than harder. Re-measure there.
  */
-const AUDIO_SECONDS_IN_FLIGHT = 3000;
+export const BYTES_IN_FLIGHT = 640 * 1024 * 1024;
 
 /**
- * Segments in flight at once — 32 at the segment length above.
+ * The widest fan-out, however small the segments are.
  *
- * Bounded because the far side has a capacity limit, and it is MEASURED — 65
- * segments (1h37m of 48 kHz stereo, 17.66 MB each) through this workflow, one
- * concurrency per run, from one laptop and one account:
+ * Because {@link BYTES_IN_FLIGHT} stops being the binding constraint once segments
+ * are small — 16 kHz mono would divide out to 173 — and something else takes over
+ * before that helps. `mapInBatches` is a barrier rather than a work-stealing pool,
+ * deliberately, because the DevKit correlates a journal entry to a step call by the
+ * order the call was issued in: a batch's wall time is therefore its SLOWEST request
+ * and a run's is the sum of those, so depth is paid at p100 and the tail widens with
+ * it (p95/p50 measured 1.1x at 20 concurrent against 1.5x at 320, max/p50 reaching
+ * 6.7x — 5.2s against 35.0s). A `503` carrying `retry-after: 1` is exactly such a
+ * straggler, which is why overshooting is cheap in BILLING and not in latency.
+ *
+ * 32 is the measured knee over 65 segments (1h37m of 48 kHz stereo), one concurrency
+ * per run, through this workflow:
  *
  * | in flight | wall | vs realtime | `503`s |
  * | --- | --- | --- | --- |
@@ -102,37 +136,38 @@ const AUDIO_SECONDS_IN_FLIGHT = 3000;
  * | 48 | 26.1-28.5s | 204-223x | 0-4 |
  * | 64 | 31.9s | 182x | 20 |
  *
- * 32 is the KNEE and this used to be 8, which cost 37% of the wall clock for
- * headroom the endpoint turns out not to need — see {@link AUDIO_SECONDS_IN_FLIGHT}
- * for the 320-concurrent run that drew no throttling at all. Past 32 there is
- * nothing to buy: 48 is within noise of it while starting to pay retries, and 64 is
- * outright SLOWER than 32.
+ * This was 8 for a long time, which cost 37% of the wall clock for headroom the
+ * endpoint does not need. Past 32 there is nothing left to buy: 48 is within noise
+ * of it while starting to pay retries, and 64 is outright SLOWER. Note the width is
+ * also inert below a threshold — at 90-second segments, 32 only binds past 48
+ * minutes of audio — so on a typical recording the whole fan-out is in flight
+ * either way and this number changes nothing.
+ */
+export const MAX_SEGMENT_CONCURRENCY = 32;
+
+/**
+ * How many segments of THIS recording to keep in flight.
  *
- * Why the ceiling is real, and it is not the rate limit. `mapInBatches` is a
- * barrier rather than a work-stealing pool — deliberately, because the DevKit
- * correlates a journal entry to a step call by the order the call was issued in — so
- * a batch's wall time is its SLOWEST request, and a run's is the sum of those. Depth
- * widens the tail it therefore pays in full: p95/p50 measured 1.1x at 20 concurrent
- * and 1.5x at 320, with max/p50 reaching 6.7x (5.2s against 35.0s). One straggler
- * stalls every sibling that already finished, and a `503` carrying `retry-after: 1`
- * is exactly such a straggler — which is why overshooting is cheap in BILLING and
- * not in latency.
+ * Derived rather than declared, because the byte cost of a segment is a property of
+ * the format and not of this code: see {@link BYTES_IN_FLIGHT} for the measurements,
+ * and note that a fixed 32 is safe for 48 kHz stereo and a guaranteed queue timeout
+ * for a format twice as heavy. Both flows call this, so both scale the same way.
  *
- * Two things this number does not cover. It is inert below a threshold: at 90-second
- * segments, 32 only binds past 48 minutes of audio, so for a typical recording the
- * whole fan-out is in flight either way. And the plateau belongs to the machine,
- * not to this code — a deployed guest reserves one CPU and has neither this uplink
- * nor its ~47 MB/s, and at 17.66 MB a segment, 32 in flight is 565 MB of concurrent
- * upload. Re-measure there before trusting it; the symptom of getting it wrong on a
- * guest is latency, not an error. Overshooting stays SAFE either way: a `503` carries
+ * Safe to call from a workflow BODY: `format` arrives from a journaled step result,
+ * so a replay derives the same width from the same bytes — which is what keeps
+ * `mapInBatches` issuing its calls in the order the journal recorded them.
+ *
+ * Overshooting stays recoverable whatever this returns: a `503` carries
  * `retry-after` and `toStepError` below honours it, so the run completes having paid
  * one extra request per limited segment (measured: 20 `503`s at 64, each retried
  * exactly once, run completed). That is only true over HTTP/1.1, which is what
  * `stepFetch` pins.
  */
-export const SEGMENT_CONCURRENCY = Math.floor(
-  AUDIO_SECONDS_IN_FLIGHT / (SEGMENT_SECONDS + SEGMENT_OVERLAP_SECONDS),
-);
+export function segmentConcurrency(format: WavFormat): number {
+  const perSegment = bytesPerSecond(format) * (SEGMENT_SECONDS + SEGMENT_OVERLAP_SECONDS);
+  if (perSegment <= 0) return MAX_SEGMENT_CONCURRENCY;
+  return Math.max(1, Math.min(MAX_SEGMENT_CONCURRENCY, Math.floor(BYTES_IN_FLIGHT / perSegment)));
+}
 
 /**
  * Bytes probed for the WAV header.
@@ -189,7 +224,7 @@ export async function transcribeFlow(input: { recording: string }) {
   // already journaled, so the resume replays those for free and re-issues only
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
-  const parts = await mapInBatches(plan.segments, SEGMENT_CONCURRENCY, (segment) =>
+  const parts = await mapInBatches(plan.segments, segmentConcurrency(plan.format), (segment) =>
     transcribeSegment(input.recording, plan.format, segment),
   );
 

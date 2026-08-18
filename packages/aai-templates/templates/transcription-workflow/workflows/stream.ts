@@ -116,8 +116,8 @@ import { sleep } from "workflow";
 import {
   clock,
   mergeTranscript,
-  SEGMENT_CONCURRENCY,
   type SegmentTranscript,
+  segmentConcurrency,
   startClock,
   transcribeSegment,
 } from "./transcribe.ts";
@@ -212,8 +212,10 @@ export async function transcribeStreamFlow(input: { recording: string }) {
         // `ready` is derived from a journaled poll, and `mapInBatches` issues its
         // calls in array order. THE SAME STEP the classic flow uses.
         parts.push(
-          ...(await mapInBatches(ready, SEGMENT_CONCURRENCY, (segment) =>
-            transcribeSegment(input.recording, (plan as StreamPlan).format, segment),
+          ...(await mapInBatches(
+            ready,
+            segmentConcurrency((plan as StreamPlan).format),
+            (segment) => transcribeSegment(input.recording, (plan as StreamPlan).format, segment),
           )),
         );
         // Straight back to the top WITHOUT sleeping, and this line was measured
