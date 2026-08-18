@@ -124,6 +124,9 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
       # The guest snapshot image installs the three SDK packages from npm at the
       # EXACT versions this checkout declares (`resolveSdkSpecs` in
       # modal-harness-image.ts — they cannot be lockfile-pinned, because an
@@ -133,37 +136,29 @@ jobs:
       # the image build fails, and no agent and no studio session can start.
       #
       # Deploy and Release both trigger on a push to main, in PARALLEL — nothing
-      # ordered them — so a failed or slow release did exactly that. Refusing to
-      # deploy is the safe half of the trade: prod keeps serving the previous
-      # version, which works, instead of rolling forward onto one that cannot
-      # spawn. Re-run this job once Release has published (or run Release's
-      # `workflow_dispatch` publish).
-      - name: Require the SDK versions on npm before shipping a server that needs them
-        run: |
-          set -uo pipefail
-          missing=""
-          for pkg in aai aai-cli aai-ui; do
-            version="$(node -p "require('./packages/$pkg/package.json').version")"
-            # The registry directly, not `npm view`: a wrapper that filters recent
-            # versions (this repo's safe-chain, minimum-release-age) reports a
-            # just-published version as absent, which would fail every deploy in
-            # the window this check exists to protect.
-            code="$(curl -s -o /dev/null -w '%{http_code}' \
-              "https://registry.npmjs.org/@alexkroman1%2f$pkg/$version")"
-            if [ "$code" = "200" ]; then
-              echo "  ok       @alexkroman1/$pkg@$version"
-            else
-              echo "  MISSING  @alexkroman1/$pkg@$version (HTTP $code)"
-              missing="$missing @alexkroman1/$pkg@$version"
-            fi
-          done
-          if [ -n "$missing" ]; then
-            echo "::error title=Unpublished SDK versions::Not on npm:$missing — the guest image build would 404 on every sandbox spawn. Publish first (Release workflow, or its workflow_dispatch publish), then re-run this job."
-            exit 1
-          fi
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 26
+      # orders them — so a slow release did exactly that.
+      #
+      # This step used to FAIL in that window rather than wait. Safe (prod keeps
+      # serving the previous version, which works) and needlessly manual: the
+      # versions do arrive, usually a couple of minutes later, so every deploy
+      # that landed in the window needed a human to re-run the job. It waits
+      # instead, and fails only once the versions are still absent at the
+      # deadline — a release that errored, or the documented case where
+      # `changesets/action` takes the version path and never publishes at all.
+      #
+      # "Published" is not the bar, "readable BY AN INSTALLER" is: the script
+      # polls the abbreviated packument `npm install` resolves against and then
+      # the tarball it fetches, both through the caches an installer sees rather
+      # than around them. See the script's module doc.
+      #
+      # Node builtins only, so it needs no `pnpm install` — and it runs BEFORE
+      # the python/modal setup below, so a timed-out wait costs nothing further.
+      - name: Wait for the SDK versions to be readable from npm
+        # A backstop over the script's own 25-minute deadline, which is the one
+        # that prints an actionable error. A step timeout only has to stop a
+        # hang that gets past it.
+        timeout-minutes: 30
+        run: node scripts/wait-for-npm-versions.mjs
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
