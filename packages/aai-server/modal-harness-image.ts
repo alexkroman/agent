@@ -329,6 +329,17 @@ export type HarnessImageResolver = (code: string) => Promise<Image>;
  * context. That is also why the ~13 MB harness bundle cannot join this layer —
  * it is written into a sandbox started from the layer and snapshotted on top
  * (see `build`).
+ *
+ * **Neither step runs a dependency's install scripts** (`--ignore-scripts`).
+ * npm 11.19 REPORTS an unreviewed install script and then runs it anyway (the
+ * skip in arborist is gated on an explicit deny), so `npm warn install-scripts
+ * … not yet covered by allowScripts` was a notice about code that had already
+ * executed in the build producing every tenant's guest image — and the second
+ * step is unlocked by construction, so a hijacked transitive arrives there with
+ * no integrity hash to fail against. Skipping is measured, not assumed, and the
+ * argument (including why `--strict-allow-scripts` is worse here, and why the
+ * flags stay out of {@link toolchainFingerprint}, which is pinned on agents
+ * rows) is in "The snapshot image" in `packages/aai-guest/CLAUDE.md`.
  */
 export function toolchainImage(
   baseImage: Image,
@@ -347,9 +358,9 @@ export function toolchainImage(
     // `npm ci` refuses to run when the two disagree, which is the check we
     // want: a hand-edited manifest fails the BUILD rather than silently
     // installing something else.
-    `RUN cd ${GUEST_ROOT} && npm ci --no-audit --no-fund`,
+    `RUN cd ${GUEST_ROOT} && npm ci --no-audit --no-fund --ignore-scripts`,
     // The SDK packages go on top, in one RUN so they are one cached layer.
-    `RUN npm install --prefix ${GUEST_ROOT} --no-audit --no-fund ${sdkSpecs.join(" ")}`,
+    `RUN npm install --prefix ${GUEST_ROOT} --no-audit --no-fund --ignore-scripts ${sdkSpecs.join(" ")}`,
   ]);
 }
 

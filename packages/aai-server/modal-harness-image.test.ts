@@ -176,6 +176,29 @@ describe("toolchainImage", () => {
   });
 
   /**
+   * npm 11.19 WARNS about unreviewed install scripts and runs them anyway (the
+   * skip in arborist is gated on an explicit deny), so the flag is the only
+   * thing standing between a hijacked transitive and code execution in the
+   * build that produces every tenant's guest image. It is asserted per COMMAND
+   * rather than over the joined layer: the unlocked SDK install is the one that
+   * matters most, and a check on the layer as a whole would pass with the flag
+   * on `npm ci` alone.
+   */
+  test("neither install step runs a dependency's install scripts", () => {
+    const image = fakeImage();
+    toolchainImage(image, ["@alexkroman1/aai@5.7.0"], LOCK);
+    const layer = image.commands[0] ?? [];
+
+    const installs = layer.filter(
+      (line) => line.includes("npm ci") || line.includes("npm install"),
+    );
+    expect(installs).toHaveLength(2);
+    for (const line of installs) {
+      expect.soft(line, line).toContain("--ignore-scripts");
+    }
+  });
+
+  /**
    * `dockerfileCommands` carries no build context, so both files are written
    * by the RUN itself. Gzip keeps the command ~20 KB rather than ~250 KB.
    */
