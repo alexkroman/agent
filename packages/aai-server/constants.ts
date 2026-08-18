@@ -244,16 +244,14 @@ export const WORKFLOW_WAKE_MAX_PER_TICK = (() => {
 })();
 
 /**
- * How long `/:slug/workflows/*` waits on the guest before giving up.
+ * How long `/:slug/workflows/*` may go WITHOUT PROGRESS before giving up.
  *
- * Every route on that surface is a small JSON read or a `start` that answers as
- * soon as the run is created, so nothing on it is legitimately slow — but ONE of
- * them is legitimately endless: `GET /runs/:id/events` is a server-sent-event
- * stream the guest holds open for minutes. A timeout applied to the whole
- * forward would cut it mid-body, which is the exact protocol error
- * `live-streams.ts` exists to prevent, so the signal below is armed on the
- * REQUEST only — `fetch` settles it when the response HEADERS arrive, and the
- * body streams unbounded after that.
+ * An INACTIVITY deadline, not a total: two routes on the surface are
+ * legitimately unbounded in opposite directions — `GET /runs/:id/events` holds
+ * a stream open for minutes, and `POST /workflows/uploads` carries up to
+ * `MAX_WORKFLOW_UPLOAD_BYTES` — so the forward is `bound: "activity"`, whose
+ * doc in `guest-forward.ts` carries the argument and the 500 MB upload this
+ * number used to abort at 30.3s.
  *
  * 30s rather than something tighter because the first request through this route
  * is what BOOTS the sandbox: the broker has already waited for readiness, but a

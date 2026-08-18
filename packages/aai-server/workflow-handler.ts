@@ -108,13 +108,21 @@ export function createAgentWorkflowsHandler(
         headers: pickHeaders(request.headers, GUEST_API_REQUEST_HEADERS),
         body,
         timeoutMs: WORKFLOW_PROXY_TIMEOUT_MS,
-        // The deadline bounds the RESPONSE HEADERS, not the body: one route on
-        // this surface is legitimately endless — `GET /runs/:id/events` holds a
-        // stream open for minutes — and a still-armed signal would abort it
-        // mid-body, which is precisely the truncated chunked response
-        // `live-streams.ts` exists to prevent, on a healthy agent, at a fixed
-        // interval, looking like a network fault.
-        bound: "headers",
+        // The deadline bounds neither body — and BOTH halves of that are a
+        // route on this surface being legitimately unbounded.
+        //
+        // Not the RESPONSE body, because `GET /runs/:id/events` holds a stream
+        // open for minutes: a still-armed signal would abort it mid-body, which
+        // is precisely the truncated chunked response `live-streams.ts` exists
+        // to prevent, on a healthy agent, at a fixed interval, looking like a
+        // network fault.
+        //
+        // Not the REQUEST body, because `POST /workflows/uploads` carries a file
+        // and the guest answers 201 only once the last byte is stored — so a
+        // head deadline is transitively a deadline on the whole transfer, and
+        // any total is really a claim about the caller's upstream bandwidth.
+        // `"activity"` re-arms per chunk drained instead; see `guest-forward.ts`.
+        bound: "activity",
       });
     } catch (cause) {
       // The sandbox was ready a moment ago, so an unreachable guest is one that

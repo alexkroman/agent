@@ -135,6 +135,47 @@ describe("routing", () => {
     expect(guest.calls[0]?.body).toBe('{"workflow":"digest"}');
     expect(guest.calls[0]?.headers.get("content-type")).toBe("application/json");
   });
+
+  test("forwards an upload's raw body, name and declared type", async () => {
+    // The one route on this surface whose body is MEANT to be large: the bytes
+    // are the file, the filename rides in `?name=` and the type in the header
+    // (see `workflow-api-uploads.ts`). It is also the route whose deadline the
+    // proxy got wrong — the guest answers 201 only once the last byte is
+    // stored, so the bound has to be `"activity"`; `guest-forward.test.ts` is
+    // where that is asserted, and this is that the route exists at all.
+    const guest = recordingGuest(() => json({ id: "upl_1", size: 5 }, 201));
+    const harness = await residentHarness(guest.fetchFn);
+    const res = await harness.fetch("/my-agent/workflows/uploads?name=standup.wav", {
+      method: "POST",
+      headers: { "Content-Type": "audio/wav" },
+      body: "RIFF!",
+    });
+    expect(res.status).toBe(201);
+    expect(guest.calls[0]?.url).toBe("https://tunnel.test/workflows/uploads?name=standup.wav");
+    expect(guest.calls[0]?.body).toBe("RIFF!");
+    expect(guest.calls[0]?.headers.get("content-type")).toBe("audio/wav");
+  });
+
+  test("forwards a Range on an upload read, so a step reads one window", async () => {
+    // Dropped, a step asking for 64 KB of a 200 MB recording is answered with
+    // the whole thing — correctly and uselessly. `Range` is in
+    // `GUEST_API_REQUEST_HEADERS` for this, and the 206's own headers are in
+    // `GUEST_API_RESPONSE_HEADERS` so the caller can place the bytes.
+    const guest = recordingGuest(
+      () =>
+        new Response("abc", {
+          status: 206,
+          headers: { "Content-Range": "bytes 0-2/2048", "Accept-Ranges": "bytes" },
+        }),
+    );
+    const harness = await residentHarness(guest.fetchFn);
+    const res = await get(harness.fetch, "/my-agent/workflows/uploads/upl_1", {
+      headers: { Range: "bytes=0-2" },
+    });
+    expect(guest.calls[0]?.headers.get("range")).toBe("bytes=0-2");
+    expect(res.status).toBe(206);
+    expect(res.headers.get("content-range")).toBe("bytes 0-2/2048");
+  });
 });
 
 describe("headers", () => {
