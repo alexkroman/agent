@@ -291,6 +291,22 @@ export type SupervisedDevServerOptions = {
    * the shipped 60s that is a minute of wall clock per assertion.
    */
   healthTimeoutMs?: number | undefined;
+  /**
+   * The host `url` names, and so the one `/health` is polled on. Defaults to
+   * `127.0.0.1`; a project WITH a client.tsx needs `localhost`.
+   *
+   * Vite owns `port` there and binds its default `server.host` — the NAME
+   * `localhost`, which is `::1` on macOS. Measured with `lsof`:
+   *
+   *     node  TCP 127.0.0.1:4834 (LISTEN)   <- the backend, IPv4
+   *     node  TCP [::1]:4833    (LISTEN)   <- Vite, IPv6 loopback only
+   *
+   * so the hardcoded `127.0.0.1` this replaces was refused for the full 60s
+   * against a server that had already announced itself. `localhost` rather
+   * than `::1` because Node connects with `autoSelectFamily`: the name tries
+   * both families, and holds on a runner that binds the v4 address instead.
+   */
+  host?: string | undefined;
 };
 
 /**
@@ -305,7 +321,7 @@ export async function startSupervisedDevServer(
 ): Promise<SupervisedServer> {
   const profile = opts.profile ?? resolveFaultProfile();
   const points = profile?.points ?? [];
-  const url = `http://127.0.0.1:${opts.port}`;
+  const url = `http://${opts.host ?? "127.0.0.1"}:${opts.port}`;
   const lines: string[] = [];
   const tracker = createFaultTracker(points);
   /** Successful boots so far, which is what `afterHealthy` counts. */
