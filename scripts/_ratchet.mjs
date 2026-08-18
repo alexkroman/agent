@@ -172,6 +172,11 @@ const KNOWN_BINARY = new Set([
   "node",
   "ogg",
   "otf",
+  // Raw PCM16 — an audio fixture with no container. `aai-ui`'s playback bench
+  // records real TTS as `<name>.pcm` beside a `<name>.json` index, because a
+  // WAV header would be four bytes of ceremony over the same samples and the
+  // trace has its own metadata file already.
+  "pcm",
   "pdf",
   "png",
   "ttf",

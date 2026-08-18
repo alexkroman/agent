@@ -19,6 +19,9 @@ type AnyWorkflowDef<R = unknown> = {
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
 // @internal
+export const CLIENT_AUDIO_LEAD_MS = 1500;
+
+// @internal
 export interface CoalescingRunner<T> {
     trigger(): Promise<T>;
 }
@@ -46,6 +49,9 @@ type FindOptions = {
 
 // @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
+
+// @internal
+export const HEARD_AUDIO_LAG_MS = 150;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
@@ -85,10 +91,16 @@ export interface OwnedMap<K, V> {
 }
 
 // @internal
+export const PACER_BURST_MS = 100;
+
+// @internal
 export function parseWsUpgradeParams(rawUrl: string): {
     resumeFrom?: string;
     skipGreeting: boolean;
 };
+
+// @internal
+export const PIPELINE_PLAYBACK_GRACE_MS = 750;
 
 // @internal
 export const PLAYBACK_BUFFER_SECONDS = 60;
@@ -106,13 +118,10 @@ export const PLAYBACK_DONE_MAX_WAIT_MS: number;
 export const PLAYBACK_DONE_POLL_MS = 1000;
 
 // @internal
-export const PLAYBACK_JITTER_MS = 400;
+export const PLAYBACK_FILL_MS = 200;
 
 // @public
 export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
-
-// @internal
-export const PLAYBACK_REFILL_MS = 200;
 
 // @internal
 export function rejectingWorkflows(message: string): WorkflowClient;

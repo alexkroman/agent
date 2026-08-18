@@ -32,7 +32,7 @@ describe("playback-processor worklet", () => {
     expect(playbackProcessorSource).toContain(
       "class PlaybackProcessor extends AudioWorkletProcessor",
     );
-    expect(playbackProcessorSource).toContain("jitterSamples");
+    expect(playbackProcessorSource).toContain("fillSamples");
   });
 
   test("converts even-aligned PCM16 to float and plays it back in order", () => {
@@ -170,13 +170,12 @@ type StopMessage = {
 const lastStop = (w: WorkletHarness): StopMessage => w.posted.at(-1) as StopMessage;
 
 describe("playback-processor underrun handling", () => {
-  // A 1 kHz context makes the fill targets 20 samples instead of the 9600 a
-  // realistic 24 kHz/400ms pairing needs, so a starve is reachable in-test.
+  // A 1 kHz context makes the fill target 20 samples instead of the 4800 a
+  // realistic 24 kHz/200ms pairing needs, so a starve is reachable in-test.
   const tuned = (): WorkletHarness =>
     instantiateWorklet(playbackProcessorSource, {
       sampleRate: 1000,
-      jitterMs: 20,
-      refillMs: 20,
+      fillMs: 20,
     });
 
   test("re-enters buffering after an underrun instead of playing fragments", () => {

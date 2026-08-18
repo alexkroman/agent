@@ -56,7 +56,7 @@ The membership test for anything added later: **a symbol belongs here if an
 `agent.ts`, a tool module, or a `workflow()` would NAME it.** A budget the
 framework enforces on its own does not qualify however public it is —
 `DEFAULT_MIN_BARGE_IN_WORDS` stayed because it documents `minBargeInWords`,
-`PLAYBACK_JITTER_MS` did not because no field sets it. Nothing was deleted:
+`PLAYBACK_FILL_MS` did not because no field sets it. Nothing was deleted:
 budgets went to `./internal`, the slug/CLI contracts and wire helpers stay on
 `./utils`, and `StandardSchemaV1` and its result/issue types stay in
 `sdk/schema.ts` — the ecosystem SPEC `tool()` accepts, not something an agent

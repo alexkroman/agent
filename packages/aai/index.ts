@@ -37,7 +37,7 @@
  * depths, provider connect deadlines, wire caps, WebSocket close codes — and
  * lives on `@alexkroman1/aai/internal`. The test for membership is whether an
  * author could act on the value: `DEFAULT_MIN_BARGE_IN_WORDS` documents
- * `minBargeInWords`, while `PLAYBACK_JITTER_MS` documents a decision the
+ * `minBargeInWords`, while `PLAYBACK_FILL_MS` documents a decision the
  * client audio path makes with no field to set.
  */
 export {

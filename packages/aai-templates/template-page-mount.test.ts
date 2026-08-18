@@ -29,7 +29,7 @@
  * in production, which is the only good news about it.
  */
 
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 
 /** Every template's client source, as text. */
 const clientSources = import.meta.glob("./templates/*/client.tsx", {
@@ -38,7 +38,7 @@ const clientSources = import.meta.glob("./templates/*/client.tsx", {
   eager: true,
 }) as Record<string, string>;
 
-/** Every template's agent module, lazily — only the ones with a client load. */
+/** Every template's agent module, lazily — resolved once in `beforeAll` below. */
 const agentModules = import.meta.glob("./templates/*/agent.ts");
 
 /** Every template's agent source, as text — the declaration half. */
@@ -47,6 +47,42 @@ const agentSources = import.meta.glob("./templates/*/agent.ts", {
   import: "default",
   eager: true,
 }) as Record<string, string>;
+
+/**
+ * Each template's resolved `page`, keyed by module path.
+ *
+ * Loaded ONCE, and that is a flake fix rather than a tidiness one. These are
+ * lazy `import.meta.glob` handles, so the first `await load()` in the file pays
+ * to transform the whole agent graph — this SDK, its providers, zod — through
+ * Vite. Awaited inside a `test.each` case, that cost lands on whichever template
+ * happens to be first, so a saturated machine failed
+ * `'plan-and-execute': the mount matches what agent.ts declares` on the unit
+ * tier's 5s budget while nothing about plan-and-execute was wrong, and the case
+ * that pays is an artifact of iteration order. No tier here carries a retry, so
+ * a timing failure has to be designed out rather than absorbed.
+ *
+ * The hook takes its own budget for the shared work and the assertions stay
+ * synchronous. A module that fails to load now fails once, naming its path,
+ * instead of surfacing as one opaque timeout.
+ */
+const agentPages = new Map<string, "voice" | "static">();
+
+beforeAll(async () => {
+  await Promise.all(
+    Object.entries(agentModules).map(async ([path, load]) => {
+      const mod = (await load()) as { default?: { page?: "voice" | "static" } };
+      // Absent reads as "voice" everywhere else, so it reads that way here.
+      agentPages.set(path, mod.default?.page === "static" ? "static" : "voice");
+    }),
+  );
+}, 60_000);
+
+/** The `page` a template resolved to, or a failure naming the template. */
+function pageOf(agentPath: string): "voice" | "static" {
+  const page = agentPages.get(agentPath);
+  if (!page) throw new Error(`No agent.ts beside ${agentPath}`);
+  return page;
+}
 
 const clients = Object.entries(clientSources)
   .map(([path, source]) => {
@@ -85,19 +121,12 @@ describe("template client mounts", () => {
     expect(client && page, "imports both mounts; a client.tsx mounts once").toBe(false);
   });
 
-  test.each(clients)(
-    "$name: the mount matches what agent.ts declares",
-    async ({ source, agentPath }) => {
-      const load = agentModules[agentPath];
-      if (!load) throw new Error(`No agent.ts beside ${agentPath}`);
-      const mod = (await load()) as { default?: { page?: "voice" | "static" } };
-      // Absent reads as "voice" everywhere else, so it reads that way here.
-      const isStatic = mod.default?.page === "static";
-      expect(mountsWith(source).page, isStatic ? "expected page()" : "expected client()").toBe(
-        isStatic,
-      );
-    },
-  );
+  test.each(clients)("$name: the mount matches what agent.ts declares", ({ source, agentPath }) => {
+    const isStatic = pageOf(agentPath) === "static";
+    expect(mountsWith(source).page, isStatic ? "expected page()" : "expected client()").toBe(
+      isStatic,
+    );
+  });
 });
 
 const agents = Object.entries(agentSources)
@@ -109,18 +138,19 @@ const agents = Object.entries(agentSources)
   .sort((a, b) => a.name.localeCompare(b.name));
 
 describe("template agent declarations", () => {
-  test("there is at least one agent to check", () => {
-    // Same reason as above: a glob that stops matching reads as a pass.
+  test("there is at least one agent to check, and every one of them loaded", () => {
+    // Same reason as above: a glob that stops matching reads as a pass. The
+    // second half is new with the shared loader — an empty map would make
+    // `pageOf` throw rather than silently pass, but only for templates that
+    // still have a case, so the count is what pins the corpus.
     expect(agents.length).toBeGreaterThan(0);
+    expect(agentPages.size).toBe(agents.length);
   });
 
   test.each(agents)(
     "$name: the declaration helper matches what agent.ts resolves to",
-    async ({ source, agentPath }) => {
-      const load = agentModules[agentPath];
-      if (!load) throw new Error(`No module for ${agentPath}`);
-      const mod = (await load()) as { default?: { page?: "voice" | "static" } };
-      const isStatic = mod.default?.page === "static";
+    ({ source, agentPath }) => {
+      const isStatic = pageOf(agentPath) === "static";
       const imports = importsFrom(source, "@alexkroman1/aai");
 
       // `workflowApp()` is `agent({ …, page: "static" })` with the discriminant

@@ -41,10 +41,10 @@ new one fails `pnpm check:api-contracts` until it joins one:
 
 Three things to know before touching them.
 
-**A capability id is qualified — `aai-ui:forms`, not `forms`.** `workflow` names
-a capability of both packages (the SDK declares a workflow, this reaches one over
-HTTP) and they version independently, so the CLI refuses a bare ambiguous name
-rather than guessing.
+**A capability id is qualified — `aai-ui:forms`, not `forms`.** `workflow`
+names a capability of both packages (the SDK declares a workflow, this reaches
+one over HTTP) and they version independently, so the CLI refuses a bare
+ambiguous name rather than guessing.
 
 **The compatibility fixtures are `.tsx`, and they are the reason to write them
 carefully.** A frozen example for a component library is JSX or it is not
@@ -56,15 +56,15 @@ cannot take an explicit `undefined` under `exactOptionalPropertyTypes`, and
 `api.get` is deliberately untyped (`useWorkflowRun<R>` is where a page names the
 shape).
 
-**The `@internal` ratchet here stands at nine**, all on the root barrel and all
-recorded in `contracts/internal-surface.json`: `SessionProvider`,
+**The `@internal` ratchet here stands at nine**, all on the root barrel and
+all recorded in `contracts/internal-surface.json`: `SessionProvider`,
 `ThemeProvider`, `ToolConfigContext`, the three URL chips (`ApiUrlChip`,
 `UiUrlChip`, `SessionUrlChips`), and the client-config trio (`buildAgentUrl`,
 `fetchClientConfig`, `loadClientConfig`). Every one is importable and in an
 author's autocomplete while no contract covers it — `client()` and the default
-client install them, which is why they are tagged rather than moved. The list may
-shrink and may never grow; unlike `aai` there is no `/internal` subpath to move
-one to, so paying it down means a private module.
+client install them, which is why they are tagged rather than moved. The list
+may shrink and may never grow; unlike `aai` there is no `/internal` subpath to
+move one to, so paying it down means a private module.
 
 ## Key files
 
@@ -176,10 +176,10 @@ like breakage rather than a pause.
 **Underruns are reported, in WebRTC's counter shape.** Each turn's `stop`
 message carries `concealedSamples`, `silentConcealedSamples` (a subset, as in
 `getStats()`), `concealmentEvents`, and `silentConcealmentEvents`, surfaced as
-`VoiceIOOptions.onPlaybackStats` (the default session leaves it unwired). Nothing
-else marks an underrun — the session still reports `"speaking"` and `done()`
-still settles — so this is the only way to tell a turn that needed its cushion
-from one that didn't, and the only honest basis for retuning
+`VoiceIOOptions.onPlaybackStats` (the default session leaves it unwired).
+Nothing else marks an underrun — the session still reports `"speaking"` and
+`done()` still settles — so this is the only way to tell a turn that needed
+its cushion from one that didn't, and the only honest basis for retuning
 `PLAYBACK_JITTER_MS`. A high `silentConcealedSamples` share means the stall
 outran what concealment can cover, i.e. a bandwidth problem rather than a
 tuning one.
@@ -337,11 +337,12 @@ workflow API of an app whose workflows are fine, which is the case
 so `aai init -t link-digest && aai dev` is the reproduction.
 
 The check keys off `page` rather than the descriptors because by the time a
-config reaches the deploy preflight the injection has already happened: "declared
-nothing" and "declared the default" are the same object there. Deferring rather
-than skipping keeps the honest error for the one path that can still open a
-session on a static agent — an embedder passing `createServer({ telephony: true
-})` — which resolves at session start and reports the missing key by name.
+config reaches the deploy preflight the injection has already happened:
+"declared nothing" and "declared the default" are the same object there.
+Deferring rather than skipping keeps the honest error for the one path that
+can still open a session on a static agent — an embedder passing
+`createServer({ telephony: true })` — which resolves at session start and
+reports the missing key by name.
 
 ### The API is `ctx.workflows` spelled over HTTP, and nothing more
 
@@ -359,24 +360,25 @@ POST   /workflows/runs/:id/wake   → { runId, woken }
 
 **`events` and `stream` answer different questions, and a dashboard wants
 both.** `events` reports the run's STATE — the status transitions the world
-records, which every run has. `stream` reports what the run itself WROTE through
-`getWritable()` (imported from `workflow`, like `sleep`), which is the only way
-a long run can say anything before it finishes: a snapshot carries a status and,
-once terminal, an output, and nothing in between. Chunks are RETAINED with the
-run rather than live-only, so `stream` is equally a replay — a page that reloads
-mid-run reads the whole thing by default, and `startIndex` (negative counts back
-from the end) is for a reader resuming from a known position. `api.streamOutput()`
-is the client half, resolving the raw `Response` for the same reason `watch` does:
-an agent deployed before the route existed answers 404, which is a normal path.
+records, which every run has. `stream` reports what the run itself WROTE
+through `getWritable()` (imported from `workflow`, like `sleep`), which is the
+only way a long run can say anything before it finishes: a snapshot carries a
+status and, once terminal, an output, and nothing in between. Chunks are
+RETAINED with the run rather than live-only, so `stream` is equally a replay —
+a page that reloads mid-run reads the whole thing by default, and `startIndex`
+(negative counts back from the end) is for a reader resuming from a known
+position. `api.streamOutput()` is the client half, resolving the raw
+`Response` for the same reason `watch` does: an agent deployed before the
+route existed answers 404, which is a normal path.
 
 **`wake` is what makes a long `sleep()` usable.** `POST /runs/:id/wake` ends a
-run's pending sleeps and reports how many (`api.wake()`, `ctx.workflows.wakeUp()`);
-`woken: 0` is an answer, not a failure — the run finished or was never asleep,
-the same shape as `cancelled: false`. Without it the only handle on a sleeping run
-was `cancel`, so "send it now" and "throw it away" were one button. Both routes
-ride the platform's already-declared GET and POST on the `/workflows` prefix, so
-neither needed a deployment change; `research-workflow` is the worked example
-for each.
+run's pending sleeps and reports how many (`api.wake()`,
+`ctx.workflows.wakeUp()`); `woken: 0` is an answer, not a failure — the run
+finished or was never asleep, the same shape as `cancelled: false`. Without it
+the only handle on a sleeping run was `cancel`, so "send it now" and "throw it
+away" were one button. Both routes ride the platform's already-declared GET
+and POST on the `/workflows` prefix, so neither needed a deployment change;
+`research-workflow` is the worked example for each.
 
 ### Rendering progress (`useWorkflowProgress`)
 
@@ -387,9 +389,9 @@ page with only the second cannot tell a finished run from a quiet one. Both are
 one stream, ended by the agent when there is nothing left to say.
 
 Four properties, three of them the same ones `useWorkflowRun` documents (the
-client in a REF, not an effect dependency; the lazily-built default client; state
-cleared synchronously on an id change) and one that is its own — and that one is
-the whole reason this route is shaped the way it is:
+client in a REF, not an effect dependency; the lazily-built default client;
+state cleared synchronously on an id change) and one that is its own — and
+that one is the whole reason this route is shaped the way it is:
 
 - **A progress read is BOUNDED, so the hook re-opens rather than holds.** A
   workflow stream signals its end only once it has been CLOSED, and a progress
@@ -401,11 +403,12 @@ the whole reason this route is shaped the way it is:
   is a closed one. Only `dev-workflow.scenario.test.ts`, against a real
   transform and a real world, reaches it.
 
-  The route therefore bounds each read by `streamTail()` — the last written index
-  at the moment the request arrived — and its `done` frame carries `complete`,
-  the RUN's own terminal state. The hook re-opens from where it left off until a
-  read comes back `complete`. So progress is a durable LOG a reader re-reads, not
-  a socket it holds, and each re-read asks only for what it has not seen.
+  The route therefore bounds each read by `streamTail()` — the last written
+  index at the moment the request arrived — and its `done` frame carries
+  `complete`, the RUN's own terminal state. The hook re-opens from where it
+  left off until a read comes back `complete`. So progress is a durable LOG a
+  reader re-reads, not a socket it holds, and each re-read asks only for what
+  it has not seen.
 - **`supported` is load-bearing for the render.** "This deploy predates progress
   streams" and "the run has written nothing yet" are indistinguishable from
   `progress` alone, and a page needs to hide the section in the first case and
@@ -453,9 +456,9 @@ default it did not ask for, and `placeholder` covers the pre-first-line frame.
 
 `link-digest` deliberately keeps the raw hook: it renders the newest line only
 (a compact status), which is what `latest` is for, and it is this package's
-example of the primitives underneath. `transcription-workflow` and `redline` render
-the whole log through the component, because their fan-out and their rounds are
-where the history is worth seeing.
+example of the primitives underneath. `transcription-workflow` and `redline`
+render the whole log through the component, because their fan-out and their
+rounds are where the history is worth seeing.
 
 `ctx.workflows.start()` only covers the case where a VOICE TURN starts a run; a
 page and a programmatic caller (`aai workflow`, a script, a cron job) had no
@@ -467,18 +470,18 @@ workflow-handler.ts`), because `createWorkflowApi` builds every URL from
 `location` and has no broker step of the kind the voice session gets.
 
 **The CLIENT half lives in the SDK** (`createWorkflowApiClient`,
-`@alexkroman1/aai/workflow-api`), and `createWorkflowApi` here is a wrapper that
-supplies one thing: the base URL, defaulted to the page's own origin + path. That
-is the only part of it a browser owns — everything else (each route, the query
-encoding, the bearer, the `wait` clamp, and the rule that a 404 from
-`GET /runs/:id` is an ANSWER rather than a failure, and the 404 `wake` reads as
-"nothing was sleeping") had been written three times over, here plus
-`aai workflow` plus the studio's Workflows card, each a different SUBSET,
-disagreeing on exactly the things a reader cannot check by eye. So: no route logic
-in this package. A page that needs a knob the wrapper does not pass through should
-get it from the SDK client's options, not a second `fetch` here — and a NEW route
-is added to the SDK client, where `useWorkflowProgress` and the studio's card
-reach it too, never here.
+`@alexkroman1/aai/workflow-api`), and `createWorkflowApi` here is a wrapper
+that supplies one thing: the base URL, defaulted to the page's own origin +
+path. That is the only part of it a browser owns — everything else (each
+route, the query encoding, the bearer, the `wait` clamp, and the rule that a
+404 from `GET /runs/:id` is an ANSWER rather than a failure, and the 404
+`wake` reads as "nothing was sleeping") had been written three times over,
+here plus `aai workflow` plus the studio's Workflows card, each a different
+SUBSET, disagreeing on exactly the things a reader cannot check by eye. So: no
+route logic in this package. A page that needs a knob the wrapper does not
+pass through should get it from the SDK client's options, not a second `fetch`
+here — and a NEW route is added to the SDK client, where `useWorkflowProgress`
+and the studio's card reach it too, never here.
 
 `WORKFLOW_API_PREFIX` moved with it, which is why the SDK declares the literal
 and `aai/host/workflow-api.ts` re-exports it: the server, the `aai dev` proxy
@@ -557,12 +560,13 @@ the SDK's:
   `<FileField upload>` contributes the `File` UNREAD for the same reason
   (describing a 200 MB recording would mean holding it in memory).
 
-A file input is also the one control whose BUTTON the browser draws, and left to
-the user agent it inherits the field's colours — which can come out as invisible
-text on the surface it sits on. `<FileField>` therefore styles
+A file input is also the one control whose BUTTON the browser draws, and left
+to the user agent it inherits the field's colours — which can come out as
+invisible text on the surface it sits on. `<FileField>` therefore styles
 `::file-selector-button` explicitly in the theme's colours, passed to the
 pseudo-element as CSS custom properties (a Tailwind class cannot read a
-JavaScript theme object, and a React `style` prop cannot reach a pseudo-element).
+JavaScript theme object, and a React `style` prop cannot reach a
+pseudo-element).
 
 On the platform the pair is proxied like the rest of `/:slug/workflows/*` —
 which took two header-allowlist entries, `Range` in and `Content-Range` /
@@ -576,12 +580,13 @@ started and useless for everything before it — a reload drops the id.
 `useWorkflowRuns(workflow, { limit, key })` is the other half, over
 `GET /workflows/runs`: history a page can render.
 
-It reads once and hands back `refresh` rather than polling. The run a page cares
-about right now is already being watched; a second loop over the whole history
-would broker N requests a minute to re-learn what the first one knows. A page
-calls `refresh` when its own run settles, which is exactly when the list is
-stale. `transcription-workflow` is the worked example, and it replaced a text box
-asking the reader to paste a run id they would have had to write down.
+It reads once and hands back `refresh` rather than polling. The run a page
+cares about right now is already being watched; a second loop over the whole
+history would broker N requests a minute to re-learn what the first one knows.
+A page calls `refresh` when its own run settles, which is exactly when the
+list is stale. `transcription-workflow` is the worked example, and it replaced
+a text box asking the reader to paste a run id they would have had to write
+down.
 
 **Every read carries a `createEpoch()` generation, and the READ bumps it — not
 only the unmount.** With the cleanup as the sole bumper, two `refresh()` calls
@@ -622,16 +627,16 @@ draining a provider's 429s and re-collecting them four at a time on a backoff
 the server did not choose.
 
 **The surface is as public as `/websocket` beside it.** A page carries no
-credential — it is served to anyone with the URL, exactly like the voice client
-— so requiring one by default would mean no static page could ever work. What is
-genuinely worse here is the COST SHAPE: a run outlives the request that started
-it, so a loop of cheap POSTs queues far more work than a loop of voice sessions.
-An operator who wants it closed sets `AAI_WORKFLOW_API_TOKEN` in the agent env
-and every route requires it as a bearer; the platform forwards the header, and
-`aai workflow --token` and the studio's runs card present it. Fail-OPEN when
-unset is the documented default, and the platform's per-IP limits
-(`WORKFLOW_IP_RATE_LIMIT`, and a much tighter one on `POST /runs`) are what bound
-the cost in the meantime.
+credential — it is served to anyone with the URL, exactly like the voice
+client — so requiring one by default would mean no static page could ever
+work. What is genuinely worse here is the COST SHAPE: a run outlives the
+request that started it, so a loop of cheap POSTs queues far more work than a
+loop of voice sessions. An operator who wants it closed sets
+`AAI_WORKFLOW_API_TOKEN` in the agent env and every route requires it as a
+bearer; the platform forwards the header, and `aai workflow --token` and the
+studio's runs card present it. Fail-OPEN when unset is the documented default,
+and the platform's per-IP limits (`WORKFLOW_IP_RATE_LIMIT`, and a much tighter
+one on `POST /runs`) are what bound the cost in the meantime.
 
 ### Two vocabularies use the word "name", and mixing them is silent
 
@@ -746,28 +751,29 @@ Four properties, each covering something that is silent when it goes wrong:
   synchronous call's whole value is that a fast run answers fast.
 
 `useWorkflowSubmit(workflow, { wait })` opts a form in, and still follows the
-returned id with `useWorkflowRun` afterwards — the budget bounds the request, not
-the run.
+returned id with `useWorkflowRun` afterwards — the budget bounds the request,
+not the run.
 
 ### Forms (`components/form.tsx`)
 
 A workflow app's front door is a form, and nothing in this package knew how to
 render one — every component here is about a live session (a transcript, a mic
-button, a tool-call row) — so each such page hand-rolled labels, inputs, a submit
-button and the value collection between them, differently each time.
+button, a tool-call row) — so each such page hand-rolled labels, inputs, a
+submit button and the value collection between them, differently each time.
 `<Form>` plus `Field` / `TextField` / `NumberField` / `TextAreaField` /
 `SelectField` / `CheckboxField` / `FileField` / `SubmitButton` is that, once.
 
 **Values come off the DOM, not out of React state.** `<Form>` reads its own
-`<form>` element on submit and builds one plain object from the named controls,
-which is what makes a field here nothing more than a styled `<input>` — no
-registration, no controlled-component ceremony, and a bare `<input name="x">` a
-caller writes themselves works identically. It also makes the values TYPED,
-which `new FormData(form)` cannot: a number field yields a number, a checkbox a
-boolean, an empty optional field nothing at all. That is load-bearing rather
-than tidy, because these values go straight into a workflow's input where a zod
-schema is waiting — `"3"` against `z.number()` is a rejected run, and the browser
-is the only place that still knows the control was `type="number"`.
+`<form>` element on submit and builds one plain object from the named
+controls, which is what makes a field here nothing more than a styled
+`<input>` — no registration, no controlled-component ceremony, and a bare
+`<input name="x">` a caller writes themselves works identically. It also makes
+the values TYPED, which `new FormData(form)` cannot: a number field yields a
+number, a checkbox a boolean, an empty optional field nothing at all. That is
+load-bearing rather than tidy, because these values go straight into a
+workflow's input where a zod schema is waiting — `"3"` against `z.number()` is
+a rejected run, and the browser is the only place that still knows the control
+was `type="number"`.
 
 **What a control contributes is decided per ELEMENT KIND, so every branch owes
 the same two checks.** `collectValues` had them on `<input>` alone: a `<select>`
@@ -782,11 +788,12 @@ against one left blank (the number field's omission rule).
 
 **A `<FileField>` describes a file; by default it does not upload one.** It
 contributes `{ name, size, type, lastModified }`, and `read="text"` /
-`read="dataUrl"` adds `content` for the cases where the bytes really are small.
-A workflow's input is serialized into the run record and replayed from it on
-every resume, so bytes in there are re-read for the life of the run and capped by
-the request-body limit besides; a URL or the app's own storage is where they
-belong, fetched inside a `"use step"` function that runs once per execution.
+`read="dataUrl"` adds `content` for the cases where the bytes really are
+small. A workflow's input is serialized into the run record and replayed from
+it on every resume, so bytes in there are re-read for the life of the run and
+capped by the request-body limit besides; a URL or the app's own storage is
+where they belong, fetched inside a `"use step"` function that runs once per
+execution.
 
 That is also why **no template exercises it**, and the allowlist records that:
 `transcription-workflow` used to open on one, and a form field describing a file
@@ -795,22 +802,21 @@ URL, which is what the paragraph above says to do.
 
 **`<WorkflowFields workflow="transcribe">` renders the schema half.** It takes
 either the workflow's NAME — fetching the listing itself, which is the form a
-page normally wants because the alternative is three lines (`useWorkflows()`, a
-`.find()` by name, and folding that lookup's error into the form's) whose only
-product is this component's argument — or a `WorkflowSummary` the caller already
-holds, which fetches nothing (`useWorkflows({ skip: true })`, since the hook
-cannot be conditional). It reads the summary that `GET /workflows` serves and
-emits one control per
-SCALAR property — string, number, integer, boolean, and an enum as a
-`<SelectField>` — honouring `required`, `default`, and `description` as the hint,
-with the label humanized from the property name (`recordingId` → `Recording
-id`). It SKIPS objects and arrays deliberately: there is no honest control for
-either, and rendering an approximation would be worse than leaving the field to
-the caller, who writes it by hand in the same `<Form>` because every field is a
-plain named control. So a form is as declared as its schema allows — all of it
-when the input is scalars all the way down, as `transcription-workflow`'s is — and
-adding a scalar to the workflow's input schema adds a control with no client
-edit.
+page normally wants because the alternative is three lines (`useWorkflows()`,
+a `.find()` by name, and folding that lookup's error into the form's) whose
+only product is this component's argument — or a `WorkflowSummary` the caller
+already holds, which fetches nothing (`useWorkflows({ skip: true })`, since
+the hook cannot be conditional). It reads the summary that `GET /workflows`
+serves and emits one control per SCALAR property — string, number, integer,
+boolean, and an enum as a `<SelectField>` — honouring `required`, `default`,
+and `description` as the hint, with the label humanized from the property name
+(`recordingId` → `Recording id`). It SKIPS objects and arrays deliberately:
+there is no honest control for either, and rendering an approximation would be
+worse than leaving the field to the caller, who writes it by hand in the same
+`<Form>` because every field is a plain named control. So a form is as
+declared as its schema allows — all of it when the input is scalars all the
+way down, as `transcription-workflow`'s is — and adding a scalar to the
+workflow's input schema adds a control with no client edit.
 
 `useWorkflows()` fetches that list (the client held in a ref, read once — same
 rule as `useWorkflowRun`) for a page rendering its own chrome from it; no
@@ -967,6 +973,197 @@ present. And the model has to stay **faithful to the protocol** — one
 `config` frame per connection, a drain-stop only after a `done`, timers
 advanced 1ms per op so a lagged message can cross later operations — or the
 "violations" it reports are its own.
+
+## Tuning playback against a REAL reply, not a generated one
+
+`worklets/playback-tuning.test.ts` is where `PLAYBACK_JITTER_MS` and
+`PLAYBACK_REFILL_MS` are answered with numbers. It exists because every other
+test of the playback worklet supplies its own arrival timing — and
+`audio-stress.test.ts` says so in its own header: its chunk sizes outrun the
+render loop by an order of magnitude, so "the buffer effectively never starves".
+Both are the right tests for what they check, and neither can price a jitter
+buffer.
+
+`fixtures/tts-reply-24k.{json,pcm}` is 8 seconds of one real AssemblyAI reply —
+the PCM16 bytes plus the millisecond each frame ARRIVED. The `.pcm` is a sidecar
+rather than base64 in the JSON so it stays `ffplay`-able and reviewable by its
+length; `pcm` is in `KNOWN_BINARY` in `scripts/_ratchet.mjs` for that reason.
+Three harnesses sit behind it, all excluded from coverage by the
+`_*-harness.ts` glob:
+
+| Harness | Job |
+| --- | --- |
+| `_tts-trace-harness.ts` | capture (`captureTtsTrace`, needs a live key, takes an INJECTED opener because `resolveTts` is on no published subpath) and replay (`readTtsTraceSync`, keyless and offline) |
+| `_playback-bench-harness.ts` | provider frames -> pacer model -> network profile -> the real worklet, on a virtual sample clock. ~3 ms per 17-second render, so a sweep of hundreds of settings is instant and byte-identical every run |
+| `_playback-bench-page.ts` | the same thing in a real browser: a real `AudioContext` at the trace's rate, the real worklet, audible output, sliders, and a tap node that captures exactly what reached the destination |
+
+**The browser half is not decoration — it is what makes the offline sweep
+believable.** Cross-checked over four link profiles x three settings, concealed
+milliseconds agreed within 1-9% and episode counts agreed exactly on eleven of
+twelve cells. Where they disagree, the browser is right.
+
+**One fidelity gap, stated because it cannot be closed from here:** the server's
+pacer is MODELLED (`pacedSends`). `createAudioPacer` is not on a published
+subpath and this package may not import a sibling's internals, so a change to
+the real pacer will not fail this file. Re-read it against `pacedSends` if the
+pacer moves; exporting the real one and deleting the model is the fix.
+
+### What the measurements say
+
+Recorded against the trace above, the shipped pacing (`CLIENT_AUDIO_LEAD_MS`
+1000, `PACER_BURST_MS` 200) and a typical link:
+
+- **TTS synthesizes ~20x faster than it plays** — 4.2 s of speech in 208 ms,
+  32.7 s in 1434 ms, first frame at 52-92 ms. So the provider contributes no
+  jitter at all, and the arrival pattern the client sees is manufactured
+  entirely by the server's pacer.
+- **The client's buffer holds ~870 ms mid-reply** (a sawtooth 827-923 ms), never
+  anything near the 400 ms fill target. The operative cushion is
+  `CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS`. - **Stall resilience is ~867 ms and
+  is FLAT in `PLAYBACK_JITTER_MS`** — 859 ms at 100, 906 ms at 800. It tracks
+  the pacer's lead almost one-for-one instead (lead 400 -> 250 ms absorbed,
+  1000 -> 875 ms, 2000 -> 1844 ms).
+- **The whole legal range of `PLAYBACK_JITTER_MS` costs 37 ms of startup**
+  (149 ms at 100, 187 ms at 800), because the audio to fill it with has already
+  arrived. Its doc's trade — startup for resilience — is real in the abstract
+  and worth tens of milliseconds on both sides at these values.
+- **The one profile where the fill target earns its keep is a link under the PCM
+  bitrate** (350 kbps against the 384 kbps 24 kHz PCM16 needs), and there it
+  points the other way: deeper is strictly better, 4 concealment episodes at 100
+  against 0 at 800.
+- **`PLAYBACK_REFILL_MS` is inert on a stall** (identical output from 50 to 600)
+  and decides stutter-versus-pause only under sustained starvation, which is
+  exactly the failure the re-arm was added for: at 25 ms the reply degrades into
+  hundreds of fragments, at 200 ms into a handful of audible pauses.
+- **`PACER_BURST_MS` is spent out of the CLIENT's resilience one-for-one** —
+  ~100 ms more absorbed stall at 50 than at 200 — a trade neither constant's doc
+  prices, since the burst exists to save timer wakeups on the server.
+
+### `PLAYBACK_JITTER_MS` is redundant BY CONSTRUCTION
+
+The strongest result, and it is structural rather than a property of this trace:
+**`{jitterMs: 0, refillMs: R}` renders byte-identically to `{jitterMs: R,
+refillMs: R}`** — same startup, same concealed samples, same episode count, on a
+healthy link, a 900 ms-jitter link and a starved one alike.
+
+On a turn's FIRST render the ring is empty, so `avail` (0) is under one quantum
+and the underrun branch fires before any audio exists — setting `fillTarget =
+refillSamples`. Every turn therefore waits for the REFILL target regardless of
+what the jitter target said, and `PLAYBACK_JITTER_MS` can only act by being
+LARGER. Its entire effect is to make a turn's first wait longer than every later
+recovery's, which is the opposite of the argument the refill step rests on (mid
+-reply a long wait is itself a hole in the speech).
+
+Collapsing to one target at today's `PLAYBACK_REFILL_MS` (200) is strictly
+better than the shipped pair on every link that can carry the bitrate —
+startup drops 16 ms on a typical link, 54 ms on mobile, 118 ms at 400 ms of
+jitter and 208 ms at 900 ms, with concealment unchanged at zero — and behaves
+the same under starvation. Collapsing BELOW 200 is what must not happen: at 50
+ms the reply degrades into 99 fragments, which is the stutter the re-arm
+exists to prevent.
+
+### The pacer is a cost to playback, not a contributor
+
+Measured across leads including no pacing at all, **startup is 155 ms at every
+one of them** — the fill target is met by the first frames either way. Everything
+the pacer does to the audio is subtraction:
+
+| lead / burst | absorbs a freeze of | peak in flight | ear behind forwarded |
+| --- | --- | --- | --- |
+| 1000 / 200 (shipped) | 820 ms | 46 KiB | 848 ms |
+| 1000 / 100 | 914 ms | 46 KiB | 955 ms |
+| 1500 / 100 | 1453 ms | 68 KiB | 1456 ms |
+| 2000 / 100 | 1945 ms | 93 KiB | 1947 ms |
+| unpaced | the whole reply | 354 KiB | 4149 ms |
+
+So the pacer earns its keep on backpressure (`MAX_CLIENT_WS_BUFFERED_BYTES` is
+4 MiB, so even unpaced this reply is nowhere near it — the guard is for a genuinely
+slow link) and on heard-cursor accuracy, NOT on audio. Its `burstMs` is the cheap
+win: it is spent out of the client's cushion one-for-one, and the wakeup rate it
+was sized against ("~50/second") is ~12.5/second at this provider's 3840-byte
+frames.
+
+**The last column is NOT why the lead cannot be raised**, and believing it was
+cost this branch a second commit. `HEARD_AUDIO_LAG_MS` (originally 750) was
+documented as `PLAYBACK_JITTER_MS` (400) plus a sub-second network hop, and the
+measurement above refutes that decomposition: the cushion the client holds is
+the pacer's LEAD, moving one-for-one with it and barely at all with the fill
+target. The tempting conclusion — derive the ear-lag from the lead — is ALSO
+wrong, and was briefly shipped.
+
+**Why: the playback clock already subtracts the buffer.** `heardMs()` in
+`aai/host/transports/pipeline-heard.ts` is
+`audioMs - clock.remainingMs() - lagMs`, and `endsAtMs` inside that clock
+accumulates from `max(endsAtMs, now())` — so it runs ahead by whatever the lead
+is, and `remainingMs()` already reports the client's unplayed backlog. Anything
+the constant adds on top double-counts it. Driving the host's own arithmetic
+against the audio the ear really received (`heardErrorMs` in the test):
+
+| `lagMs` | perfect | typical | mobile |
+| --- | --- | --- | --- |
+| 0 | +8 ms | +55 ms | +130 ms |
+| 150 (shipped) | -142 ms | -95 ms | -20 ms |
+| 750 (the old value) | -742 ms | -694 ms | -619 ms |
+| 950 (`lead - burst/2`) | -942 ms | -894 ms | -819 ms |
+
+Positive means the cursor runs AHEAD of the ear — over-keeping, the failure
+`pipeline-heard.ts` names. At zero it is already accurate to tens of
+milliseconds, and the error is IDENTICAL at leads of 1000, 1500 and 2000, which
+is the evidence that what is left for the term is the one-way network hop and
+nothing else. The old 750 left the cursor ~694 ms early on a typical link — ~10
+words at English narration rates rather than the "word or two of redundancy" the
+asymmetry argument budgets for, pushing toward exactly the repetition
+`buildTailResumePrompt` exists to fix.
+
+**`PIPELINE_PLAYBACK_GRACE_MS` (750) is likewise fine and likewise
+lead-independent.** The requirement — how long after `endsAtMs` the caller is
+still hearing audio, so a smaller value misses a tail barge-in — measures 15 ms
+on a loopback link, 63 ms typical, 138 ms mobile, identical at every lead. It has
+~5x margin over the worst of those.
+
+The rule this leaves behind, since two derivations broke on it: **neither
+constant is the client's buffer depth.** Measure `heardMs()` against the ear, not
+the buffer against the lead.
+
+### What was changed, and what deliberately was not
+
+Three of those findings were acted on; the tests above are what keep them true.
+
+- **`PLAYBACK_JITTER_MS` is deleted**, and with it the worklet's `fillTarget`
+  indirection — with one target, that field was always equal to `fillSamples`.
+  The survivor is `PLAYBACK_FILL_MS` (200), initialized EXPLICITLY rather than
+  left to the pre-roll underrun that used to arm it, so the wait no longer
+  depends on whether a write happened to land before the first render callback.
+- **`PACER_BURST_MS` is 100**, up from a 200 that cost ~94 ms of absorbed freeze
+  for four timer fires a second.
+- **`HEARD_AUDIO_LAG_MS` is 150**, down from 750, because it covers only the
+  residual the playback clock cannot see — the one-way network hop. It and
+  `PIPELINE_PLAYBACK_GRACE_MS` live in `aai/sdk/playback-timing-constants.ts`,
+  which exists to keep the trap they share in one place.
+- **`CLIENT_AUDIO_LEAD_MS` is 1500**, up from 1000: the longest absorbed link
+  freeze goes 914 ms -> 1453 ms at no latency cost. What bounds it is bandwidth
+  rather than correctness — a mid-reply barge-in discards ~1.3 s of pushed speech
+  instead of ~0.85 s, paid on the metered links that can least afford it.
+
+**The bench grew a barge-in instrument to settle that**, because the claim that
+the grace blocked the lead was arithmetic rather than measurement, and wrong.
+`playoutVsHost` (in `_playback-bench-host.ts`) replays a render against the
+host's own playback-clock arithmetic and reports how long after its estimate the
+ear was still receiving audio, for a client that reports its backlog and one that
+does not. That is what turned "the grace is ~200 ms short" into "the requirement
+is 15-138 ms and the grace has 5x margin", and it is what unblocked the lead.
+
+**The pacer itself stays.** Removing it is the best thing that could happen to
+playback quality in isolation — unpaced, the client rides out any freeze — and
+it is still wrong on three counts, two of which are measured here: the peak
+client-socket queue becomes the whole undelivered reply (356 KiB for 8 s, ~2.7
+MiB extrapolated to 60 s, against a 4 MiB disconnect), a mid-reply barge-in
+throws away ~3.9 s of pushed speech instead of ~0.85 s, and the ear-lag becomes
+proportional to reply length, which no constant or formula can model. Note also
+that on a link which cannot carry 384 kbps the pacer changes nothing at all
+(identical episode and silence counts at 350 and 250 kbps) — the link is
+already the pacer. Its cost is paid on good links and its protection earned on
+bad ones, which is coherent.
 
 ## The capture worklet (`worklets/capture-processor.ts`)
 

@@ -8,7 +8,13 @@
  * barge-in must discard what is held.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS, PLAYBACK_JITTER_MS } from "../sdk/constants.ts";
+import {
+  CLIENT_AUDIO_LEAD_MS,
+  HEARD_AUDIO_LAG_MS,
+  PACER_BURST_MS,
+  PIPELINE_PLAYBACK_GRACE_MS,
+  PLAYBACK_FILL_MS,
+} from "../sdk/constants.ts";
 import { createAudioPacer, UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 
 const SAMPLE_RATE = 24_000;
@@ -46,11 +52,32 @@ describe("createAudioPacer", () => {
     vi.useRealTimers();
   });
 
-  test("the burst dip leaves the client's jitter cushion intact", () => {
+  test("the burst dip leaves the client's fill target intact", () => {
     // The burst wake lets the lead sag to CLIENT_AUDIO_LEAD_MS -
     // PACER_BURST_MS; that dip is cushion the client temporarily doesn't
-    // have, so it must stay above the playback worklet's jitter target.
-    expect(CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS).toBeGreaterThan(PLAYBACK_JITTER_MS);
+    // have, so it must stay above the playback worklet's fill target — above
+    // which the target can never be met and the reply would not start until
+    // 'done' arrived.
+    expect(CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS).toBeGreaterThan(PLAYBACK_FILL_MS);
+  });
+
+  test("the heard cursor's ear-lag is NOT derived from the lead", () => {
+    // This reads like a missing coupling and is the opposite. Both this pacer's
+    // lead and the playback clock in `pipeline-heard.ts` accumulate from
+    // `max(previous, now())`, so `remainingMs()` already tracks whatever lead is
+    // set here — the client's buffer depth is subtracted from the heard cursor
+    // before HEARD_AUDIO_LAG_MS is applied at all. Measured
+    // (`aai-ui/worklets/playback-tuning.test.ts`), the cursor's error is
+    // identical at leads of 1000, 1500 and 2000 ms.
+    //
+    // Two derivations have been wrong here in the same direction, the second one
+    // briefly shipped: `PLAYBACK_JITTER_MS + hop`, then
+    // `CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS / 2`. Both sized the term against
+    // the buffer depth, double-counting it, leaving the cursor ~694 ms and then
+    // ~894 ms early. So this asserts the ear-lag stays SMALL and independent —
+    // it is the network hop and nothing else.
+    expect(HEARD_AUDIO_LAG_MS).toBeLessThan(CLIENT_AUDIO_LEAD_MS / 4);
+    expect(HEARD_AUDIO_LAG_MS).toBeLessThan(PIPELINE_PLAYBACK_GRACE_MS);
   });
 
   test("sends audio immediately while the lead is unmet", () => {
