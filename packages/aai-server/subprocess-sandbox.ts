@@ -268,6 +268,8 @@ export async function spawnSubprocessAgentServer(
     slug: string;
     worker: WorkerSource;
     agentEnv: Record<string, string>;
+    /** See BackendAgentSpawn.onSpawned — a kill for a guest that is not ready. */
+    onSpawned?: ((terminate: () => Promise<void>) => void) | undefined;
   },
   ctx: SubprocessSpawnContext = realContext(),
   fetchFn?: GuestFetch,
@@ -314,6 +316,10 @@ export async function spawnSubprocessAgentServer(
       // this reaps the bundle copy once the guest is gone.
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
     };
+    // Publish it before the readiness poll, for the reason the Modal backend
+    // does (see BackendAgentSpawn.onSpawned): a guest that is still starting
+    // must still be killable.
+    opts.onSpawned?.(terminate);
 
     try {
       const origin = `ws://127.0.0.1:${port}`;

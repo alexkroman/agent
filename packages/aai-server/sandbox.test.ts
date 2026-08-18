@@ -137,13 +137,99 @@ describe("createSandbox", () => {
   // Reaching a guest needs a handle, so drain/shutdown go through the spawn's
   // readiness promise — which carries the BOOT budget (120s). Correct for a
   // broker; wrong for a process that is exiting, where it blocks shutdown for
-  // two minutes on a guest that has never served a session. Walking away is
-  // safe: the guest self-exits on idle and Modal's timeouts sit behind that.
+  // two minutes on a guest that has never served a session.
+  //
+  // Giving up at the budget is NOT walking away, though it used to be: a boot
+  // this outlasts is TERMINATED through the kill the backend published at
+  // `onSpawned`. The old empty `catch` left it "to the guest's own idle
+  // self-exit", which a DELETE cannot afford — it has already dropped the app's
+  // Postgres role and database, so the abandoned guest boots and fails `28P01`
+  // against credentials that were valid when its env was composed.
   describe("teardown while still booting", () => {
     /** A spawn that never comes back — a guest stuck mid-boot. */
     function neverBoots(): void {
       mockSpawnAgentServer.mockReturnValueOnce(new Promise(() => undefined));
     }
+
+    /**
+     * The same stuck boot, having published its kill the way both real backends
+     * do (`BackendAgentSpawn.onSpawned`) — i.e. the shape a mid-boot teardown
+     * actually meets in production.
+     */
+    function neverBootsButKillable(terminate: () => Promise<void>): void {
+      mockSpawnAgentServer.mockImplementationOnce(
+        (opts: { onSpawned?: ((t: () => Promise<void>) => void) | undefined }) => {
+          opts.onSpawned?.(terminate);
+          return new Promise(() => undefined);
+        },
+      );
+    }
+
+    it("shutdown terminates a boot it outlasted instead of abandoning it", async () => {
+      vi.useFakeTimers();
+      try {
+        const terminate = vi.fn().mockResolvedValue(undefined);
+        neverBootsButKillable(terminate);
+        const sandbox = createSandbox(makeSandboxOptions());
+
+        const settled = vi.fn();
+        void sandbox.shutdown().then(settled);
+        await vi.advanceTimersByTimeAsync(SANDBOX_TEARDOWN_READY_MS);
+
+        expect(terminate).toHaveBeenCalledTimes(1);
+        expect(settled).toHaveBeenCalled();
+        // The graceful path was never available — there was no guest to ask.
+        expect(mockShutdown).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // The kill is the FALLBACK, not the mechanism: a guest that is ready still
+    // gets to refuse new sessions and exit on its own, which is what keeps a
+    // redeploy from cutting the calls a retirement is draining.
+    it("shutdown asks a ready guest rather than terminating its sandbox", async () => {
+      const terminate = vi.fn().mockResolvedValue(undefined);
+      mockSpawnAgentServer.mockImplementationOnce(
+        (opts: { onSpawned?: ((t: () => Promise<void>) => void) | undefined }) => {
+          opts.onSpawned?.(terminate);
+          return Promise.resolve({
+            sessionUrl: "wss://tunnel.test:443/websocket",
+            drain: mockDrain,
+            shutdown: mockShutdown,
+            onExit: mockOnExit,
+            alive: () => true,
+          });
+        },
+      );
+      const sandbox = createSandbox(makeSandboxOptions());
+
+      await sandbox.shutdown();
+
+      expect(mockShutdown).toHaveBeenCalledTimes(1);
+      expect(terminate).not.toHaveBeenCalled();
+    });
+
+    // Every caller of `shutdown` is already tearing down, so an undeliverable
+    // kill must not become a thrown teardown — `terminateSlot` would only log
+    // it, and there is nothing else this process could still do about it.
+    it("shutdown resolves when the mid-boot terminate itself fails", async () => {
+      vi.useFakeTimers();
+      try {
+        neverBootsButKillable(() => Promise.reject(new Error("control plane down")));
+        const sandbox = createSandbox(makeSandboxOptions());
+
+        const settled = vi.fn();
+        const rejected = vi.fn();
+        void sandbox.shutdown().then(settled, rejected);
+        await vi.advanceTimersByTimeAsync(SANDBOX_TEARDOWN_READY_MS);
+
+        expect(settled).toHaveBeenCalled();
+        expect(rejected).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
 
     // Nothing here AWAITS the teardown promise: against an unbounded wait that
     // would hang to the suite timeout instead of failing, and a 20s red test

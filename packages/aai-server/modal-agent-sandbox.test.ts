@@ -79,6 +79,57 @@ function execEnv(sb: Awaited<ReturnType<typeof spawn>>["sb"]): Record<string, st
 }
 
 describe("spawnModalAgentServer", () => {
+  // The kill has to be reachable BEFORE readiness, and this is the only place
+  // that can see it: `sandbox.test.ts` mocks the spawner, so a backend that
+  // stopped publishing `onSpawned` would leave `Sandbox.shutdown()` with
+  // nothing to call and every one of its tests still green — which is how the
+  // production race this closes went unseen (a DELETE dropped the app's
+  // Postgres role while a ~17s boot was in flight, and the abandoned guest came
+  // up to a `28P01` on credentials that had been valid at spawn).
+  it("publishes a terminate before the guest is ready, and it really terminates", async () => {
+    const proc = makeFakeProc();
+    const sb = makeFakeSandbox(proc);
+    const harnessPath = await makeHarnessFile("// agent harness");
+
+    let killAtSpawn: (() => Promise<void>) | undefined;
+    /** What the sandbox had done by the time the kill was handed over. */
+    let execsWhenPublished = -1;
+    let readyWhenPublished = true;
+    let ready = false;
+    const waitUntilReady = sb.waitUntilReady.bind(sb);
+    sb.waitUntilReady = async (timeoutMs?: number) => {
+      const result = await waitUntilReady(timeoutMs);
+      ready = true;
+      return result;
+    };
+
+    await spawnModalAgentServer(
+      {
+        harnessPath,
+        slug: "killable",
+        worker: { kind: "inline", code: WORKER, sha256: SHA },
+        agentEnv: {},
+        name: "agent-killable-v1",
+        onSpawned: (terminate) => {
+          killAtSpawn = terminate;
+          execsWhenPublished = sb.execCalls.length;
+          readyWhenPublished = ready;
+        },
+      },
+      makeCtx(sb),
+    );
+
+    // Published at the earliest moment there is something to kill: the sandbox
+    // exists, the harness has not been exec'd, and nothing has waited on the
+    // readiness probe.
+    expect(execsWhenPublished).toBe(0);
+    expect(readyWhenPublished).toBe(false);
+
+    expect(sb.terminate).not.toHaveBeenCalled();
+    await killAtSpawn?.();
+    expect(sb.terminate).toHaveBeenCalledTimes(1);
+  });
+
   it("writes both boot artifacts CONCURRENTLY, and both before exec'ing the harness", async () => {
     // Two properties in one sequence, because they constrain each other.
     //

@@ -98,6 +98,11 @@ export type AgentSpawnOptions = {
    * already-deployed bundle. Ignored by the subprocess backend.
    */
   imageTag?: string | undefined;
+  /**
+   * Published the moment the guest exists and BEFORE it is ready — see
+   * {@link BackendAgentSpawn.onSpawned}, which carries the argument.
+   */
+  onSpawned?: ((terminate: () => Promise<void>) => void) | undefined;
 };
 
 // ── The backend contract ─────────────────────────────────────────────────────
@@ -113,6 +118,27 @@ export type BackendAgentSpawn = {
   imageTag?: string | undefined;
   /** Modal only — the fleet-wide sandbox name (see sandbox-directory.ts). */
   name?: string | undefined;
+  /**
+   * Hand the caller a KILL for a guest that is not ready yet, as soon as one
+   * exists — which is long before this spawner's promise settles.
+   *
+   * **A teardown must not depend on a boot succeeding.** `terminate` used to
+   * be published only on the resolved {@link AgentServerHandle}, so
+   * `Sandbox.shutdown()` had nothing to call while `vmReady` was pending: it
+   * waited `SANDBOX_TEARDOWN_READY_MS` (5s) and then walked away, leaving the
+   * guest to boot and self-exit. A ~17s Modal boot raced a project DELETE
+   * exactly that way in production — the delete dropped the app's Postgres
+   * role and database, the abandoned guest finished booting, and its Workflow
+   * DevKit migration reported `28P01 password authentication failed for user
+   * "app_<hex>"` against credentials that had been valid when its env was
+   * composed. That reads as a storage-credential bug and is a lifecycle race.
+   *
+   * Called AT MOST ONCE, before readiness. Terminating through it is expected
+   * to make the in-flight spawn fail, which is the point: the spawner's own
+   * cleanup then runs and `vmReady` rejects, so `onSandboxLost` detaches the
+   * slot the way it would for any failed boot.
+   */
+  onSpawned?: ((terminate: () => Promise<void>) => void) | undefined;
 };
 
 /**
@@ -164,6 +190,10 @@ const SANDBOX_BACKENDS: Record<SandboxBackend, SandboxBackendOps> = {
         slug: opts.slug,
         worker: opts.worker,
         agentEnv: opts.agentEnv,
+        // NOT a Modal-only field: a mid-boot kill is the contract both
+        // backends owe `Sandbox.shutdown()`, and dev is where the delete
+        // path is exercised without a Modal control plane in the way.
+        onSpawned: opts.onSpawned,
       }),
     harnessImageTag: async () => null,
   },
@@ -290,5 +320,6 @@ export async function spawnAgentServer(
     agentEnv: opts.env,
     imageTag: opts.imageTag,
     name: agentSandboxName(opts.slug, opts.version),
+    onSpawned: opts.onSpawned,
   });
 }
