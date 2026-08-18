@@ -1,23 +1,33 @@
 // Playback worklet: receives raw PCM16 LE bytes, handles byte alignment,
 // converts to float32, and plays through a jitter buffer with hysteresis.
 //
-// The buffer has two states. It fills to `jitterSamples` before a turn starts
-// speaking, and on an underrun it returns to filling — to `refillSamples` this
-// time — rather than playing whatever fragment has arrived. Without that
-// re-arm the cushion is a one-shot budget: once spent, readPos chases writePos
-// for the rest of the turn and every quantum emits a few real samples padded
-// with silence, which is heard as stutter through every word rather than as
-// one pause. Gaps are covered by extrapolating from played audio (see
-// `coverGap`), and every covered sample is counted so a turn can report how
+// The buffer has two states, and ONE fill target. It fills to `fillSamples`
+// before a turn starts speaking, and on an underrun it returns to filling —
+// to the same target — rather than playing whatever fragment has arrived.
+// Without that re-arm the cushion is a one-shot budget: once spent, readPos
+// chases writePos for the rest of the turn and every quantum emits a few real
+// samples padded with silence, which is heard as stutter through every word
+// rather than as one pause. Gaps are covered by extrapolating from played audio
+// (see `coverGap`), and every covered sample is counted so a turn can report how
 // much of itself was concealed.
+//
+// There used to be a SECOND, larger target for the start of a turn
+// (`PLAYBACK_JITTER_MS`, 400, against this one's 200), and it was redundant by
+// construction: on a turn's first render the ring is empty, so `avail` (0) is
+// under one quantum and the underrun branch below fires before any audio
+// exists — arming the refill target. Every turn already waited for this number,
+// so the startup target could only act by being LARGER, which is backwards. It
+// is initialized explicitly here rather than left to that pre-roll underrun,
+// because relying on the accident would make the wait depend on whether a write
+// happened to land before the first render callback. `PLAYBACK_FILL_MS`'s doc
+// carries the measurement.
 
 import {
   PLAYBACK_BUFFER_SECONDS,
   PLAYBACK_CONCEAL_FADE_MS,
   PLAYBACK_CONCEAL_FLOOR,
-  PLAYBACK_JITTER_MS,
+  PLAYBACK_FILL_MS,
   PLAYBACK_PROGRESS_INTERVAL_MS,
-  PLAYBACK_REFILL_MS,
 } from "../types.ts";
 import { workletModuleUrl } from "./_module-url.ts";
 
@@ -37,12 +47,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // could ever assert on the reported backlog, so the divergence made the
     // number untestable rather than wrong.
     this.rate = rate;
-    // Fill target for the start of a turn. If 'done' arrives first (short
-    // utterance), start immediately instead of waiting for audio that is
-    // never coming.
-    this.jitterSamples = Math.floor((rate * (opts.jitterMs ?? ${PLAYBACK_JITTER_MS})) / 1000);
-    // Fill target after an underrun — see PLAYBACK_REFILL_MS.
-    this.refillSamples = Math.floor((rate * (opts.refillMs ?? ${PLAYBACK_REFILL_MS})) / 1000);
+    // The one fill target — for the start of a turn and for recovery after an
+    // underrun alike. If 'done' arrives first (short utterance), start
+    // immediately instead of waiting for audio that is never coming.
+    this.fillSamples = Math.floor((rate * (opts.fillMs ?? ${PLAYBACK_FILL_MS})) / 1000);
     // Concealment source: a ring of the most recently played samples, looped
     // under a decaying gain to cover a gap. Sized to the fade window, with a
     // per-sample decay that reaches the floor exactly at its end.
@@ -99,7 +107,6 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // pre-roll (nothing to extrapolate from, and not a defect) from a
     // mid-turn underrun.
     this.hasPlayed = false;
-    this.fillTarget = this.jitterSamples;
     // Carry-over byte for split samples across chunks
     this.carry = null;
     this.writePos = 0;
@@ -291,7 +298,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // Filling: wait for the target. 'done' short-circuits it — what is
     // buffered is all there will be, so there is nothing left to wait for.
     if (!this.playing) {
-      if (avail >= this.fillTarget || this.isDone) {
+      if (avail >= this.fillSamples || this.isDone) {
         this.playing = true;
       } else {
         this.coverGap(out, 0);
@@ -300,13 +307,12 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     }
 
     // Underrun: this quantum cannot be filled and more audio is still coming.
-    // Go back to filling (at the refill target) and cover the gap, leaving
+    // Go back to filling and cover the gap, leaving
     // readPos untouched — the fragment stays buffered and plays intact once
     // the buffer recovers, instead of being dribbled out a few samples at a
     // time for the rest of the turn.
     if (avail < out.length && !this.isDone) {
       this.playing = false;
-      this.fillTarget = this.refillSamples;
       this.coverGap(out, 0);
       return true;
     }

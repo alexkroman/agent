@@ -30,27 +30,26 @@ export const MIC_BUFFER_SECONDS = 0.1;
 export const MIC_SILENCE_PROBE_MS = 1500;
 
 /**
- * How much TTS audio the playback worklet buffers before a turn starts
- * speaking. This is the client's whole cushion against uneven chunk arrival,
- * so raising it trades time-to-first-audio for resilience. Tune it against the
- * concealment counters the worklet reports on each turn's `stop` (a turn with
- * `concealmentEvents: 0` never needed the cushion it was given).
- *
- * @internal
- */
-export const PLAYBACK_JITTER_MS = 400;
-
-/**
  * How far ahead of real time the server may run when relaying TTS audio to a
  * client. TTS synthesis outruns playback, so without a ceiling an entire reply
  * lands in the socket buffer the moment the provider produces it: on a slow
  * link that is a multi-second queue the server cannot see into, and the only
  * limit is the `MAX_CLIENT_WS_BUFFERED_BYTES` disconnect.
  *
- * **Must stay above {@link PLAYBACK_JITTER_MS}.** The lead is the client's only
+ * **Must stay above {@link PLAYBACK_FILL_MS}.** The lead is the client's only
  * source of cushion — pacing at exactly real time would leave the playback
  * worklet unable to ever fill its jitter buffer, which is the failure mode of
  * a producer-paced/consumer-unbuffered pairing.
+ *
+ * **This number IS the client's resilience, and it is the only thing that is.**
+ * Measured against a recorded reply (`aai-ui/worklets/playback-tuning.test.ts`):
+ * the client's buffer sits at the lead minus half a burst mid-reply, and the
+ * longest link freeze it rides out with no concealment tracks that one-for-one —
+ * 820 ms at 1000/200, 1453 ms at 1500/100, 1945 ms at 2000/100, the whole reply
+ * unpaced. Startup latency is identical at every one of them, so raising this is
+ * free on the audio side. What it is NOT free on is {@link HEARD_AUDIO_LAG_MS},
+ * which is derived from it: the two are the same physical quantity seen from the
+ * two ends, so they move together or the heard cursor starts lying.
  *
  * @internal
  */
@@ -58,26 +57,65 @@ export const CLIENT_AUDIO_LEAD_MS = 1000;
 
 /**
  * How far the pacer lets the lead drain below {@link CLIENT_AUDIO_LEAD_MS}
- * before waking to top it up, releasing the drained span's worth of frames
- * per wakeup instead of one frame per timer fire (~50 wakeups/second per
- * speaking session at typical TTS frame sizes). **`CLIENT_AUDIO_LEAD_MS -
- * PACER_BURST_MS` must stay above {@link PLAYBACK_JITTER_MS}** — the dip is
+ * before waking to top it up, releasing the drained span's worth of frames per
+ * wakeup instead of one frame per timer fire. **`CLIENT_AUDIO_LEAD_MS -
+ * PACER_BURST_MS` must stay above {@link PLAYBACK_FILL_MS}** — the dip is
  * cushion the client temporarily doesn't have.
  *
- * @internal
- */
-export const PACER_BURST_MS = 200;
-
-/**
- * Refill target after an underrun, deliberately lower than
- * {@link PLAYBACK_JITTER_MS}: mid-reply, waiting to rebuild the full cushion is
- * itself a hole in the speech, so the buffer trades some resilience for a
- * shorter gap. Without a refill step at all, one stall degrades the rest of the
- * turn into a fragment per render quantum.
+ * **It is spent out of the CLIENT's resilience, one millisecond for one**, which
+ * is what sets the value. Measured on a recorded reply, the longest freeze the
+ * chain rides out with no concealment: 984 ms at a 50 ms burst, 914 ms at 100,
+ * 820 ms at 200, 684 ms at 400 — and time-to-first-audio is unchanged at every
+ * one, so the burst buys nothing back on the audio side. It was 200.
+ *
+ * The wakeup saving is the only thing on the other side of that trade, and it is
+ * smaller than it looks: this doc used to cite "~50 wakeups/second per speaking
+ * session at typical TTS frame sizes", where AssemblyAI streaming TTS delivers
+ * 3840-byte frames — 80 ms of 24 kHz PCM16 each, so **~12.5 a second** unpaced.
+ * At 100 ms the pacer wakes ~8.8 times a second against ~4.6 at 200: four extra
+ * timer fires per second of speech, for ~94 ms more freeze the caller never
+ * hears. Going to 50 buys another ~70 ms and is left on the table deliberately —
+ * that is the point where the pacer is waking more often than frames arrive.
  *
  * @internal
  */
-export const PLAYBACK_REFILL_MS = 200;
+export const PACER_BURST_MS = 100;
+
+/**
+ * The playback worklet's ONE fill target: how much audio it buffers before a
+ * turn starts speaking, and how much it rebuilds after an underrun before
+ * resuming.
+ *
+ * **There used to be two, and the startup one was redundant BY CONSTRUCTION.**
+ * `PLAYBACK_JITTER_MS` (400) was documented as the client's cushion against
+ * uneven arrival, and it could not be: on a turn's first render the ring is
+ * empty, so `avail` (0) is under one 128-sample quantum and the underrun branch
+ * fires before any audio exists — arming the REFILL target. Every turn already
+ * waited for this number, and the separate startup target could only ever act by
+ * being LARGER, i.e. by making a turn's first wait longer than every later
+ * recovery's. That is backwards from the argument this constant rests on.
+ * Measured: `{jitter: 0, refill: R}` renders byte-identically to
+ * `{jitter: R, refill: R}` for R of 100, 200 and 400, on a healthy link, a
+ * 900 ms-jitter link and a bandwidth-starved one alike.
+ *
+ * Collapsing to this one target took time-to-first-audio off the top of every
+ * reply — 16 ms on a typical link, 54 ms on mobile, 118 ms at 400 ms of jitter,
+ * 208 ms at 900 ms — with concealment unchanged at zero in all of them.
+ *
+ * **The value may not go lower, and that is the measured half.** This is the
+ * re-arm that keeps one stall from degrading the rest of the turn into a
+ * fragment per render quantum: on a link under the PCM bitrate, 200 ms yields a
+ * handful of audible pauses where 25 ms yields ~99 concealment episodes with no
+ * gap long enough to read as a pause — stutter through every word, which is the
+ * failure the re-arm exists to prevent. Tune against the concealment counters
+ * the worklet reports on each turn's `stop`, and note a turn with
+ * `concealmentEvents: 0` did not need the cushion it was given: on any link that
+ * can carry 384 kbps, the cushion that actually matters is
+ * {@link CLIENT_AUDIO_LEAD_MS}, not this.
+ *
+ * @internal
+ */
+export const PLAYBACK_FILL_MS = 200;
 
 /**
  * How long concealment extrapolates from already-played audio before it has

@@ -129,26 +129,6 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
 export const PIPELINE_FLUSH_TIMEOUT_MS = 10_000;
 
 /**
- * Slack added to the pipeline transport's estimated client playback deadline
- * when deciding whether user speech is a barge-in. The estimate assumes each
- * forwarded TTS chunk starts playing the instant it is sent, so real playback
- * always ends a little later (network latency + client jitter buffer); the
- * grace keeps barge-in working through that tail. A spurious cancel inside
- * the window is harmless — the client flushes an already-empty buffer.
- *
- * **Its counterpart with the opposite sign is {@link HEARD_AUDIO_LAG_MS}**,
- * which models the same physical delay (network + jitter buffer) but is
- * SUBTRACTED, to ask "where had the voice actually got to" rather than "could
- * anything still be audible". The harmlessness argument above does NOT transfer
- * to it: that one decides what an interrupted reply records in history, where
- * erring in either direction costs. Tune this one for barge-in robustness
- * without assuming the other should follow.
- *
- * @internal
- */
-export const PIPELINE_PLAYBACK_GRACE_MS = 750;
-
-/**
  * Cap on back-to-back silence nudges (pipeline mode). Once the assistant has
  * taken this many unprompted turns with no user speech in between, it stops
  * nudging until the user speaks again — prevents the agent from talking to
@@ -351,9 +331,8 @@ export {
   PLAYBACK_CONCEAL_FLOOR,
   PLAYBACK_DONE_MAX_WAIT_MS,
   PLAYBACK_DONE_POLL_MS,
-  PLAYBACK_JITTER_MS,
+  PLAYBACK_FILL_MS,
   PLAYBACK_PROGRESS_INTERVAL_MS,
-  PLAYBACK_REFILL_MS,
 } from "./client-audio-constants.ts";
 export {
   DEFAULT_MAX_TURN_SILENCE_MS,
@@ -372,7 +351,6 @@ export {
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
-  HEARD_AUDIO_LAG_MS,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
   MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE,
   PREEMPTIVE_CONFIDENCE_THRESHOLD,
@@ -386,6 +364,7 @@ export {
   TTS_COALESCE_MAX_CHARS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./pipeline-tuning-constants.ts";
+export { HEARD_AUDIO_LAG_MS, PIPELINE_PLAYBACK_GRACE_MS } from "./playback-timing-constants.ts";
 export {
   STEP_FETCH_CONNECTIONS,
   STEP_FETCH_KEEP_ALIVE_MS,

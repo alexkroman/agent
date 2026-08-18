@@ -8,7 +8,12 @@
  * barge-in must discard what is held.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS, PLAYBACK_JITTER_MS } from "../sdk/constants.ts";
+import {
+  CLIENT_AUDIO_LEAD_MS,
+  HEARD_AUDIO_LAG_MS,
+  PACER_BURST_MS,
+  PLAYBACK_FILL_MS,
+} from "../sdk/constants.ts";
 import { createAudioPacer, UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 
 const SAMPLE_RATE = 24_000;
@@ -46,11 +51,29 @@ describe("createAudioPacer", () => {
     vi.useRealTimers();
   });
 
-  test("the burst dip leaves the client's jitter cushion intact", () => {
+  test("the burst dip leaves the client's fill target intact", () => {
     // The burst wake lets the lead sag to CLIENT_AUDIO_LEAD_MS -
     // PACER_BURST_MS; that dip is cushion the client temporarily doesn't
-    // have, so it must stay above the playback worklet's jitter target.
-    expect(CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS).toBeGreaterThan(PLAYBACK_JITTER_MS);
+    // have, so it must stay above the playback worklet's fill target — above
+    // which the target can never be met and the reply would not start until
+    // 'done' arrived.
+    expect(CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS).toBeGreaterThan(PLAYBACK_FILL_MS);
+  });
+
+  test("the heard cursor's ear-lag stays derived from THIS pacer's numbers", () => {
+    // These two are the same physical quantity from the two ends of the wire:
+    // the lead IS the depth the client's buffer holds, which IS how far behind
+    // the server's bookkeeping the ear is. Measured on a recorded reply
+    // (`aai-ui/worklets/playback-tuning.test.ts`), the depth sits at
+    // `lead - burst/2` within ~2%. Before HEARD_AUDIO_LAG_MS was derived it was
+    // a literal 750 decomposed from a playback constant that no longer exists,
+    // and raising the lead for stall resilience silently invalidated it — in the
+    // direction that records words the caller never heard. This is the test that
+    // fails if the expression is replaced by a number again.
+    expect(HEARD_AUDIO_LAG_MS).toBe(CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS / 2);
+    // And it must stay under the lead: the ear cannot be further behind than
+    // everything the server has released.
+    expect(HEARD_AUDIO_LAG_MS).toBeLessThan(CLIENT_AUDIO_LEAD_MS);
   });
 
   test("sends audio immediately while the lead is unmet", () => {

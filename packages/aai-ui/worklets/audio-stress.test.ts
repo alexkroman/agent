@@ -63,13 +63,13 @@ const QUANTUM = 128;
  * not the processor — `sizesArb(3000)` averages ~750 samples a chunk against
  * 128 consumed per render, so writes outrun renders by an order of magnitude
  * and the buffer effectively never starves. Lengthening the source, lowering
- * `jitterMs`/`refillMs`, and adding explicit multi-quantum stall bursts were
+ * the fill target, and adding explicit multi-quantum stall bursts were
  * each measured and each left it at 1-5 of 25. A floor here would flake; the
  * fix is a starvation-weighted chunk-size arbitrary, which is its own change.
  *
  * What is NOT at risk meanwhile: the concealment path itself has example
  * coverage in `playback-processor.test.ts`, which reaches it deterministically
- * with a tuned processor (`jitterMs: 20`) and pins the counters, the fade to
+ * with a tuned processor (`fillMs: 20`) and pins the counters, the fade to
  * silence, and the resume-where-it-left-off behaviour. This property's own
  * assertions — a complete, in-order ramp around whatever the concealer
  * fabricated — hold either way. *

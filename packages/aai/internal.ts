@@ -41,9 +41,8 @@ export {
   PLAYBACK_CONCEAL_FLOOR,
   PLAYBACK_DONE_MAX_WAIT_MS,
   PLAYBACK_DONE_POLL_MS,
-  PLAYBACK_JITTER_MS,
+  PLAYBACK_FILL_MS,
   PLAYBACK_PROGRESS_INTERVAL_MS,
-  PLAYBACK_REFILL_MS,
 } from "./sdk/client-audio-constants.ts";
 export {
   type CoalescingRunner,

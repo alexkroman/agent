@@ -160,33 +160,6 @@ export const DEFAULT_FALSE_INTERRUPTION_PROMPT =
 export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 
 /**
- * How far BEHIND the server's "audio forwarded" bookkeeping the caller's ear
- * actually is (pipeline mode). Subtracted from the estimated playback position
- * to get the heard cursor — the character of the reply the caller had heard
- * when a barge-in cut it — which decides both what an interrupted turn records
- * in history and where the resume prompt's anchor sits (`pipeline-heard.ts`).
- *
- * **This value is DERIVED, not measured.** It is
- * {@link PLAYBACK_JITTER_MS} (400 — the cushion the client's playback worklet
- * fills before a turn starts speaking, which is real) plus an assumed
- * sub-second one-way network hop, which is the same decomposition
- * `PIPELINE_PLAYBACK_GRACE_MS`'s own doc states for the same physical quantity.
- * On a fast LAN it over-subtracts and on a slow link it under-subtracts; it is
- * the one number in the heard cursor without direct evidence.
- *
- * **It is a SECOND constant rather than a reuse of that grace, deliberately.**
- * The grace is added to a deadline where erring late is harmless (a spurious
- * barge-in cancel flushes an already-empty client buffer), so it may be tuned
- * generously for barge-in robustness. This one is SUBTRACTED from a position
- * where erring either way costs — too large drops words the caller really
- * heard, too small records words they never did — so tuning the grace must not
- * silently change what the record says. Both docs name each other.
- *
- * @internal
- */
-export const HEARD_AUDIO_LAG_MS = 750;
-
-/**
  * Cap on back-to-back false-interruption resumes (pipeline mode) before the
  * user must speak again, mirroring {@link MAX_CONSECUTIVE_SILENCE_NUDGES}.
  * Without it, persistent cross-talk loops barge-in → resume → barge-in every

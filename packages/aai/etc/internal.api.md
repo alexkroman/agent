@@ -106,13 +106,10 @@ export const PLAYBACK_DONE_MAX_WAIT_MS: number;
 export const PLAYBACK_DONE_POLL_MS = 1000;
 
 // @internal
-export const PLAYBACK_JITTER_MS = 400;
+export const PLAYBACK_FILL_MS = 200;
 
 // @public
 export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
-
-// @internal
-export const PLAYBACK_REFILL_MS = 200;
 
 // @internal
 export function rejectingWorkflows(message: string): WorkflowClient;
