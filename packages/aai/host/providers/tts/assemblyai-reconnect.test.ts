@@ -1,10 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
-// AssemblyAI TTS cancel()/reconnect specs — split from assemblyai.test.ts
-// for file length. The protocol has no discard/cancel frame, so a mid-turn
-// cancel drops the connection and reconnects; see the adapter's module doc.
+// AssemblyAI TTS cancel() specs — split from assemblyai.test.ts for file
+// length. A mid-turn cancel sends a `Cancel` frame and KEEPS the socket; the
+// server's `Cancelled` is the boundary past which the abandoned turn's frames
+// stop arriving. Dropping the connection is the fallback for a socket that
+// cannot carry the frame. See the adapter's module doc for the measurements.
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
+import { TTS_CANCEL_ACK_TIMEOUT_MS, TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
 import { tick } from "../../_test-utils.ts";
 import { WS_OPEN_TIMEOUT_MS } from "../_socket.ts";
@@ -23,55 +25,110 @@ beforeEach(() => {
   FakeWebSocket.reset();
 });
 
-describe("AssemblyAI TTS cancel() reconnect", () => {
-  // The protocol has no discard/cancel frame, so a mid-turn cancel must drop
-  // the connection (and with it the server-side text buffer + in-flight
-  // audio) and reconnect — see the module doc.
+describe("AssemblyAI TTS cancel()", () => {
+  // `Cancel` discards the server's buffered text and aborts synthesis in
+  // progress, so the socket survives a barge-in — see the module doc for the
+  // production measurements behind both claims.
 
-  test("cancel mid-turn drops the socket and reconnects", async () => {
+  test("cancel mid-turn sends Cancel and keeps the socket", async () => {
     const { session, ws } = await openSession();
     session.sendText("half a reply");
     session.cancel();
-    expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+
+    expect(ws._frames()).toContainEqual({ type: "Cancel" });
+    expect(ws.readyState).toBe(FakeWebSocket.OPEN);
     await tick();
-    expect(FakeWebSocket.instances).toHaveLength(2);
-    expect(session._ws).not.toBe(ws);
+    // The whole point: no reconnect at the moment the caller is talking.
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(session._ws).toBe(ws);
   });
 
-  test("cancel with no turn in flight keeps the socket (and is idempotent)", async () => {
+  test("cancel with no turn in flight sends nothing (and is idempotent)", async () => {
     const { session, ws } = await openSession();
     session.cancel();
-    expect(ws.readyState).toBe(FakeWebSocket.OPEN);
+    expect(ws._frames()).toEqual([]);
 
     session.sendText("hi");
     session.cancel();
-    session.cancel(); // second cancel of the same turn: no second reconnect
-    await tick();
-    expect(FakeWebSocket.instances).toHaveLength(2);
+    session.cancel(); // second cancel of the same turn: no second Cancel frame
+    expect(ws._frames().filter((f) => f.type === "Cancel")).toHaveLength(1);
   });
 
-  test("stale frames from the cancelled socket are unobservable", async () => {
+  test("the cancelled turn's trailing frames are dropped until Cancelled", async () => {
+    // The socket used to be dropped, which made these unobservable for free.
+    // It survives now, so ~0.3s of in-flight audio really does still arrive.
     const { session, ws } = await openSession();
     const events: string[] = [];
     session.on("audio", () => events.push("audio"));
     session.on("done", () => events.push("done"));
-    session.on("error", () => events.push("error"));
 
     session.sendText("cancelled reply");
-    session.cancel(); // synchronous barge-in done; no tts_stream_error from the close
-    expect(events).toEqual(["done"]);
+    session.cancel();
+    expect(events).toEqual(["done"]); // synchronous barge-in done
 
-    await tick();
-    // Audio/done/error already in flight from the old socket must be dropped.
     ws._msg({ type: "Audio", audio: pcmBase64([1, 2]) });
     ws._msg({ type: "FlushDone" });
-    ws._fire("error", new Error("late"));
+    ws._msg({ type: "WordBoundaries", words: [{ text: "cancelled", audio_start_ms: 0 }] });
     expect(events).toEqual(["done"]);
   });
 
-  test("a late old-turn done cannot end the next turn early", async () => {
+  test("frames resume once Cancelled marks the boundary", async () => {
+    // The other half of the window: a barrier that never lifts is a session
+    // that never plays audio again.
+    const { session, ws } = await openSession();
+    const events: string[] = [];
+    session.on("audio", () => events.push("audio"));
+
+    session.sendText("cancelled reply");
+    session.cancel();
+    ws._msg({ type: "Audio", audio: pcmBase64([1]) }); // still the old turn
+    expect(events).toEqual([]);
+
+    ws._msg({ type: "Cancelled" });
+    session.sendText("new turn ");
+    ws._msg({ type: "Audio", audio: pcmBase64([2]) });
+    expect(events).toEqual(["audio"]);
+  });
+
+  test("a second barge-in before the first Cancelled keeps the window shut", async () => {
+    // Counted rather than a flag: the first Cancelled must not reopen the
+    // window while the second cancel's frames are still on the wire.
+    const { session, ws } = await openSession();
+    const events: string[] = [];
+    session.on("audio", () => events.push("audio"));
+
+    session.sendText("first ");
+    session.cancel();
+    session.sendText("second ");
+    session.cancel();
+
+    ws._msg({ type: "Cancelled" }); // only the FIRST of two
+    ws._msg({ type: "Audio", audio: pcmBase64([1]) });
+    expect(events).toEqual([]);
+
+    ws._msg({ type: "Cancelled" });
+    ws._msg({ type: "Audio", audio: pcmBase64([2]) });
+    expect(events).toEqual(["audio"]);
+  });
+
+  test("an Error inside the cancel window still surfaces", async () => {
+    // Deliberate exception: an Error frame describes the SOCKET, not the
+    // abandoned turn, and swallowing it would mute the session silently.
+    const { session, ws } = await openSession();
+    const errors: TtsError[] = [];
+    session.on("error", (err) => errors.push(err));
+
+    session.sendText("cancelled reply");
+    session.cancel();
+    ws._msg({ type: "Error", error_code: 1008, error: "Unauthorized" });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain("Unauthorized");
+  });
+
+  test("a late old-turn ack cannot end the next turn early", async () => {
     // sendText resets doneEmitted; a stale is_final/FlushDone landing after it
-    // would otherwise resolve the next turn's flush wait before synthesis ran.
+    // would otherwise retire one of the NEW turn's outstanding flushes.
     const { session, ws } = await openSession();
     const onDone = vi.fn();
     session.on("done", onDone);
@@ -79,15 +136,15 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     session.sendText("old turn");
     session.cancel();
     expect(onDone).toHaveBeenCalledTimes(1);
-    await tick();
 
-    session.sendText("new turn");
-    ws._msg({ type: "Audio", audio: pcmBase64([9]), is_final: true }); // old socket
-    ws._msg({ type: "FlushDone" }); // old socket
+    session.sendText("new turn ");
+    ws._msg({ type: "Audio", audio: pcmBase64([9]), is_final: true }); // cancelled turn
+    ws._msg({ type: "FlushDone" }); // cancelled turn
     expect(onDone).toHaveBeenCalledTimes(1);
 
-    const next = FakeWebSocket.instances.at(-1);
-    next?._msg({ type: "FlushDone" });
+    ws._msg({ type: "Cancelled" });
+    session.flush();
+    ws._msg({ type: "FlushDone" });
     expect(onDone).toHaveBeenCalledTimes(2);
   });
 
@@ -95,23 +152,70 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     const { session, ws } = await openSession();
     session.sendText("first half");
     session.cancel();
-    // The replacement is still connecting: the next turn's frames queue and
-    // flush to it on open — the old server-side buffer died with its socket.
+    ws._msg({ type: "Cancelled" });
+
     session.sendText("fresh turn");
     session.flush();
-    await tick();
 
-    const next = FakeWebSocket.instances.at(-1);
-    expect(next).not.toBe(ws);
-    expect(next?._frames()).toEqual([{ type: "Generate", text: "fresh turn" }, { type: "Flush" }]);
     // "first half" has no sentence end, so it was still buffered host-side and
-    // never reached the old socket — Generate only goes out paired with a Flush.
-    expect(ws._frames()).toEqual([{ type: "Terminate" }]);
+    // never reached the socket — Generate only goes out paired with a Flush.
+    // The Cancel is what clears the server's own buffer; measured, see the doc.
+    expect(ws._frames()).toEqual([
+      { type: "Cancel" },
+      { type: "Generate", text: "fresh turn" },
+      { type: "Flush" },
+    ]);
+  });
+});
+
+describe("AssemblyAI TTS cancel() reconnect fallback", () => {
+  // Dropping the socket is no longer the cancel path, but it remains the
+  // recovery for a socket that cannot carry a Cancel or will not answer one.
+
+  test("a Cancel that cannot be sent falls back to the reconnect", async () => {
+    const { session, ws } = await openSession();
+    session.sendText("half a reply");
+    ws.readyState = FakeWebSocket.CLOSED; // send() refuses
+
+    session.cancel();
+
+    await tick();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(session._ws).not.toBe(ws);
+  });
+
+  test("a Cancelled that never arrives falls back to the reconnect", async () => {
+    // Otherwise the suppression window never lifts and the session is mute
+    // for the rest of the call — the failure the deadline exists to prevent.
+    vi.useFakeTimers();
+    try {
+      const { session, ws } = await openSession();
+      const events: string[] = [];
+      session.on("audio", () => events.push("audio"));
+      session.sendText("half a reply");
+      session.cancel();
+
+      await vi.advanceTimersByTimeAsync(TTS_CANCEL_ACK_TIMEOUT_MS + 1);
+      expect(FakeWebSocket.instances).toHaveLength(2);
+      expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
+
+      // `tick()` is a setTimeout(0) and would hang here — advance the clock
+      // instead, which is also what lets the replacement socket open.
+      await vi.advanceTimersByTimeAsync(0);
+      // And the replacement is audible, i.e. the barrier really reopened.
+      const next = FakeWebSocket.instances.at(-1);
+      session.sendText("new turn ");
+      next?._msg({ type: "Audio", audio: pcmBase64([1]) });
+      expect(events).toEqual(["audio"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("cancel while the replacement is still connecting drops the queued frames", async () => {
-    const { session } = await openSession();
+    const { session, ws } = await openSession();
     session.sendText("one");
+    ws.readyState = FakeWebSocket.CLOSED; // force the reconnect path
     session.cancel();
     session.sendText("two"); // queued for the connecting socket
     session.cancel(); // cancelled before the frames ever left the process
@@ -131,12 +235,13 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     // full pipeline flush timeout in silence.
     vi.useFakeTimers();
     try {
-      const { session } = await openSession();
+      const { session, ws } = await openSession();
       const errors: TtsError[] = [];
       session.on("error", (err) => errors.push(err));
 
       session.sendText("half a reply");
       FakeWebSocket.neverOpen = true;
+      ws.readyState = FakeWebSocket.CLOSED; // force the reconnect path
       session.cancel(); // reconnect begins; the replacement never opens
 
       await vi.advanceTimersByTimeAsync(TTS_RECONNECT_TIMEOUT_MS + 1);
@@ -194,9 +299,10 @@ describe("AssemblyAI TTS cancel() reconnect", () => {
     expect(FakeWebSocket.instances.at(-1)?.readyState).toBe(FakeWebSocket.CLOSED);
   });
 
-  test("close() after cancel closes the replacement socket", async () => {
-    const { session } = await openSession();
+  test("close() after a fallback reconnect closes the replacement socket", async () => {
+    const { session, ws } = await openSession();
     session.sendText("hi");
+    ws.readyState = FakeWebSocket.CLOSED; // force the reconnect path
     session.cancel();
     await tick();
     const next = FakeWebSocket.instances.at(-1);

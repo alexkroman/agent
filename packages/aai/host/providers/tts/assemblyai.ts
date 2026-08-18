@@ -34,6 +34,10 @@
  * acknowledgements — routing one into the turn tracker would end the reply
  * mid-synthesis.
  *
+ * See `assemblyai-frames.ts` for the frame vocabulary, which is read back
+ * from the SERVICE rather than inferred — including why there is no
+ * continuous/streaming mode to switch on.
+ *
  * **Flush is what starts synthesis, so this adapter flushes per sentence.**
  * `Generate` only buffers: measured against production, a turn's Generate
  * frames produce *zero* audio and the first `Audio` frame lands ~33ms after a
@@ -80,15 +84,16 @@
  * double-acknowledgement dedup that would otherwise end the turn mid-reply —
  * lives in `assemblyai-turn.ts` (`createTurnTracker`).
  *
- * **Cancel.** The protocol has no discard/cancel frame, so a mid-turn
- * `cancel()` drops the whole connection and reconnects: text Generate'd but
- * never Flush'ed would otherwise sit in the server-side buffer and be spliced
- * into the NEXT turn's synthesis on its Flush, and Audio frames already in
- * flight would audibly resume the interrupted reply. The cancelled socket's
- * listeners are detached before it closes, so its late frames (audio, a stale
- * `is_final`/`FlushDone` that could end the next turn early, the close
- * itself) are unobservable. Text sent while the replacement socket is still
- * connecting is queued and flushed to it on open.
+ * **Cancel.** A mid-turn `cancel()` sends a `Cancel` frame and KEEPS the
+ * socket; the service's `Cancelled` is the boundary past which the abandoned
+ * turn's frames stop arriving, and until it lands this adapter drops that
+ * turn's audio, acks and word timings (never its `Error` frames, which
+ * describe the socket rather than the turn). Dropping the connection and
+ * reconnecting is the FALLBACK, for a socket that cannot carry the frame or
+ * will not answer one. That is one measured rule and lives in
+ * `assemblyai-cancel.ts` — read it before changing the barge-in path; this
+ * doc claimed for a long time that no cancel frame existed. Text sent while a
+ * replacement socket is still connecting is queued and flushed to it on open.
  */
 
 import { createNanoEvents, type Emitter } from "nanoevents";
@@ -109,9 +114,7 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
-import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
-import { base64ToUint8 } from "../../_base64.ts";
-import { bytesToPcm16 } from "../../_pcm.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
 import { PROVIDER_WS_OPTIONS } from "../../_ws.ts";
 import { createGuardedWs, dropSocket as dropSocketShared, openGuardedWs } from "../_socket.ts";
 import {
@@ -119,9 +122,10 @@ import {
   closeOnAbort,
   createTtsSessionShell,
   requireApiKey,
-  type SessionShell,
   waitForOpen,
 } from "../_utils.ts";
+import { createCancelBarrier } from "./assemblyai-cancel.ts";
+import { type AssemblyAITtsMessage, handleMessage } from "./assemblyai-frames.ts";
 import { splitSegment } from "./assemblyai-segment.ts";
 import { createTurnTracker, type SynthesisAck } from "./assemblyai-turn.ts";
 import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
@@ -129,32 +133,6 @@ import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
 export interface AssemblyAITtsSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
   readonly _ws: WebSocket;
-}
-
-interface AssemblyAITtsMessage {
-  type: "Begin" | "Audio" | "FlushDone" | "Warning" | "Error" | "WordBoundaries" | string;
-  /** Base64 PCM16 LE payload on `Audio` frames. */
-  audio?: string;
-  /** Word timings on `WordBoundaries` frames — shape read defensively. */
-  words?: unknown;
-  /** Set on the last `Audio` frame of a synthesis by some server versions. */
-  is_final?: boolean;
-  error?: string;
-  error_code?: string | number;
-  warning?: string;
-}
-
-/**
- * `(code): reason`, with a fallback so a detail-less frame still reads.
- *
- * Named for the FRAME rather than `errorDetail`, which is the repo-wide helper
- * in `sdk/utils.ts` (a `cause`/`detail` reader over an unknown throwable) and
- * is in scope everywhere — one name meaning two things in one file is how the
- * wrong one gets imported.
- */
-function formatErrorFrame(msg: AssemblyAITtsMessage): string {
-  const reason = msg.error?.trim() ? msg.error : "unknown";
-  return `(${msg.error_code ?? ""}): ${reason}`;
 }
 
 function buildUrl(
@@ -186,52 +164,6 @@ function buildUrl(
   // treating it as "unset" beats building `wss:///v1/ws/` and failing at connect.
   const host = (opts.host?.length ?? 0) > 0 ? opts.host : ASSEMBLYAI_TTS_HOST;
   return `wss://${host}/v1/ws/?${params.toString()}`;
-}
-
-/**
- * Handle one server frame. Extracted to keep `open()` under the cognitive
- * complexity limit; turn state is threaded through the callbacks.
- *
- * Emits through `shell`, never the raw emitter: this runs inside a socket
- * 'message' handler, where a throw from a downstream listener escapes into
- * Node's EventEmitter as an uncaughtException — taking down a multi-tenant host
- * rather than one session.
- */
-function handleMessage(
-  raw: WebSocket.Data,
-  shell: SessionShell<TtsEvents>,
-  onSynthesisComplete: (ack: SynthesisAck) => void,
-  onWords: (msg: AssemblyAITtsMessage) => void,
-): void {
-  const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
-    | AssemblyAITtsMessage
-    | undefined;
-  if (msg === undefined) return;
-
-  switch (msg.type) {
-    case "Audio": {
-      if (typeof msg.audio === "string") {
-        const pcm = bytesToPcm16(base64ToUint8(msg.audio));
-        if (pcm.length > 0) shell.emit("audio", pcm);
-      }
-      // Older servers flag the final frame; the live one uses FlushDone.
-      if (msg.is_final) onSynthesisComplete("is_final");
-      return;
-    }
-    case "FlushDone":
-      onSynthesisComplete("flush_done");
-      return;
-    case "WordBoundaries":
-      // Deliberately NOT an acknowledgement — see the module doc.
-      onWords(msg);
-      return;
-    case "Error":
-      shell.streamError(`AssemblyAI TTS ${formatErrorFrame(msg)}`);
-      return;
-    default:
-      // Begin is consumed by the handshake below; Warning is informational.
-      return;
-  }
 }
 
 export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
@@ -278,6 +210,13 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       // Accepted text not yet sent: `Generate` goes out only paired with a
       // `Flush`, so the server never holds unsynthesized text.
       let buffered = "";
+      // Barge-in: the socket survives a cancel, so the abandoned turn's
+      // trailing frames are filtered until the service acknowledges. An
+      // unanswered `Cancel` falls back to the reconnect below.
+      const cancels = createCancelBarrier(() => {
+        if (shell.isClosed()) return;
+        reconnect();
+      });
 
       /** Detach + politely close a socket without emitting anything for it. */
       const dropSocket = (socket: WebSocket): void =>
@@ -287,7 +226,10 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         emitter,
         // `ws` is read at teardown time so a close after a cancel-reconnect
         // releases the replacement socket, not the one already dropped.
-        teardown: () => dropSocket(ws),
+        teardown: () => {
+          cancels.reset();
+          dropSocket(ws);
+        },
       });
 
       // Flush/acknowledgement bookkeeping — which ack ends the turn, and the
@@ -315,7 +257,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const attach = (socket: WebSocket): void => {
         socket.on("message", (raw: WebSocket.Data) => {
           if (shell.isClosed()) return;
-          handleMessage(raw, shell, onSynthesisComplete, onWords);
+          handleMessage(raw, shell, onSynthesisComplete, onWords, cancels);
         });
         socket.on("error", (err: Error) => shell.onSocketError(err));
         socket.on("close", (code: number) => {
@@ -337,6 +279,9 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
 
       /** Replace the connection after a mid-turn cancel — see the module doc. */
       const reconnect = (): void => {
+        // The abandoned turn's frames die with the socket, so the barrier has
+        // nothing left to filter — and leaving it shut would mute the session.
+        cancels.reset();
         dropSocket(ws);
         const frames: Record<string, unknown>[] = [];
         queued = frames;
@@ -427,11 +372,11 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
 
         cancel() {
           if (shell.isClosed()) return;
-          // The cancelled turn's flushes are abandoned: either the socket is
-          // dropped below (its late frames unobservable) or the queued frames
-          // are discarded, so no acknowledgement for them will ever arrive.
-          // `done` is emitted synchronously — the orchestrator's state machine
-          // advances on it, and barge-in must not be microtask-deferred.
+          // The cancelled turn's flushes are abandoned: their acknowledgements
+          // are either filtered by the barrier below, discarded with the queued
+          // frames, or unobservable on a dropped socket. `done` is emitted
+          // synchronously — the orchestrator's state machine advances on it,
+          // and barge-in must not be microtask-deferred.
           buffered = "";
           timeline.reset();
           const turnInFlight = turn.cancel();
@@ -444,7 +389,15 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
             queued.length = 0;
             return;
           }
-          reconnect();
+          // `Cancel` discards the server's buffered text AND aborts synthesis
+          // in progress, leaving the socket usable — measured; see the module
+          // doc. A socket that cannot carry the frame is one the reconnect is
+          // for.
+          if (!send({ type: "Cancel" })) {
+            reconnect();
+            return;
+          }
+          cancels.arm();
         },
 
         on: shell.on,

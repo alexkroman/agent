@@ -8,6 +8,19 @@
  * time-to-first-audio. It is split out for the same reason `assemblyai-turn.ts`
  * is: the adapter owns socket and turn lifecycle, this owns one measured rule.
  *
+ * **There is no continuous mode to reach for instead, and that is now
+ * verified rather than assumed.** Probed against the live service 2026-08-18:
+ * the client->server vocabulary is exactly `Generate`, `Flush`, `Terminate`,
+ * `KeepAlive`, `Cancel` (the server enumerates it when handed an unknown
+ * type); `Generate` with no `Flush` produced zero audio in 20 s; no field on
+ * `Generate` triggers synthesis (`flush`, `final`, `continue`, `auto_flush`
+ * are all silently ignored); and no connect param enables one — the `Begin`
+ * frame echoes the complete accepted configuration and holds nothing of the
+ * kind. So the seam between segments is a property of the PROVIDER, and the
+ * only knobs are the two below. Cartesia has no equivalent (`continue: true`
+ * synthesizes on arrival), which is the alternative if the seam matters more
+ * than the rest of the pipeline's AssemblyAI-single-key story.
+ *
  * **Segment size is a measured tradeoff**, because each flushed segment is
  * synthesized as its own utterance with its own prosody and padding. For one
  * fixed text: end-of-turn flush only = 5.44s of audio but no sound until the

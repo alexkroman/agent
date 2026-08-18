@@ -310,6 +310,29 @@ export const DEFAULT_VOICE_FOCUS = "near-field";
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
 
 /**
+ * How long a `Cancel` frame's `Cancelled` acknowledgement may take before the
+ * AssemblyAI TTS adapter falls back to dropping the socket.
+ *
+ * `Cancel` is answered in order on the same socket, so that acknowledgement is
+ * the BOUNDARY between the abandoned turn's frames and the next turn's — the
+ * adapter drops the cancelled turn's audio, acks and word timings until it
+ * arrives (see the module doc in `host/providers/tts/assemblyai.ts`). Which
+ * means an acknowledgement that never comes is a session that never plays
+ * audio again: exactly the silent-mute failure the reconnect path's own
+ * deadline exists to prevent, arriving by a new route.
+ *
+ * Measured against production, `Cancelled` lands within a millisecond of the
+ * `Cancel` going out — the frame does no synthesis work — so this is a
+ * liveness bound on a misbehaving socket rather than a tuning knob, and is set
+ * far above the observed value. It stays well under
+ * {@link PIPELINE_FLUSH_TIMEOUT_MS} so the fallback reconnect has time to
+ * complete before the first post-cancel turn gives up on its flush.
+ *
+ * @internal
+ */
+export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
+
+/**
  * Watchdog for the pipeline speaking edge: how long after the last STT partial
  * to force `speech_stopped` when no non-empty final ever arrives. Genuine
  * utterances close the edge when their final commits, well inside this window
