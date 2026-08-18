@@ -10,8 +10,10 @@
  * - `GET /studio/events` — the caller's project list (`projects` frames)
  */
 
+import { MAX_LIVE_STREAMS_PER_SCOPE } from "aai-server/constants";
+import { reservedLiveStreams, reserveLiveStream, resetLiveStreams } from "aai-server/live-streams";
 import { authHeaders, type TestFetch } from "aai-server/test-utils";
-import { expect, test } from "vitest";
+import { afterEach, expect, test } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
 import {
   createWorkspace,
@@ -20,6 +22,15 @@ import {
   stampWorkspaceMeta,
   studioScope,
 } from "./studio-workspace.ts";
+
+// The per-scope stream reservations are PROCESS-global, like the shutdown
+// registry they live beside — so a stream this file leaves open would spend a
+// slot every later test in the file has to share. Reset rather than relied upon:
+// the cap is 50 and this suite opens well under it, which is exactly the kind of
+// margin that quietly disappears as tests are added.
+afterEach(() => {
+  resetLiveStreams();
+});
 
 /** Parse the payloads of `event` out of complete frames in `buffer`. */
 function payloadsOf(buffer: string, event: string): unknown[] {
@@ -340,4 +351,40 @@ test("streams on one project share a fixed number of reads per change", async ()
   // three — one each.
   expect(reads).toBe(2);
   await Promise.all(readers.map((reader) => reader.close()));
+});
+
+test("a scope at its stream cap is refused with 429, not served a stream", async () => {
+  const { fetch } = await setupProject();
+  const scope = studioScope("key1");
+  // Fill the cap directly — opening 50 real streams would measure the test
+  // harness rather than the route.
+  for (let i = 0; i < MAX_LIVE_STREAMS_PER_SCOPE; i++) reserveLiveStream(scope);
+
+  // Both routes, because each reserves its own slot and a cap enforced on one
+  // of them is not a cap.
+  const project = await openEvents(fetch, "proj");
+  expect(project.status).toBe(429);
+  expect(project.headers.get("Content-Type")).toContain("application/json");
+  const list = await fetch("/studio/events", { headers: authHeaders("key1") });
+  expect(list.status).toBe(429);
+
+  // Another caller is unaffected — one abusive scope must not close the studio.
+  expect((await fetch("/studio/events", { headers: authHeaders("key2") })).status).toBe(200);
+});
+
+test("closing a stream gives its slot back", async () => {
+  const { fetch } = await setupProject();
+  const scope = studioScope("key1");
+
+  const res = await openEvents(fetch, "proj");
+  const reader = frameReader(res);
+  await reader.take("project", 1);
+  expect(reservedLiveStreams(scope)).toBe(1);
+
+  await reader.close();
+
+  // The anti-leak property, and the reason the release sits in a `finally`: a
+  // slot that outlives its stream is not a slow leak, it is one scope
+  // permanently answered 429 until the replica restarts.
+  await expect.poll(() => reservedLiveStreams(scope)).toBe(0);
 });

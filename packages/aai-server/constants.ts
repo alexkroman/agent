@@ -345,10 +345,14 @@ export const APP_DB_ADMIN_POOL_MAX = 1;
  * reserved": Vault, the agents row the broker needs, workspaces, chats. A
  * control-plane outage, at peak, with nothing before it to read as a warning.
  *
- * **This number is a claim about the provisioned instance, and nothing in the
- * repo can check it** — verify it against the project's `max_connections` (and
- * leave room for migrations, the dashboard, and Supavisor) when changing
- * either side. `platform-db-budget.test.ts` holds the arithmetic so that
+ * **This number is a claim about the provisioned instance, and boot now CHECKS
+ * it** (`platform-db-capacity.ts`): the server holds a connection, so
+ * `show max_connections` and a `pg_stat_activity` count are one query each, and
+ * a budget that promises more than the instance can give says so at boot
+ * instead of at peak. It went unchecked for as long as it did because this
+ * paragraph asserted it could not be — the check is the cheaper half of the
+ * verification it asked for. Still verify by hand (and leave room for
+ * migrations, the dashboard, and Supavisor) when changing either side. `platform-db-budget.test.ts` holds the arithmetic so that
  * raising `MAX_CONTAINERS`, a pool size, or the cluster list fails a check
  * instead of failing in production. The tenant-facing half of this concern was
  * always reasoned explicitly (`APP_DB_CONNECTION_LIMIT`, "so one hot app
@@ -376,6 +380,86 @@ export const APP_DB_ADMIN_POOL_MAX = 1;
  * understates the fleet by one per replica, which is why boot announces it.
  */
 export const MAX_PLATFORM_DB_CONNECTIONS = 40;
+
+/**
+ * The per-tenant connection ceiling, so one hot app cannot starve the shared
+ * instance. It lives here rather than beside the DDL that applies it because
+ * it is a TERM IN THE BUDGET (see MAX_ACTIVE_APP_DATABASES), and the budget's
+ * arithmetic is checked by a unit test that must not import a composition
+ * root to reach it.
+ *
+ * **10, and the number is a SUM a workflow guest really needs**, not a round
+ * figure. It was 4, sized when `ctx.db` was the only thing that ever used the
+ * role — which was true only because the Workflow DevKit could not connect at all
+ * under the per-schema model. Now that it can, one guest holds:
+ *
+ * | what | how many |
+ * | --- | --- |
+ * | the DevKit's world pool (`WORKFLOW_POSTGRES_MAX_POOL_SIZE`) | 4 |
+ * | its dedicated `LISTEN` client, outside that pool | 1 |
+ * | `ctx.db`'s own pool (`APP_DB_POOL_MAX`) | 4 |
+ * | one spare, for the world's migration on boot | 1 |
+ *
+ * At 4 the symptom was every workflow request failing `too many connections for
+ * role "app_…"`. The two sides are pinned against each other on purpose —
+ * `aai/host/workflow-world.ts` sets the DevKit's half and carries the same table
+ * — so raising one without the other reintroduces exactly that error.
+ */
+export const APP_DB_CONNECTION_LIMIT = 10;
+
+/**
+ * How many app databases the budget assumes are CONCURRENTLY ACTIVE.
+ *
+ * The one term {@link MAX_PLATFORM_DB_CONNECTIONS} left uncounted, and it was
+ * uncounted on a premise that does not hold. `platform-db-budget.test.ts`
+ * excluded per-app connections because they are POOLED — but the pooler they go
+ * through is Supavisor in SESSION mode, which is mandatory for the Workflow
+ * DevKit (see `withPoolerHost` in app-db-url.ts) and which multiplexes NOTHING.
+ * One client connection is one real backend. So routing them through Supavisor
+ * moves them out of `max_connections` accounting without moving them out of
+ * `max_connections`, and the budget was a bound on the term that does not grow
+ * while ignoring the term that scales with tenants.
+ *
+ * Measured against a real provisioned app: one workflow guest holds **6**
+ * backends at rest (4 for the DevKit's world pool, 2 for `ctx.db`) and is
+ * ENTITLED to {@link APP_DB_CONNECTION_LIMIT}, which is what this budgets
+ * against — a ceiling has to assume the ceiling.
+ *
+ * **2 is honest arithmetic, not a target, and it is the finding.** With
+ * `MAX_CONTAINERS = 5` the platform's own direct pools take 20 of the 40, which
+ * leaves room for two apps at their entitlement. That is too few, and no
+ * further code change can raise it: the instance is the constraint (the
+ * provisioned `max_connections` is 60, against ~17 for Supabase's own workers).
+ * Raising this needs either a bigger instance or `APP_DB_URLS` cellular
+ * sharding, which is the only fix that breaks the coupling between tenant count
+ * and one instance's ceiling. Until then the number is small ON PURPOSE, so
+ * that the test fails when growth outruns the provisioning.
+ */
+export const MAX_ACTIVE_APP_DATABASES = 2;
+
+/**
+ * Concurrent live SSE streams one caller SCOPE may hold across this replica.
+ *
+ * `GET /studio/events` and `GET /studio/projects/:project/events` were capped
+ * by nothing and metered by nothing: `live-streams.ts` computed `live.size` and
+ * gated on it nowhere, and the studio's rate limiters cover chat,
+ * project-create and preview-wake only. One caller could hold as many streams
+ * as it had sockets.
+ *
+ * A CAP rather than a rate limit, and the distinction is the point: a stream is
+ * a concurrent resource, so the thing worth bounding is how many are held at
+ * once. A fixed-window limiter meters ARRIVALS, which would punish exactly the
+ * honest client this is meant to protect — every tab reconnects at once after a
+ * deploy or a scale-in (`endLiveStreams`), so a window sized for steady state
+ * refuses the reconnect storm that the system itself caused.
+ *
+ * 50 is far above legitimate use — a tab holds at most two (the scope list plus
+ * one project) — and far below the point where streams matter to a replica: at
+ * the measured ~100 KB each, this whole cap is ~5 MB, and one replica held
+ * 2,000 streams with no measurable degradation. It bounds the blast radius of a
+ * single abusive scope without being reachable by a person with many tabs open.
+ */
+export const MAX_LIVE_STREAMS_PER_SCOPE = 50;
 
 /**
  * DIRECT connections one replica may open, given `extraAppDbTargets` extra

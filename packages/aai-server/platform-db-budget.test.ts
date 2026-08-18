@@ -27,11 +27,14 @@ import { describe, expect, test } from "vitest";
 import {
   ADMIN_POOL_MAX,
   APP_DB_ADMIN_POOL_MAX,
+  APP_DB_CONNECTION_LIMIT,
   APP_DB_TARGET_POOL_MAX,
+  MAX_ACTIVE_APP_DATABASES,
   MAX_PLATFORM_DB_CONNECTIONS,
   platformDbConnectionsPerReplica,
   SLUG_LOCK_POOL_MAX,
 } from "./constants.ts";
+import { platformDbBudget } from "./platform-db-capacity.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const deployPy = readFileSync(path.join(REPO_ROOT, "packages/aai-server/modal_deploy.py"), "utf-8");
@@ -61,16 +64,50 @@ describe("platform database connection budget", () => {
   });
 
   /**
-   * The exclusion above is only legitimate while app-database connections are
-   * POOLED: Supavisor capacity is not `max_connections`. A direct connection per
-   * app would make the fleet total scale with the number of APPS, which no
-   * fleet-wide ceiling can bound — so losing the pooler routing does not make this
-   * budget wrong by one, it stops it being a bound at all.
+   * The whole budget, and the one this file was missing: the platform's own
+   * pools PLUS the app databases they cannot reach. `platformDbBudget()` is what
+   * the boot-time check compares against the real instance, so the two cannot
+   * disagree about what is claimed.
+   *
+   * This is the assertion that makes MAX_CONTAINERS and the tenant count compete
+   * in the open. They always competed for the same `max_connections`; only one
+   * of them was counted.
+   */
+  test("the fleet's direct pools AND the app databases fit the budget together", () => {
+    const maxContainers = pyInt("MAX_CONTAINERS");
+    const fleetDirect = maxContainers * platformDbConnectionsPerReplica();
+    const appTotal = MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT;
+
+    expect(
+      fleetDirect + appTotal,
+      `MAX_CONTAINERS (${maxContainers}) x ${platformDbConnectionsPerReplica()} = ${fleetDirect} ` +
+        `direct, plus ${MAX_ACTIVE_APP_DATABASES} app databases x ${APP_DB_CONNECTION_LIMIT} = ` +
+        `${appTotal}, is ${fleetDirect + appTotal} against a ${MAX_PLATFORM_DB_CONNECTIONS} ` +
+        "budget. These two terms compete: lower MAX_CONTAINERS to buy app databases, or " +
+        "provision a bigger instance / shard with APP_DB_URLS to buy both.",
+    ).toBeLessThanOrEqual(MAX_PLATFORM_DB_CONNECTIONS);
+    // The runtime check must claim exactly what this test allows, or a green
+    // suite would sit beside a warning at boot (or, worse, silence at boot
+    // beside a red suite).
+    expect(platformDbBudget()).toBe(MAX_PLATFORM_DB_CONNECTIONS + appTotal);
+  });
+
+  /**
+   * The pooler routing still has to exist — it is what keeps a per-app
+   * connection off the DIRECT budget and under Supavisor's own limits.
+   *
+   * But it is NOT why app databases may be left out of the arithmetic, and for a
+   * long time this file said it was. The pooler here is Supavisor in SESSION
+   * mode, mandatory for the Workflow DevKit (transaction mode breaks
+   * graphile-worker's prepared statements and world-postgres's LISTEN), and
+   * session mode multiplexes NOTHING: one client connection is one backend on
+   * the instance. So the routing changes which limits apply, never how many
+   * connections exist — which is why the test above counts them.
    *
    * A TEXT scan, because the property is "the routing exists", and the alternative
    * (asserting a URL) would pass against a helper nothing calls.
    */
-  test("per-app connections are excluded because they are POOLED", () => {
+  test("per-app connections are POOLED, which bounds them without hiding them", () => {
     // `app-db-url.ts` owns how an app database is ADDRESSED; the resolver that
     // decides whether a pooler is used at all lives with the other connection
     // settings. Both are named here because the exclusion above depends on the
@@ -111,10 +148,12 @@ describe("platform database connection budget", () => {
     // sharing one pool let a handful of concurrent deploys starve Vault reads.
     expect(ADMIN_POOL_MAX).toBeGreaterThan(0);
     expect(SLUG_LOCK_POOL_MAX).toBeGreaterThan(0);
-    // ...but only the SLUG-LOCK pool is direct, so only it is in the budget. The
-    // admin pool is pooled (transaction mode), and per-app connections are pooled
-    // (session mode); neither consumes `max_connections` the way a direct pool
-    // does. See `platformDbConnectionsPerReplica` for which locks decide that.
+    // ...but only the SLUG-LOCK pool is direct, so only it is PER-REPLICA in the
+    // budget. The admin pool is transaction-pooled, which genuinely multiplexes
+    // (measured: 4 client connections cost 2-3 backends, fleet-wide rather than
+    // per replica). Per-app connections are session-pooled, which does not — they
+    // are counted as a whole-fleet term instead, above. See
+    // `platformDbConnectionsPerReplica` for which locks decide that.
     expect(platformDbConnectionsPerReplica()).toBe(SLUG_LOCK_POOL_MAX);
     expect(platformDbConnectionsPerReplica()).not.toBe(ADMIN_POOL_MAX + SLUG_LOCK_POOL_MAX);
     expect(APP_DB_ADMIN_POOL_MAX).toBeGreaterThan(0);
