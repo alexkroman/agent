@@ -37,7 +37,14 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   different filters. **A header crossing this hop reaches TENANT CODE**, so
   `Cookie`, `Authorization` and `X-Forwarded-*` never do; the API routes take
   an allow-list and the webhook route deliberately passes the rest through. Its
-  module doc has the argument
+  module doc has the argument.
+
+  **A route forwarding a STREAMING request body needs `bound: "activity"`; the
+  other two bounds are a trap for it.** Both bound the response HEAD, so a
+  guest that answers only after consuming the whole body has the entire upload
+  inside its deadline — `POST /workflows/uploads` did, and a 500 MB file was a
+  503 at 30.3s while working under `aai dev`, which has no forward at all. The
+  `bound` doc in that module carries the arithmetic and why no TOTAL is right
 - `modal-context.ts` — the shared Modal context every spawn path needs
   first: the client, the App, the harness-baked snapshot image (built once
   per harness version, published under a content-addressed tag), and the

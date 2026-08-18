@@ -149,9 +149,53 @@ export type GuestForwardOptions = {
    * a healthy agent at a fixed interval and looking exactly like a network
    * fault. `"response"` (the default) keeps it armed over the body, which is
    * right wherever the caller buffers the whole thing.
+   *
+   * `"activity"` is `"headers"` plus a re-arm on every chunk of the REQUEST
+   * body that drains, and it is what any route forwarding a STREAMING body
+   * wants. Both of the other two bound the head, and a route whose guest
+   * answers only after consuming the whole body therefore has the entire
+   * upload inside its deadline — `POST /workflows/uploads` accepts 2 GiB
+   * (`MAX_WORKFLOW_UPLOAD_BYTES`) and answers 201 once the last byte is
+   * stored, so under `"headers"` a 500 MB file needed ~133 Mbps of sustained
+   * upstream to beat a 30s deadline and was otherwise aborted mid-transfer.
+   * There is no total that is right for that: the ceiling is the caller's
+   * bandwidth, which this hop cannot see. What it CAN see is progress, so the
+   * deadline becomes "no chunk drained for `timeoutMs`" — a stalled guest
+   * still fails on time, and a slow-but-moving upload never does.
    */
-  bound?: "headers" | "response";
+  bound?: "headers" | "response" | "activity";
 };
+
+/**
+ * Re-emit a request body, calling `onProgress` as each chunk is consumed.
+ *
+ * The consumer is undici writing to the socket, which reads under
+ * backpressure — so a `pull` means the previous chunk really reached the
+ * network rather than a buffer, which is what makes this a progress signal and
+ * not a clock. `onProgress` fires on the final read too, so the guest gets a
+ * full budget to ANSWER after the last byte rather than whatever the transfer
+ * left over.
+ */
+function trackBodyProgress<T>(body: ReadableStream<T>, onProgress: () => void): ReadableStream<T> {
+  const reader = body.getReader();
+  return new ReadableStream<T>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      onProgress();
+      if (done) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel(reason) {
+      // The forward was abandoned (the deadline fired, or the platform's own
+      // caller went away). Without this the source stream — the inbound
+      // request's body — is left unread with nobody to drain it.
+      return reader.cancel(reason);
+    },
+  });
+}
 
 /**
  * Forward one request to a guest, bounded.
@@ -162,13 +206,28 @@ export type GuestForwardOptions = {
  * that has to make it.
  */
 export async function forwardToGuest(opts: GuestForwardOptions): Promise<Response> {
+  const bound = opts.bound ?? "response";
   // Two mechanisms, because the deadline means two different things. A
-  // hand-held timer can be DISARMED the moment the head arrives, which is the
-  // only way to leave a legitimately endless body alone; `AbortSignal.timeout`
-  // cannot be, which is exactly what a caller that buffers the whole response
-  // wants — the body read is inside the budget rather than unbounded after it.
-  const controller = opts.bound === "headers" ? new AbortController() : undefined;
-  const timer = controller ? setTimeout(() => controller.abort(), opts.timeoutMs) : undefined;
+  // hand-held timer can be DISARMED the moment the head arrives — and, under
+  // `"activity"`, RE-ARMED as the request body moves — which is the only way to
+  // leave a legitimately endless body alone; `AbortSignal.timeout` cannot be,
+  // which is exactly what a caller that buffers the whole response wants — the
+  // body read is inside the budget rather than unbounded after it.
+  const controller = bound === "response" ? undefined : new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = (): void => {
+    if (!controller) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+  };
+  arm();
+  // Only a STREAM can report progress; a buffered body is handed over whole, so
+  // under `"activity"` it behaves exactly as `"headers"` does — which is why the
+  // one caller on this bound passes it for every method rather than branching.
+  const body =
+    bound === "activity" && opts.body instanceof ReadableStream
+      ? trackBodyProgress(opts.body, arm)
+      : opts.body;
   try {
     return await opts.fetchFn(opts.url, {
       method: opts.method ?? "GET",
@@ -176,7 +235,7 @@ export async function forwardToGuest(opts: GuestForwardOptions): Promise<Respons
       // `duplex: "half"` is REQUIRED whenever the body is a stream — undici
       // rejects the request outright rather than buffering it, which is the
       // trade we want but not one it may assume.
-      ...(opts.body ? { body: opts.body, duplex: "half" } : {}),
+      ...(body ? { body, duplex: "half" } : {}),
       signal: controller?.signal ?? AbortSignal.timeout(opts.timeoutMs),
     });
   } finally {
