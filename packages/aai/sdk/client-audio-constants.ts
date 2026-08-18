@@ -45,15 +45,29 @@ export const MIC_SILENCE_PROBE_MS = 1500;
  * Measured against a recorded reply (`aai-ui/worklets/playback-tuning.test.ts`):
  * the client's buffer sits at the lead minus half a burst mid-reply, and the
  * longest link freeze it rides out with no concealment tracks that one-for-one —
- * 820 ms at 1000/200, 1453 ms at 1500/100, 1945 ms at 2000/100, the whole reply
- * unpaced. Startup latency is identical at every one of them, so raising this is
- * free on the audio side. What it is NOT free on is {@link HEARD_AUDIO_LAG_MS},
- * which is derived from it: the two are the same physical quantity seen from the
- * two ends, so they move together or the heard cursor starts lying.
+ * 820 ms at 1000/200, 914 ms at 1000/100, 1453 ms at 1500/100, 1945 ms at
+ * 2000/100, the whole reply unpaced. Time-to-first-audio is IDENTICAL at every
+ * one of them, so this buys resilience at no latency cost at all.
+ *
+ * **1500, up from 1000, and what stops it going further is bandwidth rather than
+ * correctness.** Two costs scale with it, both measured on the same reply: peak
+ * bytes the server has pushed but the client has not played (46 KiB at 1000,
+ * 68 KiB at 1500, 93 KiB at 2000 — all far under the 4 MiB
+ * `MAX_CLIENT_WS_BUFFERED_BYTES` disconnect, which is there for a genuinely slow
+ * link), and audio a mid-reply barge-in has to throw away (~0.85 s of speech at
+ * 1000, ~1.3 s at 1500, ~1.8 s at 2000). The second is the real one, because it
+ * is paid on exactly the metered links that can least afford it, and it is why
+ * this is not simply set to the unpaced behaviour that is best for playback.
+ *
+ * **It is NOT coupled to {@link HEARD_AUDIO_LAG_MS}, and a note here used to say
+ * it was.** The playback clock's `endsAtMs` accumulates from `max(endsAtMs,
+ * now())`, so it already tracks whatever lead this is set to; the heard cursor's
+ * error is measured identical at 1000, 1500 and 2000. Read that constant's doc
+ * before re-deriving either one from the other.
  *
  * @internal
  */
-export const CLIENT_AUDIO_LEAD_MS = 1000;
+export const CLIENT_AUDIO_LEAD_MS = 1500;
 
 /**
  * How far the pacer lets the lead drain below {@link CLIENT_AUDIO_LEAD_MS}

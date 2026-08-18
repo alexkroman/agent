@@ -46,6 +46,41 @@
  * The budget is therefore a floor-BREAKER, not a cap — a buffer already holding
  * complete sentences still flushes as one large segment, which is both better
  * prosody and fewer round trips.
+ *
+ * **Re-measured 2026-08-17 against the live service, and the interesting cell is
+ * the fourth: adding clause marks to {@link SEGMENT_BOUNDARY_RE} on top of the
+ * budget changes time-to-first-audio by NOTHING.** Same text (a reply whose
+ * opening clause is long and comma-rich, i.e. the best case for clause flushing),
+ * 30 ms delta pacing, medians of 3:
+ *
+ * | boundary | budget | first audio | audio |
+ * | --- | --- | --- | --- |
+ * | `.!?…` | none | 253 ms | 15.84 s |
+ * | `.!?…,;:` | none | 127 ms | 17.68 s |
+ * | `.!?…` | 40 (shipped) | **96 ms** | 18.64 s |
+ * | `.!?…,;:` | 40 | 96 ms | 18.24 s |
+ *
+ * Clause marks DO halve the latency of sentence-only segmentation on their own —
+ * that much is real — and the budget then beats them anyway, because 40
+ * characters comes up before the first comma does. With the budget in place the
+ * punctuation class can only add flushes LATER in the reply, where the caller is
+ * already listening to something and the only effect left is the ~800 ms padding
+ * slot. That is the measurement behind "buys nothing measurable" above, with the
+ * mechanism named: the budget pre-empts it.
+ *
+ * Two caveats on those numbers. First-audio was tight (±1-8 ms across runs) and
+ * the durations were not (spreads of 0.9-1.4 s, 5-8%), so only the large duration
+ * steps are outside the noise — the last two rows are indistinguishable. And this
+ * is ONE sentence shape: which rule fires first depends on where the first clause
+ * mark falls, so a reply opening "Sure, let me check." reaches a comma at five
+ * characters, where {@link MIN_SEGMENT_WORDS} holds it anyway.
+ *
+ * **Whoever measures this next: pace the deltas.** An unpaced capture hands the
+ * segmenter the whole reply before its first cut, and every rule above then
+ * scores an identical ~40 ms — the service's own latency and nothing else. That
+ * mistake was made while producing this table; `captureTtsTrace`'s
+ * `deltaIntervalMs` in `aai-ui/worklets/_tts-trace-harness.ts` exists because of
+ * it.
  */
 
 import { hasMinWords } from "../../transports/pipeline-text.ts";

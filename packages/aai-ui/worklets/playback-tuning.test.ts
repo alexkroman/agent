@@ -31,13 +31,27 @@
 
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { PLAYBACK_FILL_MS } from "../types.ts";
 import {
+  CLIENT_AUDIO_LEAD_MS,
+  HEARD_AUDIO_LAG_MS,
+  PACER_BURST_MS,
+  PIPELINE_PLAYBACK_GRACE_MS,
+  PLAYBACK_FILL_MS,
+  PLAYBACK_PROGRESS_INTERVAL_MS,
+} from "../types.ts";
+import {
+  type Delivery,
+  EAR_SAMPLE_MS,
   type NetworkProfile,
+  overNetwork,
   type PacerProfile,
+  pacedSends,
+  type RenderResult,
+  renderSchedule,
   runBench,
   scoreRender,
 } from "./_playback-bench-harness.ts";
+import { playoutVsHost } from "./_playback-bench-host.ts";
 import {
   hasTtsTrace,
   readTtsTraceSync,
@@ -49,12 +63,15 @@ const FIXTURES = path.join(import.meta.dirname, "..", "fixtures");
 const TRACE = "tts-reply-24k";
 
 /**
- * Production's pacing, spelled here because `CLIENT_AUDIO_LEAD_MS` and
- * `PACER_BURST_MS` are not on any published subpath — this package cannot
- * import them, which is itself part of what these tests are about (the two
- * numbers that decide the client's cushion are invisible to the client).
+ * Production's pacing — the REAL constants. They were literals here until the
+ * measurements below made the case for putting them on `@alexkroman1/aai/internal`:
+ * they decide how much audio the browser's playback buffer holds, so a bench that
+ * restates them is a bench measuring a copy nothing checks.
  */
-const SHIPPED_PACER: PacerProfile = { leadMs: 1000, burstMs: 200 };
+const SHIPPED_PACER: PacerProfile = {
+  leadMs: CLIENT_AUDIO_LEAD_MS,
+  burstMs: PACER_BURST_MS,
+};
 const SHIPPED = { fillMs: PLAYBACK_FILL_MS };
 
 const PERFECT: NetworkProfile = { name: "perfect", latencyMs: 0, jitterMs: 0 };
@@ -118,6 +135,59 @@ describe.skipIf(!present)("playback tuning against a real TTS reply", () => {
   const rate = trace.sampleRate;
   const asMs = (samples: number): number => (samples / rate) * 1000;
 
+  /**
+   * The error in the host's heard cursor, in ms: what it believes the caller has
+   * heard, minus what the ear actually received. POSITIVE means it over-keeps.
+   *
+   * Transcribed from `heardMs()` in `aai/host/transports/pipeline-heard.ts` —
+   * `audioMs - clock.remainingMs() - lagMs` over the FORWARDED schedule, since the
+   * host sees what it sent and not what the wire did with it — and compared against
+   * `RenderResult.earMs`, which counts only delivered (never concealed) samples.
+   * Sampled mid-reply, where a barge-in happens, and reported as the median.
+   */
+  function heardErrorMs(pacer: PacerProfile, net: NetworkProfile, lagMs: number): number {
+    const forwarded = pacedSends(trace, pacer);
+    const render = runBenchWith(forwarded, net);
+    const rate = trace.sampleRate;
+    const errors: number[] = [];
+    for (const [i, truthMs] of render.earMs.entries()) {
+      const tMs = i * EAR_SAMPLE_MS;
+      if (truthMs <= 200 || tMs > traceAudioMs(trace) - 500) continue;
+      let audioMs = 0;
+      let endsAtMs = 0;
+      for (const d of forwarded) {
+        if (d.atMs > tMs) break;
+        const chunkMs = (d.bytes.byteLength / 2 / rate) * 1000;
+        audioMs += chunkMs;
+        endsAtMs = Math.max(endsAtMs, d.atMs) + chunkMs;
+      }
+      const remainingMs = Math.max(0, endsAtMs - tMs);
+      const hostMs = Math.max(0, Math.min(audioMs, audioMs - remainingMs - lagMs));
+      errors.push(hostMs - truthMs);
+    }
+    errors.sort((a, b) => a - b);
+    return errors[errors.length >> 1] ?? 0;
+  }
+
+  /** The smallest barge-in grace that keeps `pending()` true to the last sample. */
+  function requiredGraceMs(pacer: PacerProfile, net: NetworkProfile): number {
+    const forwarded = pacedSends(trace, pacer);
+    return playoutVsHost({
+      forwarded,
+      render: runBenchWith(forwarded, net),
+      sampleRate: trace.sampleRate,
+      reportIntervalMs: PLAYBACK_PROGRESS_INTERVAL_MS,
+    }).requiredGraceMs;
+  }
+
+  /** Render an already-paced schedule over a link, at the shipped fill target. */
+  function runBenchWith(forwarded: Delivery[], net: NetworkProfile): RenderResult {
+    return renderSchedule(overNetwork(forwarded, net), {
+      sampleRate: trace.sampleRate,
+      settings: SHIPPED,
+    });
+  }
+
   test("the recorded reply arrives far faster than it plays, so the provider is not the jitter source", () => {
     // 8 s of speech delivered in under half a second. This is the fact the rest
     // of the file rests on: a jitter buffer sized against provider unevenness is
@@ -147,7 +217,12 @@ describe.skipIf(!present)("playback tuning against a real TTS reply", () => {
     // The integrity property `audio-stress.test.ts` proves for generated input,
     // asserted here on the real thing — and it is what makes a duration
     // comparison a legitimate quality metric elsewhere in this file.
-    const r = runBench({ trace, pacer: SHIPPED_PACER, net: stall(3000, 1500), settings: SHIPPED });
+    const r = runBench({
+      trace,
+      pacer: SHIPPED_PACER,
+      net: stall(3000, SHIPPED_PACER.leadMs + 1000),
+      settings: SHIPPED,
+    });
     const renderedMs = (r.rendered.length / rate) * 1000;
     const expectedMs = traceAudioMs(trace) + asMs(r.stats.concealedSamples);
     // Within one render quantum plus the startup gate.
@@ -196,17 +271,16 @@ describe.skipIf(!present)("playback tuning against a real TTS reply", () => {
     // The burst exists to save timer wakeups on the SERVER, and it is spent out
     // of the CLIENT's resilience — a trade neither constant's doc prices. Half
     // the burst is ~100 ms more stall the caller never hears.
-    const wide = absorbedStallMs({
-      trace,
-      pacer: { leadMs: 1000, burstMs: 400 },
-      settings: SHIPPED,
-    });
-    const shipped = absorbedStallMs({ trace, pacer: SHIPPED_PACER, settings: SHIPPED });
-    const narrow = absorbedStallMs({
-      trace,
-      pacer: { leadMs: 1000, burstMs: 50 },
-      settings: SHIPPED,
-    });
+    const at = (burstMs: number): number =>
+      absorbedStallMs({
+        trace,
+        pacer: { leadMs: SHIPPED_PACER.leadMs, burstMs },
+        settings: SHIPPED,
+        maxMs: 4000,
+      });
+    const wide = at(PACER_BURST_MS * 4);
+    const shipped = at(PACER_BURST_MS);
+    const narrow = at(PACER_BURST_MS / 2);
     expect(wide).toBeLessThan(shipped);
     expect(shipped).toBeLessThan(narrow);
     expect(narrow - shipped).toBeGreaterThan(50);
@@ -239,62 +313,58 @@ describe.skipIf(!present)("playback tuning against a real TTS reply", () => {
     expect(absorbed[2]).toBeGreaterThan(traceAudioMs(trace) - (STALL_AT_MS - 500));
   });
 
-  test("FINDING: the ear-lag scales with the pacer's LEAD, so the two cannot be tuned apart", () => {
-    // `HEARD_AUDIO_LAG_MS` (750) is documented as `PLAYBACK_JITTER_MS` (400)
-    // plus a sub-second network hop. Both halves of that derivation are wrong
-    // here: the cushion the client actually holds is the pacer's lead, not the
-    // fill target, and it moves one-for-one WITH the lead — so raising the lead
-    // for stall resilience silently invalidates the constant that decides what
-    // an interrupted reply records in history.
-    const depths = [
-      { leadMs: 1000, burstMs: 200 },
-      { leadMs: 1500, burstMs: 100 },
-      { leadMs: 2000, burstMs: 100 },
-    ].map((pacer) => {
-      const steady = runBench({ trace, pacer, net: TYPICAL, settings: SHIPPED }).progressMs.slice(
-        0,
-        -1,
-      );
-      return steady.slice().sort((a, b) => a - b)[steady.length >> 1] ?? 0;
-    });
-    for (const [i, depth] of depths.entries()) {
-      if (i === 0) continue;
-      expect
-        .soft(depth, `depth grows with lead: ${depths.join(", ")}`)
-        .toBeGreaterThan((depths[i - 1] ?? 0) + 300);
-    }
-    // And the fill target, which the constant USED to be derived from, moves it
-    // barely — which is why the derivation had to change with the pacer, not
-    // with the worklet.
-    const byTarget = [100, 400].map((fillMs) => {
-      const steady = runBench({
-        trace,
-        pacer: SHIPPED_PACER,
-        net: TYPICAL,
-        settings: { fillMs },
-      }).progressMs.slice(0, -1);
-      return steady.slice().sort((a, b) => a - b)[steady.length >> 1] ?? 0;
-    });
-    expect(Math.abs((byTarget[1] ?? 0) - (byTarget[0] ?? 0))).toBeLessThan(100);
+  test("FINDING: the heard cursor's error does NOT scale with the pacer's lead", () => {
+    // The correction that cost this branch a second commit. The client's buffer
+    // depth DOES track the lead — that much is measured above — and the tempting
+    // conclusion is that `HEARD_AUDIO_LAG_MS` must therefore be derived from it.
+    // It must not: `heardMs()` in `aai/host/transports/pipeline-heard.ts` is
+    // `audioMs - clock.remainingMs() - lagMs`, and `endsAtMs` inside that clock
+    // accumulates from `max(endsAtMs, now())`, so it already runs ahead by
+    // whatever the lead is. The depth is subtracted BEFORE the constant applies.
+    //
+    // So this drives the host's own arithmetic against the audio the ear really
+    // received, at three leads, and the error is identical across them.
+    const errors = [CLIENT_AUDIO_LEAD_MS, 1500, 2000].map((leadMs) =>
+      heardErrorMs({ leadMs, burstMs: PACER_BURST_MS }, TYPICAL, HEARD_AUDIO_LAG_MS),
+    );
+    const spread = Math.max(...errors) - Math.min(...errors);
+    expect(
+      spread,
+      `heard error by lead: ${errors.map((e) => e.toFixed(0)).join(", ")}`,
+    ).toBeLessThan(20);
   });
 
-  test("the derived HEARD_AUDIO_LAG_MS now AGREES with the measured buffer depth", () => {
-    // It used to be a literal 750 decomposed from the deleted startup target,
-    // and this test asserted the two DISAGREED — measured depth ~864 ms against
-    // 750, under-subtracting, which is the direction that records words the
-    // caller never heard. It is `CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS / 2` now,
-    // so the assertion flips: the formula has to predict what the bench measures,
-    // and it is this test that fails if either pacer constant moves without the
-    // heard cursor following.
-    const r = runBench({ trace, pacer: SHIPPED_PACER, net: TYPICAL, settings: SHIPPED });
-    // Drop the final drain, which is playout emptying rather than steady state.
-    const steady = r.progressMs.slice(0, -1);
-    const median = steady.slice().sort((a, b) => a - b)[steady.length >> 1] ?? 0;
-    const predicted = SHIPPED_PACER.leadMs - SHIPPED_PACER.burstMs / 2;
-    expect(
-      Math.abs(median - predicted),
-      `measured depth ${median.toFixed(0)} ms vs derived ${predicted} ms`,
-    ).toBeLessThan(100);
+  test("HEARD_AUDIO_LAG_MS leaves the heard cursor erring EARLY, by tens of ms", () => {
+    // The direction is the contract (`pipeline-heard.ts`: over-keeping is the
+    // measured failure, under-keeping costs a word or two of redundancy), and the
+    // MAGNITUDE is what two wrong derivations got wrong — 750 left the cursor
+    // ~694 ms early on this link and 950 left it ~894 ms, which is ~10 words
+    // rather than one or two.
+    for (const net of [PERFECT, TYPICAL, MOBILE]) {
+      const err = heardErrorMs(SHIPPED_PACER, net, HEARD_AUDIO_LAG_MS);
+      expect.soft(err, `${net.name}: cursor must not run ahead of the ear`).toBeLessThanOrEqual(0);
+      expect
+        .soft(err, `${net.name}: and must not lag it by more than a word or two`)
+        .toBeGreaterThan(-250);
+    }
+    // With the term at zero the cursor is already accurate to tens of ms, which
+    // is the evidence that it is a network hop and not a buffer depth.
+    expect(Math.abs(heardErrorMs(SHIPPED_PACER, TYPICAL, 0))).toBeLessThan(150);
+  });
+
+  test("PIPELINE_PLAYBACK_GRACE_MS clears what barge-in actually requires", () => {
+    // The grace keeps `pending()` true while the caller can still hear forwarded
+    // audio, so a value below the requirement misses a barge-in in the reply's
+    // tail. Measured the same way, and it does not scale with the lead either —
+    // it was briefly believed to be ~200 ms short and to block raising the lead.
+    for (const leadMs of [CLIENT_AUDIO_LEAD_MS, 2000]) {
+      for (const net of [PERFECT, TYPICAL, MOBILE]) {
+        const required = requiredGraceMs({ leadMs, burstMs: PACER_BURST_MS }, net);
+        expect
+          .soft(required, `lead ${leadMs} on ${net.name} requires ${required.toFixed(0)} ms`)
+          .toBeLessThan(PIPELINE_PLAYBACK_GRACE_MS);
+      }
+    }
   });
 
   test("the score ranks a clean render above a stalled one", () => {
@@ -303,8 +373,14 @@ describe.skipIf(!present)("playback tuning against a real TTS reply", () => {
     const clean = scoreRender(
       runBench({ trace, pacer: SHIPPED_PACER, net: TYPICAL, settings: SHIPPED }),
     );
+    // Past what the shipped lead absorbs — otherwise there is no stall to rank.
     const stalled = scoreRender(
-      runBench({ trace, pacer: SHIPPED_PACER, net: stall(3000, 1500), settings: SHIPPED }),
+      runBench({
+        trace,
+        pacer: SHIPPED_PACER,
+        net: stall(3000, SHIPPED_PACER.leadMs + 1000),
+        settings: SHIPPED,
+      }),
     );
     expect(clean.score).toBeLessThan(stalled.score);
     expect(clean.parts.silentMs).toBe(0);

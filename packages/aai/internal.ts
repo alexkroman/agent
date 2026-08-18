@@ -30,12 +30,20 @@
 // Client-audio budgets: the browser client's half of wire paths the host
 // enforces the other half of (e.g. MAX_CLIENT_WS_BUFFERED_BYTES), which is why
 // they are declared in the SDK and not in `aai-ui`.
+//
+// `CLIENT_AUDIO_LEAD_MS` and `PACER_BURST_MS` are the SERVER's pacing and are
+// here for one reason: they decide how much audio the browser's playback buffer
+// holds, so `aai-ui`'s playback bench cannot measure anything real without them.
+// It used to re-spell both as literals, which made the one number the whole
+// measurement rests on a copy that nothing checked.
 export {
   CAPTURE_STOP_ACK_TIMEOUT_MS,
+  CLIENT_AUDIO_LEAD_MS,
   MAX_PLAYBACK_BUFFERED_MS,
   MIC_BUFFER_SECONDS,
   MIC_SEND_MAX_BUFFERED_BYTES,
   MIC_SILENCE_PROBE_MS,
+  PACER_BURST_MS,
   PLAYBACK_BUFFER_SECONDS,
   PLAYBACK_CONCEAL_FADE_MS,
   PLAYBACK_CONCEAL_FLOOR,
@@ -54,6 +62,14 @@ export {
 export { AGENT_CSP, WS_OPEN } from "./sdk/constants.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
+// The two halves of one physical delay — how long between the server handing a
+// frame to the socket and the caller hearing it. Exported for the same reason as
+// the pacing above: the bench that measures that delay lives in `aai-ui`, and a
+// constant it cannot import is a constant it can only restate.
+export {
+  HEARD_AUDIO_LAG_MS,
+  PIPELINE_PLAYBACK_GRACE_MS,
+} from "./sdk/playback-timing-constants.ts";
 export { requestPath, requestQuery } from "./sdk/request-url.ts";
 export { formatSchemaIssues } from "./sdk/schema.ts";
 // The one `sleep`. Here rather than on `/utils` because that subpath is where a

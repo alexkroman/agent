@@ -1083,18 +1083,47 @@ win: it is spent out of the client's cushion one-for-one, and the wakeup rate it
 was sized against ("~50/second") is ~12.5/second at this provider's 3840-byte
 frames.
 
-**And the last column is why the lead cannot simply be raised.**
-`HEARD_AUDIO_LAG_MS` (750) is documented as `PLAYBACK_JITTER_MS` (400) plus a
-sub-second network hop, and both halves of that derivation are contradicted here:
-the cushion the client actually holds is the pacer's LEAD, it moves one-for-one
-with the lead (848 -> 1456 -> 1947 ms) and barely at all with the fill target
-(under 100 ms across 100-400), and the term it is derived from turns out to be
-redundant. Measured ear-lag at the shipped config is ~880 ms against the
-constant's 750 — under-subtracting, which is the direction that records words the
-caller never heard. Note `pipeline-heard.ts` ALREADY consumes `playback_progress`
-to clamp the playout-end estimate; the ear-lag is the one term still a flat
-constant, and deriving it from the same reports is what would let the lead be
-tuned for quality at all.
+**The last column is NOT why the lead cannot be raised**, and believing it was
+cost this branch a second commit. `HEARD_AUDIO_LAG_MS` (originally 750) was
+documented as `PLAYBACK_JITTER_MS` (400) plus a sub-second network hop, and the
+measurement above refutes that decomposition: the cushion the client holds is
+the pacer's LEAD, moving one-for-one with it and barely at all with the fill
+target. The tempting conclusion — derive the ear-lag from the lead — is ALSO
+wrong, and was briefly shipped.
+
+**Why: the playback clock already subtracts the buffer.** `heardMs()` in
+`aai/host/transports/pipeline-heard.ts` is
+`audioMs - clock.remainingMs() - lagMs`, and `endsAtMs` inside that clock
+accumulates from `max(endsAtMs, now())` — so it runs ahead by whatever the lead
+is, and `remainingMs()` already reports the client's unplayed backlog. Anything
+the constant adds on top double-counts it. Driving the host's own arithmetic
+against the audio the ear really received (`heardErrorMs` in the test):
+
+| `lagMs` | perfect | typical | mobile |
+| --- | --- | --- | --- |
+| 0 | +8 ms | +55 ms | +130 ms |
+| 150 (shipped) | -142 ms | -95 ms | -20 ms |
+| 750 (the old value) | -742 ms | -694 ms | -619 ms |
+| 950 (`lead - burst/2`) | -942 ms | -894 ms | -819 ms |
+
+Positive means the cursor runs AHEAD of the ear — over-keeping, the failure
+`pipeline-heard.ts` names. At zero it is already accurate to tens of
+milliseconds, and the error is IDENTICAL at leads of 1000, 1500 and 2000, which
+is the evidence that what is left for the term is the one-way network hop and
+nothing else. The old 750 left the cursor ~694 ms early on a typical link — ~10
+words at English narration rates rather than the "word or two of redundancy" the
+asymmetry argument budgets for, pushing toward exactly the repetition
+`buildTailResumePrompt` exists to fix.
+
+**`PIPELINE_PLAYBACK_GRACE_MS` (750) is likewise fine and likewise
+lead-independent.** The requirement — how long after `endsAtMs` the caller is
+still hearing audio, so a smaller value misses a tail barge-in — measures 15 ms
+on a loopback link, 63 ms typical, 138 ms mobile, identical at every lead. It has
+~5x margin over the worst of those.
+
+The rule this leaves behind, since two derivations broke on it: **neither
+constant is the client's buffer depth.** Measure `heardMs()` against the ear, not
+the buffer against the lead.
 
 ### What was changed, and what deliberately was not
 
@@ -1107,21 +1136,22 @@ Three of those findings were acted on; the tests above are what keep them true.
   depends on whether a write happened to land before the first render callback.
 - **`PACER_BURST_MS` is 100**, up from a 200 that cost ~94 ms of absorbed freeze
   for four timer fires a second.
-- **`HEARD_AUDIO_LAG_MS` is derived** as
-  `CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS / 2`, which the bench measures within
-  ~2%. It and `PIPELINE_PLAYBACK_GRACE_MS` now
-  live in `aai/sdk/playback-timing-constants.ts`, because they are one physical
-  delay with two signs and keeping them apart is what let them drift.
+- **`HEARD_AUDIO_LAG_MS` is 150**, down from 750, because it covers only the
+  residual the playback clock cannot see — the one-way network hop. It and
+  `PIPELINE_PLAYBACK_GRACE_MS` live in `aai/sdk/playback-timing-constants.ts`,
+  which exists to keep the trap they share in one place.
+- **`CLIENT_AUDIO_LEAD_MS` is 1500**, up from 1000: the longest absorbed link
+  freeze goes 914 ms -> 1453 ms at no latency cost. What bounds it is bandwidth
+  rather than correctness — a mid-reply barge-in discards ~1.3 s of pushed speech
+  instead of ~0.85 s, paid on the metered links that can least afford it.
 
-**`CLIENT_AUDIO_LEAD_MS` was NOT raised**, though the measurements say it is
-the only thing that buys stall resilience and that doing so is free on the
-audio side (1453 ms absorbed at 1500 against 820 at 1000, same startup). It is
-blocked on `PIPELINE_PLAYBACK_GRACE_MS`, the last un-derived copy of the same
-quantity: at a 1500 ms lead the real delay is ~1450 ms and a barge-in in the
-reply's tail would fall outside that 750 ms window. Deriving it too is a
-change to BARGE-IN behaviour, and this bench measures buffer depth rather than
-barge-in outcomes — so it wants its own instrument first. That is the next
-piece of work here.
+**The bench grew a barge-in instrument to settle that**, because the claim that
+the grace blocked the lead was arithmetic rather than measurement, and wrong.
+`playoutVsHost` (in `_playback-bench-host.ts`) replays a render against the
+host's own playback-clock arithmetic and reports how long after its estimate the
+ear was still receiving audio, for a client that reports its backlog and one that
+does not. That is what turned "the grace is ~200 ms short" into "the requirement
+is 15-138 ms and the grace has 5x margin", and it is what unblocked the lead.
 
 **The pacer itself stays.** Removing it is the best thing that could happen to
 playback quality in isolation — unpaced, the client rides out any freeze — and

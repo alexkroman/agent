@@ -31,6 +31,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { sleep } from "@alexkroman1/aai/internal";
 
 /**
  * The rate a trace is captured at. Mirrors the SDK's own
@@ -117,6 +118,18 @@ export async function captureTtsTrace(opts: {
   voice?: string;
   provider?: string;
   sampleRate?: number;
+  /**
+   * Gap between deltas, in ms. **Set this to represent a real turn.**
+   *
+   * Sending every delta in one burst is what a capture does by default, and for
+   * the PLAYBACK question that is harmless — the pacer reshapes arrival anyway.
+   * For anything about SEGMENTATION it invalidates the measurement outright: the
+   * segmenter is handed the whole reply before it makes its first cut, so
+   * time-to-first-audio collapses to the service's own latency (~40 ms measured)
+   * and every segmentation rule scores the same. An LLM streams at ~30 ms a
+   * delta, which is what the segmenter really sees.
+   */
+  deltaIntervalMs?: number;
   /** Hard cap, so a provider that never sends `done` cannot hang the capture. */
   timeoutMs?: number;
 }): Promise<TtsTrace> {
@@ -145,7 +158,10 @@ export async function captureTtsTrace(opts: {
   session.on("error", (err) => reject(new Error(`tts error: ${err.message ?? String(err)}`)));
 
   const deltas = opts.deltas ?? splitIntoDeltas(opts.text);
-  for (const delta of deltas) session.sendText(delta);
+  for (const delta of deltas) {
+    session.sendText(delta);
+    if (opts.deltaIntervalMs) await sleep(opts.deltaIntervalMs);
+  }
   session.flush();
 
   const timeout = setTimeout(

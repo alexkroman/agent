@@ -46,6 +46,9 @@ import { playbackProcessorSource } from "./playback-processor.ts";
 /** The render quantum every AudioWorkletProcessor is called with. */
 export const QUANTUM = 128;
 
+/** Sampling interval of {@link RenderResult.earMs}. */
+export const EAR_SAMPLE_MS = 20;
+
 /** PCM16 on both wires. */
 const BYTES_PER_SAMPLE = 2;
 
@@ -182,6 +185,16 @@ export type RenderResult = {
   gapsMs: number[];
   /** `bufferedMs` values the worklet reported, as `playback_progress` would. */
   progressMs: number[];
+  /**
+   * Ground truth for the heard cursor: cumulative ms of the REPLY's own audio
+   * the ear had received, sampled every {@link EAR_SAMPLE_MS}.
+   *
+   * Concealed samples are excluded — they are fabricated, not reply audio — so
+   * this is exactly the quantity `heardMs()` in
+   * `aai/host/transports/pipeline-heard.ts` estimates, which is what makes the
+   * two comparable.
+   */
+  earMs: number[];
   /** How long the reply took to play out, first sample to last. */
   playedMs: number;
 };
@@ -219,9 +232,18 @@ function createAudibleTracker(msPerQuantum: number) {
   let firstQuantum = -1;
   let lastQuantum = -1;
   let gapQuanta = 0;
+  let concealed = true;
   return {
+    /**
+     * Whether the quantum just observed was concealment (or pre-roll silence)
+     * rather than the reply's own audio.
+     */
+    wasConcealed(): boolean {
+      return concealed;
+    },
     observe(out: Float32Array, q: number): void {
       if (out.some((v) => v !== 0)) {
+        concealed = false;
         if (firstQuantum < 0) firstQuantum = q;
         lastQuantum = q;
         if (gapQuanta > 0) {
@@ -230,6 +252,10 @@ function createAudibleTracker(msPerQuantum: number) {
         }
         return;
       }
+      // Before the turn's first real sample the worklet emits exact zeros and
+      // counts nothing; after it, a silent quantum is a concealed one. Either
+      // way it is not reply audio.
+      concealed = true;
       if (firstQuantum >= 0) gapQuanta++;
     },
     finish(): { gapsMs: number[]; timeToFirstAudioMs: number; playedMs: number } {
@@ -240,6 +266,30 @@ function createAudibleTracker(msPerQuantum: number) {
         playedMs:
           lastQuantum < 0 ? 0 : (lastQuantum - Math.max(firstQuantum, 0) + 1) * msPerQuantum,
       };
+    },
+  };
+}
+
+/**
+ * Sample how far into the REPLY the ear has got, every {@link EAR_SAMPLE_MS}.
+ *
+ * Its own object rather than four locals in the render loop, which was over the
+ * complexity cap: this is bookkeeping on a second clock, and the loop's job is
+ * the first one.
+ */
+function createEarRecorder(sampleRate: number) {
+  const earMs: number[] = [];
+  let realSamples = 0;
+  let nextSampleMs = 0;
+  return {
+    earMs,
+    /** Account for one rendered quantum, then emit any samples now due. */
+    observe(rendered: number, concealed: boolean, tMs: number): void {
+      if (!concealed) realSamples += rendered;
+      while (nextSampleMs <= tMs) {
+        earMs.push((realSamples / sampleRate) * 1000);
+        nextSampleMs += EAR_SAMPLE_MS;
+      }
     },
   };
 }
@@ -284,6 +334,7 @@ export function renderSchedule(
   const audible = createAudibleTracker(msPerQuantum);
 
   const chunks: Float32Array[] = [];
+  const ear = createEarRecorder(sampleRate);
   let next = 0;
   let donePosted = false;
   let stopped: PostedMessage | undefined;
@@ -309,6 +360,7 @@ export function renderSchedule(
     }
     audible.observe(out, q);
     chunks.push(out);
+    ear.observe(out.length, audible.wasConcealed(), tMs);
   }
 
   const progressMs = harness.posted
@@ -320,6 +372,7 @@ export function renderSchedule(
     sampleRate,
     stats: stopped?.stats ?? NO_CONCEALMENT,
     progressMs,
+    earMs: ear.earMs,
     ...audible.finish(),
   };
 }

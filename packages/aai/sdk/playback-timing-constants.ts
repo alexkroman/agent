@@ -13,14 +13,17 @@
  *   the voice actually got to?" — so erring in either direction costs, because
  *   it decides what an interrupted reply records in history.
  *
- * That asymmetry is real and is why they are two numbers rather than one. What
- * is NOT legitimate is the two disagreeing about the delay itself, which is what
- * happened: the second was a literal 750 decomposed from the playback worklet's
- * startup fill target, a constant that turned out to be redundant and no longer
- * exists. Measured against a recorded reply
- * (`aai-ui/worklets/playback-tuning.test.ts`), the delay is set by the SERVER's
- * pacing rather than by anything on the client — so one of them is derived from
- * the pacer now, and the other carries a note saying it is not yet.
+ * That asymmetry is real and is why they are two numbers rather than one.
+ *
+ * **What they have in common is the trap.** Both are applied on top of the
+ * playback clock in `pipeline-heard.ts`, whose `endsAtMs` already tracks how much
+ * forwarded audio the client has not played — so neither of them is the client's
+ * buffer depth, and sizing either one against that depth double-counts it. Both
+ * were sized that way at some point, and the second one twice. What is left for
+ * each is the residual the host cannot see: the network hop, and the client's
+ * fill target. Measured against a recorded reply
+ * (`aai-ui/worklets/playback-tuning.test.ts`), that residual is tens of
+ * milliseconds and does not move with the pacer's lead at all.
  *
  * Split out of `constants.ts` (which re-exports them, so `@alexkroman1/aai`
  * stays the one import path) when that file hit its length cap; the seam is this
@@ -28,8 +31,6 @@
  *
  * @internal
  */
-
-import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS } from "./client-audio-constants.ts";
 
 /**
  * Slack added to the pipeline transport's estimated client playback deadline
@@ -47,15 +48,20 @@ import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS } from "./client-audio-constants.t
  * erring in either direction costs. Tune this one for barge-in robustness
  * without assuming the other should follow.
  *
- * **That counterpart is now DERIVED from the pacer and this one is not, which is
- * the last un-derived copy of this quantity.** The delay was measured at
- * `CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS / 2` (~950 ms at the shipped pacing,
- * `aai-ui/worklets/playback-tuning.test.ts`), so this 750 is ~200 ms short — and
- * it is the reason `CLIENT_AUDIO_LEAD_MS` has NOT been raised despite that being
- * free on the audio side: at a 1500 ms lead the real delay is ~1450 ms and a
- * barge-in in the reply's tail would fall outside this window. Raising it is a
- * change to barge-in behaviour and wants its own measurement, which the bench
- * above does not do — it measures buffer depth, not barge-in outcomes.
+ * **750 is generous, it does NOT need to scale with the pacer, and both of those
+ * are measured.** The requirement is how long after `endsAtMs` the caller is
+ * still hearing audio, and `aai-ui/worklets/playback-tuning.test.ts` measures it
+ * by driving the real worklet: **15 ms on a loopback link, 63 ms on a typical
+ * one, 138 ms on a mobile one** — and identical at pacer leads of 1000, 1500 and
+ * 2000 ms, because `endsAtMs` accumulates from `max(endsAtMs, now())` and so
+ * already tracks the lead. What is left is the client's fill target plus the hop.
+ *
+ * It was briefly believed that this constant was ~200 ms SHORT and that it
+ * therefore blocked raising `CLIENT_AUDIO_LEAD_MS`. That was wrong in the
+ * same way the old {@link HEARD_AUDIO_LAG_MS} derivation was wrong — it compared
+ * the constant against the client's buffer depth, which the playback clock
+ * already accounts for. The margin here is ~5x the worst measured requirement,
+ * and the lead is not coupled to it.
  *
  * @internal
  */
@@ -63,43 +69,45 @@ export const PIPELINE_PLAYBACK_GRACE_MS = 750;
 
 /**
  * How far BEHIND the server's "audio forwarded" bookkeeping the caller's ear
- * actually is (pipeline mode). Subtracted from the estimated playback position
- * to get the heard cursor — the character of the reply the caller had heard
- * when a barge-in cut it — which decides both what an interrupted turn records
- * in history and where the resume prompt's anchor sits (`pipeline-heard.ts`).
+ * actually is (pipeline mode), OVER AND ABOVE what the playback clock already
+ * accounts for. Subtracted from the estimated playback position to get the heard
+ * cursor — the character of the reply the caller had heard when a barge-in cut it
+ * — which decides both what an interrupted turn records in history and where the
+ * resume prompt's anchor sits (`pipeline-heard.ts`).
  *
- * **It is DERIVED FROM THE PACER, and that is a correction.** It used to be the
- * literal 750, decomposed as `PLAYBACK_JITTER_MS` (400) plus an assumed
- * sub-second network hop — and both halves were wrong. The cushion the client
- * holds is not the worklet's fill target but the pacer's LEAD, because TTS
- * synthesizes ~20x faster than it plays and the pacer front-loads: measured
- * against a recorded reply (`aai-ui/worklets/playback-tuning.test.ts`), the
- * client's buffer sits at `CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS / 2`, moving
- * one-for-one with the lead (848 ms at 1000/200, 1456 ms at 1500/100, 1947 ms at
- * 2000/100) and by under 100 ms across the whole range of the fill target. The
- * term it was derived from turned out to be redundant and no longer exists.
+ * **"Over and above" is the whole of it, and two successive derivations got it
+ * wrong by ignoring that clause.** `heardMs()` is
+ * `audioMs - clock.remainingMs() - lagMs`, and `remainingMs()` is already the
+ * host's estimate of unplayed forwarded audio: `endsAtMs` accumulates each
+ * chunk's duration from `max(endsAtMs, now())`, so once the pacer runs ahead the
+ * estimate runs ahead with it. **The client's buffer depth is therefore already
+ * subtracted**, and anything this constant adds on top is double-counting it.
  *
- * So the two are the same physical quantity seen from the two ends of the wire,
- * and the expression is what keeps them from being tuned apart — raising the lead
- * for stall resilience used to silently invalidate this number, in the direction
- * that RECORDS WORDS THE CALLER NEVER HEARD. At the shipped pacing that error was
- * ~130 ms, roughly two words.
+ * So what is left for this term is the ONE-WAY NETWORK HOP — the only part of the
+ * delay the host genuinely cannot see. Measured
+ * (`aai-ui/worklets/playback-tuning.test.ts` drives the real worklet and compares
+ * the host's arithmetic against the audio the ear actually received): with this
+ * term at ZERO the cursor is already accurate to +8 ms on a loopback link, +55 ms
+ * on a typical one and +130 ms on a mobile one, and the error is IDENTICAL at
+ * pacer leads of 1000, 1500 and 2000 ms. 150 makes the residual non-positive on
+ * all three, which is the required direction: the roundings in `pipeline-heard.ts`
+ * all err toward UNDER-keeping.
  *
- * **The one-way network hop is deliberately NOT added back.** The old assumed
- * ~350 ms of it was a guess, and the closed loop that would price it already
- * exists: `pipeline-heard.ts` consumes the client's own `playback_progress`
- * reports and clamps the playout-end estimate upward with them. Deriving this
- * term from those reports too is the remaining work; until then the formula is at
- * least wrong in a direction that moves with its cause.
+ * **The two wrong derivations, because both are instructive.** It was a literal
+ * 750, decomposed as the playback worklet's old startup fill target (400) plus an
+ * assumed sub-second hop — which double-counted the buffer and left the cursor
+ * ~694 ms EARLY on a typical link. That is ~10 words at English narration rates,
+ * not the "word or two of redundancy" the asymmetry argument budgets for, and it
+ * pushes in exactly the direction of the repetition `buildTailResumePrompt` was
+ * built to fix. The first attempt to correct it made the term
+ * `CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS / 2` on the evidence that the client's
+ * buffer holds the pacer's lead — true, and the wrong conclusion, because that
+ * depth is what `remainingMs()` already reports. It measured the right quantity
+ * and attributed it to the wrong term, taking the error to ~894 ms.
  *
- * **It is a SECOND constant rather than a reuse of that grace, deliberately.**
- * The grace is added to a deadline where erring late is harmless (a spurious
- * barge-in cancel flushes an already-empty client buffer), so it may be tuned
- * generously for barge-in robustness. This one is SUBTRACTED from a position
- * where erring either way costs — too large drops words the caller really
- * heard, too small records words they never did — so tuning the grace must not
- * silently change what the record says. Both docs name each other.
+ * The lesson for the next change here: this constant is NOT the client's buffer
+ * depth. Measure `heardMs()` against the ear, not the buffer against the lead.
  *
  * @internal
  */
-export const HEARD_AUDIO_LAG_MS = CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS / 2;
+export const HEARD_AUDIO_LAG_MS = 150;
