@@ -15,6 +15,9 @@
  *   sandbox session URL (ensures the sandbox is running)
  * - `GET/POST /:slug/phone`     — carrier call-answering webhook: brokers the
  *   sandbox and answers with TwiML/TeXML pointing at its media-stream endpoint
+ * - `PUT/GET/HEAD /:slug/uploads/:id/:offset` — one window of a workflow upload's
+ *   bytes, in the platform's own bucket (upload-handler.ts). The one byte route that
+ *   is NOT brokered: a guest holds no bucket credential
  * - `GET/POST/DELETE /:slug/workflows/*` — the durable-workflow API, brokered
  *   to the guest. A workflow app's page has no other way to reach it — it is
  *   served from `/:slug/` and builds every URL from `location`
@@ -88,6 +91,12 @@ import {
   handleAgentPage,
   handleClientAsset,
 } from "./transport-websocket.ts";
+import { createMemoryUploadBytes, type UploadBytes } from "./upload-bytes.ts";
+import {
+  createUploadBytesHandler,
+  UPLOAD_BYTES_METHODS,
+  UPLOAD_BYTES_ROUTE,
+} from "./upload-handler.ts";
 import { createAgentWorkflowsHandler, createWorkflowRateLimitMw } from "./workflow-handler.ts";
 import { startWorkflowWakeSweep } from "./workflow-wake.ts";
 import {
@@ -183,6 +192,17 @@ export type OrchestratorOpts = {
    * forwarding route ends up untestable by omission.
    */
   guestFetch?: typeof globalThis.fetch;
+  /**
+   * Where a workflow upload's WINDOWS live — `PUT/GET/HEAD /:slug/uploads/:id/:offset`.
+   *
+   * Defaults to memory, which is right for tests and for a dev server: the route then
+   * serves windows itself rather than redirecting, because a Map has no origin to sign
+   * for. Production passes `createSupabaseUploadBytes`, and a deployment that forgot to
+   * loses nothing silently — a deployed agent's brokered client would be writing into a
+   * bucket this replica does not have, so the first upload fails at the route rather
+   * than being stored somewhere it will not be found.
+   */
+  uploadBytes?: UploadBytes;
   /**
    * True once shutdown has begun. Fails `/health` so the platform's proxy
    * stops routing here. (Upgrades on `/:slug/websocket` are pure handshake
@@ -406,6 +426,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     }),
     (c) => handleWorkflows(c, brokerOpts),
   );
+  // One window of a workflow upload's bytes. NOT brokered and not a guest route: the
+  // guest holds no bucket credential, so both the browser's parts and the guest's own
+  // reads come here. `upload-handler.ts` carries the argument, the key derivation and
+  // why reads redirect while writes do not.
+  const handleUploadBytes = createUploadBytesHandler(opts.uploadBytes ?? createMemoryUploadBytes());
+  agents.on([...UPLOAD_BYTES_METHODS], UPLOAD_BYTES_ROUTE, handleUploadBytes);
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")

@@ -168,11 +168,24 @@ describe("agentBootEnv", () => {
     });
   });
 
+  // The SAME value under a second name, and the duplication is load-bearing: this one
+  // claims "the thing at this URL serves my upload bytes", which only a managed
+  // platform can say, while `AAI_PUBLIC_BASE_URL` answers "where do third parties reach
+  // me" — a question a self-hosted deployment behind a proxy also answers. One key for
+  // both would put such an agent on a byte route nothing serves and 404 every upload.
+  it("names the upload broker separately, at the same URL", () => {
+    expect(agentBootEnv(boot, { AAI_PUBLIC_ORIGIN: "https://aai.example" })).toMatchObject({
+      AAI_UPLOAD_BROKER_URL: "https://aai.example/digest-desk",
+    });
+  });
+
   // Omitted rather than empty: a present-and-useless key is the shape a
   // `publicUrl: ""` bug takes, and minting `/.well-known/…` — a relative URL
-  // nothing can call back on — is worse than throwing.
-  it("omits the public base URL when this replica can name no origin", () => {
+  // nothing can call back on — is worse than throwing. Both keys, because a broker URL
+  // this replica cannot name is a byte route the guest would dial at `/uploads/…`.
+  it("omits both URLs when this replica can name no origin", () => {
     expect(agentBootEnv(boot, {})).not.toHaveProperty("AAI_PUBLIC_BASE_URL");
+    expect(agentBootEnv(boot, {})).not.toHaveProperty("AAI_UPLOAD_BROKER_URL");
   });
 
   // No request reaches a wake sweep or a blue-green handover, so the observed

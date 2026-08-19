@@ -102,16 +102,18 @@ export type ServerOptions = {
   /** Agent greeting, included in the `GET /client-config` response. */
   greeting?: string;
   /**
-   * Project directory the dev-mode upload folder hangs off (`.workflow-data/
-   * uploads`). Defaults to `process.cwd()`.
+   * Base URL of a PLATFORM that serves this agent's upload bytes for it.
    *
-   * Only read when the agent has no database — with one, uploads live there.
-   * `aai dev` passes the project directory for the reason
-   * `configureWorkflowWorld` does: the process cwd is wherever the developer
-   * was standing, so a second `aai dev` from elsewhere would see none of the
-   * first one's uploads.
+   * Its presence puts workflow uploads on the brokered path, where every byte operation
+   * goes to `<uploadBroker>/uploads/<id>/<offset>` and this process holds no bucket
+   * credential; absent, the store reads the `AAI_UPLOAD_STORAGE_*` keys and talks to a
+   * bucket itself, as `aai dev` does. `host/_upload-blobs.ts` has the argument.
+   *
+   * **Deliberately NOT `publicUrl`.** That one answers "where do third parties reach
+   * me", which a self-hosted agent behind a proxy also answers — reusing it would put
+   * such an agent on a byte route nothing serves. This is a claim about the DEPLOYMENT.
    */
-  workflowDataDir?: string;
+  uploadBroker?: string;
   /**
    * First look at every WebSocket upgrade. Return true to claim it (the
    * server then leaves the socket alone); return false to fall through to
@@ -232,7 +234,7 @@ export function createServer(options: ServerOptions): AgentServer {
    * new server on every save. See `installWorkflowSupport`.
    */
   const workflowSupport = installWorkflowSupport({
-    ...omitUndefined({ env, dataDir: options.workflowDataDir }),
+    ...omitUndefined({ env, uploadBroker: options.uploadBroker }),
     logger,
   });
 
@@ -250,6 +252,11 @@ export function createServer(options: ServerOptions): AgentServer {
   const workflowApi = createWorkflowApi({
     engine: () => runtime.workflows,
     uploads: workflowSupport.uploads,
+    // Derived from the one option rather than passed separately, so the two cannot
+    // disagree: a claim advertising a route nothing serves is a client sending
+    // megabytes into a 404 — which is exactly what reusing `publicUrl` here would do
+    // to a self-hosted agent behind a proxy.
+    directParts: Boolean(options.uploadBroker?.trim()),
     ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
     logger,
   });

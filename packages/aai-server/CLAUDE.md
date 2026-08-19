@@ -101,18 +101,16 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   payloads); memory emitter + store decorators for dev/tests.
   **A store decorator must wrap EVERY mutator, and a missed one is silent in
   both directions.** Production wraps nothing — the row's own UPDATE is what
-  Realtime streams — so a gap here is invisible in production and, in dev, is
-  a write that lands and bumps the version with no watcher ever hearing it;
-  there is no polling loop behind these streams to cover for it.
-  `withWorkspaceEvents` missed `patch`, which is the METADATA STAMP
-  (`stampWorkspaceMeta`, the only writer of `previewSlug`/`previewHash`/
-  `previewError`, `deployedSlug`/`deployedHash`, `databaseEnabled`), so under
-  `pnpm dev:aai-server` a finished preview deploy pushed no `project` frame at
-  all and the studio's Preview pane sat on its placeholder until a reload —
-  Publish and the database switch equally quiet. It survived because the
-  studio SSE test modelled the stamp as a read-modify-write (a `put`) instead
-  of calling `stampWorkspaceMeta`; a test standing in for a real writer has to
-  BE that writer.
+  Realtime streams — so a gap is invisible there and, in dev, is a write that
+  lands and bumps the version with no watcher hearing it; there is no polling
+  loop behind these streams to cover for it. `withWorkspaceEvents` missed
+  `patch`, the METADATA STAMP (`stampWorkspaceMeta`, the only writer of the
+  preview/deployed/database fields), so under `pnpm dev:aai-server` a finished
+  preview deploy pushed no `project` frame at all. It survived because the
+  studio SSE test modelled the stamp as a read-modify-write instead of calling
+  `stampWorkspaceMeta` — **a test standing in for a real writer has to BE that
+  writer.**
+
   **Wait out an emit with `memory.settled()`, never a microtask spin** — an
   emit is fire-and-forget in both directions, and the spin's iteration count is
   unknowable and silent when wrong. `settled()`'s own doc comment carries the
@@ -141,21 +139,18 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   unreferenced deploy blobs, runaway tenant queries, pg_cron's own run log),
   installed idempotently at boot.
 
-  **The orphan sweep drops its databases through `dblink`, because `DROP
-  DATABASE` cannot run in pg_cron's transaction** (`25001`, from a function and
-  from an explicit `BEGIN` alike). dblink runs it on a second connection, so it
-  is outside the caller's transaction — and it SURVIVES a rollback of that
-  transaction, which is what makes it work and why the drops must be the LAST
-  thing a job body does. Three things it needs, each verified: a non-loopback
-  host (pg_cron's worker connects over loopback, where a `trust` rule means the
-  password is never used and dblink answers `2F003` — hence `AAI_DBLINK_HOST`,
-  which carries an optional `:port`); the credential from Vault
-  (`PLATFORM_DB_DSN_SECRET`, never the job text, where it would be plaintext in
-  every `select * from cron.job`); and the extension in a schema NOTHING has
-  `USAGE` on (`aai_admin`, `20260817000000_dblink_admin.sql`) — dblink ships 41
-  functions, 39 executable by `PUBLIC`, and a tenant that can reach any of them
-  executes as the ADMIN. That escalation was reproduced; revoking the overloads
-  by name does not work, the schema is the only chokepoint that holds.
+  **The orphan sweep drops its databases through `dblink`, because `DROP DATABASE`
+  cannot run in pg_cron's transaction** (`25001`). dblink runs it on a second
+  connection, so it is outside the caller's transaction — and it SURVIVES a
+  rollback, which is why the drops must be the LAST thing a job body does. Three
+  things it needs, each verified and each argued at its own site: a non-loopback
+  host (`AAI_DBLINK_HOST` — over loopback a `trust` rule means the password is
+  never used and dblink answers `2F003`), the credential from Vault
+  (`PLATFORM_DB_DSN_SECRET`, never the job text), and the extension in a schema
+  NOTHING has `USAGE` on (`aai_admin`) — dblink ships 39 `PUBLIC`-executable
+  functions and a tenant reaching any of them executes as the ADMIN. That
+  escalation was reproduced; revoking the overloads by name does not hold, the
+  schema is the only chokepoint that does.
 
   **Per-app maintenance is `cron.schedule_in_database` instead** — pg_cron 1.6.4,
   usable by Supabase's non-superuser `postgres`, and it really fires into a
@@ -260,20 +255,12 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `SUPABASE_SERVICE_ROLE_KEY` as Realtime — Storage has no credential of its
   own), memory in dev/tests. The surface is `getItem`/`setItem`/`signedUrl`
   and nothing else (see "The guest fetches its own bundle" for the third).
-  It replaced unstorage's generic S3 driver plus a local
-  override of that driver's `getKeys` (which lists the whole bucket and reads
-  only the first 1000-key page): once workspaces moved to Postgres NOTHING
-  lists keys, so the override guarded a call no longer made, and the
-  `SUPABASE_S3_*` endpoint/region/key set was a third credential for a
-  project already reachable two other ways. A miss (404) MUST resolve `null`
-  while any other failure throws — the bundle store caches misses under a
-  sentinel and retries failures, so conflating them makes a live deploy read
-  as absent.
-
-  **Uploads carry a one-year `cacheControl`, and it is inert on purpose** —
-  correct by construction rather than as a guess, because the key is a content
-  hash. The comment on `cacheControl` in `blob-storage.ts` carries why setting an
-  inert directive now is what avoids re-uploading the bucket later.
+  It replaced unstorage's generic S3 driver plus a local `getKeys` override, and
+  the `SUPABASE_S3_*` credential triple with it — that module's own doc has the
+  argument. A miss (404) MUST resolve `null` while any other failure throws: the
+  bundle store caches misses under a sentinel and retries failures, so conflating
+  them makes a live deploy read as absent. (The inert one-year `cacheControl` is
+  argued at its own comment there too.)
 
   **`SUPABASE_SERVICE_ROLE_KEY` must be a SECRET key (`sb_secret_…`), and boot
   refuses an anon-authority one** — `assertServiceRoleKey` in `_boot.ts`, called
@@ -301,6 +288,13 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   declares it in `config.toml`), so nothing else would notice it going missing or
   turning public — but unlike the two guards above this one is a NETWORK call, and
   failing boot on a Storage blip would stop every container at once.
+- `upload-bytes.ts` / `upload-handler.ts` — `PUT/GET/HEAD /:slug/uploads/:id/:offset`,
+  one WINDOW of a workflow upload's bytes. The SAME bucket as deploy blobs, under
+  `uploads/` rather than `blobs/` — which is safe only because
+  `aai-sweep-blob-gc` filters `name like 'blobs/%'`; without that clause it would
+  delete every upload in the bucket on its first run, an upload having no
+  `worker_hash` to be found by. **Anything else put in this bucket owes the same
+  check.** See "A workflow upload's bytes are the PLATFORM's" below.
 - `deploy.ts` / `delete.ts` — deployment lifecycle.
 
   **A delete whose app-database deprovision fails FAILS (503)**, rather than
@@ -908,14 +902,12 @@ Two rules from it that a reader of THIS package needs in front of them:
   as `SandboxTimeoutError: Sandbox operation timed out` — the whole session
   fails, and the more regions are available the less often it happens.
 
-  The locality it bought was narrower than the original note claimed
-  ("every host↔guest exchange paid a transatlantic RTT inside voice turns",
-  after an unpinned server in us-east-1/AWS met guests in uk-london-1/OCI).
-  AGENT guests have no host channel at all — voice clients dial the sandbox
-  tunnel directly, so a voice turn crosses that hop **zero** times. Only the
-  studio's control-channel RPCs pay it, outside any latency budget. Re-pin
-  per environment if that ever stops being true; don't re-bake it into the
-  shared image.
+  The locality it bought was narrower than the note that justified it claimed:
+  AGENT guests have no host channel at all, so a voice turn crosses that hop
+  **zero** times and only the studio's control-channel RPCs pay it, outside any
+  latency budget. Re-pin per environment if that stops being true; don't re-bake
+  it into the shared image.
+
 - **Orphan cleanup differs per mode.** STUDIO guests: the host's
   WebSocket IS the liveness signal — a host that dies without teardown
   drops its sockets, and the harness self-exits after
@@ -1380,6 +1372,30 @@ checked with `guestUnderstandsBundleUrl` before being handed a URL it cannot
 read — is documented with the guest: see "Fetching its own bundle" in
 `packages/aai-guest/CLAUDE.md`.
 
+### A workflow upload's bytes are the PLATFORM's
+
+A deployed guest holds no bucket credential: it runs tenant code and the
+bucket is platform-wide, so a service key there is a cross-tenant read of
+every agent's uploads AND every agent's worker bundle. So the byte path is a
+platform route the guest brokers through
+(`aai/host/_upload-blobs-brokered.ts`, selected by the
+`AAI_UPLOAD_BROKER_URL` boot key — a SECOND name for
+`AAI_PUBLIC_BASE_URL`'s value, because that one is a claim a self-hosted
+deployment also makes; `agentBootEnv` carries why). The browser sends each
+window here and then tells the agent which one landed, so no upload byte
+reaches a guest or a tenant database.
+
+**`upload-handler.ts`'s module doc carries the argument** — the key
+derivation, why the route is as public as `/client-config` beside it, and why
+reads REDIRECT (a sixty-step fan-out would otherwise move a 200 MB recording
+through this process once per run) while writes do not. Read it there; this
+guide is the copy at a size cap. `aai/host/_upload-blobs.ts` has what those
+bytes cost when they were `bytea` rows in the app's own database.
+
+One thing a reader of THIS package needs in front of them: the key is
+composed from the slug Hono matched and never from anything the caller sends,
+because the prefix it must never be able to name is `blobs/<hash>`.
+
 ### Telephony — `GET/POST /:slug/phone`
 
 A carrier points a phone number at this route; it brokers the agent's sandbox
@@ -1719,16 +1735,12 @@ whether some replica is already serving this deploy and routes to that
 guest's tunnel — sessions dial the guest directly, so a peer's URL serves a
 client exactly as well as a local one.
 
-This replaced `aai_platform.sandbox_registry`, a lease table the owning
-replica heartbeated every 10s. What went with it: the heartbeat timer and its
-per-tick ownership re-check (which existed so every detach path — retire,
-terminate, idle self-exit, lost guest, blue-green handover — converged on an
-unregister without knowing the registry existed), the pg_cron sweep for
-crashed replicas' rows, `replicaId` on the agent path, and the accepted
-**stale-lease window**: the old design could hand out a dead peer URL for up
-to one lease after a crash, and a retired sandbox's URL for up to one
-heartbeat. A name is released when the sandbox stops, so `fromName` cannot
-return something that is not running.
+This replaced `aai_platform.sandbox_registry`, a lease table the owning replica
+heartbeated every 10s. With it went the heartbeat timer and its per-tick ownership
+re-check, the pg_cron sweep for crashed replicas' rows, `replicaId` on the agent
+path, and the accepted **stale-lease window** — that design could hand out a dead
+peer URL for up to one lease after a crash. A name is released when the sandbox
+stops, so `fromName` cannot return something that is not running.
 
 Three properties worth keeping:
 
@@ -1782,31 +1794,19 @@ platform host mode ever returns, run it in the guest on the bundle's runtime.
   (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
 
 There is deliberately **no load or chaos tier.** `packages/aai-server/load/`
-and `packages/aai-server/adversarial/` (plus the `load-and-adversarial` CI
-job and `docker-compose.load.yml`) were deleted, because what they asserted
-had drifted away from what they claimed to test:
-
-- The two "adversarial" tests deployed an agent whose tool body was a
-  `while (true) {}` spin or an unbounded allocation loop — **and then never
-  invoked it.** No message was ever sent on the socket and the deploy seeded
-  a fake `ASSEMBLYAI_API_KEY`, so no LLM existed to call the tool. Both
-  amounted to "an idle server stays under 90% memory." Their docstrings still
-  described "the isolate" and a "V8 heap (128 MB limit)" — the secure-exec
-  design replaced two architectures ago.
-- `lru-eviction.test.ts` configured `MAX_SLOTS` / `SLOT_IDLE_MS`, neither of
-  which exists in the server anymore; testcontainers passes unknown env vars
-  through silently, so it stayed green while testing nothing.
-- `ws-memory.test.ts`, `session-memory.test.ts`, and
-  `s2s-session-memory.test.ts` were benchmarks with `.test.ts` extensions —
-  their only assertions were shape checks like `results.length > 0` and
-  `sessions.length === TIERS.at(-1)`. `ws-memory` imported no aai-server code
-  at all; it measured the `ws` package.
-- `sandbox-storm.test.ts` swallowed deploy failures and passed on
-  `aliveCount > 0` — 1 of 14 sandboxes working was a pass.
-
-Two were real (`connection-flood`, `kv-corruption`), but not worth an 8-minute
-Docker job wired into the required `ci` gate, where a wall-clock memory
-threshold on a shared runner blocks merges when it flakes.
+and `packages/aai-server/adversarial/` (plus the `load-and-adversarial` CI job
+and `docker-compose.load.yml`) were deleted, because what they asserted had
+drifted away from what they claimed to test. The two "adversarial" tests
+deployed an agent whose tool body spun forever **and then never invoked it**,
+so both amounted to "an idle server stays under 90% memory"; `lru-eviction`
+configured `MAX_SLOTS`/`SLOT_IDLE_MS`, neither of which exists (testcontainers
+passes unknown env vars through silently, so it stayed green while testing
+nothing); three more were benchmarks with `.test.ts` extensions whose only
+assertions were `results.length > 0`, one of which imported no aai-server code
+at all; and `sandbox-storm` passed on `aliveCount > 0`, i.e. 1 of 14 sandboxes
+working. Two were real (`connection-flood`, `kv-corruption`) and not worth an
+8-minute Docker job in the required gate, where a wall-clock memory threshold
+on a shared runner blocks merges when it flakes.
 
 If you reintroduce load or chaos testing, the bar is: **the hostile code must
 actually execute** (put it at the bundle's top level so the boot-time load

@@ -5,7 +5,7 @@
  * How a `"use step"` body reads a file the run did not carry. A workflow's
  * input is journaled and replayed on every resume, so bytes travel to
  * `POST /workflows/uploads` instead and the input carries the id — which makes
- * these three the whole of what an author writes against.
+ * these the whole of what an author writes against.
  *
  * Its own capability rather than part of `utils`, because it is a promise about
  * a STORE: the id shape, the half-open window, and the clamping are what a
@@ -22,6 +22,7 @@ export {
   type ReadUploadOptions,
   readUpload,
   type UploadInfo,
+  type UploadRange,
   type UploadSlice,
   uploadInfo,
 } from "../../sdk/utils.ts";

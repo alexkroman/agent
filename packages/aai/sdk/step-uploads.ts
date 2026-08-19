@@ -136,7 +136,42 @@ export type UploadInfo = {
    * until it is finished.
    */
   complete: boolean;
+  /**
+   * Which windows have LANDED, for an unfinished upload that arrived as parts.
+   *
+   * Absent for every other upload, and that absence is the honest answer rather
+   * than an omission: a whole-file write has no windows (its bytes are one
+   * contiguous prefix, which {@link UploadInfo.size} already states), and a
+   * finished parts upload is covered end to end by construction.
+   *
+   * `size` remains the only field a READER may act on — it is the contiguous
+   * prefix, so it is how far the bytes can be read, and a range past it is a hole
+   * whatever this says. What this is for is the UPLOADER: a client re-sending a
+   * parts upload can skip the windows that are already stored instead of sending
+   * the file again, which is the difference between resuming a recording and
+   * starting it over.
+   *
+   * Sorted, non-overlapping, and half-open like every other range here.
+   *
+   * **A LIST rather than a single offset, and that is the whole of what it buys.**
+   * The obvious cheaper shape is one number — "everything up to here has landed" —
+   * which is what a sequential append protocol reports (tus's `Upload-Offset`, where
+   * a `PATCH` at any other offset is a 409). A single cursor cannot represent a GAP
+   * at all, so under it an upload whose second part was lost has to re-send
+   * everything after the first, and a fan-out that lands parts out of order has
+   * nothing to report until they happen to join up. {@link UploadInfo.size} already
+   * IS that number. This is the strictly larger fact.
+   *
+   * Absent also means "cannot say", not "nothing landed" — the store may decline to
+   * report windows, and an agent too old to have this field says nothing either. A
+   * reader's answer to an absent list is therefore to assume nothing about what is
+   * stored, which for an uploader means sending the file.
+   */
+  ranges?: readonly UploadRange[];
 };
+
+/** A half-open window of an upload's bytes, `[start, end)`. */
+export type UploadRange = { start: number; end: number };
 
 /** One window of an upload, as {@link readUpload} resolves it. */
 export type UploadSlice = {

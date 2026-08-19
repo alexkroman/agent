@@ -259,6 +259,10 @@ export function startGuestLogging(proc: GuestProcLike, label: string): void {
  * parameter, not env inheritance, so that rule still holds. The guest owns
  * the parse (an unusable value falls back to its default).
  *
+ * `AAI_UPLOAD_BROKER_URL` carries the same value as `AAI_PUBLIC_BASE_URL` under a
+ * second name on purpose — see the comment at its own line for why one key cannot
+ * serve both claims.
+ *
  * `AAI_PUBLIC_BASE_URL` is the newest key and the first whose consumer is the
  * BUNDLE'S SDK rather than the harness: the harness hands it straight through as
  * `createRuntime`'s `publicUrl`, and `ctx.workflows.publicWebhookUrl` is what
@@ -306,7 +310,15 @@ export function agentBootEnv(
     // trims and drops a blank anyway, but a key that is present and useless is
     // the shape a `publicUrl: ""` bug takes, and a URL a third party cannot
     // reach must not be minted from one.
-    ...(publicBaseUrl ? { AAI_PUBLIC_BASE_URL: publicBaseUrl } : {}),
+    // TWO keys at the same value, and the duplication is the point:
+    // `AAI_PUBLIC_BASE_URL` answers "where do third parties reach this agent", which a
+    // self-hosted deployment behind a proxy also answers, while `AAI_UPLOAD_BROKER_URL`
+    // claims "the thing at this URL serves my upload bytes" — which only a managed
+    // platform can say. Reusing the first would put a self-hosted agent on a byte route
+    // nothing serves and 404 every upload. See `aai/host/server.ts`'s `uploadBroker`.
+    ...(publicBaseUrl
+      ? { AAI_PUBLIC_BASE_URL: publicBaseUrl, AAI_UPLOAD_BROKER_URL: publicBaseUrl }
+      : {}),
   };
 }
 

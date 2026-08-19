@@ -342,6 +342,27 @@ export function createIdleController(opts: {
  * guest-owned: idle self-exit replaces the orphan timeout, and a drain
  * refuses new sessions then exits with the last one.
  */
+/**
+ * The agent's env as `createServer` may read it: everything except the host-mode gate.
+ *
+ * A deployed agent has NO host mode — `aai-server`'s guide has the argument, and the
+ * platform's own in-process version was deliberately removed. But the gate
+ * `createServer` consults is `isHostAllowed(env)`, so handing it the agent's env
+ * unfiltered would let a TENANT turn host mode on inside their own guest by setting one
+ * secret. That is not theirs to enable: `?host=1` lets a caller supply its own agent
+ * definition, the guest's `/websocket` has no authentication of its own, and the sandbox
+ * tunnel URL is public — so the caller would be driving that agent's provider
+ * credentials with a prompt of their choosing.
+ *
+ * Omitting the key rather than adding a `hostMode: "off"` option, because the SDK's
+ * contract is already "no env, no host mode" and this is the guest saying which env it
+ * is willing to have read. A new option would be a second way to express one rule.
+ */
+export function agentServerEnv(env: Record<string, string>): Record<string, string> {
+  const { AAI_ALLOW_HOST: _ignored, ...rest } = env;
+  return rest;
+}
+
 export async function mainAgent(port: number, host: string, token: string): Promise<void> {
   const state = emptyHarnessState();
 
@@ -402,6 +423,31 @@ export async function mainAgent(port: number, host: string, token: string): Prom
 
   const server = createServer({
     runtime,
+    // The agent's own env, and its ABSENCE here was a bug with three symptoms.
+    // `createServer` reads four things out of it, and a deployed agent got none:
+    //
+    // - `DATABASE_URL`, which is where a workflow upload's RECORD lives. Without it
+    //   `installWorkflowSupport` built a store with no database — so every deployed
+    //   agent's uploads went to the old file backend in the container's `/tmp` and
+    //   were gone by the time a resumed run read them, however the app database was
+    //   provisioned. That is the exact failure `aai/host/_upload-store.ts` warns
+    //   about, and it was silent until the file backend stopped existing.
+    // - `AAI_WORKFLOW_API_TOKEN`, the gate on `/workflows/*`. `aai-server`'s guide
+    //   says that gate "is what closes" the proxied workflow route; it was never
+    //   applied, so an agent that set the secret was still serving the API open.
+    // - `AAI_SESSION_EVENTS_TOKEN`, the same shape one route over.
+    //
+    // The fourth is `AAI_ALLOW_HOST`, and it must NOT ride along — hence
+    // `agentServerEnv`.
+    env: agentServerEnv(boot.env),
+    // The platform's own origin plus this agent's slug, translated from one `AAI_*`
+    // key exactly as `ensureRuntime` translates `AAI_PUBLIC_BASE_URL` for
+    // `publicWebhookUrl`. A SECOND key carrying the same value, because the two claims
+    // are different and a self-hosted agent makes only one of them — `agentBootEnv` in
+    // aai-server carries the argument. Its presence is what puts an upload's bytes on
+    // the brokered path, where the platform holds the bucket credential and this guest
+    // holds none (see `aai/host/_upload-blobs.ts`).
+    ...omitUndefined({ uploadBroker: process.env.AAI_UPLOAD_BROKER_URL?.trim() || undefined }),
     // The guest is the authority on the agent's public client config: the
     // platform's `GET /:slug/client-config` broker PROXIES this server's
     // own `/client-config` for name/greeting, so the bundle's live agent

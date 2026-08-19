@@ -19,7 +19,6 @@
  * the steps that matter most.
  */
 
-import { join } from "node:path";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { publishStepFetch } from "../sdk/step-fetch.ts";
 import { publishStepReporter } from "../sdk/step-report.ts";
@@ -29,17 +28,24 @@ import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { createStepReporter } from "./workflow-report.ts";
-import { createUploadStore, type UploadStore } from "./workflow-uploads.ts";
+import { createUploadStore, resolveUploadBlobs, type UploadStore } from "./workflow-uploads.ts";
 
 /**
- * Where the file backend keeps uploads when there is no database.
+ * How many connections the upload pool may hold.
  *
- * Inside the Local World's own directory, so a project has ONE place its dev
- * workflow state lives and one thing to delete to start over.
+ * Two, and it went back DOWN when the bytes left the database. It was sized off the
+ * client's fan-out — `UPLOAD_PART_CONCURRENCY + 2` — because every concurrent `PUT`
+ * was a request writing chunk ROWS for as long as it lasted, so the parallelism the
+ * fan-out exists for was being serialized back down by the store behind it. A part
+ * is now one small `update` naming a window that landed, which holds a connection
+ * for a round trip rather than for a megabyte, so the pool no longer has to be as
+ * wide as the fan-out. Two is one writer plus the reader that runs WHILE a file is
+ * arriving, which is the shape the streaming flow is built on: a run polls `info`
+ * and reads windows through `readUpload`.
+ *
+ * That the number could come back down is the measurable half of the change — see
+ * `_upload-blobs.ts`, "The pool".
  */
-export const UPLOAD_DIR_NAME = join(".workflow-data", "uploads");
-
-/** How many connections the upload pool may hold. */
 const UPLOAD_DB_POOL = 2;
 
 /**
@@ -70,23 +76,30 @@ type WorkflowSupport = {
 /**
  * Build the upload store for one server and publish all three step slots.
  *
- * `DATABASE_URL` in the env picks the Postgres backend, which is the only
- * durable one — an upload in a container's filesystem is gone by the time a
- * resumed run reads it.
- * @param opts.dataDir - Project directory the file backend's folder hangs off.
- *   Defaults to `process.cwd()`, matching what the Local World does with its
- *   own state.
+ * An upload needs BOTH halves — `DATABASE_URL` for the record and somewhere to put
+ * the bytes — and a server missing either gets a store that refuses by name
+ * (`createUnavailableUploadStore`). There is deliberately no local-directory
+ * fallback any more: it stored a dev upload perfectly well and lost it by the time
+ * a resumed run read it, with nothing reporting a thing.
+ *
  * @internal
  */
 export function installWorkflowSupport(opts: {
   /**
-   * The agent's env, read for three keys and nothing else: `DATABASE_URL`
-   * (which storage backend), and the upload cap. Taking the RECORD rather than
-   * the three values keeps the key names in one module — the caller would
-   * otherwise spell them at the call site, which is where they drift.
+   * The agent's env. Read for `DATABASE_URL`, the upload cap, and the three
+   * `AAI_UPLOAD_STORAGE_*` keys — nothing else. Taking the RECORD rather than the
+   * values keeps the key names in one module; the caller would otherwise spell them
+   * at the call site, which is where they drift.
    */
   env?: Record<string, string> | undefined;
-  dataDir?: string | undefined;
+  /**
+   * Base URL of a platform serving this agent's upload bytes, when there is one.
+   *
+   * Its PRESENCE selects the brokered byte path, which is the security boundary rather
+   * than a preference — see `resolveUploadBlobs`, and `ServerOptions.uploadBroker` for
+   * why this is not `publicUrl`.
+   */
+  uploadBroker?: string | undefined;
   logger: Logger;
 }): WorkflowSupport {
   // A pool of its own rather than the runtime's `ctx.db`: the runtime is built
@@ -99,12 +112,14 @@ export function installWorkflowSupport(opts: {
     : undefined;
   const store = createUploadStore({
     db,
-    dir: join(opts.dataDir ?? process.cwd(), UPLOAD_DIR_NAME),
-    // A value that is not a positive number is IGNORED rather than treated as
-    // zero: a typo'd env var must not make every upload fail as "too large".
-    // An operator knob rather than a tuning one: what it bounds is how much of
-    // their storage one upload may take, and only they know that.
-    ...omitUndefined({ maxBytes: positiveBytes(opts.env?.[MAX_UPLOAD_BYTES_ENV]) }),
+    ...omitUndefined({
+      blobs: resolveUploadBlobs(omitUndefined({ env: opts.env, broker: opts.uploadBroker })),
+      // A value that is not a positive number is IGNORED rather than treated as
+      // zero: a typo'd env var must not make every upload fail as "too large".
+      // An operator knob rather than a tuning one: what it bounds is how much of
+      // their storage one upload may take, and only they know that.
+      maxBytes: positiveBytes(opts.env?.[MAX_UPLOAD_BYTES_ENV]),
+    }),
   });
   publishUploadReader(store);
   publishStepReporter(createStepReporter(opts.logger));

@@ -13,30 +13,63 @@
  * invariants every reader depends on (an ordinary upload does not exist until it is
  * finished; a STREAMED one exists from its first byte and says so with `complete`;
  * a PARTS one arrives over several connections at once and publishes only its
- * contiguous prefix as `size`).
- * Read it before changing a backend. The backends themselves are
- * `_upload-store-postgres.ts` (the deployed case, and the only durable one) and
- * `_upload-store-files.ts` (`aai dev` with no `DATABASE_URL`).
+ * contiguous prefix as `size`). Read it before changing the store.
+ *
+ * ## One store, two things it needs, and neither is optional
+ *
+ * `_upload-store-blobs.ts` is the only store: the RECORD is a row in the app's own
+ * database, and the BYTES are objects reached through {@link UploadBlobs}. There
+ * used to be two backends — chunk rows in Postgres, files in a dev directory — and
+ * `_upload-blobs.ts` carries why the bytes left the database.
+ *
+ * So an upload needs a database AND a bucket, and a deployment with either one
+ * missing has no uploads at all. That case is answered by
+ * {@link createUnavailableUploadStore} rather than by a third backend: every method
+ * throws, and the message NAMES what is missing. The alternative — quietly falling
+ * back to a directory, or to memory — is what the old file backend was, and it is
+ * the shape this repo keeps paying for: an upload that stores perfectly well and is
+ * gone by the time a resumed run reads it, with nothing reporting a thing.
  *
  * This module re-exports the contract's names so it stays the ONE import path for
- * the store: `runtime-barrel.ts` and six call sites already name it, and the split
- * into backends is packaging rather than a move of the public surface.
+ * the store: `runtime-barrel.ts` and six call sites already name it.
  */
 
 import { MAX_WORKFLOW_UPLOAD_BYTES } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
+import type { UploadInfo } from "../sdk/step-uploads.ts";
+import type { UploadBlobs } from "./_upload-blobs.ts";
+import { createBrokeredUploadBlobs } from "./_upload-blobs-brokered.ts";
+import { createHttpUploadBlobs } from "./_upload-blobs-http.ts";
+import {
+  UPLOAD_STORAGE_BUCKET_ENV,
+  UPLOAD_STORAGE_KEY_ENV,
+  UPLOAD_STORAGE_URL_ENV,
+} from "./_upload-env.ts";
 import type { UploadStore } from "./_upload-store.ts";
-import { createFileUploadStore } from "./_upload-store-files.ts";
-import { createPostgresUploadStore } from "./_upload-store-postgres.ts";
+import { createBlobUploadStore } from "./_upload-store-blobs.ts";
 
+export {
+  createMemoryUploadBlobs,
+  partKey,
+  partsCovering,
+  partsOf,
+  rangesOf,
+  type UploadBlobs,
+  type UploadPart,
+} from "./_upload-blobs.ts";
+export { createHttpUploadBlobs, type HttpUploadBlobsOptions } from "./_upload-blobs-http.ts";
+export {
+  UPLOAD_STORAGE_BUCKET_ENV,
+  UPLOAD_STORAGE_KEY_ENV,
+  UPLOAD_STORAGE_URL_ENV,
+} from "./_upload-env.ts";
 export {
   assertPartOffset,
   assertPartTotal,
   type ByteRange,
   contiguousBytes,
-  mergeRanges,
   UnknownUploadError,
-  UPLOAD_CHUNKS_TABLE,
   UPLOADS_TABLE,
   UploadIdTakenError,
   type UploadMeta,
@@ -45,25 +78,146 @@ export {
   UploadTooLargeError,
 } from "./_upload-store.ts";
 
+/** Where one deployment's upload objects live, under whichever bucket it uses. */
+export const UPLOAD_KEY_PREFIX = "uploads";
+
+/**
+ * The `.env` block a local project needs, spelled out in the refusal.
+ *
+ * A message that names three variables and leaves the reader to work out the shape is
+ * how "configure it" turns into a search; this is copy-pasteable. `DATABASE_URL` is in
+ * it because uploads need BOTH halves and a reader who has only just discovered the
+ * first is about to discover the second.
+ *
+ * The bucket is `blobs` rather than `uploads`, which is not a typo and cost a real
+ * confusion: `blobs` is the one bucket the local stack DECLARES
+ * (`supabase/config.toml`, applied by `supabase start`), and an upload lands under an
+ * `uploads/` PREFIX inside it — the same layout production uses beside its
+ * `blobs/<sha256>` deploy artifacts. Nothing creates a bucket, here or there.
+ */
+const UPLOAD_ENV_EXAMPLE = [
+  // COMPOSED rather than written as one literal: biome's `noSecrets` reads a
+  // `user:password@host` URL as a password in a URL, and it is right to — the
+  // alternative is a suppression comment, which would spend escape-hatch budget on a
+  // local default. Same trade `store-conformance.ts` makes for a function name and
+  // `with-test-pg.mjs` for its own candidate URL.
+  `DATABASE_URL=postgresql://${["postgres", "postgres"].join(":")}@127.0.0.1:54322/postgres`,
+  `${UPLOAD_STORAGE_URL_ENV}=http://127.0.0.1:54321`,
+  `${UPLOAD_STORAGE_KEY_ENV}=<SERVICE_ROLE_KEY>`,
+  // `blobs`, not `uploads`: it is the one bucket the local stack declares, and an
+  // upload lands under an `uploads/` PREFIX inside it — see `UPLOAD_KEY_PREFIX`.
+  `${UPLOAD_STORAGE_BUCKET_ENV}=blobs`,
+].join("\n");
+
 /**
  * Build the store for one server.
  *
- * Takes a resolver for the database rather than a URL so the caller decides
- * what "has storage" means, and takes the directory unconditionally: the file
- * backend is what answers when there is no database, and a server with neither
- * would have no uploads at all, which is a worse dev experience than a
- * directory nobody asked for.
+ * Both `db` and `blobs` are required for a working store, and passing neither is a
+ * legitimate call: a `createServer` with no `DATABASE_URL` and no bucket still has
+ * to answer the upload routes, and what it answers is a refusal naming what it
+ * lacks.
  *
  * @internal
  */
 export function createUploadStore(opts: {
   db?: Db | undefined;
-  dir: string;
+  blobs?: UploadBlobs | undefined;
+  /** Key prefix for this deployment's objects. Defaults to {@link UPLOAD_KEY_PREFIX}. */
+  prefix?: string | undefined;
   /** Cap for a body that names none. Defaults to `MAX_WORKFLOW_UPLOAD_BYTES`. */
   maxBytes?: number | undefined;
 }): UploadStore {
-  const maxBytes = opts.maxBytes ?? MAX_WORKFLOW_UPLOAD_BYTES;
-  return opts.db
-    ? createPostgresUploadStore(opts.db, maxBytes)
-    : createFileUploadStore(opts.dir, maxBytes);
+  const missing = [
+    ...(opts.db ? [] : ["a database (`DATABASE_URL`)"]),
+    ...(opts.blobs ? [] : [`somewhere to put the bytes (\`${UPLOAD_STORAGE_URL_ENV}\`)`]),
+  ];
+  if (!(opts.db && opts.blobs)) return createUnavailableUploadStore(missing.join(" and "));
+  return createBlobUploadStore({
+    db: opts.db,
+    blobs: opts.blobs,
+    prefix: opts.prefix ?? UPLOAD_KEY_PREFIX,
+    maxBytes: opts.maxBytes ?? MAX_WORKFLOW_UPLOAD_BYTES,
+  });
+}
+
+/**
+ * Resolve where bytes go from an agent's environment, or `undefined`.
+ *
+ * Two shapes, and which one applies is decided by whether a PLATFORM said it serves
+ * this agent's bytes — see `_upload-blobs.ts` for why that split is the security
+ * boundary rather than a preference:
+ *
+ * - **`broker` set** → brokered. A deployed guest sends every byte operation to the
+ *   platform surface holding the bucket credential. Checked FIRST, so a stray service
+ *   key in a deployed agent's env cannot take precedence over the boundary — an agent
+ *   author may set any env var they like.
+ * - **the three `AAI_UPLOAD_STORAGE_*` keys set** → direct. `aai dev` and a
+ *   self-hosted server talk to the operator's own bucket with the operator's own
+ *   key, which is theirs to hold.
+ *
+ * Neither → `undefined`, and {@link createUploadStore} refuses by name.
+ *
+ * @internal
+ */
+export function resolveUploadBlobs(opts: {
+  env?: Record<string, string> | undefined;
+  /** See `ServerOptions.uploadBroker` — a claim about the deployment, not a URL. */
+  broker?: string | undefined;
+  fetch?: typeof globalThis.fetch | undefined;
+}): UploadBlobs | undefined {
+  const base = opts.broker?.trim();
+  if (base) {
+    return createBrokeredUploadBlobs({ base, ...omitUndefined({ fetch: opts.fetch }) });
+  }
+  const url = opts.env?.[UPLOAD_STORAGE_URL_ENV]?.trim();
+  const serviceKey = opts.env?.[UPLOAD_STORAGE_KEY_ENV]?.trim();
+  const bucket = opts.env?.[UPLOAD_STORAGE_BUCKET_ENV]?.trim();
+  // All three or none: two of three is a half-configured store, and letting that
+  // resolve would turn a typo into a 500 on the first upload instead of a refusal
+  // that names the key.
+  if (!(url && serviceKey && bucket)) return undefined;
+  return createHttpUploadBlobs({
+    url,
+    serviceKey,
+    bucket,
+    ...omitUndefined({ fetch: opts.fetch }),
+  });
+}
+
+/**
+ * A store that refuses everything, naming what this deployment is missing.
+ *
+ * Every method throws the same message, including {@link UploadStore.info} and
+ * {@link UploadStore.read} — a reader that answered "no such upload" would make a
+ * misconfiguration indistinguishable from an id nobody uploaded, which is exactly
+ * the confusion an operator cannot debug from the outside.
+ *
+ * @internal
+ */
+export function createUnavailableUploadStore(missing: string): UploadStore {
+  // REJECTS rather than throwing synchronously. Every method here is declared async,
+  // and a caller that composes one into a `Promise.all` or attaches a `.catch` gets
+  // an unhandled throw instead of the failure it asked for — a difference the route's
+  // own `try` hides and a step's does not.
+  const refuse = <T>(): Promise<T> =>
+    Promise.reject(
+      new Error(
+        `Workflow uploads need ${missing}.\n\n` +
+          "A DEPLOYED agent gets both from the platform, and its env comes from Vault rather " +
+          "than from your project's `.env` — so `DATABASE_URL` appears only once the app " +
+          "database is provisioned: `aai storage enable`.\n\n" +
+          "Running LOCALLY, both come from the project's `.env`. `supabase start`, then " +
+          "`supabase status -o env` for API_URL and SERVICE_ROLE_KEY:\n\n" +
+          `${UPLOAD_ENV_EXAMPLE}\n`,
+      ),
+    );
+  return {
+    create: refuse<UploadInfo>,
+    stream: refuse<UploadInfo>,
+    beginParts: refuse<UploadInfo>,
+    writePart: refuse<UploadInfo>,
+    recordPart: refuse<UploadInfo>,
+    info: refuse<UploadInfo | undefined>,
+    read: refuse<Uint8Array>,
+  };
 }

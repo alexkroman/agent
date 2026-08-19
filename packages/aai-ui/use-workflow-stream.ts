@@ -49,14 +49,18 @@
  * - **Reporting the bytes.** The same `UploadStatus` `useWorkflowSubmit` reports,
  *   so `<UploadProgressBar>` renders either without knowing which hook it came from.
  *
- * ## A failed upload CANCELS the run
+ * ## A failed upload is RESUMED once, and only then cancels the run
  *
  * An upload that dies stays in the store, incomplete, and `complete` never becomes
  * true — so a run left behind polls until its own abandonment bound and then fails,
- * minutes after the page has already reported the error. Cancelling is the honest
- * end to a submission that did not happen. The cost is that work already done is
- * thrown away with the run; a caller who wants to resume instead drives
- * `api.uploadStream` and `api.uploadInfo` directly.
+ * minutes after the page has already reported the error.
+ *
+ * That used to be the whole story, and it threw away a run and a file together for
+ * what is usually one dropped connection near the end. So a failure gets one more
+ * attempt with `resume: true`, which sends only the windows the store does not
+ * already have (`UploadInfo.ranges`) — the run is still waiting on the same id, so
+ * a resume that succeeds is invisible to it. Cancelling is what happens when THAT
+ * fails too, and it is the honest end to a submission that did not happen.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
@@ -86,8 +90,8 @@ export type UseWorkflowStreamOptions = {
    * the uplink sees the same growing file whether one connection or four are
    * filling it. What changes is only how fast it grows.
    *
-   * `true` for the defaults, or `{ partBytes, concurrency }` to tune them. See
-   * `UploadOptions.parallel`.
+   * **On by default.** `false` opts out, `{ partBytes, concurrency }` tunes it.
+   * See `UploadOptions.parallel`.
    */
   parallel?: UploadParallel;
 };
@@ -184,12 +188,25 @@ export function useWorkflowStream<R = unknown>(
         started = await client.start(workflow, payload, omitUndefined({ key }));
         setRunId(started);
         if (!chosen) return;
-        await client.uploadStream(id, chosen, {
-          name: chosen.name,
-          onProgress: (progress) =>
-            setUpload({ ...progress, name: chosen.name, index: 1, count: 1 }),
-          ...omitUndefined({ parallel }),
-        });
+        const send = async (resume: boolean): Promise<void> => {
+          await client.uploadStream(id, chosen, {
+            name: chosen.name,
+            onProgress: (progress) =>
+              setUpload({ ...progress, name: chosen.name, index: 1, count: 1 }),
+            // `resume` only on the SECOND attempt: a fresh id has nothing to
+            // resume, and claiming otherwise waives the refusal that makes a
+            // caller-chosen id safe.
+            ...omitUndefined({ parallel, resume: resume ? true : undefined }),
+          });
+        };
+        // One resume before giving up, because the alternative throws away a run
+        // AND a file. An upload that dies has usually landed most of itself, and
+        // `resume` sends only the windows that are missing — so the second attempt
+        // is short, and the run watching this id never learns anything happened.
+        // Once rather than a loop: a second failure is a signal about the link
+        // rather than a coincidence, and a page cannot retry forever on a person's
+        // behalf.
+        await send(false).catch(async () => await send(true));
         // See the module doc: the run is asleep between polls, so without this it
         // learns the upload is complete a poll interval late. Best-effort.
         await client.wake(started).catch(() => undefined);

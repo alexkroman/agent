@@ -625,11 +625,11 @@ form and is the worked example.
 
 Both upload paths above are ONE request, so the file moves at one connection's
 throughput — which over any distance is a fraction of the link, and for a
-recording that is the wait a person is sitting through. `parallel` is the option
-that splits it: `useWorkflowSubmit(w, { parallel: true })` and
-`useWorkflowStream(w, { parallel: true })` both pass it to the SDK, which cuts
-the file into megabyte-aligned parts and sends four at once against
-`POST|PUT /workflows/uploads/:id/parts`.
+recording that is the wait a person is sitting through. So a file is CUT by
+default: both `useWorkflowSubmit` and `useWorkflowStream` hand the SDK
+megabyte-aligned parts and it sends four at once against
+`POST|PUT /workflows/uploads/:id/parts`. `parallel` is the option that tunes it
+(`{ partBytes, concurrency }`) or turns it off (`false`).
 
 Three things worth knowing at a call site:
 
@@ -637,13 +637,21 @@ Three things worth knowing at a call site:
   run polls is the store's `size`, which for a parts upload is the CONTIGUOUS
   prefix — so a run reading ahead of the uplink sees the same growing file
   whether one connection or four are filling it, and only the rate changes.
+- **A failed upload is RESUMED once before the run is cancelled.**
+  `useWorkflowStream` re-sends with `resume: true`, which fills in only the
+  windows the store does not already have (`UploadInfo.ranges`) — the run is still
+  waiting on the same id, so a resume that works is invisible to it. Once rather
+  than a loop: a second failure is a signal about the link, and a page cannot
+  retry forever on a person's behalf.
 - **`parallel` splits ONE file; a form's files stay sequential.** Two recordings
   sent at once would compete for the same link with two bars to explain it, which
   is the shape `uploadFiles` was written to avoid.
 - **It degrades rather than failing** — a small file, a string body, or an agent
   deployed before the `/parts` routes existed all send the single request instead
-  — so a page may turn it on unconditionally. `sdk/workflow-upload-parts.ts` owns
-  the causes.
+  — which is what makes it safe as the default rather than something each page
+  opts into. It is also the only upload path that RETRIES a dropped part, so
+  opting out costs recoverability as well as speed.
+  `sdk/workflow-upload-parts.ts` owns the causes.
 
 `transcription-workflow` renders it as a checkbox beside the mode radios,
 deliberately: it describes the UPLOAD, and all three of its flows have one.

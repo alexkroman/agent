@@ -8,6 +8,7 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useTempDirs } from "./_test-utils.ts";
 import {
+  agentServerEnv,
   createAgentRequestHandler,
   createIdleController,
   createManageHandler,
@@ -522,5 +523,49 @@ describe("createIdleController", () => {
     vi.advanceTimersByTime(3_600_000);
     expect(exit).not.toHaveBeenCalled();
     ctl.stop();
+  });
+});
+
+describe("the env a deployed agent's server may read", () => {
+  test("carries DATABASE_URL, which is what a workflow upload's RECORD needs", () => {
+    // The bug this exists for: `createServer` was called with no `env` AT ALL, so
+    // `installWorkflowSupport` saw no `DATABASE_URL` however the app database was
+    // provisioned — and every deployed agent's uploads went to the old file backend in
+    // the container's `/tmp`, gone by the time a resumed run read them. Silent until
+    // that backend stopped existing.
+    expect(agentServerEnv({ DATABASE_URL: "postgres://app@db/x" })).toEqual({
+      DATABASE_URL: "postgres://app@db/x",
+    });
+  });
+
+  test("carries the two API tokens, which were never applied either", () => {
+    // `aai-server`'s guide says the guest's own `AAI_WORKFLOW_API_TOKEN` gate "is what
+    // closes" the proxied workflow route. With no env reaching `createServer` it was
+    // never read, so an agent that set the secret was still serving that API open.
+    expect(
+      agentServerEnv({
+        AAI_WORKFLOW_API_TOKEN: "w",
+        AAI_SESSION_EVENTS_TOKEN: "s",
+      }),
+    ).toEqual({ AAI_WORKFLOW_API_TOKEN: "w", AAI_SESSION_EVENTS_TOKEN: "s" });
+  });
+
+  test("DROPS the host-mode gate, which is not a tenant's to set", () => {
+    // A deployed agent has no host mode. `?host=1` lets a caller supply its own agent
+    // definition, the guest's `/websocket` has no authentication of its own, and the
+    // sandbox tunnel URL is public — so honouring this key would let anyone holding that
+    // URL drive the agent's provider credentials with a prompt of their choosing, on the
+    // strength of one secret the agent's author may not realise does that.
+    const env = agentServerEnv({ AAI_ALLOW_HOST: "1", DATABASE_URL: "postgres://app@db/x" });
+    expect(env).not.toHaveProperty("AAI_ALLOW_HOST");
+    expect(env.DATABASE_URL).toBe("postgres://app@db/x");
+  });
+
+  test("drops it whatever spelling turns the gate ON", () => {
+    // `isHostAllowed` accepts 1/true/yes/on, so a filter keyed on the VALUE would leak
+    // three of them. Keyed on the NAME, so it cannot.
+    for (const value of ["1", "true", "yes", "on", "TRUE"]) {
+      expect(agentServerEnv({ AAI_ALLOW_HOST: value })).toEqual({});
+    }
   });
 });

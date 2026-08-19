@@ -78,17 +78,47 @@ export const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 export const UPLOAD_PART_CONCURRENCY = 4;
 
 /**
- * How many times a part is sent before the upload gives up on it.
+ * How many times a request on the parts path is sent before the upload gives up.
  *
  * A parallel upload has N connections' worth of chances to lose one, which is the
- * cost of the speed — so ONE retry is what makes the shape pay: the store accepts
- * a repeated part as the same part (its rows are keyed by offset), a transient
+ * cost of the speed — so retrying is what makes the shape pay: the store accepts a
+ * repeated part as the same part (its rows are keyed by offset), a transient
  * failure is the ordinary reason a part dies, and the alternative is throwing away
- * every other part that already landed. Two attempts rather than more because a
- * second failure is a signal about the link rather than a coincidence, and a
- * caller waiting on a form would rather be told.
+ * every other part that already landed.
+ *
+ * **Four, and two was too few for the reason the backoff exists.** The argument for
+ * two was that "a second failure is a signal about the link rather than a
+ * coincidence" — true of a link, and false of the failure this actually meets,
+ * which is a guest at capacity answering 503. Those arrive in BURSTS, because a
+ * fan-out hits the limit together, and the old budget spent its one retry
+ * immediately: two rejections a few milliseconds apart, from a server whose own
+ * answer said to come back. With {@link UPLOAD_RETRY_BASE_MS} between them the
+ * attempts sample a window of seconds rather than of milliseconds, which is the
+ * thing being waited out. Four of those is ~4-11s before a part is called lost —
+ * against an upload measured in minutes, and against the alternative of losing all
+ * of it.
  */
-export const UPLOAD_PART_ATTEMPTS = 2;
+export const UPLOAD_PART_ATTEMPTS = 4;
+
+/**
+ * The first backoff between attempts, doubling from there.
+ *
+ * Half a second is above the round trip that just failed and far under the poll
+ * a run watching this upload is on, so a retried part is invisible to everything
+ * except the thing it is waiting out.
+ */
+export const UPLOAD_RETRY_BASE_MS = 500;
+
+/**
+ * The longest wait between attempts, `Retry-After` included.
+ *
+ * The far side's own number is honoured up to here and no further: the agent's
+ * 503s carry single-digit seconds, and something upstream of it that asks for two
+ * minutes is asking a person watching an upload bar to wait longer than they will.
+ * Ten seconds keeps the whole budget (~4-11s of waiting over four attempts) shorter
+ * than the time it would take to notice and start the upload again by hand.
+ */
+export const UPLOAD_RETRY_MAX_MS = 10_000;
 
 /**
  * Prefix every upload id carries.

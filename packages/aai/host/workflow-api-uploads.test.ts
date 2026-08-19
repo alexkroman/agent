@@ -16,6 +16,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import { UPLOAD_CHUNK_BYTES } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { requestPath } from "../sdk/request-url.ts";
 import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
 import { silentLogger } from "./_test-utils.ts";
@@ -24,8 +25,9 @@ import { parseRange } from "./workflow-api-uploads.ts";
 import {
   assertPartOffset,
   contiguousBytes,
-  mergeRanges,
+  rangesOf,
   UnknownUploadError,
+  type UploadPart,
   UploadPartError,
   type UploadStore,
 } from "./workflow-uploads.ts";
@@ -37,21 +39,43 @@ const engine = () => ({
 });
 
 let close: (() => Promise<void>) | undefined;
+/**
+ * The store the last {@link serve} built.
+ *
+ * Only the DIRECT-path specs need it: `recordPart` carries no body, so the only way to
+ * say "these bytes are in the bucket" is to put them where the store looks.
+ */
+let lastStore: ReturnType<typeof fakeStore> | undefined;
+
+/** The store behind the running server, for a spec that has to seed stored bytes. */
+function current(): ReturnType<typeof fakeStore> {
+  if (!lastStore) throw new Error("no store: serve() was called with an explicit uploads");
+  return lastStore;
+}
 afterEach(async () => {
   await close?.();
   close = undefined;
 });
 
 /** Mount the API over an in-memory store on a real loopback server. */
-async function serve(opts: { uploads?: UploadStore | undefined } = {}): Promise<string> {
+async function serve(
+  opts: { uploads?: UploadStore | undefined; directParts?: boolean } = {},
+): Promise<string> {
   // `"uploads" in opts` rather than a default parameter: a default is applied
   // for an explicit `undefined` too, which is exactly the case the "no store"
   // spec below needs to reach.
-  const uploads = "uploads" in opts ? opts.uploads : memoryStore();
+  const built = "uploads" in opts ? opts.uploads : fakeStore();
+  lastStore = built && "stored" in built ? (built as ReturnType<typeof fakeStore>) : undefined;
+  const uploads = built;
   // The shared no-op logger, not a module-level bag of `vi.fn()`s: nothing
   // here asserts on log output, and a spy singleton is what lets a later
   // `toHaveBeenCalled` pass on an earlier test's call.
-  const api = createWorkflowApi({ engine, uploads, logger: silentLogger });
+  const api = createWorkflowApi({
+    engine,
+    uploads,
+    logger: silentLogger,
+    ...omitUndefined({ directParts: opts.directParts }),
+  });
   const server = http.createServer((req, res) => {
     const url = requestPath(req.url);
     if (api(req, res, url, req.method ?? "GET")) return;
@@ -62,8 +86,8 @@ async function serve(opts: { uploads?: UploadStore | undefined } = {}): Promise<
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
-/** The real store over an in-memory `Db` — enough to exercise create + range. */
-function memoryStore(): UploadStore {
+/** A store the ROUTES can be driven against — enough to exercise create + range. */
+function fakeStore(): UploadStore & { stored: Map<string, Uint8Array> } {
   // `size` is tracked beside the buffer rather than read off it: a PARTS upload is
   // allocated whole at its declaration, so its buffer's length is the file's total
   // from the first moment and its `size` is the contiguous prefix.
@@ -76,7 +100,38 @@ function memoryStore(): UploadStore {
   // bytes rather than in them, because a parts upload's `size` is the contiguous
   // prefix and its buffer is the whole file from the moment it is begun.
   const totals = new Map<string, number>();
-  const ranges = new Map<string, { start: number; end: number }[]>();
+  const parts = new Map<string, UploadPart[]>();
+  /**
+   * Bytes a spec says are ALREADY in the bucket, keyed `<id>/<offset>`.
+   *
+   * The direct path's whole premise: `recordPart` carries no body, so the only thing
+   * that can tell a real part from a claimed one is asking the store. This map is
+   * what the fake asks.
+   */
+  const stored = new Map<string, Uint8Array>();
+  /** One part's arrival, however its bytes got here. */
+  const record = (id: string, offset: number, bytes: number) => {
+    const file = files.get(id);
+    const total = totals.get(id) ?? 0;
+    const merged = [
+      ...(parts.get(id) ?? []).filter((one) => one.at !== offset),
+      { at: offset, bytes },
+    ];
+    parts.set(id, merged);
+    const size = contiguousBytes(rangesOf(merged));
+    if (file) {
+      file.size = size;
+      file.complete = size >= total;
+    }
+    return {
+      id,
+      name: file?.name ?? "",
+      type: file?.type ?? "",
+      size,
+      complete: file?.complete ?? false,
+    };
+  };
+
   /** Drain a request body, which both writers do the same way. */
   const drain = async (body: AsyncIterable<Uint8Array>): Promise<Uint8Array> => {
     const parts: Uint8Array[] = [];
@@ -138,7 +193,7 @@ function memoryStore(): UploadStore {
       // is the RECORD, which is the property the route is for.
       files.set(id, { name, type, bytes: new Uint8Array(total), size: 0, complete: false });
       totals.set(id, total);
-      ranges.set(id, []);
+      parts.set(id, []);
       return { id, name, type, size: 0, complete: false };
     },
     async writePart(id, offset, body) {
@@ -154,15 +209,22 @@ function memoryStore(): UploadStore {
         throw new UploadPartError(`A part at ${offset} runs past the ${total} bytes declared.`);
       }
       file.bytes.set(bytes, offset);
-      const merged = mergeRanges(ranges.get(id) ?? [], {
-        start: offset,
-        end: offset + bytes.length,
-      });
-      ranges.set(id, merged);
-      const size = contiguousBytes(merged);
-      file.size = size;
-      file.complete = size >= total;
-      return { id, name: file.name, type: file.type, size, complete: file.complete };
+      return record(id, offset, bytes.length);
+    },
+    async recordPart(id, offset) {
+      // The direct path: the bytes went to the bucket without passing through the
+      // agent, so the store measures them ITSELF. The fake stands in for the
+      // measurement with what a spec put there — `stored` below.
+      assertPartOffset(offset);
+      const file = files.get(id);
+      const total = totals.get(id);
+      if (!file || total === undefined) throw new UnknownUploadError(id);
+      const bytes = stored.get(`${id}/${offset}`);
+      if (bytes === undefined) {
+        throw new UploadPartError(`No bytes are stored for the part at ${offset}.`);
+      }
+      file.bytes.set(bytes, offset);
+      return record(id, offset, bytes.length);
     },
     async info(id) {
       const file = files.get(id);
@@ -173,6 +235,7 @@ function memoryStore(): UploadStore {
     async read(id, start, end) {
       return files.get(id)?.bytes.subarray(start, end) ?? new Uint8Array(0);
     },
+    stored,
   };
 }
 
@@ -214,7 +277,7 @@ describe("POST /workflows/uploads", () => {
   test("answers 413 for a body past the cap rather than storing a short file", async () => {
     const base = await serve({
       uploads: {
-        ...memoryStore(),
+        ...fakeStore(),
         create: async () => {
           const { UploadTooLargeError } = await import("./workflow-uploads.ts");
           throw new UploadTooLargeError(10);
@@ -465,6 +528,50 @@ describe("the parts routes", () => {
       complete: false,
       url: "/workflows/uploads/abc",
     });
+  });
+
+  test("says nothing about a direct byte route by default", async () => {
+    // `aai dev` and a self-hosted server hold the bucket credential themselves and
+    // serve no such route. The field is OMITTED rather than `false`, because that is
+    // also what an agent deployed before any of this existed answers — one shape for
+    // "send the body to me", not two.
+    const base = await serve();
+    const res = await begin(base, "abc", 8);
+    await expect(res.json()).resolves.not.toHaveProperty("directParts");
+  });
+
+  test("advertises the direct route when the deployment has one", async () => {
+    // A CAPABILITY of the deployment, answered by the claim so a client never has to
+    // guess it from its own URL — a wrong guess sends megabytes into a 404.
+    const base = await serve({ directParts: true });
+    const res = await begin(base, "abc", 8);
+    await expect(res.json()).resolves.toMatchObject({ directParts: true });
+  });
+
+  test("`stored=1` records a window without carrying it", async () => {
+    // The direct path's write. No body: the bytes went to the platform, and the store
+    // measures the object itself rather than trusting anything here.
+    const base = await serve({ directParts: true });
+    await begin(base, "abc", 8);
+    const store = current();
+    store.stored.set("abc/0", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
+    const res = await fetch(`${base}/workflows/uploads/abc/parts?offset=0&stored=1`, {
+      method: "PUT",
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ size: 8, complete: true });
+  });
+
+  test("`stored=1` is a 400 for a window nobody uploaded", async () => {
+    // The whole defence on that path: a client claiming a part it never sent would
+    // advance `size` over bytes that are not there, and a step reading them gets
+    // SILENCE — a gap in a transcript with nothing anywhere reporting one.
+    const base = await serve({ directParts: true });
+    await begin(base, "abc", 8);
+    const res = await fetch(`${base}/workflows/uploads/abc/parts?offset=0&stored=1`, {
+      method: "PUT",
+    });
+    expect(res.status).toBe(400);
   });
 
   test("reassembles parts sent AT ONCE and out of order", async () => {

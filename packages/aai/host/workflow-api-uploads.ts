@@ -94,6 +94,20 @@ const CHOSEN_ID_MESSAGE =
 /** What `POST` and `PUT /workflows/uploads` answer with. */
 export type UploadCreated = UploadInfo & {
   /**
+   * Present and `true` when a part's bytes go to the PLATFORM rather than here.
+   *
+   * A capability of the deployment, answered by the claim so a client never has to
+   * guess: a deployed agent holds no bucket credential and brokers every byte
+   * operation, so the platform serves a byte route of its own and a part sent here
+   * would cross it twice. `aai dev` and a self-hosted server hold the credential
+   * themselves and have no such route, so the field is ABSENT and a client keeps
+   * sending bodies to `PUT …/parts?offset=`.
+   *
+   * Absent also covers an agent deployed before this existed, which is the same
+   * answer and the right one.
+   */
+  directParts?: boolean | undefined;
+  /**
    * Where the bytes are, relative to the API's own prefix.
    *
    * Relative rather than absolute because only the CALLER knows the origin it
@@ -211,6 +225,7 @@ export async function beginUploadParts(
   store: UploadStore,
   id: string,
   logger: Logger,
+  directParts = false,
 ): Promise<void> {
   if (!UPLOAD_TOKEN_RE.test(id)) {
     sendJson(res, 400, { error: CHOSEN_ID_MESSAGE });
@@ -227,7 +242,15 @@ export async function beginUploadParts(
   try {
     const info = await store.beginParts(id, declaredMeta(req), total);
     logger.info("Workflow parts upload begun", { id: info.id, name: info.name, total });
-    sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
+    sendJson(res, 201, {
+      ...info,
+      url: `${UPLOADS_PATH}/${info.id}`,
+      // `undefined` rather than `false` when the bytes come here, and `sendJson`'s
+      // `JSON.stringify` drops it: a client reads the field's PRESENCE, and absent is
+      // also what an agent deployed before this existed answers — one shape for "send
+      // the body to me", not two.
+      directParts: directParts ? true : undefined,
+    } satisfies UploadCreated);
   } catch (err: unknown) {
     if (sendWriteFailure(res, err)) return;
     throw err;
@@ -236,12 +259,29 @@ export async function beginUploadParts(
 
 /**
  * `PUT /workflows/uploads/:id/parts?offset=<byte>` — store one window of a parts
- * upload.
+ * upload, or RECORD one that is already stored.
  *
  * Answers the record as it now stands, so the caller writing the part that closes
  * the last gap learns the upload is complete from its own response rather than by
  * polling for it. 200 rather than 201: a part creates nothing, it fills in a
  * resource that already exists.
+ *
+ * ## `&stored=1` is the direct path, and it is the same route on purpose
+ *
+ * With `stored=1` the request carries NO body: the client sent the window straight
+ * to the byte store and is telling the agent which window landed. Everything else
+ * about it is identical — the id, the offset grid, the answer — which is what lets a
+ * client take either route without anything downstream knowing, and lets a page
+ * built against the body form keep working where the direct path is unavailable
+ * (`aai dev` against a bucket the browser cannot reach).
+ *
+ * A separate PATH would have been the other option and is worse: the two are one
+ * operation with one set of refusals, and a second route is a second place for the
+ * offset rule, the 404 and the 400 to drift.
+ *
+ * The flag says nothing about how big the part is. `recordPart` asks the STORE, and
+ * that is the whole defence: a client claiming a part it never uploaded would
+ * otherwise advance `size` past a hole, and a step reading there gets silence.
  */
 export async function writeUploadPart(
   req: http.IncomingMessage,
@@ -255,8 +295,13 @@ export async function writeUploadPart(
     sendJson(res, 400, { error: "A part names the byte it starts at as `?offset=`." });
     return;
   }
+  const stored = requestQuery(req.url).get("stored") !== null;
   try {
-    sendJson(res, 200, await store.writePart(id, offset, req));
+    sendJson(
+      res,
+      200,
+      stored ? await store.recordPart(id, offset) : await store.writePart(id, offset, req),
+    );
   } catch (err: unknown) {
     if (sendWriteFailure(res, err)) return;
     throw err;

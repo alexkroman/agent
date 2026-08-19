@@ -502,6 +502,22 @@ descriptor's `apiKeyEnv` now, like every other stage; they resolve through
 `resolveS2sEnvVar`, so the key a session reads is by construction the key
 the preflight asked for.
 
+## An upload's bytes are OBJECTS, and its record is a row
+
+One store (`host/_upload-store-blobs.ts`): a row in the app's own database, and
+one object per `UPLOAD_PART_BYTES` window behind a two-method `UploadBlobs`. It
+used to hold the bytes itself — a `bytea` row per megabyte, or a file per upload
+under `aai dev` — and **`host/_upload-blobs.ts` carries why they left**: 6x the
+storage cost, every byte in the WAL and every base backup, the app's own queries
+sharing a pool with them (p50 1.34s against 0.43s), and the platform's forward
+reading a slow drain as a dead guest.
+
+The file backend went with it. It was justified as "a valid double for the
+Postgres one", which was the wrong axis — what a double has to stand in for here
+is BYTES, not records — so the seam moved down to `UploadBlobs`, whose whole
+contract is a window read and a length. There is no fallback left: a deployment
+with no database or no bucket has no uploads and says so by name.
+
 ## An upload can be read while it is still arriving
 
 `POST /workflows/uploads` answers with an id once the last byte is stored — the
@@ -524,19 +540,43 @@ author-facing half (`useWorkflowStream`) is in `packages/aai-ui/CLAUDE.md`.
 Both writes above carry the whole file in ONE request, so an upload runs at one
 connection's throughput — a fraction of the link over any distance. `POST
 /workflows/uploads/:id/parts?total=` declares an upload and `PUT
-…/parts?offset=` fills in a window of it, so a browser sends four at once
-(`api.upload(file, { parallel: true })`, `useWorkflowSubmit(w, { parallel })`).
+…/parts?offset=` fills in a window of it, so a browser sends four at once. **It
+is the DEFAULT** — `api.upload(file)` and every form hook take it unless a caller
+passes `parallel: false`.
 
 **Two rules make it invisible downstream**, which is why no reader, no step and
 no range route changed: a part starts on an `UPLOAD_CHUNK_BYTES` boundary, so its
-bytes are ordinary chunks at their own offsets; and **`size` is the CONTIGUOUS
-prefix, never the sum of what has arrived** — parts land out of order, so a size
-that counted bytes would tell a reader it may read a hole. `complete` becomes
-true when that prefix reaches the DECLARED total, which is the only observable
-moment every byte is present. The client path DECLINES rather than fails (an
+offset — which IS its object's name — is on a grid nothing can scatter; and
+**`size` is the CONTIGUOUS prefix, never the sum of what has arrived** — parts
+land out of order, so a size that counted bytes would tell a reader it may
+read a hole. `complete` becomes true when that prefix reaches the DECLARED
+total, which is the only observable moment every byte is present.
+
+**On the platform the bytes do not come to the agent at all.** A deployed guest
+holds no bucket credential, so each window goes to a route the PLATFORM serves
+and a bodyless `PUT …/parts?offset=…&stored=1` tells the agent which landed —
+whose size the store asks the BUCKET for rather than taking from the caller,
+which is what stops a claimed part becoming a readable hole. The CLAIM decides
+which path a client takes (`directParts`), because `aai dev`, a self-hosted
+server and an agent deployed before this all answer the same way — see
+`host/_upload-blobs.ts` and `aai-server/upload-handler.ts`.
+
+**And `info` publishes WHICH windows landed** (`UploadInfo.ranges`), for an
+unfinished parts upload and nothing else — a whole-file write has no windows, and
+a finished upload is covered end to end. `size` is still the only field a READER
+may act on; `ranges` is for the UPLOADER, and it is what makes
+`api.upload(file, { resume: true })` send the missing windows rather than the
+file. An agent too old to report them answers like an empty upload, so a resume
+against one re-sends everything rather than leaving a hole.
+
+The client path DECLINES rather than fails (an
 uncuttable string body, a file that fits in one part, an agent answering 404 to
-the declaration), so `parallel: true` is safe on every form.
-`sdk/workflow-upload-parts.ts` and `host/_upload-store.ts` carry the rest.
+the declaration), which is what makes it safe as a default rather than an opt-in
+— and it is also the only upload path that can RETRY, since a single-request
+`POST` retried after a lost response mints a SECOND upload and a `PUT` retried
+against its own id is refused as taken. `sdk/workflow-upload-parts.ts` and
+`host/_upload-store.ts` carry the rest, including the backoff, the `Retry-After`
+it honours, and the two bracketing requests that are retried with it.
 
 ## Workflow apps and the workflow HTTP API
 

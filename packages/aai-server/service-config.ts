@@ -45,7 +45,7 @@ import {
   localSlugLock,
   type SlugMutationLock,
 } from "./platform-lock.ts";
-import { buildStorage } from "./platform-storage-config.ts";
+import { buildStorage, buildUploadBytes } from "./platform-storage-config.ts";
 import { createRealtimePlatformEvents } from "./realtime-events.ts";
 import { describeSandboxBackend, resolveSandboxBackend } from "./sandbox-backend.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -351,6 +351,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   // `storage.objects` RLS; a Realtime channel that rejoins in silence forever).
   if (env.SUPABASE_SERVICE_ROLE_KEY) assertServiceRoleKey(env.SUPABASE_SERVICE_ROLE_KEY);
   const storage = buildStorage(env);
+  const uploadBytes = buildUploadBytes(env);
   const {
     secrets,
     agents,
@@ -396,6 +397,11 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     // client-file blobs); the deploy records live in the agents table and
     // studio workspaces/chats in Postgres via `workspaces`/`chats`.
     store: createBundleStore(storage, { secrets, agents }),
+    // Where a workflow upload's WINDOWS go. Not part of the bundle store: it is the
+    // same bucket and the same credential, and nothing else about it is the same — the
+    // keys are not content hashes, the objects are mutable within one upload, and its
+    // one consumer is a route rather than a deploy.
+    uploadBytes,
     workspaces,
     chats,
     events,

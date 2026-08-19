@@ -246,13 +246,14 @@ export type UseWorkflowSubmitOptions = {
   /**
    * Send each chosen file as concurrent parts instead of in one request.
    *
-   * `true` for the defaults, or `{ partBytes, concurrency }` to tune them. This is
-   * the wait a form with a recording in it actually spends: the run does not exist
-   * until its input is stored, so until the last byte lands there is no run to
-   * watch and nothing for `<WorkflowProgress>` to say. Splitting the file across
-   * connections is what makes that stretch shorter, and it degrades to the single
-   * request wherever it would not help — a small file, an older agent — so turning
-   * it on is safe for every form. See `UploadOptions.parallel`.
+   * **On by default.** `false` opts out, `{ partBytes, concurrency }` tunes it.
+   * This is the wait a form with a recording in it actually spends: the run does
+   * not exist until its input is stored, so until the last byte lands there is no
+   * run to watch and nothing for `<WorkflowProgress>` to say. Splitting the file
+   * across connections is what makes that stretch shorter, and it degrades to the
+   * single request wherever it would not help — a small file, an older agent — so
+   * the default costs nothing where it would not have paid. See
+   * `UploadOptions.parallel`.
    */
   parallel?: UploadParallel;
 };
