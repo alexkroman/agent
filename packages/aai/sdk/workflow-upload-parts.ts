@@ -36,9 +36,20 @@
  * N connections give a file N chances to lose one, which is the cost of the
  * speed — so a failed part is retried once (`UPLOAD_PART_ATTEMPTS`) and the
  * store accepts the repeat as the same part rather than as a duplicate. What is
- * NOT retried is a part the agent answered: a 400 (the offset contradicts the
+ * NOT retried is a part the agent REFUSED: a 400 (the offset contradicts the
  * declared total), a 409, a 413 are all requests that will be refused again, and
  * retrying them is a loop the caller pays for twice.
+ *
+ * **A 5xx is not a refusal, and reading every answer as one cost a real upload.**
+ * The platform's own vocabulary for "come back" is a status: a sandbox that is
+ * booting, draining or momentarily unreachable is a 503, and "Server busy — retry
+ * shortly" is a 503 that says so in words. Retrying a transport rejection while
+ * treating those as final meant one aborted forward — a proxy deadline, in the
+ * case this was written for — ended the whole fan-out; the contiguous prefix
+ * froze at the three parts that had landed, and the run watching that upload
+ * failed five minutes later with `the uploader stopped`. So
+ * {@link RETRYABLE_STATUS} is re-sent on the same one-retry budget as a dropped
+ * connection, which is what it is.
  */
 
 import { omitUndefined } from "./omit-undefined.ts";
@@ -176,6 +187,17 @@ export function planParts(total: number, partBytes: number): Part[] {
 const NO_SUCH_ROUTE = new Set([404, 405]);
 
 /**
+ * Statuses that mean "come back", as opposed to "no".
+ *
+ * A part is disjoint from every other and the store keys its rows by offset, so
+ * re-sending one is idempotent by construction — which is what makes retrying
+ * safe here even for a 500, where a caller mutating something would have to
+ * wonder whether it had already happened. 408 and 425 are on the list for the
+ * same reason as 503: they name the request's TIMING rather than its content.
+ */
+const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+/**
  * Store one file as concurrent parts, or resolve `undefined` to say this path
  * declined.
  *
@@ -226,8 +248,12 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
         report(part.index, part.end - part.start);
         return;
       }
-      // An ANSWER is final: the agent refused this part and will refuse it again.
-      if (res) throw await req.fail(res);
+      // A REFUSAL is final; a "come back" is not. Both are answers, and telling
+      // them apart is the difference between one part being re-sent and the whole
+      // upload ending — see the module doc.
+      if (res && (!RETRYABLE_STATUS.has(res.status) || attempt >= UPLOAD_PART_ATTEMPTS)) {
+        throw await req.fail(res);
+      }
     }
   };
 

@@ -40,8 +40,8 @@ type Agent = {
 type Script = {
   /** Status for the `POST …/parts` declaration. 201 unless a spec says otherwise. */
   begin?: number;
-  /** Answer for the part at this offset, first attempt only. */
-  refuse?: { offset: number; status?: number; network?: boolean };
+  /** Answer for the part at this offset, first attempt only — or `always`. */
+  refuse?: { offset: number; status?: number; network?: boolean; always?: boolean };
 };
 
 /**
@@ -104,7 +104,7 @@ async function answerPart(
   await Promise.resolve();
   flight.now -= 1;
   const offset = Number(call.url.searchParams.get("offset"));
-  if (script.refuse?.offset === offset && !refused.has(offset)) {
+  if (script.refuse?.offset === offset && (script.refuse.always || !refused.has(offset))) {
     refused.add(offset);
     if (script.refuse.network) throw new TypeError("the upload did not reach the agent");
     return json(script.refuse.status ?? 400, { error: "refused" });
@@ -268,6 +268,30 @@ describe("a part that does not land", () => {
     expect(
       agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)),
     ).toHaveLength(1);
+  });
+
+  test("is sent again when the platform said COME BACK, not no", async () => {
+    // A 503 is the platform's own word for retryable — a sandbox booting, draining
+    // or a forward that gave up — and reading it as a refusal ended the whole
+    // fan-out over one part. In production that froze the stored prefix at the
+    // parts that had landed and the run watching the upload failed five minutes
+    // later with `the uploader stopped`.
+    const agent = scriptAgent({ refuse: { offset: PART, status: 503 } });
+    const stored = await client().upload(recording(), { parallel: true });
+    expect(
+      agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)),
+    ).toHaveLength(2);
+    expect(stored.complete).toBe(true);
+  });
+
+  test("gives up on the retry budget, so a 503 is not a loop either", async () => {
+    const agent = scriptAgent({ refuse: { offset: PART, status: 503, always: true } });
+    await expect(client().upload(recording(), { parallel: true })).rejects.toThrow(/refused/);
+    // Two attempts, the same budget a dropped connection gets — and the agent's own
+    // answer is what the caller hears, not an invented one.
+    expect(
+      agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)),
+    ).toHaveLength(2);
   });
 
   test("reports the transport's own failure when the retry fails too", async () => {

@@ -15,8 +15,21 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { type AdoptSessionParams, adoptPeerSession } from "./studio-session-adopt.ts";
 import type { StudioSessionRecord, StudioSessionRegistry } from "./studio-session-registry.ts";
+
+/**
+ * Postgres `foreign_key_violation`. On {@link SessionFleet.claim} it has exactly
+ * one cause, because `studio_sessions` has exactly one foreign key: the WORKSPACE
+ * is gone (`studio_sessions_workspace_fk`, `on delete cascade`).
+ */
+const FOREIGN_KEY_VIOLATION = "23503";
+
+/** Did this claim fail because the project was DELETED under it? */
+function workspaceGone(err: unknown): boolean {
+  return isRecord(err) && err.code === FOREIGN_KEY_VIOLATION;
+}
 
 /** What a freshly spawned sandbox announces to the fleet. */
 export type FleetClaim = Omit<StudioSessionRecord, "owner">;
@@ -96,6 +109,21 @@ export function createSessionFleet(options: SessionFleetOptions): SessionFleet {
 
     async claim(scope, project, claim) {
       await registry.claim(scope, project, { ...claim, owner: replicaId }).catch((err: unknown) => {
+        // Two different findings, and reporting both as the first one made the
+        // common one unreadable. "Peers may duplicate" describes a registry we
+        // could not WRITE to — a database blip, a lease we lost — where the cost
+        // is a second replica spawning its own sandbox for this project. A
+        // foreign-key violation is not that: the project was DELETED while this
+        // session was being brokered, the row cascaded away with it, and no peer
+        // is going to duplicate a workspace that no longer exists. Seen in
+        // production as the tail of one `DELETE /studio/projects/<slug>` — the
+        // session POST had been in flight for 14s when the delete landed.
+        if (workspaceGone(err)) {
+          console.warn("Studio session: project was deleted while it was being brokered", {
+            project,
+          });
+          return;
+        }
         console.warn("Studio session: registry claim failed; peers may duplicate", {
           project,
           error: errorMessage(err),

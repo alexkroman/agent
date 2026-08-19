@@ -141,6 +141,19 @@ export type GuestForwardOptions = {
   body?: RequestInit["body"] | undefined;
   timeoutMs: number;
   /**
+   * The window once the request body has started MOVING. Defaults to
+   * `timeoutMs`, and only `"activity"` reads it.
+   *
+   * Its own number because what it waits on is unobservable from here. A pull
+   * stall means undici's write buffer is full, and that buffer empties at the
+   * GUEST's pace — so both the wait for room for one more chunk and the wait for
+   * an answer after the last byte are really claims about the guest's write
+   * bandwidth, not about a round trip. See
+   * `WORKFLOW_PROXY_TRANSFER_TIMEOUT_MS`, whose doc carries the measurement and
+   * the 27 production 503s that named this.
+   */
+  transferTimeoutMs?: number | undefined;
+  /**
    * What the deadline covers.
    *
    * `"headers"` disarms it once the response head arrives, and is REQUIRED
@@ -170,12 +183,15 @@ export type GuestForwardOptions = {
 /**
  * Re-emit a request body, calling `onProgress` as each chunk is consumed.
  *
- * The consumer is undici writing to the socket, which reads under
- * backpressure — so a `pull` means the previous chunk really reached the
- * network rather than a buffer, which is what makes this a progress signal and
- * not a clock. `onProgress` fires on the final read too, so the guest gets a
- * full budget to ANSWER after the last byte rather than whatever the transfer
- * left over.
+ * The consumer is undici writing to the socket, which reads under backpressure
+ * — so a `pull` is evidence the transfer is MOVING, which is what makes this a
+ * progress signal and not a clock. What a pull is NOT is proof the chunk reached
+ * the far end, and this doc claimed it was: measured against a real reader that
+ * consumed 64 KB every 200ms, undici took 5 MiB of body in 10ms and the reader
+ * had 0.6 MiB of it. So the pulls run AHEAD of the wire by whatever the socket
+ * and undici's own write buffer hold, and a pull STALL means that buffer is full
+ * rather than that anything is wrong — which is why what a pull re-arms is
+ * `transferTimeoutMs` and not the head budget.
  */
 function trackBodyProgress<T>(body: ReadableStream<T>, onProgress: () => void): ReadableStream<T> {
   const reader = body.getReader();
@@ -215,11 +231,12 @@ export async function forwardToGuest(opts: GuestForwardOptions): Promise<Respons
   // which is exactly what a caller that buffers the whole response wants — the
   // body read is inside the budget rather than unbounded after it.
   const controller = bound === "response" ? undefined : new AbortController();
+  const transferMs = opts.transferTimeoutMs ?? opts.timeoutMs;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const arm = (): void => {
+  const arm = (ms: number = opts.timeoutMs): void => {
     if (!controller) return;
     clearTimeout(timer);
-    timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+    timer = setTimeout(() => controller.abort(), ms);
   };
   arm();
   // Only a STREAM can report progress; a buffered body is handed over whole, so
@@ -227,7 +244,7 @@ export async function forwardToGuest(opts: GuestForwardOptions): Promise<Respons
   // one caller on this bound passes it for every method rather than branching.
   const body =
     bound === "activity" && opts.body instanceof ReadableStream
-      ? trackBodyProgress(opts.body, arm)
+      ? trackBodyProgress(opts.body, () => arm(transferMs))
       : opts.body;
   try {
     return await opts.fetchFn(opts.url, {

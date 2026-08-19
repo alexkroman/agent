@@ -76,6 +76,24 @@ describe("createSessionFleet", () => {
     await expect(fleet.claim(SCOPE, PROJECT, CLAIM)).resolves.toBeUndefined();
   });
 
+  test("a DELETED project is named as one, not as a peer-duplication risk", async () => {
+    // `studio_sessions` has one foreign key, so 23503 has one cause: the workspace
+    // cascaded away while this session was being brokered. Reporting it as "peers
+    // may duplicate" describes a database we could not write to and misnames the
+    // condition an operator is actually looking at.
+    const registry = createMemoryStudioSessionRegistry();
+    vi.spyOn(registry, "claim").mockRejectedValue(
+      Object.assign(new Error('insert or update on table "studio_sessions" violates …'), {
+        code: "23503",
+      }),
+    );
+    const fleet = createSessionFleet({ registry, replicaId: US });
+    await expect(fleet.claim(SCOPE, PROJECT, CLAIM)).resolves.toBeUndefined();
+    const warned = vi.mocked(console.warn).mock.calls.map(([line]) => String(line));
+    expect(warned).toContain("Studio session: project was deleted while it was being brokered");
+    expect(warned).not.toContain("Studio session: registry claim failed; peers may duplicate");
+  });
+
   test("adopt installs into a peer's guest and touches the lease", async () => {
     const { registry, fleet, adopt } = setup();
     await registry.claim(SCOPE, PROJECT, peerRow());

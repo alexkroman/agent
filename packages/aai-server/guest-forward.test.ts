@@ -92,6 +92,42 @@ function drainingGuest(answer: () => Response = () => new Response("{}", { statu
   return fetchFn;
 }
 
+/**
+ * A guest that takes the whole body at once and answers `answerAfterMs` later.
+ *
+ * undici, modelled: it accepts a stream body into its own write buffer far ahead
+ * of the socket (measured against a real reader — 5 MiB handed over in 10ms
+ * while the far end had 0.6 MiB), so every re-arm happens up front and the time
+ * the guest spends STORING those bytes falls entirely inside the last budget
+ * armed. That is the production shape `transferTimeoutMs` exists for and the one
+ * `drainingGuest` cannot show, because it answers the instant the body ends.
+ */
+function digestingGuest(answerAfterMs: number) {
+  const fetchFn: typeof globalThis.fetch = async (_url, init) => {
+    const body = init?.body;
+    if (body instanceof ReadableStream) {
+      const reader = body.getReader();
+      for (;;) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    }
+    const signal = init?.signal ?? null;
+    return await new Promise<Response>((resolve, reject) => {
+      const timer = setTimeout(() => resolve(new Response("{}", { status: 200 })), answerAfterMs);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          reject(signal.reason);
+        },
+        { once: true },
+      );
+    });
+  };
+  return fetchFn;
+}
+
 /** A guest that never answers at all, so only the deadline can settle the call. */
 const silentGuest: typeof globalThis.fetch = (_url, init) =>
   new Promise((_resolve, reject) => {
@@ -199,6 +235,68 @@ describe('bound: "activity"', () => {
     // No timer survives the call, so nothing can abort the stream later — the
     // truncated chunked response `live-streams.ts` exists to prevent.
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("the TRANSFER window covers digesting the body, not one round trip", async () => {
+    // The regression. Every chunk is taken up front, so what is left running is
+    // the window armed by the last pull — and the guest is still persisting bytes
+    // the forward has already let go of. Under a flat `timeoutMs` this aborted at
+    // the deadline while nothing was wrong, which is 27 upload `PUT`s in an hour
+    // of production log answering 503 between 30.3s and 34.1s.
+    const body = pushableBody();
+    const forward = forwardToGuest({
+      fetchFn: digestingGuest(TIMEOUT_MS * 3),
+      url: "https://tunnel.test/workflows/uploads/upl_1/parts?offset=0",
+      method: "PUT",
+      body: body.stream,
+      timeoutMs: TIMEOUT_MS,
+      transferTimeoutMs: TIMEOUT_MS * 5,
+      bound: "activity",
+    });
+    const settled = capture(forward);
+    body.push();
+    body.close();
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS * 3 + 1);
+    expect(await settled).toMatchObject({ res: { status: 200 } });
+  });
+
+  test("a guest that swallowed the body and DIED still fails, on the transfer window", async () => {
+    // The other half: the window is longer, not absent. A guest that takes every
+    // byte and never answers is the failure this deadline still has to report.
+    const body = pushableBody();
+    const forward = forwardToGuest({
+      fetchFn: digestingGuest(TIMEOUT_MS * 100),
+      url: "https://tunnel.test/workflows/uploads/upl_1/parts?offset=0",
+      method: "PUT",
+      body: body.stream,
+      timeoutMs: TIMEOUT_MS,
+      transferTimeoutMs: TIMEOUT_MS * 5,
+      bound: "activity",
+    });
+    const settled = capture(forward);
+    body.push();
+    body.close();
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS * 5 + 1);
+    expect(await settled).toMatchObject({ err: expect.objectContaining({ name: "AbortError" }) });
+  });
+
+  test("without transferTimeoutMs the window is timeoutMs, unchanged", async () => {
+    // Default preserved, so the two other callers on this helper keep the bound
+    // they were written against.
+    const body = pushableBody();
+    const forward = forwardToGuest({
+      fetchFn: digestingGuest(TIMEOUT_MS * 3),
+      url: "https://tunnel.test/workflows/uploads",
+      method: "POST",
+      body: body.stream,
+      timeoutMs: TIMEOUT_MS,
+      bound: "activity",
+    });
+    const settled = capture(forward);
+    body.push();
+    body.close();
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS + 1);
+    expect(await settled).toMatchObject({ err: expect.objectContaining({ name: "AbortError" }) });
   });
 
   test("a buffered body needs no branch at the call site", async () => {
