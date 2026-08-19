@@ -6,6 +6,7 @@
  * _studio-session-test-utils.ts.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createMemoryChatStore } from "aai-server/chat-store";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
@@ -455,7 +456,7 @@ describe("cross-replica studio sessions", () => {
       spawn,
       harnessPath: "/fake/harness.mjs",
       previewQueue: createMemoryPreviewQueue(),
-      ...(adopt && { adopt }),
+      ...omitUndefined({ adopt }),
     });
     return { broker, spawn };
   }

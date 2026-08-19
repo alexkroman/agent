@@ -18,14 +18,13 @@
  */
 
 import { stubReporter, stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
-import { readUpload } from "@alexkroman1/aai/utils";
+import { omitUndefined, readUpload } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
 import { createJob, pollTranscript, readTranscript, uploadToProvider } from "./workflows/batch.ts";
 import { planStreamed, probeUpload } from "./workflows/stream.ts";
-
 import {
   clock,
   mergeTranscript,
@@ -539,7 +538,7 @@ describe("transcribeSegment", () => {
     const stub = stubStepFetch(() => ({
       status: sync.status ?? 200,
       body: sync.body ?? { text: "hello there" },
-      ...(sync.headers && { headers: sync.headers }),
+      ...omitUndefined({ headers: sync.headers }),
     }));
     stubs.push(stub.restore);
     return stub.calls;

@@ -5,6 +5,7 @@
 // (keyed by version), the failed-build banner, and the production
 // fallback for projects published before auto previews existed.
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse } from "./_test-utils.ts";
@@ -259,11 +260,7 @@ describe("PreviewPane: reporting a missing preview", () => {
     vi.useFakeTimers();
     const fetchMock = stubHealth([]);
     render(
-      <PreviewPane
-        previewSlug="p-preview"
-        nonce={0}
-        {...(onPreviewMissing && { onPreviewMissing })}
-      />,
+      <PreviewPane previewSlug="p-preview" nonce={0} {...omitUndefined({ onPreviewMissing })} />,
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(ms);

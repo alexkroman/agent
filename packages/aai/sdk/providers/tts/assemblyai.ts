@@ -20,6 +20,7 @@
  */
 
 import { isRecord } from "../../is-record.ts";
+import { omitUndefined } from "../../omit-undefined.ts";
 import type { TtsProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
@@ -289,6 +290,6 @@ export function resolveAssemblyAITtsSettings(opts: AssemblyAITtsOptions): {
     voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
     // Omitted unless set: every voice speaks one language, so the server
     // infers it, and a mismatched pair is worse than no hint.
-    ...(opts.language ? { language: opts.language } : {}),
+    ...omitUndefined({ language: opts.language }),
   };
 }

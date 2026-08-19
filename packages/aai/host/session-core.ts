@@ -23,6 +23,7 @@
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ClientSink, ReadyConfig, RestoredToolCall, SessionCommand } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -280,7 +281,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     clearHistory: () => {
       history = [];
     },
-    ...(opts.onToolResult ? { onToolResult: opts.onToolResult } : {}),
+    ...omitUndefined({ onToolResult: opts.onToolResult }),
   });
 
   /** One tool call the transport reported. See {@link SessionCore.report}. */

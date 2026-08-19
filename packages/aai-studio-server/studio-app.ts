@@ -21,6 +21,7 @@
  * seconds; see sandbox-resolve.ts).
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ApiKeyVerifier } from "aai-server/api-key-verify";
 import type { AppDatabases } from "aai-server/app-database";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/app-middleware";
@@ -105,8 +106,8 @@ export function createStudioApp(opts: StudioAppOpts): {
   app.get("/favicon.ico", handleStudioFavicon);
   app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
   const studioRoutes = createStudioRoutes({
-    ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
-    ...(opts.studioSessionRegistry && { sessionRegistry: opts.studioSessionRegistry }),
+    ...omitUndefined({ rateLimiters: opts.studioRateLimiters }),
+    ...omitUndefined({ sessionRegistry: opts.studioSessionRegistry }),
     previewQueue: opts.previewQueue,
     ...(opts.replicaId && { replicaId: opts.replicaId }),
   });
@@ -121,9 +122,9 @@ export function createStudioApp(opts: StudioAppOpts): {
     chats: opts.chats,
     events: opts.events ?? createMemoryPlatformEvents().events,
     secrets: opts.secrets ?? createMemorySecretStore(),
-    ...(opts.auth && { auth: opts.auth }),
-    ...(opts.keyVerifier && { keyVerifier: opts.keyVerifier }),
-    ...(opts.appDb && { appDb: opts.appDb }),
+    ...omitUndefined({ auth: opts.auth }),
+    ...omitUndefined({ keyVerifier: opts.keyVerifier }),
+    ...omitUndefined({ appDb: opts.appDb }),
     // Wrapped exactly as the agent service wraps it: holding the lock must
     // also drop this replica's cached view of the slug, or a mutation
     // read-modify-writes off a pre-lock snapshot (see createMutationLock).

@@ -183,7 +183,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot } = setupTools({
     agent,
     opts,
-    ...(notifier ? { notifier } : {}),
+    ...omitUndefined({ notifier }),
     llm: effectiveProviders.llm,
     env,
     providerEnv,
@@ -266,7 +266,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       client: sessionOpts.client,
       stream: sessionState.stream,
       logger,
-      ...(hooks ? { hooks } : {}),
+      ...omitUndefined({ hooks }),
     });
     const releaseEmitter = emitters.claim(sessionOpts.id, emitter);
 
@@ -315,7 +315,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       executeTool,
       transport,
       logger,
-      ...(opts.onToolResult ? { onToolResult: opts.onToolResult } : {}),
+      ...omitUndefined({ onToolResult: opts.onToolResult }),
     });
 
     // Hydration on the way in, reclamation on the way out — see
@@ -372,10 +372,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         }),
       readyConfig,
       logger,
-      ...(startOpts?.logContext ? { logContext: startOpts.logContext } : {}),
-      ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
-      ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
-      ...(startOpts?.onSinkCreated ? { onSinkCreated: startOpts.onSinkCreated } : {}),
+      ...omitUndefined({ logContext: startOpts?.logContext }),
+      ...omitUndefined({ onOpen: startOpts?.onOpen }),
+      ...omitUndefined({ onClose: startOpts?.onClose }),
+      ...omitUndefined({ onSinkCreated: startOpts?.onSinkCreated }),
       ...omitUndefined({ audioLeadMs: startOpts?.audioLeadMs }),
       // sinkMap/session-state cleanup lives in the identity-guarded stop() wrapper
       // (createSession) — a key delete here would hit the resumed session's

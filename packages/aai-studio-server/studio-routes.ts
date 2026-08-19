@@ -47,6 +47,7 @@
  * for raw callers — either way a caller only ever sees their own projects.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { authMw } from "aai-server/middleware";
 import { TtlCache } from "aai-server/platform-barrel";
 import { userApiKeySecretName } from "aai-server/supabase-auth";
@@ -134,7 +135,7 @@ export function createStudioRoutes(options: StudioRouteOptions): {
       broker = (options.broker ?? createStudioSessionBroker)({
         workspaces: c.env.workspaces,
         chats: c.env.chats,
-        ...(options.sessionRegistry && { registry: options.sessionRegistry }),
+        ...omitUndefined({ registry: options.sessionRegistry }),
         ...(options.replicaId && { replicaId: options.replicaId }),
         previewQueue: options.previewQueue,
         // Runs after any successful deploy, on both paths — see

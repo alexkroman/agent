@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
-import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
+import { omitUndefined, PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import {
   APP_CRON_JOB_PREFIX,
@@ -27,7 +27,7 @@ import {
 function captureSql(scheduled: string[] = [], hasCron = true) {
   const calls: { query: string; params?: unknown[] }[] = [];
   const sql: SqlExec = (query, params) => {
-    calls.push({ query, ...(params && { params }) });
+    calls.push({ query, ...omitUndefined({ params }) });
     if (query.includes("from pg_extension")) {
       return Promise.resolve(hasCron ? [{ ok: 1 }] : []);
     }

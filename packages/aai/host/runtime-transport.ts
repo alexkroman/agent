@@ -213,7 +213,7 @@ export function createTransportFactory(
       inputSampleRate: s2sConfig.inputSampleRate,
       outputSampleRate: s2sConfig.outputSampleRate,
       skipGreeting: sessionOpts.skipGreeting ?? false,
-      ...(createOpenaiRealtimeWebSocket ? { createWebSocket: createOpenaiRealtimeWebSocket } : {}),
+      ...omitUndefined({ createWebSocket: createOpenaiRealtimeWebSocket }),
       logger,
     });
   }
@@ -239,7 +239,7 @@ export function createTransportFactory(
       callbacks,
       sid: sessionOpts.id,
       agent: sessionOpts.agent,
-      ...(createWebSocket ? { createWebSocket } : {}),
+      ...omitUndefined({ createWebSocket }),
       logger,
     });
   }

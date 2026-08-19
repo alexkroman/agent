@@ -7,6 +7,7 @@
  * mounted the studio routes in-process.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ChatStore } from "aai-server/chat-store";
 import type { OrchestratorOpts } from "aai-server/orchestrator";
 import { createMemorySecretStore } from "aai-server/secret-store";
@@ -43,12 +44,12 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     // `orch.workspaces` feed the studio's SSE route, like production.
     events: overrides.events ?? orch.events,
     secrets,
-    ...(overrides.auth && { auth: overrides.auth }),
-    ...(overrides.keyVerifier && { keyVerifier: overrides.keyVerifier }),
-    ...(overrides.appDb && { appDb: overrides.appDb }),
-    ...(overrides.slugLock && { slugLock: overrides.slugLock }),
-    ...(overrides.studioRateLimiters && { studioRateLimiters: overrides.studioRateLimiters }),
-    ...(overrides.studioSessionRegistry && {
+    ...omitUndefined({ auth: overrides.auth }),
+    ...omitUndefined({ keyVerifier: overrides.keyVerifier }),
+    ...omitUndefined({ appDb: overrides.appDb }),
+    ...omitUndefined({ slugLock: overrides.slugLock }),
+    ...omitUndefined({ studioRateLimiters: overrides.studioRateLimiters }),
+    ...omitUndefined({
       studioSessionRegistry: overrides.studioSessionRegistry,
     }),
     // A test harness IS a composition root, so it makes the choice the real one

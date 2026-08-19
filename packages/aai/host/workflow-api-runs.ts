@@ -125,7 +125,7 @@ export async function startRun(
   // cannot reconstruct. See `workflow-api-wait.ts` for why an expired budget is
   // an answer rather than an error.
   const run = await waitForRun(engine, runId, wait, res);
-  sendJson(res, isTerminal(run) ? 200 : 202, { runId, ...(run && { run }) });
+  sendJson(res, isTerminal(run) ? 200 : 202, { runId, ...omitUndefined({ run }) });
 }
 
 /**

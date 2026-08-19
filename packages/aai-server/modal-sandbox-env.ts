@@ -220,7 +220,7 @@ export function guestSandboxResources(env: NodeJS.ProcessEnv): {
         cpuLimit: limits.cpuLimit,
       }),
       // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
-      ...(regions && { regions }),
+      ...omitUndefined({ regions }),
     },
   };
 }

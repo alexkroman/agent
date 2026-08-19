@@ -182,7 +182,7 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
     if ("dsn" in dsn) await vault.put(PLATFORM_DB_DSN_SECRET, dsn.dsn);
     // No flag for the DSN: the sweep body reads it from Vault at run time, so a
     // boot-time boolean would be a second source of truth for the same fact.
-    await schedulePlatformSweeps(sql, platformCronJobs({ ...(storage && { storage }) }));
+    await schedulePlatformSweeps(sql, platformCronJobs({ ...omitUndefined({ storage }) }));
   };
   bootstrap().catch((err: unknown) => {
     console.error("pg_cron sweep scheduling failed — janitorial sweeps will not run:", err);
@@ -400,15 +400,15 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     chats,
     events,
     secrets,
-    ...(auth && { auth }),
-    ...(keyVerifier && { keyVerifier }),
+    ...omitUndefined({ auth }),
+    ...omitUndefined({ keyVerifier }),
     slugLock,
     replicaId,
-    ...(appDb && { appDb }),
-    ...(sql && { sql }),
-    ...(adminDb && { adminDb }),
+    ...omitUndefined({ appDb }),
+    ...omitUndefined({ sql }),
+    ...omitUndefined({ adminDb }),
     ...omitUndefined({ extraAppDbClusters }),
-    ...(directory && { directory }),
+    ...omitUndefined({ directory }),
   };
 }
 

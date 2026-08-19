@@ -314,11 +314,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slots: opts.slots,
     store: opts.store,
     secrets,
-    ...(opts.appDb && { appDb: opts.appDb }),
-    ...(opts.directory && { directory: opts.directory }),
+    ...omitUndefined({ appDb: opts.appDb }),
+    ...omitUndefined({ directory: opts.directory }),
     // Same predicate `/health` reports on, so "the proxy has been told to
     // stop routing here" and "stop booting sandboxes" can never disagree.
-    ...(opts.isDraining && { isDraining: opts.isDraining }),
+    ...omitUndefined({ isDraining: opts.isDraining }),
   };
 
   // Durable runs whose sandbox is long gone (workflow-wake.ts). Wired here for
@@ -328,8 +328,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   startWorkflowWakeSweep({
     store: opts.store,
     broker: brokerOpts,
-    ...(opts.adminDb && { adminDb: opts.adminDb }),
-    ...(opts.isDraining && { isDraining: opts.isDraining }),
+    ...omitUndefined({ adminDb: opts.adminDb }),
+    ...omitUndefined({ isDraining: opts.isDraining }),
     ...omitUndefined({ extraAppDbClusters: opts.extraAppDbClusters }),
   });
 
@@ -416,9 +416,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   bindFetchEnv(app, {
     store: opts.store,
     secrets,
-    ...(opts.auth && { auth: opts.auth }),
-    ...(opts.keyVerifier && { keyVerifier: opts.keyVerifier }),
-    ...(opts.appDb && { appDb: opts.appDb }),
+    ...omitUndefined({ auth: opts.auth }),
+    ...omitUndefined({ keyVerifier: opts.keyVerifier }),
+    ...omitUndefined({ appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact. Wrapped so
     // taking the lock also drops this replica's cached view of the slug —

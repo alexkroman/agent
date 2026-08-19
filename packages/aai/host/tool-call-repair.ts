@@ -44,6 +44,7 @@ import {
   type ToolSet,
 } from "ai";
 import { jsonrepair } from "jsonrepair";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { errorMessage, isRecord, safeJsonParse } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -165,7 +166,7 @@ export function createToolCallRepair(
       const { output } = await generateText({
         model,
         output: Output.object({ schema: jsonSchema(schema) }),
-        ...(abortSignal ? { abortSignal } : {}),
+        ...omitUndefined({ abortSignal }),
         prompt:
           `The tool "${toolCall.toolName}" was called with arguments that failed schema ` +
           `validation:\n${error.message}\n\nInvalid arguments:\n${toolCall.input}\n\n` +

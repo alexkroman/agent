@@ -22,6 +22,7 @@ import {
   DEFAULT_MAX_TURN_SILENCE_MS,
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "../../endpointing-constants.ts";
+import { omitUndefined } from "../../omit-undefined.ts";
 import {
   DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
@@ -226,6 +227,6 @@ export function resolveAssemblyAISttSettings(opts: AssemblyAIOptions): {
       ? { languages: opts.languages }
       : {}),
     ...(opts.streamingUrl ? { streamingUrl: opts.streamingUrl } : {}),
-    ...(opts.region ? { region: opts.region } : {}),
+    ...omitUndefined({ region: opts.region }),
   };
 }

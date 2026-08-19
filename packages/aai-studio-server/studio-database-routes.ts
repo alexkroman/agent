@@ -12,6 +12,7 @@
  * reasoning; this is the routing and the request-bound wiring.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Context, Hono } from "hono";
 import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";
 import {
@@ -34,7 +35,7 @@ export function databaseEnvFor(c: Context<StudioHonoEnv>): ProjectDatabaseEnv {
     workspaces: c.env.workspaces,
     store: c.env.store,
     secrets: c.env.secrets,
-    ...(c.env.appDb && { appDb: c.env.appDb }),
+    ...omitUndefined({ appDb: c.env.appDb }),
     slugLock: c.env.slugLock,
   };
 }

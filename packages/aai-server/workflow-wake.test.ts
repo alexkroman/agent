@@ -131,8 +131,8 @@ function sweepWith(
     store: storeWithSlugs(opts.slugs ?? Object.keys(hints)),
     broker: { slots: createSlotCache(), store: createTestStore() },
     wake,
-    ...(opts.isDraining && { isDraining: opts.isDraining }),
-    ...(opts.now && { now: opts.now }),
+    ...omitUndefined({ isDraining: opts.isDraining }),
+    ...omitUndefined({ now: opts.now }),
     ...omitUndefined({ retryMs: opts.retryMs, maxPerTick: opts.maxPerTick }),
   });
   return { sweep, wake, adminDb, appDb };

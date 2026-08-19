@@ -1,4 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
+
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { readGlobalConfig } from "./_config.ts";
 import { CliError } from "./_output.ts";
@@ -44,7 +46,7 @@ function fakeFetch(
   const calls: { url: string; init?: RequestInit }[] = [];
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
-    calls.push({ url, ...(init ? { init } : {}) });
+    calls.push({ url, ...omitUndefined({ init }) });
     const route = Object.entries(routes).find(([suffixOrPath]) => url.includes(suffixOrPath));
     if (!route) return new Response(JSON.stringify({ error: `no route: ${url}` }), { status: 404 });
     const { status = 200, body } = route[1](init);

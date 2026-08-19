@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import pTimeout from "p-timeout";
 import { type Mock, vi } from "vitest";
 import type { AgentConfig } from "../sdk/_internal-types.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ClientSink, SessionEvent } from "../sdk/protocol.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { createDetachedSlotStore } from "../sdk/session-state.ts";
@@ -203,7 +204,7 @@ export function makeEmitter(
       sessionId,
       client,
       stream,
-      ...(opts?.hooks ? { hooks: opts.hooks } : {}),
+      ...omitUndefined({ hooks: opts?.hooks }),
     }),
     stream,
     sessionId,

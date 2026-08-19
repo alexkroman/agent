@@ -57,6 +57,7 @@
  * two things per import path is the same trap the factory renames removed).
  */
 
+import { omitUndefined } from "../omit-undefined.ts";
 import { type AssemblyAILlmProvider, assemblyAILlm } from "./llm/assemblyai.ts";
 import { type AssemblyAIProvider, assemblyAIStt } from "./stt/assemblyai.ts";
 import {
@@ -132,7 +133,7 @@ export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
     // cost of losing it is 1786ms p50 time-to-first-token on gpt-5.5's
     // server-side reasoning default against 999ms with it off; deleting it as
     // redundant makes the next id change a silent regression.
-    llm: assemblyAILlm({ reasoningEffort: "none", ...(region ? { region } : {}) }),
+    llm: assemblyAILlm({ reasoningEffort: "none", ...omitUndefined({ region }) }),
     tts: assemblyAITts(voice ? { voice } : {}),
   };
 }

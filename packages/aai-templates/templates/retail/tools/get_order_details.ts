@@ -1,4 +1,5 @@
 import { isToolFailure } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { OrderIdField, resolveOrder } from "../resolve.ts";
 import { retailTool, setFocus } from "../store.ts";
@@ -28,7 +29,7 @@ export default retailTool({
         options: item.options,
       })),
       payment_history: order.payment_history,
-      ...(order.fulfillments ? { fulfillments: order.fulfillments } : {}),
+      ...omitUndefined({ fulfillments: order.fulfillments }),
       ...(order.cancel_reason ? { cancel_reason: order.cancel_reason } : {}),
     };
   },

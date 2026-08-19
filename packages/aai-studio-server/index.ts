@@ -18,6 +18,7 @@
  * packages/aai-server/modal_deploy.py.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { DEFAULT_PORT } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
 import { resolvePort } from "aai-server/platform-barrel";
@@ -101,13 +102,13 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     workspaces: base.workspaces,
     chats: base.chats,
     events: base.events,
-    ...(base.secrets && { secrets: base.secrets }),
-    ...(base.auth && { auth: base.auth }),
-    ...(base.keyVerifier && { keyVerifier: base.keyVerifier }),
-    ...(base.appDb && { appDb: base.appDb }),
-    ...(base.slugLock && { slugLock: base.slugLock }),
-    ...(rateLimiters && { studioRateLimiters: rateLimiters }),
-    ...(sessionRegistry && { studioSessionRegistry: sessionRegistry }),
+    ...omitUndefined({ secrets: base.secrets }),
+    ...omitUndefined({ auth: base.auth }),
+    ...omitUndefined({ keyVerifier: base.keyVerifier }),
+    ...omitUndefined({ appDb: base.appDb }),
+    ...omitUndefined({ slugLock: base.slugLock }),
+    ...omitUndefined({ studioRateLimiters: rateLimiters }),
+    ...omitUndefined({ studioSessionRegistry: sessionRegistry }),
     previewQueue,
     replicaId: base.replicaId,
     isDraining,
@@ -149,7 +150,7 @@ async function main(): Promise<void> {
   const deployRateLimiter = buildDeployRateLimiter(base);
   const orchestrator = createOrchestrator({
     ...base,
-    ...(deployRateLimiter && { deployRateLimiter }),
+    ...omitUndefined({ deployRateLimiter }),
     isDraining: () => draining,
   });
   const combinedFetch = (req: Request): Response | Promise<Response> =>

@@ -128,7 +128,7 @@ async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promis
 
   const turnTimeoutMs = opts.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const runtime = createRuntime({
-    // `omitUndefined`, not `...(opts.llm ? { llm } : {})`: the conditional spread
+    // `omitUndefined`, not `...omitUndefined({ llm })`: the conditional spread
     // of an object literal is the idiom `guard-invariants` rule 2 exists to keep
     // out, and the truthiness spelling is the one its regex cannot see.
     agent: { ...opts.agent, stt: fake.stt, tts: fake.tts, ...omitUndefined({ llm: opts.llm }) },

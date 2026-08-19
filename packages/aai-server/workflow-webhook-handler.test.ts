@@ -11,6 +11,7 @@
  * run outlives the call that started it and an agent guest self-exits on idle.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
@@ -52,7 +53,7 @@ async function residentHarness(guestFetch?: typeof globalThis.fetch) {
   const slots = createSlotCache();
   const harness = await createTestOrchestrator({
     slots,
-    ...(guestFetch && { guestFetch }),
+    ...omitUndefined({ guestFetch }),
   });
   await deployAgent(harness.fetch, "my-agent");
   setSlot(slots, {
