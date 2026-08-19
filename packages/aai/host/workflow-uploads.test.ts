@@ -156,11 +156,20 @@ describe("a deployment with nowhere to put uploads", () => {
     await expect(store.create({}, body(ramp(4)))).rejects.toThrow(/AAI_UPLOAD_STORAGE_URL/);
   });
 
-  test("names only the half that is missing", async () => {
+  test("DIAGNOSES only the half that is missing", async () => {
     const { db } = memoryStore();
     const store = createUploadStore({ db });
-    await expect(store.beginParts("abc", {}, 4)).rejects.toThrow(/AAI_UPLOAD_STORAGE_URL/);
-    await expect(store.beginParts("abc", {}, 4)).rejects.not.toThrow(/DATABASE_URL/);
+    const failed = await store
+      .beginParts("abc", {}, 4)
+      .then(() => expect.fail("the store accepted a claim it has nowhere to store"))
+      .catch((err: unknown) => err as Error);
+    // The first sentence is the diagnosis and names one half; the `.env` block after it
+    // is deliberately COMPLETE, because a reader who has just found the first missing
+    // variable is about to find the second.
+    const [diagnosis = ""] = failed.message.split(".");
+    expect(diagnosis).toContain("AAI_UPLOAD_STORAGE_URL");
+    expect(diagnosis).not.toContain("DATABASE_URL");
+    expect(failed.message).toContain("supabase status -o env");
   });
 
   test("refuses the READS too, so a misconfiguration cannot look like a missing id", async () => {

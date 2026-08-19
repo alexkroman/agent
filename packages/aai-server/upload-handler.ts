@@ -172,10 +172,16 @@ async function serveWindow(
   const range = parseRange(c.req.header("range"));
   const found = await bytes.read(key, range?.start ?? 0, range?.end ?? Number.MAX_SAFE_INTEGER);
   if (found.length === 0 && (await bytes.size(key)) === undefined) return c.body(null, 404);
-  return c.body(found as unknown as ArrayBuffer, range ? 206 : 200, {
-    "Content-Type": "application/octet-stream",
-    "Content-Length": String(found.length),
-    "Accept-Ranges": "bytes",
+  // `new Response` rather than `c.body`, whose `Data` is `string | ArrayBuffer |
+  // ReadableStream` — a `Uint8Array` is a perfectly good `BodyInit` and the only way
+  // through that signature is a cast that stops reporting if the type ever moves.
+  return new Response(found, {
+    status: range ? 206 : 200,
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Content-Length": String(found.length),
+      "Accept-Ranges": "bytes",
+    },
   });
 }
 

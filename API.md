@@ -3341,10 +3341,16 @@ type CreateHeaderWebSocket = (url: string, opts: {
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
 // @public
+export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs;
+
+// @public
 export function createMemoryKeyStore(): WorkflowKeyStore;
 
 // @internal
 export function createMemoryStateBackend(): SessionStateBackend;
+
+// @public
+export function createMemoryUploadBlobs(): UploadBlobs;
 
 // @public (undocumented)
 type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
@@ -3421,7 +3427,8 @@ export function createToolCallRepair(model: LanguageModel, log: Logger, getAbort
 // @internal
 export function createUploadStore(opts: {
     db?: Db | undefined;
-    dir: string;
+    blobs?: UploadBlobs | undefined;
+    prefix?: string | undefined;
     maxBytes?: number | undefined;
 }): UploadStore;
 
@@ -3604,13 +3611,21 @@ export interface HostServerOptions extends PassthroughServerOptions {
 // @public
 export type HostSessionDefaults = Omit<Partial<AgentDef>, "systemPrompt" | "greeting" | "tools" | "sttPrompt">;
 
+// @public (undocumented)
+type HttpUploadBlobsOptions = {
+    url: string;
+    serviceKey: string;
+    bucket: string;
+    fetch?: typeof globalThis.fetch | undefined;
+};
+
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @internal
 export function installWorkflowSupport(opts: {
     env?: Record<string, string> | undefined;
-    dataDir?: string | undefined;
+    uploadBroker?: string | undefined;
     logger: Logger;
 }): WorkflowSupport;
 
@@ -3681,6 +3696,9 @@ interface OwnedMap<K, V> {
     // (undocumented)
     values(): IterableIterator<V>;
 }
+
+// @public
+export function partKey(prefix: string, id: string, at: number): string;
 
 // @public
 export type PassthroughServerOptions = {
@@ -3860,6 +3878,13 @@ export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
 
 // @internal
+export function resolveUploadBlobs(opts: {
+    env?: Record<string, string> | undefined;
+    broker?: string | undefined;
+    fetch?: typeof globalThis.fetch | undefined;
+}): UploadBlobs | undefined;
+
+// @internal
 type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
 
 // @public
@@ -3978,7 +4003,7 @@ export type ServerOptions = {
     env?: Record<string, string>;
     hostBaseAgent?: AgentDef;
     greeting?: string;
-    workflowDataDir?: string;
+    uploadBroker?: string;
     upgrade?: (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
     request?: (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
     page?: "voice" | "static";
@@ -4698,10 +4723,35 @@ export const twilioCodec: CarrierCodec;
 type Unsubscribe = () => void;
 
 // @public
-export const UPLOAD_CHUNKS_TABLE = "aai_workflow_upload_chunks";
+export const UPLOAD_CHUNK_BYTES: number;
 
 // @public
-export const UPLOAD_DIR_NAME: string;
+export const UPLOAD_KEY_PREFIX = "uploads";
+
+// @public
+export const UPLOAD_PART_BYTES: number;
+
+// @public
+export const UPLOAD_STORAGE_BUCKET_ENV = "AAI_UPLOAD_STORAGE_BUCKET";
+
+// @public
+export const UPLOAD_STORAGE_KEY_ENV = "AAI_UPLOAD_STORAGE_KEY";
+
+// @public
+export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
+
+// @public
+export const UPLOAD_TOKEN_RE: RegExp;
+
+// @public
+export type UploadBlobs = {
+    put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
+        type?: string | undefined;
+        limit?: number | undefined;
+    }): Promise<number>;
+    read(key: string, start: number, end: number): Promise<Uint8Array>;
+    size(key: string): Promise<number | undefined>;
+};
 
 // @public
 type UploadInfo = {
@@ -4717,6 +4767,12 @@ type UploadInfo = {
 export type UploadMeta = {
     name?: string | undefined;
     type?: string | undefined;
+};
+
+// @public
+export type UploadPart = {
+    at: number;
+    bytes: number;
 };
 
 // @public
@@ -4749,6 +4805,7 @@ export type UploadStore = UploadReader & {
         limit?: number;
     }): Promise<UploadInfo>;
     writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
+    recordPart(id: string, offset: number): Promise<UploadInfo>;
 };
 
 // @public
@@ -4840,6 +4897,7 @@ export type WorkflowApiOptions = {
     engine: () => WorkflowApiEngine | undefined;
     token?: string | undefined;
     uploads?: UploadStore | undefined;
+    directParts?: boolean | undefined;
     logger: Logger;
 };
 

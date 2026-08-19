@@ -93,12 +93,13 @@ export function installWorkflowSupport(opts: {
    */
   env?: Record<string, string> | undefined;
   /**
-   * This agent's own public base URL, when a platform told it one.
+   * Base URL of a platform serving this agent's upload bytes, when there is one.
    *
-   * Its PRESENCE is what selects the brokered byte path, which is the security
-   * boundary rather than a preference — see `resolveUploadBlobs`.
+   * Its PRESENCE selects the brokered byte path, which is the security boundary rather
+   * than a preference — see `resolveUploadBlobs`, and `ServerOptions.uploadBroker` for
+   * why this is not `publicUrl`.
    */
-  publicUrl?: string | undefined;
+  uploadBroker?: string | undefined;
   logger: Logger;
 }): WorkflowSupport {
   // A pool of its own rather than the runtime's `ctx.db`: the runtime is built
@@ -112,7 +113,7 @@ export function installWorkflowSupport(opts: {
   const store = createUploadStore({
     db,
     ...omitUndefined({
-      blobs: resolveUploadBlobs(omitUndefined({ env: opts.env, publicUrl: opts.publicUrl })),
+      blobs: resolveUploadBlobs(omitUndefined({ env: opts.env, broker: opts.uploadBroker })),
       // A value that is not a positive number is IGNORED rather than treated as
       // zero: a typo'd env var must not make every upload fail as "too large".
       // An operator knob rather than a tuning one: what it bounds is how much of

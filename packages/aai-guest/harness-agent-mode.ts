@@ -403,12 +403,13 @@ export async function mainAgent(port: number, host: string, token: string): Prom
   const server = createServer({
     runtime,
     // The platform's own origin plus this agent's slug, translated from one `AAI_*`
-    // key exactly as `ensureRuntime` translates it for `publicWebhookUrl`. Read here
-    // TOO rather than off the runtime, because the runtime is a lazy facade and the
-    // upload store is built with the server — and its PRESENCE is what puts an
-    // upload's bytes on the brokered path, where the platform holds the bucket
-    // credential and this guest holds none (see `aai/host/_upload-blobs.ts`).
-    ...omitUndefined({ publicUrl: process.env.AAI_PUBLIC_BASE_URL?.trim() || undefined }),
+    // key exactly as `ensureRuntime` translates `AAI_PUBLIC_BASE_URL` for
+    // `publicWebhookUrl`. A SECOND key carrying the same value, because the two claims
+    // are different and a self-hosted agent makes only one of them — `agentBootEnv` in
+    // aai-server carries the argument. Its presence is what puts an upload's bytes on
+    // the brokered path, where the platform holds the bucket credential and this guest
+    // holds none (see `aai/host/_upload-blobs.ts`).
+    ...omitUndefined({ uploadBroker: process.env.AAI_UPLOAD_BROKER_URL?.trim() || undefined }),
     // The guest is the authority on the agent's public client config: the
     // platform's `GET /:slug/client-config` broker PROXIES this server's
     // own `/client-config` for name/greeting, so the bundle's live agent

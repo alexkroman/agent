@@ -1166,6 +1166,22 @@ A query returning more than 1000 rows throws — always bound reads with
   preview and published agents, each with its own schema)
 - `aai dev`: set `DATABASE_URL` in the project `.env`
 
+**A workflow UPLOAD needs one more thing locally: somewhere to put the bytes.**
+A deployed agent gets it from the platform; under `aai dev` the bytes go to a
+bucket you point it at, and the Supabase CLI prints the two values
+(`supabase start`, then `supabase status -o env`):
+
+```sh
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
+AAI_UPLOAD_STORAGE_URL=http://127.0.0.1:54321
+AAI_UPLOAD_STORAGE_KEY=<SERVICE_ROLE_KEY>
+AAI_UPLOAD_STORAGE_BUCKET=uploads
+```
+
+Without both halves `api.upload(file)` fails naming the one that is missing —
+never quietly into a directory, which is what it used to do and then lose by the
+time a resumed run read it.
+
 Create tables lazily from tool code and upsert with `on conflict`:
 
 ```ts no-check

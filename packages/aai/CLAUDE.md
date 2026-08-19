@@ -502,6 +502,22 @@ descriptor's `apiKeyEnv` now, like every other stage; they resolve through
 `resolveS2sEnvVar`, so the key a session reads is by construction the key
 the preflight asked for.
 
+## An upload's bytes are OBJECTS, and its record is a row
+
+One store (`host/_upload-store-blobs.ts`): a row in the app's own database, and
+one object per `UPLOAD_PART_BYTES` window behind a two-method `UploadBlobs`. It
+used to hold the bytes itself — a `bytea` row per megabyte, or a file per upload
+under `aai dev` — and **`host/_upload-blobs.ts` carries why they left**: 6x the
+storage cost, every byte in the WAL and every base backup, the app's own queries
+sharing a pool with them (p50 1.34s against 0.43s), and the platform's forward
+reading a slow drain as a dead guest.
+
+The file backend went with it. It was justified as "a valid double for the
+Postgres one", which was the wrong axis — what a double has to stand in for here
+is BYTES, not records — so the seam moved down to `UploadBlobs`, whose whole
+contract is a window read and a length. There is no fallback left: a deployment
+with no database or no bucket has no uploads and says so by name.
+
 ## An upload can be read while it is still arriving
 
 `POST /workflows/uploads` answers with an id once the last byte is stored — the
@@ -530,11 +546,20 @@ passes `parallel: false`.
 
 **Two rules make it invisible downstream**, which is why no reader, no step and
 no range route changed: a part starts on an `UPLOAD_CHUNK_BYTES` boundary, so its
-bytes are ordinary chunks at their own offsets; and **`size` is the CONTIGUOUS
-prefix, never the sum of what has arrived** — parts land out of order, so a size
-that counted bytes would tell a reader it may read a hole. `complete` becomes
-true when that prefix reaches the DECLARED total, which is the only observable
-moment every byte is present.
+offset — which IS its object's name — is on a grid nothing can scatter; and
+**`size` is the CONTIGUOUS prefix, never the sum of what has arrived** — parts
+land out of order, so a size that counted bytes would tell a reader it may read a
+hole. `complete` becomes true when that prefix reaches the DECLARED total, which
+is the only observable moment every byte is present.
+
+**On the platform the bytes do not come to the agent at all.** A deployed guest
+holds no bucket credential, so each window goes to a route the PLATFORM serves
+and a bodyless `PUT …/parts?offset=…&stored=1` tells the agent which one landed —
+whose size the store asks the BUCKET for rather than taking from the caller,
+which is what stops a claimed part becoming a readable hole. The CLAIM decides
+which path a client takes (`directParts`), because `aai dev`, a self-hosted
+server and an agent deployed before this all answer the same way — see
+`host/_upload-blobs.ts` and `aai-server/upload-handler.ts`.
 
 **And `info` publishes WHICH windows landed** (`UploadInfo.ranges`), for an
 unfinished parts upload and nothing else — a whole-file write has no windows, and

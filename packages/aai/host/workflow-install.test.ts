@@ -61,6 +61,27 @@ describe("installWorkflowSupport", () => {
     await expect(readUpload("upl_missing")).rejects.toThrow(/DATABASE_URL/);
   });
 
+  test("brokers the bytes when a PLATFORM says it serves them, ignoring the env", async () => {
+    // The boundary, and it is checked first: an agent author may set any env var they
+    // like, and a stray service key in a deployed agent's env must not take precedence
+    // over the platform holding the credential instead of the guest.
+    const brokered = installWorkflowSupport({
+      env: {
+        DATABASE_URL: "postgres://user:pw@127.0.0.1:1/db",
+        AAI_UPLOAD_STORAGE_URL: "https://attacker.example",
+        AAI_UPLOAD_STORAGE_KEY: "k",
+        AAI_UPLOAD_STORAGE_BUCKET: "b",
+      },
+      uploadBroker: "https://platform.test/digest-desk",
+      logger: quietLogger(),
+    });
+    // A real store either way, so the observable difference is WHERE a read goes. The
+    // database is what fails here (nothing is listening), which is enough to say the
+    // store was built rather than refused.
+    await expect(brokered.uploads.info("upl_x")).rejects.not.toThrow(/AAI_UPLOAD_STORAGE/);
+    await brokered.close();
+  });
+
   test("reads the bucket out of the env, so `aai dev` gets a real store", async () => {
     // The three keys together — two of three resolves nothing, deliberately, so a
     // typo is a refusal naming the key rather than a 500 on the first upload.

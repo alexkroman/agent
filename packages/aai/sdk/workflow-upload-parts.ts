@@ -17,27 +17,18 @@
  *
  * ## The bytes may not come to the agent at all
  *
- * On the managed platform they do not. A deployed guest holds no bucket credential,
- * so it reaches an upload's bytes through a route the PLATFORM serves — and a part
- * sent to the agent would cross that platform twice on its way to the same bucket,
- * through a forward that measures a body's drain to decide whether the guest is
- * alive. So the claim answers `directParts: true`, and each window goes
- * `PUT <origin>/<slug>/uploads/<id>/<offset>` followed by a bodyless
- * `PUT …/parts?offset=…&stored=1` telling the agent which window landed.
+ * On the platform they do not: a deployed guest holds no bucket credential, so a part
+ * sent to it would cross the platform twice to reach the same bucket. The claim answers
+ * `directParts: true` and each window goes `PUT <origin>/<slug>/uploads/<id>/<offset>`
+ * followed by a bodyless `PUT …/parts?offset=…&stored=1` naming the window that landed.
+ * `aai-server/upload-handler.ts` and `aai/host/_upload-blobs.ts` carry the argument.
  *
- * Two properties make that safe to be the ordinary path rather than an option:
- *
- * - **The CLAIM decides, not the client.** `aai dev` and a self-hosted server hold
- *   the credential themselves and serve no such route, so they answer without the
- *   field and the bytes come to them — as does an agent deployed before any of this
- *   existed. A client that guessed from its own URL would send 8 MiB into a 404.
- * - **The agent still measures the part.** `stored=1` carries an offset and no size:
- *   the store asks the bucket how big the object is before it records the window, so
- *   a client cannot advance `size` past a hole however it got there.
- *
- * Everything else about the fan-out is unchanged — the same windows, the same
- * concurrency, the same retry budget, the same resume — because the RECORD is still
- * the agent's and it is what `size`, `complete` and `ranges` come from.
+ * Two properties make that the ordinary path rather than an option. **The CLAIM
+ * decides** — `aai dev`, a self-hosted server and an agent deployed before this all
+ * answer without the field, and a client guessing from its own URL would send 8 MiB
+ * into a 404. And **the agent still measures the part**: `stored=1` carries an offset
+ * and no size, so a client cannot advance `size` past a hole however it got there.
+ * Everything else is unchanged, because the RECORD is still the agent's.
  *
  * ## This is the DEFAULT, and it degrades to the single request
  *

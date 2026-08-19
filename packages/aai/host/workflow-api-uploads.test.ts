@@ -16,6 +16,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
 import { UPLOAD_CHUNK_BYTES } from "../sdk/constants.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { requestPath } from "../sdk/request-url.ts";
 import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
 import { silentLogger } from "./_test-utils.ts";
@@ -73,7 +74,7 @@ async function serve(
     engine,
     uploads,
     logger: silentLogger,
-    ...(opts.directParts === undefined ? {} : { directParts: opts.directParts }),
+    ...omitUndefined({ directParts: opts.directParts }),
   });
   const server = http.createServer((req, res) => {
     const url = requestPath(req.url);

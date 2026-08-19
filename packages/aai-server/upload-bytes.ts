@@ -45,6 +45,7 @@ import {
   createMemoryUploadBlobs,
   type UploadBlobs,
 } from "@alexkroman1/aai/runtime";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { StorageClient } from "@supabase/storage-js";
 import { type SupabaseBlobStorageOptions, storageEndpoint } from "./blob-storage.ts";
 
@@ -88,7 +89,7 @@ export function createSupabaseUploadBytes(opts: SupabaseBlobStorageOptions): Upl
     url: opts.url,
     serviceKey: opts.serviceRoleKey,
     bucket: opts.bucket,
-    ...(opts.fetch ? { fetch: opts.fetch } : {}),
+    ...omitUndefined({ fetch: opts.fetch }),
   });
   const bucket = new StorageClient(
     storageEndpoint(opts.url),

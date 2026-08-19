@@ -102,21 +102,18 @@ export type ServerOptions = {
   /** Agent greeting, included in the `GET /client-config` response. */
   greeting?: string;
   /**
-   * This agent's own public base URL — origin plus, on the managed platform, the
-   * slug (`https://<platform>/<slug>`).
+   * Base URL of a PLATFORM that serves this agent's upload bytes for it.
    *
-   * Read for one thing: workflow uploads. Its PRESENCE selects the brokered byte
-   * path, where every byte operation goes to the platform surface holding the bucket
-   * credential rather than to a credential in this process — see
-   * `_upload-blobs.ts`. Absent, the store reads the three `AAI_UPLOAD_STORAGE_*`
-   * keys out of the agent env, which is what `aai dev` and a self-hosted server do.
+   * Its presence puts workflow uploads on the brokered path, where every byte operation
+   * goes to `<uploadBroker>/uploads/<id>/<offset>` and this process holds no bucket
+   * credential; absent, the store reads the `AAI_UPLOAD_STORAGE_*` keys and talks to a
+   * bucket itself, as `aai dev` does. `host/_upload-blobs.ts` has the argument.
    *
-   * The same value the RUNTIME takes for `ctx.workflows.publicWebhookUrl`, and it is
-   * passed twice rather than read off the runtime because the runtime is a LAZY
-   * facade in the guest harness: the DevKit can dispatch a step, and therefore reach
-   * the upload store, before any session has built one.
+   * **Deliberately NOT `publicUrl`.** That one answers "where do third parties reach
+   * me", which a self-hosted agent behind a proxy also answers — reusing it would put
+   * such an agent on a byte route nothing serves. This is a claim about the DEPLOYMENT.
    */
-  publicUrl?: string;
+  uploadBroker?: string;
   /**
    * First look at every WebSocket upgrade. Return true to claim it (the
    * server then leaves the socket alone); return false to fall through to
@@ -237,7 +234,7 @@ export function createServer(options: ServerOptions): AgentServer {
    * new server on every save. See `installWorkflowSupport`.
    */
   const workflowSupport = installWorkflowSupport({
-    ...omitUndefined({ env, publicUrl: options.publicUrl }),
+    ...omitUndefined({ env, uploadBroker: options.uploadBroker }),
     logger,
   });
 
@@ -255,13 +252,11 @@ export function createServer(options: ServerOptions): AgentServer {
   const workflowApi = createWorkflowApi({
     engine: () => runtime.workflows,
     uploads: workflowSupport.uploads,
-    // The presence of a public base URL is exactly the condition that puts this
-    // server's uploads on the brokered byte path, so it is also the condition under
-    // which a platform serves a byte route the client should use instead. Derived
-    // from the one option rather than passed separately, so the two cannot disagree —
-    // a claim advertising a route nothing serves is a client sending bytes into a
-    // 404.
-    directParts: Boolean(options.publicUrl?.trim()),
+    // Derived from the one option rather than passed separately, so the two cannot
+    // disagree: a claim advertising a route nothing serves is a client sending
+    // megabytes into a 404 — which is exactly what reusing `publicUrl` here would do
+    // to a self-hosted agent behind a proxy.
+    directParts: Boolean(options.uploadBroker?.trim()),
     ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
     logger,
   });

@@ -14,12 +14,13 @@
 
 import { vi } from "vitest";
 import { UPLOAD_RETRY_MAX_MS } from "./constants.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import { createWorkflowApiClient } from "./workflow-api-client.ts";
 
 export const BASE = "https://agents.example/my-agent/";
 
 export function client(opts: { token?: string } = {}) {
-  return createWorkflowApiClient({ baseUrl: BASE, ...(opts.token ? { token: opts.token } : {}) });
+  return createWorkflowApiClient({ baseUrl: BASE, ...omitUndefined({ token: opts.token }) });
 }
 
 /** One request the client made, reduced to what a spec asks about. */
@@ -157,7 +158,7 @@ function answerBegin(script: Script, attempt: number): Response {
   if (status !== 201) return json(status, { error: "no such route" });
   // Omitted rather than false when the bytes come to the agent, exactly as the route
   // omits it — so a fake cannot make the client take a path a real agent would not.
-  return json(201, { ...record(0, false), ...(script.direct ? { directParts: true } : {}) });
+  return json(201, { ...record(0, false), directParts: script.direct ? true : undefined });
 }
 
 /**

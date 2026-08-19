@@ -106,7 +106,7 @@ export type UploadCreated = UploadInfo & {
    * Absent also covers an agent deployed before this existed, which is the same
    * answer and the right one.
    */
-  directParts?: boolean;
+  directParts?: boolean | undefined;
   /**
    * Where the bytes are, relative to the API's own prefix.
    *
@@ -245,10 +245,11 @@ export async function beginUploadParts(
     sendJson(res, 201, {
       ...info,
       url: `${UPLOADS_PATH}/${info.id}`,
-      // Omitted rather than `false` when the bytes come here: a client reads its
-      // presence, and an absent field is also what an agent deployed before this
-      // existed answers — one shape for "send the body to me", not two.
-      ...(directParts ? { directParts: true } : {}),
+      // `undefined` rather than `false` when the bytes come here, and `sendJson`'s
+      // `JSON.stringify` drops it: a client reads the field's PRESENCE, and absent is
+      // also what an agent deployed before this existed answers — one shape for "send
+      // the body to me", not two.
+      directParts: directParts ? true : undefined,
     } satisfies UploadCreated);
   } catch (err: unknown) {
     if (sendWriteFailure(res, err)) return;

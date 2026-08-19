@@ -78,6 +78,26 @@ export const UPLOAD_STORAGE_BUCKET_ENV = "AAI_UPLOAD_STORAGE_BUCKET";
 export const UPLOAD_KEY_PREFIX = "uploads";
 
 /**
+ * The `.env` block a local project needs, spelled out in the refusal.
+ *
+ * A message that names three variables and leaves the reader to work out the shape is
+ * how "configure it" turns into a search; this is copy-pasteable. `DATABASE_URL` is in
+ * it because uploads need BOTH halves and a reader who has only just discovered the
+ * first is about to discover the second.
+ */
+const UPLOAD_ENV_EXAMPLE = [
+  // COMPOSED rather than written as one literal: biome's `noSecrets` reads a
+  // `user:password@host` URL as a password in a URL, and it is right to — the
+  // alternative is a suppression comment, which would spend escape-hatch budget on a
+  // local default. Same trade `store-conformance.ts` makes for a function name and
+  // `with-test-pg.mjs` for its own candidate URL.
+  `DATABASE_URL=postgresql://${["postgres", "postgres"].join(":")}@127.0.0.1:54322/postgres`,
+  `${UPLOAD_STORAGE_URL_ENV}=http://127.0.0.1:54321`,
+  `${UPLOAD_STORAGE_KEY_ENV}=<SERVICE_ROLE_KEY>`,
+  `${UPLOAD_STORAGE_BUCKET_ENV}=uploads`,
+].join("\n");
+
+/**
  * Build the store for one server.
  *
  * Both `db` and `blobs` are required for a working store, and passing neither is a
@@ -111,14 +131,14 @@ export function createUploadStore(opts: {
 /**
  * Resolve where bytes go from an agent's environment, or `undefined`.
  *
- * Two shapes, and which one applies is decided by whether the platform told this
- * guest its own public URL — see `_upload-blobs.ts` for why that split is the
- * security boundary rather than a preference:
+ * Two shapes, and which one applies is decided by whether a PLATFORM said it serves
+ * this agent's bytes — see `_upload-blobs.ts` for why that split is the security
+ * boundary rather than a preference:
  *
- * - **`publicUrl` set** → brokered. A deployed guest sends every byte operation to
- *   its own public platform surface, which holds the bucket credential. This is
- *   checked FIRST, so a stray service key in a deployed agent's env cannot take
- *   precedence over the boundary — an agent author may set any env var they like.
+ * - **`broker` set** → brokered. A deployed guest sends every byte operation to the
+ *   platform surface holding the bucket credential. Checked FIRST, so a stray service
+ *   key in a deployed agent's env cannot take precedence over the boundary — an agent
+ *   author may set any env var they like.
  * - **the three `AAI_UPLOAD_STORAGE_*` keys set** → direct. `aai dev` and a
  *   self-hosted server talk to the operator's own bucket with the operator's own
  *   key, which is theirs to hold.
@@ -129,10 +149,11 @@ export function createUploadStore(opts: {
  */
 export function resolveUploadBlobs(opts: {
   env?: Record<string, string> | undefined;
-  publicUrl?: string | undefined;
+  /** See `ServerOptions.uploadBroker` — a claim about the deployment, not a URL. */
+  broker?: string | undefined;
   fetch?: typeof globalThis.fetch | undefined;
 }): UploadBlobs | undefined {
-  const base = opts.publicUrl?.trim();
+  const base = opts.broker?.trim();
   if (base) {
     return createBrokeredUploadBlobs({ base, ...omitUndefined({ fetch: opts.fetch }) });
   }
@@ -169,9 +190,10 @@ export function createUnavailableUploadStore(missing: string): UploadStore {
   const refuse = <T>(): Promise<T> =>
     Promise.reject(
       new Error(
-        `Workflow uploads need ${missing}. Configure it, or drop the upload from this ` +
-          "workflow — `aai dev` reads these from the project's `.env`, and a deployed agent " +
-          "gets them from the platform.",
+        `Workflow uploads need ${missing}. A deployed agent gets both from the platform; ` +
+          "locally they come from the project's `.env`, and the Supabase CLI prints the two " +
+          "storage values — `supabase start`, then `supabase status -o env` for " +
+          `SERVICE_ROLE_KEY and API_URL:\n\n${UPLOAD_ENV_EXAMPLE}\n`,
       ),
     );
   return {
