@@ -1,5 +1,19 @@
 # @alexkroman1/aai-server
 
+## 3.5.14
+
+### Patch Changes
+
+- 58788ee: Internal quality pass: give repeated shapes one home each, remove stranded code, and hoist redundant work out of render and streaming paths. No API or behaviour change.
+- e2c2cda: Fix four production errors from an hour of Modal logs: a 30s proxy deadline that aborted healthy uploads (27 x 503), a parallel-upload part that treated a retryable 503 as a refusal, a 5xx whose cause was never logged, and an aborted request logged as an agent failure.
+- Updated dependencies [58788ee]
+- Updated dependencies [e2c2cda]
+- Updated dependencies [153264f]
+- Updated dependencies [153264f]
+  - @alexkroman1/aai@6.5.1
+  - aai-guest@0.4.21
+  - @alexkroman1/aai-ui@6.5.1
+
 ## 3.5.13
 
 ### Patch Changes

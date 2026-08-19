@@ -1,5 +1,17 @@
 # aai-studio-client
 
+## 0.5.6
+
+### Patch Changes
+
+- 58788ee: Internal quality pass: give repeated shapes one home each, remove stranded code, and hoist redundant work out of render and streaming paths. No API or behaviour change.
+- Updated dependencies [58788ee]
+- Updated dependencies [e2c2cda]
+- Updated dependencies [153264f]
+- Updated dependencies [153264f]
+  - @alexkroman1/aai@6.5.1
+  - @alexkroman1/aai-ui@6.5.1
+
 ## 0.5.5
 
 ### Patch Changes

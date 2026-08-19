@@ -1,5 +1,15 @@
 # @alexkroman1/aai-ui
 
+## 6.5.1
+
+### Patch Changes
+
+- 153264f: `useWorkflowStream` refuses a submission whose payload still carries a `File` instead of starting a run over it. A File serializes to `{}`, so it arrived as an empty object and the workflow rejected its own input — reported in production as `recording: Invalid input` from a page whose file picker was working.
+- Updated dependencies [58788ee]
+- Updated dependencies [e2c2cda]
+- Updated dependencies [153264f]
+  - @alexkroman1/aai@6.5.1
+
 ## 6.5.0
 
 ### Patch Changes
