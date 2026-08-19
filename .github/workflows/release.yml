@@ -125,6 +125,9 @@ jobs:
           # Skip lefthook pre-push hooks: the Check workflow already
           # gated the merge commit, and re-running the full suite here
           # on a single runner (without per-package Deno setup) is both
-          # redundant and flaky. The Check workflow re-runs on the
-          # pushed changeset-release/main branch anyway.
+          # redundant and flaky. The Version Packages PR this push opens
+          # is checked by the Check workflow's `pull_request` arm — which
+          # is why `changeset-release/main` is NOT in that workflow's
+          # `push` list: with both, every push here ran the whole matrix
+          # twice.
           LEFTHOOK: "0"
