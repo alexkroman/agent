@@ -88,6 +88,9 @@ export function ToolCallRow({
   const theme = useTheme();
   const sizes = VARIANT_CLASSES[variant];
   const canExpand = children != null;
+  // The chip, the detail preview and the chevron are all one step: derived once
+  // rather than three times per render.
+  const faint = inkTint(theme.text, theme.bg, INK_FAINT_PCT);
 
   return (
     <div
@@ -110,10 +113,7 @@ export function ToolCallRow({
         {icon ? (
           <span className="w-4 h-4 shrink-0 text-center leading-4">{icon}</span>
         ) : (
-          <Eyebrow
-            className="shrink-0"
-            style={{ color: inkTint(theme.text, theme.bg, INK_FAINT_PCT) }}
-          >
+          <Eyebrow className="shrink-0" style={{ color: faint }}>
             Tool
           </Eyebrow>
         )}
@@ -138,7 +138,7 @@ export function ToolCallRow({
         </span>
         <span
           className={clsx("font-aai-mono truncate flex-1 min-w-0", sizes.title)}
-          style={{ color: inkTint(theme.text, theme.bg, INK_FAINT_PCT) }}
+          style={{ color: faint }}
         >
           {detail}
         </span>
@@ -149,7 +149,7 @@ export function ToolCallRow({
               sizes.chevron,
               isOpen && "rotate-90",
             )}
-            style={{ color: inkTint(theme.text, theme.bg, INK_FAINT_PCT) }}
+            style={{ color: faint }}
           >
             ▶
           </span>

@@ -5,7 +5,7 @@
 import { type ComponentType, createElement, type ReactNode, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { pageBaseUrl } from "./_utils.ts";
+import { pageBaseUrl, setPageTitle } from "./_utils.ts";
 import { type ClientConfigResponse, fetchClientConfig } from "./client-config.ts";
 import { ChatView } from "./components/chat-view.tsx";
 import { SidebarLayout } from "./components/sidebar-layout.tsx";
@@ -331,9 +331,8 @@ export function client(config: ClientConfig): ClientHandle {
   });
 
   // The default shell renders `name` in its header; a custom component has no
-  // header, so the page title is where it goes. Only set when given — never
-  // clobber a title the page's own HTML declared.
-  if (config.name && typeof document !== "undefined") document.title = config.name;
+  // header, so the page title is where it goes.
+  setPageTitle(config.name);
 
   const rootNode = config.component
     ? createElement(config.component)

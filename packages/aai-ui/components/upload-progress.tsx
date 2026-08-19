@@ -102,21 +102,16 @@ export function UploadProgressBar({
 
   const { name, index, count, loaded, total, fraction } = upload;
   const percent = fraction === undefined ? undefined : Math.round(fraction * 100);
+  // The name and the byte count are the same step — derived once.
+  const faint = inkTint(theme.text, theme.surface, INK_FAINT_PCT);
 
   return (
     <div className={clsx(className ?? "flex flex-col gap-1.5")}>
       <div className="flex items-baseline justify-between gap-4 text-xs">
-        <span
-          id={labelId}
-          className="truncate"
-          style={{ color: inkTint(theme.text, theme.surface, INK_FAINT_PCT) }}
-        >
+        <span id={labelId} className="truncate" style={{ color: faint }}>
           {count > 1 ? `Uploading ${name} (${index} of ${count})` : `Uploading ${name}`}
         </span>
-        <span
-          className="shrink-0 tabular-nums"
-          style={{ color: inkTint(theme.text, theme.surface, INK_FAINT_PCT) }}
-        >
+        <span className="shrink-0 tabular-nums" style={{ color: faint }}>
           {total === undefined
             ? formatBytes(loaded)
             : `${formatBytes(loaded)} of ${formatBytes(total)}`}

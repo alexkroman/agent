@@ -16,19 +16,9 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createMockWorkflowApi } from "./_react-test-utils.ts";
+import { createMockWorkflowApi, workflowRun as run } from "./_react-test-utils.ts";
 import { DEFAULT_WORKFLOW_POLL_MS, MAX_MISSING_READS, useWorkflowRun } from "./use-workflow-run.ts";
-import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
-
-function run(over: Partial<WorkflowRun> = {}): WorkflowRun {
-  return {
-    runId: "wrun_1",
-    workflow: "digest",
-    createdAt: 0,
-    status: "running",
-    ...over,
-  } as WorkflowRun;
-}
+import type { WorkflowApi } from "./workflow-client.ts";
 
 /** A JSON response, as `fetch` resolves one. */
 function json(body: unknown, status = 200): Response {

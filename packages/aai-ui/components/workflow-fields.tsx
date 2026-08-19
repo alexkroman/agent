@@ -143,7 +143,8 @@ function SchemaField({
     );
   }
 
-  switch (typeOf(property)) {
+  const type = typeOf(property);
+  switch (type) {
     case "boolean":
       return (
         <CheckboxField
@@ -160,7 +161,7 @@ function SchemaField({
           name={name}
           label={label}
           required={required}
-          step={typeOf(property) === "integer" ? 1 : "any"}
+          step={type === "integer" ? 1 : "any"}
           {...hint}
           {...defaults}
         />

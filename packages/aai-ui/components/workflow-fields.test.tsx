@@ -14,6 +14,7 @@
  */
 
 import type { WorkflowSummary } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { ThemeProvider } from "../context.ts";
@@ -23,7 +24,7 @@ function renderFields(inputSchema: unknown, uploads?: readonly string[]) {
   const workflow: WorkflowSummary = {
     name: "transcribe",
     inputSchema,
-    ...(uploads && { uploads }),
+    ...omitUndefined({ uploads }),
   };
   render(
     <ThemeProvider>

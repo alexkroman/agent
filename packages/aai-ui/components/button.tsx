@@ -5,6 +5,7 @@
 import clsx from "clsx";
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 import { useTheme } from "../context.ts";
+import type { ClientTheme } from "../types.ts";
 import { INK_SURFACE_PCT, inkTint, primaryTint } from "./_colors.ts";
 
 /**
@@ -59,6 +60,41 @@ export type ButtonVariant = "default" | "secondary" | "ghost";
  */
 export type ButtonSize = "default" | "lg";
 
+/** One variant's rest and hover colors, derived from the theme. */
+function variantColors(variant: ButtonVariant, theme: Required<ClientTheme>): VariantColors {
+  switch (variant) {
+    case "default":
+      return {
+        bg: theme.primary,
+        fg: theme.surface,
+        border: "transparent",
+        // Blended toward the theme's own ink, so one rule reads correctly on a
+        // dark theme (where "toward ink" is lighter) as on a light one.
+        hoverBg: inkTint(theme.text, theme.primary, 14),
+        hoverFg: theme.surface,
+        hoverBorder: "transparent",
+      };
+    case "secondary":
+      return {
+        bg: "transparent",
+        fg: theme.primary,
+        border: theme.primary,
+        hoverBg: primaryTint(theme.primary, theme.surface, 8),
+        hoverFg: theme.primary,
+        hoverBorder: theme.primary,
+      };
+    default:
+      return {
+        bg: theme.surface,
+        fg: theme.text,
+        border: theme.border,
+        hoverBg: inkTint(theme.text, theme.surface, INK_SURFACE_PCT + 2),
+        hoverFg: theme.text,
+        hoverBorder: theme.border,
+      };
+  }
+}
+
 /**
  * A styled button with variant and size presets.
  *
@@ -100,38 +136,7 @@ export function Button({
   children?: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">) {
   const theme = useTheme();
-
-  let colors: VariantColors;
-  if (variant === "default") {
-    colors = {
-      bg: theme.primary,
-      fg: theme.surface,
-      border: "transparent",
-      // Blended toward the theme's own ink, so one rule reads correctly on a
-      // dark theme (where "toward ink" is lighter) as on a light one.
-      hoverBg: inkTint(theme.text, theme.primary, 14),
-      hoverFg: theme.surface,
-      hoverBorder: "transparent",
-    };
-  } else if (variant === "secondary") {
-    colors = {
-      bg: "transparent",
-      fg: theme.primary,
-      border: theme.primary,
-      hoverBg: primaryTint(theme.primary, theme.surface, 8),
-      hoverFg: theme.primary,
-      hoverBorder: theme.primary,
-    };
-  } else {
-    colors = {
-      bg: theme.surface,
-      fg: theme.text,
-      border: theme.border,
-      hoverBg: inkTint(theme.text, theme.surface, INK_SURFACE_PCT + 2),
-      hoverFg: theme.text,
-      hoverBorder: theme.border,
-    };
-  }
+  const colors = variantColors(variant, theme);
 
   const vars: StyleWithVars = {
     "--aai-btn-bg": colors.bg,

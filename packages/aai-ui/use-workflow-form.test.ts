@@ -12,7 +12,7 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createMockWorkflowApi } from "./_react-test-utils.ts";
+import { createMockWorkflowApi, refuseNetwork, workflowRun as run } from "./_react-test-utils.ts";
 import { useWorkflowSubmit, useWorkflows } from "./use-workflow-form.ts";
 import { MAX_MISSING_READS } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -35,16 +35,6 @@ import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
  * conflict this comment used to give as the reason for real time everywhere.
  */
 const POLL_MS = 5;
-
-function run(over: Partial<WorkflowRun> = {}): WorkflowRun {
-  return {
-    runId: "wrun_1",
-    workflow: "digest",
-    createdAt: 0,
-    status: "running",
-    ...over,
-  } as WorkflowRun;
-}
 
 /**
  * A client whose `watch` always declines, so the hook under test falls through
@@ -70,16 +60,7 @@ function fakeApi(over: Partial<WorkflowApi> = {}): WorkflowApi {
   });
 }
 
-beforeEach(() => {
-  // A real `fetch` must never be reachable: an unstubbed call would hit the
-  // jsdom origin and fail slowly rather than loudly.
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => {
-      throw new Error("no test may reach the network");
-    }),
-  );
-});
+beforeEach(refuseNetwork);
 
 afterEach(() => {
   // `useFakeTimers` is outside `restoreMocks`; one spec below installs them.

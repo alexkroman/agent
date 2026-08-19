@@ -8,6 +8,7 @@
 import { act } from "react";
 import { vi } from "vitest";
 import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
+import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 /**
  * Create a mock SessionCore for React component tests.
@@ -299,16 +300,7 @@ export function installAudioMocks(
   if (nav?.mediaDevices) {
     nav.mediaDevices.getUserMedia = (constraints?: MediaStreamConstraints) => {
       _lastAudioConstraints = constraints?.audio as MediaTrackConstraints | undefined;
-      return Promise.resolve({
-        getTracks: () => [
-          {
-            stopped: false,
-            stop() {
-              this.stopped = true;
-            },
-          },
-        ],
-      });
+      return Promise.resolve({ getTracks: () => [fakeTrack()] });
     };
   }
 
@@ -352,6 +344,58 @@ export function fakeMediaStream(...tracks: { stop: () => void }[]): MediaStream 
   return { getTracks: () => tracks } as unknown as MediaStream;
 }
 
+/** A stoppable stand-in for one `MediaStreamTrack`. */
+export type FakeTrack = { stopped: boolean; stop(): void };
+
+/**
+ * One fake microphone track, fresh per call.
+ *
+ * Every consumer asserts the same thing — that init or teardown STOPPED this
+ * track, since a track left running is the browser's recording indicator lit on
+ * a dead session — and five copies of the six-line literal had been written for
+ * it, one of them inside {@link installAudioMocks} itself.
+ */
+export function fakeTrack(): FakeTrack {
+  return {
+    stopped: false,
+    stop() {
+      this.stopped = true;
+    },
+  };
+}
+
+/**
+ * A running {@link WorkflowRun} snapshot, overridable field by field.
+ *
+ * The cast is the point of having one: a snapshot's remaining fields are the
+ * server's, and a test that names them all is asserting on the shape rather than
+ * on the hook. Three copies of this literal existed, each with its own cast.
+ */
+export function workflowRun(over: Partial<WorkflowRun> = {}): WorkflowRun {
+  return {
+    runId: "wrun_1",
+    workflow: "digest",
+    createdAt: 0,
+    status: "running",
+    ...over,
+  } as WorkflowRun;
+}
+
+/**
+ * Make `fetch` fail loudly for the rest of the test.
+ *
+ * An unstubbed call reaches the jsdom origin and fails slowly instead, which
+ * reads as a hanging hook rather than as a double nobody wired up.
+ */
+export function refuseNetwork(): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => {
+      throw new Error("no test may reach the network");
+    }),
+  );
+}
+
 /**
  * A `WorkflowApi` whose every method is a spy with an inert default.
  *
@@ -364,15 +408,8 @@ export function fakeMediaStream(...tracks: { stop: () => void }[]): MediaStream 
  * Override exactly the methods the test is about; everything else stays a spy, so
  * "was this called?" is answerable without wiring one up.
  */
-export function createMockWorkflowApi(
-  over: Partial<import("./workflow-client.ts").WorkflowApi> = {},
-): import("./workflow-client.ts").WorkflowApi {
-  const snapshot = {
-    runId: "wrun_1",
-    workflow: "digest",
-    createdAt: 0,
-    status: "running",
-  } as import("./workflow-client.ts").WorkflowRun;
+export function createMockWorkflowApi(over: Partial<WorkflowApi> = {}): WorkflowApi {
+  const snapshot = workflowRun();
   const ref = (id: string) => ({
     id,
     name: "",

@@ -10,7 +10,13 @@
  */
 import ReconnectingWebSocket from "partysocket/ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type AudioMockContext, fakeMediaStream, installAudioMocks } from "./_react-test-utils.ts";
+import {
+  type AudioMockContext,
+  type FakeTrack,
+  fakeMediaStream,
+  fakeTrack,
+  installAudioMocks,
+} from "./_react-test-utils.ts";
 import { MockWebSocket, makeConfig, resetLastSocket } from "./_session-core-test-utils.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { SessionCore } from "./session-core-types.ts";
@@ -141,15 +147,10 @@ describe("session-core automatic reconnection (partysocket)", () => {
     let audio: AudioMockContext & { restore: () => void };
     /** Resolvers for parked getUserMedia calls, in call order. */
     let gumResolvers: ((stream: MediaStream) => void)[] = [];
-    let tracks: { stopped: boolean; stop(): void }[] = [];
+    let tracks: FakeTrack[] = [];
 
     function makeStream(): MediaStream {
-      const track = {
-        stopped: false,
-        stop() {
-          this.stopped = true;
-        },
-      };
+      const track = fakeTrack();
       tracks.push(track);
       return fakeMediaStream(track);
     }

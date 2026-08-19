@@ -7,7 +7,12 @@
  * non-fatal audio failure paths (mic release vs. survivable banner).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type AudioMockContext, fakeMediaStream, installAudioMocks } from "./_react-test-utils.ts";
+import {
+  type AudioMockContext,
+  fakeMediaStream,
+  fakeTrack,
+  installAudioMocks,
+} from "./_react-test-utils.ts";
 import {
   lastSocket,
   MockWebSocketConstructor,
@@ -273,12 +278,7 @@ describe("session-core error handling", () => {
     });
 
     it("a fatal error event releases the microphone", async () => {
-      const track = {
-        stopped: false,
-        stop() {
-          this.stopped = true;
-        },
-      };
+      const track = fakeTrack();
       navigator.mediaDevices.getUserMedia = () => Promise.resolve(fakeMediaStream(track));
 
       core.connect();

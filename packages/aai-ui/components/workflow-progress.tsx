@@ -2,6 +2,7 @@
 
 /** @jsxImportSource react */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useWorkflowProgress } from "../use-workflow-progress.ts";
@@ -65,7 +66,7 @@ export function WorkflowProgress({
   className?: string | undefined;
   placeholder?: ReactNode | undefined;
 }): ReactNode {
-  const { progress, streaming, supported } = useWorkflowProgress(runId, api ? { api } : {});
+  const { progress, streaming, supported } = useWorkflowProgress(runId, omitUndefined({ api }));
 
   if (!supported || progress.length === 0) return placeholder ?? null;
 

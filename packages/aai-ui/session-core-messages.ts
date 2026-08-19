@@ -283,12 +283,14 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "tool.completed": {
         const tcs = getSnapshot().toolCalls;
         const idx = tcs.findIndex((tc) => tc.callId === e.toolCallId);
-        if (idx !== -1) {
-          const updated = [...tcs];
-          const existing = updated[idx];
-          if (existing) updated[idx] = { ...existing, status: "done", result: e.result };
-          updateState({ toolCalls: updated });
-        }
+        // One lookup rather than an index check plus a defensive re-read: a
+        // miss reads back `undefined` either way, and the second guard was a
+        // branch nothing could reach.
+        const existing = tcs[idx];
+        if (!existing) break;
+        const updated = [...tcs];
+        updated[idx] = { ...existing, status: "done", result: e.result };
+        updateState({ toolCalls: updated });
         break;
       }
       case "reply.completed":
@@ -354,7 +356,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "session.timed-out":
         // The server closes the socket itself; this only marks the close as
         // expected so the automatic reconnect doesn't undo the reclamation.
-        deps.conn.retiredByServer = true;
+        conn.retiredByServer = true;
         break;
       default:
         break;

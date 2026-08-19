@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   type AudioMockContext,
   crashWorklet,
+  fakeTrack,
   findWorkletNode,
   g,
   installAudioMocks,
@@ -480,20 +481,7 @@ describe("createVoiceIO", () => {
     //
     // Subsumes a "cleans up on worklet load error" duplicate that re-declared
     // the same failing-`addModule` subclass to assert only the context close.
-    const tracks = [
-      {
-        stopped: false,
-        stop() {
-          this.stopped = true;
-        },
-      },
-      {
-        stopped: false,
-        stop() {
-          this.stopped = true;
-        },
-      },
-    ];
+    const tracks = [fakeTrack(), fakeTrack()];
     const nav = g.navigator as { mediaDevices: { getUserMedia: unknown } };
     nav.mediaDevices.getUserMedia = () => Promise.resolve({ getTracks: () => tracks });
 

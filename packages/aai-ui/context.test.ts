@@ -189,8 +189,8 @@ describe("useTheme", () => {
   });
 
   it("keeps merged theme identity stable across re-renders", () => {
-    // The useChatItems row cache compares theme by reference — a fresh merged
-    // object per ThemeProvider render would rebuild every message row.
+    // `MessageList`'s memoized rows take the theme as a dependency — a fresh
+    // merged object per ThemeProvider render would rebuild every message row.
     const value: ClientTheme = { primary: "#f00" };
     const wrapper = ({ children }: { children: ReactNode }) =>
       React.createElement(ThemeProvider, { value }, children);
