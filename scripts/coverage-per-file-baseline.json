@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file statement-coverage floors for files below the global floor \u2014 see scripts/check-coverage-per-file.mjs. A file may cover MORE than its number and may never cover less; `--update` raises an entry and refuses to lower one, and never creates one. Generated: do not hand-edit except to bless a deliberate regression. Global floor: 50% of statements, for files with at least 10 statements.",
+  "_description": "Per-file statement-coverage floors for files below the global floor — see scripts/check-coverage-per-file.mjs. A file may cover MORE than its number and may never cover less; `--update` raises an entry and refuses to lower one, and never creates one. Generated: do not hand-edit except to bless a deliberate regression. Global floor: 50% of statements, for files with at least 10 statements.",
   "files": {
     "packages/aai-cli/_studio-commands.ts": 33.3,
     "packages/aai-guest/harness.ts": 23.4,
@@ -15,6 +15,6 @@
     "packages/aai-templates/templates/travel-concierge/tools/search_car_rentals.ts": 0,
     "packages/aai/host/session-state-postgres.ts": 40.6,
     "packages/aai/host/workflow-wdk.ts": 3.1,
-    "packages/aai/sdk/testing.ts": 21.4
+    "packages/aai/sdk/testing.ts": 34
   }
 }

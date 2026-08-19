@@ -62,10 +62,6 @@ function recordingStreams() {
   return streams;
 }
 
-function makeLogger() {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-}
-
 beforeEach(() => {
   getStepMetadata.mockReturnValue({ stepName: "transcribeSegment", stepId: "step_1", attempt: 1 });
 });
@@ -153,7 +149,10 @@ describe("a chunk emitted into a named stream", () => {
     // where a retry is already visible.
     getStepMetadata.mockReturnValue({ stepName: "transcribeSegment", stepId: "s", attempt: 3 });
     const streams = recordingStreams();
-    await createStepReporter(makeLogger())({ text: "hello" }, { namespace: "transcript", log: false });
+    await createStepReporter(makeLogger())(
+      { text: "hello" },
+      { namespace: "transcript", log: false },
+    );
     expect(streams.get("transcript")).toEqual([{ text: "hello" }]);
   });
 

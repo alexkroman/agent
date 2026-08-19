@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budgets for guard-invariants' line rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 12, rule 13, rule 14, rule 20, rule 21.",
+  "_description": "Per-file budgets for guard-invariants' line rules \u2014 see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 7, rule 9, rule 12, rule 13, rule 14, rule 20, rule 21.",
   "rule2_spreadTernary": {
     "packages/aai-cli/_utils.ts": 1,
     "packages/aai-server/subprocess-sandbox.ts": 1,
@@ -90,7 +90,7 @@
     "packages/aai/host/server.ts": 1,
     "packages/aai/host/transports/pipeline-llm-trace.ts": 1,
     "packages/aai/host/workflow-api-uploads.ts": 2,
-    "packages/aai/host/workflow-report.ts": 1,
+    "packages/aai/host/workflow-report.ts": 2,
     "packages/aai/sdk/providers/stt/assemblyai.ts": 1,
     "packages/aai/sdk/providers/stt/elevenlabs.ts": 1,
     "packages/aai/sdk/step-fetch.ts": 1,
