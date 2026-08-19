@@ -32,7 +32,6 @@
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { clientIp } from "./client-ip.ts";
-import { WORKFLOW_PROXY_TIMEOUT_MS, WORKFLOW_PROXY_TRANSFER_TIMEOUT_MS } from "./constants.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
 import {
   forwardToGuest,
@@ -50,6 +49,10 @@ import {
 } from "./rate-limit.ts";
 import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrlOrThrow } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import {
+  WORKFLOW_PROXY_TIMEOUT_MS,
+  WORKFLOW_PROXY_TRANSFER_TIMEOUT_MS,
+} from "./workflow-proxy-constants.ts";
 
 /** The 503 the forward answers with — the broker's own sentence, not a second one. */
 function unavailable(cause?: unknown): HTTPException {
