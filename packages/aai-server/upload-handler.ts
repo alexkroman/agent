@@ -42,6 +42,30 @@
  * agent's own row, and the store asks the bucket for a part's length before it
  * records one. So the worst an unrecorded write achieves is an orphan.
  *
+ * ## A WRITE requires the agent to exist, which is what bounds that orphan
+ *
+ * "The worst is an orphan" is only reassuring if the number of prefixes an orphan
+ * can appear under is bounded, and for a while it was not: `slugMw` validates a
+ * slug's SHAPE and its reserved names, never its existence, so
+ * `PUT /no-such-agent-here/uploads/upl_x/0` answered **201** and put bytes at
+ * `uploads/no-such-agent-here/upl_x/0`. Measured against production. Nothing
+ * reclaims them either — `aai-sweep-blob-gc` matches `name like 'blobs/%'` — so an
+ * unauthenticated caller could mint unbounded prefixes in a bucket shared by every
+ * tenant, and the platform had no record that any of them existed.
+ *
+ * So a write now costs one indexed column read (`store.getAgentVersion`) and answers the
+ * same 404 an unknown agent gets everywhere else. That is the STRONGEST check
+ * available at this layer and deliberately not the one you would want: the upload
+ * RECORD lives in the app's own database, which only the guest can reach, so the
+ * platform cannot ask whether this id was ever claimed. What it can say is that the
+ * prefix belongs to an agent somebody deployed.
+ *
+ * **Reads are NOT gated, and that is a cost decision.** A read is the fan-out — sixty
+ * steps each taking their own window — so a lookup there is sixty extra queries per
+ * run to establish something a miss already reports: an unknown slug has no objects,
+ * so the answer is the 404 it would get anyway, and the key space is guarded by the
+ * upload id's 122 bits regardless.
+ *
  * ## Reads REDIRECT, writes do not
  *
  * A read is a fan-out — sixty steps each taking their own window of one recording —
@@ -56,6 +80,7 @@ import { UPLOAD_TOKEN_RE, UploadTooLargeError } from "@alexkroman1/aai/runtime";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "./context.ts";
+import { notFoundMessage } from "./sandbox-broker.ts";
 import { UPLOAD_READ_URL_TTL_SECONDS, type UploadBytes, uploadKey } from "./upload-bytes.ts";
 
 /** The path an upload window lives at, under `/:slug`. */
@@ -107,10 +132,33 @@ function windowKey(c: Context<HonoEnv>): string {
 export function createUploadBytesHandler(bytes: UploadBytes) {
   return async (c: Context<HonoEnv>): Promise<Response> => {
     const key = windowKey(c);
-    if (c.req.method === "PUT") return await storeWindow(c, bytes, key);
+    if (c.req.method === "PUT") {
+      await assertAgentExists(c);
+      return await storeWindow(c, bytes, key);
+    }
     if (c.req.method === "HEAD") return await measureWindow(c, bytes, key);
     return await serveWindow(c, bytes, key);
   };
+}
+
+/**
+ * Refuse a write under a slug no agent answers to — see the module doc.
+ *
+ * `getAgentVersion` rather than `getAgent`: this needs one bit of information, and
+ * that is the read which fetches a single column and is cached briefly for exactly
+ * this shape of question — where `getAgent` returns the record's credential hashes
+ * and client-file list to have them discarded.
+ *
+ * The 404 is `notFoundMessage`, so a slug that does not exist reads the same here as
+ * it does from `/client-config` and the session broker. A caller cannot tell it apart
+ * from a slug that exists and holds no such window, which is correct: both are "there
+ * is nothing of yours here".
+ */
+async function assertAgentExists(c: Context<HonoEnv>): Promise<void> {
+  const version = await c.env.store.getAgentVersion(c.var.slug);
+  if (version === null) {
+    throw new HTTPException(404, { message: notFoundMessage(c.var.slug) });
+  }
 }
 
 /** `PUT` — the window goes into the bucket. */
