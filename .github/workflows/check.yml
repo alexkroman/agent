@@ -207,6 +207,15 @@ jobs:
       # package touches. Under turbo those builds are cache hits from the setup
       # job in the normal case and a real rebuild in the abnormal one.
       - run: pnpm exec turbo run test:coverage --filter "./packages/${{ matrix.package }}"
+      # The PER-FILE floor, in the job that has the data. The thresholds in each
+      # vitest.config.ts are package-wide and cannot see one new module landing
+      # untested — a ~300-line aai-ui module once came in at 1.44% line coverage
+      # and was caught only because it happened to drag the whole package under
+      # its floor. `--package` exists for this step: a matrix job holds only its
+      # own coverage output, and running the gate solely from scripts/check.sh
+      # would leave it enforced by the pre-push hook alone, which
+      # `git push --no-verify` skips.
+      - run: node scripts/check-coverage-per-file.mjs --package "${{ matrix.package }}"
 
   # Both middle tiers. Named for both because it runs both: the integration tier
   # (in-memory, no real resource) and the scenario tier (a real subprocess, port,

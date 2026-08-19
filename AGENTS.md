@@ -260,7 +260,7 @@ reason); `pnpm test:coverage:affected` is the coverage half on its own.
 ### Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.sh` **and the CI check job** run
-nine **gates** (all also runnable standalone) that hold the line on technical
+ten **gates** (all also runnable standalone) that hold the line on technical
 debt. Two compare against a COMMITTED PER-FILE BASELINE
 (`check:hatches`, `check:invariants`); the rest are absolute. They must stay
 wired into BOTH: for a long time they lived only in `check.sh`, which CI never
@@ -352,35 +352,25 @@ one commit of history. A file in the tree has no merge base and no such modes.
   DEBT ratchets whose goal is zero, so a minimum match count would eventually
   block the very campaign the gate exists to encourage.
 
-  **Markdown is not scanned**, and the reason is worth keeping: the patterns
-  are plain substrings with no notion of code versus prose, so any doc that
-  *discusses* a hatch scores as one. `CHANGELOG.md` is the sharp edge —
-  changesets generates it from changeset summaries, so a summary describing
-  this script's own `as any` / `as unknown as` patterns rendered into
-  `packages/aai/CHANGELOG.md` and failed the **Version Packages PR**, on a
-  file no human wrote and with nothing an author could see at review time.
-  A changeset summary may name a pattern freely. `escape-hatch-scope.test.ts`
-  guards the exclusion, and asserts the patterns really do match prose so the
-  test can't pass by the patterns quietly becoming narrower.
+  **Markdown is not scanned**: the patterns are plain substrings with no notion
+  of code versus prose, so any doc that *discusses* a hatch scores as one — and
+  `CHANGELOG.md` is generated from changeset summaries, so one naming a pattern
+  once failed the Version Packages PR on a file no human wrote. A changeset
+  summary may name a pattern freely. `escape-hatch-scope.test.ts` guards the
+  exclusion, and asserts the patterns really do match prose so it cannot pass by
+  them quietly becoming narrower.
 
-  **`as unknown as` is the one to watch, and the reason it is counted.** It
-  launders a value past the checker without tripping `as any`, and while it
-  went uncounted it became the dominant idiom here: 210 of them against 3
-  `as any` (all three of which are prose in comments, not casts). Counting it
-  came with halving it to 105, and the removals are the pattern to copy — a
-  concentration of identical casts is a missing **typed seam**, one narrowing
-  in one helper that every call site goes through (`fakeOf(session)`,
-  `asSessionWs(ws)`, `MockWebSocketConstructor`), not a cast repeated per
-  assertion. Some need no cast at all once the tool's own affordance is used:
-  `vi.mocked(fn)` instead of casting a mock back to a spy, and typing a
-  recorder with `Parameters<T>` instead of widening to
-  `Record<string, unknown>` and re-narrowing at each read.
+  **`as unknown as` is the one to watch**: it launders a value past the checker
+  without tripping `as any`, and went 210 → 105 once counted. The removals are
+  the pattern to copy — a concentration of identical casts is a missing **typed
+  seam**, one narrowing in one helper every call site goes through
+  (`fakeOf(session)`, `asSessionWs(ws)`), not a cast per assertion. Some need no
+  cast once the tool's own affordance is used: `vi.mocked(fn)`, or typing a
+  recorder with `Parameters<T>` instead of widening and re-narrowing.
 
-  One property to know before editing the baseline: it is itself a file whose
-  content is a list of the pattern names, so it needs the same pathspec
-  exclusion the script does. That was not theoretical — the first run after the
-  per-file conversion scored its own `"as unknown as": { … }` keys as four fresh
-  hatches. Same trap as markdown above, arriving by a new route.
+  The baseline is itself a list of the pattern names, so it needs the same
+  pathspec exclusion the script does — its first per-file run scored its own keys
+  as four fresh hatches. Same trap as markdown, by a new route.
 - **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
   source files at 500 lines and test files at 700. Files that already
   exceed the cap are grandfathered in `scripts/file-length-allowlist.json`,
@@ -456,6 +446,14 @@ one commit of history. A file in the tree has no merge base and no such modes.
   (over budget = refactor before adding more; over 150k = a guide is being
   truncated right now), that the root still links every package guide, and
   that the script and CI wiring still agree with it.
+- **`pnpm check:coverage-per-file`** (`scripts/check-coverage-per-file.mjs`) — a
+  50% per-file statement floor over what `test:coverage` wrote, because the
+  `vitest.config.ts` thresholds are PACKAGE-wide and cannot see one new module
+  landing untested. **Its ratchet runs the other way** — coverage may only go up,
+  so `--update` refuses to lower an entry and never creates one; `--seed` is the
+  bootstrap, opened at 15 files. Runs per package in CI's coverage matrix
+  (`--package`). The script's own doc carries the rest.
+
 - **`pnpm check:konsistent`** ([konsistent], config in root `konsistent.json`)
   — enforces **structural** conventions: the shapes that are wrong only in
   relation to their siblings, which is why no per-file tool can see them.
