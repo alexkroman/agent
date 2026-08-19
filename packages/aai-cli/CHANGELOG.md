@@ -1,5 +1,14 @@
 # @alexkroman1/aai-cli
 
+## 6.4.0
+
+### Patch Changes
+
+- 5288539: Scale the transcription template's segment fan-out by BYTES in flight, and raise it from 8 to 32 for ordinary formats. A `503` from the sync endpoint says `queue wait timed out; server at capacity` — requests queue rather than being refused, and one fails only when it waited out the queue's deadline — so the fan-out is limited by total work in flight, which at this segment length is dominated by upload bytes. Measured against one account: 320 concurrent 5-second clips (51 MB) and 64 concurrent 92-second 16 kHz mono segments (188 MB) both drew zero `503`s, while the same 5,888 audio-seconds at 48 kHz stereo (1.13 GB) drew 20, and 320 small requests summing to 941 MB drew 64. So neither the request count nor the audio duration is the cap; admitted bytes land at 753-883 MB across request counts differing 5x. `BYTES_IN_FLIGHT` is 640 MB and `segmentConcurrency(format)` divides it, clamped at 32 — the measured wall-clock knee (27.5s against 43.3s at 8 over 1h37m of audio), past which 48 pays retries and 64 is slower. A fixed 32 was safe only for the format it was measured on: the same width is 565 MB of 48 kHz stereo and 1.28 GB at the segment-size ceiling.
+- Updated dependencies [5288539]
+  - @alexkroman1/aai@6.4.0
+  - @alexkroman1/aai-ui@6.4.0
+
 ## 6.3.1
 
 ### Patch Changes
