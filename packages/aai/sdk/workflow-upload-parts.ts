@@ -371,11 +371,26 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
  */
 function assertRecorded(info: Omit<UploadRef, "url">, id: string, total: number): void {
   if (info.complete) return;
-  throw new Error(
+  throw new UploadNotRecordedError(
     `Workflow API: upload ${id} stored every part but reports ${info.size} of ` +
       `${total} byte(s) and is not complete. The agent acknowledged each window and ` +
       "then did not record it, so nothing can read this upload.",
   );
+}
+
+/**
+ * The one failure on this path that RE-SENDING cannot repair.
+ *
+ * Its own type because `_upload-resume.ts` has to tell it apart, and it is the
+ * exception to that module's rule: every other failure here is the far side being
+ * away, where sending the missing windows again is exactly the remedy. This one
+ * says the windows all arrived and the agent recorded none of them — so a resume
+ * reads the ranges, finds nothing, and re-sends the WHOLE file into the same
+ * defect, once per round. On the 660 MB recording that found this bug that is
+ * four uploads of it to reach the same sentence.
+ */
+export class UploadNotRecordedError extends Error {
+  override readonly name = "UploadNotRecordedError";
 }
 
 /**

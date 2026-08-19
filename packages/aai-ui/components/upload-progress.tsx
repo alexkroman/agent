@@ -8,6 +8,7 @@ import { type ReactNode, useId } from "react";
 import { useTheme } from "../context.ts";
 import type { UploadStatus } from "../use-workflow-form.ts";
 import { INK_FAINT_PCT, inkTint } from "./_colors.ts";
+import { Button } from "./button.tsx";
 
 /**
  * The track behind the fill, as a tint of the theme's own ink.
@@ -63,6 +64,14 @@ function formatBytes(bytes: number): string {
  * - **The file is NAMED, and counted when there is more than one.** Files are
  *   sent one after another, so a single bar otherwise appears to restart from
  *   zero partway through with nothing to say why.
+ * - **A paused upload SAYS SO, rather than being a bar that stopped.** Those look
+ *   identical, which is the whole reason `UploadStatus.paused` exists, and the
+ *   fill stops animating so the difference is visible without reading.
+ *
+ * The pause control appears only when a handler for it is passed. That is not
+ * politeness about props: a button whose press does nothing is worse than no
+ * button, and a page holding an `upload` it did not produce (a saved status, a
+ * parent's state) has nothing to pause.
  *
  * @example
  * ```tsx
@@ -82,6 +91,9 @@ function formatBytes(bytes: number): string {
  *
  * @param upload - What `useWorkflowSubmit` reports. `undefined` renders nothing,
  *   so a page may pass its state straight through.
+ * @param onPause - The hook's `pauseUpload`. Pass it together with `onResume` to
+ *   get the control; pass neither for a bar that only reports.
+ * @param onResume - The hook's `resumeUpload`.
  * @param className - Replaces the default classes rather than extending them,
  *   so a custom chrome is not fighting a default it did not ask for.
  *
@@ -89,9 +101,13 @@ function formatBytes(bytes: number): string {
  */
 export function UploadProgressBar({
   upload,
+  onPause,
+  onResume,
   className,
 }: {
   upload?: UploadStatus | undefined;
+  onPause?: (() => void) | undefined;
+  onResume?: (() => void) | undefined;
   className?: string | undefined;
 }): ReactNode {
   const theme = useTheme();
@@ -100,7 +116,11 @@ export function UploadProgressBar({
   const labelId = useId();
   if (!upload) return null;
 
-  const { name, index, count, loaded, total, fraction } = upload;
+  const { name, index, count, loaded, total, fraction, paused } = upload;
+  // BOTH handlers or neither: a bar that can be paused and not resumed is a
+  // one-way door drawn as a toggle.
+  const toggle = paused ? onResume : onPause;
+  const control = onPause && onResume ? toggle : undefined;
   const percent = fraction === undefined ? undefined : Math.round(fraction * 100);
   // The name and the byte count are the same step — derived once.
   const faint = inkTint(theme.text, theme.surface, INK_FAINT_PCT);
@@ -109,13 +129,27 @@ export function UploadProgressBar({
     <div className={clsx(className ?? "flex flex-col gap-1.5")}>
       <div className="flex items-baseline justify-between gap-4 text-xs">
         <span id={labelId} className="truncate" style={{ color: faint }}>
-          {count > 1 ? `Uploading ${name} (${index} of ${count})` : `Uploading ${name}`}
+          {/* The VERB carries the state, because it is the first thing read and
+              the one word that distinguishes a paused upload from a stalled one. */}
+          {`${paused ? "Paused" : "Uploading"} ${name}${count > 1 ? ` (${index} of ${count})` : ""}`}
         </span>
-        <span className="shrink-0 tabular-nums" style={{ color: faint }}>
-          {total === undefined
-            ? formatBytes(loaded)
-            : `${formatBytes(loaded)} of ${formatBytes(total)}`}
-        </span>
+        <div className="flex shrink-0 items-baseline gap-3">
+          <span className="tabular-nums" style={{ color: faint }}>
+            {total === undefined
+              ? formatBytes(loaded)
+              : `${formatBytes(loaded)} of ${formatBytes(total)}`}
+          </span>
+          {control && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-6 px-2 text-[0.625rem]"
+              onClick={control}
+            >
+              {paused ? "Resume" : "Pause"}
+            </Button>
+          )}
+        </div>
       </div>
       {/* The ARIA role rather than a `<progress>` element: the bar is two nested
           divs so a theme can colour the fill, and `<progress>`'s own fill is
@@ -139,7 +173,10 @@ export function UploadProgressBar({
             "h-full rounded-full transition-[width] duration-200 ease-out",
             // Nothing to size, so the whole track pulses instead: an
             // indeterminate upload is moving, and a 0%-wide bar denies it.
-            percent === undefined && "animate-pulse",
+            // A PAUSED one is not moving, so it must not pulse either — the
+            // animation is the only thing saying "still going" when there is no
+            // width to watch.
+            percent === undefined && !paused && "animate-pulse",
           )}
           style={{
             backgroundColor: theme.primary,

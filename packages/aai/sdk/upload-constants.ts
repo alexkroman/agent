@@ -234,6 +234,53 @@ export const UPLOAD_RETRY_BASE_MS = 500;
 export const UPLOAD_RETRY_MAX_MS = 10_000;
 
 /**
+ * How many times an upload is RE-ENTERED — claim, ranges, send what is missing —
+ * before it gives up.
+ *
+ * The retry budget above is per REQUEST and is sized for the failure a fan-out
+ * meets while the agent is up: a reset stream, a 503 from a guest at capacity.
+ * Four attempts spanning ~4-11s cover that and nothing longer, and the thing
+ * they cannot cover is the ordinary event this platform is built out of — **the
+ * agent going away and coming back**. A Modal sandbox is superseded on redeploy
+ * and reclaimed on idle, `aai dev` restarts on every file save, and a managed
+ * Postgres fails over; each of those is tens of seconds during which every
+ * request fails, so the whole fan-out spent its budget inside the outage and a
+ * 660 MB recording that was 90% stored was thrown away entirely.
+ *
+ * A re-entry is not a retry of a request. It re-reads `UploadInfo.ranges` and
+ * sends only the windows that are missing, so the second round of a nearly
+ * finished upload is nearly free — which is what makes a budget this long
+ * affordable, and what makes the whole file the thing being protected rather
+ * than one window of it.
+ *
+ * Four rounds at {@link UPLOAD_RESUME_BASE_MS} doubling is ~30s of waiting, plus
+ * each round's own request budget: roughly a minute of downtime survived, which
+ * is a redeploy with room to spare. Past that the person is better told.
+ */
+export const UPLOAD_RESUME_ATTEMPTS = 4;
+
+/**
+ * The first wait before an upload is re-entered, doubling from there.
+ *
+ * Two seconds rather than the half-second a request waits, because what is being
+ * waited out is a PROCESS rather than a queue: the round that just failed already
+ * spent seconds establishing that nothing is answering, and a sandbox that is
+ * booting cannot answer sooner than it boots. Asking again in 500ms only spends
+ * the budget faster.
+ */
+export const UPLOAD_RESUME_BASE_MS = 2000;
+
+/**
+ * The longest wait between re-entries.
+ *
+ * Fifteen seconds is past the point where a person watching a stalled bar wants
+ * to be told rather than waited for — and unlike the per-request cap, this one is
+ * not competing with a `Retry-After`: nothing answered, so there is no far side
+ * with an opinion.
+ */
+export const UPLOAD_RESUME_MAX_MS = 15_000;
+
+/**
  * Prefix every upload id carries.
  *
  * So a stray value in a log, a run input or an error reads as what it is — the

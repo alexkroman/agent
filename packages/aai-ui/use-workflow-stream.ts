@@ -49,24 +49,45 @@
  * - **Reporting the bytes.** The same `UploadStatus` `useWorkflowSubmit` reports,
  *   so `<UploadProgressBar>` renders either without knowing which hook it came from.
  *
- * ## A failed upload is RESUMED once, and only then cancels the run
+ * ## A failed upload is RESUMED, and only a spent budget cancels the run
  *
  * An upload that dies stays in the store, incomplete, and `complete` never becomes
  * true — so a run left behind polls until its own abandonment bound and then fails,
  * minutes after the page has already reported the error.
  *
  * That used to be the whole story, and it threw away a run and a file together for
- * what is usually one dropped connection near the end. So a failure gets one more
- * attempt with `resume: true`, which sends only the windows the store does not
- * already have (`UploadInfo.ranges`) — the run is still waiting on the same id, so
- * a resume that succeeds is invisible to it. Cancelling is what happens when THAT
- * fails too, and it is the honest end to a submission that did not happen.
+ * what is usually one dropped connection near the end. **The resume lives in the
+ * SDK now** (`aai/sdk/_upload-resume.ts`): a round that fails for a reason that
+ * looks like an outage is re-entered with `resume: true`, sending only the windows
+ * the store does not already have, on a budget sized to outlast a redeploy. The run
+ * is still waiting on the same id, so a resume that succeeds is invisible to it.
+ *
+ * This hook used to hand-roll one such retry and no longer does — one resume with
+ * no wait in front of it covers a dropped connection and cannot cover the case that
+ * actually strands people, which is the agent restarting underneath the upload.
+ * Cancelling the run is what happens when the whole budget is spent, and it is the
+ * honest end to a submission that did not happen.
+ *
+ * ## Pausing is the same mechanism, asked for
+ *
+ * `pauseUpload()` aborts the bytes in flight and holds the uploader;
+ * `resumeUpload()` sends what is missing. The store cannot tell that from an
+ * outage, because there is nothing to tell apart — see `_upload-session.ts`. The
+ * RUN is untouched either way: it goes on polling the id it was started with, and
+ * `stream.ts`'s idle bound (five minutes of no new bytes) is what decides that a
+ * pause has become an abandonment.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadParallel } from "@alexkroman1/aai/workflow-api";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import {
+  createUploadGate,
+  randomUploadId,
+  sendThroughGate,
+  type UploadGate,
+} from "./_upload-session.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { fileFields, filesOf } from "./_workflow-files.ts";
 import type { UploadStatus } from "./use-workflow-form.ts";
@@ -119,6 +140,17 @@ export type WorkflowStreamSubmission<R = unknown> = {
   pending: boolean;
   /** How far the upload has got, while it is still going. */
   upload: UploadStatus | undefined;
+  /**
+   * Park the upload where it is, stopping the bytes in flight.
+   *
+   * The RUN keeps going — it is watching an upload id, and a paused upload is one
+   * whose `size` has stopped growing, which is exactly what a slow uplink looks
+   * like. So a pause costs nothing until the workflow's own idle bound decides the
+   * uploader is gone (five minutes in `transcription-workflow`).
+   */
+  pauseUpload: () => void;
+  /** Continue a paused upload, sending only the windows the store does not have. */
+  resumeUpload: () => void;
   /** The submit's own failure (a rejected input, or an upload that would not store). */
   error: string | undefined;
 };
@@ -157,6 +189,9 @@ export function useWorkflowStream<R = unknown>(
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | undefined>(undefined);
   const [upload, setUpload] = useState<UploadStatus | undefined>(undefined);
+  // The live submission's pause, so `pauseUpload` reaches the gate the uploader is
+  // waiting on. A ref rather than state: nothing renders from it.
+  const gateRef = useRef<UploadGate | undefined>(undefined);
 
   const getClient = useWorkflowApiRef(api);
 
@@ -168,77 +203,149 @@ export function useWorkflowStream<R = unknown>(
       setStarting(true);
       setStartError(undefined);
       setRunId(undefined);
+      // A submission that is starting takes the pause controls from whatever was
+      // there before, so a stale gate cannot park the new one.
+      gateRef.current?.cancel();
+      const gate = createUploadGate();
+      gateRef.current = gate;
       let started: string | undefined;
       try {
-        // The declaration decides which property is an upload, and it is READ here
+        // The declaration decides which property is an upload, and it is READ
         // rather than taken as an option so the page cannot disagree with the
-        // workflow. One small GET per submit, deliberately: holding the listing in
-        // state would make a submit before it landed a race, and the failure mode of
-        // that race is a File reaching a run input.
-        const field = await uploadField(client, workflow);
-        const chosen = field === undefined ? undefined : fileAt(input, field);
+        // workflow — see `beginRun`.
         const id = randomUploadId();
-        // No file to stream: start the run with the input exactly as given. A
-        // workflow may declare an upload property and be handed something else (an
-        // id from a previous submit, an empty optional), and refusing here would be
-        // this hook deciding what its own declaration means.
-        const payload = chosen && field ? { ...(input as object), [field]: id } : input;
-        // Checked on the PAYLOAD, so the substitution above is what clears it.
-        assertSendable(workflow, payload, field);
-        started = await client.start(workflow, payload, omitUndefined({ key }));
+        const begun = await beginRun({ client, workflow, input, id, ...omitUndefined({ key }) });
+        started = begun.runId;
+        const chosen = begun.file;
         setRunId(started);
         if (!chosen) return;
-        const send = async (resume: boolean): Promise<void> => {
-          await client.uploadStream(id, chosen, {
-            name: chosen.name,
-            onProgress: (progress) =>
-              setUpload({ ...progress, name: chosen.name, index: 1, count: 1 }),
-            // `resume` only on the SECOND attempt: a fresh id has nothing to
-            // resume, and claiming otherwise waives the refusal that makes a
-            // caller-chosen id safe.
-            ...omitUndefined({ parallel, resume: resume ? true : undefined }),
-          });
-        };
-        // One resume before giving up, because the alternative throws away a run
-        // AND a file. An upload that dies has usually landed most of itself, and
-        // `resume` sends only the windows that are missing — so the second attempt
-        // is short, and the run watching this id never learns anything happened.
-        // Once rather than a loop: a second failure is a signal about the link
-        // rather than a coincidence, and a page cannot retry forever on a person's
-        // behalf.
-        await send(false).catch(async () => await send(true));
+        await streamFile({ client, gate, id, file: chosen, parallel, report: setUpload });
         // See the module doc: the run is asleep between polls, so without this it
         // learns the upload is complete a poll interval late. Best-effort.
         await client.wake(started).catch(() => undefined);
       } catch (err: unknown) {
-        setStartError(errorMessage(err));
+        // An abandoned upload is not a failure to report — `reset()` and the next
+        // `submit()` both cancel — but the RUN still has to go, for the reason
+        // below: it is waiting on bytes that are not coming either way.
+        if (!gate.cancelled) setStartError(errorMessage(err));
         // A run left behind waits for bytes that will never come, until its own
         // abandonment bound — failing long after the page said so. Best-effort: the
         // submission has already failed, and a failing cancel must not replace the
         // error that caused it.
         if (started) await client.cancel(started).catch(() => undefined);
       } finally {
-        setStarting(false);
-        setUpload(undefined);
+        // A SUPERSEDED submission owns none of this state any more: its upload
+        // unwinds after the next one has already set `starting`, so clearing here
+        // unconditionally would report the live submission as finished.
+        if (gateRef.current === gate) {
+          gateRef.current = undefined;
+          setStarting(false);
+          setUpload(undefined);
+        }
       }
     },
     [workflow, key, parallel, getClient],
   );
 
   const reset = useCallback(() => {
+    // Abandoned rather than left running — see `useWorkflowSubmit`'s `reset`. The
+    // run this submission started is cancelled by the `submit` it unwinds into,
+    // which is the one place that knows the id.
+    gateRef.current?.cancel();
+    gateRef.current = undefined;
     setRunId(undefined);
     setStartError(undefined);
     setUpload(undefined);
   }, []);
 
+  const pauseUpload = useCallback(() => {
+    gateRef.current?.pause();
+    setUpload((current) => (current ? { ...current, paused: true } : current));
+  }, []);
+
+  const resumeUpload = useCallback(() => {
+    gateRef.current?.resume();
+    setUpload((current) => (current ? { ...current, paused: false } : current));
+  }, []);
+
   return {
     submit,
     reset,
+    pauseUpload,
+    resumeUpload,
     run: tracked.run,
     pending: starting || tracked.polling,
     upload,
     error: startError ?? tracked.error,
   };
+}
+
+/**
+ * Read the declaration, substitute the id, and start the run.
+ *
+ * Everything that has to happen BEFORE a byte moves, which is the inversion this
+ * hook exists for. One small `list()` per submit, deliberately: holding the
+ * listing in state would make a submit before it landed a race, and the failure
+ * mode of that race is a `File` reaching a run input.
+ */
+async function beginRun(opts: {
+  client: WorkflowApi;
+  workflow: string;
+  input: unknown;
+  id: string;
+  key?: string;
+}): Promise<{ runId: string; file: File | undefined }> {
+  const { client, workflow, input, id } = opts;
+  const field = await uploadField(client, workflow);
+  const chosen = field === undefined ? undefined : fileAt(input, field);
+  // No file to stream: start the run with the input exactly as given. A workflow
+  // may declare an upload property and be handed something else (an id from a
+  // previous submit, an empty optional), and refusing here would be this hook
+  // deciding what its own declaration means.
+  const payload = chosen && field ? { ...(input as object), [field]: id } : input;
+  // Checked on the PAYLOAD, so the substitution above is what clears it.
+  assertSendable(workflow, payload, field);
+  const runId = await client.start(workflow, payload, omitUndefined({ key: opts.key }));
+  return { runId, file: chosen };
+}
+
+/**
+ * Send the file, waiting out however many pauses the person takes.
+ *
+ * Its own function rather than a block inside `submit` because `submit` is
+ * already carrying the ORDER this hook exists for — read the declaration, mint
+ * the id, start the run, then the bytes, then the wake — and the sending is the
+ * one step of that list with a loop in it.
+ */
+async function streamFile(opts: {
+  client: WorkflowApi;
+  gate: UploadGate;
+  id: string;
+  file: File;
+  parallel: UploadParallel | undefined;
+  report: (status: UploadStatus) => void;
+}): Promise<void> {
+  const { client, gate, id, file, parallel, report } = opts;
+  await sendThroughGate(gate, async (resume) => {
+    await client.uploadStream(id, file, {
+      name: file.name,
+      signal: gate.signal,
+      onProgress: (progress) =>
+        report({
+          ...progress,
+          name: file.name,
+          index: 1,
+          count: 1,
+          // Read off the gate rather than fixed at `false`: an XHR can deliver one
+          // more progress event between the abort and its rejection, which would
+          // otherwise unpause the bar.
+          paused: gate.paused,
+        }),
+      // The SDK re-enters a failed round on its own; this flag is for the round
+      // after a PAUSE, which unwound all the way out to here.
+      ...omitUndefined({ parallel, resume: resume ? true : undefined }),
+    });
+  });
 }
 
 /**
@@ -271,11 +378,6 @@ function assertSendable(workflow: string, payload: unknown, field: string | unde
       `declare as an upload${declares}. Add the property to \`workflow({ uploads: [...] })\`, ` +
       "or submit an upload id.",
   );
-}
-
-/** A fresh upload id: a capability, so it is random rather than derived. */
-function randomUploadId(): string {
-  return crypto.randomUUID().replaceAll("-", "");
 }
 
 /**

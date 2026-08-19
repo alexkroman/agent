@@ -28,6 +28,7 @@ import {
   UPLOAD_CHUNK_BYTES,
   UPLOAD_PART_ATTEMPTS,
   UPLOAD_PART_CONCURRENCY,
+  UPLOAD_RESUME_ATTEMPTS,
   UPLOAD_RETRY_BASE_MS,
 } from "./constants.ts";
 import type { UploadProgress } from "./workflow-upload-client.ts";
@@ -210,10 +211,44 @@ describe("a part that does not land", () => {
       withoutBackoff(() => client().upload(recording(), { parallel: true })),
     ).rejects.toThrow(/refused/);
     // The whole budget and no more — and the agent's own answer is what the caller
-    // hears, not an invented one.
+    // hears, not an invented one. The two budgets COMPOSE, deliberately: the
+    // request one waits out a busy guest and the resume one waits out a guest that
+    // is not there, so an agent refusing forever is asked
+    // `UPLOAD_PART_ATTEMPTS` times per round for `UPLOAD_RESUME_ATTEMPTS` rounds
+    // and then told about it.
     expect(
       agent.parts.filter((one) => one.url.searchParams.get("offset") === String(PART)),
-    ).toHaveLength(UPLOAD_PART_ATTEMPTS);
+    ).toHaveLength(UPLOAD_PART_ATTEMPTS * UPLOAD_RESUME_ATTEMPTS);
+  });
+
+  test("an agent that goes away mid-fan-out and comes back keeps the file", async () => {
+    // The whole point of the resume loop, from the outside. The first round loses
+    // one window's entire request budget — which is what a redeploy looks like to
+    // a part — and the store answers the second round's claim with the 409 that
+    // says the id is already ours.
+    const agent = scriptAgent({
+      refuse: { offset: PART, status: 503, times: UPLOAD_PART_ATTEMPTS },
+      begin: [201, 409],
+      landed: [{ start: 0, end: PART }],
+    });
+    const stored = await withoutBackoff(() => client().upload(recording(), { parallel: true }));
+
+    expect(stored.complete).toBe(true);
+    // TWO claims, the second under the SAME id: a fresh id would be a second
+    // upload holding only the tail of the file.
+    const claims = agent.calls.filter(
+      (one) => one.method === "POST" && one.url.pathname.endsWith("/parts"),
+    );
+    expect(claims).toHaveLength(2);
+    expect(new Set(claims.map((one) => one.url.pathname)).size).toBe(1);
+    // And the second round sends only what is MISSING. Re-sending the file would
+    // also work and is exactly what this exists not to do: `landed` covers every
+    // window below `PART`, so each of those is sent ONCE across both rounds.
+    const below = agent.parts
+      .map((one) => Number(one.url.searchParams.get("offset")))
+      .filter((offset) => offset < PART);
+    expect(new Set(below).size).toBe(below.length);
+    expect(below.length).toBeGreaterThan(0);
   });
 
   test("WAITS before asking again, rather than re-colliding with the limit", async () => {
@@ -397,9 +432,12 @@ describe("a part that does not land", () => {
         throw new TypeError("the upload did not reach the agent");
       }),
     );
-    await expect(client().upload(recording(), { parallel: true })).rejects.toThrow(
-      /did not reach the agent/,
-    );
+    // On virtual time: a link that never comes back spends the resume budget as
+    // well as the request one, which is tens of seconds of real waiting and a spec
+    // that races the tier timeout rather than asserting anything about the delay.
+    await expect(
+      withoutBackoff(() => client().upload(recording(), { parallel: true })),
+    ).rejects.toThrow(/did not reach the agent/);
   });
 });
 

@@ -46,6 +46,7 @@
  */
 
 import { progressOf, sendViaXhr, uploadXhrClass } from "./_upload-progress.ts";
+import { withResumes } from "./_upload-resume.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
 import type { UploadInfo } from "./step-uploads.ts";
@@ -148,6 +149,13 @@ export type UploadOptions = {
    * over. Without it a second attempt at an id is REFUSED — which is the rule that
    * makes a caller-chosen id safe, since nothing else stops one upload writing into
    * another's — so this is how a caller says the id is its own.
+   *
+   * **A transient failure needs no flag: this call re-enters itself.** A round
+   * that fails for a reason that looks like an outage is retried with the resume
+   * already set, up to `UPLOAD_RESUME_ATTEMPTS` (see `_upload-resume.ts`, which
+   * carries what "looks like an outage" excludes). So this option is for a
+   * SEPARATE call against an id the caller already owns — the round after a pause,
+   * a second submit of a form the person interrupted — and not for retrying.
    *
    * Only the parts path can do it, and the store is what makes it safe: a part's
    * rows are keyed by the offset it starts at, so re-sending one is writing the
@@ -304,19 +312,29 @@ export async function uploadFile(
     // call is not: `upload` promises only to resolve the ref, so where the id came
     // from is this module's business. Random rather than derived, for the reason
     // `useWorkflowStream` mints one that way — an upload id is a capability.
-    const stored = await uploadInParts({
-      base,
-      headers,
-      fail,
-      send: sendUpload,
-      id: newClientUploadId(),
-      file,
-      name,
-      type,
-      options,
-      settings,
-      plan,
-    });
+    //
+    // Minted ONCE, outside the loop: an id that changed per round would make every
+    // round a fresh upload of the whole file, which is the thing being fixed.
+    const id = newClientUploadId();
+    const stored = await withResumes(
+      (round) =>
+        uploadInParts({
+          base,
+          headers,
+          fail,
+          send: sendUpload,
+          id,
+          file,
+          name,
+          type,
+          options: { ...options, resume: round.resume },
+          settings,
+          plan,
+        }),
+      // No `resume` on the first round: nothing has been stored under an id minted
+      // one line above.
+      { resume: undefined, ...omitUndefined({ signal: options?.signal }) },
+    );
     // `undefined` means this path declined; the file has not moved, so it goes the
     // ordinary way below.
     if (stored) return stored;
@@ -370,19 +388,26 @@ export async function streamUploadFile(
     // parts compose with this at all: a run started on this id reads the
     // contiguous prefix as the parts fill it in, exactly as it reads a single
     // streaming `PUT`.
-    const stored = await uploadInParts({
-      base,
-      headers,
-      fail,
-      send: sendUpload,
-      id,
-      file,
-      name,
-      type,
-      options,
-      settings,
-      plan,
-    });
+    const stored = await withResumes(
+      (round) =>
+        uploadInParts({
+          base,
+          headers,
+          fail,
+          send: sendUpload,
+          id,
+          file,
+          name,
+          type,
+          options: { ...options, resume: round.resume },
+          settings,
+          plan,
+        }),
+      // The caller's own `resume` decides the FIRST round, because only the caller
+      // knows whether this id already holds bytes — it chose the id. Every round
+      // after a failure is a resume regardless.
+      { resume: options?.resume, ...omitUndefined({ signal: options?.signal }) },
+    );
     if (stored) return stored;
   }
   const res = await sendUpload(
