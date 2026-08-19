@@ -40,6 +40,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { GATE_WIRING, repoPathOf } from "./_gate-support.ts";
 
 /** The point past which an agent's context silently drops the remainder. */
 const HARD_LIMIT = 150_000;
@@ -64,21 +65,11 @@ const rootShim = import.meta.glob("../../CLAUDE.md", {
   eager: true,
 })["../../CLAUDE.md"];
 
-/**
- * Normalize a glob key to a repo-relative path, so a failure names the file
- * the way the developer would. Vite resolves keys relative to THIS file, so
- * the three globs land in three shapes: `../../x` is the repo root, `../pkg/x`
- * is a sibling package, and `./x` is this package (which is the shape the
- * sibling-package glob reports aai-templates' own guide under).
- */
-const repoPath = (key: string): string => {
-  if (key.startsWith("../../")) return key.slice("../../".length);
-  if (key.startsWith("../")) return `packages/${key.slice("../".length)}`;
-  return `packages/aai-templates/${key.slice("./".length)}`;
-};
-
+// `repoPathOf` knows all three shapes a key arrives in — the repo root, a
+// sibling package, and this package (which is what the sibling-package glob
+// reports aai-templates' own guide under). See `_gate-support.ts`.
 const entries = Object.entries(guides)
-  .map(([key, text]) => ({ path: repoPath(key), text }))
+  .map(([key, text]) => ({ path: repoPathOf(key), text }))
   .sort((a, b) => a.path.localeCompare(b.path));
 
 const remedy =
@@ -172,24 +163,7 @@ describe("agent guide size", () => {
     // The repo has been here before: the quality ratchets lived only in
     // check.sh, which CI never invokes, so `git push --no-verify` was enough
     // to skip them entirely.
-    const files: Record<string, string | undefined> = {
-      "package.json": import.meta.glob("../../package.json", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../package.json"],
-      "scripts/check.sh": import.meta.glob("../../scripts/check.sh", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../scripts/check.sh"],
-      ".github/workflows/check.yml": import.meta.glob("../../.github/workflows/check.yml", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../.github/workflows/check.yml"],
-    };
-    for (const [path, text] of Object.entries(files)) {
+    for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");
       expect(text, `${path} no longer references check:claude-md`).toContain("check:claude-md");
     }

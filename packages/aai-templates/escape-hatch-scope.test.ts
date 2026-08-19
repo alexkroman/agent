@@ -36,6 +36,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { ERE_UNSUPPORTED } from "./_gate-support.ts";
 
 const script = import.meta.glob("../../scripts/check-escape-hatches.mjs", {
   query: "?raw",
@@ -83,29 +84,35 @@ const scaffoldGuide = import.meta.glob("./scaffold/CLAUDE.md", {
  * pattern added without any prose naming it fails below, and the remedy is to
  * document it — which every pattern here already is.
  */
-const proseDocs = (): Record<string, string> => ({
-  ...(import.meta.glob("../../AGENTS.md", {
+const proseDocs: Record<string, string> = {
+  ...import.meta.glob<string>("../../AGENTS.md", {
     query: "?raw",
     import: "default",
     eager: true,
-  }) as Record<string, string>),
-  ...(import.meta.glob("../*/CLAUDE.md", {
+  }),
+  ...import.meta.glob<string>("../*/CLAUDE.md", {
     query: "?raw",
     import: "default",
     eager: true,
-  }) as Record<string, string>),
-  ...(import.meta.glob("./scaffold/CLAUDE.md", {
+  }),
+  ...import.meta.glob<string>("./scaffold/CLAUDE.md", {
     query: "?raw",
     import: "default",
     eager: true,
-  }) as Record<string, string>),
-});
+  }),
+};
 
-/** Every line of that corpus, tagged with the document it came from. */
-const proseLines = (): { doc: string; line: string }[] =>
-  Object.entries(proseDocs()).flatMap(([doc, text]) =>
-    text.split("\n").map((line) => ({ doc, line })),
-  );
+/**
+ * Every line of that corpus, tagged with the document it came from.
+ *
+ * Split ONCE, at module scope, rather than per call: the per-pattern liveness
+ * case below reads it for each of the seven patterns, and the corpus is every
+ * guide in the repo — half a megabyte of markdown re-split eight times for an
+ * answer that cannot change between cases.
+ */
+const proseLines: { doc: string; line: string }[] = Object.entries(proseDocs).flatMap(
+  ([doc, text]) => text.split("\n").map((line) => ({ doc, line })),
+);
 
 /**
  * The committed per-file budgets the gate now checks against.
@@ -141,6 +148,9 @@ function shippedPatterns(source: string): { label: string; re: string }[] {
   return entries.map(([, label, re]) => ({ label: label ?? "", re: re ?? "" }));
 }
 
+/** The shipped patterns, parsed once — four cases below read the same answer. */
+const patterns = shippedPatterns(script ?? "");
+
 describe("escape-hatch ratchet scope", () => {
   test("the script and the prose corpus are readable", () => {
     expect(script, "scripts/check-escape-hatches.mjs not found").toBeTypeOf("string");
@@ -148,12 +158,11 @@ describe("escape-hatch ratchet scope", () => {
     // A corpus floor, for the reason the ratchets themselves carry one: every
     // per-pattern assertion below is "this pattern found prose", and an empty
     // corpus turns all of them into statements about nothing.
-    expect(Object.keys(proseDocs()).length, "no guides found").toBeGreaterThanOrEqual(10);
-    expect(proseLines().length, "the markdown corpus is empty").toBeGreaterThan(2000);
+    expect(Object.keys(proseDocs).length, "no guides found").toBeGreaterThanOrEqual(10);
+    expect(proseLines.length, "the markdown corpus is empty").toBeGreaterThan(2000);
   });
 
   test("the shipped patterns parse", () => {
-    const patterns = shippedPatterns(script ?? "");
     // Seven today. Asserting a floor rather than an exact count keeps this from
     // failing every time a pattern is legitimately added.
     expect(patterns.length).toBeGreaterThanOrEqual(7);
@@ -163,7 +172,7 @@ describe("escape-hatch ratchet scope", () => {
     }
   });
 
-  test.each(shippedPatterns(script ?? ""))(
+  test.each(patterns)(
     "pattern $label matches this repo's own prose — which is why markdown is excluded",
     ({ label, re }) => {
       // PER PATTERN, and that is the whole point of this test.
@@ -180,7 +189,7 @@ describe("escape-hatch ratchet scope", () => {
       // A failure here is far likelier to be a narrowed pattern than a reworded
       // guide, but either way the reasoning behind the markdown exclusion needs
       // re-checking before this is "fixed" by deleting it.
-      const hits = proseLines().filter(({ line }) => new RegExp(re).test(line));
+      const hits = proseLines.filter(({ line }) => new RegExp(re).test(line));
       expect(
         hits.length,
         `pattern "${label}" matches no line of AGENTS.md or a package guide — ` +
@@ -201,23 +210,14 @@ describe("escape-hatch ratchet scope", () => {
     // tree holding 110 violations. A JS-side regex test cannot detect that, so
     // the constructs ERE has no answer for are banned outright.
     //
-    // `guard-invariants-gate.test.ts` carries the twin ban for the rule
-    // patterns; this file had no `\b` assertion at all, and its two most
+    // The list is `ERE_UNSUPPORTED` in `_gate-support.ts`, shared with
+    // `guard-invariants-gate.test.ts`'s twin ban over the rule patterns: a
+    // construct added to one copy and not the other is a hole in whichever gate
+    // was not updated. This file had no `\b` assertion at all, and its two most
     // complex patterns are the two that historically carried one.
-    const banned = [
-      ["\\b", "a word boundary — git's matcher does not implement it"],
-      ["\\B", "a non-word-boundary — same GNU extension as \\b"],
-      ["\\w", "a GNU character class; POSIX ERE spells it [A-Za-z0-9_]"],
-      ["\\d", "a GNU character class; POSIX ERE spells it [0-9]"],
-      ["\\s", "a GNU character class; POSIX ERE spells it [[:space:]]"],
-      ["(?", "a JS-only group (lookaround or non-capturing); ERE has neither"],
-      ["*?", "a lazy quantifier; ERE quantifiers are always greedy"],
-      ["+?", "a lazy quantifier; ERE quantifiers are always greedy"],
-    ] as const;
-    const patterns = shippedPatterns(script ?? "");
     expect(patterns.length, "no patterns parsed").toBeGreaterThanOrEqual(7);
     for (const { label, re } of patterns) {
-      for (const [construct, why] of banned) {
+      for (const [construct, why] of ERE_UNSUPPORTED) {
         expect(re, `pattern "${label}" uses ${construct} — ${why}`).not.toContain(construct);
       }
     }
@@ -244,7 +244,7 @@ describe("escape-hatch ratchet scope", () => {
     // A pattern missing from the baseline is not an error (zero occurrences is
     // the goal), but a pattern the baseline has never heard of, holding
     // hundreds of hits, would mean the JSON and the script had drifted apart.
-    const labels = new Set(shippedPatterns(script ?? "").map((p) => p.label));
+    const labels = new Set(patterns.map((p) => p.label));
     expect(labels.size).toBeGreaterThanOrEqual(7);
     for (const key of Object.keys(baseline)) {
       if (key.startsWith("_")) continue;

@@ -422,8 +422,14 @@ export {
 
 // ---- I/O helpers ------------------------------------------------------------
 
-/** Run a `wav.ts` helper, turning its "cannot cut this" into a terminal failure. */
-function fatalOnUnsupported<T>(read: () => T): T {
+/**
+ * Run a `wav.ts` helper, turning its "cannot cut this" into a terminal failure.
+ *
+ * Exported for the same reason `countWords` is: `stream.ts` plans with the same
+ * `wav.ts` helpers and owes the same classification, and it had this byte for
+ * byte.
+ */
+export function fatalOnUnsupported<T>(read: () => T): T {
   try {
     return read();
   } catch (err: unknown) {

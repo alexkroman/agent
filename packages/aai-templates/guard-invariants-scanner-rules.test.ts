@@ -31,61 +31,36 @@
 import { describe, expect, test } from "vitest";
 
 /**
- * Rule 12's decision function, imported as a real value.
+ * The scanner rules' PURE halves, imported as real values.
  *
- * The scanner rules (1, 7, 12) have no `re` to sample, so the
- * positive/negative discipline the line rules get has to come from exercising
- * the logic directly. Rule 12 is the one worth it: the others ask a single
- * yes/no question of a file, while this one parses two sources and diffs them,
- * and every part of that can go quietly empty — a renamed `GUEST_ROUTES`
- * binding, a pathspec that stops matching, a prefix rule that swallows
- * everything. It is split into a pure half for exactly this.
- */
-const findUndeclaredGuestRoutes = Object.values(
-  import.meta.glob<
-    (
-      literals: { file: string; line: number; literal: string }[],
-      declared: Set<string>,
-    ) => { file: string; line: number; text: string }[]
-  >("../../scripts/guard-invariants-scanners.mjs", {
-    import: "findUndeclaredGuestRoutes",
-    eager: true,
-  }),
-)[0];
-
-/**
- * Rule 13's decision function, imported as a real value — same treatment and
- * same reason as rule 12's above: it is a path computation, and a version that
+ * Rules 1, 7 and 12 have no `re` to sample, so the positive/negative discipline
+ * the line rules get has to come from exercising the logic directly — and the
+ * ones split into a pure half are split for exactly this. Rule 12 parses two
+ * sources and diffs them, and every part of that can go quietly empty (a renamed
+ * `GUEST_ROUTES` binding, a pathspec that stops matching, a prefix rule that
+ * swallows everything). Rule 13 is a path computation, and a version that
  * resolved everything to "inside its template" would report the healthiest
- * possible tree while checking nothing.
+ * possible tree while checking nothing. Rule 14 is the one where the difference
+ * between "matches the name" and "resolves to the directory" IS the rule.
+ *
+ * ONE namespace glob rather than four `import: "<name>"` globs over the same
+ * module: `import.meta.glob` is a compile-time transform, so four calls are four
+ * static imports of one file to pick one binding out of each. Destructured with a
+ * fallback, so every member stays possibly-absent and the "is importable" cases
+ * below keep asserting it.
  */
-const importEscapesTemplate = Object.values(
-  import.meta.glob<(file: string, specifier: string) => boolean>(
-    "../../scripts/guard-invariants-scanners.mjs",
-    { import: "importEscapesTemplate", eager: true },
-  ),
-)[0];
-
-/**
- * Rule 14's two halves, imported as real values for the same reason as 12's and
- * 13's. This rule is the one where the difference between "matches the name" and
- * "resolves to the directory" IS the rule, so a resolver that quietly agreed with
- * every candidate would report a clean tree while the bug it was written for sat
- * in it.
- */
-const resolveAgainstFile = Object.values(
-  import.meta.glob<(readerFile: string, specifier: string) => string>(
-    "../../scripts/guard-invariants-scanners.mjs",
-    { import: "resolveAgainstFile", eager: true },
-  ),
-)[0];
-
-const fixtureDirs = Object.values(
-  import.meta.glob<() => string[]>("../../scripts/guard-invariants-scanners.mjs", {
-    import: "fixtureDirs",
-    eager: true,
-  }),
-)[0];
+const { findUndeclaredGuestRoutes, importEscapesTemplate, resolveAgainstFile, fixtureDirs } =
+  Object.values(
+    import.meta.glob<{
+      findUndeclaredGuestRoutes: (
+        literals: { file: string; line: number; literal: string }[],
+        declared: Set<string>,
+      ) => { file: string; line: number; text: string }[];
+      importEscapesTemplate: (file: string, specifier: string) => boolean;
+      resolveAgainstFile: (readerFile: string, specifier: string) => string;
+      fixtureDirs: () => string[];
+    }>("../../scripts/guard-invariants-scanners.mjs", { eager: true }),
+  )[0] ?? {};
 
 /**
  * The SCANNER corpus that no floor and no sample protects.
@@ -104,37 +79,36 @@ const fixtureDirs = Object.values(
  * `api-surface-file.test.ts` uses), so an empty one fails HERE even while the
  * gate prints its checkmark.
  */
-const workflowFiles = import.meta.glob("../../.github/workflows/*.yml", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
+const workflowFiles: Record<string, string> = import.meta.glob<string>(
+  "../../.github/workflows/*.yml",
+  { query: "?raw", import: "default", eager: true },
+);
 
 describe("rule 7 — every GitHub Action is SHA-pinned", () => {
   /** `uses:` lines naming a third-party action, i.e. ones with a ref to pin. */
-  const pinnable = (): { file: string; spec: string }[] =>
-    Object.entries(workflowFiles).flatMap(([file, text]) =>
+  const pinnable: { file: string; spec: string }[] = Object.entries(workflowFiles).flatMap(
+    ([file, text]) =>
       text
         .split("\n")
         .map((line) => /^\s*(?:-\s*)?uses:\s*(\S+)/.exec(line)?.[1])
         .filter((spec): spec is string => spec !== undefined)
         .filter((spec) => !(spec.startsWith("./") || spec.startsWith("docker://")))
         .map((spec) => ({ file, spec })),
-    );
+  );
 
   test("the corpus is not empty", () => {
     // The floor the scanner does not have. Without it a renamed directory
     // makes rule 7 report `0 findings ✓` forever, over workflows holding
     // floating tags, on the rule that guards the release job's npm token.
     expect(Object.keys(workflowFiles).length, "no workflows found").toBeGreaterThanOrEqual(5);
-    expect(pinnable().length, "no `uses:` lines found").toBeGreaterThanOrEqual(10);
+    expect(pinnable.length, "no `uses:` lines found").toBeGreaterThanOrEqual(10);
   });
 
   test("every third-party action carries a 40-character commit SHA", () => {
     // Re-derived here rather than read off the scanner's empty result: a tag
     // is a mutable pointer, so `@v7` grants every future version of that code
     // the permissions of the job it runs in.
-    for (const { file, spec } of pinnable()) {
+    for (const { file, spec } of pinnable) {
       const ref = spec.split("@")[1] ?? "";
       expect(/^[0-9a-f]{40}$/.test(ref), `${file}: "${spec}" is not pinned to a SHA`).toBe(true);
     }

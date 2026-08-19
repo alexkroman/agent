@@ -17,6 +17,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { GATE_WIRING } from "./_gate-support.ts";
 
 const script = import.meta.glob("../../scripts/check-test-assertions.mjs", {
   query: "?raw",
@@ -122,24 +123,7 @@ describe("check-test-assertions parser", () => {
   test("the gate is wired into both the local check and CI", () => {
     // The repo has been here before: the quality ratchets lived only in
     // check.sh, which CI never invokes, so `git push --no-verify` skipped them.
-    const files: Record<string, string | undefined> = {
-      "package.json": import.meta.glob("../../package.json", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../package.json"],
-      "scripts/check.sh": import.meta.glob("../../scripts/check.sh", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../scripts/check.sh"],
-      ".github/workflows/check.yml": import.meta.glob("../../.github/workflows/check.yml", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../.github/workflows/check.yml"],
-    };
-    for (const [path, text] of Object.entries(files)) {
+    for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");
       expect(text, `${path} no longer references check:test-assertions`).toContain(
         "check:test-assertions",

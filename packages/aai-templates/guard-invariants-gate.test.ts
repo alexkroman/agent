@@ -32,6 +32,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { ERE_UNSUPPORTED, GATE_WIRING, repoPathOf } from "./_gate-support.ts";
 
 /**
  * The shared ratchet ENGINE both baseline gates run on.
@@ -94,7 +95,7 @@ const repoFiles = new Set(
   // Keys come back relative to THIS file, which Vite normalizes to the shortest
   // form (`../aai/host/session-core.ts`) — hence the rewrite rather than a
   // `../../packages/` pattern, whose keys are the same string either way.
-  Object.keys(import.meta.glob("../*/**/*.ts")).map((k) => k.replace(/^\.\.\//, "packages/")),
+  Object.keys(import.meta.glob("../*/**/*.ts")).map(repoPathOf),
 );
 
 /**
@@ -107,8 +108,11 @@ const repoFiles = new Set(
  * own module — it parsed zero rules and every per-rule assertion went vacuous,
  * which is the blindness this file exists to prevent, in this file. Real values
  * cannot go stale or half-parse.
+ *
+ * Read once, as a value: the glob is an eager import, so nine call sites calling
+ * it as a function only re-ran the `Object.values` and the `?? []` fallback.
  */
-const shippedLineRules = (): LineRule[] =>
+const shippedLineRules: LineRule[] =
   Object.values(
     import.meta.glob<LineRule[]>("../../scripts/guard-invariants-rules.mjs", {
       import: "LINE_RULES",
@@ -353,12 +357,11 @@ describe("guard-invariants gate", () => {
   });
 
   test("every line rule parses to a valid regex", () => {
-    const rules = shippedLineRules();
     expect(
-      rules.length,
+      shippedLineRules.length,
       "no line rules parsed — has the rule shape changed?",
     ).toBeGreaterThanOrEqual(7);
-    for (const { id, key, re } of rules) {
+    for (const { id, key, re } of shippedLineRules) {
       expect(key, `rule ${id} parsed with an empty key`).not.toBe("");
       expect(() => new RegExp(re), `rule ${id}'s pattern is not a valid regex`).not.toThrow();
     }
@@ -367,7 +370,7 @@ describe("guard-invariants gate", () => {
   test("every line rule has samples", () => {
     // A rule added without samples would be untested, which is the state this
     // suite exists to make impossible. Either source counts.
-    for (const rule of shippedLineRules()) {
+    for (const rule of shippedLineRules) {
       expect(
         sampleFor(rule),
         `rule ${rule.id} (${rule.key}) has no positive/negative samples`,
@@ -381,14 +384,14 @@ describe("guard-invariants gate", () => {
     // were being maintained, read and trusted while matching against nothing.
     // A dead sample is worse than no sample — it reads as coverage, and only
     // the "every rule has samples" direction was ever asserted.
-    const keys = new Set(shippedLineRules().map((r) => r.key));
+    const keys = new Set(shippedLineRules.map((r) => r.key));
     expect(keys.size, "no line rules parsed").toBeGreaterThanOrEqual(7);
     for (const key of Object.keys(SAMPLES)) {
       expect(keys, `SAMPLES has "${key}", which is not a shipped rule — retired?`).toContain(key);
     }
   });
 
-  test.each(shippedLineRules())("rule $id ($key) matches its anti-pattern", (rule) => {
+  test.each(shippedLineRules)("rule $id ($key) matches its anti-pattern", (rule) => {
     const samples = sampleFor(rule);
     if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
     for (const line of samples.matches) {
@@ -400,7 +403,7 @@ describe("guard-invariants gate", () => {
   });
 
   test.each(
-    shippedLineRules().filter(({ key }) => (SAMPLES[key]?.multilineMatches?.length ?? 0) > 0),
+    shippedLineRules.filter(({ key }) => (SAMPLES[key]?.multilineMatches?.length ?? 0) > 0),
   )("rule $id ($key) matches a REALISTIC multi-line occurrence", ({ key, re }) => {
     // The scan is `git grep -nIE`, which is LINE-BASED, so this asserts the
     // sample the way the gate would really see it: at least one line of it must
@@ -420,7 +423,7 @@ describe("guard-invariants gate", () => {
     }
   });
 
-  test.each(shippedLineRules())("rule $id ($key) spares its legitimate twin", (rule) => {
+  test.each(shippedLineRules)("rule $id ($key) spares its legitimate twin", (rule) => {
     const samples = sampleFor(rule);
     if (samples === undefined) expect.fail(`rule ${rule.key} has no samples`);
     for (const line of samples.ignores) {
@@ -438,21 +441,11 @@ describe("guard-invariants gate", () => {
     // patterns carried one, matched nothing on the machines where git's matcher
     // does not implement it, and the gate reported success over a tree holding
     // 110 violations. So every construct ERE has no answer for is banned, not
-    // just `\b`.
-    const banned = [
-      ["\\b", "a word boundary — git's matcher does not implement it"],
-      ["\\B", "a non-word-boundary — same GNU extension as \\b"],
-      ["\\w", "a GNU character class; POSIX ERE spells it [A-Za-z0-9_]"],
-      ["\\d", "a GNU character class; POSIX ERE spells it [0-9]"],
-      ["\\s", "a GNU character class; POSIX ERE spells it [[:space:]]"],
-      ["(?", "a JS-only group (lookaround or non-capturing); ERE has neither"],
-      ["*?", "a lazy quantifier; ERE quantifiers are always greedy"],
-      ["+?", "a lazy quantifier; ERE quantifiers are always greedy"],
-    ] as const;
-    const rules = shippedLineRules();
-    expect(rules.length, "no line rules parsed").toBeGreaterThanOrEqual(7);
-    for (const { id, re } of rules) {
-      for (const [construct, why] of banned) {
+    // just `\b` — from the one list `escape-hatch-scope.test.ts` bans over its
+    // own patterns, so neither gate can be the one that missed an addition.
+    expect(shippedLineRules.length, "no line rules parsed").toBeGreaterThanOrEqual(7);
+    for (const { id, re } of shippedLineRules) {
+      for (const [construct, why] of ERE_UNSUPPORTED) {
         expect(re, `rule ${id} uses ${construct} — ${why}`).not.toContain(construct);
       }
     }
@@ -465,7 +458,7 @@ describe("guard-invariants gate", () => {
     // `transports/pipeline-llm-stream.ts` does not. The price of that is a list
     // that a rename empties silently: a `git grep` pathspec matching nothing
     // reports `now=0 ✓`, which reads exactly like the rule being upheld.
-    const rule16 = shippedLineRules().find((r) => r.id === 16);
+    const rule16 = shippedLineRules.find((r) => r.id === 16);
     expect(rule16, "rule 16 is not in LINE_RULES").toBeTypeOf("object");
     expect(rule16?.paths.length, "rule 16 scans nothing").toBeGreaterThanOrEqual(10);
     expect(repoFiles.size, "no package sources discovered").toBeGreaterThan(100);
@@ -475,7 +468,7 @@ describe("guard-invariants gate", () => {
   });
 
   test("baseline keys name real rules", () => {
-    const keys = new Set(shippedLineRules().map((r) => r.key));
+    const keys = new Set(shippedLineRules.map((r) => r.key));
     for (const key of Object.keys(baseline)) {
       if (key.startsWith("_")) continue;
       expect(keys, `the baseline names "${key}", which is not a shipped rule`).toContain(key);
@@ -498,24 +491,7 @@ describe("guard-invariants gate", () => {
   test("the gate is wired into both the local check and CI", () => {
     // The repo has been here before: the quality ratchets lived only in
     // check.sh, which CI never invokes, so `git push --no-verify` skipped them.
-    const files: Record<string, string | undefined> = {
-      "package.json": import.meta.glob("../../package.json", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../package.json"],
-      "scripts/check.sh": import.meta.glob("../../scripts/check.sh", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../scripts/check.sh"],
-      ".github/workflows/check.yml": import.meta.glob("../../.github/workflows/check.yml", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../.github/workflows/check.yml"],
-    };
-    for (const [path, text] of Object.entries(files)) {
+    for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");
       expect(text, `${path} no longer references check:invariants`).toContain("check:invariants");
     }

@@ -158,6 +158,26 @@ export function requireOwnOrder(state: RetailState, orderId: string): Order | To
   return order;
 }
 
+/**
+ * The authenticated customer, when `userId` names them.
+ *
+ * The wrapper's auth gate says a customer is on the call; a tool whose schema
+ * takes a `user_id` also needs to know the caller named THAT customer, and only
+ * one message is right for the second. Two tools had the pair of guards written
+ * out, so the message was maintained in two places — the same reason
+ * {@link requireOwnOrder} exists one rule up.
+ */
+export function requireOwnUser(state: RetailState, userId: string): User | ToolFailure {
+  const user = authenticatedUser(state);
+  if (isToolFailure(user)) return user;
+  if (user.user_id !== userId) {
+    return {
+      error: `${userId} is not the customer on this call. You can help only one customer per conversation.`,
+    };
+  }
+  return user;
+}
+
 // ─── The tool wrapper ────────────────────────────────────────────────────────
 
 interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {

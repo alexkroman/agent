@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { creditRefund, REFUND_DELAY_NOTE, REFUND_IMMEDIATE_NOTE } from "../refund.ts";
-import { resolveOrder } from "../resolve.ts";
+import { OrderIdField, resolveOrder } from "../resolve.ts";
 import { authenticatedUser, retailTool, setFocus } from "../store.ts";
 
 /** tau2 accepts exactly these two. Anything else is refused. */
@@ -15,10 +15,7 @@ export default retailTool({
     "State the order, its total and the refund destination to the caller and get an explicit yes " +
     "before calling this.",
   inputSchema: z.object({
-    order_id: z
-      .string()
-      .max(120)
-      .describe("Order id such as '#W0000000', or a spoken reference to one of their orders"),
+    order_id: OrderIdField,
     reason: z
       .enum(CANCEL_REASONS)
       .describe("Either 'no longer needed' or 'ordered by mistake' — no other reason is accepted"),

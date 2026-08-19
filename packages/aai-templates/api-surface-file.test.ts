@@ -20,6 +20,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { repoPathOf } from "./_gate-support.ts";
 
 /** Every committed per-entry-point report, keyed by path relative to this file. */
 const reports: Record<string, string> = import.meta.glob("../*/etc/*.api.md", {
@@ -28,14 +29,18 @@ const reports: Record<string, string> = import.meta.glob("../*/etc/*.api.md", {
   eager: true,
 });
 
-const combined = import.meta.glob("../../API.md", {
+const combined: string | undefined = import.meta.glob<string>("../../API.md", {
   query: "?raw",
   import: "default",
   eager: true,
-})["../../API.md"] as string | undefined;
+})["../../API.md"];
 
-/** `../aai/etc/stt.api.md` -> `packages/aai/etc/stt.api.md`. */
-const repoPath = (key: string): string => `packages/${key.slice("../".length)}`;
+/**
+ * The same text, never absent — its readability is asserted in its own case
+ * below, and the four readers after that work on a string rather than each
+ * spelling `combined ?? ""` again.
+ */
+const api: string = combined ?? "";
 
 /**
  * The declarations inside a report's ```ts fence, one per line.
@@ -55,7 +60,7 @@ const declarations = (report: string): string[] =>
     );
 
 const entries = Object.entries(reports)
-  .map(([key, text]) => ({ path: repoPath(key), declarations: declarations(text) }))
+  .map(([key, text]) => ({ path: repoPathOf(key), declarations: declarations(text) }))
   .sort((a, b) => a.path.localeCompare(b.path));
 
 const remedy = "Run `pnpm api-report` and commit API.md.";
@@ -76,11 +81,11 @@ describe("API.md", () => {
     expect(combined, `API.md is missing. ${remedy}`).toBeTypeOf("string");
     // Every report has a heading and a fence of its own, so the combined file
     // is necessarily larger than any one of them.
-    expect((combined ?? "").length).toBeGreaterThan(50_000);
+    expect(api.length).toBeGreaterThan(50_000);
   });
 
   test("it names every entry point in its contents list", () => {
-    const listed = [...(combined ?? "").matchAll(/^- `([^`]+)` — `([^`]+)`$/gm)].map((match) => ({
+    const listed = [...api.matchAll(/^- `([^`]+)` — `([^`]+)`$/gm)].map((match) => ({
       // Both groups are non-optional in the pattern, so a match has both;
       // `noUncheckedIndexedAccess` types them as possibly absent regardless.
       specifier: match[1] ?? "",
@@ -95,15 +100,12 @@ describe("API.md", () => {
     // The contents list and the sections have to agree, or the list is a map of
     // a file that is not there.
     for (const { specifier } of listed) {
-      expect(
-        (combined ?? "").includes(`\n## \`${specifier}\`\n`),
-        `no section for ${specifier}`,
-      ).toBe(true);
+      expect(api.includes(`\n## \`${specifier}\`\n`), `no section for ${specifier}`).toBe(true);
     }
   });
 
   test.each(entries)("$path made it into API.md", ({ path, declarations: lines }) => {
-    const missing = lines.filter((line) => !(combined ?? "").includes(line));
+    const missing = lines.filter((line) => !api.includes(line));
     expect(
       missing,
       `${missing.length} declaration(s) from ${path} are absent from API.md, ` +

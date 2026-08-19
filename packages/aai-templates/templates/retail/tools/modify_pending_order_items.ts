@@ -1,6 +1,6 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { resolveOrder } from "../resolve.ts";
+import { OrderIdField, resolveOrder } from "../resolve.ts";
 import { authenticatedUser, isGiftCard, money, retailTool, setFocus } from "../store.ts";
 import { applySwap, assertCanCoverDiff, planItemSwap } from "../swap.ts";
 
@@ -13,10 +13,7 @@ export default retailTool({
     "list and the price difference back, and get an explicit yes first. The item and replacement " +
     "lists are positional and must be the same length.",
   inputSchema: z.object({
-    order_id: z
-      .string()
-      .max(120)
-      .describe("Order id such as '#W0000000', or a spoken reference to one of their orders"),
+    order_id: OrderIdField,
     item_ids: z
       .array(z.string().max(60))
       .max(20)

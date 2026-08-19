@@ -1,6 +1,6 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { resolveOrder } from "../resolve.ts";
+import { OrderIdField, resolveOrder } from "../resolve.ts";
 import { retailTool, setFocus } from "../store.ts";
 
 export default retailTool({
@@ -10,10 +10,7 @@ export default retailTool({
     "order id (e.g. '#W0000000' — note the leading '#'), or a spoken reference such as " +
     "'my pending order', 'the delivered one', or 'the second pending order'.",
   inputSchema: z.object({
-    order_id: z
-      .string()
-      .max(120)
-      .describe("Order id such as '#W0000000', or a spoken reference to one of their orders"),
+    order_id: OrderIdField,
   }),
   execute: (args, state) => {
     const order = resolveOrder(state, args.order_id);

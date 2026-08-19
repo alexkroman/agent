@@ -123,6 +123,7 @@ import { mapConcurrent, readUpload, report, uploadInfo } from "@alexkroman1/aai/
 import { sleep } from "workflow";
 import {
   clock,
+  fatalOnUnsupported,
   mergeTranscript,
   type SegmentTranscript,
   segmentConcurrency,
@@ -321,16 +322,6 @@ export async function planStreamed(id: string): Promise<StreamPlan> {
  */
 function expectedSegments(plan: StreamPlan, size: number): number {
   return plan.segments.filter((segment) => segment.start < size).length;
-}
-
-/** Run a `wav.ts` helper, turning its "cannot cut this" into a terminal failure. */
-function fatalOnUnsupported<T>(read: () => T): T {
-  try {
-    return read();
-  } catch (err: unknown) {
-    if (err instanceof UnsupportedRecordingError) return throwFatalStepError(err);
-    throw err;
-  }
 }
 
 /**

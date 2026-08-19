@@ -40,25 +40,35 @@ const workflow = import.meta.glob("../../.github/workflows/check.yml", {
   eager: true,
 })["../../.github/workflows/check.yml"];
 
-const lines = (): string[] => (workflow ?? "").split("\n");
+/** Split once — a dozen readers below walk the same file. */
+const lines: string[] = (workflow ?? "").split("\n");
 
-/** Every job key: a two-space-indented name with nothing after the colon. */
+/** Where the `jobs:` block starts; everything above it is the trigger header. */
+const jobsAt = lines.indexOf("jobs:");
+
+/** A job KEY: a two-space-indented name with nothing after the colon. */
+const JOB_KEY = /^ {2}([A-Za-z0-9_-]+):\s*$/;
+
+/** A `[a, b, c]` flow sequence as its entries — `needs:` and `branches:` both. */
+const bracketList = (inside: string | undefined): string[] =>
+  (inside ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+/** Every job key. */
 function jobNames(): string[] {
-  const all = lines();
-  const start = all.indexOf("jobs:");
-  if (start === -1) throw new Error("check.yml has no top-level `jobs:` block");
-  return all
-    .slice(start + 1)
-    .map((line) => /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(line)?.[1])
+  if (jobsAt === -1) throw new Error("check.yml has no top-level `jobs:` block");
+  return lines
+    .slice(jobsAt + 1)
+    .map((line) => JOB_KEY.exec(line)?.[1])
     .filter((name): name is string => name !== undefined);
 }
 
 /** Everything above `jobs:` — the triggers and the concurrency block. */
 function header(): string {
-  const all = lines();
-  const end = all.indexOf("jobs:");
-  if (end === -1) throw new Error("check.yml has no top-level `jobs:` block");
-  return all.slice(0, end).join("\n");
+  if (jobsAt === -1) throw new Error("check.yml has no top-level `jobs:` block");
+  return lines.slice(0, jobsAt).join("\n");
 }
 
 /** The `branches: [...]` list belonging to the `push:` trigger. */
@@ -66,19 +76,15 @@ function pushBranches(): string[] {
   const found = /^\s*push:\s*\n\s*branches:\s*\[([^\]]*)\]/m.exec(header());
   if (found === null)
     throw new Error("check.yml declares no `push:` trigger with a bracketed `branches:`");
-  return (found[1] ?? "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  return bracketList(found[1]);
 }
 
 /** The body of one job, from its key to the next job key (or end of file). */
 function jobBody(name: string): string {
-  const all = lines();
-  const at = all.indexOf(`  ${name}:`);
+  const at = lines.indexOf(`  ${name}:`);
   if (at === -1) throw new Error(`check.yml has no job named ${name}`);
-  const rest = all.slice(at + 1);
-  const next = rest.findIndex((line) => /^ {2}[A-Za-z0-9_-]+:\s*$/.test(line));
+  const rest = lines.slice(at + 1);
+  const next = rest.findIndex((line) => JOB_KEY.test(line));
   return (next === -1 ? rest : rest.slice(0, next)).join("\n");
 }
 
@@ -86,10 +92,7 @@ function jobBody(name: string): string {
 function needsOf(name: string): string[] {
   const found = /^\s*needs:\s*\[([^\]]*)\]/m.exec(jobBody(name));
   if (found === null) throw new Error(`the ${name} job declares no bracketed \`needs:\``);
-  return (found[1] ?? "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  return bracketList(found[1]);
 }
 
 describe("the ci gate job", () => {
@@ -196,16 +199,16 @@ describe("the ci gate job", () => {
  * happened three times across two PRs on 2026-08-18, all cleared by a rerun.
  */
 describe("the Postgres image pull", () => {
-  const pgStep = (): string => jobBody("integration-and-scenario");
+  const pgStep = jobBody("integration-and-scenario");
 
   test("the pull is its own command, so it can be retried", () => {
     // `docker run` pulls implicitly and cannot be retried without also
     // re-creating the container, which is why the two are separate.
-    expect(pgStep(), "the image is no longer pulled before `docker run`").toContain("docker pull");
+    expect(pgStep, "the image is no longer pulled before `docker run`").toContain("docker pull");
   });
 
   test("it retries more than once, with a growing delay", () => {
-    const body = pgStep();
+    const body = pgStep;
     const loop = /for attempt in ([^\n]+); do/.exec(body);
     expect(loop, "the pull is not wrapped in an attempt loop").not.toBeNull();
     const attempts = (loop?.[1] ?? "").trim().split(/\s+/).filter(Boolean);
@@ -221,7 +224,7 @@ describe("the Postgres image pull", () => {
   });
 
   test("a non-transient failure is NOT retried", () => {
-    const body = pgStep();
+    const body = pgStep;
     // A wrong tag must stay fast and loud. Blanket retries would spend the whole
     // backoff in front of an error nobody reads — the same argument as the
     // extension check in that step.
@@ -236,7 +239,7 @@ describe("the Postgres image pull", () => {
     // nothing on its own — and the attempt count is the only evidence that
     // throttling is getting worse, on the step whose reason for existing is
     // throttling. Silence on the happy path is the wrong silence here.
-    expect(pgStep(), "a successful pull no longer reports its attempt number").toMatch(
+    expect(pgStep, "a successful pull no longer reports its attempt number").toMatch(
       /succeeded on attempt \$\{attempt\}/,
     );
   });
@@ -245,7 +248,7 @@ describe("the Postgres image pull", () => {
     // The trap this guards is a loop that falls out and carries on, leaving
     // `docker run` to fail later with an error naming the container rather than
     // the pull — or worse, a suite that skips itself.
-    expect(pgStep(), "a pull that never succeeded no longer exits non-zero").toMatch(
+    expect(pgStep, "a pull that never succeeded no longer exits non-zero").toMatch(
       /pulled:-0.*\n?[\s\S]{0,200}?exit 1/,
     );
   });

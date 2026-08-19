@@ -84,13 +84,27 @@ function pageOf(agentPath: string): "voice" | "static" {
   return page;
 }
 
-const clients = Object.entries(clientSources)
-  .map(([path, source]) => {
-    const name = path.split("/")[2];
-    if (!name) throw new Error(`Unexpected glob key: ${path}`);
-    return { name, source, agentPath: `./templates/${name}/agent.ts` };
-  })
-  .sort((a, b) => a.name.localeCompare(b.name));
+/**
+ * One glob's sources as `{ name, source, agentPath }`, in template order.
+ *
+ * Both corpora below are the same shape over a different glob — the client
+ * sources and the agent sources — so the key parse, its failure, and the sort
+ * are written once. `agentPath` is derived from the NAME rather than from the
+ * key, which is what makes the two agree: a client's entry has to name its
+ * sibling agent, and an agent's entry names itself.
+ */
+const byTemplate = (
+  sources: Record<string, string>,
+): { name: string; source: string; agentPath: string }[] =>
+  Object.entries(sources)
+    .map(([path, source]) => {
+      const name = path.split("/")[2];
+      if (!name) throw new Error(`Unexpected glob key: ${path}`);
+      return { name, source, agentPath: `./templates/${name}/agent.ts` };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+const clients = byTemplate(clientSources);
 
 /** Which names does `source` import from `spec`? */
 function importsFrom(source: string, spec: string): string[] {
@@ -102,10 +116,7 @@ function importsFrom(source: string, spec: string): string[] {
 
 /** Which mount does this source name in its `@alexkroman1/aai-ui` import? */
 function mountsWith(source: string): { client: boolean; page: boolean } {
-  // The named-import list of the aai-ui import, whichever line it is on.
-  const imports = [...source.matchAll(/import\s*\{([^}]*)\}\s*from\s*"@alexkroman1\/aai-ui"/g)]
-    .flatMap((match) => (match[1] ?? "").split(","))
-    .map((name) => name.trim());
+  const imports = importsFrom(source, "@alexkroman1/aai-ui");
   return { client: imports.includes("client"), page: imports.includes("page") };
 }
 
@@ -129,13 +140,7 @@ describe("template client mounts", () => {
   });
 });
 
-const agents = Object.entries(agentSources)
-  .map(([path, source]) => {
-    const name = path.split("/")[2];
-    if (!name) throw new Error(`Unexpected glob key: ${path}`);
-    return { name, source, agentPath: path };
-  })
-  .sort((a, b) => a.name.localeCompare(b.name));
+const agents = byTemplate(agentSources);
 
 describe("template agent declarations", () => {
   test("there is at least one agent to check, and every one of them loaded", () => {

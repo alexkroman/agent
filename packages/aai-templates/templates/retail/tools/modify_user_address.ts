@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { AddressFields, formatAddress, toAddress } from "../address.ts";
-import { authenticatedUser, retailTool } from "../store.ts";
+import { requireOwnUser, retailTool } from "../store.ts";
 
 export default retailTool({
   name: "modify_user_address",
@@ -14,13 +14,8 @@ export default retailTool({
     ...AddressFields,
   }),
   execute: (args, state) => {
-    const user = authenticatedUser(state);
+    const user = requireOwnUser(state, args.user_id);
     if (isToolFailure(user)) return user;
-    if (user.user_id !== args.user_id) {
-      return {
-        error: `${args.user_id} is not the customer on this call. You can help only one customer per conversation.`,
-      };
-    }
 
     user.address = toAddress(args);
     return {
