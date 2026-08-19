@@ -3,8 +3,7 @@
  * The `aai login` handshake code, when this tab was opened by the CLI.
  *
  * The code moves OUT of the URL and into per-tab sessionStorage as soon as
- * the page loads, for the same reason the Supabase session lives there (see
- * auth.tsx): the GitHub OAuth round trip is a same-tab navigation, so
+ * the page loads: the GitHub OAuth round trip is a same-tab navigation, so
  * sessionStorage carries the code through sign-in WITHOUT it riding the
  * OAuth redirect chain (`redirectTo` → Supabase → GitHub → back), where it
  * would land in third-party redirect URLs and request logs. The code is

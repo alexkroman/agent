@@ -80,10 +80,11 @@ function SandboxNote({ error, onRetry }: { error: unknown; onRetry: () => void }
   if (error == null) {
     return <p className="m-0 text-[13px] text-subtle italic">Starting sandbox…</p>;
   }
+  const reason = errorText(error);
   return (
     <div className="flex flex-col items-start gap-2">
       <p className="m-0 text-[13px] text-err">Could not start the project's sandbox.</p>
-      {errorText(error) && <p className="m-0 text-[13px] text-subtle">{errorText(error)}</p>}
+      {reason && <p className="m-0 text-[13px] text-subtle">{reason}</p>}
       {/* Re-broker in place — the retries behind "Starting sandbox…" already
           gave up, so recovery must not require a page reload. */}
       <button type="button" className="btn" onClick={onRetry}>

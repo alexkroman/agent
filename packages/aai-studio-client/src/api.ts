@@ -109,6 +109,9 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
  */
 export const STATUS_ATTEMPT_TIMEOUT_MS = 10_000;
 
+/** Stands in for a body that would not parse — one sentinel, not one per call. */
+const INVALID_BODY = Symbol("invalid-body");
+
 /** Throw an {@link ApiError} on non-2xx responses, else parse the JSON body. */
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -123,9 +126,8 @@ async function handleResponse<T>(res: Response): Promise<T> {
   }
   // A 2xx with a non-JSON body (a proxy error page, say) should surface as
   // the same error type as everything else, not a raw SyntaxError.
-  const invalid = Symbol("invalid");
-  const parsed: unknown = await res.json().catch(() => invalid);
-  if (parsed === invalid) {
+  const parsed: unknown = await res.json().catch(() => INVALID_BODY);
+  if (parsed === INVALID_BODY) {
     throw new ApiError(res.status, "Server returned an invalid response");
   }
   return parsed as T;

@@ -9,7 +9,7 @@
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
+import { fetchCallsWith, jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
 import { DatabaseCard } from "./database-card.tsx";
 
 const PATH = "/studio/projects/demo/database";
@@ -71,10 +71,8 @@ describe("DatabaseCard", () => {
     await waitFor(() => expect(screen.getByText("Disable database")).toBeTruthy());
     // The PROJECT route, not the platform's per-slug /:slug/storage: a project
     // is two deployed agents and the server fans the switch out.
-    const posted = fetchMock.mock.calls.find(
-      ([, init]) => (init as RequestInit)?.method === "POST",
-    );
-    expect(String(posted?.[0])).toBe(PATH);
+    const [posted] = fetchCallsWith(fetchMock, "POST");
+    expect(posted?.url).toBe(PATH);
   });
 
   test("both environments' state is listed once enabled", async () => {
@@ -175,20 +173,14 @@ describe("DatabaseCard", () => {
       vi.fn(() => false),
     );
     fireEvent.click(button);
-    expect(fetchMock.mock.calls.some(([, i]) => (i as RequestInit)?.method === "DELETE")).toBe(
-      false,
-    );
+    expect(fetchCallsWith(fetchMock, "DELETE")).toHaveLength(0);
 
     vi.stubGlobal(
       "confirm",
       vi.fn(() => true),
     );
     fireEvent.click(button);
-    await waitFor(() =>
-      expect(fetchMock.mock.calls.some(([, i]) => (i as RequestInit)?.method === "DELETE")).toBe(
-        true,
-      ),
-    );
+    await waitFor(() => expect(fetchCallsWith(fetchMock, "DELETE").length).toBeGreaterThan(0));
     // The response is the new state, so the card flips without a re-read.
     await waitFor(() => expect(screen.getByText("Enable database")).toBeTruthy());
   });

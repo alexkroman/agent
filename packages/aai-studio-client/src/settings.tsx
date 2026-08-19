@@ -15,8 +15,10 @@
 // copy of them (studio-secrets.ts), so a key can be saved before anything is
 // deployed and lands in each agent as its deploy claims a slug; the preview
 // redeploys on its own so the environment the user is looking at picks the key
-// up. Every change posts a note into the chat (values withheld) so the coding
-// agent knows which keys exist without ever seeing them.
+// up. Nothing here writes into the conversation: each card reports its own
+// outcome beside the control that did it, and the coding agent is told in its
+// preamble that it cannot see a secret (see "No studio action writes into the
+// transcript" in the package guide).
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";

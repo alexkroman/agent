@@ -155,7 +155,7 @@ export function SignInGate({
         />
       )}
 
-      {error && <p className="m-0 text-[13px] text-err">{error ?? "Sign-in failed"}</p>}
+      {error && <p className="m-0 text-[13px] text-err">{error}</p>}
       {noMethod && (
         <p className="m-0 text-[13px] text-err">
           No sign-in method is enabled on this project's auth backend. Enable a provider (GitHub, or

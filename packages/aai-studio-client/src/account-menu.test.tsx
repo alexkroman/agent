@@ -6,7 +6,14 @@
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { button, input, jsonResponse, renderWithClient, stubFetch } from "./_test-utils.ts";
+import {
+  button,
+  fetchCallsWith,
+  input,
+  jsonResponse,
+  renderWithClient,
+  stubFetch,
+} from "./_test-utils.ts";
 import { AccountMenu } from "./account-menu.tsx";
 
 function renderMenu(open: boolean, onClose = vi.fn()) {
@@ -55,10 +62,10 @@ describe("AccountMenu", () => {
     await waitFor(() => {
       expect(screen.getByText(/Key updated/)).toBeTruthy();
     });
-    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
-    expect(put?.[0]).toBe("/studio/account/key");
+    const [put] = fetchCallsWith(fetchMock, "PUT");
+    expect(put?.url).toBe("/studio/account/key");
     // Trimmed — a pasted key routinely carries whitespace.
-    expect(JSON.parse(String(put?.[1]?.body))).toEqual({ apiKey: "new-key" });
+    expect(JSON.parse(String(put?.init.body))).toEqual({ apiKey: "new-key" });
     expect(field.value).toBe("");
   });
 
@@ -68,11 +75,11 @@ describe("AccountMenu", () => {
       "PUT /studio/account/key": () => jsonResponse({ ok: true }),
     });
     renderMenu(true);
-    const field = screen.getByLabelText("New AssemblyAI API key");
+    const field = input("New AssemblyAI API key");
     fireEvent.change(field, { target: { value: "typed-key" } });
     fireEvent.keyDown(field, { key: "Enter" });
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true);
+      expect(fetchCallsWith(fetchMock, "PUT").length).toBeGreaterThan(0);
     });
   });
 

@@ -107,6 +107,25 @@ export function fetchCall(
   return { url: String(input), method: init?.method ?? "GET", init: init ?? {} };
 }
 
+/**
+ * The recorded requests made with `method`, in order — the reader behind "did
+ * it PUT, and with what body".
+ *
+ * Eight assertions across three suites had rebuilt the same
+ * `mock.calls.find(([, init]) => init?.method === "PUT")` predicate, six of them
+ * casting `init` back to `RequestInit` although the mock is already typed as
+ * `fetch` itself. Defaulting is {@link fetchCall}'s, so a GET matches whether or
+ * not the caller named one.
+ */
+export function fetchCallsWith(
+  mock: FetchMock,
+  method: string,
+): { url: string; method: string; init: RequestInit }[] {
+  return mock.mock.calls
+    .map((_call, index) => fetchCall(mock, index))
+    .filter((call) => call.method === method);
+}
+
 /** Every recorded request as `"METHOD /url"`, in order. */
 export function fetchLines(mock: FetchMock): string[] {
   return mock.mock.calls.map((_call, index) => {

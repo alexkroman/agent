@@ -164,6 +164,9 @@ type TopBarProps = {
 export function TopBar(props: TopBarProps) {
   const segClass = (active: boolean) =>
     clsx("seg", active ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg");
+  // Once per render: the href, the title and the link text are the same URL,
+  // and `agentUrl` builds a `new URL` each time it is asked.
+  const productionUrl = props.deployedSlug ? agentUrl(props.deployedSlug) : null;
   let publishTitle: string | undefined;
   if (!props.hasBuild) publishTitle = "Publish unlocks after your first build";
   else if (props.chatBusy) publishTitle = PUBLISH_WAIT_FOR_TURN;
@@ -216,18 +219,18 @@ export function TopBar(props: TopBarProps) {
       <div className="flex-1" />
       {/* The PRODUCTION URL (Publish's slug, never the preview's) — a plain
           link that opens the deployed agent in a new tab. */}
-      {props.deployedSlug && (
+      {productionUrl && (
         <a
           // `min-w-0`: a flex item defaults to min-width:auto, so `truncate`
           // alone could not shrink it and the action buttons overflowed the
           // viewport instead (measured: 829px of bar in a 768px window).
           className="max-w-80 min-w-0 truncate font-mono text-xs whitespace-nowrap text-muted hover:text-indigo"
-          href={agentUrl(props.deployedSlug)}
+          href={productionUrl}
           target="_blank"
           rel="noreferrer"
-          title={`Production: ${agentUrl(props.deployedSlug)}`}
+          title={`Production: ${productionUrl}`}
         >
-          {agentUrl(props.deployedSlug)} ↗
+          {productionUrl} ↗
         </a>
       )}
       <button

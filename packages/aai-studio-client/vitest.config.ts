@@ -38,8 +38,8 @@ export default defineConfig({
     coverage: {
       // The pane components are browser-heavy (CodeMirror, useChat
       // streaming, the live iframe) and only their extracted logic
-      // (toBlocks, the buffer rules in file-drafts.ts, the notify dispatch,
-      // the 401 wiring) is tested here — so they are excluded from the
+      // (toBlocks, the buffer rules in file-drafts.ts, the queue reducer, the
+      // 401 wiring) is tested here — so they are excluded from the
       // *floors*, which govern the fully node-testable modules. The behavior
       // tests still run either way.
       exclude: [
