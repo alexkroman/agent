@@ -24,7 +24,7 @@ import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { publishStepFetch } from "../sdk/step-fetch.ts";
 import { publishStepReporter } from "../sdk/step-report.ts";
 import { publishUploadReader } from "../sdk/step-uploads.ts";
-import { MAX_UPLOAD_BYTES_ENV } from "../sdk/upload-constants.ts";
+import { MAX_UPLOAD_BYTES_ENV, UPLOAD_PART_CONCURRENCY } from "../sdk/upload-constants.ts";
 import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
@@ -39,8 +39,22 @@ import { createUploadStore, type UploadStore } from "./workflow-uploads.ts";
  */
 export const UPLOAD_DIR_NAME = join(".workflow-data", "uploads");
 
-/** How many connections the upload pool may hold. */
-const UPLOAD_DB_POOL = 2;
+/**
+ * How many connections the upload pool may hold.
+ *
+ * Sized off the CLIENT's fan-out, because that is what decides how many writers
+ * this pool has to serve at once: a browser sending one file as parts issues
+ * `UPLOAD_PART_CONCURRENCY` concurrent `PUT`s, and each one is a request writing
+ * chunk rows for as long as it lasts. This was 2, so half of the default four were
+ * always parked on connection checkout — the fan-out that exists to beat a single
+ * connection, serialized back down to two by the store behind it.
+ *
+ * Plus two for the reads that happen WHILE a file is arriving, which is the whole
+ * shape the streaming flow is built on: a run polls `info` and reads windows
+ * through `readUpload`, and those go through this same pool. Without the headroom
+ * a full fan-out would starve the reader that the upload exists to feed.
+ */
+const UPLOAD_DB_POOL = UPLOAD_PART_CONCURRENCY + 2;
 
 /**
  * What one server's workflow support OWNS, so it can give it back.

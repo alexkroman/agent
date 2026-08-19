@@ -1635,12 +1635,19 @@ type UploadInfo = {
     type: string;
     size: number;
     complete: boolean;
+    ranges?: readonly UploadRange[];
 };
 
 // @public
 export type UploadMeta = {
     name?: string | undefined;
     type?: string | undefined;
+};
+
+// @public
+type UploadRange = {
+    start: number;
+    end: number;
 };
 
 // @internal

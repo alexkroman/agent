@@ -97,6 +97,39 @@ describe.each([
     expect(filled).toMatchObject({ size: TOTAL, complete: true });
   });
 
+  test("publishes WHICH windows landed, so a re-send can skip them", async () => {
+    const store = await open();
+    // Three chunks, so a hole can sit between two landed windows.
+    const total = UPLOAD_CHUNK_BYTES * 3;
+    await store.beginParts("abc", {}, total);
+    await store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES)));
+    const after = await store.writePart(
+      "abc",
+      UPLOAD_CHUNK_BYTES * 2,
+      body(ramp(UPLOAD_CHUNK_BYTES)),
+    );
+    // The hole is what makes this worth publishing: `size` is 0 past the first
+    // window, so nothing else in the record says the third one is already stored —
+    // and a client that re-sent the file would send it again.
+    expect(after.ranges).toEqual([
+      { start: 0, end: UPLOAD_CHUNK_BYTES },
+      { start: UPLOAD_CHUNK_BYTES * 2, end: total },
+    ]);
+    expect((await store.info("abc"))?.ranges).toEqual(after.ranges);
+  });
+
+  test("says nothing about windows once there is nothing left to resume", async () => {
+    const store = await open();
+    await store.beginParts("abc", {}, UPLOAD_CHUNK_BYTES);
+    const done = await store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES)));
+    // A finished upload is covered end to end by construction, so a range list
+    // would restate `size` — and the absence is what tells a caller there is no
+    // resuming to do.
+    expect(done.complete).toBe(true);
+    expect(done.ranges).toBeUndefined();
+    expect((await store.info("abc"))?.ranges).toBeUndefined();
+  });
+
   test("takes a RETRIED part as the same part, not as a second one", async () => {
     const store = await open();
     await store.beginParts("abc", {}, TOTAL);

@@ -50,7 +50,12 @@ import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
 import type { UploadInfo } from "./step-uploads.ts";
 import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
-import { partsSettings, type UploadParallel, uploadInParts } from "./workflow-upload-parts.ts";
+import {
+  partsPlan,
+  partsSettings,
+  type UploadParallel,
+  uploadInParts,
+} from "./workflow-upload-parts.ts";
 
 /**
  * Names the surface in a failure that was not the agent's own `{ error }`
@@ -118,20 +123,43 @@ export type UploadOptions = {
   /**
    * Cut the file up and send the pieces at once, instead of in one request.
    *
-   * `true` for the defaults, or `{ partBytes, concurrency }` to tune them. What it
-   * buys is the difference between one connection's throughput and the link's: a
-   * single request is bounded by its congestion window over the round-trip time,
-   * so the further away the agent is the smaller a fraction of the available
-   * bandwidth one request can use, and a recording is exactly the body big enough
-   * for that to be the wait a person is sitting through.
+   * **On by default.** `false` opts out, `{ partBytes, concurrency }` tunes it.
+   * What it buys is the difference between one connection's throughput and the
+   * link's: a single request is bounded by its congestion window over the
+   * round-trip time, so the further away the agent is the smaller a fraction of
+   * the available bandwidth one request can use, and a recording is exactly the
+   * body big enough for that to be the wait a person is sitting through. It is
+   * also the only path here that can RETRY — see `partsSettings` for why the
+   * single-request writers cannot.
    *
-   * OPT-IN rather than the default, and it degrades rather than failing: a body
-   * that cannot be cut by byte (a string), a file that fits in one part, or an
-   * agent deployed before the `/parts` routes existed all send the file the
-   * ordinary way instead. So turning it on is safe everywhere and does nothing
-   * where it would not help. `workflow-upload-parts.ts` carries the rest.
+   * It degrades rather than failing: a body that cannot be cut by byte (a
+   * string), a file that fits in one part, or an agent deployed before the
+   * `/parts` routes existed all send the file the ordinary way instead. So the
+   * default does nothing where it would not have helped, and opting out is for a
+   * caller who knows something about their own link that this does not.
+   * `workflow-upload-parts.ts` carries the rest.
    */
   parallel?: UploadParallel | undefined;
+  /**
+   * Continue an upload already begun under this id, sending only the windows that
+   * are missing.
+   *
+   * What it buys is the difference between resuming a recording and starting it
+   * over. Without it a second attempt at an id is REFUSED — which is the rule that
+   * makes a caller-chosen id safe, since nothing else stops one upload writing into
+   * another's — so this is how a caller says the id is its own.
+   *
+   * Only the parts path can do it, and the store is what makes it safe: a part's
+   * rows are keyed by the offset it starts at, so re-sending one is writing the
+   * same bytes to the same place. The windows already stored come from
+   * `UploadInfo.ranges`, and an agent too old to report them re-sends the whole
+   * file rather than leaving a hole.
+   *
+   * The bytes must be the SAME FILE. Nothing here can check that — the id is a
+   * capability and the offsets are the caller's contract — so a resume with a
+   * different file is a corrupted upload only its owner can read.
+   */
+  resume?: boolean | undefined;
 };
 
 export type { UploadParallel, UploadPartsSettings } from "./workflow-upload-parts.ts";
@@ -268,7 +296,10 @@ export async function uploadFile(
 ): Promise<UploadRef> {
   const { name, type } = describeUpload(file, options);
   const settings = partsSettings(options?.parallel);
-  if (settings) {
+  // Decided before anything is awaited, so a file the parts path will not take is
+  // sent in the same tick as the call rather than a microtask later.
+  const plan = settings && partsPlan(file, settings);
+  if (settings && plan) {
     // The id is minted HERE, because the parts routes are caller-named and this
     // call is not: `upload` promises only to resolve the ref, so where the id came
     // from is this module's business. Random rather than derived, for the reason
@@ -284,6 +315,7 @@ export async function uploadFile(
       type,
       options,
       settings,
+      plan,
     });
     // `undefined` means this path declined; the file has not moved, so it goes the
     // ordinary way below.
@@ -332,7 +364,8 @@ export async function streamUploadFile(
 ): Promise<UploadRef> {
   const { name, type } = describeUpload(file, options);
   const settings = partsSettings(options?.parallel);
-  if (settings) {
+  const plan = settings && partsPlan(file, settings);
+  if (settings && plan) {
     // The caller's OWN id, which is the difference from `uploadFile` and is why
     // parts compose with this at all: a run started on this id reads the
     // contiguous prefix as the parts fill it in, exactly as it reads a single
@@ -348,6 +381,7 @@ export async function streamUploadFile(
       type,
       options,
       settings,
+      plan,
     });
     if (stored) return stored;
   }

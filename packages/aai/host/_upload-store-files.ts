@@ -8,6 +8,7 @@ import type { FileHandle } from "node:fs/promises";
 import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createKeyedLock, withLock } from "../sdk/keyed-lock.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { assertUploadToken, type UploadInfo } from "../sdk/step-uploads.ts";
 import { ensureOnce } from "./_ensure-once.ts";
 import {
@@ -206,7 +207,15 @@ export function createFileUploadStore(dir: string, maxBytes: number): UploadStor
           ranges,
         };
         await writeFile(metaPath(id), JSON.stringify(next), "utf-8");
-        return { id, name: next.name, type: next.type, size, complete: next.complete };
+        return {
+          id,
+          name: next.name,
+          type: next.type,
+          size,
+          complete: next.complete,
+          // Only while there is something to resume — see `UploadInfo.ranges`.
+          ...omitUndefined({ ranges: next.complete ? undefined : ranges }),
+        };
       });
     },
 
@@ -224,6 +233,13 @@ export function createFileUploadStore(dir: string, maxBytes: number): UploadStor
         // because that is the only kind `create` produced — same reasoning as the
         // Postgres column's `default true`.
         complete: record.complete !== false,
+        // Only while there is something to resume — see `UploadInfo.ranges`. The
+        // sidecar has held these all along; what changed is that a client can read
+        // them, which is what lets a re-send skip the windows already stored.
+        ...omitUndefined({
+          ranges:
+            record.expected !== undefined && record.complete === false ? record.ranges : undefined,
+        }),
       };
     },
 

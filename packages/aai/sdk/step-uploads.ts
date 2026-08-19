@@ -136,7 +136,28 @@ export type UploadInfo = {
    * until it is finished.
    */
   complete: boolean;
+  /**
+   * Which windows have LANDED, for an unfinished upload that arrived as parts.
+   *
+   * Absent for every other upload, and that absence is the honest answer rather
+   * than an omission: a whole-file write has no windows (its bytes are one
+   * contiguous prefix, which {@link UploadInfo.size} already states), and a
+   * finished parts upload is covered end to end by construction.
+   *
+   * `size` remains the only field a READER may act on — it is the contiguous
+   * prefix, so it is how far the bytes can be read, and a range past it is a hole
+   * whatever this says. What this is for is the UPLOADER: a client re-sending a
+   * parts upload can skip the windows that are already stored instead of sending
+   * the file again, which is the difference between resuming a recording and
+   * starting it over.
+   *
+   * Sorted, non-overlapping, and half-open like every other range here.
+   */
+  ranges?: readonly UploadRange[];
 };
+
+/** A half-open window of an upload's bytes, `[start, end)`. */
+export type UploadRange = { start: number; end: number };
 
 /** One window of an upload, as {@link readUpload} resolves it. */
 export type UploadSlice = {

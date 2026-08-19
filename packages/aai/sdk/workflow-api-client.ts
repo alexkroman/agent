@@ -277,7 +277,7 @@ export { WORKFLOW_API_PREFIX } from "./_workflow-api-envelope.ts";
 // The record a caller reads back. Declared beside the STEP reader, because a body
 // and a browser look at the same thing from two sides and a second shape for it is
 // how the two would come to disagree about `complete`.
-export type { UploadInfo } from "./step-uploads.ts";
+export type { UploadInfo, UploadRange } from "./step-uploads.ts";
 // One import path for the whole surface. NAMED, not `type *` — that also
 // re-exports `uploadFile`, putting an `@internal` name on a public subpath.
 export type {

@@ -73,6 +73,10 @@ export {
   type ReadUploadOptions,
   readUpload,
   type UploadInfo,
+  // `UploadInfo.ranges` mentions this, and a type a public signature MENTIONS but
+  // does not export is a docs-build warning — which `treatWarningsAsErrors` makes a
+  // failed build. `runtime-barrel.ts` carries the same note for the same reason.
+  type UploadRange,
   type UploadSlice,
   uploadInfo,
 } from "./step-uploads.ts";

@@ -17,6 +17,7 @@ export type UploadInfo = {
     type: string;
     size: number;
     complete: boolean;
+    ranges?: readonly UploadRange[];
 };
 
 // @public
@@ -26,6 +27,7 @@ export type UploadOptions = {
     signal?: AbortSignal | undefined;
     onProgress?: ((progress: UploadProgress) => void) | undefined;
     parallel?: UploadParallel | undefined;
+    resume?: boolean | undefined;
 };
 
 // @public
@@ -42,6 +44,12 @@ export type UploadProgress = {
     loaded: number;
     total: number | undefined;
     fraction: number | undefined;
+};
+
+// @public
+export type UploadRange = {
+    start: number;
+    end: number;
 };
 
 // @public

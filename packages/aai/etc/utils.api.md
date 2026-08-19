@@ -234,10 +234,17 @@ export type UploadInfo = {
     type: string;
     size: number;
     complete: boolean;
+    ranges?: readonly UploadRange[];
 };
 
 // @public
 export function uploadInfo(id: string): Promise<UploadInfo>;
+
+// @public
+export type UploadRange = {
+    start: number;
+    end: number;
+};
 
 // @public
 export type UploadSlice = {

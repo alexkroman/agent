@@ -109,6 +109,57 @@ describe("the Postgres backend", () => {
     expect(statements).toBeLessThan(5);
   });
 
+  test("the WHOLE-FILE writers batch too, which is where the size publish doubled it", async () => {
+    // `create` and `stream` had the same round trip per megabyte the parts writer
+    // did, and `stream` had a second one beside it: an `update … set size` after
+    // every chunk, on the path a page's upload bar and a streaming run are both
+    // waiting on.
+    const { db, sql } = recordingDb();
+    const store = createUploadStore({ db, dir: "/unused" });
+    await store.create({}, body(...Array.from({ length: 4 }, () => ramp(UPLOAD_CHUNK_BYTES))));
+    expect(sql.filter((one) => one.includes(`insert into ${UPLOAD_CHUNKS_TABLE}`))).toHaveLength(1);
+    expect(sql.filter((one) => one.includes(`update ${UPLOADS_TABLE} set size`))).toHaveLength(0);
+
+    const streamed = recordingDb();
+    const other = createUploadStore({ db: streamed.db, dir: "/unused" });
+    await other.stream(
+      "abc",
+      {},
+      body(...Array.from({ length: 4 }, () => ramp(UPLOAD_CHUNK_BYTES))),
+    );
+    // One insert and one size publish for four megabytes, plus the final
+    // `complete = true` — not four of each.
+    const chunkInserts = streamed.sql.filter((one) =>
+      one.includes(`insert into ${UPLOAD_CHUNKS_TABLE}`),
+    );
+    expect(chunkInserts).toHaveLength(1);
+    expect(
+      streamed.sql.filter(
+        (one) => one.includes(`update ${UPLOADS_TABLE} set size`) && !one.includes("complete"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("turns compression OFF for the chunk column, which audio never pays for", async () => {
+    const { db, sql } = recordingDb();
+    const store = createUploadStore({ db, dir: "/unused" });
+    await store.create({}, body(ramp(4)));
+    // `extended` is the default, and it means an LZ attempt on every megabyte of
+    // already-compressed or PCM audio — on the one cpu this write path is bounded
+    // by.
+    expect(sql.some((one) => one.includes("alter column bytes set storage external"))).toBe(true);
+  });
+
+  test("stores the chunks anyway when the statement that turns compression off is refused", async () => {
+    const { db, chunks } = recordingDb({ refuse: "set storage external" });
+    const store = createUploadStore({ db, dir: "/unused" });
+    // The `alter` needs table ownership. A store that refused to work because it
+    // could not turn an OPTIMIZATION off would be strictly worse than a slower one,
+    // so the failure is swallowed — deliberately, and only there.
+    await expect(store.create({}, body(ramp(4)))).resolves.toMatchObject({ size: 4 });
+    expect(chunks).toHaveLength(1);
+  });
+
   test("records each chunk's byte offset, which is what a range read selects on", async () => {
     const { db, chunks } = recordingDb();
     const store = createUploadStore({ db, dir: "/unused" });
@@ -203,6 +254,11 @@ describe.each([
     // bytes is not published until the body ends. That is the right trade for the
     // storage layer and it is worth pinning, since it bounds how fresh a polling
     // run's view can be — a megabyte, not a byte.
+    //
+    // It is also what pins the TIME half of `inBatches`. Writes are grouped, so a
+    // backend that only ever flushed a full batch would hold this chunk waiting for
+    // three more that are gated behind an assertion — which is the shape of a slow
+    // uplink, where `size` not advancing is what an abandonment bound is judged on.
     const body = pausableBody([ramp(UPLOAD_CHUNK_BYTES), ramp(UPLOAD_CHUNK_BYTES)]);
     const done = store.stream("abc", {}, body);
     await vi.waitFor(async () => expect(await store.info("abc")).toBeDefined());
@@ -240,6 +296,15 @@ describe.each([
     expect([...(await store.read("abc", UPLOAD_CHUNK_BYTES, UPLOAD_CHUNK_BYTES + 8))]).toEqual([
       ...ramp(8, 3),
     ]);
+  });
+
+  test("reports no windows, because a whole-file write has none", async () => {
+    const store = await open();
+    const stored = await store.stream("abc", {}, body(ramp(4)));
+    // `ranges` is for an uploader deciding what to re-send, and a single request has
+    // nothing to decide: its bytes are one prefix, which `size` already states.
+    expect(stored.ranges).toBeUndefined();
+    expect((await store.info("abc"))?.ranges).toBeUndefined();
   });
 
   test("is COMPLETE when it resolves", async () => {
@@ -280,6 +345,10 @@ describe.each([
       throw new Error("client hung up");
     }
     await expect(store.stream("abc", {}, dies())).rejects.toThrow("client hung up");
+    // It also pins that a batch HELD when the body died is written before the
+    // failure propagates — grouping must not cost a torn upload bytes that had
+    // already arrived.
+    //
     // The opposite of `create`, deliberately: a reader may already have used the
     // part that arrived, and `complete` is what stops anything mistaking it for
     // the whole file.

@@ -137,6 +137,29 @@ describe("useWorkflowStream", () => {
     expect(result.current.error).toBeUndefined();
   });
 
+  test("a failed upload is RESUMED before anything is given up on", async () => {
+    let attempts = 0;
+    const { api, calls } = recordingApi({
+      uploadStream: vi.fn(async (id: string) => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("connection reset");
+        return { id, name: "", type: "", size: 3, complete: true, url: `/u/${id}` };
+      }),
+    });
+    const result = await submitFile(api);
+    // An upload that dies has usually landed most of itself, and `resume` sends
+    // only the windows the store does not have — so giving up here would throw
+    // away a run AND a file for one dropped connection.
+    expect(result.current.error).toBeUndefined();
+    expect(calls).not.toContain("cancel");
+    const [, , retried] = vi.mocked(api.uploadStream).mock.calls[1] ?? [];
+    expect(retried).toMatchObject({ resume: true });
+    // And the FIRST attempt does not carry it: a fresh id has nothing to resume,
+    // and saying so would waive the refusal that makes a chosen id safe.
+    const [, , first] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
+    expect(first && "resume" in first).toBe(false);
+  });
+
   test("a failed UPLOAD cancels the run and reports the error", async () => {
     const { api, calls } = recordingApi({
       uploadStream: vi.fn(async () => {
@@ -144,6 +167,9 @@ describe("useWorkflowStream", () => {
       }),
     });
     const result = await submitFile(api);
+    // The resume is attempted first and fails the same way — see the spec above —
+    // so the run is cancelled once there is nothing left to try.
+    expect(vi.mocked(api.uploadStream).mock.calls).toHaveLength(2);
     expect(result.current.error).toBe("disk full");
     // Otherwise the run waits for bytes that will never come, until its own
     // abandonment bound — failing long after the page already said so.

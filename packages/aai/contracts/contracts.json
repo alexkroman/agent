@@ -89,8 +89,8 @@
     "dropped": {}
   },
   "uploads": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
     "dropped": {}
   },
   "utils": {
@@ -104,8 +104,8 @@
     "dropped": {}
   },
   "workflow-api": {
-    "current": 5,
-    "supported": [1, 2, 3, 4, 5],
+    "current": 6,
+    "supported": [1, 2, 3, 4, 5, 6],
     "dropped": {}
   }
 }

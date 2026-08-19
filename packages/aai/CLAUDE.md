@@ -524,8 +524,9 @@ author-facing half (`useWorkflowStream`) is in `packages/aai-ui/CLAUDE.md`.
 Both writes above carry the whole file in ONE request, so an upload runs at one
 connection's throughput — a fraction of the link over any distance. `POST
 /workflows/uploads/:id/parts?total=` declares an upload and `PUT
-…/parts?offset=` fills in a window of it, so a browser sends four at once
-(`api.upload(file, { parallel: true })`, `useWorkflowSubmit(w, { parallel })`).
+…/parts?offset=` fills in a window of it, so a browser sends four at once. **It
+is the DEFAULT** — `api.upload(file)` and every form hook take it unless a caller
+passes `parallel: false`.
 
 **Two rules make it invisible downstream**, which is why no reader, no step and
 no range route changed: a part starts on an `UPLOAD_CHUNK_BYTES` boundary, so its
@@ -533,10 +534,24 @@ bytes are ordinary chunks at their own offsets; and **`size` is the CONTIGUOUS
 prefix, never the sum of what has arrived** — parts land out of order, so a size
 that counted bytes would tell a reader it may read a hole. `complete` becomes
 true when that prefix reaches the DECLARED total, which is the only observable
-moment every byte is present. The client path DECLINES rather than fails (an
+moment every byte is present.
+
+**And `info` publishes WHICH windows landed** (`UploadInfo.ranges`), for an
+unfinished parts upload and nothing else — a whole-file write has no windows, and
+a finished upload is covered end to end. `size` is still the only field a READER
+may act on; `ranges` is for the UPLOADER, and it is what makes
+`api.upload(file, { resume: true })` send the missing windows rather than the
+file. An agent too old to report them answers like an empty upload, so a resume
+against one re-sends everything rather than leaving a hole.
+
+The client path DECLINES rather than fails (an
 uncuttable string body, a file that fits in one part, an agent answering 404 to
-the declaration), so `parallel: true` is safe on every form.
-`sdk/workflow-upload-parts.ts` and `host/_upload-store.ts` carry the rest.
+the declaration), which is what makes it safe as a default rather than an opt-in
+— and it is also the only upload path that can RETRY, since a single-request
+`POST` retried after a lost response mints a SECOND upload and a `PUT` retried
+against its own id is refused as taken. `sdk/workflow-upload-parts.ts` and
+`host/_upload-store.ts` carry the rest, including the backoff, the `Retry-After`
+it honours, and the two bracketing requests that are retried with it.
 
 ## Workflow apps and the workflow HTTP API
 

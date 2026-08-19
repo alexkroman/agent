@@ -62,7 +62,7 @@ export async function fileStore() {
  * alternative was a fake silently answering `[]`, i.e. a green suite over a store
  * that reads nothing back.
  */
-export function recordingDb() {
+export function recordingDb(opts: { refuse?: string } = {}) {
   const sql: string[] = [];
   const uploads = new Map<
     string,
@@ -106,12 +106,22 @@ export function recordingDb() {
         const covered = chunks
           .filter((chunk) => chunk.id === String(params[0]))
           .sort((a, b) => a.offset - b.offset);
-        let size = 0;
+        // One row per ISLAND, which is what the real statement's two window
+        // functions produce — computed here by the walk the SQL exists to avoid, so
+        // the fake and the statement are independent answers to the same question.
+        const islands: { start_at: string; end_at: string }[] = [];
         for (const chunk of covered) {
-          if (chunk.offset !== size) break;
-          size = chunk.offset + chunk.bytes.length;
+          const last = islands.at(-1);
+          if (last && Number(last.end_at) === chunk.offset) {
+            last.end_at = String(chunk.offset + chunk.bytes.length);
+          } else {
+            islands.push({
+              start_at: String(chunk.offset),
+              end_at: String(chunk.offset + chunk.bytes.length),
+            });
+          }
         }
-        return [{ size: String(size) }];
+        return islands;
       },
     },
     {
@@ -226,7 +236,13 @@ export function recordingDb() {
       when: `from ${UPLOADS_TABLE} where id =`,
       run: (params) => {
         const row = uploads.get(String(params[0]));
-        return row ? [{ id: params[0], ...row, size: String(row.size) }] : [];
+        // `expected` as NULL rather than absent, which is what the driver answers
+        // for a column that was never set — and what the store reads to tell a
+        // parts upload from a streamed one. Left `undefined`, every streamed upload
+        // reads as a parts upload here and nowhere else.
+        return row
+          ? [{ id: params[0], ...row, size: String(row.size), expected: row.expected ?? null }]
+          : [];
       },
     },
     {
@@ -258,6 +274,8 @@ export function recordingDb() {
   const db: Db = {
     query: async <T = Record<string, unknown>>(text: string, params: unknown[] = []) => {
       sql.push(text.replace(/\s+/g, " ").trim());
+      // One statement the store is allowed to lose — see the spec that names it.
+      if (opts.refuse && text.includes(opts.refuse)) throw new Error(`refused: ${opts.refuse}`);
       // First match wins, so the handlers are ordered narrowest-first wherever one
       // statement's text contains another's.
       return (handlers.find((handler) => text.includes(handler.when))?.run(params) ?? []) as T[];

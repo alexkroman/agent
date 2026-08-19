@@ -61,11 +61,13 @@
  * CONTIGUOUS prefix, which is honest whether one connection or four are filling
  * it).
  *
- * It is selectable rather than always-on for the reason the modes are: this is the
- * template where a reader runs both over the same recording and sees what each
- * costs. It also degrades on its own — a small file, or an agent deployed before
- * the `/parts` routes existed, sends the single request instead — so leaving it on
- * is safe.
+ * The SDK does this by DEFAULT, so the checkbox is an opt-OUT rather than an
+ * opt-in — and it is here for the reason the mode radios are: this is the template
+ * where a reader runs both over the same recording and sees what each costs. It
+ * also degrades on its own — a small file, or an agent deployed before the
+ * `/parts` routes existed, sends the single request instead — so leaving it on is
+ * safe, and turning it off costs retries as well as speed (a single request is the
+ * one upload path that cannot be re-sent).
  *
  * ## The transcript ARRIVES, rather than appearing at the end
  *
@@ -342,7 +344,8 @@ function UploadPicker({
           <span>Split the file across connections</span>
           <span className="text-xs opacity-70">
             Sends the recording as several parts at once instead of in one request, which is most of
-            the wait on a long file. Falls back to the single request on a small one.
+            the wait on a long file — and is the only upload a dropped connection can resume. Falls
+            back to the single request on a small one.
           </span>
         </span>
       </label>

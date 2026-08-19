@@ -5,14 +5,17 @@
  */
 
 import type { Db } from "../sdk/db.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { assertUploadToken, type UploadInfo } from "../sdk/step-uploads.ts";
 import { ensureOnce } from "./_ensure-once.ts";
+import { batchEnd, type ChunkRow, inBatches, placed } from "./_upload-batches.ts";
 import {
   assertPartOffset,
   assertPartTotal,
+  type ByteRange,
   chunked,
-  chunkSeq,
   concat,
+  contiguousBytes,
   newUploadId,
   partChunks,
   UnknownUploadError,
@@ -22,53 +25,6 @@ import {
   UploadPartError,
   type UploadStore,
 } from "./_upload-store.ts";
-
-/**
- * How many chunks one `writePart` commits per statement.
- *
- * A part used to be stored one awaited `INSERT` per `UPLOAD_CHUNK_BYTES`, and that
- * shape has two costs a batch removes, both measured in production:
- *
- * - **The body drains at the speed of a round trip per megabyte.** The loop awaits
- *   a commit before pulling the next chunk off the request, so the socket moves
- *   only as fast as this app's Postgres — which for a deployed agent is a pooler in
- *   another AWS region. The platform's forward measures exactly that drain to
- *   decide whether a guest is alive, so a part that is storing perfectly well looks
- *   like a stall: 6 upload `PUT`s answered 503 or 408 in one hour, three of them
- *   aborted at 121-125s against a 120s window that had just been raised from 30s.
- * - **It holds a pool connection for the whole part.** `postgres-db.ts` pools FOUR
- *   by default and the whole guest shares it — the workflow engine's polling, every
- *   `/stream` re-read, session state — so the client's four concurrent parts take
- *   the pool for the length of the upload. Measured over the same hour: every
- *   non-upload request on that agent ran at **p50 1.34s while a part was in flight
- *   against 0.43s when none was**, a 3.1x slowdown across 801 and 366 samples, with
- *   `GET /workflows/runs` peaking at 17.7s.
- *
- * FOUR rather than the whole part, because the app role carries
- * `statement_timeout = '10s'` (`aai-server/app-database.ts`) and one statement has
- * to stay well inside it. Four cuts an 8 MiB part from eight round trips to two and
- * bounds the extra memory at 4 MiB per part in flight, where buffering the part
- * whole would be bounded only by the upload's own declared total — 2 GiB.
- */
-const PART_CHUNKS_PER_STATEMENT = 4;
-
-/**
- * Group an async iterator into runs of at most `size`, emitting a short last one.
- *
- * Local to this backend deliberately: the file store writes into a descriptor, so
- * it has no round trip to amortize and batching there would only add latency.
- */
-async function* batched<T>(items: AsyncIterable<T>, size: number): AsyncGenerator<T[]> {
-  let batch: T[] = [];
-  for await (const item of items) {
-    batch.push(item);
-    if (batch.length >= size) {
-      yield batch;
-      batch = [];
-    }
-  }
-  if (batch.length > 0) yield batch;
-}
 
 export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore {
   // Created lazily and idempotently rather than by a migration step, for the
@@ -102,60 +58,73 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       bytes bytea not null,
       primary key (upload_id, seq)
     )`);
+    // `bytea` defaults to `extended` storage, which means Postgres attempts LZ
+    // compression on every one of these values before writing it. A chunk is a
+    // megabyte of whatever the uploader sent, and what people upload here is
+    // recorded audio and video — already compressed, or PCM, and neither pays for
+    // the attempt. The guest doing it reserves ONE cpu, and it is the same cpu the
+    // write path above is bounded by.
+    //
+    // Best-effort, and this is the one place in `ensureTables` that swallows: the
+    // statement needs table ownership, and a store that refused to work because it
+    // could not turn an OPTIMIZATION off would be strictly worse than a slower one.
+    // It applies to values written from here on rather than rewriting what is
+    // already stored, which is why it is safe to run on every boot.
+    await db
+      .query(`alter table ${UPLOAD_CHUNKS_TABLE} alter column bytes set storage external`)
+      .catch(() => undefined);
   });
 
   /**
-   * How many bytes are present from byte ZERO — the `size` a parts upload publishes.
+   * The windows that have LANDED, merged — sorted, non-overlapping, touching ones
+   * joined.
    *
-   * One statement rather than reading the offsets back and walking them: a 2 GB
+   * One statement rather than reading every offset back and walking them: a 2 GB
    * upload is two thousand chunk rows, well past `MAX_DB_RESULT_ROWS`, so the walk
-   * would fail on exactly the files parts exist for. `lag` gives each row the end of
-   * the one before it, so a GAP is a row whose start is not that end, and the
-   * prefix is the earliest such end — falling back to the far end when there is no
-   * gap at all, and to 0 for an upload with no chunks yet.
+   * would fail on exactly the files parts exist for. It is the ordinary
+   * gaps-and-islands shape — `lag` gives each row the end of the one before it, a
+   * GAP is a row whose start is not that end, and a running count of gaps names the
+   * island each row belongs to — so what comes back is one row per island, which
+   * for a parts upload in flight is a handful.
+   *
+   * Both things the record publishes are derived from it: `size` is the island that
+   * starts at zero ({@link contiguousBytes}), and the islands themselves are what
+   * lets an uploader re-send only what is missing.
    */
-  async function contiguousSize(id: string): Promise<number> {
-    const rows = await db.query<{ size: string | number | null }>(
+  async function coverage(id: string): Promise<ByteRange[]> {
+    const rows = await db.query<{ start_at: string | number; end_at: string | number }>(
       `with covered as (
          select byte_offset as start_at,
                 byte_offset + octet_length(bytes) as end_at,
                 lag(byte_offset + octet_length(bytes)) over (order by byte_offset) as prev_end
            from ${UPLOAD_CHUNKS_TABLE} where upload_id = $1
+       ),
+       islands as (
+         select start_at,
+                end_at,
+                sum(case when prev_end is null or prev_end <> start_at then 1 else 0 end)
+                  over (order by start_at) as island
+           from covered
        )
-       select coalesce(
-         (select min(coalesce(prev_end, 0)) from covered where coalesce(prev_end, 0) <> start_at),
-         (select max(end_at) from covered),
-         0
-       ) as size`,
+       select min(start_at) as start_at, max(end_at) as end_at
+         from islands group by island order by 1`,
       [id],
     );
-    return Number(rows[0]?.size ?? 0);
+    return rows.map((row) => ({ start: Number(row.start_at), end: Number(row.end_at) }));
   }
 
-  // One statement, two callers: `create` and `stream` differ in what they do
-  // AROUND the bytes (which record is written when, and what a failure leaves
-  // behind) and not in how a chunk is stored, so the SQL and the column list
-  // live once — a schema change has one place to be made.
-  const insertChunk = async (
-    id: string,
-    seq: number,
-    byteOffset: number,
-    chunk: Uint8Array,
-  ): Promise<void> => {
-    await db.query(
-      `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
-       values ($1, $2, $3, $4)`,
-      [id, seq, byteOffset, Buffer.from(chunk)],
-    );
-  };
-
   /**
-   * One part's worth of chunks, upserted in ONE statement.
+   * One batch of chunks, written in ONE statement.
    *
-   * `do update` for the reason the single-row insert above does not need it: a part
-   * is RETRIED whenever a connection dies mid-flight, which is the ordinary failure
-   * of the thing parts exist for, and a retry must be the same upload rather than a
-   * duplicate-key error the client cannot recover from.
+   * One helper for all three writers: they differ in what they do AROUND the bytes
+   * (which record is written when, and what a failure leaves behind) and not in how
+   * a chunk is stored, so the SQL and the column list live once.
+   *
+   * `upsert` is the one thing they do not share. A part is RETRIED whenever a
+   * connection dies mid-flight, which is the ordinary failure of the thing parts
+   * exist for, so a repeat has to be the same upload rather than a duplicate-key
+   * error the client cannot recover from. `create` and `stream` write each seq once
+   * by construction, and a plain insert is what makes a bug there LOUD.
    *
    * Safe as a multi-row upsert only because a batch's `seq` values are DISTINCT —
    * Postgres refuses a statement whose `ON CONFLICT DO UPDATE` would touch one row
@@ -163,20 +132,25 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
    * last one and a part starts chunk-aligned, so the offsets in a batch are
    * strictly increasing and `chunkSeq` maps them one-to-one.
    */
-  const insertChunkBatch = async (
+  const insertChunks = async (
     id: string,
-    batch: readonly { bytes: Uint8Array; at: number }[],
+    batch: readonly ChunkRow[],
+    upsert: boolean,
   ): Promise<void> => {
+    if (batch.length === 0) return;
     const params: unknown[] = [id];
-    const rows = batch.map(({ bytes, at }) => {
-      params.push(chunkSeq(at), at, Buffer.from(bytes));
+    const rows = batch.map(({ seq, at, bytes }) => {
+      params.push(seq, at, Buffer.from(bytes));
       return `($1, $${params.length - 2}, $${params.length - 1}, $${params.length})`;
     });
     await db.query(
       `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
-       values ${rows.join(", ")}
-       on conflict (upload_id, seq) do update
-         set byte_offset = excluded.byte_offset, bytes = excluded.bytes`,
+       values ${rows.join(", ")}${
+         upsert
+           ? ` on conflict (upload_id, seq) do update
+             set byte_offset = excluded.byte_offset, bytes = excluded.bytes`
+           : ""
+}`,
       params,
     );
   };
@@ -186,12 +160,10 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       await ensureTables();
       const id = newUploadId();
       let size = 0;
-      let seq = 0;
       try {
-        for await (const chunk of chunked(body, options?.limit ?? maxBytes)) {
-          await insertChunk(id, seq, size, chunk);
-          seq += 1;
-          size += chunk.length;
+        for await (const batch of inBatches(placed(chunked(body, options?.limit ?? maxBytes)))) {
+          await insertChunks(id, batch, false);
+          size = batchEnd(batch);
         }
       } catch (err: unknown) {
         // Best effort: the metadata row was never written, so these rows are
@@ -239,14 +211,18 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       if (!row || Number(row.size) !== 0 || row.complete) throw new UploadIdTakenError(id);
 
       let size = 0;
-      let seq = 0;
-      for await (const chunk of chunked(body, options?.limit ?? maxBytes)) {
-        await insertChunk(id, seq, size, chunk);
-        seq += 1;
-        size += chunk.length;
-        // The size is published per CHUNK, which is the whole mechanism: it is what
-        // a polling run reads to learn how far it may go. One small update per
-        // megabyte beside an insert that already happened.
+      for await (const batch of inBatches(placed(chunked(body, options?.limit ?? maxBytes)))) {
+        await insertChunks(id, batch, false);
+        size = batchEnd(batch);
+        // The size is published per BATCH, which is the whole mechanism: it is what
+        // a polling run reads to learn how far it may go.
+        //
+        // Per batch rather than per CHUNK, which is what it used to be — and that
+        // doubled this loop's round trips, an update beside every insert, on the
+        // path a page's upload bar and a streaming run are both waiting on. What
+        // the cadence costs a reader is bounded by `UPLOAD_WRITE_BATCH_MS`; what it
+        // cost to publish was half the throughput of the one write this store
+        // exists to do quickly.
         //
         // Nothing is deleted on failure, unlike `create`: an incomplete upload is a
         // legitimate readable state here, and a reader may already have used it.
@@ -302,16 +278,14 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       if (offset > total) {
         throw new UploadPartError(`A part at ${offset} starts past this upload's ${total} bytes.`);
       }
-      // Batched rather than one awaited statement per chunk — see
-      // `PART_CHUNKS_PER_STATEMENT`, which carries the two production measurements
+      // Grouped rather than one awaited statement per chunk — see
+      // `UPLOAD_WRITE_BATCH_CHUNKS`, which carries the two production measurements
       // that argue for it.
-      for await (const batch of batched(
-        partChunks(body, offset, total),
-        PART_CHUNKS_PER_STATEMENT,
-      )) {
-        await insertChunkBatch(id, batch);
+      for await (const batch of inBatches(partChunks(body, offset, total))) {
+        await insertChunks(id, batch, true);
       }
-      const size = await contiguousSize(id);
+      const ranges = await coverage(id);
+      const size = contiguousBytes(ranges);
       const complete = size >= total;
       // Published once per PART rather than per chunk, unlike `stream`: the size a
       // part changes is the contiguous prefix, which costs the query above, and a
@@ -322,7 +296,18 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
         size,
         complete,
       ]);
-      return { id, name: row.name, type: row.type, size, complete };
+      return {
+        id,
+        name: row.name,
+        type: row.type,
+        size,
+        complete,
+        // Only while there is something to resume — see `UploadInfo.ranges`. The
+        // caller writing the part that closes the last gap learns the upload is
+        // finished from its own response, and a finished one has no windows to
+        // report.
+        ...omitUndefined({ ranges: complete ? undefined : ranges }),
+      };
     },
 
     async info(id): Promise<UploadInfo | undefined> {
@@ -333,20 +318,29 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
         type: string;
         size: string;
         complete: boolean;
-      }>(`select id, name, type, size, complete from ${UPLOADS_TABLE} where id = $1`, [id]);
+        expected: string | null;
+      }>(`select id, name, type, size, complete, expected from ${UPLOADS_TABLE} where id = $1`, [
+        id,
+      ]);
       const row = rows[0];
+      if (!row) return undefined;
+      const complete = row.complete !== false;
+      // A SECOND statement, and only for the one record that has something to say:
+      // an unfinished PARTS upload. Everything else answers from the row it already
+      // read — a whole-file write has no windows and a finished upload is covered
+      // end to end — so the read a polling run makes over and over is unchanged.
+      const ranges = row.expected !== null && !complete ? await coverage(id) : undefined;
       // `bigint` comes back as a string from the driver — `Number` rather than
       // trusting the shape, so a column type change is a NaN here instead of a
       // string silently used as a byte count.
-      return row
-        ? {
-            id: row.id,
-            name: row.name,
-            type: row.type,
-            size: Number(row.size),
-            complete: row.complete !== false,
-          }
-        : undefined;
+      return {
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        size: Number(row.size),
+        complete,
+        ...omitUndefined({ ranges }),
+      };
     },
 
     async read(id, start, end): Promise<Uint8Array> {

@@ -118,7 +118,7 @@
  */
 
 import { UPLOAD_CHUNK_BYTES, UPLOAD_ID_PREFIX } from "../sdk/constants.ts";
-import type { UploadInfo, UploadReader } from "../sdk/step-uploads.ts";
+import type { UploadInfo, UploadRange, UploadReader } from "../sdk/step-uploads.ts";
 
 /** The table one row per upload lives in. Prefixed so it cannot collide with an app's own. */
 export const UPLOADS_TABLE = "aai_workflow_uploads";
@@ -252,8 +252,14 @@ export type UploadStore = UploadReader & {
   writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
 };
 
-/** A half-open window of an upload's bytes, `[start, end)` like every other here. */
-export type ByteRange = { start: number; end: number };
+/**
+ * A half-open window of an upload's bytes, `[start, end)` like every other here.
+ *
+ * The SDK's own name for it, aliased rather than restated: these ranges reach a
+ * caller as {@link UploadInfo.ranges}, so two structurally identical declarations
+ * would be one rename away from disagreeing about what the store publishes.
+ */
+export type ByteRange = UploadRange;
 
 /**
  * Refuse an offset a part may not start at.
