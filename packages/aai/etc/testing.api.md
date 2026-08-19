@@ -401,6 +401,12 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+export type StubEmitted = {
+    namespace: string;
+    chunk: unknown;
+};
+
+// @public
 export interface StubGateway {
     calls: StubGatewayCall[];
     fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -448,6 +454,16 @@ export type StubGenerateReply = string | {
 
 // @public
 export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
+
+// @public
+export type StubReporter = {
+    lines: string[];
+    emitted: StubEmitted[];
+    restore: () => void;
+};
+
+// @public
+export function stubReporter(): StubReporter;
 
 // @public
 export type StubStepFetch = {

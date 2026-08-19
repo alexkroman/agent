@@ -4422,7 +4422,10 @@ type StepFetchInit = {
 };
 
 // @internal
-export type StepReporter = (line: string) => void | Promise<void>;
+export type StepReporter = (chunk: unknown, options?: {
+    namespace?: string | undefined;
+    log?: boolean | undefined;
+}) => void | Promise<void>;
 
 // @public
 type StoredSessionEvent = {
@@ -4734,6 +4737,10 @@ export type UploadStore = UploadReader & {
     stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
         limit?: number;
     }): Promise<UploadInfo>;
+    beginParts(id: string, meta: UploadMeta, total: number, opts?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
 };
 
 // @public
@@ -5588,6 +5595,12 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+export type StubEmitted = {
+    namespace: string;
+    chunk: unknown;
+};
+
+// @public
 export interface StubGateway {
     calls: StubGatewayCall[];
     fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -5635,6 +5648,16 @@ export type StubGenerateReply = string | {
 
 // @public
 export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
+
+// @public
+export type StubReporter = {
+    lines: string[];
+    emitted: StubEmitted[];
+    restore: () => void;
+};
+
+// @public
+export function stubReporter(): StubReporter;
 
 // @public
 export type StubStepFetch = {
@@ -6098,6 +6121,9 @@ export function capToolResult(result: string): string;
 export function createKeyedLock(): KeyedLock;
 
 // @public
+export function emit<T>(namespace: string, chunk: T): Promise<void>;
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -6139,7 +6165,10 @@ export class KeyedLockTimeoutError extends Error {
 export function linkConfirmationCode(code: string): string;
 
 // @public
-export function mapInBatches<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+export function mapConcurrent<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+
+// @public @deprecated
+export const mapInBatches: typeof mapConcurrent;
 
 // @public
 export const MAX_SLUG_LENGTH = 64;
@@ -6359,6 +6388,16 @@ export type UploadOptions = {
     type?: string | undefined;
     signal?: AbortSignal | undefined;
     onProgress?: ((progress: UploadProgress) => void) | undefined;
+    parallel?: UploadParallel | undefined;
+};
+
+// @public
+export type UploadParallel = boolean | UploadPartsSettings;
+
+// @public
+export type UploadPartsSettings = {
+    partBytes?: number | undefined;
+    concurrency?: number | undefined;
 };
 
 // @public
@@ -6617,6 +6656,7 @@ import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
 import type { TextareaHTMLAttributes } from 'react';
+import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai';
@@ -7120,6 +7160,7 @@ export type UseWorkflowStreamOptions = {
     api?: WorkflowApi;
     key?: string;
     intervalMs?: number;
+    parallel?: UploadParallel;
 };
 
 // @public
@@ -7131,6 +7172,7 @@ export type UseWorkflowSubmitOptions = {
     key?: string;
     wait?: number;
     intervalMs?: number;
+    parallel?: UploadParallel;
 };
 
 // @public

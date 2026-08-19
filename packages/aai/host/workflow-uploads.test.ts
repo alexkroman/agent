@@ -16,17 +16,27 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { UPLOAD_CHUNK_BYTES } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import {
+  contiguousBytes,
   createUploadStore,
+  mergeRanges,
+  UnknownUploadError,
   UPLOAD_CHUNKS_TABLE,
   UPLOADS_TABLE,
   UploadIdTakenError,
+  UploadPartError,
   UploadTooLargeError,
 } from "./workflow-uploads.ts";
 
 /** One body, as the routes hand it over: an async iterable of chunks. */
 async function* body(...pieces: Uint8Array[]): AsyncGenerator<Uint8Array> {
   for (const piece of pieces) yield piece;
+}
+
+/** The declared total a PARTS claim carries, which a streaming claim does not. */
+function declaredTotal(param: unknown): number | undefined {
+  return param === undefined ? undefined : Number(param);
 }
 
 /** `n` bytes counting up, so a window's CONTENT identifies its offset. */
@@ -101,20 +111,90 @@ function recordingDb() {
   const sql: string[] = [];
   const uploads = new Map<
     string,
-    { name: string; type: string; size: number; complete: boolean }
+    { name: string; type: string; size: number; complete: boolean; expected?: number }
   >();
-  const chunks: { id: string; offset: number; bytes: Uint8Array }[] = [];
+  const chunks: { id: string; seq: number; offset: number; bytes: Uint8Array }[] = [];
 
   const handlers: readonly { when: string; run: (params: unknown[]) => unknown[] }[] = [
     {
       when: `insert into ${UPLOAD_CHUNKS_TABLE}`,
       run: (params) => {
-        chunks.push({
+        const row = {
           id: String(params[0]),
+          seq: Number(params[1]),
           offset: Number(params[2]),
           bytes: params[3] as Uint8Array,
-        });
+        };
+        // Keyed by `(upload_id, seq)`, as the table is — the parts writer UPSERTS,
+        // so a fake that appended would let a retried part read back doubled.
+        const at = chunks.findIndex((one) => one.id === row.id && one.seq === row.seq);
+        if (at >= 0) chunks[at] = row;
+        else chunks.push(row);
         return [];
+      },
+    },
+    {
+      // The contiguous prefix, which the real statement computes with a window
+      // function. Computed here by the walk the SQL exists to avoid, so the fake
+      // and the statement are independent answers to the same question.
+      when: "with covered as",
+      run: (params) => {
+        const covered = chunks
+          .filter((chunk) => chunk.id === String(params[0]))
+          .sort((a, b) => a.offset - b.offset);
+        let size = 0;
+        for (const chunk of covered) {
+          if (chunk.offset !== size) break;
+          size = chunk.offset + chunk.bytes.length;
+        }
+        return [{ size: String(size) }];
+      },
+    },
+    {
+      // Before the plain size update and the streamed one, whose texts overlap it.
+      when: "set size = $2, complete = $3",
+      run: (params) => {
+        const row = uploads.get(String(params[0]));
+        if (row)
+          uploads.set(String(params[0]), {
+            ...row,
+            size: Number(params[1]),
+            complete: Boolean(params[2]),
+          });
+        return [];
+      },
+    },
+    {
+      // The two parts reads, which name their columns in their own orders so each
+      // is matchable on its own.
+      when: "select expected, complete, size",
+      run: (params) => {
+        const row = uploads.get(String(params[0]));
+        return row
+          ? [
+              {
+                expected: row.expected === undefined ? null : String(row.expected),
+                complete: row.complete,
+                size: String(row.size),
+              },
+            ]
+          : [];
+      },
+    },
+    {
+      when: "select name, type, expected, complete",
+      run: (params) => {
+        const row = uploads.get(String(params[0]));
+        return row
+          ? [
+              {
+                name: row.name,
+                type: row.type,
+                expected: row.expected === undefined ? null : String(row.expected),
+                complete: row.complete,
+              },
+            ]
+          : [];
       },
     },
     {
@@ -123,15 +203,20 @@ function recordingDb() {
       when: "on conflict (id) do nothing",
       run: (params) => {
         const id = String(params[0]);
-        if (!uploads.has(id)) {
-          uploads.set(id, {
-            name: String(params[1]),
-            type: String(params[2]),
-            size: 0,
-            complete: false,
-          });
-        }
-        return [];
+        // `returning id` answers with a row only for a statement that INSERTED —
+        // which is what the parts claim reads to refuse a taken id, so a fake that
+        // always answered would let two callers declare the same upload.
+        if (uploads.has(id)) return [];
+        uploads.set(id, {
+          name: String(params[1]),
+          type: String(params[2]),
+          size: 0,
+          // The streaming claim passes neither; the parts claim passes both, and
+          // a zero-byte upload is complete from the moment it is declared.
+          complete: params[4] === true,
+          ...omitUndefined({ expected: declaredTotal(params[3]) }),
+        });
+        return [{ id }];
       },
     },
     {
@@ -184,17 +269,24 @@ function recordingDb() {
       when: "substring",
       run: (params) => {
         const [id, start, end] = [String(params[0]), Number(params[1]), Number(params[2])];
-        return chunks
-          .filter(
-            (chunk) =>
-              chunk.id === id && chunk.offset < end && chunk.offset + chunk.bytes.length > start,
-          )
-          .map((chunk) => ({
-            part: chunk.bytes.subarray(
-              Math.max(start - chunk.offset, 0),
-              Math.min(end - chunk.offset, chunk.bytes.length),
-            ),
-          }));
+        return (
+          chunks
+            // `order by seq` in the real statement, and it is load-bearing rather
+            // than cosmetic: parts land in whatever order the network settles, so a
+            // fake answering in INSERTION order reassembles a file whose windows
+            // are correct and whose bytes are shuffled.
+            .toSorted((a, b) => a.seq - b.seq)
+            .filter(
+              (chunk) =>
+                chunk.id === id && chunk.offset < end && chunk.offset + chunk.bytes.length > start,
+            )
+            .map((chunk) => ({
+              part: chunk.bytes.subarray(
+                Math.max(start - chunk.offset, 0),
+                Math.min(end - chunk.offset, chunk.bytes.length),
+              ),
+            }))
+        );
       },
     },
   ];
@@ -417,5 +509,179 @@ describe.each([
     await expect(store.stream("abc", {}, body(ramp(100)), { limit: 50 })).rejects.toBeInstanceOf(
       UploadTooLargeError,
     );
+  });
+});
+
+/**
+ * The PARTS write, run against BOTH backends by the same body — for the reason the
+ * streamed block above is parameterized, and with more riding on it: the two
+ * backends answer "how much is contiguous" by completely different means (a window
+ * function against a sidecar of merged ranges), so a rule that held in only one of
+ * them would be a claim about nothing.
+ */
+describe.each([
+  ["files", async () => await fileStore()],
+  ["postgres", async () => createUploadStore({ db: recordingDb().db, dir: "/unused" })],
+])("a parts upload (%s backend)", (_label, open) => {
+  /** The upload every spec here begins: two whole chunks' worth, declared up front. */
+  const TOTAL = UPLOAD_CHUNK_BYTES * 2;
+
+  test("exists from the DECLARATION, incomplete and empty", async () => {
+    const store = await open();
+    const begun = await store.beginParts("abc", { name: "a.wav", type: "audio/wav" }, TOTAL);
+    expect(begun).toEqual({
+      id: "abc",
+      name: "a.wav",
+      type: "audio/wav",
+      size: 0,
+      complete: false,
+    });
+    // Readable by everything else the moment it is declared — which is what lets a
+    // run be started on it before a single part has landed.
+    expect(await store.info("abc")).toMatchObject({ id: "abc", size: 0, complete: false });
+  });
+
+  test("reassembles parts that arrive OUT OF ORDER", async () => {
+    const store = await open();
+    await store.beginParts("abc", {}, TOTAL);
+    // The second part first, which is the ordinary case rather than an edge one:
+    // four requests in flight finish in whatever order the network decides.
+    await store.writePart("abc", UPLOAD_CHUNK_BYTES, body(ramp(UPLOAD_CHUNK_BYTES, 7)));
+    await store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES)));
+    expect(await store.info("abc")).toMatchObject({ size: TOTAL, complete: true });
+    // Read across the seam, so the assertion is about the ORDER of the bytes and
+    // not merely about their number.
+    const window = await store.read("abc", UPLOAD_CHUNK_BYTES - 2, UPLOAD_CHUNK_BYTES + 2);
+    expect([...window]).toEqual([...ramp(2, UPLOAD_CHUNK_BYTES - 2), ...ramp(2, 7)]);
+  });
+
+  test("publishes the CONTIGUOUS prefix, so a hole is never readable", async () => {
+    const store = await open();
+    await store.beginParts("abc", {}, TOTAL);
+    // Only the far part. Its bytes are stored, and `size` stays 0 — which is the
+    // whole invariant: `size` says how far a reader may go, and reading from zero
+    // here would read a hole.
+    const after = await store.writePart("abc", UPLOAD_CHUNK_BYTES, body(ramp(UPLOAD_CHUNK_BYTES)));
+    expect(after).toMatchObject({ size: 0, complete: false });
+    // And it advances over BOTH parts at once when the gap closes, rather than to
+    // the end of the part that just landed.
+    const filled = await store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES)));
+    expect(filled).toMatchObject({ size: TOTAL, complete: true });
+  });
+
+  test("takes a RETRIED part as the same part, not as a second one", async () => {
+    const store = await open();
+    await store.beginParts("abc", {}, TOTAL);
+    await store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES)));
+    // The failure parts exist to survive: a connection dies and the client sends
+    // the window again. A store that appended would double the file.
+    await store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES)));
+    expect(await store.info("abc")).toMatchObject({ size: UPLOAD_CHUNK_BYTES, complete: false });
+    expect([...(await store.read("abc", 0, 4))]).toEqual([...ramp(4)]);
+  });
+
+  test("refuses a part that does not start on a chunk boundary", async () => {
+    const store = await open();
+    await store.beginParts("abc", {}, TOTAL);
+    // Misaligned: it would have to be stored INSIDE a chunk another part owns, and
+    // the alternative to refusing it is reading it back from the wrong place.
+    await expect(store.writePart("abc", 7, body(ramp(4)))).rejects.toBeInstanceOf(UploadPartError);
+  });
+
+  test("refuses a part that runs past the declared total", async () => {
+    const store = await open();
+    await store.beginParts("abc", {}, UPLOAD_CHUNK_BYTES);
+    await expect(
+      store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES), ramp(UPLOAD_CHUNK_BYTES))),
+    ).rejects.toBeInstanceOf(UploadPartError);
+  });
+
+  test("refuses a part for an upload nobody began", async () => {
+    const store = await open();
+    await expect(store.writePart("abc", 0, body(ramp(4)))).rejects.toBeInstanceOf(
+      UnknownUploadError,
+    );
+  });
+
+  test("refuses to append parts to a STREAMED upload", async () => {
+    const store = await open();
+    await store.stream("abc", {}, body(ramp(4)));
+    // It declared no total, so nothing could ever decide it was complete — which
+    // is exactly what makes this a 400 rather than a write that quietly works.
+    await expect(store.writePart("abc", 0, body(ramp(4)))).rejects.toBeInstanceOf(UploadPartError);
+  });
+
+  test("refuses an id that is already taken", async () => {
+    const store = await open();
+    await store.beginParts("abc", {}, TOTAL);
+    await expect(store.beginParts("abc", {}, TOTAL)).rejects.toBeInstanceOf(UploadIdTakenError);
+  });
+
+  test("refuses an id that would escape the store", async () => {
+    const store = await open();
+    await expect(store.beginParts("../escape", {}, TOTAL)).rejects.toThrow(/Invalid upload id/);
+  });
+
+  test("refuses a total past its cap BEFORE a byte is sent", async () => {
+    const store = await open();
+    // The declaration is the one place an oversized upload can be refused for free
+    // — the streamed path can only find out as the bytes arrive.
+    await expect(store.beginParts("abc", {}, 500, { limit: 50 })).rejects.toBeInstanceOf(
+      UploadTooLargeError,
+    );
+  });
+
+  test("an upload of NO bytes is complete from the declaration", async () => {
+    const store = await open();
+    // No part can ever arrive to close it, so anything else is a record a run waits
+    // on forever.
+    expect(await store.beginParts("abc", {}, 0)).toMatchObject({ size: 0, complete: true });
+  });
+
+  test("survives parts written CONCURRENTLY, which is the point of the shape", async () => {
+    const store = await open();
+    const parts = 4;
+    await store.beginParts("abc", {}, UPLOAD_CHUNK_BYTES * parts);
+    // All at once and unordered, the way the client sends them. The file backend
+    // reads-modifies-writes one sidecar to answer this, so without its lock a
+    // part's arrival is silently dropped and `complete` never arrives.
+    await Promise.all(
+      Array.from({ length: parts }, (_, at) =>
+        store.writePart(
+          "abc",
+          at * UPLOAD_CHUNK_BYTES,
+          body(ramp(UPLOAD_CHUNK_BYTES, at * UPLOAD_CHUNK_BYTES)),
+        ),
+      ),
+    );
+    expect(await store.info("abc")).toMatchObject({
+      size: UPLOAD_CHUNK_BYTES * parts,
+      complete: true,
+    });
+  });
+});
+
+describe("merging the windows that have landed", () => {
+  test("joins ranges that TOUCH, so a contiguous file is one range", () => {
+    // Two parts meeting exactly on a boundary is the ordinary case, and joining
+    // them is what makes the contiguous read a single lookup.
+    const merged = mergeRanges([{ start: 0, end: 10 }], { start: 10, end: 20 });
+    expect(merged).toEqual([{ start: 0, end: 20 }]);
+    expect(contiguousBytes(merged)).toBe(20);
+  });
+
+  test("keeps a gap a gap, and reports nothing past it", () => {
+    const merged = mergeRanges([{ start: 20, end: 30 }], { start: 0, end: 10 });
+    expect(merged).toEqual([
+      { start: 0, end: 10 },
+      { start: 20, end: 30 },
+    ]);
+    expect(contiguousBytes(merged)).toBe(10);
+  });
+
+  test("reports NOTHING when the first byte is missing", () => {
+    // However much of the rest has landed: `size` is how far a reader may go.
+    expect(contiguousBytes(mergeRanges([], { start: 10, end: 100 }))).toBe(0);
+    expect(contiguousBytes([])).toBe(0);
   });
 });

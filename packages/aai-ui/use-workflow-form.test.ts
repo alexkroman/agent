@@ -167,6 +167,30 @@ describe("useWorkflowSubmit", () => {
     );
   });
 
+  test("passes `parallel` down to the upload, and omits it when unasked", async () => {
+    // The option describes the UPLOAD, so this hook's only job is to carry it —
+    // and to carry it as ABSENT when nobody asked, since a `parallel: undefined`
+    // in the options object is a different thing to the SDK's exact-optional
+    // signature than no key at all.
+    const asked = fakeApi();
+    const file = new File(["abc"], "standup.wav", { type: "audio/wav" });
+    const withParts = renderHook(() =>
+      useWorkflowSubmit("digest", { api: asked, intervalMs: POLL_MS, parallel: true }),
+    );
+    await act(() => withParts.result.current.submit({ recording: file }));
+    expect(asked.upload).toHaveBeenCalledWith(file, {
+      onProgress: expect.any(Function),
+      parallel: true,
+    });
+
+    const plain = fakeApi();
+    const without = renderHook(() =>
+      useWorkflowSubmit("digest", { api: plain, intervalMs: POLL_MS }),
+    );
+    await act(() => without.result.current.submit({ recording: file }));
+    expect(plain.upload).toHaveBeenCalledWith(file, { onProgress: expect.any(Function) });
+  });
+
   test("reports the bytes as they go, then drops the report once the run starts", async () => {
     // Two files, each held open, so what a bar would draw is observed at each
     // step rather than inferred from whatever React last committed.

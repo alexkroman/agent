@@ -9,9 +9,11 @@
  * fine for a recording that is already hosted and useless for a person with a file
  * on their laptop.
  *
- * **`_upload-store.ts` is the contract** — the types, the chunking, and the two
+ * **`_upload-store.ts` is the contract** — the types, the chunking, and the
  * invariants every reader depends on (an ordinary upload does not exist until it is
- * finished; a STREAMED one exists from its first byte and says so with `complete`).
+ * finished; a STREAMED one exists from its first byte and says so with `complete`;
+ * a PARTS one arrives over several connections at once and publishes only its
+ * contiguous prefix as `size`).
  * Read it before changing a backend. The backends themselves are
  * `_upload-store-postgres.ts` (the deployed case, and the only durable one) and
  * `_upload-store-files.ts` (`aai dev` with no `DATABASE_URL`).
@@ -28,10 +30,17 @@ import { createFileUploadStore } from "./_upload-store-files.ts";
 import { createPostgresUploadStore } from "./_upload-store-postgres.ts";
 
 export {
+  assertPartOffset,
+  assertPartTotal,
+  type ByteRange,
+  contiguousBytes,
+  mergeRanges,
+  UnknownUploadError,
   UPLOAD_CHUNKS_TABLE,
   UPLOADS_TABLE,
   UploadIdTakenError,
   type UploadMeta,
+  UploadPartError,
   type UploadStore,
   UploadTooLargeError,
 } from "./_upload-store.ts";

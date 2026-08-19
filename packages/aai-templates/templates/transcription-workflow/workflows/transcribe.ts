@@ -44,17 +44,28 @@
  *   app's own upload store and the run carries only its id; each step reads
  *   exactly its own window with `readUpload`. Sixty steps therefore move the
  *   recording once between them, not sixty times.
- * - **The fan-out is bounded by `mapInBatches`, and the bound is not a detail.**
+ * - **The fan-out is bounded by `mapConcurrent`, and the bound is not a detail.**
  *   The DevKit correlates a journal entry to a step call by the ORDER the call
- *   was issued in, so a work-stealing pool — which issues its next call only
- *   when a previous one settles — puts the calls in a different order on a
- *   replay than it did on the first execution. That primitive is sequential
- *   batches of `Promise.all` for exactly that reason; its module doc carries the
- *   argument.
+ *   was issued in, so the primitive keeps a WINDOW over a cursor that only ever
+ *   hands out the next index — the Nth call issued is segment N-1 however the
+ *   calls settle. Its module doc carries the argument; what matters here is that
+ *   there is no barrier, so a slow segment costs only itself.
+ * - **The transcript STREAMS as it is produced.** Each segment is emitted the
+ *   moment it lands (`emit(TRANSCRIPT_STREAM, …)`), so the page renders the
+ *   answer growing rather than a status line and then everything at once. That is
+ *   the difference a fan-out can make to a reader and a run output cannot: an
+ *   `output` exists only when the last segment does.
  */
 
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
-import { mapInBatches, readUpload, report, uploadInfo } from "@alexkroman1/aai/utils";
+import { emit, mapConcurrent, readUpload, report, uploadInfo } from "@alexkroman1/aai/utils";
+import {
+  clock,
+  countWords,
+  stitchTranscript,
+  TRANSCRIPT_STREAM,
+  type TranscriptChunk,
+} from "./stitch.ts";
 import { elapsed, timed, transcribeWav } from "./sync-api.ts";
 import {
   bytesPerSecond,
@@ -117,14 +128,16 @@ export const BYTES_IN_FLIGHT = 640 * 1024 * 1024;
  * The widest fan-out, however small the segments are.
  *
  * Because {@link BYTES_IN_FLIGHT} stops being the binding constraint once segments
- * are small — 16 kHz mono would divide out to 173 — and something else takes over
- * before that helps. `mapInBatches` is a barrier rather than a work-stealing pool,
- * deliberately, because the DevKit correlates a journal entry to a step call by the
- * order the call was issued in: a batch's wall time is therefore its SLOWEST request
- * and a run's is the sum of those, so depth is paid at p100 and the tail widens with
- * it (p95/p50 measured 1.1x at 20 concurrent against 1.5x at 320, max/p50 reaching
- * 6.7x — 5.2s against 35.0s). A `503` carrying `retry-after: 1` is exactly such a
- * straggler, which is why overshooting is cheap in BILLING and not in latency.
+ * are small — 16 kHz mono would divide out to 173 — and the endpoint's own tail
+ * takes over before that helps: p95/p50 measured 1.1x at 20 concurrent against
+ * 1.5x at 320, with max/p50 reaching 6.7x (5.2s against 35.0s). A `503` carrying
+ * `retry-after: 1` is exactly such a straggler.
+ *
+ * **That tail used to be paid once per ROUND, and is not any more.** `mapConcurrent`
+ * was `mapInBatches` — sequential batches of `Promise.all` — so a batch's wall time
+ * was its slowest member and a run's was the sum of those. It is a window over a
+ * cursor now: a straggler holds up nothing but itself, and the numbers below were
+ * measured under the old barrier, so they are if anything pessimistic.
  *
  * 32 is the measured knee over 65 segments (1h37m of 48 kHz stereo), one concurrency
  * per run, through this workflow:
@@ -142,6 +155,10 @@ export const BYTES_IN_FLIGHT = 640 * 1024 * 1024;
  * also inert below a threshold — at 90-second segments, 32 only binds past 48
  * minutes of audio — so on a typical recording the whole fan-out is in flight
  * either way and this number changes nothing.
+ *
+ * The table above was measured under the old per-round barrier. Re-measuring it is
+ * worth doing before this number moves again: the window makes a wide fan-out
+ * cheaper at the tail, which if anything argues for a HIGHER knee.
  */
 export const MAX_SEGMENT_CONCURRENCY = 32;
 
@@ -155,7 +172,7 @@ export const MAX_SEGMENT_CONCURRENCY = 32;
  *
  * Safe to call from a workflow BODY: `format` arrives from a journaled step result,
  * so a replay derives the same width from the same bytes — which is what keeps
- * `mapInBatches` issuing its calls in the order the journal recorded them.
+ * `mapConcurrent` issuing its calls in the order the journal recorded them.
  *
  * Overshooting stays recoverable whatever this returns: a `503` carries
  * `retry-after` and `toStepError` below honours it, so the run completes having paid
@@ -178,9 +195,6 @@ export function segmentConcurrency(format: WavFormat): number {
  */
 const HEADER_PROBE_BYTES = 64 * 1024;
 
-/** Most words `stitchTranscript` will look back over to find a repeated seam. */
-const MAX_SEAM_WORDS = 40;
-
 /**
  * What a finished run reports, whichever flow produced it.
  *
@@ -201,7 +215,7 @@ export type Transcript = {
   transcript: string;
 };
 
-/** What one segment's request came back with. */
+/** What one segment's request came back with — the STEP's result, journaled. */
 export type SegmentTranscript = {
   index: number;
   text: string;
@@ -216,15 +230,18 @@ export type SegmentTranscript = {
 export async function transcribeFlow(input: { recording: string }) {
   "use workflow";
 
-  const startedAt = await startClock();
-  const plan = await splitRecording(input.recording);
+  // Both at once: neither needs the other, and issued together they are one
+  // round trip instead of two before any audio is read. The ORDER is still a
+  // pure function of this line — the two calls go out synchronously, left to
+  // right — which is what a replay reproduces.
+  const [startedAt, plan] = await Promise.all([startClock(), splitRecording(input.recording)]);
 
   // One step per segment, bounded, in an order a replay reproduces exactly.
   // A failed segment fails the RUN, deliberately: every sibling that finished is
   // already journaled, so the resume replays those for free and re-issues only
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
-  const parts = await mapInBatches(plan.segments, segmentConcurrency(plan.format), (segment) =>
+  const parts = await mapConcurrent(plan.segments, segmentConcurrency(plan.format), (segment) =>
     transcribeSegment(input.recording, plan.format, segment),
   );
 
@@ -309,6 +326,17 @@ export async function transcribeSegment(
   // The LATENCY, which is what says whether the concurrency bound or the endpoint
   // is the thing limiting the run — see `timed`'s doc.
   await report(`Transcribed ${clock(segment.startMs)}–${clock(segment.endMs)} in ${elapsed(ms)}.`);
+  // And the WORDS, into their own stream, which is what makes this run's answer
+  // streamable rather than only its narration: the page stitches whatever has
+  // arrived and renders the transcript growing, minutes before `output` exists.
+  // Its own namespace because `report`'s stream carries sentences a page prints
+  // verbatim — see `emit`'s doc.
+  await emit(TRANSCRIPT_STREAM, {
+    index: segment.index,
+    startMs: segment.startMs,
+    endMs: segment.endMs,
+    text,
+  } satisfies TranscriptChunk);
   return { index: segment.index, text };
 }
 
@@ -337,7 +365,7 @@ export async function mergeTranscript(
 
   await report(`Stitching ${parts.length} segment${parts.length === 1 ? "" : "s"} together.`);
 
-  // `mapInBatches` resolves in ITEM order however the calls settled, so this is
+  // `mapConcurrent` resolves in ITEM order however the calls settled, so this is
   // already ordered — sorted anyway, because the merge is where an ordering
   // mistake would be invisible rather than loud.
   const ordered = [...parts].sort((a, b) => a.index - b.index);
@@ -358,7 +386,7 @@ export async function mergeTranscript(
   };
 }
 
-// ---- Pure helpers -----------------------------------------------------------
+// ---- The run's own clock ----------------------------------------------------
 
 /**
  * When the run started, as epoch ms.
@@ -380,66 +408,17 @@ export async function startClock(): Promise<number> {
   return Date.now();
 }
 
-/** A word, stripped of the punctuation the decoder added, for seam comparison. */
-function seamKey(word: string): string {
-  return word.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
-}
-
-/**
- * Join segment transcripts, dropping the words the overlap made duplicates.
- *
- * Segments overlap by `SEGMENT_OVERLAP_SECONDS` (see `wav.ts` for why), so the
- * last few words of one segment are the first few of the next — verbatim when
- * the decoder heard them the same way, which is the common case because it heard
- * the same audio. This finds the longest such run and removes one copy.
- *
- * Comparison is on `seamKey`, not the raw words: the two passes punctuate
- * differently at their own edges (one ends a sentence where the other is
- * mid-clause), so `"today."` and `"today"` are the same word and a raw compare
- * finds no seam at all. The text KEPT is the raw text — only the match is
- * normalized.
- *
- * A missed seam repeats a few words, which a reader can see and forgive. A
- * false one would delete speech, so the search is bounded at
- * `MAX_SEAM_WORDS` and always prefers the LONGEST match: a single repeated
- * "the" is not evidence of anything, and requiring the longest run is what stops
- * it counting as one when a longer match is available.
- */
-export function stitchTranscript(parts: readonly string[]): string {
-  const merged: string[] = [];
-  for (const part of parts) {
-    const next = part.split(/\s+/).filter(Boolean);
-    if (next.length === 0) continue;
-    if (merged.length === 0) {
-      merged.push(...next);
-      continue;
-    }
-    merged.push(...next.slice(seamLength(merged, next)));
-  }
-  return merged.join(" ");
-}
-
-/** How many leading words of `next` repeat the tail of `merged`. */
-function seamLength(merged: readonly string[], next: readonly string[]): number {
-  const limit = Math.min(MAX_SEAM_WORDS, merged.length, next.length);
-  // Longest first, so a short accidental match never wins over a real seam.
-  for (let length = limit; length > 0; length--) {
-    const tail = merged.slice(merged.length - length);
-    if (tail.every((word, at) => seamKey(word) === seamKey(next[at] ?? ""))) return length;
-  }
-  return 0;
-}
-
-/** Words in a string. Exported so the streaming flow reports the same number. */
-export function countWords(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
-}
-
-/** `m:ss` for the progress log — a byte offset means nothing to a reader. */
-export function clock(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
+// `clock` and `countWords` are re-exported rather than re-declared: `stream.ts`
+// and `batch.ts` already import them from this module, and the split that let the
+// PAGE stitch a partial transcript should not ripple through every flow.
+export {
+  clock,
+  countWords,
+  stitchChunks,
+  stitchTranscript,
+  TRANSCRIPT_STREAM,
+  type TranscriptChunk,
+} from "./stitch.ts";
 
 // ---- I/O helpers ------------------------------------------------------------
 

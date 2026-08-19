@@ -148,6 +148,8 @@ export type WorkflowApi = {
    *
    * One request for the whole body, so a file past `MAX_WORKFLOW_UPLOAD_BYTES` is
    * a 413 rather than a truncation; {@link UploadOptions.onProgress} draws a bar.
+   * `{ parallel: true }` sends it as concurrent parts instead, which is what a
+   * recording over a long link wants — see {@link UploadOptions.parallel}.
    */
   upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
   /**
@@ -253,6 +255,10 @@ export type WorkflowApi = {
    * `id` must be 1-64 characters of letters, digits, `-` and `_` (a
    * `crypto.randomUUID()` qualifies) and must not already exist — a second call on
    * one id is a 409, never an append.
+   *
+   * `{ parallel: true }` applies here too, and composes with the ORDER this method
+   * exists for: the run reads the contiguous prefix as the parts fill it in,
+   * exactly as it reads a single streaming `PUT`.
    */
   uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
   /**
@@ -277,6 +283,8 @@ export type { UploadInfo } from "./step-uploads.ts";
 export type {
   UploadBody,
   UploadOptions,
+  UploadParallel,
+  UploadPartsSettings,
   UploadProgress,
   UploadRef,
 } from "./workflow-upload-client.ts";

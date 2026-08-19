@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
-import { createStubWorkflows, createToolContext, createUnusedDb } from "./testing.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { emit, publishStepReporter, report } from "./step-report.ts";
+import { createStubWorkflows, createToolContext, createUnusedDb, stubReporter } from "./testing.ts";
 
 describe("createToolContext", () => {
   test("supplies every ToolContext field", () => {
@@ -169,5 +170,47 @@ describe("createStubWorkflows", () => {
     // that has not been given one must say so rather than hand back something a
     // test would then assert about.
     expect(() => createStubWorkflows().publicWebhookUrl("t")).toThrow(/not stubbed/);
+  });
+});
+
+describe("stubReporter", () => {
+  afterEach(() => publishStepReporter(undefined));
+
+  test("separates the SENTENCES from the CHUNKS, the way the streams are", async () => {
+    // The split is the helper's whole value: a spec asserting a partial result
+    // never has to filter the narration out of it, and the test it applies is
+    // the same one `emit()`'s contract rests on — an absent namespace is the
+    // default stream, which is `report()`'s.
+    const reported = stubReporter();
+    await report("Transcribing 0:00–0:58.");
+    await emit("transcript", { index: 0, text: "hello" });
+    await report("Transcribed 0:00–0:58 in 4.2s.");
+
+    expect(reported.lines).toEqual(["Transcribing 0:00–0:58.", "Transcribed 0:00–0:58 in 4.2s."]);
+    expect(reported.emitted).toEqual([
+      { namespace: "transcript", chunk: { index: 0, text: "hello" } },
+    ]);
+  });
+
+  test("keeps chunks from different streams apart, and in order", async () => {
+    const reported = stubReporter();
+    await emit("transcript", "one");
+    await emit("costs", { usd: 0.02 });
+    await emit("transcript", "two");
+    expect(reported.emitted.map((one) => one.namespace)).toEqual([
+      "transcript",
+      "costs",
+      "transcript",
+    ]);
+  });
+
+  test("restore unpublishes, so it cannot answer the next file's steps", async () => {
+    const reported = stubReporter();
+    reported.restore();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await report("after");
+    expect(reported.lines).toEqual([]);
+    // Back to the console fallback, which is what an unpublished slot means.
+    expect(spy).toHaveBeenCalled();
   });
 });

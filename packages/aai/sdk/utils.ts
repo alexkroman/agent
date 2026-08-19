@@ -44,7 +44,7 @@ export {
   KeyedLockTimeoutError,
   withLock,
 } from "./keyed-lock.ts";
-export { mapInBatches } from "./map-in-batches.ts";
+export { mapConcurrent, mapInBatches } from "./map-concurrent.ts";
 export { omitUndefined } from "./omit-undefined.ts";
 export { safeJsonParse } from "./safe-json-parse.ts";
 export { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
@@ -67,7 +67,7 @@ export {
   stepGenerateJson,
   stripJsonFence,
 } from "./step-generate-json.ts";
-export { report } from "./step-report.ts";
+export { emit, report } from "./step-report.ts";
 export { isTransientStatus, retryAfter } from "./step-retry.ts";
 export {
   type ReadUploadOptions,

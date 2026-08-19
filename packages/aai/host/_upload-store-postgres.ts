@@ -8,12 +8,18 @@ import type { Db } from "../sdk/db.ts";
 import { assertUploadToken, type UploadInfo } from "../sdk/step-uploads.ts";
 import { ensureOnce } from "./_ensure-once.ts";
 import {
+  assertPartOffset,
+  assertPartTotal,
   chunked,
+  chunkSeq,
   concat,
   newUploadId,
+  partChunks,
+  UnknownUploadError,
   UPLOAD_CHUNKS_TABLE,
   UPLOADS_TABLE,
   UploadIdTakenError,
+  UploadPartError,
   type UploadStore,
 } from "./_upload-store.ts";
 export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore {
@@ -36,6 +42,11 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
     await db.query(
       `alter table ${UPLOADS_TABLE} add column if not exists complete boolean not null default true`,
     );
+    // Added the same way and for the same reason: an agent that stored an upload
+    // before parts existed has a table this `create` will not touch. NULL is the
+    // honest default — every upload that predates parts declared no total, and
+    // that is exactly what makes `writePart` refuse to append to one.
+    await db.query(`alter table ${UPLOADS_TABLE} add column if not exists expected bigint`);
     await db.query(`create table if not exists ${UPLOAD_CHUNKS_TABLE} (
       upload_id text not null,
       seq int not null,
@@ -44,6 +55,34 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       primary key (upload_id, seq)
     )`);
   });
+
+  /**
+   * How many bytes are present from byte ZERO — the `size` a parts upload publishes.
+   *
+   * One statement rather than reading the offsets back and walking them: a 2 GB
+   * upload is two thousand chunk rows, well past `MAX_DB_RESULT_ROWS`, so the walk
+   * would fail on exactly the files parts exist for. `lag` gives each row the end of
+   * the one before it, so a GAP is a row whose start is not that end, and the
+   * prefix is the earliest such end — falling back to the far end when there is no
+   * gap at all, and to 0 for an upload with no chunks yet.
+   */
+  async function contiguousSize(id: string): Promise<number> {
+    const rows = await db.query<{ size: string | number | null }>(
+      `with covered as (
+         select byte_offset as start_at,
+                byte_offset + octet_length(bytes) as end_at,
+                lag(byte_offset + octet_length(bytes)) over (order by byte_offset) as prev_end
+           from ${UPLOAD_CHUNKS_TABLE} where upload_id = $1
+       )
+       select coalesce(
+         (select min(coalesce(prev_end, 0)) from covered where coalesce(prev_end, 0) <> start_at),
+         (select max(end_at) from covered),
+         0
+       ) as size`,
+      [id],
+    );
+    return Number(rows[0]?.size ?? 0);
+  }
 
   return {
     async create(meta, body, options): Promise<UploadInfo> {
@@ -129,6 +168,76 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
         size,
       ]);
       return { id, name, type, size, complete: true };
+    },
+
+    async beginParts(id, meta, total, options): Promise<UploadInfo> {
+      await ensureTables();
+      assertUploadToken(id);
+      assertPartTotal(total, options?.limit ?? maxBytes);
+      const name = meta.name ?? "";
+      const type = meta.type ?? "";
+      // An upload of NO bytes is finished the moment it is declared: no part can
+      // ever arrive to close it, so anything else is a record that waits forever.
+      const complete = total === 0;
+      // `returning id` rather than the read-back `stream` does, and it is the
+      // stronger claim: a row comes back only when THIS statement inserted it, so
+      // an id already held is refused even by a caller declaring an identical
+      // upload. `stream` cannot tell those apart — it reads the row's own state
+      // back, which for two identical claims is identical — and here they are
+      // routine, because a client that retries a `beginParts` after a lost
+      // response sends exactly the same declaration.
+      const claimed = await db.query<{ id: string }>(
+        `insert into ${UPLOADS_TABLE} (id, name, type, size, complete, expected)
+         values ($1, $2, $3, 0, $5, $4) on conflict (id) do nothing returning id`,
+        [id, name, type, total, complete],
+      );
+      if (claimed.length === 0) throw new UploadIdTakenError(id);
+      return { id, name, type, size: 0, complete };
+    },
+
+    async writePart(id, offset, body): Promise<UploadInfo> {
+      await ensureTables();
+      assertPartOffset(offset);
+      const rows = await db.query<{
+        name: string;
+        type: string;
+        expected: string | null;
+        complete: boolean;
+      }>(`select name, type, expected, complete from ${UPLOADS_TABLE} where id = $1`, [id]);
+      const row = rows[0];
+      if (!row) throw new UnknownUploadError(id);
+      if (row.expected === null) {
+        throw new UploadPartError(`Upload ${id} was not begun as a parts upload.`);
+      }
+      const total = Number(row.expected);
+      if (offset > total) {
+        throw new UploadPartError(`A part at ${offset} starts past this upload's ${total} bytes.`);
+      }
+      for await (const { bytes, at } of partChunks(body, offset, total)) {
+        // `do update` rather than a bare insert: a part is RETRIED whenever a
+        // connection dies mid-flight, which is the ordinary failure of the thing
+        // parts exist for, and a retry must be the same upload rather than a
+        // duplicate-key error the client has no way to recover from.
+        await db.query(
+          `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
+           values ($1, $2, $3, $4)
+           on conflict (upload_id, seq) do update
+             set byte_offset = excluded.byte_offset, bytes = excluded.bytes`,
+          [id, chunkSeq(at), at, Buffer.from(bytes)],
+        );
+      }
+      const size = await contiguousSize(id);
+      const complete = size >= total;
+      // Published once per PART rather than per chunk, unlike `stream`: the size a
+      // part changes is the contiguous prefix, which costs the query above, and a
+      // part is the unit a caller retries anyway. A run reading ahead therefore
+      // sees the file grow by parts (megabytes) rather than by chunks.
+      await db.query(`update ${UPLOADS_TABLE} set size = $2, complete = $3 where id = $1`, [
+        id,
+        size,
+        complete,
+      ]);
+      return { id, name: row.name, type: row.type, size, complete };
     },
 
     async info(id): Promise<UploadInfo | undefined> {

@@ -42,15 +42,52 @@
  * because they take the same input and return the same shape, and the only thing
  * the page chooses is which HOOK submits it.
  *
- * `useWorkflowStream` is the streaming half: it cuts the file with the cutter this
- * template supplies (`cut-wav.ts`, which is `workflows/wav.ts` run in the browser),
- * uploads each part under one group token, and wakes the run as each lands.
- * `useWorkflowSubmit` is the classic half and is unchanged.
+ * `useWorkflowStream` is the streaming half: it mints the upload id, starts the run
+ * on it, sends the file, and wakes the run when the bytes land. `useWorkflowSubmit`
+ * is the classic half and is unchanged.
  *
  * Streaming is the DEFAULT because it is faster on any real recording. The classic
- * path stays selectable because it is the shape to read first, and because it is
- * the one that works on a file this browser cannot parse — the cutter needs a WAV
- * header, where the server-side flow reaches the same conclusion in its first step.
+ * path stays selectable because it is the shape to read first.
+ *
+ * ## The third control is about the UPLOAD, not the flow
+ *
+ * "Split the file across connections" (`parallel`) is orthogonal to the three modes
+ * and applies to all of them, which is why it is a checkbox beside the radios
+ * rather than a fourth option. A single request moves a file at one connection's
+ * throughput, which over any distance is a fraction of the link — so the SDK cuts
+ * the file into megabyte-aligned parts and sends four at once. Nothing about the
+ * workflow changes: the agent reassembles them, `readUpload` reads the same
+ * windows, and the streaming flow still watches the file grow (what it polls is the
+ * CONTIGUOUS prefix, which is honest whether one connection or four are filling
+ * it).
+ *
+ * It is selectable rather than always-on for the reason the modes are: this is the
+ * template where a reader runs both over the same recording and sees what each
+ * costs. It also degrades on its own — a small file, or an agent deployed before
+ * the `/parts` routes existed, sends the single request instead — so leaving it on
+ * is safe.
+ *
+ * ## The transcript ARRIVES, rather than appearing at the end
+ *
+ * A run's `output` exists only when its last segment does, so a page with only
+ * that shows a status line for the whole fan-out and then everything at once — on
+ * a 97-minute recording, minutes of it. Each segment is emitted the moment it
+ * lands (`emit(TRANSCRIPT_STREAM, …)` in `workflows/transcribe.ts`) and
+ * `useWorkflowProgress` reads that stream, so the panel renders the transcript
+ * growing.
+ *
+ * Three things make it honest rather than decorative:
+ *
+ * - **The page stitches with the RUN's own function.** `stitchChunks` is
+ *   `workflows/stitch.ts`, imported by both, so the live text and the stored one
+ *   cannot drift into two different transcripts of one recording.
+ * - **It is a SEPARATE stream from the progress log.** `report()`'s lines go to
+ *   the default one, which `<WorkflowProgress>` renders verbatim; objects in
+ *   there would come out as `[object Object]` between the sentences.
+ * - **The finished run wins.** Once `output` exists the panel renders that
+ *   instead — it is the authoritative text, counted and measured, and a live
+ *   transcript that stayed on screen beside it would be a second answer with no
+ *   way to tell which was current.
  *
  * ## Two waits, two bars
  *
@@ -77,6 +114,7 @@ import {
   page,
   SubmitButton,
   UploadProgressBar,
+  useWorkflowProgress,
   useWorkflowRuns,
   useWorkflowStream,
   useWorkflowSubmit,
@@ -84,9 +122,16 @@ import {
   WorkflowProgress,
   type WorkflowRun,
 } from "@alexkroman1/aai-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { transcribe } from "./agent.ts";
 import { ApiHelp } from "./api-help.tsx";
+import {
+  clock,
+  countWords,
+  stitchChunks,
+  TRANSCRIPT_STREAM,
+  type TranscriptChunk,
+} from "./workflows/stitch.ts";
 
 /**
  * What a finished run reports.
@@ -142,12 +187,16 @@ const HISTORY_LIMIT = 10;
 
 function TranscriptionDesk() {
   const [mode, setMode] = useState<Mode>("streaming");
+  // Whether the browser cuts the recording up and sends the pieces at once. One
+  // piece of state for all three hooks, because it describes the UPLOAD and every
+  // mode has one — see the module doc.
+  const [parallel, setParallel] = useState(true);
   // ALL THREE hooks are called every render, because a hook may not be conditional —
   // and that costs nothing here: none of them does anything until its `submit` is
   // called, and `useWorkflowRun` underneath them holds no id until then either.
-  const streamed = useWorkflowStream<Transcript>(WORKFLOWS.streaming);
-  const stored = useWorkflowSubmit<Transcript>(WORKFLOWS.classic);
-  const batched = useWorkflowSubmit<Transcript>(WORKFLOWS.batch);
+  const streamed = useWorkflowStream<Transcript>(WORKFLOWS.streaming, { parallel });
+  const stored = useWorkflowSubmit<Transcript>(WORKFLOWS.classic, { parallel });
+  const batched = useWorkflowSubmit<Transcript>(WORKFLOWS.batch, { parallel });
   // The batch flow uploads the same way the classic one does — the id comes from the
   // store — so it is the SAME hook against a different workflow. Only the streaming
   // mode needs the other one, because only it needs the id before the bytes.
@@ -183,6 +232,8 @@ function TranscriptionDesk() {
       </header>
 
       <ModePicker mode={mode} onPick={setMode} disabled={pending} />
+
+      <UploadPicker parallel={parallel} onPick={setParallel} disabled={pending} />
 
       {/* No mapping: the collected values already match the input schema. All three
           workflows declare `recording` as an upload, so the same picker serves every
@@ -252,6 +303,49 @@ function ModePicker({
           </span>
         </label>
       ))}
+    </fieldset>
+  );
+}
+
+/**
+ * How the recording travels, as one checkbox.
+ *
+ * Beside the mode radios rather than among them because it answers a different
+ * question — those pick the WORKFLOW, this picks how its input gets there — and
+ * every mode is uploading a file either way.
+ *
+ * Disabled mid-submission for the same reason the radios are: the bytes are
+ * already moving, and a control that looks live while changing nothing is worse
+ * than one that is plainly unavailable.
+ */
+function UploadPicker({
+  parallel,
+  onPick,
+  disabled,
+}: {
+  parallel: boolean;
+  onPick: (next: boolean) => void;
+  disabled: boolean;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-3" disabled={disabled}>
+      <legend className="text-sm font-medium uppercase tracking-[1.2px]">Upload</legend>
+      <label className="flex items-start gap-3 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          name="parallel"
+          checked={parallel}
+          onChange={(event) => onPick(event.target.checked)}
+        />
+        <span className="flex flex-col gap-0.5">
+          <span>Split the file across connections</span>
+          <span className="text-xs opacity-70">
+            Sends the recording as several parts at once instead of in one request, which is most of
+            the wait on a long file. Falls back to the single request on a small one.
+          </span>
+        </span>
+      </label>
     </fieldset>
   );
 }
@@ -338,6 +432,11 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
           finished run up in the panel below shows how it got there. */}
       <WorkflowProgress runId={run.runId} />
 
+      {/* While it runs, the transcript so far. Unguarded on the run's status
+          beyond this: the component renders nothing until a segment has landed,
+          and stops the moment there is an `output` to render instead. */}
+      {!isTerminal(run) && <LiveTranscript runId={run.runId} />}
+
       {/* Discriminated on `status`, so `output` and `error` are reachable
           without a cast — the reason a snapshot is a union rather than a flat
           object with optional fields. */}
@@ -353,6 +452,45 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
       )}
       {run.status === "failed" && <p className="text-red-600">{run.error}</p>}
     </section>
+  );
+}
+
+/**
+ * The transcript as it arrives, stitched from the segments that have landed.
+ *
+ * The other half of `<WorkflowProgress>` above it: that one renders what the run
+ * SAYS about itself, this one renders what it has produced. Both are the same
+ * mechanism — a run's output stream — separated by the namespace, which is what
+ * lets this one be typed.
+ *
+ * It renders NOTHING until a segment lands, so a page can mount it unguarded:
+ * before the first chunk there is nothing to say that the progress log is not
+ * already saying better.
+ *
+ * The count is derived from the stitched text rather than summed per chunk,
+ * because the seams overlap — adding up the segments would over-count every one
+ * of them by a couple of seconds' worth of words.
+ */
+function LiveTranscript({ runId }: { runId: string }) {
+  const { progress } = useWorkflowProgress<TranscriptChunk>(runId, {
+    namespace: TRANSCRIPT_STREAM,
+  });
+  // Memoized on the ARRAY, which the hook appends to per read: stitching is a
+  // seam search per segment, and a fan-out re-renders this panel on every
+  // progress poll whether or not anything arrived.
+  const transcript = useMemo(() => stitchChunks(progress), [progress]);
+  if (progress.length === 0) return null;
+
+  // The furthest point reached, not the count: segments land out of order, so
+  // "6 segments" says nothing about how much of the recording is covered.
+  const covered = Math.max(...progress.map((chunk) => chunk.endMs));
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs opacity-60">
+        {countWords(transcript)} words so far · through {clock(covered)}
+      </p>
+      <pre className="whitespace-pre-wrap text-sm leading-relaxed opacity-80">{transcript}</pre>
+    </div>
   );
 }
 

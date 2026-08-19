@@ -159,7 +159,7 @@ once, and the templates are now their reference use:
 | `withDiscoveredTools` (`@alexkroman1/aai/testing`) | the same four plus `retail` — the five whose tools are FILES, so `def.tools` is empty until something resolves `tools/`. See "A `tools/` file IS the tool" below for why the glob is written per template |
 | `stubGenerate` (`@alexkroman1/aai/testing`) | `support-line` (five nodes over one binary-score schema) and `plan-and-execute` (planner, executor, replanner) — the two whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
 | `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-workflow` and `recap-workflow` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
-| `mapInBatches`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
+| `mapConcurrent`, `emit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
 | `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-workflow`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-and-execute`, from an ordinary tool body, which is the case the module was published for |
 
 **`research-workflow` is the workflow template, and its shape is dictated by the
@@ -248,7 +248,7 @@ failure it was already receiving.
 load test rather than review.** `transcription-workflow` used `fetch` with a
 `FormData`, which is the obvious spelling and fails under exactly the concurrency
 the template exists to demonstrate: Node's `fetch` offers `h2` in ALPN and the
-sync endpoint takes it, so a `mapInBatches` batch of 17.66 MB uploads multiplexes
+sync endpoint takes it, so a `mapConcurrent` window of 17.66 MB uploads multiplexes
 onto ONE connection. Measured at 8 in flight, `fetch` landed 14 of 16 at p50
 8094ms against HTTP/1.1's 16 of 16 at p50 3037ms — and the two it lost are the
 point, because a capacity limit on h2 arrives as `NGHTTP2_ENHANCE_YOUR_CALM`, a
@@ -331,28 +331,44 @@ run gets the Nth id on the first execution and on every replay. The step's NAME
 is only cross-checked against that id, and a mismatch is `ReplayDivergenceError`
 rather than a silent re-run.
 
-Two things follow, and they are the fan-out's whole shape:
-`Promise.all(batch.map(step))` is safe (every call issued synchronously, in
-array order, whatever order they settle in), and **a work-stealing pool is not**
-— a worker issues its next call only after its previous one settles, so the
-issue order tracks completion order, which differs between a live run and a
-replay. Bounded concurrency therefore has to be sequential batches of
-`Promise.all`, which costs the tail of each batch and is the only deterministic
-option. This is the one piece of the pre-DevKit engine's API that did NOT
-survive the port: `ctx.step("chunk-3", …)` let a caller pin identity to a
-position, and nothing replaces it.
+What follows is narrower than it looks, and this guide had it too wide for a
+long time. The requirement is that **the SEQUENCE OF ITEMS whose calls are
+issued is a pure function of the list** — not that no call may be issued after
+another settles, which is what an ordinary `await`-then-call body does. So
+`Promise.all(batch.map(step))` is safe, and so is a WINDOW over a shared cursor:
+the cursor only ever hands out the next index, so the Nth call issued is item
+N-1 however the calls settle, and what completion order decides is which slot
+runs which item. This guide (and the primitive's own doc) used to say a pool
+was unsafe because "the issue order tracks completion order"; it does not,
+because the item choice is the cursor's and the cursor is monotonic. What is
+genuinely unavailable is a caller-supplied step key — `ctx.step("chunk-3", …)`,
+the one piece of the pre-DevKit engine's API that did not survive the port.
 
-**That rule is a primitive now rather than a loop in a template.**
-`mapInBatches` (`@alexkroman1/aai/utils`) IS those sequential batches, and its
-module doc carries the argument above; a template that hand-rolls the loop is
-restating a rule whose failure mode is a `ReplayDivergenceError` in production.
+**That rule is a primitive rather than a loop in a template.** `mapConcurrent`
+(`@alexkroman1/aai/utils`, formerly `mapInBatches` and still exported under that
+name, deprecated) is the window; its module doc carries the argument, and
+`sdk/map-concurrent.test.ts` asserts the issue order directly at every width and
+under reversed and shuffled settle orders. Dropping the barrier is worth real
+time on a wide fan-out: a batch was only as fast as its slowest member and a run
+was the sum of those, and a `503` carrying `retry-after: 1` is exactly such a
+straggler (`transcription-workflow` measured max/p50 at 6.7x).
+
+The rule that IS load-bearing whatever the shape: **the callback must issue the
+same sequence of step calls for every item**, in practice one, synchronously. A
+callback that awaits something first, or issues two steps in a row, interleaves
+with its siblings by completion order — under a window and under batches alike,
+since within one batch the second round of calls goes out as the first round
+settles. A body needing two steps per item runs them as two fan-outs.
+
 Note what makes passing a step to a helper legal at all — the WDK transform
 rewrites a step's DECLARATION into a dispatcher rather than rewriting call
 sites, so a `"use step"` function handed to another module as a callback still
 dispatches a real step. That is a claim about the transform, so it is tested
-against a real one: `aai-cli`'s `dev-workflow.scenario.test.ts` fans a
-fixture flow out through `mapInBatches` with steps that settle in reverse issue
-order.
+against a real one: `aai-cli`'s `dev-workflow.scenario.test.ts` fans a fixture
+flow out through `mapConcurrent`, nine items through a window of three with
+shuffled durations. That tier proves the steps are REAL; it does not prove the
+issue-order property, because a healthy run is not a resume — which is why the
+unit spec asserts it directly.
 
 The fan-out's WIDTH is derived from a STEP'S RESULT (the parsed header), not
 re-probed by the body — the ordinary determinism rule: a replay has to produce

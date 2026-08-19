@@ -48,6 +48,49 @@ export const MAX_UPLOAD_BYTES_ENV = "AAI_MAX_UPLOAD_BYTES";
 export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
 
 /**
+ * How much of a file one PART of a parallel upload carries, by default.
+ *
+ * The number trades two costs against each other. Too small and an upload is
+ * mostly per-request overhead — a `POST`, a round trip, a write per 8 MB is
+ * nothing, a write per 64 KB is the upload. Too large and the parallelism
+ * disappears: a 20 MB recording split into 32 MB parts is one part, which is the
+ * single request this exists to beat, and a part that fails is a part that has to
+ * be sent again in full.
+ *
+ * 8 MiB is eight chunks, so a part is a handful of stored rows; it keeps a
+ * 200 MB recording at 25 parts (comfortably more than the concurrency below, so
+ * every connection stays fed), and it is the size the object stores this shape
+ * comes from settled on for the same reasons.
+ */
+export const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
+
+/**
+ * How many parts a parallel upload keeps in flight, by default.
+ *
+ * The whole point is to beat one connection, and the gain is steep at first and
+ * then flat: the bottleneck moves from per-connection window scaling to the link
+ * itself somewhere around four, and past that the parts mostly compete with each
+ * other for the same bandwidth while multiplying the writes the agent is doing at
+ * once. Four is also inside every browser's per-origin connection limit (six),
+ * which leaves room for the page's own requests — a page that spends all six on
+ * one upload cannot poll the run it just started.
+ */
+export const UPLOAD_PART_CONCURRENCY = 4;
+
+/**
+ * How many times a part is sent before the upload gives up on it.
+ *
+ * A parallel upload has N connections' worth of chances to lose one, which is the
+ * cost of the speed — so ONE retry is what makes the shape pay: the store accepts
+ * a repeated part as the same part (its rows are keyed by offset), a transient
+ * failure is the ordinary reason a part dies, and the alternative is throwing away
+ * every other part that already landed. Two attempts rather than more because a
+ * second failure is a signal about the link rather than a coincidence, and a
+ * caller waiting on a form would rather be told.
+ */
+export const UPLOAD_PART_ATTEMPTS = 2;
+
+/**
  * Prefix every upload id carries.
  *
  * So a stray value in a log, a run input or an error reads as what it is — the

@@ -136,6 +136,14 @@ const ROUTES: readonly { route: string; does: string }[] = [
     route: "PUT  /workflows/uploads/:id",
     does: "store a file under YOUR id, readable as it arrives",
   },
+  {
+    route: "POST /workflows/uploads/:id/parts",
+    does: "declare an upload its parts fill in · ?total=<bytes>",
+  },
+  {
+    route: "PUT  /workflows/uploads/:id/parts",
+    does: "one window of it · ?offset=<byte>, sent concurrently",
+  },
   { route: "GET  /workflows/uploads/:id", does: "read the bytes back · Range honoured" },
   { route: "GET  /workflows/uploads/:id/info", does: "name, bytes stored so far, and complete" },
 ];

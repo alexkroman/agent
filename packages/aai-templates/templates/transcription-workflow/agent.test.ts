@@ -17,7 +17,7 @@
  * the decoder happily transcribes into confident nonsense.
  */
 
-import { stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
+import { stubReporter, stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
 import { readUpload } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
@@ -30,7 +30,9 @@ import {
   clock,
   mergeTranscript,
   splitRecording,
+  stitchChunks,
   stitchTranscript,
+  TRANSCRIPT_STREAM,
   transcribeSegment,
 } from "./workflows/transcribe.ts";
 import {
@@ -421,6 +423,52 @@ describe("stitchTranscript", () => {
   });
 });
 
+describe("stitchChunks — what the PAGE renders while a run is going", () => {
+  const chunk = (index: number, text: string) => ({
+    index,
+    startMs: index * 1000,
+    endMs: (index + 1) * 1000,
+    text,
+  });
+
+  test("orders by index, because chunks arrive as the segments settle", () => {
+    // The one thing a live reader definitely does not have is arrival order: the
+    // segments are transcribed concurrently, so chunk 2 routinely precedes 1.
+    expect(stitchChunks([chunk(2, "gamma"), chunk(0, "alpha"), chunk(1, "beta")])).toBe(
+      "alpha beta gamma",
+    );
+  });
+
+  test("stitches the seams the same way the finished run does", () => {
+    // The whole reason the page imports the run's own function: a live
+    // transcript that de-duplicated differently would read as the model having
+    // changed its mind between the last poll and the result.
+    const parts = ["we should ship it on Friday", "ship it on Friday if the tests pass"];
+    expect(stitchChunks(parts.map((text, index) => chunk(index, text)))).toBe(
+      stitchTranscript(parts),
+    );
+  });
+
+  test("keeps both pieces around a HOLE rather than seaming across it", () => {
+    // A partial list is the ordinary case here, and two pieces that were never
+    // adjacent share no overlap — so the live text reads with a jump in it until
+    // the missing segment lands, instead of quietly losing a sentence.
+    expect(stitchChunks([chunk(0, "alpha beta"), chunk(2, "epsilon zeta")])).toBe(
+      "alpha beta epsilon zeta",
+    );
+  });
+
+  test("does not mutate the caller's list, which is React state", () => {
+    const chunks = [chunk(1, "beta"), chunk(0, "alpha")];
+    stitchChunks(chunks);
+    expect(chunks.map((one) => one.index)).toEqual([1, 0]);
+  });
+
+  test("renders nothing out of nothing", () => {
+    expect(stitchChunks([])).toBe("");
+  });
+});
+
 describe("clock", () => {
   test("renders a position a reader can find in the recording", () => {
     expect(clock(0)).toBe("0:00");
@@ -523,6 +571,30 @@ describe("transcribeSegment", () => {
     expect(decoded).toContain('name="audio"; filename="segment-0.wav"');
     // The WAV really rides in the part, header and all.
     expect(decoded).toContain("RIFF");
+  });
+
+  test("EMITS the segment's words as it lands, into the transcript stream", async () => {
+    // What makes the run's answer streamable rather than only its narration: the
+    // page stitches whatever has arrived, so the transcript renders growing
+    // instead of appearing when the last segment does. The reporter is the SDK's
+    // published slot, which is the same seam `report()` goes through.
+    const reported = stubReporter();
+    stubs.push(reported.restore);
+    stubProvider();
+
+    await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT);
+
+    // The timestamps ride along for the READER — a partial transcript has holes
+    // in it, and "0:00–0:01" is what explains a jump.
+    expect(reported.emitted).toEqual([
+      {
+        namespace: TRANSCRIPT_STREAM,
+        chunk: { index: 0, startMs: 0, endMs: 1000, text: "hello there" },
+      },
+    ]);
+    // And the narration is still its own stream: lines a page prints verbatim
+    // cannot share a channel with objects.
+    expect(reported.lines.some((line) => line.startsWith("Transcribing"))).toBe(true);
   });
 
   test("fails FATALLY with no API key rather than retrying five times", async () => {

@@ -12,6 +12,7 @@
  * invisible in a diff and, got wrong, produces a run that hangs rather than fails.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockWorkflowApi } from "./_react-test-utils.ts";
@@ -57,8 +58,10 @@ function recordingApi(over: Partial<WorkflowApi> = {}) {
 }
 
 /** Render the hook and run one submission to completion. */
-async function submitFile(api: WorkflowApi, file?: File) {
-  const { result } = renderHook(() => useWorkflowStream("transcribe", { api }));
+async function submitFile(api: WorkflowApi, file?: File, parallel?: boolean) {
+  const { result } = renderHook(() =>
+    useWorkflowStream("transcribe", { api, ...omitUndefined({ parallel }) }),
+  );
   const chosen = file ?? new File([new Uint8Array([1, 2, 3])], "call.wav", { type: "audio/wav" });
   await act(async () => {
     await result.current.submit({ recording: chosen });
@@ -91,6 +94,22 @@ describe("useWorkflowStream", () => {
     // And the body is the File itself, not a slice of it: nothing here cuts.
     const [, body] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
     expect(body).toBeInstanceOf(File);
+  });
+
+  test("carries `parallel` to the upload, and omits it when unasked", async () => {
+    // What it changes is only how fast the file grows — the run still starts
+    // first, and what it polls is the contiguous prefix either way — so this
+    // hook's whole job is to pass it through.
+    const asked = recordingApi();
+    await submitFile(asked.api, undefined, true);
+    const [, , withParts] = vi.mocked(asked.api.uploadStream).mock.calls[0] ?? [];
+    expect(withParts).toMatchObject({ parallel: true });
+
+    const plain = recordingApi();
+    await submitFile(plain.api);
+    const [, , without] = vi.mocked(plain.api.uploadStream).mock.calls[0] ?? [];
+    // Absent, not `undefined`: the SDK's options are exact-optional.
+    expect(without && "parallel" in without).toBe(false);
   });
 
   test("the run is started on the SAME id the bytes go to", async () => {

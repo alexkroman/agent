@@ -40,7 +40,8 @@
  *
  * That is also why the step that does it is the step the DevKit retries: a streaming
  * body is consumed once, so a retry has to re-read the upload from the start, which
- * it does.
+ * it does. One window of READ-AHEAD keeps the store and the socket busy at the same
+ * time; `windows` carries the argument.
  */
 
 import { throwFatalStepError, toStepError } from "@alexkroman1/aai/step-errors";
@@ -100,8 +101,13 @@ const MAX_POLLS = 360;
 export async function transcribeBatchFlow(input: { recording: string }): Promise<Transcript> {
   "use workflow";
 
-  const startedAt = await startClock();
-  const { audioUrl } = await uploadToProvider(input.recording);
+  // Both at once: the clock does not depend on the upload, and issuing them
+  // together costs one round trip instead of two before a byte moves. Their issue
+  // order is still decided by this line rather than by which lands first.
+  const [startedAt, { audioUrl }] = await Promise.all([
+    startClock(),
+    uploadToProvider(input.recording),
+  ]);
   const job = await createJob(audioUrl);
 
   for (let poll = 0; poll < MAX_POLLS; poll += 1) {
@@ -241,17 +247,33 @@ export async function readTranscript(
 }
 
 /**
- * The stored upload as a sequence of windows.
+ * The stored upload as a sequence of windows, with the next one already in flight.
  *
  * A generator rather than one `readUpload`, because the whole point is that the file
  * is never held: each window is read, sent, and dropped. `readUpload` clamps to what
  * is stored, so the loop ends on the real end of the file even if `size` moved.
+ *
+ * **One window of READ-AHEAD**, which is the whole concurrency available here: the
+ * consumer is a socket and the producer is the app's own store, and read-then-send
+ * makes them strictly alternate — the store idles while bytes go out, and the socket
+ * idles while the next window is fetched. Starting the next read before yielding the
+ * current window overlaps them, so a gigabyte upload pays the larger of the two
+ * rather than their sum. Exactly one, not a queue: a deeper buffer holds more of a
+ * file this generator exists to avoid holding, and there is nothing to gain past
+ * keeping both ends busy.
  */
 async function* windows(uploadId: string, size: number): AsyncGenerator<Uint8Array> {
-  for (let at = 0; at < size; at += UPLOAD_WINDOW_BYTES) {
-    const slice = await readUpload(uploadId, { start: at, end: at + UPLOAD_WINDOW_BYTES });
-    if (slice.bytes.length === 0) return;
-    yield slice.bytes;
+  const read = (at: number): Promise<Uint8Array> =>
+    readUpload(uploadId, { start: at, end: at + UPLOAD_WINDOW_BYTES }).then((slice) => slice.bytes);
+  let at = 0;
+  let next = at < size ? read(at) : undefined;
+  while (next !== undefined) {
+    const bytes = await next;
+    if (bytes.length === 0) return;
+    at += UPLOAD_WINDOW_BYTES;
+    // Issued BEFORE the yield, so the store is fetching while the socket sends.
+    next = at < size ? read(at) : undefined;
+    yield bytes;
   }
 }
 

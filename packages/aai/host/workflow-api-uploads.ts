@@ -5,6 +5,8 @@
  * ```text
  * POST /workflows/uploads?name=recording.wav   → 201 { id, …, complete: true }
  * PUT  /workflows/uploads/:id?name=…           → 201 { id, …, complete: true }
+ * POST /workflows/uploads/:id/parts?total=…    → 201 { id, …, complete: false }
+ * PUT  /workflows/uploads/:id/parts?offset=…   → 200 { id, …, complete }
  * GET  /workflows/uploads/:id                  → the bytes, `Range` honoured
  * GET  /workflows/uploads/:id/info             → { id, name, type, size, complete }
  * ```
@@ -26,6 +28,21 @@
  * Split from `workflow-api.ts` because nothing here is about runs — the store is
  * the only thing these two touch, and the module they came out of is the one
  * place a route may only do what a tool can do.
+ *
+ * ## The two `/parts` routes are ONE upload over SEVERAL connections
+ *
+ * `POST` and `PUT` above each carry a whole file in one request, so an upload runs
+ * at the speed of one connection to the agent — which over any real distance is a
+ * fraction of the link. The `/parts` pair splits it: `POST …/parts` declares the id
+ * and the total, and then any number of concurrent `PUT …/parts?offset=` requests
+ * fill in windows of it.
+ *
+ * Everything about a part is the same as a whole-file `PUT` — the body is the
+ * bytes, the cap is the same, the id is the caller's — and the two rules that come
+ * with it are the store's rather than this module's: a part starts on a megabyte
+ * boundary, and `size` reports the CONTIGUOUS prefix, so nothing downstream (the
+ * range route below, `readUpload`, a run polling `size`) learns that parts exist.
+ * `workflow-uploads.ts` carries the argument.
  *
  * ## The body is the FILE, not a multipart envelope
  *
@@ -55,14 +72,24 @@ import { WORKFLOW_API_PREFIX } from "../sdk/workflow-api-client.ts";
 import type { Logger } from "./runtime-config.ts";
 import { sendJson } from "./workflow-api-http.ts";
 import {
+  UnknownUploadError,
   UploadIdTakenError,
   type UploadMeta,
+  UploadPartError,
   type UploadStore,
   UploadTooLargeError,
 } from "./workflow-uploads.ts";
 
 /** Path the upload routes live under. */
 export const UPLOADS_PATH = `${WORKFLOW_API_PREFIX}/uploads`;
+
+/** Suffix the two multi-part routes hang off `…/uploads/:id`. */
+export const UPLOAD_PARTS_SUFFIX = "/parts";
+
+/** What a caller-chosen id has to look like, said once for the two routes taking one. */
+const CHOSEN_ID_MESSAGE =
+  "A caller-chosen upload id is 1-64 characters of letters, digits, `-` and `_` — a " +
+  "`crypto.randomUUID()` already qualifies.";
 
 /** What `POST` and `PUT /workflows/uploads` answer with. */
 export type UploadCreated = UploadInfo & {
@@ -106,6 +133,19 @@ function sendWriteFailure(res: http.ServerResponse, err: unknown): boolean {
     sendJson(res, 409, { error: err.message });
     return true;
   }
+  // 400: the request contradicts itself (a misaligned offset, a part past the
+  // declared total), which a client has to be able to tell from a transport
+  // failure it should retry — a retried part is the ordinary case, and retrying
+  // one that can never be accepted is a loop.
+  if (err instanceof UploadPartError) {
+    sendJson(res, 400, { error: err.message });
+    return true;
+  }
+  // 404: well formed, and there is simply nothing to write into.
+  if (err instanceof UnknownUploadError) {
+    sendJson(res, 404, { error: err.message });
+    return true;
+  }
   return false;
 }
 
@@ -142,17 +182,81 @@ export async function streamUpload(
   logger: Logger,
 ): Promise<void> {
   if (!UPLOAD_TOKEN_RE.test(id)) {
-    sendJson(res, 400, {
-      error:
-        "A caller-chosen upload id is 1-64 characters of letters, digits, `-` and `_` — a " +
-        "`crypto.randomUUID()` already qualifies.",
-    });
+    sendJson(res, 400, { error: CHOSEN_ID_MESSAGE });
     return;
   }
   try {
     const info = await store.stream(id, declaredMeta(req), req);
     logger.info("Workflow upload streamed", { id: info.id, name: info.name, size: info.size });
     sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
+  } catch (err: unknown) {
+    if (sendWriteFailure(res, err)) return;
+    throw err;
+  }
+}
+
+/**
+ * `POST /workflows/uploads/:id/parts?total=<bytes>` — declare an upload its parts
+ * will fill in.
+ *
+ * No body: this is the CLAIM, and the bytes arrive through {@link writeUploadPart}.
+ * The total is declared here rather than inferred from the parts because
+ * `complete` has to be answerable — with parts landing in any order, "the last one
+ * arrived" is not something a server can observe, and an upload nothing ever
+ * declares finished is one a run waits on forever.
+ */
+export async function beginUploadParts(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  store: UploadStore,
+  id: string,
+  logger: Logger,
+): Promise<void> {
+  if (!UPLOAD_TOKEN_RE.test(id)) {
+    sendJson(res, 400, { error: CHOSEN_ID_MESSAGE });
+    return;
+  }
+  const declared = requestQuery(req.url).get("total");
+  const total = Number(declared);
+  if (declared === null || !Number.isFinite(total)) {
+    sendJson(res, 400, {
+      error: "A parts upload declares the file's whole size in bytes as `?total=`.",
+    });
+    return;
+  }
+  try {
+    const info = await store.beginParts(id, declaredMeta(req), total);
+    logger.info("Workflow parts upload begun", { id: info.id, name: info.name, total });
+    sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
+  } catch (err: unknown) {
+    if (sendWriteFailure(res, err)) return;
+    throw err;
+  }
+}
+
+/**
+ * `PUT /workflows/uploads/:id/parts?offset=<byte>` — store one window of a parts
+ * upload.
+ *
+ * Answers the record as it now stands, so the caller writing the part that closes
+ * the last gap learns the upload is complete from its own response rather than by
+ * polling for it. 200 rather than 201: a part creates nothing, it fills in a
+ * resource that already exists.
+ */
+export async function writeUploadPart(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  store: UploadStore,
+  id: string,
+): Promise<void> {
+  const declared = requestQuery(req.url).get("offset");
+  const offset = Number(declared);
+  if (declared === null || !Number.isFinite(offset)) {
+    sendJson(res, 400, { error: "A part names the byte it starts at as `?offset=`." });
+    return;
+  }
+  try {
+    sendJson(res, 200, await store.writePart(id, offset, req));
   } catch (err: unknown) {
     if (sendWriteFailure(res, err)) return;
     throw err;

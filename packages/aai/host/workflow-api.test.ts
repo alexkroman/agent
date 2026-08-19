@@ -109,6 +109,10 @@ describe("routing", () => {
       read: () => Promise.resolve(new Uint8Array()),
       create: () => Promise.resolve({ id: "upl_1", name: "", type: "", size: 0, complete: true }),
       stream: (id: string) => Promise.resolve({ id, name: "", type: "", size: 0, complete: true }),
+      beginParts: (id: string) =>
+        Promise.resolve({ id, name: "", type: "", size: 0, complete: false }),
+      writePart: (id: string) =>
+        Promise.resolve({ id, name: "", type: "", size: 0, complete: false }),
     };
     harness = await serve({ engine: () => fakeClient(), uploads });
     const res = await fetch(`${harness.url}/workflows/uploads/%`);

@@ -54,6 +54,7 @@ import { researchFlow } from "./workflows/research.ts";
 import { callbackFlow } from "./workflows/callback.ts";
 import { fanOutFlow } from "./workflows/fan-out.ts";
 import { secretFlow } from "./workflows/secret.ts";
+import { narrateFlow } from "./workflows/narrate.ts";
 
 export const research = workflow({
   description: "Research a topic",
@@ -68,7 +69,7 @@ export const callback = workflow({
 });
 
 export const fanOut = workflow({
-  description: "Fan out over a list in bounded batches",
+  description: "Fan out over a list through a bounded window",
   input: z.object({ words: z.array(z.string()) }),
   run: fanOutFlow,
 });
@@ -79,11 +80,17 @@ export const secret = workflow({
   run: secretFlow,
 });
 
+export const narrate = workflow({
+  description: "Narrate to one stream and emit results to another",
+  input: z.object({ items: z.array(z.string()) }),
+  run: narrateFlow,
+});
+
 export default agent({
   name: "dev-workflow-fixture",
   greeting: "hi",
   systemPrompt: "fixture",
-  workflows: { research, callback, fanOut, secret },
+  workflows: { research, callback, fanOut, secret, narrate },
   requiredEnv: ["FIXTURE_STEP_TOKEN"],
 });
 `;
@@ -174,11 +181,11 @@ async function deliver(url: string, label: string) {
 `;
 
 /**
- * A fan-out through `mapInBatches` — the SDK primitive `transcription-workflow` maps
- * its segments with.
+ * A fan-out through `mapConcurrent` — the SDK primitive `transcription-workflow`
+ * maps its segments with.
  *
  * This is the only tier that can say whether that primitive is legal at all.
- * `mapInBatches` passes a `"use step"` function to a helper in ANOTHER MODULE as
+ * `mapConcurrent` passes a `"use step"` function to a helper in ANOTHER MODULE as
  * a callback, and whether that still dispatches a real step depends on what the
  * WDK transform rewrites: a declaration-side rewrite (what `createUseStep`'s
  * shape implies) keeps working through a callback, while a call-site rewrite
@@ -186,23 +193,66 @@ async function deliver(url: string, label: string) {
  * silent about it. Reading the transform's output is inference; running one is
  * not.
  *
- * The steps settle in REVERSE issue order, which is the trap the primitive
- * exists for: a pool that issued work as previous calls settled would produce
- * this run's step ids in a different order on a replay.
+ * Two things about the shape are deliberate, and both are about the CURSOR that
+ * makes the window replay-safe: **more items than the width** (nine against
+ * three), so most calls are issued only after an earlier one has settled, and
+ * **durations that shuffle the settle order**, so completion order is neither the
+ * issue order nor its reverse — item 4 lands first and item 0 last. A fan-out that
+ * fits in one window exercises none of that.
+ *
+ * **What this does NOT prove is the replay property itself**, and the distinction
+ * is worth keeping: a healthy run is not a resume, so nothing here re-executes the
+ * body against an existing journal. That the issue order is a pure function of the
+ * list — the thing the DevKit's Nth-call-gets-the-Nth-id correlation needs — is
+ * asserted directly, at every width and under reversed and shuffled settle orders,
+ * in `aai/sdk/map-concurrent.test.ts`. This tier's job is the half a unit test
+ * cannot reach: that these are REAL steps, dispatched through the transform from
+ * inside an SDK helper.
  */
 const FAN_OUT_TS = `
-import { mapInBatches } from "@alexkroman1/aai/utils";
+import { mapConcurrent } from "@alexkroman1/aai/utils";
 
 export async function fanOutFlow(input: { words: string[] }) {
   "use workflow";
-  return { shouted: await mapInBatches(input.words, 2, (word, index) => shout(word, index)) };
+  return { shouted: await mapConcurrent(input.words, 3, (word, index) => shout(word, index)) };
 }
 
 async function shout(word: string, index: number) {
   "use step";
-  // Later items finish FIRST, so completion order is the reverse of issue order.
-  await new Promise((resolve) => setTimeout(resolve, (8 - index) * 20));
+  // Neither issue order nor its reverse: the settle order is shuffled against
+  // both, which is what a replay's different timings look like.
+  const delays = [90, 30, 60, 10, 5, 70, 20, 50, 40];
+  await new Promise((resolve) => setTimeout(resolve, delays[index] ?? 10));
   return word.toUpperCase();
+}
+`;
+
+/**
+ * The SDK's own two narration channels, against a real world.
+ *
+ * `report()` and `emit()` write to the same run through the same published
+ * reporter, and what separates them is a DevKit namespace — which is precisely
+ * the part a mocked `getWritable` cannot check. If the namespace did not really
+ * key a distinct stream, the two would land in one and a page reading progress
+ * would render `[object Object]` between its lines.
+ *
+ * It also exercises them from inside a `mapConcurrent` fan-out, which is where a
+ * real template calls them from.
+ */
+const NARRATE_TS = `
+import { emit, mapConcurrent, report } from "@alexkroman1/aai/utils";
+
+export async function narrateFlow(input: { items: string[] }) {
+  "use workflow";
+  const seen = await mapConcurrent(input.items, 2, (item, index) => handle(item, index));
+  return { seen };
+}
+
+async function handle(item: string, index: number) {
+  "use step";
+  await report("handling " + item);
+  await emit("results", { index, shouted: item.toUpperCase() });
+  return item.toUpperCase();
 }
 `;
 
@@ -245,6 +295,7 @@ async function writeFixture(): Promise<void> {
   await fs.writeFile(path.join(FIXTURE, "workflows", "callback.ts"), CALLBACK_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "fan-out.ts"), FAN_OUT_TS);
   await fs.writeFile(path.join(FIXTURE, "workflows", "secret.ts"), SECRET_TS);
+  await fs.writeFile(path.join(FIXTURE, "workflows", "narrate.ts"), NARRATE_TS);
   // The agent env `stepEnv` answers from. `resolveAgentEnv` surfaces DECLARED
   // keys only, so this file is both the declaration and the value.
   await fs.writeFile(path.join(FIXTURE, ".env"), "FIXTURE_STEP_TOKEN=from-dot-env\n");
@@ -360,6 +411,7 @@ describe("aai dev serves the workflow HTTP API", () => {
     expect(workflows.map((w) => w.name).sort((a, b) => a.localeCompare(b))).toEqual([
       "callback",
       "fanOut",
+      "narrate",
       "research",
       "secret",
     ]);
@@ -458,25 +510,24 @@ describe("aai dev serves the workflow HTTP API", () => {
     expect(runs.every((r) => r.workflow === "research")).toBe(true);
   }, 40_000);
 
-  test("a bounded fan-out through `mapInBatches` runs its steps for real", async () => {
-    // Results in ITEM order although the steps settle in reverse, and — the
-    // part no unit test can reach — every one of them dispatched as a genuine
-    // step through the transform while being called from an SDK helper rather
-    // than from the body's own source. See `FAN_OUT_TS`.
+  test("a bounded fan-out through `mapConcurrent` runs its steps for real", async () => {
+    // Two things at once, and only the first is about the array. Results in ITEM
+    // order although the steps settle in a shuffled one; and every one of them
+    // dispatched as a genuine step through the transform while being called from
+    // an SDK helper rather than from the body's own source. Nine items through a
+    // window of three is what makes the cursor do any work — see `FAN_OUT_TS`,
+    // which also says what this tier deliberately does not prove.
+    const words = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
     const { status, body } = await api("/workflows/runs", {
       method: "POST",
       headers: JSON_POST,
-      body: JSON.stringify({
-        workflow: "fanOut",
-        input: { words: ["one", "two", "three", "four", "five"] },
-        wait: 30_000,
-      }),
+      body: JSON.stringify({ workflow: "fanOut", input: { words }, wait: 30_000 }),
     });
 
     expect(status).toBe(200);
     expect(body.run).toMatchObject({
       status: "completed",
-      output: { shouted: ["ONE", "TWO", "THREE", "FOUR", "FIVE"] },
+      output: { shouted: words.map((word) => word.toUpperCase()) },
     });
   }, 40_000);
 
@@ -524,6 +575,41 @@ describe("aai dev serves the workflow HTTP API", () => {
     expect(body).toContain('event: chunk\ndata: "filed otters"');
     // Terminated properly, so a reader knows it is finished rather than dropped.
     expect(body).toContain("event: done");
+  }, 40_000);
+
+  test("`emit` streams results into their OWN namespace, beside the narration", async () => {
+    // The half a mocked `getWritable` cannot reach: whether a namespace really
+    // keys a distinct stream in a real world. It has to, or `report()`'s lines
+    // and `emit()`'s objects share one channel and a page renders
+    // `[object Object]` in the middle of its progress log.
+    const started = await api("/workflows/runs", {
+      method: "POST",
+      headers: JSON_POST,
+      body: JSON.stringify({
+        workflow: "narrate",
+        input: { items: ["one", "two", "three"] },
+        wait: 30_000,
+      }),
+    });
+    const runId = started.body.runId as string;
+
+    const narration = await (await fetch(`${origin}/workflows/runs/${runId}/stream`)).text();
+    const results = await (
+      await fetch(`${origin}/workflows/runs/${runId}/stream?namespace=results`)
+    ).text();
+
+    // The default stream carries the SENTENCES and none of the values.
+    expect(narration).toContain('event: chunk\ndata: "handling one"');
+    expect(narration).toContain('event: chunk\ndata: "handling three"');
+    expect(narration).not.toContain("shouted");
+    // The named stream carries the VALUES and none of the sentences — typed, so
+    // `useWorkflowProgress<T>` has one shape to name.
+    expect(results).toContain('"shouted":"ONE"');
+    expect(results).toContain('"shouted":"THREE"');
+    expect(results).not.toContain("handling");
+    // And each is terminated, so a reader knows it finished rather than dropped.
+    expect(narration).toContain("event: done");
+    expect(results).toContain("event: done");
   }, 40_000);
 
   test("wake ends a sleeping run early, and reports how many sleeps it stopped", async () => {

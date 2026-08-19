@@ -36,7 +36,7 @@
 
 import { errorMessage, type WorkflowSummary } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import type { UploadProgress } from "@alexkroman1/aai/workflow-api";
+import type { UploadParallel, UploadProgress } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { filesOf } from "./_workflow-files.ts";
@@ -153,6 +153,7 @@ async function uploadFiles(
   api: WorkflowApi,
   input: unknown,
   report: (status: UploadStatus) => void,
+  parallel: UploadParallel | undefined,
 ): Promise<unknown> {
   if (!isRecord(input)) return input;
   const entries = Object.entries(input);
@@ -165,6 +166,10 @@ async function uploadFiles(
     const position = { name: file.name, index, count };
     const ref = await api.upload(file, {
       onProgress: (progress) => report({ ...position, ...progress }),
+      // Files stay SEQUENTIAL above whatever this says: `parallel` splits ONE
+      // file across connections, and a form sending two recordings at once would
+      // still have them competing for the same link with two bars to explain it.
+      ...omitUndefined({ parallel }),
     });
     return ref.id;
   };
@@ -238,6 +243,18 @@ export type UseWorkflowSubmitOptions = {
   wait?: number;
   /** How often the fallback poll re-reads a live run. */
   intervalMs?: number;
+  /**
+   * Send each chosen file as concurrent parts instead of in one request.
+   *
+   * `true` for the defaults, or `{ partBytes, concurrency }` to tune them. This is
+   * the wait a form with a recording in it actually spends: the run does not exist
+   * until its input is stored, so until the last byte lands there is no run to
+   * watch and nothing for `<WorkflowProgress>` to say. Splitting the file across
+   * connections is what makes that stretch shorter, and it degrades to the single
+   * request wherever it would not help — a small file, an older agent — so turning
+   * it on is safe for every form. See `UploadOptions.parallel`.
+   */
+  parallel?: UploadParallel;
 };
 
 /**
@@ -269,7 +286,7 @@ export function useWorkflowSubmit<R = unknown>(
   workflow: string,
   opts: UseWorkflowSubmitOptions = {},
 ): WorkflowSubmission<R> {
-  const { api, key, wait, intervalMs } = opts;
+  const { api, key, wait, intervalMs, parallel } = opts;
   const [runId, setRunId] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | undefined>(undefined);
@@ -298,7 +315,7 @@ export function useWorkflowSubmit<R = unknown>(
         // can store it. A form using `<FileField upload>` (which is what
         // `<WorkflowFields>` renders for a declared upload property) therefore
         // needs no upload code of its own.
-        const started = await uploadFiles(client, input, setUpload);
+        const started = await uploadFiles(client, input, setUpload, parallel);
         // Both paths end in a run id — the difference is only whether the agent
         // held the request open — so the watch below is identical either way.
         setRunId(
@@ -316,7 +333,7 @@ export function useWorkflowSubmit<R = unknown>(
         setUpload(undefined);
       }
     },
-    [workflow, key, wait, getClient],
+    [workflow, key, wait, parallel, getClient],
   );
 
   const reset = useCallback(() => {

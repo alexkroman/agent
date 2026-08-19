@@ -35,12 +35,22 @@
  * and every other call stays on `fetch`. The XHR answer is turned back into a
  * `Response` at the boundary, so exactly one error vocabulary and one JSON guard
  * sit above both paths — the alternative is two ways for this route to describe
- * the same 413.
+ * the same 413. That transport is `_upload-progress.ts`.
+ *
+ * ## And a THIRD shape, which is several of the first
+ *
+ * `UploadOptions.parallel` cuts the file up and sends the windows at once. It is
+ * not a fourth transport — every part goes through `sendUpload` below, on
+ * whichever of the two the options call for — so what `workflow-upload-parts.ts`
+ * owns is the plan, the pool and the one aggregate report over them.
  */
 
+import { progressOf, sendViaXhr, uploadXhrClass } from "./_upload-progress.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
 import type { UploadInfo } from "./step-uploads.ts";
+import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
+import { partsSettings, type UploadParallel, uploadInParts } from "./workflow-upload-parts.ts";
 
 /**
  * Names the surface in a failure that was not the agent's own `{ error }`
@@ -105,7 +115,26 @@ export type UploadOptions = {
    * same URL, same headers, same failures.
    */
   onProgress?: ((progress: UploadProgress) => void) | undefined;
+  /**
+   * Cut the file up and send the pieces at once, instead of in one request.
+   *
+   * `true` for the defaults, or `{ partBytes, concurrency }` to tune them. What it
+   * buys is the difference between one connection's throughput and the link's: a
+   * single request is bounded by its congestion window over the round-trip time,
+   * so the further away the agent is the smaller a fraction of the available
+   * bandwidth one request can use, and a recording is exactly the body big enough
+   * for that to be the wait a person is sitting through.
+   *
+   * OPT-IN rather than the default, and it degrades rather than failing: a body
+   * that cannot be cut by byte (a string), a file that fits in one part, or an
+   * agent deployed before the `/parts` routes existed all send the file the
+   * ordinary way instead. So turning it on is safe everywhere and does nothing
+   * where it would not help. `workflow-upload-parts.ts` carries the rest.
+   */
+  parallel?: UploadParallel | undefined;
 };
+
+export type { UploadParallel, UploadPartsSettings } from "./workflow-upload-parts.ts";
 
 /** A stored upload, as `WorkflowApi.upload` resolves it. */
 export type UploadRef = {
@@ -122,17 +151,6 @@ export type UploadRef = {
   /** Absolute URL the bytes can be read back from, `Range` included. */
   url: string;
 };
-
-/** One report, with the fraction derived once rather than at each call site. */
-function progressOf(loaded: number, total: number | undefined): UploadProgress {
-  return {
-    loaded,
-    total,
-    // `> 0` rather than `!== undefined`: a zero-byte body divides to `NaN`, and
-    // the clamp covers a transport that reports the last chunk twice.
-    fraction: total !== undefined && total > 0 ? Math.min(1, loaded / total) : undefined,
-  };
-}
 
 /**
  * The body's size in bytes, where asking is free.
@@ -151,123 +169,6 @@ function bodyBytes(file: UploadBody): number | undefined {
   // perfectly good size, and anything with none reports an unknown total.
   const size: unknown = file.size;
   return typeof size === "number" ? size : undefined;
-}
-
-/**
- * The slice of `XMLHttpRequest` this module uses.
- *
- * Structural rather than the DOM's own type, because `packages/aai` compiles
- * with `lib: ["ESNext"]` — no browser globals — which is the boundary that keeps
- * host code from reaching for `document`. Naming only the members this module
- * touches states the dependency exactly and costs no `as any`.
- */
-type UploadXhr = {
-  open(method: string, url: string): void;
-  setRequestHeader(name: string, value: string): void;
-  send(body: UploadBody): void;
-  abort(): void;
-  addEventListener(type: "load" | "error" | "timeout" | "abort", listener: () => void): void;
-  readonly upload: {
-    addEventListener(
-      type: "progress",
-      listener: (event: { loaded: number; total: number; lengthComputable: boolean }) => void,
-    ): void;
-  };
-  readonly status: number;
-  readonly statusText: string;
-  readonly responseText: string;
-  getResponseHeader(name: string): string | null;
-};
-
-/**
- * `XMLHttpRequest`, when this runtime has one.
- *
- * Read off `globalThis` rather than referenced directly so the module still
- * loads under Node, where the name does not exist at all and a bare reference
- * would be a `ReferenceError` at first call rather than a fallback.
- */
-function uploadXhrClass(): (new () => UploadXhr) | undefined {
-  const candidate = (globalThis as Partial<{ XMLHttpRequest: new () => UploadXhr }>).XMLHttpRequest;
-  return typeof candidate === "function" ? candidate : undefined;
-}
-
-/** Statuses a `Response` may not carry a body for. */
-const BODILESS_STATUSES = new Set([204, 205, 304]);
-/** The status range a `Response` can be constructed with at all. */
-const MIN_RESPONSE_STATUS = 200;
-const MAX_RESPONSE_STATUS = 599;
-
-/**
- * Send the body through XHR and answer the `Response` it amounts to.
- *
- * The conversion is the point: everything above this line — the 413's sentence,
- * the JSON guard, the `ok` check — is written against `Response`, and a second
- * shape here would be a second way to describe the same failure.
- */
-function sendViaXhr(
-  Xhr: new () => UploadXhr,
-  method: "POST" | "PUT",
-  url: string,
-  headers: Record<string, string>,
-  file: UploadBody,
-  total: number | undefined,
-  report: (progress: UploadProgress) => void,
-  signal: AbortSignal | undefined,
-): Promise<Response> {
-  return new Promise<Response>((resolve, reject) => {
-    const xhr = new Xhr();
-    xhr.open(method, url);
-    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
-    xhr.upload.addEventListener("progress", (event) => {
-      // The event's own total when it has one — it is the encoded length, which
-      // for a string body is the only correct answer — and the measured one
-      // otherwise, so a bar keeps its scale across a non-computable event.
-      report(progressOf(event.loaded, event.lengthComputable ? event.total : total));
-    });
-    xhr.addEventListener("load", () => {
-      // A `Response` can only be built over 200-599, and XHR reports 0 for a
-      // response the browser refused to expose (an opaque cross-origin
-      // redirect). Nothing above this line could read such an answer anyway, so
-      // it becomes the same failure the `error` event is — checked here rather
-      // than left to `new Response`, whose `RangeError` would be thrown inside
-      // an event listener where it can reject nothing and the call would hang.
-      if (xhr.status < MIN_RESPONSE_STATUS || xhr.status > MAX_RESPONSE_STATUS) {
-        reject(networkError());
-        return;
-      }
-      const type = xhr.getResponseHeader("Content-Type");
-      resolve(
-        new Response(BODILESS_STATUSES.has(xhr.status) ? null : xhr.responseText, {
-          status: xhr.status,
-          statusText: xhr.statusText,
-          headers: omitUndefined({ "Content-Type": type ?? undefined }),
-        }),
-      );
-    });
-    xhr.addEventListener("error", () => reject(networkError()));
-    xhr.addEventListener("timeout", () => reject(networkError()));
-    // `signal.reason` is what `fetch` rejects an aborted request with, so a
-    // caller's `catch` reads the same on both transports.
-    xhr.addEventListener("abort", () => reject(signal?.reason ?? abortError()));
-    if (signal) {
-      if (signal.aborted) {
-        reject(signal.reason ?? abortError());
-        return;
-      }
-      signal.addEventListener("abort", () => xhr.abort(), { once: true });
-    }
-    xhr.send(file);
-  });
-}
-
-/** What `fetch` rejects a failed request with, spelled for the other transport. */
-function networkError(): Error {
-  return new TypeError(`${UPLOAD_ERROR_LABEL}: the upload did not reach the agent`);
-}
-
-/** What an aborted request rejects with when the signal named no reason. */
-function abortError(): Error {
-  return new DOMException("The upload was aborted.", "AbortError");
 }
 
 /**
@@ -312,6 +213,44 @@ async function sendUpload(
 }
 
 /**
+ * The name and type to store: what the caller said, else what the file says.
+ *
+ * One helper because the two writers below had it letter for letter, and a parts
+ * upload adds a THIRD reader — the metadata has to be the same whichever route
+ * carries the bytes, or the same file stores under two different names depending
+ * on how fast the link was.
+ */
+function describeUpload(
+  file: UploadBody,
+  options: UploadOptions | undefined,
+): { name: string; type: string } {
+  // A `File` already knows both; anything else says so or gets the defaults.
+  const described = file as { name?: unknown; type?: unknown };
+  return {
+    name: options?.name ?? (typeof described.name === "string" ? described.name : ""),
+    type:
+      options?.type ??
+      (typeof described.type === "string" && described.type
+        ? described.type
+        : "application/octet-stream"),
+  };
+}
+
+/**
+ * An id for an upload this module names itself.
+ *
+ * A hyphenless `crypto.randomUUID()`, which satisfies {@link UPLOAD_TOKEN_RE} by
+ * construction — asserted rather than assumed, because the store answers a bad one
+ * with a 400 and this is the one id no caller can see to correct.
+ */
+function newClientUploadId(): string {
+  const id = crypto.randomUUID().replaceAll("-", "");
+  if (!UPLOAD_TOKEN_RE.test(id))
+    throw new Error(`${UPLOAD_ERROR_LABEL}: could not mint an upload id`);
+  return id;
+}
+
+/**
  * Store one file against an already-resolved API base.
  *
  * @param base - The API root (`…/workflows`), as the client resolved it.
@@ -327,14 +266,29 @@ export async function uploadFile(
   file: UploadBody,
   options?: UploadOptions,
 ): Promise<UploadRef> {
-  // A `File` already knows both; anything else says so or gets the defaults.
-  const described = file as { name?: unknown; type?: unknown };
-  const name = options?.name ?? (typeof described.name === "string" ? described.name : "");
-  const type =
-    options?.type ??
-    (typeof described.type === "string" && described.type
-      ? described.type
-      : "application/octet-stream");
+  const { name, type } = describeUpload(file, options);
+  const settings = partsSettings(options?.parallel);
+  if (settings) {
+    // The id is minted HERE, because the parts routes are caller-named and this
+    // call is not: `upload` promises only to resolve the ref, so where the id came
+    // from is this module's business. Random rather than derived, for the reason
+    // `useWorkflowStream` mints one that way — an upload id is a capability.
+    const stored = await uploadInParts({
+      base,
+      headers,
+      fail,
+      send: sendUpload,
+      id: newClientUploadId(),
+      file,
+      name,
+      type,
+      options,
+      settings,
+    });
+    // `undefined` means this path declined; the file has not moved, so it goes the
+    // ordinary way below.
+    if (stored) return stored;
+  }
   const res = await sendUpload(
     "POST",
     `${base}/uploads?name=${encodeURIComponent(name)}`,
@@ -376,13 +330,27 @@ export async function streamUploadFile(
   file: UploadBody,
   options?: UploadOptions,
 ): Promise<UploadRef> {
-  const described = file as { name?: unknown; type?: unknown };
-  const name = options?.name ?? (typeof described.name === "string" ? described.name : "");
-  const type =
-    options?.type ??
-    (typeof described.type === "string" && described.type
-      ? described.type
-      : "application/octet-stream");
+  const { name, type } = describeUpload(file, options);
+  const settings = partsSettings(options?.parallel);
+  if (settings) {
+    // The caller's OWN id, which is the difference from `uploadFile` and is why
+    // parts compose with this at all: a run started on this id reads the
+    // contiguous prefix as the parts fill it in, exactly as it reads a single
+    // streaming `PUT`.
+    const stored = await uploadInParts({
+      base,
+      headers,
+      fail,
+      send: sendUpload,
+      id,
+      file,
+      name,
+      type,
+      options,
+      settings,
+    });
+    if (stored) return stored;
+  }
   const res = await sendUpload(
     "PUT",
     `${base}/uploads/${encodeURIComponent(id)}?name=${encodeURIComponent(name)}`,
