@@ -23,7 +23,7 @@
  */
 
 import type { Stats } from "node:fs";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import picomatch from "picomatch";
@@ -32,7 +32,7 @@ import type { HarnessBundleAccess } from "./harness-types.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { applyEdit, clearEditMisses, rewriteHint, StudioEditError } from "./studio-edit.ts";
 import { globMatcher, grepWorkspace, StudioGrepError } from "./studio-grep.ts";
-import { envWithoutGuestToken, runCapped } from "./studio-spawn.ts";
+import { envWithoutGuestToken, outputWithKillNote, runCapped } from "./studio-spawn.ts";
 import { formatRejection, syntaxError } from "./studio-syntax.ts";
 import { formatTestRun, runWorkspaceTests } from "./studio-test.ts";
 import {
@@ -42,7 +42,7 @@ import {
   READ_LIMIT,
   STUDIO_TOOL_DESCRIPTIONS,
 } from "./studio-tool-descriptions.ts";
-import { resolveInside, walkWorkspace } from "./studio-workspace-fs.ts";
+import { resolveInside, walkWorkspace, writeFileWithParents } from "./studio-workspace-fs.ts";
 import type { PostWriteDiagnostics } from "./studio-write-diagnostics.ts";
 
 /** Output cap per stream; beyond it the tail is kept (errors print last). */
@@ -127,12 +127,7 @@ async function runBash(
     cap: BASH_OUTPUT_CAP,
     combineStreams: true,
   });
-  return {
-    exitCode: result.exitCode,
-    output: result.signal
-      ? `${result.stdout}\n[killed by ${result.signal} after ${timeoutMs}ms]`
-      : result.stdout,
-  };
+  return { exitCode: result.exitCode, output: outputWithKillNote(result, timeoutMs) };
 }
 
 const TodoItemSchema = z.object({
@@ -261,8 +256,7 @@ export function createStudioTools(deps: StudioToolDeps): Record<string, ToolDef>
         // turn (see studio-syntax.ts).
         const bad = await syntaxError(dir, rel, content);
         if (bad !== undefined) return formatRejection(rel, bad);
-        await mkdir(path.dirname(abs), { recursive: true });
-        await writeFile(abs, content, "utf-8");
+        await writeFileWithParents(abs, content);
         clearEditMisses(rel);
         const diagnostics = await postWriteDiagnostics(rel);
         return `Wrote ${rel} (${content.length} bytes)${diagnostics ?? ""}`;

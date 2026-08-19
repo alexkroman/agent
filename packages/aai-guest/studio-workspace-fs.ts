@@ -26,6 +26,22 @@ export function resolveInside(dir: string, rel: string): string {
 }
 
 /**
+ * Write one file at an already-resolved absolute path, creating its parent
+ * directories.
+ *
+ * Every write into a workspace goes through the same two calls — `mkdir -p` the
+ * parent, then write utf-8 — and it was open-coded at four sites (this module's
+ * own materialize, `write_file`, `download_to_workspace`, and the template
+ * copy). The path is passed RESOLVED rather than relative on purpose: each
+ * caller refuses an escape with {@link resolveInside} at the point where its own
+ * error shape is right, and this must not become a second place that decides.
+ */
+export async function writeFileWithParents(abs: string, content: string): Promise<void> {
+  await mkdir(path.dirname(abs), { recursive: true });
+  await writeFile(abs, content, "utf-8");
+}
+
+/**
  * Workspace-relative paths of all non-ignored files under `dir`.
  *
  * Backs the coding agent's `list_files`/`grep` as well as the sync, which is
@@ -64,10 +80,8 @@ export async function materializeWorkspace(
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
   await Promise.all(
-    Object.entries(files).map(async ([rel, content]) => {
-      const abs = resolveInside(dir, rel);
-      await mkdir(path.dirname(abs), { recursive: true });
-      await writeFile(abs, content, "utf-8");
-    }),
+    Object.entries(files).map(([rel, content]) =>
+      writeFileWithParents(resolveInside(dir, rel), content),
+    ),
   );
 }

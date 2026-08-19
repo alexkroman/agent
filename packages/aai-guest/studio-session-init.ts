@@ -47,7 +47,7 @@ export const SESSION_INIT_PATH = "/studio/session-init";
  */
 const MAX_INIT_BODY_BYTES = 32_000_000;
 
-/** Mirrors `StudioSessionParams` (studio-chat.ts) field for field. */
+/** Mirrors `StudioSessionParams` (studio-session.ts) field for field. */
 export const SessionInitParamsSchema = z.object({
   scope: z.string(),
   project: z.string(),

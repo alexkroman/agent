@@ -145,6 +145,18 @@ function loadToolchain(): Promise<Toolchain> {
 }
 
 /**
+ * A failed type check's output, made readable for the coding agent: scratch
+ * paths scrubbed, then the fixing idioms attached.
+ *
+ * Both gates that run `typecheckProject` — the build and the post-write check —
+ * owe the agent the identical treatment, and each spelled the two calls out for
+ * itself, so a change to either half had two places to land.
+ */
+function annotateTypeErrors(output: string, dir: string): Promise<string> {
+  return annotateDiagnostics(scrubDir(output, dir), moduleExports(dir));
+}
+
+/**
  * Build a materialized workspace directory into deploy artifacts.
  *
  * `configFile: false` on both passes: a studio workspace has no
@@ -174,10 +186,7 @@ export async function buildWorkspaceDir(
     // the system prompt: it costs nothing until a build actually fails, and
     // it arrives inside the error the agent is already reading.
     return {
-      buildError: withDependencyWarning(
-        depWarning,
-        await annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)),
-      ),
+      buildError: withDependencyWarning(depWarning, await annotateTypeErrors(typed.output, dir)),
     };
   }
   try {
@@ -223,12 +232,7 @@ export async function typecheckWorkspaceDir(
     };
   }
   const typed = await typecheckProject(dir);
-  return typed.ok
-    ? typed
-    : {
-        ok: false,
-        output: await annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)),
-      };
+  return typed.ok ? typed : { ok: false, output: await annotateTypeErrors(typed.output, dir) };
 }
 
 let buildSeq = 0;

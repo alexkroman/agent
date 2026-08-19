@@ -19,7 +19,7 @@
  * client.tsx) rather than writing a file that breaks at publish time.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import { safeFetch } from "@alexkroman1/aai/runtime";
@@ -27,9 +27,9 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { WORKSPACE_DEPENDENCIES } from "./studio-project-shape.ts";
-import { NPM_TIMEOUT_MS, PACKAGE_NAME_RE, runNpm } from "./studio-spawn.ts";
+import { NPM_TIMEOUT_MS, outputWithKillNote, PACKAGE_NAME_RE, runNpm } from "./studio-spawn.ts";
 import { STUDIO_TOOL_DESCRIPTIONS } from "./studio-tool-descriptions.ts";
-import { resolveInside } from "./studio-workspace-fs.ts";
+import { resolveInside, writeFileWithParents } from "./studio-workspace-fs.ts";
 
 /** Deadline for one asset download. */
 const DOWNLOAD_TIMEOUT_MS = 30_000;
@@ -76,18 +76,20 @@ async function npmOutput(
   args: string[],
 ): Promise<{ exitCode: number | null; output: string }> {
   const result = await runNpm(dir, args);
-  return {
-    exitCode: result.exitCode,
-    output: result.signal
-      ? `${result.stdout}\n[killed by ${result.signal} after ${NPM_TIMEOUT_MS}ms]`
-      : result.stdout,
-  };
+  return { exitCode: result.exitCode, output: outputWithKillNote(result, NPM_TIMEOUT_MS) };
+}
+
+/**
+ * The refusal for a spec that cannot go on an npm command line. One spelling,
+ * because it is one rule (PACKAGE_SPEC_RE) and both surfaces that check it —
+ * `npm_info` and the install/uninstall pair — had their own copy of the prose.
+ */
+function invalidSpec(spec: string): string {
+  return `Error: "${spec}" is not a valid npm package spec (expected name, @scope/name, or name@version)`;
 }
 
 async function npmTool(dir: string, verb: "install" | "uninstall", spec: string): Promise<string> {
-  if (!PACKAGE_SPEC_RE.test(spec)) {
-    return `Error: "${spec}" is not a valid npm package spec (expected name, @scope/name, or name@version)`;
-  }
+  if (!PACKAGE_SPEC_RE.test(spec)) return invalidSpec(spec);
   try {
     const { exitCode, output } = await npmOutput(dir, [verb, spec]);
     const body = output.trim();
@@ -267,8 +269,7 @@ async function downloadToWorkspace(dir: string, url: string, rel: string): Promi
       "reference binary assets (images, audio) by URL in client.tsx instead"
     );
   }
-  await mkdir(path.dirname(abs), { recursive: true });
-  await writeFile(abs, text, "utf-8");
+  await writeFileWithParents(abs, text);
   return `Downloaded ${url} to ${rel} (${bytes.byteLength} bytes)`;
 }
 
@@ -287,9 +288,7 @@ export function createProjectTools(deps: ProjectToolDeps): Record<string, ToolDe
         package: z.string().describe('npm package to look up, e.g. "date-fns" or "zod@3"'),
       }),
       execute: async ({ package: spec }) => {
-        if (!PACKAGE_SPEC_RE.test(spec)) {
-          return `Error: "${spec}" is not a valid npm package spec (expected name, @scope/name, or name@version)`;
-        }
+        if (!PACKAGE_SPEC_RE.test(spec)) return invalidSpec(spec);
         try {
           const { exitCode, output } = await npmOutput(dir, ["view", spec, ...NPM_INFO_FIELDS]);
           const body = output.trim();

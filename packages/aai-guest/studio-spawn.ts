@@ -73,6 +73,18 @@ export function runCapped(
   });
 }
 
+/**
+ * The child's stdout with a KILL annotated onto it — the shape every surface
+ * that returns one string to the model shares (`bash`, the npm tools, the
+ * workspace test run). `runCapped` leaves the policy to the caller and reports
+ * `signal`; what was copied three times was this sentence, not the decision.
+ */
+export function outputWithKillNote(result: SpawnCappedResult, timeoutMs: number): string {
+  return result.signal
+    ? `${result.stdout}\n[killed by ${result.signal} after ${timeoutMs}ms]`
+    : result.stdout;
+}
+
 /** Wall-clock limit for one npm invocation. */
 export const NPM_TIMEOUT_MS = 110_000;
 

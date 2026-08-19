@@ -118,6 +118,25 @@ const DeployParamsSchema = z.object({
   allowPreviewSlug: z.boolean().optional(),
 });
 
+/**
+ * Validate `req.params` against the handler's own schema, answering -32602 with
+ * the schema's issues when they do not fit. Null means "already answered".
+ *
+ * One place decides what an invalid-params response looks like: the two cases
+ * below each carried the same six lines, so the method name, the error code and
+ * the `formatSchemaIssues` rendering were written out per handler.
+ */
+function parseParams<S extends z.ZodType>(req: JsonRpcRequest, schema: S): z.output<S> | null {
+  const parsed = schema.safeParse(req.params);
+  if (parsed.success) return parsed.data;
+  sendError(
+    req.id,
+    -32_602,
+    `${req.method}: invalid params — ${formatSchemaIssues(parsed.error.issues)}`,
+  );
+  return null;
+}
+
 /** Resolve and settle a single incoming JSON-RPC request. */
 export async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
   switch (req.method) {
@@ -126,16 +145,9 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
     // so studio publishes and laptop deploys are one path, and the CLI's
     // output rides back for the chat.
     case "workspace/deploy": {
-      const parsed = DeployParamsSchema.safeParse(req.params);
-      if (!parsed.success) {
-        sendError(
-          req.id,
-          -32_602,
-          `workspace/deploy: invalid params — ${formatSchemaIssues(parsed.error.issues)}`,
-        );
-        break;
-      }
-      const { files, serverUrl, apiKey, slug, allowPreviewSlug } = parsed.data;
+      const params = parseParams(req, DeployParamsSchema);
+      if (params === null) break;
+      const { files, serverUrl, apiKey, slug, allowPreviewSlug } = params;
       const result = await withBuildDir(files, materializeWorkspace, (dir) =>
         deployWorkspaceDir(dir, { serverUrl, apiKey, slug, allowPreviewSlug }),
       );
@@ -144,16 +156,9 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
     }
 
     case "studio/session-init": {
-      const parsed = SessionInitParamsSchema.safeParse(req.params);
-      if (!parsed.success) {
-        sendError(
-          req.id,
-          -32_602,
-          `studio/session-init: invalid params — ${formatSchemaIssues(parsed.error.issues)}`,
-        );
-        break;
-      }
-      state.studio = await initStudioSession(parsed.data);
+      const params = parseParams(req, SessionInitParamsSchema);
+      if (params === null) break;
+      state.studio = await initStudioSession(params);
       sendResponse(req.id, { ok: true });
       break;
     }

@@ -24,7 +24,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
 import { scrubDir } from "./studio-build.ts";
-import { envWithoutGuestToken, runCapped } from "./studio-spawn.ts";
+import { envWithoutGuestToken, outputWithKillNote, runCapped } from "./studio-spawn.ts";
 
 /** Wall clock for the run. The per-tool deadline (STUDIO_TOOL_TIMEOUT_MS,
  *  studio-tools.ts) is 120s and the build has already spent part of it, so
@@ -93,9 +93,7 @@ export async function runWorkspaceTests(dir: string): Promise<TestRunResult> {
       combineStreams: true,
     });
     code = result.exitCode;
-    output = result.signal
-      ? `${result.stdout}\n[killed by ${result.signal} after ${TEST_TIMEOUT_MS}ms]`
-      : result.stdout;
+    output = outputWithKillNote(result, TEST_TIMEOUT_MS);
   } catch (err) {
     code = -1;
     output = errorMessage(err);
