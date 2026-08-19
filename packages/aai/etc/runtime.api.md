@@ -1737,6 +1737,11 @@ export type UploadStore = UploadReader & {
 };
 
 // @public
+export class UploadsUnavailableError extends Error {
+    constructor(message: string);
+}
+
+// @public
 export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }

@@ -357,6 +357,7 @@
     "UploadReader",
     "UploadStore",
     "UploadTooLargeError",
+    "UploadsUnavailableError",
     "WORKFLOW_API_PREFIX",
     "WORKFLOW_API_TOKEN_ENV",
     "WORKFLOW_FLOW_PATH",
