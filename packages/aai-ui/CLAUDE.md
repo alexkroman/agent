@@ -627,7 +627,7 @@ Both upload paths above are ONE request, so the file moves at one connection's
 throughput — which over any distance is a fraction of the link, and for a
 recording that is the wait a person is sitting through. So a file is CUT by
 default: both `useWorkflowSubmit` and `useWorkflowStream` hand the SDK
-megabyte-aligned parts and it sends four at once against
+megabyte-aligned parts and it sends eight at once against
 `POST|PUT /workflows/uploads/:id/parts`. `parallel` is the option that tunes it
 (`{ partBytes, concurrency }`) or turns it off (`false`).
 
