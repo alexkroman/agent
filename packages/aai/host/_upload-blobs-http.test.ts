@@ -211,6 +211,38 @@ describe("brokered through the platform", () => {
     expect(calls[0]?.headers.range).toBe("bytes=8-11");
   });
 
+  test("reads a HEAD with NO content-length as ABSENT, never as zero bytes", async () => {
+    // The production bug, in one assertion. Node's `fetch` advertises `zstd`, the
+    // platform's proxy honoured it on a body-less 200, and a `content-encoding: zstd`
+    // response carries no `Content-Length` — measured against a deployed agent:
+    // `identity`, `gzip` and `gzip, deflate, br` all answered `content-length:
+    // 8388608` where `zstd` answered nothing. `Number(null)` is 0, a perfectly safe
+    // non-negative integer, so this used to report a stored 8 MiB window as EMPTY and
+    // `recordPart` recorded it as a zero-length hole.
+    const { blobs } = open(
+      () => new Response(null, { status: 200, headers: { "content-encoding": "zstd" } }),
+    );
+    expect(await blobs.size("uploads/upl_a/0")).toBeUndefined();
+  });
+
+  test("asks for the response UNENCODED, because the answer is a header", async () => {
+    const { blobs, calls } = open(
+      () => new Response(null, { status: 200, headers: { "content-length": "64" } }),
+    );
+    expect(await blobs.size("uploads/upl_a/0")).toBe(64);
+    expect(calls[0]?.method).toBe("HEAD");
+    expect(calls[0]?.headers["accept-encoding"]).toBe("identity");
+  });
+
+  test("still reports a genuinely EMPTY object as zero, not as absent", async () => {
+    // The distinction the fix turns on: a stated `0` is a measurement, an absent
+    // header is not. Collapsing them the other way would be the same bug mirrored.
+    const { blobs } = open(
+      () => new Response(null, { status: 200, headers: { "content-length": "0" } }),
+    );
+    expect(await blobs.size("uploads/upl_a/0")).toBe(0);
+  });
+
   test("clamps 404 and 416, throws on anything else", async () => {
     for (const status of [404, 416]) {
       const { blobs } = open(() => new Response("", { status }));

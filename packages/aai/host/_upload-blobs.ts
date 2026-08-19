@@ -252,3 +252,52 @@ export function rangesOf(parts: readonly UploadPart[]): ByteRange[] {
   }
   return merged;
 }
+
+/**
+ * Headers that ask for the response EXACTLY as stored.
+ *
+ * A `HEAD` here carries one number and carries it in `Content-Length`, which is a
+ * header any hop is free to rewrite — and one did. Node's `fetch` advertises `zstd`
+ * (Node 22.15+), Modal's proxy honoured it on a body-less 200, and a
+ * `content-encoding: zstd` response has no `Content-Length` at all: measured
+ * against a deployed agent, `identity`, `gzip` and `gzip, deflate, br` all answered
+ * `content-length: 8388608` where `zstd` answered nothing. So the request opts out
+ * of encoding rather than trusting every future proxy not to apply one.
+ *
+ * `contentLength` below is what makes the loss SAFE; this is what makes it rare.
+ */
+export const IDENTITY_ENCODING: Readonly<Record<string, string>> = {
+  "Accept-Encoding": "identity",
+};
+
+/**
+ * `Content-Length` as a byte count, or `undefined` when the response did not state
+ * one — which is NOT the same as zero, and conflating them corrupted every upload
+ * on the platform.
+ *
+ * `res.headers.get()` answers `null` for an absent header and `Number(null)` is
+ * **0**, a perfectly safe non-negative integer — so the obvious
+ * `Number.isSafeInteger(length) && length >= 0` guard, written in both blob
+ * implementations under a comment promising that an unmeasurable answer reads as
+ * absent, returned `0` for the one case that comment was about.
+ *
+ * What that cost: `UploadStore.recordPart` asks this before recording a window, and
+ * `undefined` is the answer it refuses on. `0` it accepts — so every part of every
+ * parts upload was recorded as a ZERO-LENGTH window, the contiguous prefix never
+ * advanced past byte 0, and the record stayed `size: 0, complete: false` while the
+ * bytes sat correctly in the bucket. A run then read nothing: the transcription
+ * desk's header probe came back empty and reported "That is not a WAV file", and
+ * its streaming flow never reached the 64 KB it plans from, so the page showed an
+ * empty progress panel for the whole upload. The single-request path was unaffected
+ * because it counts bytes as they stream through and never asks a bucket.
+ *
+ * So the missing header is read as missing, and the caller's refusal does its job.
+ */
+export function contentLength(res: Response): number | undefined {
+  const header = res.headers.get("content-length");
+  // The absent case FIRST — see the doc. Everything below is about a header that
+  // is present and might still be nonsense.
+  if (header === null) return undefined;
+  const length = Number(header);
+  return Number.isSafeInteger(length) && length >= 0 ? length : undefined;
+}

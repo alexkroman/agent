@@ -243,6 +243,21 @@ describe("a parts upload", () => {
     expect(await store.info("abc")).toMatchObject({ size: 0, complete: false });
   });
 
+  test("refuses a window the bucket measures as EMPTY, rather than recording a hole", async () => {
+    // The production failure this guard was added for. `UploadBlobs.size` read a
+    // missing `Content-Length` as `0` (a proxy had zstd-encoded the body-less HEAD),
+    // so every window of every parts upload on the platform was recorded as an empty
+    // range: well formed, summing to a contiguous 0, and completely unreadable. A
+    // zero-length window IS a hole, so it is refused like one.
+    const { store, blobs } = memoryStore();
+    await store.beginParts("abc", {}, TOTAL);
+    await blobs.put("uploads/abc/0", body(new Uint8Array(0)));
+    await expect(store.recordPart("abc", 0)).rejects.toBeInstanceOf(UploadPartError);
+    expect(await store.info("abc")).toMatchObject({ size: 0, complete: false });
+    // And the record holds NO range for it — the refusal is what keeps the row honest.
+    expect(await store.info("abc")).toMatchObject({ ranges: [] });
+  });
+
   test("takes the SIZE from the bucket, not from the caller", async () => {
     // Which is the same statement as above from the other side: the record follows
     // what is really stored, so a short object cannot be recorded as a whole part.

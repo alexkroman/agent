@@ -80,18 +80,14 @@
  * which is what it is — `_upload-retry.ts` owns that vocabulary.
  */
 
+import { type Part, sliceOf, type UploadPartsPlan } from "./_upload-parts-plan.ts";
 import { withRetries } from "./_upload-retry.ts";
 import { WORKFLOW_API_PREFIX } from "./_workflow-api-envelope.ts";
 import { mapConcurrent } from "./map-concurrent.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
 import type { UploadInfo, UploadRange } from "./step-uploads.ts";
-import {
-  UPLOAD_CHUNK_BYTES,
-  UPLOAD_PART_ATTEMPTS,
-  UPLOAD_PART_BYTES,
-  UPLOAD_PART_CONCURRENCY,
-} from "./upload-constants.ts";
+import { UPLOAD_PART_ATTEMPTS, UPLOAD_PART_CONCURRENCY } from "./upload-constants.ts";
 import type {
   UploadBody,
   UploadOptions,
@@ -185,74 +181,10 @@ export type UploadPartsRequest = {
 };
 
 /** A file's total and the windows it was cut into. */
-export type UploadPartsPlan = { total: number; parts: Part[] };
-
-/** A window of the file, and the part index that reports its progress. */
-type Part = { start: number; end: number; index: number };
-
-/**
- * The file's byte length, when it can be cut by byte at all.
- *
- * `undefined` is what makes this path DECLINE — see the module doc. A string is
- * excluded deliberately rather than encoded first: encoding it to measure it is a
- * second copy of the whole body, for a body that is not what this exists for.
- */
-function sliceableBytes(file: UploadBody): number | undefined {
-  if (typeof file === "string") return undefined;
-  if (file instanceof ArrayBuffer) return file.byteLength;
-  if (ArrayBuffer.isView(file)) return file.byteLength;
-  // Read structurally rather than `instanceof Blob`: a `File` from another realm
-  // (an iframe, a worker) fails an instance check while slicing perfectly well.
-  const described = file as { size?: unknown; slice?: unknown };
-  return typeof described.size === "number" && typeof described.slice === "function"
-    ? described.size
-    : undefined;
-}
-
-/** One window of the body, however it is spelled. */
-function sliceOf(file: UploadBody, start: number, end: number): UploadBody {
-  if (file instanceof ArrayBuffer) return file.slice(start, end);
-  if (ArrayBuffer.isView(file)) {
-    return new Uint8Array(file.buffer, file.byteOffset + start, end - start);
-  }
-  return (file as Blob).slice(start, end);
-}
-
-/**
- * How this file would be cut, or `undefined` when the parts path declines it.
- *
- * SYNCHRONOUS, and separate from {@link uploadInParts} for that reason alone: two
- * of the three reasons to decline are properties of the file, so deciding them
- * before anything is awaited keeps a small upload's first request in the same tick
- * as the call — the third reason (an agent with no `/parts` routes) is an ANSWER
- * and necessarily costs a round trip.
- */
-export function partsPlan(
-  file: UploadBody,
-  settings: UploadPartsSettings,
-): UploadPartsPlan | undefined {
-  const total = sliceableBytes(file);
-  if (total === undefined) return undefined;
-  const parts = planParts(total, settings.partBytes ?? UPLOAD_PART_BYTES);
-  // One part is the single request with two extra round trips in front of it.
-  if (parts.length < 2) return undefined;
-  return { total, parts };
-}
-
-/** The windows to send, in order. */
-export function planParts(total: number, partBytes: number): Part[] {
-  // Rounded up to a whole number of chunks — the store's alignment rule, applied
-  // here so a caller's `partBytes` is a preference rather than a way to fail.
-  const size = Math.max(
-    UPLOAD_CHUNK_BYTES,
-    Math.ceil(partBytes / UPLOAD_CHUNK_BYTES) * UPLOAD_CHUNK_BYTES,
-  );
-  const parts: Part[] = [];
-  for (let start = 0; start < total; start += size) {
-    parts.push({ start, end: Math.min(start + size, total), index: parts.length });
-  }
-  return parts;
-}
+// Re-exported rather than moved out of the import surface: `partsPlan` is what
+// `workflow-upload-client.ts` calls, and `planParts` is what the specs pin. The
+// split above is a file-size seam, not an API change.
+export { partsPlan, planParts, type UploadPartsPlan } from "./_upload-parts-plan.ts";
 
 /** Statuses that mean "this agent has no `/parts` routes", as opposed to a failure. */
 const NO_SUCH_ROUTE = new Set([404, 405]);
@@ -418,7 +350,32 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
   );
   if (!stored.ok) throw await req.fail(stored);
   const info = await readJsonBody<Omit<UploadRef, "url">>(stored, "Workflow API");
+  assertRecorded(info, req.id, total);
   return { ...info, url: uploads };
+}
+
+/**
+ * Refuse a record that does not hold the file, after every window was acknowledged.
+ *
+ * The agent's own `complete` is the reason the closing read exists, and ignoring it
+ * made every failure in the record-keeping path SILENT. Every window has been sent
+ * and 2xx'd by the time this runs, so an incomplete record does not mean a dropped
+ * part — it means the agent did not record what it acknowledged, and the caller is
+ * about to start a run over a file that reads as empty.
+ *
+ * That is exactly what shipped. A `Content-Length` the platform's proxy removed from
+ * a body-less `HEAD` made the store measure every window as zero bytes (see
+ * `host/_upload-blobs.ts`'s `contentLength`), so a 660 MB recording was reported here
+ * as stored while the record said `size: 0` — and the run then failed on a header
+ * probe that came back empty, minutes later and in a different component.
+ */
+function assertRecorded(info: Omit<UploadRef, "url">, id: string, total: number): void {
+  if (info.complete) return;
+  throw new Error(
+    `Workflow API: upload ${id} stored every part but reports ${info.size} of ` +
+      `${total} byte(s) and is not complete. The agent acknowledged each window and ` +
+      "then did not record it, so nothing can read this upload.",
+  );
 }
 
 /**

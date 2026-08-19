@@ -43,6 +43,7 @@
 import pTimeout from "p-timeout";
 import { errorMessage } from "../sdk/utils.ts";
 import type { UploadBlobs } from "./_upload-blobs.ts";
+import { contentLength, IDENTITY_ENCODING } from "./_upload-blobs.ts";
 import { concat, UploadTooLargeError } from "./_upload-store.ts";
 
 /**
@@ -130,13 +131,16 @@ export function createBrokeredUploadBlobs(opts: BrokeredUploadBlobsOptions): Upl
     },
 
     async size(key): Promise<number | undefined> {
-      const res = await send(key, { method: "HEAD" }, "head");
+      // `identity`, because the answer IS a header and a proxy that re-encodes the
+      // response drops it — see {@link IDENTITY_ENCODING} for the one that did.
+      const res = await send(key, { method: "HEAD", headers: { ...IDENTITY_ENCODING } }, "head");
       if (res.status === 404) return undefined;
       if (!res.ok) throw await brokerError("head", key, res);
-      const length = Number(res.headers.get("content-length"));
       // Never guessed: `UploadBlobs.size` is what stops a part nobody uploaded being
-      // recorded as present, so an unmeasurable answer has to read as absent.
-      return Number.isSafeInteger(length) && length >= 0 ? length : undefined;
+      // recorded as present, so an unmeasurable answer has to read as absent — which
+      // includes a response that stated no length at all. `contentLength` owns that
+      // distinction, and carries what conflating the two cost.
+      return contentLength(res);
     },
   };
 }
