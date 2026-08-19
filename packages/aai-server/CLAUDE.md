@@ -1374,24 +1374,27 @@ read — is documented with the guest: see "Fetching its own bundle" in
 
 ### A workflow upload's bytes are the PLATFORM's
 
-A deployed guest holds no bucket credential: it runs tenant code and the bucket is
-platform-wide, so a service key there is a cross-tenant read of every agent's
-uploads AND every agent's worker bundle. So the byte path is a platform route the
-guest brokers through (`aai/host/_upload-blobs-brokered.ts`, selected by the
-`AAI_UPLOAD_BROKER_URL` boot key — a SECOND name for `AAI_PUBLIC_BASE_URL`'s value,
-because that one is a claim a self-hosted deployment also makes; `agentBootEnv`
-carries why), the browser sends each
-window here and then tells the agent which one landed, and no upload byte reaches a
-guest or a tenant database. **`upload-handler.ts`'s module doc carries the argument**
-— the key derivation, why the route is as public as `/client-config` beside it, and
-why reads REDIRECT (a sixty-step fan-out would otherwise move a 200 MB recording
-through this process once per run) while writes do not. Read it there; this guide is
-the copy at a size cap. `aai/host/_upload-blobs.ts` has what those bytes cost when
-they were `bytea` rows in the app's own database.
+A deployed guest holds no bucket credential: it runs tenant code and the
+bucket is platform-wide, so a service key there is a cross-tenant read of
+every agent's uploads AND every agent's worker bundle. So the byte path is a
+platform route the guest brokers through
+(`aai/host/_upload-blobs-brokered.ts`, selected by the
+`AAI_UPLOAD_BROKER_URL` boot key — a SECOND name for
+`AAI_PUBLIC_BASE_URL`'s value, because that one is a claim a self-hosted
+deployment also makes; `agentBootEnv` carries why). The browser sends each
+window here and then tells the agent which one landed, so no upload byte
+reaches a guest or a tenant database.
 
-One thing a reader of THIS package needs in front of them: the key is composed from
-the slug Hono matched and never from anything the caller sends, because the prefix it
-must never be able to name is `blobs/<hash>`.
+**`upload-handler.ts`'s module doc carries the argument** — the key
+derivation, why the route is as public as `/client-config` beside it, and why
+reads REDIRECT (a sixty-step fan-out would otherwise move a 200 MB recording
+through this process once per run) while writes do not. Read it there; this
+guide is the copy at a size cap. `aai/host/_upload-blobs.ts` has what those
+bytes cost when they were `bytea` rows in the app's own database.
+
+One thing a reader of THIS package needs in front of them: the key is
+composed from the slug Hono matched and never from anything the caller sends,
+because the prefix it must never be able to name is `blobs/<hash>`.
 
 ### Telephony — `GET/POST /:slug/phone`
 

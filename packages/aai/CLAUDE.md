@@ -548,13 +548,13 @@ passes `parallel: false`.
 no range route changed: a part starts on an `UPLOAD_CHUNK_BYTES` boundary, so its
 offset — which IS its object's name — is on a grid nothing can scatter; and
 **`size` is the CONTIGUOUS prefix, never the sum of what has arrived** — parts
-land out of order, so a size that counted bytes would tell a reader it may read a
-hole. `complete` becomes true when that prefix reaches the DECLARED total, which
-is the only observable moment every byte is present.
+land out of order, so a size that counted bytes would tell a reader it may
+read a hole. `complete` becomes true when that prefix reaches the DECLARED
+total, which is the only observable moment every byte is present.
 
 **On the platform the bytes do not come to the agent at all.** A deployed guest
 holds no bucket credential, so each window goes to a route the PLATFORM serves
-and a bodyless `PUT …/parts?offset=…&stored=1` tells the agent which one landed —
+and a bodyless `PUT …/parts?offset=…&stored=1` tells the agent which landed —
 whose size the store asks the BUCKET for rather than taking from the caller,
 which is what stops a claimed part becoming a readable hole. The CLAIM decides
 which path a client takes (`directParts`), because `aai dev`, a self-hosted
