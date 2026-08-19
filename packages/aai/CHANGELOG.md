@@ -1,5 +1,12 @@
 # @alexkroman1/aai
 
+## 6.5.0
+
+### Minor Changes
+
+- 4da4327: Make the workflow fan-out concurrent and a run's results streamable. `mapConcurrent` (formerly `mapInBatches`, still exported) replaces sequential batches with a window over a cursor, so a slow item no longer holds back a whole round — the replay property needs the issue ORDER to be a pure function of the list, which a monotonic cursor gives at any width. New `emit(namespace, chunk)` writes structured partial results into a named stream that `streamOutput`/`useWorkflowProgress` already read, and `stubReporter()` on `/testing` is how a spec asserts either channel. The transcription template streams its transcript as each segment lands.
+- 4da4327: Add an opt-in parallel upload: the browser can split a file into parts and send them at once. `api.upload(file, { parallel: true })`, `useWorkflowSubmit(w, { parallel })` and `useWorkflowStream(w, { parallel })` cut the file into megabyte-aligned windows and fan them out over the new `POST|PUT /workflows/uploads/:id/parts` routes; the store publishes the contiguous prefix as `size`, so readers and the streaming flow are unchanged. Falls back to the single request for a small file, an uncuttable body, or an agent that does not serve the routes.
+
 ## 6.4.0
 
 ### Minor Changes
