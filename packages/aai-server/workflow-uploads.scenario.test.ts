@@ -412,6 +412,79 @@ describeWithPg("the workflow upload store over a real Postgres", () => {
     expect(rows[0]?.n).toBeGreaterThan(0);
   });
 
+  // ─── Parts ──────────────────────────────────────────────────────────────────
+  //
+  // The parallel-upload path had NO coverage over a real Postgres, which is where
+  // it differs most from the file backend: the pg store commits a batch of chunks
+  // per statement as one multi-row upsert, and that statement is only safe because
+  // a batch's `seq` values are distinct — Postgres refuses an `ON CONFLICT DO
+  // UPDATE` that would touch a row twice. Both properties are invisible to the
+  // file backend and to a fake, so they are asserted here or nowhere.
+
+  /** One upload, declared then filled window by window. Returns the id. */
+  const uploadInParts = async (
+    store: UploadStore,
+    id: string,
+    total: number,
+    parts: readonly number[],
+  ): Promise<void> => {
+    await store.beginParts(id, { name: "call.wav", type: "audio/wav" }, total);
+    for (const at of parts) {
+      const end = Math.min(at + chunkBytes * 3, total);
+      await store.writePart(id, at, body(ramp(end - at, at)));
+    }
+  };
+
+  test("a parts upload reads back byte for byte, in both backends", async () => {
+    // Three parts of three chunks each, so every batch is a MULTI-row statement and
+    // the last one is short — the two shapes the batching has to get right.
+    const total = chunkBytes * 9;
+    const starts = [0, chunkBytes * 3, chunkBytes * 6];
+    await uploadInParts(pg, "parts_pg_ordered", total, starts);
+    await uploadInParts(files, "parts_file_ordered", total, starts);
+    const whole = digest(ramp(total));
+    expect(digest(await pg.read("parts_pg_ordered", 0, total))).toBe(whole);
+    expect(digest(await files.read("parts_file_ordered", 0, total))).toBe(whole);
+    // And a window straddling two batches, which is where a mis-numbered `seq`
+    // would show up as bytes from the wrong offset rather than as missing ones.
+    const straddle = [chunkBytes * 2 + 17, chunkBytes * 4 + 29] as const;
+    expect(digest(await pg.read("parts_pg_ordered", straddle[0], straddle[1]))).toBe(
+      digest(ramp(straddle[1] - straddle[0], straddle[0])),
+    );
+  });
+
+  test("parts landing OUT OF ORDER leave size as the contiguous prefix", async () => {
+    // The rule the whole feature rests on: `size` is what a reader may read, so a
+    // hole must not be counted even though its bytes arrived.
+    const total = chunkBytes * 9;
+    await pg.beginParts("parts_pg_holey", { name: "c.wav", type: "audio/wav" }, total);
+    const write = async (at: number) =>
+      await pg.writePart("parts_pg_holey", at, body(ramp(chunkBytes * 3, at)));
+    const third = await write(chunkBytes * 6);
+    expect(third).toMatchObject({ size: 0, complete: false });
+    const first = await write(0);
+    expect(first).toMatchObject({ size: chunkBytes * 3, complete: false });
+    const middle = await write(chunkBytes * 3);
+    expect(middle).toMatchObject({ size: total, complete: true });
+    expect(digest(await pg.read("parts_pg_holey", 0, total))).toBe(digest(ramp(total)));
+  });
+
+  test("a RESENT part is the same part, not a duplicate or a conflict", async () => {
+    // What the client's one retry depends on, and the reason the batch is an upsert.
+    // A bare insert answers a duplicate-key error the caller cannot act on.
+    const total = chunkBytes * 3;
+    await pg.beginParts("parts_pg_retry", { name: "c.wav", type: "audio/wav" }, total);
+    await pg.writePart("parts_pg_retry", 0, body(ramp(total)));
+    const again = await pg.writePart("parts_pg_retry", 0, body(ramp(total)));
+    expect(again).toMatchObject({ size: total, complete: true });
+    const rows = await sql<{ n: number }>(
+      `select count(*)::int as n from ${SCHEMA}.${UPLOAD_CHUNKS_TABLE} where upload_id = $1`,
+      ["parts_pg_retry"],
+    );
+    expect(rows[0]?.n).toBe(3);
+    expect(digest(await pg.read("parts_pg_retry", 0, total))).toBe(digest(ramp(total)));
+  });
+
   test("a body past its cap is refused as it ARRIVES, in both backends", async () => {
     // The cap is counted as the bytes arrive rather than from a declared length,
     // so the refusal has to happen with chunk rows already written — which is the
