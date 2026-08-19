@@ -303,7 +303,15 @@ Three things in it are load-bearing:
   not upload code but the other half of the same argument: storing a two-hour
   recording is minutes long, and until the bytes are in there is no run for
   `<WorkflowProgress>` to narrate — so the page shows two bars covering two
-  disjoint waits.
+  disjoint waits. **And one clock over both**, because the number a reader
+  comparing the three modes wants is the press-to-transcript total, and no
+  server-side number can be it: `output.elapsedMs` is the RUN's own wall clock,
+  so in the two modes that store the file first it begins after the upload and
+  misses most of the wait. `useTotalLatency` in the page is a stopwatch started
+  by the submit and frozen when the run settles; `<TotalLatency>` prints it with
+  the split (before the run, inside it) once the run reports its own elapsed,
+  since two disagreeing durations on one screen otherwise invite the reader to
+  distrust both.
 - **It is linear-PCM WAV only, and it says so by name.** The cutting is
   arithmetic over byte offsets — a sample is a fixed size, so an offset IS a
   timestamp and any frame boundary is a clean cut. An MP3 or M4A frame boundary
