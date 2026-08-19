@@ -1,5 +1,15 @@
 # @alexkroman1/aai-cli
 
+## 6.6.0
+
+### Patch Changes
+
+- Updated dependencies [6d6d71f]
+- Updated dependencies [6d6d71f]
+- Updated dependencies [6d6d71f]
+  - @alexkroman1/aai@6.6.0
+  - @alexkroman1/aai-ui@6.6.0
+
 ## 6.5.1
 
 ### Patch Changes
