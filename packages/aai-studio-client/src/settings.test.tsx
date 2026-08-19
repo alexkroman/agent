@@ -11,7 +11,14 @@
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, renderWithClient, stubFetch, textarea } from "./_test-utils.ts";
+import {
+  type FetchMock,
+  fetchCallsWith,
+  jsonResponse,
+  renderWithClient,
+  stubFetch,
+  textarea,
+} from "./_test-utils.ts";
 import { SettingsPane } from "./settings.tsx";
 
 /**
@@ -26,7 +33,7 @@ const DATABASE_STATE = {
 };
 
 /** How many requests this mock saw for one path — counts survive the card's own. */
-function callsTo(fetchMock: ReturnType<typeof stubFetch>, path: string): number {
+function callsTo(fetchMock: FetchMock, path: string): number {
   return fetchMock.mock.calls.filter(([input]) => String(input) === path).length;
 }
 
@@ -133,8 +140,8 @@ describe("SettingsPane", () => {
     fireEvent.change(draftBox(), { target: { value: "MY_KEY=super-secret-value" } });
     fireEvent.click(screen.getByText("Save secrets"));
     await waitFor(() => expect(draftBox().value).toBe(""));
-    const put = fetchMock.mock.calls.find(([, init]) => (init as RequestInit)?.method === "PUT");
-    expect(put?.[1]?.body).toContain("MY_KEY");
+    const [put] = fetchCallsWith(fetchMock, "PUT");
+    expect(put?.init.body).toContain("MY_KEY");
   });
 
   test("a multi-line draft saves every key in one request", async () => {
@@ -147,10 +154,10 @@ describe("SettingsPane", () => {
     fireEvent.change(draftBox(), { target: { value: "A=1\nB=2" } });
     fireEvent.click(screen.getByText("Save secrets"));
     await waitFor(() => expect(draftBox().value).toBe(""));
-    const puts = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit)?.method === "PUT");
+    const puts = fetchCallsWith(fetchMock, "PUT");
     expect(puts).toHaveLength(1);
-    expect(puts[0]?.[1]?.body).toContain("A");
-    expect(puts[0]?.[1]?.body).toContain("B");
+    expect(puts[0]?.init.body).toContain("A");
+    expect(puts[0]?.init.body).toContain("B");
   });
 
   test("saving an empty draft is a no-op — no request at all", async () => {
@@ -249,9 +256,9 @@ describe("SettingsPane", () => {
       expect(screen.getByText(/managed for you and can't be set here/)).toBeTruthy();
     });
     // The rest of the draft still saved; only the managed key was dropped.
-    const put = fetchMock.mock.calls.find(([, init]) => (init as RequestInit)?.method === "PUT");
-    expect(put?.[1]?.body).toContain("OPENAI_API_KEY");
-    expect(put?.[1]?.body).not.toContain("ASSEMBLYAI_API_KEY");
+    const [put] = fetchCallsWith(fetchMock, "PUT");
+    expect(put?.init.body).toContain("OPENAI_API_KEY");
+    expect(put?.init.body).not.toContain("ASSEMBLYAI_API_KEY");
   });
 
   test("a draft of nothing but managed keys sends no request at all", async () => {

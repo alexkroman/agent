@@ -119,6 +119,10 @@ export function createStepReporter(logger: Logger): StepReporter {
       // Not `logger.warn`: a page that closed mid-run makes this the ordinary
       // case, and a warn per step would bury the narration it sits beside.
       logger.debug?.("Workflow progress not streamed", {
+        // Truthiness, not `omitUndefined`, and `guard-invariants` rule 22 has a
+        // baseline entry for it: an ABSENT namespace IS the default stream (see
+        // `writeChunk` below), so `namespace: ""` would claim a namespace where
+        // there is none. `omitUndefined` keeps `""`; dropping it is the point.
         ...(namespace ? { namespace } : {}),
         error: errorMessage(err),
       });

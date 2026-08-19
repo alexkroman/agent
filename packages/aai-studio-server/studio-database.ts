@@ -132,11 +132,21 @@ async function stateFor(
   env: ProjectDatabaseEnv,
   apiKey: string,
   workspace: StudioWorkspace,
+  /**
+   * The caller's owned slugs, when the caller already resolved them (a
+   * mutation does, to know what to provision). Threaded rather than re-read
+   * for the reason `ownedProjectSlugs` is shared at all: a set/clear used to
+   * fan out the ownership check twice per request, once here and once for the
+   * state it answers with.
+   */
+  resolved?: readonly { slug: string }[],
 ): Promise<ProjectDatabaseState> {
   // One ownership resolution for both environments — `ownedProjectSlugs` is
   // the shared answer to "which of this project's agents are the caller's"
   // (studio-project-slugs.ts), and it checks them concurrently.
-  const owned = new Set((await ownedProjectSlugs(env.store, apiKey, workspace)).map((e) => e.slug));
+  const owned = new Set(
+    (resolved ?? (await ownedProjectSlugs(env.store, apiKey, workspace))).map((e) => e.slug),
+  );
   const environments = await Promise.all(
     PROJECT_ENVIRONMENTS.map((environment) => environmentState(env, owned, workspace, environment)),
   );
@@ -213,7 +223,8 @@ export async function setProjectDatabase(
   // `reconcileProjectDatabase`. Same for one whose slug the caller does not
   // own. The applies stay SEQUENTIAL — each is a schema provision under the
   // slug lock — while the ownership reads inside `ownedProjectSlugs` are not.
-  for (const { environment, slug } of await ownedProjectSlugs(env.store, apiKey, workspace)) {
+  const owned = await ownedProjectSlugs(env.store, apiKey, workspace);
+  for (const { environment, slug } of owned) {
     try {
       await applyToSlug(env, slug, enabled);
       switched += 1;
@@ -233,7 +244,7 @@ export async function setProjectDatabase(
     await forcePreviewRedeploy(env.workspaces, scope, project, schedulePreview);
   }
 
-  const state = await stateFor(env, apiKey, workspace);
+  const state = await stateFor(env, apiKey, workspace, owned);
   return {
     ...state,
     ...(failures.length > 0 && {

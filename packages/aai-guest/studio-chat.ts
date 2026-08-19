@@ -121,8 +121,9 @@ async function runTurn(
   );
 
   const checkpointWorkspace = createWorkspaceCheckpointer(session);
-  // One checker for both tool families — they share the diagnostics backend,
-  // and building it twice would double the coalescing runner it hangs off.
+  // The workspace type check the agent's post-write diagnostics run on. Handed
+  // down as a FUNCTION: `createStudioAgent` builds the one shared checker over
+  // it (see there for why there must only be one).
   const typecheck: TypecheckFn = deps.typecheck ?? (() => typecheckWorkspaceDir(session.dir));
 
   // The coding agent, as an ordinary `agent()` definition — see

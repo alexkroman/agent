@@ -225,12 +225,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     onError: (c) => c.json({ error: "Request body too large" }, 413),
   });
 
-  // ...and cap how many of them are in flight together, which is the axis the
-  // two size limits above cannot bound: peak memory was arrival rate times
-  // ~164 MB, and arrival rate is the caller's to choose. Runs FIRST, ahead of
-  // bodyLimit and the gunzip, so a refused request has allocated nothing.
-  // Per-replica by construction — this bounds THIS container's heap, which is
-  // a process-local resource, so it wants no cross-replica coordination.
   // Per-IP deploy limit. Runs ahead of the body gate so a refused caller
   // never occupies one of its slots — otherwise the cheap control queues
   // behind the expensive one it is meant to protect.
@@ -245,6 +239,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     await next();
   });
 
+  // ...and cap how many deploy bodies are in flight together, which is the axis
+  // the two size limits above cannot bound: peak memory was arrival rate times
+  // ~164 MB, and arrival rate is the caller's to choose. Runs ahead of
+  // bodyLimit and the gunzip, so a refused request has allocated nothing — and
+  // behind `authMw`, for the reason spelled out at the route below.
+  // Per-replica by construction: this bounds THIS container's heap, which is a
+  // process-local resource, so it wants no cross-replica coordination.
   const deployBodySlots = createSemaphore(opts.deployBodyConcurrency ?? DEPLOY_BODY_CONCURRENCY);
   const deployBodyWaitMs = opts.deployBodyWaitMs ?? DEPLOY_BODY_WAIT_MS;
   const deployBodyGate = createMiddleware<HonoEnv>(async (c, next) => {
@@ -313,11 +314,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slots: opts.slots,
     store: opts.store,
     secrets,
-    ...(opts.appDb && { appDb: opts.appDb }),
-    ...(opts.directory && { directory: opts.directory }),
+    ...omitUndefined({ appDb: opts.appDb }),
+    ...omitUndefined({ directory: opts.directory }),
     // Same predicate `/health` reports on, so "the proxy has been told to
     // stop routing here" and "stop booting sandboxes" can never disagree.
-    ...(opts.isDraining && { isDraining: opts.isDraining }),
+    ...omitUndefined({ isDraining: opts.isDraining }),
   };
 
   // Durable runs whose sandbox is long gone (workflow-wake.ts). Wired here for
@@ -327,8 +328,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   startWorkflowWakeSweep({
     store: opts.store,
     broker: brokerOpts,
-    ...(opts.adminDb && { adminDb: opts.adminDb }),
-    ...(opts.isDraining && { isDraining: opts.isDraining }),
+    ...omitUndefined({ adminDb: opts.adminDb }),
+    ...omitUndefined({ isDraining: opts.isDraining }),
     ...omitUndefined({ extraAppDbClusters: opts.extraAppDbClusters }),
   });
 
@@ -415,9 +416,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   bindFetchEnv(app, {
     store: opts.store,
     secrets,
-    ...(opts.auth && { auth: opts.auth }),
-    ...(opts.keyVerifier && { keyVerifier: opts.keyVerifier }),
-    ...(opts.appDb && { appDb: opts.appDb }),
+    ...omitUndefined({ auth: opts.auth }),
+    ...omitUndefined({ keyVerifier: opts.keyVerifier }),
+    ...omitUndefined({ appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact. Wrapped so
     // taking the lock also drops this replica's cached view of the slug —

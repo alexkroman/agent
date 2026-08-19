@@ -240,8 +240,6 @@ function createWatcherMap<A extends unknown[]>(track: TrackDispatch) {
  * {@link MemoryPlatformEvents.settled} for how a caller waits one out.
  */
 export function createMemoryPlatformEvents(): MemoryPlatformEvents {
-  const agentWatchers = new Set<Watcher<[slug: string]>>();
-  const agentResyncWatchers = new Set<Watcher>();
   const inFlight = new Set<Promise<void>>();
 
   const track: TrackDispatch = (dispatch) => {
@@ -258,15 +256,24 @@ export function createMemoryPlatformEvents(): MemoryPlatformEvents {
   const workspaceWatchers = createWatcherMap<[]>(track);
   const chatWatchers = createWatcherMap<[]>(track);
   const scopeWatchers = createWatcherMap<[]>(track);
+  // The agents stream is not keyed — there is one, fleet-wide — so both of its
+  // watcher sets sit under a constant key. They go through the same map as the
+  // keyed streams anyway, because the DISPATCH is the part worth having once:
+  // the microtask deferral and the `track` that makes `settled()` able to wait
+  // an emit out were written out per emitter before, so a third emitter (the
+  // resync) had to remember both.
+  const AGENTS = "agents";
+  const agentWatchers = createWatcherMap<[slug: string]>(track);
+  const agentResyncWatchers = createWatcherMap<[]>(track);
 
   return {
     events: {
       watchAgents(onChange, onResync) {
-        agentWatchers.add(onChange);
-        if (onResync) agentResyncWatchers.add(onResync);
+        const unwatch = agentWatchers.add(AGENTS, onChange);
+        const unwatchResync = onResync ? agentResyncWatchers.add(AGENTS, onResync) : undefined;
         return () => {
-          agentWatchers.delete(onChange);
-          if (onResync) agentResyncWatchers.delete(onResync);
+          unwatch();
+          unwatchResync?.();
         };
       },
       watchWorkspace(scope, project, onChange) {
@@ -286,21 +293,15 @@ export function createMemoryPlatformEvents(): MemoryPlatformEvents {
       close: () => Promise.resolve(),
     },
     emitAgent(slug) {
-      track(async () => {
-        await Promise.resolve();
-        await Promise.all([...agentWatchers].map((watcher) => watcher(slug)));
-      });
+      agentWatchers.fire(AGENTS, slug);
     },
     emitAgentResync() {
-      // Tracked like every other dispatch, so `settled()` covers a resync's
-      // handlers too — the resync handler does strictly MORE async work than a
-      // change handler (one reconcile per resident, not one), so a test that
-      // could not wait it out would be the worst-placed one to hand-roll a
-      // microtask spin for.
-      track(async () => {
-        await Promise.resolve();
-        await Promise.all([...agentResyncWatchers].map((watcher) => watcher()));
-      });
+      // Fired through the same map, so `settled()` covers a resync's handlers
+      // too — the resync handler does strictly MORE async work than a change
+      // handler (one reconcile per resident, not one), so a test that could not
+      // wait it out would be the worst-placed one to hand-roll a microtask spin
+      // for.
+      agentResyncWatchers.fire(AGENTS);
     },
     emitWorkspace(scope, project) {
       workspaceWatchers.fire(projectKey(scope, project));

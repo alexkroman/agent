@@ -73,8 +73,11 @@ function useToolCallEffect(
   args: unknown[],
   fire: (callback: ToolCallCallback, toolCall: ToolCallInfo, filtered: boolean) => void,
 ): void {
-  const filterName = typeof args[0] === "string" ? (args[0] as string) : null;
-  const callback = (typeof args[0] === "string" ? args[1] : args[0]) as ToolCallCallback;
+  // The overload is `(toolName, callback)` or `(callback)`, so the first
+  // argument decides both — read once rather than type-tested twice.
+  const first = args[0];
+  const filterName = typeof first === "string" ? first : null;
+  const callback = (filterName === null ? first : args[1]) as ToolCallCallback;
 
   const toolCalls = useSessionSelector((s) => s.toolCalls);
   const cursorRef = useRef<ToolCallCursor>({ seq: 0, fired: new Set<string>() });

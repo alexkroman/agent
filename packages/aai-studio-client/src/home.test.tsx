@@ -114,11 +114,11 @@ describe("HomeHero submit", () => {
 });
 
 describe("HomeHero kind switcher", () => {
-  /** Flip the switcher to Workflow. */
-  const chooseWorkflow = () => fireEvent.click(screen.getByRole("radio", { name: "Workflow" }));
-
   /** The switcher's radios, by label. */
   const radio = (name: string) => input(name, "radio");
+
+  /** Flip the switcher to Workflow. */
+  const chooseWorkflow = () => fireEvent.click(radio("Workflow"));
 
   test("starts on Voice agent — the default and the common case", () => {
     render(<HomeHero {...heroProps} status={status} />);

@@ -173,7 +173,10 @@ export function installFakeHostChannel(options: { autoAnswer?: boolean } = {}): 
     },
     answerLast(result?: unknown, error?: { code: number; message: string }) {
       const { id } = channel.lastRequest();
-      handleHostResponse({ id, ...(error ? { error } : { result }) });
+      // The two branches are the JSON-RPC response's two SHAPES, so choosing the
+      // whole object states that; a spread of one key or the other reads as an
+      // optional field on one shape, which is not what a response is.
+      handleHostResponse(error ? { id, error } : { id, result });
     },
   };
   setHostSend((msg) => {

@@ -12,8 +12,9 @@
  * reasoning; this is the routing and the request-bound wiring.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { Context, Hono } from "hono";
-import type { StudioHonoEnv } from "./studio-context.ts";
+import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";
 import {
   type ProjectDatabaseEnv,
   projectDatabaseState,
@@ -21,6 +22,7 @@ import {
   setProjectDatabase,
 } from "./studio-database.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
+import type { AfterDeploy } from "./studio-session-publish.ts";
 import { schedulePreviewFor } from "./studio-settled-edit.ts";
 
 /**
@@ -33,7 +35,7 @@ export function databaseEnvFor(c: Context<StudioHonoEnv>): ProjectDatabaseEnv {
     workspaces: c.env.workspaces,
     store: c.env.store,
     secrets: c.env.secrets,
-    ...(c.env.appDb && { appDb: c.env.appDb }),
+    ...omitUndefined({ appDb: c.env.appDb }),
     slugLock: c.env.slugLock,
   };
 }
@@ -54,7 +56,7 @@ export function registerDatabaseRoutes(
       project,
       apiKey: c.var.apiKey,
     });
-    if (!state) return c.json({ error: "Project not found" }, 404);
+    if (!state) return projectNotFound(c);
     return c.json(state);
   });
 
@@ -68,7 +70,7 @@ export function registerDatabaseRoutes(
       enabled,
       schedulePreview: () => schedulePreviewFor(ensureBroker(c), c, scope, project),
     });
-    if (!result) return c.json({ error: "Project not found" }, 404);
+    if (!result) return projectNotFound(c);
     return c.json(result);
   };
 
@@ -82,9 +84,7 @@ export function registerDatabaseRoutes(
  * request's stores, and handed to the broker, which outlives the request —
  * safe because {@link databaseEnvFor} reads the env rather than the Context.
  */
-export function databaseDeployHook(
-  c: Context<StudioHonoEnv>,
-): (scope: string, project: string, slug: string) => Promise<void> {
+export function databaseDeployHook(c: Context<StudioHonoEnv>): AfterDeploy {
   const env = databaseEnvFor(c);
   return (scope, project, slug) => reconcileProjectDatabase(env, { scope, project, slug });
 }

@@ -4,6 +4,7 @@ import { requireDeployedSlug, resolveDeployTarget } from "./_agent.ts";
 import { type ApiTestSeam, apiRequest, apiTestSeam, HINT_NOT_DEPLOYED } from "./_api-client.ts";
 import { writeProjectConfig } from "./_config.ts";
 import { type CommandResult, ok } from "./_output.ts";
+import { studioProjectApiUrl } from "./_studio.ts";
 import { log } from "./_ui.ts";
 
 export type DeleteOpts = ApiTestSeam & {
@@ -41,7 +42,7 @@ export async function executeDelete(opts: {
   if (config?.studioProject) {
     const project = config.studioProject;
     log.step(`Deleting studio project ${project} (and its deployed agents)`);
-    await apiRequest(`${serverUrl}/studio/projects/${encodeURIComponent(project)}`, {
+    await apiRequest(studioProjectApiUrl(serverUrl, project), {
       method: "DELETE",
       apiKey,
       action: "delete",

@@ -227,6 +227,18 @@ function replaceAllMatches(haystack: string, needle: string, to: string): [strin
 }
 
 /**
+ * The miss message, in one place: both branches below reach it (a `replaceAll`
+ * that matched nothing, and a single edit that found nothing) and each carried
+ * its own byte-identical copy of the sentence.
+ */
+function notFound(path: string): StudioEditError {
+  return new StudioEditError(
+    `Could not find that text in ${path}. It must match the file exactly, ` +
+      "including whitespace and newlines — read the file and copy the text verbatim.",
+  );
+}
+
+/**
  * Replace `oldText` with `newText` in `content` — exactly once, or at every
  * occurrence with `replaceAll` (the rename case, where requiring a unique
  * match would force one edit per call site).
@@ -258,20 +270,10 @@ export function applyEdit(
   let replacements: number;
   if (opts.replaceAll) {
     [updated, replacements] = replaceAllMatches(normalized, from, to);
-    if (replacements === 0) {
-      throw new StudioEditError(
-        `Could not find that text in ${path}. It must match the file exactly, ` +
-          "including whitespace and newlines — read the file and copy the text verbatim.",
-      );
-    }
+    if (replacements === 0) throw notFound(path);
   } else {
     const match = findText(normalized, from);
-    if (!match) {
-      throw new StudioEditError(
-        `Could not find that text in ${path}. It must match the file exactly, ` +
-          "including whitespace and newlines — read the file and copy the text verbatim.",
-      );
-    }
+    if (!match) throw notFound(path);
 
     const occurrences = countOccurrences(match.occurrenceHaystack, match.occurrenceNeedle);
     if (occurrences > 1) {

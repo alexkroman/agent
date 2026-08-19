@@ -54,16 +54,12 @@ let bundleSeq = 0;
  * asymmetry this package's own parity table exists to enumerate — and the
  * fallback is still strictly better than failing the load, because an agent with
  * no workflows never needs the anchor at all.
- */
-
-/**
- * The directory a bundle is written into: this module's own, which after bundling
- * is the one holding `harness.mjs`.
  *
- * Exported so a spec can assert the anchor without recomputing it — the failure
- * this guards is a bundle landing somewhere with no `node_modules` above it, and
- * a test that derived the expected path the same way the code does would agree
- * with a wrong answer.
+ * So: this module's own directory, which after bundling is the one holding
+ * `harness.mjs`. Exported so a spec can assert the anchor without recomputing
+ * it — the failure this guards is a bundle landing somewhere with no
+ * `node_modules` above it, and a test that derived the expected path the same
+ * way the code does would agree with a wrong answer.
  */
 export function harnessBundleDir(): string {
   return import.meta.dirname;

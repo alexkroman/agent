@@ -150,19 +150,29 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     updateState(CLEARED_SESSION_STATE);
   }
 
+  /**
+   * The socket, when there is one and it can carry a frame.
+   *
+   * Returning the socket rather than a boolean because every caller needs it
+   * next, and a predicate does not narrow `conn.ws` across the call. One
+   * spelling of the readiness test, which four call sites used to repeat.
+   */
+  function openSocket(): ConnState["ws"] {
+    return conn.ws?.readyState === WS_OPEN ? conn.ws : null;
+  }
+
   function sendJson(msg: ClientMessage): void {
-    if (conn.ws && conn.ws.readyState === WS_OPEN) {
-      conn.ws.send(JSON.stringify(msg));
-    }
+    openSocket()?.send(JSON.stringify(msg));
   }
 
   function sendAudio(bytes: ArrayBuffer): void {
-    if (!conn.ws || conn.ws.readyState !== WS_OPEN) return;
+    const ws = openSocket();
+    if (!ws) return;
     // Backpressure: if the socket's send queue is backed up (slow network),
     // drop this frame instead of queueing. Queued mic audio only adds latency
     // and flushes stale speech into STT once the connection recovers.
-    if (conn.ws.bufferedAmount > MIC_SEND_MAX_BUFFERED_BYTES) return;
-    conn.ws.send(bytes);
+    if (ws.bufferedAmount > MIC_SEND_MAX_BUFFERED_BYTES) return;
+    ws.send(bytes);
   }
 
   // ─── Message handling ─────────────────────────────────────────────────────
@@ -353,7 +363,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   function cancel(): void {
     // Only meaningful mid-session: called while disconnected/errored it would
     // fake a "listening" state with nobody on the other end.
-    if (!conn.ws || conn.ws.readyState !== WS_OPEN) return;
+    if (!openSocket()) return;
     // A client-side barge-in is a turn boundary exactly as the server's
     // `cancelled` frame is: the flush below settles the interrupted turn's
     // drain, whose continuation must not outlive the turn it belonged to.
@@ -366,7 +376,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   function reset(): void {
     conn.turn.bump();
     conn.voiceIO?.flush();
-    if (conn.ws && conn.ws.readyState === WS_OPEN) {
+    if (openSocket()) {
       sendJson({ type: "reset" });
       return;
     }

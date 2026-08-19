@@ -67,6 +67,20 @@ export function studioProjectUrl(serverUrl: string, project: string): string {
   return `${serverUrl}/studio/chat/${project}`;
 }
 
+/**
+ * The `/studio/projects/:project` base every project-scoped route hangs off —
+ * the source, the deploy, the secret fan-out, the delete.
+ *
+ * One definition because of the `encodeURIComponent`: the project name comes
+ * from `.aai/project.json` or from a directory name, i.e. from the working
+ * tree, and every request built on it carries the user's API key. Six call
+ * sites spelled this template out by hand, so "did that one encode?" was a
+ * question the reader had to answer six times.
+ */
+export function studioProjectApiUrl(serverUrl: string, project: string): string {
+  return `${serverUrl}/studio/projects/${encodeURIComponent(project)}`;
+}
+
 /** `GET /studio/projects/:project` — see `projectPayload` server-side. */
 export type StudioProject = {
   files: Record<string, string>;
@@ -100,10 +114,11 @@ export function fetchStudioProject(
   apiKey: string,
   project: string,
 ): Promise<StudioProject | null> {
-  return apiRequest<StudioProject | null>(
-    `${serverUrl}/studio/projects/${encodeURIComponent(project)}`,
-    { apiKey, action: "pull", allow404: true },
-  );
+  return apiRequest<StudioProject | null>(studioProjectApiUrl(serverUrl, project), {
+    apiKey,
+    action: "pull",
+    allow404: true,
+  });
 }
 
 /** `PUT /studio/projects/:project/source` — the atomic whole-tree push. */
@@ -113,7 +128,7 @@ export function pushStudioSource(
   project: string,
   body: { files: Record<string, string>; baseHash?: string | undefined },
 ): Promise<{ sourceHash: string; created: boolean }> {
-  return apiRequest(`${serverUrl}/studio/projects/${encodeURIComponent(project)}/source`, {
+  return apiRequest(`${studioProjectApiUrl(serverUrl, project)}/source`, {
     apiKey,
     action: "push",
     method: "PUT",
@@ -133,7 +148,7 @@ export function publishStudioProject(
   apiKey: string,
   project: string,
 ): Promise<{ ok: true; slug: string; url: string; output: string }> {
-  return apiRequest(`${serverUrl}/studio/projects/${encodeURIComponent(project)}/deploy`, {
+  return apiRequest(`${studioProjectApiUrl(serverUrl, project)}/deploy`, {
     apiKey,
     action: "publish",
     method: "POST",

@@ -32,10 +32,10 @@ import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import { deleteAgentResources } from "aai-server/delete";
 import { RESERVED_SLUGS } from "aai-server/schemas";
-import { verifySlugOwner } from "aai-server/secrets";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import type { Context, Hono } from "hono";
-import type { StudioHonoEnv } from "./studio-context.ts";
+import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";
+import { ownedProjectSlugs } from "./studio-project-slugs.ts";
 import type { RefuseFn } from "./studio-route-limits.ts";
 import {
   CreateProjectSchema,
@@ -119,7 +119,7 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
   studio.get("/projects/:project", async (c) => {
     const { scope, project } = c.var;
     const workspace = await getWorkspace(c.env.workspaces, scope, project);
-    if (!workspace) return c.json({ error: "Project not found" }, 404);
+    if (!workspace) return projectNotFound(c);
     return c.json(projectPayload(workspace));
   });
 
@@ -132,7 +132,7 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
       getWorkspace(c.env.workspaces, scope, project),
       c.env.chats.getChat(scope, project),
     ]);
-    if (!workspace) return c.json({ error: "Project not found" }, 404);
+    if (!workspace) return projectNotFound(c);
     return c.json({ messages: messages ?? [] });
   });
 
@@ -143,19 +143,15 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
   studio.delete("/projects/:project", async (c) => {
     const { scope, project } = c.var;
     const workspace = await getWorkspace(c.env.workspaces, scope, project);
-    const slugs = [
-      ...new Set(
-        [workspace?.deployedSlug, workspace?.previewSlug].filter(
-          (slug): slug is string => typeof slug === "string",
-        ),
-      ),
-    ];
-    for (const slug of slugs) {
-      // Ownership is still the agents row's credential hash, never project
-      // scope alone — a workspace naming a slug the caller doesn't own
-      // (however it got there) must not become a deletion oracle.
-      const owner = await verifySlugOwner(c.var.apiKey, { slug, store: c.env.store });
-      if (owner.status === "owned") await deleteAgentResources(c.env, slug);
+    // Ownership is still the agents row's credential hash, never project scope
+    // alone — a workspace naming a slug the caller doesn't own (however it got
+    // there) must not become a deletion oracle. `ownedProjectSlugs`
+    // (studio-project-slugs.ts) is the one answer to "which of this project's
+    // agents are the caller's", shared with the database and secret switches,
+    // and it checks the pair CONCURRENTLY where this route asked per slug.
+    const owned = workspace ? await ownedProjectSlugs(c.env.store, c.var.apiKey, workspace) : [];
+    for (const slug of new Set(owned.map((entry) => entry.slug))) {
+      await deleteAgentResources(c.env, slug);
     }
     // No lock needed: a racing versioned write cannot resurrect the project —
     // `mutateWorkspace` only ever replaces an existing row.
@@ -180,7 +176,7 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
         ...current,
         files: { ...current.files, [path]: content },
       }));
-      if (!workspace) return c.json({ error: "Project not found" }, 404);
+      if (!workspace) return projectNotFound(c);
     } catch (err) {
       return c.json({ error: errorMessage(err) }, 400);
     }

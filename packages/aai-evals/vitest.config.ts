@@ -37,8 +37,8 @@ export default defineConfig({
       exclude: [...sharedCoverageExclude, "session-target.ts", "studio-target.ts", "_gate.ts"],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      // Measured: 98.26 / 96.96 / 89.57 / 97.70.
-      thresholds: { lines: 95, functions: 94, branches: 88, statements: 95 },
+      // Measured: 99.20 / 98.27 / 92.20 / 99.30.
+      thresholds: { lines: 96, functions: 95, branches: 89, statements: 96 },
     },
   },
 });

@@ -260,7 +260,7 @@ reason); `pnpm test:coverage:affected` is the coverage half on its own.
 ### Quality ratchets
 
 Beyond lint/typecheck/test, `scripts/check.sh` **and the CI check job** run
-nine **gates** (all also runnable standalone) that hold the line on technical
+ten **gates** (all also runnable standalone) that hold the line on technical
 debt. Two compare against a COMMITTED PER-FILE BASELINE
 (`check:hatches`, `check:invariants`); the rest are absolute. They must stay
 wired into BOTH: for a long time they lived only in `check.sh`, which CI never
@@ -352,35 +352,25 @@ one commit of history. A file in the tree has no merge base and no such modes.
   DEBT ratchets whose goal is zero, so a minimum match count would eventually
   block the very campaign the gate exists to encourage.
 
-  **Markdown is not scanned**, and the reason is worth keeping: the patterns
-  are plain substrings with no notion of code versus prose, so any doc that
-  *discusses* a hatch scores as one. `CHANGELOG.md` is the sharp edge —
-  changesets generates it from changeset summaries, so a summary describing
-  this script's own `as any` / `as unknown as` patterns rendered into
-  `packages/aai/CHANGELOG.md` and failed the **Version Packages PR**, on a
-  file no human wrote and with nothing an author could see at review time.
-  A changeset summary may name a pattern freely. `escape-hatch-scope.test.ts`
-  guards the exclusion, and asserts the patterns really do match prose so the
-  test can't pass by the patterns quietly becoming narrower.
+  **Markdown is not scanned**: the patterns are plain substrings with no notion
+  of code versus prose, so any doc that *discusses* a hatch scores as one — and
+  `CHANGELOG.md` is generated from changeset summaries, so one naming a pattern
+  once failed the Version Packages PR on a file no human wrote. A changeset
+  summary may name a pattern freely. `escape-hatch-scope.test.ts` guards the
+  exclusion, and asserts the patterns really do match prose so it cannot pass by
+  them quietly becoming narrower.
 
-  **`as unknown as` is the one to watch, and the reason it is counted.** It
-  launders a value past the checker without tripping `as any`, and while it
-  went uncounted it became the dominant idiom here: 210 of them against 3
-  `as any` (all three of which are prose in comments, not casts). Counting it
-  came with halving it to 105, and the removals are the pattern to copy — a
-  concentration of identical casts is a missing **typed seam**, one narrowing
-  in one helper that every call site goes through (`fakeOf(session)`,
-  `asSessionWs(ws)`, `MockWebSocketConstructor`), not a cast repeated per
-  assertion. Some need no cast at all once the tool's own affordance is used:
-  `vi.mocked(fn)` instead of casting a mock back to a spy, and typing a
-  recorder with `Parameters<T>` instead of widening to
-  `Record<string, unknown>` and re-narrowing at each read.
+  **`as unknown as` is the one to watch**: it launders a value past the checker
+  without tripping `as any`, and went 210 → 105 once counted. The removals are
+  the pattern to copy — a concentration of identical casts is a missing **typed
+  seam**, one narrowing in one helper every call site goes through
+  (`fakeOf(session)`, `asSessionWs(ws)`), not a cast per assertion. Some need no
+  cast once the tool's own affordance is used: `vi.mocked(fn)`, or typing a
+  recorder with `Parameters<T>` instead of widening and re-narrowing.
 
-  One property to know before editing the baseline: it is itself a file whose
-  content is a list of the pattern names, so it needs the same pathspec
-  exclusion the script does. That was not theoretical — the first run after the
-  per-file conversion scored its own `"as unknown as": { … }` keys as four fresh
-  hatches. Same trap as markdown above, arriving by a new route.
+  The baseline is itself a list of the pattern names, so it needs the same
+  pathspec exclusion the script does — its first per-file run scored its own keys
+  as four fresh hatches. Same trap as markdown, by a new route.
 - **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
   source files at 500 lines and test files at 700. Files that already
   exceed the cap are grandfathered in `scripts/file-length-allowlist.json`,
@@ -456,6 +446,14 @@ one commit of history. A file in the tree has no merge base and no such modes.
   (over budget = refactor before adding more; over 150k = a guide is being
   truncated right now), that the root still links every package guide, and
   that the script and CI wiring still agree with it.
+- **`pnpm check:coverage-per-file`** (`scripts/check-coverage-per-file.mjs`) — a
+  50% per-file statement floor over what `test:coverage` wrote, because the
+  `vitest.config.ts` thresholds are PACKAGE-wide and cannot see one new module
+  landing untested. **Its ratchet runs the other way** — coverage may only go up,
+  so `--update` refuses to lower an entry and never creates one; `--seed` is the
+  bootstrap, opened at 15 files. Runs per package in CI's coverage matrix
+  (`--package`). The script's own doc carries the rest.
+
 - **`pnpm check:konsistent`** ([konsistent], config in root `konsistent.json`)
   — enforces **structural** conventions: the shapes that are wrong only in
   relation to their siblings, which is why no per-file tool can see them.
@@ -502,7 +500,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Eighteen numbered rules, each printing WHY the invariant exists and what to use
+  Nineteen numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -510,7 +508,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | # | Rule | Instead |
   | --- | --- | --- |
   | 1 | no symlinks anywhere | a real file, or a module that re-exports |
-  | 2 | no conditional spread of an object literal — the ternary, the inverted ternary, or the `&&` form | `omitUndefined()` |
+  | 2 | no conditional spread on a `!== undefined` presence test — all three spellings | `omitUndefined()` |
   | 3 | no `Promise.race` against a `setTimeout`, WRAPPED FORM INCLUDED | `p-timeout` |
   | 4 | no inline `new Promise(r => setTimeout(r, 0))`, `setImmediate` and `<T>` included | `flush()` / `tick()` |
   | 5 | no `delete process.env.X` | `vi.stubEnv(name, undefined)` |
@@ -529,6 +527,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 19 | no hand-rolled sleep (or `node:timers/promises`), `<T>` included | `sleep()` |
   | 20 | no changeset naming a package or bump type that does not exist | the real name from its package.json |
   | 21 | no `expect.poll` — a `test.concurrent` sibling clears the pointer it reads | `vi.waitFor()` |
+  | 22 | no truthiness-guarded conditional spread — `...(x && { x })` | a judgement: see the rule's remedy |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
@@ -536,12 +535,18 @@ one commit of history. A file in the tree has no merge base and no such modes.
   rule 10, retired with the `research/` directory it checked; and 15,
   reserved). Rules 1, 7, 9, 12, 13, 14, 20 and 21 are at zero and enforced
   absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
-  was widened**: `git grep` is line-based, so the wrapped `Promise.race([` form
-  Biome emits can only be matched by reporting the OPENING line, which cannot
-  see whether a timer is among the elements — so a timer-free wrapped race is a
-  legitimate baseline entry (`aai-server/guest-readiness.ts` is the one).
-  Over-reporting a race is the cheap error; every finding in this family is a
-  guard that under-reports silently.
+  was widened** — a wrapped `Promise.race([` can only be matched by reporting the
+  opening line, which cannot see whether a timer is among the elements, so a
+  timer-free wrapped race is a legitimate entry. Over-reporting there is the
+  cheap error: every finding in this family under-reports silently. The argument
+  is on `RACE_CONTINUES` in `guard-invariants-ere.mjs`.
+
+  **Rule 2's `undefined` scope is a BOUNDARY, and rule 22 is why.** Rule 2 tests
+  presence, which `omitUndefined` *is*, so its matches rewrite without changing
+  behaviour; `...(x && { x })` also drops `""`, `0` and `false`, so widening rule
+  2 to reach it would have the gate recommend a behaviour change on 145 lines.
+  Rule 22 counts that family instead, the first rule here **seeded as debt** (145
+  across 75 files, goal zero) — its entries are lines nobody has read yet.
 
   **Five scopes, five corpus FLOORS**, and three of the five were missing —
   rule 11's shipped-source corpus (~1,027 files, covered by neither existing
@@ -569,21 +574,15 @@ one commit of history. A file in the tree has no merge base and no such modes.
   one computed line, the printed count, stayed right. The per-file baselines
   carry the same `--update`-only-lowers contract as `check:hatches`.
 
-  **Every baselined occurrence is legitimate, and the JSON is NOT where it says
-  so** — that file is a bare `{path: count}` map written by `--update`, with
+  **A baselined occurrence needs a reason, and the JSON is NOT where it goes** —
+  that file is a bare `{path: count}` map written by `--update`, with
   `_description` its only prose, so a reason recorded there would be erased by
-  the next regeneration. A reason lives at the OCCURRENCE, in a comment beside
-  the line, and the roster is here: three spread-ternaries where **the guard
-  is not the value** (`String(params.port)` would stringify `undefined` into
-  `"undefined"`; `{ mode: 0o700 }` sets a different value from the one it
-  tests), the CLI test setup's env scrub, one hand-rolled owned-map in
-  `studio-sse.ts`, the two `/tmp` literals that name a path inside the Linux
-  sandbox rather than on this machine, one record guard over a declared
-  union, one `.split("?")` that cuts a Vite module id rather than a
-  request target, one hand-rolled sleep inside a fixture of USER code (a
-  user's own agent may not import an SDK internal, so the hand-rolled form is
-  what that fixture is demonstrating), and the two `scripts/*.mjs` guards that a
-  plain-node gate cannot replace with an SDK import.
+  the next regeneration. It lives at the OCCURRENCE, in a comment beside the
+  line. A roster used to be duplicated here and is not, for the reason the
+  script's own prose copy of the rule catalogue was deleted: a hand-kept list of
+  baseline entries goes stale while the generated one stays right. Read the
+  entries out of the baseline and the reasons off the lines they sit on. The one
+  rule whose entries are NOT yet defended decisions is 22 — see above.
 
   Rule 4's nine are zero-delay yields that cannot use `flush()`/`tick()`:
   `tool-executor.ts`'s `setImmediate` between tool calls (shipped source, where

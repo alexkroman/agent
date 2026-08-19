@@ -145,15 +145,16 @@ export async function annotateDiagnostics(
 ): Promise<string> {
   const all = [...output.matchAll(CODE_RE)].flatMap((m) => (m[1] ? [m[1]] : []));
   if (all.length === 0) return output;
+  // One map, not a map plus a Set of its own keys — the Set was derivable from
+  // the map, and reading the count back out of it needed a `?? 1` fallback that
+  // could never fire.
   const counts = new Map<string, number>();
   for (const c of all) counts.set(c, (counts.get(c) ?? 0) + 1);
-  const codes = new Set(all);
 
   const hints: string[] = [];
-  for (const code of codes) {
+  for (const [code, n] of counts) {
     const hint = HINTS[code];
     if (hint === undefined) continue;
-    const n = counts.get(code) ?? 1;
     // Repeated instances of ONE code are a single mistake made N times, and
     // fixing them one edit at a time costs a build cycle per pass. Observed:
     // fifteen TS7006 in one file repaired across three rounds.
@@ -166,7 +167,7 @@ export async function annotateDiagnostics(
     hints.push(`${code} (x${n}): ${hint}${batched}`);
   }
 
-  if ([...codes].some((c) => EXPORT_CODES.has(c)) && resolveExports) {
+  if ([...counts.keys()].some((c) => EXPORT_CODES.has(c)) && resolveExports) {
     hints.push(...(await exportHints(output, resolveExports)));
   }
 

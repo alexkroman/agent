@@ -118,6 +118,13 @@ if [ "$MODE" = "--local" ]; then
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1
   fi
+  # After test:coverage, and it READS what that wrote. The per-package floors in
+  # each vitest.config.ts catch a package sliding as a whole and are blind to one
+  # new module landing untested — 433 measured files means one file at zero moves
+  # a package average by a fraction of a point. `turbo.json` declares
+  # `coverage/**` as test:coverage's output, so a cache hit restores the data and
+  # this still measures the current tree.
+  pnpm run check:coverage-per-file || failed=1
   pnpm run check:publish-names
   # After build, and it PACKS: `catalog:` / `workspace:` are pnpm-only
   # protocols that pnpm rewrites when it makes a tarball, and that rewrite is
@@ -166,6 +173,10 @@ else
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1
   fi
+  # See the note on the same call in the --local branch: this reads
+  # test:coverage's output and floors the FILE, which the per-package floors
+  # cannot see.
+  pnpm run check:coverage-per-file || failed=1
   # check:e2e runs ALONE, in its own invocation after everything else.
   #
   # It is not a well-behaved sibling: the mock registry rebuilds and

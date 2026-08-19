@@ -105,6 +105,20 @@ function assertGranted(granted: number, requested: number, side: string): void {
 }
 
 /**
+ * The error a dead worklet processor reports.
+ *
+ * A processor exception permanently kills the node — no further messages or
+ * audio will ever arrive — so both sides log it and hand it on. One spelling of
+ * that, because the pair differed only in the word "capture"/"playback" and in
+ * what the playback side has to settle afterwards.
+ */
+function workletCrash(side: "capture" | "playback"): Error {
+  const err = new Error(`Audio ${side} worklet crashed`);
+  console.error("[aai-ui]", err.message);
+  return err;
+}
+
+/**
  * Release a microphone that was (or later gets) granted while another init
  * step failed; if `getUserMedia` itself rejected, this is a no-op. Without
  * it, a mic granted after a failed init keeps the browser's recording
@@ -271,13 +285,9 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   const capture = createCaptureNode(capCtx, onMicData, onMicSilent);
   mic.connect(capture.node);
 
-  // A processor exception permanently kills the worklet — no further mic
-  // chunks will ever arrive. Surface it rather than staying silently deaf.
-  capture.node.onprocessorerror = () => {
-    const err = new Error("Audio capture worklet crashed");
-    console.error("[aai-ui]", err.message);
-    onError?.(err);
-  };
+  // No further mic chunks will ever arrive — surface it rather than staying
+  // silently deaf.
+  capture.node.onprocessorerror = () => onError?.(workletCrash("capture"));
 
   capture.start();
 
@@ -344,8 +354,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     // A dead processor never posts 'stop' — settle any pending done() wait so
     // session state can't hang in "speaking", then surface the failure.
     node.onprocessorerror = () => {
-      const err = new Error("Audio playback worklet crashed");
-      console.error("[aai-ui]", err.message);
+      const err = workletCrash("playback");
       settlePendingStop();
       onError?.(err);
     };

@@ -14,7 +14,8 @@
 import { MIC_BUFFER_SECONDS, MIC_SILENCE_PROBE_MS } from "../types.ts";
 import { workletModuleUrl } from "./_module-url.ts";
 
-const CaptureProcessorWorklet = `
+/** Raw worklet source — exported so tests can evaluate the processor directly. */
+export const captureProcessorSource = `
 class CaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
@@ -105,7 +106,4 @@ class CaptureProcessor extends AudioWorkletProcessor {
 registerProcessor('capture-processor', CaptureProcessor);
 `;
 
-/** Raw worklet source — exported so tests can evaluate the processor directly. */
-export const captureProcessorSource = CaptureProcessorWorklet;
-
-export default workletModuleUrl(CaptureProcessorWorklet);
+export default workletModuleUrl(captureProcessorSource);

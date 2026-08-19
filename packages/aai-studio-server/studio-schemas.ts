@@ -214,19 +214,19 @@ export const CliLinkSchema = z.object({
  * counted, so the cap is enforced on slightly less than serialized size —
  * string content is what dominates a near-limit message either way.
  */
+/** What a value contains, for the walk below: members, values, or nothing. */
+function childValues(value: unknown): readonly unknown[] {
+  if (Array.isArray(value)) return value;
+  return isRecord(value) ? Object.values(value) : [];
+}
+
 function totalStringLength(value: unknown): number {
   if (typeof value === "string") return value.length;
-  if (Array.isArray(value)) {
-    let total = 0;
-    for (const item of value) total += totalStringLength(item);
-    return total;
-  }
-  if (isRecord(value)) {
-    let total = 0;
-    for (const item of Object.values(value)) total += totalStringLength(item);
-    return total;
-  }
-  return 0;
+  // ONE summing loop: the array and record branches summed their members
+  // identically, which is a copy of a loop rather than a second case.
+  let total = 0;
+  for (const item of childValues(value)) total += totalStringLength(item);
+  return total;
 }
 
 /**

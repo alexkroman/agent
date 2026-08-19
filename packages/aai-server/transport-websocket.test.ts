@@ -6,7 +6,13 @@ import { WebSocket as WsClient } from "ws";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { createTestOrchestrator, createTestStore, deploy, deployAgent } from "./test-utils.ts";
+import {
+  createTestOrchestrator,
+  createTestStore,
+  deploy,
+  deployAgent,
+  fakeSandbox,
+} from "./test-utils.ts";
 
 describe("handleAgentHealth", () => {
   test("returns 404 for non-existent agent", async () => {
@@ -40,7 +46,7 @@ describe("handleAgentClientConfig", () => {
     store: Awaited<ReturnType<typeof createTestOrchestrator>>["store"],
     slots: ReturnType<typeof createSlotCache>,
     slug: string,
-    sandbox: Sandbox = makeFakeSandbox(),
+    sandbox: Sandbox = fakeSandbox(),
   ): Promise<void> {
     await deployAgent(fetch, slug);
     setSlot(slots, {
@@ -109,7 +115,7 @@ describe("handleAgentClientConfig", () => {
 
     // One port, two sandboxes: A's guest exits, B's lands on the same port.
     const onOnePort = (): Sandbox => ({
-      ...makeFakeSandbox(),
+      ...fakeSandbox(),
       sessionUrl: vi.fn(() => Promise.resolve("ws://127.0.0.1:41234/websocket")),
       guestOrigin: vi.fn(() => Promise.resolve("ws://127.0.0.1:41234")),
     });
@@ -128,7 +134,7 @@ describe("handleAgentClientConfig", () => {
     const slots = createSlotCache();
     const { fetch, store } = await createTestOrchestrator({ slots });
     const broken: Sandbox = {
-      ...makeFakeSandbox(),
+      ...fakeSandbox(),
       sessionUrl: () => Promise.reject(new Error("spawn failed")),
     };
     await seedResident(fetch, store, slots, "my-agent", broken);
@@ -220,17 +226,6 @@ describe("handleClientAsset", () => {
 
 // ── /:slug/websocket upgrade handling ───────────────────────────────────
 
-/** Fake Sandbox (the direct-to-tunnel control-channel shape). */
-function makeFakeSandbox(): Sandbox {
-  return {
-    sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
-    guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
-    drain: vi.fn(() => Promise.resolve()),
-    alive: vi.fn(() => true),
-    shutdown: vi.fn(() => Promise.resolve()),
-  };
-}
-
 type HarnessOpts = {
   /** Skip pre-populating the slot with the fake sandbox. Default: seeded. */
   seedSandbox?: boolean;
@@ -242,12 +237,12 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   slug: string;
   slots: ReturnType<typeof createSlotCache>;
   store: ReturnType<typeof createTestStore>;
-  sandbox: ReturnType<typeof makeFakeSandbox>;
+  sandbox: Sandbox;
   close: () => Promise<void>;
 }> {
   const slug = "ws-agent";
   const slots = createSlotCache();
-  const sandbox = makeFakeSandbox();
+  const sandbox = fakeSandbox();
   // Pre-populate the slot with a fake sandbox so nothing spawns for real —
   // at version 1, matching the single putAgent below, so the resident is
   // not retired as superseded.

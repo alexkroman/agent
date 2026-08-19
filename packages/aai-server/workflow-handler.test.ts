@@ -14,12 +14,12 @@
  * relayed through a body THIS replica can end cleanly on shutdown.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
 import { endLiveStreams, resetLiveStreams } from "./live-streams.ts";
-import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { createTestOrchestrator, deployAgent, type TestFetch } from "./test-utils.ts";
+import { createTestOrchestrator, deployAgent, fakeSandbox, type TestFetch } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({ mockSpawnAgentServer: vi.fn() }));
 
@@ -27,17 +27,6 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
   spawnAgentServer: mockSpawnAgentServer,
 }));
-
-function makeFakeSandbox(overrides: Partial<Sandbox> = {}): Sandbox {
-  return {
-    sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
-    guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
-    drain: vi.fn(() => Promise.resolve()),
-    alive: vi.fn(() => true),
-    shutdown: vi.fn(() => Promise.resolve()),
-    ...overrides,
-  };
-}
 
 /** Records what the platform forwarded, and answers as the guest would. */
 function recordingGuest(answer: (req: Request) => Response | Promise<Response> = () => json({})) {
@@ -60,11 +49,11 @@ function json(body: unknown, status = 200): Response {
 /** An orchestrator with a deployed agent and a live resident sandbox. */
 async function residentHarness(guestFetch?: typeof globalThis.fetch) {
   const slots = createSlotCache();
-  const harness = await createTestOrchestrator({ slots, ...(guestFetch && { guestFetch }) });
+  const harness = await createTestOrchestrator({ slots, ...omitUndefined({ guestFetch }) });
   await deployAgent(harness.fetch, "my-agent");
   setSlot(slots, {
     slug: "my-agent",
-    sandbox: makeFakeSandbox(),
+    sandbox: fakeSandbox(),
     version: (await harness.store.getAgentVersion("my-agent")) ?? 1,
   });
   return harness;

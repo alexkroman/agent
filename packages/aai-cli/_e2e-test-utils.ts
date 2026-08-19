@@ -19,6 +19,22 @@ export const packagesDir = path.resolve(dir, "..");
 export const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn";
 
 /**
+ * The workspace packages this suite publishes to its mock registry — by
+ * directory name under `packages/`, which is also their npm name minus the
+ * scope.
+ *
+ * One list, because the two consumers have to agree: `startRegistry` publishes
+ * these and `installDeps` rewrites exactly these dependencies to the version it
+ * published them under. A package present in one and not the other installs
+ * from the real npmjs, i.e. tests the released copy instead of this working
+ * tree — silently.
+ */
+const PUBLISHED_PACKAGES = ["aai", "aai-ui", "aai-cli"] as const;
+const PUBLISHED_DEP_NAMES: ReadonlySet<string> = new Set(
+  PUBLISHED_PACKAGES.map((name) => `@alexkroman1/${name}`),
+);
+
+/**
  * Throwaway global-config dir for every CLI the e2e suites spawn, created
  * once per run so a scenario's later steps still see the key an earlier step
  * saved.
@@ -116,7 +132,7 @@ export function detachedCli(aaiBin: string, into: string): string {
  */
 export async function startRegistry(): Promise<MockRegistry> {
   const { startMockRegistry } = await import("./_mock-registry.ts");
-  return startMockRegistry(packagesDir, ["aai", "aai-ui", "aai-cli"]);
+  return startMockRegistry(packagesDir, [...PUBLISHED_PACKAGES]);
 }
 
 /** Poll a health endpoint, capturing child stderr for diagnostics on timeout. */
@@ -150,23 +166,6 @@ export async function waitForExit(child: ChildProcess, timeoutMs = 5000): Promis
 }
 
 /**
- * Install dependencies using the mock registry.
- *
- * **`ignore-scripts` is set HERE and nowhere else, and that placement is
- * load-bearing.** It exists to stop a linked package's `postinstall` running
- * during THIS install — but `npm_config_ignore_scripts` is read by every npm
- * invocation, so while it sat in `aaiEnv()` it silently suppressed every
- * lifecycle script in every spawned command. That took out `npm start`'s
- * `prestart`, i.e. the build the self-hosted entrypoint cannot boot without: the
- * child printed `> start` with no `> prestart` above it and died on the missing
- * artifact, naming a project file rather than the env var that skipped the step.
- *
- * The trap generalizes past this repo — an install-time protection that is
- * really a global one — and the second half is worse than the failure: had the
- * artifact happened to exist from an earlier build, the test would have PASSED
- * while never running the script it exists to exercise.
- */
-/**
  * Whether a failed install may be excused as the mock registry's npmjs
  * passthrough failing rather than as a real dependency-resolution break.
  *
@@ -198,6 +197,23 @@ export function isRegistryProxyFailure(err: unknown): boolean {
   );
 }
 
+/**
+ * Install dependencies using the mock registry.
+ *
+ * **`ignore-scripts` is set HERE and nowhere else, and that placement is
+ * load-bearing.** It exists to stop a linked package's `postinstall` running
+ * during THIS install — but `npm_config_ignore_scripts` is read by every npm
+ * invocation, so while it sat in `aaiEnv()` it silently suppressed every
+ * lifecycle script in every spawned command. That took out `npm start`'s
+ * `prestart`, i.e. the build the self-hosted entrypoint cannot boot without: the
+ * child printed `> start` with no `> prestart` above it and died on the missing
+ * artifact, naming a project file rather than the env var that skipped the step.
+ *
+ * The trap generalizes past this repo — an install-time protection that is
+ * really a global one — and the second half is worse than the failure: had the
+ * artifact happened to exist from an earlier build, the test would have PASSED
+ * while never running the script it exists to exercise.
+ */
 export function installDeps(registry: MockRegistry, projectDir: string): void {
   const env = { ...aaiEnv(), ...registry.env, npm_config_ignore_scripts: "true" };
 
@@ -208,13 +224,7 @@ export function installDeps(registry: MockRegistry, projectDir: string): void {
   for (const depField of ["dependencies", "devDependencies"] as const) {
     if (!pkgJson[depField]) continue;
     for (const dep of Object.keys(pkgJson[depField])) {
-      if (
-        dep === "@alexkroman1/aai" ||
-        dep === "@alexkroman1/aai-ui" ||
-        dep === "@alexkroman1/aai-cli"
-      ) {
-        pkgJson[depField][dep] = registry.testVersion;
-      }
+      if (PUBLISHED_DEP_NAMES.has(dep)) pkgJson[depField][dep] = registry.testVersion;
     }
   }
   // Remove packageManager to avoid corepack version mismatches in tests

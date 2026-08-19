@@ -22,7 +22,7 @@ import { hash } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
 import { LRUCache } from "lru-cache";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
-import { createSingleFlight } from "./_memo.ts";
+import { createSingleFlight, type SingleFlight } from "./_memo.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AgentRecord, AgentRows } from "./agent-store.ts";
@@ -170,15 +170,50 @@ export function createBundleStore(
     versionFlight.drop(slug);
   }
 
-  function readBlob(contentHashHex: string): Promise<string | null> {
-    const key = blobKey(contentHashHex);
-    return retryOnTransient(() => storage.getItem(key), {
+  /**
+   * One read-through for the two ROW caches: serve the cache, else join (or
+   * start) the single flight, and write the answer back only if no mutation
+   * landed while it was in the air.
+   *
+   * The row and version reads had this written out twice, differing in nothing
+   * but which cache and which flight they name — so the epoch guard, which is
+   * the subtle half (see `readEpochs`), existed in two places that had to agree.
+   */
+  function cachedSlugRead<T>(
+    cache: TtlCache<T>,
+    flight: SingleFlight<T>,
+    slug: string,
+    read: () => Promise<T>,
+  ): Promise<T> {
+    const cached = cache.get(slug);
+    if (cached !== undefined) return Promise.resolve(cached);
+    return flight.run(slug, async () => {
+      const gen = currentEpoch(slug);
+      const value = await read();
+      if (isCurrentEpoch(slug, gen)) cache.set(slug, value);
+      return value;
+    });
+  }
+
+  /**
+   * A blob operation, retrying the transient network failures `_retry.ts`
+   * describes. `verb` only names the operation in the log line — reads and
+   * writes retry identically, and both are safe to retry for the same reason:
+   * the key is a content hash (see {@link writeBlob}).
+   */
+  function retryBlobOp<T>(verb: string, key: string, op: () => Promise<T>): Promise<T> {
+    return retryOnTransient(op, {
       onRetry: (attempt, attempts, err) => {
         console.warn(
-          `Transient storage error reading ${key} (attempt ${attempt}/${attempts}): ${errorMessage(err)}`,
+          `Transient storage error ${verb} ${key} (attempt ${attempt}/${attempts}): ${errorMessage(err)}`,
         );
       },
     });
+  }
+
+  function readBlob(contentHashHex: string): Promise<string | null> {
+    const key = blobKey(contentHashHex);
+    return retryBlobOp("reading", key, () => storage.getItem(key));
   }
 
   /**
@@ -201,13 +236,7 @@ export function createBundleStore(
    */
   function writeBlob(contentHashHex: string, content: string): Promise<void> {
     const key = blobKey(contentHashHex);
-    return retryOnTransient(() => storage.setItem(key, content), {
-      onRetry: (attempt, attempts, err) => {
-        console.warn(
-          `Transient storage error writing ${key} (attempt ${attempt}/${attempts}): ${errorMessage(err)}`,
-        );
-      },
-    });
+    return retryBlobOp("writing", key, () => storage.setItem(key, content));
   }
 
   function readBlobCached(contentHashHex: string): Promise<string | null> {
@@ -223,14 +252,7 @@ export function createBundleStore(
   }
 
   function getAgentCached(slug: string): Promise<AgentRecord | null> {
-    const cached = rowCache.get(slug);
-    if (cached !== undefined) return Promise.resolve(cached);
-    return rowFlight.run(slug, async () => {
-      const gen = currentEpoch(slug);
-      const value = await agents.get(slug);
-      if (isCurrentEpoch(slug, gen)) rowCache.set(slug, value);
-      return value;
-    });
+    return cachedSlugRead(rowCache, rowFlight, slug, () => agents.get(slug));
   }
 
   /**
@@ -263,8 +285,15 @@ export function createBundleStore(
   return {
     async putAgent(bundle) {
       const workerHash = contentHash(bundle.worker);
+      // Hashed ONCE per file, and the hash is carried alongside its content:
+      // re-deriving it through the path→hash map on the write side needed a
+      // `?? ""` fallback for a lookup that cannot miss, which is a blob written
+      // under an empty key if it ever did.
+      const clientBlobs = Object.entries(bundle.clientFiles).map(
+        ([path, content]) => [path, contentHash(content), content] as const,
+      );
       const clientFiles = Object.fromEntries(
-        Object.entries(bundle.clientFiles).map(([path, content]) => [path, contentHash(content)]),
+        clientBlobs.map(([path, fileHash]) => [path, fileHash]),
       );
 
       // Blobs and env first, in parallel — all immutable or idempotent
@@ -273,9 +302,7 @@ export function createBundleStore(
       await Promise.all([
         writeEnv(bundle.slug, bundle.env),
         writeBlob(workerHash, bundle.worker),
-        ...Object.entries(bundle.clientFiles).map(([path, content]) =>
-          writeBlob(clientFiles[path] ?? "", content),
-        ),
+        ...clientBlobs.map(([, fileHash, content]) => writeBlob(fileHash, content)),
       ]);
 
       await agents.put({
@@ -296,14 +323,7 @@ export function createBundleStore(
     },
 
     getAgentVersion(slug) {
-      const cached = versionCache.get(slug);
-      if (cached !== undefined) return Promise.resolve(cached);
-      return versionFlight.run(slug, async () => {
-        const gen = currentEpoch(slug);
-        const value = await agents.getVersion(slug);
-        if (isCurrentEpoch(slug, gen)) versionCache.set(slug, value);
-        return value;
-      });
+      return cachedSlugRead(versionCache, versionFlight, slug, () => agents.getVersion(slug));
     },
 
     listSlugs() {

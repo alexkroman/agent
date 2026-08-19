@@ -190,9 +190,20 @@ class AaiWorkflowBuilder extends BaseBuilder {
    * repo's `erasableSyntaxOnly`, so the fields are declared the long way too.
    */
   output: WorkflowBundleOutput | undefined;
-  private readonly outDir: string;
+  /**
+   * The two bundles `build()` reads back.
+   *
+   * Held as fields because `super()` is also told where to write them: derived
+   * a second time inside `build()`, the two spellings of each path were free to
+   * disagree, and a `build()` reading a file the builder never wrote is a
+   * "produced nothing" failure that names neither path.
+   */
+  private readonly flowFile: string;
+  private readonly stepFile: string;
 
   constructor(cwd: string, outDir: string) {
+    const flowFile = path.join(outDir, "flow.mjs");
+    const stepFile = path.join(outDir, "step.mjs");
     super({
       buildTarget: "standalone",
       dirs: [`./${WORKFLOWS_DIR}`],
@@ -200,8 +211,8 @@ class AaiWorkflowBuilder extends BaseBuilder {
       projectRoot: cwd,
       moduleSpecifierRoot: cwd,
       externalPackages: [...WDK_EXTERNAL],
-      stepsBundlePath: path.join(outDir, "step.mjs"),
-      workflowsBundlePath: path.join(outDir, "flow.mjs"),
+      stepsBundlePath: stepFile,
+      workflowsBundlePath: flowFile,
       webhookBundlePath: path.join(outDir, "webhook.mjs"),
       // The builder narrates each bundle at info level, which is noise inside
       // `aai build` and actively wrong inside `aai dev`'s watch loop.
@@ -209,26 +220,25 @@ class AaiWorkflowBuilder extends BaseBuilder {
       suppressCreateWebhookBundleLogs: true,
       suppressCreateManifestLogs: true,
     });
-    this.outDir = outDir;
+    this.flowFile = flowFile;
+    this.stepFile = stepFile;
   }
 
   override async build(): Promise<void> {
     const inputFiles = await this.getInputFiles();
-    const flowFile = path.join(this.outDir, "flow.mjs");
-    const stepFile = path.join(this.outDir, "step.mjs");
 
     const { manifest } = await this.createWorkflowsBundle({
       inputFiles,
       format: "esm",
-      outfile: flowFile,
+      outfile: this.flowFile,
       // See the module doc — this is the 3.7 MB → 69 KB setting.
       bundleFinalOutput: false,
     });
-    await this.createStepsBundle({ inputFiles, format: "esm", outfile: stepFile });
+    await this.createStepsBundle({ inputFiles, format: "esm", outfile: this.stepFile });
 
     const [workflowCode, stepCode] = await Promise.all([
-      fs.readFile(flowFile, "utf-8"),
-      fs.readFile(stepFile, "utf-8"),
+      fs.readFile(this.flowFile, "utf-8"),
+      fs.readFile(this.stepFile, "utf-8"),
     ]);
     this.output = { workflowCode, stepCode: STEP_REQUIRE_SHIM + stepCode, manifest, inputFiles };
   }

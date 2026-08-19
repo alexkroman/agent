@@ -8,7 +8,17 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { makeStore, PROJECT, SCOPE, settled, TARGET } from "./_studio-preview-test-utils.ts";
+import {
+  makeStore,
+  PROJECT,
+  previewStamped,
+  SCOPE,
+  seededStore,
+  settled,
+  silenceWarn,
+  stampProject,
+  TARGET,
+} from "./_studio-preview-test-utils.ts";
 import { createPreviewDeployer, type PreviewDeployerOptions } from "./studio-preview.ts";
 import {
   createMemoryPreviewQueue,
@@ -16,7 +26,7 @@ import {
   PREVIEW_JOB_VISIBILITY_MS,
 } from "./studio-preview-queue.ts";
 import type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-broker.ts";
-import { createWorkspace, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
+import { getWorkspace } from "./studio-workspace.ts";
 
 /** Jump the memory queue's clock past any visibility timeout. */
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -34,17 +44,14 @@ function makeDeployer(opts: Omit<PreviewDeployerOptions, "queue" | "pollMs">) {
 
 describe("createPreviewDeployer", () => {
   test("deploys the workspace to the preview slug and stamps the metadata", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const workspaces = await seededStore();
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }),
     );
     const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-    });
+    const workspace = await previewStamped(workspaces);
 
     expect(deploy).toHaveBeenCalledWith(
       SCOPE,
@@ -60,16 +67,14 @@ describe("createPreviewDeployer", () => {
         allowPreviewSlug: true,
       },
     );
-    const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
-    expect(workspace?.previewSlug).toBe("contact-form-x7k2mq-preview");
-    expect(workspace?.previewError).toBeUndefined();
+    expect(workspace.previewSlug).toBe("contact-form-x7k2mq-preview");
+    expect(workspace.previewError).toBeUndefined();
     // The stamped hash matches the deployed files — the preview is current.
-    expect(workspace?.previewHash).toBe(workspace?.hash);
+    expect(workspace.previewHash).toBe(workspace.hash);
   });
 
   test("prefers the slug the deploy actually claimed, and reuses it after", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const workspaces = await seededStore();
     const deploy = vi.fn(
       async (
         _scope: string,
@@ -86,25 +91,19 @@ describe("createPreviewDeployer", () => {
     });
 
     // Edit → redeploys to the SAME slug, so the preview URL never rots.
-    await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
-      ...ws,
-      files: { "agent.ts": "// v2" },
-    }));
+    await stampProject(workspaces, { files: { "agent.ts": "// v2" } });
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(2));
     expect(deploy.mock.calls[1]?.[3]).toMatchObject({ slug: "claimed" });
   });
 
   test("a no-op schedule (preview already current) never deploys", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const workspaces = await seededStore();
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));
     const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-    });
+    await previewStamped(workspaces);
     // Same files, second schedule: nothing to ship.
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await settled();
@@ -112,8 +111,7 @@ describe("createPreviewDeployer", () => {
   });
 
   test("schedules during a deploy coalesce into one trailing re-deploy", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const workspaces = await seededStore();
     const { promise: gate, resolve: release } = Promise.withResolvers<void>();
     const deploy = vi.fn(
       async (
@@ -132,10 +130,7 @@ describe("createPreviewDeployer", () => {
     await vi.waitFor(() => expect(deploy).toHaveBeenCalledTimes(1));
     // Three edits land while the first deploy is in flight…
     for (const version of ["v2", "v3", "v4"]) {
-      await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
-        ...ws,
-        files: { "agent.ts": `// ${version}` },
-      }));
+      await stampProject(workspaces, { files: { "agent.ts": `// ${version}` } });
       deployer.schedule(SCOPE, PROJECT, TARGET);
     }
     release();
@@ -149,9 +144,8 @@ describe("createPreviewDeployer", () => {
   });
 
   test("a failed deploy stamps previewError and leaves the hash unset", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const workspaces = await seededStore({ "agent.ts": "// broken" });
+    silenceWarn();
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> => ({
         ok: false,
@@ -173,9 +167,8 @@ describe("createPreviewDeployer", () => {
   });
 
   test("a success after a failure clears previewError", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const workspaces = await seededStore({ "agent.ts": "// broken" });
+    silenceWarn();
     let ok = false;
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> =>
@@ -189,15 +182,9 @@ describe("createPreviewDeployer", () => {
     });
 
     ok = true;
-    await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
-      ...ws,
-      files: { "agent.ts": "// fixed" },
-    }));
+    await stampProject(workspaces, { files: { "agent.ts": "// fixed" } });
     deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-    });
-    expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeUndefined();
+    expect((await previewStamped(workspaces)).previewError).toBeUndefined();
   });
 
   /**
@@ -210,9 +197,8 @@ describe("createPreviewDeployer", () => {
    * "success" needs no deploy: what is running already IS the current files.
    */
   test("a job over already-deployed files clears a stale previewError without deploying", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// good" } });
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const workspaces = await seededStore({ "agent.ts": "// good" });
+    silenceWarn();
     let ok = true;
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> =>
@@ -222,15 +208,9 @@ describe("createPreviewDeployer", () => {
 
     // A good deploy, then a bad edit that fails.
     deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-    });
-    const goodHash = (await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash;
+    const goodHash = (await previewStamped(workspaces)).previewHash;
     ok = false;
-    await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
-      ...ws,
-      files: { "agent.ts": "// broken" },
-    }));
+    await stampProject(workspaces, { files: { "agent.ts": "// broken" } });
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(async () => {
       expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeDefined();
@@ -238,10 +218,7 @@ describe("createPreviewDeployer", () => {
     expect(deploy).toHaveBeenCalledTimes(2);
 
     // Undo. The files now hash to exactly what is deployed.
-    await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
-      ...ws,
-      files: { "agent.ts": "// good" },
-    }));
+    await stampProject(workspaces, { files: { "agent.ts": "// good" } });
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await vi.waitFor(async () => {
       expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewError).toBeUndefined();
@@ -257,17 +234,13 @@ describe("createPreviewDeployer", () => {
     // The common case, and the one the clear above must not turn into a write:
     // N queued jobs for one project cost a read each, not a version bump each
     // (every bump is an SSE push of the whole file map to every open tab).
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const workspaces = await seededStore();
     const deploy = vi.fn(
       async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "Deployed" }),
     );
     const deployer = makeDeployer({ workspaces, deployWorkspace: deploy });
     deployer.schedule(SCOPE, PROJECT, TARGET);
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-    });
-    const before = await getWorkspace(workspaces, SCOPE, PROJECT);
+    const before = await previewStamped(workspaces);
 
     deployer.schedule(SCOPE, PROJECT, TARGET);
     await settled();
@@ -287,9 +260,8 @@ describe("createPreviewDeployer", () => {
   });
 
   test("a thrown deploy (dead sandbox) is contained, not fatal", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const workspaces = await seededStore();
+    const warn = silenceWarn();
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
       throw new Error("sandbox gone");
     });
@@ -308,9 +280,8 @@ describe("createPreviewDeployer", () => {
    * preview…" indefinitely.
    */
   test("a job whose deploy throws is left for redelivery, not consumed", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const workspaces = await seededStore();
+    const warn = silenceWarn();
     let attempts = 0;
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
       attempts++;
@@ -332,9 +303,7 @@ describe("createPreviewDeployer", () => {
 
     // The next drain — any replica's — picks it up and finishes the work.
     await deployer.drainOnce();
-    await vi.waitFor(async () => {
-      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
-    });
+    expect((await previewStamped(workspaces)).previewError).toBeUndefined();
   });
 
   test("a job wedged on its project lock is handed back, not sat on", async () => {
@@ -344,9 +313,8 @@ describe("createPreviewDeployer", () => {
     // rejects, leaving the job unacked for redelivery.
     vi.useFakeTimers();
     try {
-      const workspaces = makeStore();
-      await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const workspaces = await seededStore();
+      const warn = silenceWarn();
 
       // The first deploy never returns — a sandbox that went away mid-request.
       const wedged = vi.fn(
@@ -395,9 +363,8 @@ describe("createPreviewDeployer", () => {
   });
 
   test("a job redelivered past the attempt cap is archived, not retried forever", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const workspaces = await seededStore();
+    silenceWarn();
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => {
       throw new Error("crash loop");
     });
@@ -421,8 +388,7 @@ describe("createPreviewDeployer", () => {
    * replica that did not enqueue it resolves the user's key from Vault.
    */
   test("a redelivered job resolves the caller's key by user id", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    const workspaces = await seededStore();
     const queue = createMemoryPreviewQueue();
     // Enqueued by a replica that is now gone: only the row survives.
     await queue.enqueue({
@@ -455,9 +421,8 @@ describe("createPreviewDeployer", () => {
   });
 
   test("a redelivered job with no resolvable key is archived", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const workspaces = await seededStore();
+    silenceWarn();
     const queue = createMemoryPreviewQueue();
     // No userId: a raw-key caller's job whose enqueuing replica is gone. No
     // replica will ever hold that credential, so retrying is pointless.
@@ -483,9 +448,8 @@ describe("createPreviewDeployer", () => {
  */
 describe("queue failures are contained", () => {
   test("an enqueue failure is logged and never reaches the caller", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const workspaces = await seededStore();
+    const warn = silenceWarn();
     const queue = createMemoryPreviewQueue();
     queue.enqueue = () => Promise.reject(new Error("pgmq is down"));
     const deployer = createPreviewDeployer({
@@ -521,9 +485,8 @@ describe("queue failures are contained", () => {
   });
 
   test("an ack failure is logged, leaving the job for redelivery", async () => {
-    const workspaces = makeStore();
-    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const workspaces = await seededStore();
+    const warn = silenceWarn();
     const queue = createMemoryPreviewQueue();
     queue.ack = () => Promise.reject(new Error("ack lost"));
     const deploy = vi.fn(async (): Promise<WorkspaceDeployOutcome> => ({ ok: true, output: "ok" }));

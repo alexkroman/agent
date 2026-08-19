@@ -163,8 +163,9 @@ export function ThemeProvider({
   value?: ClientTheme | undefined;
   children?: ReactNode;
 }) {
-  // Identity-stable merge: the useChatItems row cache compares theme by
-  // reference, so a fresh object per render would rebuild every message row.
+  // Identity-stable merge: `MessageList`'s memoized rows take the theme as a
+  // dependency and `MessageBubble` is `memo()`-wrapped on it, so a fresh object
+  // per render would rebuild every message row.
   const merged = useMemo(() => (value ? { ...DEFAULT_THEME, ...value } : DEFAULT_THEME), [value]);
   usePageBackground(merged.bg);
   return createElement(ThemeCtx.Provider, { value: merged }, children);

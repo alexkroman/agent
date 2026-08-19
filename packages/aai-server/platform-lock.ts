@@ -180,12 +180,6 @@ export type PgSlugLockOptions = {
 };
 
 /**
- * Refuse a transaction-mode pooler URL: a session-scoped advisory lock taken
- * through one is not held by whoever thinks it holds it (see the module doc).
- * Throwing at construction is the point — the alternative is a lock that
- * appears to work and silently stops excluding anything.
- */
-/**
  * Does this URL name a TRANSACTION-mode pooler?
  *
  * One spelling, because two callers need the same answer for opposite reasons:
@@ -199,6 +193,12 @@ export function isTransactionModePooler(url: URL): boolean {
   return url.port === "6543" || url.searchParams.get("pgbouncer") === "true";
 }
 
+/**
+ * Refuse a transaction-mode pooler URL: a session-scoped advisory lock taken
+ * through one is not held by whoever thinks it holds it (see the module doc).
+ * Throwing at construction is the point — the alternative is a lock that
+ * appears to work and silently stops excluding anything.
+ */
 export function assertSessionModeUrl(url: string): void {
   let parsed: URL;
   try {

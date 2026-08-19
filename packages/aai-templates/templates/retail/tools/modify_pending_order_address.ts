@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { AddressFields, formatAddress, toAddress } from "../address.ts";
-import { resolveOrder } from "../resolve.ts";
+import { OrderIdField, resolveOrder } from "../resolve.ts";
 import { retailTool, setFocus } from "../store.ts";
 
 export default retailTool({
@@ -10,10 +10,7 @@ export default retailTool({
     "Change the shipping address of a pending order. Read the new address back to the caller and " +
     "get an explicit yes before calling this. This does not change the customer's default address.",
   inputSchema: z.object({
-    order_id: z
-      .string()
-      .max(120)
-      .describe("Order id such as '#W0000000', or a spoken reference to one of their orders"),
+    order_id: OrderIdField,
     ...AddressFields,
   }),
   execute: (args, state) => {

@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { AdoptSessionParams } from "./studio-session-adopt.ts";
+import type { AdoptSessionParams, adoptPeerSession } from "./studio-session-adopt.ts";
 import { createSessionFleet, soloFleet } from "./studio-session-fleet.ts";
 import {
   createMemoryStudioSessionRegistry,
@@ -30,9 +30,16 @@ const PARAMS: AdoptSessionParams = {
   maxSteps: 4,
 };
 
-function setup(adopt = vi.fn(async () => ({ url: "https://peer/chat", token: "chat-token" }))) {
+// Typed as the real peer install rather than cast in: the fleet's `adopt` seam
+// IS `adoptPeerSession`, and a cast here stops reporting when its shape moves.
+function setup(
+  adopt = vi.fn<typeof adoptPeerSession>(async () => ({
+    url: "https://peer/chat",
+    token: "chat-token",
+  })),
+) {
   const registry = createMemoryStudioSessionRegistry();
-  const fleet = createSessionFleet({ registry, replicaId: US, adopt: adopt as never });
+  const fleet = createSessionFleet({ registry, replicaId: US, adopt });
   return { registry, fleet, adopt };
 }
 
@@ -95,7 +102,7 @@ describe("createSessionFleet", () => {
   });
 
   test("a failed install drops the stale row so the next call spawns", async () => {
-    const { registry, fleet } = setup(vi.fn(async () => null) as never);
+    const { registry, fleet } = setup(vi.fn<typeof adoptPeerSession>(async () => null));
     await registry.claim(SCOPE, PROJECT, peerRow());
     expect(await fleet.adopt(SCOPE, PROJECT, PARAMS)).toBeNull();
     expect(await registry.get(SCOPE, PROJECT)).toBeNull();

@@ -1,3 +1,4 @@
+import { omitUndefined } from "@alexkroman1/aai/utils";
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The one platform→guest forward, and the one header policy it applies.
@@ -231,7 +232,7 @@ export async function forwardToGuest(opts: GuestForwardOptions): Promise<Respons
   try {
     return await opts.fetchFn(opts.url, {
       method: opts.method ?? "GET",
-      ...(opts.headers ? { headers: opts.headers } : {}),
+      ...omitUndefined({ headers: opts.headers }),
       // `duplex: "half"` is REQUIRED whenever the body is a stream — undici
       // rejects the request outright rather than buffering it, which is the
       // trade we want but not one it may assume.

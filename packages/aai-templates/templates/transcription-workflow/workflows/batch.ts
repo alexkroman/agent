@@ -45,8 +45,9 @@
  */
 
 import { throwFatalStepError, toStepError } from "@alexkroman1/aai/step-errors";
-import { readUpload, report, requireStepEnv, stepFetch, uploadInfo } from "@alexkroman1/aai/utils";
+import { readUpload, report, stepFetch, uploadInfo } from "@alexkroman1/aai/utils";
 import { sleep } from "workflow";
+import { apiKeyOrFatal } from "./sync-api.ts";
 import { countWords, startClock, type Transcript } from "./transcribe.ts";
 
 /** The async API's base. */
@@ -65,9 +66,6 @@ const API = "https://api.assemblyai.com";
  * pins the model so a default change does not silently move this template's output.
  */
 const MODELS = ["universal-3-5-pro"];
-
-/** The key a step reads out of the agent env. Declared in `agent.ts`'s `requiredEnv`. */
-const API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
 /** How much of our stored upload one outbound window carries. */
 const UPLOAD_WINDOW_BYTES = 4 * 1024 * 1024;
@@ -274,15 +272,6 @@ async function* windows(uploadId: string, size: number): AsyncGenerator<Uint8Arr
     // Issued BEFORE the yield, so the store is fetching while the socket sends.
     next = at < size ? read(at) : undefined;
     yield bytes;
-  }
-}
-
-/** The API key, or a terminal failure — three more attempts find the same gap. */
-function apiKeyOrFatal(): string {
-  try {
-    return requireStepEnv(API_KEY_ENV);
-  } catch (err: unknown) {
-    return throwFatalStepError(err);
   }
 }
 

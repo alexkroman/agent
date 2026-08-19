@@ -46,6 +46,7 @@ import { CliLinkGate, KeyGate, SignInGate } from "./gates.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { installStaleBuildRecovery } from "./stale-build.ts";
 import "./styles.css";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 
 // Before anything renders: a chunk this build names can stop existing under
 // a running tab (see stale-build.ts). Vite reports the modulepreload half of
@@ -151,7 +152,7 @@ function Root() {
       <GateProblem
         message={auth.message}
         detail={auth.detail}
-        {...(auth.retry && { onRetry: auth.retry })}
+        {...omitUndefined({ onRetry: auth.retry })}
       />
     );
   }

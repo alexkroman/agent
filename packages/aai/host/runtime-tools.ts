@@ -15,6 +15,7 @@ import {
 } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import type { StateProjection } from "../sdk/session-state.ts";
@@ -196,7 +197,7 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
   const generate = setupGenerate(deps);
   const resolved = mergeBuiltinSurface(agent, builtinFetchOpt, {
     schemas: opts.toolSchemas ?? [],
-    ...(opts.toolGuidance ? { guidance: opts.toolGuidance } : {}),
+    ...omitUndefined({ guidance: opts.toolGuidance }),
   });
   const builtinDefs = resolved.defs;
   const toolSchemas = resolved.schemas;
@@ -239,10 +240,10 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   const { agent, opts, env, resolvedDb, workflows, notifier, logger, emitters, stateStore } = deps;
   const builtinOpts = {
-    ...(opts.fetch ? { fetch: opts.fetch } : {}),
+    ...omitUndefined({ fetch: opts.fetch }),
     // The guest harness runs this path INSIDE the sandbox and provides the
     // real run_code executor; without one the builtin refuses (aai dev).
-    ...(opts.runCode ? { runCode: opts.runCode } : {}),
+    ...omitUndefined({ runCode: opts.runCode }),
   };
   const customSchemas = agentToolsToSchemas(agent.tools ?? {});
   const builtins = mergeBuiltinSurface(agent, builtinOpts, { schemas: customSchemas });

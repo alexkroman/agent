@@ -44,17 +44,15 @@ describe("TopBar", () => {
     expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   });
 
-  test("the switcher moves between all three panes", () => {
+  test.each([
+    ["Code", "code"],
+    ["Settings", "settings"],
+    ["Preview", "preview"],
+  ])("the switcher moves to the %s pane", (label, id) => {
     const onSelectTab = vi.fn();
     render(<TopBar {...barProps} onSelectTab={onSelectTab} />);
-    for (const [label, id] of [
-      ["Code", "code"],
-      ["Settings", "settings"],
-      ["Preview", "preview"],
-    ]) {
-      fireEvent.click(screen.getByRole("button", { name: label as string }));
-      expect(onSelectTab).toHaveBeenCalledWith(id);
-    }
+    fireEvent.click(button(label));
+    expect(onSelectTab).toHaveBeenCalledWith(id);
   });
 
   test("the open pane is the current one", () => {

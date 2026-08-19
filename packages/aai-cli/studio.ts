@@ -28,6 +28,7 @@ import {
   projectNameFromDir,
   publishStudioProject,
   pushStudioSource,
+  studioProjectApiUrl,
   studioProjectUrl,
 } from "./_studio.ts";
 import { layerScaffold } from "./_templates.ts";
@@ -259,7 +260,7 @@ async function syncEnvSecrets(
   // The PROJECT route, not the deployed slug's: a project has a preview agent
   // too — one this very command created — and a `.env` synced to production
   // alone leaves it failing at its first session. The server fans out.
-  await apiRequest(`${serverUrl}/studio/projects/${encodeURIComponent(project)}/secret`, {
+  await apiRequest(`${studioProjectApiUrl(serverUrl, project)}/secret`, {
     apiKey,
     action: "secret",
     method: "PUT",

@@ -1,12 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { createHash } from "node:crypto";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import type http from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WORKFLOW_FLOW_PATH } from "@alexkroman1/aai/runtime";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { useTempDirs } from "./_test-utils.ts";
 import {
   createAgentRequestHandler,
   createIdleController,
@@ -20,8 +20,15 @@ import { BUNDLE_FETCH_TIMEOUT_MS, GUEST_CONTRACT_VERSION } from "./limits.ts";
 
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf-8").digest("hex");
 
-async function writeBoot(opts: { code: string; sha?: string; env?: unknown }) {
-  const dir = await mkdtemp(join(tmpdir(), "aai-agent-boot-"));
+const makeBootDir = useTempDirs("aai-agent-boot-");
+
+/** The exec env a spawner would have written, in a self-removing temp dir. */
+async function writeBoot(opts: {
+  code: string;
+  sha?: string;
+  env?: unknown;
+}): Promise<Record<string, string>> {
+  const dir = await makeBootDir();
   const bundlePath = join(dir, "bundle.mjs");
   await writeFile(bundlePath, opts.code, "utf-8");
   const bootEnv: Record<string, string> = {
@@ -33,25 +40,25 @@ async function writeBoot(opts: { code: string; sha?: string; env?: unknown }) {
     await writeFile(envPath, JSON.stringify(opts.env), "utf-8");
     bootEnv.AAI_AGENT_ENV_PATH = envPath;
   }
-  return { bootEnv, dir };
+  return bootEnv;
 }
 
 describe("readAgentBoot", () => {
   test("reads the bundle and env, verifying the bundle hash", async () => {
-    const { bootEnv } = await writeBoot({ code: "export default {}", env: { KEY: "v" } });
+    const bootEnv = await writeBoot({ code: "export default {}", env: { KEY: "v" } });
     const boot = await readAgentBoot(bootEnv);
     expect(boot.code).toBe("export default {}");
     expect(boot.env).toEqual({ KEY: "v" });
   });
 
   test("deletes the env file after reading (secrets leave the disk)", async () => {
-    const { bootEnv } = await writeBoot({ code: "x", env: { KEY: "v" } });
+    const bootEnv = await writeBoot({ code: "x", env: { KEY: "v" } });
     await readAgentBoot(bootEnv);
     await expect(access(bootEnv.AAI_AGENT_ENV_PATH as string)).rejects.toThrow();
   });
 
   test("a hash mismatch refuses to load", async () => {
-    const { bootEnv } = await writeBoot({ code: "export default {}", sha: sha256("tampered") });
+    const bootEnv = await writeBoot({ code: "export default {}", sha: sha256("tampered") });
     await expect(readAgentBoot(bootEnv)).rejects.toThrow(/hash mismatch/);
   });
 
@@ -61,18 +68,18 @@ describe("readAgentBoot", () => {
 
   test("a non-object or non-string-valued env file is rejected", async () => {
     const arr = await writeBoot({ code: "x", env: ["nope"] });
-    await expect(readAgentBoot(arr.bootEnv)).rejects.toThrow(/JSON object/);
+    await expect(readAgentBoot(arr)).rejects.toThrow(/JSON object/);
     const bad = await writeBoot({ code: "x", env: { KEY: 7 } });
-    await expect(readAgentBoot(bad.bootEnv)).rejects.toThrow(/must be a string/);
+    await expect(readAgentBoot(bad)).rejects.toThrow(/must be a string/);
   });
 
   test("env file is optional — boots with an empty env", async () => {
-    const { bootEnv } = await writeBoot({ code: "x" });
+    const bootEnv = await writeBoot({ code: "x" });
     expect((await readAgentBoot(bootEnv)).env).toEqual({});
   });
 
   test("the bundle file itself is untouched (only the env is scrubbed)", async () => {
-    const { bootEnv } = await writeBoot({ code: "keep-me", env: {} });
+    const bootEnv = await writeBoot({ code: "keep-me", env: {} });
     await readAgentBoot(bootEnv);
     expect(await readFile(bootEnv.AAI_BUNDLE_PATH as string, "utf-8")).toBe("keep-me");
   });
@@ -147,7 +154,7 @@ describe("readAgentBoot", () => {
   test("the URL wins over a path, so a v2 guest never reads a file nobody wrote", async () => {
     const code = "from-the-url";
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(code));
-    const { bootEnv } = await writeBoot({ code: "from-the-file" });
+    const bootEnv = await writeBoot({ code: "from-the-file" });
     const boot = await readAgentBoot({
       ...bootEnv,
       AAI_BUNDLE_URL: "https://blobs.test/signed",

@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineCommand, runMain, showUsage } from "citty";
@@ -8,7 +8,7 @@ import { commandPath, defineExec, sharedArgs, unknownFlagsForArgv } from "./_cli
 import { CliError, fail, getOutputMode, installStdoutGuard, writeLine } from "./_output.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
 import { log } from "./_ui.ts";
-import { AGENT_ENTRY, errorMessage, resolveCwd } from "./_utils.ts";
+import { AGENT_ENTRY, errorMessage, readPackageJson, resolveCwd } from "./_utils.ts";
 import { workflow } from "./cli-workflow.ts";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
@@ -20,8 +20,8 @@ const cliDir = path.dirname(fileURLToPath(import.meta.url));
 function readCliVersion(dir: string): string {
   for (const candidate of [path.join(dir, "package.json"), path.join(dir, "..", "package.json")]) {
     try {
-      const parsed = JSON.parse(readFileSync(candidate, "utf-8")) as { version?: unknown };
-      if (typeof parsed.version === "string") return parsed.version;
+      const { version } = readPackageJson(candidate);
+      if (typeof version === "string") return version;
     } catch {
       /* missing or corrupt — try the next candidate */
     }
@@ -417,12 +417,13 @@ if (process.env.VITEST !== "true") {
       await showUsage(cmd, parent);
       return;
     }
+    const named = commandPath(cmd, parent);
     await writeLine(
       `${JSON.stringify(
         fail(
           "usage",
-          `Invalid arguments for \`${commandPath(cmd, parent)}\`.`,
-          `Run \`${commandPath(cmd, parent)} --help\` to see the arguments it accepts.`,
+          `Invalid arguments for \`${named}\`.`,
+          `Run \`${named} --help\` to see the arguments it accepts.`,
         ),
       )}\n`,
     );

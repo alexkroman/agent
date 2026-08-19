@@ -144,7 +144,16 @@ export function evalMinScore(
   return n;
 }
 
-function createRecorder(): EvalRecorder & { readonly checks: EvalCheck[] } {
+/**
+ * A recorder with no run around it — what {@link runEval} hands a case body, and
+ * what a test of the assertion vocabulary asserts against.
+ *
+ * Exported because `assertions.test.ts` needs exactly this and had a byte-for-byte
+ * copy of the `check` body: the detail-omission rule below is the shape those
+ * tests assert (`{ label, ok }` for a pass, `detail` only on a failure), so a copy
+ * lets the suite keep checking a recorder the runner no longer builds.
+ */
+export function createRecorder(): EvalRecorder & { readonly checks: EvalCheck[] } {
   const checks: EvalCheck[] = [];
   return {
     checks,

@@ -20,7 +20,7 @@
  * the workspace's type errors the way a write's result does.
  */
 
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -29,7 +29,7 @@ import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./limits.ts";
 import { toolchainModules } from "./studio-build.ts";
 import { isScriptFile } from "./studio-syntax.ts";
 import { STUDIO_TOOL_DESCRIPTIONS } from "./studio-tool-descriptions.ts";
-import { resolveInside, walkWorkspace } from "./studio-workspace-fs.ts";
+import { resolveInside, walkWorkspace, writeFileWithParents } from "./studio-workspace-fs.ts";
 import type { PostWriteDiagnostics } from "./studio-write-diagnostics.ts";
 
 /**
@@ -222,11 +222,7 @@ async function copyTemplate(
   }
 
   await Promise.all(
-    writes.map(async ({ rel, content }) => {
-      const abs = resolveInside(dir, rel);
-      await mkdir(path.dirname(abs), { recursive: true });
-      await writeFile(abs, content, "utf-8");
-    }),
+    writes.map(({ rel, content }) => writeFileWithParents(resolveInside(dir, rel), content)),
   );
 
   const written = writes.map((w) => w.rel);

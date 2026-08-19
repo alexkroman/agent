@@ -47,11 +47,6 @@ export function simulateTextFrame(ws: MockWebSocket, text: string): void {
   ws.dispatchEvent(new MessageEvent("message", { data: text }));
 }
 
-/** The server's first outbound frame, parsed — in practice the CONFIG frame. */
-export function parseFirstFrame(ws: MockWebSocket): Record<string, unknown> {
-  return JSON.parse(ws.sent[0] as string);
-}
-
 /** Wait until the handler has logged that `session.start()` resolved. */
 export async function waitForSessionReady(logger: {
   info: ReturnType<typeof vi.fn>;

@@ -123,15 +123,17 @@ describe("template build smoke", () => {
  * exist, so the guide is pinned to the SDK catalog in both directions.
  */
 describe("scaffold guide voice catalog", () => {
-  const guide = scaffoldGuide;
-
   test("lists every current voice", () => {
-    const missing = Object.keys(ASSEMBLYAI_TTS_VOICES).filter((v) => !guide.includes(`\`${v}\``));
+    const missing = Object.keys(ASSEMBLYAI_TTS_VOICES).filter(
+      (v) => !scaffoldGuide.includes(`\`${v}\``),
+    );
     expect(missing).toEqual([]);
   });
 
   test("points at no deprecated voice", () => {
-    const stale = ASSEMBLYAI_TTS_DEPRECATED_VOICES.filter((v) => guide.includes(`\`${v}\``));
+    const stale = ASSEMBLYAI_TTS_DEPRECATED_VOICES.filter((v) =>
+      scaffoldGuide.includes(`\`${v}\``),
+    );
     expect(stale).toEqual([]);
   });
 });

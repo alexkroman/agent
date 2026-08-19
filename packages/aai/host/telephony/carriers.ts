@@ -23,6 +23,7 @@
  * reason to read.
  */
 
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import { isRecord } from "../../sdk/utils.ts";
 
 /** One inbound carrier frame, reduced to what a session needs. */
@@ -137,15 +138,16 @@ export const twilioCodec: CarrierCodec = {
       encoding: "encoding",
       sampleRate: "sampleRate",
     }),
-  media: (payload, streamId) => ({
-    event: "media",
-    ...(streamId === null ? {} : { streamSid: streamId }),
-    media: { payload },
-  }),
-  clear: (streamId) => ({
-    event: "clear",
-    ...(streamId === null ? {} : { streamSid: streamId }),
-  }),
+  // `omitUndefined` rather than a conditional spread of an object literal, which
+  // is what `guard-invariants` rule 2 asks for wherever the guard IS the value:
+  // a carrier that puts no id on the wire simply has no `streamSid` key.
+  media: (payload, streamId) =>
+    omitUndefined({
+      event: "media",
+      streamSid: streamId ?? undefined,
+      media: { payload },
+    }),
+  clear: (streamId) => omitUndefined({ event: "clear", streamSid: streamId ?? undefined }),
 };
 
 /**

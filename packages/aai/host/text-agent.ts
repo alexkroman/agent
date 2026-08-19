@@ -60,6 +60,7 @@ import { agentToolsToSchemas } from "../sdk/_internal-types.ts";
 import { DEFAULT_MAX_STEPS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { assemblyAILlm } from "../sdk/providers/llm/assemblyai.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import { createDetachedSlotStore } from "../sdk/session-state.ts";
@@ -242,8 +243,8 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
   const builtins = mergeBuiltinSurface(
     agent,
     {
-      ...(opts.fetch ? { fetch: opts.fetch } : {}),
-      ...(opts.runCode ? { runCode: opts.runCode } : {}),
+      ...omitUndefined({ fetch: opts.fetch }),
+      ...omitUndefined({ runCode: opts.runCode }),
     },
     { schemas: agentToolsToSchemas(agent.tools ?? {}) },
   );
@@ -337,8 +338,8 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent {
         stopWhen: [stepCountIs(maxSteps + 1), ...(turn.stopWhen ?? [])],
         prepareStep: composePrepareStep(turn.prepareStep, forceFinal),
         experimental_repairToolCall: createToolCallRepair(model, logger, () => turn.signal),
-        ...(turn.signal ? { abortSignal: turn.signal } : {}),
-        ...(turn.onStepFinish ? { onStepFinish: turn.onStepFinish } : {}),
+        ...omitUndefined({ abortSignal: turn.signal }),
+        ...omitUndefined({ onStepFinish: turn.onStepFinish }),
         // Claiming this callback is what keeps a provider failure to one log
         // line: the SDK's default is `console.error(error)`, which spends
         // ~100 lines on three nested stack traces plus the whole request body

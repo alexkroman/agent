@@ -10,8 +10,24 @@
  */
 
 import { isToolFailure, resolveOne, spokenDigits, type ToolFailure } from "@alexkroman1/aai";
+import { z } from "zod";
 import type { Order, OrderStatus, Product, RetailState } from "./shared.ts";
 import { authenticatedUser } from "./store.ts";
+
+/**
+ * The `order_id` parameter, for the seven tools that take one.
+ *
+ * Same reasoning as `AddressFields` in `address.ts`, and here the stakes are the
+ * DESCRIPTION: it is the sentence that tells the model a spoken reference is
+ * acceptable, so a copy that lost the second half would quietly make one tool
+ * demand a literal id while its six siblings accept "the last one". It belongs in
+ * this module because "what an order id looks like when a caller reads it aloud"
+ * is exactly what {@link resolveOrder} implements.
+ */
+export const OrderIdField = z
+  .string()
+  .max(120)
+  .describe("Order id such as '#W0000000', or a spoken reference to one of their orders");
 
 /** `#W5866402` from anything STT plausibly produces for it. */
 export function normalizeOrderId(spoken: string): string {

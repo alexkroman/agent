@@ -295,10 +295,7 @@ export function useWorkflowSubmit<R = unknown>(
   // The caller's client through a ref — see `_workflow-api-ref.ts`.
   const getClient = useWorkflowApiRef(api);
 
-  const tracked = useWorkflowRun<R>(runId, {
-    ...(api && { api }),
-    ...omitUndefined({ intervalMs }),
-  });
+  const tracked = useWorkflowRun<R>(runId, omitUndefined({ api, intervalMs }));
 
   const submit = useCallback(
     async (input: unknown) => {

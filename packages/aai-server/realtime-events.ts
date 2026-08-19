@@ -60,6 +60,9 @@ import {
   type Unwatch,
 } from "./platform-events.ts";
 
+/** The schema every watched table lives in — see the module doc's grant note. */
+const PLATFORM_SCHEMA = "aai_platform";
+
 /** The rows a postgres_changes payload carries. Treated as untrusted wire data. */
 type ChangePayload = {
   new?: Record<string, unknown> | null;
@@ -214,23 +217,6 @@ function createSubscriptionMonitor() {
 }
 
 /**
- * Refcounted keyed channels: one Realtime channel per distinct key, shared
- * by its watchers and released (unsubscribed) when the last one unwatches.
- * Entries are dropped by identity — the pool is an {@link createOwnedMap}, so
- * a late unwatch releases its own claim and can never tear down a successor
- * channel for the same key.
- *
- * **A (re)join is itself a signal.** `subscribe()` only SENDS the join; the
- * server-side `postgres_changes` binding does not exist until the push is
- * acked with `SUBSCRIBED`, and realtime-js rejoins the channel after any
- * socket drop. Changes in either window are delivered to nobody, ever — these
- * are pure signal streams with no sequence number to resume from and (since
- * the studio client's polling loop was removed) nothing downstream that would
- * notice. So every successful join fires the key's watchers, which re-read
- * their row exactly as they do for a change event. That makes the join gap and
- * a reconnect outage cost a redundant read instead of a silently stale client.
- */
-/**
  * One project's pool KEY and its Realtime TOPIC, derived together.
  *
  * They must be injective in the same way, and only one of them was. The key
@@ -258,6 +244,23 @@ function projectChannel(
   };
 }
 
+/**
+ * Refcounted keyed channels: one Realtime channel per distinct key, shared
+ * by its watchers and released (unsubscribed) when the last one unwatches.
+ * Entries are dropped by identity — the pool is an {@link createOwnedMap}, so
+ * a late unwatch releases its own claim and can never tear down a successor
+ * channel for the same key.
+ *
+ * **A (re)join is itself a signal.** `subscribe()` only SENDS the join; the
+ * server-side `postgres_changes` binding does not exist until the push is
+ * acked with `SUBSCRIBED`, and realtime-js rejoins the channel after any
+ * socket drop. Changes in either window are delivered to nobody, ever — these
+ * are pure signal streams with no sequence number to resume from and (since
+ * the studio client's polling loop was removed) nothing downstream that would
+ * notice. So every successful join fires the key's watchers, which re-read
+ * their row exactly as they do for a change event. That makes the join gap and
+ * a reconnect outage cost a redundant read instead of a silently stale client.
+ */
 function createChannelPool(
   client: RealtimeClientLike,
   monitor: ReturnType<typeof createSubscriptionMonitor>,
@@ -326,6 +329,9 @@ function createChannelPool(
 export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions): PlatformEvents {
   const client = opts.client ?? defaultClient(opts);
 
+  const monitor = createSubscriptionMonitor();
+  const pool = createChannelPool(client, monitor);
+
   // The one agents channel, shared by every watcher, created on first watch.
   const agentWatchers = new Set<(slug: string) => void>();
   const agentResyncWatchers = new Set<() => void>();
@@ -336,7 +342,7 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
     agentsChannel = client.channel("aai:agents");
     agentsChannel.on(
       "postgres_changes",
-      { event: "*", schema: "aai_platform", table: "agents" },
+      { event: "*", schema: PLATFORM_SCHEMA, table: "agents" },
       (payload) => {
         // Delete events carry the identity in `old`; everything else in `new`.
         const slug = payload.new?.slug ?? payload.old?.slug;
@@ -370,10 +376,30 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
     });
   };
 
-  const monitor = createSubscriptionMonitor();
-  const pool = createChannelPool(client, monitor);
   const scopeAccepts = (scope: string) => (row: Record<string, unknown> | null | undefined) =>
     row?.scope === scope;
+
+  /**
+   * One project's row watcher: the workspace and chat streams differ only in
+   * which table they watch and which channel kind they claim.
+   *
+   * Both filter on `project` alone — a postgres_changes filter carries ONE
+   * column — so both check the other half of the composite key handler-side with
+   * `scopeAccepts`. Written twice, that pairing is one edit away from a stream
+   * that watches every scope's rows for a project name.
+   */
+  const watchProjectRow =
+    (kind: "workspace" | "chat", table: string) =>
+    (scope: string, project: string, onChange: () => void): Unwatch => {
+      const { key, topic } = projectChannel(kind, scope, project);
+      return pool.watch(
+        key,
+        topic,
+        { event: "*", schema: PLATFORM_SCHEMA, table, filter: `project=eq.${project}` },
+        scopeAccepts(scope),
+        onChange,
+      );
+    };
 
   return {
     watchAgents(onChange, onResync): Unwatch {
@@ -390,37 +416,9 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
       };
     },
 
-    watchWorkspace(scope, project, onChange): Unwatch {
-      const { key, topic } = projectChannel("workspace", scope, project);
-      return pool.watch(
-        key,
-        topic,
-        {
-          event: "*",
-          schema: "aai_platform",
-          table: "studio_workspaces",
-          filter: `project=eq.${project}`,
-        },
-        scopeAccepts(scope),
-        onChange,
-      );
-    },
+    watchWorkspace: watchProjectRow("workspace", "studio_workspaces"),
 
-    watchChat(scope, project, onChange): Unwatch {
-      const { key, topic } = projectChannel("chat", scope, project);
-      return pool.watch(
-        key,
-        topic,
-        {
-          event: "*",
-          schema: "aai_platform",
-          table: "studio_chats",
-          filter: `project=eq.${project}`,
-        },
-        scopeAccepts(scope),
-        onChange,
-      );
-    },
+    watchChat: watchProjectRow("chat", "studio_chats"),
 
     watchScopeProjects(scope, onChange): Unwatch {
       return pool.watch(
@@ -428,7 +426,7 @@ export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions
         `aai:projects:${scope}`,
         {
           event: "*",
-          schema: "aai_platform",
+          schema: PLATFORM_SCHEMA,
           table: "studio_workspaces",
           filter: `scope=eq.${scope}`,
         },

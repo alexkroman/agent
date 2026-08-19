@@ -3,8 +3,15 @@
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "../../.tsbuildinfo/aai-cli.tsbuildinfo",
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
+    // `bin.mjs` is the published CLI's entrypoint and `bundle-templates.mjs`
+    // builds what it ships, and neither was type-checked by anything: no
+    // tsconfig in the repo set `allowJs`, so the two files every user of this
+    // package actually executes had lint but no compiler. `checkJs` is the half
+    // that matters — `allowJs` alone only lets them be pulled in as imports.
+    "allowJs": true,
+    "checkJs": true
   },
-  "include": ["./**/*.ts"],
+  "include": ["./**/*.ts", "./*.mjs"],
   "exclude": ["node_modules", "dist", "templates", "**/__snapshots__"]
 }

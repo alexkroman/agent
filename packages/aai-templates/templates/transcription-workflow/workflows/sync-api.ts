@@ -104,8 +104,14 @@ export async function transcribeWav(
   return (body.text ?? "").trim();
 }
 
-/** The API key, or a terminal failure — three more attempts find the same gap. */
-function apiKeyOrFatal(): string {
+/**
+ * The API key, or a terminal failure — three more attempts find the same gap.
+ *
+ * Exported because `batch.ts` calls the same provider on the same key and had
+ * written this, and its own `API_KEY_ENV`, again. The key belongs to the
+ * PROVIDER; only the endpoint and its failure shapes belong to this module.
+ */
+export function apiKeyOrFatal(): string {
   try {
     return requireStepEnv(API_KEY_ENV);
   } catch (err: unknown) {

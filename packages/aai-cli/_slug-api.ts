@@ -1,8 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-
-import { getServerInfo } from "./_agent.ts";
-import { type ApiRequestOptions, apiRequest, HINT_NOT_DEPLOYED } from "./_api-client.ts";
-
 /**
  * Authenticated request against a deployed agent's slug-scoped resource
  * (`${serverUrl}/${slug}${resourcePath}`) — the one shape every per-agent
@@ -13,6 +9,11 @@ import { type ApiRequestOptions, apiRequest, HINT_NOT_DEPLOYED } from "./_api-cl
  * so tests can mock `_agent.ts`/`_api-client.ts` while this composition
  * stays real — an intra-module call would bypass those mocks.
  */
+
+import { getServerInfo } from "./_agent.ts";
+import { type ApiRequestOptions, apiRequest, HINT_NOT_DEPLOYED } from "./_api-client.ts";
+import { studioProjectApiUrl } from "./_studio.ts";
+
 /**
  * A SECRET request, routed to the project when this directory is linked to
  * one and to the bare slug otherwise.
@@ -33,7 +34,7 @@ export async function secretRequest<T = unknown>(
 ): Promise<{ data: T; target: string }> {
   const { serverUrl, slug, apiKey, studioProject } = await getServerInfo(cwd, server);
   const url = studioProject
-    ? `${serverUrl}/studio/projects/${encodeURIComponent(studioProject)}/secret${resourcePath}`
+    ? `${studioProjectApiUrl(serverUrl, studioProject)}/secret${resourcePath}`
     : `${serverUrl}/${slug}/secret${resourcePath}`;
   const data = await apiRequest<T>(url, {
     ...init,

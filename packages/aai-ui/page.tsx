@@ -21,6 +21,7 @@
  */
 
 import { type ComponentType, createElement } from "react";
+import { setPageTitle } from "./_utils.ts";
 import { ThemeProvider } from "./context.ts";
 import { mountRoot, resolveContainer } from "./define-client.tsx";
 import type { ClientTheme } from "./types.ts";
@@ -97,7 +98,7 @@ export type PageHandle = {
 export function page(config: PageConfig): PageHandle {
   const container = resolveContainer(config.target);
 
-  if (config.name && typeof document !== "undefined") document.title = config.name;
+  setPageTitle(config.name);
 
   // The mount itself is `client()`'s — one copy of the root, the `flushSync`
   // and the disposable handle. What differs is only the tree: no session

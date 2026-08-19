@@ -30,8 +30,11 @@
  */
 
 import { createOwnedMap } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { ChatStore } from "aai-server/chat-store";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
+import type { WorkspaceStore } from "aai-server/workspace-store";
 import { createPreviewDeployer, type PreviewOrigin, type PreviewTarget } from "./studio-preview.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
@@ -55,8 +58,8 @@ export type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-ses
 export { chatUrlForGuest } from "./studio-session-wire.ts";
 
 type BrokerStores = {
-  workspaces: import("aai-server/workspace-store").WorkspaceStore;
-  chats: import("aai-server/chat-store").ChatStore;
+  workspaces: WorkspaceStore;
+  chats: ChatStore;
 };
 
 export type StudioSessionBrokerOptions = BrokerStores & {
@@ -174,7 +177,7 @@ export function createStudioSessionBroker(
       ? createSessionFleet({
           registry: options.registry,
           replicaId: options.replicaId,
-          ...(options.adopt && { adopt: options.adopt }),
+          ...omitUndefined({ adopt: options.adopt }),
         })
       : soloFleet;
   /**
@@ -240,7 +243,7 @@ export function createStudioSessionBroker(
     harnessPath: options.harnessPath,
     // Both deploy paths below go through this one publisher, which is what
     // makes `afterDeploy` a per-deploy consequence neither can skip.
-    ...(options.afterDeploy && { afterDeploy: options.afterDeploy }),
+    ...omitUndefined({ afterDeploy: options.afterDeploy }),
     liveSession: (scope, project) => {
       const entry = sessions.get(projectKey(scope, project));
       if (!entry) return null;
@@ -273,7 +276,7 @@ export function createStudioSessionBroker(
     workspaces: options.workspaces,
     deployWorkspace: deployWorkspaceImpl,
     queue: options.previewQueue,
-    ...(options.resolveApiKey && { resolveApiKey: options.resolveApiKey }),
+    ...omitUndefined({ resolveApiKey: options.resolveApiKey }),
   });
 
   return {

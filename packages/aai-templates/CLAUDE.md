@@ -935,6 +935,33 @@ never names one. `createTextAgent`'s worked example is the studio's own coding
 agent (`packages/aai-guest/CLAUDE.md`), which is a better one than a template
 could be: it is a real agent doing real work, on the same SDK it builds with.
 
+## A gate spec's SOURCES are shared; its assertions are not
+
+`_gate-support.ts` holds the three things every gate spec here reads and none of
+them owns: `GATE_WIRING` (the three files a gate must be NAMED in —
+`package.json`, `scripts/check.sh`, `.github/workflows/check.yml`),
+`ERE_UNSUPPORTED` (the regex constructs POSIX ERE has no answer for, banned by
+both pattern-shipping gates), and `repoPathOf` (a Vite glob key as a
+repo-relative path). The wiring block alone stood in FIVE specs at seventeen
+lines each, differing only in the gate name the caller then asserts.
+
+Sharing them is safe precisely because none of it is an assertion: each spec
+still makes its own, over its own gate, and a glob that stopped resolving leaves
+`GATE_WIRING`'s values `undefined` so every caller's `toBeTypeOf("string")`
+fails. What must NOT move here is a positive/negative sample or a floor — the
+per-gate discipline is the whole point of these files, and one spec asserting
+another's samples is the vacuous-guard failure they exist to prevent.
+
+`import.meta.glob` is a compile-time transform, so a caller cannot hoist the
+pattern OR the options object into a constant. It can import the result, which
+is the only reason this module works — and it is why the glob-per-source shape
+stays wherever a spec reads a source only it cares about.
+
+It never ships (nothing under `templates/` or `scaffold/` may import it, and
+`guard-invariants` rule 13 enforces that), so it is in the same position as
+`_discovery.ts`: the shared-helper shape is right here and wrong inside a
+template.
+
 ## What `tsconfig.json` includes is what gets type-checked
 
 A test file is imported by nothing, so tsc only sees it if `include` names

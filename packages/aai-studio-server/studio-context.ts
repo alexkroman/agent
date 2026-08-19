@@ -40,6 +40,19 @@ export type StudioHonoEnv = HonoEnv & {
 };
 
 /**
+ * The one "no such project" answer.
+ *
+ * Ten routes across five modules spelled the literal out. It is a response
+ * BODY — part of the contract the studio client and the CLI both read — so
+ * maintaining it by copy is the same hazard as any other duplicated wire
+ * shape; here rather than in a route module because no route module is a
+ * parent of the other four.
+ */
+export function projectNotFound(c: Context<StudioHonoEnv>): Response {
+  return c.json({ error: "Project not found" }, 404);
+}
+
+/**
  * The public platform origin the guest's `aai deploy` must dial — the
  * browser-facing origin, not this service's own. See `resolvePublicOrigin`
  * for the resolution order and for why the request URL's own scheme is

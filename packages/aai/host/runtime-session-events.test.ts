@@ -11,6 +11,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import type { Db } from "../sdk/db.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { SessionEvent } from "../sdk/protocol.ts";
 import type { SessionEventHandlers } from "../sdk/session-events.ts";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
@@ -29,7 +30,7 @@ function runtimeWith(events: SessionEventHandlers, db?: Db) {
     agent,
     env: { MY_KEY: "v" },
     logger: silentLogger,
-    ...(db ? { db } : {}),
+    ...omitUndefined({ db }),
   });
 }
 

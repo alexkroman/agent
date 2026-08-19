@@ -11,7 +11,7 @@ const DIR = process.cwd();
 // including one with no `node_modules` above it at all. A test that appeared to
 // exercise it would be asserting against the runner, not the module.
 
-describe("syntaxProblems", () => {
+describe("syntaxError", () => {
   test("accepts a valid module", async () => {
     expect(await syntaxError(DIR, "agent.ts", "export const x: number = 1;\n")).toBeUndefined();
   });

@@ -85,6 +85,14 @@ export type LiveSession = {
   dispose: () => Promise<void>;
 };
 
+/**
+ * A per-deploy consequence: what a slug the deploy just claimed owes its
+ * project. Named here rather than at the composer (studio-deploy-hooks.ts)
+ * because THIS is the seam that takes one — so the two producers can be typed
+ * by the contract they satisfy without importing the thing that composes them.
+ */
+export type AfterDeploy = (scope: string, project: string, slug: string) => Promise<void>;
+
 export type PublisherDeps = {
   spawn: typeof spawnWarmHarness;
   /** Absolute path to the built harness; defaults to the resolved one. */
@@ -98,7 +106,7 @@ export type PublisherDeps = {
    * for one and forgotten for the other. The studio uses it to give a newly
    * claimed slug the database its project asked for (studio-database.ts).
    */
-  afterDeploy?: ((scope: string, project: string, slug: string) => Promise<void>) | undefined;
+  afterDeploy?: AfterDeploy | undefined;
 };
 
 /** Send one `workspace/deploy` and validate the guest's response. */

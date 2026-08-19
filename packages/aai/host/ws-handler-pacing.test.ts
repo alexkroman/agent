@@ -41,9 +41,7 @@ describe("wireSessionSocket audio pacing", () => {
     (ws.sent as unknown[]).filter((d) => d instanceof Uint8Array);
 
   const jsonTypes = (ws: MockWebSocket): string[] =>
-    (ws.sent as unknown[])
-      .filter((d): d is string => typeof d === "string")
-      .map((s) => (JSON.parse(s) as { type: string }).type);
+    ws.sentJson().map((frame) => frame.type as string);
 
   test("holds a reply that outruns real time instead of filling the socket buffer", () => {
     vi.useFakeTimers();

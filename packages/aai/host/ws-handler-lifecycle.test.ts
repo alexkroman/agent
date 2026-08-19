@@ -205,10 +205,7 @@ describe("wireSessionSocket lifecycle", () => {
 
     capturedClient.event(stampSessionEvent({ type: "audio.completed" }));
 
-    const textFrames = (ws.sent as unknown[])
-      .filter((d): d is string => typeof d === "string")
-      .map((s) => JSON.parse(s));
-    expect(textFrames.find((m) => m.type === "audio.completed")).toBeDefined();
+    expect(ws.sentJson().find((m) => m.type === "audio.completed")).toBeDefined();
   });
 
   test("playAudioChunk closes a stalled client once the socket buffer exceeds the cap", async () => {
@@ -342,11 +339,6 @@ describe("wireSessionSocket lifecycle", () => {
     ws.close();
   });
 
-  const textFrames = (ws: MockWebSocket): Record<string, unknown>[] =>
-    (ws.sent as unknown[])
-      .filter((d): d is string => typeof d === "string")
-      .map((s) => JSON.parse(s) as Record<string, unknown>);
-
   test("start() failure sends the client an error frame and closes the socket", async () => {
     const core = makeMockCore({ start: vi.fn(() => Promise.reject(new Error("boom"))) });
     const ws = openSocket();
@@ -361,7 +353,7 @@ describe("wireSessionSocket lifecycle", () => {
     // Without this the client, which already got `config`, streams audio into a
     // dead session forever with no retry signal.
     await vi.waitFor(() => {
-      expect(textFrames(ws).some((f) => f.type === "error.reported")).toBe(true);
+      expect(ws.sentJson().some((f) => f.type === "error.reported")).toBe(true);
     });
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
   });
@@ -383,7 +375,7 @@ describe("wireSessionSocket lifecycle", () => {
       }),
     ).not.toThrow();
 
-    expect(textFrames(ws).some((f) => f.type === "error.reported")).toBe(true);
+    expect(ws.sentJson().some((f) => f.type === "error.reported")).toBe(true);
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
     expect(sessions.size).toBe(0);
   });

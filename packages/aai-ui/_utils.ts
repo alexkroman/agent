@@ -22,3 +22,16 @@ export function pageBaseUrl(): string {
   if (typeof location === "undefined") return "";
   return location.origin + location.pathname;
 }
+
+/**
+ * Set the document title, when there is one to set and a document to set it on.
+ *
+ * Both mounts do this and neither may clobber a title the page's own HTML
+ * declared — `client()`'s custom-component tier because there is no shell header
+ * to show the name in, `page()` because there is no shell at all. One copy, for
+ * the reason `resolveContainer` and `mountRoot` are shared: the rule is the
+ * same, so the two mounts must not be able to disagree about it.
+ */
+export function setPageTitle(name: string | undefined): void {
+  if (name && typeof document !== "undefined") document.title = name;
+}

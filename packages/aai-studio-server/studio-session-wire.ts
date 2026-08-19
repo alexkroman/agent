@@ -15,9 +15,11 @@
  * is not a limitation — it is why adoption needs no ownership transfer.
  */
 
+import type { ChatStore } from "aai-server/chat-store";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import type { WarmHarness } from "aai-server/sandbox-vm";
 import { SafePathSchema } from "aai-server/schemas";
+import type { WorkspaceStore } from "aai-server/workspace-store";
 import { z } from "zod";
 import type { PreviewTarget } from "./studio-preview.ts";
 import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
@@ -49,8 +51,8 @@ const GuestChatSchema = z.object({
 });
 
 export type GuestWiringDeps = {
-  workspaces: import("aai-server/workspace-store").WorkspaceStore;
-  chats: import("aai-server/chat-store").ChatStore;
+  workspaces: WorkspaceStore;
+  chats: ChatStore;
   /**
    * Mark this sandbox used — locally AND across the fleet. Called on every
    * guest RPC because an agent turn longer than the idle window is activity

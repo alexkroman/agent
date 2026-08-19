@@ -81,7 +81,6 @@ export class MockWebSocket {
     for (const cb of this._listeners.get("open") ?? []) cb(new Event("open"));
   }
 
-  /** Simulate receiving a message from the server (text JSON, binary ArrayBuffer, or Uint8Array). */
   /**
    * Deliver one server frame.
    *

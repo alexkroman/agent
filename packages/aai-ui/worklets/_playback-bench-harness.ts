@@ -207,16 +207,6 @@ type PostedMessage = {
 };
 
 /**
- * Render one delivery schedule through the real playback worklet.
- *
- * The clock is the render loop itself: quantum `q` happens at
- * `q * QUANTUM / sampleRate` seconds, every delivery at or before that instant
- * is written first, and `done` is posted once the last frame has landed. That
- * is the ordering the audio thread really sees (`onmessage` and `process()`
- * never interleave), and it makes the whole render a pure function of the
- * schedule.
- */
-/**
  * Tracks where audible audio starts, stops, and gaps, from the rendered output
  * alone.
  *

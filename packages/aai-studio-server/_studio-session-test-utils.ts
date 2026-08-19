@@ -9,9 +9,9 @@
 
 import { createMemoryChatStore } from "aai-server/chat-store";
 import type { GuestConnection } from "aai-server/rpc-schemas";
-import type { WarmHarness } from "aai-server/sandbox-vm";
+import type { spawnWarmHarness, WarmHarness } from "aai-server/sandbox-vm";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
-import { vi } from "vitest";
+import { type Mock, vi } from "vitest";
 import { createMemoryPreviewQueue, type PreviewJob } from "./studio-preview-queue.ts";
 import { createStudioSessionBroker } from "./studio-session-broker.ts";
 import { createWorkspace } from "./studio-workspace.ts";
@@ -75,6 +75,26 @@ export function fakeGuest(
   return { warm, requests, handlers, disposed: () => disposed };
 }
 
+/**
+ * The spawner a broker is wired with: hands out `guests` in order, so a test
+ * that expects a REPLACEMENT sandbox says so by supplying a second guest.
+ *
+ * Typed as `spawnWarmHarness` itself rather than cast in at each call site: the
+ * fake ignores the options, and a cast at that seam is one that stops reporting
+ * the day the real spawner's signature moves. Shared because both this file's
+ * `makeBroker` and the broker suite's own cross-replica `makeReplica` need the
+ * same hand-out-in-order queue.
+ */
+export function fakeSpawn(guests: FakeGuest[]): Mock<typeof spawnWarmHarness> {
+  let spawned = 0;
+  return vi.fn<typeof spawnWarmHarness>(async () => {
+    const guest = guests[spawned];
+    spawned += 1;
+    if (!guest) throw new Error("no more fake guests");
+    return guest.warm;
+  });
+}
+
 export async function makeBroker(
   guests: FakeGuest[],
   extra: Partial<Parameters<typeof createStudioSessionBroker>[0]> = {},
@@ -82,20 +102,14 @@ export async function makeBroker(
   const workspaces = createMemoryWorkspaceStore();
   const chats = createMemoryChatStore();
   await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
-  let spawned = 0;
-  const spawn = vi.fn(async () => {
-    const guest = guests[spawned];
-    spawned += 1;
-    if (!guest) throw new Error("no more fake guests");
-    return guest.warm;
-  });
+  const spawn = fakeSpawn(guests);
   // Every preview job enqueued: the ROW is what a redelivery elsewhere sees.
   const enqueued: PreviewJob[] = [];
   const inner = createMemoryPreviewQueue();
   const broker = createStudioSessionBroker({
     workspaces,
     chats,
-    spawn: spawn as never,
+    spawn,
     harnessPath: "/fake/harness.mjs",
     previewQueue: {
       ...inner,

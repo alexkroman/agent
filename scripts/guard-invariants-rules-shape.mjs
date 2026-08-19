@@ -19,6 +19,7 @@ import {
   OR,
   SPLIT_ON_QUERY,
   SPREAD_OPEN,
+  SPREAD_TRUTHY,
   TYPEOF_OBJECT,
 } from "./guard-invariants-ere.mjs";
 import { SOURCE_PATHSPECS } from "./guard-invariants-scopes.mjs";
@@ -42,6 +43,17 @@ export const SHAPE_RULES = [
     // `...(opts.languages !== undefined && opts.languages.length > 0 ? … )` is a
     // compound condition rather than a presence test. Neither matches, and
     // neither should.
+    //
+    // **`undefined` is a BOUNDARY, not a fourth spelling waiting to be added.**
+    // All three patterns here test PRESENCE, and `omitUndefined` is exactly that
+    // test, so every match has a mechanical rewrite that cannot change
+    // behaviour. A truthiness guard does not: `...(x && { x })` also drops `""`,
+    // `0` and `false`, so pointing this rule's remedy at one would have the gate
+    // recommend a behaviour change. That is why the truthiness family — 147
+    // occurrences, measured, i.e. an order of magnitude more than this rule's 13
+    // — is RULE 22 with its own three-way remedy rather than a widening here.
+    // Widening was proposed and rejected; do not re-propose it without reading
+    // rule 22 first.
     re: `${SPREAD_OPEN} !== undefined \\?|${SPREAD_OPEN} === undefined \\? \\{\\}|${SPREAD_OPEN} !== undefined && \\{`,
     paths: SOURCE_PATHSPECS,
     skipComments: true,
@@ -58,6 +70,86 @@ export const SHAPE_RULES = [
       "A frozen `contracts/compatibility/**` example is the other legitimate\n" +
       "entry: those are authoring examples written the way an epoch WAS\n" +
       "authored, and editing one destroys the check it exists to be.",
+  },
+  {
+    id: 22,
+    key: "rule22_truthySpread",
+    label: "truthiness-guarded conditional spread",
+    // Rule 2's sibling, and the FIRST rule here seeded as DEBT rather than as a
+    // short list of legitimate exceptions. Its baseline opens at 147 occurrences
+    // across 77 files, which is the same order as the escape-hatch ratchet's
+    // `as unknown as` (83 across 59) and 7x this gate's largest existing entry.
+    // That is stated rather than hidden because it changes how an entry here
+    // reads: for every other rule a baselined line is a decision someone
+    // defends, and for this one it is a line nobody has looked at yet. The goal
+    // is zero.
+    //
+    // Seeding is the cheap half of the alternative. `--update` refuses to raise,
+    // so the only other way to introduce this rule is to convert all 147 sites
+    // in one commit — and a conversion is NOT mechanical here (see the remedy),
+    // so that commit would be 147 behaviour judgements landing together. Counting
+    // stops the growth today, which is the whole finding: `as never` went 98 ->
+    // 110 in three days while uncounted, and this family is bigger than that was.
+    //
+    // Why it is not folded into rule 2: same shape, different remedy. Read the
+    // `undefined`-is-a-boundary paragraph on rule 2.
+    re: SPREAD_TRUTHY,
+    paths: SOURCE_PATHSPECS,
+    skipComments: true,
+    samples: {
+      matches: [
+        "    ...(auth && { auth }),",
+        "    ...(notifier ? { notifier } : {}),",
+        // Optional chaining is the one punctuation a bare truthiness test may
+        // carry, which is why `MEMBER_Q` exists apart from `MEMBER`.
+        "      ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),",
+        // The brace-at-end-of-line form Biome emits for a long property list.
+        "    ...(overrides.studioSessionRegistry && {",
+      ],
+      ignores: [
+        // Rule 2's three shapes: a different rule with an exact remedy.
+        "    ...(x !== undefined ? { x } : {}),",
+        "    ...(x === undefined ? {} : { x }),",
+        "    ...(x !== undefined && { x }),",
+        // A comparison is not a bare truthiness test.
+        "    ...(failures.length > 0 && { failures }),",
+        '    ...(init.body != null && { "Content-Type": "application/json" }),',
+        '    ...("url" in opts.bundle ? { url: opts.bundle.url } : {}),',
+        // An ARRAY spread, which `omitUndefined` cannot express — the trailing
+        // brace is what excludes it, exactly as in rule 2.
+        "    ...(placed ? [item] : []),",
+      ],
+    },
+    remedy:
+      "A truthiness guard on a conditional spread is THREE different\n" +
+      "situations wearing one spelling, and which one it is decides the fix:\n\n" +
+      "1. The value cannot be falsy-but-defined — a function, an object, a\n" +
+      "   validated slug. Then the guard is a presence test written the loose\n" +
+      "   way, and `...omitUndefined({ x })` is an exact rewrite. Most of the\n" +
+      "   seeded occurrences are this one.\n" +
+      '2. Dropping `""` / `0` / `false` is DELIBERATE. Then the truthiness is\n' +
+      "   load-bearing, `omitUndefined` would change behaviour, and the\n" +
+      "   occurrence stays — baseline it with a comment saying which falsy\n" +
+      "   value it is filtering and why.\n" +
+      "3. The GUARD IS NOT THE VALUE — `...(opts.allowPreviewSlug ? {\n" +
+      "   allowPreviewSlug: true } : {})` sets a literal, and\n" +
+      '   `...(body ? { body, duplex: "half" } : {})` adds a second key.\n' +
+      "   `omitUndefined` cannot express either; baseline with a comment, the\n" +
+      "   same way rule 2 documents its own guard-is-not-the-value entries.\n" +
+      "4. It is a TWO-WAY CHOICE, not an optional key: `...(opts.slug ? {} :\n" +
+      "   { retry: 0 })` spreads on the FALSY side, and `...(error ? { error }\n" +
+      "   : { result })` spreads a different object in each branch. Neither is\n" +
+      "   an optional-key spread and `omitUndefined` has nothing to say about\n" +
+      "   either; both are reported because the else branch is not something a\n" +
+      "   line-based pattern can inspect — rule 2 over-reports the same shape\n" +
+      "   for the same reason. Baseline with a comment.\n\n" +
+      "Do NOT convert by pattern-matching the spelling. The whole reason this\n" +
+      "is a separate rule from rule 2 is that rule 2's rewrite is mechanical\n" +
+      "and this one's is a judgement about the value's type.\n\n" +
+      "A multi-line spread whose `?` wraps to the next line is NOT reported —\n" +
+      "`git grep` is line-based, and the alternative that would catch it also\n" +
+      "catches every wrapped spread of a plain call. Measured: 15 multi-line\n" +
+      "spreads exist and none is this shape.",
   },
   {
     id: 17,

@@ -33,6 +33,7 @@
     "artifact-size": "node scripts/artifact-size-report.mjs",
     "check:file-length": "node scripts/check-file-length.mjs",
     "check:test-assertions": "node scripts/check-test-assertions.mjs",
+    "check:coverage-per-file": "node scripts/check-coverage-per-file.mjs",
     "check:claude-md": "node scripts/check-claude-md.mjs",
     "check:konsistent": "konsistent check",
     "check:konsistent-config": "konsistent validate",

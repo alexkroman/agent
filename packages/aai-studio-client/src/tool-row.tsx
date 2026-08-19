@@ -74,10 +74,17 @@ export function summarizeArgs(input: unknown): string {
     return text === null ? [] : [[key, text] as const];
   });
   if (entries.length === 0) return "";
-  const headline =
-    HEADLINE_ARG_KEYS.map((key) => entries.find(([name]) => name === key)).find(Boolean) ??
-    (entries.length === 1 ? entries[0] : undefined);
-  if (headline) return clip(headline[1], ARGS_SUMMARY_CHARS);
+  // One index, then the first headline key this call actually carries — or, for
+  // a lone argument, that argument, whatever it is called. The earlier
+  // `map(...).find(Boolean)` re-scanned the whole entry list once per headline
+  // key even after the hit, and this runs for every tool row of a streaming
+  // message.
+  const byName = new Map(entries);
+  const candidates = entries.length === 1 ? [...byName.keys()] : HEADLINE_ARG_KEYS;
+  for (const key of candidates) {
+    const value = byName.get(key);
+    if (value !== undefined) return clip(value, ARGS_SUMMARY_CHARS);
+  }
   return clip(entries.map(([key, text]) => `${key}: ${text}`).join(", "), ARGS_SUMMARY_CHARS);
 }
 

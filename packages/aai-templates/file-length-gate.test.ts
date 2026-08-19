@@ -22,12 +22,23 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { GATE_WIRING } from "./_gate-support.ts";
 
 const script = import.meta.glob("../../scripts/check-file-length.mjs", {
   query: "?raw",
   import: "default",
   eager: true,
 })["../../scripts/check-file-length.mjs"];
+
+/**
+ * The same text, never absent.
+ *
+ * Every reader below scrapes it, so each one used to spell its own `script ?? ""`
+ * — five of them, one of which then indexed `script?.[i]` a character at a time
+ * against a length taken from a different expression. The readability of the file
+ * is asserted in its own case; the readers work on a string.
+ */
+const source: string = script ?? "";
 
 const lefthook = import.meta.glob("../../lefthook.yml", {
   query: "?raw",
@@ -94,7 +105,6 @@ const byCodeUnit = (a: string, b: string): number => {
 
 /** The pathspecs `listAll()` really hands to `git ls-files`, parsed from source. */
 function listAllPathspecs(): string[] {
-  const source = script ?? "";
   const at = source.indexOf("const listAll = () =>");
   if (at === -1) throw new Error("check-file-length.mjs no longer declares listAll");
   const end = source.indexOf("]).filter(", at);
@@ -107,36 +117,30 @@ function listAllPathspecs(): string[] {
     .split("\n")
     .filter((line) => !line.trimStart().startsWith("//"))
     .join("\n");
-  return (
-    [...new Set([...code.matchAll(/"((?:packages|scripts)\/[^"]*\*[^"]*)"/g)].map((m) => m[1]))]
-      .filter((spec): spec is string => spec !== undefined)
-      // Code-unit order, explicitly. A bare `.sort()` coerces and compares by
-      // UTF-16 code unit anyway, but saying so is the repo's standing rule for
-      // anything a gate reads (see the API-surface artifacts): an implicit
-      // comparator is one refactor away from `localeCompare`, which answers to
-      // the runtime's ICU default and makes a gate report a locale difference as
-      // a change.
-      .sort(byCodeUnit)
-  );
+  return [
+    ...new Set([...code.matchAll(/"((?:packages|scripts)\/[^"]*\*[^"]*)"/g)].map((m) => m[1])),
+  ]
+    .filter((spec): spec is string => spec !== undefined)
+    .sort(byCodeUnit);
 }
 
 /** Read a numeric constant out of the script rather than restating it here. */
 function constant(name: string): number {
-  const found = new RegExp(`const ${name} = ([\\d._]+)`).exec(script ?? "");
+  const found = new RegExp(`const ${name} = ([\\d._]+)`).exec(source);
   if (!found?.[1]) throw new Error(`check-file-length.mjs no longer declares ${name}`);
   return Number(found[1].replaceAll("_", ""));
 }
 
 /** The body of the first `if (<cond>) {` block whose condition matches. */
 function block(opener: string): string {
-  const at = (script ?? "").indexOf(opener);
+  const at = source.indexOf(opener);
   if (at === -1) throw new Error(`check-file-length.mjs no longer contains \`${opener}\``);
   const from = at + opener.length;
   let depth = 1;
-  for (let i = from; i < (script ?? "").length; i++) {
-    const ch = script?.[i];
+  for (let i = from; i < source.length; i++) {
+    const ch = source[i];
     if (ch === "{") depth++;
-    if (ch === "}" && --depth === 0) return (script ?? "").slice(from, i);
+    if (ch === "}" && --depth === 0) return source.slice(from, i);
   }
   throw new Error(`check-file-length.mjs: unbalanced braces after \`${opener}\``);
 }
@@ -283,24 +287,7 @@ describe("check-file-length", () => {
     // Same reasoning as claude-md-limit.test.ts: the ratchets once lived only
     // in check.sh, which CI never invokes, so `git push --no-verify` skipped
     // them entirely.
-    const files: Record<string, string | undefined> = {
-      "package.json": import.meta.glob("../../package.json", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../package.json"],
-      "scripts/check.sh": import.meta.glob("../../scripts/check.sh", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../scripts/check.sh"],
-      ".github/workflows/check.yml": import.meta.glob("../../.github/workflows/check.yml", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../.github/workflows/check.yml"],
-    };
-    for (const [path, text] of Object.entries(files)) {
+    for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");
       expect(text, `${path} no longer references check:file-length`).toContain("check:file-length");
     }

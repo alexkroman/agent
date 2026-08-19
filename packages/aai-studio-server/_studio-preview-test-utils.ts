@@ -10,7 +10,14 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
+import { createMemoryWorkspaceStore, type WorkspaceStore } from "aai-server/workspace-store";
+import { vi } from "vitest";
+import {
+  createWorkspace,
+  getWorkspace,
+  mutateWorkspace,
+  type StudioWorkspace,
+} from "./studio-workspace.ts";
 
 export const SCOPE = "scope";
 export const PROJECT = "contact-form-x7k2mq";
@@ -18,6 +25,68 @@ export const TARGET = { serverUrl: "https://platform.example", apiKey: "caller-k
 
 export function makeStore() {
   return createMemoryWorkspaceStore();
+}
+
+/**
+ * A store holding THE shared project, seeded with `files`.
+ *
+ * Both suites open almost every case with this pair of statements, and the pair
+ * is not incidental: `wakeProjectPreview` and the deploy loop both read the
+ * workspace by (SCOPE, PROJECT), so a case that seeded a different project
+ * would exercise the "no such project" path while reading as a real scenario.
+ */
+export async function seededStore(
+  files: Record<string, string> = { "agent.ts": "// v1" },
+): Promise<WorkspaceStore> {
+  const workspaces = makeStore();
+  await createWorkspace(workspaces, SCOPE, PROJECT, { files });
+  return workspaces;
+}
+
+/**
+ * Put the shared project into the state a deploy would have left it in —
+ * `previewSlug`/`previewHash`/`previewError`, or a file edit.
+ *
+ * Takes the fields, not the whole document: every call site spread `...current`
+ * by hand purely to satisfy the read-modify-write, which buried the two or
+ * three fields the case is actually about.
+ */
+export function stampProject(
+  workspaces: WorkspaceStore,
+  stamp: Partial<StudioWorkspace> | ((current: StudioWorkspace) => Partial<StudioWorkspace>),
+): Promise<StudioWorkspace | null> {
+  return mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+    ...current,
+    ...(typeof stamp === "function" ? stamp(current) : stamp),
+  }));
+}
+
+/**
+ * Wait until a preview deploy has stamped the shared project, and hand back the
+ * workspace it stamped — the document the case then reads its own assertions
+ * off.
+ *
+ * A THROW rather than an `expect`: `vi.waitFor` retries on either, and an
+ * assertion inside a shared helper is one that no longer belongs to the test
+ * that called it (Biome's `noMisplacedAssertion`, and the reason
+ * `check-test-assertions.mjs` wants every case to assert for itself). Waiting
+ * is this helper's job; asserting is the caller's.
+ */
+export function previewStamped(workspaces: WorkspaceStore): Promise<StudioWorkspace> {
+  return vi.waitFor(async () => {
+    const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
+    if (workspace?.previewHash === undefined) throw new Error("no previewHash stamped yet");
+    return workspace;
+  });
+}
+
+/**
+ * Keep an EXPECTED `console.warn` out of the test output, and hand back the spy
+ * for the cases that assert on it. `restoreMocks` undoes it before the next
+ * test, so there is nothing to tear down (see the root guide).
+ */
+export function silenceWarn() {
+  return vi.spyOn(console, "warn").mockImplementation(() => undefined);
 }
 
 /**

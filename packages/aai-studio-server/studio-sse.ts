@@ -160,12 +160,19 @@ export function createSharedReads(): SharedReads {
  */
 export type SseStream = Pick<SSEStreamingApi, "writeSSE" | "onAbort">;
 
-export function createSsePusher(stream: SseStream): {
+/**
+ * NAMED rather than inferred off the factory: both event routes are handed one
+ * of these by the stream scaffolding they share, so the shape needs something
+ * to be referred to by.
+ */
+export type SsePusher = {
   write(event: string, data: string): Promise<void>;
-  push(produce: () => Promise<{ event: string; data: string } | null>): void;
+  push(produce: () => Promise<Frame>): void;
   /** Hold open until disconnect (or a null push); then run `cleanup`. */
   wait(cleanup: () => void): Promise<void>;
-} {
+};
+
+export function createSsePusher(stream: SseStream): SsePusher {
   let closed = false;
   const done = Promise.withResolvers<void>();
   const finish = (): void => {
@@ -178,7 +185,7 @@ export function createSsePusher(stream: SseStream): {
   const write = (event: string, data: string): Promise<void> =>
     closed ? Promise.resolve() : stream.writeSSE({ event, data });
   let chain: Promise<void> = Promise.resolve();
-  const push = (produce: () => Promise<{ event: string; data: string } | null>): void => {
+  const push = (produce: () => Promise<Frame>): void => {
     chain = chain
       .then(async () => {
         const frame = await produce();

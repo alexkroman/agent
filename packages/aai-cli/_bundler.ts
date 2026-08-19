@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { validateAgentExport } from "./_utils.ts";
 import { buildClient } from "./client-bundler.ts";
 import { type BuildWorkerOptions, buildWorker } from "./worker-bundler.ts";
@@ -45,7 +46,7 @@ export async function buildAgentBundle(
   // The client build is independent, so it overlaps.
   const [workflows, clientFiles] = await Promise.all([buildWorkflows(cwd), buildClient(cwd)]);
   const worker = await buildWorker(cwd, { ...opts, workflows });
-  return { worker, clientFiles, ...(workflows && { workflows }) };
+  return { worker, clientFiles, ...omitUndefined({ workflows }) };
 }
 
 /**
@@ -67,11 +68,11 @@ export async function buildAgentBundle(
  * experimental.
  */
 export async function evalWorkerBundle(code: string): Promise<AgentDef> {
-  const mod = await importWorkerModule(code);
-  const agentDef = (mod.default ?? mod) as AgentDef;
-
-  validateAgentExport(agentDef);
-  return agentDef;
+  // Delegates rather than repeating the import/unwrap/validate sequence: the
+  // two used to be written out twice, so "what counts as a valid worker" had
+  // two definitions. The return type stays NARROW — see EvaluatedWorker below
+  // for why the workflow strings do not travel with it.
+  return (await evalWorkerWithWorkflows(code)).agent;
 }
 
 /**

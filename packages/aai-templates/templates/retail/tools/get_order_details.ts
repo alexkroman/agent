@@ -1,6 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { resolveOrder } from "../resolve.ts";
+import { OrderIdField, resolveOrder } from "../resolve.ts";
 import { retailTool, setFocus } from "../store.ts";
 
 export default retailTool({
@@ -10,10 +11,7 @@ export default retailTool({
     "order id (e.g. '#W0000000' — note the leading '#'), or a spoken reference such as " +
     "'my pending order', 'the delivered one', or 'the second pending order'.",
   inputSchema: z.object({
-    order_id: z
-      .string()
-      .max(120)
-      .describe("Order id such as '#W0000000', or a spoken reference to one of their orders"),
+    order_id: OrderIdField,
   }),
   execute: (args, state) => {
     const order = resolveOrder(state, args.order_id);
@@ -31,7 +29,7 @@ export default retailTool({
         options: item.options,
       })),
       payment_history: order.payment_history,
-      ...(order.fulfillments ? { fulfillments: order.fulfillments } : {}),
+      ...omitUndefined({ fulfillments: order.fulfillments }),
       ...(order.cancel_reason ? { cancel_reason: order.cancel_reason } : {}),
     };
   },

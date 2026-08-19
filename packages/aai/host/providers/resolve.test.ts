@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { omitUndefined } from "../../sdk/omit-undefined.ts";
 import { ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import {
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
@@ -282,7 +283,7 @@ describe("resolveLlm", () => {
       try {
         await model.doGenerate({
           prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
-          ...(tools ? { tools } : {}),
+          ...omitUndefined({ tools }),
         });
       } finally {
         vi.unstubAllGlobals();

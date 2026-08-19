@@ -20,8 +20,7 @@ import type { Context } from "hono";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import { databaseDeployHook } from "./studio-database-routes.ts";
 import { secretsDeployHook } from "./studio-secret-routes.ts";
-
-export type AfterDeploy = (scope: string, project: string, slug: string) => Promise<void>;
+import type { AfterDeploy } from "./studio-session-publish.ts";
 
 /**
  * Bound to THIS request's stores and handed to a broker that outlives the

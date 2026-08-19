@@ -323,8 +323,6 @@ async function rebuildSlot(
   }
 }
 
-/** Also stop REACTING to deploys while draining — see `watchAgentInvalidation`. */
-
 /**
  * Map a slug to its (possibly freshly built) ONE resident sandbox. A LIVE
  * resident is served as-is — whether it is still current is not this path's

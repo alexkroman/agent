@@ -21,6 +21,12 @@ export function envMs(raw: string | undefined, fallback: number): number {
   return Number.isFinite(ms) && ms >= 0 ? ms : fallback;
 }
 
+/** A positive-integer env override (a count, not a duration) — {@link envMs}'s companion. */
+export function envCount(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 1 ? value : fallback;
+}
+
 export const DEFAULT_PORT = 8080;
 
 /**
@@ -49,10 +55,7 @@ export const MAX_WORKER_SIZE = 30_000_000;
  * — raising `MAX_WORKER_SIZE` (bundles do grow) means re-checking this.
  * Override with `DEPLOY_BODY_CONCURRENCY`.
  */
-export const DEPLOY_BODY_CONCURRENCY = (() => {
-  const raw = Number(process.env.DEPLOY_BODY_CONCURRENCY);
-  return Number.isInteger(raw) && raw >= 1 ? raw : 2;
-})();
+export const DEPLOY_BODY_CONCURRENCY = envCount(process.env.DEPLOY_BODY_CONCURRENCY, 2);
 
 /**
  * How long a deploy waits for one of those slots before answering 503.
@@ -244,10 +247,7 @@ export const WORKFLOW_WAKE_READY_MS = envMs(process.env.WORKFLOW_WAKE_READY_MS, 
  * simultaneous-due count and below the point where a tick would spawn faster
  * than Modal schedules. Override with `WORKFLOW_WAKE_MAX_PER_TICK`.
  */
-export const WORKFLOW_WAKE_MAX_PER_TICK = (() => {
-  const raw = Number(process.env.WORKFLOW_WAKE_MAX_PER_TICK);
-  return Number.isInteger(raw) && raw >= 1 ? raw : 10;
-})();
+export const WORKFLOW_WAKE_MAX_PER_TICK = envCount(process.env.WORKFLOW_WAKE_MAX_PER_TICK, 10);
 
 /**
  * How long `/:slug/workflows/*` may go WITHOUT PROGRESS before giving up.

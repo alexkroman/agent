@@ -15,7 +15,7 @@
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { createMockWorkflowApi } from "./_react-test-utils.ts";
+import { createMockWorkflowApi, refuseNetwork } from "./_react-test-utils.ts";
 import { useWorkflowStream } from "./use-workflow-stream.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
 
@@ -69,14 +69,7 @@ async function submitFile(api: WorkflowApi, file?: File, parallel?: boolean) {
   return result;
 }
 
-beforeEach(() => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() => {
-      throw new Error("no test may reach the network");
-    }),
-  );
-});
+beforeEach(refuseNetwork);
 
 describe("useWorkflowStream", () => {
   test("starts the run BEFORE a byte is uploaded", async () => {

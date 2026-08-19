@@ -63,7 +63,9 @@ function coerceValue(value: string, types: ReadonlySet<string> | null): unknown 
   if (allows("boolean") && /^(true|false)$/i.test(value)) return value.toLowerCase() === "true";
   if ((allows("number") || allows("integer")) && NUMERIC_RE.test(value)) {
     const n = Number(value);
-    const integerOnly = types?.has("integer") === true && types?.has("number") !== true;
+    // Through `allows`, so the "no schema at all" case is answered in one place:
+    // an unconstrained property allows both, which is not integer-only.
+    const integerOnly = allows("integer") && !allows("number");
     if (Number.isFinite(n) && !(integerOnly && !Number.isInteger(n))) return n;
   }
   return value;

@@ -218,7 +218,7 @@ function failedScope(recorder: EvalRecorder, prefix: string, reason: string): Ev
   const fail = (label: string): void => {
     recorder.check(false, `${prefix}${label}`, reason);
   };
-  const scope: EvalScope = {
+  return {
     events: [],
     toolCalls: [],
     said: [],
@@ -240,7 +240,6 @@ function failedScope(recorder: EvalRecorder, prefix: string, reason: string): Ev
     turn: (index) => failedScope(recorder, `${prefix}turn ${index}: `, reason),
     turns: () => 0,
   };
-  return scope;
 }
 
 /**
@@ -258,27 +257,36 @@ export function eventScope(
   const calls = toolCallsOf(events);
   const names = calls.map((c) => c.name);
   const types = events.map((e) => e.type);
+  // Partitioned ONCE, beside the other derived views: `turn()` and `turns()` each
+  // re-ran `turnsOf` per call, so a case that scopes three turns walked the event
+  // list four times — and, more to the point, the two reads could disagree with
+  // `types`/`said`/`calls`, which are snapshots taken here.
+  const slices = turnsOf(events);
   const said = events.flatMap((e) => (e.type === "agent-transcript.committed" ? [e.text] : []));
   const check = (ok: boolean, label: string, detail?: string): void => {
     recorder.check(ok, `${prefix}${label}`, detail);
   };
 
-  const scope: EvalScope = {
+  return {
     events,
     toolCalls: calls,
     said,
 
     succeeded() {
       const completed = types.includes("reply.completed");
-      const fatal = events.find((e) => e.type === "error.reported" && e.fatal !== false);
+      // `flatMap`, not `find`: a `find` predicate does not NARROW its result, so
+      // the detail below had to re-check `type === "error.reported"` twice to
+      // reach `code` and `message` — the same union member, established three
+      // times. Same shape as `noErrors` and `said` in this file.
+      const fatal = events.flatMap((e) =>
+        e.type === "error.reported" && e.fatal !== false ? [e] : [],
+      )[0];
       check(
         completed && fatal === undefined,
         "succeeded",
-        fatal !== undefined
-          ? `fatal ${fatal.type === "error.reported" ? fatal.code : "error"}: ${short(
-              fatal.type === "error.reported" ? fatal.message : "",
-            )}`
-          : `no reply.completed; saw ${types.join(", ") || "no events"}`,
+        fatal === undefined
+          ? `no reply.completed; saw ${types.join(", ") || "no events"}`
+          : `fatal ${fatal.code}: ${short(fatal.message)}`,
       );
     },
 
@@ -359,15 +367,16 @@ export function eventScope(
 
     event(type, opts = {}) {
       const n = types.filter((seen) => seen === type).length;
-      const wanted = opts.count ?? undefined;
+      const wanted = opts.count;
       const min = wanted ?? opts.min ?? 1;
       const max = wanted ?? opts.max ?? Number.POSITIVE_INFINITY;
-      const bound =
-        wanted !== undefined
-          ? `=${wanted}`
-          : `${opts.min === undefined ? "" : `>=${opts.min}`}${
-              opts.max === undefined ? "" : ` <=${opts.max}`
-            }`.trim();
+      // Spelled out rather than assembled by trimming a template: the previous
+      // form leaned on a leading space inside the `<=` branch plus a `.trim()`,
+      // so the separator lived in one branch and the fix-up in neither.
+      const bounds: string[] = [];
+      if (opts.min !== undefined) bounds.push(`>=${opts.min}`);
+      if (opts.max !== undefined) bounds.push(`<=${opts.max}`);
+      const bound = wanted === undefined ? bounds.join(" ") : `=${wanted}`;
       check(n >= min && n <= max, `event(${type}${bound === "" ? "" : ` ${bound}`})`, `saw ${n}`);
     },
 
@@ -396,7 +405,6 @@ export function eventScope(
     },
 
     turn(index) {
-      const slices = turnsOf(events);
       const slice = slices[index];
       if (slice === undefined) {
         // An out-of-range turn returns a scope that FAILS every assertion made
@@ -420,8 +428,7 @@ export function eventScope(
     },
 
     turns() {
-      return turnsOf(events).length;
+      return slices.length;
     },
   };
-  return scope;
 }

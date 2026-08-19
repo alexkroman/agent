@@ -6,20 +6,28 @@
  * _studio-session-test-utils.ts.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createMemoryChatStore } from "aai-server/chat-store";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
 import {
   type FakeGuest,
   fakeGuest,
+  fakeSpawn,
   makeBroker,
   PROJECT,
   SCOPE,
 } from "./_studio-session-test-utils.ts";
 import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
+import type { adoptPeerSession } from "./studio-session-adopt.ts";
 import { chatUrlForGuest, createStudioSessionBroker } from "./studio-session-broker.ts";
 import { createMemoryStudioSessionRegistry } from "./studio-session-registry.ts";
-import { createWorkspace, getWorkspace } from "./studio-workspace.ts";
+import {
+  createWorkspace,
+  getWorkspace,
+  mutateWorkspace,
+  syncWorkspaceSource,
+} from "./studio-workspace.ts";
 
 describe("studio session broker", () => {
   test("boots a sandbox, installs the session, and returns the public chat URL", async () => {
@@ -136,7 +144,6 @@ describe("studio session broker", () => {
     const { broker, workspaces, spawn } = await makeBroker([guest]);
     await broker.ensureSession(SCOPE, PROJECT, "k");
     // The editor writes a file between page sessions…
-    const { mutateWorkspace } = await import("./studio-workspace.ts");
     await mutateWorkspace(workspaces, SCOPE, PROJECT, (ws) => ({
       ...ws,
       files: { "agent.ts": "// v2" },
@@ -158,7 +165,6 @@ describe("studio session broker", () => {
     const guest = fakeGuest();
     const { broker, workspaces, spawn } = await makeBroker([guest]);
     await broker.ensureSession(SCOPE, PROJECT, "k");
-    const { syncWorkspaceSource } = await import("./studio-workspace.ts");
     await syncWorkspaceSource(workspaces, SCOPE, PROJECT, { "agent.ts": "// pushed" });
 
     expect(await broker.refreshSession(SCOPE, PROJECT, "k")).toBe(true);
@@ -439,24 +445,18 @@ describe("cross-replica studio sessions", () => {
       chats: ReturnType<typeof createMemoryChatStore>;
       registry: ReturnType<typeof createMemoryStudioSessionRegistry>;
     },
-    adopt?: unknown,
+    adopt?: typeof adoptPeerSession,
   ) {
-    let spawned = 0;
-    const spawn = vi.fn(async () => {
-      const guest = guests[spawned];
-      spawned += 1;
-      if (!guest) throw new Error("no more fake guests");
-      return guest.warm;
-    });
+    const spawn = fakeSpawn(guests);
     const broker = createStudioSessionBroker({
       workspaces: shared.workspaces,
       chats: shared.chats,
       registry: shared.registry,
       replicaId,
-      spawn: spawn as never,
+      spawn,
       harnessPath: "/fake/harness.mjs",
       previewQueue: createMemoryPreviewQueue(),
-      ...(adopt ? { adopt: adopt as never } : {}),
+      ...omitUndefined({ adopt }),
     });
     return { broker, spawn };
   }
@@ -481,7 +481,10 @@ describe("cross-replica studio sessions", () => {
     const a = await makeReplica("replica-a", [guestA], shared);
     const first = await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
 
-    const adopt = vi.fn(async () => ({
+    // Typed as the real peer install, so the params it was handed are read off
+    // the fake's own recorded call rather than re-narrowed by a cast — which
+    // would stop reporting the day `AdoptSessionParams` gains a field.
+    const adopt = vi.fn<typeof adoptPeerSession>(async () => ({
       url: "https://guest-a.example/studio/chat",
       token: first?.token as string,
     }));
@@ -498,8 +501,7 @@ describe("cross-replica studio sessions", () => {
     // must be able to keep using the token it already holds.
     expect(second).toEqual(first);
     // And the peer got the workspace, so it never edits a stale tree.
-    const call = adopt.mock.calls[0] as unknown as [unknown, { files: Record<string, string> }];
-    expect(call[1].files).toEqual({ "agent.ts": "// v1" });
+    expect(adopt.mock.calls[0]?.[1].files).toEqual({ "agent.ts": "// v1" });
   });
 
   test("a peer whose guest is unreachable falls back to a local spawn", async () => {
@@ -508,7 +510,7 @@ describe("cross-replica studio sessions", () => {
     const a = await makeReplica("replica-a", [guestA], shared);
     await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
 
-    const adopt = vi.fn(async () => null);
+    const adopt = vi.fn<typeof adoptPeerSession>(async () => null);
     const guestB = fakeGuest("wss://guest-b.example:443");
     const b = await makeReplica("replica-b", [guestB], shared, adopt);
     const session = await b.broker.ensureSession(SCOPE, PROJECT, "caller-key");
@@ -523,7 +525,7 @@ describe("cross-replica studio sessions", () => {
   test("the owning replica reuses its own sandbox rather than adopting", async () => {
     const shared = await sharedFleet();
     const guest = fakeGuest();
-    const adopt = vi.fn(async () => null);
+    const adopt = vi.fn<typeof adoptPeerSession>(async () => null);
     const a = await makeReplica("replica-a", [guest], shared, adopt);
     await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
     await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
@@ -573,7 +575,7 @@ describe("cross-replica studio sessions", () => {
       // The row is what a peer reads. Untouched, it expired one reload ago.
       expect(await shared.registry.get(SCOPE, PROJECT)).toMatchObject({ owner: "replica-a" });
 
-      const adopt = vi.fn(async () => ({
+      const adopt = vi.fn<typeof adoptPeerSession>(async () => ({
         url: "https://guest-a.example/studio/chat",
         token: first?.token as string,
       }));

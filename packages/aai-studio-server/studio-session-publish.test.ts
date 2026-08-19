@@ -10,6 +10,7 @@
  */
 
 import { createMemoryChatStore } from "aai-server/chat-store";
+import type { spawnWarmHarness } from "aai-server/sandbox-vm";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
 import { fakeGuest, makeBroker, PROJECT, SCOPE } from "./_studio-session-test-utils.ts";
@@ -55,9 +56,9 @@ describe("studio publish (workspace/deploy)", () => {
     const broker = createStudioSessionBroker({
       workspaces,
       chats,
-      spawn: (async () => {
-        throw new Error("guest WebSocket not dialable after 30000ms");
-      }) as never,
+      spawn: vi.fn<typeof spawnWarmHarness>(() =>
+        Promise.reject(new Error("guest WebSocket not dialable after 30000ms")),
+      ),
       harnessPath: "/fake/harness.mjs",
       previewQueue: createMemoryPreviewQueue(),
     });

@@ -4,32 +4,30 @@ import { describe, expect, test, vi } from "vitest";
 import { PHONE_READY_TIMEOUT_MS } from "./phone-handler.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
+import { createTestOrchestrator, deployAgent, fakeSandbox } from "./test-utils.ts";
 
 type TestFetch = Awaited<ReturnType<typeof createTestOrchestrator>>["fetch"];
 
-function makeFakeSandbox(): Sandbox {
-  return {
-    sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
-    guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
-    drain: vi.fn(() => Promise.resolve()),
-    alive: vi.fn(() => true),
-    shutdown: vi.fn(() => Promise.resolve()),
-  };
-}
-
-/** Deploy `slug` and park a live fake sandbox in its slot, as the broker specs do. */
-async function seedResident(
-  harness: Awaited<ReturnType<typeof createTestOrchestrator>>,
-  slots: ReturnType<typeof createSlotCache>,
-  slug: string,
-): Promise<void> {
+/**
+ * An orchestrator with `slug` deployed and a live fake sandbox parked in its
+ * slot, as the broker specs do.
+ *
+ * It builds the slot cache and the orchestrator too, because that three-line
+ * preamble opened seven tests here and none of them touched `slots` again — the
+ * slot is an input to the setup, not to the subject.
+ */
+async function residentHarness(
+  slug = "my-agent",
+): Promise<Awaited<ReturnType<typeof createTestOrchestrator>>> {
+  const slots = createSlotCache();
+  const harness = await createTestOrchestrator({ slots });
   await deployAgent(harness.fetch, slug);
   setSlot(slots, {
     slug,
-    sandbox: makeFakeSandbox(),
+    sandbox: fakeSandbox(),
     version: (await harness.store.getAgentVersion(slug)) ?? 1,
   });
+  return harness;
 }
 
 /** POST a carrier webhook the way Twilio does: form-encoded, no JSON. */
@@ -52,9 +50,7 @@ async function callWebhook(
 
 describe("POST /:slug/phone", () => {
   test("answers with TwiML pointing at the guest's media-stream endpoint", async () => {
-    const slots = createSlotCache();
-    const harness = await createTestOrchestrator({ slots });
-    await seedResident(harness, slots, "my-agent");
+    const harness = await residentHarness();
 
     const { status, contentType, xml } = await callWebhook(harness.fetch, "/my-agent/phone");
 
@@ -65,18 +61,14 @@ describe("POST /:slug/phone", () => {
   });
 
   test("passes the requested carrier through to the stream URL", async () => {
-    const slots = createSlotCache();
-    const harness = await createTestOrchestrator({ slots });
-    await seedResident(harness, slots, "my-agent");
+    const harness = await residentHarness();
 
     const { xml } = await callWebhook(harness.fetch, "/my-agent/phone?carrier=telnyx");
     expect(xml).toContain("?carrier=telnyx");
   });
 
   test("answers a GET too, since the webhook method is the operator's choice", async () => {
-    const slots = createSlotCache();
-    const harness = await createTestOrchestrator({ slots });
-    await seedResident(harness, slots, "my-agent");
+    const harness = await residentHarness();
 
     const res = await harness.fetch("/my-agent/phone");
     expect(res.status).toBe(200);
@@ -84,9 +76,7 @@ describe("POST /:slug/phone", () => {
   });
 
   test("rejects an unsupported carrier with a 400 rather than a spoken error", async () => {
-    const slots = createSlotCache();
-    const harness = await createTestOrchestrator({ slots });
-    await seedResident(harness, slots, "my-agent");
+    const harness = await residentHarness();
 
     const { status } = await callWebhook(harness.fetch, "/my-agent/phone?carrier=vonage");
     expect(status).toBe(400);
@@ -113,7 +103,7 @@ describe("POST /:slug/phone", () => {
       const harness = await createTestOrchestrator({ slots });
       await deployAgent(harness.fetch, "my-agent");
       const booting: Sandbox = {
-        ...makeFakeSandbox(),
+        ...fakeSandbox(),
         sessionUrl: vi.fn(() => new Promise<string>(() => undefined)),
         guestOrigin: vi.fn(() => new Promise<string>(() => undefined)),
       };
@@ -192,9 +182,7 @@ describe("POST /:slug/phone", () => {
     const BODY = "CallSid=CA1&From=%2B15551234567";
 
     async function signedHarness() {
-      const slots = createSlotCache();
-      const harness = await createTestOrchestrator({ slots });
-      await seedResident(harness, slots, "my-agent");
+      const harness = await residentHarness();
       await harness.store.putEnv("my-agent", { TWILIO_AUTH_TOKEN: AUTH_TOKEN });
       return harness;
     }
@@ -239,9 +227,7 @@ describe("POST /:slug/phone", () => {
     });
 
     test("leaves an agent with no stored token open, like /client-config", async () => {
-      const slots = createSlotCache();
-      const harness = await createTestOrchestrator({ slots });
-      await seedResident(harness, slots, "my-agent");
+      const harness = await residentHarness();
       const { status } = await callWebhook(harness.fetch, "/my-agent/phone");
       expect(status).toBe(200);
     });
@@ -265,9 +251,7 @@ describe("POST /:slug/phone", () => {
     test("a Telnyx-only agent is not bypassed by omitting the parameter", async () => {
       // The mirror image: the route defaults to `twilio`, so leaving the
       // parameter off was the same bypass in the other direction.
-      const slots = createSlotCache();
-      const harness = await createTestOrchestrator({ slots });
-      await seedResident(harness, slots, "my-agent");
+      const harness = await residentHarness();
       await harness.store.putEnv("my-agent", { TELNYX_PUBLIC_KEY: "AAAA" });
       const { status, xml } = await callWebhook(harness.fetch, "/my-agent/phone", { body: BODY });
       expect(status).toBe(403);

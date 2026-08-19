@@ -25,7 +25,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 // The `/utils` subpath is deliberately zod-free — the root barrel would pull
 // zod and five other modules into the graph for one pure string helper.
-import { isTextAssetPath } from "@alexkroman1/aai/utils";
+import { isTextAssetPath, omitUndefined } from "@alexkroman1/aai/utils";
 import { build, type PluginOption } from "vite";
 import { writeTempHtml } from "./_default-html.ts";
 import { errorMessage, fileExists } from "./_utils.ts";
@@ -86,7 +86,7 @@ export async function buildClient(
         base: "./",
         logLevel: "silent",
         ...(opts.configFile === false && { configFile: false }),
-        ...(opts.plugins && { plugins: opts.plugins }),
+        ...omitUndefined({ plugins: opts.plugins }),
         resolve: { dedupe: DEDUPED_PEERS },
         build: {
           outDir,

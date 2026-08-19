@@ -1,4 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { deployAgentBundle } from "./deploy.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
@@ -134,7 +136,7 @@ describe("deployAgentBundle env merge", () => {
         apiKey: "key1",
         worker: "w",
         clientFiles: {},
-        ...(params.env && { env: params.env }),
+        ...omitUndefined({ env: params.env }),
       },
     );
   }

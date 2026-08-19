@@ -60,15 +60,20 @@ const WRITE_DIAGNOSTIC_PREAMBLE = /^[\s\S]*?Type errors after writing (\S+)[^:]*
 const TEST_AGENT_PREAMBLE =
   /^\s*Bundle loaded[^.]*\.\s*Agent "[^"]*" \([a-z0-9]+ mode\)[^\n.]*\.\s*/i;
 
+/** One line of at most {@link MAX_RED_EXCERPT} characters — both readers end here. */
+function condense(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, MAX_RED_EXCERPT);
+}
+
 /** One red verification, reduced to the diagnostics themselves. */
 function redExcerpt(name: string, out: string): string {
   const body = out.replace(WRITE_DIAGNOSTIC_PREAMBLE, (_m, file: string) => `${file}: `);
-  return `${name}: ${body.replace(/\s+/g, " ").trim().slice(0, MAX_RED_EXCERPT)}`;
+  return `${name}: ${condense(body)}`;
 }
 
 /** One failed `test_agent` run, reduced to what actually failed. */
 function failureExcerpt(out: string): string {
-  return out.replace(TEST_AGENT_PREAMBLE, "").replace(/\s+/g, " ").trim().slice(0, MAX_RED_EXCERPT);
+  return condense(out.replace(TEST_AGENT_PREAMBLE, ""));
 }
 
 /** What one streamed turn produced. */
@@ -125,24 +130,23 @@ function recordToolOutput(turn: MutableTurn, name: string | undefined, out: stri
 /** Fold one AI SDK UI-message-stream part into the turn. */
 function applyPart(turn: MutableTurn, pending: Map<string, string>, part: unknown): void {
   if (!isRecord(part)) return;
-  const p = part;
-  const type = typeof p.type === "string" ? p.type : "";
-  if (type === "text-delta" && typeof p.delta === "string") {
-    turn.text += p.delta;
+  const type = typeof part.type === "string" ? part.type : "";
+  if (type === "text-delta" && typeof part.delta === "string") {
+    turn.text += part.delta;
     return;
   }
-  const callId = typeof p.toolCallId === "string" ? p.toolCallId : "";
-  if (type.startsWith("tool-input-available") && typeof p.toolName === "string") {
-    pending.set(callId, p.toolName);
-    turn.toolCalls.push(p.toolName);
+  const callId = typeof part.toolCallId === "string" ? part.toolCallId : "";
+  if (type.startsWith("tool-input-available") && typeof part.toolName === "string") {
+    pending.set(callId, part.toolName);
+    turn.toolCalls.push(part.toolName);
     return;
   }
   if (type.startsWith("tool-output-available")) {
-    const out = typeof p.output === "string" ? p.output : JSON.stringify(p.output ?? "");
+    const out = typeof part.output === "string" ? part.output : JSON.stringify(part.output ?? "");
     recordToolOutput(turn, pending.get(callId), out);
     return;
   }
-  if (type === "error") turn.errors.push(String(p.errorText ?? "error"));
+  if (type === "error") turn.errors.push(String(part.errorText ?? "error"));
 }
 
 /** One studio project, from creation to a synced workspace. */
@@ -252,16 +256,15 @@ export function createStudioClient(origin: string, key: string): StudioClient {
       // single read races it and returns an empty project, i.e. a capability
       // check that fails everything.
       const deadline = Date.now() + WORKSPACE_TIMEOUT_MS;
-      let files: Record<string, string> | undefined;
       for (;;) {
-        const project_ = (await api(`/projects/${project}`).catch(() => undefined)) as
+        const read = (await api(`/projects/${project}`).catch(() => undefined)) as
           | { files?: Record<string, string> }
           | undefined;
-        files = project_?.files;
+        const files = read?.files;
         // agent.ts is the file every starter must produce; its presence means
-        // the sync has happened rather than merely that the project exists.
-        if (files?.["agent.ts"] !== undefined) return files;
-        if (Date.now() >= deadline) return files;
+        // the sync has happened rather than merely that the project exists. Out
+        // of time, the last read is what there is to report.
+        if (files?.["agent.ts"] !== undefined || Date.now() >= deadline) return files;
         await sleep(WORKSPACE_POLL_MS);
       }
     },

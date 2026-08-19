@@ -393,7 +393,7 @@ export function createServer(options: ServerOptions): AgentServer {
           env,
           startOpts,
           logger,
-          ...(hostBaseAgent ? { baseAgent: hostBaseAgent } : {}),
+          ...omitUndefined({ baseAgent: hostBaseAgent }),
         });
         return;
       }

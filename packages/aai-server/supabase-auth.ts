@@ -124,6 +124,20 @@ export type StudioAuth = {
 // JWT-shaped so one test routes both.
 const JWT_SHAPE_RE = /^[\w-]+\.[\w-]+\.[\w-]+$/;
 
+/**
+ * `{ id, email? }` from an untrusted body, or null when it names no subject.
+ *
+ * Three sites read the same two fields out of three different shapes — JWT
+ * claims (`sub`), the Auth server's user JSON (`id`), and a dev token's payload
+ * — and each had written both guards plus the optional-email spread by hand.
+ * The rules are the contract, not an incidental: an empty subject is NOT an
+ * identity, and an empty email is absent rather than `""`.
+ */
+function studioUser(id: unknown, email: unknown): StudioAuthUser | null {
+  if (typeof id !== "string" || id.length === 0) return null;
+  return { id, ...(typeof email === "string" && email ? { email } : {}) };
+}
+
 /** True when a bearer token is a session token (JWT-shaped), not an API key. */
 export function isJwtShaped(token: string): boolean {
   return JWT_SHAPE_RE.test(token);
@@ -184,15 +198,6 @@ export function createSupabaseAuth(opts: {
     return Math.max(0, Math.min(VERIFY_TTL_MS, claims.exp * 1000 - Date.now()));
   };
 
-  /** JWT claims → the user shape, or null when the claims name no subject. */
-  const userFromClaims = (claims: { sub?: unknown; email?: unknown }): StudioAuthUser | null =>
-    typeof claims.sub === "string" && claims.sub.length > 0
-      ? {
-          id: claims.sub,
-          ...(typeof claims.email === "string" && claims.email ? { email: claims.email } : {}),
-        }
-      : null;
-
   const verifyFresh = async (token: string): Promise<StudioAuthUser | null> => {
     const res = await doFetch(`${base}/auth/v1/user`, {
       headers: { apikey: opts.supabasePublishableKey, Authorization: `Bearer ${token}` },
@@ -207,11 +212,7 @@ export function createSupabaseAuth(opts: {
       id?: unknown;
       email?: unknown;
     } | null;
-    if (!body || typeof body.id !== "string" || body.id.length === 0) return null;
-    return {
-      id: body.id,
-      ...(typeof body.email === "string" && body.email ? { email: body.email } : {}),
-    };
+    return body ? studioUser(body.id, body.email) : null;
   };
 
   return {
@@ -239,7 +240,7 @@ export function createSupabaseAuth(opts: {
         cache.set(cacheKey, null);
         return null;
       }
-      const user = data ? userFromClaims(data.claims) : null;
+      const user = data ? studioUser(data.claims.sub, data.claims.email) : null;
       // A REJECTION keeps the flat TTL — there is no `exp` to read from a
       // token that did not verify, and re-verifying a bad token every minute
       // is the behaviour that was wanted anyway.
@@ -265,11 +266,7 @@ export function parseDevToken(token: string): StudioAuthUser | null {
       id?: unknown;
       email?: unknown;
     };
-    if (typeof body.id !== "string" || body.id.length === 0) return null;
-    return {
-      id: body.id,
-      ...(typeof body.email === "string" && body.email ? { email: body.email } : {}),
-    };
+    return studioUser(body.id, body.email);
   } catch {
     return null;
   }

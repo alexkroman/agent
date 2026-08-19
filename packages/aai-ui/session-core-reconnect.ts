@@ -47,12 +47,6 @@ export function openReconnectingSocket(
 }
 
 /**
- * True while `socket` is a reconnecting socket that will retry after the
- * close event currently being handled. partysocket schedules the retry
- * *before* dispatching `close`, so `retryCount` already names the attempt
- * just scheduled — at `maxRetries` it has given up.
- */
-/**
  * Force a fresh connection attempt on a reconnecting socket, reporting
  * whether it was one. Used for a failure partysocket cannot see: a socket it
  * considers open and healthy, whose peer never completed OUR handshake.
@@ -65,6 +59,12 @@ export function forceReconnect(socket: unknown): boolean {
   return true;
 }
 
+/**
+ * True while `socket` is a reconnecting socket that will retry after the
+ * close event currently being handled. partysocket schedules the retry
+ * *before* dispatching `close`, so `retryCount` already names the attempt
+ * just scheduled — at `maxRetries` it has given up.
+ */
 export function reconnectPending(socket: unknown): boolean {
   return (
     socket instanceof ReconnectingWebSocket &&

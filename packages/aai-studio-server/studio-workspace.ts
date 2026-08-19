@@ -236,13 +236,32 @@ function stampWorkspace(workspace: WorkspaceInput, prior?: StudioWorkspace): Stu
   return { ...workspace, files, hash: hashValue, updatedAt: Date.now() };
 }
 
+/**
+ * The stored row and its parsed document together — the read every WRITER
+ * opens with, since a versioned put needs the version and a malformed document
+ * has to read as "no workspace" (see {@link parseWorkspace}).
+ *
+ * Spelled once because the three readers below each re-derived the pair and
+ * its `record && current` guard, and the guard is the interesting half: a row
+ * whose `doc` does not parse must take the same path as a missing row, in
+ * every one of them.
+ */
+async function readWorkspace(
+  store: WorkspaceStore,
+  scope: string,
+  project: string,
+): Promise<{ version: number; workspace: StudioWorkspace } | null> {
+  const record = await store.get(scope, project);
+  const workspace = record ? parseWorkspace(record.doc) : null;
+  return record && workspace ? { version: record.version, workspace } : null;
+}
+
 export async function getWorkspace(
   store: WorkspaceStore,
   scope: string,
   project: string,
 ): Promise<StudioWorkspace | null> {
-  const record = await store.get(scope, project);
-  return record ? parseWorkspace(record.doc) : null;
+  return (await readWorkspace(store, scope, project))?.workspace ?? null;
 }
 
 /**
@@ -280,9 +299,8 @@ export function syncWorkspaceSource(
     // such push as a change — a version bump and a preview deploy per `aai
     // push`, for a byte-identical tree.
     const incoming = normalizeFileMap(files);
-    const record = await store.get(scope, project);
-    const current = record ? parseWorkspace(record.doc) : null;
-    if (!(record && current)) {
+    const stored = await readWorkspace(store, scope, project);
+    if (!stored) {
       // A caller holding a baseHash pulled a project that has since been
       // deleted — that is a conflict to surface, not a fresh create.
       if (baseHash !== undefined) throw new WorkspaceConflictError(scope, project);
@@ -290,6 +308,7 @@ export function syncWorkspaceSource(
       await store.put(scope, project, doc, null);
       return { workspace: doc, sourceHash: currentFilesHash(doc), created: true, changed: true };
     }
+    const { workspace: current } = stored;
     const storedHash = currentFilesHash(current);
     if (baseHash !== undefined && baseHash !== storedHash) {
       throw new WorkspaceConflictError(scope, project);
@@ -298,7 +317,7 @@ export function syncWorkspaceSource(
       return { workspace: current, sourceHash: storedHash, created: false, changed: false };
     }
     const doc = stampWorkspace({ ...current, files: incoming }, current);
-    await store.put(scope, project, doc, record.version);
+    await store.put(scope, project, doc, stored.version);
     return { workspace: doc, sourceHash: currentFilesHash(doc), created: false, changed: true };
   });
 }
@@ -369,14 +388,14 @@ async function applyMutation(
   mutate: (current: StudioWorkspace) => WorkspaceInput | null | Promise<WorkspaceInput | null>,
 ): Promise<StudioWorkspace | null> {
   for (let attempt = 0; ; attempt += 1) {
-    const record = await store.get(scope, project);
-    const current = record ? parseWorkspace(record.doc) : null;
-    if (!(record && current)) return null;
+    const stored = await readWorkspace(store, scope, project);
+    if (!stored) return null;
+    const current = stored.workspace;
     const next = await mutate(current);
     if (next === null) return current;
     const doc = stampWorkspace(next, current);
     try {
-      await store.put(scope, project, doc, record.version);
+      await store.put(scope, project, doc, stored.version);
       return doc;
     } catch (err) {
       if (!(err instanceof WorkspaceConflictError) || attempt > 0) throw err;

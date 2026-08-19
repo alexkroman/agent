@@ -44,7 +44,8 @@ import {
   type ToolSet,
 } from "ai";
 import { jsonrepair } from "jsonrepair";
-import { errorMessage, isRecord } from "../sdk/utils.ts";
+import { omitUndefined } from "../sdk/omit-undefined.ts";
+import { errorMessage, isRecord, safeJsonParse } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /** What {@link parseToolInput} returns for an object with no fields. */
@@ -125,12 +126,9 @@ async function parseToolInput(candidate: string): Promise<string | null> {
 
 /** Did these arguments fail to PARSE, as opposed to failing validation? */
 function isUnparsable(input: string): boolean {
-  try {
-    JSON.parse(input);
-    return false;
-  } catch {
-    return true;
-  }
+  // `undefined` is unambiguous as "did not parse": JSON cannot encode it, so it
+  // is `safeJsonParse` reporting malformed input rather than a parsed value.
+  return safeJsonParse(input) === undefined;
 }
 
 /**
@@ -168,7 +166,7 @@ export function createToolCallRepair(
       const { output } = await generateText({
         model,
         output: Output.object({ schema: jsonSchema(schema) }),
-        ...(abortSignal ? { abortSignal } : {}),
+        ...omitUndefined({ abortSignal }),
         prompt:
           `The tool "${toolCall.toolName}" was called with arguments that failed schema ` +
           `validation:\n${error.message}\n\nInvalid arguments:\n${toolCall.input}\n\n` +

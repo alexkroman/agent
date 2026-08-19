@@ -1,4 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
+
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { expect, test, vi } from "vitest";
 import type { AppDatabases, AppDbMeta } from "./app-database.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
@@ -36,7 +38,7 @@ function fakeAppDb(): AppDatabases & {
 
 async function deployWithStorage(opts: { appDb?: AppDatabases; secrets?: SecretStore } = {}) {
   const secrets = opts.secrets ?? createMemorySecretStore();
-  const orch = await createTestOrchestrator({ secrets, ...(opts.appDb && { appDb: opts.appDb }) });
+  const orch = await createTestOrchestrator({ secrets, ...omitUndefined({ appDb: opts.appDb }) });
   await deployAgent(orch.fetch, "my-agent", "key1");
   return { ...orch, secrets };
 }

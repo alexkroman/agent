@@ -8,6 +8,7 @@
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
 import clsx from "clsx";
+import { errorText } from "./api-error.ts";
 import type { FileBufferState } from "./file-drafts.ts";
 import { useFlash } from "./use-flash.ts";
 
@@ -36,7 +37,10 @@ function FileBuffer({ path, buffer, onEdit, onSave }: FileBufferProps) {
       await onSave(path, draft);
       flashSaveState("saved");
     } catch (err) {
-      flashSaveState(err instanceof Error ? err.message : "save failed");
+      // `errorText`, not a local `instanceof Error` ternary: react-query and
+      // `fetch` both reject with values that carry a message without being
+      // `Error` instances, and the ternary rendered those as "[object Object]".
+      flashSaveState(errorText(err) ?? "save failed");
     }
   };
 
@@ -100,7 +104,10 @@ export function FileNav({ paths, currentFile, onSelectFile }: FileNavProps) {
       groups.set(dir, [path]);
     }
   }
-  const dirs = [...groups.keys()].sort((a, b) => {
+  // Sorted entries rather than sorted keys: mapping over them below needs no
+  // second `groups.get(dir)` lookup, and so no `?? []` fallback standing in for
+  // a miss that cannot happen.
+  const dirs = [...groups].sort(([a], [b]) => {
     if (a === "") return -1;
     if (b === "") return 1;
     return a.localeCompare(b);
@@ -111,7 +118,7 @@ export function FileNav({ paths, currentFile, onSelectFile }: FileNavProps) {
       aria-label="Workspace files"
       className="w-52 shrink-0 overflow-y-auto border-r border-line bg-cream py-1"
     >
-      {dirs.map((dir) => (
+      {dirs.map(([dir, entries]) => (
         <div key={dir || "/"}>
           {dir && (
             <div
@@ -121,7 +128,7 @@ export function FileNav({ paths, currentFile, onSelectFile }: FileNavProps) {
               {dir}/
             </div>
           )}
-          {(groups.get(dir) ?? []).map((path) => {
+          {entries.map((path) => {
             const active = path === currentFile;
             return (
               <button

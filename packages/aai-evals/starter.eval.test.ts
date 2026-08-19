@@ -34,7 +34,6 @@
  */
 
 import { STARTERS } from "aai-studio-client/starters";
-import { describe } from "vitest";
 import {
   checkCapabilities,
   checkMode,
@@ -43,7 +42,7 @@ import {
   EXPECTATIONS,
   parseLoadedConfig,
 } from "../../scripts/starter-eval/expectations.mjs";
-import { describeEval, evalApiKey, evalOrigin } from "./_gate.ts";
+import { describeEvalWhen, evalApiKey, evalOrigin } from "./_gate.ts";
 import { registerEvalCases } from "./_register.ts";
 import type { EvalRecorder } from "./runner.ts";
 import { createStudioClient, type StudioTurn } from "./studio-target.ts";
@@ -59,8 +58,8 @@ const PROBE_MS = 3000;
  *
  * Probed rather than assumed, for the reason `_gate.ts` exists: with a key but
  * no studio every case would fail as a HARNESS error, which reads like the
- * codegen being broken. `AAI_REQUIRE_EVAL` makes it a hard failure instead of a
- * skip, for whoever meant to run this tier.
+ * codegen being broken. The announcing and the `AAI_REQUIRE_EVAL` hard failure
+ * are `describeEvalWhen`'s — this file states the precondition, not the policy.
  */
 async function studioReachable(origin: string): Promise<boolean> {
   try {
@@ -72,14 +71,6 @@ async function studioReachable(origin: string): Promise<boolean> {
 }
 
 const ORIGIN = evalOrigin();
-const STUDIO_UP = await studioReachable(ORIGIN);
-if (!STUDIO_UP) {
-  const how = "Start one with `pnpm dev:aai-server`, or set AAI_EVAL_ORIGIN.";
-  if ((process.env.AAI_REQUIRE_EVAL ?? "") !== "") {
-    throw new Error(`AAI_REQUIRE_EVAL is set but no studio answered at ${ORIGIN}.\n${how}`);
-  }
-  console.warn(`\n[skipped: no studio at ${ORIGIN}] starter eval not run.\n${how}\n`);
-}
 
 /** Every starter, with the project KIND that selects its coding-agent prompt. */
 function starters(): { label: string; prompt: string; kind: string }[] {
@@ -151,7 +142,11 @@ function gradeStarter(
   }
 }
 
-const describeStarters = STUDIO_UP ? describeEval : describe.skip;
+const describeStarters = describeEvalWhen(
+  await studioReachable(ORIGIN),
+  `no studio answered at ${ORIGIN}`,
+  "Start one with `pnpm dev:aai-server`, or set AAI_EVAL_ORIGIN.",
+);
 
 describeStarters("starter eval — studio codegen", () => {
   registerEvalCases(

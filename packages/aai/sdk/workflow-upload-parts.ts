@@ -41,6 +41,7 @@
  * retrying them is a loop the caller pays for twice.
  */
 
+import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
 import {
   UPLOAD_CHUNK_BYTES,
@@ -194,7 +195,7 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
     {
       method: "POST",
       headers: { ...req.headers, "Content-Type": req.type },
-      ...(req.options?.signal ? { signal: req.options.signal } : {}),
+      ...omitUndefined({ signal: req.options?.signal }),
     },
   );
   // An older agent, and the file has not moved yet — so this costs one round trip
@@ -255,7 +256,7 @@ function partOptions(
   report: (index: number, loaded: number) => void,
 ): UploadOptions {
   return {
-    ...(options?.signal ? { signal: options.signal } : {}),
+    ...omitUndefined({ signal: options?.signal }),
     ...(options?.onProgress
       ? { onProgress: (progress: UploadProgress) => report(part.index, progress.loaded) }
       : {}),

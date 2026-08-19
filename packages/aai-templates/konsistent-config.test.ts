@@ -31,6 +31,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { GATE_WIRING, repoPathOf } from "./_gate-support.ts";
 
 /**
  * The `must` half of a convention, in either of the two shapes konsistent
@@ -98,11 +99,7 @@ const repoFiles = Object.keys({
     query: "?raw",
     eager: false,
   }),
-}).map((key) =>
-  key.startsWith("../")
-    ? `packages/${key.slice("../".length)}`
-    : `packages/aai-templates/${key.replace(/^\.\//, "")}`,
-);
+}).map(repoPathOf);
 
 /**
  * Everything a `paths` pattern could select, FILES and DIRECTORIES both.
@@ -119,14 +116,11 @@ const repoFiles = Object.keys({
  * knip note above, which is about the SHALLOW globs and stays true of them.
  */
 const repoPaths = (() => {
-  // Two key shapes, exactly as the shallow globs above produce: Vite normalizes
-  // to the shortest relative form, so a sibling package arrives as
-  // `../aai/index.ts` and THIS package's own files as `./templates/…/agent.ts`.
-  const files = Object.keys(import.meta.glob("../*/**/*.{ts,tsx,json,md}")).map((key) =>
-    key.startsWith("../")
-      ? `packages/${key.slice("../".length)}`
-      : `packages/aai-templates/${key.replace(/^\.\//, "")}`,
-  );
+  // Two key shapes, exactly as the shallow globs above produce, and `repoPathOf`
+  // is what knows them: Vite normalizes to the shortest relative form, so a
+  // sibling package arrives as `../aai/index.ts` and THIS package's own files as
+  // `./templates/…/agent.ts`.
+  const files = Object.keys(import.meta.glob("../*/**/*.{ts,tsx,json,md}")).map(repoPathOf);
   const paths = new Set(files);
   for (const file of files) {
     const segments = file.split("/");
@@ -311,24 +305,7 @@ describe("konsistent.json", () => {
   });
 
   test("the gate is wired into the local check and CI, not just one of them", () => {
-    const files: Record<string, string | undefined> = {
-      "package.json": import.meta.glob("../../package.json", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../package.json"],
-      "scripts/check.sh": import.meta.glob("../../scripts/check.sh", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../scripts/check.sh"],
-      ".github/workflows/check.yml": import.meta.glob("../../.github/workflows/check.yml", {
-        query: "?raw",
-        import: "default",
-        eager: true,
-      })["../../.github/workflows/check.yml"],
-    };
-    for (const [path, text] of Object.entries(files)) {
+    for (const [path, text] of Object.entries(GATE_WIRING)) {
       expect(text, `${path} not found`).toBeTypeOf("string");
       expect(text, `${path} no longer references check:konsistent`).toContain("check:konsistent");
     }

@@ -1,6 +1,6 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { authenticatedUser, retailTool } from "../store.ts";
+import { requireOwnUser, retailTool } from "../store.ts";
 
 export default retailTool({
   name: "get_user_details",
@@ -11,13 +11,8 @@ export default retailTool({
     user_id: z.string().max(100).describe("The user id, e.g. 'sara_doe_496'"),
   }),
   execute: (args, state) => {
-    const user = authenticatedUser(state);
+    const user = requireOwnUser(state, args.user_id);
     if (isToolFailure(user)) return user;
-    if (user.user_id !== args.user_id) {
-      return {
-        error: `${args.user_id} is not the customer on this call. You can help only one customer per conversation.`,
-      };
-    }
     return {
       user_id: user.user_id,
       name: `${user.name.first_name} ${user.name.last_name}`,

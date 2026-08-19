@@ -46,17 +46,46 @@ const HOW_TO =
   "Export ASSEMBLYAI_API_KEY, or run `aai login` (the tier reads the key it\n" +
   "saves). This tier calls a live model and spends tokens on that key.";
 
-if (KEY === undefined) {
+/** What a gated eval file registers its suite with. */
+type GatedDescribe = typeof describe | typeof describe.skip;
+
+/**
+ * A precondition the tier needs is missing: say so, or FAIL when a pipeline
+ * asked for the tier by name.
+ *
+ * One function rather than the two copies this had, because the rule is the
+ * module's whole subject and the second copy lived in an eval file — the starter
+ * eval spelled out its own `AAI_REQUIRE_EVAL` read, its own throw and its own
+ * warning for the studio probe, so a change to how a skip announces itself would
+ * have reached one gate and not the other.
+ */
+function announceOrThrow(reason: string, howTo: string): void {
   if ((process.env.AAI_REQUIRE_EVAL ?? "") !== "") {
     // Thrown at import time on purpose: it fails the FILE, which is the one
     // outcome a green-but-skipped suite cannot be confused with.
-    throw new Error(`AAI_REQUIRE_EVAL is set but no API key resolved.\n${HOW_TO}`);
+    throw new Error(`AAI_REQUIRE_EVAL is set but ${reason}.\n${howTo}`);
   }
-  console.warn(`\n[skipped: no API key] behaviour eval tier not run.\n${HOW_TO}\n`);
+  console.warn(`\n[skipped: ${reason}] eval tier not run.\n${howTo}\n`);
 }
 
+if (KEY === undefined) announceOrThrow("no API key resolved", HOW_TO);
+
 /** `describe` when a key resolved, `describe.skip` otherwise — announced above. */
-export const describeEval = KEY === undefined ? describe.skip : describe;
+export const describeEval: GatedDescribe = KEY === undefined ? describe.skip : describe;
+
+/**
+ * {@link describeEval}, narrowed by one more precondition of the caller's.
+ *
+ * The gates COMPOSE: a file needs the key AND its own precondition, so a missing
+ * key still skips even when `ok` holds. The starter eval's `/health` probe of the
+ * studio origin is the one caller — with a key but no studio every one of its
+ * cases would fail as a harness error, which reads like the codegen being broken.
+ */
+export function describeEvalWhen(ok: boolean, reason: string, howTo: string): GatedDescribe {
+  if (ok) return describeEval;
+  announceOrThrow(reason, howTo);
+  return describe.skip;
+}
 
 /**
  * The key as a plain `string`, for use inside a `describeEval` body.

@@ -14,6 +14,7 @@ import {
   deployMock,
   ensureSessionMock,
   lastWake,
+  listedProjects,
   wakePreviewMock,
 } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
@@ -179,14 +180,8 @@ describe("studio auth", () => {
   test("workspaces are namespaced per key", async () => {
     const { fetch } = await createTestCombined();
     await createProject(fetch, "mine", "key1");
-    const mine = (await (await authFetch(fetch, "/studio/projects", { method: "GET" })).json()) as {
-      projects: string[];
-    };
-    expect(mine.projects).toEqual(["mine"]);
-    const theirs = (await (
-      await authFetch(fetch, "/studio/projects", { method: "GET", key: "key2" })
-    ).json()) as { projects: string[] };
-    expect(theirs.projects).toEqual([]);
+    expect(await listedProjects(fetch)).toEqual(["mine"]);
+    expect(await listedProjects(fetch, "key2")).toEqual([]);
   });
 });
 
@@ -257,10 +252,10 @@ describe("deploy + chat endpoints", () => {
       url: "/proj/",
       output: "Deployed /proj/",
     });
-    const [, params] = deployMock.mock.calls[0] as unknown[] as [
-      unknown,
-      { apiKey: string; project: string; serverUrl: string },
-    ];
+    // Read off the TYPED fake (see _studio-routes-test-utils.ts): a cast here
+    // would stop reporting the day `StudioDeployParams` gains or renames a
+    // field, which is the whole thing this assertion watches.
+    const params = deployMock.mock.calls[0]?.[1];
     expect(params).toMatchObject({
       apiKey: "key1",
       project: "proj",
@@ -293,10 +288,10 @@ describe("deploy + chat endpoints", () => {
     });
     // The broker got the caller's own key — it becomes the guest's LLM
     // credential and the chat surface's bearer.
-    const call = ensureSessionMock.mock.calls.at(-1) as unknown[];
-    expect(call[0]).toBe(studioScope("key1"));
-    expect(call[1]).toBe("proj");
-    expect(call[2]).toBe("key1");
+    const call = ensureSessionMock.mock.calls.at(-1);
+    expect(call?.[0]).toBe(studioScope("key1"));
+    expect(call?.[1]).toBe("proj");
+    expect(call?.[2]).toBe("key1");
   });
 
   /**
