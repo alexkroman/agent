@@ -83,6 +83,7 @@ import {
   sendResponse,
   setHostSend,
 } from "./harness-rpc.ts";
+import { guestSdkVersion } from "./harness-sdk-version.ts";
 import type {
   JsonRpcMessage,
   JsonRpcNotification,
@@ -350,7 +351,11 @@ function main(): void {
   // whole dial deadline and then blames the dial.
   server.listen(port, host).then(
     () => {
-      console.error(`harness listening on ${host}:${port}`);
+      // The SDK version rides the readiness line because a sandbox's boot output
+      // is all anyone outside it ever sees, and the copy an agent RUNS is the one
+      // beside the harness rather than the one bundled into it — see
+      // `harness-sdk-version.ts` for the 500 that cost.
+      console.error(`harness listening on ${host}:${port} (aai ${guestSdkVersion()})`);
     },
     (err: unknown) => {
       console.error(`harness failed to listen on ${host}:${port}:`, err);

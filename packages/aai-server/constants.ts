@@ -354,34 +354,36 @@ export const APP_DB_ADMIN_POOL_MAX = 1;
  * `show max_connections` and a `pg_stat_activity` count are one query each, and
  * a budget that promises more than the instance can give says so at boot
  * instead of at peak. It went unchecked for as long as it did because this
- * paragraph asserted it could not be — the check is the cheaper half of the
- * verification it asked for. Still verify by hand (and leave room for
- * migrations, the dashboard, and Supavisor) when changing either side. `platform-db-budget.test.ts` holds the arithmetic so that
- * raising `MAX_CONTAINERS`, a pool size, or the cluster list fails a check
- * instead of failing in production. The tenant-facing half of this concern was
- * always reasoned explicitly (`APP_DB_CONNECTION_LIMIT`, "so one hot app
- * cannot starve the shared cluster"); the platform's own half was not.
+ * paragraph asserted it could not be. Still verify by hand (and leave room for
+ * migrations, the dashboard, and Supavisor) when changing either side;
+ * `platform-db-budget.test.ts` holds the arithmetic so that raising
+ * `MAX_CONTAINERS`, a pool size, or the cluster list fails a check instead of
+ * failing in production.
  *
  * **It was 80 against a provisioned instance that has 60**, which is exactly the
  * unchecked claim the paragraph above warns about — the dashboard reports
- * `max_connections` 60 on the `t3a.micro` this runs on, so the fleet ceiling
- * promised more than the database could give and the "control-plane outage at
- * peak" above was reachable. 40 leaves 20 for what else needs the instance:
- * Supabase's own Realtime / PostgREST / Storage workers (~17 in use at idle),
- * `supabase db push`, the dashboard, and Supavisor's server-side connections.
+ * `max_connections` 60 on the `t3a.micro` this runs on, so the "control-plane
+ * outage at peak" above was reachable. 40 leaves 20 for what else needs the
+ * instance: Supabase's own Realtime / PostgREST / Storage workers (~17 in use at
+ * idle), `supabase db push`, the dashboard, and Supavisor's server side.
  *
- * **Neither per-app databases NOR the admin pool are in this number, and both
- * are routing decisions rather than omissions** — see
- * {@link platformDbConnectionsPerReplica} for what may be pooled and why the slug
- * lock may not. They are reached through Supavisor in SESSION mode
- * (`APP_DB_POOLER_URL`, applied by `withPoolerHost` in app-database.ts), so they
- * consume pooler capacity rather than `max_connections` — which is what makes
- * them boundable at all, since a direct connection per app scales with the number
- * of APPS and no fleet-wide ceiling can bound that. Their governing limits are
- * Supavisor's instead: a pool per `user+db+mode` triple, each entitled to the
- * configured pool size, against a default `max_pools` of 50 per tenant. With
- * `APP_DB_POOLER_URL` unset the connections are DIRECT and this budget
- * understates the fleet by one per replica, which is why boot announces it.
+ * **Per-app databases ARE in this number; the admin pool is not.** So what this
+ * bounds is `MAX_CONTAINERS x platformDbConnectionsPerReplica() +
+ * MAX_ACTIVE_APP_DATABASES x APP_DB_CONNECTION_LIMIT`, which is what
+ * `platform-db-budget.test.ts` asserts and what `platformDbBudget()` returns
+ * unchanged. This paragraph used to read the other way — "neither per-app
+ * databases NOR the admin pool are in this number" — on the premise that
+ * Supavisor pools them out of `max_connections` accounting. It does not: the
+ * pooler is in SESSION mode, mandatory for the Workflow DevKit, and multiplexes
+ * nothing (see {@link MAX_ACTIVE_APP_DATABASES}). The stale wording cost a bug —
+ * `platformDbBudget()` read it, added the app databases a second time, claimed 60
+ * on an instance with 60, and warned on every boot it ever ran.
+ *
+ * The ADMIN pool stays out, and that one IS a routing decision — see
+ * {@link platformDbConnectionsPerReplica}. It reaches the instance through
+ * `PLATFORM_POOLER_URL` in TRANSACTION mode, which does multiplex. With either
+ * pooler URL unset those connections are DIRECT and this budget understates the
+ * fleet, which is why boot announces the reading rather than trusting the constant.
  */
 export const MAX_PLATFORM_DB_CONNECTIONS = 40;
 

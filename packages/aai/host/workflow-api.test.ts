@@ -26,6 +26,29 @@ import { createWorkflowApi, MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api.ts";
 import { chunkStream, fakeClient, type Harness, run, serve } from "./workflow-api-test-utils.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
 
+/**
+ * A `WorkflowRequestError` as a SECOND copy of its module would construct one:
+ * a distinct class carrying the same registered brand. `Symbol.for` is what makes
+ * the two agree, so this is a faithful stand-in for the guest's real seam rather
+ * than a hand-built look-alike.
+ */
+function foreignRequestError(message: string): Error {
+  class ForeignWorkflowRequestError extends Error {
+    constructor(msg: string) {
+      super(msg);
+      this.name = "WorkflowRequestError";
+      // `defineProperty` rather than a computed class field: a computed field
+      // needs a `unique symbol`, which a locally-declared `Symbol.for` is not
+      // (TS1166) — and the whole point here is to reach the registry by NAME, the
+      // way a second copy of the module does, rather than to share a binding with
+      // it. A test that imported the source's own symbol would be asserting
+      // against one module, which is the case that already worked.
+      Object.defineProperty(this, Symbol.for("aai.workflowRequestError"), { value: true });
+    }
+  }
+  return new ForeignWorkflowRequestError(message);
+}
+
 let harness: Harness | undefined;
 
 beforeEach(() => {
@@ -230,6 +253,39 @@ describe("POST /runs", () => {
     });
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: '"key" must be a string when present' });
+  });
+
+  /**
+   * The production failure this route's classification exists to prevent, and the
+   * one `instanceof` could not: a guest runs TWO copies of this SDK on purpose
+   * (the harness bundles one, the agent's runtime comes from its own bundle), so
+   * the copy that throws a caller mistake is not the copy that catches it.
+   * `POST /workflows/runs` answered 500 to five schema failures in one production
+   * day and 400 to none, while this file's own in-process case passed.
+   *
+   * `foreignRequestError` is what a second copy of `_workflow-request-error.ts`
+   * constructs — same registered brand, different class — and the `instanceof`
+   * assertion below is what keeps this test honest: without it, a guard that
+   * quietly went back to `instanceof` would still pass, because the double IS a
+   * `WorkflowRequestError` in every way except identity.
+   */
+  test("a caller mistake thrown by ANOTHER copy of the SDK is still a 400", async () => {
+    const start = vi.fn(() =>
+      Promise.reject(foreignRequestError('Workflow "nope" is not declared')),
+    );
+    harness = await serve({ engine: () => fakeClient({ start }) });
+    const res = await fetch(`${harness.url}/workflows/runs`, {
+      method: "POST",
+      body: JSON.stringify({ workflow: "nope" }),
+    });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: 'Workflow "nope" is not declared' });
+    // The seam is real: this value would fail the `instanceof` the route used to
+    // use, so a 400 above can only have come from the brand.
+    expect(foreignRequestError("x")).not.toBeInstanceOf(WorkflowRequestError);
+    // And it must not be logged as an unhandled fault — the 500 came with a
+    // "Workflow API request failed" line naming a caller's typo as our bug.
+    expect(harness.logger.error).not.toHaveBeenCalled();
   });
 
   test("a start rejected as the CALLER's mistake is a 400 carrying the client's own sentence", async () => {

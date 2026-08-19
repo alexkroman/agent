@@ -64,7 +64,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadParallel } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
-import { filesOf } from "./_workflow-files.ts";
+import { fileFields, filesOf } from "./_workflow-files.ts";
 import type { UploadStatus } from "./use-workflow-form.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -182,6 +182,8 @@ export function useWorkflowStream<R = unknown>(
         // id from a previous submit, an empty optional), and refusing here would be
         // this hook deciding what its own declaration means.
         const payload = chosen && field ? { ...(input as object), [field]: id } : input;
+        // Checked on the PAYLOAD, so the substitution above is what clears it.
+        assertSendable(workflow, payload, field);
         started = await client.start(workflow, payload, omitUndefined({ key }));
         setRunId(started);
         if (!chosen) return;
@@ -223,6 +225,38 @@ export function useWorkflowStream<R = unknown>(
     upload,
     error: startError ?? tracked.error,
   };
+}
+
+/**
+ * Refuse a payload carrying a `File`, before a run is started over it.
+ *
+ * A File cannot be SENT: a run input is JSON and `JSON.stringify(new File(…))` is
+ * `{}` (see `fileFields`). So without this the run starts, rejects its own input,
+ * and reports a type error about a property the user filled in correctly — which is
+ * what production did, five times: `Invalid input for workflow "transcribe":
+ * recording: Invalid input`, from a page whose file picker was working.
+ *
+ * The reachable cause is a workflow whose listing declares no `uploads` for the
+ * property the form put a file in — one built before the declaration existed, or a
+ * page pointing at the wrong workflow — so the message names BOTH halves: the
+ * property that carries a file, and the one (if any) the workflow says is its
+ * upload. A message naming only one of them leaves the reader guessing which end
+ * to change.
+ *
+ * A throw rather than a silent repair: this hook cannot know whether the right fix
+ * is to declare the property or to stop sending the file, and guessing either way
+ * would start a run the caller did not mean.
+ */
+function assertSendable(workflow: string, payload: unknown, field: string | undefined): void {
+  const unsendable = fileFields(payload);
+  if (unsendable.length === 0) return;
+  const carries = unsendable.length === 1 ? "carries a file" : "carry files";
+  const declares = field === undefined ? "" : ` (it declares "${field}")`;
+  throw new Error(
+    `Cannot start "${workflow}": ${unsendable.join(", ")} ${carries} the workflow does not ` +
+      `declare as an upload${declares}. Add the property to \`workflow({ uploads: [...] })\`, ` +
+      "or submit an upload id.",
+  );
 }
 
 /** A fresh upload id: a capability, so it is random rather than derived. */

@@ -223,3 +223,70 @@ describe("useWorkflowStream", () => {
     await waitFor(() => expect(result.current.run?.runId).toBe("wrun_1"));
   });
 });
+
+/**
+ * The production failure this refuses, and the reason it is refused rather than
+ * repaired: a `File` cannot travel in a run input at all. `JSON.stringify` gives
+ * `{}` for one — no `toJSON`, no own enumerable properties — so a File left in the
+ * payload does not fail to SEND, it arrives as an empty object and the workflow
+ * rejects it against its own schema. That reached production as
+ * `Invalid input for workflow "transcribe": recording: Invalid input`: a message
+ * about a type, from a page whose file picker was working, five times over two days.
+ *
+ * The path is a listing that declares no `uploads` for the property the form put
+ * the file in — reachable whenever the deployed workflow predates the declaration,
+ * or the page names the wrong workflow.
+ */
+describe("a file the workflow does not declare as an upload", () => {
+  const noUploads = [{ name: "transcribe" }];
+
+  test("is refused, and no run is started over it", async () => {
+    const { api, calls } = recordingApi({ list: vi.fn(async () => noUploads) });
+    const result = await submitFile(api);
+
+    expect(api.start).not.toHaveBeenCalled();
+    expect(calls).not.toContain("start");
+    // Reported the way a form expects, not thrown past the caller.
+    expect(result.current.error).toContain("recording");
+    expect(result.current.error).toContain("uploads");
+  });
+
+  test("uploads nothing and cancels nothing, there being no run to cancel", async () => {
+    const { api } = recordingApi({ list: vi.fn(async () => noUploads) });
+    await submitFile(api);
+    expect(api.uploadStream).not.toHaveBeenCalled();
+    expect(api.cancel).not.toHaveBeenCalled();
+  });
+
+  test("leaves the hook idle rather than pending", async () => {
+    const { api } = recordingApi({ list: vi.fn(async () => noUploads) });
+    const result = await submitFile(api);
+    expect(result.current.pending).toBe(false);
+  });
+
+  /**
+   * The other half: a declared upload still works. Without this the guard could be
+   * refusing every submission and the three tests above would all pass.
+   */
+  test("does not refuse the ordinary declared case", async () => {
+    const { api, calls } = recordingApi();
+    const result = await submitFile(api);
+    expect(result.current.error).toBeUndefined();
+    expect(calls).toContain("start");
+  });
+
+  /**
+   * A run input carrying no file at all must pass whatever the listing says — the
+   * guard is about files, not about the declaration. This is the case the hook's own
+   * comment protects ("an id from a previous submit, an empty optional").
+   */
+  test("passes a plain input through even with no upload declared", async () => {
+    const { api, calls } = recordingApi({ list: vi.fn(async () => noUploads) });
+    const { result } = renderHook(() => useWorkflowStream("transcribe", { api }));
+    await act(async () => {
+      await result.current.submit({ recording: "upload_abc" });
+    });
+    expect(result.current.error).toBeUndefined();
+    expect(calls).toContain("start");
+  });
+});

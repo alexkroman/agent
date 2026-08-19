@@ -16,7 +16,7 @@ import type http from "node:http";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { requestQuery } from "../sdk/request-url.ts";
 import { clampWorkflowWait, isTerminal } from "../sdk/workflow.ts";
-import { WorkflowRequestError } from "./_workflow-request-error.ts";
+import { isWorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
 import { MAX_WORKFLOW_INPUT_BYTES, readBody, sendJson } from "./workflow-api-http.ts";
 import { waitForRun } from "./workflow-api-wait.ts";
@@ -89,7 +89,10 @@ export async function startRun(
   // rather than 500s. Everything else is ours, and is RETHROWN to the router,
   // whose `answerHandlerFailure` logs the cause and answers an opaque 500.
   //
-  // The type test is what makes that split real. This used to catch everything
+  // The type test is what makes that split real — `isWorkflowRequestError`, and
+  // not `instanceof`, because a guest runs two copies of this SDK and the copy
+  // that throws is not the copy that catches (see `_workflow-request-error.ts`).
+  // This used to catch everything
   // and answer 400 with `errorMessage(err)` under a comment claiming the router
   // had the rest — but the `try` covers the world call, so it never did: a
   // six-second Postgres outage answered a form submission
@@ -101,7 +104,7 @@ export async function startRun(
   try {
     runId = await engine.start(workflow, input, key === undefined ? undefined : { key });
   } catch (err) {
-    if (!(err instanceof WorkflowRequestError)) throw err;
+    if (!isWorkflowRequestError(err)) throw err;
     sendJson(res, 400, { error: err.message });
     return;
   }
@@ -238,7 +241,7 @@ export async function findRuns(
     // to answer 400 with the raw message, so a read against a dead database
     // returned the whole `select … from "workflow"."workflow_runs"` statement to
     // an unauthenticated caller.
-    if (!(err instanceof WorkflowRequestError)) throw err;
+    if (!isWorkflowRequestError(err)) throw err;
     sendJson(res, 400, { error: err.message });
   }
 }

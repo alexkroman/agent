@@ -88,8 +88,15 @@ describe("platform database connection budget", () => {
     ).toBeLessThanOrEqual(MAX_PLATFORM_DB_CONNECTIONS);
     // The runtime check must claim exactly what this test allows, or a green
     // suite would sit beside a warning at boot (or, worse, silence at boot
-    // beside a red suite).
-    expect(platformDbBudget()).toBe(MAX_PLATFORM_DB_CONNECTIONS + appTotal);
+    // beside a red suite). "Exactly what this test allows" is the ceiling the
+    // assertion above compares against — `MAX_PLATFORM_DB_CONNECTIONS`, app
+    // databases INCLUDED. This line used to read `+ appTotal`, which is the
+    // double count `platformDbBudget` carried: it demanded the runtime claim be
+    // `appTotal` larger than the bound this very test enforces, and so it was the
+    // green suite sitting beside the warning at boot rather than the guard
+    // against it.
+    expect(platformDbBudget()).toBe(MAX_PLATFORM_DB_CONNECTIONS);
+    expect(fleetDirect + appTotal).toBeLessThanOrEqual(platformDbBudget());
   });
 
   /**

@@ -44,6 +44,9 @@ function makeStubCore(
 ): SessionCore {
   return {
     id: sessionId,
+    // No fault: this harness exercises the wire, and a session reporting one
+    // would have `ws-handler` log it as degraded rather than ready.
+    faultCode: undefined,
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     announce: vi.fn(() => true),

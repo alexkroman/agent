@@ -155,6 +155,9 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
 export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
   return {
     id: "test",
+    // A healthy session by default, so an override is what opts a spec into the
+    // fault path. Not a spy: it is a readonly value on the real type.
+    faultCode: undefined,
     configure: vi.fn(),
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),

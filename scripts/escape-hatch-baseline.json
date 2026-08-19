@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
     "packages/aai-ui/default-client.tsx": 1,
     "packages/aai-ui/types.test.ts": 2
@@ -88,7 +88,8 @@
     "packages/aai-cli/_output.test.ts": 2,
     "packages/aai-cli/dev.test.ts": 1,
     "packages/aai-cli/studio.test.ts": 1,
-    "packages/aai-guest/harness-crash-guards.test.ts": 3,
+    "packages/aai-guest/_test-utils.ts": 1,
+    "packages/aai-guest/harness-crash-guards.test.ts": 1,
     "packages/aai-guest/harness.test.ts": 10,
     "packages/aai-server/delete.test.ts": 2,
     "packages/aai-server/orchestrator-key-auth.test.ts": 1,

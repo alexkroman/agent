@@ -112,6 +112,22 @@ export type SessionCore = {
   start(): Promise<void>;
   stop(): Promise<void>;
   /**
+   * The code of the first FATAL error this session reported, if it reported one.
+   *
+   * Exists so a caller cannot claim a session is fine when it is not.
+   * `ws-handler.ts` logs `Session ready` once `start()` resolves, and that is a
+   * different question: a provider which cannot open at all reports a fatal error
+   * and lets the transport start anyway. Production logged
+   * `session error (fatal) { code: 'tts', message: 'AssemblyAI TTS: missing API
+   * key…' }` and `Session ready` 400ms later, in that order — a session that could
+   * never speak, announced as ready.
+   *
+   * Deliberately NOT a reason to stop the session. `fatal` defaults to true, so it
+   * covers a wide class here (see the `error.reported` case), and the transport
+   * owns whether a session ends; this is an observation, not a policy.
+   */
+  readonly faultCode: string | undefined;
+  /**
    * One client COMMAND, in the protocol's own command vocabulary
    * (`sdk/protocol-commands.ts`).
    *
@@ -203,6 +219,8 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let history: Message[] = [];
   let turnPromise: Promise<void> | null = null;
   let stopped = false;
+  /** For {@link SessionCore.faultCode} — see there for the log it exists to fix. */
+  let faultCode: string | undefined;
   const emit = opts.emitter.emit;
 
   // The idle deadline and everything it means — see `session-idle.ts`, which is
@@ -358,7 +376,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
         // exactly the case that has to be answerable from the server's logs.
         const entry = { sid: opts.id, code: event.code, message: event.message };
         if (event.fatal === false) log.debug("session error", entry);
-        else log.warn("session error (fatal)", entry);
+        else {
+          log.warn("session error (fatal)", entry);
+          // FIRST one wins: the earliest fatal is the cause, and everything after
+          // it is likely downstream of the same failure.
+          faultCode ??= event.code;
+        }
         break;
       }
       default:
@@ -371,6 +394,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
   return {
     id: opts.id,
+
+    // A getter, not a captured value: the return object is built once at
+    // construction, when no error has been reported yet.
+    get faultCode() {
+      return faultCode;
+    },
 
     configure(config) {
       emit({

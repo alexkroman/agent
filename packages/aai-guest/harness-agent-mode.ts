@@ -41,6 +41,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { verifyBearer } from "./harness-auth.ts";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { bundleSourceOf, readVerifiedBundle } from "./harness-bundle-source.ts";
+import { guestSdkVersion } from "./harness-sdk-version.ts";
 import { AGENT_IDLE_EXIT_MS, AGENT_IDLE_POLL_MS, GUEST_CONTRACT_VERSION } from "./limits.ts";
 
 // ---- Boot artifacts ----------------------------------------------------------
@@ -430,5 +431,7 @@ export async function mainAgent(port: number, host: string, token: string): Prom
     }),
   });
   await server.listen(port, host);
-  console.error(`agent-mode harness listening on ${host}:${port}`);
+  // See `harness.ts`'s twin line: the version is the copy BESIDE the harness,
+  // which is the one this agent's own runtime came from.
+  console.error(`agent-mode harness listening on ${host}:${port} (aai ${guestSdkVersion()})`);
 }
