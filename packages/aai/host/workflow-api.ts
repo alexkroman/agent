@@ -183,6 +183,21 @@ export type WorkflowApiOptions = {
    * the pair 404s naming the reason; `createServer` always passes one.
    */
   uploads?: UploadStore | undefined;
+  /**
+   * Whether a part's bytes should be sent somewhere OTHER than this server.
+   *
+   * True when the store reaches its bytes through a platform that also serves them
+   * a route of its own — a deployed guest, which holds no bucket credential and
+   * brokers every byte operation. The `/parts` claim then advertises it, and the
+   * client sends each window to the platform and reports it here with no body, so
+   * an upload byte never touches this process at all.
+   *
+   * A CAPABILITY of the deployment rather than a fact about the file, which is why
+   * the claim carries it instead of a client guessing: `aai dev` and a self-hosted
+   * server hold the credential themselves and have no such route, so their clients
+   * must keep sending bodies here.
+   */
+  directParts?: boolean | undefined;
   logger: Logger;
 };
 
@@ -292,7 +307,9 @@ const ROUTES: readonly Route[] = [
       const store = requireUploads(res, ctx);
       if (!store) return;
       const id = uploadIdOr400(res, url, UPLOAD_PARTS_SUFFIX);
-      if (id !== undefined) await beginUploadParts(req, res, store, id, ctx.logger);
+      if (id !== undefined) {
+        await beginUploadParts(req, res, store, id, ctx.logger, ctx.directParts === true);
+      }
     },
   },
   {
@@ -406,7 +423,7 @@ const ROUTES: readonly Route[] = [
 export function createWorkflowApi(
   opts: WorkflowApiOptions,
 ): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean {
-  const { engine: resolveEngine, token, logger, uploads } = opts;
+  const { engine: resolveEngine, token, logger, uploads, directParts } = opts;
 
   async function route(
     req: http.IncomingMessage,
@@ -443,7 +460,7 @@ export function createWorkflowApi(
       sendJson(res, 404, { error: "Not found" });
       return;
     }
-    await matched.run(req, res, { engine, uploads, logger }, url);
+    await matched.run(req, res, { engine, uploads, logger, directParts }, url);
   }
 
   return claimUnder<http.IncomingMessage, http.ServerResponse>({

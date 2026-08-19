@@ -39,6 +39,16 @@ export {
   UPLOADS_UNAVAILABLE_MESSAGE,
   type UploadReader,
 } from "../sdk/step-uploads.ts";
+// The two sizes an upload is measured in, plus the id grammar. Exported for the
+// PLATFORM, which owns the byte route a deployed guest brokers through: its window
+// cap and its key derivation have to be stated in the same units the SDK cuts in,
+// and a second copy of either number is a silent disagreement about where an object
+// begins. Not on an authoring subpath — an agent author never picks these.
+export {
+  UPLOAD_CHUNK_BYTES,
+  UPLOAD_PART_BYTES,
+  UPLOAD_TOKEN_RE,
+} from "../sdk/upload-constants.ts";
 // `SessionStateStore.syncSession` mentions this type, and a type a public
 // signature MENTIONS but does not export is a docs-build warning here — and
 // warnings are errors (see the `WdkStreamOptions` note below, same rule).
@@ -299,8 +309,10 @@ export {
   type WorkflowSurface,
 } from "./workflow-serve.ts";
 export {
+  createHttpUploadBlobs,
   createMemoryUploadBlobs,
   createUploadStore,
+  partKey,
   resolveUploadBlobs,
   UPLOAD_KEY_PREFIX,
   UPLOAD_STORAGE_BUCKET_ENV,

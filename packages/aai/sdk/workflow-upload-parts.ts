@@ -15,6 +15,30 @@
  * routes: one `POST` declaring the id and the total, then a `PUT` per window. The
  * agent reassembles them, and nothing downstream of the store knows it happened.
  *
+ * ## The bytes may not come to the agent at all
+ *
+ * On the managed platform they do not. A deployed guest holds no bucket credential,
+ * so it reaches an upload's bytes through a route the PLATFORM serves — and a part
+ * sent to the agent would cross that platform twice on its way to the same bucket,
+ * through a forward that measures a body's drain to decide whether the guest is
+ * alive. So the claim answers `directParts: true`, and each window goes
+ * `PUT <origin>/<slug>/uploads/<id>/<offset>` followed by a bodyless
+ * `PUT …/parts?offset=…&stored=1` telling the agent which window landed.
+ *
+ * Two properties make that safe to be the ordinary path rather than an option:
+ *
+ * - **The CLAIM decides, not the client.** `aai dev` and a self-hosted server hold
+ *   the credential themselves and serve no such route, so they answer without the
+ *   field and the bytes come to them — as does an agent deployed before any of this
+ *   existed. A client that guessed from its own URL would send 8 MiB into a 404.
+ * - **The agent still measures the part.** `stored=1` carries an offset and no size:
+ *   the store asks the bucket how big the object is before it records the window, so
+ *   a client cannot advance `size` past a hole however it got there.
+ *
+ * Everything else about the fan-out is unchanged — the same windows, the same
+ * concurrency, the same retry budget, the same resume — because the RECORD is still
+ * the agent's and it is what `size`, `complete` and `ranges` come from.
+ *
  * ## This is the DEFAULT, and it degrades to the single request
  *
  * Three things make this path decline rather than fail, because none of them is
@@ -66,6 +90,7 @@
  */
 
 import { withRetries } from "./_upload-retry.ts";
+import { WORKFLOW_API_PREFIX } from "./_workflow-api-envelope.ts";
 import { mapConcurrent } from "./map-concurrent.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
@@ -242,6 +267,25 @@ export function planParts(total: number, partBytes: number): Part[] {
 const NO_SUCH_ROUTE = new Set([404, 405]);
 
 /**
+ * Where the PLATFORM serves an upload's bytes, given the workflow API's own base.
+ *
+ * `…/<slug>/workflows` → `…/<slug>/uploads`, i.e. one segment across rather than one
+ * level up: both routes hang off the same agent prefix, and the base is the only
+ * thing in this client that knows what that prefix is (it may be an origin, a path
+ * under one, or a `/:slug` on the platform).
+ *
+ * `undefined` when the base does not end in the API prefix, which is a base composed
+ * by something other than this client. Declining is the conservative half: sending
+ * bytes to a URL guessed from a shape nobody recognises is exactly the 404 the
+ * capability flag exists to prevent.
+ */
+export function directBytesBase(base: string): string | undefined {
+  const trimmed = base.replace(/\/+$/, "");
+  if (!trimmed.endsWith(WORKFLOW_API_PREFIX)) return undefined;
+  return `${trimmed.slice(0, -WORKFLOW_API_PREFIX.length)}/uploads`;
+}
+
+/**
  * Store one file as concurrent parts, or resolve `undefined` to say this path
  * declined.
  *
@@ -286,6 +330,16 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
   const begunAlready = begun.status === 409 && (claims > 1 || req.options?.resume === true);
   if (!(begun.ok || begunAlready)) throw await req.fail(begun);
 
+  // Where the bytes go, decided by the CLAIM — see the module doc. A 409'd claim
+  // carries no body to read the flag from, so a resume reads it off the record
+  // instead of assuming: an upload begun on the direct path is finished on it.
+  const claimed = begun.ok
+    ? await readJsonBody<{ directParts?: boolean }>(begun, "Workflow API").catch(
+        () => ({}) as { directParts?: boolean },
+      )
+    : {};
+  const bytesBase = claimed.directParts === true ? directBytesBase(req.base) : undefined;
+
   // What is already stored, so a resume sends the windows that are MISSING rather
   // than the file. Only asked for when the claim says the upload already existed —
   // a fresh one has nothing in it, and this is a round trip.
@@ -299,6 +353,13 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
     if (!missing.includes(part)) report(part.index, part.end - part.start);
   }
   const sendPart = async (part: Part): Promise<void> => {
+    // Where the bytes go. The whole window is retried as ONE unit even on the direct
+    // path, and it has to be: a stored object that was never recorded is an orphan
+    // nothing reads, so re-sending the bytes and re-recording them is the only repair
+    // that leaves the record and the bucket agreeing.
+    const target = bytesBase
+      ? `${bytesBase}/${encodeURIComponent(req.id)}/${part.start}`
+      : `${uploads}/parts?offset=${part.start}`;
     const { res } = await withRetries(
       () => {
         // Reset before every attempt, so a retried part does not leave the bytes of
@@ -306,8 +367,11 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
         report(part.index, 0);
         return req.send(
           "PUT",
-          `${uploads}/parts?offset=${part.start}`,
-          { ...req.headers, "Content-Type": req.type },
+          target,
+          // No auth headers on the direct path: it is the PLATFORM's route, and the
+          // agent's own `AAI_WORKFLOW_API_TOKEN` means nothing there. Sending them
+          // would leak the agent's bearer to a surface that never checks it.
+          bytesBase ? { "Content-Type": req.type } : { ...req.headers, "Content-Type": req.type },
           sliceOf(req.file, part.start, part.end),
           partOptions(options, part, report),
         );
@@ -315,6 +379,21 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
       { attempts, signal },
     );
     if (!res.ok) throw await req.fail(res);
+    // The window is in the bucket and the agent has not heard. Recorded as its own
+    // retried request, because the two failures are different: the bytes are already
+    // stored, so a lost receipt costs one small request rather than the window.
+    if (bytesBase) {
+      const { res: recorded } = await withRetries(
+        () =>
+          fetch(`${uploads}/parts?offset=${part.start}&stored=1`, {
+            method: "PUT",
+            headers: req.headers,
+            signal,
+          }),
+        { attempts, signal },
+      );
+      if (!recorded.ok) throw await req.fail(recorded);
+    }
     report(part.index, part.end - part.start);
   };
 

@@ -255,6 +255,13 @@ export function createServer(options: ServerOptions): AgentServer {
   const workflowApi = createWorkflowApi({
     engine: () => runtime.workflows,
     uploads: workflowSupport.uploads,
+    // The presence of a public base URL is exactly the condition that puts this
+    // server's uploads on the brokered byte path, so it is also the condition under
+    // which a platform serves a byte route the client should use instead. Derived
+    // from the one option rather than passed separately, so the two cannot disagree —
+    // a claim advertising a route nothing serves is a client sending bytes into a
+    // 404.
+    directParts: Boolean(options.publicUrl?.trim()),
     ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
     logger,
   });

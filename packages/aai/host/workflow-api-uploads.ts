@@ -94,6 +94,20 @@ const CHOSEN_ID_MESSAGE =
 /** What `POST` and `PUT /workflows/uploads` answer with. */
 export type UploadCreated = UploadInfo & {
   /**
+   * Present and `true` when a part's bytes go to the PLATFORM rather than here.
+   *
+   * A capability of the deployment, answered by the claim so a client never has to
+   * guess: a deployed agent holds no bucket credential and brokers every byte
+   * operation, so the platform serves a byte route of its own and a part sent here
+   * would cross it twice. `aai dev` and a self-hosted server hold the credential
+   * themselves and have no such route, so the field is ABSENT and a client keeps
+   * sending bodies to `PUT …/parts?offset=`.
+   *
+   * Absent also covers an agent deployed before this existed, which is the same
+   * answer and the right one.
+   */
+  directParts?: boolean;
+  /**
    * Where the bytes are, relative to the API's own prefix.
    *
    * Relative rather than absolute because only the CALLER knows the origin it
@@ -211,6 +225,7 @@ export async function beginUploadParts(
   store: UploadStore,
   id: string,
   logger: Logger,
+  directParts = false,
 ): Promise<void> {
   if (!UPLOAD_TOKEN_RE.test(id)) {
     sendJson(res, 400, { error: CHOSEN_ID_MESSAGE });
@@ -227,7 +242,14 @@ export async function beginUploadParts(
   try {
     const info = await store.beginParts(id, declaredMeta(req), total);
     logger.info("Workflow parts upload begun", { id: info.id, name: info.name, total });
-    sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
+    sendJson(res, 201, {
+      ...info,
+      url: `${UPLOADS_PATH}/${info.id}`,
+      // Omitted rather than `false` when the bytes come here: a client reads its
+      // presence, and an absent field is also what an agent deployed before this
+      // existed answers — one shape for "send the body to me", not two.
+      ...(directParts ? { directParts: true } : {}),
+    } satisfies UploadCreated);
   } catch (err: unknown) {
     if (sendWriteFailure(res, err)) return;
     throw err;

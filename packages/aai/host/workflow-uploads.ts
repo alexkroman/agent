@@ -52,6 +52,7 @@ export {
   type UploadBlobs,
   type UploadPart,
 } from "./_upload-blobs.ts";
+export { createHttpUploadBlobs, type HttpUploadBlobsOptions } from "./_upload-blobs-http.ts";
 export {
   assertPartOffset,
   assertPartTotal,

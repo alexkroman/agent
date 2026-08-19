@@ -1,0 +1,146 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Specs for `PUT/GET/HEAD /:slug/uploads/:id/:offset`.
+ *
+ * Driven through the real orchestrator app, because two of the three things worth
+ * asserting are properties of the ROUTE rather than of the handler: that a caller
+ * cannot address a key outside its own agent's prefix, and that this route is reached
+ * without brokering a sandbox — a forward would defeat the whole point, which is that
+ * an upload byte never touches a guest.
+ */
+
+import { UPLOAD_PART_BYTES } from "@alexkroman1/aai/runtime";
+import { describe, expect, test } from "vitest";
+import { createOrchestrator } from "./orchestrator.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
+import { createTestStore } from "./test-utils.ts";
+import { createMemoryUploadBytes, type UploadBytes, uploadKey } from "./upload-bytes.ts";
+import { MAX_UPLOAD_WINDOW_BYTES } from "./upload-handler.ts";
+
+/** The app plus the byte store behind it, so a spec can look at what really landed. */
+function serve(bytes: UploadBytes = createMemoryUploadBytes()) {
+  const { app } = createOrchestrator({
+    slots: createSlotCache(),
+    store: createTestStore(),
+    uploadBytes: bytes,
+  });
+  const call = async (path: string, init?: RequestInit): Promise<Response> =>
+    await app.request(`http://platform.test${path}`, init);
+  return { bytes, call };
+}
+
+/** `n` bytes counting up, so a window's CONTENT identifies its offset. */
+function ramp(n: number, from = 0): Uint8Array {
+  return Uint8Array.from({ length: n }, (_, at) => (from + at) % 251);
+}
+
+describe("a window of upload bytes", () => {
+  test("PUT stores it under the agent's OWN prefix", async () => {
+    const { bytes, call } = serve();
+    const res = await call("/digest-desk/uploads/upl_abc/0", {
+      method: "PUT",
+      body: ramp(64),
+      headers: { "Content-Type": "audio/wav" },
+    });
+    expect(res.status).toBe(201);
+    await expect(res.json()).resolves.toEqual({ bytes: 64 });
+    // The key is composed HERE from the slug Hono matched, never from anything the
+    // caller sent — which is what stops one agent addressing another's objects in a
+    // bucket every tenant shares.
+    expect(await bytes.size(uploadKey("digest-desk", "upl_abc", 0))).toBe(64);
+  });
+
+  test("GET answers the bytes when the backend cannot sign", async () => {
+    // The memory backend has no server in front of it, so `readUrl` is null and the
+    // route serves the window itself — the path `aai dev` and the tests take.
+    const { call } = serve();
+    await call("/desk/uploads/upl_abc/0", { method: "PUT", body: ramp(64) });
+    const res = await call("/desk/uploads/upl_abc/0");
+    expect(res.status).toBe(200);
+    expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([...ramp(64)]);
+  });
+
+  test("GET honours a Range, because the reader is a fan-out", async () => {
+    const { call } = serve();
+    await call("/desk/uploads/upl_abc/0", { method: "PUT", body: ramp(64) });
+    const res = await call("/desk/uploads/upl_abc/0", { headers: { Range: "bytes=8-11" } });
+    expect(res.status).toBe(206);
+    expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([...ramp(4, 8)]);
+  });
+
+  test("GET REDIRECTS when the backend can sign, so bytes skip the platform", async () => {
+    // The property that keeps a sixty-step fan-out from moving a 200 MB recording
+    // through this process once per run. A 302 carries no body and `fetch` follows it
+    // with the `Range` header intact.
+    const signing: UploadBytes = {
+      ...createMemoryUploadBytes(),
+      readUrl: (key) => Promise.resolve(`https://storage.test/${key}?token=t`),
+    };
+    const { call } = serve(signing);
+    const res = await call("/desk/uploads/upl_abc/0", { redirect: "manual" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("https://storage.test/uploads/desk/upl_abc/0?token=t");
+  });
+
+  test("HEAD answers the length, and 404 for a window nobody wrote", async () => {
+    // Answered here rather than redirected: it is one number, and a 302 would cost a
+    // second round trip to learn it. `size` never over-reporting is what lets the
+    // agent refuse a part nobody uploaded.
+    const { call } = serve();
+    await call("/desk/uploads/upl_abc/0", { method: "PUT", body: ramp(64) });
+    const found = await call("/desk/uploads/upl_abc/0", { method: "HEAD" });
+    expect(found.status).toBe(200);
+    expect(found.headers.get("content-length")).toBe("64");
+    expect((await call("/desk/uploads/upl_abc/8", { method: "HEAD" })).status).toBe(404);
+  });
+
+  test("GET is a 404 for a window nobody wrote, not an empty 200", async () => {
+    const { call } = serve();
+    expect((await call("/desk/uploads/upl_abc/0")).status).toBe(404);
+  });
+
+  test("refuses an id that is not one, before composing a key from it", async () => {
+    const { bytes, call } = serve();
+    const res = await call("/desk/uploads/..%2F..%2Fblobs%2Fdeadbeef/0", {
+      method: "PUT",
+      body: ramp(4),
+    });
+    // 400 rather than a stored object: the id is part of a key, and the one thing this
+    // route must never do is let a caller name `blobs/<hash>` — every tenant's worker
+    // bundle lives under that prefix in the same bucket.
+    expect(res.status).toBe(400);
+    expect(await bytes.size("blobs/deadbeef")).toBeUndefined();
+  });
+
+  test("refuses an offset that is not a byte position", async () => {
+    const { call } = serve();
+    expect((await call("/desk/uploads/upl_abc/-8", { method: "PUT", body: ramp(4) })).status).toBe(
+      400,
+    );
+    expect((await call("/desk/uploads/upl_abc/1e9", { method: "PUT", body: ramp(4) })).status).toBe(
+      400,
+    );
+  });
+
+  test("caps a WINDOW rather than a file, which is a different number", async () => {
+    // `MAX_WORKFLOW_UPLOAD_BYTES` (2 GiB) bounds a FILE and a file is many windows, so
+    // it is the wrong cap here. This one is an order of magnitude above what the client
+    // sends, so anything past it is a caller doing something else entirely.
+    expect(MAX_UPLOAD_WINDOW_BYTES).toBeGreaterThan(UPLOAD_PART_BYTES);
+    const { call } = serve();
+    const res = await call("/desk/uploads/upl_abc/0", {
+      method: "PUT",
+      body: new Uint8Array(MAX_UPLOAD_WINDOW_BYTES + 1),
+    });
+    expect(res.status).toBe(413);
+  });
+
+  test("does not broker a sandbox, which is the whole point of the route", async () => {
+    // A store with no agent row would make any brokered route answer 404 or 503. This
+    // one answers 201, because no guest is involved at any point — the bytes go from
+    // the caller to the bucket and the agent is told afterwards.
+    const { call } = serve();
+    const res = await call("/never-deployed/uploads/upl_abc/0", { method: "PUT", body: ramp(4) });
+    expect(res.status).toBe(201);
+  });
+});

@@ -49,6 +49,11 @@ export type RouteContext = {
   engine: WorkflowApiEngine;
   /** Undefined on a server that was given no store — the routes then 404. */
   uploads: UploadStore | undefined;
+  /**
+   * Whether a part's bytes go somewhere OTHER than this server — see
+   * `WorkflowApiOptions.directParts`, which is where the argument lives.
+   */
+  directParts?: boolean | undefined;
   logger: Logger;
 };
 

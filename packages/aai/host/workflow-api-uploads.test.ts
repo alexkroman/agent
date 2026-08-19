@@ -38,21 +38,43 @@ const engine = () => ({
 });
 
 let close: (() => Promise<void>) | undefined;
+/**
+ * The store the last {@link serve} built.
+ *
+ * Only the DIRECT-path specs need it: `recordPart` carries no body, so the only way to
+ * say "these bytes are in the bucket" is to put them where the store looks.
+ */
+let lastStore: ReturnType<typeof fakeStore> | undefined;
+
+/** The store behind the running server, for a spec that has to seed stored bytes. */
+function current(): ReturnType<typeof fakeStore> {
+  if (!lastStore) throw new Error("no store: serve() was called with an explicit uploads");
+  return lastStore;
+}
 afterEach(async () => {
   await close?.();
   close = undefined;
 });
 
 /** Mount the API over an in-memory store on a real loopback server. */
-async function serve(opts: { uploads?: UploadStore | undefined } = {}): Promise<string> {
+async function serve(
+  opts: { uploads?: UploadStore | undefined; directParts?: boolean } = {},
+): Promise<string> {
   // `"uploads" in opts` rather than a default parameter: a default is applied
   // for an explicit `undefined` too, which is exactly the case the "no store"
   // spec below needs to reach.
-  const uploads = "uploads" in opts ? opts.uploads : fakeStore();
+  const built = "uploads" in opts ? opts.uploads : fakeStore();
+  lastStore = built && "stored" in built ? (built as ReturnType<typeof fakeStore>) : undefined;
+  const uploads = built;
   // The shared no-op logger, not a module-level bag of `vi.fn()`s: nothing
   // here asserts on log output, and a spy singleton is what lets a later
   // `toHaveBeenCalled` pass on an earlier test's call.
-  const api = createWorkflowApi({ engine, uploads, logger: silentLogger });
+  const api = createWorkflowApi({
+    engine,
+    uploads,
+    logger: silentLogger,
+    ...(opts.directParts === undefined ? {} : { directParts: opts.directParts }),
+  });
   const server = http.createServer((req, res) => {
     const url = requestPath(req.url);
     if (api(req, res, url, req.method ?? "GET")) return;
@@ -505,6 +527,50 @@ describe("the parts routes", () => {
       complete: false,
       url: "/workflows/uploads/abc",
     });
+  });
+
+  test("says nothing about a direct byte route by default", async () => {
+    // `aai dev` and a self-hosted server hold the bucket credential themselves and
+    // serve no such route. The field is OMITTED rather than `false`, because that is
+    // also what an agent deployed before any of this existed answers — one shape for
+    // "send the body to me", not two.
+    const base = await serve();
+    const res = await begin(base, "abc", 8);
+    await expect(res.json()).resolves.not.toHaveProperty("directParts");
+  });
+
+  test("advertises the direct route when the deployment has one", async () => {
+    // A CAPABILITY of the deployment, answered by the claim so a client never has to
+    // guess it from its own URL — a wrong guess sends megabytes into a 404.
+    const base = await serve({ directParts: true });
+    const res = await begin(base, "abc", 8);
+    await expect(res.json()).resolves.toMatchObject({ directParts: true });
+  });
+
+  test("`stored=1` records a window without carrying it", async () => {
+    // The direct path's write. No body: the bytes went to the platform, and the store
+    // measures the object itself rather than trusting anything here.
+    const base = await serve({ directParts: true });
+    await begin(base, "abc", 8);
+    const store = current();
+    store.stored.set("abc/0", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
+    const res = await fetch(`${base}/workflows/uploads/abc/parts?offset=0&stored=1`, {
+      method: "PUT",
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ size: 8, complete: true });
+  });
+
+  test("`stored=1` is a 400 for a window nobody uploaded", async () => {
+    // The whole defence on that path: a client claiming a part it never sent would
+    // advance `size` over bytes that are not there, and a step reading them gets
+    // SILENCE — a gap in a transcript with nothing anywhere reporting one.
+    const base = await serve({ directParts: true });
+    await begin(base, "abc", 8);
+    const res = await fetch(`${base}/workflows/uploads/abc/parts?offset=0&stored=1`, {
+      method: "PUT",
+    });
+    expect(res.status).toBe(400);
   });
 
   test("reassembles parts sent AT ONCE and out of order", async () => {

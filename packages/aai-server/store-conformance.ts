@@ -136,6 +136,32 @@ export const STORE_CONTRACTS = [
     why: "SDK tier: one case list cannot span the boundary; real arm is workflow-keys.scenario.test.ts",
   },
   {
+    contract: "upload-bytes",
+    memory: "createMemoryUploadBytes",
+    pg: "createSupabaseUploadBytes",
+    // The SAME exemption as blob-storage above, for the same reason and against the
+    // same missing thing: its real arm is the stack's `storage-api` container, which
+    // needs a declared bucket. Worth more than blob-storage's when that bucket
+    // arrives — the interesting half here is `Range`, `Content-Length` on a HEAD, and
+    // what Storage answers for a window starting past the object, none of which a Map
+    // can be strict about.
+    conformance: false,
+    why: "needs a declared local storage bucket (supabase/config.toml)",
+  },
+  {
+    // The SDK's byte seam, and the pair the platform's own arm is built ON:
+    // `createSupabaseUploadBytes` composes `createHttpUploadBlobs`, so the guest
+    // talking to a bucket directly under `aai dev` and the platform serving the
+    // brokered route run the same code. Same structural exemption as session-state
+    // below — `packages/aai` may import no sibling, so a shared case list declared
+    // here cannot reach its memory arm's unit spec — plus the bucket one above.
+    contract: "upload-blobs",
+    memory: "createMemoryUploadBlobs",
+    pg: "createHttpUploadBlobs",
+    conformance: false,
+    why: "SDK tier, and its real arm needs a declared local storage bucket",
+  },
+  {
     contract: "platform-lock",
     memory: "localSlugLock",
     pg: PG_SLUG_LOCK,
