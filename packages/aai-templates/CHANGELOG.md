@@ -1,5 +1,11 @@
 # aai-templates
 
+## 0.3.6
+
+### Patch Changes
+
+- 58788ee: Internal quality pass: give repeated shapes one home each, remove stranded code, and hoist redundant work out of render and streaming paths. No API or behaviour change.
+
 ## 0.3.5
 
 ### Patch Changes

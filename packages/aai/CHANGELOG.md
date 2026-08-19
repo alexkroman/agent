@@ -1,5 +1,13 @@
 # @alexkroman1/aai
 
+## 6.5.1
+
+### Patch Changes
+
+- 58788ee: Internal quality pass: give repeated shapes one home each, remove stranded code, and hoist redundant work out of render and streaming paths. No API or behaviour change.
+- e2c2cda: Fix four production errors from an hour of Modal logs: a 30s proxy deadline that aborted healthy uploads (27 x 503), a parallel-upload part that treated a retryable 503 as a refusal, a 5xx whose cause was never logged, and an aborted request logged as an agent failure.
+- 153264f: Answer a workflow input-validation failure with 400 rather than 500. A guest runs two copies of the SDK by design — the harness bundles one, the agent's runtime comes from its own bundle — so the route's `instanceof WorkflowRequestError` check was false across that seam and every caller mistake was rethrown as an opaque server error. The guard is a registered-symbol brand now, which crosses it.
+
 ## 6.5.0
 
 ### Minor Changes
