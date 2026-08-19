@@ -18,15 +18,39 @@ name: Check
 # branch protection ("require branches to be up to date", or a merge queue),
 # which a workflow file cannot express — but running here on main is what makes
 # the resulting breakage VISIBLE rather than silent.
+#
+# The push list is `main` and nothing else. `changeset-release/main` used to sit
+# beside it, and it was a straight DUPLICATE: that branch's PR targets main, so
+# the `pull_request` arm below already covers it, the two runs land in different
+# concurrency groups, and nothing dedupes them — every push to a Version
+# Packages PR ran this whole matrix twice. 97 such runs exist in the history.
+# They stopped on 2026-08-07, when RELEASE_TOKEN went dead: `GITHUB_TOKEN`
+# cannot trigger a workflow, which `release.yml` warns about itself, so the
+# entry became config that fires nothing and would have silently resumed
+# double-running the moment the token was rotated.
 on:
   push:
-    branches: [main, changeset-release/main]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch: {}
 
 concurrency:
-  group: check-${{ github.event.pull_request.number || github.ref }}
+  # **Per-SHA on a push, per-PR on a pull request**, and the push half is what
+  # makes `cancel-in-progress: false` below mean anything. GitHub keeps at most
+  # ONE pending run per group and cancels it when a newer run joins, so
+  # declining to cancel the in-flight run does not save the queued one: with
+  # every commit on main sharing a single `github.ref` group, each main run died
+  # at the exact second the next merge arrived. Measured over 28 consecutive
+  # main pushes: 5 cancelled, each one's `updated_at` equal to the next run's
+  # `created_at`, and NOTHING reached a verdict on main between 16:00 and 21:57
+  # on 2026-08-18 — precisely the "gap in its history exactly where it is
+  # merging fastest" the note below says the setting exists to prevent.
+  #
+  # It has to stay `pull_request.number` on the PR side rather than a bare
+  # `github.sha`: a PR's sha is the MERGE ref and changes on every push, so a
+  # per-SHA group there would put each push in its own group and cancel nothing.
+  group: check-${{ github.event.pull_request.number || github.sha }}
   # Cancel supersedes only on PULL REQUESTS, where the newest push is the only
   # candidate anyone cares about. On a push it must not: each commit on main is
   # a distinct thing to have a verdict about, and cancelling the in-flight run

@@ -125,13 +125,13 @@ Two things about it are load-bearing, and both were missing:
   can only ever mean "a dependency failed"; a job that legitimately skips
   ITSELF would need its own accepted-result list, never a blanket `skipped`.
 
-**And `main` is in its `push` list.** Without it every run evaluated a merge
-ref and nothing evaluated the branch, so "PRs are green" said nothing about
-main — while `release.yml` / `deploy.yml` / `docs.yml`, which no PR runs, broke
-unreported (Release: 20 of 30 consecutive pushes; #1112 has the shape).
-`cancel-in-progress` is scoped to pull requests for the same reason: each
-commit on main needs its own verdict. A PR result is also never recomputed
-after its base moves, which only branch protection can close.
+**And `main` is in its `push` list — ONLY main.** Without it nothing evaluated
+the branch, only merge refs (#1112: Release broke on 20 of 30 pushes), and the
+version branch beside it ran every Version Packages push through this matrix
+TWICE. Each commit needs its own verdict, which takes `cancel-in-progress`
+scoped to pull requests AND a per-SHA push group. A PR result is also never
+recomputed after its base moves, which only branch protection can close. Both
+push-list rules and the group are specced — see `packages/aai-templates/CLAUDE.md`.
 
 **The test matrix names every package with a `test:coverage` script**, which
 now includes `aai-evals` — absent for a long time, so its seven unit suites and

@@ -962,6 +962,39 @@ It never ships (nothing under `templates/` or `scaffold/` may import it, and
 `_discovery.ts`: the shared-helper shape is right here and wrong inside a
 template.
 
+## `check.yml`'s push list and concurrency group are specced here
+
+`ci-gate-job.test.ts` guards the `ci` job — the single required check — and it
+also owns the two facts about WHEN that workflow runs, because both are the
+shape this package's gates exist for: config that looks live while checking
+nothing.
+
+**The push list is `main` and nothing else.** `changeset-release/main` sat beside
+it and was a straight duplicate: a Version Packages PR targets main, so the
+`pull_request` arm already covers that branch, the two runs land in different
+concurrency groups (`check-<number>` vs `check-<sha>`), and nothing dedupes
+them — every push to a version PR ran the whole matrix twice. 97 such push runs
+are in the history, and they stopped on 2026-08-07 when `RELEASE_TOKEN` went
+dead: `GITHUB_TOKEN` cannot trigger a workflow, which `release.yml` warns about
+itself. So the entry fired nothing, was invisible in a diff AND in the run list,
+and would have silently resumed double-running the moment the token was rotated.
+
+**The push concurrency group is per-SHA, and that is what makes
+`cancel-in-progress: false` mean anything.** GitHub keeps at most ONE pending run
+per group and cancels it when a newer run joins, so declining to cancel the
+IN-FLIGHT run does not save the QUEUED one. With every commit on main sharing a
+single `github.ref` group, each main run died at the exact second the next merge
+arrived — measured over 28 consecutive main pushes: 5 cancelled, every one's
+`updated_at` equal to the next run's `created_at`, and nothing reaching a verdict
+on main across five merges between 16:00 and 21:57 on 2026-08-18. That is
+precisely the "gap in its history exactly where it is merging fastest" the
+workflow's own comment says the setting prevents. The pull-request side stays
+keyed on the PR NUMBER: a PR's `github.sha` is the merge ref and changes on every
+push, so a bare per-SHA group there would supersede nothing.
+
+Both specs were A/B'd against the old config before landing — the non-vacuity
+rule every gate in this package carries.
+
 ## What `tsconfig.json` includes is what gets type-checked
 
 A test file is imported by nothing, so tsc only sees it if `include` names

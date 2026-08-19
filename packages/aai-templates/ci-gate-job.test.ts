@@ -27,9 +27,10 @@
  * reach the workflow with no node types, which this package's tsconfig has none
  * of.
  *
- * The parsing is deliberately not a YAML library. Three facts are read — the
- * job names, one `needs:` list and one shell loop — this package carries no
- * YAML parser, and a malformed file fails the shape assertions below anyway.
+ * The parsing is deliberately not a YAML library. Five facts are read — the job
+ * names, one `needs:` list, one shell loop, the `push:` branch list and the
+ * concurrency block — this package carries no YAML parser, and a malformed file
+ * fails the shape assertions below anyway.
  */
 
 import { describe, expect, test } from "vitest";
@@ -160,6 +161,51 @@ describe("the ci gate job", () => {
       pushBranches(),
       "check.yml no longer runs on a push to main — nothing evaluates the branch, only merge refs",
     ).toContain("main");
+  });
+
+  test("the version branch is NOT in the push list", () => {
+    // `changeset-release/main` used to sit beside `main` here, and it was a pure
+    // duplicate: that branch's PR targets main, so the `pull_request` arm
+    // already covers it, and the two runs get different concurrency groups
+    // (`check-<number>` vs `check-<sha>`), so nothing dedupes them — every push
+    // to a Version Packages PR ran this whole matrix twice. 97 such push runs
+    // are in the history.
+    //
+    // Asserted rather than commented because the entry is INVISIBLE while
+    // RELEASE_TOKEN is dead: `GITHUB_TOKEN` cannot trigger a workflow, so it
+    // fires nothing today and would silently resume double-running the moment
+    // the token is rotated. Same shape as this package's other gates — config
+    // that looks live, checks nothing, and costs on a delay.
+    expect(
+      pushBranches(),
+      "the version branch is back in the push list — its pull_request arm already covers it, so the whole matrix runs twice",
+    ).not.toContain("changeset-release/main");
+  });
+
+  test("its push concurrency group is per-COMMIT", () => {
+    // The other half of the spec below, and the half that makes it mean
+    // anything. GitHub keeps at most ONE pending run per concurrency group and
+    // cancels it when a newer run joins, so `cancel-in-progress: false` does not
+    // save a QUEUED run — with every commit on main sharing one `github.ref`
+    // group, each main run died at the exact second the next merge arrived. Over
+    // 28 consecutive main pushes: 5 cancelled, every one's `updated_at` equal to
+    // the next run's `created_at`, and nothing reached a verdict on main across
+    // five merges on 2026-08-18.
+    //
+    // The PR side must stay keyed on the PR NUMBER: a pull request's `github.sha`
+    // is the merge ref and changes on every push, so a bare per-SHA group would
+    // put each push in its own group and cancel nothing.
+    const found = /^\s*group:\s*(.+)$/m.exec(header());
+    expect(found, "check.yml declares no concurrency `group`").not.toBeNull();
+    const group = found?.[1]?.trim() ?? "";
+    expect(
+      group,
+      "the push concurrency group is keyed on the ref again — the next merge cancels the previous commit's pending run",
+    ).toContain("github.sha");
+    expect(
+      group,
+      "the concurrency group no longer keys pull requests by number — a merge-ref sha changes per push, so nothing would be superseded",
+    ).toContain("pull_request.number");
   });
 
   test("it does not cancel superseded runs on a push", () => {
