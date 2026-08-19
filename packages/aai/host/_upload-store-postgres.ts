@@ -22,6 +22,54 @@ import {
   UploadPartError,
   type UploadStore,
 } from "./_upload-store.ts";
+
+/**
+ * How many chunks one `writePart` commits per statement.
+ *
+ * A part used to be stored one awaited `INSERT` per `UPLOAD_CHUNK_BYTES`, and that
+ * shape has two costs a batch removes, both measured in production:
+ *
+ * - **The body drains at the speed of a round trip per megabyte.** The loop awaits
+ *   a commit before pulling the next chunk off the request, so the socket moves
+ *   only as fast as this app's Postgres — which for a deployed agent is a pooler in
+ *   another AWS region. The platform's forward measures exactly that drain to
+ *   decide whether a guest is alive, so a part that is storing perfectly well looks
+ *   like a stall: 6 upload `PUT`s answered 503 or 408 in one hour, three of them
+ *   aborted at 121-125s against a 120s window that had just been raised from 30s.
+ * - **It holds a pool connection for the whole part.** `postgres-db.ts` pools FOUR
+ *   by default and the whole guest shares it — the workflow engine's polling, every
+ *   `/stream` re-read, session state — so the client's four concurrent parts take
+ *   the pool for the length of the upload. Measured over the same hour: every
+ *   non-upload request on that agent ran at **p50 1.34s while a part was in flight
+ *   against 0.43s when none was**, a 3.1x slowdown across 801 and 366 samples, with
+ *   `GET /workflows/runs` peaking at 17.7s.
+ *
+ * FOUR rather than the whole part, because the app role carries
+ * `statement_timeout = '10s'` (`aai-server/app-database.ts`) and one statement has
+ * to stay well inside it. Four cuts an 8 MiB part from eight round trips to two and
+ * bounds the extra memory at 4 MiB per part in flight, where buffering the part
+ * whole would be bounded only by the upload's own declared total — 2 GiB.
+ */
+const PART_CHUNKS_PER_STATEMENT = 4;
+
+/**
+ * Group an async iterator into runs of at most `size`, emitting a short last one.
+ *
+ * Local to this backend deliberately: the file store writes into a descriptor, so
+ * it has no round trip to amortize and batching there would only add latency.
+ */
+async function* batched<T>(items: AsyncIterable<T>, size: number): AsyncGenerator<T[]> {
+  let batch: T[] = [];
+  for await (const item of items) {
+    batch.push(item);
+    if (batch.length >= size) {
+      yield batch;
+      batch = [];
+    }
+  }
+  if (batch.length > 0) yield batch;
+}
+
 export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore {
   // Created lazily and idempotently rather than by a migration step, for the
   // reason `workflow-keys.ts` gives: an agent's first workflow may be its first
@@ -98,6 +146,38 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
        values ($1, $2, $3, $4)`,
       [id, seq, byteOffset, Buffer.from(chunk)],
+    );
+  };
+
+  /**
+   * One part's worth of chunks, upserted in ONE statement.
+   *
+   * `do update` for the reason the single-row insert above does not need it: a part
+   * is RETRIED whenever a connection dies mid-flight, which is the ordinary failure
+   * of the thing parts exist for, and a retry must be the same upload rather than a
+   * duplicate-key error the client cannot recover from.
+   *
+   * Safe as a multi-row upsert only because a batch's `seq` values are DISTINCT —
+   * Postgres refuses a statement whose `ON CONFLICT DO UPDATE` would touch one row
+   * twice. `chunked` yields whole `UPLOAD_CHUNK_BYTES` pieces except for a short
+   * last one and a part starts chunk-aligned, so the offsets in a batch are
+   * strictly increasing and `chunkSeq` maps them one-to-one.
+   */
+  const insertChunkBatch = async (
+    id: string,
+    batch: readonly { bytes: Uint8Array; at: number }[],
+  ): Promise<void> => {
+    const params: unknown[] = [id];
+    const rows = batch.map(({ bytes, at }) => {
+      params.push(chunkSeq(at), at, Buffer.from(bytes));
+      return `($1, $${params.length - 2}, $${params.length - 1}, $${params.length})`;
+    });
+    await db.query(
+      `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
+       values ${rows.join(", ")}
+       on conflict (upload_id, seq) do update
+         set byte_offset = excluded.byte_offset, bytes = excluded.bytes`,
+      params,
     );
   };
 
@@ -222,18 +302,14 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       if (offset > total) {
         throw new UploadPartError(`A part at ${offset} starts past this upload's ${total} bytes.`);
       }
-      for await (const { bytes, at } of partChunks(body, offset, total)) {
-        // `do update` rather than a bare insert: a part is RETRIED whenever a
-        // connection dies mid-flight, which is the ordinary failure of the thing
-        // parts exist for, and a retry must be the same upload rather than a
-        // duplicate-key error the client has no way to recover from.
-        await db.query(
-          `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
-           values ($1, $2, $3, $4)
-           on conflict (upload_id, seq) do update
-             set byte_offset = excluded.byte_offset, bytes = excluded.bytes`,
-          [id, chunkSeq(at), at, Buffer.from(bytes)],
-        );
+      // Batched rather than one awaited statement per chunk — see
+      // `PART_CHUNKS_PER_STATEMENT`, which carries the two production measurements
+      // that argue for it.
+      for await (const batch of batched(
+        partChunks(body, offset, total),
+        PART_CHUNKS_PER_STATEMENT,
+      )) {
+        await insertChunkBatch(id, batch);
       }
       const size = await contiguousSize(id);
       const complete = size >= total;
