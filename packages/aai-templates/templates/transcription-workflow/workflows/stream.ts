@@ -91,9 +91,29 @@
  * realtime, so a recording long enough for the difference to matter is a recording
  * whose upload dominates either way.
  *
- * It grows with LENGTH rather than with size, because concurrency is capped: a
- * 97-minute recording is ~65 segments in ~9 rounds, and eight of those rounds happen
- * behind the upload instead of after it.
+ * Precisely: both flows are `upload + rounds x one segment`, streaming is always
+ * ONE round (only the last segment is left when the bytes land), and the classic
+ * flow is `ceil(segments / segmentConcurrency)`. So the saving is
+ * `(rounds - 1) x segment latency` and **it is ZERO whenever the classic fan-out
+ * fits in one round** — which is most files, because that width is 32:
+ *
+ * | recording | segments | classic rounds | saving |
+ * | --- | --- | --- | --- |
+ * | 12 min, 48 kHz stereo (130 MB) | 8 | 1 | none, by construction |
+ * | 60 min, 48 kHz stereo (660 MB) | 41 | 2 | one segment |
+ * | 6 h, 16 kHz mono (660 MB) | 241 | 8 | seven segments |
+ *
+ * It therefore grows with the SEGMENT COUNT, which is duration over bitrate — not
+ * with file size. The two 660 MB rows are the point: same bytes, same width, and
+ * the low-bitrate one has six times the segments and six times the benefit.
+ *
+ * This paragraph used to claim a 97-minute recording was "~65 segments in ~9
+ * rounds, and eight of those rounds happen behind the upload". The segment count
+ * was right and the rounds were not: at width 32 that is 3 rounds, so at most 2
+ * are hidden. It described a width of ~7, which is what `mapInBatches` and a
+ * smaller `BYTES_IN_FLIGHT` gave before either moved — and it overstated this
+ * flow's benefit about fourfold, which is exactly the expectation a reader brings
+ * to the mode picker and then finds unmet.
  *
  * What it always buys, at any length, is the thing a table cannot show: the page
  * shows real progress — segment timings, arriving — while the bytes are still
