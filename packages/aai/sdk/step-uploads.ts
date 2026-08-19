@@ -152,6 +152,20 @@ export type UploadInfo = {
    * starting it over.
    *
    * Sorted, non-overlapping, and half-open like every other range here.
+   *
+   * **A LIST rather than a single offset, and that is the whole of what it buys.**
+   * The obvious cheaper shape is one number — "everything up to here has landed" —
+   * which is what a sequential append protocol reports (tus's `Upload-Offset`, where
+   * a `PATCH` at any other offset is a 409). A single cursor cannot represent a GAP
+   * at all, so under it an upload whose second part was lost has to re-send
+   * everything after the first, and a fan-out that lands parts out of order has
+   * nothing to report until they happen to join up. {@link UploadInfo.size} already
+   * IS that number. This is the strictly larger fact.
+   *
+   * Absent also means "cannot say", not "nothing landed" — a backend may decline to
+   * report windows it cannot enumerate compactly. A reader's answer to an absent
+   * list is therefore to assume nothing about what is stored, which for an uploader
+   * means sending the file.
    */
   ranges?: readonly UploadRange[];
 };

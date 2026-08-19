@@ -51,6 +51,27 @@ export async function fileStore() {
   return createUploadStore({ dir });
 }
 
+/** The merged windows one upload's chunks cover, sorted, touching ones joined. */
+function islandsOf(
+  chunks: readonly { id: string; offset: number; bytes: Uint8Array }[],
+  id: string,
+): { start_at: string; end_at: string }[] {
+  const covered = chunks.filter((chunk) => chunk.id === id).sort((a, b) => a.offset - b.offset);
+  const islands: { start_at: string; end_at: string }[] = [];
+  for (const chunk of covered) {
+    const last = islands.at(-1);
+    if (last && Number(last.end_at) === chunk.offset) {
+      last.end_at = String(chunk.offset + chunk.bytes.length);
+    } else {
+      islands.push({
+        start_at: String(chunk.offset),
+        end_at: String(chunk.offset + chunk.bytes.length),
+      });
+    }
+  }
+  return islands;
+}
+
 /**
  * A `Db` that records statements and answers the reads this store makes.
  *
@@ -70,7 +91,12 @@ export function recordingDb(opts: { refuse?: string } = {}) {
   >();
   const chunks: { id: string; seq: number; offset: number; bytes: Uint8Array }[] = [];
 
-  const handlers: readonly { when: string; run: (params: unknown[]) => unknown[] }[] = [
+  const handlers: readonly {
+    when: string;
+    // The statement TEXT as well as its parameters: one handler reads its own
+    // `limit` off it — see the islands walk below.
+    run: (params: unknown[], text: string) => unknown[];
+  }[] = [
     {
       when: `insert into ${UPLOAD_CHUNKS_TABLE}`,
       // VARIADIC, because the parts writer commits several chunks per statement and
@@ -101,27 +127,31 @@ export function recordingDb(opts: { refuse?: string } = {}) {
       // The contiguous prefix, which the real statement computes with a window
       // function. Computed here by the walk the SQL exists to avoid, so the fake
       // and the statement are independent answers to the same question.
-      when: "with covered as",
-      run: (params) => {
-        const covered = chunks
-          .filter((chunk) => chunk.id === String(params[0]))
-          .sort((a, b) => a.offset - b.offset);
+      // BEFORE the prefix query below, whose text this also contains: both walks
+      // open `with covered as` and only the group-by tells them apart.
+      when: "group by island",
+      run: (params, text) => {
         // One row per ISLAND, which is what the real statement's two window
         // functions produce — computed here by the walk the SQL exists to avoid, so
         // the fake and the statement are independent answers to the same question.
-        const islands: { start_at: string; end_at: string }[] = [];
-        for (const chunk of covered) {
-          const last = islands.at(-1);
-          if (last && Number(last.end_at) === chunk.offset) {
-            last.end_at = String(chunk.offset + chunk.bytes.length);
-          } else {
-            islands.push({
-              start_at: String(chunk.offset),
-              end_at: String(chunk.offset + chunk.bytes.length),
-            });
-          }
-        }
-        return islands;
+        const islands = islandsOf(chunks, String(params[0]));
+        // Its `limit` is read OFF THE STATEMENT rather than from a shared constant:
+        // the store detects "too many to report" by asking for one more row than it
+        // will accept, so a fake that truncated to its own number could never let a
+        // spec reach that branch — and could never drift from the real one either.
+        const limit = Number(/\blimit\s+(\d+)/.exec(text)?.[1] ?? islands.length);
+        return islands.slice(0, limit);
+      },
+    },
+    {
+      when: "with covered as",
+      run: (params) => {
+        // The CONTIGUOUS prefix, in one row — the shape the per-part write path
+        // needs, because `MAX_DB_RESULT_ROWS` makes a row-per-island query on that
+        // path a throw whose likelihood the caller decides.
+        const first = islandsOf(chunks, String(params[0]))[0];
+        const size = first && Number(first.start_at) === 0 ? Number(first.end_at) : 0;
+        return [{ size: String(size) }];
       },
     },
     {
@@ -278,7 +308,8 @@ export function recordingDb(opts: { refuse?: string } = {}) {
       if (opts.refuse && text.includes(opts.refuse)) throw new Error(`refused: ${opts.refuse}`);
       // First match wins, so the handlers are ordered narrowest-first wherever one
       // statement's text contains another's.
-      return (handlers.find((handler) => text.includes(handler.when))?.run(params) ?? []) as T[];
+      return (handlers.find((handler) => text.includes(handler.when))?.run(params, text) ??
+        []) as T[];
     },
   };
   return { db, sql, chunks, uploads };

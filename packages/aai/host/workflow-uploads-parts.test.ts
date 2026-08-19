@@ -111,11 +111,16 @@ describe.each([
     // The hole is what makes this worth publishing: `size` is 0 past the first
     // window, so nothing else in the record says the third one is already stored —
     // and a client that re-sent the file would send it again.
-    expect(after.ranges).toEqual([
+    expect((await store.info("abc"))?.ranges).toEqual([
       { start: 0, end: UPLOAD_CHUNK_BYTES },
       { start: UPLOAD_CHUNK_BYTES * 2, end: total },
     ]);
-    expect((await store.info("abc"))?.ranges).toEqual(after.ranges);
+    // NOT on the part's own response, which is the write path: the islands query is
+    // the one whose row count the caller decides, so keeping it off the per-part
+    // path is what stops a finely-cut upload becoming a failed statement. Nothing
+    // reads it there — a resume reads the record, once, before it sends anything.
+    expect(after.ranges).toBeUndefined();
+    expect(after).toMatchObject({ size: UPLOAD_CHUNK_BYTES, complete: false });
   });
 
   test("says nothing about windows once there is nothing left to resume", async () => {

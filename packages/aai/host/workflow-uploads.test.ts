@@ -12,6 +12,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { UPLOAD_CHUNK_BYTES } from "../sdk/constants.ts";
+import { MAX_UPLOAD_RANGES } from "./_upload-store-postgres.ts";
 import { body, fileStore, ramp, recordingDb } from "./_upload-store-test-utils.ts";
 import {
   contiguousBytes,
@@ -138,6 +139,49 @@ describe("the Postgres backend", () => {
         (one) => one.includes(`update ${UPLOADS_TABLE} set size`) && !one.includes("complete"),
       ),
     ).toHaveLength(1);
+  });
+
+  test("bounds the windows query, so a sparse upload is not a permanent 500", async () => {
+    const { db, sql, chunks } = recordingDb();
+    const store = createUploadStore({ db, dir: "/unused" });
+    await store.beginParts("sparse", {}, UPLOAD_CHUNK_BYTES * (MAX_UPLOAD_RANGES + 2) * 2);
+    // Every OTHER chunk slot, so no two windows merge: one island each, which is
+    // the only statement here whose row count the caller decides. `postgres-db.ts`
+    // THROWS above `MAX_DB_RESULT_ROWS`, so unbounded meant an upload whose record
+    // could never be read again — a 500 on every `GET …/info` and every step's
+    // `uploadInfo`, with no way for its owner to correct it.
+    for (let at = 0; at < MAX_UPLOAD_RANGES + 2; at += 1) {
+      chunks.push({
+        id: "sparse",
+        seq: at * 2,
+        offset: at * 2 * UPLOAD_CHUNK_BYTES,
+        bytes: ramp(1),
+      });
+    }
+    const info = await store.info("sparse");
+    // Not a throw — and no windows, which is the same answer an agent too old to
+    // report them gives, so the client re-sends the whole file rather than trusting
+    // a truncated list and leaving a hole.
+    expect(info).toMatchObject({ complete: false });
+    expect(info?.ranges).toBeUndefined();
+    // And the statement asked for one more than the cap, which is how it can tell a
+    // full page from an exact fit.
+    expect(sql.some((one) => /group by island order by 1 limit \d+/.test(one))).toBe(true);
+  });
+
+  test("keeps the per-part write on the ONE-row prefix query", async () => {
+    const { db, sql } = recordingDb();
+    const store = createUploadStore({ db, dir: "/unused" });
+    await store.beginParts("abc", {}, UPLOAD_CHUNK_BYTES * 2);
+    const before = sql.length;
+    await store.writePart("abc", 0, body(ramp(UPLOAD_CHUNK_BYTES)));
+    const walked = sql.slice(before).filter((one) => one.includes("with covered as"));
+    // The write path asks for the prefix, never the islands: its row count is one by
+    // construction, where the islands query's is a function of how finely the caller
+    // cut the file.
+    expect(walked).toHaveLength(1);
+    expect(walked[0]).toContain("select coalesce(");
+    expect(walked[0]).not.toContain("group by island");
   });
 
   test("turns compression OFF for the chunk column, which audio never pays for", async () => {

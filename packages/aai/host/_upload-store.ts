@@ -245,6 +245,11 @@ export type UploadStore = UploadReader & {
    * total. So the caller writing the last part learns the upload is finished from
    * its own response, and every other part's response is the progress a page draws.
    *
+   * NOT {@link UploadInfo.ranges}: those are a property of the record, read once by
+   * a resume through {@link UploadReader.info} before it sends anything. Deriving
+   * them costs a statement whose result set the CALLER sizes — see the Postgres
+   * backend's `coverage` — and this is the per-part write path.
+   *
    * @throws {UnknownUploadError} when nothing has begun under `id`.
    * @throws {UploadPartError} when `offset` is not a multiple of
    *   `UPLOAD_CHUNK_BYTES`, or the part would run past the declared total.

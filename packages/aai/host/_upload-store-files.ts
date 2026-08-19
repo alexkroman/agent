@@ -207,15 +207,13 @@ export function createFileUploadStore(dir: string, maxBytes: number): UploadStor
           ranges,
         };
         await writeFile(metaPath(id), JSON.stringify(next), "utf-8");
-        return {
-          id,
-          name: next.name,
-          type: next.type,
-          size,
-          complete: next.complete,
-          // Only while there is something to resume — see `UploadInfo.ranges`.
-          ...omitUndefined({ ranges: next.complete ? undefined : ranges }),
-        };
+        // No `ranges` here, matching the Postgres backend: a part's response is the
+        // record's `size` and `complete`, and the windows are a property of the
+        // RECORD, read once by a resume through `info`. That backend has a reason of
+        // its own (the islands query's row count is the caller's to decide, and the
+        // driver caps it), and a contract the two answered differently would stop
+        // this one being a double for it.
+        return { id, name: next.name, type: next.type, size, complete: next.complete };
       });
     },
 

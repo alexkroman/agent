@@ -15,7 +15,6 @@ import {
   type ByteRange,
   chunked,
   concat,
-  contiguousBytes,
   newUploadId,
   partChunks,
   UnknownUploadError,
@@ -25,6 +24,19 @@ import {
   UploadPartError,
   type UploadStore,
 } from "./_upload-store.ts";
+
+/**
+ * The most windows a record will report.
+ *
+ * A budget on the ISLANDS query, which is the only statement here whose result set
+ * the caller sizes — see `coverage`. 256 is a 2 GiB upload at the default part size
+ * cut into parts that all landed out of order and none of which merged, i.e. the
+ * worst case a client using the defaults can construct. Past that the caller cut
+ * far finer than the default, and telling them "re-send it" beats the alternative,
+ * which was a statement over `MAX_DB_RESULT_ROWS` and therefore a 500 on every read
+ * of that upload's record for as long as it existed.
+ */
+export const MAX_UPLOAD_RANGES = 256;
 
 export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore {
   // Created lazily and idempotently rather than by a migration step, for the
@@ -76,22 +88,55 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
   });
 
   /**
-   * The windows that have LANDED, merged — sorted, non-overlapping, touching ones
-   * joined.
+   * How many bytes are present from byte ZERO — the `size` every writer publishes.
    *
-   * One statement rather than reading every offset back and walking them: a 2 GB
-   * upload is two thousand chunk rows, well past `MAX_DB_RESULT_ROWS`, so the walk
-   * would fail on exactly the files parts exist for. It is the ordinary
-   * gaps-and-islands shape — `lag` gives each row the end of the one before it, a
-   * GAP is a row whose start is not that end, and a running count of gaps names the
-   * island each row belongs to — so what comes back is one row per island, which
-   * for a parts upload in flight is a handful.
+   * ONE row by construction, which is the property that matters: this runs on the
+   * per-part write path, and `postgres-db.ts` THROWS when a statement answers with
+   * more than `MAX_DB_RESULT_ROWS`. A shape that returns a row per island is fine
+   * for a read and wrong here, because the row count would then be a function of
+   * how the caller cut its file.
    *
-   * Both things the record publishes are derived from it: `size` is the island that
-   * starts at zero ({@link contiguousBytes}), and the islands themselves are what
-   * lets an uploader re-send only what is missing.
+   * `lag` gives each row the end of the one before it, so a GAP is a row whose start
+   * is not that end, and the prefix is the earliest such end — falling back to the
+   * far end when there is no gap at all, and to 0 for an upload with no chunks yet.
    */
-  async function coverage(id: string): Promise<ByteRange[]> {
+  async function contiguousSize(id: string): Promise<number> {
+    const rows = await db.query<{ size: string | number | null }>(
+      `with covered as (
+         select byte_offset as start_at,
+                byte_offset + octet_length(bytes) as end_at,
+                lag(byte_offset + octet_length(bytes)) over (order by byte_offset) as prev_end
+           from ${UPLOAD_CHUNKS_TABLE} where upload_id = $1
+       )
+       select coalesce(
+         (select min(coalesce(prev_end, 0)) from covered where coalesce(prev_end, 0) <> start_at),
+         (select max(end_at) from covered),
+         0
+       ) as size`,
+      [id],
+    );
+    return Number(rows[0]?.size ?? 0);
+  }
+
+  /**
+   * The windows that have LANDED, merged — or `undefined` when there are too many
+   * to report.
+   *
+   * The same gaps-and-islands walk as above, stopping at the group-by instead of
+   * reducing to the prefix: one row per island. That row count is the caller's to
+   * decide — it is bounded by how finely they cut the file and in what order the
+   * pieces arrived — so this is the one statement here whose result set is not
+   * bounded by construction, and `MAX_DB_RESULT_ROWS` makes an unbounded result set
+   * a THROW. A sparse upload was therefore permanently a 500 on every read of its
+   * record, with no way for its owner to correct it.
+   *
+   * So it asks for one more than {@link MAX_UPLOAD_RANGES} and answers `undefined`
+   * when that arrives. `undefined` is a shape the client already handles — it is
+   * what an agent too old to report ranges answers — and its answer there is to
+   * re-send the whole file, which is the honest outcome for an upload nobody can
+   * describe compactly.
+   */
+  async function coverage(id: string): Promise<ByteRange[] | undefined> {
     const rows = await db.query<{ start_at: string | number; end_at: string | number }>(
       `with covered as (
          select byte_offset as start_at,
@@ -107,9 +152,10 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
            from covered
        )
        select min(start_at) as start_at, max(end_at) as end_at
-         from islands group by island order by 1`,
+         from islands group by island order by 1 limit ${MAX_UPLOAD_RANGES + 1}`,
       [id],
     );
+    if (rows.length > MAX_UPLOAD_RANGES) return undefined;
     return rows.map((row) => ({ start: Number(row.start_at), end: Number(row.end_at) }));
   }
 
@@ -284,8 +330,7 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       for await (const batch of inBatches(partChunks(body, offset, total))) {
         await insertChunks(id, batch, true);
       }
-      const ranges = await coverage(id);
-      const size = contiguousBytes(ranges);
+      const size = await contiguousSize(id);
       const complete = size >= total;
       // Published once per PART rather than per chunk, unlike `stream`: the size a
       // part changes is the contiguous prefix, which costs the query above, and a
@@ -296,18 +341,11 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
         size,
         complete,
       ]);
-      return {
-        id,
-        name: row.name,
-        type: row.type,
-        size,
-        complete,
-        // Only while there is something to resume — see `UploadInfo.ranges`. The
-        // caller writing the part that closes the last gap learns the upload is
-        // finished from its own response, and a finished one has no windows to
-        // report.
-        ...omitUndefined({ ranges: complete ? undefined : ranges }),
-      };
+      // No `ranges` here, deliberately: this is the per-part write path, and the
+      // islands query is the one whose row count the CALLER decides — see
+      // `coverage`. Nothing reads them from a part's response anyway; a resume
+      // reads them from the record (`info`), once, before it sends anything.
+      return { id, name: row.name, type: row.type, size, complete };
     },
 
     async info(id): Promise<UploadInfo | undefined> {
@@ -329,6 +367,9 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       // an unfinished PARTS upload. Everything else answers from the row it already
       // read — a whole-file write has no windows and a finished upload is covered
       // end to end — so the read a polling run makes over and over is unchanged.
+      // `coverage` answers `undefined` for an upload with too many windows to
+      // report, which is the same answer as "this agent does not report them" —
+      // and `omitUndefined` below turns both into an absent field.
       const ranges = row.expected !== null && !complete ? await coverage(id) : undefined;
       // `bigint` comes back as a string from the driver — `Number` rather than
       // trusting the shape, so a column type change is a NaN here instead of a
