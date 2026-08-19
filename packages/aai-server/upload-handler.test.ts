@@ -17,17 +17,32 @@ import { createTestStore } from "./test-utils.ts";
 import { createMemoryUploadBytes, type UploadBytes, uploadKey } from "./upload-bytes.ts";
 import { MAX_UPLOAD_WINDOW_BYTES } from "./upload-handler.ts";
 
-/** The app plus the byte store behind it, so a spec can look at what really landed. */
-function serve(bytes: UploadBytes = createMemoryUploadBytes()) {
-  const { app } = createOrchestrator({
-    slots: createSlotCache(),
-    store: createTestStore(),
-    uploadBytes: bytes,
-  });
+/**
+ * The app plus the byte store behind it, so a spec can look at what really landed.
+ *
+ * The agents are SEEDED, because a write requires the slug to name one — see
+ * `assertAgentExists`. Nothing brokers as a result: an agents-row read is not a
+ * sandbox, which is the property the last spec here pins.
+ */
+async function serve(bytes: UploadBytes = createMemoryUploadBytes()) {
+  const store = createTestStore();
+  const { app } = createOrchestrator({ slots: createSlotCache(), store, uploadBytes: bytes });
+  for (const slug of DEPLOYED) {
+    await store.putAgent({
+      slug,
+      env: {},
+      worker: "export default {};",
+      clientFiles: {},
+      credential_hashes: [],
+    });
+  }
   const call = async (path: string, init?: RequestInit): Promise<Response> =>
     await app.request(`http://platform.test${path}`, init);
   return { bytes, call };
 }
+
+/** The slugs every spec here writes under, deployed by {@link serve}. */
+const DEPLOYED = ["desk", "digest-desk"] as const;
 
 /** `n` bytes counting up, so a window's CONTENT identifies its offset. */
 function ramp(n: number, from = 0): Uint8Array {
@@ -36,7 +51,7 @@ function ramp(n: number, from = 0): Uint8Array {
 
 describe("a window of upload bytes", () => {
   test("PUT stores it under the agent's OWN prefix", async () => {
-    const { bytes, call } = serve();
+    const { bytes, call } = await serve();
     const res = await call("/digest-desk/uploads/upl_abc/0", {
       method: "PUT",
       body: ramp(64),
@@ -53,7 +68,7 @@ describe("a window of upload bytes", () => {
   test("GET answers the bytes when the backend cannot sign", async () => {
     // The memory backend has no server in front of it, so `readUrl` is null and the
     // route serves the window itself — the path `aai dev` and the tests take.
-    const { call } = serve();
+    const { call } = await serve();
     await call("/desk/uploads/upl_abc/0", { method: "PUT", body: ramp(64) });
     const res = await call("/desk/uploads/upl_abc/0");
     expect(res.status).toBe(200);
@@ -61,7 +76,7 @@ describe("a window of upload bytes", () => {
   });
 
   test("GET honours a Range, because the reader is a fan-out", async () => {
-    const { call } = serve();
+    const { call } = await serve();
     await call("/desk/uploads/upl_abc/0", { method: "PUT", body: ramp(64) });
     const res = await call("/desk/uploads/upl_abc/0", { headers: { Range: "bytes=8-11" } });
     expect(res.status).toBe(206);
@@ -76,7 +91,7 @@ describe("a window of upload bytes", () => {
       ...createMemoryUploadBytes(),
       readUrl: (key) => Promise.resolve(`https://storage.test/${key}?token=t`),
     };
-    const { call } = serve(signing);
+    const { call } = await serve(signing);
     const res = await call("/desk/uploads/upl_abc/0", { redirect: "manual" });
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("https://storage.test/uploads/desk/upl_abc/0?token=t");
@@ -86,7 +101,7 @@ describe("a window of upload bytes", () => {
     // Answered here rather than redirected: it is one number, and a 302 would cost a
     // second round trip to learn it. `size` never over-reporting is what lets the
     // agent refuse a part nobody uploaded.
-    const { call } = serve();
+    const { call } = await serve();
     await call("/desk/uploads/upl_abc/0", { method: "PUT", body: ramp(64) });
     const found = await call("/desk/uploads/upl_abc/0", { method: "HEAD" });
     expect(found.status).toBe(200);
@@ -95,12 +110,12 @@ describe("a window of upload bytes", () => {
   });
 
   test("GET is a 404 for a window nobody wrote, not an empty 200", async () => {
-    const { call } = serve();
+    const { call } = await serve();
     expect((await call("/desk/uploads/upl_abc/0")).status).toBe(404);
   });
 
   test("refuses an id that is not one, before composing a key from it", async () => {
-    const { bytes, call } = serve();
+    const { bytes, call } = await serve();
     const res = await call("/desk/uploads/..%2F..%2Fblobs%2Fdeadbeef/0", {
       method: "PUT",
       body: ramp(4),
@@ -113,7 +128,7 @@ describe("a window of upload bytes", () => {
   });
 
   test("refuses an offset that is not a byte position", async () => {
-    const { call } = serve();
+    const { call } = await serve();
     expect((await call("/desk/uploads/upl_abc/-8", { method: "PUT", body: ramp(4) })).status).toBe(
       400,
     );
@@ -127,7 +142,7 @@ describe("a window of upload bytes", () => {
     // it is the wrong cap here. This one is an order of magnitude above what the client
     // sends, so anything past it is a caller doing something else entirely.
     expect(MAX_UPLOAD_WINDOW_BYTES).toBeGreaterThan(UPLOAD_PART_BYTES);
-    const { call } = serve();
+    const { call } = await serve();
     const res = await call("/desk/uploads/upl_abc/0", {
       method: "PUT",
       body: new Uint8Array(MAX_UPLOAD_WINDOW_BYTES + 1),
@@ -136,11 +151,38 @@ describe("a window of upload bytes", () => {
   });
 
   test("does not broker a sandbox, which is the whole point of the route", async () => {
-    // A store with no agent row would make any brokered route answer 404 or 503. This
-    // one answers 201, because no guest is involved at any point — the bytes go from
-    // the caller to the bucket and the agent is told afterwards.
-    const { call } = serve();
-    const res = await call("/never-deployed/uploads/upl_abc/0", { method: "PUT", body: ramp(4) });
+    // The orchestrator here is built with NO guest fetch and no sandbox backend, so a
+    // route that brokered would answer 404 or 503 rather than storing anything. This
+    // one answers 201 and the bytes are in the bucket, because no guest is involved at
+    // any point — they go from the caller straight to storage and the agent is told
+    // afterwards. (This used to be proven with an UNDEPLOYED slug, which conflated
+    // "does not broker" with "does not check the agent exists" — see below.)
+    const { bytes, call } = await serve();
+    const res = await call("/desk/uploads/upl_abc/0", { method: "PUT", body: ramp(4) });
     expect(res.status).toBe(201);
+    expect(await bytes.size(uploadKey("desk", "upl_abc", 0))).toBe(4);
+  });
+
+  test("REFUSES a write under a slug no agent answers to", async () => {
+    // Measured against production before this guard existed: `PUT
+    // /no-such-agent-here/uploads/upl_x/0` answered 201 and put bytes at
+    // `uploads/no-such-agent-here/upl_x/0`. `slugMw` validates a slug's shape and its
+    // reserved names, never its existence — so an unauthenticated caller could mint
+    // unbounded prefixes in a bucket shared by every tenant, and `aai-sweep-blob-gc`
+    // matches `blobs/%` so nothing reclaims them.
+    const { bytes, call } = await serve();
+    const res = await call("/never-deployed/uploads/upl_abc/0", { method: "PUT", body: ramp(4) });
+    expect(res.status).toBe(404);
+    // And nothing landed — the refusal is BEFORE the write, not a status over one.
+    expect(await bytes.size(uploadKey("never-deployed", "upl_abc", 0))).toBeUndefined();
+  });
+
+  test("still READS without a lookup, because a miss already answers", async () => {
+    // Reads are the fan-out — sixty steps each taking their own window — so gating them
+    // would be sixty queries a run to establish what a 404 reports anyway. An unknown
+    // slug simply has no objects.
+    const { call } = await serve();
+    const res = await call("/never-deployed/uploads/upl_abc/0");
+    expect(res.status).toBe(404);
   });
 });

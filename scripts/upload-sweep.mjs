@@ -153,7 +153,10 @@ const config = {
   widths: numbers(args.get("concurrency"), [1, 2, 4, 8, 16]),
   partMib: numbers(args.get("part-mib"), [UPLOAD_PART_BYTES / MIB]),
   repeat: Number(args.get("repeat") ?? 3),
-  gapMs: Number(args.get("gap-ms") ?? 1000),
+  // 30s, not 1s: the far side's limiter penalises a connection for a while after
+  // it trips, so a short gap measures the previous cell as much as this one — see
+  // `transport()`. Lower it only for a target with no such limiter.
+  gapMs: Number(args.get("gap-ms") ?? 30_000),
   json: args.get("json"),
   h2: flags.has("h2"),
   shuffle: !flags.has("no-shuffle"),
@@ -250,11 +253,37 @@ function bodyBytes(body) {
   return 0;
 }
 
-/** HTTP/2 has to be asked for, and undici lives in `packages/aai`, not at the root. */
-async function enableH2() {
+/**
+ * Pin the transport, and hand back a way to start a run on a FRESH connection.
+ *
+ * Both halves were wrong, and each hid the other. The script printed
+ * `transport node fetch, HTTP/1.1` while pinning NOTHING without `--h2` — and
+ * undici negotiates h2 with an origin that offers it, so the unflagged arm was
+ * h2 wearing an HTTP/1.1 label. Conclusive rather than inferred: that arm failed
+ * with `ERR_HTTP2_STREAM_ERROR`, which HTTP/1.1 cannot produce.
+ *
+ * And the connection has to be NEW per run, because the far side's limiter has a
+ * PENALTY WINDOW: once tripped it resets further streams on that connection, so a
+ * sweep that reuses one measures its own contamination and every later cell reads
+ * worse than the first. That is not a hypothetical — it produced two confident and
+ * opposite conclusions in one afternoon, "a hard 2-stream ceiling" and "HTTP/1.1 is
+ * 6x faster", both of which evaporated once each cell got a fresh connection and a
+ * cooldown. `--shuffle` cannot help: it defends against a link that degrades over
+ * the sweep, and this degrades because of what the sweep just did.
+ *
+ * undici lives in `packages/aai`, not at the root.
+ */
+async function transport() {
   const requireFromAai = createRequire(new URL("../packages/aai/package.json", import.meta.url));
   const { Agent, setGlobalDispatcher } = await import(requireFromAai.resolve("undici"));
-  setGlobalDispatcher(new Agent({ allowH2: true }));
+  return {
+    /** Install a new dispatcher, so the next request opens its own connection. */
+    async fresh() {
+      const agent = new Agent({ allowH2: config.h2 });
+      setGlobalDispatcher(agent);
+      return agent;
+    },
+  };
 }
 
 async function runOnce(api, blob, parallel) {
@@ -341,7 +370,7 @@ function printPlan(cells, totalBytes) {
   const totalMib = Math.round(totalBytes / MIB);
   console.log(`target      ${config.target}`);
   console.log(
-    `transport   node fetch, ${config.h2 ? "HTTP/2 (--h2)" : "HTTP/1.1"} — NOT a browser, see the doc comment`,
+    `transport   node fetch, ${config.h2 ? "HTTP/2 (--h2)" : "HTTP/1.1"} (PINNED), fresh connection per run`,
   );
   console.log(`file        ${Math.round(config.fileBytes / MIB)} MiB of random bytes`);
   console.log(`matrix      ${cells.length} cells x ${config.repeat} runs`);
@@ -411,7 +440,8 @@ async function main() {
     cells.length * config.repeat * config.fileBytes + (config.warmup ? config.fileBytes : 0);
 
   printPlan(cells, totalBytes);
-  if (config.h2) await enableH2();
+  const net = await transport();
+  await net.fresh();
 
   const blob = makeBody();
   const api = createWorkflowApiClient({ baseUrl: config.target, token: config.token });
@@ -423,7 +453,12 @@ async function main() {
   const byLabel = new Map(cells.map((cell) => [cell.label, { ...cell, runs: [] }]));
   for (const cell of order) {
     for (let run = 0; run < config.repeat; run += 1) {
+      // A CONNECTION per run — see `transport()`. Closed after the run rather than
+      // before the next, so a reset the far side is still penalising cannot ride
+      // into the cell that follows.
+      const agent = await net.fresh();
       const result = await runOnce(api, blob, cell.parallel);
+      await agent.close().catch(() => undefined);
       byLabel.get(cell.label).runs.push(result);
       const note =
         result.error === undefined
