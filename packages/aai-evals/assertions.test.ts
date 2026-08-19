@@ -2,18 +2,23 @@
 import type { SessionEvent, SessionEventBody, SessionEventMeta } from "@alexkroman1/aai/protocol";
 import { beforeEach, describe, expect, test } from "vitest";
 import { eventScope } from "./assertions.ts";
-import type { EvalCheck, EvalRecorder } from "./runner.ts";
+import { createRecorder, type EvalRecorder } from "./runner.ts";
 
-/** A recorder with no runner around it. */
+/**
+ * The RUNNER's recorder, plus two readers for the labels a test asserts on.
+ *
+ * `createRecorder` rather than a second implementation of it: the copy this
+ * replaces repeated the detail-omission rule (`detail` kept only on a failure),
+ * which is the very shape the assertions below check — so a change to that rule
+ * in `runner.ts` would have left this suite green against a recorder the tier no
+ * longer uses.
+ */
 function recorder(): EvalRecorder & { failed(): string[]; held(): string[] } {
-  const checks: EvalCheck[] = [];
+  const rec = createRecorder();
   return {
-    checks,
-    check(ok, label, detail) {
-      checks.push(ok || detail === undefined ? { label, ok } : { label, ok, detail });
-    },
-    failed: () => checks.filter((c) => !c.ok).map((c) => c.label),
-    held: () => checks.filter((c) => c.ok).map((c) => c.label),
+    ...rec,
+    failed: () => rec.checks.filter((c) => !c.ok).map((c) => c.label),
+    held: () => rec.checks.filter((c) => c.ok).map((c) => c.label),
   };
 }
 

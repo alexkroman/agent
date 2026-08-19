@@ -30,8 +30,9 @@ import { sleep } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { createRuntime, type Logger } from "@alexkroman1/aai/runtime";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type EvalScope, eventScope, TURN_ENDS } from "./assertions.ts";
-import { installFakeSpeech } from "./fake-speech.ts";
+import { type FakeSpeech, installFakeSpeech } from "./fake-speech.ts";
 import type { EvalRecorder } from "./runner.ts";
 
 /** How long one turn may take before the harness gives up on it. */
@@ -112,10 +113,7 @@ export async function openEvalSession(opts: EvalSessionOptions): Promise<EvalSes
   }
 }
 
-async function openWithFakes(
-  opts: EvalSessionOptions,
-  fake: ReturnType<typeof installFakeSpeech>,
-): Promise<EvalSession> {
+async function openWithFakes(opts: EvalSessionOptions, fake: FakeSpeech): Promise<EvalSession> {
   const events: SessionEvent[] = [];
   const sink: ClientSink = {
     open: true,
@@ -130,7 +128,10 @@ async function openWithFakes(
 
   const turnTimeoutMs = opts.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const runtime = createRuntime({
-    agent: { ...opts.agent, stt: fake.stt, tts: fake.tts, ...(opts.llm ? { llm: opts.llm } : {}) },
+    // `omitUndefined`, not `...(opts.llm ? { llm } : {})`: the conditional spread
+    // of an object literal is the idiom `guard-invariants` rule 2 exists to keep
+    // out, and the truthiness spelling is the one its regex cannot see.
+    agent: { ...opts.agent, stt: fake.stt, tts: fake.tts, ...omitUndefined({ llm: opts.llm }) },
     env: { ...opts.env, ...fake.env },
     logger: opts.logger ?? silentLogger,
   });
@@ -142,14 +143,12 @@ async function openWithFakes(
   ): Promise<void> => {
     const deadline = Date.now() + turnTimeoutMs;
     for (;;) {
-      if (ready(events.slice(from))) return;
+      const since = events.slice(from);
+      if (ready(since)) return;
       if (Date.now() >= deadline) {
         throw new Error(
           `eval session timed out after ${turnTimeoutMs}ms waiting for ${what}; ` +
-            `events since: ${events
-              .slice(from)
-              .map((e) => e.type)
-              .join(", ")}`,
+            `events since: ${since.map((e) => e.type).join(", ")}`,
         );
       }
       await sleep(POLL_MS);

@@ -143,10 +143,10 @@ function formatCase(report: EvalReport): string[] {
 }
 
 /**
- * Print a run and, when `minScore` is set, name the cases that failed it.
+ * When `minScore` is set, name the cases that did not clear it.
  *
- * Returns the offending cases rather than throwing, so the caller decides
- * whether the tier gates. It does not gate by default — see `runner.ts`.
+ * Returns the offending cases rather than printing or throwing, so the caller
+ * decides whether the tier gates. It does not gate by default — see `runner.ts`.
  */
 export function evalShortfalls(
   reports: readonly EvalReport[],
