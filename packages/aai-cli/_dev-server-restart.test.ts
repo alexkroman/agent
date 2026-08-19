@@ -9,7 +9,6 @@
 // for coverage the supervisor spec gets in microseconds.
 
 import { existsSync } from "node:fs";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
@@ -20,8 +19,9 @@ import {
   mockListen,
   mockValidateAgentExport,
   primeDevServerMocks,
+  writeAgentTs,
 } from "./_dev-server-test-utils.ts";
-import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
+import { withTempDir } from "./_test-utils.ts";
 
 // ─── Module mocks ───────────────────────────────────────────────────────────
 // Factories (and the mock fns/state they wire up) live in the shared
@@ -58,15 +58,6 @@ import { startDevServer } from "./_dev-server.ts";
 vi.setConfig({ testTimeout: 30_000 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-/** Write a minimal agent.ts in the given directory. */
-async function writeAgentTs(dir: string, name = "test-agent"): Promise<void> {
-  await linkSdkNodeModules(dir);
-  await fs.writeFile(
-    path.join(dir, "agent.ts"),
-    `export default { name: "${name}", tools: {} };\n`,
-  );
-}
 
 /** Fire a synthetic chokidar change event for a path inside `dir`. */
 function fireChange(dir: string, relPath: string): void {

@@ -29,6 +29,17 @@ const workflowToken = {
 const runIdArg = { type: "positional", description: "Run id", required: true } as const;
 
 /**
+ * The flags all four verbs take. Declared once so a flag added to the group
+ * reaches every verb — four hand-copied triples is how one of them ends up
+ * without `--token`.
+ */
+const workflowArgs = {
+  server: sharedArgs.server,
+  json: sharedArgs.json,
+  token: workflowToken,
+} as const;
+
+/**
  * Every verb here reads `.aai/project.json` for the origin and the published
  * slug, and none of them touches `agent.ts` — a directory `aai pull`ed but
  * never edited still names a deployed agent whose runs are worth asking about.
@@ -37,7 +48,7 @@ const WORKFLOW_CWD = "any";
 
 const workflowList = defineExec({
   meta: { name: "list", description: "List the workflows this agent declares" },
-  args: { server: sharedArgs.server, json: sharedArgs.json, token: workflowToken },
+  args: workflowArgs,
   cwd: WORKFLOW_CWD,
   async run({ args, cwd }) {
     const { executeWorkflowList } = await import("./workflow.ts");
@@ -50,9 +61,7 @@ const workflowRuns = defineExec({
   args: {
     workflow: { type: "positional", description: "Workflow name", required: true },
     limit: { type: "string", description: "How many runs to list" },
-    server: sharedArgs.server,
-    json: sharedArgs.json,
-    token: workflowToken,
+    ...workflowArgs,
   },
   cwd: WORKFLOW_CWD,
   async run({ args, cwd }) {
@@ -73,7 +82,7 @@ const workflowRuns = defineExec({
 
 const workflowShow = defineExec({
   meta: { name: "show", description: "Show one run, including its output" },
-  args: { runId: runIdArg, server: sharedArgs.server, json: sharedArgs.json, token: workflowToken },
+  args: { runId: runIdArg, ...workflowArgs },
   cwd: WORKFLOW_CWD,
   async run({ args, cwd }) {
     const { executeWorkflowShow } = await import("./workflow.ts");
@@ -86,7 +95,7 @@ const workflowShow = defineExec({
 
 const workflowCancel = defineExec({
   meta: { name: "cancel", description: "Stop a running workflow run" },
-  args: { runId: runIdArg, server: sharedArgs.server, json: sharedArgs.json, token: workflowToken },
+  args: { runId: runIdArg, ...workflowArgs },
   cwd: WORKFLOW_CWD,
   async run({ args, cwd }) {
     const { executeWorkflowCancel } = await import("./workflow.ts");

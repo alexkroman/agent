@@ -163,12 +163,13 @@ export async function typecheckProject(cwd: string): Promise<TypecheckResult> {
     });
     let output = "";
     const keep = (s: string) => (s.length > OUTPUT_CAP ? `…${s.slice(-OUTPUT_CAP)}` : s);
-    child.stdout.on("data", (chunk: Buffer) => {
+    // One appender on both streams: tsc writes diagnostics to stdout and its
+    // own failures to stderr, and the message wants whichever it produced.
+    const append = (chunk: Buffer) => {
       output = keep(output + chunk.toString());
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      output = keep(output + chunk.toString());
-    });
+    };
+    child.stdout.on("data", append);
+    child.stderr.on("data", append);
     child.on("error", reject);
     child.on("close", (code, signal) => {
       if (signal) {

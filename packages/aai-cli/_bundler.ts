@@ -67,11 +67,11 @@ export async function buildAgentBundle(
  * experimental.
  */
 export async function evalWorkerBundle(code: string): Promise<AgentDef> {
-  const mod = await importWorkerModule(code);
-  const agentDef = (mod.default ?? mod) as AgentDef;
-
-  validateAgentExport(agentDef);
-  return agentDef;
+  // Delegates rather than repeating the import/unwrap/validate sequence: the
+  // two used to be written out twice, so "what counts as a valid worker" had
+  // two definitions. The return type stays NARROW — see EvaluatedWorker below
+  // for why the workflow strings do not travel with it.
+  return (await evalWorkerWithWorkflows(code)).agent;
 }
 
 /**

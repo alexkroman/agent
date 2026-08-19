@@ -13,7 +13,7 @@ import path from "node:path";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { execaNode, execaSync, type ResultPromise } from "execa";
 import pTimeout from "p-timeout";
-import { errorMessage } from "./_utils.ts";
+import { binFromPackageJson, errorMessage } from "./_utils.ts";
 
 // This file is ESM ("type": "module") — a bare `require.resolve` only worked
 // because vitest's runtime injects `require`; importing this from a plain
@@ -97,14 +97,13 @@ type VerdaccioProcess = ResultPromise<{ ipc: true; stdout: "ignore"; stderr: "ig
  */
 function resolveVerdaccioBin(): string {
   const manifestPath = require.resolve("verdaccio/package.json");
-  const { bin } = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
-    bin?: string | Record<string, string>;
-  };
-  const relative = typeof bin === "string" ? bin : bin?.verdaccio;
-  if (relative === undefined) {
+  // The same read the CLI does for the project's `tsc` and `vitest` bins —
+  // both spellings of `bin` (a string, or a map) handled in one place.
+  const entry = binFromPackageJson(manifestPath, "verdaccio");
+  if (entry === undefined) {
     throw new Error("mock registry: verdaccio's package.json declares no `bin` entry to run.");
   }
-  return path.resolve(path.dirname(manifestPath), relative);
+  return entry;
 }
 
 // The subprocess is returned wrapped in an object: a ResultPromise is itself

@@ -251,15 +251,17 @@ export const __aaiStepCode = ${JSON.stringify(workflows.stepCode)};
 export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): Promise<string> {
   const wrapperPath = path.join(cwd, WRAPPER_ENTRY_REL);
 
-  await fs.mkdir(path.dirname(wrapperPath), { recursive: true });
+  // The two probes are independent reads of the project directory, and this
+  // function runs after every settled write burst in the studio — so they
+  // overlap with each other and with creating the scratch dir.
+  const [, toolFiles, systemPromptFile] = await Promise.all([
+    fs.mkdir(path.dirname(wrapperPath), { recursive: true }),
+    discoverToolFiles(cwd),
+    hasSystemPromptFile(cwd),
+  ]);
   await fs.writeFile(
     wrapperPath,
-    wrapperEntrySource(
-      opts.runtime !== false,
-      opts.workflows,
-      await discoverToolFiles(cwd),
-      await hasSystemPromptFile(cwd),
-    ),
+    wrapperEntrySource(opts.runtime !== false, opts.workflows, toolFiles, systemPromptFile),
     "utf-8",
   );
 

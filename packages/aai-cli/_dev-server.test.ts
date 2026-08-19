@@ -16,6 +16,7 @@ import {
   mockResolveServerEnv,
   mockValidateAgentExport,
   primeDevServerMocks,
+  writeAgentTs,
 } from "./_dev-server-test-utils.ts";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -100,19 +101,6 @@ async function withViteMock(
   } finally {
     vi.doUnmock("vite");
   }
-}
-
-/** Write a minimal agent.ts in the given directory. */
-async function writeAgentTs(dir: string, name = "test-agent"): Promise<void> {
-  // The worker wrapper imports `@alexkroman1/aai/manifest`, so the fixture
-  // project needs a resolvable node_modules — like any real project.
-  await fs
-    .symlink(path.resolve(import.meta.dirname, "node_modules"), path.join(dir, "node_modules"))
-    .catch(() => undefined);
-  await fs.writeFile(
-    path.join(dir, "agent.ts"),
-    `export default { name: "${name}", tools: {} };\n`,
-  );
 }
 
 // ─── Setup ──────────────────────────────────────────────────────────────────

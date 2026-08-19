@@ -19,11 +19,13 @@ let _cachedMonorepoRoot: string | null | undefined;
 export function getMonorepoRoot(): string | null {
   if (_cachedMonorepoRoot !== undefined) return _cachedMonorepoRoot;
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  const root1 = path.resolve(cliDir, "../..");
-  const root2 = path.resolve(cliDir, "../../..");
-  if (existsSync(path.join(root1, "pnpm-workspace.yaml"))) _cachedMonorepoRoot = root1;
-  else if (existsSync(path.join(root2, "pnpm-workspace.yaml"))) _cachedMonorepoRoot = root2;
-  else _cachedMonorepoRoot = null;
+  // Two candidates: the source layout (`packages/aai-cli`) and the published
+  // one (`packages/aai-cli/dist`). First match wins, so the nearer workspace
+  // root is the one reported.
+  _cachedMonorepoRoot =
+    ["../..", "../../.."]
+      .map((up) => path.resolve(cliDir, up))
+      .find((root) => existsSync(path.join(root, "pnpm-workspace.yaml"))) ?? null;
   return _cachedMonorepoRoot;
 }
 

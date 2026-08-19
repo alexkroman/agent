@@ -33,6 +33,17 @@ export interface MockApi {
 
 type Override = { method: string; pathPattern: string; status: number; body: string };
 
+/** Every response this server sends is JSON — one place says so. */
+function send(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(body);
+}
+
+/** {@link send} for a value that still has to be serialized. */
+function json(res: ServerResponse, status: number, payload: unknown): void {
+  send(res, status, JSON.stringify(payload));
+}
+
 export async function startMockApi(): Promise<MockApi> {
   const requests: RecordedRequest[] = [];
   const secrets: Record<string, string> = {};
@@ -66,22 +77,19 @@ export async function startMockApi(): Promise<MockApi> {
     // Check auth
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Unauthorized" }));
+      json(res, 401, { error: "Unauthorized" });
       return;
     }
 
     if (auth === "Bearer invalid-key") {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Invalid API key" }));
+      json(res, 401, { error: "Invalid API key" });
       return;
     }
 
     // Check overrides first
     const ov = matchOverride(method, path);
     if (ov) {
-      res.writeHead(ov.status, { "Content-Type": "application/json" });
-      res.end(ov.body);
+      send(res, ov.status, ov.body);
       return;
     }
 
@@ -89,22 +97,19 @@ export async function startMockApi(): Promise<MockApi> {
     if (method === "POST" && path === "/deploy") {
       const parsed = body ? (JSON.parse(body) as Record<string, unknown>) : {};
       const slug = (parsed.slug as string) ?? `generated-${Date.now()}`;
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, slug }));
+      json(res, 200, { ok: true, slug });
       return;
     }
 
     // Route: DELETE /{slug}  (but not /{slug}/secret/*)
     if (method === "DELETE" && path.match(/^\/[^/]+$/) && !path.includes("/secret")) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
+      json(res, 200, { ok: true });
       return;
     }
 
     // Route: GET /{slug}/secret — list secrets
     if (method === "GET" && path.match(/^\/[^/]+\/secret$/)) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ vars: Object.keys(secrets) }));
+      json(res, 200, { vars: Object.keys(secrets) });
       return;
     }
 
@@ -112,8 +117,7 @@ export async function startMockApi(): Promise<MockApi> {
     if (method === "PUT" && path.match(/^\/[^/]+\/secret$/)) {
       const parsed = JSON.parse(body) as Record<string, string>;
       Object.assign(secrets, parsed);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
+      json(res, 200, { ok: true });
       return;
     }
 
@@ -122,14 +126,12 @@ export async function startMockApi(): Promise<MockApi> {
     if (method === "DELETE" && secretDeleteMatch?.[1]) {
       const name = secretDeleteMatch[1];
       delete secrets[name];
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
+      json(res, 200, { ok: true });
       return;
     }
 
     // Unknown route
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Not found" }));
+    json(res, 404, { error: "Not found" });
   }
 
   const server: Server = createServer((req, res) => {

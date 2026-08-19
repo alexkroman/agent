@@ -16,27 +16,65 @@
  * Vitest isolates the module registry per test file, so each file gets its
  * own instances of the mock fns and `chokidarState` — no cross-file state.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { vi } from "vitest";
-import { makeMockLog } from "./_test-utils.ts";
+import { linkSdkNodeModules, makeMockLog } from "./_test-utils.ts";
+
+// ─── Fixture project ─────────────────────────────────────────────────────────
+
+/**
+ * Write a minimal `agent.ts` in `dir`, with the SDK resolvable from it.
+ *
+ * Both dev-server suites need exactly this, and they each had a copy — one of
+ * which hand-rolled the symlink and swallowed EVERY error from it, so a real
+ * failure surfaced as a module-resolution error several layers away instead of
+ * naming the link. `linkSdkNodeModules` is the version that only forgives
+ * EEXIST.
+ */
+export async function writeAgentTs(dir: string, name = "test-agent"): Promise<void> {
+  await linkSdkNodeModules(dir);
+  await fs.writeFile(
+    path.join(dir, "agent.ts"),
+    `export default { name: "${name}", tools: {} };\n`,
+  );
+}
 
 // ─── Mock fns ────────────────────────────────────────────────────────────────
 
-export const mockListen = vi.fn().mockResolvedValue(undefined);
-export const mockClose = vi.fn().mockResolvedValue(undefined);
-export const mockCreateRuntime = vi.fn().mockReturnValue({ runtime: "mock" });
+export const mockListen = vi.fn();
+export const mockClose = vi.fn();
+export const mockCreateRuntime = vi.fn();
 export const mockCreateServer = vi.fn();
 // The runtime barrel is mocked to keep it out of these specs, so this stands
 // in for the real registry-derived lookup. The provider-less agent these
 // tests write runs the default AssemblyAI pipeline, which needs an AssemblyAI
 // key; the real function has its own specs in the aai package
 // (providers/resolve.test.ts).
-const mockRequiredProviderEnvVars = vi.fn().mockReturnValue(["ASSEMBLYAI_API_KEY"]);
-export const mockEnsureApiKey = vi.fn().mockResolvedValue("test-api-key");
-export const mockResolveServerEnv = vi.fn().mockResolvedValue({ ASSEMBLYAI_API_KEY: "test-key" });
+const mockRequiredProviderEnvVars = vi.fn();
+export const mockEnsureApiKey = vi.fn();
+export const mockResolveServerEnv = vi.fn();
 export const mockValidateAgentExport = vi.fn();
 
-// Wire mockCreateServer to return the mock server object.
-mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
+/**
+ * The default implementations, in ONE place.
+ *
+ * They used to be written twice — once as `vi.fn().mockResolvedValue(…)`
+ * initializers and again inside `primeDevServerMocks` — so a default changed at
+ * the declaration was silently overridden from the first `beforeEach` onwards,
+ * and the two copies were free to disagree about what a mock returns.
+ */
+function primeDefaults(): void {
+  mockListen.mockResolvedValue(undefined);
+  mockClose.mockResolvedValue(undefined);
+  mockCreateRuntime.mockReturnValue({ runtime: "mock" });
+  mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
+  mockRequiredProviderEnvVars.mockReturnValue(["ASSEMBLYAI_API_KEY"]);
+  mockEnsureApiKey.mockResolvedValue("test-api-key");
+  mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "test-key" });
+}
+
+primeDefaults();
 
 /**
  * Reset the shared mocks to a known state: CALL HISTORY CLEARED, then the
@@ -71,13 +109,7 @@ export function primeDevServerMocks(): void {
   ]) {
     mock.mockClear();
   }
-  mockListen.mockResolvedValue(undefined);
-  mockClose.mockResolvedValue(undefined);
-  mockCreateRuntime.mockReturnValue({ runtime: "mock" });
-  mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
-  mockRequiredProviderEnvVars.mockReturnValue(["ASSEMBLYAI_API_KEY"]);
-  mockEnsureApiKey.mockResolvedValue("test-api-key");
-  mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "test-key" });
+  primeDefaults();
 }
 
 // ─── Fake chokidar ───────────────────────────────────────────────────────────

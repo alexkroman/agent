@@ -97,7 +97,7 @@ async function ensureStartScript(cwd: string): Promise<boolean> {
   if (existing !== undefined && existing !== START_SCRIPT) {
     log.warn(
       `Kept your existing "start" script (${existing}) — run \`${PRESTART_SCRIPT}\` ` +
-        `then \`node ${SERVER_ENTRY}\`.`,
+        `then \`${START_SCRIPT}\`.`,
     );
     return false;
   }

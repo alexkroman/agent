@@ -389,13 +389,21 @@ export async function startSupervisedDevServer(
       });
   };
 
+  /**
+   * Drop the handle, signal, wait for the exit — in that order, so nothing
+   * running while the exit is awaited can signal the same child twice.
+   */
+  const reap = async (signal?: NodeJS.Signals): Promise<void> => {
+    const dying = child;
+    child = undefined;
+    dying?.kill(signal);
+    if (dying) await waitForExit(dying, 10_000);
+  };
+
   /** SIGKILL, hold, bring it back. */
   const recycle = async (point: FaultPoint): Promise<void> => {
     if (stopped) return;
-    const dying = child;
-    child = undefined;
-    dying?.kill("SIGKILL");
-    if (dying) await waitForExit(dying, 10_000);
+    await reap("SIGKILL");
     if (point.downMs !== undefined && point.downMs > 0) {
       await sleep(point.downMs);
     }
@@ -479,10 +487,7 @@ export async function startSupervisedDevServer(
           `aai fault mode: a restart never became healthy: ${errorMessage(restartFailure)}`,
         );
       }
-      const dying = child;
-      child = undefined;
-      dying?.kill();
-      if (dying) await waitForExit(dying, 10_000);
+      await reap();
     },
   };
 }

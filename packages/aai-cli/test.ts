@@ -47,10 +47,9 @@ export function resolveVitestCommand(
  * Throws on test failure.
  */
 export function runVitest(cwd: string): boolean {
-  let testFile: string | null = null;
-  if (existsSync(path.join(cwd, "agent.test.ts"))) testFile = "agent.test.ts";
-  else if (existsSync(path.join(cwd, "agent.test.js"))) testFile = "agent.test.js";
-
+  const testFile = ["agent.test.ts", "agent.test.js"].find((name) =>
+    existsSync(path.join(cwd, name)),
+  );
   if (!testFile) return false;
 
   const { cmd, args } = resolveVitestCommand(cwd);
