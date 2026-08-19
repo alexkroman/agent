@@ -321,6 +321,22 @@ describe("a part that does not land", () => {
     expect(stored.complete).toBe(true);
   });
 
+  test("REFUSES to report success over a record the agent never completed", async () => {
+    // The silent half of a production failure. Every window was sent and every
+    // acknowledgement came back 200, and the store had measured each as zero bytes —
+    // so this read, whose whole purpose is the agent's own `complete`, answered
+    // `size: 0, complete: false` and the client returned it as a stored file. The
+    // caller then started a run over an upload nothing could read: the transcription
+    // desk's header probe came back empty and reported "That is not a WAV file".
+    const agent = scriptAgent({ direct: true, neverRecorded: true });
+    await expect(
+      withoutBackoff(() => client().upload(recording(), { parallel: true })),
+    ).rejects.toThrow(/stored every part but reports 0 of \d+ byte\(s\)/);
+    // It got that far honestly — the bytes really were all sent, which is why the
+    // failure has to come from the RECORD rather than from any request failing.
+    expect(agent.bytes).toHaveLength(TOTAL / PART);
+  });
+
   test("a RESUMED upload sends only the windows the store does not have", async () => {
     // The claim is refused because the id is already this upload's own — which is
     // what `resume` says, and what the store answers 409 to for everybody else.

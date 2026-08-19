@@ -36,7 +36,7 @@
  */
 
 import { errorMessage } from "../sdk/utils.ts";
-import type { UploadBlobs } from "./_upload-blobs.ts";
+import { contentLength, IDENTITY_ENCODING, type UploadBlobs } from "./_upload-blobs.ts";
 import { UPLOAD_STORAGE_BUCKET_ENV, UPLOAD_STORAGE_URL_ENV } from "./_upload-env.ts";
 import { concat, UploadTooLargeError } from "./_upload-store.ts";
 
@@ -120,15 +120,21 @@ export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs
     },
 
     async size(key): Promise<number | undefined> {
-      const res = await call(objectUrl(key), { method: "HEAD", headers: auth });
+      // `identity` for the reason the brokered client does it: the answer is a header,
+      // and a hop that re-encodes the response takes it away. Storage itself does not,
+      // but nothing here guarantees Storage is the only hop.
+      const res = await call(objectUrl(key), {
+        method: "HEAD",
+        headers: { ...auth, ...IDENTITY_ENCODING },
+      });
       if (res.status === 404) return undefined;
       if (!res.ok) throw await storageError("head", key, res);
-      const length = Number(res.headers.get("content-length"));
-      // A HEAD that answers 200 with no length is a store this cannot measure, and
-      // measuring is the whole point of the call — see `UploadBlobs.size`, whose
-      // contract is that it never over-reports. Guessing here would let a part
-      // nobody uploaded be recorded as present.
-      return Number.isSafeInteger(length) && length >= 0 ? length : undefined;
+      // A HEAD that answers 200 with no usable length is a store this cannot measure,
+      // and measuring is the whole point of the call — see `UploadBlobs.size`, whose
+      // contract is that it never over-reports. `contentLength` is what keeps "stated
+      // no length" out of the zero case; this used to read the header itself and got
+      // that wrong.
+      return contentLength(res);
     },
   };
 }

@@ -77,6 +77,16 @@ export type Script = {
    */
   direct?: boolean;
   /**
+   * Whether the CLOSING `…/info` read reports an upload that never got recorded.
+   *
+   * The production shape: every window was sent and acknowledged, and the store
+   * measured each as zero bytes, so the record answers `size: 0, complete: false`
+   * over a file whose bytes are all in the bucket. A spec asks for it because the
+   * client's own answer to it — reporting success, or refusing — is the difference
+   * between a run that fails on an empty file and one that never starts.
+   */
+  neverRecorded?: boolean;
+  /**
    * Offsets whose part request NEVER answers until it is aborted.
    *
    * The only way to observe that a doomed fan-out stops: a part the fake answers
@@ -170,7 +180,11 @@ function answerBegin(script: Script, attempt: number): Response {
 function answerInfo(script: Script, attempt: number): Response {
   const status = script.info?.[attempt - 1] ?? 200;
   if (status !== 200) return json(status, { error: "no" });
-  if (!script.landed || attempt !== 1) return json(200, record(TOTAL, true));
+  // The closing read, which is every read but a resume's first. `neverRecorded` is
+  // what a store that acknowledged each window and recorded none answers with.
+  if (!script.landed || attempt !== 1) {
+    return json(200, script.neverRecorded ? record(0, false) : record(TOTAL, true));
+  }
   const first = script.landed[0];
   // The contiguous prefix, which is what the store would publish as `size`.
   const prefix = first?.start === 0 ? first.end : 0;

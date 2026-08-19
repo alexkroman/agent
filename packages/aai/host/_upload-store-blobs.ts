@@ -316,6 +316,20 @@ export function createBlobUploadStore(opts: {
             "its signed URL before recording it.",
         );
       }
+      // A window of NO bytes, where the upload declares some. Refused rather than
+      // recorded, and this is not hypothetical: `UploadBlobs.size` read a missing
+      // `Content-Length` as `0` for a while (see `contentLength`), so every part of
+      // every parts upload on the platform was recorded as an empty window. Nothing
+      // below could see it — a zero-length range is well formed and `contiguousBytes`
+      // sums it happily to 0 — so the only symptom was a stored file nothing could
+      // read. The refusal above exists to keep a hole out of the record; a
+      // zero-length window IS a hole, so it belongs under the same rule.
+      if (bytes === 0 && held.total > 0) {
+        throw new UploadPartError(
+          `The part at ${offset} of upload ${id} measured 0 bytes, but the upload declares ` +
+            `${held.total}. Recording it would leave a hole that reads as silence.`,
+        );
+      }
       if (offset + bytes > held.total) {
         throw new UploadPartError(
           `The part at ${offset} holds ${bytes} bytes, which runs past this upload's ${held.total}.`,
