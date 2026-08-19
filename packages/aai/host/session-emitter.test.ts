@@ -4,6 +4,7 @@ import type { Db } from "../sdk/db.ts";
 import type { ClientSink, SessionEvent } from "../sdk/protocol.ts";
 import type { SessionEventHandlers } from "../sdk/session-events.ts";
 import { createUnusedDb } from "../sdk/testing.ts";
+import { makeLogger } from "./_test-utils.ts";
 import { createSessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
 import { createMemoryStateBackend } from "./session-state-store.ts";
@@ -26,7 +27,7 @@ function setup(opts?: { handlers?: SessionEventHandlers; db?: () => Db }) {
     playAudioChunk: vi.fn(),
   };
   const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
-  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  const logger = makeLogger();
   const emitter = createSessionEmitter({
     sessionId: SID,
     client,

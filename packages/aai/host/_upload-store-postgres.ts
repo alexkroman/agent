@@ -84,6 +84,23 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
     return Number(rows[0]?.size ?? 0);
   }
 
+  // One statement, two callers: `create` and `stream` differ in what they do
+  // AROUND the bytes (which record is written when, and what a failure leaves
+  // behind) and not in how a chunk is stored, so the SQL and the column list
+  // live once — a schema change has one place to be made.
+  const insertChunk = async (
+    id: string,
+    seq: number,
+    byteOffset: number,
+    chunk: Uint8Array,
+  ): Promise<void> => {
+    await db.query(
+      `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
+       values ($1, $2, $3, $4)`,
+      [id, seq, byteOffset, Buffer.from(chunk)],
+    );
+  };
+
   return {
     async create(meta, body, options): Promise<UploadInfo> {
       await ensureTables();
@@ -92,11 +109,7 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       let seq = 0;
       try {
         for await (const chunk of chunked(body, options?.limit ?? maxBytes)) {
-          await db.query(
-            `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
-             values ($1, $2, $3, $4)`,
-            [id, seq, size, Buffer.from(chunk)],
-          );
+          await insertChunk(id, seq, size, chunk);
           seq += 1;
           size += chunk.length;
         }
@@ -148,11 +161,7 @@ export function createPostgresUploadStore(db: Db, maxBytes: number): UploadStore
       let size = 0;
       let seq = 0;
       for await (const chunk of chunked(body, options?.limit ?? maxBytes)) {
-        await db.query(
-          `insert into ${UPLOAD_CHUNKS_TABLE} (upload_id, seq, byte_offset, bytes)
-           values ($1, $2, $3, $4)`,
-          [id, seq, size, Buffer.from(chunk)],
-        );
+        await insertChunk(id, seq, size, chunk);
         seq += 1;
         size += chunk.length;
         // The size is published per CHUNK, which is the whole mechanism: it is what

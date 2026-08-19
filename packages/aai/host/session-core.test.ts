@@ -3,7 +3,7 @@ import type { ExecuteTool } from "../sdk/_internal-types.ts";
 import type { ClientSink, SessionEvent } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
 import { makeAgentConfig, makeCore, makeSink } from "./_session-core-harness.ts";
-import { flush, makeEmitter } from "./_test-utils.ts";
+import { flush, makeEmitter, makeLogger } from "./_test-utils.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import type { Transport } from "./transports/types.ts";
 
@@ -532,7 +532,7 @@ describe("createSessionCore — error logging", () => {
   // A provider ending a session (STT session cap, idle cutoff) used to reach the
   // client only, so the server's log showed the close and nothing about why.
   test("a fatal error is logged server-side, not just emitted", () => {
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const logger = makeLogger();
     const { core, sink } = makeCore({ logger });
 
     core.report({ type: "error.reported", code: "stt", message: "socket closed 1000" });
@@ -554,7 +554,7 @@ describe("createSessionCore — error logging", () => {
   });
 
   test("a non-fatal error stays at debug level", () => {
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const logger = makeLogger();
     const { core } = makeCore({ logger });
 
     core.report({ type: "error.reported", code: "internal", message: "recoverable", fatal: false });

@@ -5,6 +5,7 @@ import {
   MAX_SESSION_EVENTS,
   SESSION_EVENT_FLUSH_THRESHOLD,
 } from "../sdk/session-event-constants.ts";
+import { makeLogger } from "./_test-utils.ts";
 import { createSessionEventStream, stampSessionEvent } from "./session-event-stream.ts";
 import {
   createMemoryStateBackend,
@@ -16,7 +17,7 @@ const SID = "s-1";
 
 function makeStream(overrides?: Partial<SessionStateBackend>) {
   const backend = { ...createMemoryStateBackend(), ...overrides };
-  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  const logger = makeLogger();
   return { stream: createSessionEventStream({ backend, logger }), backend, logger };
 }
 

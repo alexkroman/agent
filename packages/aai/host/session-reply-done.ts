@@ -112,8 +112,8 @@ export function dispatchReplyDone(deps: ReplyDoneDeps): void {
     }
   };
 
-  if (hadTurnPromise) {
-    void turnPromise?.then(sendPendingSafely).catch((err: unknown) => {
+  if (turnPromise !== null) {
+    void turnPromise.then(sendPendingSafely).catch((err: unknown) => {
       log.warn("turn promise rejected before reply.done dispatch", {
         sid: deps.sessionId,
         error: errorMessage(err),

@@ -8,9 +8,10 @@
  * correlation key survive a restart" is not otherwise answerable from outside.
  */
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import type { Db } from "../sdk/db.ts";
 import { type WorkflowBody, workflow } from "../sdk/workflow.ts";
+import { makeLogger } from "./_test-utils.ts";
 import { buildWorkflowClient } from "./workflow-runtime.ts";
 
 function body(id: string): WorkflowBody {
@@ -22,10 +23,6 @@ function body(id: string): WorkflowBody {
 const digest = workflow({ run: body("workflow//./workflows/digest//digestFlow") });
 const unusedDb: Db = { query: () => Promise.reject(new Error("db not used")) };
 const PUBLIC_URL = "https://agents.test/digest-desk";
-
-function makeLogger() {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-}
 
 describe("buildWorkflowClient", () => {
   test("returns undefined for an agent that declares no workflows", () => {

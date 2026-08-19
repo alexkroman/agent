@@ -11,6 +11,7 @@
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { makeLogger } from "./_test-utils.ts";
 
 const getWritable = vi.fn();
 const getStepMetadata = vi.fn();
@@ -61,7 +62,7 @@ function recordingStreams() {
   return streams;
 }
 
-function logger() {
+function makeLogger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 }
 
@@ -72,7 +73,7 @@ beforeEach(() => {
 describe("createStepReporter", () => {
   test("writes the line to the run's stream and to the log", async () => {
     const written = recordingStream();
-    const log = logger();
+    const log = makeLogger();
     await createStepReporter(log)("Transcribing 0:00–0:58.");
     expect(written).toEqual(["Transcribing 0:00–0:58."]);
     expect(log.info).toHaveBeenCalledWith(
@@ -86,13 +87,13 @@ describe("createStepReporter", () => {
     // the same sentence, sixty times — unless the attempt is in the line.
     getStepMetadata.mockReturnValue({ stepName: "transcribeSegment", stepId: "s", attempt: 3 });
     const written = recordingStream();
-    await createStepReporter(logger())("Transcribing 0:00–0:58.");
+    await createStepReporter(makeLogger())("Transcribing 0:00–0:58.");
     expect(written).toEqual(["Transcribing 0:00–0:58. (attempt 3)"]);
   });
 
   test("says nothing extra on the first attempt", async () => {
     const written = recordingStream();
-    await createStepReporter(logger())("Filing the findings.");
+    await createStepReporter(makeLogger())("Filing the findings.");
     expect(written).toEqual(["Filing the findings."]);
   });
 
@@ -103,7 +104,7 @@ describe("createStepReporter", () => {
       throw new Error("not in a step");
     });
     const written = recordingStream();
-    const log = logger();
+    const log = makeLogger();
     await createStepReporter(log)("Planning.");
     expect(written).toEqual(["Planning."]);
     expect(log.info).toHaveBeenCalledWith("Workflow: Planning.", {});
@@ -115,7 +116,7 @@ describe("createStepReporter", () => {
     recordingStream({
       write: () => Promise.reject(new Error("stream is gone")),
     });
-    const log = logger();
+    const log = makeLogger();
     await expect(createStepReporter(log)("Still going.")).resolves.toBeUndefined();
     expect(log.info).toHaveBeenCalledWith("Workflow: Still going.", expect.anything());
     expect(log.debug).toHaveBeenCalledWith(
@@ -128,7 +129,7 @@ describe("createStepReporter", () => {
 describe("a chunk emitted into a named stream", () => {
   test("goes to THAT stream and not to the default one", async () => {
     const streams = recordingStreams();
-    const log = logger();
+    const log = makeLogger();
     await createStepReporter(log)(
       { index: 3, text: "and then we shipped it" },
       { namespace: "transcript", log: false },
@@ -141,7 +142,7 @@ describe("a chunk emitted into a named stream", () => {
 
   test("is not logged, so a chunk per segment cannot bury the narration", async () => {
     recordingStreams();
-    const log = logger();
+    const log = makeLogger();
     await createStepReporter(log)({ index: 3 }, { namespace: "transcript", log: false });
     expect(log.info).not.toHaveBeenCalled();
   });
@@ -152,7 +153,7 @@ describe("a chunk emitted into a named stream", () => {
     // where a retry is already visible.
     getStepMetadata.mockReturnValue({ stepName: "transcribeSegment", stepId: "s", attempt: 3 });
     const streams = recordingStreams();
-    await createStepReporter(logger())({ text: "hello" }, { namespace: "transcript", log: false });
+    await createStepReporter(makeLogger())({ text: "hello" }, { namespace: "transcript", log: false });
     expect(streams.get("transcript")).toEqual([{ text: "hello" }]);
   });
 
@@ -163,7 +164,7 @@ describe("a chunk emitted into a named stream", () => {
         releaseLock: vi.fn(),
       }),
     }));
-    const log = logger();
+    const log = makeLogger();
     await expect(
       createStepReporter(log)({ index: 1 }, { namespace: "transcript", log: false }),
     ).resolves.toBeUndefined();
@@ -178,7 +179,7 @@ describe("a chunk emitted into a named stream", () => {
     // namespace, and `getWritable` distinguishes that from an explicit one.
     getStepMetadata.mockReturnValue({ stepName: "transcribeSegment", stepId: "s", attempt: 2 });
     const streams = recordingStreams();
-    const log = logger();
+    const log = makeLogger();
     await createStepReporter(log)("Transcribing 0:00–0:58.", { log: true });
     expect(streams.get("")).toEqual(["Transcribing 0:00–0:58. (attempt 2)"]);
     expect(log.info).toHaveBeenCalled();

@@ -136,8 +136,15 @@ function noteFatalError(h: Harness, e: Extract<SessionEvent, { type: "error.repo
 
 /** `speech_stopped` must pair with a `speech_started` any client can have seen. */
 function checkSpeechPairing(h: Harness): void {
-  const starts = h.events.filter((x) => x.type === "speech.started").length;
-  const stops = h.events.filter((x) => x.type === "speech.stopped").length;
+  // One pass rather than two `filter().length` scans of the same array: this
+  // runs on every `speech.stopped` of every generated run, so the log is walked
+  // once per check instead of twice.
+  let starts = 0;
+  let stops = 0;
+  for (const event of h.events) {
+    if (event.type === "speech.started") starts += 1;
+    else if (event.type === "speech.stopped") stops += 1;
+  }
   if (stops > starts) fail("speech_stopped with no matching speech_started");
 }
 

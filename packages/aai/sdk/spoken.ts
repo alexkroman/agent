@@ -198,12 +198,21 @@ export function resolveOne<T>(
   }
 
   if (opts.score) {
+    // Captured once: inside this branch the scorer is known to be there, and
+    // re-reading `opts.score?.()` per candidate spells an absence that cannot
+    // happen here as a score of zero.
+    const score = opts.score;
     const text = spoken.toLowerCase();
     const scored = candidates.map((candidate) => ({
       candidate,
-      score: opts.score?.(candidate, text) ?? 0,
+      score: score(candidate, text) ?? 0,
     }));
-    const best = Math.max(...scored.map((one) => one.score));
+    // A loop rather than `Math.max(...scored.map(…))`, for the reason
+    // `session-state-store.ts` gives at its own maximum: `candidates` is the
+    // caller's list and a spread passes one argument per element, so a long
+    // enough one is a `RangeError` from a line that reads as an aggregate.
+    let best = Number.NEGATIVE_INFINITY;
+    for (const one of scored) best = Math.max(best, one.score);
     if (best <= 0) {
       return toolFailure(
         `No ${label} matches "${spoken}". Ask which one: ${list(candidates, opts.describe)}.`,
