@@ -137,27 +137,64 @@ describe("useWorkflowStream", () => {
     expect(result.current.error).toBeUndefined();
   });
 
-  test("a failed upload is RESUMED before anything is given up on", async () => {
+  test("PAUSING stops the bytes without touching the run, and resuming sends the rest", async () => {
+    // The two halves of the feature in one spec, because neither is worth much
+    // alone: a pause that cancelled the run would make resuming pointless, and a
+    // resume that did not say `resume: true` would be refused by the store as a
+    // second claim on somebody else's id.
+    const started = Promise.withResolvers<void>();
     let attempts = 0;
     const { api, calls } = recordingApi({
-      uploadStream: vi.fn(async (id: string) => {
+      uploadStream: vi.fn(async (id: string, _file, options) => {
         attempts += 1;
-        if (attempts === 1) throw new Error("connection reset");
+        if (attempts === 1) {
+          started.resolve();
+          // The gate's own abort, which is what a pause is on the wire.
+          await new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => {
+              reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+            });
+          });
+        }
         return { id, name: "", type: "", size: 3, complete: true, url: `/u/${id}` };
       }),
     });
-    const result = await submitFile(api);
-    // An upload that dies has usually landed most of itself, and `resume` sends
-    // only the windows the store does not have — so giving up here would throw
-    // away a run AND a file for one dropped connection.
-    expect(result.current.error).toBeUndefined();
+    const { result } = renderHook(() => useWorkflowStream("transcribe", { api }));
+
+    let submitted: Promise<void> = Promise.resolve();
+    await act(async () => {
+      submitted = result.current.submit({ recording: new File(["abc"], "call.wav") });
+      await started.promise;
+    });
+
+    await act(async () => {
+      result.current.pauseUpload();
+      await Promise.resolve();
+    });
+    // The run is the thing a pause must NOT take with it: it is watching an id,
+    // and a paused upload is one whose `size` stopped growing — which is what a
+    // slow uplink looks like too.
+    expect(calls).toContain("start");
     expect(calls).not.toContain("cancel");
-    const [, , retried] = vi.mocked(api.uploadStream).mock.calls[1] ?? [];
-    expect(retried).toMatchObject({ resume: true });
-    // And the FIRST attempt does not carry it: a fresh id has nothing to resume,
+    expect(result.current.run?.runId).toBe("wrun_1");
+    expect(result.current.error).toBeUndefined();
+
+    await act(async () => {
+      result.current.resumeUpload();
+      await submitted;
+    });
+    expect(vi.mocked(api.uploadStream).mock.calls).toHaveLength(2);
+    // The SAME id, or the second attempt is a second upload and the run is
+    // watching the first one forever.
+    const [first] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
+    const [second, , resumed] = vi.mocked(api.uploadStream).mock.calls[1] ?? [];
+    expect(second).toBe(first);
+    expect(resumed).toMatchObject({ resume: true });
+    // And the first attempt does not claim it: a fresh id has nothing to resume,
     // and saying so would waive the refusal that makes a chosen id safe.
-    const [, , first] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
-    expect(first && "resume" in first).toBe(false);
+    const [, , opening] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
+    expect(opening && "resume" in opening).toBe(false);
+    expect(result.current.error).toBeUndefined();
   });
 
   test("a failed UPLOAD cancels the run and reports the error", async () => {
@@ -167,9 +204,11 @@ describe("useWorkflowStream", () => {
       }),
     });
     const result = await submitFile(api);
-    // The resume is attempted first and fails the same way — see the spec above —
-    // so the run is cancelled once there is nothing left to try.
-    expect(vi.mocked(api.uploadStream).mock.calls).toHaveLength(2);
+    // ONE attempt from here. Re-entering a failed upload is the SDK's job now
+    // (`_upload-resume.ts`), on a budget that outlasts a redeploy — a second
+    // hand-rolled attempt at this layer would multiply that budget by two and
+    // report a failure the SDK had already spent a minute deciding about.
+    expect(vi.mocked(api.uploadStream).mock.calls).toHaveLength(1);
     expect(result.current.error).toBe("disk full");
     // Otherwise the run waits for bytes that will never come, until its own
     // abandonment bound — failing long after the page already said so.

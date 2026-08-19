@@ -62,12 +62,22 @@ export type Script = {
    * the one at the end of the fan-out is the finished record.
    */
   landed?: readonly { start: number; end: number }[];
-  /** Answer for the part at this offset, first attempt only — or `always`. */
+  /** Answer for the part at this offset, first attempt only — or `always`/`times`. */
   refuse?: {
     offset: number;
     status?: number;
     network?: boolean;
     always?: boolean;
+    /**
+     * Refuse the first N attempts and answer the rest.
+     *
+     * What an agent that went away and came BACK looks like from one part: set it
+     * to the per-request budget and the whole first round fails, which is the only
+     * way to reach the client's own resume loop (`_upload-resume.ts`) from a spec.
+     * `always` cannot — nothing ever succeeds — and the default cannot, since one
+     * refusal is absorbed by the retry inside the round.
+     */
+    times?: number;
     /** `Retry-After` on the refusal, when a spec is about the wait. */
     retryAfter?: string;
   };
@@ -106,7 +116,7 @@ export type Script = {
 export function scriptAgent(script: Script = {}): Agent {
   const agent: Agent = { calls: [], parts: [], peak: 0, aborted: [], bytes: [] };
   const flight = { now: 0 };
-  const refused = new Set<number>();
+  const refusals = new Map<number, number>();
   const attempts = { begin: 0, info: 0 };
 
   vi.stubGlobal(
@@ -125,10 +135,10 @@ export function scriptAgent(script: Script = {}): Agent {
       // the whole point of it. Matched first, because everything below assumes the
       // path is one of the agent's own.
       if (!url.pathname.includes("/workflows/")) {
-        return answerBytes(agent, refused, script, call);
+        return answerBytes(agent, refusals, script, call);
       }
       if (url.pathname.endsWith("/parts")) {
-        if (call.method !== "POST") return await answerPart(agent, flight, refused, script, call);
+        if (call.method !== "POST") return await answerPart(agent, flight, refusals, script, call);
         attempts.begin += 1;
         return answerBegin(script, attempts.begin);
       }
@@ -150,15 +160,36 @@ export function scriptAgent(script: Script = {}): Agent {
  * parameter: on that path the byte write is what a spec about a failed part has to be
  * able to fail.
  */
-function answerBytes(agent: Agent, refused: Set<number>, script: Script, call: Call): Response {
+function answerBytes(
+  agent: Agent,
+  refusals: Map<number, number>,
+  script: Script,
+  call: Call,
+): Response {
   agent.bytes.push(call);
   const at = Number(call.url.pathname.split("/").at(-1));
-  if (script.refuse?.offset === at && (script.refuse.always || !refused.has(at))) {
-    refused.add(at);
+  if (script.refuse?.offset === at && stillRefusing(script, refusals, at)) {
     if (script.refuse.network) throw new TypeError("the upload did not reach the platform");
     return json(script.refuse.status ?? 400, { error: "refused" });
   }
   return json(201, { bytes: call.bytes });
+}
+
+/**
+ * Whether this offset is still being refused, counting the refusals so far.
+ *
+ * Three modes in one line, because they are three points on the same axis: refuse
+ * forever (`always`), refuse the first N (`times` — an agent that came back), or
+ * refuse once (the default, absorbed by the retry inside a round).
+ */
+function stillRefusing(script: Script, refusals: Map<number, number>, offset: number): boolean {
+  const refuse = script.refuse;
+  if (!refuse) return false;
+  const soFar = refusals.get(offset) ?? 0;
+  const limit = refuse.always ? Number.POSITIVE_INFINITY : (refuse.times ?? 1);
+  if (soFar >= limit) return false;
+  refusals.set(offset, soFar + 1);
+  return true;
 }
 
 /** The declaration: 201 unless a spec is playing an agent that has no such route. */
@@ -201,7 +232,7 @@ function answerInfo(script: Script, attempt: number): Response {
 async function answerPart(
   agent: Agent,
   flight: { now: number },
-  refused: Set<number>,
+  refusals: Map<number, number>,
   script: Script,
   call: Call,
 ): Promise<Response> {
@@ -222,8 +253,7 @@ async function answerPart(
       });
     });
   }
-  if (script.refuse?.offset === offset && (script.refuse.always || !refused.has(offset))) {
-    refused.add(offset);
+  if (script.refuse?.offset === offset && stillRefusing(script, refusals, offset)) {
     if (script.refuse.network) throw new TypeError("the upload did not reach the agent");
     return json(
       script.refuse.status ?? 400,

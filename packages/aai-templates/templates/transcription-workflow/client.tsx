@@ -107,6 +107,32 @@
  * the same `<Form>` — every field in `@alexkroman1/aai-ui` is a plain named
  * control, so declared and hand-written ones mix freely.
  *
+ * ## A long upload can be PAUSED, and survives the agent restarting
+ *
+ * The same wait is the one thing on this page a person may want to interrupt: a
+ * 600 MB recording is minutes of a laptop's uplink, and needing it back for a
+ * call should not cost the upload. So `<UploadProgressBar>` takes the hook's
+ * `pauseUpload`/`resumeUpload` and draws a button — every mode, because every
+ * mode is sending a file.
+ *
+ * **Nothing in this template implements it**, which is the part worth reading.
+ * Pausing is an abort plus an id: the windows already sent are stored under an
+ * upload id the hook minted, so resuming reads back which ranges landed and sends
+ * only the rest. That is the same mechanism the SDK uses on its own when a round
+ * fails for a reason that looks like an outage — a redeploy, a sandbox reclaimed
+ * on idle, `aai dev` restarting on a save — so an agent that goes away mid-upload
+ * is a pause nobody asked for, and the upload picks up where it stopped.
+ *
+ * The two flows differ in what a pause costs, and only in that:
+ *
+ * - **"After it uploads"** and **"the async API"** have no run yet, so a pause
+ *   costs nothing at all. The form simply has not been submitted.
+ * - **"While it uploads"** has a run watching the id already, and to a run a
+ *   paused upload is one whose `size` stopped growing — which is exactly what a
+ *   slow uplink looks like. `workflows/stream.ts` gives that five minutes
+ *   (`MAX_IDLE_POLLS`) before it calls the uploader gone and fails the run, so a
+ *   pause longer than a coffee ends the run rather than the upload.
+ *
  * ## Two waits, ONE number
  *
  * The two bars describe the two stretches separately, and neither answers the
@@ -345,7 +371,7 @@ function TranscriptionDesk() {
   // store — so it is the SAME hook against a different workflow. Only the streaming
   // mode needs the other one, because only it needs the id before the bytes.
   const active = mode === "streaming" ? streamed : mode === "batch" ? batched : stored;
-  const { submit, run, upload, pending, error, reset } = active;
+  const { submit, run, upload, pending, error, reset, pauseUpload, resumeUpload } = active;
   // History is per WORKFLOW, so the list follows the mode: two flows that produce
   // the same output are still two different things to have run, and merging them
   // would put a run under a heading that cannot explain it.
@@ -408,8 +434,10 @@ function TranscriptionDesk() {
         {/* The NAME, so the schema is fetched here rather than by this page. */}
         <WorkflowFields workflow={WORKFLOWS[mode]} />
         {/* Unguarded on purpose: it renders nothing until there are bytes in
-            flight, and nothing again once they have landed. */}
-        <UploadProgressBar upload={upload} />
+            flight, and nothing again once they have landed. The handlers are what
+            turn the bar into a control — see "A long upload can be PAUSED" above;
+            all three hooks expose the same pair, so `active` needs no branch. */}
+        <UploadProgressBar upload={upload} onPause={pauseUpload} onResume={resumeUpload} />
         <SubmitButton pending={pending}>Transcribe</SubmitButton>
       </Form>
 

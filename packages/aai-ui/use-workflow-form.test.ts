@@ -140,12 +140,17 @@ describe("useWorkflowSubmit", () => {
 
     await act(() => result.current.submit({ recording: file, languageCode: "en" }));
 
-    expect(api.upload).toHaveBeenCalledWith(file, { onProgress: expect.any(Function) });
-    expect(api.start).toHaveBeenCalledWith(
-      "digest",
-      { recording: "upl_1", languageCode: "en" },
-      {},
-    );
+    // `uploadStream`, not `upload`, and the id is the reason: this hook mints it
+    // so an interrupted upload has a name to be picked up again under — see
+    // `uploadFiles`. Which id it is remains this hook's business, so the spec
+    // asserts the two ends AGREE rather than pinning a value.
+    expect(api.uploadStream).toHaveBeenCalledWith(expect.any(String), file, {
+      name: "standup.wav",
+      signal: expect.any(AbortSignal),
+      onProgress: expect.any(Function),
+    });
+    const [id] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
+    expect(api.start).toHaveBeenCalledWith("digest", { recording: id, languageCode: "en" }, {});
   });
 
   test("passes `parallel` down to the upload, and omits it when unasked", async () => {
@@ -159,7 +164,9 @@ describe("useWorkflowSubmit", () => {
       useWorkflowSubmit("digest", { api: asked, intervalMs: POLL_MS, parallel: true }),
     );
     await act(() => withParts.result.current.submit({ recording: file }));
-    expect(asked.upload).toHaveBeenCalledWith(file, {
+    expect(asked.uploadStream).toHaveBeenCalledWith(expect.any(String), file, {
+      name: "standup.wav",
+      signal: expect.any(AbortSignal),
       onProgress: expect.any(Function),
       parallel: true,
     });
@@ -169,7 +176,11 @@ describe("useWorkflowSubmit", () => {
       useWorkflowSubmit("digest", { api: plain, intervalMs: POLL_MS }),
     );
     await act(() => without.result.current.submit({ recording: file }));
-    expect(plain.upload).toHaveBeenCalledWith(file, { onProgress: expect.any(Function) });
+    expect(plain.uploadStream).toHaveBeenCalledWith(expect.any(String), file, {
+      name: "standup.wav",
+      signal: expect.any(AbortSignal),
+      onProgress: expect.any(Function),
+    });
   });
 
   test("reports the bytes as they go, then drops the report once the run starts", async () => {
@@ -178,19 +189,12 @@ describe("useWorkflowSubmit", () => {
     const gates = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
     let call = 0;
     const api = fakeApi({
-      upload: vi.fn(async (_file, options) => {
+      uploadStream: vi.fn(async (id, _file, options) => {
         const gate = gates[call++];
         options?.onProgress?.({ loaded: 0, total: 400, fraction: 0 });
         options?.onProgress?.({ loaded: 200, total: 400, fraction: 0.5 });
         await gate?.promise;
-        return {
-          id: `upl_${call}`,
-          name: "",
-          type: "",
-          size: 400,
-          complete: true,
-          url: "/uploads",
-        };
+        return { id, name: "", type: "", size: 400, complete: true, url: "/uploads" };
       }),
     });
     const files = [new File(["a"], "one.wav"), new File(["b"], "two.wav")];
@@ -212,6 +216,7 @@ describe("useWorkflowSubmit", () => {
       loaded: 200,
       total: 400,
       fraction: 0.5,
+      paused: false,
     });
 
     gates[0]?.resolve();
@@ -226,12 +231,13 @@ describe("useWorkflowSubmit", () => {
     // The bytes are gone, so the bar goes: from here the wait is the RUN's, and
     // one left at 100% under a running workflow reads as the slow part.
     expect(result.current.upload).toBeUndefined();
-    expect(api.start).toHaveBeenCalledWith("digest", { recordings: ["upl_1", "upl_2"] }, {});
+    const ids = vi.mocked(api.uploadStream).mock.calls.map(([id]) => id);
+    expect(api.start).toHaveBeenCalledWith("digest", { recordings: ids }, {});
   });
 
   test("drops the report when the upload FAILS, so no bar sits under the error", async () => {
     const api = fakeApi({
-      upload: vi.fn(async (_file, options) => {
+      uploadStream: vi.fn(async (_id, _file, options) => {
         options?.onProgress?.({ loaded: 8, total: 64, fraction: 0.125 });
         throw new Error("upload exceeds 268435456 bytes");
       }),
@@ -244,6 +250,94 @@ describe("useWorkflowSubmit", () => {
     expect(result.current.upload).toBeUndefined();
   });
 
+  test("PAUSING parks the upload and resuming sends only what is left", async () => {
+    // Two files, so the spec also covers the part a single file cannot show: a
+    // resumed walk re-enters `uploadFiles` from the top and must not re-send the
+    // recording that already landed.
+    const started = Promise.withResolvers<void>();
+    const attempts: string[] = [];
+    const api = fakeApi({
+      uploadStream: vi.fn(async (id, file, options) => {
+        const name = file instanceof File ? file.name : "?";
+        attempts.push(name);
+        options?.onProgress?.({ loaded: 40, total: 100, fraction: 0.4 });
+        if (name === "two.wav" && attempts.filter((one) => one === "two.wav").length === 1) {
+          started.resolve();
+          await new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => {
+              reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+            });
+          });
+        }
+        return { id, name, type: "", size: 100, complete: true, url: `/u/${id}` };
+      }),
+    });
+    const files = [new File(["a"], "one.wav"), new File(["b"], "two.wav")];
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    let submitted: Promise<void> = Promise.resolve();
+    await act(async () => {
+      submitted = result.current.submit({ recordings: files });
+      await started.promise;
+    });
+
+    await act(async () => {
+      result.current.pauseUpload();
+      await Promise.resolve();
+    });
+    // The bar keeps its bytes and says what it is doing — a paused upload and a
+    // stalled one are the same picture without this flag.
+    expect(result.current.upload).toMatchObject({ name: "two.wav", loaded: 40, paused: true });
+    expect(api.start).not.toHaveBeenCalled();
+
+    await act(async () => {
+      result.current.resumeUpload();
+      await submitted;
+    });
+    // `one.wav` is stored, so the resumed walk skips it: three attempts total, and
+    // the third is the second file again rather than the first.
+    expect(attempts).toEqual(["one.wav", "two.wav", "two.wav"]);
+    const [, , resumed] = vi.mocked(api.uploadStream).mock.calls[2] ?? [];
+    expect(resumed).toMatchObject({ resume: true });
+    // The SAME id both times, or the run would be started on an upload holding
+    // only the tail of the file.
+    const ids = vi.mocked(api.uploadStream).mock.calls.map(([id]) => id);
+    expect(ids[1]).toBe(ids[2]);
+    expect(api.start).toHaveBeenCalledWith("digest", { recordings: [ids[0], ids[1]] }, {});
+  });
+
+  test("reset abandons an upload in flight rather than reporting it as failed", async () => {
+    const started = Promise.withResolvers<void>();
+    const api = fakeApi({
+      uploadStream: vi.fn(async (_id, _file, options) => {
+        started.resolve();
+        await new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener("abort", () => {
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+          });
+        });
+        throw new Error("unreachable");
+      }),
+    });
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    let submitted: Promise<void> = Promise.resolve();
+    await act(async () => {
+      submitted = result.current.submit({ recording: new File(["a"], "big.wav") });
+      await started.promise;
+    });
+
+    await act(async () => {
+      result.current.reset();
+      await submitted;
+    });
+    // A form put back to its initial state has no submission to fail: an error
+    // here would be the page reporting the person's own button back to them.
+    expect(result.current.error).toBeUndefined();
+    expect(result.current.upload).toBeUndefined();
+    expect(api.start).not.toHaveBeenCalled();
+  });
+
   test("leaves a MIXED array alone rather than storing half of it", async () => {
     // An array that is not files all the way through is some other field's
     // value that happens to contain one; turning half of it into ids would
@@ -254,7 +348,7 @@ describe("useWorkflowSubmit", () => {
 
     await act(() => result.current.submit({ recordings: mixed }));
 
-    expect(api.upload).not.toHaveBeenCalled();
+    expect(api.uploadStream).not.toHaveBeenCalled();
     expect(api.start).toHaveBeenCalledWith("digest", { recordings: mixed }, {});
   });
 
@@ -265,8 +359,12 @@ describe("useWorkflowSubmit", () => {
 
     await act(() => result.current.submit({ recordings: files }));
 
-    expect(api.upload).toHaveBeenCalledTimes(2);
-    expect(api.start).toHaveBeenCalledWith("digest", { recordings: ["upl_1", "upl_1"] }, {});
+    expect(api.uploadStream).toHaveBeenCalledTimes(2);
+    const stored = vi.mocked(api.uploadStream).mock.calls.map(([id]) => id);
+    // Two files, two ids: an id is per FILE, so a shared one would have the
+    // second recording writing over the first.
+    expect(new Set(stored).size).toBe(2);
+    expect(api.start).toHaveBeenCalledWith("digest", { recordings: stored }, {});
   });
 
   test("leaves an input with no files exactly as it was", async () => {
@@ -275,13 +373,13 @@ describe("useWorkflowSubmit", () => {
 
     await act(() => result.current.submit({ url: "u", count: 3, deep: true }));
 
-    expect(api.upload).not.toHaveBeenCalled();
+    expect(api.uploadStream).not.toHaveBeenCalled();
     expect(api.start).toHaveBeenCalledWith("digest", { url: "u", count: 3, deep: true }, {});
   });
 
   test("reports a failed upload as the submit's error, without starting a run", async () => {
     const api = fakeApi({
-      upload: vi.fn(async () => {
+      uploadStream: vi.fn(async () => {
         throw new Error("upload exceeds 268435456 bytes");
       }),
     });

@@ -15,7 +15,7 @@
  */
 
 import { readJsonBody } from "./response-body.ts";
-import { responseErrorMessage } from "./utils.ts";
+import { isRecord, responseErrorMessage } from "./utils.ts";
 
 /**
  * Path prefix every route lives under, relative to the agent's own base URL.
@@ -54,9 +54,36 @@ export function apiRoot(baseUrl: string): string {
   return new URL(WORKFLOW_API_PREFIX.replace(/^\//, ""), base).toString();
 }
 
+/**
+ * A failure that came from a RESPONSE, so it knows which one.
+ *
+ * The message is the agent's own sentence and deliberately does not carry the
+ * status (see {@link WORKFLOW_API_ERROR_LABEL}), which left the status
+ * unreachable to anything downstream — fine while every caller did the same
+ * thing with every failure, and not fine once one of them had to tell "come
+ * back" from "no": see `_upload-resume.ts`, where the difference is between
+ * waiting out a redeploy and re-sending a file the agent has already refused.
+ */
+export type ApiFailure = Error & { status: number };
+
 /** Read the agent's error sentence out of a failed response. */
-export async function apiFailure(res: Response): Promise<Error> {
-  return new Error(await responseErrorMessage(res, WORKFLOW_API_ERROR_LABEL));
+export async function apiFailure(res: Response): Promise<ApiFailure> {
+  return Object.assign(new Error(await responseErrorMessage(res, WORKFLOW_API_ERROR_LABEL)), {
+    status: res.status,
+  });
+}
+
+/**
+ * The status a failure carried, or nothing.
+ *
+ * Nothing means the failure was not an answer at all — a dropped connection, a
+ * DNS miss, a request that never completed — which is the case a caller usually
+ * treats most generously, since there is no far side saying no.
+ */
+export function failureStatus(err: unknown): number | undefined {
+  if (!isRecord(err)) return undefined;
+  const status = err.status;
+  return typeof status === "number" ? status : undefined;
 }
 
 /**

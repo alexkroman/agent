@@ -557,10 +557,19 @@ the SDK's:
   cannot be derived from the schema: an upload property IS a string there, and
   "type a recording id" is exactly the wrong control.
 - `useWorkflowSubmit` stores every `File` in the submitted values through
-  `api.upload()` and substitutes its id before starting the run. That is the one
-  place holding both the chosen file and the client that can store it; a
-  `<FileField upload>` contributes the `File` UNREAD for the same reason
-  (describing a 200 MB recording would mean holding it in memory).
+  `api.uploadStream()` — under an id it MINTS — and substitutes that id before
+  starting the run. That is the one place holding both the chosen file and the
+  client that can store it; a `<FileField upload>` contributes the `File` UNREAD
+  for the same reason (describing a 200 MB recording would mean holding it in
+  memory).
+
+  **The call is `uploadStream` rather than `upload`, and the id is the whole
+  reason.** The two differ only in who mints it, and that decides whether an
+  interrupted upload can be picked up again: an `upload` mints its own at the
+  END, so a caller whose upload died has nothing to name what was stored and must
+  send the file again. Nothing else about the submission changes — the run is
+  still started after the last byte lands, so the incomplete record a streamed
+  upload leaves along the way is one nobody reads.
 
 **Storing the file is a WAIT nothing else on the page can describe, and
 `<UploadProgressBar>` is what draws it.** A run does not EXIST until its input is
@@ -637,12 +646,15 @@ Three things worth knowing at a call site:
   run polls is the store's `size`, which for a parts upload is the CONTIGUOUS
   prefix — so a run reading ahead of the uplink sees the same growing file
   whether one connection or four are filling it, and only the rate changes.
-- **A failed upload is RESUMED once before the run is cancelled.**
-  `useWorkflowStream` re-sends with `resume: true`, which fills in only the
-  windows the store does not already have (`UploadInfo.ranges`) — the run is still
-  waiting on the same id, so a resume that works is invisible to it. Once rather
-  than a loop: a second failure is a signal about the link, and a page cannot
-  retry forever on a person's behalf.
+- **A failed upload is RESUMED, and the loop is the SDK's.** A round that fails
+  for a reason that looks like an outage is re-entered with `resume: true`,
+  filling in only the windows the store does not already have
+  (`UploadInfo.ranges`), on a budget sized to outlast a redeploy —
+  `aai/sdk/_upload-resume.ts` owns it and carries what "looks like an outage"
+  excludes. The run is still waiting on the same id, so a resume that works is
+  invisible to it. `useWorkflowStream` used to hand-roll one such retry with no
+  wait in front of it, which covers a dropped connection and cannot cover the
+  case that actually strands people: the agent restarting underneath the upload.
 - **`parallel` splits ONE file; a form's files stay sequential.** Two recordings
   sent at once would compete for the same link with two bars to explain it, which
   is the shape `uploadFiles` was written to avoid.
@@ -652,6 +664,39 @@ Three things worth knowing at a call site:
   opts into. It is also the only upload path that RETRIES a dropped part, so
   opting out costs recoverability as well as speed.
   `sdk/workflow-upload-parts.ts` owns the causes.
+
+### A long upload can be PAUSED, and it is the same mechanism
+
+Both hooks return `pauseUpload`/`resumeUpload`, `UploadStatus` carries `paused`,
+and `<UploadProgressBar>` draws the control when handed both — never one, since
+a pause with no resume is a one-way door drawn as a toggle.
+
+**Nothing new is stored to make it work.** Pausing is an abort plus an id: the
+windows already sent are in the store under an id the hook minted, so resuming
+reads back which ranges landed and sends the rest. That is the SDK's outage
+resume, asked for — which is why the store cannot tell the two apart and needs no
+new route, and why the feature arrived with the auto-resume rather than after it.
+
+Three things a page should know:
+
+- **`submit()`'s promise stays unresolved across a pause**, because the
+  submission genuinely has not finished — the run does not exist until the last
+  byte lands, so resolving would tell a `<Form>` the work was accepted when
+  nothing was started.
+- **The RUN is untouched.** In the streaming flow the run is already watching the
+  id, and to a run a paused upload is one whose `size` stopped growing — exactly
+  what a slow uplink looks like. The workflow's own idle bound is what eventually
+  calls it abandoned (five minutes in `transcription-workflow`), so a pause is
+  free until then and fatal after.
+- **`reset()` ABANDONS rather than pauses**, and reports no error for it: a form
+  put back to its initial state has no submission to fail, and an error there
+  would be the page reporting the person's own button back to them.
+
+`_upload-session.ts` is the gate both hooks share. Its one subtle rule is that the
+uploader keys off the ABORT rather than off `gate.paused`: a pause and an
+immediate resume — a double-click — reopens the gate before the rejection the
+abort caused has landed, so a `paused` check would read false and rethrow an
+`AbortError` as though the upload had failed.
 
 `transcription-workflow` renders it as a checkbox beside the mode radios,
 deliberately: it describes the UPLOAD, and all three of its flows have one.

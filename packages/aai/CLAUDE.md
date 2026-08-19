@@ -592,6 +592,17 @@ worse for reasons that are not its width. **That script's doc comment owns the
 rest** — why it gates nothing, why it reports a RANGE, why a DECLINED cell has to
 announce itself, and that it leaves every upload it makes in the bucket forever.
 
+**And the whole upload RE-ENTERS itself when the agent goes away.** The
+per-request budget (~4-11s) covers a failure that happens while the agent is UP;
+it cannot cover a redeploy, an idle reclaim or a `aai dev` restart, where every
+part in flight burns its budget inside the outage and a 90%-stored recording is
+thrown away in full. So a round failing for a reason that LOOKS like an outage is
+run again with `resume: true` — reading the ranges and sending only what is
+missing, which is why a budget of about a minute is affordable.
+**`sdk/_upload-resume.ts` owns it**, including the three failures it refuses to
+re-enter (an abort — also how a person's PAUSE arrives — a refusal status, and a
+record the agent acknowledged and never wrote).
+
 The client path DECLINES rather than fails (an
 uncuttable string body, a file that fits in one part, an agent answering 404 to
 the declaration), which is what makes it safe as a default rather than an opt-in

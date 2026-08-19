@@ -7127,6 +7127,8 @@ export function UiUrlChip(input: {
 // @public
 export function UploadProgressBar(input: {
     upload?: UploadStatus | undefined;
+    onPause?: (() => void) | undefined;
+    onResume?: (() => void) | undefined;
     className?: string | undefined;
 }): ReactNode;
 
@@ -7135,6 +7137,7 @@ export type UploadStatus = UploadProgress & {
     name: string;
     index: number;
     count: number;
+    paused: boolean;
 };
 
 // @public
@@ -7314,6 +7317,8 @@ export type WorkflowStreamSubmission<R = unknown> = {
     run: WorkflowRun<R> | undefined;
     pending: boolean;
     upload: UploadStatus | undefined;
+    pauseUpload: () => void;
+    resumeUpload: () => void;
     error: string | undefined;
 };
 
@@ -7324,6 +7329,8 @@ export type WorkflowSubmission<R = unknown> = {
     run: WorkflowRun<R> | undefined;
     pending: boolean;
     upload: UploadStatus | undefined;
+    pauseUpload: () => void;
+    resumeUpload: () => void;
     error: string | undefined;
 };
 

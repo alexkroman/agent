@@ -35,11 +35,11 @@
  */
 
 import { errorMessage, type WorkflowSummary } from "@alexkroman1/aai";
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadParallel, UploadProgress } from "@alexkroman1/aai/workflow-api";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
-import { filesOf } from "./_workflow-files.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
@@ -134,64 +134,17 @@ export type UploadStatus = UploadProgress & {
   index: number;
   /** How many files this submission sends in total. */
   count: number;
+  /**
+   * Whether the person has parked this upload.
+   *
+   * A paused upload is not a stopped one: the windows already stored stay stored,
+   * `loaded` holds where it got to, and resuming sends what is missing rather than
+   * the file. So a bar rendering this reads "Paused at 62%", never "62% and
+   * frozen" — which is what a page could otherwise only guess from a number that
+   * stopped moving, the same ambiguity `complete` exists to remove on the run side.
+   */
+  paused: boolean;
 };
-
-/**
- * Replace every `File` in a submitted form with the id of a stored upload,
- * reporting how far each one has got.
- *
- * Sequential rather than `Promise.all`: these are large bodies, and a form with
- * two 200 MB recordings should send them one after another rather than compete
- * for the same connection. That is also what makes a single bar honest — one
- * file is in flight at a time, and `index`/`count` say which.
- *
- * Anything that is not a `File` (or an array of them) passes through untouched,
- * so this is invisible to every form that has none — including one whose values
- * are not an object at all, which `submit` accepts.
- */
-async function uploadFiles(
-  api: WorkflowApi,
-  input: unknown,
-  report: (status: UploadStatus) => void,
-  parallel: UploadParallel | undefined,
-): Promise<unknown> {
-  if (!isRecord(input)) return input;
-  const entries = Object.entries(input);
-  // Counted before the first byte leaves, because "1 of 3" needs the 3 and the
-  // last field is where it becomes known.
-  const count = entries.reduce((total, [, value]) => total + filesOf(value).length, 0);
-  let index = 0;
-  const store = async (file: File): Promise<string> => {
-    index += 1;
-    const position = { name: file.name, index, count };
-    const ref = await api.upload(file, {
-      onProgress: (progress) => report({ ...position, ...progress }),
-      // Files stay SEQUENTIAL above whatever this says: `parallel` splits ONE
-      // file across connections, and a form sending two recordings at once would
-      // still have them competing for the same link with two bars to explain it.
-      ...omitUndefined({ parallel }),
-    });
-    return ref.id;
-  };
-  const out: Record<string, unknown> = {};
-  for (const [name, value] of entries) {
-    if (value instanceof File) {
-      out[name] = await store(value);
-      continue;
-    }
-    const chosen = filesOf(value);
-    if (chosen.length === 0) {
-      out[name] = value;
-      continue;
-    }
-    const ids: string[] = [];
-    for (const file of chosen) ids.push(await store(file));
-    // The SHAPE follows the field, not the count: a `multiple` field carrying
-    // one file still submits a list, because that is what its schema declares.
-    out[name] = ids;
-  }
-  return out;
-}
 
 /** What {@link useWorkflowSubmit} returns. */
 export type WorkflowSubmission<R = unknown> = {
@@ -226,6 +179,21 @@ export type WorkflowSubmission<R = unknown> = {
    * for a 200 MB recording is minutes of a page that looks stuck.
    */
   upload: UploadStatus | undefined;
+  /**
+   * Park the upload where it is, stopping the bytes in flight.
+   *
+   * The windows already stored stay stored, so `resumeUpload()` sends what is
+   * missing rather than the file — which is the difference between a pause a
+   * person will actually use on a 200 MB recording and a cancel dressed up as one.
+   *
+   * `submit()`'s promise stays unresolved across a pause, because the submission
+   * genuinely has not finished: the run does not exist until the last byte lands,
+   * so resolving here would tell a `<Form>` the work was accepted when nothing has
+   * been started. A no-op when there is no upload in flight.
+   */
+  pauseUpload: () => void;
+  /** Continue a paused upload, sending only the windows the store does not have. */
+  resumeUpload: () => void;
   /** The submit's own failure (a rejected input), or the watch's. */
   error: string | undefined;
 };
@@ -292,6 +260,10 @@ export function useWorkflowSubmit<R = unknown>(
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | undefined>(undefined);
   const [upload, setUpload] = useState<UploadStatus | undefined>(undefined);
+  // The live submission's uploads, so `pauseUpload` reaches the gate the walk is
+  // waiting on. A ref rather than state: nothing renders from it, and a re-render
+  // per pause would be a re-render that changes nothing on the page.
+  const session = useRef<UploadSession | undefined>(undefined);
 
   // The caller's client through a ref — see `_workflow-api-ref.ts`.
   const getClient = useWorkflowApiRef(api);
@@ -306,6 +278,11 @@ export function useWorkflowSubmit<R = unknown>(
       // Dropped BEFORE the request, not after it returns: the previous run's
       // result must not sit under a form that is already submitting again.
       setRunId(undefined);
+      // A submission that is starting takes the pause controls from whatever was
+      // there before, so a stale gate cannot park the new one.
+      session.current?.gate.cancel();
+      const current = createUploadSession();
+      session.current = current;
       try {
         const options = omitUndefined({ key });
         // Files first: a run input carries an upload ID, never bytes, and this
@@ -313,7 +290,7 @@ export function useWorkflowSubmit<R = unknown>(
         // can store it. A form using `<FileField upload>` (which is what
         // `<WorkflowFields>` renders for a declared upload property) therefore
         // needs no upload code of its own.
-        const started = await uploadFiles(client, input, setUpload, parallel);
+        const started = await uploadFiles(client, input, setUpload, parallel, current);
         // Both paths end in a run id — the difference is only whether the agent
         // held the request open — so the watch below is identical either way.
         setRunId(
@@ -322,27 +299,56 @@ export function useWorkflowSubmit<R = unknown>(
             : (await client.startAndWait(workflow, started, { ...options, wait })).runId,
         );
       } catch (err: unknown) {
-        setStartError(errorMessage(err));
+        // An abandoned upload is not a failure to report: `reset()` and the next
+        // `submit()` both cancel, and both are the person's own doing.
+        if (!current.gate.cancelled) setStartError(errorMessage(err));
       } finally {
-        setStarting(false);
-        // Dropped whichever way it went. From here the wait belongs to the RUN,
-        // which `run` and `pending` describe, and a bar left at 100% under a
-        // running workflow reads as the thing that is taking the time.
-        setUpload(undefined);
+        // A SUPERSEDED submission owns none of this state any more. Its walk
+        // unwinds after the next one has already set `starting`, so clearing here
+        // unconditionally would report the live submission as finished and drop the
+        // bar it is drawing.
+        if (session.current === current) {
+          session.current = undefined;
+          setStarting(false);
+          // Dropped whichever way it went. From here the wait belongs to the RUN,
+          // which `run` and `pending` describe, and a bar left at 100% under a
+          // running workflow reads as the thing that is taking the time.
+          setUpload(undefined);
+        }
       }
     },
     [workflow, key, wait, parallel, getClient],
   );
 
   const reset = useCallback(() => {
+    // Abandoned rather than left running: a form put back to its initial state has
+    // no bar to draw and no submission to finish, so bytes still going would be
+    // bytes nobody is waiting for.
+    session.current?.gate.cancel();
+    session.current = undefined;
     setRunId(undefined);
     setStartError(undefined);
     setUpload(undefined);
   }, []);
 
+  const pauseUpload = useCallback(() => {
+    session.current?.gate.pause();
+    // The gate stops the bytes; this is what makes the page say so. Folded into
+    // the existing status rather than replacing it, because everything else about
+    // it — which file, how far, of how many — is still true.
+    setUpload((current) => (current ? { ...current, paused: true } : current));
+  }, []);
+
+  const resumeUpload = useCallback(() => {
+    session.current?.gate.resume();
+    setUpload((current) => (current ? { ...current, paused: false } : current));
+  }, []);
+
   return {
     submit,
     reset,
+    pauseUpload,
+    resumeUpload,
     run: tracked.run,
     // `tracked.polling` rather than a second derivation from the snapshot, and
     // that is the whole of it: `useWorkflowRun` gives up on an id the agent
