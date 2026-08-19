@@ -162,10 +162,10 @@ export type UploadInfo = {
    * nothing to report until they happen to join up. {@link UploadInfo.size} already
    * IS that number. This is the strictly larger fact.
    *
-   * Absent also means "cannot say", not "nothing landed" — a backend may decline to
-   * report windows it cannot enumerate compactly. A reader's answer to an absent
-   * list is therefore to assume nothing about what is stored, which for an uploader
-   * means sending the file.
+   * Absent also means "cannot say", not "nothing landed" — the store may decline to
+   * report windows, and an agent too old to have this field says nothing either. A
+   * reader's answer to an absent list is therefore to assume nothing about what is
+   * stored, which for an uploader means sending the file.
    */
   ranges?: readonly UploadRange[];
 };

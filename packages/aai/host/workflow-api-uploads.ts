@@ -236,12 +236,29 @@ export async function beginUploadParts(
 
 /**
  * `PUT /workflows/uploads/:id/parts?offset=<byte>` — store one window of a parts
- * upload.
+ * upload, or RECORD one that is already stored.
  *
  * Answers the record as it now stands, so the caller writing the part that closes
  * the last gap learns the upload is complete from its own response rather than by
  * polling for it. 200 rather than 201: a part creates nothing, it fills in a
  * resource that already exists.
+ *
+ * ## `&stored=1` is the direct path, and it is the same route on purpose
+ *
+ * With `stored=1` the request carries NO body: the client sent the window straight
+ * to the byte store and is telling the agent which window landed. Everything else
+ * about it is identical — the id, the offset grid, the answer — which is what lets a
+ * client take either route without anything downstream knowing, and lets a page
+ * built against the body form keep working where the direct path is unavailable
+ * (`aai dev` against a bucket the browser cannot reach).
+ *
+ * A separate PATH would have been the other option and is worse: the two are one
+ * operation with one set of refusals, and a second route is a second place for the
+ * offset rule, the 404 and the 400 to drift.
+ *
+ * The flag says nothing about how big the part is. `recordPart` asks the STORE, and
+ * that is the whole defence: a client claiming a part it never uploaded would
+ * otherwise advance `size` past a hole, and a step reading there gets silence.
  */
 export async function writeUploadPart(
   req: http.IncomingMessage,
@@ -255,8 +272,13 @@ export async function writeUploadPart(
     sendJson(res, 400, { error: "A part names the byte it starts at as `?offset=`." });
     return;
   }
+  const stored = requestQuery(req.url).get("stored") !== null;
   try {
-    sendJson(res, 200, await store.writePart(id, offset, req));
+    sendJson(
+      res,
+      200,
+      stored ? await store.recordPart(id, offset) : await store.writePart(id, offset, req),
+    );
   } catch (err: unknown) {
     if (sendWriteFailure(res, err)) return;
     throw err;

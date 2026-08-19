@@ -102,16 +102,21 @@ export type ServerOptions = {
   /** Agent greeting, included in the `GET /client-config` response. */
   greeting?: string;
   /**
-   * Project directory the dev-mode upload folder hangs off (`.workflow-data/
-   * uploads`). Defaults to `process.cwd()`.
+   * This agent's own public base URL — origin plus, on the managed platform, the
+   * slug (`https://<platform>/<slug>`).
    *
-   * Only read when the agent has no database — with one, uploads live there.
-   * `aai dev` passes the project directory for the reason
-   * `configureWorkflowWorld` does: the process cwd is wherever the developer
-   * was standing, so a second `aai dev` from elsewhere would see none of the
-   * first one's uploads.
+   * Read for one thing: workflow uploads. Its PRESENCE selects the brokered byte
+   * path, where every byte operation goes to the platform surface holding the bucket
+   * credential rather than to a credential in this process — see
+   * `_upload-blobs.ts`. Absent, the store reads the three `AAI_UPLOAD_STORAGE_*`
+   * keys out of the agent env, which is what `aai dev` and a self-hosted server do.
+   *
+   * The same value the RUNTIME takes for `ctx.workflows.publicWebhookUrl`, and it is
+   * passed twice rather than read off the runtime because the runtime is a LAZY
+   * facade in the guest harness: the DevKit can dispatch a step, and therefore reach
+   * the upload store, before any session has built one.
    */
-  workflowDataDir?: string;
+  publicUrl?: string;
   /**
    * First look at every WebSocket upgrade. Return true to claim it (the
    * server then leaves the socket alone); return false to fall through to
@@ -232,7 +237,7 @@ export function createServer(options: ServerOptions): AgentServer {
    * new server on every save. See `installWorkflowSupport`.
    */
   const workflowSupport = installWorkflowSupport({
-    ...omitUndefined({ env, dataDir: options.workflowDataDir }),
+    ...omitUndefined({ env, publicUrl: options.publicUrl }),
     logger,
   });
 

@@ -267,7 +267,7 @@ export {
   type WdkStreamOptions,
   type WorkflowClientOptions,
 } from "./workflow-client.ts";
-export { installWorkflowSupport, UPLOAD_DIR_NAME } from "./workflow-install.ts";
+export { installWorkflowSupport } from "./workflow-install.ts";
 export {
   createMemoryKeyStore,
   createPostgresKeyStore,
@@ -299,10 +299,17 @@ export {
   type WorkflowSurface,
 } from "./workflow-serve.ts";
 export {
+  createMemoryUploadBlobs,
   createUploadStore,
-  UPLOAD_CHUNKS_TABLE,
+  resolveUploadBlobs,
+  UPLOAD_KEY_PREFIX,
+  UPLOAD_STORAGE_BUCKET_ENV,
+  UPLOAD_STORAGE_KEY_ENV,
+  UPLOAD_STORAGE_URL_ENV,
   UPLOADS_TABLE,
+  type UploadBlobs,
   type UploadMeta,
+  type UploadPart,
   type UploadStore,
   UploadTooLargeError,
 } from "./workflow-uploads.ts";

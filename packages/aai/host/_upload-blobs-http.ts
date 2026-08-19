@@ -1,0 +1,139 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * {@link UploadBlobs} against a Supabase Storage bucket, with a service key.
+ *
+ * The implementation for `aai dev` and for a self-hosted server: the bucket is the
+ * OPERATOR's, and the operator and the agent author are the same person, so there
+ * is no boundary between the credential and the code. A deployed guest gets
+ * `_upload-blobs-brokered.ts` instead — see `_upload-blobs.ts`, "Signing is NOT
+ * here", for why that split is the security model rather than a configuration
+ * choice.
+ *
+ * ## Plain `fetch`, not `@supabase/storage-js`
+ *
+ * `aai-server` uses the client for deploy blobs and is right to; here it would be a
+ * new RUNTIME dependency of the published `aai` package, which the artifact-size
+ * budget fails on its own terms — a dependency lands in every consumer's tree, and
+ * a 4 kB wrapper can pull megabytes behind it. What it would buy is nothing this
+ * needs: `download()` reads a whole object with no way to ask for a window, which is
+ * the one operation the fan-out is built on, so the interesting call would be
+ * hand-written either way.
+ *
+ * Storage's REST surface is four requests and one header:
+ *
+ * ```text
+ * PUT    /object/<bucket>/<key>   x-upsert: true      → store
+ * GET    /object/<bucket>/<key>   Range: bytes=a-b    → a window
+ * HEAD   /object/<bucket>/<key>                       → Content-Length
+ * ```
+ *
+ * ## `x-upsert`, because a part is RETRIED
+ *
+ * A window is keyed by the byte it starts at, so a repeat carries the same bytes to
+ * the same name. Without upsert Storage answers 409 on the second attempt and the
+ * ordinary failure the parts path exists to survive — a connection dying
+ * mid-flight — would be permanent.
+ */
+
+import { errorMessage } from "../sdk/utils.ts";
+import type { UploadBlobs } from "./_upload-blobs.ts";
+import { concat, UploadTooLargeError } from "./_upload-store.ts";
+
+export type HttpUploadBlobsOptions = {
+  /** Project URL (`https://<ref>.supabase.co`), or any Storage-compatible origin. */
+  url: string;
+  /** Service key. Reaches the bucket, so it never leaves the process holding it. */
+  serviceKey: string;
+  bucket: string;
+  /** Test seam — production uses the global. */
+  fetch?: typeof globalThis.fetch | undefined;
+};
+
+/** `https://<ref>.supabase.co` → `https://<ref>.supabase.co/storage/v1`. */
+export function storageEndpoint(url: string): string {
+  return `${url.replace(/\/+$/, "")}/storage/v1`;
+}
+
+/** {@link UploadBlobs} over Supabase Storage's REST API. */
+export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs {
+  const endpoint = storageEndpoint(opts.url);
+  const call = opts.fetch ?? globalThis.fetch;
+  const auth = {
+    apikey: opts.serviceKey,
+    Authorization: `Bearer ${opts.serviceKey}`,
+  };
+  // Every segment is encoded: an upload id is `UPLOAD_TOKEN_RE`-checked and a
+  // prefix is ours, so nothing here needs escaping today — and a key is composed
+  // from three separately-validated pieces, which is exactly the shape where a
+  // later fourth piece arrives unvalidated.
+  const objectUrl = (key: string): string =>
+    `${endpoint}/object/${encodeURIComponent(opts.bucket)}/${key
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/")}`;
+
+  return {
+    async put(key, body, options): Promise<number> {
+      // Buffered, and this is the one place that is unavoidable: Storage has no
+      // append and no streaming PUT of unknown length, so an object's bytes have to
+      // be in hand to write them. It is bounded by the WINDOW rather than by the
+      // file — `UPLOAD_PART_BYTES`, i.e. megabytes, not the two gigabytes
+      // `MAX_WORKFLOW_UPLOAD_BYTES` allows — which is the whole reason the store
+      // cuts a body into windows before it reaches here.
+      const held: Uint8Array[] = [];
+      let size = 0;
+      for await (const piece of body) {
+        size += piece.length;
+        if (options?.limit !== undefined && size > options.limit) {
+          throw new UploadTooLargeError(options.limit);
+        }
+        held.push(piece);
+      }
+      const res = await call(objectUrl(key), {
+        method: "PUT",
+        headers: {
+          ...auth,
+          "Content-Type": options?.type || "application/octet-stream",
+          // See the module doc: a retried part must be the same object.
+          "x-upsert": "true",
+        },
+        body: concat(held, size),
+      });
+      if (!res.ok) throw await storageError("write", key, res);
+      return size;
+    },
+
+    async read(key, start, end): Promise<Uint8Array> {
+      if (end <= start) return new Uint8Array(0);
+      const res = await call(objectUrl(key), {
+        method: "GET",
+        // Inclusive of its last byte, unlike every offset in this codebase.
+        headers: { ...auth, Range: `bytes=${start}-${end - 1}` },
+      });
+      // Clamped rather than refused — see `UploadBlobs.read`. 416 is what Storage
+      // answers for a window starting past the object, which is the same "there is
+      // less here than you asked for" a short 206 reports.
+      if (res.status === 404 || res.status === 416) return new Uint8Array(0);
+      if (!res.ok) throw await storageError("read", key, res);
+      return new Uint8Array(await res.arrayBuffer());
+    },
+
+    async size(key): Promise<number | undefined> {
+      const res = await call(objectUrl(key), { method: "HEAD", headers: auth });
+      if (res.status === 404) return undefined;
+      if (!res.ok) throw await storageError("head", key, res);
+      const length = Number(res.headers.get("content-length"));
+      // A HEAD that answers 200 with no length is a store this cannot measure, and
+      // measuring is the whole point of the call — see `UploadBlobs.size`, whose
+      // contract is that it never over-reports. Guessing here would let a part
+      // nobody uploaded be recorded as present.
+      return Number.isSafeInteger(length) && length >= 0 ? length : undefined;
+    },
+  };
+}
+
+/** One failure shape, carrying the status and whatever the body said. */
+async function storageError(op: string, key: string, res: Response): Promise<Error> {
+  const detail = await res.text().catch((err: unknown) => errorMessage(err));
+  return new Error(`upload blob ${op} failed for ${key}: ${res.status} ${detail.slice(0, 200)}`);
+}

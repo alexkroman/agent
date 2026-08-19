@@ -1,18 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The upload store's CONTRACT: its types, its two invariants, and the helpers both
- * backends share.
+ * The upload store's CONTRACT: its types, its invariants, and the helpers the
+ * store and its byte backend share.
  *
- * Split from `workflow-uploads.ts` because that module builds the backends and the
- * backends need these names — an import cycle, and biome says so. The line the
- * split follows is the one that was already load-bearing: **the chunking is the
- * contract, where the pieces go is not** (`chunked`'s own doc has said so since
- * before there were two callers). So everything a backend must agree with the other
- * backend about lives here, which is exactly what makes the file backend a valid
- * double for the Postgres one.
- *
- * Nothing here is new public surface: `workflow-uploads.ts` re-exports the names
- * that were already reachable through `@alexkroman1/aai/runtime`.
+ * Split from `workflow-uploads.ts` because that module builds the store and the
+ * store needs these names — an import cycle, and biome says so.
  *
  * ORIGINAL CONTEXT — where an uploaded file lives between the form that sent it and
  * the step that reads it.
@@ -24,46 +16,46 @@
  * person with a file on their laptop — the case every transcription and document
  * app opens on. So the app gets a place of its own.
  *
- * Each backend is its own module (`_upload-store-postgres.ts`,
- * `_upload-store-files.ts`); what stays here is the CONTRACT they share — the
- * chunking, the id minting, and the two invariants below — because that is exactly
- * what makes the memory backend a valid double for the Postgres one.
+ * ## ONE store, and the bytes are OBJECTS
  *
- * ## Two backends, and it is the SAME split the workflow world makes
+ * There used to be two backends holding the bytes themselves — a `bytea` row per
+ * megabyte in the app's own database, or a file per upload under `aai dev` — and
+ * both are gone. There is one store (`_upload-store-blobs.ts`): a metadata row in
+ * the app's database, and the bytes as objects in a bucket
+ * (`_upload-blobs.ts`, which carries why they left Postgres and why the interface
+ * mints no URLs).
  *
- * - **Postgres** when the app has a database — the ordinary deployed case, and
- *   the one that matters, because a durable run is precisely the thing that
- *   outlives the container that started it. An upload in a container's `/tmp`
- *   is gone by the time a resumed run reaches segment 27, which would make the
- *   whole point of a journal unreachable.
- * - **Files** otherwise — `aai dev` against a project with no `DATABASE_URL`,
- *   next to the Local World's own `.workflow-data/`. Forgotten when the
- *   directory is, which is the same honest dev tradeoff the Local World already
- *   makes about runs.
+ * The old shape's whole argument was that the file backend was "a valid double for
+ * the Postgres one", which is what two implementations of one contract buy — and it
+ * was the wrong axis. What a double has to stand in for here is BYTES, not records:
+ * every rule below is about the record, and the record is Postgres either way. So
+ * the seam moved one level down, to {@link UploadBlobs}, whose contract is a window
+ * read and a length and is small enough that `createMemoryUploadBlobs` really is
+ * equivalent.
  *
- * ## Bytes are stored in CHUNKS, and read with `substring`
+ * ## Bytes are stored in WINDOWS, and read one window at a time
  *
  * A recording is not a value: a two-hour WAV is a couple of hundred megabytes,
- * and both halves of the naive shape — buffer it to insert it, select it whole
- * to read 64 KB of header — are the memory this process does not have. So the
- * body streams into `UPLOAD_CHUNK_BYTES` rows as it arrives, and a range
- * read asks Postgres for exactly the bytes inside each covering chunk. A header
- * probe therefore moves 64 KB, not the file.
+ * and both halves of the naive shape — buffer it to store it, read it whole to
+ * inspect 64 KB of header — are the memory this process does not have. So the body
+ * streams into `UPLOAD_PART_BYTES` objects as it arrives, and a range read touches
+ * only the objects the window overlaps. A header probe therefore moves 64 KB, not
+ * the file.
  *
  * ## The metadata row is written LAST — for an ordinary upload
  *
- * There is no transaction around a multi-megabyte stream, so "does this upload
- * exist" has to be answerable by one row that only appears when the bytes are
- * all in. An interrupted upload leaves orphan chunks (best-effort deleted) and
- * no upload — which reads correctly to every caller as "there is no such
- * upload", rather than as a file that is silently short.
+ * There is no transaction spanning a multi-megabyte stream and a bucket, so "does
+ * this upload exist" has to be answerable by one row that only appears when the
+ * bytes are all in. An interrupted upload leaves orphan objects and no upload —
+ * which reads correctly to every caller as "there is no such upload", rather than
+ * as a file that is silently short.
  *
  * ## A STREAMED upload is the deliberate exception, and `complete` is the price
  *
  * `create` cannot serve a run that wants to start before the bytes are in: it
  * mints the id at the END, and there is nothing to put in the run input. `stream`
  * is the other shape — the CALLER names the id, the record appears at the first
- * byte, and its `size` grows as chunks land.
+ * byte, and its `size` grows as windows land.
  *
  * That is a real relaxation of the invariant above, so it is paid for explicitly
  * rather than quietly:
@@ -99,11 +91,16 @@
  * It reuses the streamed upload's whole shape — the caller names the id, the record
  * exists from the beginning with `complete: false` — and adds exactly two rules:
  *
- * - **A part starts at a multiple of `UPLOAD_CHUNK_BYTES`**, which is what lets a
- *   part's bytes be stored as ordinary chunks at their own offsets rather than
- *   needing a second storage shape. A misaligned offset is refused
- *   ({@link UploadPartError}) rather than stored somewhere it would be read back
- *   from wrong.
+ * - **A part starts at a multiple of `UPLOAD_CHUNK_BYTES`.** This used to be a
+ *   STORAGE requirement (a part's bytes were stored as ordinary chunk rows at their
+ *   own offsets, and a misaligned one would have had to rewrite the row it landed
+ *   in). With one object per window it is no longer that, and it is kept for a
+ *   different reason worth stating so it is not mistaken for a leftover: it bounds
+ *   the key space. A part's offset IS its object's name, so arbitrary offsets let a
+ *   client scatter a million tiny objects across a prefix nothing can enumerate,
+ *   and let two parts of different sizes overlap at addresses no reader can
+ *   reconcile. A megabyte grid costs a client nothing — it cuts where it likes as
+ *   long as it cuts on megabytes.
  * - **`size` is the CONTIGUOUS prefix, never the sum of what has arrived.** Parts
  *   land out of order, so a size that counted bytes would tell a reader it may read
  *   a window that is still a hole. Counting only from byte zero keeps `size`
@@ -115,6 +112,13 @@
  * only moment every byte is present. Non-overlapping parts are the CALLER's
  * contract, the same way the chosen id is: overlapping ones corrupt an upload the
  * caller alone can read.
+ *
+ * {@link UploadStore.recordPart} is the same write with NO body — for a part whose
+ * bytes went from the browser to the bucket without passing through this process at
+ * all. It is the reason the two are separate methods rather than one with an
+ * optional body: a part that arrived here is measured as it streams, and a part
+ * that did not has to be measured by ASKING THE BUCKET, which is what stops a
+ * client advancing `size` past a hole.
  */
 
 import { UPLOAD_CHUNK_BYTES, UPLOAD_ID_PREFIX } from "../sdk/constants.ts";
@@ -122,8 +126,6 @@ import type { UploadInfo, UploadRange, UploadReader } from "../sdk/step-uploads.
 
 /** The table one row per upload lives in. Prefixed so it cannot collide with an app's own. */
 export const UPLOADS_TABLE = "aai_workflow_uploads";
-/** The table the bytes live in, one `UPLOAD_CHUNK_BYTES` piece per row. */
-export const UPLOAD_CHUNKS_TABLE = "aai_workflow_upload_chunks";
 
 /** Raised by an upload store's `create` when the body ran past its cap. */
 export class UploadTooLargeError extends Error {
@@ -142,10 +144,10 @@ export class UploadTooLargeError extends Error {
  */
 export class UploadIdTakenError extends Error {
   constructor(id: string, options?: { cause?: unknown }) {
-    // The cause is optional because the two backends learn this two different
-    // ways: Postgres reads the row back and has nothing to attach, while the file
-    // backend learns it from a failed exclusive `open` whose errno is worth
-    // keeping — an `EACCES` there is a broken store, not a taken id.
+    // The cause is optional because the store learns this from a conditional
+    // `insert` returning no row, which carries nothing worth attaching. It stays in
+    // the signature for a caller that DOES have one — a bucket refusing a key, say —
+    // rather than making that caller drop the only evidence it holds.
     super(`upload ${id} already exists`, options);
     this.name = UploadIdTakenError.name;
   }
@@ -245,16 +247,36 @@ export type UploadStore = UploadReader & {
    * total. So the caller writing the last part learns the upload is finished from
    * its own response, and every other part's response is the progress a page draws.
    *
-   * NOT {@link UploadInfo.ranges}: those are a property of the record, read once by
-   * a resume through {@link UploadReader.info} before it sends anything. Deriving
-   * them costs a statement whose result set the CALLER sizes — see the Postgres
-   * backend's `coverage` — and this is the per-part write path.
+   * {@link UploadInfo.ranges} rides along, which it deliberately did not before: it
+   * used to mean a statement whose result set the CALLER sized — one row per island,
+   * against `MAX_DB_RESULT_ROWS` — so a finely-cut sparse upload became a record
+   * nothing could read again, and keeping the list off this path was the fix. The
+   * boundary list is one `jsonb` column this write already reads and merges, so there
+   * is nothing left to pay.
    *
    * @throws {UnknownUploadError} when nothing has begun under `id`.
    * @throws {UploadPartError} when `offset` is not a multiple of
    *   `UPLOAD_CHUNK_BYTES`, or the part would run past the declared total.
    */
   writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
+  /**
+   * Record a part whose bytes are ALREADY stored, without carrying them.
+   *
+   * The write for the direct path: the browser sent the window to the bucket itself,
+   * so there is no body here and nothing for this process to stream. Answers the
+   * same record {@link UploadStore.writePart} does, so a client cannot tell which
+   * route it took from the response.
+   *
+   * The size is asked of the STORE, never taken from the caller. A client that named
+   * a part it never uploaded would otherwise advance `size` past a hole, and a step
+   * reading there gets silence rather than an error — a gap in a transcript with
+   * nothing anywhere reporting one.
+   *
+   * @throws {UnknownUploadError} when nothing has begun under `id`.
+   * @throws {UploadPartError} when `offset` is misaligned, when no bytes are stored
+   *   for it, or when what is stored runs past the declared total.
+   */
+  recordPart(id: string, offset: number): Promise<UploadInfo>;
 };
 
 /**
@@ -269,11 +291,10 @@ export type ByteRange = UploadRange;
 /**
  * Refuse an offset a part may not start at.
  *
- * Alignment is the whole reason a part can be stored as ordinary chunks: a part
- * beginning mid-chunk would have to either rewrite the chunk it lands in — a
- * read-modify-write racing every other part — or store a second shape beside them.
- * Neither is worth the arbitrary offsets nobody asked for; a client cuts where it
- * likes as long as it cuts on megabytes.
+ * The offset IS the object's name, so the grid is what bounds the key space — see
+ * the module doc, which also records that this used to be a storage requirement and
+ * why it is kept now that it is not. A client cuts where it likes as long as it cuts
+ * on megabytes.
  */
 export function assertPartOffset(offset: number): void {
   if (!Number.isSafeInteger(offset) || offset < 0 || offset % UPLOAD_CHUNK_BYTES !== 0) {
@@ -289,25 +310,6 @@ export function assertPartTotal(total: number, limit: number): void {
     throw new UploadPartError(`A parts upload declares its total in bytes; ${total} is not one.`);
   }
   if (total > limit) throw new UploadTooLargeError(limit);
-}
-
-/**
- * `ranges` with `add` merged in: sorted, non-overlapping, and touching ranges
- * joined.
- *
- * Joining the ones that merely TOUCH is what makes {@link contiguousBytes} a
- * single lookup rather than a walk — two parts that meet exactly at a megabyte
- * boundary are one range, which is the ordinary case rather than an edge one.
- */
-export function mergeRanges(ranges: readonly ByteRange[], add: ByteRange): ByteRange[] {
-  const sorted = [...ranges, add].sort((a, b) => a.start - b.start);
-  const merged: ByteRange[] = [];
-  for (const range of sorted) {
-    const last = merged.at(-1);
-    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
-    else merged.push({ ...range });
-  }
-  return merged;
 }
 
 /**
@@ -330,9 +332,9 @@ export function newUploadId(): string {
 /**
  * Read a body into `UPLOAD_CHUNK_BYTES` pieces, refusing anything past `limit`.
  *
- * Shared by both backends because the SPLIT is the contract — a chunk's size is
- * what a range read's cost is measured in — while where the pieces go is not.
- * Counted as it arrives rather than from a declared length, the same rule
+ * The piece size a body is assembled from before it is grouped into window objects,
+ * and the unit `readUploadRoute` writes to a socket in. Counted as it arrives rather
+ * than from a declared length, the same rule
  * `readBody` follows and for the same reason: a client controls that header
  * independently of what it sends.
  */
@@ -357,43 +359,6 @@ export async function* chunked(
     }
   }
   if (heldBytes > 0) yield concat(held, heldBytes);
-}
-
-/**
- * A part's body as `UPLOAD_CHUNK_BYTES` pieces, each carrying the offset it goes at.
- *
- * The shared half of {@link UploadStore.writePart}: both backends need the same
- * arithmetic (a chunk's absolute offset, and its `seq` derived from it), and both
- * owe the same refusal for a part that runs past what was declared. The refusal is
- * {@link UploadPartError} rather than {@link UploadTooLargeError} because nothing
- * about the FILE is too large here — the caller contradicted its own total, which
- * is a 400 and not a 413.
- */
-export async function* partChunks(
-  body: AsyncIterable<Uint8Array>,
-  offset: number,
-  total: number,
-): AsyncGenerator<{ bytes: Uint8Array; at: number }> {
-  let at = offset;
-  try {
-    for await (const bytes of chunked(body, Math.max(0, total - offset))) {
-      yield { bytes, at };
-      at += bytes.length;
-    }
-  } catch (err: unknown) {
-    if (err instanceof UploadTooLargeError) {
-      throw new UploadPartError(
-        `A part at ${offset} runs past the ${total} bytes this upload declared.`,
-        { cause: err },
-      );
-    }
-    throw err;
-  }
-}
-
-/** Which stored chunk an absolute byte offset begins, given parts are aligned. */
-export function chunkSeq(at: number): number {
-  return Math.floor(at / UPLOAD_CHUNK_BYTES);
 }
 
 /**
