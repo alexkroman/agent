@@ -1,5 +1,15 @@
 # aai-studio-server
 
+## 0.7.8
+
+### Patch Changes
+
+- Updated dependencies [9882411]
+  - @alexkroman1/aai@6.7.0
+  - aai-server@3.5.16
+  - aai-studio-client@0.5.8
+  - @alexkroman1/aai-ui@6.7.0
+
 ## 0.7.7
 
 ### Patch Changes
