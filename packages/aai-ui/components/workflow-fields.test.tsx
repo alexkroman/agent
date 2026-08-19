@@ -15,9 +15,10 @@
 
 import type { WorkflowSummary } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { ThemeProvider } from "../context.ts";
+import { Form, SubmitButton } from "./form.tsx";
 import { WorkflowFields } from "./workflow-fields.tsx";
 
 function renderFields(inputSchema: unknown, uploads?: readonly string[]) {
@@ -211,6 +212,60 @@ describe("WorkflowFields resolving by name", () => {
       </ThemeProvider>,
     );
     expect(calls).toEqual([]);
+  });
+
+  test("cannot be submitted before the fields it validates exist", async () => {
+    // The reported bug. `<Form>` leans on NATIVE validation, so a `required`
+    // field is what stops an empty submit — and while the listing is in flight
+    // there are no fields, so the browser had nothing to check. The first click
+    // on the transcription desk therefore sent `{}` and the agent answered
+    // `Invalid input for workflow "transcribeStream": recording: Invalid input`:
+    // a schema complaint about a file picker that appeared a moment later.
+    const listing = Promise.withResolvers<WorkflowSummary[]>();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ workflows: await listing.promise }))),
+    );
+    const onSubmit = vi.fn();
+    render(
+      <ThemeProvider>
+        <Form onSubmit={onSubmit}>
+          <WorkflowFields workflow="transcribeStream" />
+          <SubmitButton>Transcribe</SubmitButton>
+        </Form>
+      </ThemeProvider>,
+    );
+    const button = screen.getByRole("button", { name: "Transcribe" });
+    fireEvent.click(button);
+    expect(onSubmit).not.toHaveBeenCalled();
+    // And it is visibly unavailable rather than silently inert — the fieldset
+    // that already covers the in-flight case covers this one too. Matched with
+    // `:disabled` rather than read off `.disabled`, which reflects the button's
+    // OWN attribute and is false for one disabled by an ancestor fieldset.
+    expect(button.matches(":disabled")).toBe(true);
+
+    // Inside `act`, because resolving this settles the component's own fetch and
+    // the state update that follows is React's, not the test's.
+    await act(async () => {
+      listing.resolve([
+        {
+          name: "transcribeStream",
+          inputSchema: {
+            type: "object",
+            properties: { recording: { type: "string" } },
+            required: ["recording"],
+          },
+          uploads: ["recording"],
+        },
+      ]);
+    });
+    // Once the declaration lands the form works again, and the empty submit is
+    // now refused by the BROWSER — which is what should have happened all along.
+    await vi.waitFor(() => expect(fieldNames()).toEqual(["recording"]));
+    expect(button.matches(":disabled")).toBe(false);
+    fireEvent.click(button);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(document.querySelector("[name=recording]")?.hasAttribute("required")).toBe(true);
   });
 
   test("renders nothing for a name the agent does not declare", async () => {

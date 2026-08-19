@@ -44,6 +44,7 @@ import type {
 } from "react";
 import { useCallback, useId, useState } from "react";
 import { useTheme } from "../context.ts";
+import { FormReadinessProvider, useFormReadiness } from "./_form-readiness.ts";
 import { collectValues } from "./_form-values.ts";
 import { Button, type ButtonSize } from "./button.tsx";
 import type { FieldShell, FileRead, FileValue, FormValues } from "./form-types.ts";
@@ -94,11 +95,18 @@ export type FormProps = {
 export function Form({ onSubmit, error, children, className, ...rest }: FormProps) {
   const theme = useTheme();
   const [busy, setBusy] = useState(false);
+  // Whether any child is still waiting for its own field declaration — see
+  // `_form-readiness.ts` for why native validation cannot cover that on its own.
+  const { pending: fieldsPending, declare } = useFormReadiness();
 
   const handle = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
-      if (busy) return;
+      // `fieldsPending` as well as `busy`, and it guards the SUBMIT rather than only
+      // the button: the fieldset below disables a click, and Enter in a text field
+      // submits a form without one. Nothing to report — the fields are about to
+      // appear, and the person has not been shown anything to be wrong about yet.
+      if (busy || fieldsPending) return;
       const form = event.currentTarget;
       setBusy(true);
       void (async () => {
@@ -109,7 +117,7 @@ export function Form({ onSubmit, error, children, className, ...rest }: FormProp
         }
       })();
     },
-    [busy, onSubmit],
+    [busy, fieldsPending, onSubmit],
   );
 
   return (
@@ -122,8 +130,10 @@ export function Form({ onSubmit, error, children, className, ...rest }: FormProp
       // caller wrote themselves, which is the point of reading the DOM.
       {...rest}
     >
-      <fieldset disabled={busy} className="contents">
-        {children}
+      {/* `busy` OR fields still loading, so the submit button — which lives in
+          here — is visibly unavailable rather than silently inert. */}
+      <fieldset disabled={busy || fieldsPending} className="contents">
+        <FormReadinessProvider value={declare}>{children}</FormReadinessProvider>
       </fieldset>
       {error !== undefined && error !== "" && (
         <p role="alert" className="text-sm" style={{ color: theme.primary }}>
