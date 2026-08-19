@@ -567,3 +567,35 @@ describe("createSessionCore — error logging", () => {
     });
   });
 });
+
+/**
+ * What `ws-handler.ts` reads before it claims a session is ready. Production
+ * logged `session error (fatal)` for a missing TTS key and `Session ready` 400ms
+ * later, on a session that could never speak.
+ */
+describe("createSessionCore — faultCode", () => {
+  test("is undefined on a session that has reported nothing", () => {
+    const { core } = makeCore({});
+    expect(core.faultCode).toBeUndefined();
+  });
+
+  test("carries the code of a fatal error", () => {
+    const { core } = makeCore({});
+    core.report({ type: "error.reported", code: "tts", message: "missing API key" });
+    expect(core.faultCode).toBe("tts");
+  });
+
+  test("a non-fatal error leaves it undefined", () => {
+    const { core } = makeCore({});
+    core.report({ type: "error.reported", code: "internal", message: "recoverable", fatal: false });
+    expect(core.faultCode).toBeUndefined();
+  });
+
+  /** The FIRST fatal is the cause; later ones are usually downstream of it. */
+  test("keeps the first fatal code when several are reported", () => {
+    const { core } = makeCore({});
+    core.report({ type: "error.reported", code: "tts", message: "missing API key" });
+    core.report({ type: "error.reported", code: "stt", message: "socket closed" });
+    expect(core.faultCode).toBe("tts");
+  });
+});

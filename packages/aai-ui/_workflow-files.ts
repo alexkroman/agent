@@ -10,6 +10,8 @@
  * kind of string.
  */
 
+import { isRecord } from "@alexkroman1/aai/utils";
+
 /**
  * The files a submitted field carries, if that is what it carries.
  *
@@ -22,4 +24,26 @@ export function filesOf(value: unknown): File[] {
   if (!Array.isArray(value)) return [];
   const files = value.filter((one): one is File => one instanceof File);
   return files.length > 0 && files.length === value.length ? files : [];
+}
+
+/**
+ * The input properties still carrying a `File` — i.e. the ones that CANNOT survive
+ * being sent.
+ *
+ * A run input is JSON, and `JSON.stringify(new File(…))` is `{}` — no `toJSON`, no
+ * own enumerable properties. So a File left in a payload does not fail to send: it
+ * arrives as an empty object, and the workflow rejects it against whatever its own
+ * schema says the property should be. Measured in production as
+ * `Invalid input for workflow "transcribe": recording: Invalid input` — a message
+ * about a type, on a form where the user had picked a perfectly good file.
+ *
+ * Exported beside {@link filesOf} because it is the same question asked at the
+ * other end: that one decides which fields to UPLOAD, this one checks that none
+ * were missed. Both hooks are the callers.
+ */
+export function fileFields(input: unknown): string[] {
+  if (!isRecord(input)) return [];
+  return Object.entries(input)
+    .filter(([, value]) => filesOf(value).length > 0)
+    .map(([key]) => key);
 }

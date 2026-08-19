@@ -341,7 +341,9 @@ describe("session upgrades (direct-to-tunnel)", () => {
     try {
       const response = await rawUpgrade(ctx.port, `/${ctx.slug}/websocket`);
       expect(response).toMatch(/^HTTP\/1\.1 302 Found/);
-      expect(response).toContain("Location: wss://tunnel.test/websocket");
+      // `https:`, not `wss:` — see `httpScheme` in orchestrator-ws.ts. Same
+      // target; the scheme is what the proxy in front of us can follow.
+      expect(response).toContain("Location: https://tunnel.test/websocket");
       expect(response).toContain(`/${ctx.slug}/client-config`);
       // The long-living endpoint resolves the sandbox like the broker does.
       expect(ctx.sandbox.sessionUrl).toHaveBeenCalled();
@@ -355,7 +357,35 @@ describe("session upgrades (direct-to-tunnel)", () => {
     try {
       const response = await rawUpgrade(ctx.port, `/${ctx.slug}/websocket?sessionId=abc123`);
       expect(response).toMatch(/^HTTP\/1\.1 302 Found/);
-      expect(response).toContain("Location: wss://tunnel.test/websocket?sessionId=abc123");
+      expect(response).toContain("Location: https://tunnel.test/websocket?sessionId=abc123");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  /**
+   * The production crash this scheme rewrite exists for: Modal proxies a WebSocket
+   * upgrade through aiohttp, which REFUSES a redirect to a non-HTTP scheme
+   * (`NonHttpUrlRedirectClientError`) from inside `_proxy_websocket_request` —
+   * a Python traceback in the app log and the container's input torn down, over a
+   * session that had done nothing wrong.
+   *
+   * Asserted as the ABSENCE of `wss:` in the header rather than only as the
+   * presence of `https:`, because the two tests above would both pass on a
+   * `Location` that carried both (a rewrite that appended instead of replacing).
+   */
+  test("the redirect Location never carries a scheme an HTTP proxy cannot follow", async () => {
+    const ctx = await startServerWithOrchestrator();
+    try {
+      const response = await rawUpgrade(ctx.port, `/${ctx.slug}/websocket`);
+      const location = /^Location: (.*)$/m.exec(response)?.[1]?.trim();
+      expect(location).toBeDefined();
+      expect(location).toMatch(/^https:\/\//);
+      expect(location).not.toContain("wss:");
+      // The host and path are untouched — the rewrite must not point a client
+      // somewhere else in the course of fixing the scheme.
+      expect(new URL(String(location)).host).toBe("tunnel.test");
+      expect(new URL(String(location)).pathname).toBe("/websocket");
     } finally {
       await ctx.close();
     }

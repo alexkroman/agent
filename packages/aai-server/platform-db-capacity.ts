@@ -73,9 +73,32 @@ export type PlatformDbCapacity = {
  * "pooled", but the pooler is Supavisor in SESSION mode — mandatory for the
  * Workflow DevKit, and multiplexing nothing — so each is a real backend. See
  * {@link MAX_ACTIVE_APP_DATABASES}.
+ *
+ * **They are in it ONCE, which is the fix.** This used to return
+ * `MAX_PLATFORM_DB_CONNECTIONS + MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT`
+ * — adding the app databases to a constant that already contains them, since
+ * `platform-db-budget.test.ts` asserts `fleetDirect + appTotal <=
+ * MAX_PLATFORM_DB_CONNECTIONS` and `MAX_ACTIVE_APP_DATABASES`'s own doc reads 40
+ * as "the platform's own direct pools take 20 of the 40, which leaves room for
+ * two apps at their entitlement". So the claim came out 20 over: 60 against a
+ * provisioned `max_connections` of 60, which made the overrun warning fire on
+ * EVERY boot (7 of 7 in one production day) and therefore say nothing. A warning
+ * that cannot be cleared is not a warning, and this one guards a control-plane
+ * outage.
+ *
+ * The double count was invisible because both halves read correctly on their own
+ * — the sum is only wrong in relation to what the constant already means. Which
+ * is why the arithmetic now lives in ONE place and both readers come here: the
+ * test asserts this function against the constant, so the two cannot drift back
+ * apart.
  */
 export function platformDbBudget(): number {
-  return MAX_PLATFORM_DB_CONNECTIONS + MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT;
+  // Deliberately the constant itself, not a sum. `MAX_PLATFORM_DB_CONNECTIONS`
+  // IS the total — `MAX_CONTAINERS x platformDbConnectionsPerReplica()` for the
+  // direct pools PLUS `MAX_ACTIVE_APP_DATABASES x APP_DB_CONNECTION_LIMIT` for
+  // the app databases — and `platform-db-budget.test.ts` is what holds it to
+  // that. Re-deriving the sum here is what produced the double count.
+  return MAX_PLATFORM_DB_CONNECTIONS;
 }
 
 /** Read the instance's capacity and compare it against what we claim. */
@@ -105,10 +128,15 @@ export async function readPlatformDbCapacity(sql: SqlExec): Promise<PlatformDbCa
 export function announcePlatformDbCapacity(sql: SqlExec): void {
   readPlatformDbCapacity(sql)
     .then((c) => {
+      // The split is quoted INSIDE the total rather than added to it, because
+      // adding it is the bug this line used to print: "platform budget=60
+      // (40 direct + 2 app databases x 10)" both overstated the claim by 20 and
+      // read as though 60 were the sum of 40 and 20. See `platformDbBudget`.
+      const appTotal = MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT;
       const arithmetic =
         `max_connections=${c.maxConnections}, in use at boot=${c.inUse}, ` +
-        `platform budget=${c.budgeted} (${MAX_PLATFORM_DB_CONNECTIONS} direct + ` +
-        `${MAX_ACTIVE_APP_DATABASES} app databases x ${APP_DB_CONNECTION_LIMIT})`;
+        `platform budget=${c.budgeted} (of which ${MAX_ACTIVE_APP_DATABASES} app ` +
+        `databases x ${APP_DB_CONNECTION_LIMIT} = ${appTotal})`;
       if (c.headroom < 0) {
         console.warn(
           `Platform database budget OVERRUNS the instance by ${-c.headroom} connections: ` +

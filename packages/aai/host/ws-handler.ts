@@ -335,7 +335,20 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         // Socket closed while start() was in flight — the session is already
         // stopped and the buffer discarded; don't mark it ready.
         if (!session) return;
-        log.info("Session ready", { ...ctx, sid });
+        // `start()` resolving is not the same question as "this session works".
+        // A provider that cannot open at all reports a fatal error and lets the
+        // transport start anyway, so production logged `session error (fatal)`
+        // for a missing TTS key and `Session ready` 400ms later — a session that
+        // could never speak, announced as ready, with the two lines in the order
+        // that makes the second one look like the outcome.
+        //
+        // The session still starts (see `SessionCore.faultCode`: the transport
+        // owns that policy, not this log line). What changes is that the line
+        // stops claiming otherwise, and names the code so the pair reads as one
+        // event.
+        const fault = session.faultCode;
+        if (fault === undefined) log.info("Session ready", { ...ctx, sid });
+        else log.warn("Session ready after a fatal error", { ...ctx, sid, code: fault });
         sessionReady = true;
         drainBuffer();
       })

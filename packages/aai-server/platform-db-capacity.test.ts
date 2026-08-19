@@ -47,13 +47,37 @@ const logged = (spy: MockInstance): Promise<void> =>
   });
 
 describe("platformDbBudget", () => {
-  test("counts the app databases the direct budget cannot reach", () => {
-    expect(platformDbBudget()).toBe(
-      MAX_PLATFORM_DB_CONNECTIONS + MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT,
-    );
-    // The correction this module exists for: strictly MORE than the direct
-    // budget alone, because session-mode pooling multiplexes nothing.
-    expect(platformDbBudget()).toBeGreaterThan(MAX_PLATFORM_DB_CONNECTIONS);
+  test("claims the constant, so the app databases are counted exactly once", () => {
+    expect(platformDbBudget()).toBe(MAX_PLATFORM_DB_CONNECTIONS);
+  });
+
+  /**
+   * The regression this pair pins, measured in production: the budget used to be
+   * `MAX_PLATFORM_DB_CONNECTIONS + MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT`
+   * — the app databases added to a constant that already contains them (see
+   * `platform-db-budget.test.ts`, which asserts `fleetDirect + appTotal` fits
+   * INSIDE it). That overstated the claim by exactly `appTotal`, put it at 60 on
+   * an instance whose `max_connections` is 60, and made the overrun warning fire
+   * on all 7 boots of one production day. A warning that cannot be cleared is
+   * indistinguishable from one that is never checked.
+   */
+  test("does not double-count the app databases it already contains", () => {
+    const appTotal = MAX_ACTIVE_APP_DATABASES * APP_DB_CONNECTION_LIMIT;
+    // Guards the guard: with no app-database term there is nothing to double,
+    // and the assertion below would hold over the old arithmetic too.
+    expect(appTotal).toBeGreaterThan(0);
+    expect(platformDbBudget()).not.toBe(MAX_PLATFORM_DB_CONNECTIONS + appTotal);
+  });
+
+  /**
+   * The production reading itself, as a case: `max_connections=60` with the ~17
+   * backends Supabase's own Realtime / PostgREST / Storage workers hold at idle
+   * is the instance this runs on, and it is the reading the warning fired over.
+   * It has to FIT, or the check is back to warning about the shape of the fleet
+   * rather than about the fleet.
+   */
+  test("fits the provisioned instance at its measured idle load", () => {
+    expect(platformDbBudget() + 17).toBeLessThanOrEqual(60);
   });
 });
 
@@ -67,10 +91,24 @@ describe("readPlatformDbCapacity", () => {
   });
 
   test("headroom goes NEGATIVE when the budget overruns the instance", async () => {
-    // The provisioned shape this was written for: a 60-connection instance with
-    // Supabase's own workers already on it.
-    const c = await readPlatformDbCapacity(fakeSql(60, 17));
+    // Derived from the budget rather than written as a literal pair. This was
+    // `fakeSql(60, 17)` — the real provisioned instance at its real idle load —
+    // which the double-counted budget made negative and the corrected one does
+    // not, so the test asserted the bug. Anything past the budget's own headroom
+    // overruns whatever the budget happens to be.
+    const c = await readPlatformDbCapacity(fakeSql(60, 60 - platformDbBudget() + 1));
     expect(c.headroom).toBeLessThan(0);
+  });
+
+  /**
+   * The other side of that pair, and the one the old literal hid: the instance
+   * this actually runs on, at the idle load actually measured on it, must come
+   * out POSITIVE. Without this the check can regress to warning unconditionally
+   * again and every test above it still passes.
+   */
+  test("headroom stays positive on the provisioned instance at idle", async () => {
+    const c = await readPlatformDbCapacity(fakeSql(60, 17));
+    expect(c.headroom).toBeGreaterThanOrEqual(0);
   });
 
   test("reads `show max_connections` positionally, not by column name", async () => {
@@ -97,7 +135,12 @@ describe("announcePlatformDbCapacity", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
-    announcePlatformDbCapacity(fakeSql(60, 17));
+    // A reading that really overruns: the budget plus this much other load is
+    // past 60. Deliberately NOT the (60, 17) production reading this used to
+    // use — that one FITS now (see `platformDbBudget` above), and a warning
+    // asserted against a fitting reading is how the double count stayed green.
+    const inUse = 60 - platformDbBudget() + 5;
+    announcePlatformDbCapacity(fakeSql(60, inUse));
     await logged(warn);
 
     expect(info).not.toHaveBeenCalled();
@@ -105,9 +148,9 @@ describe("announcePlatformDbCapacity", () => {
     expect(message).toContain("OVERRUNS");
     // By how much, and out of what — a warning without the numbers is not
     // actionable, and the overrun is the only number an operator can act on.
-    expect(message).toContain(`${platformDbBudget() + 17 - 60}`);
+    expect(message).toContain(`${platformDbBudget() + inUse - 60}`);
     expect(message).toContain("max_connections=60");
-    expect(message).toContain("in use at boot=17");
+    expect(message).toContain(`in use at boot=${inUse}`);
     expect(message).toContain("MAX_CONTAINERS");
   });
 

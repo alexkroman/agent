@@ -47,6 +47,39 @@ describe("wireSessionSocket", () => {
     });
   });
 
+  /**
+   * The production pair this stops: a missing TTS key reported
+   * `session error (fatal)` and `Session ready` landed 400ms later, so the log read
+   * as though a session that could never speak had come up fine. The session still
+   * STARTS — the transport owns that policy — but the line stops claiming it is
+   * healthy, and carries the code so the two lines read as one event.
+   */
+  test("a session that reported a fatal error is not logged as plainly ready", async () => {
+    const logs: { msg: string; meta: Record<string, unknown> | undefined }[] = [];
+    const record = (msg: string, meta?: Record<string, unknown>) => logs.push({ msg, meta });
+    const logger = { info: record, warn: record, error: record, debug: record };
+
+    const core = makeMockCore({ faultCode: "tts" });
+    const ws = openSocket();
+
+    wireSessionSocket(ws, {
+      sessions: createOwnedMap(),
+      createSession: () => core,
+      readyConfig: defaultConfig,
+      logger,
+    });
+
+    await vi.waitFor(() => {
+      expect(logs).toContainEqual(
+        expect.objectContaining({
+          msg: "Session ready after a fatal error",
+          meta: expect.objectContaining({ code: "tts" }),
+        }),
+      );
+    });
+    expect(logs.map((l) => l.msg)).not.toContain("Session ready");
+  });
+
   test("logs 'Session start failed' when start() rejects", async () => {
     const logs: { msg: string; meta: Record<string, unknown> | undefined }[] = [];
     const record = (msg: string, meta?: Record<string, unknown>) => logs.push({ msg, meta });

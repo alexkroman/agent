@@ -69,8 +69,10 @@ export type WsUpgrades = {
  * the agent's live sandbox — booting it on demand, exactly like the
  * `GET /:slug/client-config` broker — and redirect the handshake to its
  * current session URL, with the caller's query preserved so `?sessionId=`
- * resumes survive the hop. Clients that can't follow a WebSocket redirect
- * get the broker guidance in the body either way; an unknown slug answers
+ * resumes survive the hop and an HTTP scheme on the `Location` (see
+ * {@link httpScheme}, which is a crash fix rather than a nicety). Clients that
+ * can't follow a WebSocket redirect get the broker guidance in the body either
+ * way; an unknown slug answers
  * 404 and a sandbox that failed to start answers 503 (retryable) — the
  * failure taxonomy is `brokerSessionUrl`, shared with the client-config
  * broker so the two can't drift.
@@ -93,12 +95,46 @@ async function answerRedirectUpgrade(
     for (const [k, v] of requestQuery(rawUrl)) {
       location.searchParams.set(k, v);
     }
-    extraHeaders.push(`Location: ${location}`);
+    extraHeaders.push(`Location: ${httpScheme(location)}`);
   }
   const body = sessionUrl
     ? `sessions connect directly to the agent: follow the Location redirect, or GET /${slug}/client-config names the current sessionUrl\n`
     : `sessions connect directly to the agent: GET /${slug}/client-config names the current sessionUrl\n`;
   answerUpgrade(socket, status, body, extraHeaders);
+}
+
+/**
+ * The redirect target with an HTTP scheme, because a `wss:` Location CRASHED the
+ * proxy in front of us.
+ *
+ * `guestOrigin` builds `wss://<tunnel>`, which is the right scheme for the thing
+ * being pointed at and the wrong one to put in a `Location` header. Modal's ASGI
+ * layer proxies a WebSocket upgrade through aiohttp, and aiohttp REFUSES a
+ * redirect to a non-HTTP scheme outright — `NonHttpUrlRedirectClientError` — from
+ * inside `_proxy_websocket_request`, where there is no handler for it. Observed in
+ * production: a full Python traceback in the app log and the container's input
+ * torn down, on a session that had done nothing wrong. The client's retry
+ * connected 3s later, so the cost was a scary log and a dropped attempt rather
+ * than an outage, which is exactly why it went unnoticed.
+ *
+ * Rewriting the scheme keeps the target byte-identical — same host, port, path and
+ * query — and every client is better off for it: a redirect follower that speaks
+ * HTTP (the proxy, `fetch`, aiohttp) can now follow it, and a WebSocket client
+ * upgrades an `https:` URL exactly as it upgrades a `wss:` one, because that is
+ * what a WebSocket handshake IS. RFC 6455 defines no redirect handling for either
+ * spelling, so nothing is being traded away.
+ *
+ * The BODY still names `GET /<slug>/client-config` for clients that follow no
+ * redirect at all, which is most of them — the redirect has always been the
+ * convenience path rather than the contract.
+ */
+function httpScheme(url: URL): string {
+  // A copy: mutating the caller's URL would leave the query-merging above
+  // operating on a value whose scheme has silently changed under it.
+  const http = new URL(url);
+  if (http.protocol === "wss:") http.protocol = "https:";
+  else if (http.protocol === "ws:") http.protocol = "http:";
+  return http.toString();
 }
 
 export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {

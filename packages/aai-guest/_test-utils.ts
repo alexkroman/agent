@@ -11,10 +11,30 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ToolDef } from "@alexkroman1/aai";
 import { executeToolCall } from "@alexkroman1/aai/runtime";
-import { afterEach, beforeEach } from "vitest";
+import { afterEach, beforeEach, type MockInstance, vi } from "vitest";
 import { handleHostResponse, setHostSend } from "./harness-rpc.ts";
 import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "./harness-types.ts";
 import type { runNpm } from "./studio-spawn.ts";
+
+/**
+ * Stub `process.exit` and hand back the spy, so a spec can assert on whether the
+ * guest would have died without dying.
+ *
+ * The ONE typed seam for that cast, which is what earns it. `process.exit` is
+ * declared to return `never`, so a stub that returns normally cannot satisfy the
+ * signature and every call site reached for `(() => undefined) as never` — eleven
+ * of them across the crash-guard specs, each independently laundering a value past
+ * the checker. `as never` is the strongest laundering there is (`never` is
+ * assignable to everything, so it also stops reporting when the signature CHANGES),
+ * and the repo's rule for a concentration of identical casts is one narrowing in
+ * one helper rather than one per assertion.
+ *
+ * `restoreMocks` puts the real `process.exit` back before the next test, so there
+ * is nothing to undo here.
+ */
+export function stubProcessExit(): MockInstance<(code?: number) => never> {
+  return vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+}
 
 /** A settled npm run, defaulting to a clean success. */
 export const npmResult = (over: Partial<Awaited<ReturnType<typeof runNpm>>> = {}) => ({

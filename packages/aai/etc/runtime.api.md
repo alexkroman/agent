@@ -945,6 +945,7 @@ export type SessionCore = {
     configure(config: ReadyConfig): void;
     start(): Promise<void>;
     stop(): Promise<void>;
+    readonly faultCode: string | undefined;
     command(cmd: SessionCommand): void;
     onAudio(bytes: Uint8Array): void;
     announce(instruction: string): boolean;
