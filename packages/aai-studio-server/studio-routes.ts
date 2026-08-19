@@ -53,7 +53,7 @@ import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { registerAccountRoutes } from "./studio-account-routes.ts";
-import { requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
+import { projectNotFound, requestPublicOrigin, type StudioHonoEnv } from "./studio-context.ts";
 import { registerDatabaseRoutes } from "./studio-database-routes.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { createAfterDeploy } from "./studio-deploy-hooks.ts";
@@ -258,7 +258,7 @@ export function createStudioRoutes(options: StudioRouteOptions): {
     // run by any other replica — see `ensureSession`.
     const preview = previewOrigin(c);
     const session = await ensureBroker(c).ensureSession(scope, project, c.var.apiKey, preview);
-    if (!session) return c.json({ error: "Project not found" }, 404);
+    if (!session) return projectNotFound(c);
     // The user just landed on (or re-opened) this project — wake its preview
     // too (fire-and-forget; gates and rationale live in studio-preview.ts).
     wake(c, scope, project);

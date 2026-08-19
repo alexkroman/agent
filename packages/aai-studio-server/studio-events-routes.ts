@@ -29,8 +29,14 @@
 import { reserveLiveStream } from "aai-server/live-streams";
 import type { Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import type { StudioHonoEnv } from "./studio-context.ts";
-import { createSharedReads, createSsePusher, type Frame, projectPayload } from "./studio-sse.ts";
+import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";
+import {
+  createSharedReads,
+  createSsePusher,
+  type Frame,
+  projectPayload,
+  type SsePusher,
+} from "./studio-sse.ts";
 import { getWorkspace, listProjects, projectKey } from "./studio-workspace.ts";
 
 /**
@@ -58,6 +64,35 @@ const TOO_MANY_STREAMS = {
   error: "Too many concurrent event streams — close some tabs and retry",
 } as const;
 
+/**
+ * The scaffolding both streams share: the caller's stream slot, the SSE
+ * response, and the hold-open-until-disconnect lifecycle.
+ *
+ * `wire` gets the pusher, subscribes its watchers, pushes the initial frame
+ * THROUGH it (that ordering is the module doc's whole subject), and returns the
+ * cleanup for whatever it subscribed. The slot release stays in a `finally`
+ * rather than joining that cleanup: everything `wire` does can throw, and a
+ * slot leaked that way is one scope permanently answered 429 until a replica
+ * restarts. It was spelled twice, with the second copy pointing a comment at
+ * the first.
+ */
+function studioEventStream(
+  c: Context<StudioHonoEnv>,
+  scope: string,
+  wire: (sse: SsePusher) => () => void,
+): Response {
+  const slot = reserveLiveStream(scope);
+  if (!slot) return c.json(TOO_MANY_STREAMS, 429);
+  return streamSSE(c, async (stream) => {
+    try {
+      const sse = createSsePusher(stream);
+      await sse.wait(wire(sse));
+    } finally {
+      slot();
+    }
+  });
+}
+
 export function registerEventRoutes(
   studio: Hono<StudioHonoEnv>,
   /** The caller's workspace namespace — `requestScope` in studio-routes.ts. */
@@ -69,39 +104,29 @@ export function registerEventRoutes(
   // `/projects/events`) because "events" is a valid project name.
   studio.get("/events", (c) => {
     const scope = requestScope(c);
-    // Reserved BEFORE the response becomes a stream, for the same reason the
-    // project route answers its 404 first: once `streamSSE` has taken the
-    // response there is no status left to send.
-    const slot = reserveLiveStream(scope);
-    if (!slot) return c.json(TOO_MANY_STREAMS, 429);
     // Destructured BEFORE the reader closure, for the reason `ensureBroker`
     // documents: a shared reader outlives the request that created it (later
     // streams on the same key reuse the FIRST `read`), so closing over `c`
     // pins that request — its body, its headers, its response — for the whole
     // time some tab, anywhere, is still watching this scope.
     const workspaces = c.env.workspaces;
-    return streamSSE(c, async (stream) => {
-      // `finally`, not the `wait` cleanup: everything between here and `wait`
-      // can throw (a reader, a watcher subscribe), and a slot leaked that way
-      // is not a slow leak — it is one scope permanently answered 429, cured
-      // only by a replica restart. The release is idempotent, so covering
-      // every exit costs nothing.
-      try {
-        const sse = createSsePusher(stream);
-        const reads = scopeReads.acquire(scope, async () => ({
-          event: "projects",
-          data: JSON.stringify(await listProjects(workspaces, scope)),
-        }));
-        const frame = (): Promise<Frame> => reads.trigger();
-        const unwatch = c.env.events.watchScopeProjects(scope, () => sse.push(frame));
-        sse.push(frame);
-        await sse.wait(() => {
-          unwatch();
-          reads.release();
-        });
-      } finally {
-        slot();
-      }
+    const events = c.env.events;
+    // The slot is reserved BEFORE the response becomes a stream (see
+    // `studioEventStream`), for the same reason the project route answers its
+    // 404 first: once `streamSSE` has taken the response there is no status
+    // left to send.
+    return studioEventStream(c, scope, (sse) => {
+      const reads = scopeReads.acquire(scope, async () => ({
+        event: "projects",
+        data: JSON.stringify(await listProjects(workspaces, scope)),
+      }));
+      const frame = (): Promise<Frame> => reads.trigger();
+      const unwatch = events.watchScopeProjects(scope, () => sse.push(frame));
+      sse.push(frame);
+      return () => {
+        unwatch();
+        reads.release();
+      };
     });
   });
 
@@ -115,51 +140,40 @@ export function registerEventRoutes(
     // — see the note in `GET /events`.
     const workspaces = c.env.workspaces;
     const chats = c.env.chats;
+    const events = c.env.events;
     // Existence only — the frames below re-read. A 404 has to be answerable
     // before the response becomes a stream.
-    if (!(await getWorkspace(workspaces, scope, project))) {
-      return c.json({ error: "Project not found" }, 404);
-    }
+    if (!(await getWorkspace(workspaces, scope, project))) return projectNotFound(c);
     // Keyed by SCOPE, not by project: the resource being bounded is what one
     // caller holds open across this replica, and a per-project key would let a
     // caller cycling project names hold unlimited streams — the same evasion
     // that made the scope-keyed rate limits decorative before they were paired
     // with an IP key.
-    const slot = reserveLiveStream(scope);
-    if (!slot) return c.json(TOO_MANY_STREAMS, 429);
-    return streamSSE(c, async (stream) => {
-      // See the `finally` note in `GET /events`.
-      try {
-        const sse = createSsePusher(stream);
-        const key = projectKey(scope, project);
-        const projectReader = projectReads.acquire(key, async () => {
-          const current = await getWorkspace(workspaces, scope, project);
-          // A vanished workspace (project deleted) ends the stream; the client's
-          // other queries surface the 404. Shared, so it ends EVERY stream on
-          // this project — which is what deleting a project should do.
-          if (!current) return null;
-          return { event: "project", data: JSON.stringify(projectPayload(current)) };
-        });
-        const chatReader = chatReads.acquire(key, async () => ({
-          event: "chat",
-          data: JSON.stringify((await chats.getChat(scope, project)) ?? []),
-        }));
-        const projectFrame = (): Promise<Frame> => projectReader.trigger();
-        const chatFrame = (): Promise<Frame> => chatReader.trigger();
-        const unwatchWorkspace = c.env.events.watchWorkspace(scope, project, () =>
-          sse.push(projectFrame),
-        );
-        const unwatchChat = c.env.events.watchChat(scope, project, () => sse.push(chatFrame));
-        sse.push(projectFrame);
-        await sse.wait(() => {
-          unwatchWorkspace();
-          unwatchChat();
-          projectReader.release();
-          chatReader.release();
-        });
-      } finally {
-        slot();
-      }
+    return studioEventStream(c, scope, (sse) => {
+      const key = projectKey(scope, project);
+      const projectReader = projectReads.acquire(key, async () => {
+        const current = await getWorkspace(workspaces, scope, project);
+        // A vanished workspace (project deleted) ends the stream; the client's
+        // other queries surface the 404. Shared, so it ends EVERY stream on
+        // this project — which is what deleting a project should do.
+        if (!current) return null;
+        return { event: "project", data: JSON.stringify(projectPayload(current)) };
+      });
+      const chatReader = chatReads.acquire(key, async () => ({
+        event: "chat",
+        data: JSON.stringify((await chats.getChat(scope, project)) ?? []),
+      }));
+      const projectFrame = (): Promise<Frame> => projectReader.trigger();
+      const chatFrame = (): Promise<Frame> => chatReader.trigger();
+      const unwatchWorkspace = events.watchWorkspace(scope, project, () => sse.push(projectFrame));
+      const unwatchChat = events.watchChat(scope, project, () => sse.push(chatFrame));
+      sse.push(projectFrame);
+      return () => {
+        unwatchWorkspace();
+        unwatchChat();
+        projectReader.release();
+        chatReader.release();
+      };
     });
   });
 }

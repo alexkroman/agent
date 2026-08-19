@@ -25,7 +25,8 @@ import {
 } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
 import { MAX_STUDIO_FILES } from "./studio-limits.ts";
-import type { PreviewQueue } from "./studio-preview-queue.ts";
+import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
+import { createMemoryStudioSessionRegistry } from "./studio-session-registry.ts";
 
 // The orchestrator constructs its studio routes internally; intercept the
 // deploy pipeline, the session broker, and the preview wake at the module
@@ -250,10 +251,12 @@ describe("browser-session scoping", () => {
 describe("session broker wiring", () => {
   test("forwards the fleet options and a Vault-backed key resolver", async () => {
     brokerMock.mockClear();
-    const registry = { claim: vi.fn(), release: vi.fn() } as unknown as NonNullable<
-      Parameters<typeof createTestCombined>[0]
-    >["studioSessionRegistry"];
-    const previewQueue = { enqueue: vi.fn() } as unknown as PreviewQueue;
+    // The REAL memory implementations rather than two-method literals cast into
+    // the interfaces: the broker is faked here, so nothing calls either one and
+    // this asserts pass-through by identity — and a cast at that seam stops
+    // reporting the day either interface grows a method.
+    const registry = createMemoryStudioSessionRegistry();
+    const previewQueue = createMemoryPreviewQueue();
 
     const secrets = createMemorySecretStore();
     const combined = await createTestCombined({

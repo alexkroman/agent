@@ -172,10 +172,11 @@ export function createMemoryStudioSessionRegistry(
 
   return {
     get(scope, project) {
-      const row = rows.get(projectKey(scope, project));
+      const key = projectKey(scope, project);
+      const row = rows.get(key);
       if (!row) return Promise.resolve(null);
       if (row.expiresAt <= Date.now()) {
-        rows.delete(projectKey(scope, project));
+        rows.delete(key);
         return Promise.resolve(null);
       }
       return Promise.resolve(row.record);
@@ -190,8 +191,8 @@ export function createMemoryStudioSessionRegistry(
       return Promise.resolve();
     },
     release(scope, project, owner) {
-      const row = rows.get(projectKey(scope, project));
-      if (row?.record.owner === owner) rows.delete(projectKey(scope, project));
+      const key = projectKey(scope, project);
+      if (rows.get(key)?.record.owner === owner) rows.delete(key);
       return Promise.resolve();
     },
   };

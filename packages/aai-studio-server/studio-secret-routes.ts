@@ -19,7 +19,7 @@ import { zValidator } from "@hono/zod-validator";
 import { SecretKeySchema, SecretUpdatesSchema } from "aai-server/schemas";
 import type { Context, Hono } from "hono";
 import { z } from "zod";
-import type { StudioHonoEnv } from "./studio-context.ts";
+import { projectNotFound, type StudioHonoEnv } from "./studio-context.ts";
 import {
   deleteProjectSecret,
   type ProjectSecretsEnv,
@@ -28,6 +28,7 @@ import {
   setProjectSecrets,
 } from "./studio-secrets.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
+import type { AfterDeploy } from "./studio-session-publish.ts";
 import { schedulePreviewFor } from "./studio-settled-edit.ts";
 
 /**
@@ -60,7 +61,7 @@ export function registerSecretRoutes(
   studio.get("/projects/:project/secret", async (c) => {
     const { scope, project, apiKey } = c.var;
     const state = await projectSecretsState(secretsEnvFor(c), { scope, project, apiKey });
-    if (!state) return c.json({ error: "Project not found" }, 404);
+    if (!state) return projectNotFound(c);
     return c.json(state);
   });
 
@@ -73,7 +74,7 @@ export function registerSecretRoutes(
       updates: c.req.valid("json"),
       schedulePreview: () => redeployPreview(c, scope, project),
     });
-    if (!state) return c.json({ error: "Project not found" }, 404);
+    if (!state) return projectNotFound(c);
     return c.json(state);
   });
 
@@ -89,7 +90,7 @@ export function registerSecretRoutes(
         key: c.req.valid("param").key,
         schedulePreview: () => redeployPreview(c, scope, project),
       });
-      if (!state) return c.json({ error: "Project not found" }, 404);
+      if (!state) return projectNotFound(c);
       return c.json(state);
     },
   );
@@ -102,9 +103,7 @@ export function registerSecretRoutes(
  * the request env rather than the Context, which is what makes it safe to
  * hand to a broker that outlives the request.
  */
-export function secretsDeployHook(
-  c: Context<StudioHonoEnv>,
-): (scope: string, project: string, slug: string) => Promise<void> {
+export function secretsDeployHook(c: Context<StudioHonoEnv>): AfterDeploy {
   const env = secretsEnvFor(c);
   return (scope, project, slug) => reconcileProjectSecrets(env, { scope, project, slug });
 }

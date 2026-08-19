@@ -207,8 +207,14 @@ export async function projectSecretsState(
 ): Promise<ProjectSecretsState | null> {
   const project = resolved ?? (await resolveProject(env, params));
   if (project === null) return null;
-  const listed = await overProjectAgents(project, (slug) => listSlugSecrets(env, slug));
-  const held = Object.keys(await readProjectSecrets(env, params.scope, params.project));
+  // Independent reads — the per-agent listing and the project's own record
+  // touch different stores, and this runs on the panel's GET as well as after
+  // every mutation.
+  const [listed, record] = await Promise.all([
+    overProjectAgents(project, (slug) => listSlugSecrets(env, slug)),
+    readProjectSecrets(env, params.scope, params.project),
+  ]);
+  const held = Object.keys(record);
   const byEnvironment = new Map(listed.map((entry) => [entry.environment, entry]));
   const environments: ProjectSecretsEnvironmentState[] = PROJECT_ENVIRONMENTS.map((environment) => {
     const entry = byEnvironment.get(environment);
@@ -225,9 +231,10 @@ export async function projectSecretsState(
 }
 
 /**
- * Merge `updates` into the project's own record AND every agent it already
- * has. The record is written FIRST, in both this and
- * {@link deleteProjectSecret}, for the reason `setProjectDatabase` stamps its
+ * The sequence EVERY secret mutation runs, spelled once — because the order is
+ * the invariant, and both of its steps are a hazard that was got wrong before.
+ *
+ * The record is written FIRST, for the reason `setProjectDatabase` stamps its
  * flag first: a deploy racing this reads the record to decide what to inject,
  * so writing it last would let an update miss a deploy that landed in between
  * — and let a delete be undone by one.
@@ -241,34 +248,55 @@ export async function projectSecretsState(
  * later project taking that name inherited a stranger's values on its first
  * deploy. Resolving first costs nothing: the mutation needs the workspace and
  * its owned slugs anyway.
+ *
+ * Only the CHANGE differs between the two callers below — what the project's
+ * record becomes, and the same change against one deployed agent.
+ *
+ * @returns the resulting state, or null when the project does not exist.
  */
-export async function setProjectSecrets(
+async function mutateProjectSecrets(
   env: ProjectSecretsEnv,
-  params: MutationParams & { updates: Record<string, string> },
+  params: MutationParams,
+  change: {
+    /** The project's own record after the change. */
+    record: (held: Record<string, string>) => Record<string, string>;
+    /** The same change applied to one of the project's deployed agents. */
+    perAgent: (slug: string) => Promise<unknown>;
+  },
 ): Promise<ProjectSecretsState | null> {
   const { scope, project } = params;
   const resolved = await resolveProject(env, params);
   if (resolved === null) return null;
   const held = await readProjectSecrets(env, scope, project);
-  await writeProjectSecrets(env, scope, project, { ...held, ...params.updates });
-  await overProjectAgents(resolved, (slug) => setSlugSecrets(env, slug, params.updates));
+  await writeProjectSecrets(env, scope, project, change.record(held));
+  await overProjectAgents(resolved, change.perAgent);
   await redeployPreview(env, params, resolved);
   return projectSecretsState(env, params, resolved);
 }
 
+/**
+ * Merge `updates` into the project's own record AND every agent it already
+ * has — see {@link mutateProjectSecrets} for the ordering both mutations obey.
+ */
+export function setProjectSecrets(
+  env: ProjectSecretsEnv,
+  params: MutationParams & { updates: Record<string, string> },
+): Promise<ProjectSecretsState | null> {
+  return mutateProjectSecrets(env, params, {
+    record: (held) => ({ ...held, ...params.updates }),
+    perAgent: (slug) => setSlugSecrets(env, slug, params.updates),
+  });
+}
+
 /** Drop `key` from the project's record and from every agent it has. */
-export async function deleteProjectSecret(
+export function deleteProjectSecret(
   env: ProjectSecretsEnv,
   params: MutationParams & { key: string },
 ): Promise<ProjectSecretsState | null> {
-  const { scope, project, key } = params;
-  const resolved = await resolveProject(env, params);
-  if (resolved === null) return null;
-  const { [key]: _dropped, ...rest } = await readProjectSecrets(env, scope, project);
-  await writeProjectSecrets(env, scope, project, rest);
-  await overProjectAgents(resolved, (slug) => deleteSlugSecret(env, slug, key));
-  await redeployPreview(env, params, resolved);
-  return projectSecretsState(env, params, resolved);
+  return mutateProjectSecrets(env, params, {
+    record: ({ [params.key]: _dropped, ...rest }) => rest,
+    perAgent: (slug) => deleteSlugSecret(env, slug, params.key),
+  });
 }
 
 /**

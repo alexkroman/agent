@@ -135,7 +135,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     project: string,
     apiKey: string,
     /** Pre-read workspace; the cold path reads it BEFORE spawning a sandbox. */
-    known?: Awaited<ReturnType<typeof getWorkspace>>,
+    known?: StudioWorkspace,
     /** This sandbox's existing token; absent on a cold spawn. */
     existingToken?: string,
   ): Promise<string | null> {
@@ -237,7 +237,7 @@ export function createSessionInstaller(deps: SessionInstallerDeps): SessionInsta
     scope: string,
     project: string,
     apiKey: string,
-    workspace: Awaited<ReturnType<typeof getWorkspace>>,
+    workspace: StudioWorkspace,
   ): Promise<string | null> {
     try {
       wire(warm, key, scope, project);

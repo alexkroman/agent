@@ -129,6 +129,13 @@ function parseJob(raw: unknown): PreviewJob | null {
  * under whatever connection happened to notice.
  */
 export function createPgPreviewQueue(sql: SqlExec): PreviewQueue {
+  // Named rather than reached through `this` inside `claim`: the unreadable-job
+  // path is the one caller, and a method that depends on its receiver breaks
+  // the moment the queue is destructured or wrapped (the test doubles do both).
+  const archive = async (id: string): Promise<void> => {
+    await sql("select pgmq.archive($1, $2::bigint)", [PREVIEW_QUEUE, id]);
+  };
+
   return {
     async enqueue(job) {
       await sql("select pgmq.send($1, $2::text::jsonb)", [PREVIEW_QUEUE, JSON.stringify(job)]);
@@ -149,7 +156,7 @@ export function createPgPreviewQueue(sql: SqlExec): PreviewQueue {
           // is how a job written by an older/newer shape stops costing us a
           // redelivery every visibility timeout.
           console.warn(`Archiving unreadable preview job ${id}`);
-          await this.archive(id).catch(() => undefined);
+          await archive(id).catch(() => undefined);
           continue;
         }
         claimed.push({ id, job, attempts: Number(row.read_ct ?? 1) });
@@ -161,9 +168,7 @@ export function createPgPreviewQueue(sql: SqlExec): PreviewQueue {
       await sql("select pgmq.delete($1, $2::bigint)", [PREVIEW_QUEUE, id]);
     },
 
-    async archive(id) {
-      await sql("select pgmq.archive($1, $2::bigint)", [PREVIEW_QUEUE, id]);
-    },
+    archive,
   };
 }
 

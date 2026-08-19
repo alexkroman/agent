@@ -109,3 +109,13 @@ export function lastWake(): Parameters<typeof wakeProjectPreview>[0] {
 export function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
   return authFetch(fetch, "/studio/projects", { body: { name }, key });
 }
+
+/**
+ * The project names `key` can see — the answer every scoping assertion is
+ * about, and the read four suites open-coded as a doubly-nested `await` plus a
+ * cast to re-narrow the body they had just parsed.
+ */
+export async function listedProjects(fetch: TestFetch, key = "key1"): Promise<string[]> {
+  const res = await authFetch(fetch, "/studio/projects", { method: "GET", key });
+  return ((await res.json()) as { projects: string[] }).projects;
+}

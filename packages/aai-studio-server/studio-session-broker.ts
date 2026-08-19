@@ -30,8 +30,10 @@
  */
 
 import { createOwnedMap } from "@alexkroman1/aai/internal";
+import type { ChatStore } from "aai-server/chat-store";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
+import type { WorkspaceStore } from "aai-server/workspace-store";
 import { createPreviewDeployer, type PreviewOrigin, type PreviewTarget } from "./studio-preview.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
@@ -55,8 +57,8 @@ export type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-ses
 export { chatUrlForGuest } from "./studio-session-wire.ts";
 
 type BrokerStores = {
-  workspaces: import("aai-server/workspace-store").WorkspaceStore;
-  chats: import("aai-server/chat-store").ChatStore;
+  workspaces: WorkspaceStore;
+  chats: ChatStore;
 };
 
 export type StudioSessionBrokerOptions = BrokerStores & {

@@ -52,7 +52,7 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import fc from "fast-check";
 import { expect, test } from "vitest";
-import { createPreviewDeployer } from "./studio-preview.ts";
+import { createPreviewDeployer, type PreviewDeployerOptions } from "./studio-preview.ts";
 import {
   createMemoryPreviewQueue,
   PREVIEW_JOB_MAX_ATTEMPTS,
@@ -166,7 +166,11 @@ async function runPreviewPipeline(
   const inFlight = new Map<string, number>();
   let quiescing = false;
   let deployIndex = 0;
-  const deployWorkspace = async (_scope: string, project: string): Promise<unknown> => {
+  // Typed as the seam it stands in for, not `Promise<unknown>` cast in with
+  // `as never`: that cast also stops reporting the day `WorkspaceDeployOutcome`
+  // gains a field, and a preview deploy's outcome shape is exactly what these
+  // properties are about.
+  const deployWorkspace: PreviewDeployerOptions["deployWorkspace"] = async (_scope, project) => {
     const depth = (inFlight.get(project) ?? 0) + 1;
     inFlight.set(project, depth);
     if (depth > 1) problems.push(`${depth} concurrent deploys of ${project}`);
@@ -185,7 +189,7 @@ async function runPreviewPipeline(
         reached.buildErrors += 1;
         return { ok: false, output: "build error: missing ;" };
       }
-      return { ok: true, slug: `${project}-preview` };
+      return { ok: true, slug: `${project}-preview`, output: "Deployed" };
     } finally {
       inFlight.set(project, (inFlight.get(project) ?? 1) - 1);
     }
@@ -193,7 +197,7 @@ async function runPreviewPipeline(
 
   const deployer = createPreviewDeployer({
     workspaces: store,
-    deployWorkspace: deployWorkspace as never,
+    deployWorkspace,
     queue,
     // The timer is off: the interleaving drives `drainOnce` itself, so a run
     // replays identically instead of depending on wall-clock timing.
@@ -355,10 +359,10 @@ test("preview queue: a crash-looping job is archived past the cap, never before"
           workspaces: store,
           // Every deploy dies mid-flight: the job is left unacked and comes
           // back on the next visibility window.
-          deployWorkspace: (async () => {
+          deployWorkspace: async () => {
             await s.schedule(Promise.resolve(), "deploy");
             throw new Error("sandbox died mid-deploy");
-          }) as never,
+          },
           queue,
           pollMs: 0,
         });
@@ -411,10 +415,12 @@ test("preview queue: an undo clears the banner its failed edit left", async () =
       let ok = true;
       const deployer = createPreviewDeployer({
         workspaces: store,
-        deployWorkspace: (async () => {
+        deployWorkspace: async () => {
           await s.schedule(Promise.resolve(), "deploy");
-          return ok ? { ok: true, slug: "alpha-a1b2c3-preview" } : { ok: false, output: "boom" };
-        }) as never,
+          return ok
+            ? { ok: true, slug: "alpha-a1b2c3-preview", output: "Deployed" }
+            : { ok: false, output: "boom" };
+        },
         queue,
         pollMs: 0,
       });
@@ -459,7 +465,11 @@ test("preview queue: an undo clears the banner its failed edit left", async () =
 
       const workspace = await getWorkspace(store, SCOPE, "alpha-a1b2c3");
       expect(workspace?.previewError, "the banner outlived the edit it described").toBeUndefined();
-      expect(workspace?.previewHash).toBe(currentFilesHash(workspace as never));
+      // The stamp still names the deploy the undo returned to — compared
+      // against the hash captured from THAT deploy rather than re-derived from
+      // the document being asserted on (which needed a cast to read past its
+      // own null, and made the claim nearly circular).
+      expect(workspace?.previewHash).toBe(deployedHash);
     }),
     { numRuns: 40 },
   );

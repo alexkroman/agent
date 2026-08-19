@@ -7,40 +7,29 @@
 import { authFetch } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import { claimSlug, type FakeAppDb, fakeAppDb } from "./_studio-agents-test-utils.ts";
-import { createProject } from "./_studio-routes-test-utils.ts";
+import {
+  brokerMock,
+  brokerOptions,
+  createProject,
+  schedulePreviewMock,
+} from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
-import type {
-  createStudioSessionBroker,
-  StudioSessionBroker,
-  StudioSessionBrokerOptions,
-} from "./studio-session-broker.ts";
 import { getWorkspace, mutateWorkspace, studioScope } from "./studio-workspace.ts";
 
-// The broker is faked: enabling the database schedules a preview deploy, and
-// a real broker would try to spawn a harness for it. Capturing the options is
-// also how the long-lived `afterDeploy` hook is asserted.
-const schedulePreviewMock = vi.fn();
-const brokerMock = vi.fn(
-  (..._args: Parameters<typeof createStudioSessionBroker>): StudioSessionBroker => ({
-    ensureSession: async () => ({ url: "https://tunnel.example/studio/chat", token: "t" }),
-    refreshSession: async () => true,
-    schedulePreview: (...args: Parameters<StudioSessionBroker["schedulePreview"]>) =>
-      schedulePreviewMock(...args),
-    deployWorkspace: async () => ({ ok: true, slug: "proj", output: "" }),
-    dispose: async () => undefined,
-  }),
-);
-let brokerOptions: StudioSessionBrokerOptions | undefined;
-/** Read through a function so the assignment above doesn't narrow the type. */
-const wiredBroker = (): StudioSessionBrokerOptions | undefined => brokerOptions;
+// The broker is faked: enabling the database schedules a preview deploy, and a
+// real broker would try to spawn a harness for it. The fakes are the SHARED
+// ones (_studio-routes-test-utils.ts) — this file kept a second copy of them,
+// including its own reader for the options the routes pass, which is how the
+// two came to disagree on what a faked broker answers. Only the `vi.mock` call
+// itself has to be local: the factory is hoisted above the imports, hence the
+// `await import()` inside it.
 vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-session-broker.ts")>();
+  const { brokerMock: mock } = await import("./_studio-routes-test-utils.ts");
   return {
     ...original,
-    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) => {
-      brokerOptions = args[0];
-      return brokerMock(...args);
-    },
+    createStudioSessionBroker: (...args: Parameters<typeof original.createStudioSessionBroker>) =>
+      mock(...args),
   };
 });
 
@@ -149,10 +138,13 @@ describe("project database routes", () => {
     // broker's one publisher, so this hook is what makes the switch reach an
     // environment that did not exist when it was flipped.
     const appDb = fakeAppDb();
+    // Cleared so `brokerOptions()` reads THIS test's broker: the fake is shared
+    // across the file, and an earlier case's options carry an earlier app.
+    brokerMock.mockClear();
     const { fetch, workspaces, store } = await publishedProject(appDb);
     // Enabling redeploys the preview, which is what builds the broker here.
     await authFetch(fetch, "/studio/projects/proj/database", { body: {} });
-    const afterDeploy = wiredBroker()?.afterDeploy;
+    const afterDeploy = brokerOptions().afterDeploy;
     expect(afterDeploy).toBeTypeOf("function");
 
     // A slug claimed by a LATER deploy — the case the hook exists for.
