@@ -583,8 +583,8 @@ across the whole sweep with a 1s gap, and the far side penalises a connection
 after it trips — so every cell inherited the previous cell's penalty and the
 widest cells, run last, looked catastrophic. It also printed `HTTP/1.1` while
 pinning nothing. Both are fixed (transport pinned in both arms, a fresh connection
-per run, 30s default gap), and **`pnpm bench:uploads --target <agent base url>` is
-believable now** — but two limits stand: it is Node's `fetch`, which spreads width
+per run, 30s default gap), and **`pnpm bench:uploads --target <base>` is believable
+now** — but two limits stand: it is Node's `fetch`, which spreads width
 across CONNECTIONS where a browser multiplexes ONE h2 connection, so no number it
 prints is a browser number; and sustained throughput is metered, measured decaying
 6.5 -> 1.9 MB/s over one sweep against a 13.6 MB/s link, so a cell run late reads

@@ -96,7 +96,7 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * sizes measured (1.8 MB/s). 32 MiB buys nothing over 16 and is the noisiest.
  *
  * It is not taken, because the number the platform reacts to is the PRODUCT with
- * {@link UPLOAD_PART_CONCURRENCY}, and three costs land on it rather than on the
+ * `UPLOAD_PART_CONCURRENCY`, and three costs land on it rather than on the
  * size alone:
  *
  * - **Platform memory.** `_upload-blobs-http.ts` buffers a whole window to hand
