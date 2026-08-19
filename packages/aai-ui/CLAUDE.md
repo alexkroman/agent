@@ -715,6 +715,37 @@ the step and its attempt, and past the first the reporter appends
 as one that is succeeding, sixty times, and a reader cannot tell a slow run from
 a wedged one.
 
+### `emit()` is the other channel, and it makes a run's ANSWER streamable
+
+`report()` writes a sentence for a person. **`emit(namespace, chunk)`** writes a
+VALUE for a program, into a stream named by the caller — which is what lets a long
+fan-out hand over each result as it lands. Without it a run's partial results have
+nowhere to go: a snapshot carries a status and, once terminal, an output, so a
+sixty-segment transcription that has finished forty of them has forty answers and
+no way to show any of them.
+
+The READ half already existed and needed nothing: `streamOutput({ namespace })`
+and `useWorkflowProgress<T>(runId, { namespace })` have taken one since they were
+written. What was missing was the write.
+
+**The namespace is REQUIRED, and that is the point of the argument.** The default
+stream is `report()`'s, and a page renders those chunks verbatim — an object in
+there is `[object Object]` in the middle of the progress log. A named stream is
+also what lets `useWorkflowProgress<T>` be typed at all, since a subscription
+then carries one shape.
+
+Everything else is `report()`'s rule: call it from a STEP (a body replays), it is
+best-effort, and the chunks are RETAINED with the run so a reader that arrives
+late gets the whole stream. It is NOT logged — a structured chunk per item would
+bury the narration beside it — which is the one place the two paths differ inside
+`host/workflow-report.ts`.
+
+`transcription-workflow` is the worked example on both ends: each segment is
+emitted as it lands, and the page stitches whatever has arrived with the RUN's own
+seam function, so the live transcript and the stored one cannot become two
+different transcripts of one recording. `stubReporter()`
+(`@alexkroman1/aai/testing`) is how a spec asserts either half.
+
 Two more things a step should reach for rather than hand-roll, both on
 `/utils`: `isTransientStatus(status)` (the 408/429/5xx split every template had
 its own copy of) and `retryAfter(response)`, which is what carries a rate

@@ -43,7 +43,7 @@
  */
 
 import type { Db } from "../sdk/db.ts";
-import { mapInBatches } from "../sdk/map-in-batches.ts";
+import { mapConcurrent } from "../sdk/map-concurrent.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { formatSchemaIssues, toToolJsonSchema } from "../sdk/schema.ts";
 import { errorMessage } from "../sdk/utils.ts";
@@ -291,12 +291,12 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     ): Promise<WorkflowRunSnapshot[]> {
       const { name } = resolve(workflow);
       const runIds = await keys.lookup(name, key, resolveFindLimit(options?.limit));
-      const records = await mapInBatches(runIds, RUN_READ_CONCURRENCY, (id) => wdk.getRun(id));
+      const records = await mapConcurrent(runIds, RUN_READ_CONCURRENCY, (id) => wdk.getRun(id));
       // A recorded id whose run is gone is dropped rather than reported: runs
       // expire, and a `find` that threw because one of five results had aged out
       // would be useless exactly when history matters. The key stays indexed —
       // sweeping it would need a second writer for no read it affects.
-      return await mapInBatches(
+      return await mapConcurrent(
         records.filter((r): r is WdkRunRecord => r !== undefined),
         RUN_READ_CONCURRENCY,
         (r) => toSnapshot(r, key),
@@ -312,7 +312,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // WDK's own store and so takes WDK's own identifier.
       const { def } = resolve(workflow);
       const records = await wdk.listRuns(workflowIdOf(def), resolveFindLimit(options?.limit));
-      return await mapInBatches(records, RUN_READ_CONCURRENCY, (r) => toSnapshot(r, undefined));
+      return await mapConcurrent(records, RUN_READ_CONCURRENCY, (r) => toSnapshot(r, undefined));
     },
 
     cancel(runId: string): Promise<boolean> {

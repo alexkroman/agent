@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The published half of {@link report}: one progress line becomes a stream chunk
- * AND a server-log line.
+ * The published half of {@link report} and {@link emit}: one call becomes a
+ * stream chunk, and — for a narration line — a server-log line beside it.
  *
  * `sdk/step-report.ts` is the surface a step calls and may import neither the
  * DevKit (it is on the CLI's zero-dependency startup path and rides the browser
@@ -42,7 +42,7 @@ import type { Logger } from "./runtime-config.ts";
 
 /** The two DevKit entry points a report reads, as that package exports them. */
 type WorkflowRuntime = {
-  getWritable?: <T>() => WritableStream<T>;
+  getWritable?: <T>(options?: { namespace?: string }) => WritableStream<T>;
   getStepMetadata?: () => { stepName: string; stepId: string; attempt: number };
 };
 
@@ -87,38 +87,68 @@ function stepMetadata(
  * @internal
  */
 export function createStepReporter(logger: Logger): StepReporter {
-  return async (line: string): Promise<void> => {
+  return async (chunk: unknown, options): Promise<void> => {
     const mod = await loadDevkit();
     const step = stepMetadata(mod);
+    const namespace = options?.namespace;
     // **The attempt is part of the LINE, not just the log context.** A fan-out
     // that is retrying looks identical in a progress stream to one that is
     // succeeding — `report()` prints the same sentence each attempt — so a
     // reader watching sixty segments cannot tell a slow run from a wedged one.
     // Only past the first, so the ordinary case reads as the author wrote it.
-    const written = step && step.attempt > 1 ? `${line} (attempt ${step.attempt})` : line;
+    //
+    // Only a LINE gets it. `emit()`'s chunk is a value a program parses, and a
+    // suffix on it is either lost or corruption — its retries are visible in the
+    // narration beside it, which is the reader that can read a suffix.
+    const written =
+      typeof chunk === "string" && step && step.attempt > 1
+        ? `${chunk} (attempt ${step.attempt})`
+        : chunk;
     // The log first: it is the reader that cannot go away, and a stream write
-    // that throws must not cost the operator the line.
-    logger.info(`Workflow: ${written}`, {
-      ...(step ? { step: step.stepName, stepId: step.stepId, attempt: step.attempt } : {}),
-    });
+    // that throws must not cost the operator the line. `emit()` passes
+    // `log: false`, because a structured chunk per item would bury the narration
+    // it sits beside.
+    if (options?.log !== false) {
+      logger.info(`Workflow: ${String(written)}`, {
+        ...(step ? { step: step.stepName, stepId: step.stepId, attempt: step.attempt } : {}),
+      });
+    }
     try {
-      await writeChunk(mod, written);
+      await writeChunk(mod, written, namespace);
     } catch (err: unknown) {
       // Not `logger.warn`: a page that closed mid-run makes this the ordinary
       // case, and a warn per step would bury the narration it sits beside.
-      logger.debug?.("Workflow progress not streamed", { error: errorMessage(err) });
+      logger.debug?.("Workflow progress not streamed", {
+        ...(namespace ? { namespace } : {}),
+        error: errorMessage(err),
+      });
     }
   };
 }
 
-/** Write one line to the current run's output stream, if there is one. */
-async function writeChunk(mod: WorkflowRuntime, line: string): Promise<void> {
+/**
+ * Write one chunk to a stream of the current run, if there is one.
+ *
+ * The namespace is what separates `emit()`'s typed chunks from `report()`'s
+ * lines: the DevKit keys a run's writable streams by it, so a reader subscribing
+ * to one sees only the other's. An ABSENT namespace is the default stream, which
+ * is `report()`'s — passed through rather than defaulted here, because
+ * `getWritable` distinguishes the two and a `{ namespace: undefined }` is not
+ * the same request as no options at all.
+ */
+async function writeChunk(
+  mod: WorkflowRuntime,
+  chunk: unknown,
+  namespace: string | undefined,
+): Promise<void> {
   // No DevKit in this process (a spec, a script): the log line above is the
   // whole report, which is what makes an exported step callable without a world.
   if (!mod.getWritable) return;
-  const writer = mod.getWritable<string>().getWriter();
+  const writer = mod
+    .getWritable<unknown>(namespace === undefined ? undefined : { namespace })
+    .getWriter();
   try {
-    await writer.write(line);
+    await writer.write(chunk);
   } finally {
     // Released rather than closed: later steps write to the same stream, and a
     // closed stream cannot be reopened.

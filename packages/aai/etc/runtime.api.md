@@ -1347,7 +1347,10 @@ type StepFetchInit = {
 };
 
 // @internal
-export type StepReporter = (line: string) => void | Promise<void>;
+export type StepReporter = (chunk: unknown, options?: {
+    namespace?: string | undefined;
+    log?: boolean | undefined;
+}) => void | Promise<void>;
 
 // @public
 type StoredSessionEvent = {

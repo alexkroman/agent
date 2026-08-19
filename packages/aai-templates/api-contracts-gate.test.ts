@@ -364,6 +364,7 @@ describe("API-EXPORTS.json", () => {
     expect(surface["@alexkroman1/aai/testing"]).toEqual([
       "RunSnapshotOverrides",
       "SentEvent",
+      "StubEmitted",
       "StubGateway",
       "StubGatewayCall",
       "StubGatewayOptions",
@@ -371,6 +372,7 @@ describe("API-EXPORTS.json", () => {
       "StubGenerateCall",
       "StubGenerateReply",
       "StubGenerateRoute",
+      "StubReporter",
       "StubStepFetch",
       "StubStepRequest",
       "StubUpload",
@@ -384,6 +386,7 @@ describe("API-EXPORTS.json", () => {
       "runTool",
       "stubGateway",
       "stubGenerate",
+      "stubReporter",
       "stubStepFetch",
       "stubUploads",
       "toolOf",

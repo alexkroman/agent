@@ -101,17 +101,25 @@
  * shape and is never slower, which is why the page offers both rather than replacing
  * one with the other.
  *
- * ## And a batch has to finish before the next poll
+ * ## A ROUND has to finish before the next poll
  *
- * The DevKit correlates a journal entry to a step call by ISSUE ORDER, which is what
- * rules out a work-stealing pool — `mapInBatches`'s own doc carries the argument. So
- * a segment that becomes readable while a batch is running waits for that batch. On
- * a slow uplink that costs nothing (segments arrive slower than they transcribe); on
- * a fast one it is why the two flows converge rather than the streaming one winning.
+ * Everything the body decides comes from a journaled poll, so the set of segments it
+ * fans out over is fixed for the length of that fan-out: one that becomes readable
+ * while a round is in flight waits for the round. That is a smaller wait than it was
+ * — `mapConcurrent` is a window over a cursor rather than sequential batches, so a
+ * round now ends when its LAST segment lands rather than at the sum of each batch's
+ * slowest — but it is not zero, and it is why the two flows converge on a fast
+ * uplink rather than the streaming one winning. On a slow uplink it costs nothing:
+ * segments arrive slower than they transcribe.
+ *
+ * Feeding new segments into a running fan-out would remove it and is deliberately
+ * not done: which items are in flight would then depend on when bytes arrived, and
+ * the DevKit correlates a journal entry to a step call by ISSUE ORDER. A round is
+ * what keeps that order a pure function of journaled values.
  */
 
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
-import { mapInBatches, readUpload, report, uploadInfo } from "@alexkroman1/aai/utils";
+import { mapConcurrent, readUpload, report, uploadInfo } from "@alexkroman1/aai/utils";
 import { sleep } from "workflow";
 import {
   clock,
@@ -209,10 +217,11 @@ export async function transcribeStreamFlow(input: { recording: string }) {
         lastSize = at.size;
         for (const segment of ready) done.add(segment.index);
         // One step per segment, bounded, in an order a replay reproduces exactly —
-        // `ready` is derived from a journaled poll, and `mapInBatches` issues its
-        // calls in array order. THE SAME STEP the classic flow uses.
+        // `ready` is derived from a journaled poll, and `mapConcurrent` issues its
+        // calls in list order. THE SAME STEP the classic flow uses, so a segment
+        // transcribed here reaches the page's live transcript identically.
         parts.push(
-          ...(await mapInBatches(
+          ...(await mapConcurrent(
             ready,
             segmentConcurrency((plan as StreamPlan).format),
             (segment) => transcribeSegment(input.recording, (plan as StreamPlan).format, segment),

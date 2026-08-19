@@ -4422,7 +4422,10 @@ type StepFetchInit = {
 };
 
 // @internal
-export type StepReporter = (line: string) => void | Promise<void>;
+export type StepReporter = (chunk: unknown, options?: {
+    namespace?: string | undefined;
+    log?: boolean | undefined;
+}) => void | Promise<void>;
 
 // @public
 type StoredSessionEvent = {
@@ -5592,6 +5595,12 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+export type StubEmitted = {
+    namespace: string;
+    chunk: unknown;
+};
+
+// @public
 export interface StubGateway {
     calls: StubGatewayCall[];
     fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -5639,6 +5648,16 @@ export type StubGenerateReply = string | {
 
 // @public
 export type StubGenerateRoute = StubGenerateReply | ((call: StubGenerateCall) => StubGenerateReply);
+
+// @public
+export type StubReporter = {
+    lines: string[];
+    emitted: StubEmitted[];
+    restore: () => void;
+};
+
+// @public
+export function stubReporter(): StubReporter;
 
 // @public
 export type StubStepFetch = {
@@ -6102,6 +6121,9 @@ export function capToolResult(result: string): string;
 export function createKeyedLock(): KeyedLock;
 
 // @public
+export function emit<T>(namespace: string, chunk: T): Promise<void>;
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -6143,7 +6165,10 @@ export class KeyedLockTimeoutError extends Error {
 export function linkConfirmationCode(code: string): string;
 
 // @public
-export function mapInBatches<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+export function mapConcurrent<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+
+// @public @deprecated
+export const mapInBatches: typeof mapConcurrent;
 
 // @public
 export const MAX_SLUG_LENGTH = 64;

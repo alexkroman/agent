@@ -67,6 +67,28 @@
  * the `/parts` routes existed, sends the single request instead — so leaving it on
  * is safe.
  *
+ * ## The transcript ARRIVES, rather than appearing at the end
+ *
+ * A run's `output` exists only when its last segment does, so a page with only
+ * that shows a status line for the whole fan-out and then everything at once — on
+ * a 97-minute recording, minutes of it. Each segment is emitted the moment it
+ * lands (`emit(TRANSCRIPT_STREAM, …)` in `workflows/transcribe.ts`) and
+ * `useWorkflowProgress` reads that stream, so the panel renders the transcript
+ * growing.
+ *
+ * Three things make it honest rather than decorative:
+ *
+ * - **The page stitches with the RUN's own function.** `stitchChunks` is
+ *   `workflows/stitch.ts`, imported by both, so the live text and the stored one
+ *   cannot drift into two different transcripts of one recording.
+ * - **It is a SEPARATE stream from the progress log.** `report()`'s lines go to
+ *   the default one, which `<WorkflowProgress>` renders verbatim; objects in
+ *   there would come out as `[object Object]` between the sentences.
+ * - **The finished run wins.** Once `output` exists the panel renders that
+ *   instead — it is the authoritative text, counted and measured, and a live
+ *   transcript that stayed on screen beside it would be a second answer with no
+ *   way to tell which was current.
+ *
  * ## Two waits, two bars
  *
  * A recording is the one input big enough that STORING it is itself a wait, and
@@ -92,6 +114,7 @@ import {
   page,
   SubmitButton,
   UploadProgressBar,
+  useWorkflowProgress,
   useWorkflowRuns,
   useWorkflowStream,
   useWorkflowSubmit,
@@ -99,9 +122,16 @@ import {
   WorkflowProgress,
   type WorkflowRun,
 } from "@alexkroman1/aai-ui";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { transcribe } from "./agent.ts";
 import { ApiHelp } from "./api-help.tsx";
+import {
+  clock,
+  countWords,
+  stitchChunks,
+  TRANSCRIPT_STREAM,
+  type TranscriptChunk,
+} from "./workflows/stitch.ts";
 
 /**
  * What a finished run reports.
@@ -402,6 +432,11 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
           finished run up in the panel below shows how it got there. */}
       <WorkflowProgress runId={run.runId} />
 
+      {/* While it runs, the transcript so far. Unguarded on the run's status
+          beyond this: the component renders nothing until a segment has landed,
+          and stops the moment there is an `output` to render instead. */}
+      {!isTerminal(run) && <LiveTranscript runId={run.runId} />}
+
       {/* Discriminated on `status`, so `output` and `error` are reachable
           without a cast — the reason a snapshot is a union rather than a flat
           object with optional fields. */}
@@ -417,6 +452,45 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
       )}
       {run.status === "failed" && <p className="text-red-600">{run.error}</p>}
     </section>
+  );
+}
+
+/**
+ * The transcript as it arrives, stitched from the segments that have landed.
+ *
+ * The other half of `<WorkflowProgress>` above it: that one renders what the run
+ * SAYS about itself, this one renders what it has produced. Both are the same
+ * mechanism — a run's output stream — separated by the namespace, which is what
+ * lets this one be typed.
+ *
+ * It renders NOTHING until a segment lands, so a page can mount it unguarded:
+ * before the first chunk there is nothing to say that the progress log is not
+ * already saying better.
+ *
+ * The count is derived from the stitched text rather than summed per chunk,
+ * because the seams overlap — adding up the segments would over-count every one
+ * of them by a couple of seconds' worth of words.
+ */
+function LiveTranscript({ runId }: { runId: string }) {
+  const { progress } = useWorkflowProgress<TranscriptChunk>(runId, {
+    namespace: TRANSCRIPT_STREAM,
+  });
+  // Memoized on the ARRAY, which the hook appends to per read: stitching is a
+  // seam search per segment, and a fan-out re-renders this panel on every
+  // progress poll whether or not anything arrived.
+  const transcript = useMemo(() => stitchChunks(progress), [progress]);
+  if (progress.length === 0) return null;
+
+  // The furthest point reached, not the count: segments land out of order, so
+  // "6 segments" says nothing about how much of the recording is covered.
+  const covered = Math.max(...progress.map((chunk) => chunk.endMs));
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs opacity-60">
+        {countWords(transcript)} words so far · through {clock(covered)}
+      </p>
+      <pre className="whitespace-pre-wrap text-sm leading-relaxed opacity-80">{transcript}</pre>
+    </div>
   );
 }
 

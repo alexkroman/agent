@@ -38,6 +38,29 @@ function recordingStream(over: { write?: () => Promise<void> } = {}) {
   return written;
 }
 
+/**
+ * A writable per NAMESPACE, so a spec can assert which stream a chunk landed in.
+ *
+ * The key is the whole subject for `emit()`: the DevKit keys a run's streams by
+ * namespace, and a chunk written to the default one is a chunk in the middle of
+ * the progress log.
+ */
+function recordingStreams() {
+  const streams = new Map<string, unknown[]>();
+  getWritable.mockImplementation((options?: { namespace?: string }) => {
+    const key = options?.namespace ?? "";
+    const written = streams.get(key) ?? [];
+    streams.set(key, written);
+    return {
+      getWriter: () => ({
+        write: async (chunk: unknown) => void written.push(chunk),
+        releaseLock: vi.fn(),
+      }),
+    };
+  });
+  return streams;
+}
+
 function logger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 }
@@ -99,5 +122,65 @@ describe("createStepReporter", () => {
       "Workflow progress not streamed",
       expect.objectContaining({ error: expect.stringContaining("stream is gone") }),
     );
+  });
+});
+
+describe("a chunk emitted into a named stream", () => {
+  test("goes to THAT stream and not to the default one", async () => {
+    const streams = recordingStreams();
+    const log = logger();
+    await createStepReporter(log)(
+      { index: 3, text: "and then we shipped it" },
+      { namespace: "transcript", log: false },
+    );
+    expect(streams.get("transcript")).toEqual([{ index: 3, text: "and then we shipped it" }]);
+    // The default stream is `report()`'s, and an object in it renders as
+    // `[object Object]` in the middle of a page's progress log.
+    expect(streams.get("")).toBeUndefined();
+  });
+
+  test("is not logged, so a chunk per segment cannot bury the narration", async () => {
+    recordingStreams();
+    const log = logger();
+    await createStepReporter(log)({ index: 3 }, { namespace: "transcript", log: false });
+    expect(log.info).not.toHaveBeenCalled();
+  });
+
+  test("takes NO attempt suffix — a chunk is parsed, not read", async () => {
+    // The suffix is what tells a human reader a fan-out is retrying. Appended to
+    // a value it is either lost or corruption, and the narration beside it is
+    // where a retry is already visible.
+    getStepMetadata.mockReturnValue({ stepName: "transcribeSegment", stepId: "s", attempt: 3 });
+    const streams = recordingStreams();
+    await createStepReporter(logger())({ text: "hello" }, { namespace: "transcript", log: false });
+    expect(streams.get("transcript")).toEqual([{ text: "hello" }]);
+  });
+
+  test("names the stream when a write is lost", async () => {
+    getWritable.mockImplementation(() => ({
+      getWriter: () => ({
+        write: () => Promise.reject(new Error("stream is gone")),
+        releaseLock: vi.fn(),
+      }),
+    }));
+    const log = logger();
+    await expect(
+      createStepReporter(log)({ index: 1 }, { namespace: "transcript", log: false }),
+    ).resolves.toBeUndefined();
+    expect(log.debug).toHaveBeenCalledWith(
+      "Workflow progress not streamed",
+      expect.objectContaining({ namespace: "transcript" }),
+    );
+  });
+
+  test("a LINE still goes to the default stream, with its attempt suffix", async () => {
+    // The other half of the same reporter, unchanged: `report()` passes no
+    // namespace, and `getWritable` distinguishes that from an explicit one.
+    getStepMetadata.mockReturnValue({ stepName: "transcribeSegment", stepId: "s", attempt: 2 });
+    const streams = recordingStreams();
+    const log = logger();
+    await createStepReporter(log)("Transcribing 0:00–0:58.", { log: true });
+    expect(streams.get("")).toEqual(["Transcribing 0:00–0:58. (attempt 2)"]);
+    expect(log.info).toHaveBeenCalled();
   });
 });

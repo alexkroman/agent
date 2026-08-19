@@ -11,6 +11,9 @@ export function capToolResult(result: string): string;
 export function createKeyedLock(): KeyedLock;
 
 // @public
+export function emit<T>(namespace: string, chunk: T): Promise<void>;
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -52,7 +55,10 @@ export class KeyedLockTimeoutError extends Error {
 export function linkConfirmationCode(code: string): string;
 
 // @public
-export function mapInBatches<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+export function mapConcurrent<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+
+// @public @deprecated
+export const mapInBatches: typeof mapConcurrent;
 
 // @public
 export const MAX_SLUG_LENGTH = 64;
