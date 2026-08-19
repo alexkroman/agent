@@ -20,6 +20,7 @@ import {
   type BlobStorage,
   createMemoryBlobStorage,
   createSupabaseBlobStorage,
+  type SupabaseBlobStorageOptions,
 } from "./blob-storage.ts";
 
 /**
@@ -33,16 +34,27 @@ import {
 export async function assertStorageBucket(env: NodeJS.ProcessEnv): Promise<void> {
   // No platform database is the memory blob store — there is no bucket to check.
   if (!hasPlatformDb(env)) return;
+  await assertBucketPrivate(storageOptions(env));
+}
+
+/**
+ * The three settings Supabase Storage needs, required together.
+ *
+ * One reader, because the check and the construction below must demand the same
+ * three: a variable missing from one list would make boot verify a bucket the
+ * handles never write to, or the reverse.
+ */
+function storageOptions(env: NodeJS.ProcessEnv): SupabaseBlobStorageOptions {
   const required = requireEnv(env, [
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_STORAGE_BUCKET",
   ]);
-  await assertBucketPrivate({
+  return {
     url: required.SUPABASE_URL,
     serviceRoleKey: required.SUPABASE_SERVICE_ROLE_KEY,
     bucket: required.SUPABASE_STORAGE_BUCKET,
-  });
+  };
 }
 
 export function buildStorage(env: NodeJS.ProcessEnv): BlobStorage {
@@ -56,14 +68,5 @@ export function buildStorage(env: NodeJS.ProcessEnv): BlobStorage {
   // Storage authenticates with the SAME service-role key the Realtime socket
   // uses — no separate S3 credential pair for a project we already hold two
   // credentials for (see blob-storage.ts).
-  const required = requireEnv(env, [
-    "SUPABASE_URL",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "SUPABASE_STORAGE_BUCKET",
-  ]);
-  return createSupabaseBlobStorage({
-    url: required.SUPABASE_URL,
-    serviceRoleKey: required.SUPABASE_SERVICE_ROLE_KEY,
-    bucket: required.SUPABASE_STORAGE_BUCKET,
-  });
+  return createSupabaseBlobStorage(storageOptions(env));
 }

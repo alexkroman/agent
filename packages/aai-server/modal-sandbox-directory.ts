@@ -12,7 +12,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
-import { GUEST_PORT, type ModalSpawnContext, modalContext } from "./modal-context.ts";
+import { guestOrigin, type ModalSpawnContext, modalContext } from "./modal-context.ts";
 import { agentSandboxName, type SandboxDirectory } from "./sandbox-directory.ts";
 
 /**
@@ -32,10 +32,11 @@ export function createModalSandboxDirectory(ctx?: ModalSpawnContext): SandboxDir
         const context = ctx ?? (await modalContext());
         const sb = await context.lookupGuestSandbox(name);
         if (!sb) return null;
-        const tunnels = await sb.tunnels();
-        const tunnel = tunnels[GUEST_PORT];
-        if (!tunnel) return null;
-        const origin = `wss://${tunnel.host}:${tunnel.port}`;
+        // `guestOrigin`, not a second `wss://host:port` spelling — it is the one
+        // derivation of a guest's origin from a tunnel map, and a sandbox with no
+        // tunnel for the harness port throws into the catch below, which is the
+        // same "no sandbox" answer plus a line saying so.
+        const origin = guestOrigin(await sb.tunnels());
         return { sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session), guestOrigin: origin };
       } catch (err) {
         debug("Sandbox directory lookup failed", { name, error: errorMessage(err) });

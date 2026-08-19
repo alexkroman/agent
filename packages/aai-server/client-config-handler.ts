@@ -109,9 +109,7 @@ export function createAgentClientConfigHandler(
       const parsed = ClientConfigResponseSchema.safeParse(await res.json());
       if (!parsed.success) return {};
       const { name, greeting, page } = parsed.data;
-      const config = {
-        ...omitUndefined({ name, greeting, page }),
-      };
+      const config = omitUndefined({ name, greeting, page });
       memo.set(key, config);
       return config;
     } catch {

@@ -63,8 +63,9 @@ export type WebhookVerdict =
 function equals(a: string, b: string): boolean {
   const left = Buffer.from(a, "utf-8");
   const right = Buffer.from(b, "utf-8");
-  // `timingSafeEqual` throws on a length mismatch, which would itself leak
-  // length — compare a fixed-size digest of each instead.
+  // `timingSafeEqual` throws on a length mismatch, so the lengths are compared
+  // first. That leaks only the LENGTH of a signature the caller already chose,
+  // never anything about the expected one.
   if (left.length !== right.length) return false;
   return timingSafeEqual(left, right);
 }

@@ -13,9 +13,8 @@
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
-import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { createTestOrchestrator, deployAgent, type TestFetch } from "./test-utils.ts";
+import { createTestOrchestrator, deployAgent, fakeSandbox, type TestFetch } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({
   // A cold broker must reach a real spawn for the "the guest exited" case to
@@ -31,17 +30,6 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
 
 const TOKEN = "wh_abc123";
 const WEBHOOK_PATH = `/my-agent/.well-known/workflow/v1/webhook/${TOKEN}`;
-
-function makeFakeSandbox(overrides: Partial<Sandbox> = {}): Sandbox {
-  return {
-    sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
-    guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
-    drain: vi.fn(() => Promise.resolve()),
-    alive: vi.fn(() => true),
-    shutdown: vi.fn(() => Promise.resolve()),
-    ...overrides,
-  };
-}
 
 /** Records what the platform forwarded, and answers as the guest would. */
 function recordingGuest(answer: () => Response = () => new Response(null, { status: 202 })) {
@@ -69,7 +57,7 @@ async function residentHarness(guestFetch?: typeof globalThis.fetch) {
   await deployAgent(harness.fetch, "my-agent");
   setSlot(slots, {
     slug: "my-agent",
-    sandbox: makeFakeSandbox(),
+    sandbox: fakeSandbox(),
     version: (await harness.store.getAgentVersion("my-agent")) ?? 1,
   });
   return harness;
@@ -254,7 +242,7 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
     await deployAgent(harness.fetch, "my-agent");
     setSlot(slots, {
       slug: "my-agent",
-      sandbox: makeFakeSandbox({
+      sandbox: fakeSandbox({
         guestOrigin: vi.fn(() => new Promise<string>(() => undefined)),
         sessionUrl: vi.fn(() => new Promise<string>(() => undefined)),
       }),

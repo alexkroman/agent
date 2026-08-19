@@ -147,9 +147,7 @@ async function deployLocked(
 
   // Best-effort pin: a failed tag computation must not fail the deploy —
   // the agent just runs unpinned (the pre-pinning behavior).
-  const harnessImageTag = await (deps.harnessImageTag?.() ?? Promise.resolve(null)).catch(
-    () => null,
-  );
+  const harnessImageTag = (await deps.harnessImageTag?.().catch(() => null)) ?? null;
 
   await deps.store.putAgent({
     slug,

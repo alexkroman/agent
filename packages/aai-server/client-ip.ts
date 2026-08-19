@@ -26,6 +26,8 @@
  * line behind key verification and never the only control.
  */
 
+import { envCount } from "./constants.ts";
+
 /** Key used when no forwarded address is available. Shared, so it over-limits. */
 export const UNKNOWN_CLIENT_IP = "unknown";
 
@@ -33,10 +35,7 @@ export const UNKNOWN_CLIENT_IP = "unknown";
  * How many trailing `X-Forwarded-For` entries were appended by proxies we
  * run. 1 = Modal's own. Raise it only for hops that genuinely append.
  */
-const TRUSTED_PROXY_HOPS = (() => {
-  const raw = Number(process.env.TRUSTED_PROXY_HOPS);
-  return Number.isInteger(raw) && raw >= 1 ? raw : 1;
-})();
+const TRUSTED_PROXY_HOPS = envCount(process.env.TRUSTED_PROXY_HOPS, 1);
 
 /**
  * The calling address, or {@link UNKNOWN_CLIENT_IP}.

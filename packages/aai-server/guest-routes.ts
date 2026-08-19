@@ -201,16 +201,6 @@ export const GUEST_ROUTE_EXPOSURE = {
   // CANCELLED the run half a second after starting it. The symptom names nothing:
   // the log says `Workflow run cancelled` and the page says the upload failed.
   workflows: { via: "proxied", methods: ["GET", "POST", "PUT", "DELETE"] },
-  // Nothing outside the sandbox calls these two: the DevKit's queue lives in
-  // the guest (graphile-worker polling the app database from inside this
-  // container) and dials its own server on loopback, so there is no caller to
-  // route for. Not `proxied` — a platform route would be an unauthenticated
-  // way for anyone to replay another tenant's run or execute one of its steps,
-  // and these two are unauthenticated precisely BECAUSE loopback is the whole
-  // gate. Not `host-only` either: the platform never dials them, and saying it
-  // does would claim a bearer check that does not exist. Reconsider only if a
-  // run's queue ever moves out of the guest — then they need a platform route
-  // AND an authenticity check of their own, not one without the other.
   // DIRECT-DIAL, and the choice is worth stating because `proxied` was the
   // other candidate and is what an audit ingester would want.
   //
@@ -227,6 +217,16 @@ export const GUEST_ROUTE_EXPOSURE = {
   // being alive. Promoting this to `proxied` is one route registration plus the
   // methods declared here, if a caller turns up that needs it.
   sessionEvents: { via: "direct-dial" },
+  // Nothing outside the sandbox calls these two: the DevKit's queue lives in
+  // the guest (graphile-worker polling the app database from inside this
+  // container) and dials its own server on loopback, so there is no caller to
+  // route for. Not `proxied` — a platform route would be an unauthenticated
+  // way for anyone to replay another tenant's run or execute one of its steps,
+  // and these two are unauthenticated precisely BECAUSE loopback is the whole
+  // gate. Not `host-only` either: the platform never dials them, and saying it
+  // does would claim a bearer check that does not exist. Reconsider only if a
+  // run's queue ever moves out of the guest — then they need a platform route
+  // AND an authenticity check of their own, not one without the other.
   workflowFlow: { via: "guest-internal" },
   workflowStep: { via: "guest-internal" },
   // The one workflow route with a caller outside the container, and the reason

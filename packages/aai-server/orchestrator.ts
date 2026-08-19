@@ -225,12 +225,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     onError: (c) => c.json({ error: "Request body too large" }, 413),
   });
 
-  // ...and cap how many of them are in flight together, which is the axis the
-  // two size limits above cannot bound: peak memory was arrival rate times
-  // ~164 MB, and arrival rate is the caller's to choose. Runs FIRST, ahead of
-  // bodyLimit and the gunzip, so a refused request has allocated nothing.
-  // Per-replica by construction — this bounds THIS container's heap, which is
-  // a process-local resource, so it wants no cross-replica coordination.
   // Per-IP deploy limit. Runs ahead of the body gate so a refused caller
   // never occupies one of its slots — otherwise the cheap control queues
   // behind the expensive one it is meant to protect.
@@ -245,6 +239,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     await next();
   });
 
+  // ...and cap how many deploy bodies are in flight together, which is the axis
+  // the two size limits above cannot bound: peak memory was arrival rate times
+  // ~164 MB, and arrival rate is the caller's to choose. Runs ahead of
+  // bodyLimit and the gunzip, so a refused request has allocated nothing — and
+  // behind `authMw`, for the reason spelled out at the route below.
+  // Per-replica by construction: this bounds THIS container's heap, which is a
+  // process-local resource, so it wants no cross-replica coordination.
   const deployBodySlots = createSemaphore(opts.deployBodyConcurrency ?? DEPLOY_BODY_CONCURRENCY);
   const deployBodyWaitMs = opts.deployBodyWaitMs ?? DEPLOY_BODY_WAIT_MS;
   const deployBodyGate = createMiddleware<HonoEnv>(async (c, next) => {

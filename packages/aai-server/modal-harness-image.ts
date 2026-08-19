@@ -371,8 +371,7 @@ function gzipBase64(content: string): string {
 
 /**
  * Populate the harness's V8 compile cache inside the builder sandbox, so the
- * snapshot carries it (see {@link HARNESS_COMPILE_CACHE_ENV} for the measured
- * saving).
+ * snapshot carries it (see {@link guestExecBaseEnv} for the measured saving).
  *
  * Runs the harness in warm-up mode — it evaluates the module and exits 0,
  * opening no server and reading no bundle. BEST-EFFORT: a failed or slow

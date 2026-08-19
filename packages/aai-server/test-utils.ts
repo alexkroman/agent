@@ -2,6 +2,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { vi } from "vitest";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { type AppDatabases, appDbIdentifier } from "./app-database.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
@@ -16,6 +17,7 @@ import {
   withChatEvents,
   withWorkspaceEvents,
 } from "./platform-events.ts";
+import type { Sandbox } from "./sandbox.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore, type SecretStore, type SqlExec } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -94,6 +96,30 @@ export function fakeAppDatabases(overrides?: Partial<AppDatabases>): AppDatabase
     connectionUrl: unstubbed("connectionUrl"),
     usage: unstubbed("usage"),
     withAppDb: unstubbed("withAppDb"),
+    ...overrides,
+  };
+}
+
+/**
+ * A live fake {@link Sandbox} — resolved URLs on the standard test tunnel, and
+ * every lifecycle method a no-op spy.
+ *
+ * The same five-method literal had been written out in FOUR specs (the phone
+ * webhook, both workflow proxies, and the transport/upgrade suite), byte for
+ * byte apart from whether it took `overrides`. That is the case this file's
+ * `fakeAppDatabases` already argues: `Sandbox` growing a method breaks every
+ * copy at once while telling nobody which behaviour the specs actually wanted.
+ *
+ * Overrides are spread last, so a spec that needs a sandbox stuck on boot
+ * replaces just `sessionUrl`/`guestOrigin`.
+ */
+export function fakeSandbox(overrides: Partial<Sandbox> = {}): Sandbox {
+  return {
+    sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
+    guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
+    drain: vi.fn(() => Promise.resolve()),
+    alive: vi.fn(() => true),
+    shutdown: vi.fn(() => Promise.resolve()),
     ...overrides,
   };
 }
@@ -317,11 +343,25 @@ export function createRecordingSql(
  *
  * CI is unaffected either way: a fresh container per run cannot drift.
  */
-export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
-  const migrationsDir = path.resolve(import.meta.dirname, "../../supabase/migrations");
-  const repoMigrations = readdirSync(migrationsDir)
+/**
+ * The repo's migration files, sorted, plus their concatenated text.
+ *
+ * Both readers below (the DDL replay and {@link platformMigrationSql}) had
+ * written the same listing, the same `.sql` filter, the same sort and the same
+ * join — and only one of them refused an empty directory, which is the one
+ * outcome that makes either of them silently do nothing.
+ */
+function readMigrations(): { dir: string; files: string[]; raw: string } {
+  const dir = path.resolve(import.meta.dirname, "../../supabase/migrations");
+  const files = readdirSync(dir)
     .filter((name) => name.endsWith(".sql"))
     .sort();
+  if (files.length === 0) throw new Error(`no migrations in ${dir}`);
+  return { dir, files, raw: files.map((n) => readFileSync(path.join(dir, n), "utf-8")).join("\n") };
+}
+
+export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
+  const { dir, files: repoMigrations, raw } = readMigrations();
 
   // `SqlExec` is not generic — the row is `unknown`, which is all this needs.
   const [ledger] = await sql(
@@ -337,10 +377,7 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
   );
   if (existing?.present) return;
 
-  const dir = migrationsDir;
-  const sqlText = repoMigrations
-    .map((name) => readFileSync(path.join(dir, name), "utf-8"))
-    .join("\n")
+  const sqlText = raw
     // COMMENTS FIRST, or prose becomes DDL. These migrations explain
     // themselves at length and quote statements while doing it — the expand
     // half of the `agents.config` retirement names its own contract half
@@ -395,12 +432,7 @@ export async function ensurePlatformTables(sql: SqlExec): Promise<void> {
  * must create it itself.
  */
 export function platformMigrationSql(): { sql: string; skipped: number } {
-  const dir = path.resolve(import.meta.dirname, "../../supabase/migrations");
-  const files = readdirSync(dir)
-    .filter((n) => n.endsWith(".sql"))
-    .sort();
-  if (files.length === 0) throw new Error(`no migrations in ${dir}`);
-  const raw = files.map((n) => readFileSync(path.join(dir, n), "utf-8")).join("\n");
+  const { raw } = readMigrations();
   let skipped = 0;
   const sql = raw.replace(/^create extension if not exists pg_cron;$/gm, () => {
     skipped += 1;

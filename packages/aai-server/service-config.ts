@@ -148,7 +148,6 @@ function buildMemoryStores(): {
  * runs; only the SCHEDULING stays here, because the sweep bodies are defined
  * in TypeScript (pg-cron.ts) and change with the code that owns them.
  */
-
 function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
   // The blob GC sweep deletes through the Storage API from inside Postgres,
   // so it needs a credential no SQL-only job can otherwise hold. Stored in
