@@ -1,5 +1,15 @@
 # aai-guest
 
+## 0.4.19
+
+### Patch Changes
+
+- Updated dependencies [5288539]
+- Updated dependencies [5288539]
+  - @alexkroman1/aai@6.4.0
+  - @alexkroman1/aai-cli@6.4.0
+  - @alexkroman1/aai-ui@6.4.0
+
 ## 0.4.18
 
 ### Patch Changes
