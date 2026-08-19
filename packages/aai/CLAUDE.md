@@ -569,6 +569,20 @@ may act on; `ranges` is for the UPLOADER, and it is what makes
 file. An agent too old to report them answers like an empty upload, so a resume
 against one re-sends everything rather than leaving a hole.
 
+**Neither the width nor the part size has been MEASURED**, which is worth knowing
+before trusting either: they are the repo's only fan-out numbers argued in prose
+rather than backed by a table, and half the argument for 4 ("multiplying the
+writes the agent is doing at once") went stale when a part stopped writing chunk
+rows through the guest — the same change took `UPLOAD_DB_POOL` from
+`UPLOAD_PART_CONCURRENCY + 2` down to 2, and the client end never moved.
+`pnpm bench:uploads --target <agent base url>` (`scripts/upload-sweep.mjs`)
+sweeps the matrix over this exact client path and prints a table shaped like
+`MAX_SEGMENT_CONCURRENCY`'s. **That script's doc comment owns the rest** — why it
+gates nothing, why it reports a RANGE, why a DECLINED cell has to announce itself,
+and the one thing it cannot measure (it is Node's `fetch`, so the browser
+connection limit that justifies half of `UPLOAD_PART_CONCURRENCY` is out of
+reach; `--h2` is the closest probe).
+
 The client path DECLINES rather than fails (an
 uncuttable string body, a file that fits in one part, an agent answering 404 to
 the declaration), which is what makes it safe as a default rather than an opt-in

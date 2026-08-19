@@ -18,6 +18,7 @@
     "test:templates": "pnpm --filter aai-templates test",
     "test:aai-evals": "pnpm --filter aai-evals test",
     "test:mutate:sdk": "stryker run stryker.sdk.config.mjs",
+    "bench:uploads": "node scripts/upload-sweep.mjs",
     "aai": "node packages/aai-cli/cli.ts",
     "dev:aai-server": "pnpm --filter aai-studio-server dev",
     "typecheck": "turbo run typecheck",

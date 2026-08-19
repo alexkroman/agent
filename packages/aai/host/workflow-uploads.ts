@@ -46,7 +46,7 @@ import {
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
 } from "./_upload-env.ts";
-import type { UploadStore } from "./_upload-store.ts";
+import { type UploadStore, UploadsUnavailableError } from "./_upload-store.ts";
 import { createBlobUploadStore } from "./_upload-store-blobs.ts";
 
 export {
@@ -75,6 +75,7 @@ export {
   type UploadMeta,
   UploadPartError,
   type UploadStore,
+  UploadsUnavailableError,
   UploadTooLargeError,
 } from "./_upload-store.ts";
 
@@ -201,7 +202,7 @@ export function createUnavailableUploadStore(missing: string): UploadStore {
   // own `try` hides and a step's does not.
   const refuse = <T>(): Promise<T> =>
     Promise.reject(
-      new Error(
+      new UploadsUnavailableError(
         `Workflow uploads need ${missing}.\n\n` +
           "A DEPLOYED agent gets both from the platform, and its env comes from Vault rather " +
           "than from your project's `.env` — so `DATABASE_URL` appears only once the app " +

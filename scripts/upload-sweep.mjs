@@ -1,0 +1,450 @@
+#!/usr/bin/env node
+
+/**
+ * Measure where the parts upload's fan-out stops buying anything.
+ *
+ * `UPLOAD_PART_CONCURRENCY` (4) and `UPLOAD_PART_BYTES` (8 MiB) are the two
+ * numbers a parallel upload is shaped by, and both were ARGUED rather than
+ * measured — "the bottleneck moves from per-connection window scaling to the
+ * link itself somewhere around four" is a belief, and a reader cannot falsify
+ * it. Every other fan-out width in this repo carries a table with its corpus
+ * named: `MAX_SEGMENT_CONCURRENCY` (32, the measured knee over 65 segments of
+ * 1h37m audio) and `stepFetch`'s transport comparison. This is how those two
+ * get one.
+ *
+ * It matters more than it did, because the topology moved underneath the
+ * number. A part used to be a request writing chunk ROWS through the guest for
+ * as long as it lasted, which is half of why 4 was chosen ("multiplying the
+ * writes the agent is doing at once"); a part is now one small `update` naming a
+ * window that landed, which is why `UPLOAD_DB_POOL` came back DOWN to 2. The
+ * client end of that same argument never moved.
+ *
+ * ## Not a gate, and it cannot become one
+ *
+ * Same rule as `check:gateway-models`: it spends real bandwidth against a live
+ * remote, so a bad link would redden unrelated pull requests. Nothing runs it
+ * but a person. It also LEAVES ITS UPLOADS BEHIND — there is no delete route on
+ * `/workflows/uploads` — so it prints the bytes it is about to store, refuses a
+ * large run without `--yes`, and writes every id it minted into `--json` so a
+ * cleanup is possible later.
+ *
+ * ## What it measures, and the one thing it cannot
+ *
+ * It drives the real `createWorkflowApiClient(...).upload()` — the published
+ * path, including the retry budget, the claim, and the `stored=1` record — and
+ * counts every request through a wrapped `fetch`. So the report separates the
+ * two questions `partBytes x concurrency` confuses: WALL time (did widening the
+ * fan-out help) and per-part LATENCY (is the concurrency bound binding, or is
+ * the far side). Eight parts each taking 4s means the fan-out is the
+ * constraint; eight taking 32s means it is not.
+ *
+ * **It runs on Node's `fetch`, which is not a browser**, and the difference is
+ * exactly where the second half of the current argument lives. Node's undici
+ * opens as many connections per origin as it needs; a browser caps HTTP/1.1 at
+ * six, which is the stated reason 4 "leaves room for the page to poll the run
+ * it just started". So a knee found here is a knee for a programmatic caller,
+ * and a browser number needs a browser. `--h2` is the closest available probe:
+ * it makes undici negotiate HTTP/2, where the per-origin connection limit stops
+ * applying and a capacity limit arrives as a STREAM RESET carrying no HTTP
+ * status — invisible to the `Retry-After` handling in `_upload-retry.ts`, and
+ * the failure `sdk/step-fetch.ts` pins HTTP/1.1 to avoid. A browser cannot pin
+ * it. If the h2 arm shows resets where the h1 arm shows 503s, that is a finding
+ * about the browser default and not about this script.
+ *
+ * ## Reading the output
+ *
+ * Repeat every cell (`--repeat`, default 3) and read the RANGE, never one
+ * actual: these distributions have long left tails, and a single run is not
+ * evidence about the unlucky one. Cells run in shuffled order by default so a
+ * link that degrades during the sweep does not bias one width.
+ *
+ * ```sh
+ * # against a local dev server, small and cheap, to check the harness works
+ * node scripts/upload-sweep.mjs --target http://127.0.0.1:8080 --mib 16
+ *
+ * # the real question, against a deployed agent over a real link
+ * node scripts/upload-sweep.mjs \
+ *   --target https://agents.example/my-agent --token "$AAI_WORKFLOW_API_TOKEN" \
+ *   --mib 64 --concurrency 1,2,4,8,16 --part-mib 4,8,16 --repeat 5 \
+ *   --json /tmp/upload-sweep.json --yes
+ *
+ * # the same matrix over HTTP/2, which is what a browser would negotiate
+ * node scripts/upload-sweep.mjs --target … --h2 --yes
+ * ```
+ */
+
+import { randomFillSync } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { sleep } from "../packages/aai/sdk/sleep.ts";
+import {
+  UPLOAD_PART_BYTES,
+  UPLOAD_PART_CONCURRENCY,
+} from "../packages/aai/sdk/upload-constants.ts";
+import { createWorkflowApiClient } from "../packages/aai/sdk/workflow-api-client.ts";
+import {
+  fixed,
+  mbPerSecond,
+  median,
+  percentile,
+  reportKnee,
+  reportTable,
+} from "./_upload-sweep-report.mjs";
+
+const MIB = 1024 * 1024;
+
+/**
+ * Bytes a run may store before it needs `--yes`.
+ *
+ * The uploads are permanent (no delete route), and on the platform they are
+ * objects somebody pays for — so the default matrix has to be one a person can
+ * run without thinking, and anything past this has to be chosen.
+ */
+const UNATTENDED_BYTES_LIMIT = 2 * 1024 * MIB;
+
+/**
+ * Discarded uploads a cold target may lose before the sweep gives up.
+ *
+ * Three, because the thing being waited out is one sandbox spawn and not a queue:
+ * a platform agent answers its first request in ~12s or drops it, and a target
+ * that has failed three of these is not merely asleep.
+ */
+const WARMUP_ATTEMPTS = 3;
+
+function parseArgs(argv) {
+  const args = new Map();
+  const flags = new Set();
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (!arg.startsWith("--")) continue;
+    const name = arg.slice(2);
+    const next = argv[i + 1];
+    if (next === undefined || next.startsWith("--")) {
+      flags.add(name);
+      continue;
+    }
+    args.set(name, next);
+    i += 1;
+  }
+  return { args, flags };
+}
+
+const { args, flags } = parseArgs(process.argv.slice(2));
+
+const numbers = (value, fallback) =>
+  value === undefined
+    ? fallback
+    : value
+        .split(",")
+        .map((part) => Number(part.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0);
+
+const target = args.get("target");
+if (target === undefined) {
+  console.error("usage: node scripts/upload-sweep.mjs --target <agent base url> [options]");
+  console.error("       see this file's doc comment for the whole vocabulary");
+  process.exit(2);
+}
+
+const config = {
+  target,
+  token: args.get("token"),
+  fileBytes: Math.round(Number(args.get("mib") ?? 32) * MIB),
+  widths: numbers(args.get("concurrency"), [1, 2, 4, 8, 16]),
+  partMib: numbers(args.get("part-mib"), [UPLOAD_PART_BYTES / MIB]),
+  repeat: Number(args.get("repeat") ?? 3),
+  gapMs: Number(args.get("gap-ms") ?? 1000),
+  json: args.get("json"),
+  h2: flags.has("h2"),
+  shuffle: !flags.has("no-shuffle"),
+  warmup: !flags.has("no-warmup"),
+  single: !flags.has("no-single"),
+  yes: flags.has("yes"),
+};
+
+/**
+ * Every request the SDK issued, classified by SHAPE rather than by URL.
+ *
+ * Which is what makes one report cover both topologies: on the platform a
+ * window's bytes go to a route the platform serves and a bodyless `PUT` tells
+ * the agent it landed, under `aai dev` the bytes go to the agent itself. A
+ * classifier keyed on the path would need to know which, where "a PUT carrying
+ * a body is the bytes" is true of both.
+ */
+function installCountingFetch() {
+  const real = globalThis.fetch;
+  const requests = [];
+  const origins = new Set();
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : String(input?.url ?? input);
+    const method = init?.method ?? "GET";
+    const bytes = bodyBytes(init?.body);
+    const kind = classify(method, bytes);
+    const started = performance.now();
+    try {
+      const res = await real(input, init);
+      requests.push({ kind, method, status: res.status, bytes, ms: performance.now() - started });
+      origins.add(new URL(url).origin);
+      return res;
+    } catch (err) {
+      requests.push({
+        kind,
+        method,
+        status: 0,
+        bytes,
+        ms: performance.now() - started,
+        err: describeError(err),
+      });
+      origins.add(new URL(url).origin);
+      throw err;
+    }
+  };
+  return {
+    requests,
+    origins,
+    restore: () => {
+      globalThis.fetch = real;
+    },
+  };
+}
+
+/**
+ * What a request IS, from its method and whether it carries bytes.
+ *
+ * Deliberately not keyed on the path: on the platform a window's bytes go to a
+ * route the platform serves and a bodyless `PUT …?stored=1` tells the agent it
+ * landed, while under `aai dev` the bytes go to the agent. "A PUT with a body is
+ * the bytes" holds in both, so one classifier covers both topologies.
+ */
+function classify(method, bytes) {
+  if (method === "POST") return "claim";
+  if (method !== "PUT") return "info";
+  return bytes > 0 ? "bytes" : "record";
+}
+
+/**
+ * An error with its CAUSE CHAIN, because the top of one says nothing here.
+ *
+ * `fetch` reports every transport failure as the same five words —
+ * `TypeError: fetch failed` — and puts the fact you need (`ECONNRESET`, a DNS
+ * failure, an h2 stream reset, a body that was cut) one or two `cause` hops
+ * down. `sdk/step-fetch.ts` documents that exact trap for the fan-out it pins
+ * HTTP/1.1 for; a harness whose whole output is a failure column has no excuse
+ * for reprinting the useless half.
+ */
+function describeError(err) {
+  const parts = [];
+  for (let at = err, depth = 0; at !== undefined && at !== null && depth < 4; depth += 1) {
+    const code = at.code === undefined ? "" : ` (${at.code})`;
+    parts.push(`${at.name ?? "Error"}: ${at.message ?? String(at)}${code}`);
+    at = at.cause;
+  }
+  return parts.join(" <- ");
+}
+
+function bodyBytes(body) {
+  if (body === undefined || body === null) return 0;
+  if (typeof body === "string") return Buffer.byteLength(body);
+  if (typeof body.size === "number") return body.size;
+  if (typeof body.byteLength === "number") return body.byteLength;
+  return 0;
+}
+
+/** HTTP/2 has to be asked for, and undici lives in `packages/aai`, not at the root. */
+async function enableH2() {
+  const requireFromAai = createRequire(new URL("../packages/aai/package.json", import.meta.url));
+  const { Agent, setGlobalDispatcher } = await import(requireFromAai.resolve("undici"));
+  setGlobalDispatcher(new Agent({ allowH2: true }));
+}
+
+async function runOnce(api, blob, parallel) {
+  const counted = installCountingFetch();
+  const started = performance.now();
+  let ref;
+  let error;
+  try {
+    ref = await api.upload(blob, {
+      name: "upload-sweep.bin",
+      type: "application/octet-stream",
+      parallel,
+    });
+  } catch (err) {
+    error = describeError(err);
+  }
+  const ms = performance.now() - started;
+  counted.restore();
+  const requests = counted.requests;
+  const byteRequests = requests.filter((r) => r.kind === "bytes");
+  return {
+    ms,
+    error,
+    id: ref?.id,
+    origins: [...counted.origins],
+    requests: requests.length,
+    parts: byteRequests.length,
+    // The parts path DECLINES rather than failing — a file that fits in one part
+    // is the case this sweep can walk into by accident (`--mib 8` against the
+    // 8 MiB default part size), and it would then report a single-request row
+    // under a fan-out label. A cell that asked for parts and sent none said no.
+    //
+    // **`error === undefined` is load-bearing, and leaving it out mislabelled a
+    // real outage as a benign decline.** A run that dies on its claim also sends
+    // zero byte-requests, so the first real-link sweep printed "(declined)" —
+    // the word for "this cell was not applicable" — against three cells whose
+    // every run had failed with `TypeError: fetch failed` and 66 resets. That is
+    // the harness committing the exact sin it exists to catch: reporting a
+    // failure in the vocabulary of a non-event.
+    declined: parallel !== false && byteRequests.length === 0 && error === undefined,
+    partMsP50: median(byteRequests.map((r) => r.ms)),
+    partMsP95: percentile(
+      byteRequests.map((r) => r.ms),
+      95,
+    ),
+    // A part re-sent is a request beyond the one the plan called for. Counted as
+    // an EXCESS rather than from the retry helper's own bookkeeping, which is
+    // internal — and this way a claim or an `/info` read that was retried counts
+    // too, which is what the branch that added a budget to them cares about.
+    failures: requests.filter((r) => r.status === 0 || r.status >= 400).length,
+    retryable: requests.filter((r) => r.status === 429 || r.status === 503).length,
+    resets: requests.filter((r) => r.status === 0).length,
+  };
+}
+
+/** Every (width, partBytes) pair, plus the single request the whole path exists to beat. */
+function buildCells() {
+  const cells = [];
+  if (config.single) cells.push({ label: "1 request", parallel: false, width: 1, partMib: 0 });
+  for (const partMib of config.partMib) {
+    for (const width of config.widths) {
+      cells.push({
+        label: `${width} x ${partMib} MiB`,
+        parallel: { concurrency: width, partBytes: partMib * MIB },
+        width,
+        partMib,
+      });
+    }
+  }
+  return cells;
+}
+
+function shuffled(items) {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/** Everything printed before a byte moves, plus the refusal. */
+function printPlan(cells, totalBytes) {
+  const totalMib = Math.round(totalBytes / MIB);
+  console.log(`target      ${config.target}`);
+  console.log(
+    `transport   node fetch, ${config.h2 ? "HTTP/2 (--h2)" : "HTTP/1.1"} — NOT a browser, see the doc comment`,
+  );
+  console.log(`file        ${Math.round(config.fileBytes / MIB)} MiB of random bytes`);
+  console.log(`matrix      ${cells.length} cells x ${config.repeat} runs`);
+  console.log(
+    `defaults    concurrency ${UPLOAD_PART_CONCURRENCY}, part ${UPLOAD_PART_BYTES / MIB} MiB`,
+  );
+  console.log(`will store  ~${totalMib} MiB, PERMANENTLY — there is no delete route`);
+
+  const tooBig = config.partMib.filter((mib) => mib * MIB >= config.fileBytes);
+  if (tooBig.length > 0) {
+    console.log(
+      `warning     part size(s) ${tooBig.join(", ")} MiB are >= the file, so those cells will DECLINE`,
+    );
+  }
+  if (totalBytes > UNATTENDED_BYTES_LIMIT && !config.yes) {
+    console.error(`\nrefusing to store ${totalMib} MiB without --yes.`);
+    console.error("lower --mib / --repeat / the matrix, or pass --yes if that is the intent.");
+    process.exit(2);
+  }
+}
+
+/** Random bytes, so nothing on the path can compress the measurement away. */
+function makeBody() {
+  const buffer = Buffer.allocUnsafe(config.fileBytes);
+  for (let offset = 0; offset < buffer.length; offset += 65_536) {
+    randomFillSync(buffer, offset, Math.min(65_536, buffer.length - offset));
+  }
+  return new Blob([buffer]);
+}
+
+/**
+ * Discarded uploads until one lands, so DNS, TLS and the far side are hot.
+ *
+ * It FAILS THE RUN when none does, which is the point of doing it first: a target
+ * that cannot take one default upload makes every number below meaningless, and a
+ * sweep that discovers that in cell seven has already spent the bandwidth.
+ *
+ * **It takes several attempts, and one was wrong for the target this exists to
+ * measure.** A platform agent is a sandbox that self-exits when idle, so the first
+ * request after a gap pays a cold spawn — measured at 11.9s for a bare claim — and
+ * the connection is sometimes dropped outright rather than answered, which arrives
+ * as a bare `TypeError: fetch failed` with no status to read. A single attempt
+ * therefore reports the ordinary cold state in the vocabulary of a broken target,
+ * and the run that hit it aborted against a deployment that was working.
+ */
+async function warmup(api, blob) {
+  console.log("\nwarmup (discarded): one default upload, retried while the target wakes");
+  for (let attempt = 1; attempt <= WARMUP_ATTEMPTS; attempt += 1) {
+    const warm = await runOnce(api, blob, undefined);
+    if (warm.error === undefined) {
+      const shape = warm.parts === 0 ? "declined to one request" : `${warm.parts} parts`;
+      console.log(
+        `  attempt ${attempt}: ${fixed(warm.ms / 1000, 2)}s, ${shape}, bytes to ${warm.origins.join(", ")}`,
+      );
+      return;
+    }
+    console.log(`  attempt ${attempt}/${WARMUP_ATTEMPTS} failed: ${warm.error}`);
+    await sleep(config.gapMs);
+  }
+  console.error("warmup never landed — nothing below would mean anything.");
+  process.exit(1);
+}
+
+async function main() {
+  const cells = buildCells();
+  const totalBytes =
+    cells.length * config.repeat * config.fileBytes + (config.warmup ? config.fileBytes : 0);
+
+  printPlan(cells, totalBytes);
+  if (config.h2) await enableH2();
+
+  const blob = makeBody();
+  const api = createWorkflowApiClient({ baseUrl: config.target, token: config.token });
+  if (config.warmup) await warmup(api, blob);
+
+  const order = config.shuffle ? shuffled(cells) : cells;
+  console.log(`\norder       ${order.map((c) => c.label).join(", ")}`);
+
+  const byLabel = new Map(cells.map((cell) => [cell.label, { ...cell, runs: [] }]));
+  for (const cell of order) {
+    for (let run = 0; run < config.repeat; run += 1) {
+      const result = await runOnce(api, blob, cell.parallel);
+      byLabel.get(cell.label).runs.push(result);
+      const note =
+        result.error === undefined
+          ? `${fixed(result.ms / 1000, 2)}s  ${fixed(mbPerSecond(config.fileBytes, result.ms))} MB/s`
+          : `FAILED ${result.error}`;
+      console.log(`  ${cell.label.padEnd(16)} run ${run + 1}/${config.repeat}  ${note}`);
+      await sleep(config.gapMs);
+    }
+  }
+
+  const results = cells.map((cell) => byLabel.get(cell.label));
+  const rows = reportTable(results, config.fileBytes);
+  reportKnee(rows);
+
+  if (config.json !== undefined) {
+    writeFileSync(
+      config.json,
+      `${JSON.stringify({ config: { ...config, token: config.token === undefined ? undefined : "set" }, results }, null, 2)}\n`,
+    );
+    console.log(`\nwrote ${config.json} — it carries every upload id this run minted, for cleanup`);
+  }
+}
+
+await main();
