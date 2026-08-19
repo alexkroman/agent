@@ -334,6 +334,26 @@ describe("POST /runs", () => {
     });
   });
 
+  test("a caller that HUNG UP is not logged as this agent's failure", async () => {
+    // Node errors an aborted request stream with `aborted` / `ECONNRESET`, and
+    // there is no socket left to write a 500 to. At error level these read as
+    // exactly what an operator is hunting for: 30 lines of `Workflow API request
+    // failed { error: 'aborted' }` in one hour of production log, every one a
+    // navigation away or an upload the platform's proxy gave up on.
+    const aborted = Object.assign(new Error("aborted"), { code: "ECONNRESET" });
+    const start = vi.fn(() => Promise.reject(aborted));
+    harness = await serve({ engine: () => fakeClient({ start }) });
+    await fetch(`${harness.url}/workflows/runs`, {
+      method: "POST",
+      body: JSON.stringify({ workflow: "digest" }),
+    }).catch(() => undefined);
+    expect(harness.logger.error).not.toHaveBeenCalled();
+    expect(harness.logger.debug).toHaveBeenCalledWith(
+      "Workflow API request failed (caller went away)",
+      { error: "aborted" },
+    );
+  });
+
   test("a body over the cap is a 413, not a 500", async () => {
     // Mapped in the ROUTER, so a second body-reading route cannot forget it.
     harness = await serve({ engine: () => fakeClient() });

@@ -16,7 +16,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type http from "node:http";
-import { errorMessage } from "../sdk/utils.ts";
+import { errorMessage, isRecord } from "../sdk/utils.ts";
 
 /**
  * The response members a JSON reply touches, named rather than taken whole.
@@ -74,6 +74,29 @@ export const SSE_HEADERS: Readonly<Record<string, string>> = {
  */
 export function sseFrame(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+/**
+ * Whether a rejection is just the CALLER having gone away.
+ *
+ * A client that hangs up mid-body makes Node error the request stream — `aborted`
+ * with `ECONNRESET` — and an `AbortSignal` on the same path surfaces as an
+ * `AbortError`. Neither is a fault of this agent's, and there is nobody left to
+ * answer: the socket the 500 would be written to is the socket that closed. Logged
+ * at ERROR they read as exactly what an operator is hunting for, which is the
+ * expensive kind of noise — 30 lines of `Workflow API request failed { error:
+ * 'aborted' }` in one hour of production log, every one of them a browser that
+ * navigated away or an upload the platform's own proxy gave up on, sitting in the
+ * same log as the genuine failures behind them. The repo already treats the
+ * mirror-image case this way on the platform side, where a client abandoning a
+ * streamed response is logged as expected and only a RISE in them is a signal.
+ *
+ * The code is what is tested rather than the message: `aborted` is Node's wording
+ * and a version away from being someone else's.
+ */
+export function isCallerGone(err: unknown): boolean {
+  if (!isRecord(err)) return false;
+  return err.code === "ECONNRESET" || err.name === "AbortError";
 }
 
 /**
@@ -202,7 +225,10 @@ export function readBody(req: http.IncomingMessage, limit: number): Promise<Buff
 export function claimUnder<Req, Res extends JsonResponse>(opts: {
   claims: (url: string) => boolean;
   route: (req: Req, res: Res, url: string, method: string) => Promise<void>;
-  logger: { error: (message: string, meta?: Record<string, unknown>) => void };
+  logger: {
+    error: (message: string, meta?: Record<string, unknown>) => void;
+    debug?: (message: string, meta?: Record<string, unknown>) => void;
+  };
   /** Log line for a rejection this surface did not handle. */
   label: string;
   onError?: (err: unknown, res: Res) => boolean;
@@ -212,6 +238,14 @@ export function claimUnder<Req, Res extends JsonResponse>(opts: {
     if (!claims(url)) return false;
     route(req, res, url, method).catch((err: unknown) => {
       if (onError?.(err, res)) return;
+      // A caller that hung up is not a failure to report, and its socket is not a
+      // place to write a 500 — see `isCallerGone`. Dropped rather than answered,
+      // and noted at debug so a suspicious volume is still recoverable.
+      if (isCallerGone(err)) {
+        logger.debug?.(`${label} (caller went away)`, { error: errorMessage(err) });
+        res.destroy();
+        return;
+      }
       answerHandlerFailure(res, logger, label, errorMessage(err));
     });
     return true;

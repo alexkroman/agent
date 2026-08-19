@@ -32,7 +32,6 @@
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { clientIp } from "./client-ip.ts";
-import { WORKFLOW_PROXY_TIMEOUT_MS } from "./constants.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
 import {
   forwardToGuest,
@@ -50,6 +49,10 @@ import {
 } from "./rate-limit.ts";
 import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrlOrThrow } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+import {
+  WORKFLOW_PROXY_TIMEOUT_MS,
+  WORKFLOW_PROXY_TRANSFER_TIMEOUT_MS,
+} from "./workflow-proxy-constants.ts";
 
 /** The 503 the forward answers with — the broker's own sentence, not a second one. */
 function unavailable(cause?: unknown): HTTPException {
@@ -108,6 +111,13 @@ export function createAgentWorkflowsHandler(
         headers: pickHeaders(request.headers, GUEST_API_REQUEST_HEADERS),
         body,
         timeoutMs: WORKFLOW_PROXY_TIMEOUT_MS,
+        // And once a body is MOVING the window is a different one, because what
+        // it waits on is the guest's write bandwidth rather than a round trip:
+        // undici buffers a stream body ahead of the socket, so a pull stall means
+        // that buffer is full and it drains at the guest's pace. A flat 30s here
+        // is what put 27 of these into an hour of production log as 503s, all
+        // between 30.3s and 34.1s, on a guest that was storing fine.
+        transferTimeoutMs: WORKFLOW_PROXY_TRANSFER_TIMEOUT_MS,
         // The deadline bounds neither body — and BOTH halves of that are a
         // route on this surface being legitimately unbounded.
         //

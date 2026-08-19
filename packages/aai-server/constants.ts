@@ -250,23 +250,6 @@ export const WORKFLOW_WAKE_READY_MS = envMs(process.env.WORKFLOW_WAKE_READY_MS, 
 export const WORKFLOW_WAKE_MAX_PER_TICK = envCount(process.env.WORKFLOW_WAKE_MAX_PER_TICK, 10);
 
 /**
- * How long `/:slug/workflows/*` may go WITHOUT PROGRESS before giving up.
- *
- * An INACTIVITY deadline, not a total: two routes on the surface are
- * legitimately unbounded in opposite directions — `GET /runs/:id/events` holds
- * a stream open for minutes, and `POST /workflows/uploads` carries up to
- * `MAX_WORKFLOW_UPLOAD_BYTES` — so the forward is `bound: "activity"`, whose
- * doc in `guest-forward.ts` carries the argument and the 500 MB upload this
- * number used to abort at 30.3s.
- *
- * 30s rather than something tighter because the first request through this route
- * is what BOOTS the sandbox: the broker has already waited for readiness, but a
- * cold guest's first HTTP answer still lands behind module loading. Override
- * with `WORKFLOW_PROXY_TIMEOUT_MS`.
- */
-export const WORKFLOW_PROXY_TIMEOUT_MS = envMs(process.env.WORKFLOW_PROXY_TIMEOUT_MS, 30_000);
-
-/**
  * Locate the built Node guest harness — the `aai-guest` workspace package's
  * single-file artifact (overridable via GUEST_HARNESS_PATH). Resolved
  * lazily at sandbox creation, so a missing build fails the spawn loudly

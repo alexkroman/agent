@@ -21,6 +21,16 @@ function createApp() {
   });
   app.get("/syntax-error", () => throwError(new SyntaxError("Unexpected token")));
   app.get("/unknown-error", () => throwError(new Error("something broke")));
+  app.get("/unavailable", () =>
+    throwError(
+      new HTTPException(503, {
+        message: "This agent is not available right now — try again.",
+        cause: new Error("the forward was aborted", {
+          cause: new Error("This operation was aborted"),
+        }),
+      }),
+    ),
+  );
   app.get("/sandbox-unavailable", () =>
     throwError(
       new SandboxUnavailableError("Modal sandbox spawn failed: Sandbox operation timed out", {
@@ -37,6 +47,28 @@ describe("createErrorHandler", () => {
     const res = await createApp().request("/http-error");
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "Forbidden" });
+  });
+
+  test("logs a 5xx HTTPException's whole cause chain, which is the diagnosis", async () => {
+    // The message is written FOR THE CALLER and the stack names the throw site, so
+    // neither says which condition produced the 503. Before this, 27 upload `PUT`s
+    // answered 503 in one hour of production log with no server-side line at all.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const res = await createApp().request("/unavailable");
+    expect(res.status).toBe(503);
+    const logged = warn.mock.calls.map(([line]) => String(line)).join("\n");
+    expect(logged).toContain("503 on /unavailable");
+    expect(logged).toContain("the forward was aborted");
+    expect(logged).toContain("This operation was aborted");
+  });
+
+  test("a 4xx HTTPException stays quiet — it is about the CALLER's request", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const res = await createApp().request("/http-error");
+    expect(res.status).toBe(403);
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
   });
 
   test("returns 400 for ZodError", async () => {
