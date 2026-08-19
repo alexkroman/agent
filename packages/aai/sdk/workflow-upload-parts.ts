@@ -66,6 +66,7 @@
  */
 
 import { withRetries } from "./_upload-retry.ts";
+import { mapConcurrent } from "./map-concurrent.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
 import type { UploadInfo, UploadRange } from "./step-uploads.ts";
@@ -317,16 +318,25 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
     report(part.index, part.end - part.start);
   };
 
-  await inParallel(missing, req.settings.concurrency ?? UPLOAD_PART_CONCURRENCY, async (part) => {
-    try {
-      await sendPart(part);
-    } catch (err: unknown) {
-      // Before re-throwing, so the siblings stop on this failure rather than on
-      // `Promise.all` having already rejected without telling them.
-      failed.abort(err);
-      throw err;
-    }
-  });
+  // `mapConcurrent` rather than a pool written here, and it is the SDK's own — a
+  // window over a cursor with exactly the semantics this needs, including the one
+  // the local copy got wrong: a rejection stops the other slots taking new items,
+  // where the local pool kept them pulling from the cursor and relied on the abort
+  // below to make each new request fail on arrival.
+  await mapConcurrent(
+    missing,
+    req.settings.concurrency ?? UPLOAD_PART_CONCURRENCY,
+    async (part) => {
+      try {
+        await sendPart(part);
+      } catch (err: unknown) {
+        // Before re-throwing, so the parts already ON THE WIRE stop too — stopping
+        // the window is not the same as abandoning the requests it has issued.
+        failed.abort(err);
+        throw err;
+      }
+    },
+  );
   // The record as the agent has it, rather than one assembled here: `complete` is
   // the agent's own answer about whether every byte landed, which is the one claim
   // this path must not make on its behalf. Retried like everything else on this
@@ -415,29 +425,4 @@ function partReporter(
     const done = loaded.reduce((sum, part) => sum + part, 0);
     onProgress({ loaded: done, total, fraction: Math.min(1, done / total) });
   };
-}
-
-/**
- * Run `work` over every item with at most `limit` in flight.
- *
- * A fixed pool of workers pulling from a shared cursor, rather than
- * `Promise.all` over batches: a batch is only as fast as its slowest member, so a
- * pool keeps every connection busy while one part is finishing. The first failure
- * rejects, and the parts already in flight settle without being awaited — the
- * upload is over either way, and the caller's `signal` is what stops them early.
- */
-async function inParallel<T>(
-  items: readonly T[],
-  limit: number,
-  work: (item: T) => Promise<void>,
-): Promise<void> {
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    for (let at = next++; at < items.length; at = next++) {
-      const item = items[at];
-      if (item !== undefined) await work(item);
-    }
-  };
-  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker);
-  await Promise.all(workers);
 }
