@@ -77,6 +77,7 @@ import {
   type UploadMeta,
   UploadPartError,
   type UploadStore,
+  UploadsUnavailableError,
   UploadTooLargeError,
 } from "./workflow-uploads.ts";
 
@@ -130,15 +131,29 @@ function declaredMeta(req: http.IncomingMessage): UploadMeta {
 }
 
 /**
- * Answer a write failure, or re-throw.
+ * Answer an upload failure this route can name, or decline so the caller re-throws.
  *
  * 413 here rather than in the router's catch, because these are the routes whose
  * body is MEANT to be large: the cap is part of their contract, and a caller has
  * to tell "too big" apart from "the agent is broken". 409 for a taken id for the
  * same reason — the request is well formed and the id is simply not available,
  * which a client retrying a `PUT` after a lost response needs to know.
+ *
+ * **It serves the READS too, which is why it is no longer `sendWriteFailure`.**
+ * The two `GET` routes called `store.info(id)` outside any `try`, so on a
+ * deployment with no upload backend they took the same opaque 500 as the writes —
+ * and `info` is precisely the route a person reaches for to ask why the others are
+ * failing.
  */
-function sendWriteFailure(res: http.ServerResponse, err: unknown): boolean {
+function sendUploadFailure(res: http.ServerResponse, err: unknown): boolean {
+  // 501, and it is the only status here addressed to an OPERATOR rather than to a
+  // client — see `UploadsUnavailableError` for why not 500 or 503. The message is
+  // the whole value: it names which half is missing and the command that supplies
+  // it, and until this branch existed it was composed and then discarded.
+  if (err instanceof UploadsUnavailableError) {
+    sendJson(res, 501, { error: err.message });
+    return true;
+  }
   if (err instanceof UploadTooLargeError) {
     sendJson(res, 413, { error: err.message });
     return true;
@@ -175,7 +190,7 @@ export async function createUpload(
     logger.info("Workflow upload stored", { id: info.id, name: info.name, size: info.size });
     sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
   } catch (err: unknown) {
-    if (sendWriteFailure(res, err)) return;
+    if (sendUploadFailure(res, err)) return;
     throw err;
   }
 }
@@ -204,7 +219,7 @@ export async function streamUpload(
     logger.info("Workflow upload streamed", { id: info.id, name: info.name, size: info.size });
     sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
   } catch (err: unknown) {
-    if (sendWriteFailure(res, err)) return;
+    if (sendUploadFailure(res, err)) return;
     throw err;
   }
 }
@@ -252,7 +267,7 @@ export async function beginUploadParts(
       directParts: directParts ? true : undefined,
     } satisfies UploadCreated);
   } catch (err: unknown) {
-    if (sendWriteFailure(res, err)) return;
+    if (sendUploadFailure(res, err)) return;
     throw err;
   }
 }
@@ -303,7 +318,30 @@ export async function writeUploadPart(
       stored ? await store.recordPart(id, offset) : await store.writePart(id, offset, req),
     );
   } catch (err: unknown) {
-    if (sendWriteFailure(res, err)) return;
+    if (sendUploadFailure(res, err)) return;
+    throw err;
+  }
+}
+
+/**
+ * `store.info`, with a named failure ANSWERED rather than thrown.
+ *
+ * Three states, and the reads need all three kept apart: the record
+ * ({@link UploadInfo}), "no such upload" (`null` → the caller's 404), and "this
+ * route already answered" (`undefined` → return). Collapsing the last two is what
+ * would put a misconfigured deployment back under a 404, which reads as "your id
+ * is wrong" — the same confusion `createUnavailableUploadStore` refuses to create
+ * by making its `info` throw instead of answering empty.
+ */
+async function readInfoOrFail(
+  res: http.ServerResponse,
+  store: UploadStore,
+  id: string,
+): Promise<UploadInfo | null | undefined> {
+  try {
+    return (await store.info(id)) ?? null;
+  } catch (err: unknown) {
+    if (sendUploadFailure(res, err)) return undefined;
     throw err;
   }
 }
@@ -321,7 +359,8 @@ export async function readUploadInfoRoute(
   store: UploadStore,
   id: string,
 ): Promise<void> {
-  const info = await store.info(id);
+  const info = await readInfoOrFail(res, store, id);
+  if (info === undefined) return;
   if (!info) {
     sendJson(res, 404, { error: `No upload with id ${id}` });
     return;
@@ -336,11 +375,29 @@ export async function readUploadRoute(
   store: UploadStore,
   id: string,
 ): Promise<void> {
-  const info = id ? await store.info(id) : undefined;
+  const info = id ? await readInfoOrFail(res, store, id) : null;
+  if (info === undefined) return;
   if (!info) {
     sendJson(res, 404, { error: `No upload with id ${id}` });
     return;
   }
+  await sendUploadBytes(req, res, store, id, info);
+}
+
+/**
+ * The answer itself, once the record is in hand.
+ *
+ * Split from the route on the complexity cap, and the seam is where the route stops
+ * DECIDING and starts writing: everything above resolves which of the three answers
+ * this request gets (a refusal, a 404, or the file), everything here is the file.
+ */
+async function sendUploadBytes(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  store: UploadStore,
+  id: string,
+  info: UploadInfo,
+): Promise<void> {
   const header = req.headers.range;
   const range = typeof header === "string" ? parseRange(header, info.size) : undefined;
   if (range === "unsatisfiable") {

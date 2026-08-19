@@ -102,6 +102,15 @@ const MIB = 1024 * 1024;
  */
 const UNATTENDED_BYTES_LIMIT = 2 * 1024 * MIB;
 
+/**
+ * Discarded uploads a cold target may lose before the sweep gives up.
+ *
+ * Three, because the thing being waited out is one sandbox spawn and not a queue:
+ * a platform agent answers its first request in ~12s or drops it, and a target
+ * that has failed three of these is not merely asleep.
+ */
+const WARMUP_ATTEMPTS = 3;
+
 function parseArgs(argv) {
   const args = new Map();
   const flags = new Set();
@@ -184,7 +193,7 @@ function installCountingFetch() {
         status: 0,
         bytes,
         ms: performance.now() - started,
-        err: `${err}`,
+        err: describeError(err),
       });
       origins.add(new URL(url).origin);
       throw err;
@@ -211,6 +220,26 @@ function classify(method, bytes) {
   if (method === "POST") return "claim";
   if (method !== "PUT") return "info";
   return bytes > 0 ? "bytes" : "record";
+}
+
+/**
+ * An error with its CAUSE CHAIN, because the top of one says nothing here.
+ *
+ * `fetch` reports every transport failure as the same five words —
+ * `TypeError: fetch failed` — and puts the fact you need (`ECONNRESET`, a DNS
+ * failure, an h2 stream reset, a body that was cut) one or two `cause` hops
+ * down. `sdk/step-fetch.ts` documents that exact trap for the fan-out it pins
+ * HTTP/1.1 for; a harness whose whole output is a failure column has no excuse
+ * for reprinting the useless half.
+ */
+function describeError(err) {
+  const parts = [];
+  for (let at = err, depth = 0; at !== undefined && at !== null && depth < 4; depth += 1) {
+    const code = at.code === undefined ? "" : ` (${at.code})`;
+    parts.push(`${at.name ?? "Error"}: ${at.message ?? String(at)}${code}`);
+    at = at.cause;
+  }
+  return parts.join(" <- ");
 }
 
 function bodyBytes(body) {
@@ -240,7 +269,7 @@ async function runOnce(api, blob, parallel) {
       parallel,
     });
   } catch (err) {
-    error = err;
+    error = describeError(err);
   }
   const ms = performance.now() - started;
   counted.restore();
@@ -257,7 +286,15 @@ async function runOnce(api, blob, parallel) {
     // is the case this sweep can walk into by accident (`--mib 8` against the
     // 8 MiB default part size), and it would then report a single-request row
     // under a fan-out label. A cell that asked for parts and sent none said no.
-    declined: parallel !== false && byteRequests.length === 0,
+    //
+    // **`error === undefined` is load-bearing, and leaving it out mislabelled a
+    // real outage as a benign decline.** A run that dies on its claim also sends
+    // zero byte-requests, so the first real-link sweep printed "(declined)" —
+    // the word for "this cell was not applicable" — against three cells whose
+    // every run had failed with `TypeError: fetch failed` and 66 resets. That is
+    // the harness committing the exact sin it exists to catch: reporting a
+    // failure in the vocabulary of a non-event.
+    declined: parallel !== false && byteRequests.length === 0 && error === undefined,
     partMsP50: median(byteRequests.map((r) => r.ms)),
     partMsP95: percentile(
       byteRequests.map((r) => r.ms),
@@ -336,22 +373,36 @@ function makeBody() {
 }
 
 /**
- * One discarded upload, so DNS, TLS and the far side's pool are hot.
+ * Discarded uploads until one lands, so DNS, TLS and the far side are hot.
  *
- * It also FAILS THE RUN, which is the point of doing it first: a target that
- * cannot take one default upload makes every number below meaningless, and a
+ * It FAILS THE RUN when none does, which is the point of doing it first: a target
+ * that cannot take one default upload makes every number below meaningless, and a
  * sweep that discovers that in cell seven has already spent the bandwidth.
+ *
+ * **It takes several attempts, and one was wrong for the target this exists to
+ * measure.** A platform agent is a sandbox that self-exits when idle, so the first
+ * request after a gap pays a cold spawn — measured at 11.9s for a bare claim — and
+ * the connection is sometimes dropped outright rather than answered, which arrives
+ * as a bare `TypeError: fetch failed` with no status to read. A single attempt
+ * therefore reports the ordinary cold state in the vocabulary of a broken target,
+ * and the run that hit it aborted against a deployment that was working.
  */
 async function warmup(api, blob) {
-  console.log("\nwarmup (discarded): one default upload");
-  const warm = await runOnce(api, blob, undefined);
-  if (warm.error !== undefined) {
-    console.error(`warmup failed: ${warm.error}`);
-    console.error("nothing below would mean anything — fix the target first.");
-    process.exit(1);
+  console.log("\nwarmup (discarded): one default upload, retried while the target wakes");
+  for (let attempt = 1; attempt <= WARMUP_ATTEMPTS; attempt += 1) {
+    const warm = await runOnce(api, blob, undefined);
+    if (warm.error === undefined) {
+      const shape = warm.parts === 0 ? "declined to one request" : `${warm.parts} parts`;
+      console.log(
+        `  attempt ${attempt}: ${fixed(warm.ms / 1000, 2)}s, ${shape}, bytes to ${warm.origins.join(", ")}`,
+      );
+      return;
+    }
+    console.log(`  attempt ${attempt}/${WARMUP_ATTEMPTS} failed: ${warm.error}`);
+    await sleep(config.gapMs);
   }
-  const shape = warm.parts === 0 ? "declined to one request" : `${warm.parts} parts`;
-  console.log(`  ${fixed(warm.ms / 1000, 2)}s, ${shape}, bytes to ${warm.origins.join(", ")}`);
+  console.error("warmup never landed — nothing below would mean anything.");
+  process.exit(1);
 }
 
 async function main() {

@@ -325,6 +325,7 @@ export {
   type UploadMeta,
   type UploadPart,
   type UploadStore,
+  UploadsUnavailableError,
   UploadTooLargeError,
 } from "./workflow-uploads.ts";
 // The wake hint. Exported for BOTH ends: the guest builds the publisher, and

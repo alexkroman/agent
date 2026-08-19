@@ -90,6 +90,17 @@ export function reportTable(results, fileBytes) {
   console.log(`\n${line(header)}`);
   console.log(`| ${widths.map((w) => "-".repeat(w)).join(" | ")} |`);
   for (const row of rows) console.log(line(keys.map((key) => row[key])));
+  // Said before the decline note and before the knee, because a cell that landed
+  // nothing is a fact about the RUN rather than about the fan-out: the numbers that
+  // did land were measured against a target that later stopped answering, so the
+  // whole table is suspect and not merely incomplete.
+  const empty = rows.filter((row) => row.ok.startsWith("0/"));
+  if (empty.length > 0) {
+    console.log(
+      `\n${empty.length} cell(s) landed NOTHING: ${empty.map((r) => r.label).join(", ")}`,
+    );
+    console.log("  the target stopped answering mid-sweep. Re-run before reading anything above.");
+  }
   if (rows.some((row) => row.declined)) {
     console.log("\n(declined) = the parts path refused this cell and sent ONE request instead —");
     console.log("  the file fits in one part. Raise --mib or lower --part-mib to measure it.");

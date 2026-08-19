@@ -183,6 +183,34 @@ export class UnknownUploadError extends Error {
   }
 }
 
+/**
+ * Raised by every method of the store a deployment with no upload backend gets.
+ *
+ * Its own error for the reason the four above are, and the case for it is the
+ * strongest of the five: this is the only one whose message is addressed to an
+ * OPERATOR rather than to a client, and it is the only one that was being thrown
+ * away. Untyped, it fell through the route's `sendUploadFailure` to
+ * `answerHandlerFailure`, which is written to be opaque on purpose — "a rejection
+ * that reached here is not the caller's fault to describe" — and that rule is
+ * right for a crash and wrong for a named configuration condition whose whole
+ * content is the remedy. The symptom is `{"error":"Internal server error"}` on
+ * every upload route of a deployed agent, with `aai storage enable` sitting in a
+ * string nobody ever sees.
+ *
+ * **The status is 501, and 500 or 503 would both be worse.** `RETRYABLE_STATUS`
+ * (`sdk/_upload-retry.ts`) holds 500, 502, 503 and 504, so under either of those a
+ * client spends its whole `UPLOAD_PART_ATTEMPTS` budget — four attempts, ~4-11s of
+ * backoff, per part — re-asking a deployment that cannot ever answer differently,
+ * and the message arrives last and looks like a flaky link. 501 says what is
+ * actually true: this server does not implement uploads.
+ */
+export class UploadsUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = UploadsUnavailableError.name;
+  }
+}
+
 /** What an uploader declares about the file it is sending. */
 export type UploadMeta = {
   /** Filename, as the browser reported it. Stored, never interpreted. */

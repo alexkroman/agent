@@ -67,13 +67,43 @@ export const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 /**
  * How many parts a parallel upload keeps in flight, by default.
  *
- * The whole point is to beat one connection, and the gain is steep at first and
- * then flat: the bottleneck moves from per-connection window scaling to the link
- * itself somewhere around four, and past that the parts mostly compete with each
- * other for the same bandwidth while multiplying the writes the agent is doing at
- * once. Four is also inside every browser's per-origin connection limit (six),
- * which leaves room for the page's own requests — a page that spends all six on
- * one upload cannot poll the run it just started.
+ * **Four, and it is now MEASURED — the knee and a hard ceiling land in the same
+ * place.** `pnpm bench:uploads` (`scripts/upload-sweep.mjs`) against a deployed
+ * agent on the managed platform, 32 MiB in 2 MiB parts, two runs per width:
+ *
+ * | in flight | wall p50 | range | MB/s | part p50/p95 | h2 resets |
+ * | --- | --- | --- | --- | --- | --- |
+ * | 1 request | 11.6s | 11.5-11.6s | 2.8 | — | 0 |
+ * | 1 | 49.7s | 49.1-50.2s | 0.6 | 1.41s / 2.73s | 0 |
+ * | 2 | 20.7s | 19.6-21.8s | 1.5 | 1.28s / 1.97s | 0 |
+ * | 4 | 14.0s | 13.6-14.4s | 2.3 | 1.63s / 2.88s | 0 |
+ * | 8 | 13.1s | 8.5-17.7s | 2.4 | 2.81s / 4.38s | 10 |
+ * | 16 | — | 0 of 2 landed | — | — | 63 |
+ *
+ * The shape the old prose GUESSED is roughly right — steep, then flat — and the
+ * number it guessed survives. What it could not know is why the flat part is flat.
+ * 1 → 4 is 3.5x. 4 → 8 buys nothing measurable (13.1s against 14.0s, inside 8's own
+ * 2.1x spread) and starts paying stream resets. 16 does not complete at all.
+ *
+ * **The ceiling is HTTP/2, and it is not the browser connection limit this used to
+ * cite.** Both halves of that sentence were wrong. A browser's six-per-origin cap is
+ * an HTTP/1.1 rule, and the origin here speaks h2 — to Node's `fetch` and to a page
+ * alike — so the real limit is the server's concurrent-stream budget, and it does not
+ * answer with a status. It answers `NGHTTP2_ENHANCE_YOUR_CALM`, a STREAM RESET, which
+ * surfaces as a bare `TypeError: fetch failed` and is invisible to both
+ * {@link UPLOAD_RETRY_MAX_MS}'s `Retry-After` handling and `RETRYABLE_STATUS`: there
+ * is no response to read. `withRetries` still re-sends it as a transport failure, which
+ * is what absorbs the ten at width 8 — and at 16 every sibling collides into the same
+ * reset and the budget is gone. `sdk/step-fetch.ts` documents this exact failure and
+ * pins HTTP/1.1 to escape it; the upload path CANNOT, because half its callers are
+ * pages. So four is not merely where the gain stops, it is under the cliff.
+ *
+ * Two honest limits on the table. It is ONE link on one afternoon at two runs a cell,
+ * so it bounds the shape rather than pinning the knee to the megabyte — the 8-wide row
+ * spans 2.1x on its own and the sweep says so rather than reporting its median. And the
+ * `1 request` row is not the win it looks like: one stream never collides, so it beats
+ * every fan-out on a path whose bottleneck is the far side rather than the uplink. Both
+ * are reasons to RE-RUN before this number moves, not reasons to move it.
  */
 export const UPLOAD_PART_CONCURRENCY = 4;
 
