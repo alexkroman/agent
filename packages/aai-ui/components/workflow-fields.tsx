@@ -25,6 +25,7 @@
 import type { WorkflowSummary } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { useWorkflows } from "../use-workflow-form.ts";
+import { useDeclareFieldsPending } from "./_form-readiness.ts";
 import { CheckboxField, FileField, NumberField, SelectField, TextField } from "./form.tsx";
 
 /** The slice of JSON Schema this reads. Everything else is ignored. */
@@ -77,9 +78,15 @@ export function WorkflowFields({ workflow }: { workflow?: WorkflowSummary | stri
   // Unconditional, because a hook cannot be: the listing is only REQUESTED when
   // a name was passed, which is what keeps a page that already holds its
   // summaries from fetching them twice.
-  const { workflows } = useWorkflows(typeof workflow === "string" ? {} : { skip: true });
+  const { workflows, loading } = useWorkflows(typeof workflow === "string" ? {} : { skip: true });
   const summary =
     typeof workflow === "string" ? workflows.find((entry) => entry.name === workflow) : workflow;
+  // Tell the enclosing `<Form>` that its fields do not exist yet, so a click
+  // before the lookup lands cannot submit an empty payload — the whole argument is
+  // in `_form-readiness.ts`. `loading` rather than `!summary`: a name that matches
+  // no workflow is a PERMANENT absence, and holding the form shut for it would
+  // replace a bad error message with a form that never submits.
+  useDeclareFieldsPending(loading);
   const schema = asObjectSchema(summary?.inputSchema);
   if (!schema?.properties) return null;
   const required = new Set(schema.required ?? []);
