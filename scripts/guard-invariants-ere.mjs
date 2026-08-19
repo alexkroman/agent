@@ -55,6 +55,44 @@ export const NOT_NULL = `${MEMBER} !== null`;
 export const IS_NULL = `${MEMBER} === null`;
 /** The spread of a parenthesised expression — the head of rule 2's three shapes. */
 export const SPREAD_OPEN = "\\.\\.\\.\\([^)]*";
+/**
+ * A dotted member path that may use OPTIONAL CHAINING — `startOpts?.logContext`.
+ *
+ * Distinct from `MEMBER` because rule 22's whole discriminator is that the
+ * condition contains no operator, and `?.` is the one punctuation a bare
+ * truthiness test is allowed to carry. Folding it into `MEMBER` would let rule
+ * 17's patterns match a `typeof a?.b === "object"` they were never measured
+ * against.
+ */
+const MEMBER_Q = `[${ID_HEAD}][${ID_TAIL}.?]*`;
+/**
+ * A BARE truthiness test: a member path, optionally negated, and nothing else.
+ *
+ * The absence of an operator is the entire point. `!==`, `===`, `<`, `.length`
+ * and `in` are all excluded by the character class, which is what keeps rule 22
+ * off rule 2's `!== undefined` forms (a different remedy), off the compound
+ * conditions rule 2 documents as deliberately unmatched
+ * (`opts.languages !== undefined && opts.languages.length > 0`), and off
+ * `"url" in opts.bundle` — verified against all seven shapes.
+ */
+const TRUTHY = `!?${MEMBER_Q}`;
+/**
+ * A conditional spread guarded by a bare TRUTHINESS test, either spelling:
+ * `...(x && {` or `...(x ? {`.
+ *
+ * The trailing `\{` carries the same weight it does in rule 2 — it is what
+ * keeps an ARRAY spread out (`...(placed ? [item] : [])`), which
+ * `omitUndefined` cannot express at all.
+ *
+ * Both spellings require the brace on the SAME LINE, so the multi-line form
+ * whose `?` wraps to the next line is not seen. That is deliberate and
+ * conservative rather than complete: an alternative matching a bare `...(ident$`
+ * would also match every multi-line spread of a plain call
+ * (`...(await mapInBatches(`), and rule 3's history is the argument for
+ * over-reporting only where the over-report is still a real finding. Measured:
+ * 15 multi-line spreads exist, none of them this shape.
+ */
+export const SPREAD_TRUTHY = `\\.\\.\\.\\(${TRUTHY} (&&|\\?) \\{`;
 /** A literal `"?"` argument, escaped for ERE. */
 const QUERY_ARG = '\\("\\?"\\)';
 /** A `.split("?")` call — hand-cutting a request target into path and query. */

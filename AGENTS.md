@@ -502,7 +502,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:invariants`** (`scripts/guard-invariants.mjs`, rules in
   `scripts/guard-invariants-rules.mjs`) — **the mechanical half of this file.**
-  Eighteen numbered rules, each printing WHY the invariant exists and what to use
+  Nineteen numbered rules, each printing WHY the invariant exists and what to use
   instead, so a violation is self-correcting and a reviewer never re-explains
   it. Every one used to live only as prose here, and prose is enforcement
   exactly as long as somebody remembers it at review time.
@@ -510,7 +510,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | # | Rule | Instead |
   | --- | --- | --- |
   | 1 | no symlinks anywhere | a real file, or a module that re-exports |
-  | 2 | no conditional spread of an object literal — the ternary, the inverted ternary, or the `&&` form | `omitUndefined()` |
+  | 2 | no conditional spread on a `!== undefined` presence test — all three spellings | `omitUndefined()` |
   | 3 | no `Promise.race` against a `setTimeout`, WRAPPED FORM INCLUDED | `p-timeout` |
   | 4 | no inline `new Promise(r => setTimeout(r, 0))`, `setImmediate` and `<T>` included | `flush()` / `tick()` |
   | 5 | no `delete process.env.X` | `vi.stubEnv(name, undefined)` |
@@ -529,6 +529,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 19 | no hand-rolled sleep (or `node:timers/promises`), `<T>` included | `sleep()` |
   | 20 | no changeset naming a package or bump type that does not exist | the real name from its package.json |
   | 21 | no `expect.poll` — a `test.concurrent` sibling clears the pointer it reads | `vi.waitFor()` |
+  | 22 | no truthiness-guarded conditional spread — `...(x && { x })` | a judgement: see the rule's remedy |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
@@ -536,12 +537,18 @@ one commit of history. A file in the tree has no merge base and no such modes.
   rule 10, retired with the `research/` directory it checked; and 15,
   reserved). Rules 1, 7, 9, 12, 13, 14, 20 and 21 are at zero and enforced
   absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
-  was widened**: `git grep` is line-based, so the wrapped `Promise.race([` form
-  Biome emits can only be matched by reporting the OPENING line, which cannot
-  see whether a timer is among the elements — so a timer-free wrapped race is a
-  legitimate baseline entry (`aai-server/guest-readiness.ts` is the one).
-  Over-reporting a race is the cheap error; every finding in this family is a
-  guard that under-reports silently.
+  was widened** — a wrapped `Promise.race([` can only be matched by reporting the
+  opening line, which cannot see whether a timer is among the elements, so a
+  timer-free wrapped race is a legitimate entry. Over-reporting there is the
+  cheap error: every finding in this family under-reports silently. The argument
+  is on `RACE_CONTINUES` in `guard-invariants-ere.mjs`.
+
+  **Rule 2's `undefined` scope is a BOUNDARY, and rule 22 is why.** Rule 2 tests
+  presence, which `omitUndefined` *is*, so its matches rewrite without changing
+  behaviour; `...(x && { x })` also drops `""`, `0` and `false`, so widening rule
+  2 to reach it would have the gate recommend a behaviour change on 145 lines.
+  Rule 22 counts that family instead, the first rule here **seeded as debt** (145
+  across 75 files, goal zero) — its entries are lines nobody has read yet.
 
   **Five scopes, five corpus FLOORS**, and three of the five were missing —
   rule 11's shipped-source corpus (~1,027 files, covered by neither existing
@@ -569,21 +576,15 @@ one commit of history. A file in the tree has no merge base and no such modes.
   one computed line, the printed count, stayed right. The per-file baselines
   carry the same `--update`-only-lowers contract as `check:hatches`.
 
-  **Every baselined occurrence is legitimate, and the JSON is NOT where it says
-  so** — that file is a bare `{path: count}` map written by `--update`, with
+  **A baselined occurrence needs a reason, and the JSON is NOT where it goes** —
+  that file is a bare `{path: count}` map written by `--update`, with
   `_description` its only prose, so a reason recorded there would be erased by
-  the next regeneration. A reason lives at the OCCURRENCE, in a comment beside
-  the line, and the roster is here: three spread-ternaries where **the guard
-  is not the value** (`String(params.port)` would stringify `undefined` into
-  `"undefined"`; `{ mode: 0o700 }` sets a different value from the one it
-  tests), the CLI test setup's env scrub, one hand-rolled owned-map in
-  `studio-sse.ts`, the two `/tmp` literals that name a path inside the Linux
-  sandbox rather than on this machine, one record guard over a declared
-  union, one `.split("?")` that cuts a Vite module id rather than a
-  request target, one hand-rolled sleep inside a fixture of USER code (a
-  user's own agent may not import an SDK internal, so the hand-rolled form is
-  what that fixture is demonstrating), and the two `scripts/*.mjs` guards that a
-  plain-node gate cannot replace with an SDK import.
+  the next regeneration. It lives at the OCCURRENCE, in a comment beside the
+  line. A roster used to be duplicated here and is not, for the reason the
+  script's own prose copy of the rule catalogue was deleted: a hand-kept list of
+  baseline entries goes stale while the generated one stays right. Read the
+  entries out of the baseline and the reasons off the lines they sit on. The one
+  rule whose entries are NOT yet defended decisions is 22 — see above.
 
   Rule 4's nine are zero-delay yields that cannot use `flush()`/`tick()`:
   `tool-executor.ts`'s `setImmediate` between tool calls (shipped source, where
