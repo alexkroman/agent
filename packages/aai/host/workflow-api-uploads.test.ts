@@ -15,12 +15,20 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, test } from "vitest";
+import { UPLOAD_CHUNK_BYTES } from "../sdk/constants.ts";
 import { requestPath } from "../sdk/request-url.ts";
 import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
 import { silentLogger } from "./_test-utils.ts";
 import { createWorkflowApi } from "./workflow-api.ts";
 import { parseRange } from "./workflow-api-uploads.ts";
-import type { UploadStore } from "./workflow-uploads.ts";
+import {
+  assertPartOffset,
+  contiguousBytes,
+  mergeRanges,
+  UnknownUploadError,
+  UploadPartError,
+  type UploadStore,
+} from "./workflow-uploads.ts";
 
 /** An engine that answers nothing: these routes must not touch it. */
 const engine = () => ({
@@ -56,11 +64,19 @@ async function serve(opts: { uploads?: UploadStore | undefined } = {}): Promise<
 
 /** The real store over an in-memory `Db` — enough to exercise create + range. */
 function memoryStore(): UploadStore {
+  // `size` is tracked beside the buffer rather than read off it: a PARTS upload is
+  // allocated whole at its declaration, so its buffer's length is the file's total
+  // from the first moment and its `size` is the contiguous prefix.
   const files = new Map<
     string,
-    { name: string; type: string; bytes: Uint8Array; complete: boolean }
+    { name: string; type: string; bytes: Uint8Array; size: number; complete: boolean }
   >();
   let seq = 0;
+  // What a PARTS upload declared, and which windows have landed. Kept beside the
+  // bytes rather than in them, because a parts upload's `size` is the contiguous
+  // prefix and its buffer is the whole file from the moment it is begun.
+  const totals = new Map<string, number>();
+  const ranges = new Map<string, { start: number; end: number }[]>();
   /** Drain a request body, which both writers do the same way. */
   const drain = async (body: AsyncIterable<Uint8Array>): Promise<Uint8Array> => {
     const parts: Uint8Array[] = [];
@@ -81,7 +97,13 @@ function memoryStore(): UploadStore {
     async create(meta, body) {
       const bytes = await drain(body);
       const id = `upl_${++seq}`;
-      files.set(id, { name: meta.name ?? "", type: meta.type ?? "", bytes, complete: true });
+      files.set(id, {
+        name: meta.name ?? "",
+        type: meta.type ?? "",
+        bytes,
+        size: bytes.length,
+        complete: true,
+      });
       return {
         id,
         name: meta.name ?? "",
@@ -100,15 +122,52 @@ function memoryStore(): UploadStore {
       const name = meta.name ?? "";
       const type = meta.type ?? "";
       // Present from the first byte, which is the property this route exists for.
-      files.set(id, { name, type, bytes: new Uint8Array(0), complete: false });
+      files.set(id, { name, type, bytes: new Uint8Array(0), size: 0, complete: false });
       const bytes = await drain(body);
-      files.set(id, { name, type, bytes, complete: true });
+      files.set(id, { name, type, bytes, size: bytes.length, complete: true });
       return { id, name, type, size: bytes.length, complete: true };
+    },
+    async beginParts(id, meta, total) {
+      if (files.has(id)) {
+        const { UploadIdTakenError } = await import("./workflow-uploads.ts");
+        throw new UploadIdTakenError(id);
+      }
+      const name = meta.name ?? "";
+      const type = meta.type ?? "";
+      // The real store allocates nothing up front either — what exists from here
+      // is the RECORD, which is the property the route is for.
+      files.set(id, { name, type, bytes: new Uint8Array(total), size: 0, complete: false });
+      totals.set(id, total);
+      ranges.set(id, []);
+      return { id, name, type, size: 0, complete: false };
+    },
+    async writePart(id, offset, body) {
+      // The same two refusals the real store makes, spelled through the same
+      // helpers — a fake that accepted a misaligned part would let the route's
+      // 400 be tested against a path production does not take.
+      assertPartOffset(offset);
+      const file = files.get(id);
+      const total = totals.get(id);
+      if (!file || total === undefined) throw new UnknownUploadError(id);
+      const bytes = await drain(body);
+      if (offset + bytes.length > total) {
+        throw new UploadPartError(`A part at ${offset} runs past the ${total} bytes declared.`);
+      }
+      file.bytes.set(bytes, offset);
+      const merged = mergeRanges(ranges.get(id) ?? [], {
+        start: offset,
+        end: offset + bytes.length,
+      });
+      ranges.set(id, merged);
+      const size = contiguousBytes(merged);
+      file.size = size;
+      file.complete = size >= total;
+      return { id, name: file.name, type: file.type, size, complete: file.complete };
     },
     async info(id) {
       const file = files.get(id);
       return file
-        ? { id, name: file.name, type: file.type, size: file.bytes.length, complete: file.complete }
+        ? { id, name: file.name, type: file.type, size: file.size, complete: file.complete }
         : undefined;
     },
     async read(id, start, end) {
@@ -356,5 +415,160 @@ describe("GET /workflows/uploads/:id/info", () => {
     const base = await serve();
     const res = await fetch(`${base}/workflows/uploads/upl_gone/info`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe("the parts routes", () => {
+  /** Declare an upload its parts will fill in, and answer what the route said. */
+  async function begin(
+    base: string,
+    id: string,
+    total: number,
+    init: { name?: string; type?: string } = {},
+  ): Promise<Response> {
+    return await fetch(
+      `${base}/workflows/uploads/${id}/parts?name=${encodeURIComponent(init.name ?? "")}&total=${total}`,
+      { method: "POST", headers: { "Content-Type": init.type ?? "application/octet-stream" } },
+    );
+  }
+
+  /** Send one window of it. */
+  async function part(
+    base: string,
+    id: string,
+    offset: number,
+    bytes: Uint8Array,
+  ): Promise<Response> {
+    return await fetch(`${base}/workflows/uploads/${id}/parts?offset=${offset}`, {
+      method: "PUT",
+      body: bytes,
+    });
+  }
+
+  /** A chunk of bytes whose CONTENT identifies where it came from. */
+  function ramp(n: number, from = 0): Uint8Array {
+    return Uint8Array.from({ length: n }, (_, at) => (from + at) % 251);
+  }
+
+  test("declares an upload readable before a single part has landed", async () => {
+    const base = await serve();
+    const res = await begin(base, "abc", UPLOAD_CHUNK_BYTES * 2, {
+      name: "standup.wav",
+      type: "audio/wav",
+    });
+    expect(res.status).toBe(201);
+    await expect(res.json()).resolves.toMatchObject({
+      id: "abc",
+      name: "standup.wav",
+      type: "audio/wav",
+      size: 0,
+      complete: false,
+      url: "/workflows/uploads/abc",
+    });
+  });
+
+  test("reassembles parts sent AT ONCE and out of order", async () => {
+    const base = await serve();
+    const total = UPLOAD_CHUNK_BYTES * 3;
+    await begin(base, "abc", total);
+    // All three in flight together, which is the shape the client really sends —
+    // and `Promise.all` settles them in whatever order the server finishes.
+    const answers = await Promise.all([
+      part(base, "abc", UPLOAD_CHUNK_BYTES * 2, ramp(UPLOAD_CHUNK_BYTES, 2)),
+      part(base, "abc", 0, ramp(UPLOAD_CHUNK_BYTES)),
+      part(base, "abc", UPLOAD_CHUNK_BYTES, ramp(UPLOAD_CHUNK_BYTES, 1)),
+    ]);
+    expect(answers.map((one) => one.status)).toEqual([200, 200, 200]);
+    const stored = await fetch(`${base}/workflows/uploads/abc/info`);
+    await expect(stored.json()).resolves.toMatchObject({ size: total, complete: true });
+    // Read across a seam, so this is about the ORDER of the bytes rather than
+    // their number.
+    const bytes = await fetch(`${base}/workflows/uploads/abc`, {
+      headers: { Range: `bytes=${UPLOAD_CHUNK_BYTES - 1}-${UPLOAD_CHUNK_BYTES}` },
+    });
+    expect([...new Uint8Array(await bytes.arrayBuffer())]).toEqual([
+      (UPLOAD_CHUNK_BYTES - 1) % 251,
+      1,
+    ]);
+  });
+
+  test("answers each part with the record AS IT NOW STANDS", async () => {
+    const base = await serve();
+    await begin(base, "abc", UPLOAD_CHUNK_BYTES * 2);
+    // The part that closes the last gap tells its own sender the upload is
+    // finished, so a client never has to poll for it.
+    const first = await part(base, "abc", 0, ramp(UPLOAD_CHUNK_BYTES));
+    await expect(first.json()).resolves.toMatchObject({
+      size: UPLOAD_CHUNK_BYTES,
+      complete: false,
+    });
+    const last = await part(base, "abc", UPLOAD_CHUNK_BYTES, ramp(UPLOAD_CHUNK_BYTES));
+    await expect(last.json()).resolves.toMatchObject({
+      size: UPLOAD_CHUNK_BYTES * 2,
+      complete: true,
+    });
+  });
+
+  test("a declaration with no total is a 400 naming what is missing", async () => {
+    const base = await serve();
+    const res = await fetch(`${base}/workflows/uploads/abc/parts`, { method: "POST" });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining("total") });
+  });
+
+  test("a part with no offset is a 400 naming what is missing", async () => {
+    const base = await serve();
+    await begin(base, "abc", UPLOAD_CHUNK_BYTES);
+    const res = await fetch(`${base}/workflows/uploads/abc/parts`, {
+      method: "PUT",
+      body: new Uint8Array([1]),
+    });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining("offset") });
+  });
+
+  test("a misaligned offset is a 400, not a part stored in the wrong place", async () => {
+    const base = await serve();
+    await begin(base, "abc", UPLOAD_CHUNK_BYTES);
+    const res = await part(base, "abc", 7, ramp(4));
+    // 400 rather than a retryable status, because the request will be refused
+    // identically every time and a client retrying it is in a loop.
+    expect(res.status).toBe(400);
+  });
+
+  test("a part for an upload nobody declared is a 404", async () => {
+    const base = await serve();
+    const res = await part(base, "abc", 0, ramp(4));
+    expect(res.status).toBe(404);
+  });
+
+  test("a second declaration of one id is a 409, never a re-declaration", async () => {
+    const base = await serve();
+    await begin(base, "abc", UPLOAD_CHUNK_BYTES);
+    expect((await begin(base, "abc", UPLOAD_CHUNK_BYTES)).status).toBe(409);
+  });
+
+  test("an id that would escape the store is a 400", async () => {
+    const base = await serve();
+    const res = await fetch(`${base}/workflows/uploads/..%2Fescape/parts?total=4`, {
+      method: "POST",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("is matched BEFORE `/uploads/:id`, which is a prefix rule", async () => {
+    const base = await serve();
+    // The order-is-load-bearing rule: listed the other way round, this `PUT` reads
+    // `"abc/parts"` as an upload id and stores a whole file under it.
+    await begin(base, "abc", UPLOAD_CHUNK_BYTES);
+    expect((await part(base, "abc", 0, ramp(UPLOAD_CHUNK_BYTES))).status).toBe(200);
+    const stored = await fetch(`${base}/workflows/uploads/abc%2Fparts/info`);
+    expect(stored.status).toBe(404);
+  });
+
+  test("404s with the fix on a server that stores no uploads", async () => {
+    const base = await serve({ uploads: undefined });
+    expect((await begin(base, "abc", 4)).status).toBe(404);
+    expect((await part(base, "abc", 0, ramp(4))).status).toBe(404);
   });
 });

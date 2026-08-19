@@ -25,6 +25,16 @@ export type UploadOptions = {
     type?: string | undefined;
     signal?: AbortSignal | undefined;
     onProgress?: ((progress: UploadProgress) => void) | undefined;
+    parallel?: UploadParallel | undefined;
+};
+
+// @public
+export type UploadParallel = boolean | UploadPartsSettings;
+
+// @public
+export type UploadPartsSettings = {
+    partBytes?: number | undefined;
+    concurrency?: number | undefined;
 };
 
 // @public

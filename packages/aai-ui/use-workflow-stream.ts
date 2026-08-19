@@ -61,6 +61,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import type { UploadParallel } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { filesOf } from "./_workflow-files.ts";
@@ -76,6 +77,19 @@ export type UseWorkflowStreamOptions = {
   key?: string;
   /** How often the fallback poll re-reads a live run. */
   intervalMs?: number;
+  /**
+   * Send the file as concurrent parts instead of in one streaming request.
+   *
+   * It COMPOSES with what this hook is for rather than competing with it: the run
+   * still starts before the bytes, and the store still publishes how far the file
+   * is readable — that number is the CONTIGUOUS prefix, so a run reading ahead of
+   * the uplink sees the same growing file whether one connection or four are
+   * filling it. What changes is only how fast it grows.
+   *
+   * `true` for the defaults, or `{ partBytes, concurrency }` to tune them. See
+   * `UploadOptions.parallel`.
+   */
+  parallel?: UploadParallel;
 };
 
 /** What {@link useWorkflowStream} returns. */
@@ -134,7 +148,7 @@ export function useWorkflowStream<R = unknown>(
   workflow: string,
   opts: UseWorkflowStreamOptions = {},
 ): WorkflowStreamSubmission<R> {
-  const { api, key, intervalMs } = opts;
+  const { api, key, intervalMs, parallel } = opts;
   const [runId, setRunId] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | undefined>(undefined);
@@ -175,6 +189,7 @@ export function useWorkflowStream<R = unknown>(
           name: chosen.name,
           onProgress: (progress) =>
             setUpload({ ...progress, name: chosen.name, index: 1, count: 1 }),
+          ...omitUndefined({ parallel }),
         });
         // See the module doc: the run is asleep between polls, so without this it
         // learns the upload is complete a poll interval late. Best-effort.
@@ -191,7 +206,7 @@ export function useWorkflowStream<R = unknown>(
         setUpload(undefined);
       }
     },
-    [workflow, key, getClient],
+    [workflow, key, parallel, getClient],
   );
 
   const reset = useCallback(() => {

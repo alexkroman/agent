@@ -621,6 +621,33 @@ token, a part index, a seal call and a cutter callback, all of which the store
 publishing `size` replaces. `transcription-workflow` offers both paths over one
 form and is the worked example.
 
+### Sending one file over SEVERAL connections
+
+Both upload paths above are ONE request, so the file moves at one connection's
+throughput — which over any distance is a fraction of the link, and for a
+recording that is the wait a person is sitting through. `parallel` is the option
+that splits it: `useWorkflowSubmit(w, { parallel: true })` and
+`useWorkflowStream(w, { parallel: true })` both pass it to the SDK, which cuts
+the file into megabyte-aligned parts and sends four at once against
+`POST|PUT /workflows/uploads/:id/parts`.
+
+Three things worth knowing at a call site:
+
+- **It composes with the streaming flow rather than competing with it.** What the
+  run polls is the store's `size`, which for a parts upload is the CONTIGUOUS
+  prefix — so a run reading ahead of the uplink sees the same growing file
+  whether one connection or four are filling it, and only the rate changes.
+- **`parallel` splits ONE file; a form's files stay sequential.** Two recordings
+  sent at once would compete for the same link with two bars to explain it, which
+  is the shape `uploadFiles` was written to avoid.
+- **It degrades rather than failing** — a small file, a string body, or an agent
+  deployed before the `/parts` routes existed all send the single request instead
+  — so a page may turn it on unconditionally. `sdk/workflow-upload-parts.ts` owns
+  the causes.
+
+`transcription-workflow` renders it as a checkbox beside the mode radios,
+deliberately: it describes the UPLOAD, and all three of its flows have one.
+
 **Measured, on a 10-minute 48 kHz stereo recording (115 MB, 7 segments) at 2
 MB/s:** six of seven segments were transcribed before the upload finished, the
 first at 24% of the file. The saving over the classic path is ~2s of 59s —

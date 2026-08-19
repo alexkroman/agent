@@ -4734,6 +4734,10 @@ export type UploadStore = UploadReader & {
     stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
         limit?: number;
     }): Promise<UploadInfo>;
+    beginParts(id: string, meta: UploadMeta, total: number, opts?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
 };
 
 // @public
@@ -6359,6 +6363,16 @@ export type UploadOptions = {
     type?: string | undefined;
     signal?: AbortSignal | undefined;
     onProgress?: ((progress: UploadProgress) => void) | undefined;
+    parallel?: UploadParallel | undefined;
+};
+
+// @public
+export type UploadParallel = boolean | UploadPartsSettings;
+
+// @public
+export type UploadPartsSettings = {
+    partBytes?: number | undefined;
+    concurrency?: number | undefined;
 };
 
 // @public
@@ -6617,6 +6631,7 @@ import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
 import type { TextareaHTMLAttributes } from 'react';
+import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai';
@@ -7120,6 +7135,7 @@ export type UseWorkflowStreamOptions = {
     api?: WorkflowApi;
     key?: string;
     intervalMs?: number;
+    parallel?: UploadParallel;
 };
 
 // @public
@@ -7131,6 +7147,7 @@ export type UseWorkflowSubmitOptions = {
     key?: string;
     wait?: number;
     intervalMs?: number;
+    parallel?: UploadParallel;
 };
 
 // @public

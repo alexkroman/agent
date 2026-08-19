@@ -42,15 +42,30 @@
  * because they take the same input and return the same shape, and the only thing
  * the page chooses is which HOOK submits it.
  *
- * `useWorkflowStream` is the streaming half: it cuts the file with the cutter this
- * template supplies (`cut-wav.ts`, which is `workflows/wav.ts` run in the browser),
- * uploads each part under one group token, and wakes the run as each lands.
- * `useWorkflowSubmit` is the classic half and is unchanged.
+ * `useWorkflowStream` is the streaming half: it mints the upload id, starts the run
+ * on it, sends the file, and wakes the run when the bytes land. `useWorkflowSubmit`
+ * is the classic half and is unchanged.
  *
  * Streaming is the DEFAULT because it is faster on any real recording. The classic
- * path stays selectable because it is the shape to read first, and because it is
- * the one that works on a file this browser cannot parse — the cutter needs a WAV
- * header, where the server-side flow reaches the same conclusion in its first step.
+ * path stays selectable because it is the shape to read first.
+ *
+ * ## The third control is about the UPLOAD, not the flow
+ *
+ * "Split the file across connections" (`parallel`) is orthogonal to the three modes
+ * and applies to all of them, which is why it is a checkbox beside the radios
+ * rather than a fourth option. A single request moves a file at one connection's
+ * throughput, which over any distance is a fraction of the link — so the SDK cuts
+ * the file into megabyte-aligned parts and sends four at once. Nothing about the
+ * workflow changes: the agent reassembles them, `readUpload` reads the same
+ * windows, and the streaming flow still watches the file grow (what it polls is the
+ * CONTIGUOUS prefix, which is honest whether one connection or four are filling
+ * it).
+ *
+ * It is selectable rather than always-on for the reason the modes are: this is the
+ * template where a reader runs both over the same recording and sees what each
+ * costs. It also degrades on its own — a small file, or an agent deployed before
+ * the `/parts` routes existed, sends the single request instead — so leaving it on
+ * is safe.
  *
  * ## Two waits, two bars
  *
@@ -142,12 +157,16 @@ const HISTORY_LIMIT = 10;
 
 function TranscriptionDesk() {
   const [mode, setMode] = useState<Mode>("streaming");
+  // Whether the browser cuts the recording up and sends the pieces at once. One
+  // piece of state for all three hooks, because it describes the UPLOAD and every
+  // mode has one — see the module doc.
+  const [parallel, setParallel] = useState(true);
   // ALL THREE hooks are called every render, because a hook may not be conditional —
   // and that costs nothing here: none of them does anything until its `submit` is
   // called, and `useWorkflowRun` underneath them holds no id until then either.
-  const streamed = useWorkflowStream<Transcript>(WORKFLOWS.streaming);
-  const stored = useWorkflowSubmit<Transcript>(WORKFLOWS.classic);
-  const batched = useWorkflowSubmit<Transcript>(WORKFLOWS.batch);
+  const streamed = useWorkflowStream<Transcript>(WORKFLOWS.streaming, { parallel });
+  const stored = useWorkflowSubmit<Transcript>(WORKFLOWS.classic, { parallel });
+  const batched = useWorkflowSubmit<Transcript>(WORKFLOWS.batch, { parallel });
   // The batch flow uploads the same way the classic one does — the id comes from the
   // store — so it is the SAME hook against a different workflow. Only the streaming
   // mode needs the other one, because only it needs the id before the bytes.
@@ -183,6 +202,8 @@ function TranscriptionDesk() {
       </header>
 
       <ModePicker mode={mode} onPick={setMode} disabled={pending} />
+
+      <UploadPicker parallel={parallel} onPick={setParallel} disabled={pending} />
 
       {/* No mapping: the collected values already match the input schema. All three
           workflows declare `recording` as an upload, so the same picker serves every
@@ -252,6 +273,49 @@ function ModePicker({
           </span>
         </label>
       ))}
+    </fieldset>
+  );
+}
+
+/**
+ * How the recording travels, as one checkbox.
+ *
+ * Beside the mode radios rather than among them because it answers a different
+ * question — those pick the WORKFLOW, this picks how its input gets there — and
+ * every mode is uploading a file either way.
+ *
+ * Disabled mid-submission for the same reason the radios are: the bytes are
+ * already moving, and a control that looks live while changing nothing is worse
+ * than one that is plainly unavailable.
+ */
+function UploadPicker({
+  parallel,
+  onPick,
+  disabled,
+}: {
+  parallel: boolean;
+  onPick: (next: boolean) => void;
+  disabled: boolean;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-3" disabled={disabled}>
+      <legend className="text-sm font-medium uppercase tracking-[1.2px]">Upload</legend>
+      <label className="flex items-start gap-3 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          name="parallel"
+          checked={parallel}
+          onChange={(event) => onPick(event.target.checked)}
+        />
+        <span className="flex flex-col gap-0.5">
+          <span>Split the file across connections</span>
+          <span className="text-xs opacity-70">
+            Sends the recording as several parts at once instead of in one request, which is most of
+            the wait on a long file. Falls back to the single request on a small one.
+          </span>
+        </span>
+      </label>
     </fieldset>
   );
 }

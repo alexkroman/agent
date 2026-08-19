@@ -519,6 +519,25 @@ growing is what a slow link and a dead client both look like.
 for; `sdk/step-uploads.ts` owns the reader's half and the polling shape; the
 author-facing half (`useWorkflowStream`) is in `packages/aai-ui/CLAUDE.md`.
 
+## An upload can also arrive over SEVERAL connections
+
+Both writes above carry the whole file in ONE request, so an upload runs at one
+connection's throughput — a fraction of the link over any distance. `POST
+/workflows/uploads/:id/parts?total=` declares an upload and `PUT
+…/parts?offset=` fills in a window of it, so a browser sends four at once
+(`api.upload(file, { parallel: true })`, `useWorkflowSubmit(w, { parallel })`).
+
+**Two rules make it invisible downstream**, which is why no reader, no step and
+no range route changed: a part starts on an `UPLOAD_CHUNK_BYTES` boundary, so its
+bytes are ordinary chunks at their own offsets; and **`size` is the CONTIGUOUS
+prefix, never the sum of what has arrived** — parts land out of order, so a size
+that counted bytes would tell a reader it may read a hole. `complete` becomes
+true when that prefix reaches the DECLARED total, which is the only observable
+moment every byte is present. The client path DECLINES rather than fails (an
+uncuttable string body, a file that fits in one part, an agent answering 404 to
+the declaration), so `parallel: true` is safe on every form.
+`sdk/workflow-upload-parts.ts` and `host/_upload-store.ts` carry the rest.
+
 ## Workflow apps and the workflow HTTP API
 
 `AgentDef.page` declares an agent's front door — `"voice"` (the default, and

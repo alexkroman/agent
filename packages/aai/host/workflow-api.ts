@@ -22,6 +22,8 @@
  * POST   /workflows/runs/:id/wake   → { runId, woken }
  * POST   /workflows/uploads         → { id, …, complete }   body: the file
  * PUT    /workflows/uploads/:id     → the same, under an id the CALLER chose
+ * POST   /workflows/uploads/:id/parts  → declare an upload its parts fill in
+ * PUT    /workflows/uploads/:id/parts  → one window of it, at `?offset=`
  * GET    /workflows/uploads/:id     → the bytes, `Range` honoured
  * GET    /workflows/uploads/:id/info → { id, name, type, size, complete }
  * ```
@@ -102,11 +104,14 @@ import {
 } from "./workflow-api-runs.ts";
 import { streamRunOutput } from "./workflow-api-stream.ts";
 import {
+  beginUploadParts,
   createUpload,
   readUploadInfoRoute,
   readUploadRoute,
   streamUpload,
+  UPLOAD_PARTS_SUFFIX,
   UPLOADS_PATH,
+  writeUploadPart,
 } from "./workflow-api-uploads.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
 
@@ -240,7 +245,7 @@ function runIdOr400(res: http.ServerResponse, url: string, suffix = ""): string 
 /**
  * The routes, as a table rather than an if/else chain.
  *
- * Eleven routes × (method, path shape) is well past the lint ceiling for
+ * Fourteen routes × (method, path shape) is well past the lint ceiling for
  * cognitive complexity as a chain, and a table also makes the PREFIX matches
  * visibly different from the exact ones.
  *
@@ -249,7 +254,7 @@ function runIdOr400(res: http.ServerResponse, url: string, suffix = ""): string 
  * rule listed first would read `"<id>/events"` as a run id and answer 404 for a
  * run that exists. That ordering is a property of the TABLE, which is why the
  * table is a module constant built once rather than a per-instance array: every
- * entry closes over nothing, and rebuilding ten route objects per
+ * entry closes over nothing, and rebuilding fourteen route objects per
  * `createWorkflowApi` (and re-scanning a fresh array per request) bought
  * nothing.
  */
@@ -277,6 +282,29 @@ const ROUTES: readonly Route[] = [
   // BEFORE the bare `/uploads/:id` rule below, which is a PREFIX match — listed
   // the other way round it reads `"<id>/info"` as an upload id and 404s an upload
   // that exists. Same order-is-load-bearing rule as `/runs/:id/events`.
+  // The `/parts` pair is under the same prefix-order rule as `/info` below: both
+  // paths end in a suffix the bare `/uploads/:id` rules would read as part of the
+  // id, so they are listed first.
+  {
+    method: "POST",
+    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`) && url.endsWith(UPLOAD_PARTS_SUFFIX),
+    run: async (req, res, ctx, url) => {
+      const store = requireUploads(res, ctx);
+      if (!store) return;
+      const id = uploadIdOr400(res, url, UPLOAD_PARTS_SUFFIX);
+      if (id !== undefined) await beginUploadParts(req, res, store, id, ctx.logger);
+    },
+  },
+  {
+    method: "PUT",
+    matches: (url) => url.startsWith(`${UPLOADS_PATH}/`) && url.endsWith(UPLOAD_PARTS_SUFFIX),
+    run: async (req, res, ctx, url) => {
+      const store = requireUploads(res, ctx);
+      if (!store) return;
+      const id = uploadIdOr400(res, url, UPLOAD_PARTS_SUFFIX);
+      if (id !== undefined) await writeUploadPart(req, res, store, id);
+    },
+  },
   {
     method: "GET",
     matches: (url) => url.startsWith(`${UPLOADS_PATH}/`) && url.endsWith("/info"),

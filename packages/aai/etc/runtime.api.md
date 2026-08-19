@@ -1659,6 +1659,10 @@ export type UploadStore = UploadReader & {
     stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
         limit?: number;
     }): Promise<UploadInfo>;
+    beginParts(id: string, meta: UploadMeta, total: number, opts?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
 };
 
 // @public

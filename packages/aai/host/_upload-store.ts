@@ -86,6 +86,35 @@
  *   what ends the wait.
  * - **A chosen id may not collide.** `stream` refuses an id that already exists,
  *   so a second PUT cannot append to somebody else's upload.
+ *
+ * ## PARTS are the third write, and the one a browser gets its speed from
+ *
+ * `create` and `stream` are both ONE request carrying the whole file, so an upload
+ * is exactly as fast as a single TCP connection to the agent — which on a link with
+ * any real latency is a fraction of what the link can carry. {@link
+ * UploadStore.beginParts} and {@link UploadStore.writePart} are the same upload
+ * arriving over several connections at once: the caller declares the total up front,
+ * then writes disjoint windows in whatever order they finish.
+ *
+ * It reuses the streamed upload's whole shape — the caller names the id, the record
+ * exists from the beginning with `complete: false` — and adds exactly two rules:
+ *
+ * - **A part starts at a multiple of `UPLOAD_CHUNK_BYTES`**, which is what lets a
+ *   part's bytes be stored as ordinary chunks at their own offsets rather than
+ *   needing a second storage shape. A misaligned offset is refused
+ *   ({@link UploadPartError}) rather than stored somewhere it would be read back
+ *   from wrong.
+ * - **`size` is the CONTIGUOUS prefix, never the sum of what has arrived.** Parts
+ *   land out of order, so a size that counted bytes would tell a reader it may read
+ *   a window that is still a hole. Counting only from byte zero keeps `size`
+ *   meaning exactly what it meant before parts existed — "you may read up to
+ *   here" — so `readUpload`, the range route and a polling run all need no change,
+ *   and a run reading ahead of the uplink still works.
+ *
+ * `complete` becomes true when that prefix reaches the declared total, which is the
+ * only moment every byte is present. Non-overlapping parts are the CALLER's
+ * contract, the same way the chosen id is: overlapping ones corrupt an upload the
+ * caller alone can read.
  */
 
 import { UPLOAD_CHUNK_BYTES, UPLOAD_ID_PREFIX } from "../sdk/constants.ts";
@@ -119,6 +148,36 @@ export class UploadIdTakenError extends Error {
     // keeping — an `EACCES` there is a broken store, not a taken id.
     super(`upload ${id} already exists`, options);
     this.name = UploadIdTakenError.name;
+  }
+}
+
+/**
+ * Raised when a part does not fit the upload it names.
+ *
+ * Its own error because the ROUTE has to answer 400: a misaligned offset, or one
+ * that runs past the declared total, is a client that composed the request wrong,
+ * and it has to be told which — a part silently stored at the wrong place would be
+ * read back as corruption at transcription time, minutes later and nowhere near
+ * the cause.
+ */
+export class UploadPartError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = UploadPartError.name;
+  }
+}
+
+/**
+ * Raised when a part names an upload that was never begun.
+ *
+ * Distinct from {@link UploadPartError} because the route answers 404 rather than
+ * 400: the request is well formed and the upload is simply not there, which is what
+ * a client whose `beginParts` failed (or whose upload was cleaned up) has to see.
+ */
+export class UnknownUploadError extends Error {
+  constructor(id: string) {
+    super(`No upload with id ${id}`);
+    this.name = UnknownUploadError.name;
   }
 }
 
@@ -162,7 +221,95 @@ export type UploadStore = UploadReader & {
     body: AsyncIterable<Uint8Array>,
     opts?: { limit?: number },
   ): Promise<UploadInfo>;
+  /**
+   * Claim an id for an upload whose bytes arrive as PARTS, declaring its total.
+   *
+   * The record exists from this call with `size: 0` and `complete: false`, so this
+   * is `stream`'s claim without the body — see the module doc for what parts buy
+   * and the two rules they come with.
+   *
+   * @throws {UploadIdTakenError} when `id` already names an upload.
+   * @throws {UploadTooLargeError} when `total` is past `limit`.
+   */
+  beginParts(
+    id: string,
+    meta: UploadMeta,
+    total: number,
+    opts?: { limit?: number },
+  ): Promise<UploadInfo>;
+  /**
+   * Store one window of a parts upload, at a byte offset the caller chose.
+   *
+   * Resolves the record AS IT NOW STANDS — a `size` that is the contiguous prefix
+   * and a `complete` that is true only once that prefix is the whole declared
+   * total. So the caller writing the last part learns the upload is finished from
+   * its own response, and every other part's response is the progress a page draws.
+   *
+   * @throws {UnknownUploadError} when nothing has begun under `id`.
+   * @throws {UploadPartError} when `offset` is not a multiple of
+   *   `UPLOAD_CHUNK_BYTES`, or the part would run past the declared total.
+   */
+  writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
 };
+
+/** A half-open window of an upload's bytes, `[start, end)` like every other here. */
+export type ByteRange = { start: number; end: number };
+
+/**
+ * Refuse an offset a part may not start at.
+ *
+ * Alignment is the whole reason a part can be stored as ordinary chunks: a part
+ * beginning mid-chunk would have to either rewrite the chunk it lands in — a
+ * read-modify-write racing every other part — or store a second shape beside them.
+ * Neither is worth the arbitrary offsets nobody asked for; a client cuts where it
+ * likes as long as it cuts on megabytes.
+ */
+export function assertPartOffset(offset: number): void {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset % UPLOAD_CHUNK_BYTES !== 0) {
+    throw new UploadPartError(
+      `A part starts at a multiple of ${UPLOAD_CHUNK_BYTES} bytes; ${offset} does not.`,
+    );
+  }
+}
+
+/** Refuse a declared total that is not a size. */
+export function assertPartTotal(total: number, limit: number): void {
+  if (!Number.isSafeInteger(total) || total < 0) {
+    throw new UploadPartError(`A parts upload declares its total in bytes; ${total} is not one.`);
+  }
+  if (total > limit) throw new UploadTooLargeError(limit);
+}
+
+/**
+ * `ranges` with `add` merged in: sorted, non-overlapping, and touching ranges
+ * joined.
+ *
+ * Joining the ones that merely TOUCH is what makes {@link contiguousBytes} a
+ * single lookup rather than a walk — two parts that meet exactly at a megabyte
+ * boundary are one range, which is the ordinary case rather than an edge one.
+ */
+export function mergeRanges(ranges: readonly ByteRange[], add: ByteRange): ByteRange[] {
+  const sorted = [...ranges, add].sort((a, b) => a.start - b.start);
+  const merged: ByteRange[] = [];
+  for (const range of sorted) {
+    const last = merged.at(-1);
+    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
+    else merged.push({ ...range });
+  }
+  return merged;
+}
+
+/**
+ * How many bytes are present from byte ZERO — the `size` a parts upload publishes.
+ *
+ * Deliberately not the sum: see the module doc. A file whose first part has not
+ * landed reports 0 however much of the rest has, because 0 is how much of it a
+ * reader may read.
+ */
+export function contiguousBytes(ranges: readonly ByteRange[]): number {
+  const first = ranges[0];
+  return first && first.start === 0 ? first.end : 0;
+}
 
 /** A fresh upload id. Prefixed so a stray value in a log reads as what it is. */
 export function newUploadId(): string {
@@ -199,6 +346,43 @@ export async function* chunked(
     }
   }
   if (heldBytes > 0) yield concat(held, heldBytes);
+}
+
+/**
+ * A part's body as `UPLOAD_CHUNK_BYTES` pieces, each carrying the offset it goes at.
+ *
+ * The shared half of {@link UploadStore.writePart}: both backends need the same
+ * arithmetic (a chunk's absolute offset, and its `seq` derived from it), and both
+ * owe the same refusal for a part that runs past what was declared. The refusal is
+ * {@link UploadPartError} rather than {@link UploadTooLargeError} because nothing
+ * about the FILE is too large here — the caller contradicted its own total, which
+ * is a 400 and not a 413.
+ */
+export async function* partChunks(
+  body: AsyncIterable<Uint8Array>,
+  offset: number,
+  total: number,
+): AsyncGenerator<{ bytes: Uint8Array; at: number }> {
+  let at = offset;
+  try {
+    for await (const bytes of chunked(body, Math.max(0, total - offset))) {
+      yield { bytes, at };
+      at += bytes.length;
+    }
+  } catch (err: unknown) {
+    if (err instanceof UploadTooLargeError) {
+      throw new UploadPartError(
+        `A part at ${offset} runs past the ${total} bytes this upload declared.`,
+        { cause: err },
+      );
+    }
+    throw err;
+  }
+}
+
+/** Which stored chunk an absolute byte offset begins, given parts are aligned. */
+export function chunkSeq(at: number): number {
+  return Math.floor(at / UPLOAD_CHUNK_BYTES);
 }
 
 /**

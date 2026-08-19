@@ -612,6 +612,8 @@
     "UploadBody",
     "UploadInfo",
     "UploadOptions",
+    "UploadParallel",
+    "UploadPartsSettings",
     "UploadProgress",
     "UploadRef",
     "WORKFLOW_API_PREFIX",
