@@ -1,5 +1,7 @@
 # @alexkroman1/aai
 
+## 6.8.0
+
 ## 6.7.2
 
 ### Patch Changes
