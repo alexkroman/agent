@@ -24,7 +24,12 @@ import {
   TOTAL,
   withoutBackoff,
 } from "./_upload-parts-test-utils.ts";
-import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_ATTEMPTS, UPLOAD_RETRY_BASE_MS } from "./constants.ts";
+import {
+  UPLOAD_CHUNK_BYTES,
+  UPLOAD_PART_ATTEMPTS,
+  UPLOAD_PART_CONCURRENCY,
+  UPLOAD_RETRY_BASE_MS,
+} from "./constants.ts";
 import type { UploadProgress } from "./workflow-upload-client.ts";
 import { planParts } from "./workflow-upload-parts.ts";
 
@@ -60,10 +65,14 @@ describe("sending a file as parts", () => {
 
   test("really overlaps them, which is the whole reason this path exists", async () => {
     const agent = scriptAgent();
-    // Eight parts against the default concurrency of four.
-    await client().upload(recording(PART * 8), { parallel: true });
-    expect(agent.parts).toHaveLength(8);
-    expect(agent.peak).toBe(4);
+    // TWICE the width in parts, derived — the pool has to cycle for the peak to mean
+    // anything, and a file of exactly `concurrency` parts would report a peak equal
+    // to the width whether the pool bounded it or ran everything at once. Both
+    // numbers were literals (`8` parts, peak `4`) until the default width moved.
+    const parts = UPLOAD_PART_CONCURRENCY * 2;
+    await client().upload(recording(PART * parts), { parallel: true });
+    expect(agent.parts).toHaveLength(parts);
+    expect(agent.peak).toBe(UPLOAD_PART_CONCURRENCY);
   });
 
   test("honours a caller's own concurrency", async () => {

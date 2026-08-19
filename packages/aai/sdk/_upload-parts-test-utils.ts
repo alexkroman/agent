@@ -13,7 +13,7 @@
  */
 
 import { vi } from "vitest";
-import { UPLOAD_RETRY_MAX_MS } from "./constants.ts";
+import { UPLOAD_PART_BYTES, UPLOAD_RETRY_MAX_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createWorkflowApiClient } from "./workflow-api-client.ts";
 
@@ -304,8 +304,16 @@ export function record(size: number, complete: boolean) {
 }
 
 /** A file of three whole parts at the default part size. */
-export const TOTAL = 24 * 1024 * 1024;
-export const PART = 8 * 1024 * 1024;
+export const PART = UPLOAD_PART_BYTES;
+/**
+ * A file of exactly three whole parts, DERIVED from the part size.
+ *
+ * Both used to be literals, and the day `UPLOAD_PART_BYTES` moved from 8 MiB to
+ * 4 they took eleven specs down with them — every one asserting a part COUNT that
+ * is a function of the constant, not a fact about the file. Derived, a change to
+ * the default is a one-line change here and nowhere else.
+ */
+export const TOTAL = PART * 3;
 
 /** A recording, as a `File` off a picker. */
 export function recording(bytes = TOTAL): Blob {

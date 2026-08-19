@@ -540,7 +540,7 @@ author-facing half (`useWorkflowStream`) is in `packages/aai-ui/CLAUDE.md`.
 Both writes above carry the whole file in ONE request, so an upload runs at one
 connection's throughput — a fraction of the link over any distance. `POST
 /workflows/uploads/:id/parts?total=` declares an upload and `PUT
-…/parts?offset=` fills in a window of it, so a browser sends four at once. **It
+…/parts?offset=` fills in a window of it, so a browser sends eight at once. **It
 is the DEFAULT** — `api.upload(file)` and every form hook take it unless a caller
 passes `parallel: false`.
 
@@ -569,19 +569,28 @@ may act on; `ranges` is for the UPLOADER, and it is what makes
 file. An agent too old to report them answers like an empty upload, so a resume
 against one re-sends everything rather than leaving a hole.
 
-**Neither the width nor the part size has been MEASURED**, which is worth knowing
-before trusting either: they are the repo's only fan-out numbers argued in prose
-rather than backed by a table, and half the argument for 4 ("multiplying the
-writes the agent is doing at once") went stale when a part stopped writing chunk
-rows through the guest — the same change took `UPLOAD_DB_POOL` from
-`UPLOAD_PART_CONCURRENCY + 2` down to 2, and the client end never moved.
-`pnpm bench:uploads --target <agent base url>` (`scripts/upload-sweep.mjs`)
-sweeps the matrix over this exact client path and prints a table shaped like
-`MAX_SEGMENT_CONCURRENCY`'s. **That script's doc comment owns the rest** — why it
-gates nothing, why it reports a RANGE, why a DECLINED cell has to announce itself,
-and the one thing it cannot measure (it is Node's `fetch`, so the browser
-connection limit that justifies half of `UPLOAD_PART_CONCURRENCY` is out of
-reach; `--h2` is the closest probe).
+**The width and the part size are 8 and 4 MiB, and the product is the number that
+was chosen** — 32 MiB in flight, exactly what 4 x 8 MiB held, because what the
+platform's h2 hop meters is concurrent large BODIES. Halving the part size at
+double the width buys twice the retry units and half the cost of a reset at
+unchanged exposure. **`UPLOAD_PART_CONCURRENCY`'s own doc owns the argument**,
+including why not wider (one reset aborts every sibling in flight, so width is a
+blast radius) and the table it had to DELETE.
+
+That deleted table is the warning worth carrying here: it reported a cliff at
+width 16 that did not exist. `scripts/upload-sweep.mjs` reused one connection
+across the whole sweep with a 1s gap, and the far side penalises a connection
+after it trips — so every cell inherited the previous cell's penalty and the
+widest cells, run last, looked catastrophic. It also printed `HTTP/1.1` while
+pinning nothing. Both are fixed (transport pinned in both arms, a fresh connection
+per run, 30s default gap), and **`pnpm bench:uploads --target <agent base url>` is
+believable now** — but two limits stand: it is Node's `fetch`, which spreads width
+across CONNECTIONS where a browser multiplexes ONE h2 connection, so no number it
+prints is a browser number; and sustained throughput is metered, measured decaying
+6.5 -> 1.9 MB/s over one sweep against a 13.6 MB/s link, so a cell run late reads
+worse for reasons that are not its width. **That script's doc comment owns the
+rest** — why it gates nothing, why it reports a RANGE, why a DECLINED cell has to
+announce itself, and that it leaves every upload it makes in the bucket forever.
 
 The client path DECLINES rather than fails (an
 uncuttable string body, a file that fits in one part, an agent answering 404 to

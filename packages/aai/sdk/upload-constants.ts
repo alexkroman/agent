@@ -57,55 +57,138 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * single request this exists to beat, and a part that fails is a part that has to
  * be sent again in full.
  *
- * 8 MiB is eight chunks, so a part is a handful of stored rows; it keeps a
- * 200 MB recording at 25 parts (comfortably more than the concurrency below, so
- * every connection stays fed), and it is the size the object stores this shape
- * comes from settled on for the same reasons.
+ * **8 MiB, and it stays there because a part pays a FIXED cost that has nothing to
+ * do with its size.** On the direct path (a deployed agent — see
+ * `_upload-blobs-brokered.ts`) every part is two requests: the window goes to the
+ * platform, and a body-less `PUT …/parts?offset=…&stored=1` tells the agent it
+ * landed. Measured against a deployed agent, per 4 MiB part:
+ *
+ * | | time | rate |
+ * | --- | --- | --- |
+ * | byte `PUT` to the platform | 926-2121 ms | 1.9-4.3 MB/s |
+ * | `stored=1` claim, brokered to the guest | 1604-1969 ms | no body at all |
+ *
+ * So roughly half a part's wall time is a round trip carrying nothing, and it is
+ * per-PART rather than per-byte. Halving this constant doubles how many times that
+ * toll is paid: the same 32 MiB costs four claims at 8 MiB and eight at 4 MiB.
+ * Extrapolated over a 660 MB recording at width 8, 8 MiB parts finish in ~38s
+ * against ~56s for 4 MiB ones — the fixed cost dominates, and it dominates harder
+ * the smaller the part.
+ *
+ * **This reverses a first attempt at 4 MiB**, which reasoned that a smaller window
+ * makes a reset cheaper (true, and measured: at four wide, 8 MiB bodies reset where
+ * 4 MiB, 2 MiB and 1 MiB passed). It is the right trade only if the part's cost is
+ * mostly its bytes, and it is not. The claim is the argument for not going smaller.
+ *
+ * ## And 16 MiB measures BETTER, which is not the same as being right
+ *
+ * Three runs per size, alternating order so a drifting link cannot favour one, one
+ * part per run:
+ *
+ * | part | per-byte rate | median | spread |
+ * | --- | --- | --- | --- |
+ * | 8 MiB | 2.5, 2.1, 3.8 MB/s | 2.5 | 1.8x |
+ * | 16 MiB | 3.2, 3.3, 3.2 MB/s | **3.2** | **1.03x** |
+ * | 32 MiB | 2.9, 4.0, 2.0 MB/s | 2.9 | 2.0x |
+ *
+ * 16 MiB is ~28% quicker per byte than 8 and far more predictable — a small transfer
+ * never leaves TCP slow-start, which is also why 4 MiB was the worst of all four
+ * sizes measured (1.8 MB/s). 32 MiB buys nothing over 16 and is the noisiest.
+ *
+ * It is not taken, because the number the platform reacts to is the PRODUCT with
+ * {@link UPLOAD_PART_CONCURRENCY}, and three costs land on it rather than on the
+ * size alone:
+ *
+ * - **Platform memory.** `_upload-blobs-http.ts` buffers a whole window to hand
+ *   Storage a length — unavoidable, and the reason the cap is a window rather than a
+ *   file. At eight wide, 16 MiB parts ask a shared memory-bounded process to hold
+ *   128 MiB for ONE upload.
+ * - **The reset shoulder.** 128 MiB in flight is the row where a reset appeared
+ *   (31 of 32); 64 MiB, which eight 8 MiB parts hold, did not.
+ * - **The parallelism FLOOR.** `partsPlan` declines a plan of fewer than two parts,
+ *   so this constant sets the size below which a file takes the single request and
+ *   gets no retry at all. At 8 MiB that floor is 16 MB; at 16 MiB it is 32 MB, which
+ *   is a regression for every recording in between.
+ *
+ * So the order to do this in is: batch the claims, then re-measure. Batching removes
+ * the fixed toll that makes a larger part attractive, and the 28% is then weighed
+ * against those three costs on its own rather than bundled with a round trip.
+ *
+ * The real lever is neither, and it is not a constant: **batch the claims.** One
+ * request naming several landed offsets would collapse N tolls into one, and the
+ * platform cannot record a part itself — the record lives in the app's own database,
+ * which only the guest can reach, which is exactly why the guest is told. Until
+ * then this number is a compromise with a round trip.
+ *
+ * Two costs of the size that are unchanged and still real: too small and an upload
+ * is mostly per-request overhead, too large and the parallelism disappears (a 20 MB
+ * recording in 32 MB parts is one part, which is the single request this exists to
+ * beat, and a failed part is re-sent in full).
+ *
+ * **Legal against any server version, in both directions.** `assertPartOffset`
+ * aligns on {@link UPLOAD_CHUNK_BYTES} (1 MiB), never on this — so a client cutting
+ * at 4 MiB is accepted by a server that cuts at 8, and the reverse. Check that
+ * before moving this; alignment on the part size would make it a wire break.
  */
 export const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 
 /**
  * How many parts a parallel upload keeps in flight, by default.
  *
- * **Four, and it is now MEASURED — the knee and a hard ceiling land in the same
- * place.** `pnpm bench:uploads` (`scripts/upload-sweep.mjs`) against a deployed
- * agent on the managed platform, 32 MiB in 2 MiB parts, two runs per width:
+ * **Eight, doubled from four, and it is the one knob that pays here.** Every part on
+ * the direct path costs a fixed ~1.7s body-less round trip to the guest on top of
+ * its bytes ({@link UPLOAD_PART_BYTES} carries the table). That toll is per-part and
+ * independent of size, so the only thing that hides it is OVERLAP — which is what
+ * this number is. Extrapolated over a 660 MB recording: ~77s at four wide against
+ * ~38s at eight.
  *
- * | in flight | wall p50 | range | MB/s | part p50/p95 | h2 resets |
- * | --- | --- | --- | --- | --- | --- |
- * | 1 request | 11.6s | 11.5-11.6s | 2.8 | — | 0 |
- * | 1 | 49.7s | 49.1-50.2s | 0.6 | 1.41s / 2.73s | 0 |
- * | 2 | 20.7s | 19.6-21.8s | 1.5 | 1.28s / 1.97s | 0 |
- * | 4 | 14.0s | 13.6-14.4s | 2.3 | 1.63s / 2.88s | 0 |
- * | 8 | 13.1s | 8.5-17.7s | 2.4 | 2.81s / 4.38s | 10 |
- * | 16 | — | 0 of 2 landed | — | — | 63 |
+ * ## Why not wider, which is the obvious question
  *
- * The shape the old prose GUESSED is roughly right — steep, then flat — and the
- * number it guessed survives. What it could not know is why the flat part is flat.
- * 1 → 4 is 3.5x. 4 → 8 buys nothing measurable (13.1s against 14.0s, inside 8's own
- * 2.1x spread) and starts paying stream resets. 16 does not complete at all.
+ * Three reasons, and the first is the one that would still hold on a faster link:
  *
- * **The ceiling is HTTP/2, and it is not the browser connection limit this used to
- * cite.** Both halves of that sentence were wrong. A browser's six-per-origin cap is
- * an HTTP/1.1 rule, and the origin here speaks h2 — to Node's `fetch` and to a page
- * alike — so the real limit is the server's concurrent-stream budget, and it does not
- * answer with a status. It answers `NGHTTP2_ENHANCE_YOUR_CALM`, a STREAM RESET, which
- * surfaces as a bare `TypeError: fetch failed` and is invisible to both
- * {@link UPLOAD_RETRY_MAX_MS}'s `Retry-After` handling and `RETRYABLE_STATUS`: there
- * is no response to read. `withRetries` still re-sends it as a transport failure, which
- * is what absorbs the ten at width 8 — and at 16 every sibling collides into the same
- * reset and the budget is gone. `sdk/step-fetch.ts` documents this exact failure and
- * pins HTTP/1.1 to escape it; the upload path CANNOT, because half its callers are
- * pages. So four is not merely where the gain stops, it is under the cliff.
+ * - **One reset aborts every sibling in flight.** `uploadInParts` fails the whole
+ *   upload on the first failure — deliberately, so bytes nobody will read stop
+ *   going — so width is the BLAST RADIUS of a single reset, not just a throughput
+ *   knob. At 32 wide, one window's reset discards 31 in-flight windows.
+ * - **Resets track bytes in flight, and eight is already 64 MiB of it.** Measured
+ *   against a deployed agent on a fresh connection: 32 MiB outstanding passed clean
+ *   at every part size tried, 64 MiB passed at lower per-byte throughput, 128 MiB
+ *   passed 31 of 32 with one reset. Eight sits on the shoulder of that curve rather
+ *   than under it, which is the deliberate half of this choice — 16 would be 128 MiB
+ *   and the row where a reset appeared.
+ * - **Sustained throughput is METERED, so width cannot buy it.** Over one sweep
+ *   the same 32 MiB upload went 6.5 -> 4.7 -> 3.5 -> 3.2 -> 1.9 MB/s on fresh
+ *   pinned-h1 connections 30s apart, across a width change, against a link
+ *   measured at 13.6 MB/s to an unrelated host. Width changes how fast the bucket
+ *   drains, not how fast it refills — so paying blast radius for throughput the
+ *   meter takes back is a bad trade.
  *
- * Two honest limits on the table. It is ONE link on one afternoon at two runs a cell,
- * so it bounds the shape rather than pinning the knee to the megabyte — the 8-wide row
- * spans 2.1x on its own and the sweep says so rather than reporting its median. And the
- * `1 request` row is not the win it looks like: one stream never collides, so it beats
- * every fan-out on a path whose bottleneck is the far side rather than the uplink. Both
- * are reasons to RE-RUN before this number moves, not reasons to move it.
+ * A caller who knows their link can still pass `parallel: { concurrency }`. What a
+ * DEFAULT has to be is safe on the worst link, and the reset is invisible to the
+ * classifier: it carries no HTTP status, so neither `RETRYABLE_STATUS` nor
+ * `Retry-After` sees it and `withRetries` can only treat it as a transport failure.
+ *
+ * ## The table that used to be here was measuring its own contamination
+ *
+ * It reported `8 -> 10 h2 resets` and `16 -> 0 of 2 landed, 63 resets`, and
+ * concluded four sat "under the cliff". That cliff was an artifact.
+ * `scripts/upload-sweep.mjs` reused ONE connection across the whole sweep with a
+ * 1s gap, and the far side penalises a connection for a while after it trips — so
+ * every cell inherited the previous cell's penalty and the widest cells, run last,
+ * looked catastrophic. It also printed `HTTP/1.1` while pinning nothing, so the arm
+ * was really h2. Re-measured with a fresh connection per run and a 30s gap, 16 wide
+ * completes 16 of 16 and 32 wide 31 of 32.
+ *
+ * So the old numbers are deleted rather than corrected: they cannot be rescued, and
+ * a plausible table is worse than none. **Two limits on the new ones too.** Most
+ * cells are one to three runs, so they bound the shape and do not pin a knee. And
+ * they are Node's `fetch`, which spreads width across CONNECTIONS — a browser
+ * multiplexes one h2 connection to an origin, which is exactly what the limiter
+ * meters, so a browser is strictly more exposed at a given width and no number here
+ * is a browser number. Both are reasons to re-run before moving this, and the
+ * script is honest now.
  */
-export const UPLOAD_PART_CONCURRENCY = 4;
+export const UPLOAD_PART_CONCURRENCY = 8;
 
 /**
  * How many times a request on the parts path is sent before the upload gives up.
