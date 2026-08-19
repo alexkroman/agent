@@ -12,11 +12,12 @@
  * What is left in Postgres is the RECORD, and it is still the half a recording `Db`
  * cannot be strict about — every field crosses a driver:
  *
- * - **`parts` is `jsonb`.** The store writes `JSON.stringify` and reads back whatever
- *   the driver decides to hand it. A fake returns the array it was given; a driver
- *   that returned the STRING would make every read fail on a `.filter` that is not
- *   there, and one that reordered keys would be invisible until a boundary was
- *   misread. The whole resume story rides on that column.
+ * - **`parts` is `jsonb`, and this suite has already earned its keep twice on that one
+ *   column.** `$N::jsonb` with a `JSON.stringify`d parameter stores a jsonb *string*
+ *   containing JSON rather than an array (`jsonb_typeof` said `string`), and the first
+ *   fix for the resulting crash reached for `parts::text` on a wrong theory about what
+ *   the driver returns. A fake can hold neither shape wrong, because a fake holds the
+ *   value the author handed it. `jsonb_typeof` is the assertion; see below.
  * - **`size` and `expected` are `bigint`**, which come back as STRINGS. `Number(…)` is
  *   what the store does about it; a fake that stored numbers can only restate its own
  *   choice.
@@ -114,16 +115,28 @@ describeWithPg("the workflow upload store over a real Postgres", () => {
     expect(info).toMatchObject({ name: "call.wav", type: "audio/wav", complete: true });
   });
 
-  test("the boundary list survives jsonb, which is what a resume reads", async () => {
-    // Straight out of the column, so this is the driver's answer rather than the
-    // store's. A whole-file write records the windows it cut, which is what makes one
-    // byte layout serve every route an upload can arrive by.
-    const [row] = await sql<{ parts: { at: number; bytes: number }[] }>(
-      `select parts from ${SCHEMA}.${UPLOADS_TABLE} where id = $1`,
+  test("stores the boundary list as a jsonb ARRAY, not a string containing one", async () => {
+    // **`jsonb_typeof` is the assertion, and its absence is what let a corrupt write
+    // reach CI.** `JSON.stringify(parts)` reaches postgres.js as a JSON parameter, so
+    // `$N::jsonb` stored the *string* `"[{\"at\":0,…}]"` — `jsonb_typeof` said
+    // `string`, and everything that would ever treat the column as a list (an
+    // operator's query, `jsonb_array_elements`, an index) saw a scalar. `::text::jsonb`
+    // is the fix; this is the only assertion that can tell the two apart, because both
+    // round-trip back through `partsOf` looking fine.
+    const [kind] = await sql<{ kind: string }>(
+      `select jsonb_typeof(parts) as kind from ${SCHEMA}.${UPLOADS_TABLE} where id = $1`,
       [wholeId],
     );
-    expect(Array.isArray(row?.parts)).toBe(true);
-    expect(row?.parts).toEqual([
+    expect(kind?.kind).toBe("array");
+
+    // And the windows a whole-file write recorded, which is what makes one byte layout
+    // serve every route an upload can arrive by. `parts::text` here rather than the
+    // driver's parse, so the bytes IN the column are what is compared.
+    const [row] = await sql<{ parts: string }>(
+      `select parts::text as parts from ${SCHEMA}.${UPLOADS_TABLE} where id = $1`,
+      [wholeId],
+    );
+    expect(JSON.parse(row?.parts ?? "null")).toEqual([
       { at: 0, bytes: UPLOAD_PART_BYTES },
       { at: UPLOAD_PART_BYTES, bytes: UPLOAD_PART_BYTES },
       { at: UPLOAD_PART_BYTES * 2, bytes: 1024 },
@@ -239,14 +252,14 @@ describeWithPg("the workflow upload store over a real Postgres", () => {
       size: UPLOAD_CHUNK_BYTES,
       complete: false,
     });
-    const [row] = await sql<{ parts: { at: number }[] }>(
-      `select parts from ${SCHEMA}.${UPLOADS_TABLE} where id = $1`,
+    const [row] = await sql<{ parts: string }>(
+      `select parts::text as parts from ${SCHEMA}.${UPLOADS_TABLE} where id = $1`,
       ["resent"],
     );
     // ONE entry, not two: the boundary list is keyed by offset, so a retry replaces
     // rather than appends — a list that doubled would report a range twice and, worse,
     // let `contiguousBytes` run past the bytes that exist.
-    expect(row?.parts).toEqual([{ at: 0, bytes: UPLOAD_CHUNK_BYTES }]);
+    expect(JSON.parse(row?.parts ?? "null")).toEqual([{ at: 0, bytes: UPLOAD_CHUNK_BYTES }]);
   });
 
   test("an interrupted body leaves NO upload", async () => {

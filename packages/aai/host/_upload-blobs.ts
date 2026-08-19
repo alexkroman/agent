@@ -61,6 +61,7 @@
  * `createMemoryUploadBlobs` is the third, for specs.
  */
 
+import { isRecord } from "../sdk/utils.ts";
 import { type ByteRange, concat, UploadTooLargeError } from "./_upload-store.ts";
 
 /** One window of an upload, and the object holding it. */
@@ -157,6 +158,67 @@ export function createMemoryUploadBlobs(): UploadBlobs {
       return objects.get(key)?.length;
     },
   };
+}
+
+/**
+ * A stored boundary list, whatever the driver handed back.
+ *
+ * **Accepting BOTH a string and an array is load-bearing, and it was learned twice
+ * against a real database in one afternoon.** Measured on Postgres 16 with
+ * postgres.js:
+ *
+ * ```text
+ * $2::jsonb        → jsonb_typeof = string  ← the column holds JSON inside a JSON string
+ * $2::text::jsonb  → jsonb_typeof = array
+ * ```
+ *
+ * The first is what this store did, and the missing `::text` is not a read problem —
+ * it is DATA CORRUPTION. `JSON.stringify(parts)` reaches postgres.js as a JSON
+ * parameter, so `::jsonb` stores the *string* `"[{\"at\":0,…}]"` rather than the
+ * array. Everything downstream that treats the column as a list — an operator's query,
+ * a `jsonb_array_elements`, an index — sees a scalar. The write is `::text::jsonb` now,
+ * which is the same shape `session-state-postgres.ts` uses for its own `jsonb` column.
+ *
+ * The read then gets a real array (postgres.js parses `jsonb`), and the first attempt
+ * at fixing this reached for `parts::text as parts` instead — on the theory that the
+ * driver hands back a string — which was true only BECAUSE of the corrupt write, and
+ * which double-encoded the correct one. So the shape a driver returns is exactly the
+ * thing not to have an opinion about: `partsOf` takes either and the store stops
+ * caring, which is what makes the next change to the query safe.
+ *
+ * It also VALIDATES, which would be reason enough on its own: the row lives in the
+ * tenant's own database on the tenant's own role, so `parts` is a value they can write
+ * anything into. An entry that is not two byte counts is DROPPED rather than trusted —
+ * a `NaN` offset would make `contiguousBytes` answer nonsense and a negative one would
+ * have a read ask for a window before the file starts.
+ */
+export function partsOf(value: unknown): UploadPart[] {
+  const raw = typeof value === "string" ? tryParse(value) : value;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isPart);
+}
+
+/** JSON, or nothing — a column this cannot parse is a column with nothing usable in it. */
+function tryParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether one entry really describes a window. */
+function isPart(value: unknown): value is UploadPart {
+  if (!isRecord(value)) return false;
+  const { at, bytes } = value;
+  return (
+    typeof at === "number" &&
+    typeof bytes === "number" &&
+    Number.isSafeInteger(at) &&
+    Number.isSafeInteger(bytes) &&
+    at >= 0 &&
+    bytes >= 0
+  );
 }
 
 /** Where one upload's objects live, under a prefix the deployment owns. */

@@ -151,6 +151,28 @@ describe("Storage over its REST API", () => {
     expect(await blobs.size("uploads/upl_a/0")).toBe(0);
   });
 
+  test("names the BUCKET when there is none, rather than repeating a 404", async () => {
+    // The first wall a developer meets after setting three env vars, and the raw answer
+    // does not help: `404 {"error":"Bucket not found"}` reads as "that object is not
+    // there". A bucket is dashboard state rather than a migration, so nothing creates it
+    // and nothing else would ever mention it.
+    const { blobs } = open(
+      () => new Response(JSON.stringify({ error: "Bucket not found" }), { status: 404 }),
+    );
+    await expect(blobs.put("uploads/upl_a/0", body(ramp(4)))).rejects.toThrow(
+      /AAI_UPLOAD_STORAGE_BUCKET/,
+    );
+    await expect(blobs.put("uploads/upl_a/0", body(ramp(4)))).rejects.toThrow(/PRIVATE bucket/);
+  });
+
+  test("still reads a MISSING OBJECT as short, which is a different 404", async () => {
+    // The two 404s must not be conflated in either direction: an absent object is the
+    // clamp `readUpload` relies on, and an absent bucket is a configuration fault.
+    const { blobs } = open(() => new Response("", { status: 404 }));
+    expect([...(await blobs.read("uploads/upl_a/0", 0, 8))]).toEqual([]);
+    expect(await blobs.size("uploads/upl_a/0")).toBeUndefined();
+  });
+
   test("appends the Storage path to a project URL, trailing slash or not", () => {
     expect(storageEndpoint("https://ref.supabase.co")).toBe("https://ref.supabase.co/storage/v1");
     expect(storageEndpoint("https://ref.supabase.co//")).toBe("https://ref.supabase.co/storage/v1");

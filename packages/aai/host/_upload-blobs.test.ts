@@ -16,6 +16,7 @@ import {
   createMemoryUploadBlobs,
   partKey,
   partsCovering,
+  partsOf,
   rangesOf,
   type UploadPart,
 } from "./_upload-blobs.ts";
@@ -127,6 +128,47 @@ describe("the windows a part list covers", () => {
 
   test("covers nothing for no parts", () => {
     expect(rangesOf([])).toEqual([]);
+  });
+});
+
+describe("reading a stored boundary list", () => {
+  test("parses the `::text` STRING the driver really hands back", () => {
+    // The bug this function exists for: the store trusted postgres.js to parse its
+    // `jsonb` column, on a comment asserting it does. It does not — `parts.filter` was
+    // not a function, so every parts upload, range read and `info` threw against a real
+    // database while 4,410 unit tests passed, because the fake agreed with the comment.
+    expect(partsOf('[{"at":0,"bytes":8}]')).toEqual([{ at: 0, bytes: 8 }]);
+  });
+
+  test("accepts an already-parsed array, so the store never has to ask which", () => {
+    expect(partsOf([{ at: 8, bytes: 8 }])).toEqual([{ at: 8, bytes: 8 }]);
+  });
+
+  test("answers EMPTY for null, nonsense, and a column that is not a list", () => {
+    // A fresh row's column is null; anything else here is a column nothing wrote.
+    expect(partsOf(null)).toEqual([]);
+    expect(partsOf(undefined)).toEqual([]);
+    expect(partsOf("not json")).toEqual([]);
+    expect(partsOf('{"at":0}')).toEqual([]);
+  });
+
+  test("DROPS an entry that is not two byte counts", () => {
+    // The row is in the TENANT's own database on the tenant's own role, so this column
+    // is a value they can write anything into. A `NaN` offset would make
+    // `contiguousBytes` answer nonsense and a negative one would have a read ask for a
+    // window before the file starts.
+    expect(
+      partsOf([
+        { at: 0, bytes: 8 },
+        { at: "4", bytes: 8 },
+        { at: Number.NaN, bytes: 8 },
+        { at: -8, bytes: 8 },
+        { at: 8, bytes: -1 },
+        { at: 16 },
+        null,
+        16,
+      ]),
+    ).toEqual([{ at: 0, bytes: 8 }]);
   });
 });
 

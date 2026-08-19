@@ -89,8 +89,12 @@ export function recordingDb(opts: { refuse?: string } = {}) {
     // streamed one. Left `undefined`, every streamed upload reads as a parts upload
     // here and nowhere else.
     expected: row.expected === undefined ? null : String(row.expected),
-    // `jsonb` comes back PARSED, so a fake handing back the string the store wrote
-    // would make every read fail on a `.filter` that is not there.
+    // The ARRAY, which is what postgres.js really hands back for a `jsonb` column
+    // holding one — measured, after this comment twice asserted something else and the
+    // store twice believed it. `partsOf` is what makes the store not care, and the
+    // reason it exists: a fake can only hold the shape its author believed in, so the
+    // shape is exactly the thing a fake must not be the authority on. `jsonb_typeof`
+    // in `workflow-uploads.scenario.test.ts` is the authority.
     parts: row.parts,
   });
 

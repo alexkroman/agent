@@ -41,6 +41,11 @@ import type { UploadInfo } from "../sdk/step-uploads.ts";
 import type { UploadBlobs } from "./_upload-blobs.ts";
 import { createBrokeredUploadBlobs } from "./_upload-blobs-brokered.ts";
 import { createHttpUploadBlobs } from "./_upload-blobs-http.ts";
+import {
+  UPLOAD_STORAGE_BUCKET_ENV,
+  UPLOAD_STORAGE_KEY_ENV,
+  UPLOAD_STORAGE_URL_ENV,
+} from "./_upload-env.ts";
 import type { UploadStore } from "./_upload-store.ts";
 import { createBlobUploadStore } from "./_upload-store-blobs.ts";
 
@@ -48,11 +53,17 @@ export {
   createMemoryUploadBlobs,
   partKey,
   partsCovering,
+  partsOf,
   rangesOf,
   type UploadBlobs,
   type UploadPart,
 } from "./_upload-blobs.ts";
 export { createHttpUploadBlobs, type HttpUploadBlobsOptions } from "./_upload-blobs-http.ts";
+export {
+  UPLOAD_STORAGE_BUCKET_ENV,
+  UPLOAD_STORAGE_KEY_ENV,
+  UPLOAD_STORAGE_URL_ENV,
+} from "./_upload-env.ts";
 export {
   assertPartOffset,
   assertPartTotal,
@@ -67,13 +78,6 @@ export {
   UploadTooLargeError,
 } from "./_upload-store.ts";
 
-/** Env key naming the Storage origin uploads are written to. */
-export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
-/** Env key holding the service key for {@link UPLOAD_STORAGE_URL_ENV}. */
-export const UPLOAD_STORAGE_KEY_ENV = "AAI_UPLOAD_STORAGE_KEY";
-/** Env key naming the bucket within it. */
-export const UPLOAD_STORAGE_BUCKET_ENV = "AAI_UPLOAD_STORAGE_BUCKET";
-
 /** Where one deployment's upload objects live, under whichever bucket it uses. */
 export const UPLOAD_KEY_PREFIX = "uploads";
 
@@ -84,6 +88,12 @@ export const UPLOAD_KEY_PREFIX = "uploads";
  * how "configure it" turns into a search; this is copy-pasteable. `DATABASE_URL` is in
  * it because uploads need BOTH halves and a reader who has only just discovered the
  * first is about to discover the second.
+ *
+ * The bucket is `blobs` rather than `uploads`, which is not a typo and cost a real
+ * confusion: `blobs` is the one bucket the local stack DECLARES
+ * (`supabase/config.toml`, applied by `supabase start`), and an upload lands under an
+ * `uploads/` PREFIX inside it — the same layout production uses beside its
+ * `blobs/<sha256>` deploy artifacts. Nothing creates a bucket, here or there.
  */
 const UPLOAD_ENV_EXAMPLE = [
   // COMPOSED rather than written as one literal: biome's `noSecrets` reads a
@@ -94,7 +104,9 @@ const UPLOAD_ENV_EXAMPLE = [
   `DATABASE_URL=postgresql://${["postgres", "postgres"].join(":")}@127.0.0.1:54322/postgres`,
   `${UPLOAD_STORAGE_URL_ENV}=http://127.0.0.1:54321`,
   `${UPLOAD_STORAGE_KEY_ENV}=<SERVICE_ROLE_KEY>`,
-  `${UPLOAD_STORAGE_BUCKET_ENV}=uploads`,
+  // `blobs`, not `uploads`: it is the one bucket the local stack declares, and an
+  // upload lands under an `uploads/` PREFIX inside it — see `UPLOAD_KEY_PREFIX`.
+  `${UPLOAD_STORAGE_BUCKET_ENV}=blobs`,
 ].join("\n");
 
 /**
@@ -190,10 +202,13 @@ export function createUnavailableUploadStore(missing: string): UploadStore {
   const refuse = <T>(): Promise<T> =>
     Promise.reject(
       new Error(
-        `Workflow uploads need ${missing}. A deployed agent gets both from the platform; ` +
-          "locally they come from the project's `.env`, and the Supabase CLI prints the two " +
-          "storage values — `supabase start`, then `supabase status -o env` for " +
-          `SERVICE_ROLE_KEY and API_URL:\n\n${UPLOAD_ENV_EXAMPLE}\n`,
+        `Workflow uploads need ${missing}.\n\n` +
+          "A DEPLOYED agent gets both from the platform, and its env comes from Vault rather " +
+          "than from your project's `.env` — so `DATABASE_URL` appears only once the app " +
+          "database is provisioned: `aai storage enable`.\n\n" +
+          "Running LOCALLY, both come from the project's `.env`. `supabase start`, then " +
+          "`supabase status -o env` for API_URL and SERVICE_ROLE_KEY:\n\n" +
+          `${UPLOAD_ENV_EXAMPLE}\n`,
       ),
     );
   return {

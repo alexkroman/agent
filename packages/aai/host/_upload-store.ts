@@ -264,8 +264,8 @@ export type UploadStore = UploadReader & {
    *
    * The write for the direct path: the browser sent the window to the bucket itself,
    * so there is no body here and nothing for this process to stream. Answers the
-   * same record {@link UploadStore.writePart} does, so a client cannot tell which
-   * route it took from the response.
+   * same record `writePart` above does, so a client cannot tell which route it took
+   * from the response.
    *
    * The size is asked of the STORE, never taken from the caller. A client that named
    * a part it never uploaded would otherwise advance `size` past a hole, and a step

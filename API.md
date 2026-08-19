@@ -3612,7 +3612,7 @@ export interface HostServerOptions extends PassthroughServerOptions {
 export type HostSessionDefaults = Omit<Partial<AgentDef>, "systemPrompt" | "greeting" | "tools" | "sttPrompt">;
 
 // @public (undocumented)
-type HttpUploadBlobsOptions = {
+export type HttpUploadBlobsOptions = {
     url: string;
     serviceKey: string;
     bucket: string;
@@ -3699,6 +3699,9 @@ interface OwnedMap<K, V> {
 
 // @public
 export function partKey(prefix: string, id: string, at: number): string;
+
+// @public
+export function partsOf(value: unknown): UploadPart[];
 
 // @public
 export type PassthroughServerOptions = {

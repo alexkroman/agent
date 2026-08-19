@@ -8,7 +8,7 @@
  * `null` rather than pretending it can sign.
  */
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
   createMemoryUploadBytes,
   createSupabaseUploadBytes,
@@ -23,7 +23,9 @@ function scripted(answer: (url: string, init?: RequestInit) => Response) {
     urls.push(String(input));
     return answer(String(input), init as RequestInit | undefined);
   };
-  return { urls, fetch: vi.fn(seam) as unknown as typeof globalThis.fetch };
+  // `seam` is already declared as the thing, so it needs no cast — and `vi.fn` buys
+  // nothing here: `urls` is the recording a spec asserts on.
+  return { urls, fetch: seam };
 }
 
 const options = (fetch: typeof globalThis.fetch) => ({

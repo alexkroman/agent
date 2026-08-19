@@ -50,6 +50,7 @@ import { ensureOnce } from "./_ensure-once.ts";
 import {
   partKey,
   partsCovering,
+  partsOf,
   rangesOf,
   type UploadBlobs,
   type UploadPart,
@@ -75,7 +76,11 @@ type StoredRow = {
   type: string;
   complete: boolean;
   expected: string | null;
-  parts: UploadPart[] | null;
+  /**
+   * The boundary list AS THE DRIVER GIVES IT — a `::text` string, so `unknown` here and
+   * `partsOf` at every read. See `partsOf` for the bug that made this explicit.
+   */
+  parts: unknown;
 };
 
 /**
@@ -135,7 +140,7 @@ export function createBlobUploadStore(opts: {
     // Only while there is something to resume: a finished upload is covered end to
     // end, and a reader's answer to an absent list is to assume nothing — see
     // `UploadInfo.ranges`.
-    const ranges = held.expected !== null && !complete ? rangesOf(held.parts ?? []) : undefined;
+    const ranges = held.expected !== null && !complete ? rangesOf(partsOf(held.parts)) : undefined;
     return {
       id,
       name: held.name,
@@ -159,7 +164,7 @@ export function createBlobUploadStore(opts: {
       // exactly the parts that landed while they did.
       const held = await row(id);
       if (!held) throw new UnknownUploadError(id);
-      const parts = [...(held.parts ?? []).filter((one) => one.at !== part.at), part];
+      const parts = [...partsOf(held.parts).filter((one) => one.at !== part.at), part];
       const size = contiguousBytes(rangesOf(parts));
       // A declared total is the ONLY thing that can make an upload complete here. A
       // streamed one declares none, and its prefix reaching its own length says
@@ -169,9 +174,14 @@ export function createBlobUploadStore(opts: {
       const complete =
         held.expected === null ? held.complete !== false : size >= Number(held.expected);
       await db.query(
-        `update ${UPLOADS_TABLE} set parts = $2, size = $3, complete = $4 where id = $1`,
+        // `$2::text::jsonb`, NOT `$2::jsonb` — see `partsOf` for what the missing
+        // `::text` stored.
+        `update ${UPLOADS_TABLE} set parts = $2::text::jsonb, size = $3, complete = $4
+         where id = $1`,
         [id, JSON.stringify(parts), size, complete],
       );
+      // The merged list as an ARRAY, not the string that was read: `record` goes back
+      // through `partsOf`, which accepts either.
       return record(id, { ...held, parts, complete }, size);
     });
   }
@@ -231,8 +241,9 @@ export function createBlobUploadStore(opts: {
       // not written.
       const size = await putWindows(id, body, options?.limit ?? maxBytes, false);
       await db.query(
+        // `$5::text::jsonb` for the reason `addPart`'s update carries — `partsOf` owns it.
         `insert into ${UPLOADS_TABLE} (id, name, type, size, complete, parts)
-         values ($1, $2, $3, $4, true, $5::jsonb)`,
+         values ($1, $2, $3, $4, true, $5::text::jsonb)`,
         [id, name, type, size, JSON.stringify(windowList(size))],
       );
       return { id, name, type, size, complete: true };
@@ -326,7 +337,7 @@ export function createBlobUploadStore(opts: {
       await ensureTables();
       const held = await row(id);
       if (!held) return new Uint8Array(0);
-      const wanted = partsCovering(held.parts ?? [], start, end);
+      const wanted = partsCovering(partsOf(held.parts), start, end);
       // One read per object the window overlaps, in order. A window inside a single
       // part is one read, which is the ordinary case: a header probe, or a segment
       // cut to the part size.

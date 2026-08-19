@@ -1175,8 +1175,15 @@ bucket you point it at, and the Supabase CLI prints the two values
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 AAI_UPLOAD_STORAGE_URL=http://127.0.0.1:54321
 AAI_UPLOAD_STORAGE_KEY=<SERVICE_ROLE_KEY>
-AAI_UPLOAD_STORAGE_BUCKET=uploads
+AAI_UPLOAD_STORAGE_BUCKET=blobs
 ```
+
+`blobs`, not `uploads`: that is the one bucket the local stack declares
+(`supabase/config.toml`, applied by `supabase start`), and uploads land under an
+`uploads/` PREFIX inside it — the same layout production uses beside its
+`blobs/<sha256>` deploy artifacts. Nothing creates a bucket for you.
+
+`.env.example` in a scaffolded project carries this block commented out.
 
 Without both halves `api.upload(file)` fails naming the one that is missing —
 never quietly into a directory, which is what it used to do and then lose by the

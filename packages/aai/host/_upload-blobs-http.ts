@@ -37,6 +37,7 @@
 
 import { errorMessage } from "../sdk/utils.ts";
 import type { UploadBlobs } from "./_upload-blobs.ts";
+import { UPLOAD_STORAGE_BUCKET_ENV, UPLOAD_STORAGE_URL_ENV } from "./_upload-env.ts";
 import { concat, UploadTooLargeError } from "./_upload-store.ts";
 
 export type HttpUploadBlobsOptions = {
@@ -132,8 +133,26 @@ export function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs
   };
 }
 
-/** One failure shape, carrying the status and whatever the body said. */
+/**
+ * One failure shape, carrying the status and whatever the body said.
+ *
+ * A MISSING BUCKET gets its own sentence, because it is the first thing a developer
+ * meets and the raw answer does not help: Storage replies `404 {"error":"Bucket not
+ * found"}`, which reads as "that object is not there" — indistinguishable from an
+ * ordinary miss, and the whole point of setting three env vars was to say where things
+ * go. The bucket is the one piece of Supabase state that lives in the dashboard rather
+ * than in a migration (`supabase/config.toml` declares no storage settings on purpose),
+ * so nothing creates it and nothing else would ever mention it.
+ */
 async function storageError(op: string, key: string, res: Response): Promise<Error> {
   const detail = await res.text().catch((err: unknown) => errorMessage(err));
+  if (res.status === 404 && detail.includes("Bucket not found")) {
+    return new Error(
+      `No storage bucket named in ${UPLOAD_STORAGE_BUCKET_ENV} exists at ` +
+        `${UPLOAD_STORAGE_URL_ENV}. Create it as a PRIVATE bucket — locally that is the ` +
+        "Supabase Studio's Storage tab — and note nothing creates it for you: a bucket " +
+        "is dashboard state, not a migration.",
+    );
+  }
   return new Error(`upload blob ${op} failed for ${key}: ${res.status} ${detail.slice(0, 200)}`);
 }
