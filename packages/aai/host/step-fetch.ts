@@ -97,6 +97,11 @@ export function createStepFetch(): StepFetchHandle {
         headers: init.headers && { ...init.headers },
         body: init.body,
         signal: init.signal,
+        // Required by undici (and by the spec) for a streaming request body, and
+        // REFUSED alongside a plain one — so it is set only when the body really is
+        // an iterable. A step sending a stored upload window by window is the case
+        // this exists for.
+        duplex: isStreamingBody(init.body) ? "half" : undefined,
       }),
     };
     return pinnedFetch(url, request);
@@ -105,4 +110,16 @@ export function createStepFetch(): StepFetchHandle {
   // down is a step's, and cutting it off would fail a run that was about to
   // finish. Idle keep-alive sockets — the thing a rebuild strands — go either way.
   return { fetch, close: () => agent.close() };
+}
+
+/**
+ * Whether this body is consumed as a stream.
+ *
+ * A `Uint8Array` is iterable too — over its BYTES — so the check cannot just be
+ * "has `Symbol.asyncIterator`" applied loosely; it has to exclude the two plain
+ * shapes explicitly, or every ordinary request would be sent as a stream.
+ */
+function isStreamingBody(body: StepFetchInit["body"]): boolean {
+  if (body === undefined || typeof body === "string" || body instanceof Uint8Array) return false;
+  return true;
 }

@@ -39,6 +39,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadProgress } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
+import { filesOf } from "./_workflow-files.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
@@ -134,20 +135,6 @@ export type UploadStatus = UploadProgress & {
   /** How many files this submission sends in total. */
   count: number;
 };
-
-/**
- * The files a submitted field carries, if that is what it carries.
- *
- * An array counts only when it is files ALL the way through — a mixed array is
- * some other field's value that happens to contain one, and turning half of it
- * into ids would corrupt it silently.
- */
-function filesOf(value: unknown): File[] {
-  if (value instanceof File) return [value];
-  if (!Array.isArray(value)) return [];
-  const files = value.filter((one): one is File => one instanceof File);
-  return files.length > 0 && files.length === value.length ? files : [];
-}
 
 /**
  * Replace every `File` in a submitted form with the id of a stored upload,

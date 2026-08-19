@@ -12,6 +12,7 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockWorkflowApi } from "./_react-test-utils.ts";
 import { useWorkflowSubmit, useWorkflows } from "./use-workflow-form.ts";
 import { MAX_MISSING_READS } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -48,28 +49,25 @@ function run(over: Partial<WorkflowRun> = {}): WorkflowRun {
 /**
  * A client whose `watch` always declines, so the hook under test falls through
  * to `useWorkflowRun`'s poll — the path a test can drive.
+ *
+ * The shared builder's defaults already decline; this only names the two reads
+ * these specs assert on.
  */
 function fakeApi(over: Partial<WorkflowApi> = {}): WorkflowApi {
-  return {
+  return createMockWorkflowApi({
     upload: vi.fn(async () => ({
       id: "upl_1",
       name: "",
       type: "",
       size: 0,
+      complete: true,
       url: "/uploads/upl_1",
     })),
     list: vi.fn(async () => [{ name: "digest" }]),
-    start: vi.fn(async () => "wrun_1"),
     startAndWait: vi.fn(async () => run({ status: "completed" })),
     get: vi.fn(async () => run({ status: "completed" })),
-    find: vi.fn(async () => []),
-    recent: vi.fn(async () => []),
-    cancel: vi.fn(async () => true),
-    watch: vi.fn(async () => new Response(null, { status: 404 })),
-    streamOutput: vi.fn(async () => new Response(null, { status: 404 })),
-    wake: vi.fn(async () => 0),
     ...over,
-  };
+  });
 }
 
 beforeEach(() => {
@@ -180,7 +178,14 @@ describe("useWorkflowSubmit", () => {
         options?.onProgress?.({ loaded: 0, total: 400, fraction: 0 });
         options?.onProgress?.({ loaded: 200, total: 400, fraction: 0.5 });
         await gate?.promise;
-        return { id: `upl_${call}`, name: "", type: "", size: 400, url: "/uploads" };
+        return {
+          id: `upl_${call}`,
+          name: "",
+          type: "",
+          size: 400,
+          complete: true,
+          url: "/uploads",
+        };
       }),
     });
     const files = [new File(["a"], "one.wav"), new File(["b"], "two.wav")];

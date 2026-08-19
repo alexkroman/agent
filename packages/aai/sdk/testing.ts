@@ -211,7 +211,24 @@ export function createToolContext(overrides: Partial<ToolContext> = {}): TestToo
  *
  * @public
  */
-export type StubUpload = Uint8Array | { bytes: Uint8Array; name?: string; type?: string };
+export type StubUpload =
+  | Uint8Array
+  | {
+      bytes: Uint8Array;
+      name?: string;
+      type?: string;
+      /**
+       * Whether every byte is in. Defaults to `true`.
+       *
+       * `false` stages a STREAMED upload that is still arriving, which is the state
+       * a step polling one has to handle and the only one where `readUpload`
+       * legitimately comes back short. Being able to write that down is most of why
+       * this field exists: a body that treats a stalled size as the end returns a
+       * transcript of most of a recording and reports success, and a spec cannot
+       * catch that without an incomplete upload to hand it.
+       */
+      complete?: boolean;
+    };
 
 /**
  * Publish an in-memory upload store, so a `"use step"` function that calls
@@ -233,6 +250,11 @@ export type StubUpload = Uint8Array | { bytes: Uint8Array; name?: string; type?:
  * const restore = stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
  * // … call the step …
  * restore();
+ *
+ * // A streamed upload mid-flight: `readUpload` comes back short and
+ * // `uploadInfo(...).complete` is false, which is what a polling body sees.
+ * const firstHalf = new Uint8Array([1, 2]);
+ * stubUploads({ upl_2: { bytes: firstHalf, complete: false } });
  * ```
  *
  * @param files - Keyed by upload id — the same string a run input would carry.
@@ -250,7 +272,13 @@ export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => 
       const file = stored.get(id);
       return Promise.resolve(
         file
-          ? { id, name: file.name ?? "", type: file.type ?? "", size: file.bytes.length }
+          ? {
+              id,
+              name: file.name ?? "",
+              type: file.type ?? "",
+              size: file.bytes.length,
+              complete: file.complete !== false,
+            }
           : undefined,
       );
     },
@@ -260,12 +288,46 @@ export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => 
   return () => publishUploadReader(undefined);
 }
 
+/**
+ * Collect a request body into the bytes that went out.
+ *
+ * A streaming body is an async iterable consumed ONCE, so a recorder that stored the
+ * iterable would hand a spec something the request had already eaten. Draining here
+ * is also what makes the two body shapes indistinguishable to an assertion.
+ */
+async function drainBody(
+  body: Uint8Array | string | AsyncIterable<Uint8Array> | undefined,
+): Promise<Uint8Array | string | undefined> {
+  if (body === undefined || typeof body === "string" || body instanceof Uint8Array) return body;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for await (const chunk of body) {
+    chunks.push(chunk);
+    size += chunk.length;
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.length;
+  }
+  return out;
+}
+
 /** One request a {@link stubStepFetch} recorder captured. */
 export type StubStepRequest = {
   url: string;
   method: string;
   headers: Record<string, string>;
-  /** The body as sent — BYTES, because that is all `stepFetch` accepts. */
+  /**
+   * The body as sent.
+   *
+   * A STREAMING body (an async iterable — see `StepFetchInit.body`) is DRAINED into
+   * a `Uint8Array` before it reaches a spec, so an assertion reads the bytes that
+   * went out rather than an iterator it would have to consume itself — and
+   * consuming it in the spec would be consuming the one the request was going to
+   * send.
+   */
   body: Uint8Array | string | undefined;
 };
 
@@ -327,7 +389,7 @@ export function stubStepFetch(
       url,
       method: init.method ?? "GET",
       headers: { ...init.headers },
-      body: init.body,
+      body: await drainBody(init.body),
     };
     calls.push(request);
     const answered = await answer(request);

@@ -54,3 +54,24 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * same reason a run id is `wrun_`-prefixed.
  */
 export const UPLOAD_ID_PREFIX = "upl_";
+
+/**
+ * What a caller-chosen upload id may contain.
+ *
+ * Almost every upload id is minted here (`newUploadId`), and one kind is not: a
+ * STREAMED upload is named by its caller, because the whole point is that the run
+ * can start before the bytes have finished arriving — so the id has to exist
+ * before the upload does, travel in the run input, and be the thing the two find
+ * each other by.
+ *
+ * That makes it attacker-controlled text in a place the store treats as
+ * structural: a primary key in Postgres, and a FILENAME in the file backend, where
+ * `../../etc/passwd` would escape the store entirely. So the shape is an
+ * allow-list rather than an escape — alphanumerics, `-` and `_`, which is what a
+ * `crypto.randomUUID()` already is and what leaves nothing for a path to
+ * interpret. Enforced at the ROUTE and again in the store, because the store is
+ * also reachable from a step and from a test.
+ *
+ * 64 characters is twice a hyphenless UUID with room for a caller's own prefix.
+ */
+export const UPLOAD_TOKEN_RE = /^[A-Za-z0-9_-]{1,64}$/;

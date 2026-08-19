@@ -502,6 +502,23 @@ descriptor's `apiKeyEnv` now, like every other stage; they resolve through
 `resolveS2sEnvVar`, so the key a session reads is by construction the key
 the preflight asked for.
 
+## An upload can be read while it is still arriving
+
+`POST /workflows/uploads` answers with an id once the last byte is stored — the
+store writes an upload's record LAST, so "incomplete" and "no such upload" are
+one answer and a run needing that id waits for the whole file. `PUT
+/workflows/uploads/:id` is the other shape: the CALLER names the upload, so the
+id is valid before the bytes are sent, the record exists from the first byte
+with `complete: false` and a growing `size`, and `readUpload` — which already
+clamped its window to what is stored — is what a run reads it with.
+
+**`complete` is the only field a body may exit on.** A `size` that stopped
+growing is what a slow link and a dead client both look like.
+
+`host/workflow-uploads.ts` carries what that relaxation costs and how it is paid
+for; `sdk/step-uploads.ts` owns the reader's half and the polling shape; the
+author-facing half (`useWorkflowStream`) is in `packages/aai-ui/CLAUDE.md`.
+
 ## Workflow apps and the workflow HTTP API
 
 `AgentDef.page` declares an agent's front door — `"voice"` (the default, and

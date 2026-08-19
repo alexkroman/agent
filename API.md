@@ -4417,7 +4417,7 @@ type StepFetchHandle = {
 type StepFetchInit = {
     method?: string | undefined;
     headers?: Record<string, string> | undefined;
-    body?: Uint8Array | string | undefined;
+    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
     signal?: AbortSignal | undefined;
 };
 
@@ -4705,6 +4705,7 @@ type UploadInfo = {
     name: string;
     type: string;
     size: number;
+    complete: boolean;
 };
 
 // @public
@@ -4728,6 +4729,9 @@ export const UPLOADS_UNAVAILABLE_MESSAGE: string;
 // @public
 export type UploadStore = UploadReader & {
     create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
         limit?: number;
     }): Promise<UploadInfo>;
 };
@@ -5662,6 +5666,7 @@ export type StubUpload = Uint8Array | {
     bytes: Uint8Array;
     name?: string;
     type?: string;
+    complete?: boolean;
 };
 
 // @public
@@ -6242,7 +6247,7 @@ export function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
 export type StepFetchInit = {
     method?: string | undefined;
     headers?: Record<string, string> | undefined;
-    body?: Uint8Array | string | undefined;
+    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
     signal?: AbortSignal | undefined;
 };
 
@@ -6309,6 +6314,7 @@ export type UploadInfo = {
     name: string;
     type: string;
     size: number;
+    complete: boolean;
 };
 
 // @public
@@ -6339,6 +6345,15 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
 
 // @public
+export type UploadInfo = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+};
+
+// @public
 export type UploadOptions = {
     name?: string | undefined;
     type?: string | undefined;
@@ -6359,6 +6374,7 @@ export type UploadRef = {
     name: string;
     type: string;
     size: number;
+    complete: boolean;
     url: string;
 };
 
@@ -6393,6 +6409,8 @@ export type WorkflowApi = {
         signal?: AbortSignal;
     }): Promise<Response>;
     wake(runId: string): Promise<number>;
+    uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
+    uploadInfo(id: string): Promise<UploadInfo>;
 };
 
 // @public
@@ -7095,6 +7113,16 @@ export type UseWorkflowsResult = {
 };
 
 // @public
+export function useWorkflowStream<R = unknown>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<R>;
+
+// @public
+export type UseWorkflowStreamOptions = {
+    api?: WorkflowApi;
+    key?: string;
+    intervalMs?: number;
+};
+
+// @public
 export function useWorkflowSubmit<R = unknown>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<R>;
 
 // @public
@@ -7147,6 +7175,16 @@ export function WorkflowProgress(input: {
 
 // @public
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
+
+// @public
+export type WorkflowStreamSubmission<R = unknown> = {
+    submit: (input: unknown) => Promise<void>;
+    reset: () => void;
+    run: WorkflowRun<R> | undefined;
+    pending: boolean;
+    upload: UploadStatus | undefined;
+    error: string | undefined;
+};
 
 // @public
 export type WorkflowSubmission<R = unknown> = {

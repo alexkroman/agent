@@ -1342,7 +1342,7 @@ type StepFetchHandle = {
 type StepFetchInit = {
     method?: string | undefined;
     headers?: Record<string, string> | undefined;
-    body?: Uint8Array | string | undefined;
+    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
     signal?: AbortSignal | undefined;
 };
 
@@ -1630,6 +1630,7 @@ type UploadInfo = {
     name: string;
     type: string;
     size: number;
+    complete: boolean;
 };
 
 // @public
@@ -1653,6 +1654,9 @@ export const UPLOADS_UNAVAILABLE_MESSAGE: string;
 // @public
 export type UploadStore = UploadReader & {
     create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
         limit?: number;
     }): Promise<UploadInfo>;
 };

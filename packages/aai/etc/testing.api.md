@@ -479,6 +479,7 @@ export type StubUpload = Uint8Array | {
     bytes: Uint8Array;
     name?: string;
     type?: string;
+    complete?: boolean;
 };
 
 // @public

@@ -16,7 +16,9 @@ function publish(bytes: Uint8Array, over: Partial<UploadReader> = {}) {
   const reads: { start: number; end: number }[] = [];
   publishUploadReader({
     info: async (id) =>
-      id === "upl_1" ? { id, name: "a.wav", type: "audio/wav", size: bytes.length } : undefined,
+      id === "upl_1"
+        ? { id, name: "a.wav", type: "audio/wav", size: bytes.length, complete: true }
+        : undefined,
     read: async (_id, start, end) => {
       reads.push({ start, end });
       return bytes.subarray(start, end);
@@ -86,6 +88,7 @@ describe("uploadInfo", () => {
       name: "a.wav",
       type: "audio/wav",
       size: 4,
+      complete: true,
     });
   });
 
@@ -98,7 +101,13 @@ describe("uploadInfo", () => {
 describe("publishUploadReader", () => {
   test("REPLACES, so a dev-server restart cannot leave the old store behind", async () => {
     publish(new Uint8Array([9]));
-    const second = vi.fn(async () => ({ id: "upl_1", name: "", type: "", size: 1 }));
+    const second = vi.fn(async () => ({
+      id: "upl_1",
+      name: "",
+      type: "",
+      size: 1,
+      complete: true,
+    }));
     publishUploadReader({ info: second, read: async () => new Uint8Array([7]) });
     const slice = await readUpload("upl_1");
     expect([...slice.bytes]).toEqual([7]);

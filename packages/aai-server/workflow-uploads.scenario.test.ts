@@ -56,7 +56,7 @@ import {
   UPLOADS_TABLE,
   type UploadStore,
 } from "@alexkroman1/aai/runtime";
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 
 /** Distinct from every other scenario suite's schema, and not app-shaped. */
@@ -158,7 +158,16 @@ describeWithPg("the workflow upload store over a real Postgres", () => {
 
   test("a create round-trips through info, with size as a NUMBER", async () => {
     const info = await pg.info(pgId);
-    expect(info).toEqual({ id: pgId, name: "call.wav", type: "audio/wav", size: BODY_BYTES });
+    expect(info).toEqual({
+      id: pgId,
+      name: "call.wav",
+      type: "audio/wav",
+      size: BODY_BYTES,
+      // True from the moment the record exists, because a `create`d upload does not
+      // exist until it is finished — the invariant the streaming block below is the
+      // deliberate exception to.
+      complete: true,
+    });
     // `bigint` arrives from the driver as a string, so the coercion in `info` is
     // the only thing between a byte count and a value that stringifies right and
     // arithmetics wrong. The unit tier's recorder hands back a JS number and
@@ -291,6 +300,116 @@ describeWithPg("the workflow upload store over a real Postgres", () => {
         where not exists (select 1 from ${SCHEMA}.${UPLOADS_TABLE} u where u.id = c.upload_id)`,
     );
     expect(orphans[0]?.n).toBe(0);
+  });
+
+  /**
+   * The STREAMED write, which only this tier can really see.
+   *
+   * `stream` is the deliberate exception to "an upload does not exist until all of its
+   * bytes do": the record appears at the first byte with `complete: false` and its
+   * `size` grows as chunks land, so a run can be started on the id and read what has
+   * arrived. Every mechanism in that sentence is driver-level in the Postgres arm — a
+   * `boolean` column added by `alter table`, a `bigint` re-read per chunk, and an
+   * `insert … on conflict do nothing` plus a read-back standing in for a claim — and
+   * the unit tier's recorder holds JS values and can represent none of it.
+   *
+   * The two backends reach the same guarantees by completely different means (a
+   * conflicting insert against an exclusive `open(…, "wx")`), which is the other
+   * reason the comparison belongs here.
+   */
+  test("a streamed upload EXISTS incomplete, then completes, in both backends", async () => {
+    // Gated BEFORE the first chunk as well as between them, which is what makes the
+    // claim row observable at all: the claim and the first chunk's size update are two
+    // statements microseconds apart, so a test that only waits for the record to exist
+    // races them — the first draft caught size 0 on one run and a full chunk on the
+    // next. Holding the body is the only way to look between them.
+    const first = Promise.withResolvers<void>();
+    const second = Promise.withResolvers<void>();
+    async function* held() {
+      await first.promise;
+      yield ramp(chunkBytes);
+      await second.promise;
+      yield ramp(chunkBytes, chunkBytes);
+    }
+    const pgDone = pg.stream("streamedpg", { name: "live.wav", type: "audio/wav" }, held());
+
+    // Present before the bytes are, which is the whole point of the method — and the
+    // claim row really does carry a size of ZERO, which is what makes "exists before
+    // its bytes" a fact rather than a manner of speaking.
+    await vi.waitFor(async () => expect(await pg.info("streamedpg")).toBeDefined());
+    expect(await pg.info("streamedpg")).toMatchObject({
+      complete: false,
+      name: "live.wav",
+      // Zero, deterministically: nothing has been yielded yet.
+      size: 0,
+    });
+
+    // Then the size ADVANCES, a chunk at a time.
+    first.resolve();
+    await vi.waitFor(async () => expect((await pg.info("streamedpg"))?.size).toBe(chunkBytes));
+    const partial = await pg.info("streamedpg");
+    expect(partial).toMatchObject({ complete: false });
+    // A real `bigint` re-read per chunk, coerced back to a number — the same coercion
+    // the create path needs, on a value that MOVES.
+    expect(typeof partial?.size).toBe("number");
+    // And readable to exactly there, which is what a polling run depends on.
+    expect(digest(await pg.read("streamedpg", 0, chunkBytes))).toBe(digest(ramp(chunkBytes)));
+
+    second.resolve();
+    const finished = await pgDone;
+    expect(finished).toMatchObject({ size: chunkBytes * 2, complete: true });
+    expect(await pg.info("streamedpg")).toMatchObject({ complete: true });
+
+    // The file backend agrees, by a different mechanism.
+    const viaFiles = await files.stream("streamedfs", { name: "live.wav" }, body(ramp(chunkBytes)));
+    expect(viaFiles).toMatchObject({ size: chunkBytes, complete: true });
+  });
+
+  test("the completed column is a real boolean, not a string", async () => {
+    // The column is added by `alter table … add column if not exists`, because the
+    // `create table if not exists` above is a no-op against a table that already
+    // exists — so this is the only statement that reaches a deployment which stored an
+    // upload before streaming existed, and `default true` is what makes those correct.
+    const raw = await sql<{ t: string; v: boolean }>(
+      `select pg_typeof(complete)::text as t, complete as v
+         from ${SCHEMA}.${UPLOADS_TABLE} where id = $1`,
+      [pgId],
+    );
+    expect(raw[0]?.t).toBe("boolean");
+    expect(raw[0]?.v).toBe(true);
+  });
+
+  test("a taken id is refused rather than appended to, in both backends", async () => {
+    // The safety argument for letting a caller choose the id, and the two arms get
+    // there differently: Postgres by a conflicting insert plus a read-back, the file
+    // backend by an exclusive create. Only this tier runs the first one.
+    await pg.stream("takenpg", {}, body(ramp(16)));
+    await expect(pg.stream("takenpg", {}, body(ramp(16)))).rejects.toBeInstanceOf(Error);
+    expect((await pg.info("takenpg"))?.size).toBe(16);
+
+    await files.stream("takenfs", {}, body(ramp(16)));
+    await expect(files.stream("takenfs", {}, body(ramp(16)))).rejects.toBeInstanceOf(Error);
+    expect((await files.info("takenfs"))?.size).toBe(16);
+  });
+
+  test("a stream that DIES leaves an incomplete, readable upload — not orphan rows", async () => {
+    async function* dies() {
+      yield ramp(chunkBytes);
+      throw new Error("client hung up");
+    }
+    await expect(pg.stream("diedpg", {}, dies())).rejects.toThrow("client hung up");
+    // The opposite of `create`, deliberately: a reader may already have used the part
+    // that arrived, so the record stays — and `complete` is what stops anything
+    // mistaking it for the whole file.
+    expect(await pg.info("diedpg")).toMatchObject({ size: chunkBytes, complete: false });
+    expect(digest(await pg.read("diedpg", 0, chunkBytes))).toBe(digest(ramp(chunkBytes)));
+    // Its chunk rows are REACHABLE, which is what makes them not orphans — the
+    // create path's cleanup query must not count them.
+    const rows = await sql<{ n: number }>(
+      `select count(*)::int as n from ${SCHEMA}.${UPLOAD_CHUNKS_TABLE} where upload_id = $1`,
+      ["diedpg"],
+    );
+    expect(rows[0]?.n).toBeGreaterThan(0);
   });
 
   test("a body past its cap is refused as it ARRIVES, in both backends", async () => {

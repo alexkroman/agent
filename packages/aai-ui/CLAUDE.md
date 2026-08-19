@@ -500,8 +500,10 @@ run is the WDK's business, and a route would have to invent what "again" means).
 ### Uploads — the one pair that is not about runs
 
 ```text
-POST /workflows/uploads?name=x  → { id, name, type, size, url }   body: the file
+POST /workflows/uploads?name=x  → { id, …, complete: true }   body: the file
+PUT  /workflows/uploads/:id     → the same, under an id the CALLER chose
 GET  /workflows/uploads/:id     → the bytes, `Range` honoured
+GET  /workflows/uploads/:id/info → { id, name, type, size, complete }
 ```
 
 This section used to say a `/blobs` route was deliberately absent, and that
@@ -585,6 +587,47 @@ ends: sending, then sent. `sdk/workflow-upload-client.ts` owns that, including
 why the XHR answer is converted back into a `Response` at the boundary — one
 error vocabulary and one JSON guard above both paths, rather than two ways for
 this route to describe the same 413.
+
+### Starting a run BEFORE its file has finished uploading
+
+Everything above is the `POST` path, and it forces one order: store the whole
+file, then start the run. That is not a limitation of the form layer — a `POST`
+can only answer with an id once the last byte is in, because the store writes an
+upload's record LAST so that "incomplete" and "no such upload" are the same
+answer. For a long recording that order is most of the wall clock.
+
+`PUT /workflows/uploads/:id` inverts it with one change: **the caller names the
+upload.** So the id exists before the bytes are sent, which is all a run input
+needs. The record then exists from the first byte with `complete: false` and a
+`size` that grows as chunks land, and the run reads whatever has arrived —
+`readUpload` already clamped its window to what is stored, which is why almost
+nothing else had to change.
+
+`useWorkflowStream(workflow)` is the browser half, and it is a drop-in sibling
+of `useWorkflowSubmit`: same return fields, same `<Form>`, same
+`<UploadProgressBar>`, same `<WorkflowProgress>`. What it does differently is
+three things a page should not have to own — it mints the id, puts it in the
+input where the workflow's own `uploads` list says, and **wakes the run once the
+upload lands** (a run waiting on an upload is asleep between polls, so without
+that it learns the file is finished a poll interval late, every time). A failed
+upload CANCELS the run, because a run left waiting for bytes that will never
+come fails on its own abandonment bound minutes after the page already reported
+the error.
+
+**Nothing here knows the file is audio.** Where a recording may be divided is
+the RUN's business (`planSegments` in `transcription-workflow`), and an earlier
+design that had the browser cut the file into parts is gone: it needed a group
+token, a part index, a seal call and a cutter callback, all of which the store
+publishing `size` replaces. `transcription-workflow` offers both paths over one
+form and is the worked example.
+
+**Measured, on a 10-minute 48 kHz stereo recording (115 MB, 7 segments) at 2
+MB/s:** six of seven segments were transcribed before the upload finished, the
+first at 24% of the file. The saving over the classic path is ~2s of 59s —
+bounded by one segment's latency, because the last segment cannot start until
+its bytes land — so what this really buys is that a page shows real progress
+while the bytes are moving, not a proportional speedup. `workflows/stream.ts` in
+that template carries the whole table.
 
 A file input is also the one control whose BUTTON the browser draws, and left
 to the user agent it inherits the field's colours — which can come out as

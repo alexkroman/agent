@@ -422,3 +422,41 @@ describe("a 2xx that is not JSON", () => {
     await expect(client().start("digest")).rejects.toThrow("No workflow named digest");
   });
 });
+
+describe("streamed uploads", () => {
+  test("PUTs to the caller's own id", async () => {
+    fetchMock.mockImplementation(async () =>
+      json({ id: "abc", name: "a.wav", type: "audio/wav", size: 2, complete: true }, 201),
+    );
+    const ref = await client().uploadStream("abc", "hi", { name: "a.wav" });
+    expect(call()[0]).toBe(`${BASE}workflows/uploads/abc?name=a.wav`);
+    expect(call()[1]?.method).toBe("PUT");
+    expect(ref).toMatchObject({ id: "abc", complete: true });
+    // Built from THIS client's base, never from the `url` the agent answered with.
+    expect(ref.url).toBe(`${BASE}workflows/uploads/abc`);
+  });
+
+  test("an id needing escaping is escaped, not concatenated", async () => {
+    fetchMock.mockImplementation(async () =>
+      json({ id: "a/b", name: "", type: "", size: 0, complete: true }, 201),
+    );
+    await client().uploadStream("a/b", "hi");
+    expect(call()[0]).toContain("workflows/uploads/a%2Fb?");
+  });
+
+  test("a 409 on a taken id reports the agent's own sentence", async () => {
+    fetchMock.mockImplementation(async () => json({ error: "upload abc already exists" }, 409));
+    await expect(client().uploadStream("abc", "hi")).rejects.toThrow("upload abc already exists");
+  });
+
+  test("reads an upload's record, including how much has arrived", async () => {
+    fetchMock.mockImplementation(async () =>
+      json({ id: "abc", name: "a.wav", type: "audio/wav", size: 512, complete: false }),
+    );
+    await expect(client().uploadInfo("abc")).resolves.toMatchObject({
+      size: 512,
+      complete: false,
+    });
+    expect(call()[0]).toBe(`${BASE}workflows/uploads/abc/info`);
+  });
+});

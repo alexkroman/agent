@@ -3,9 +3,25 @@
  * The two upload routes: put a file somewhere a run can reach, and read it back.
  *
  * ```text
- * POST /workflows/uploads?name=recording.wav   → 201 { id, name, type, size, url }
+ * POST /workflows/uploads?name=recording.wav   → 201 { id, …, complete: true }
+ * PUT  /workflows/uploads/:id?name=…           → 201 { id, …, complete: true }
  * GET  /workflows/uploads/:id                  → the bytes, `Range` honoured
+ * GET  /workflows/uploads/:id/info             → { id, name, type, size, complete }
  * ```
+ *
+ * ## POST mints the id; PUT lets the caller choose it
+ *
+ * The pair is not redundant, and the difference decides whether a run can start
+ * before the bytes are in. `POST` answers with an id once the LAST byte is stored,
+ * which is the only honest thing it can do — so a form that needs the id in a run
+ * input has to wait for the whole upload. `PUT` takes the id in the path, so the
+ * caller already has it: start the run, then stream the file, and the run reads
+ * what has arrived. `GET …/info` is how anything other than a step watches that
+ * happen; a step reads the same record in-process through `uploadInfo`.
+ *
+ * **`…/info` must be matched BEFORE `/uploads/:id`**, which is a prefix rule that
+ * would otherwise read `"<id>/info"` as an id and 404 an upload that exists. Same
+ * trap as `/runs/:id/events`; the router's own doc carries the general rule.
  *
  * Split from `workflow-api.ts` because nothing here is about runs — the store is
  * the only thing these two touch, and the module they came out of is the one
@@ -34,16 +50,21 @@
 import type http from "node:http";
 import { requestQuery } from "../sdk/request-url.ts";
 import type { UploadInfo } from "../sdk/step-uploads.ts";
-import { UPLOAD_CHUNK_BYTES } from "../sdk/upload-constants.ts";
+import { UPLOAD_CHUNK_BYTES, UPLOAD_TOKEN_RE } from "../sdk/upload-constants.ts";
 import { WORKFLOW_API_PREFIX } from "../sdk/workflow-api-client.ts";
 import type { Logger } from "./runtime-config.ts";
 import { sendJson } from "./workflow-api-http.ts";
-import { type UploadStore, UploadTooLargeError } from "./workflow-uploads.ts";
+import {
+  UploadIdTakenError,
+  type UploadMeta,
+  type UploadStore,
+  UploadTooLargeError,
+} from "./workflow-uploads.ts";
 
 /** Path the upload routes live under. */
 export const UPLOADS_PATH = `${WORKFLOW_API_PREFIX}/uploads`;
 
-/** What `POST /workflows/uploads` answers with. */
+/** What `POST` and `PUT /workflows/uploads` answer with. */
 export type UploadCreated = UploadInfo & {
   /**
    * Where the bytes are, relative to the API's own prefix.
@@ -56,6 +77,38 @@ export type UploadCreated = UploadInfo & {
   url: string;
 };
 
+/** What the uploader declared about the file, off the query and the header. */
+function declaredMeta(req: http.IncomingMessage): UploadMeta {
+  const type = req.headers["content-type"];
+  return {
+    name: requestQuery(req.url).get("name") ?? undefined,
+    // The declared type, minus any `; charset=` parameter — it describes the
+    // request, not the file.
+    type: typeof type === "string" ? (type.split(";")[0] ?? "").trim() : undefined,
+  };
+}
+
+/**
+ * Answer a write failure, or re-throw.
+ *
+ * 413 here rather than in the router's catch, because these are the routes whose
+ * body is MEANT to be large: the cap is part of their contract, and a caller has
+ * to tell "too big" apart from "the agent is broken". 409 for a taken id for the
+ * same reason — the request is well formed and the id is simply not available,
+ * which a client retrying a `PUT` after a lost response needs to know.
+ */
+function sendWriteFailure(res: http.ServerResponse, err: unknown): boolean {
+  if (err instanceof UploadTooLargeError) {
+    sendJson(res, 413, { error: err.message });
+    return true;
+  }
+  if (err instanceof UploadIdTakenError) {
+    sendJson(res, 409, { error: err.message });
+    return true;
+  }
+  return false;
+}
+
 /** `POST /workflows/uploads` — store the request body and answer with its id. */
 export async function createUpload(
   req: http.IncomingMessage,
@@ -63,30 +116,68 @@ export async function createUpload(
   store: UploadStore,
   logger: Logger,
 ): Promise<void> {
-  const params = requestQuery(req.url);
-  const type = req.headers["content-type"];
   try {
-    const info = await store.create(
-      {
-        name: params.get("name") ?? undefined,
-        // The declared type, minus any `; charset=` parameter — it describes
-        // the request, not the file.
-        type: typeof type === "string" ? (type.split(";")[0] ?? "").trim() : undefined,
-      },
-      req,
-    );
+    const info = await store.create(declaredMeta(req), req);
     logger.info("Workflow upload stored", { id: info.id, name: info.name, size: info.size });
     sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
   } catch (err: unknown) {
-    // 413 here rather than in the router's catch, because this is the one route
-    // whose body is MEANT to be large: the cap is part of its contract, and a
-    // caller has to tell "too big" apart from "the agent is broken".
-    if (err instanceof UploadTooLargeError) {
-      sendJson(res, 413, { error: err.message });
-      return;
-    }
+    if (sendWriteFailure(res, err)) return;
     throw err;
   }
+}
+
+/**
+ * `PUT /workflows/uploads/:id` — store the body under the caller's own id,
+ * readable as it arrives.
+ *
+ * The route that lets a run start first. Everything about it is the same as the
+ * `POST` except who names the upload, and that one difference is the feature: the
+ * caller has the id before the bytes leave, so it can go in a run input.
+ */
+export async function streamUpload(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  store: UploadStore,
+  id: string,
+  logger: Logger,
+): Promise<void> {
+  if (!UPLOAD_TOKEN_RE.test(id)) {
+    sendJson(res, 400, {
+      error:
+        "A caller-chosen upload id is 1-64 characters of letters, digits, `-` and `_` — a " +
+        "`crypto.randomUUID()` already qualifies.",
+    });
+    return;
+  }
+  try {
+    const info = await store.stream(id, declaredMeta(req), req);
+    logger.info("Workflow upload streamed", { id: info.id, name: info.name, size: info.size });
+    sendJson(res, 201, { ...info, url: `${UPLOADS_PATH}/${info.id}` } satisfies UploadCreated);
+  } catch (err: unknown) {
+    if (sendWriteFailure(res, err)) return;
+    throw err;
+  }
+}
+
+/**
+ * `GET /workflows/uploads/:id/info` — the record, including how much has arrived.
+ *
+ * The read a CLIENT polls while its own `PUT` is still in flight, and the one a
+ * page shows progress from. A step reads the same record in-process (`uploadInfo`),
+ * so this exists for everything that is not one: a script, a dashboard, or a person
+ * with `curl` asking why a run is still waiting.
+ */
+export async function readUploadInfoRoute(
+  res: http.ServerResponse,
+  store: UploadStore,
+  id: string,
+): Promise<void> {
+  const info = await store.info(id);
+  if (!info) {
+    sendJson(res, 404, { error: `No upload with id ${id}` });
+    return;
+  }
+  sendJson(res, 200, info);
 }
 
 /** `GET /workflows/uploads/:id` — the bytes, whole or by range. */

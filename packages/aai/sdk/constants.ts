@@ -382,6 +382,7 @@ export {
   MAX_WORKFLOW_UPLOAD_BYTES,
   UPLOAD_CHUNK_BYTES,
   UPLOAD_ID_PREFIX,
+  UPLOAD_TOKEN_RE,
 } from "./upload-constants.ts";
 
 /**

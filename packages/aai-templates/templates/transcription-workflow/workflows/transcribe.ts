@@ -53,40 +53,81 @@
  *   argument.
  */
 
-import { throwFatalStepError, toStepError } from "@alexkroman1/aai/step-errors";
+import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
+import { mapInBatches, readUpload, report, uploadInfo } from "@alexkroman1/aai/utils";
+import { elapsed, timed, transcribeWav } from "./sync-api.ts";
 import {
-  mapInBatches,
-  multipartBody,
-  readUpload,
-  report,
-  requireStepEnv,
-  stepFetch,
-  uploadInfo,
-} from "@alexkroman1/aai/utils";
-import {
+  bytesPerSecond,
   parseWav,
   planSegments,
+  SEGMENT_OVERLAP_SECONDS,
+  SEGMENT_SECONDS,
   type Segment,
   UnsupportedRecordingError,
   type WavFormat,
   wavWithHeader,
 } from "./wav.ts";
 
-/** The synchronous transcription endpoint. Global — it routes to the nearest region. */
-const SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
-
-/** Required on every sync request; the endpoint routes on it. */
-const SYNC_MODEL = "universal-3-5-pro";
-
-/** The key a step reads out of the agent env. Declared in `agent.ts`'s `requiredEnv`. */
-const API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+/**
+ * Bytes the desk keeps uploading at once, which is what {@link segmentConcurrency}
+ * divides to get a width.
+ *
+ * A `503` from this endpoint says `queue wait timed out; server at capacity`, and
+ * that sentence is the whole model: requests are QUEUED rather than refused, and one
+ * fails only when it waited out the queue's own deadline. So what limits the fan-out
+ * is total work in flight, and at this segment length that is dominated by BYTES —
+ * not by the request count and not by the audio duration. Five arms, one account, one
+ * laptop, `curl` straight at the endpoint:
+ *
+ * | requests | per request | bytes in flight | audio-s | `503`s |
+ * | --- | --- | --- | --- | --- |
+ * | 320 | 160 KB (5s) | 51 MB | 1,600 | 0 |
+ * | 64 | 2.94 MB (92s, 16 kHz mono) | 188 MB | 5,888 | 0 |
+ * | 48 | 17.66 MB (92s, 48 kHz stereo) | 848 MB | 4,416 | 0 |
+ * | 56 | 17.66 MB | 989 MB | 5,152 | 6 |
+ * | 64 | 17.66 MB | 1.13 GB | 5,888 | 20 |
+ * | 320 | 2.94 MB | 941 MB | 29,440 | 64 |
+ *
+ * Read the columns against each other, because each one rules something out. Request
+ * COUNT cannot be the cap: 320 tiny requests were admitted whole, and so were 64 at
+ * 2.94 MB, where a flat ceiling of ~50 would have refused the excess. Audio DURATION
+ * cannot be it either: 5,888 audio-seconds passed cleanly at 2.94 MB a request and
+ * drew 20 `503`s at 17.66 MB — same audio, six times the bytes. What tracks is the
+ * byte column, and it tracks in ADMITTED bytes too, tightly, across request counts
+ * that differ by 5x: 848 MB clean, then 883 MB / 777 MB / 753 MB admitted on the
+ * three arms that limited. The last row is the proof, since it reaches the same
+ * ceiling with 320 small requests as 64 big ones do.
+ *
+ * 640 MB sits between the largest clean run (848 MB) and the smallest limited one
+ * (941 MB), nearer the clean side. It is the declared quantity because the WIDTH is
+ * not the durable fact — this desk cuts whatever format it is handed, and the same
+ * 32 segments are 565 MB of 48 kHz stereo, 94 MB of 16 kHz mono, or 1.28 GB of a
+ * format at the {@link MAX_SEGMENT_BYTES} ceiling. Only one of those three is safe,
+ * and a constant cannot tell them apart.
+ *
+ * The threshold is this machine's, and one caveat sharpens which half. Bytes in
+ * flight is bytes UPLOADING, so it is also the number that saturated a ~65 MB/s
+ * uplink — a deployed guest reserving one CPU has neither, and a slower uplink holds
+ * every request open LONGER, which is the direction that makes a queue deadline
+ * easier to hit rather than harder. Re-measure there.
+ */
+export const BYTES_IN_FLIGHT = 640 * 1024 * 1024;
 
 /**
- * Segments in flight at once.
+ * The widest fan-out, however small the segments are.
  *
- * Bounded because the far side has a capacity limit, and it is MEASURED now —
- * 65 segments (1h37m of 48 kHz stereo, 17.66 MB each) through this workflow,
- * one concurrency per run, from one laptop and one account:
+ * Because {@link BYTES_IN_FLIGHT} stops being the binding constraint once segments
+ * are small — 16 kHz mono would divide out to 173 — and something else takes over
+ * before that helps. `mapInBatches` is a barrier rather than a work-stealing pool,
+ * deliberately, because the DevKit correlates a journal entry to a step call by the
+ * order the call was issued in: a batch's wall time is therefore its SLOWEST request
+ * and a run's is the sum of those, so depth is paid at p100 and the tail widens with
+ * it (p95/p50 measured 1.1x at 20 concurrent against 1.5x at 320, max/p50 reaching
+ * 6.7x — 5.2s against 35.0s). A `503` carrying `retry-after: 1` is exactly such a
+ * straggler, which is why overshooting is cheap in BILLING and not in latency.
+ *
+ * 32 is the measured knee over 65 segments (1h37m of 48 kHz stereo), one concurrency
+ * per run, through this workflow:
  *
  * | in flight | wall | vs realtime | `503`s |
  * | --- | --- | --- | --- |
@@ -95,23 +136,38 @@ const API_KEY_ENV = "ASSEMBLYAI_API_KEY";
  * | 48 | 26.1-28.5s | 204-223x | 0-4 |
  * | 64 | 31.9s | 182x | 20 |
  *
- * Two readings, and the second is why this is 8 and not 32. Throughput
- * PLATEAUS around 32: past it the uplink is the bottleneck, every request just
- * gets a thinner share of it (p50 4.2s at 8, 10.0s at 32, 12.5s at 64), and at
- * 64 the far side starts answering `503 Capacity Exceeded` — so the extra
- * concurrency buys retries rather than speed. And the number the plateau sits
- * at belongs to the machine, not to this code: a deployed guest reserves one
- * CPU and has neither this uplink nor its ~47 MB/s, so a default measured here
- * would be an overcommit there.
- *
- * So 8 is a floor with headroom, and the ceiling is known: raise it toward 32
- * against your own account and watch `503`s in the log. Overshooting is no
- * longer expensive — a `503` carries `retry-after` and `toStepError` below
- * honours it, so the run completes having paid one extra request per limited
- * segment (measured: 20 `503`s at 64, each retried exactly once, run
- * completed). That is only true over HTTP/1.1, which is what `stepFetch` pins.
+ * This was 8 for a long time, which cost 37% of the wall clock for headroom the
+ * endpoint does not need. Past 32 there is nothing left to buy: 48 is within noise
+ * of it while starting to pay retries, and 64 is outright SLOWER. Note the width is
+ * also inert below a threshold — at 90-second segments, 32 only binds past 48
+ * minutes of audio — so on a typical recording the whole fan-out is in flight
+ * either way and this number changes nothing.
  */
-const SEGMENT_CONCURRENCY = 8;
+export const MAX_SEGMENT_CONCURRENCY = 32;
+
+/**
+ * How many segments of THIS recording to keep in flight.
+ *
+ * Derived rather than declared, because the byte cost of a segment is a property of
+ * the format and not of this code: see {@link BYTES_IN_FLIGHT} for the measurements,
+ * and note that a fixed 32 is safe for 48 kHz stereo and a guaranteed queue timeout
+ * for a format twice as heavy. Both flows call this, so both scale the same way.
+ *
+ * Safe to call from a workflow BODY: `format` arrives from a journaled step result,
+ * so a replay derives the same width from the same bytes — which is what keeps
+ * `mapInBatches` issuing its calls in the order the journal recorded them.
+ *
+ * Overshooting stays recoverable whatever this returns: a `503` carries
+ * `retry-after` and `toStepError` below honours it, so the run completes having paid
+ * one extra request per limited segment (measured: 20 `503`s at 64, each retried
+ * exactly once, run completed). That is only true over HTTP/1.1, which is what
+ * `stepFetch` pins.
+ */
+export function segmentConcurrency(format: WavFormat): number {
+  const perSegment = bytesPerSecond(format) * (SEGMENT_SECONDS + SEGMENT_OVERLAP_SECONDS);
+  if (perSegment <= 0) return MAX_SEGMENT_CONCURRENCY;
+  return Math.max(1, Math.min(MAX_SEGMENT_CONCURRENCY, Math.floor(BYTES_IN_FLIGHT / perSegment)));
+}
 
 /**
  * Bytes probed for the WAV header.
@@ -122,11 +178,28 @@ const SEGMENT_CONCURRENCY = 8;
  */
 const HEADER_PROBE_BYTES = 64 * 1024;
 
-/** The endpoint's own per-request deadline, plus room to upload. */
-const SYNC_TIMEOUT_MS = 60_000;
-
 /** Most words `stitchTranscript` will look back over to find a repeated seam. */
 const MAX_SEAM_WORDS = 40;
+
+/**
+ * What a finished run reports, whichever flow produced it.
+ *
+ * Declared once and shared by all three, because the page renders any of them with
+ * one component: a field added to one flow and not the others is a panel that shows
+ * it for some runs and not others, with nothing saying why.
+ */
+export type Transcript = {
+  /** The recording's own filename, so a reader knows which run they are looking at. */
+  source: string;
+  /** How many requests the transcript was assembled from. `1` for the async flow. */
+  segments: number;
+  /** Length of the AUDIO. */
+  durationMs: number;
+  /** How long the RUN took, wall clock. The number that compares the flows. */
+  elapsedMs: number;
+  words: number;
+  transcript: string;
+};
 
 /** What one segment's request came back with. */
 export type SegmentTranscript = {
@@ -143,6 +216,7 @@ export type SegmentTranscript = {
 export async function transcribeFlow(input: { recording: string }) {
   "use workflow";
 
+  const startedAt = await startClock();
   const plan = await splitRecording(input.recording);
 
   // One step per segment, bounded, in an order a replay reproduces exactly.
@@ -150,13 +224,13 @@ export async function transcribeFlow(input: { recording: string }) {
   // already journaled, so the resume replays those for free and re-issues only
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
-  const parts = await mapInBatches(plan.segments, SEGMENT_CONCURRENCY, (segment) =>
+  const parts = await mapInBatches(plan.segments, segmentConcurrency(plan.format), (segment) =>
     transcribeSegment(input.recording, plan.format, segment),
   );
 
   // Whatever this returns is what a caller reads as `output` on a completed run
   // — so it is what the page renders, typed through `WorkflowOutputOf`.
-  return await mergeTranscript(input.recording, plan.durationMs, parts);
+  return await mergeTranscript(input.recording, plan.durationMs, parts, startedAt);
 }
 
 /**
@@ -210,7 +284,6 @@ export async function transcribeSegment(
   // order.
   await report(`Transcribing ${clock(segment.startMs)}–${clock(segment.endMs)}.`);
 
-  const apiKey = apiKeyOrFatal();
   // `[start, end)`, the same half-open pair `planSegments` produced — the store
   // owns the conversion to HTTP's inclusive range, so there is no `- 1` here to
   // get wrong.
@@ -221,38 +294,22 @@ export async function transcribeSegment(
   // the language, so the field was a question asked of a person that the service
   // answers better — and getting it wrong is a whole transcript in the wrong
   // language. Add one back only for a desk that really knows.
-  const part = multipartBody({
-    name: "audio",
-    filename: `segment-${segment.index}.wav`,
-    type: "audio/wav",
-    bytes: wavWithHeader(format, audio.bytes),
-  });
-
-  // `stepFetch`, not `fetch`, and here it is load-bearing rather than tidy:
-  // `fetch` speaks HTTP/2 wherever the far side offers it, which puts a whole
-  // batch of segments on ONE connection — and a capacity limit then arrives as a
-  // stream reset carrying no HTTP status for `toStepError` below to read. The
-  // fan-out is exactly the shape that breaks on. `sdk/step-fetch.ts` holds the
-  // measurements; a `StepTransportError` out of here is already retryable and
-  // already names its cause.
-  const response = await stepFetch(SYNC_ENDPOINT, {
-    method: "POST",
-    headers: {
-      // The raw key — this endpoint takes it unprefixed, and a `Bearer ` in
-      // front of it is a 401 that reads like a wrong key.
-      Authorization: apiKey,
-      "X-AAI-Model": SYNC_MODEL,
-      ...part.headers,
-    },
-    body: part.body,
-    // Nothing here has a deadline of its own, and a hung upload inside a step is
-    // a run that never finishes rather than one that retries.
-    signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
-  });
-  if (!response.ok) throw await syncFailure(response, segment);
-
-  const body = (await response.json()) as { text?: string };
-  return { index: segment.index, text: (body.text ?? "").trim() };
+  //
+  // `wavWithHeader` is what makes a WINDOW decodable: the endpoint decodes each
+  // request independently, so a slice of the middle of a recording is a headerless
+  // tail until one is put back on it. The streaming flow needs no equivalent — its
+  // parts were cut with a header each.
+  const { value: text, ms } = await timed(() =>
+    transcribeWav(
+      wavWithHeader(format, audio.bytes),
+      `segment-${segment.index}.wav`,
+      `Segment ${segment.index} (${clock(segment.startMs)})`,
+    ),
+  );
+  // The LATENCY, which is what says whether the concurrency bound or the endpoint
+  // is the thing limiting the run — see `timed`'s doc.
+  await report(`Transcribed ${clock(segment.startMs)}–${clock(segment.endMs)} in ${elapsed(ms)}.`);
+  return { index: segment.index, text };
 }
 
 /**
@@ -274,13 +331,8 @@ export async function mergeTranscript(
   uploadId: string,
   durationMs: number,
   parts: readonly SegmentTranscript[],
-): Promise<{
-  source: string;
-  segments: number;
-  durationMs: number;
-  words: number;
-  transcript: string;
-}> {
+  startedAt: number,
+): Promise<Transcript> {
   "use step";
 
   await report(`Stitching ${parts.length} segment${parts.length === 1 ? "" : "s"} together.`);
@@ -298,12 +350,35 @@ export async function mergeTranscript(
     source,
     segments: parts.length,
     durationMs,
+    // Wall clock, so the three flows can be compared over one file — see
+    // `startClock`. Measured in a STEP, which is what makes it survive a replay.
+    elapsedMs: Date.now() - startedAt,
     words: countWords(transcript),
     transcript,
   };
 }
 
 // ---- Pure helpers -----------------------------------------------------------
+
+/**
+ * When the run started, as epoch ms.
+ *
+ * A STEP, and that is the whole reason this exists rather than a `Date.now()` in the
+ * body: a body replays from the top on every resume, so a clock read there returns a
+ * different value each time and every duration derived from it would be a different
+ * duration. A step's result is journaled, so this is the moment the run really began
+ * however many times it is replayed.
+ *
+ * Shared by all three flows deliberately. A run snapshot carries `createdAt` and no
+ * end time, so "how long did this take" is not answerable from the outside — and the
+ * whole point of shipping three flows over one job is that a reader can compare them,
+ * which needs one number measured one way.
+ */
+export async function startClock(): Promise<number> {
+  "use step";
+
+  return Date.now();
+}
 
 /** A word, stripped of the punctuation the decoder added, for seam comparison. */
 function seamKey(word: string): string {
@@ -355,8 +430,8 @@ function seamLength(merged: readonly string[], next: readonly string[]): number 
   return 0;
 }
 
-/** Words in a string. */
-function countWords(text: string): number {
+/** Words in a string. Exported so the streaming flow reports the same number. */
+export function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
@@ -368,19 +443,6 @@ export function clock(ms: number): string {
 
 // ---- I/O helpers ------------------------------------------------------------
 
-/** The API key, or a terminal failure — three more attempts find the same gap. */
-function apiKeyOrFatal(): string {
-  try {
-    return requireStepEnv(API_KEY_ENV);
-  } catch (err: unknown) {
-    // `throwFatalStepError` rather than `throw new FatalError(…)`: that class
-    // takes only a message — no `cause` — so constructing one inside a `catch`
-    // loses the original where the linter (rightly) expects it preserved. Here
-    // the original is the ARGUMENT, and nothing is swallowed.
-    return throwFatalStepError(err);
-  }
-}
-
 /** Run a `wav.ts` helper, turning its "cannot cut this" into a terminal failure. */
 function fatalOnUnsupported<T>(read: () => T): T {
   try {
@@ -389,28 +451,4 @@ function fatalOnUnsupported<T>(read: () => T): T {
     if (err instanceof UnsupportedRecordingError) return throwFatalStepError(err);
     throw err;
   }
-}
-
-/**
- * The sync endpoint's failure, with whatever it said about it.
- *
- * `toStepError` makes the three-way call: a `FatalError` stops the DevKit
- * retrying something that will answer the same way, a bare `RetryableError`
- * retries in ONE SECOND (that class's own default), and a `RetryableError`
- * carrying `retryAfter` waits exactly as long as the far side asked. The last
- * matters here because `SEGMENT_CONCURRENCY` segments hit the rate limit
- * together — a second later all four ask again, where on the server's number
- * they drain.
- */
-async function syncFailure(response: Response, segment: Segment): Promise<Error> {
-  // Two shapes, documented: `{ error_code, message }` for a request problem and
-  // `{ detail }` for auth and rate limits.
-  const body = (await response.json().catch(() => ({}))) as { message?: string; detail?: string };
-  const detail = body.message ?? body.detail;
-  return toStepError(
-    response,
-    `Segment ${segment.index} (${clock(segment.startMs)}) failed: HTTP ${response.status}${
-      detail ? ` — ${detail}` : ""
-    }`,
-  );
 }

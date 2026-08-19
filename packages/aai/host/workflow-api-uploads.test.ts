@@ -56,29 +56,60 @@ async function serve(opts: { uploads?: UploadStore | undefined } = {}): Promise<
 
 /** The real store over an in-memory `Db` — enough to exercise create + range. */
 function memoryStore(): UploadStore {
-  const files = new Map<string, { name: string; type: string; bytes: Uint8Array }>();
+  const files = new Map<
+    string,
+    { name: string; type: string; bytes: Uint8Array; complete: boolean }
+  >();
   let seq = 0;
+  /** Drain a request body, which both writers do the same way. */
+  const drain = async (body: AsyncIterable<Uint8Array>): Promise<Uint8Array> => {
+    const parts: Uint8Array[] = [];
+    let size = 0;
+    for await (const piece of body) {
+      parts.push(piece);
+      size += piece.length;
+    }
+    const bytes = new Uint8Array(size);
+    let at = 0;
+    for (const part of parts) {
+      bytes.set(part, at);
+      at += part.length;
+    }
+    return bytes;
+  };
   return {
     async create(meta, body) {
-      const parts: Uint8Array[] = [];
-      let size = 0;
-      for await (const piece of body) {
-        parts.push(piece);
-        size += piece.length;
-      }
-      const bytes = new Uint8Array(size);
-      let at = 0;
-      for (const part of parts) {
-        bytes.set(part, at);
-        at += part.length;
-      }
+      const bytes = await drain(body);
       const id = `upl_${++seq}`;
-      files.set(id, { name: meta.name ?? "", type: meta.type ?? "", bytes });
-      return { id, name: meta.name ?? "", type: meta.type ?? "", size };
+      files.set(id, { name: meta.name ?? "", type: meta.type ?? "", bytes, complete: true });
+      return {
+        id,
+        name: meta.name ?? "",
+        type: meta.type ?? "",
+        size: bytes.length,
+        complete: true,
+      };
+    },
+    async stream(id, meta, body) {
+      // The real store refuses a taken id — a fake that did not would let the
+      // route's 409 be tested against a path production does not take.
+      if (files.has(id)) {
+        const { UploadIdTakenError } = await import("./workflow-uploads.ts");
+        throw new UploadIdTakenError(id);
+      }
+      const name = meta.name ?? "";
+      const type = meta.type ?? "";
+      // Present from the first byte, which is the property this route exists for.
+      files.set(id, { name, type, bytes: new Uint8Array(0), complete: false });
+      const bytes = await drain(body);
+      files.set(id, { name, type, bytes, complete: true });
+      return { id, name, type, size: bytes.length, complete: true };
     },
     async info(id) {
       const file = files.get(id);
-      return file ? { id, name: file.name, type: file.type, size: file.bytes.length } : undefined;
+      return file
+        ? { id, name: file.name, type: file.type, size: file.bytes.length, complete: file.complete }
+        : undefined;
     },
     async read(id, start, end) {
       return files.get(id)?.bytes.subarray(start, end) ?? new Uint8Array(0);
@@ -247,5 +278,83 @@ describe("parseRange", () => {
     expect(parseRange("items=0-1", 100)).toBeUndefined();
     expect(parseRange("bytes=0-1, 5-6", 100)).toBeUndefined();
     expect(parseRange("bytes=-", 100)).toBeUndefined();
+  });
+});
+
+describe("PUT /workflows/uploads/:id", () => {
+  test("stores under the caller's own id, so a run can be started on it first", async () => {
+    const base = await serve();
+    const res = await fetch(`${base}/workflows/uploads/abc123?name=standup.wav`, {
+      method: "PUT",
+      headers: { "Content-Type": "audio/wav" },
+      body: new Uint8Array([1, 2, 3]),
+    });
+    expect(res.status).toBe(201);
+    // The id is the caller's, which is the whole difference from the POST: it
+    // existed before the bytes left, so it can already be in a run input.
+    await expect(res.json()).resolves.toMatchObject({
+      id: "abc123",
+      name: "standup.wav",
+      size: 3,
+      complete: true,
+    });
+  });
+
+  test("a second PUT to one id is a 409, never an append", async () => {
+    const base = await serve();
+    const put = () =>
+      fetch(`${base}/workflows/uploads/abc123`, { method: "PUT", body: new Uint8Array([1]) });
+    expect((await put()).status).toBe(201);
+    // The safety argument for letting a caller choose the id.
+    expect((await put()).status).toBe(409);
+  });
+
+  test("an id that would escape the store is a 400", async () => {
+    const base = await serve();
+    const res = await fetch(`${base}/workflows/uploads/..%2Fescape`, {
+      method: "PUT",
+      body: new Uint8Array([1]),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("a malformed percent-escape in the id is a 400, never a 500", async () => {
+    const base = await serve();
+    const res = await fetch(`${base}/workflows/uploads/%`, {
+      method: "PUT",
+      body: new Uint8Array([1]),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /workflows/uploads/:id/info", () => {
+  test("reports the record rather than the bytes", async () => {
+    const base = await serve();
+    const stored = await upload(base, new Uint8Array([1, 2, 3]), { name: "a.wav" });
+    const res = await fetch(`${base}/workflows/uploads/${stored.id}/info`);
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      id: stored.id,
+      name: "a.wav",
+      type: "application/octet-stream",
+      size: 3,
+      complete: true,
+    });
+  });
+
+  test("is matched BEFORE `/uploads/:id`, which is a prefix rule", async () => {
+    const base = await serve();
+    const stored = await upload(base, new Uint8Array([1, 2, 3]));
+    // Listed the other way round this reads `"<id>/info"` as an upload id and 404s
+    // an upload that plainly exists — the same trap as `/runs/:id/events`.
+    const res = await fetch(`${base}/workflows/uploads/${stored.id}/info`);
+    expect(res.headers.get("content-type")).toContain("application/json");
+  });
+
+  test("404s for an id nothing stored", async () => {
+    const base = await serve();
+    const res = await fetch(`${base}/workflows/uploads/upl_gone/info`);
+    expect(res.status).toBe(404);
   });
 });

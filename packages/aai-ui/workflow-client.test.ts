@@ -75,6 +75,8 @@ describe("createWorkflowApi", () => {
       "startAndWait",
       "streamOutput",
       "upload",
+      "uploadInfo",
+      "uploadStream",
       "wake",
       "watch",
     ]);

@@ -11,6 +11,15 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
 
 // @public
+export type UploadInfo = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+};
+
+// @public
 export type UploadOptions = {
     name?: string | undefined;
     type?: string | undefined;
@@ -31,6 +40,7 @@ export type UploadRef = {
     name: string;
     type: string;
     size: number;
+    complete: boolean;
     url: string;
 };
 
@@ -65,6 +75,8 @@ export type WorkflowApi = {
         signal?: AbortSignal;
     }): Promise<Response>;
     wake(runId: string): Promise<number>;
+    uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
+    uploadInfo(id: string): Promise<UploadInfo>;
 };
 
 // @public
