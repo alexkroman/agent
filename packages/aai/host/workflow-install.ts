@@ -28,7 +28,12 @@ import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { createStepReporter } from "./workflow-report.ts";
-import { createUploadStore, resolveUploadBlobs, type UploadStore } from "./workflow-uploads.ts";
+import {
+  createUploadStore,
+  resolveUploadBlobs,
+  type UploadStore,
+  uploadBytesAreRemote,
+} from "./workflow-uploads.ts";
 import { localWorkflowDataDir } from "./workflow-world.ts";
 
 /**
@@ -70,6 +75,14 @@ const UPLOAD_DB_POOL = 2;
 type WorkflowSupport = {
   /** Where uploaded files go — what `createWorkflowApi` mounts. */
   uploads: UploadStore;
+  /**
+   * Whether {@link uploads} reads the bytes the PLATFORM stored, i.e. whether the
+   * `directParts` claim may be made. Reported from here rather than re-derived by
+   * the caller, because only this call sees both halves the arm is chosen from —
+   * see {@link uploadBytesAreRemote} for what deriving it from the broker alone
+   * cost.
+   */
+  directParts: boolean;
   /** Release the pools this call opened. Never rejects. */
   close(): Promise<void>;
 };
@@ -125,13 +138,11 @@ export function installWorkflowSupport(opts: {
   // decides: `createUploadStore` ignores `localDir` when there is a database, and a
   // bucket when there is not (its own doc carries why each is right).
   const localDir = localWorkflowDataDir();
+  const blobs = resolveUploadBlobs(omitUndefined({ env: opts.env, broker: opts.uploadBroker }));
   const store = createUploadStore({
     db,
     localDir,
-    ...omitUndefined({
-      blobs: resolveUploadBlobs(omitUndefined({ env: opts.env, broker: opts.uploadBroker })),
-      maxBytes,
-    }),
+    ...omitUndefined({ blobs, maxBytes }),
   });
   if (!db) {
     // ANNOUNCED, once, at construction. A store that quietly loses an upload with
@@ -155,6 +166,10 @@ export function installWorkflowSupport(opts: {
   publishStepFetch(stepFetch.fetch);
   return {
     uploads: store,
+    // The BROKER is still required — a self-hosted agent with its own bucket holds
+    // the credential itself, and no platform route serves its windows — but it is no
+    // longer sufficient: the store has to be the arm that reads that bucket.
+    directParts: Boolean(opts.uploadBroker?.trim()) && uploadBytesAreRemote({ db, blobs }),
     async close(): Promise<void> {
       // Settled rather than awaited in sequence, and never rejecting: this runs
       // inside `AgentServer.close()`, where one pool refusing to drain must not
