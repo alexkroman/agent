@@ -27,9 +27,8 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   (agent-mode self-exit), and its exit drops the whole SLOT via
   `onSandboxLost` — not just its sandbox, which grew the map by one shell per
   slug for the container's life; a rebuild needs nothing from an empty slot.
-  **A plain `Map`, and `withSlugLock` is the exclusion** — it was an `OwnedMap`
-  whose ownership affordance nothing used, i.e. a type describing a guarantee
-  no call site asked for; `SlotCache`'s own doc has the argument
+  **A plain `Map`, and `withSlugLock` is the exclusion** — `SlotCache`'s own
+  doc has the argument
 - `guest-forward.ts` — the one platform→guest forward (`forwardToGuest`) and
   its header policy, shared by the three routes that proxy into a tenant's
   sandbox (`/client-config`, `/:slug/workflows/*`, the durable-run webhook),
@@ -1459,62 +1458,15 @@ request URL").
 
 #### The guest half: a phone call is an ordinary session
 
-`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
-stream — Twilio Media Streams, Telnyx media streaming — and runs it as an
-ordinary session. `createServer` serves it by default, so `aai dev`, a
-self-hosted server and every deployed agent all answer phone calls with no
-per-agent configuration — the platform route above is only what points a carrier
-at it.
-
-**Nothing in the session stack knows about telephony, and that is the whole
-design.** `SessionCore` talks to a `ClientSink`; `wireSessionSocket` talks to
-a `SessionWebSocket`. So the adapter is a socket-shaped SHIM
-(`createTelephonyBridge`) that speaks the client protocol on one side and the
-carrier's JSON framing on the other, handed straight to
-`runtime.startSession`. Turn-taking, barge-in, tool calls, the audio pacer and
-its ordering rules, session eviction, keepalives, start timeouts and teardown
-are not reimplemented for phone — a call gets them because it runs the same
-code the browser does. Resist adding a telephony branch anywhere below the
-bridge; if one seems necessary, the bridge is the wrong shape.
-
-Four things that are easy to get wrong here, each of which was a decision:
-
-- **Pacing stays ON.** A carrier accepts audio far faster than it plays it and
-  buffers the rest — exactly the shape that made unpaced host-mode sessions
-  destroy 36% of all agent audio (see "Host-mode audio pacing" in
-  `packages/aai-cli/CLAUDE.md`): the
-  backlog builds on the FAR side, where `PacedAudioSink.clear()` cannot reach
-  it. So the bridge sets no `audioLeadMs` and a barge-in additionally sends the
-  carrier's own `clear` frame, which is the only way to drop what it already
-  holds. Without that frame the caller talks over an agent that keeps speaking
-  for seconds after being interrupted.
-- **The rates are LEARNED from the `config` frame**, not configured. The first
-  thing any runtime sends a session is `{ sampleRate, ttsSampleRate }`, so the
-  bridge builds its converters from that — which lets one adapter serve a
-  16 kHz pipeline agent and a 24 kHz S2S agent, and avoids plumbing a rate
-  through `createServer`, whose runtime is a LAZY facade in the guest harness
-  and cannot answer a rate question before the first session exists.
-- **Downsampling must low-pass first, and both converters are STATEFUL**
-  (`telephony/resample.ts`) — decimating without the filter folds everything
-  above 4 kHz back into the speech band, and rebuilding a converter per 20 ms
-  chunk puts a click at every boundary, 50 a second. That module's doc carries
-  the measurement; `telephony/mulaw.ts`'s carries why the G.711 curve is kept
-  sample-exact rather than approximated.
-- **This does not contradict "the host does not resample"** (see the S2S
-  section). That rule says rate conversion belongs at the EDGE, because every
-  client owns its own rate and asking it to send the advertised one is cheaper
-  and more honest. A carrier is the one client that cannot comply — 8 kHz
-  μ-law is what the PSTN carries — and the bridge IS the edge. The rule put
-  the conversion exactly here.
-
-Adding a carrier is one `CarrierCodec` in `telephony/carriers.ts` and nothing
-else — that module's doc owns the two properties every codec owes (decoding
-NEVER throws, and a media frame on a non-`inbound` track is DROPPED) and why
-these frames are narrowed by hand rather than by a Zod schema.
-
-**Known gaps**, both deliberate: no `mark` frames, so `playback_progress` is
-unused and the pipeline falls back to its open-loop estimate; and DTMF is
-ignored rather than surfaced as a custom event.
+`WS /phone` (`aai/host/telephony/`) runs a carrier's media stream as an ordinary
+session, and **nothing in the session stack knows about telephony** — the
+adapter is a socket-shaped SHIM speaking the client protocol on one side and the
+carrier's framing on the other. **It is documented with the process that serves
+it in production: see "A phone call is an ordinary session" in
+`packages/aai-guest/CLAUDE.md`** — pacing, the learned rates, the stateful
+resamplers, what a new `CarrierCodec` owes, and the two deliberate gaps. (It sat
+here until this guide reached its length cap; `packages/aai/CLAUDE.md`, which
+owns the code, is at its own.)
 
 ### Durable workflows — `/:slug/.well-known/workflow/v1/webhook/:token`
 
@@ -1868,19 +1820,26 @@ it is skipping), so read `pgUrl()` inside a hook or a test, never at the top of
 a gated `describe` body — up there it throws during collection on a machine
 with no database, which fails the file instead of skipping it.
 
-### The missing logger seam
+### Every line goes through `logger.ts`
 
-One known gap, found by audit and deliberately left alone because it is a
-refactor in its own right rather than a fix riding along with something else —
-sized, not stuck.
+`createLogger("<namespace>")` at module scope; nothing here writes to
+`console.*`, and `_debug-log.ts` is gone. Built on `aai/runtime`'s published
+`Logger` rather than a second interface — **that module's doc carries the
+rest**. A spec reaches for `captureLogs()` (`test-utils.ts`), which replaced 25
+`spyOn(console, …)` calls whose only job was keeping output quiet; assert THAT a
+line was written, not its wording.
 
-**`aai-server` writes to `console.*` directly** — 47 calls, 45 of them
-outside `_debug-log.ts` — with no logger seam, so 39 of the repo's 86
-`spyOn(console, …)` calls exist purely to keep test output quiet. The
-abstraction already exists one package over — `aai/host` has a `Logger`
-type and `consoleLogger` — and this package has
-a partial one of its own in `_debug-log.ts`. The work is to give the
-package a single injected (or module-swappable) logger and convert the call
-sites, after which the silencing spies delete themselves. It has been left
-alone because it touches ~25 files and changes production log wiring, which
-should not land inside a test-quality change.
+### An agent's own output — `GET /:slug/logs`
+
+`agent-logs.ts`, read by the studio's Logs pane and `aai logs`; the ring lives
+in the GUEST (see that guide's "Why the buffer lives in the guest" and "The
+manage token is derived, not random"). Alone among `/:slug/*` it **never BOOTS a
+sandbox** — a diagnostic that starts the thing it diagnoses answers a different
+question, and a poll would keep an idle agent billable — hence `running` beside
+the lines, and `dropped` reported rather than swallowed.
+
+**The session event log is APPEND-ONLY to the app role** (`grantSessionTables`):
+`ctx.db` runs arbitrary SQL on that role, so `delete` there meant a tool could
+delete its own audit trail. Slots keep all four verbs; events get
+`select, insert`, so the admin sweep alone reclaims a discarded session's, and a
+database predating the split is healed by `reconcileSessionGrants`.

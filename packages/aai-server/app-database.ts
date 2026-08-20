@@ -44,13 +44,10 @@
 
 import { hash, randomBytes } from "node:crypto";
 import { errorMessage, safeJsonParse } from "@alexkroman1/aai";
-import {
-  SESSION_EVENT_TABLE,
-  SESSION_STATE_TABLE,
-  sessionStateDdl,
-} from "@alexkroman1/aai/runtime";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { scheduleAppSweeps, unscheduleAppSweeps } from "./_session-state-sweep.ts";
+import { appDbIdentifier, assertIdentifier } from "./app-db-identifier.ts";
+import { APP_DB_SCHEMA, ensureSessionTables, grantSessionTables } from "./app-db-session-tables.ts";
 import { appDbAdminUrl, appDbUrlFor, withDatabase } from "./app-db-url.ts";
 import { type AppDbUsage, appDatabaseUsage } from "./app-db-usage.ts";
 import { APP_DB_CONNECTION_LIMIT } from "./constants.ts";
@@ -76,20 +73,14 @@ export type AppDbMeta = {
   url?: string;
 };
 
+export { appDbIdentifier } from "./app-db-identifier.ts";
+// Re-exported because callers know this module as the app-database surface;
+// the split behind it (app-db-session-tables.ts) is internal.
+export { APP_DB_SCHEMA, reconcileSessionGrants } from "./app-db-session-tables.ts";
 // `appDbAdminUrl` is deliberately absent: this module is its only caller (the
 // wake sweep's way in), so re-exporting it would widen the surface to nothing.
 export { appDbConnectionUrl, appDbUrlFor } from "./app-db-url.ts";
 export { type AppDbUsage, appDatabaseUsage } from "./app-db-usage.ts";
-
-const IDENTIFIER_RE = /^app_[a-f0-9]{16}$/;
-
-/**
- * The schema an app's own tables live in. Its own database, so `public` is
- * simply its default — which is what makes an unqualified `create table t (…)`
- * through `ctx.db` work with no `search_path` pin. The old model needed that
- * pin precisely because `public` belonged to the platform.
- */
-export const APP_DB_SCHEMA = "public";
 
 /**
  * A bound on scratch disk from one tenant's pathological sorts and hash joins.
@@ -103,21 +94,6 @@ export const APP_DB_SCHEMA = "public";
  * tenant nicety (see the DDL below).
  */
 const APP_DB_TEMP_FILE_LIMIT = "64MB";
-
-/** Deterministic database/role identifier for one app slug. */
-export function appDbIdentifier(slug: string): string {
-  return `app_${hash("sha256", slug).slice(0, 16)}`;
-}
-
-/**
- * Assert the derived-identifier shape before any DDL interpolation. The
- * identifier comes from a hex digest so this can only fail on a programming
- * error — but DDL cannot take bind parameters, so the assertion is the guard.
- */
-function assertIdentifier(id: string): string {
-  if (!IDENTIFIER_RE.test(id)) throw new Error(`Invalid app db identifier: ${id}`);
-  return id;
-}
 
 /**
  * Open a connection to one database and hand back an executor plus its close.
@@ -238,53 +214,6 @@ const DUPLICATE_DATABASE = "42P04";
 /** The driver attaches SQLSTATE as `code`; read it rather than the message. */
 function sqlState(err: unknown): string | undefined {
   return isRecord(err) && typeof err.code === "string" ? err.code : undefined;
-}
-
-/**
- * Create the session-state tables in an app's database.
- *
- * **Part of what "this app has a database" MEANS**, alongside its role and its
- * grants — so it belongs where the database is created rather than in the guest
- * that later queries it. The DDL itself is the SDK's (`sessionStateDdl`), applied
- * here rather than known here: one source of truth for a shape both ends derive
- * from, which is the same rule `SESSION_STATE_TABLE` already follows.
- *
- * Runs on a connection INTO the app's database, so it needs no schema
- * qualification beyond `public` — unlike the old model, where this ran on the
- * platform admin connection whose `search_path` was pinned nowhere.
- */
-async function ensureSessionTables(sql: SqlExec): Promise<void> {
-  for (const statement of sessionStateDdl(APP_DB_SCHEMA)) {
-    await sql(statement);
-  }
-}
-
-/**
- * Let the app's role USE the session-state tables the admin just created.
- *
- * **A grant is needed at all because the ADMIN creates them.** `create table`
- * makes the creator the owner, and a role holding `usage, create` on a schema has
- * no privileges on tables it did not create — so a session's first read failed
- * `permission denied for table aai_session_events`, and with it every session on
- * an app with storage enabled. The tenant's OWN tables are unaffected: it creates
- * those, so it owns them.
- *
- * **DML only, and ownership stays with the admin.** Transferring the tables to the
- * app role would also work and is worse in two ways: the tenant could then `drop`
- * or `alter` the framework's own tables (a session store that a tool can delete is
- * not a store), and the per-app sweep — which runs as the ADMIN through
- * `cron.schedule_in_database` — would need grants of its own to delete expired
- * rows. This direction needs neither.
- *
- * Named explicitly rather than `all tables in schema public`, because that would
- * also hand the role privileges on anything else the admin ever creates here; the
- * two tables this platform owns are the two it should grant.
- */
-async function grantSessionTables(sql: SqlExec, id: string): Promise<void> {
-  await sql(
-    `grant select, insert, update, delete on ${APP_DB_SCHEMA}.${SESSION_STATE_TABLE},` +
-      ` ${APP_DB_SCHEMA}.${SESSION_EVENT_TABLE} to "${id}"`,
-  );
 }
 
 /**

@@ -88,8 +88,15 @@ export type StoredSessionEvent = {
  * when the app has a database, memory otherwise, reclaimed when the session is
  * — so it is a second consumer of THIS interface instead of a second store with
  * its own selection rule, its own sweep and its own answer to "is this agent
- * durable". One `discard` reclaims both, which is what stops a swept session
- * leaving half of itself behind.
+ * durable".
+ *
+ * **`discard` reclaims what the backend is ALLOWED to reclaim, which is not
+ * always both.** The memory backend drops slots and events together; the
+ * Postgres one drops slots only, because on the platform the event table is
+ * append-only to the role the guest holds (a log tool code can delete is not a
+ * log — see `grantSessionTables` in `aai-server/app-db-session-tables.ts`) and
+ * its rows are reclaimed by the admin-run retention sweep instead. So a
+ * discarded session's events can outlive its slots by up to that window.
  *
  * @internal
  */
@@ -102,7 +109,7 @@ export type SessionStateBackend = {
   load(sessionId: string): Promise<Map<string, string>>;
   /** Store these slots' values. Called with only the ones that changed. */
   commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
-  /** Reclaim everything stored for `sessionId` — slots and events alike. */
+  /** Reclaim this session's slots, and its events where the backend may. */
   discard(sessionId: string): Promise<void>;
   /**
    * Append these events at the indices they already carry.

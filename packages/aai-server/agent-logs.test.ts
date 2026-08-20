@@ -10,8 +10,11 @@ import { createTestStore, fakeSandbox } from "./test-utils.ts";
 const ORIGIN = "wss://tunnel.test:443";
 const LINE = { seq: 0, at: 1, stream: "stdout" as const, text: "hello" };
 
+/** A `fetch` double whose recorded calls keep their argument types. */
 function jsonFetch(body: unknown, status = 200) {
-  return vi.fn(() => Promise.resolve(new Response(JSON.stringify(body), { status })));
+  return vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
+    Promise.resolve(new Response(JSON.stringify(body), { status })),
+  );
 }
 
 describe("readGuestLogs", () => {
@@ -23,7 +26,7 @@ describe("readGuestLogs", () => {
     expect(page.lines).toEqual([LINE]);
     const [url, init] = fetchFn.mock.calls[0] ?? [];
     expect(String(url)).toBe("https://tunnel.test/manage/logs?after=7");
-    expect((init as RequestInit).headers).toMatchObject({ authorization: "Bearer t" });
+    expect(init?.headers).toMatchObject({ authorization: "Bearer t" });
   });
 
   test("forwards a limit only when the caller set one", async () => {
@@ -138,7 +141,7 @@ describe("readAgentLogs", () => {
     expect(result).toEqual({ lines: [LINE], cursor: 0, dropped: 0, running: true });
     const [url, init] = fetchFn.mock.calls[0] ?? [];
     expect(String(url)).toContain("/manage/logs");
-    expect((init as RequestInit).headers).toEqual({
+    expect(init?.headers).toEqual({
       authorization: `Bearer ${guestTokenFor(agentSandboxName("elsewhere", 4))}`,
     });
   });

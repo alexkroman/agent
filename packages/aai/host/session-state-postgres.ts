@@ -130,7 +130,7 @@ const CREATE_EVENT_TABLE_SQL = (table: string) => `create table if not exists ${
  * The DDL an app's schema needs before a session can store anything.
  *
  * **The platform applies this at PROVISIONING time**
- * (`aai-server/app-database.ts`), which is the one place an app schema is
+ * (`aai-server/app-db-session-tables.ts`), which is the one place an app schema is
  * created — the tables are part of what "this app has a database" means, exactly
  * as its role and grants are. It lives HERE because the shape is the SDK's; the
  * platform executes it rather than knowing it, so there is one source of truth
@@ -184,8 +184,6 @@ where session_id = $1 and event_index >= $2 order by event_index limit $3`;
 const NEXT_EVENT_INDEX_SQL = `select coalesce(max(event_index) + 1, 0)::int as count
 from ${SESSION_EVENT_TABLE} where session_id = $1`;
 
-const DISCARD_EVENTS_SQL = `delete from ${SESSION_EVENT_TABLE} where session_id = $1`;
-
 /**
  * Session state stored in the app's own Postgres schema.
  *
@@ -212,10 +210,14 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
       await db.query(COMMIT_SQL, [sessionId, [...values.keys()], [...values.values()]]);
     },
     async discard(sessionId) {
-      // Both, in one call, because one session's durable footprint is both
-      // tables — see the backend type's doc.
+      // SLOTS only. The event table is append-only to this role by grant — a
+      // log a tool can delete is not a log (see `grantSessionTables` in
+      // `aai-server/app-database.ts`) — so its rows are reclaimed by the
+      // platform's own retention sweep, which runs as the admin. The cost is
+      // that a discarded session's events outlive its slots by up to the
+      // retention window rather than going at the same moment; they are a few
+      // KB in the tenant's own database, and the sweep already exists.
       await db.query(DISCARD_SQL, [sessionId]);
-      await db.query(DISCARD_EVENTS_SQL, [sessionId]);
     },
     async appendEvents(sessionId, pending) {
       await db.query(APPEND_EVENTS_SQL, [

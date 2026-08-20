@@ -302,6 +302,27 @@ const storageDisable = defineExec({
   },
 });
 
+const logs = defineExec({
+  meta: {
+    name: "logs",
+    description: "Show what the deployed agent has printed",
+  },
+  args: {
+    dir: storageDir,
+    follow: { type: "boolean", alias: "f", description: "Keep printing new output" },
+    server: sharedArgs.server,
+    json: sharedArgs.json,
+  },
+  cwd: "any",
+  async run({ args, cwd }) {
+    const { executeLogs } = await import("./logs.ts");
+    return executeLogs(resolveStorageCwd(cwd, args.dir), {
+      server: args.server,
+      follow: args.follow,
+    });
+  },
+});
+
 const storage = defineCommand({
   meta: { name: "storage", description: "Manage the agent's app database" },
   subCommands: { status: storageStatus, enable: storageEnable, disable: storageDisable },
@@ -357,6 +378,7 @@ export const mainCommand = defineCommand({
     delete: del,
     login,
     secret,
+    logs,
     storage,
     workflow,
     templates,

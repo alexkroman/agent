@@ -179,14 +179,23 @@ describe("provisionAppDatabase", () => {
     // them — and a role holding `usage, create` on the schema has no privileges on
     // tables it did not create. Without this every session on an app with storage
     // failed `42501 permission denied for table aai_session_events`.
-    const grant = inDb.find((q) => q.startsWith("grant select"));
-    expect(grant).toContain("aai_session_state");
-    expect(grant).toContain("aai_session_events");
-    expect(grant).toContain(`to "${id}"`);
+    // Slots take all four verbs — a slot value is a read-modify-write cell.
+    const slotGrant = inDb.find((q) => q.includes(`on public.aai_session_state to "${id}"`));
+    expect(slotGrant).toContain("grant select, insert, update, delete");
+    // The EVENT log takes only two, and the revoke is what heals a database
+    // provisioned before the split. `ctx.db` runs arbitrary SQL on this very
+    // role, so `delete` here is a tool deleting its own audit trail.
+    const eventGrant = inDb.find((q) => q.includes(`on public.aai_session_events to "${id}"`));
+    expect(eventGrant).toContain("grant select, insert");
+    expect(eventGrant).not.toContain("delete");
+    expect(inDb).toContainEqual(
+      expect.stringContaining(`revoke update, delete on public.aai_session_events from "${id}"`),
+    );
     // DML only: ownership stays with the admin, so the tenant cannot drop or alter
     // the framework's own session store, and the admin-run sweep needs no grant.
     for (const forbidden of ["all privileges", "drop", "truncate", "references"]) {
-      expect(grant?.toLowerCase()).not.toContain(forbidden);
+      expect(slotGrant?.toLowerCase()).not.toContain(forbidden);
+      expect(eventGrant?.toLowerCase()).not.toContain(forbidden);
     }
     // The connection is released, or every provision leaks one.
     expect(opener.closed()).toBe(1);

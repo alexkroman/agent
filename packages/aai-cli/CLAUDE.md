@@ -7,7 +7,7 @@ The `aai` CLI (`@alexkroman1/aai-cli`). Repo-wide conventions live in the root
 ## Commands and exports
 
 Binary: `aai` — subcommands: init, dev, test, build, eject, list, pull, push,
-publish, delete, login, secret, storage, workflow, templates.
+publish, delete, login, secret, logs, storage, workflow, templates.
 
 **`aai workflow` talks to the AGENT, not to the platform API** (`workflow.ts`,
 `cli-workflow.ts`): `list`, `runs <name>`, `show <runId>`, `cancel <runId>` over
@@ -28,6 +28,20 @@ because it is the one place the two ends disagree: `api.get` resolves
 nothing for `show` to print — and that status ALSO covers "this agent serves no
 workflow API", so the failure sentence claims neither cause and the shared
 `HINT_BROKER` names all three.
+
+**`aai logs` reads a RING, which is why `--follow` polls** (`logs.ts` →
+`GET /:slug/logs`). The source is the guest's own bounded buffer with a cursor
+(see `packages/aai-guest/CLAUDE.md`), so a stream would have to re-derive that
+cursor on every reconnect; the follow loop passes back the page's own. Three
+things it has to be honest about, because none is visible in a wall of lines:
+the ring **dies with the sandbox** (a one-shot read says so), `running` is
+**not** `lines.length` (up-and-quiet and not-running both print nothing and want
+opposite things from the reader), and a `dropped` count is printed rather than
+swallowed. A failed poll under `--follow` is not a failed command — an agent
+between sandboxes answers exactly like a network blip, and the next tick is a
+second away — so only a signalled stop ends the loop. The `--json` result
+reports the LINE COUNT, not the lines: a follow has no final set, and a one-shot
+would duplicate what it just printed.
 
 **`aai eject` is a retrofit, not the self-hosting path.** Self-hosting is the
 DEFAULT now: the scaffold ships `server.mjs` plus a `prestart`/`start` pair, so
