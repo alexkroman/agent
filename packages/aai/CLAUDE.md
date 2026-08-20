@@ -1,7 +1,7 @@
 # packages/aai — SDK guide
 
 The shared core SDK (`@alexkroman1/aai`). Repo-wide commands, conventions,
-testing rules, and the changeset/PR workflow live in the root `CLAUDE.md`;
+testing rules, and the changeset/PR workflow live in `AGENTS.md`;
 platform behaviour lives in `packages/aai-server/CLAUDE.md`.
 
 ## SDK structure
@@ -84,6 +84,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAITts`) |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; `assemblyAIS2s` is on the root export) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
+| `@alexkroman1/aai/ffmpeg` | `host/ffmpeg.ts` (direct) | ffmpeg from a step — `runFfmpeg`/`probeMedia`/`transcodeToWav`; why, in `aai-guest/CLAUDE.md` |
 | `@alexkroman1/aai/internal` | `internal.ts` | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`) plus the framework BUDGETS the browser client needs (the client-audio constants, `AGENT_CSP`, `WS_OPEN`). Not public API, not semver-covered, excluded from the docs. The env brands live on `./runtime` instead — they appear in its public signatures (`RuntimeOptions`, `withHostCredentialFallback`) |
 
 ## Session modes
@@ -1375,25 +1376,16 @@ server's principal caller and the CLI owns `AAI_DEV_HOST`, `hostModeEnv` and
 
 ## Telephony: a phone call is an ordinary session
 
-`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media stream —
-Twilio Media Streams, Telnyx media streaming — and runs it as an ordinary
-session. `createServer` serves it by default, so `aai dev`, a self-hosted server
-and every deployed agent all answer phone calls with no per-agent configuration.
-**Nothing in the session stack knows about telephony, and that is the whole
-design**: the adapter is a socket-shaped SHIM (`createTelephonyBridge`) speaking
-the client protocol on one side and the carrier's JSON framing on the other,
-handed straight to `runtime.startSession`. Resist adding a telephony branch
-anywhere below the bridge; if one seems necessary, the bridge is the wrong shape.
-
-**The four SDK-side decisions are in `packages/aai-guest/CLAUDE.md`, "A phone
-call is an ordinary session"** (the harness is what serves `/phone` in
-production, and it is the guide with room); the platform's TwiML webhook route
-is in `packages/aai-server/CLAUDE.md`, "Telephony" — the platform's TwiML webhook
-route beside the four SDK-side decisions this guide used to carry (why pacing
-stays ON and a barge-in sends the carrier's own `clear` frame, why the rates are
-LEARNED from the `config` frame, why downsampling must low-pass first, and why
-none of that contradicts "the host does not resample"), plus the two properties
-every `CarrierCodec` owes and the two deliberate gaps.
+`WS /phone` (`host/telephony/`) runs a carrier's media stream — Twilio Media
+Streams, Telnyx media streaming — as an ordinary session, served by
+`createServer` with no per-agent configuration. **The whole account is in
+`packages/aai-guest/CLAUDE.md`, "A phone call is an ordinary session"** — the
+shim design and the rule that no telephony branch may exist below the bridge,
+the four SDK-side decisions (pacing, LEARNED rates, low-pass before
+downsampling), what a `CarrierCodec` owes, and the two deliberate gaps. It is
+the harness that serves this in production, and this guide is at its cap; the
+platform's TwiML webhook route is in `packages/aai-server/CLAUDE.md`,
+"Telephony".
 
 ## Pipeline-transport interleaving fuzz
 

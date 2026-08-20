@@ -1,4 +1,27 @@
 {
+  "@alexkroman1/aai/ffmpeg": [
+    "DEFAULT_FFMPEG_TIMEOUT_MS",
+    "DEFAULT_MAX_FFMPEG_OUTPUT_BYTES",
+    "FFMPEG_PATH_ENV",
+    "FFMPEG_STDERR_TAIL_CHARS",
+    "FFPROBE_PATH_ENV",
+    "FfmpegError",
+    "FfmpegFailureKind",
+    "FfmpegRunOptions",
+    "FfmpegRunResult",
+    "MediaInfo",
+    "MediaSource",
+    "MediaStream",
+    "ProbeOptions",
+    "TranscodeToWavOptions",
+    "WavEncodeOptions",
+    "ffmpegVersion",
+    "isFfmpegError",
+    "probeMedia",
+    "runFfmpeg",
+    "transcodeToWav",
+    "wavEncodeArgs"
+  ],
   "@alexkroman1/aai": [
     "ASSEMBLYAI_S2S_API_KEY_ENV",
     "ASSEMBLYAI_S2S_KIND",

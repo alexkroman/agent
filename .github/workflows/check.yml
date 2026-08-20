@@ -386,6 +386,28 @@ jobs:
           # this job would pass — the exact "a check that exists without
           # running" failure their own comments say they must not become.
           echo "AAI_REQUIRE_PG=1" >> "$GITHUB_ENV"
+      # ffmpeg for the SDK's real-binary scenario suite
+      # (aai/host/ffmpeg.scenario.test.ts). A mocked child cannot check an argv,
+      # so this is the only thing standing between a wrong flag and a user's
+      # first recording — and it SKIPS without a binary, hence the require flag
+      # below, exactly as AAI_REQUIRE_PG above. Linux only: the suite is
+      # OS-independent (it generates its own input with lavfi), and brew would
+      # spend minutes building the same coverage the ubuntu leg already has, so
+      # the macOS leg announces its skip like the Postgres suites do.
+      - name: Install ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          # `sed -n 1p` rather than `head -1`: head exits after the first line
+          # and, under `pipefail`, a SIGPIPE'd producer would fail this step for
+          # printing its own version. sed drains the input.
+          ffmpeg -version | sed -n 1p
+          ffprobe -version | sed -n 1p
+          echo "AAI_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
       # Both slow tiers below e2e, in one job. They are separate TASKS — the
       # integration tier is in-memory only and the scenario tier is what needs the
       # Postgres started above — but they share this job's checkout and build, and

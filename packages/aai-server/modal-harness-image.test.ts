@@ -20,6 +20,7 @@ import {
   toolchainFingerprint,
   toolchainImage,
 } from "./modal-harness-image.ts";
+import { fakeModalImage as fakeImage } from "./test-utils.ts";
 
 // Everything except the digest primitive stays real. `createHash` is the one
 // observable that says whether the resolver re-paid the SHA-256 over the ~13 MB
@@ -122,8 +123,8 @@ describe("toolchainFingerprint", () => {
   // tag instead of quietly reusing one.
   test("changes when the lockfile changes, even at identical direct versions", () => {
     const specs = ["@alexkroman1/aai@5.7.0"];
-    const a = toolchainFingerprint(specs, { manifest: "{}", lock: '{"a":1}' });
-    const b = toolchainFingerprint(specs, { manifest: "{}", lock: '{"a":2}' });
+    const a = toolchainFingerprint(specs, { manifest: "{}", lock: '{"a":1}' }, ["ffmpeg"]);
+    const b = toolchainFingerprint(specs, { manifest: "{}", lock: '{"a":2}' }, ["ffmpeg"]);
     expect(a).not.toEqual(b);
     expect(harnessImageTag("node:24-slim", "code", a)).not.toBe(
       harnessImageTag("node:24-slim", "code", b),
@@ -132,25 +133,40 @@ describe("toolchainFingerprint", () => {
 
   test("ignores the manifest, which the lockfile already covers", () => {
     const specs = ["@alexkroman1/aai@5.7.0"];
-    expect(toolchainFingerprint(specs, { manifest: "{}", lock: "L" })).toEqual(
-      toolchainFingerprint(specs, { manifest: '{"different":true}', lock: "L" }),
+    expect(toolchainFingerprint(specs, { manifest: "{}", lock: "L" }, ["ffmpeg"])).toEqual(
+      toolchainFingerprint(specs, { manifest: '{"different":true}', lock: "L" }, ["ffmpeg"]),
+    );
+  });
+
+  /**
+   * The failure this covers is the silent one: the apt layer is part of the
+   * environment a deploy is pinned to, so a package joining it without moving
+   * the fingerprint leaves every already-published snapshot resolvable under
+   * its old tag — a guest that boots fine and lacks the binary a step calls.
+   */
+  test("changes when the system packages change", () => {
+    const specs = ["@alexkroman1/aai@5.7.0"];
+    const lock = { manifest: "{}", lock: "L" };
+    expect(toolchainFingerprint(specs, lock, ["ffmpeg"])).not.toEqual(
+      toolchainFingerprint(specs, lock, []),
+    );
+    expect(toolchainFingerprint(specs, lock, ["ffmpeg"])).not.toEqual(
+      toolchainFingerprint(specs, lock, ["ffmpeg", "imagemagick"]),
+    );
+  });
+
+  // Sorted, so the DECLARATION order is not an input: reordering the list
+  // would otherwise mint a tag for an image that is byte-identical.
+  test("is insensitive to the order the packages are declared in", () => {
+    const specs = ["@alexkroman1/aai@5.7.0"];
+    const lock = { manifest: "{}", lock: "L" };
+    expect(toolchainFingerprint(specs, lock, ["ffmpeg", "sox"])).toEqual(
+      toolchainFingerprint(specs, lock, ["sox", "ffmpeg"]),
     );
   });
 });
 
 describe("toolchainImage", () => {
-  function fakeImage(): Image & { commands: string[][] } {
-    const commands: string[][] = [];
-    const image = {
-      commands,
-      dockerfileCommands(next: string[]) {
-        commands.push(next);
-        return image;
-      },
-    } as unknown as Image & { commands: string[][] };
-    return image;
-  }
-
   const LOCK = { manifest: '{"dependencies":{"zod":"4.4.3"}}', lock: '{"lockfileVersion":3}' };
 
   test("installs the locked tree with npm ci, then the SDK on top", () => {
@@ -259,6 +275,8 @@ describe("createHarnessImageResolver", () => {
       execs: [] as { command: string[]; env: Record<string, string> }[],
       /** Ordering probe: was the snapshot taken after the warm-up exec? */
       snapshotAfterExecs: -1,
+      /** Every `dockerfileCommands` layer the build stacked, in order. */
+      layers: [] as string[][],
     };
     const snapshot = {
       publish: (tag: string) => {
@@ -268,7 +286,10 @@ describe("createHarnessImageResolver", () => {
       },
     } as unknown as Image;
     const baseImage = {
-      dockerfileCommands: () => baseImage,
+      dockerfileCommands: (next: string[]) => {
+        state.layers.push(next);
+        return baseImage;
+      },
       build: () => {
         state.builds++;
         return Promise.resolve(baseImage);
@@ -343,6 +364,22 @@ describe("createHarnessImageResolver", () => {
     expect(state.published).toEqual([tagFor("harness code")]);
     // The builder is throwaway — leaving it running bills a sandbox.
     expect(state.terminated).toBe(1);
+  });
+
+  /**
+   * The apt layer is FIRST on purpose. Modal caches layers by their commands
+   * in order, and the toolchain below it is invalidated by every SDK release —
+   * stacked the other way round, each release would reinstall ffmpeg too.
+   */
+  test("stacks the system packages under the toolchain", async () => {
+    const { state, resolve } = make();
+    await resolve("harness code");
+    const flat = state.layers.map((layer) => layer.join("\n"));
+    const apt = flat.findIndex((layer) => layer.includes("apt-get install"));
+    const npm = flat.findIndex((layer) => layer.includes("npm ci"));
+    expect(apt).toBeGreaterThanOrEqual(0);
+    expect(npm).toBeGreaterThanOrEqual(0);
+    expect(apt).toBeLessThan(npm);
   });
 
   test("terminates the builder even when the snapshot fails", async () => {

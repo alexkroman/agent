@@ -14,7 +14,8 @@
     "dist/sdk/providers/tts-barrel.d.ts",
     "dist/sdk/providers/llm-barrel.d.ts",
     "dist/sdk/providers/s2s-barrel.d.ts",
-    "dist/host/agent-tools.d.ts"
+    "dist/host/agent-tools.d.ts",
+    "dist/host/ffmpeg.d.ts"
   ],
   "externalSymbolLinkMappings": {
     "ai": {

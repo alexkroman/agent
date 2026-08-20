@@ -15,6 +15,7 @@ symbol exported from two subpaths appears under both.
 
 ## Contents
 
+- `@alexkroman1/aai/ffmpeg` — `packages/aai/etc/ffmpeg.api.md`
 - `@alexkroman1/aai` — `packages/aai/etc/index.api.md`
 - `@alexkroman1/aai/internal` — `packages/aai/etc/internal.api.md`
 - `@alexkroman1/aai/llm` — `packages/aai/etc/llm.api.md`
@@ -38,6 +39,140 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-cli/worker-bundler` — `packages/aai-cli/etc/worker-bundler.api.md`
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
 - `@alexkroman1/aai-ui` — `packages/aai-ui/etc/index.api.md`
+
+## `@alexkroman1/aai/ffmpeg`
+
+```ts
+// @public
+export const DEFAULT_FFMPEG_TIMEOUT_MS: number;
+
+// @public
+export const DEFAULT_MAX_FFMPEG_OUTPUT_BYTES: number;
+
+// @public
+export const FFMPEG_PATH_ENV = "AAI_FFMPEG_PATH";
+
+// @public
+export const FFMPEG_STDERR_TAIL_CHARS = 4000;
+
+// @public
+export class FfmpegError extends Error {
+    constructor(opts: {
+        kind: FfmpegFailureKind;
+        message: string;
+        binary: string;
+        argv: readonly string[];
+        exitCode?: number | null;
+        signal?: NodeJS.Signals | null;
+        stderr?: string;
+        cause?: unknown;
+    });
+    // (undocumented)
+    readonly argv: readonly string[];
+    readonly binary: string;
+    readonly exitCode: number | null;
+    // (undocumented)
+    readonly kind: FfmpegFailureKind;
+    readonly signal: NodeJS.Signals | null;
+    readonly stderr: string;
+}
+
+// @public
+export type FfmpegFailureKind =
+/** The binary ran and exited non-zero. Almost always the input, not the run. */
+"exit"
+/** Killed at `timeoutMs`. */
+| "timeout"
+/** Killed because the caller's `signal` aborted. */
+| "aborted"
+/** The binary is not installed, or `AAI_FFMPEG_PATH` points at nothing. */
+| "missing-binary"
+/** Piped output passed `maxOutputBytes`; the child was killed. */
+| "output-too-large";
+
+// @public (undocumented)
+export type FfmpegRunOptions = {
+    binary?: string;
+    cwd?: string;
+    stdin?: Uint8Array;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+};
+
+// @public (undocumented)
+export type FfmpegRunResult = {
+    stdout: Uint8Array;
+    stderr: string;
+    durationMs: number;
+};
+
+// @public
+export function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
+
+// @public
+export const FFPROBE_PATH_ENV = "AAI_FFPROBE_PATH";
+
+// @public
+export function isFfmpegError(value: unknown): value is FfmpegError;
+
+// @public
+export type MediaInfo = {
+    durationSec?: number;
+    format?: string;
+    bitRate?: number;
+    sizeBytes?: number;
+    streams: MediaStream_2[];
+    audio?: MediaStream_2;
+    video?: MediaStream_2;
+    raw: unknown;
+};
+
+// @public
+type MediaSource_2 = string | Uint8Array;
+export { MediaSource_2 as MediaSource }
+
+// @public
+type MediaStream_2 = {
+    index: number;
+    kind: string;
+    codec?: string;
+    sampleRate?: number;
+    channels?: number;
+    sampleFormat?: string;
+    width?: number;
+    height?: number;
+    durationSec?: number;
+};
+export { MediaStream_2 as MediaStream }
+
+// @public
+export function probeMedia(source: MediaSource_2, opts?: ProbeOptions): Promise<MediaInfo>;
+
+// @public (undocumented)
+export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
+    binary?: string;
+};
+
+// @public
+export function runFfmpeg(args: readonly string[], opts?: FfmpegRunOptions): Promise<FfmpegRunResult>;
+
+// @public
+export function transcodeToWav(source: MediaSource_2, opts?: TranscodeToWavOptions): Promise<Uint8Array>;
+
+// @public (undocumented)
+export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "stdin">;
+
+// @public
+export function wavEncodeArgs(opts?: WavEncodeOptions): string[];
+
+// @public (undocumented)
+export type WavEncodeOptions = {
+    sampleRate?: number;
+    channels?: number;
+    bitsPerSample?: 16 | 24 | 32;
+};
+```
 
 ## `@alexkroman1/aai`
 
