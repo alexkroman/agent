@@ -41,6 +41,7 @@
  * same way and for the same reason.
  */
 
+import { mapStream } from "../sdk/_map-stream.ts";
 import type { Db } from "../sdk/db.ts";
 import { createKeyedLock, withLock } from "../sdk/keyed-lock.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
@@ -63,12 +64,16 @@ import {
   contiguousBytes,
   newUploadId,
   UnknownUploadError,
+  UPLOAD_WINDOW_CONCURRENCY,
   UPLOADS_TABLE,
   UploadIdTakenError,
   UploadPartError,
   type UploadStore,
   UploadTooLargeError,
 } from "./_upload-store.ts";
+
+/** One cut window and the byte it starts at — see {@link windows}. */
+type PlacedWindow = { at: number; bytes: Uint8Array };
 
 /** What one upload's row holds beyond {@link UploadInfo}. */
 type StoredRow = {
@@ -213,6 +218,33 @@ export function createBlobUploadStore(opts: {
    * `UPLOAD_PART_BYTES` windows, which is the same size the browser's fan-out
    * uses — so one byte layout serves every route an upload can arrive by, and
    * `read` maps a window onto objects without asking how the bytes got here.
+   *
+   * ## The windows go up CONCURRENTLY, and the socket keeps filling while they do
+   *
+   * This was a loop — read a window, write it, repeat — and a loop of that shape
+   * uses one link at a time: the bucket sat idle for however long 8 MiB takes to
+   * arrive, and then the uplink sat idle for however long the bucket takes to
+   * acknowledge it. Neither wait is bandwidth, so overlapping them is close to
+   * free: {@link UPLOAD_WINDOW_CONCURRENCY} writes are in flight while the next
+   * window is being read off the wire.
+   *
+   * **What bounds memory is the window's WIDTH, not the arrival rate.**
+   * `mapStream` pulls the next window only once a slot has freed, so peak usage
+   * here is `UPLOAD_WINDOW_CONCURRENCY * UPLOAD_PART_BYTES` plus the one being
+   * assembled — a number this module chooses, rather than one the sender does.
+   *
+   * **Nothing about retry changes**, which is the property this had to keep: a
+   * window is still buffered whole before its `put` starts, so the bytes are in
+   * hand for as long as the write takes and a failed one can be re-sent by
+   * whoever owns the failure. Overlapping the writes only decides WHEN each one
+   * runs, never what it holds.
+   *
+   * A published (streamed) upload's `size` advances in the same jumps it already
+   * did for a parts upload: `addPart` merges boundaries under the id's lock and
+   * `contiguousBytes` counts only from byte zero, so a window that lands ahead of
+   * its predecessor is stored and simply not yet readable. That is the same
+   * guarantee as before — a reader never sees a size covering a hole — reached by
+   * the same code.
    */
   async function putWindows(
     id: string,
@@ -220,13 +252,18 @@ export function createBlobUploadStore(opts: {
     limit: number,
     publish: boolean,
   ): Promise<number> {
-    let at = 0;
-    for await (const window of windows(body, limit)) {
-      const bytes = await blobs.put(key(id, at), once(window), { limit });
-      if (publish) await addPart(id, { at, bytes });
-      at += bytes;
-    }
-    return at;
+    let size = 0;
+    const written = mapStream(
+      windows(body, limit),
+      UPLOAD_WINDOW_CONCURRENCY,
+      async ({ at, bytes }) => {
+        const stored = await blobs.put(key(id, at), once(bytes), { limit });
+        if (publish) await addPart(id, { at, bytes: stored });
+        return stored;
+      },
+    );
+    for await (const bytes of written) size += bytes;
+    return size;
   }
 
   return {
@@ -380,23 +417,32 @@ export function createBlobUploadStore(opts: {
   }
 }
 
-/** A body as `UPLOAD_PART_BYTES` windows, refusing anything past `limit`. */
+/**
+ * A body as `UPLOAD_PART_BYTES` windows, refusing anything past `limit`.
+ *
+ * Each window carries the offset it starts at, which it knows and its consumer
+ * would otherwise have to derive from the previous write's return value — i.e.
+ * from a value that only exists once that write has finished. Yielding it here is
+ * what lets the writes overlap: a window is addressable the moment it is cut.
+ */
 async function* windows(
   body: AsyncIterable<Uint8Array>,
   limit: number,
-): AsyncGenerator<Uint8Array> {
+): AsyncGenerator<PlacedWindow> {
   let held: Uint8Array[] = [];
   let bytes = 0;
+  let at = 0;
   for await (const piece of chunked(body, limit)) {
     held.push(piece);
     bytes += piece.length;
     if (bytes >= UPLOAD_PART_BYTES) {
-      yield concat(held, bytes);
+      yield { at, bytes: concat(held, bytes) };
+      at += bytes;
       held = [];
       bytes = 0;
     }
   }
-  if (bytes > 0) yield concat(held, bytes);
+  if (bytes > 0) yield { at, bytes: concat(held, bytes) };
 }
 
 /** One value as an iterable, so a window can be handed to `put` unchanged. */

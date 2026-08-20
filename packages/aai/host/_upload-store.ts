@@ -127,6 +127,25 @@ import type { UploadInfo, UploadRange, UploadReader } from "../sdk/step-uploads.
 /** The table one row per upload lives in. Prefixed so it cannot collide with an app's own. */
 export const UPLOADS_TABLE = "aai_workflow_uploads";
 
+/**
+ * Window objects a whole-file write keeps in flight at once.
+ *
+ * The number that decides whether the uplink and the bucket work at the same time
+ * or take turns — see `putWindows` in `_upload-store-blobs.ts`, which is the only
+ * caller. What it costs is memory, and exactly this much: the window's width times
+ * `UPLOAD_PART_BYTES`, i.e. 32 MiB held while a body is arriving, because a window
+ * is buffered whole before its write starts and stays held until that write
+ * acknowledges. That is the price of the write being RETRYABLE, and it is why this
+ * is 4 rather than the 8 the browser's own fan-out uses: a page holds one upload's
+ * windows and a guest holds every concurrent uploader's at once.
+ *
+ * It bounds the FALLBACK path rather than the common one. A browser sending a
+ * large file cuts it into parts itself, and each of those arrives as its own
+ * request carrying a single window; this is what a `POST`, a `curl --data-binary`,
+ * or a client the parts path declined for gets instead.
+ */
+export const UPLOAD_WINDOW_CONCURRENCY = 4;
+
 /** Raised by an upload store's `create` when the body ran past its cap. */
 export class UploadTooLargeError extends Error {
   constructor(limit: number) {
