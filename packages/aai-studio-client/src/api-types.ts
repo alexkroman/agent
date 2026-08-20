@@ -31,6 +31,17 @@ export type ProjectData = {
   previewStale?: boolean;
   /** CLI output of the last failed preview deploy. */
   previewError?: string;
+  /**
+   * The project has opted into a database (`ctx.db`) — what the **Database
+   * tab** is gated on. Off unless the user turned it on in Settings, so a
+   * project that never asked for one has no pane onto an empty database.
+   *
+   * The server resolves the default, so this is a plain boolean there; it is
+   * optional here for the same reason `unpublished` and `previewStale` are —
+   * the payload may be a workspace that has not loaded yet, and absent must
+   * read as "no tab" rather than as a tab that flickers away.
+   */
+  databaseEnabled?: boolean;
 };
 
 /**

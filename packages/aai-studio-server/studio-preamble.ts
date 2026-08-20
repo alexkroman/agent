@@ -354,9 +354,15 @@ right control:
   the published and preview agents. It needs no publish first — a key
   saved now reaches each agent as that agent next deploys.
 - The **Settings pane → Database** switches \`ctx.db\` on for the project,
-  across both the preview and published agents. It reaches an agent when
+  across both the preview and published agents. It is OFF until they
+  switch it on, and switching it on is also what adds the **Database
+  pane** — so a user who says they see no Database tab has not enabled it
+  yet, which is the answer rather than a bug. It reaches an agent when
   that agent next deploys: the preview redeploys itself, production needs
   a publish.
+- The **Database pane** (once enabled) is a read-only table browser over
+  each environment's schema. Point them at it to check whether a tool
+  really wrote what they meant, instead of writing a read-back tool.
 - Users have no terminal here. Anything still CLI-only means they install
   the aai CLI on their own machine.
 

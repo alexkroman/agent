@@ -23,6 +23,25 @@ const DATABASE_STATE = {
     jsonResponse({ enabled: false, configured: true, environments: [] }),
 };
 
+/**
+ * The card titles, in render order. Card titles are `.eyebrow` spans rather
+ * than headings, and inside this pane every one of them is a section title.
+ *
+ * Read through the class rather than by text, because the Database card's own
+ * blurb NAMES the Database pane ("also adds the Database pane") — so a
+ * `getByText("Database")` matches the title and the blurb both and throws on
+ * the ambiguity. That is copy worth keeping: the switch is the only place the
+ * pane is discoverable, since the tab does not exist until it is flipped.
+ */
+function cardTitles(): (string | null)[] {
+  return [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
+}
+
+/** Wait for the Database card, whose state arrives on its own fetch. */
+function databaseCard(): Promise<void> {
+  return waitFor(() => expect(cardTitles()).toContain("Database"));
+}
+
 function renderPanel(onDeleteProject = vi.fn()) {
   renderWithClient(
     <SettingsPane
@@ -53,11 +72,8 @@ describe("SettingsPane", () => {
     // literally true rather than nearly.
     stubFetch({ ...DATABASE_STATE });
     renderPanel();
-    await waitFor(() => expect(screen.getByText("Database")).toBeTruthy());
-    // Card titles are eyebrow spans rather than headings, and inside this
-    // pane every one of them is a section title.
-    const titles = [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
-    expect(titles).toEqual(["Work locally", "Database", "Danger zone"]);
+    await databaseCard();
+    expect(cardTitles()).toEqual(["Work locally", "Database", "Danger zone"]);
   });
 
   test("no secrets here — the pane neither reads nor writes the secret route", async () => {
@@ -65,7 +81,7 @@ describe("SettingsPane", () => {
     // this one would mean a copy came back.
     const fetchMock = stubFetch({ ...DATABASE_STATE });
     renderPanel();
-    await waitFor(() => expect(screen.getByText("Database")).toBeTruthy());
+    await databaseCard();
     expect(screen.queryByText("Save secrets")).toBeNull();
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/secret"))).toBe(false);
   });

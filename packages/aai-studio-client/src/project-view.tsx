@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Everything that exists only while a project is open: its workspace, chat
-// history and brokered sandbox, the seven panes, Publish, and the unsaved
-// editor drafts.
+// history and brokered sandbox, the panes, Publish, and the unsaved editor
+// drafts.
 //
 // Split out of app.tsx because `project` is a REQUIRED prop here. In one
 // component with the home hero it could only be `string | null`, and the six
@@ -26,7 +26,7 @@ import { queryKeys } from "./query-keys.ts";
 import { SecretsPane } from "./secrets.tsx";
 import { SettingsPane } from "./settings.tsx";
 import { lazyRetry } from "./stale-build.ts";
-import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
+import { isTabVisible, PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
 import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
 import { WorkflowsPane } from "./workflows.tsx";
 
@@ -60,6 +60,25 @@ function openFile(selected: string | null, files: Record<string, string>): strin
 }
 
 /**
+ * The pane actually shown: the user's pick while that pane is still OFFERED,
+ * else Settings.
+ *
+ * The same rule as {@link openFile} one function up — a selection of something
+ * that has stopped existing is not a selection, derived during render rather
+ * than corrected by an effect. Only `database` can vanish under a selection
+ * (see `isTabVisible`), and it vanishes when someone turns the database off,
+ * which is a thing that happens in ANOTHER tab: this one is sitting on the
+ * pane while the project frame arrives saying the pane is gone.
+ *
+ * Settings rather than the default UI pane, because Settings is where the
+ * switch that did this lives — the pane a user is looking for after the
+ * Database tab disappears is the one that can bring it back.
+ */
+function shownTab(selected: StudioTab, databaseEnabled: boolean): StudioTab {
+  return isTabVisible(selected, { databaseEnabled }) ? selected : "settings";
+}
+
+/**
  * How many transient broker failures to ride out before surfacing the
  * retryable error state. With TanStack's default exponential backoff
  * (1s doubling, capped at 30s) this keeps trying for roughly three minutes
@@ -89,7 +108,7 @@ type ProjectViewProps = {
 export function ProjectView(props: ProjectViewProps) {
   const { bearer, project, chatStatus, refreshAuth } = props;
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<StudioTab>("preview");
+  const [selectedTab, setSelectedTab] = useState<StudioTab>("preview");
   const [publishOpen, setPublishOpen] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   /** The file the user picked, or null to follow the workspace's default. */
@@ -174,6 +193,12 @@ export function ProjectView(props: ProjectViewProps) {
 
   const files = workspace.data?.files ?? EMPTY_FILES;
   const deployedSlug = workspace.data?.deployedSlug;
+  // The Database tab's gate. It rides on the project payload rather than the
+  // database-state route the Settings card reads, so the tab appears the moment
+  // the switch is flipped: recording the intent stamps the workspace, which
+  // pushes a `project` frame down the stream above (see studio-sse.ts).
+  const databaseEnabled = workspace.data?.databaseEnabled === true;
+  const tab = shownTab(selectedTab, databaseEnabled);
   // "Publish unlocks after your first build" — there must be an agent to ship.
   const hasBuild = "agent.ts" in files;
 
@@ -221,7 +246,7 @@ export function ProjectView(props: ProjectViewProps) {
       // The PRODUCTION agent changed — reload the pane's production-fallback
       // iframe (projects that predate auto previews frame production).
       setPreviewNonce((n) => n + 1);
-      setTab("preview");
+      setSelectedTab("preview");
     },
   });
 
@@ -250,13 +275,14 @@ export function ProjectView(props: ProjectViewProps) {
         tab={tab}
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
+        databaseEnabled={databaseEnabled}
         chatBusy={chatBusy}
         publishOpen={publishOpen}
         accountOpen={props.accountOpen}
         onGoHome={props.onGoHome}
         onSelectTab={(next) => {
           setPublishOpen(false);
-          setTab(next);
+          setSelectedTab(next);
         }}
         onLogOut={props.onLogOut}
         onTogglePublish={() => setPublishOpen((v) => !v)}
