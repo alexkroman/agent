@@ -1339,15 +1339,25 @@ also what you want for anything that can be a string, an array, or null.
 // shared.ts — the slot owns the shape; `agent()` has no `state` field.
 export const cartSlot = sessionSlot("cart", () => ({ cart: [] as Item[], staffPin: "" }));
 
-// agent.ts
-export default agent({
-  syncState: cartSlot.projection((s) => ({ cart: s.cart })),  // staffPin stays server-side
-});
+// Compose the projection HERE, once, and import it at both ends: staffPin stays
+// server-side, and the agent and the client cannot name different views of it.
+export const cartProjection = cartSlot.projection((s) => ({ cart: s.cart }));
 
-// client.tsx
-const view = useAgentState<{ cart: Item[] }>();   // null until the first push
-return <Cart items={view?.cart ?? []} />;
+// agent.ts
+export default agent({ syncState: cartProjection });
+
+// client.tsx — the projection types the state AND supplies the frame the client
+// renders before the first push, so there is no type argument and no `?? EMPTY`.
+const view = useAgentState(cartProjection);
+return <Cart items={view.cart} />;
 ```
+
+Passing the projection is the shape to copy. The other two overloads still
+exist: `useAgentState<S>()` returns `S | null` (nullable — nothing is pushed
+before the first tool call), and `useAgentState<S>(fallback)` returns `S` for a
+frame you build yourself. Reach for `fallback` only when the slot's factory is
+expensive to import into the browser — the projection overload calls it to build
+the empty frame.
 
 **Reach for this before wiring `useToolResult` into `useState`.** Without
 it the pattern is: return a cart snapshot from every tool, declare a type

@@ -329,6 +329,13 @@ export const DEFAULT_STATE: GameState = {
 export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE));
 
 /**
+ * The IDENTITY projection, used by `syncState` and by `useAgentState`: this
+ * campaign IS what the client renders, so there is nothing to trim — and it
+ * carries the deep-readonly type the client's components take.
+ */
+export const gameProjection = gameSlot.projection((game) => game);
+
+/**
  * The game as a READ hands it out: deep-frozen, and typed to say so.
  *
  * Every pure helper below takes this rather than {@link GameState}, which is

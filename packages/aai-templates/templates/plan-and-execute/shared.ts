@@ -159,3 +159,6 @@ export function planView(state: FrozenPlanState): PlanView {
     progress: total === 0 ? 0 : done / total,
   };
 }
+
+/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
+export const planProjection = planSlot.projection(planView);

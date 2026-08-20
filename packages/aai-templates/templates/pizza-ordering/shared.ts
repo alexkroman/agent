@@ -157,3 +157,6 @@ export function orderView(order: FrozenOrderState): OrderView {
       : {}),
   };
 }
+
+/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
+export const orderProjection = orderSlot.projection(orderView);

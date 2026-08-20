@@ -13,7 +13,7 @@
  * assert.
  */
 
-import type { DefaultToolResult } from "@alexkroman1/aai";
+import { type DefaultToolResult, sessionSlot } from "@alexkroman1/aai";
 import { expectTypeOf, test } from "vitest";
 import { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 import type { ToolCallInfo } from "./types.ts";
@@ -64,6 +64,19 @@ test("useAgentState with a fallback drops the null", () => {
   expectTypeOf(useAgentState<{ cart: string[] }>({ cart: [] })).toEqualTypeOf<{
     cart: string[];
   }>();
+});
+
+test("useAgentState infers its type from a slot projection", () => {
+  // The overload's whole reason to exist: the projection's return type IS the
+  // state's type, so a caller passing one restates nothing. A type argument
+  // here would mean the round-trip is still hand-wired.
+  const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+  const cartProjection = cartSlot.projection((cart) => ({ count: cart.items.length }));
+
+  expectTypeOf(useAgentState(cartProjection)).toEqualTypeOf<{ count: number }>();
+  // And the `null` is gone, for the same reason the `fallback` overload drops
+  // it: a projection always yields a frame.
+  expectTypeOf(useAgentState(cartProjection)).not.toEqualTypeOf<{ count: number } | null>();
 });
 
 test("useEvent types the event payload, defaulting to unknown", () => {

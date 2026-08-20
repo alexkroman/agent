@@ -18,7 +18,7 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-import { activeAssistant, FLIGHTS, tripSlot, tripView } from "./shared.ts";
+import { activeAssistant, FLIGHTS, tripProjection, tripSlot, tripView } from "./shared.ts";
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
 
@@ -298,8 +298,9 @@ describe("search tools", () => {
 
 describe("tripView projection", () => {
   test("an untouched call projects the seeded booking at the concierge desk", () => {
-    // Exactly the value client.tsx hoists as its fallback.
-    const view = tripSlot.projection(tripView)(undefined);
+    // Exactly the frame `client.tsx` renders before the first push — it passes
+    // this same projection to `useAgentState`.
+    const view = tripProjection();
     expect(view).toMatchObject({
       assistant: "primary",
       assistantTitle: "concierge",

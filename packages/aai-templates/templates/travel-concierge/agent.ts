@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { tripSlot, tripView } from "./shared.ts";
+import { tripProjection } from "./shared.ts";
 
 /**
  * A phone travel concierge, adapted from LangGraph's customer-support tutorial.
@@ -23,7 +23,7 @@ export default agent({
   // so a resumed connection has something to project.
   // One projection replaces a `ctx.send` in each of eleven tools — and is the
   // single place that decides the caller's record leaves the server trimmed.
-  syncState: tripSlot.projection(tripView),
+  syncState: tripProjection,
   greeting:
     "Swiss Air Travel, this is the concierge desk. I can see your booking — what can I do for you today?",
 });

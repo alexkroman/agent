@@ -238,3 +238,6 @@ export function supportView(state: FrozenSupportState): SupportView {
     ticket: state.ticket?.reference ?? null,
   };
 }
+
+/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
+export const supportProjection = supportSlot.projection(supportView);

@@ -134,7 +134,7 @@ once, and the templates are now their reference use:
 | Primitive | Demonstrated by |
 | --- | --- |
 | `sessionSlot()` | every stateful template — `pizza-ordering` (smallest), `retail` (slot in `store.ts`, view in `shared.ts`, so the seed stays out of the browser bundle) |
-| `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` projects the identity (`(game) => game`), and five clients call the same projection with nothing to derive their pre-first-tool-call frame |
+| `slot.projection(view)` as `syncState` | `pizza-ordering`, `dispatch-center`, `retail`; `solo-rpg` projects the identity (`(game) => game`). Six templates now export the composed projection from the module that declares the slot and import it at BOTH ends — see `useAgentState(projection)` below |
 | `slot.update` (the synchronous draft) | `dispatch-center` (every mutating tool, plus an `after` hook that prunes and recalculates the alert level), `plan-and-execute` (`work_next_step` CLAIMS its step inside one window, then awaits outside it — the shape to copy when a body needs a model call) |
 | `slot.updateTool` (the mutating half) | `retail` — every one of its fifteen tools, through `retailTool`, which is what a per-agent wrapper on top of it looks like: the wrapper owns the auth gate and the activity log, and passes the DRAFT to the tool body rather than letting it re-read the slot |
 | `slot.tool` (the reading half) | `pizza-ordering` (`view_order`), `travel-concierge` (`lookup_booking`), `infocom-adventure`, `solo-rpg` (`check_state`, and `save_game` — an async body is fine, only `updateTool` must be synchronous), `dispatch-center` (`incident_get`, `ops_dashboard`, `resources_get_available`) — and choosing wrong is loud, since what a read is handed is frozen |
@@ -142,7 +142,8 @@ once, and the templates are now their reference use:
 | `ToolFailure` / `isToolFailure` | `retail` (~40 sites, failures propagating through `store.ts` helpers), `dispatch-center` (six) |
 | `pushCapped` | `dispatch-center` (incident timeline), `retail` (activity feed), `solo-rpg` (session log), `infocom-adventure` (command history) |
 | `createToolContext` (`@alexkroman1/aai/testing`) | the four suites that test tools directly — `dispatch-center`, `pizza-ordering`, `retail`, `solo-rpg` |
-| `useAgentState(fallback)` | `pizza-ordering`, `dispatch-center`, `retail`, `solo-rpg` |
+| `useAgentState(projection)` | `pizza-ordering`, `dispatch-center`, `plan-and-execute`, `solo-rpg`, `support-line`, `travel-concierge` — the six that pass the projection itself, so nothing restates the type and nothing derives the empty frame |
+| `useAgentState(fallback)` | `retail` ONLY, and deliberately: the projection overload calls the slot's `create()`, whose factory pulls a 107 KB `seed.json`, so passing it would ship the catalog to the browser (see below) |
 | `AutoScroll` | the three custom-chrome clients — `dispatch-center`, `retail`, `infocom-adventure` |
 | `useUserTranscript` | the same three. Each had written `userTranscript !== null && (… === "" ? "…" : …)` by hand, re-deriving a PROTOCOL distinction (`null` is silence, `""` is speech detected with no words yet) from the type |
 | `WorkflowProgress` | `transcription-workflow` and `redline` — the two that render a run's whole narration; they had the component byte-identical, both comments included. `link-digest` keeps the raw `useWorkflowProgress`, since its page renders the newest line only |
@@ -885,9 +886,20 @@ exists, and there is no per-agent state type left for a map to have checked.
 
 The one thing a template may still hand-roll here is a **fallback that would
 cost the browser bundle**: `retail`'s client builds its empty view from a
-seedless `emptyRetailState()` instead of `retailSlot.projection(storeView)
-(undefined)`, because the slot's factory pulls a 107 KB `seed.json` and
-importing it would ship the whole catalog to the browser. It says so in place.
+seedless `emptyRetailState()` rather than from the projection, because the
+slot's factory pulls a 107 KB `seed.json` and importing it would ship the whole
+catalog to the browser. It says so in place.
+
+That is now the ONE exception to the rule the other six follow: **compose the
+projection in the module that declares the slot, and import it at both ends** —
+`syncState: cartProjection` on the agent, `useAgentState(cartProjection)` in
+the client. It used to be composed twice, once per end, with the client
+deriving its empty frame by calling it with `undefined` and restating the view's
+type a third time on the hook. Nothing checked that the two compositions named
+the same view. Note the LINE COUNT barely moved (measured: net +4 code lines
+across the six, most of that a Biome import reflow) — this is a
+single-source-of-truth change and a memoization fix, not a volume one, which is
+the honest shape of most remaining wins at this seam.
 
 ## `system-prompt.md` IS the system prompt
 

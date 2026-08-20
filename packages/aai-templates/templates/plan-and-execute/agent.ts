@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { planSlot, planView } from "./shared.ts";
+import { planProjection } from "./shared.ts";
 
 /**
  * A planning desk you can phone: plan-and-execute, with the caller in the loop.
@@ -18,6 +18,6 @@ export default agent({
   // The plan exists before the first tool call, so a resumed connection has
   // something to project.
   // The plan, its progress and its revision trail, pushed after every tool call.
-  syncState: planSlot.projection(planView),
+  syncState: planProjection,
   greeting: "Planning desk. Tell me what you're trying to get done and I'll work out the steps.",
 });

@@ -1,11 +1,7 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { AutoScroll, client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
 import type { TripView } from "./shared.ts";
-import { SPECIALIST_IDS, SPECIALISTS, tripSlot, tripView } from "./shared.ts";
-
-// Derived from the projection so a new TripView field cannot silently miss the
-// pre-first-tool-call render.
-const EMPTY_TRIP: TripView = tripSlot.projection(tripView)(undefined);
+import { SPECIALIST_IDS, SPECIALISTS, tripProjection } from "./shared.ts";
 
 const DESKS = ["primary", ...SPECIALIST_IDS] as const;
 
@@ -44,7 +40,7 @@ function DeskStrip({ active }: { active: TripView["assistant"] }) {
 
 function ItinerarySidebar() {
   const theme = useTheme();
-  const trip = useAgentState<TripView>(EMPTY_TRIP);
+  const trip = useAgentState(tripProjection);
 
   return (
     <div className="flex flex-col gap-4 p-4 h-full min-h-0" style={{ color: theme.text }}>

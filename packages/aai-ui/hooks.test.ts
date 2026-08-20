@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import { sessionSlot } from "@alexkroman1/aai";
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -218,6 +220,52 @@ describe("useAgentState", () => {
     });
     act(() => core.update({ agentState: { cart: ["margherita"] } }));
     expect(result.current).toEqual({ cart: ["margherita"] });
+  });
+
+  it("projects the slot's default before the agent has pushed anything", () => {
+    // The round-trip the overload closes: the pre-first-push frame is the SAME
+    // projection run over the slot's own default, so a field added to the
+    // projection reaches the first render too.
+    const core = createMockCore();
+    const cartSlot = sessionSlot("cart", () => ({ items: ["seeded"] }));
+    const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
+    const { result } = renderHook(() => useAgentState(projection), { wrapper: wrap(core) });
+    expect(result.current).toEqual({ count: 1 });
+  });
+
+  it("prefers the pushed state over the projection's default", () => {
+    const core = createMockCore();
+    const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+    const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
+    const { result } = renderHook(() => useAgentState(projection), { wrapper: wrap(core) });
+    act(() => core.update({ agentState: { count: 7 } }));
+    expect(result.current).toEqual({ count: 7 });
+  });
+
+  it("keeps the projected default a stable reference across renders", () => {
+    // The doc promises this, and it is the half the `fallback` overload can
+    // only ask a caller to arrange by hoisting: a fresh object per render
+    // re-fires every downstream effect and memo that depends on the frame.
+    const core = createMockCore();
+    const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+    const projection = cartSlot.projection((cart) => ({ count: cart.items.length }));
+    const { result, rerender } = renderHook(() => useAgentState(projection), {
+      wrapper: wrap(core),
+    });
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+  });
+
+  it("still treats a plain object as a fallback, not a projection", () => {
+    // The projection overload is declared FIRST so it wins for a function, and
+    // a type test caught `fallback: S` swallowing one. This is the other
+    // direction: the older overload must keep working unchanged.
+    const core = createMockCore();
+    const { result } = renderHook(() => useAgentState<{ cart: string[] }>({ cart: [] }), {
+      wrapper: wrap(core),
+    });
+    expect(result.current).toEqual({ cart: [] });
   });
 
   it("replaces rather than accumulating", () => {

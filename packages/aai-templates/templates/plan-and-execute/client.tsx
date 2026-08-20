@@ -1,9 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { AutoScroll, client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
-import type { PlanView } from "./shared.ts";
-import { planSlot, planView } from "./shared.ts";
-
-const EMPTY_PLAN: PlanView = planSlot.projection(planView)(undefined);
+import { planProjection } from "./shared.ts";
 
 /**
  * The plan, ticking off.
@@ -14,7 +11,7 @@ const EMPTY_PLAN: PlanView = planSlot.projection(planView)(undefined);
  */
 function PlanSidebar() {
   const theme = useTheme();
-  const plan = useAgentState<PlanView>(EMPTY_PLAN);
+  const plan = useAgentState(planProjection);
 
   if (!plan.objective) {
     return (

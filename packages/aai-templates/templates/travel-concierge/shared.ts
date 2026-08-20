@@ -545,3 +545,6 @@ export function tripView(state: FrozenTripState): TripView {
     log: state.log,
   };
 }
+
+/** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
+export const tripProjection = tripSlot.projection(tripView);

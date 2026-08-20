@@ -1,9 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { AutoScroll, client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
-import type { SupportView } from "./shared.ts";
-import { PRODUCT, supportSlot, supportView } from "./shared.ts";
-
-const EMPTY_SUPPORT: SupportView = supportSlot.projection(supportView)(undefined);
+import { PRODUCT, supportProjection } from "./shared.ts";
 
 /**
  * The graph, as it ran for the last question.
@@ -15,7 +12,7 @@ const EMPTY_SUPPORT: SupportView = supportSlot.projection(supportView)(undefined
  */
 function TraceSidebar() {
   const theme = useTheme();
-  const support = useAgentState<SupportView>(EMPTY_SUPPORT);
+  const support = useAgentState(supportProjection);
   const trace = support.trace;
 
   return (

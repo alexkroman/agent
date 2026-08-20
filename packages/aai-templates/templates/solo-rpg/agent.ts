@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { gameSlot } from "./shared.ts";
+import { gameProjection } from "./shared.ts";
 
 export default agent({
   name: "Solo RPG",
@@ -14,5 +14,5 @@ export default agent({
   // remembering to push or watching the UI quietly fall out of sync.
   // The identity projection: this campaign IS what the client renders, and the
   // slot's own default is what a session that has run no tool projects.
-  syncState: gameSlot.projection((game) => game),
+  syncState: gameProjection,
 });
