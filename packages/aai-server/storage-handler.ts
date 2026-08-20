@@ -5,9 +5,27 @@
  * Enabling storage provisions a dedicated Postgres schema + role in the
  * platform's Supabase database (see app-database.ts) and stores the
  * credentials in the SecretStore under `app-db:<slug>`. Disabling drops the
- * schema (with all its data) and the role. Like secret changes, the toggle
- * takes effect on the next deploy (or sandbox rebuild) — nothing here
- * restarts resident sandboxes.
+ * schema (with all its data) and the role.
+ *
+ * **A change that really happened BUMPS the agents row, so the running guest
+ * is rebuilt.** `DATABASE_URL` is composed when a sandbox is BUILT
+ * (`sandbox-resolve.ts`) and the version is the cross-replica invalidation
+ * signal (`sandbox-invalidate.ts`), so without the bump enabling a database
+ * reached the agent on whatever deploy happened NEXT — and the studio's own
+ * post-deploy hook made that gap permanent for the common case: a Publish
+ * bumps the row, `handoverSlot` boots the replacement immediately, and
+ * `reconcileProjectDatabase` provisions AFTER the deploy returns. So the very
+ * first publish after switching the database on produced a production sandbox
+ * with no `DATABASE_URL`, which then stayed that way — `ctx.db` throwing, and
+ * a workflow upload refusing with "Workflow uploads need a database", on an
+ * app whose Database pane says it has one.
+ *
+ * This is narrower than "storage changes move sandboxes": only a call that
+ * CHANGED the state bumps (an already-enabled app is left alone below, which
+ * is also what keeps a re-enable from rotating a live credential), and a
+ * SECRET change still takes effect on the next deploy by design — the guest
+ * re-reads no env of its own, but a secret is not a resource whose absence
+ * makes the app half-configured the way a missing database is.
  *
  * Owner-authenticated exactly like the secret routes, which serve
  * `aai storage enable`. The studio's Settings pane switches a database on per
@@ -36,6 +54,7 @@ import type { AppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import { appDbSecretName, type SecretStore, type SqlExec } from "./secret-store.ts";
+import type { BundleStore } from "./store-types.ts";
 
 const log = createLogger("storage");
 
@@ -44,6 +63,12 @@ export type StorageEnv = {
   secrets: SecretStore;
   appDb?: AppDatabases | undefined;
   slugLock: SlugMutationLock;
+  /**
+   * Agents rows — bumped so a resident guest picks the change up (see the
+   * module doc). Optional because several specs drive the core with neither a
+   * store nor a sandbox behind it; a missing one is reported, never silent.
+   */
+  store?: BundleStore | undefined;
 };
 
 const UNCONFIGURED_MESSAGE =
@@ -164,6 +189,7 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
     log.info("enabled", { slug, role: meta.role });
+    await rebuildGuest(env, slug, "enabled");
     return { enabled: true as const };
   });
 }
@@ -181,8 +207,41 @@ export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled
     await appDb.deprovision(slug, meta);
     await env.secrets.delete(appDbSecretName(slug));
     log.info("disabled", { slug });
+    // Both directions: a guest still holding a `DATABASE_URL` to a schema that
+    // has been dropped fails every `ctx.db` call at the DRIVER, which is a
+    // worse report than the enablement error a rebuilt one gives.
+    await rebuildGuest(env, slug, "disabled");
     return { enabled: false as const };
   });
+}
+
+/**
+ * Bump the agents row so this slug's resident sandbox is rebuilt with the
+ * environment the change just created (or removed). See the module doc.
+ *
+ * Reported and swallowed, never thrown: the provisioning has already happened
+ * and its credentials are already stored, so failing the request here would
+ * report "could not enable the database" for a database that exists — and the
+ * change still lands on the next deploy, which is exactly where it landed
+ * before this bump existed. A slug with no row (`false`) is the ordinary case
+ * for the studio, which switches a project's database on before either agent
+ * has deployed.
+ */
+async function rebuildGuest(env: StorageEnv, slug: string, change: string): Promise<void> {
+  if (!env.store) {
+    log.warn(`storage ${change} without an agents store: the running agent keeps its old env`, {
+      slug,
+    });
+    return;
+  }
+  try {
+    await env.store.touchAgent(slug);
+  } catch (err) {
+    log.warn(`storage ${change}: could not bump the agent for a rebuild`, {
+      slug,
+      error: errorMessage(err),
+    });
+  }
 }
 
 // ── Hono handlers (owner routes: GET/POST/DELETE /:slug/storage) ─────────────

@@ -133,6 +133,62 @@ test.each(["GET", "POST", "DELETE"])("storage %s rejects a non-owner key", async
   expect(appDb.provision).not.toHaveBeenCalled();
 });
 
+test("enabling bumps the agent's version, so the running guest is rebuilt with a DATABASE_URL", async () => {
+  // `DATABASE_URL` is composed when a sandbox is BUILT (sandbox-resolve.ts) and
+  // the version is the only cross-replica invalidation signal
+  // (sandbox-invalidate.ts), so without this bump the resident guest keeps the
+  // env it was spawned with: `ctx.db` throws and a workflow upload refuses with
+  // "Workflow uploads need a database" on an app whose Database pane says it
+  // has one.
+  const appDb = fakeAppDb();
+  const { fetch, store } = await deployWithStorage({ appDb });
+  const before = await store.getAgentVersion("my-agent");
+
+  await storageReq(fetch, "POST");
+
+  expect(await store.getAgentVersion("my-agent")).toBe((before ?? 0) + 1);
+});
+
+test("the bump reaches the agents change stream, which is what moves a sandbox", async () => {
+  // The bump on its own is a row write; what rebuilds the guest is the event
+  // every replica reacts to (`watchAgentInvalidation`). `withAgentEvents` has
+  // to wrap `touch` for that, and a mutator missing from that wrapper is
+  // invisible in production and silent in dev.
+  const appDb = fakeAppDb();
+  const { fetch, events } = await deployWithStorage({ appDb });
+  const seen: string[] = [];
+  events.watchAgents((slug) => void seen.push(slug));
+
+  await storageReq(fetch, "POST");
+
+  expect(seen).toContain("my-agent");
+});
+
+test("a no-op enable bumps nothing", async () => {
+  // The skip above it is what keeps a re-enable from rotating a live
+  // credential; a bump here would rebuild a healthy sandbox for a call that
+  // changed nothing.
+  const appDb = fakeAppDb();
+  const { fetch, store } = await deployWithStorage({ appDb });
+  await storageReq(fetch, "POST");
+  const after = await store.getAgentVersion("my-agent");
+
+  await storageReq(fetch, "POST");
+
+  expect(await store.getAgentVersion("my-agent")).toBe(after);
+});
+
+test("disabling bumps too, so no guest keeps a URL to a dropped database", async () => {
+  const appDb = fakeAppDb();
+  const { fetch, store } = await deployWithStorage({ appDb });
+  await storageReq(fetch, "POST");
+  const enabled = await store.getAgentVersion("my-agent");
+
+  await storageReq(fetch, "DELETE");
+
+  expect(await store.getAgentVersion("my-agent")).toBe((enabled ?? 0) + 1);
+});
+
 test("agent delete deprovisions the app database and clears its credentials", async () => {
   const appDb = fakeAppDb();
   const { fetch, secrets } = await deployWithStorage({ appDb });

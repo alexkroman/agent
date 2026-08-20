@@ -308,6 +308,26 @@ describe("reconcileProjectDatabase", () => {
     expect(h.env.appDb.provision).toHaveBeenCalled();
   });
 
+  test("bumps the slug it just provisioned, because the deploy already booted a guest without one", async () => {
+    // The prod failure this closes: a Publish bumps the agents row, the change
+    // stream's blue-green handover boots the replacement IMMEDIATELY, and this
+    // hook runs AFTER the deploy returns — so the first publish after switching
+    // the database on produced a sandbox with no `DATABASE_URL`, and since a
+    // storage change moved nothing, it stayed that way. `ctx.db` throwing and
+    // "Workflow uploads need a database" on a project whose pane says it has
+    // one.
+    const h = await harness({ deployedSlug: "demo" });
+    await mutateWorkspace(h.workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      databaseEnabled: true,
+    }));
+    const before = await h.store.getAgentVersion("demo");
+
+    await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo" });
+
+    expect(await h.store.getAgentVersion("demo")).toBe((before ?? 0) + 1);
+  });
+
   test("does nothing for a project that never asked — absent means OFF", async () => {
     // Every deploy of every project passes through here, so this is what keeps
     // a schema and a login role from being created for projects that will

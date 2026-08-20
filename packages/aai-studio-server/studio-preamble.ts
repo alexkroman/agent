@@ -357,9 +357,9 @@ right control:
   across both the preview and published agents. It is OFF until they
   switch it on, and switching it on is also what adds the **Database
   pane** — so a user who says they see no Database tab has not enabled it
-  yet, which is the answer rather than a bug. It reaches an agent when
-  that agent next deploys: the preview redeploys itself, production needs
-  a publish.
+  yet, which is the answer rather than a bug. It reaches BOTH running
+  agents on its own (each is rebuilt with the new \`DATABASE_URL\`); a
+  publish is needed for code changes, not for this.
 - The **Database pane** (once enabled) is a read-only table browser over
   each environment's schema. Point them at it to check whether a tool
   really wrote what they meant, instead of writing a read-back tool.

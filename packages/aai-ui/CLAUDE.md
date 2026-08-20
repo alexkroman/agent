@@ -572,14 +572,18 @@ agent env is (`publishUploadReader`, published by `createServer`). Sixty steps
 therefore move a recording once between them, and a resumed run re-reads only
 its own window.
 
-Storage follows the split the workflow world already makes: **Postgres** when
-the app has a database — the deployed case, and the only durable one, since an
-upload in a container's filesystem is gone by the time a resumed run reaches
-segment 27 — and **files** under `.workflow-data/uploads` otherwise, beside the
-Local World's own state. Bytes are chunked (`UPLOAD_CHUNK_BYTES`) and a range
-read slices INSIDE the database, so a 64 KB header probe moves 64 KB. The
-metadata row is written LAST, so an interrupted upload reads as "no such
-upload" rather than as a file that is silently short.
+**An upload needs the database, and this is the one part of a workflow app
+that does.** Runs themselves fall back to the Local World with none
+(`aai/host/workflow-world.ts`), but an upload's RECORD is a row and its bytes
+are objects, so a deployment missing either half gets a store that refuses by
+name (`createUnavailableUploadStore`) rather than a fallback. It used to write
+**files** under `.workflow-data/uploads` beside the Local World's own state,
+which stored a dev upload perfectly and lost it by the time a resumed run
+reached segment 27, with nothing reporting a thing — `aai/host/_upload-blobs.ts`
+carries why that backend was deleted rather than fixed. Bytes are chunked
+(`UPLOAD_CHUNK_BYTES`) and a range read slices at the STORE, so a 64 KB header
+probe moves 64 KB. The metadata row is written LAST, so an interrupted upload
+reads as "no such upload" rather than as a file that is silently short.
 
 **The cap is 2 GiB, and `AAI_MAX_UPLOAD_BYTES` moves it.** The first number was
 256 MB, sized off a two-hour 16 kHz MONO recording — which describes a file

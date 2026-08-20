@@ -397,6 +397,17 @@ export function createBundleStore(
       invalidate(bundle.slug);
     },
 
+    async touchAgent(slug) {
+      // Same invalidate-around-the-write shape as `putAgent`/`deleteAgent`:
+      // the bump IS the cross-replica signal, and this replica's own caches
+      // have to stop answering with the old version for it to act on its own
+      // event.
+      invalidate(slug);
+      const bumped = await agents.touch(slug);
+      invalidate(slug);
+      return bumped;
+    },
+
     getAgent(slug) {
       return getAgentCached(slug);
     },

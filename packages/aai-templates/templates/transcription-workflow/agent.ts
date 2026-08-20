@@ -17,8 +17,10 @@
  *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. `requiredEnv` below is
  *   what makes a deploy check for it rather than letting the first run find out.
  *   A step reads it with `requireStepEnv`; see `@alexkroman1/aai/utils`.
- * - **Storage** (`aai storage enable`, or `DATABASE_URL` under `aai dev`) — runs
- *   live there.
+ * - **Storage** (`aai storage enable`, Settings → Database in the studio, or
+ *   `DATABASE_URL` under `aai dev`). REQUIRED here, unlike most workflow apps:
+ *   a run survives without it, but an UPLOAD's record is a row, so the form
+ *   below refuses by name until storage is on.
  * - **A linear-PCM WAV.** The cutting is arithmetic over byte offsets, which is
  *   only possible on uncompressed audio; `workflows/wav.ts` says so in more
  *   detail, and an unsupported file fails the run by name with the `ffmpeg`
