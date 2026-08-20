@@ -518,6 +518,14 @@ is BYTES, not records — so the seam moved down to `UploadBlobs`, whose whole
 contract is a window read and a length. There is no fallback left: a deployment
 with no database or no bucket has no uploads and says so by name.
 
+**Neither direction takes turns with the socket.** A whole-file write puts
+`UPLOAD_WINDOW_CONCURRENCY` windows while the next one is still arriving, and the
+byte route reads `UPLOAD_READ_AHEAD` chunks ahead of what it has written — both
+`mapStream` (below), which is where the ordering and the memory bound are argued.
+A window is still buffered WHOLE before its write starts, deliberately: that is
+what keeps the bytes in hand for as long as the write takes, so a failed one is
+re-sendable. Overlapping decides when a write runs, never what it holds.
+
 ## An upload can be read while it is still arriving
 
 `POST /workflows/uploads` answers with an id once the last byte is stored — the
@@ -569,28 +577,14 @@ may act on; `ranges` is for the UPLOADER, and it is what makes
 file. An agent too old to report them answers like an empty upload, so a resume
 against one re-sends everything rather than leaving a hole.
 
-**The width and the part size are 8 and 4 MiB, and the product is the number that
-was chosen** — 32 MiB in flight, exactly what 4 x 8 MiB held, because what the
-platform's h2 hop meters is concurrent large BODIES. Halving the part size at
-double the width buys twice the retry units and half the cost of a reset at
-unchanged exposure. **`UPLOAD_PART_CONCURRENCY`'s own doc owns the argument**,
-including why not wider (one reset aborts every sibling in flight, so width is a
-blast radius) and the table it had to DELETE.
-
-That deleted table is the warning worth carrying here: it reported a cliff at
-width 16 that did not exist. `scripts/upload-sweep.mjs` reused one connection
-across the whole sweep with a 1s gap, and the far side penalises a connection
-after it trips — so every cell inherited the previous cell's penalty and the
-widest cells, run last, looked catastrophic. It also printed `HTTP/1.1` while
-pinning nothing. Both are fixed (transport pinned in both arms, a fresh connection
-per run, 30s default gap), and **`pnpm bench:uploads --target <base>` is believable
-now** — but two limits stand: it is Node's `fetch`, which spreads width
-across CONNECTIONS where a browser multiplexes ONE h2 connection, so no number it
-prints is a browser number; and sustained throughput is metered, measured decaying
-6.5 -> 1.9 MB/s over one sweep against a 13.6 MB/s link, so a cell run late reads
-worse for reasons that are not its width. **That script's doc comment owns the
-rest** — why it gates nothing, why it reports a RANGE, why a DECLINED cell has to
-announce itself, and that it leaves every upload it makes in the bucket forever.
+**The width is 8 and the part size 8 MiB, so 64 MiB is in flight**, because what
+the platform's h2 hop meters is concurrent large BODIES.
+**`UPLOAD_PART_CONCURRENCY`'s own doc owns the argument** — why not wider (one
+reset aborts every sibling in flight, so width is a blast radius), where the
+measured shoulder is, and the table it had to DELETE for reporting a cliff its own
+harness had caused. Read it, and `scripts/upload-sweep.mjs`, before moving
+either number: `pnpm bench:uploads --target <base>` is believable now and still
+prints no browser number.
 
 **And the whole upload RE-ENTERS itself when the agent goes away.** The
 per-request budget (~4-11s) covers a failure that happens while the agent is UP;
@@ -815,6 +809,17 @@ replaced; what follows is the index plus the rule and the adopters.**
   rule that IS load-bearing** — `run` must issue the same sequence of step calls
   for every item, in practice one, synchronously — is unchanged by the shape and
   was never rescued by batching either; the module doc carries both halves.
+- **`mapStream(source, width, run)`** (`sdk/_map-stream.ts`, internal) — the same
+  bound over an ITERATOR rather than a list, for a body that does not exist yet
+  and is expensive to pull: the next item is read only as a slot frees, so the
+  window is the memory bound and the source's own backpressure is preserved.
+  Results are yielded in SOURCE order, which the upload byte route cannot do
+  without — it is writing them to a socket. Every task is wrapped so it SETTLES
+  rather than rejects: a sibling's rejection sitting behind a slow head is an
+  unhandled rejection and, by default, a dead process. The same wrapper is what
+  lets a consumer leave early without stranding one. Adopted by the upload store's
+  whole-file write and by `GET /workflows/uploads/:id`. Reach for `mapConcurrent`
+  when the items are already in hand.
 - **`sleep(ms, { signal?, unref? })`** (`sdk/sleep.ts`, `/internal`) — the ONE
   wait; `guard-invariants` rule 19 keeps the seventh spelling out. It replaced
   **six** spellings across five packages at 22 call sites, and the argument is

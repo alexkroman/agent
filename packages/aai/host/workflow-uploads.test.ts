@@ -16,8 +16,11 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { UPLOAD_PART_BYTES } from "../sdk/constants.ts";
-import { body, memoryStore, ramp } from "./_upload-store-test-utils.ts";
+import type { UploadBlobs } from "./_upload-blobs.ts";
+import { UPLOAD_WINDOW_CONCURRENCY } from "./_upload-store.ts";
+import { body, memoryStore, ramp, recordingDb } from "./_upload-store-test-utils.ts";
 import {
+  createMemoryUploadBlobs,
   createUnavailableUploadStore,
   createUploadStore,
   UPLOADS_TABLE,
@@ -321,5 +324,118 @@ describe("a streamed upload", () => {
     await expect(store.stream("abc", {}, body(ramp(100)), { limit: 50 })).rejects.toBeInstanceOf(
       UploadTooLargeError,
     );
+  });
+});
+
+describe("a whole-file write", () => {
+  /**
+   * A store whose every `put` parks until the spec lets it finish.
+   *
+   * Local to this block rather than in `_upload-store-test-utils.ts`: it is the
+   * only thing that needs to observe writes MID-FLIGHT, and a shared helper whose
+   * puts do not resolve on their own is a trap for every other spec.
+   */
+  function gatedStore() {
+    const recorder = recordingDb();
+    const inner = createMemoryUploadBlobs();
+    const gates: PromiseWithResolvers<void>[] = [];
+    /** The offset each `put` named, in the order the puts STARTED. */
+    const started: number[] = [];
+    let live = 0;
+    let peak = 0;
+    let open = false;
+    const blobs: UploadBlobs = {
+      ...inner,
+      put: async (key, body, options) => {
+        const gate = Promise.withResolvers<void>();
+        if (open) gate.resolve();
+        gates.push(gate);
+        started.push(Number(key.split("/").at(-1)));
+        live += 1;
+        peak = Math.max(peak, live);
+        await gate.promise;
+        const bytes = await inner.put(key, body, options);
+        live -= 1;
+        return bytes;
+      },
+    };
+    return {
+      store: createUploadStore({ db: recorder.db, blobs }),
+      started,
+      /** Let the write that started `index`th finish. */
+      release: (index: number) => gates[index]?.resolve(),
+      /** Let every write through, including the ones not started yet. */
+      open: () => {
+        open = true;
+        for (const gate of gates) gate.resolve();
+      },
+      peak: () => peak,
+    };
+  }
+
+  /**
+   * `count` whole windows, cheaply.
+   *
+   * Zero-filled rather than `ramp`: these specs are about WHEN a window is written,
+   * and building 40 MiB one byte at a time to prove that costs more than the whole
+   * rest of the suite.
+   */
+  function windowBody(count: number): AsyncGenerator<Uint8Array> {
+    return body(...Array.from({ length: count }, () => new Uint8Array(UPLOAD_PART_BYTES)));
+  }
+
+  test("keeps several windows in flight, so the uplink and the bucket overlap", async () => {
+    // The property the sequential loop did not have: reading the body and writing
+    // what has been read are the same wait, not two.
+    const gated = gatedStore();
+    const done = gated.store.create({}, windowBody(6));
+    await vi.waitFor(() => expect(gated.started.length).toBe(UPLOAD_WINDOW_CONCURRENCY));
+    expect(gated.started).toEqual([
+      0,
+      UPLOAD_PART_BYTES,
+      UPLOAD_PART_BYTES * 2,
+      UPLOAD_PART_BYTES * 3,
+    ]);
+
+    gated.open();
+    const created = await done;
+    expect(created).toMatchObject({ size: UPLOAD_PART_BYTES * 6, complete: true });
+    expect(gated.peak()).toBe(UPLOAD_WINDOW_CONCURRENCY);
+    // Against one as well as against the constant: a width of 1 satisfies every
+    // line above that reads the constant, and is the sequential loop this replaced.
+    expect(UPLOAD_WINDOW_CONCURRENCY).toBeGreaterThan(1);
+  });
+
+  test("holds no more than the window's width, however fast the body arrives", async () => {
+    // The other half of the same number: a body is pulled only as slots free, so
+    // peak memory is this module's choice and not the sender's.
+    const gated = gatedStore();
+    const done = gated.store.create({}, windowBody(5));
+    await vi.waitFor(() => expect(gated.started.length).toBe(UPLOAD_WINDOW_CONCURRENCY));
+    // The fifth window is not read off the wire until one of the four lands.
+    expect(gated.started).toHaveLength(UPLOAD_WINDOW_CONCURRENCY);
+    gated.release(0);
+    await vi.waitFor(() => expect(gated.started.length).toBe(UPLOAD_WINDOW_CONCURRENCY + 1));
+    for (const at of [1, 2, 3, 4]) gated.release(at);
+    await expect(done).resolves.toMatchObject({ size: UPLOAD_PART_BYTES * 5 });
+  });
+
+  test("stores every window at the offset it was cut at, whatever order they land", async () => {
+    // Offsets come from the CUT, not from the previous write's answer — which is
+    // what makes the writes independent of each other's completion order.
+    const gated = gatedStore();
+    const done = gated.store.create({}, windowBody(4));
+    await vi.waitFor(() => expect(gated.started.length).toBe(UPLOAD_WINDOW_CONCURRENCY));
+    // Back to front, so a store deriving the next offset from the last completion
+    // would place them wrong.
+    for (const at of [3, 2, 1, 0]) gated.release(at);
+    const created = await done;
+    const read = await gated.store.read(
+      created.id,
+      UPLOAD_PART_BYTES * 3 - 2,
+      UPLOAD_PART_BYTES * 3 + 2,
+    );
+    expect(read).toHaveLength(4);
+    expect(created.size).toBe(UPLOAD_PART_BYTES * 4);
   });
 });

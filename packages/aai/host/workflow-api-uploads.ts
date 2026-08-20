@@ -1,15 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The two upload routes: put a file somewhere a run can reach, and read it back.
+ * The upload WRITES: putting a file somewhere a run can reach.
  *
  * ```text
  * POST /workflows/uploads?name=recording.wav   → 201 { id, …, complete: true }
  * PUT  /workflows/uploads/:id?name=…           → 201 { id, …, complete: true }
  * POST /workflows/uploads/:id/parts?total=…    → 201 { id, …, complete: false }
  * PUT  /workflows/uploads/:id/parts?offset=…   → 200 { id, …, complete }
- * GET  /workflows/uploads/:id                  → the bytes, `Range` honoured
- * GET  /workflows/uploads/:id/info             → { id, name, type, size, complete }
  * ```
+ *
+ * The two `GET`s are `workflow-api-uploads-read.ts`, which carries why the halves
+ * are separate modules. `_upload-route-failures.ts` is the refusal vocabulary they
+ * share.
  *
  * ## POST mints the id; PUT lets the caller choose it
  *
@@ -20,10 +22,6 @@
  * caller already has it: start the run, then stream the file, and the run reads
  * what has arrived. `GET …/info` is how anything other than a step watches that
  * happen; a step reads the same record in-process through `uploadInfo`.
- *
- * **`…/info` must be matched BEFORE `/uploads/:id`**, which is a prefix rule that
- * would otherwise read `"<id>/info"` as an id and 404 an upload that exists. Same
- * trap as `/runs/:id/events`; the router's own doc carries the general rule.
  *
  * Split from `workflow-api.ts` because nothing here is about runs — the store is
  * the only thing these two touch, and the module they came out of is the one
@@ -41,45 +39,29 @@
  * bytes, the cap is the same, the id is the caller's — and the two rules that come
  * with it are the store's rather than this module's: a part starts on a megabyte
  * boundary, and `size` reports the CONTIGUOUS prefix, so nothing downstream (the
- * range route below, `readUpload`, a run polling `size`) learns that parts exist.
+ * range route, `readUpload`, a run polling `size`) learns that parts exist.
  * `workflow-uploads.ts` carries the argument.
  *
  * ## The body is the FILE, not a multipart envelope
  *
  * `POST` takes the bytes raw: the filename rides in `?name=` and the type in
- * `Content-Type`. That is what lets the body stream straight into the store with
- * one chunk in memory at a time — a multipart parse would mean a boundary
- * scanner and a dependency, for an envelope carrying exactly one part. Both
+ * `Content-Type`. That is what lets the body stream straight into the store,
+ * which holds a bounded few windows of it at a time and never the file — a
+ * multipart parse would mean a boundary scanner and a dependency, for an envelope
+ * carrying exactly one part. Both
  * callers are ours (`api.upload()` in the browser, `curl --data-binary`
  * everywhere else) and neither wanted the envelope.
- *
- * ## `Range` is honoured because the reader is a fan-out
- *
- * A page downloading its own upload is the rare case; the common one is sixty
- * steps each reading their own window. Steps read through `readUpload`, which is
- * in-process and never touches HTTP — but the route has to agree with it,
- * because the same window is what a browser, a `curl -r`, and the platform proxy
- * ask for. So the range arithmetic is HTTP's (inclusive bounds, 206, a
- * `Content-Range` naming the total) and the store's is JavaScript's, converted
- * once, here.
  */
 
 import type http from "node:http";
 import { requestQuery } from "../sdk/request-url.ts";
 import type { UploadInfo } from "../sdk/step-uploads.ts";
-import { UPLOAD_CHUNK_BYTES, UPLOAD_TOKEN_RE } from "../sdk/upload-constants.ts";
+import { UPLOAD_TOKEN_RE } from "../sdk/upload-constants.ts";
 import { WORKFLOW_API_PREFIX } from "../sdk/workflow-api-client.ts";
+import { sendUploadFailure } from "./_upload-route-failures.ts";
 import type { Logger } from "./runtime-config.ts";
 import { sendJson } from "./workflow-api-http.ts";
-import {
-  UnknownUploadError,
-  UploadIdTakenError,
-  type UploadMeta,
-  UploadPartError,
-  type UploadStore,
-  UploadsUnavailableError,
-  UploadTooLargeError,
-} from "./workflow-uploads.ts";
+import type { UploadMeta, UploadStore } from "./workflow-uploads.ts";
 
 /** Path the upload routes live under. */
 export const UPLOADS_PATH = `${WORKFLOW_API_PREFIX}/uploads`;
@@ -128,54 +110,6 @@ function declaredMeta(req: http.IncomingMessage): UploadMeta {
     // request, not the file.
     type: typeof type === "string" ? (type.split(";")[0] ?? "").trim() : undefined,
   };
-}
-
-/**
- * Answer an upload failure this route can name, or decline so the caller re-throws.
- *
- * 413 here rather than in the router's catch, because these are the routes whose
- * body is MEANT to be large: the cap is part of their contract, and a caller has
- * to tell "too big" apart from "the agent is broken". 409 for a taken id for the
- * same reason — the request is well formed and the id is simply not available,
- * which a client retrying a `PUT` after a lost response needs to know.
- *
- * **It serves the READS too, which is why it is no longer `sendWriteFailure`.**
- * The two `GET` routes called `store.info(id)` outside any `try`, so on a
- * deployment with no upload backend they took the same opaque 500 as the writes —
- * and `info` is precisely the route a person reaches for to ask why the others are
- * failing.
- */
-function sendUploadFailure(res: http.ServerResponse, err: unknown): boolean {
-  // 501, and it is the only status here addressed to an OPERATOR rather than to a
-  // client — see `UploadsUnavailableError` for why not 500 or 503. The message is
-  // the whole value: it names which half is missing and the command that supplies
-  // it, and until this branch existed it was composed and then discarded.
-  if (err instanceof UploadsUnavailableError) {
-    sendJson(res, 501, { error: err.message });
-    return true;
-  }
-  if (err instanceof UploadTooLargeError) {
-    sendJson(res, 413, { error: err.message });
-    return true;
-  }
-  if (err instanceof UploadIdTakenError) {
-    sendJson(res, 409, { error: err.message });
-    return true;
-  }
-  // 400: the request contradicts itself (a misaligned offset, a part past the
-  // declared total), which a client has to be able to tell from a transport
-  // failure it should retry — a retried part is the ordinary case, and retrying
-  // one that can never be accepted is a loop.
-  if (err instanceof UploadPartError) {
-    sendJson(res, 400, { error: err.message });
-    return true;
-  }
-  // 404: well formed, and there is simply nothing to write into.
-  if (err instanceof UnknownUploadError) {
-    sendJson(res, 404, { error: err.message });
-    return true;
-  }
-  return false;
 }
 
 /** `POST /workflows/uploads` — store the request body and answer with its id. */
@@ -321,180 +255,4 @@ export async function writeUploadPart(
     if (sendUploadFailure(res, err)) return;
     throw err;
   }
-}
-
-/**
- * `store.info`, with a named failure ANSWERED rather than thrown.
- *
- * Three states, and the reads need all three kept apart: the record
- * ({@link UploadInfo}), "no such upload" (`null` → the caller's 404), and "this
- * route already answered" (`undefined` → return). Collapsing the last two is what
- * would put a misconfigured deployment back under a 404, which reads as "your id
- * is wrong" — the same confusion `createUnavailableUploadStore` refuses to create
- * by making its `info` throw instead of answering empty.
- */
-async function readInfoOrFail(
-  res: http.ServerResponse,
-  store: UploadStore,
-  id: string,
-): Promise<UploadInfo | null | undefined> {
-  try {
-    return (await store.info(id)) ?? null;
-  } catch (err: unknown) {
-    if (sendUploadFailure(res, err)) return undefined;
-    throw err;
-  }
-}
-
-/**
- * `GET /workflows/uploads/:id/info` — the record, including how much has arrived.
- *
- * The read a CLIENT polls while its own `PUT` is still in flight, and the one a
- * page shows progress from. A step reads the same record in-process (`uploadInfo`),
- * so this exists for everything that is not one: a script, a dashboard, or a person
- * with `curl` asking why a run is still waiting.
- */
-export async function readUploadInfoRoute(
-  res: http.ServerResponse,
-  store: UploadStore,
-  id: string,
-): Promise<void> {
-  const info = await readInfoOrFail(res, store, id);
-  if (info === undefined) return;
-  if (!info) {
-    sendJson(res, 404, { error: `No upload with id ${id}` });
-    return;
-  }
-  sendJson(res, 200, info);
-}
-
-/** `GET /workflows/uploads/:id` — the bytes, whole or by range. */
-export async function readUploadRoute(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  store: UploadStore,
-  id: string,
-): Promise<void> {
-  const info = id ? await readInfoOrFail(res, store, id) : null;
-  if (info === undefined) return;
-  if (!info) {
-    sendJson(res, 404, { error: `No upload with id ${id}` });
-    return;
-  }
-  await sendUploadBytes(req, res, store, id, info);
-}
-
-/**
- * The answer itself, once the record is in hand.
- *
- * Split from the route on the complexity cap, and the seam is where the route stops
- * DECIDING and starts writing: everything above resolves which of the three answers
- * this request gets (a refusal, a 404, or the file), everything here is the file.
- */
-async function sendUploadBytes(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  store: UploadStore,
-  id: string,
-  info: UploadInfo,
-): Promise<void> {
-  const header = req.headers.range;
-  const range = typeof header === "string" ? parseRange(header, info.size) : undefined;
-  if (range === "unsatisfiable") {
-    res.writeHead(416, { "Content-Range": `bytes */${info.size}`, "Accept-Ranges": "bytes" });
-    res.end();
-    return;
-  }
-
-  const start = range?.start ?? 0;
-  const end = range?.end ?? info.size;
-  res.writeHead(range ? 206 : 200, {
-    "Content-Type": info.type || "application/octet-stream",
-    "Content-Length": String(end - start),
-    "Accept-Ranges": "bytes",
-    // `Content-Range` is inclusive of its last byte, unlike everything else
-    // here — hence `end - 1`, and hence the empty-range case being excluded by
-    // `parseRange` rather than papered over.
-    ...(range ? { "Content-Range": `bytes ${start}-${end - 1}/${info.size}` } : {}),
-    ...(info.name ? { "Content-Disposition": contentDisposition(info.name) } : {}),
-  });
-
-  // Streamed a chunk at a time: this route exists for files far larger than
-  // this process's memory, so buffering the answer would defeat the storage
-  // layer's whole shape.
-  for (let at = start; at < end; at += UPLOAD_CHUNK_BYTES) {
-    const bytes = await store.read(id, at, Math.min(at + UPLOAD_CHUNK_BYTES, end));
-    // A client that hung up mid-download: stop reading rather than filling a
-    // socket nobody is on the other end of.
-    if (!res.write(bytes)) await drained(res);
-    if (res.destroyed) return;
-  }
-  res.end();
-}
-
-/** Wait for the response's buffer to empty, so a slow reader paces the reads. */
-function drained(res: http.ServerResponse): Promise<void> {
-  return new Promise((resolve) => {
-    res.once("drain", resolve);
-    res.once("close", resolve);
-  });
-}
-
-/**
- * One `Range` header as `[start, end)`, or `"unsatisfiable"`.
- *
- * Only a single byte range is understood: a multi-range request would have to
- * answer `multipart/byteranges`, which no caller here sends and which is a
- * second body format to get wrong. Per RFC 9110 a range this cannot parse is
- * IGNORED (the whole file is a legal answer), while one that parses and falls
- * outside the file is a 416 — so a plan computed against a stale size fails
- * loudly instead of silently reading nothing.
- */
-export function parseRange(
-  header: string,
-  size: number,
-): { start: number; end: number } | "unsatisfiable" | undefined {
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (!match) return undefined;
-  const [, rawStart = "", rawEnd = ""] = match;
-  if (rawStart === "" && rawEnd === "") return undefined;
-  if (rawStart === "") {
-    // `bytes=-N` — the last N bytes. A suffix longer than the file is the whole
-    // file, which is what the spec says and is also the friendlier answer.
-    const suffix = Number(rawEnd);
-    if (suffix <= 0) return "unsatisfiable";
-    return { start: Math.max(0, size - suffix), end: size };
-  }
-  const start = Number(rawStart);
-  if (start >= size) return "unsatisfiable";
-  const end = rawEnd === "" ? size : Math.min(Number(rawEnd) + 1, size);
-  return end > start ? { start, end } : "unsatisfiable";
-}
-
-/**
- * Everything a `filename="…"` may hold: printable ASCII, minus the two
- * characters that would break out of the quoting.
- *
- * An ALLOW-list, because the deny-list it replaced (`["\\\r\n]`) was solving the
- * wrong problem. Stripping CR/LF is response-SPLITTING defence; what a filename
- * also has to be is a header value Node will accept, and Node rejects every
- * control character. A `\x01` in an uploaded name therefore survived into the
- * metadata row and then made `res.writeHead` throw `ERR_INVALID_CHAR` — the same
- * throw on every subsequent read, so that upload was permanently a 500 with no
- * way to correct it. Non-ASCII is not lost: `filename*` carries the real name
- * and every browser prefers it.
- */
-const FILENAME_UNSAFE = /["\\]|[^\x20-\x7e]/g;
-
-/**
- * A `Content-Disposition` naming the file.
- *
- * The filename is the UPLOADER's string, so the quoted form is stripped to
- * {@link FILENAME_UNSAFE}'s complement rather than escaped — no filename needs
- * those characters enough to justify either risk. `encodeURIComponent` makes the
- * `filename*` half ASCII by construction, so it is safe whatever arrived.
- */
-function contentDisposition(name: string): string {
-  const plain = name.replaceAll(FILENAME_UNSAFE, "");
-  return `attachment; filename="${plain}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }

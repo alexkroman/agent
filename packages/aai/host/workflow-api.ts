@@ -32,9 +32,10 @@
  *
  * A run's input is journaled and replayed, so bytes may not travel in it — which
  * left a form with nowhere to put a file and no honest option but to ask for a
- * URL. `workflow-api-uploads.ts` is the answer and its own module for exactly
- * that reason: it touches the store and never the engine, so the rule below
- * ("every route is one `ctx.workflows` call") keeps meaning what it says.
+ * URL. `workflow-api-uploads.ts` (the writes) and `workflow-api-uploads-read.ts`
+ * (the two `GET`s) are the answer, and their own modules for exactly that reason:
+ * they touch the store and never the engine, so the rule below ("every route is
+ * one `ctx.workflows` call") keeps meaning what it says.
  *
  * ## `events` and `stream` are different questions about the same run
  *
@@ -106,13 +107,12 @@ import { streamRunOutput } from "./workflow-api-stream.ts";
 import {
   beginUploadParts,
   createUpload,
-  readUploadInfoRoute,
-  readUploadRoute,
   streamUpload,
   UPLOAD_PARTS_SUFFIX,
   UPLOADS_PATH,
   writeUploadPart,
 } from "./workflow-api-uploads.ts";
+import { readUploadInfoRoute, readUploadRoute } from "./workflow-api-uploads-read.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
 
 /**

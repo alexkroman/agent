@@ -21,7 +21,7 @@ import { requestPath } from "../sdk/request-url.ts";
 import { rejectingWorkflows } from "../sdk/workflow-unavailable.ts";
 import { silentLogger } from "./_test-utils.ts";
 import { createWorkflowApi } from "./workflow-api.ts";
-import { parseRange } from "./workflow-api-uploads.ts";
+import { parseRange } from "./workflow-api-uploads-read.ts";
 import {
   assertPartOffset,
   contiguousBytes,
