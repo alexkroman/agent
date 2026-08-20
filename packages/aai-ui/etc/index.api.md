@@ -20,6 +20,7 @@ import { ProviderProps } from 'react';
 import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
+import type { StateProjection } from '@alexkroman1/aai';
 import type { TextareaHTMLAttributes } from 'react';
 import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
@@ -418,6 +419,9 @@ export type UploadStatus = UploadProgress & {
 
 // @public
 export function useAgentState<S = DefaultToolResult>(): S | null;
+
+// @public
+export function useAgentState<V>(projection: StateProjection<V>): V;
 
 // @public
 export function useAgentState<S = DefaultToolResult>(fallback: S): S;

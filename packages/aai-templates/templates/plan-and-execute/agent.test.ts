@@ -26,7 +26,7 @@ const agentDef = withDiscoveredTools(
 import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./graph.ts";
 import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
 import type { SearchFn } from "./shared.ts";
-import { MAX_PAST_STEPS, planSlot, planView } from "./shared.ts";
+import { MAX_PAST_STEPS, planProjection, planSlot, planView } from "./shared.ts";
 
 // ─── A scripted model ────────────────────────────────────────────────────────
 //
@@ -381,8 +381,9 @@ describe("plan_status", () => {
 
 describe("planView projection", () => {
   test("an untouched call projects an empty plan, not undefined", () => {
-    // Exactly the value client.tsx hoists as its fallback.
-    expect(planSlot.projection(planView)(undefined)).toEqual({
+    // Exactly the frame `client.tsx` renders before the first push — it passes
+    // this same projection to `useAgentState`.
+    expect(planProjection()).toEqual({
       objective: null,
       plan: [],
       done: [],

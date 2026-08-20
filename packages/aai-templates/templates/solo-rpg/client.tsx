@@ -7,25 +7,13 @@ import {
   type Disposition,
   type GameState,
   GENRES,
-  gameSlot,
+  gameProjection,
   MAX_RESOURCE,
   MIN_MOMENTUM,
   type NPC,
   type StoryBlueprint,
   type TIME_PHASES,
 } from "./shared.ts";
-
-// The campaign before the first tool call, derived from the SAME projection the
-// server pushes rather than from the module default beside it — so a session
-// that has run no tool renders exactly what its first push will replace. Every
-// sibling template derives its fallback this way; this one read `DEFAULT_STATE`
-// directly, which is a second copy of "what an untouched session looks like".
-//
-// It is typed READONLY because that is what the projection produces, and a
-// client only ever renders what the server pushed — so the four components
-// below take a readonly campaign too, which is the deep-readonly slot
-// propagating exactly as far as it should.
-const EMPTY_GAME = gameSlot.projection((game) => game)(undefined);
 
 // ── Color Palette ────────────────────────────────────────────────────────────
 const C = {
@@ -784,7 +772,10 @@ function SoloRPGApp() {
   // The agent's own session state, projected by `syncState` and pushed after
   // every tool call — no per-tool `ctx.send`, and nothing to keep in step
   // when a new tool starts mutating the game.
-  const game = useAgentState<DeepReadonly<GameState>>(EMPTY_GAME);
+  // `gameProjection` carries both halves: the campaign's readonly type — which
+  // is what the four components below take — and the frame a session that has
+  // run no tool renders.
+  const game = useAgentState(gameProjection);
 
   return (
     <StartScreen

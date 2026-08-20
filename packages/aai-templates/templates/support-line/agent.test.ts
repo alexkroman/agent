@@ -31,7 +31,7 @@ import {
   GROUNDED_SYSTEM,
   REWRITE_SYSTEM,
 } from "./prompts.ts";
-import { retrieve, supportSlot, supportView } from "./shared.ts";
+import { retrieve, supportProjection, supportSlot, supportView } from "./shared.ts";
 
 // ─── A scripted model ────────────────────────────────────────────────────────
 //
@@ -332,8 +332,9 @@ describe("log_ticket", () => {
 
 describe("supportView projection", () => {
   test("an untouched call projects an empty trace, not undefined", () => {
-    // Exactly the value client.tsx hoists as its fallback.
-    expect(supportSlot.projection(supportView)(undefined)).toMatchObject({
+    // Exactly the frame `client.tsx` renders before the first push — it passes
+    // this same projection to `useAgentState`.
+    expect(supportProjection()).toMatchObject({
       product: "Meridian Fibre",
       trace: null,
       asked: [],

@@ -18,7 +18,14 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-import { calculateTotal, orderSlot, orderView, type Pizza, pizzaPrice } from "./shared.ts";
+import {
+  calculateTotal,
+  orderProjection,
+  orderSlot,
+  orderView,
+  type Pizza,
+  pizzaPrice,
+} from "./shared.ts";
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
 
@@ -231,8 +238,8 @@ describe("orderView projection", () => {
 
   test("an untouched session projects an empty cart, not undefined", () => {
     // The client renders before any tool has run, so `state.order` is absent —
-    // this is exactly the value `client.tsx` hoists as its fallback.
-    expect(orderSlot.projection(orderView)(undefined)).toMatchObject({
+    // this is exactly the frame `client.tsx` gets from the same projection.
+    expect(orderProjection()).toMatchObject({
       pizzas: [],
       total: "$0.00",
       orderPlaced: false,

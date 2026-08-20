@@ -133,21 +133,65 @@ It subscribes narrowly, so a component using it re-renders at STT-partial rate.
 That is what it is for and what a whole-page `useSession()` should not do —
 `ChatView`'s own comment makes the same point about the shell.
 
-## `useAgentState` has a fallback overload
+## `useAgentState` takes the PROJECTION, and that closes the round-trip
 
-`useAgentState<S>()` returns `S | null` — nullable because nothing has been
-pushed before the first tool call. `useAgentState<S>(fallback)` returns `S`.
-Every real consumer wanted the second: four of the six template clients
-immediately wrote `?? EMPTY`, and three of those built `EMPTY` by running their
-own `syncState` projection over an empty state, which is the pattern to copy —
-`slot.projection(view)(undefined)`, so a field added to the projection reaches
-the first render instead of being `undefined` in that one frame. Hoist the
-fallback to module scope; the hook does not memoize it.
+Three overloads, and the third is the one to reach for. `useAgentState<S>()`
+returns `S | null` — nullable because nothing has been pushed before the first
+tool call. `useAgentState<S>(fallback)` returns `S`. **`useAgentState(projection)`
+returns the projection's own type, defaulted by the projection itself**, and
+takes no type argument at all.
+
+Every real consumer wanted the second, and then wrote the third by hand. Four of
+the six template clients immediately wrote `?? EMPTY`, and five built `EMPTY` by
+running their own `syncState` projection over an empty state —
+`slot.projection(view)(undefined)` — which was the documented pattern and the
+right one, because a field added to the projection then reaches the first render
+instead of being `undefined` in that one frame. What it cost is that **the
+projection was composed at BOTH ends**: `agent.ts` declared
+`slot.projection(view)` and `client.tsx` built the same expression again, so the
+two could name different views of one slot with nothing checking. And **the type
+was restated three times** — the view's own return type, the `EMPTY` annotation,
+and the hook's type argument — all derivable from the projection.
+
+So the shape to copy is one export from the module that declares the slot, and
+both ends importing it:
+
+```ts no-check
+// shared.ts — composed once, so the two ends cannot drift.
+export const cartProjection = cartSlot.projection(cartView);
+
+// agent.ts
+export default agent({ name: "Shop", syncState: cartProjection });
+
+// client.tsx — no type argument, no empty frame to derive.
+const cart = useAgentState(cartProjection);
+```
+
+**It also memoizes the frame, which the `fallback` overload can only ask for.**
+That overload's doc says to hoist `EMPTY` to module scope because the hook does
+not memoize; a `slot.projection(view)` spelled inline in a render body silently
+got that wrong, returning a fresh object per render and re-firing every
+downstream memo and effect. Keyed on the projection's identity, a module-scope
+projection now yields one frame for the component's life.
+
+**Discriminating the overloads is `typeof fallback === "function"`**, which is
+sound rather than a heuristic: `agentState` is whatever crossed the wire as
+JSON, so no legitimate fallback value can be a function. The projection overload
+is declared FIRST, and that ordering is load-bearing — `fallback: S` infers `S`
+as the projection type and swallows it otherwise, which `hooks.test-d.ts` caught
+on the first draft.
+
+The one place to prefer the `fallback` overload is a slot whose `create()` is
+EXPENSIVE TO IMPORT. `retail`'s does: its factory pulls a 107 KB `seed.json`, and
+the projection overload calls `create()`, so passing the projection would ship
+the catalog to the browser. Its client says so in place.
 
 Note the fallback is only substituted for `null`, and an absent argument still
 reads back as `null` rather than `undefined` — a client spelling
-`state === null` predates the overload. `hooks.test-d.ts` pins both signatures,
-since an overload is a type-level contract a runtime suite cannot assert.
+`state === null` predates the overload. `hooks.test-d.ts` pins all three
+signatures, since an overload is a type-level contract a runtime suite cannot
+assert; `hooks.test.ts` covers the memoization and the discrimination, which are
+the halves that are runtime behaviour.
 
 ## Client audio path (browser ⇄ server)
 

@@ -7,8 +7,8 @@ import {
   useSession,
   useUserTranscript,
 } from "@alexkroman1/aai-ui";
-import type { DashboardView, DispatchState, IncidentSummary, Severity, Status } from "./shared.ts";
-import { dashboardView, dispatchSlot } from "./shared.ts";
+import type { DispatchState, IncidentSummary, Severity, Status } from "./shared.ts";
+import { dashboardProjection } from "./shared.ts";
 
 const CSS = `
 @keyframes dc-pulse {
@@ -56,10 +56,6 @@ const statusColors: Record<string, string> = {
   resolved: "#6b7280",
   escalated: "#ef4444",
 } satisfies Record<Status, string>;
-
-// The board before the first tool call — derived from the projection so a
-// new DashboardView field can't silently miss the pre-first-tool-call render.
-const EMPTY_DASH: DashboardView = dispatchSlot.projection(dashboardView)(undefined);
 
 // The dot's colour per session state, as an EXHAUSTIVE map rather than an
 // if-chain with a grey default.
@@ -152,7 +148,7 @@ function App() {
   // The agent's own board, projected by `syncState`. This replaced a
   // useState mirror that merged incident deltas out of tool events — the
   // projection is already the complete list, so there is nothing to merge.
-  const dash = useAgentState<DashboardView>(EMPTY_DASH);
+  const dash = useAgentState(dashboardProjection);
 
   const incidentList = [...dash.incidents].reverse();
   const activeIncidents = incidentList.filter((i) => i.status !== "resolved");

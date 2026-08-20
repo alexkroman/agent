@@ -43,10 +43,16 @@ const statusColors: Record<string, string> = {
 } satisfies Record<OrderStatus, string>;
 
 // The sidebar before the first tool call, derived from the projection itself so
-// a new StoreView field can't miss the pre-first-call render. Built from
-// `emptyRetailState` rather than `retailSlot.projection(...)(undefined)`,
-// because the slot's factory lives in `store.ts` and pulls the 107 KB seed —
-// importing it here would ship the whole catalog to the browser.
+// a new StoreView field can't miss the pre-first-call render.
+//
+// **This is the one template that does NOT pass its projection to
+// `useAgentState`**, and the reason is the browser bundle rather than style:
+// that overload derives the empty frame by calling the projection, which calls
+// the slot's `create()` — and this slot's factory lives in `store.ts` and pulls
+// the 107 KB seed, so importing it here would ship the whole catalog to the
+// browser. `emptyRetailState()` is the same shape without the seed. Reach for
+// the projection overload everywhere the factory is cheap, which is every
+// other stateful template.
 const EMPTY_VIEW: StoreView = storeView(emptyRetailState());
 
 // The dot's colour per session state, as an EXHAUSTIVE map rather than an
