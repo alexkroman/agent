@@ -1,5 +1,15 @@
 # @alexkroman1/aai-server
 
+## 3.6.3
+
+### Patch Changes
+
+- eda6060: Stage patchedDependencies patch files into the Modal deploy image's install layer, fixing `ENOENT: … open '/app/patches/<name>.patch'` at image build
+- Updated dependencies [5556ed5]
+  - @alexkroman1/aai@6.10.1
+  - aai-guest@0.4.30
+  - @alexkroman1/aai-ui@6.10.1
+
 ## 3.6.2
 
 ### Patch Changes
