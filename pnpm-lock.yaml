@@ -106,7 +106,7 @@ overrides:
 
 patchedDependencies:
   '@workflow/world-local@4.2.4':
-    hash: 7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa
+    hash: adb1aecc5b2367e81d7889576fdf7aa790a87132c832d32efbffc64e2849949c
     path: patches/@workflow__world-local@4.2.4.patch
 
 importers:
@@ -1260,9 +1260,6 @@ packages:
 
   '@codemirror/commands@6.10.4':
     resolution: {integrity: sha512-Ryk9y9T0FFVF0cUGhAknveAyUOl/A1qReTFi+qPKtOh2Z9F4AUBz3XOrYD4ZEgZirdugVzHvd/2/Wcwy5OliTg==}
-
-  '@codemirror/commands@6.11.0':
-    resolution: {integrity: sha512-/K4Rl5BN0OtTiPWmJCdqODu38XnDMsDxKY5rgrPnCkutPTJf2wVbkoixLfealF5Kwse/s8P8M5jAiURiwSwnFA==}
 
   '@codemirror/lang-javascript@6.2.5':
     resolution: {integrity: sha512-zD4e5mS+50htS7F+TYjBPsiIFGanfVqg4HyUz6WNFikgOPf2BgKlx+TQedI1w6n/IqRBVBbBWmGFdLB/7uxO4A==}
@@ -8287,13 +8284,6 @@ snapshots:
       '@codemirror/view': 6.43.7
       '@lezer/common': 1.5.2
 
-  '@codemirror/commands@6.11.0':
-    dependencies:
-      '@codemirror/language': 6.12.4
-      '@codemirror/state': 6.7.1
-      '@codemirror/view': 6.43.7
-      '@lezer/common': 1.5.2
-
   '@codemirror/lang-javascript@6.2.5':
     dependencies:
       '@codemirror/autocomplete': 6.20.3
@@ -10132,7 +10122,7 @@ snapshots:
       '@workflow/utils': 4.1.4
       '@workflow/web': 4.1.18
       '@workflow/world': 4.3.1
-      '@workflow/world-local': 4.2.4(patch_hash=7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa)(@opentelemetry/api@1.9.1)
+      '@workflow/world-local': 4.2.4(patch_hash=adb1aecc5b2367e81d7889576fdf7aa790a87132c832d32efbffc64e2849949c)(@opentelemetry/api@1.9.1)
       '@workflow/world-vercel': 4.6.2(@opentelemetry/api@1.9.1)
       boxen: 8.0.1
       builtin-modules: 5.0.0
@@ -10168,7 +10158,7 @@ snapshots:
       '@workflow/serde': 4.1.2
       '@workflow/utils': 4.1.4
       '@workflow/world': 4.3.1
-      '@workflow/world-local': 4.2.4(patch_hash=7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa)(@opentelemetry/api@1.9.1)
+      '@workflow/world-local': 4.2.4(patch_hash=adb1aecc5b2367e81d7889576fdf7aa790a87132c832d32efbffc64e2849949c)(@opentelemetry/api@1.9.1)
       '@workflow/world-vercel': 4.6.2(@opentelemetry/api@1.9.1)
       debug: 4.4.3(supports-color@8.1.1)
       devalue: 5.8.1
@@ -10305,7 +10295,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@workflow/world-local@4.2.4(patch_hash=7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa)(@opentelemetry/api@1.9.1)':
+  '@workflow/world-local@4.2.4(patch_hash=adb1aecc5b2367e81d7889576fdf7aa790a87132c832d32efbffc64e2849949c)(@opentelemetry/api@1.9.1)':
     dependencies:
       '@vercel/queue': 0.3.1
       '@workflow/errors': 4.2.1
@@ -10324,7 +10314,7 @@ snapshots:
       '@workflow/errors': 4.2.1
       '@workflow/utils': 4.1.4
       '@workflow/world': 4.3.1
-      '@workflow/world-local': 4.2.4(patch_hash=7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa)(@opentelemetry/api@1.9.1)
+      '@workflow/world-local': 4.2.4(patch_hash=adb1aecc5b2367e81d7889576fdf7aa790a87132c832d32efbffc64e2849949c)(@opentelemetry/api@1.9.1)
       cbor-x: 1.6.0
       dotenv: 17.3.1
       drizzle-orm: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.20.0)(postgres@3.4.9)
@@ -11022,7 +11012,7 @@ snapshots:
   codemirror@6.0.2:
     dependencies:
       '@codemirror/autocomplete': 6.20.3
-      '@codemirror/commands': 6.11.0
+      '@codemirror/commands': 6.10.4
       '@codemirror/language': 6.12.4
       '@codemirror/lint': 6.9.7
       '@codemirror/search': 6.7.1
