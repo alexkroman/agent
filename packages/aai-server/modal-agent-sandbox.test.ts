@@ -298,19 +298,24 @@ describe("spawnModalAgentServer", () => {
     expect(execEnv(sb)[CONTAINED_ENV]).toBe("1");
   });
 
-  it("mints a distinct per-sandbox token, delivered on the EXEC env", async () => {
+  it("derives the manage token from the sandbox NAME, delivered on the EXEC env", async () => {
     // The tunnel URL is public, so this token is the only thing gating
     // /manage/*. On the exec env rather than the sandbox's, so it is not
     // visible to anything else that might later run in the container.
-    const first = await spawn();
-    const second = await spawn();
+    //
+    // Derived rather than random, which is what lets a replica that did NOT
+    // spawn this sandbox still read its logs — see guest-token.ts. So the
+    // property is reproducibility from the name, not per-spawn uniqueness.
+    const first = await spawn({ name: "agent-aaa-v1" });
+    const again = await spawn({ name: "agent-aaa-v1" });
+    const other = await spawn({ name: "agent-bbb-v1" });
     const a = execEnv(first.sb).AAI_GUEST_TOKEN;
-    const b = execEnv(second.sb).AAI_GUEST_TOKEN;
     expect(a).toMatch(/^[0-9a-f]{64}$/);
-    // Distinct per sandbox: one leaked token must not open another guest's
-    // manage surface. (The handle deliberately does not expose it — it is the
-    // host's to spend on /manage/*, and nothing else needs to see it.)
-    expect(b).not.toBe(a);
+    expect(execEnv(again.sb).AAI_GUEST_TOKEN).toBe(a);
+    // Distinct per NAME: one leaked token must not open another guest's manage
+    // surface, and a redeploy bumps the version half of the name. (The handle
+    // deliberately does not expose it — it is the host's to spend on /manage/*.)
+    expect(execEnv(other.sb).AAI_GUEST_TOKEN).not.toBe(a);
   });
 
   it("creates the sandbox under its fleet-wide name, with a readiness probe", async () => {

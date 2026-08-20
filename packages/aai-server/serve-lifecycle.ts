@@ -24,6 +24,9 @@ import { serve } from "@hono/node-server";
 import pTimeout from "p-timeout";
 import { SHUTDOWN_CLOSE_FALLBACK_MS, SHUTDOWN_TEARDOWN_TIMEOUT_MS } from "./constants.ts";
 import { endLiveStreams } from "./live-streams.ts";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("serve");
 
 /** The slice of a node HTTP server this module drives. Injectable for tests. */
 export type ServerLike = {
@@ -83,7 +86,7 @@ export function createShutdownHandler(opts: ShutdownHandlerOptions): () => Promi
     // latches closed, so streams opened during the teardown below end
     // gracefully too.
     const ended = endLiveStreams();
-    if (ended > 0) console.info(`Shutdown: ended ${ended} live stream(s)`);
+    if (ended > 0) log.info(`shutdown: ended ${ended} live stream(s)`);
 
     try {
       // BOUNDED, because the timer below cannot cover this. It is armed only
@@ -107,13 +110,13 @@ export function createShutdownHandler(opts: ShutdownHandlerOptions): () => Promi
       // (the guest's own idle self-exit and Modal's sandbox timeout reclaim
       // it). Both outcomes take this path deliberately: there is nothing
       // different to DO about them, and one log line beats two.
-      console.warn("Shutdown teardown failed:", errorMessage(err));
+      log.warn("shutdown teardown failed", { error: errorMessage(err) });
     }
 
     opts.closeServer(() => exit(0));
     const timer = setTimeout(() => {
       // Loud on purpose: silently exiting here is how a hung shutdown hides.
-      console.warn("Shutdown timed out waiting for connections to close; exiting");
+      log.warn("shutdown timed out waiting for connections to close; exiting");
       exit(0);
     }, fallbackMs);
     timer.unref?.();
@@ -141,14 +144,14 @@ export async function startService(opts: StartServiceOptions): Promise<void> {
   // Without a listener, a listen failure (e.g. EADDRINUSE) gets Node's default
   // throw-from-nowhere. Log it usefully and exit.
   server.on("error", (err: unknown) => {
-    console.error("HTTP server error:", err);
+    log.error("http server error", { error: errorMessage(err) });
     process.exit(1);
   });
 
   await new Promise<void>((resolve) => {
     server.on("listening", resolve);
   });
-  console.info(`${opts.label} listening on http://localhost:${opts.port}`);
+  log.info(`${opts.label} listening on http://localhost:${opts.port}`);
 
   const shutdown = createShutdownHandler({
     onShutdown: opts.onShutdown,

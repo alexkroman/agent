@@ -107,7 +107,7 @@
  *   repairs it sooner: the Postgres world re-enqueues active runs on `start()`.
  */
 
-import { debug } from "./_debug-log.ts";
+import { errorMessage } from "@alexkroman1/aai";
 import { type DueRead, NOT_LOCKED, readDueWork } from "./_workflow-wake-read.ts";
 import type { AppDatabases } from "./app-database.ts";
 import {
@@ -117,10 +117,13 @@ import {
   WORKFLOW_WAKE_READY_MS,
   WORKFLOW_WAKE_RETRY_MS,
 } from "./constants.ts";
+import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import { type BrokeredSession, brokerSessionUrl } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import type { BundleStore } from "./store-types.ts";
+
+const log = createLogger("workflow.wake");
 
 export type WorkflowWakeOptions = {
   /**
@@ -255,15 +258,15 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
    */
   async function wakeOne(slug: string, at: number): Promise<boolean> {
     const brokered = await wake(slug).catch((err: unknown) => {
-      console.warn(`Workflow wake failed for ${slug}:`, err);
+      log.warn("wake failed", { slug, error: errorMessage(err) });
       return { ok: false, status: 503 } as BrokeredSession;
     });
     if (!brokered.ok && brokered.status === 404) {
-      debug("Due workflow hint for an agent with no bundle; not waking", { slug });
+      log.debug("Due workflow hint for an agent with no bundle; not waking", { slug });
       return false;
     }
     lastWoken.set(slug, at);
-    debug("Woke a sandbox for due workflow work", { slug, ok: brokered.ok });
+    log.debug("Woke a sandbox for due workflow work", { slug, ok: brokered.ok });
     return true;
   }
 
@@ -282,7 +285,7 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
       // The pass, not the sweep: the interval keeps ticking. Warn rather than
       // debug — a sweep that cannot read is a feature that has silently stopped
       // working, which is the failure this module exists to remove.
-      console.warn("Workflow wake sweep failed to read due runs:", err);
+      log.warn("sweep failed to read due runs", { error: errorMessage(err) });
       return NOT_LOCKED;
     });
     if (!read.locked) return EMPTY_PASS;
@@ -303,7 +306,7 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
     }
 
     if (read.due.length > 0) {
-      debug("Workflow wake sweep", {
+      log.debug("Workflow wake sweep", {
         candidates: read.candidates,
         due: read.due.length,
         woken: woken.length,
@@ -365,7 +368,7 @@ export function startWorkflowWakeSweep(
   // (the admin connection elects a leader, the app connections hold the hints),
   // and a pass with one of them reads nothing while looking healthy.
   if (!(opts.adminDb && opts.appDb) || intervalMs <= 0) {
-    debug("Workflow wake sweep not started", {
+    log.debug("Workflow wake sweep not started", {
       reason: opts.adminDb && opts.appDb ? "interval is 0" : "no platform database",
     });
     return () => undefined;
@@ -374,8 +377,8 @@ export function startWorkflowWakeSweep(
     // Loud, because the gap is per-AGENT and invisible from the outside: an app
     // placed on an extra cluster would look identical to one on the primary
     // right up until a run failed to wake.
-    console.warn(
-      "[workflow-wake] APP_DB_URLS names extra clusters; durable runs for apps placed " +
+    log.warn(
+      "APP_DB_URLS names extra clusters; durable runs for apps placed " +
         "there are NOT woken (see workflow-wake.ts, Known gaps).",
     );
   }
@@ -384,6 +387,6 @@ export function startWorkflowWakeSweep(
     adminDb: opts.adminDb,
     appDb: opts.appDb,
   });
-  console.info(`[workflow-wake] sweeping for due durable runs every ${intervalMs}ms`);
+  log.info(`sweeping for due durable runs every ${intervalMs}ms`);
   return sweep.start(intervalMs);
 }

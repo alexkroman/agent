@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
   assertBucketPrivate,
   type BlobStorage,
@@ -8,6 +8,7 @@ import {
   createSupabaseBlobStorage,
   storageEndpoint,
 } from "./blob-storage.ts";
+import { captureLogs } from "./test-utils.ts";
 
 type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
 
@@ -165,6 +166,8 @@ describe("createSupabaseBlobStorage", () => {
  * ever notice it going missing or turning public.
  */
 describe("assertBucketPrivate", () => {
+  const logs = captureLogs();
+
   const check = (handler: (call: Call) => Response) => {
     const { fetch: fetchFn, calls } = fakeFetch(handler);
     const run = assertBucketPrivate({
@@ -208,10 +211,8 @@ describe("assertBucketPrivate", () => {
    * — worse than the thing being guarded against.
    */
   test("a transient failure warns and lets the service boot", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { run } = check(() => new Response("upstream error", { status: 503 }));
     await expect(run).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledOnce();
-    expect(warn.mock.calls[0]?.[0]).toContain("reachability");
+    expect(logs.warns()).toEqual([expect.stringContaining("reachability")]);
   });
 });

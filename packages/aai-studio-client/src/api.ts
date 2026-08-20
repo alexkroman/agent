@@ -14,6 +14,7 @@ import { type StreamDownReason, watchEventStream } from "./api-events.ts";
 import { tableReads } from "./api-tables.ts";
 import type {
   Account,
+  AgentLogsPage,
   AuthConfig,
   ChatSession,
   DatabaseState,
@@ -26,6 +27,8 @@ import type {
 // the call and the shape it answers with.
 export type {
   Account,
+  AgentLogLine,
+  AgentLogsPage,
   AuthConfig,
   ChatSession,
   DatabaseEnvironment,
@@ -53,6 +56,17 @@ export type {
  * the sandbox the aborted attempt booted.
  */
 export const CHAT_SESSION_ATTEMPT_TIMEOUT_MS = 120_000;
+
+/**
+ * Per-attempt deadline for one log poll.
+ *
+ * Short on purpose. The platform's own read is bounded well under this
+ * (`LOGS_READY_TIMEOUT_MS` plus one manage request), so anything slower than
+ * this is a stall rather than work in progress — and the pane polls, so
+ * abandoning and re-asking a second later is strictly better than holding a
+ * socket open for the default deadline.
+ */
+export const AGENT_LOGS_ATTEMPT_TIMEOUT_MS = 10_000;
 
 /**
  * Per-attempt deadline for the account read that gates the whole app.
@@ -204,6 +218,25 @@ export const api = {
     fetchJson<unknown>(`${base}/${CLIENT_CONFIG_PATH}`).then((body) =>
       ClientConfigResponseSchema.parse(body),
     ),
+
+  /**
+   * A deployed agent's captured stdout/stderr, after `after`.
+   *
+   * Straight at the PLATFORM route (`/:slug/logs`) rather than through a studio
+   * one, for the same reason the secrets panel talks to `/:slug/secret`: the
+   * route already owns the ownership check, and a studio proxy in front of it
+   * would be a second place to get that wrong. The bearer is the studio
+   * session's, which `resolveBearer` maps to the account's own API key — the
+   * same credential the project's agents were deployed with.
+   *
+   * A short deadline, and a shorter one than {@link DEFAULT_REQUEST_TIMEOUT_MS}:
+   * this is a POLL, so a slow answer is better abandoned and re-asked than
+   * waited out — the next tick is a second away.
+   */
+  agentLogs: (key: string, slug: string, after: number): Promise<AgentLogsPage> =>
+    agentRequest<AgentLogsPage>(key, `/${slug}/logs?after=${after}`, {
+      timeoutMs: AGENT_LOGS_ATTEMPT_TIMEOUT_MS,
+    }),
 
   /**
    * Which LLM the studio's chat runs on. Public, and deadlined for the reason

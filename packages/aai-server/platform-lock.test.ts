@@ -14,6 +14,7 @@ import {
   SlugLockTimeoutError,
 } from "./platform-lock.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
+import { captureLogs } from "./test-utils.ts";
 
 /** The Postgres error a statement that hit `lock_timeout` raises. */
 class LockTimeout extends Error {
@@ -108,6 +109,8 @@ describe("assertSessionModeUrl", () => {
 });
 
 describe("createPgSlugLock", () => {
+  const logs = captureLogs();
+
   test("acquires, runs the work, releases the lock and the connection", async () => {
     const { db, held, counts } = fakeAdvisoryDb();
     const lock = createPgSlugLock(db);
@@ -286,11 +289,10 @@ describe("createPgSlugLock", () => {
         };
       },
     };
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const lock = createPgSlugLock(failing);
     // The caller's work still succeeds — a release failure must not fail it.
     await expect(lock("my-agent", async () => "ok")).resolves.toBe("ok");
-    expect(warn).toHaveBeenCalled();
+    expect(logs.warns()).not.toHaveLength(0);
     // And the lock is still held, which is exactly why the failure is logged.
     expect(held.has("my-agent")).toBe(true);
   });

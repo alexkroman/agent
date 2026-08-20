@@ -11,6 +11,7 @@ import { AlreadyExistsError, type Image } from "modal";
 import { describe, expect, it, vi } from "vitest";
 import { resolveSpawnImage, translateCreateError } from "./modal-context.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
+import { captureLogs } from "./test-utils.ts";
 
 /** A stand-in for a Modal `Image`, identified only by tag. */
 function fakeImage(tag: string): Image {
@@ -41,6 +42,8 @@ describe("translateCreateError", () => {
 });
 
 describe("resolveSpawnImage", () => {
+  const logs = captureLogs();
+
   const current = fakeImage("current");
   const pinned = fakeImage("pinned");
 
@@ -85,7 +88,6 @@ describe("resolveSpawnImage", () => {
   });
 
   it("honours the operator kill switch for a registry loss", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const image = await resolveSpawnImage({
       imageTag: "aai-guest-harness:gone",
       fromName: () => Promise.reject(new Error("404")),
@@ -94,8 +96,10 @@ describe("resolveSpawnImage", () => {
     });
     // Deliberately loud: the operator has traded environment pinning away.
     expect(image).toBe(current);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("SANDBOX_IGNORE_IMAGE_PINS"), {
-      imageTag: "aai-guest-harness:gone",
+    expect(logs.all()).toContainEqual({
+      level: "warn",
+      msg: expect.stringContaining("SANDBOX_IGNORE_IMAGE_PINS"),
+      ctx: { imageTag: "aai-guest-harness:gone" },
     });
   });
 });

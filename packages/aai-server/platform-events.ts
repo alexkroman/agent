@@ -98,7 +98,7 @@ export type PlatformEvents = {
  * `invalid column for filter` — and realtime-js retries the join forever.
  * The service boots healthy, `/health` answers 200, every request succeeds,
  * and the platform merely stops invalidating resident sandboxes on redeploy
- * and stops pushing studio SSE. The only trace was one `console.warn` per
+ * and stops pushing studio SSE. The only trace was one `platform.realtime` warn per
  * retry, in a log nobody reads until something else goes wrong.
  *
  * `assertServiceRoleKey` closes the two KNOWN causes at boot. This closes the

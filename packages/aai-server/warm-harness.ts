@@ -19,13 +19,18 @@
 import { createServer } from "node:net";
 import { errorMessage } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
+import type { LogPage } from "@alexkroman1/aai/runtime";
 import { WebSocket } from "ws";
-
+import { readGuestLogs } from "./agent-logs.ts";
+import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";
 import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest-routes.ts";
+import { createLogger } from "./logger.ts";
 import { agentPublicBaseUrl } from "./public-origin.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
+
+const log = createLogger("guest");
 
 /** Budget for the harness WebSocket to become dialable after exec. */
 const GUEST_DIAL_TIMEOUT_MS = 30_000;
@@ -34,7 +39,6 @@ const GUEST_DIAL_TIMEOUT_MS = 30_000;
 const GUEST_DIAL_RETRY_MS = 250;
 
 /** Per-request cap on the manage-surface probes (status/drain). */
-const MANAGE_REQUEST_TIMEOUT_MS = 5000;
 
 /**
  * Ask the OS for a free loopback port, which the subprocess backend's harness
@@ -106,7 +110,7 @@ export function drainProcStream(stream: ReadableStream<Uint8Array>, label: strin
     if (logged >= MAX_STREAM_LOG_BYTES) return; // keep draining, stop logging
     logged += value.byteLength;
     const text = decoder.decode(value, { stream: true }).trimEnd();
-    if (text) console.warn(`${label}: ${text}`);
+    if (text) log.warn(`${label}: ${text}`);
   });
 }
 
@@ -354,6 +358,15 @@ export type AgentServerHandle = {
    * "guest owns its exit now" from "nothing there to drain — terminate".
    */
   drain(deadlineMs?: number): Promise<void>;
+  /**
+   * This guest's buffered stdout/stderr, after `after` (see agent-logs.ts).
+   *
+   * NEVER throws — an unreachable or too-old guest reads as an empty page at
+   * the caller's own cursor. The caller of this is a user-facing pane, where a
+   * failure to reach a guest that simply is not running is not an error to
+   * report; `drain` beside it rejects for the opposite reason.
+   */
+  logs(opts?: { after?: number; limit?: number }): Promise<LogPage>;
   /** True while the guest process is alive. */
   alive(): boolean;
   /** One-shot exit listener; fires immediately when already dead. */
@@ -411,6 +424,10 @@ export function agentServerFromGuest(opts: {
       } catch {
         return 0; // unreachable guest = idle guest
       }
+    },
+
+    logs(logOpts = {}) {
+      return readGuestLogs({ guestOrigin: origin, token, fetchFn, ...logOpts });
     },
 
     async drain(deadlineMs?: number) {

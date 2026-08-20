@@ -53,12 +53,15 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { RealtimeClient } from "@supabase/realtime-js";
+import { createLogger } from "./logger.ts";
 import {
   type PlatformEvents,
   type PlatformEventsHealth,
   projectKey,
   type Unwatch,
 } from "./platform-events.ts";
+
+const log = createLogger("platform.realtime");
 
 /** The schema every watched table lives in — see the module doc's grant note. */
 const PLATFORM_SCHEMA = "aai_platform";
@@ -134,13 +137,13 @@ const JOIN_BUDGET_MS = 30_000;
  * A subscribe that can never succeed is this platform's most expensive quiet
  * failure (see {@link PlatformEventsHealth}), and its whole signature is an
  * infinite retry: realtime-js rejoins forever, so the ONLY difference between
- * a wedged channel and a healthy one used to be the rate of a `console.warn`.
+ * a wedged channel and a healthy one used to be the rate of a warn line.
  * That is invisible in two directions at once — nobody watches for a warn, and
  * a warn per retry is indistinguishable from a warn per blip.
  *
  * So failures are counted per channel instead of narrated: an ordinary
  * failure still warns, a channel that has never joined and is past the budget
- * escalates ONCE to `console.error`, and {@link health} reports it for as long
+ * escalates ONCE to `log.error`, and {@link health} reports it for as long
  * as it lasts.
  */
 type ChannelState = { openedAt: number; joined: boolean; escalated: boolean };
@@ -163,13 +166,13 @@ function reportFailure(
 ): void {
   const detail = err ? ` (${errorMessage(err)})` : "";
   if (!isStalled(state, Date.now())) {
-    console.warn(`Realtime channel ${topic}: ${status}${detail}`);
+    log.warn(`channel ${topic}: ${status}${detail}`);
     return;
   }
   if (state.escalated) return;
   state.escalated = true;
-  console.error(
-    `Realtime channel ${topic} has never joined after ${Math.round(JOIN_BUDGET_MS / 1000)}s ` +
+  log.error(
+    `channel ${topic} has never joined after ${Math.round(JOIN_BUDGET_MS / 1000)}s ` +
       `and is retrying indefinitely${detail}. Changes on this channel are NOT being ` +
       "delivered: sandboxes will not be invalidated on redeploy and studio SSE will not " +
       "push. Check SUPABASE_SERVICE_ROLE_KEY's authority and the aai_platform grants.",

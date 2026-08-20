@@ -153,6 +153,17 @@ export const SHUTDOWN_CLOSE_FALLBACK_MS = 3000;
 export const SANDBOX_TEARDOWN_READY_MS = envMs(process.env.SANDBOX_TEARDOWN_READY_MS, 5000);
 
 /**
+ * How long one `/manage/*` request to a guest may take.
+ *
+ * Shared rather than module-private because two callers now hold the same
+ * deadline against the same surface — `warm-harness.ts`'s status/drain pair and
+ * `agent-logs.ts`'s log read — and {@link SHUTDOWN_TEARDOWN_TIMEOUT_MS}'s
+ * arithmetic below already counts it, which a number defined out of its reach
+ * could only agree with by coincidence.
+ */
+export const MANAGE_REQUEST_TIMEOUT_MS = 5000;
+
+/**
  * The whole service teardown's deadline — the general net under
  * {@link SANDBOX_TEARDOWN_READY_MS}'s specific one.
  *

@@ -43,7 +43,7 @@
  */
 
 import { hash, randomBytes } from "node:crypto";
-import { safeJsonParse } from "@alexkroman1/aai";
+import { errorMessage, safeJsonParse } from "@alexkroman1/aai";
 import {
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
@@ -54,7 +54,10 @@ import { scheduleAppSweeps, unscheduleAppSweeps } from "./_session-state-sweep.t
 import { appDbAdminUrl, appDbUrlFor, withDatabase } from "./app-db-url.ts";
 import { type AppDbUsage, appDatabaseUsage } from "./app-db-usage.ts";
 import { APP_DB_CONNECTION_LIMIT } from "./constants.ts";
+import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
+
+const log = createLogger("app-db");
 
 /**
  * Provisioned credentials for one app's database, stored as `app-db:<slug>`.
@@ -154,9 +157,9 @@ export async function provisionAppDatabase(
   //
   // Scrubbed on failure because the password is INLINED here: postgres drivers
   // attach the failing query text as an own property on the thrown error, and
-  // the process safety nets (service-config.ts) console.error whole error
-  // objects — so an unscrubbed provisioning failure would put a live per-app
-  // password into platform logs.
+  // the process safety nets (service-config.ts) log whole error objects — so an
+  // unscrubbed provisioning failure would put a live per-app password into
+  // platform logs.
   const failure = await sql(
     `do $$
 begin
@@ -224,7 +227,7 @@ $$`,
   // upserts by name). Failing provisioning over it would refuse a database for
   // the sake of a sweep.
   await scheduleAppSweeps(sql, id).catch((err: unknown) => {
-    console.warn(`App database ${id} provisioned without its session-state sweep:`, err);
+    log.warn("provisioned without its session-state sweep", { id, error: errorMessage(err) });
   });
 
   return { role: id, password, url: targetUrl };

@@ -1,10 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { errorMessage } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
-import { debug } from "./_debug-log.ts";
 import { parseAppDbMeta } from "./app-database.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
+import { createLogger } from "./logger.ts";
 import { appDbSecretName } from "./secret-store.ts";
+
+const log = createLogger("agent.delete");
 
 export function handleDelete(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
@@ -60,7 +62,7 @@ export async function deleteAgentResources(
         // 503 rather than 500: the cause is a cluster that would not answer,
         // and re-issuing the delete is exactly what the caller should do. The
         // technical message stays in the log, as everywhere else here.
-        console.error(`Failed to deprovision app database for ${slug}: ${errorMessage(err)}`);
+        log.error("failed to deprovision app database", { slug, error: errorMessage(err) });
         throw new HTTPException(503, {
           message:
             `Could not drop the app database for ${slug}, so nothing was deleted — ` +
@@ -70,6 +72,6 @@ export async function deleteAgentResources(
       }
     }
     await env.store.deleteAgent(slug);
-    debug("Delete received", { slug });
+    log.debug("Delete received", { slug });
   });
 }

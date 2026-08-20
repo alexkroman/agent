@@ -27,8 +27,11 @@ import {
   readAppTable,
 } from "./app-db-browse.ts";
 import type { AppContext } from "./context.ts";
+import { createLogger } from "./logger.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import { appDbSecretName, type SecretStore, type SqlExec } from "./secret-store.ts";
+
+const log = createLogger("storage");
 
 /** What the storage core needs from the server bindings. */
 export type StorageEnv = {
@@ -64,7 +67,7 @@ export async function storageUsage(env: StorageEnv, slug: string): Promise<AppDb
   // cluster the META locates, which is the same rule `deprovision` states — a
   // recomputed placement points at a cluster that never hosted this app.
   return appDb.usage(slug, meta).catch((err: unknown) => {
-    console.warn("App database usage read failed", { slug, error: String(err) });
+    log.warn("app database usage read failed", { slug, error: String(err) });
     return null;
   });
 }
@@ -141,7 +144,7 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
     }
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
-    console.info("Storage enabled", { slug, role: meta.role });
+    log.info("enabled", { slug, role: meta.role });
     return { enabled: true as const };
   });
 }
@@ -158,7 +161,7 @@ export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled
     const meta = parseAppDbMeta(await env.secrets.get(appDbSecretName(slug)));
     await appDb.deprovision(slug, meta);
     await env.secrets.delete(appDbSecretName(slug));
-    console.info("Storage disabled", { slug });
+    log.info("disabled", { slug });
     return { enabled: false as const };
   });
 }

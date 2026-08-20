@@ -30,14 +30,16 @@
  */
 
 import { HTTPException } from "hono/http-exception";
-import { debug } from "./_debug-log.ts";
 import type { AppContext } from "./context.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
+import { createLogger } from "./logger.ts";
 import { verifyPhoneWebhook } from "./phone-signature.ts";
 import { resolvePublicOrigin } from "./public-origin.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import type { BundleStore } from "./store-types.ts";
+
+const log = createLogger("phone");
 
 /** Carriers this route can emit a stream URL for — the SDK's codec names. */
 const SUPPORTED_CARRIERS = new Set(["twilio", "telnyx"]);
@@ -153,7 +155,7 @@ export function createPhoneHandler(
       headers: c.req.raw.headers,
     });
     if (!verdict.ok) {
-      debug("Rejecting an unsigned phone webhook", { slug, carrier: requested, ...verdict });
+      log.debug("Rejecting an unsigned phone webhook", { slug, carrier: requested, ...verdict });
       throw new HTTPException(403, { message: "Invalid webhook signature" });
     }
 
@@ -171,7 +173,7 @@ export function createPhoneHandler(
     // An unknown slug will never become known by waiting.
     if (brokered.status === 404) return hangUpDocument(NOT_FOUND_MESSAGE);
     if (!(Number.isFinite(attempt) && attempt < MAX_ATTEMPTS - 1)) {
-      debug("Giving up on a booting sandbox for a phone call", { slug, attempt });
+      log.debug("Giving up on a booting sandbox for a phone call", { slug, attempt });
       return hangUpDocument(UNAVAILABLE_MESSAGE);
     }
     const next = new URL(`${origin}${webhookPath}`);

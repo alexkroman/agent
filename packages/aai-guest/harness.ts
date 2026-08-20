@@ -76,6 +76,7 @@ import { mainAgent } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
 import { emptyHarnessState, type HarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
+import { captureGuestOutput } from "./harness-logs.ts";
 import {
   handleHostResponse,
   rejectAllPendingHostRequests,
@@ -198,6 +199,10 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
 
 function main(): void {
   installCrashGuards();
+  // Before anything else can write: this tees both process streams into the
+  // ring `GET /manage/logs` serves, and every line produced before it is
+  // installed is a line the studio's Logs pane cannot show.
+  captureGuestOutput();
   // Warm-up mode: reaching here means this module has been compiled and
   // evaluated, which is the entire point (see the header). Exit 0 so the image
   // build can tell a populated cache from a broken warm-up.

@@ -15,7 +15,13 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { createTestOrchestrator, deployAgent, fakeSandbox, type TestFetch } from "./test-utils.ts";
+import {
+  captureLogs,
+  createTestOrchestrator,
+  deployAgent,
+  fakeSandbox,
+  type TestFetch,
+} from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => ({
   // A cold broker must reach a real spawn for the "the guest exited" case to
@@ -69,6 +75,7 @@ function post(fetch: TestFetch, path: string, init: RequestInit = {}): Promise<R
 }
 
 describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
+  const logs = captureLogs();
   beforeEach(() => {
     // `restoreMocks` (vitest.shared.ts) registers `vi.spyOn` mocks only — it
     // clears neither the history nor the implementation of a plain `vi.fn()`.
@@ -266,13 +273,12 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
   });
 
   test("answers 502 when the brokered guest will not take the delivery", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const harness = await residentHarness(() => Promise.reject(new Error("connect ECONNREFUSED")));
 
     const res = await post(harness.fetch, WEBHOOK_PATH);
 
     expect(res.status).toBe(502);
-    expect(warn).toHaveBeenCalled();
+    expect(logs.warns()).not.toHaveLength(0);
   });
 
   test("refuses a body far past any real webhook payload", async () => {

@@ -2,12 +2,14 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
+import { emptyLogPage } from "./agent-logs.ts";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { type AppDatabases, appDbIdentifier } from "./app-database.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
+import { type Logger, type RecordedLine, recordingSink, setLogSink } from "./logger.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import {
   createMemoryPlatformEvents,
@@ -118,6 +120,7 @@ export function fakeSandbox(overrides: Partial<Sandbox> = {}): Sandbox {
     sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
     guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
     drain: vi.fn(() => Promise.resolve()),
+    logs: vi.fn(() => Promise.resolve(emptyLogPage())),
     alive: vi.fn(() => true),
     shutdown: vi.fn(() => Promise.resolve()),
     ...overrides,
@@ -476,4 +479,48 @@ async function assertMigrationsApplied(sql: SqlExec, repoMigrations: string[]): 
       "would be a fourth thing that applies this schema, to a database you may have " +
       "data in.)",
   );
+}
+
+/**
+ * Silence this package's log output for the current file, and record it.
+ *
+ * The replacement for `spyOn(console, "warn")`, which was how 39 specs kept
+ * their output quiet before there was a seam to swap (see `logger.ts`). Call it
+ * at describe scope; it installs the recording sink in `beforeEach` and
+ * restores in `afterEach`, so a spec asserts on `logs.warns()` rather than on a
+ * spy it also had to remember to silence.
+ *
+ * Asserting on the TEXT is deliberately awkward — `warns()` returns the
+ * namespace-prefixed messages, and most callers should ask only whether a line
+ * was written. A spec that pins exact wording locks the message rather than the
+ * behaviour, and every one of the 25 lines this replaced had been reworded at
+ * least once without its spec noticing.
+ */
+export function captureLogs(): {
+  /** Every line written since the current test began. */
+  all(): RecordedLine[];
+  /** Messages written at `warn`. */
+  warns(): string[];
+  /** Messages written at `error`. */
+  errors(): string[];
+  /** Messages written at `info`. */
+  infos(): string[];
+} {
+  let recorded: { sink: Logger; lines: RecordedLine[] } = recordingSink();
+  let restore: (() => void) | undefined;
+  beforeEach(() => {
+    recorded = recordingSink();
+    restore = setLogSink(recorded.sink);
+  });
+  afterEach(() => {
+    restore?.();
+  });
+  const at = (level: RecordedLine["level"]) => () =>
+    recorded.lines.filter((l) => l.level === level).map((l) => l.msg);
+  return {
+    all: () => recorded.lines,
+    warns: at("warn"),
+    errors: at("error"),
+    infos: at("info"),
+  };
 }

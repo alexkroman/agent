@@ -17,9 +17,12 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { createLogger } from "./logger.ts";
 // Type-only, so the broker→peers→broker cycle is erased at compile time.
 import type { BrokeredSession } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+
+const log = createLogger("sandbox.peers");
 
 /**
  * The broker's cross-replica route: a live peer sandbox for `slug`.
@@ -49,7 +52,7 @@ export async function findPeerSession(
     if (!peer) return null;
     return { ok: true, sessionUrl: peer.sessionUrl, guestOrigin: peer.guestOrigin };
   } catch (err) {
-    console.warn(`Sandbox directory lookup failed for ${slug}: ${errorMessage(err)}`);
+    log.warn("directory lookup failed", { slug, error: errorMessage(err) });
     return null;
   }
 }

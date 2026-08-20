@@ -7,7 +7,7 @@ import { SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestStore } from "./test-utils.ts";
+import { captureLogs, createTestStore } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────
 // vi.mock factory is hoisted, so we cannot reference top-level variables.
@@ -57,10 +57,9 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("createSandbox", () => {
+  const logs = captureLogs();
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
   it("creates a sandbox with the server-handle shape", async () => {
@@ -347,9 +346,12 @@ describe("createSandbox", () => {
 
     // Wait for the rejection handler (.catch) to run
     await vi.waitFor(() => {
-      expect(console.error).toHaveBeenCalledWith(
-        "Sandbox VM failed to start",
-        expect.objectContaining({ slug: "test-agent" }),
+      expect(logs.all()).toContainEqual(
+        expect.objectContaining({
+          level: "error",
+          msg: "sandbox VM failed to start",
+          ctx: expect.objectContaining({ slug: "test-agent" }),
+        }),
       );
     });
 

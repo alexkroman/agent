@@ -8,8 +8,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { createFakeGuestSocket } from "./_sandbox-vm-test-utils.ts";
 import { createRpcConnection } from "./rpc-transport.ts";
+import { captureLogs } from "./test-utils.ts";
 
 describe("createRpcConnection", () => {
+  const logs = captureLogs();
+
   it("correlates a request with its response", async () => {
     const socket = createFakeGuestSocket();
     const conn = createRpcConnection(socket.ws);
@@ -113,7 +116,6 @@ describe("createRpcConnection", () => {
   });
 
   it("routes notifications and contains handler throws", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const socket = createFakeGuestSocket();
     const conn = createRpcConnection(socket.ws);
     const seen: unknown[] = [];
@@ -125,7 +127,9 @@ describe("createRpcConnection", () => {
 
     socket.receive({ jsonrpc: "2.0", method: "evt", params: { p: 1 } });
     expect(seen).toEqual([{ p: 1 }]);
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("handler bug"));
+    expect(logs.all()).toContainEqual(
+      expect.objectContaining({ level: "error", ctx: { error: "handler bug" } }),
+    );
   });
 
   it("ignores malformed frames", () => {

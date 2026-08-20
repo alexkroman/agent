@@ -116,8 +116,15 @@ export type BackendAgentSpawn = {
   agentEnv: Record<string, string>;
   /** Modal only — the harness snapshot image this deploy is pinned to. */
   imageTag?: string | undefined;
-  /** Modal only — the fleet-wide sandbox name (see sandbox-directory.ts). */
-  name?: string | undefined;
+  /**
+   * The fleet-wide sandbox name (see sandbox-directory.ts).
+   *
+   * REQUIRED, and no longer Modal-only: Modal races on it to keep one sandbox
+   * per deploy, and BOTH backends derive the guest's manage token from it
+   * (`guest-token.ts`), which is what lets a replica that did not spawn a
+   * sandbox still read its logs. The dispatch below always computes one.
+   */
+  name: string;
   /**
    * Hand the caller a KILL for a guest that is not ready yet, as soon as one
    * exists — which is long before this spawner's promise settles.
@@ -181,13 +188,19 @@ const SANDBOX_BACKENDS: Record<SandboxBackend, SandboxBackendOps> = {
   subprocess: {
     spawnWarm: spawnSubprocessWarm,
     // The Modal-only fields are dropped HERE, explicitly, rather than left to
-    // be ignored by the callee's signature: there is no image to pin, and a
-    // single process has no fleet to be unique within (nor a Modal control
-    // plane that would enforce a name).
+    // be ignored by the callee's signature: there is no image to pin.
+    //
+    // `name` is NOT one of them any more. It was, when its only job was Modal
+    // uniqueness — a single process has no fleet to be unique within, nor a
+    // control plane that would enforce a name. It is now also what the guest's
+    // manage token is derived from (`guest-token.ts`), so dropping it here
+    // would make this backend the one place a token is drawn at random, i.e.
+    // the one place `aai dev` cannot reproduce production's behaviour.
     spawnAgentServer: (opts) =>
       spawnSubprocessAgentServer({
         harnessPath: opts.harnessPath,
         slug: opts.slug,
+        name: opts.name,
         worker: opts.worker,
         agentEnv: opts.agentEnv,
         // NOT a Modal-only field: a mid-boot kill is the contract both

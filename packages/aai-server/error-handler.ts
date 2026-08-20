@@ -5,8 +5,11 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import { createLogger } from "./logger.ts";
 import { SlugLockTimeoutError } from "./platform-lock.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
+
+const log = createLogger("http");
 
 /**
  * What a caller is told when a sandbox could not be started. Authored here
@@ -60,7 +63,7 @@ export function createErrorHandler(): ErrorHandler {
       // reconstructed from Modal's request durations. A 4xx stays quiet, being a
       // statement about the CALLER's request and unbounded in volume.
       if (err.status >= 500) {
-        console.warn(`${err.status} on ${c.req.path}: ${causeChain(err)}`);
+        log.warn(`${err.status} on ${c.req.path}`, { cause: causeChain(err) });
       }
       return c.json({ error: err.message }, err.status);
     }
@@ -80,10 +83,10 @@ export function createErrorHandler(): ErrorHandler {
     // 5xx as transient, but "Internal server error" is what the user was left
     // staring at once the retries ran out.
     if (err instanceof SandboxUnavailableError) {
-      console.warn(`Sandbox unavailable on ${c.req.path}: ${errorDetail(err)}`);
+      log.warn(`sandbox unavailable on ${c.req.path}`, { detail: errorDetail(err) });
       return c.json({ error: SANDBOX_UNAVAILABLE_MESSAGE }, 503);
     }
-    console.error(`Unhandled error on ${c.req.path}: ${errorDetail(err)}`);
+    log.error(`unhandled error on ${c.req.path}`, { detail: errorDetail(err) });
     return c.json({ error: "Internal server error" }, 500);
   };
 }

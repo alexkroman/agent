@@ -15,6 +15,7 @@ import { resolveHarnessPath } from "./constants.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { spawnSubprocessAgentServer } from "./subprocess-sandbox.ts";
+import { captureLogs } from "./test-utils.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
 
 /**
@@ -47,6 +48,7 @@ async function spawnAgent(overrides: { workerSha256?: string } = {}): Promise<Ag
   const handle = await spawnSubprocessAgentServer({
     harnessPath: resolveHarnessPath(),
     slug: "server-mode-agent",
+    name: "agent-integration-v1",
     worker: {
       kind: "inline",
       code: WORKER_CODE,
@@ -63,6 +65,7 @@ afterAll(async () => {
 });
 
 describe("agent-server contract (real harness, no mocks)", () => {
+  const logs = captureLogs();
   test("boots from files, answers health, serves the manage surface", async () => {
     const handle = await spawnAgent();
 
@@ -126,19 +129,14 @@ describe("agent-server contract (real harness, no mocks)", () => {
     // (`Subprocess agent-server spawn failed: guest exited before ready …`), so
     // `/not ready|spawn failed/i` matched a bad harness path just as happily.
     // The guest's own refusal is what discriminates, and it reaches the host on
-    // the stderr `startGuestLogging` relays through `console.warn`.
-    const relayed: string[] = [];
-    vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
-      relayed.push(args.map(String).join(" "));
-    });
-
+    // the stderr `startGuestLogging` relays through the `guest` logger.
     await expect(spawnAgent({ workerSha256: "0".repeat(64) })).rejects.toThrow(
       SandboxUnavailableError,
     );
     // The relay is a stream drain racing the spawn's rejection, so the line can
     // land a tick late.
     await vi.waitFor(() => {
-      expect(relayed.join("\n")).toMatch(
+      expect(logs.warns().join("\n")).toMatch(
         new RegExp(`bundle hash mismatch: expected sha256 ${"0".repeat(64)}`),
       );
     });

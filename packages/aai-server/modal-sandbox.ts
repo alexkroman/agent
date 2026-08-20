@@ -34,9 +34,9 @@
 import { randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
-import { debug } from "./_debug-log.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
+import { createLogger } from "./logger.ts";
 import {
   GUEST_PORT,
   guestOrigin,
@@ -54,6 +54,8 @@ import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import { type DialGuest, dialGuest, startGuestLogging, warmFromGuest } from "./warm-harness.ts";
+
+const log = createLogger("modal.sandbox");
 
 // ── WarmHarness construction ─────────────────────────────────────────────────
 
@@ -137,7 +139,7 @@ export async function spawnModalWarm(
     await raceGuestExit(sb.waitUntilReady(GUEST_READY_TIMEOUT_MS), proc);
     const ws = await dial(guestWsUrl(origin, GUEST_ROUTES.control), token);
 
-    debug("Modal sandbox spawned", {
+    log.debug("Modal sandbox spawned", {
       sandboxId: sb.sandboxId,
       role,
       slug: opts.slug ?? "(none)",

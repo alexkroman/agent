@@ -54,9 +54,11 @@ import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { App, Image, ModalClient, Sandbox } from "modal";
 import pTimeout from "p-timeout";
-import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync } from "./_memo.ts";
 import { resolveHarnessPath } from "./constants.ts";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("modal.harness-image");
 
 /** Root the guest toolchain and harness live under inside the baked image. */
 export const GUEST_ROOT = "/opt/aai";
@@ -392,9 +394,9 @@ async function warmCompileCache(builder: Sandbox): Promise<void> {
       milliseconds: HARNESS_WARMUP_TIMEOUT_MS,
       message: `harness warm-up exceeded ${HARNESS_WARMUP_TIMEOUT_MS}ms`,
     });
-    if (exit !== 0) debug("Harness compile-cache warm-up exited non-zero", { exit });
+    if (exit !== 0) log.debug("Harness compile-cache warm-up exited non-zero", { exit });
   } catch (err) {
-    debug("Harness compile-cache warm-up failed; image will boot uncached", {
+    log.debug("Harness compile-cache warm-up failed; image will boot uncached", {
       error: errorMessage(err),
     });
   }
@@ -434,7 +436,7 @@ export function createHarnessImageResolver(deps: {
       await warmCompileCache(builder);
       const image = await builder.snapshotFilesystem();
       await image.publish(tag);
-      debug("Harness snapshot image published", { tag });
+      log.debug("Harness snapshot image published", { tag });
       return image;
     } finally {
       await builder.terminate().catch(() => undefined);

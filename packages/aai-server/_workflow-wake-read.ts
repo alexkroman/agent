@@ -56,7 +56,6 @@
  */
 
 import { type ReservedDb, WORKFLOW_WAKE_TABLE } from "@alexkroman1/aai/runtime";
-import { debug } from "./_debug-log.ts";
 import {
   APP_DB_SCHEMA,
   type AppDatabases,
@@ -64,9 +63,12 @@ import {
   appDbIdentifier,
   parseAppDbMeta,
 } from "./app-database.ts";
+import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import { APP_DB_SECRET_PREFIX, type SqlExec } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+
+const log = createLogger("workflow.wake");
 
 /**
  * Advisory-lock namespace for the wake sweep — the first of the two-int key,
@@ -214,7 +216,7 @@ async function readOneHint(
       return { present: true, due: hint[0]?.wake_at != null };
     });
   } catch {
-    debug("Workflow wake hint unreadable", { slug });
+    log.debug("Workflow wake hint unreadable", { slug });
     return { present: false, due: false };
   }
 }

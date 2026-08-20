@@ -38,12 +38,16 @@
  *   direction for the reason above. It warns, loudly, with the arithmetic.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import {
   APP_DB_CONNECTION_LIMIT,
   MAX_ACTIVE_APP_DATABASES,
   MAX_PLATFORM_DB_CONNECTIONS,
 } from "./constants.ts";
+import { createLogger } from "./logger.ts";
 import type { SqlExec } from "./secret-store.ts";
+
+const log = createLogger("platform.db-capacity");
 
 /** `show` returns text, so the value arrives as a string however it is aliased. */
 const MAX_CONNECTIONS_SQL = "show max_connections";
@@ -138,17 +142,19 @@ export function announcePlatformDbCapacity(sql: SqlExec): void {
         `platform budget=${c.budgeted} (of which ${MAX_ACTIVE_APP_DATABASES} app ` +
         `databases x ${APP_DB_CONNECTION_LIMIT} = ${appTotal})`;
       if (c.headroom < 0) {
-        console.warn(
-          `Platform database budget OVERRUNS the instance by ${-c.headroom} connections: ` +
+        log.warn(
+          `budget OVERRUNS the instance by ${-c.headroom} connections: ` +
             `${arithmetic}. At peak this surfaces as every platform read failing at once ` +
             '("remaining connection slots are reserved"), not as degradation. Lower ' +
             "MAX_CONTAINERS or MAX_ACTIVE_APP_DATABASES, or provision a larger instance.",
         );
         return;
       }
-      console.info(`Platform database capacity ok — ${c.headroom} spare: ${arithmetic}`);
+      log.info(`capacity ok — ${c.headroom} spare: ${arithmetic}`);
     })
     .catch((err: unknown) => {
-      console.warn("Could not read the platform database's connection capacity:", err);
+      log.warn("could not read the platform database's connection capacity", {
+        error: errorMessage(err),
+      });
     });
 }

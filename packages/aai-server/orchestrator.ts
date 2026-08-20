@@ -43,6 +43,7 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import { createSemaphore } from "./_semaphore.ts";
+import { createAgentLogsHandler } from "./agent-logs.ts";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
 import type { AppDatabases } from "./app-database.ts";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "./app-middleware.ts";
@@ -367,6 +368,17 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     existingOwnerMw,
     zValidator("param", z.object({ key: SecretKeySchema })),
     handleSecretDelete,
+  );
+  // The agent's own buffered stdout/stderr. Owner-authenticated like the
+  // routes above — an agent's output is its author's, and nothing else — and
+  // unlike every other `/:slug/*` route it never BOOTS a sandbox (agent-logs.ts).
+  agents.get(
+    "/logs",
+    existingOwnerMw,
+    createAgentLogsHandler({
+      slots: opts.slots,
+      ...omitUndefined({ directory: opts.directory }),
+    }),
   );
   // Per-app database storage — same auth posture as the secret routes.
   agents.get("/storage", existingOwnerMw, handleStorageStatus);

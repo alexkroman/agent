@@ -47,7 +47,6 @@
  */
 
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,9 +54,10 @@ import { performance } from "node:perf_hooks";
 import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { debug } from "./_debug-log.ts";
 import { pollGuestHealth } from "./guest-readiness.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
+import { guestTokenFor } from "./guest-token.ts";
+import { createLogger } from "./logger.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
 import { SandboxUnavailableError } from "./sandbox-errors.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
@@ -74,6 +74,8 @@ import {
   startGuestLogging,
   warmFromGuest,
 } from "./warm-harness.ts";
+
+const log = createLogger("sandbox.subprocess");
 
 // ── Structural process types ─────────────────────────────────────────────────
 // Injectable for tests, exactly like ModalSpawnContext:
@@ -203,7 +205,7 @@ export async function spawnSubprocessWarm(
     await access(opts.harnessPath);
     const port = await getFreePort();
     const limits = parseSandboxLimitsFromEnv(process.env);
-    const token = randomBytes(32).toString("hex");
+    const token = guestTokenFor(opts.name);
 
     const proc = ctx.runGuestProcess({
       harnessPath: opts.harnessPath,
@@ -227,7 +229,7 @@ export async function spawnSubprocessWarm(
     try {
       const origin = `ws://127.0.0.1:${port}`;
       const ws = await dial(guestWsUrl(origin, GUEST_ROUTES.control), token);
-      debug("Subprocess sandbox spawned", {
+      log.debug("Subprocess sandbox spawned", {
         role,
         slug,
         port,
@@ -266,6 +268,8 @@ export async function spawnSubprocessAgentServer(
   opts: {
     harnessPath: string;
     slug: string;
+    /** The fleet-wide sandbox name — what the manage token is derived from. */
+    name: string;
     worker: WorkerSource;
     agentEnv: Record<string, string>;
     /** See BackendAgentSpawn.onSpawned — a kill for a guest that is not ready. */
@@ -290,7 +294,7 @@ export async function spawnSubprocessAgentServer(
 
     const port = await getFreePort();
     const limits = parseSandboxLimitsFromEnv(process.env);
-    const token = randomBytes(32).toString("hex");
+    const token = guestTokenFor(opts.name);
 
     // agentBootEnv carries AAI_GUEST_TOKEN/AAI_GUEST_PORT itself — the boot
     // convention is one builder, so they are not passed a second time here.
@@ -324,7 +328,7 @@ export async function spawnSubprocessAgentServer(
     try {
       const origin = `ws://127.0.0.1:${port}`;
       await pollGuestHealth(origin, proc, fetchFn);
-      debug("Subprocess agent server spawned", {
+      log.debug("Subprocess agent server spawned", {
         slug: opts.slug,
         port,
         ms: Math.round(performance.now() - t0),

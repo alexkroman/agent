@@ -12,6 +12,7 @@ import {
   type RealtimeClientLike,
   realtimeEndpoint,
 } from "./realtime-events.ts";
+import { captureLogs } from "./test-utils.ts";
 
 type ChangeHandler = (payload: {
   new?: Record<string, unknown> | null;
@@ -422,6 +423,8 @@ describe("workspace channels", () => {
  * SSE. The only trace was a `console.warn` per retry.
  */
 describe("subscription health", () => {
+  const logs = captureLogs();
+
   test("a channel that acks its join is healthy, and reports as one", () => {
     const { client, channels } = fakeClient();
     const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
@@ -433,8 +436,6 @@ describe("subscription health", () => {
 
   test("a channel that never joins is stalled once its budget lapses", () => {
     const { client, channels } = fakeClient();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const events = createRealtimePlatformEvents({ url: "https://x", key: "k", client });
     events.watchWorkspace("s", "p", vi.fn());
     const channel = channels[0] as FakeChannel;
@@ -442,8 +443,8 @@ describe("subscription health", () => {
     // Inside the budget a failure is ordinary — a deploy, a blip — and warns.
     channel.ack("CHANNEL_ERROR", new Error("invalid column for filter project"));
     expect(events.health().stalled).toEqual([]);
-    expect(warn).toHaveBeenCalledOnce();
-    expect(error).not.toHaveBeenCalled();
+    expect(logs.warns()).toHaveLength(1);
+    expect(logs.errors()).toEqual([]);
 
     vi.useFakeTimers();
     try {
@@ -454,9 +455,8 @@ describe("subscription health", () => {
       expect(events.health()).toEqual({ channels: 1, stalled: ["aai:workspace:s:p"] });
       // Escalated ONCE, however many times it retries — the point is to be
       // findable in a log, not to become the log.
-      expect(error).toHaveBeenCalledOnce();
-      expect(error.mock.calls[0]?.[0]).toContain("never joined");
-      expect(warn).toHaveBeenCalledOnce();
+      expect(logs.errors()).toEqual([expect.stringContaining("never joined")]);
+      expect(logs.warns()).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }

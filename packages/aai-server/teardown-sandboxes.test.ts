@@ -1,8 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { SHUTDOWN_GRACE_MS, shutdownGraceMs, teardownSandboxes } from "./teardown-sandboxes.ts";
+import { captureLogs } from "./test-utils.ts";
 
 const fakeSandbox = () => ({
   shutdown: vi.fn().mockResolvedValue(undefined),
@@ -10,10 +11,7 @@ const fakeSandbox = () => ({
 });
 
 describe("teardownSandboxes", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  });
+  const logs = captureLogs();
 
   // A replica going down is a redeploy from the guests' point of view: their
   // sessions dial the tunnel directly and never touch this process, so the
@@ -85,7 +83,7 @@ describe("teardownSandboxes", () => {
       teardownSandboxes({ slots: createSlotCache(), broker, graceMs: 0 }),
     ).resolves.toBeUndefined();
 
-    expect(console.warn).toHaveBeenCalled();
+    expect(logs.warns()).not.toHaveLength(0);
   });
 
   it("is a no-op with no slots or broker", async () => {

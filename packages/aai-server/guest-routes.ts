@@ -98,6 +98,17 @@ export const GUEST_ROUTES = {
   /** Agent-mode management surface (bearer-gated): session count + drain. */
   manageStatus: "/manage/status",
   manageDrain: "/manage/drain",
+  /**
+   * This guest's own captured stdout/stderr, by cursor
+   * (`?after=<seq>&limit=<n>`), bearer-gated like the rest of `/manage`.
+   *
+   * It is the GUEST that holds the ring, not the platform, and the reason is
+   * the same one behind `sandbox-directory.ts`: a resident sandbox belongs to
+   * one replica, and the others reach it by dialling the sandbox rather than
+   * proxying through its owner — so a host-side buffer would be readable from
+   * exactly one replica of N. See `aai-guest/harness-logs.ts`.
+   */
+  manageLogs: "/manage/logs",
 } as const;
 
 export type GuestRoute = (typeof GUEST_ROUTES)[keyof typeof GUEST_ROUTES];
@@ -249,6 +260,14 @@ export const GUEST_ROUTE_EXPOSURE = {
   },
   manageStatus: { via: "host-only" },
   manageDrain: { via: "host-only" },
+  // HOST-ONLY, though a user-facing pane reads it — because the credential
+  // that opens it is the platform's. `GET /:slug/logs` is the caller's door,
+  // authenticated by their own API key, and the platform dials this one with
+  // the per-sandbox bearer on their behalf. Same shape as `health`: a platform
+  // route about an agent, not a forward of the guest's route. Declaring it
+  // `proxied` would claim the tunnel accepts an unauthenticated read of every
+  // line the agent has printed.
+  manageLogs: { via: "host-only" },
 } satisfies Record<keyof typeof GUEST_ROUTES, GuestRouteExposure>;
 
 /**

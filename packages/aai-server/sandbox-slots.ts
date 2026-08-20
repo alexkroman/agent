@@ -12,8 +12,12 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import type { LogPage } from "@alexkroman1/aai/runtime";
 import { createKeyedLock, type KeyedLockOptions, withLock } from "./_keyed-lock.ts";
+import { createLogger } from "./logger.ts";
 import { type RetirableSandbox, retireSandbox } from "./sandbox-retire.ts";
+
+const log = createLogger("sandbox.slots");
 
 export type SlotSandbox = RetirableSandbox & {
   /**
@@ -22,6 +26,12 @@ export type SlotSandbox = RetirableSandbox & {
    * read as alive.
    */
   alive?: () => boolean;
+  /**
+   * This guest's buffered stdout/stderr (see `Sandbox.logs`). Optional for the
+   * same reason `alive` is — a stand-in that is not a real guest has none — and
+   * absent reads as "no logs", never as an error.
+   */
+  logs?: (opts?: { after?: number; limit?: number }) => Promise<LogPage>;
 };
 
 export type AgentSlot = {
@@ -90,7 +100,7 @@ export async function terminateSlot(slot: AgentSlot): Promise<void> {
   try {
     await sb.shutdown();
   } catch (err: unknown) {
-    console.warn("Failed to shut down sandbox", { slug: slot.slug, error: errorMessage(err) });
+    log.warn("failed to shut down sandbox", { slug: slot.slug, error: errorMessage(err) });
   }
 }
 
