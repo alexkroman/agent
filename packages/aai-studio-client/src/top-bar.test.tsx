@@ -11,6 +11,9 @@ import { PublishMenu, TopBar } from "./top-bar.tsx";
 
 const noop = (): void => undefined;
 
+/** Every pane label, in the order the segmented control renders them. */
+const PANE_LABELS = ["API", "UI", "Workflows", "Database", "Code", "Logs", "Secrets", "Settings"];
+
 const barProps = {
   project: "demo" as string | null,
   tab: "preview" as const,
@@ -48,14 +51,14 @@ describe("TopBar", () => {
     expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   });
 
-  // The first tab's LABEL and its id deliberately differ: `preview` is the
+  // The UI tab's LABEL and its id deliberately differ: `preview` is the
   // platform's word for the auto-deployed agent this pane frames, and "UI" is
   // what the pane offers a person.
   test.each([
     ["Code", "code"],
     ["Settings", "settings"],
-    ["UI", "preview"],
     ["API", "docs"],
+    ["UI", "preview"],
     ["Workflows", "workflows"],
     ["Database", "database"],
     ["Secrets", "secrets"],
@@ -64,6 +67,19 @@ describe("TopBar", () => {
     render(<TopBar {...barProps} onSelectTab={onSelectTab} />);
     fireEvent.click(button(label));
     expect(onSelectTab).toHaveBeenCalledWith(id);
+  });
+
+  // The switcher's order is a product decision with nothing else holding it:
+  // the panes are peers, so a reshuffle of TABS is invisible to every other
+  // assertion here. API leads UI because the contract comes before the client
+  // that exercises it.
+  test("the switcher runs API before UI, then the rest in order", () => {
+    render(<TopBar {...barProps} />);
+    const rendered = screen
+      .getAllByRole("button")
+      .map((el) => el.textContent ?? "")
+      .filter((label) => PANE_LABELS.includes(label));
+    expect(rendered).toEqual(PANE_LABELS);
   });
 
   test("no database means no Database tab — the pane is an opt-in", () => {

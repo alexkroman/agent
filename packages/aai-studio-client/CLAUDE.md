@@ -13,8 +13,8 @@ over HTTP/SSE (no code imports in either direction); aai-server serves
 the built artifact, resolved via `require.resolve` in
 `studio-static.ts` the same way aai-ui's `dist/default-client` is.
 Panes: `chat.tsx` (chat + composer), and the seven the top bar's
-segmented control switches between — `preview.tsx` (labelled **UI**),
-`docs.tsx` (**API**), `workflows.tsx`, `database.tsx`, `code-view.tsx`,
+segmented control switches between — `docs.tsx` (**API**), `preview.tsx`
+(labelled **UI**), `workflows.tsx`, `database.tsx`, `code-view.tsx`,
 `secrets.tsx`, `settings.tsx`. The six page-shaped ones share
 `pane-shell.tsx`; only the UI and Code panes have layouts of their own.
 
@@ -58,7 +58,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
     buttons with `aria-pressed`: arrow-key navigation and the group's
     accessible name then come from the markup, and the segmented look is
     entirely on the labels.
-- **The switcher runs deployed-agent-first, then workspace**: UI, API,
+- **The switcher runs deployed-agent-first, then workspace**: API, UI,
   Workflows, Database, Code, Secrets, Settings (`StudioTab` in `top-bar.tsx`
   is the one union; `project-view.tsx`'s `selectedTab` state is the only
   selection).
@@ -88,13 +88,17 @@ so every piece of per-project state resets on a switch with no effect to do it.
       selection.
     - The switcher's left borders index the VISIBLE list, or a missing pane
       leaves a seam where it used to be.
-  The first four are all about the agent that is RUNNING — talk to it, call
+  The first four are all about the agent that is RUNNING — call it, talk to
   it, watch what it is still doing, read what it stored — where Code, Secrets
-  and Settings are about the workspace and the project. API sits second
-  because it is the same question as UI asked by a caller rather than a
-  person, and Secrets sits before Settings because a key is what a WORKING
-  project needs where Settings ends in Delete project.
-  - **The first tab's id is `preview` and its label is "UI".** The id names a
+  and Settings are about the workspace and the project. API LEADS and UI sits
+  beside it: the two ask one question of a caller and of a person, so the
+  contract comes before the client that exercises it. Secrets sits before
+  Settings because a key is what a WORKING project needs where Settings ends
+  in Delete project. The order is a product decision nothing else here holds —
+  the panes are peers, so a reshuffle of `TABS` is invisible to every other
+  assertion in `top-bar.test.tsx`, which is why one test pins the rendered
+  sequence.
+  - **The UI tab's id is `preview` and its label is "UI".** The id names a
     platform concept the whole product spells that way (the auto-deployed
     PREVIEW agent, `previewSlug`, `previewVersion`, `previewStale`), so
     renaming the state to match a button would put a second word for one
