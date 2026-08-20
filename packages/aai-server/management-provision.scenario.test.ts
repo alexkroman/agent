@@ -33,20 +33,28 @@ import {
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
 } from "@alexkroman1/aai/runtime";
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { createPgAgentRows } from "./agent-store.ts";
 import {
   APP_DB_SCHEMA,
   type AppDbOpener,
   appDbIdentifier,
+  createAppDatabases,
   deprovisionAppDatabase,
   provisionAppDatabase,
 } from "./app-database.ts";
 import { appDbAdmin, managementDatabaseAdmin } from "./app-db-admin.ts";
 import { withDatabase } from "./app-db-url.ts";
+import { createMemoryBlobStorage } from "./blob-storage.ts";
+import { createBundleStore } from "./bundle-store.ts";
 import { startDevManagementApi } from "./dev-management-api.ts";
-import type { SqlExec } from "./secret-store.ts";
+import { createOrphanPreviewSweep } from "./orphan-previews.ts";
+import { appDbSecretName, createMemorySecretStore, type SqlExec } from "./secret-store.ts";
 import { createSupabaseManagementApi } from "./supabase-management.ts";
+import { ensurePlatformTables } from "./test-utils.ts";
+import { createPgWorkspaceStore } from "./workspace-store.ts";
 
 /** A ref that names no real project, exactly as the dev stand-in uses. */
 const REF = "localdevlocaldevloca";
@@ -62,6 +70,8 @@ describeWithPg("provisioning through the Management API channel", () => {
   let open: AppDbOpener;
   /** The real thing under test: an SDK client pointed at the stand-in. */
   let channel: ReturnType<typeof managementDatabaseAdmin>;
+  /** The bound manager the reap deprovisions through. */
+  let appDatabases: ReturnType<typeof createAppDatabases>;
 
   const databaseExists = async (): Promise<boolean> =>
     (await admin.query("select 1 from pg_database where datname = $1", [APP_DB])).length > 0;
@@ -78,9 +88,11 @@ describeWithPg("provisioning through the Management API channel", () => {
     channel = managementDatabaseAdmin(
       createSupabaseManagementApi({ ref: REF, token: TOKEN, baseUrl: standIn.url }),
     );
+    appDatabases = createAppDatabases({ url, sql, open, admin: channel });
     // A leftover from an interrupted run would make the create a no-op and the
     // whole suite pass vacuously.
     await deprovisionAppDatabase(sql, SLUG, channel);
+    await deprovisionAppDatabase(sql, `${SLUG}${PREVIEW_SLUG_SUFFIX}`, channel);
   });
 
   afterAll(async () => {
@@ -184,6 +196,87 @@ describeWithPg("provisioning through the Management API channel", () => {
     expect(await databaseExists()).toBe(true);
     await deprovisionAppDatabase(sql, SLUG, resolved);
     expect(await databaseExists()).toBe(false);
+  });
+
+  test("the orphan-preview reap drops a real database through this channel", async () => {
+    // What used to be a pg_cron body with a dblink drop, end to end: a real
+    // agents row, a real anti-join against `studio_workspaces`, and a real
+    // `drop database` leaving over HTTP. The pieces the SQL version could not
+    // reach — the app database on its own cluster, and the row deleted LAST —
+    // are the ones this asserts.
+    //
+    // In a THROWAWAY database, for the reason `pg-cron.scenario.test.ts` gives
+    // about the sweep bodies it executes: the candidate read is global by
+    // construction, so on the shared stack it would reap a developer's real
+    // previews and, in a full tier run, the rows another suite just seeded.
+    // Verified: this passed alone and failed inside `test:scenario` until the
+    // read was isolated.
+    const dbName = `aai_reap_test_${process.pid}_${APP_DB.slice(4, 12)}`;
+    await admin.query(`create database "${dbName}"`);
+    const scoped = createPostgresDb({ url: withDatabase(url, dbName), max: 2 });
+    const scopedSql: SqlExec = (query, params) => scoped.query(query, params);
+    try {
+      await ensurePlatformTables(scopedSql);
+      const secrets = createMemorySecretStore();
+      // The agents rows are the REAL Postgres ones — the candidate read is a
+      // query against `aai_platform.agents`, so a memory store would let the
+      // reap "succeed" against a row the sweep never saw.
+      const agents = createPgAgentRows(scopedSql);
+      const store = createBundleStore(createMemoryBlobStorage(), { secrets, agents });
+      const previewSlug = `${SLUG}${PREVIEW_SLUG_SUFFIX}`;
+      const previewDb = appDbIdentifier(previewSlug);
+      const aged = async (slug: string): Promise<void> => {
+        await agents.put({
+          slug,
+          credential_hashes: [],
+          worker_hash: "0".repeat(64),
+          client_files: {},
+        });
+        await scopedSql(
+          "update aai_platform.agents set updated_at = now() - interval '2 hours' where slug = $1",
+          [slug],
+        );
+      };
+
+      await provisionAppDatabase(sql, previewSlug, url, open, channel);
+      await secrets.put(
+        appDbSecretName(previewSlug),
+        JSON.stringify({ role: previewDb, password: "0".repeat(32), url }),
+      );
+      await aged(previewSlug);
+
+      // A second preview a workspace CLAIMS, through the same document shape the
+      // studio writes: the anti-join reads `preview_slug`, a stored generated
+      // column over `doc->>'previewSlug'`, and against a double-encoded doc that
+      // computes NULL for every row — which deleted previews in use, hourly.
+      const claimed = `claimed${PREVIEW_SLUG_SUFFIX}`;
+      await aged(claimed);
+      await createPgWorkspaceStore(scopedSql).put(
+        "reap-scope",
+        "claimer",
+        { files: {}, previewSlug: claimed },
+        null,
+      );
+
+      const sweep = createOrphanPreviewSweep({
+        // The REAL reserved connection: the leader lock is a transaction, and
+        // postgres.js refuses a bare `begin` on a pool ("UNSAFE_TRANSACTION").
+        adminDb: scoped,
+        env: { store, secrets, slugLock: (_slug, fn) => fn(), appDb: appDatabases },
+      });
+      // The unclaimed one only — a claimed preview is live, however aged.
+      expect(await sweep.sweepOnce()).toMatchObject({ swept: true, reaped: [previewSlug] });
+      expect(await agents.get(claimed)).not.toBeNull();
+
+      // The database is gone, and so is the row that named it — in that order, so
+      // a crash between them leaves a candidate the next pass still sees.
+      expect(await sql("select 1 from pg_database where datname = $1", [previewDb])).toEqual([]);
+      expect(await agents.get(previewSlug)).toBeNull();
+      expect(await secrets.get(appDbSecretName(previewSlug))).toBeNull();
+    } finally {
+      await scoped.close();
+      await admin.query(`drop database if exists "${dbName}" with (force)`);
+    }
   });
 
   test("the stand-in refuses a statement the platform never sends", async () => {

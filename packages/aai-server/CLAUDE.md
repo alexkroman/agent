@@ -133,23 +133,30 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `PlatformEvents.health()` reports it in `/health`'s BODY — never as a 503,
   since the causes are project-wide and every replica would leave rotation at
   once, turning a feature outage into a total one.
-- `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
-  orphaned `-preview` agents + their app database/role and Vault secrets,
-  unreferenced deploy blobs, runaway tenant queries, pg_cron's own run log),
-  installed idempotently at boot.
+- `orphan-previews.ts` — the reap for studio previews nothing references: a
+  leader-elected in-process pass (same shape as the wake sweep) that SELECTS aged
+  `*-preview` agents no workspace points at and hands each to
+  `deleteAgentResources`, so the reap and `DELETE /:slug` are one path.
 
-  **The orphan sweep drops its databases through `dblink`, because `DROP DATABASE`
-  cannot run in pg_cron's transaction** (`25001`). dblink runs it on a second
-  connection, so it is outside the caller's transaction — and it SURVIVES a
-  rollback, which is why the drops must be the LAST thing a job body does. Three
-  things it needs, each verified and each argued at its own site: a non-loopback
-  host (`AAI_DBLINK_HOST` — over loopback a `trust` rule means the password is
-  never used and dblink answers `2F003`), the credential from Vault
-  (`PLATFORM_DB_DSN_SECRET`, never the job text), and the extension in a schema
-  NOTHING has `USAGE` on (`aai_admin`) — dblink ships 39 `PUBLIC`-executable
-  functions and a tenant reaching any of them executes as the ADMIN. That
-  escalation was reproduced; revoking the overloads by name does not hold, the
-  schema is the only chokepoint that does.
+  It ran in pg_cron until per-app databases moved to the Management API; the
+  module doc carries what that bought (multi-cluster correctness, no leak path,
+  a crash that is retryable because the ROW goes last) and what it cost (a reap
+  needs a live replica, which the wake sweep already required).
+- `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
+  archived queue jobs, unreferenced deploy blobs, runaway tenant queries,
+  pg_cron's own run log), installed idempotently at boot.
+
+  **The orphan-preview reap is NOT one of them any more — see
+  `orphan-previews.ts`.** It deprovisioned in SQL, which meant `drop database`
+  through `dblink` (pg_cron wraps every body in a transaction, `25001`), and that
+  was the last second implementation of deprovisioning once create/drop moved to
+  the Management API. It was also the weaker one: primary-cluster only, so it
+  reclaimed nothing on a sharded fleet, and with no resolvable DSN it deleted the
+  row and LEAKED the database with a warning. It is now a leader-elected
+  in-process pass calling `deleteAgentResources` — the one delete path — and
+  `platformDbDsn`, `PLATFORM_DB_DSN_SECRET` and `AAI_DBLINK_HOST` went with it.
+  The `aai_admin` dblink extension stays installed (unused, and no `USAGE`
+  granted) so a rollback needs no migration.
 
   **Per-app maintenance is `cron.schedule_in_database` instead** — pg_cron 1.6.4,
   usable by Supabase's non-superuser `postgres`, and it really fires into a
@@ -300,10 +307,10 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   warning and continuing — which deleted the `app-db:<slug>` secret and the
   agents row, leaving the tenant schema and login role alive with their only
   credential record gone and nothing naming the slug (`slugs()` no longer lists
-  it; the orphan sweep matches `%-preview` only). The comment claimed "a later
-  retry can finish the job"; there was none. Throwing makes it true: nothing is
-  deleted, and the drops are `if exists` so a retry is a no-op on whatever the
-  first attempt managed
+  it; the orphan-preview reap matches `%-preview` only). The comment claimed
+  "a later retry can finish the job"; there was none. Throwing makes it true:
+  nothing is deleted, and the drops are `if exists` so a retry is a no-op on
+  whatever the first attempt managed
 - `secret-handler.ts` — secret management
 - `secret-store.ts` — `SecretStore` interface: Supabase Vault
   (`createVaultSecretStore`, over the `SUPABASE_DB_URL` Postgres

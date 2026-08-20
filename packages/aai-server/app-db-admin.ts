@@ -11,8 +11,8 @@
  *
  * - **Neither may run inside a transaction block** (`25001`). That is why the
  *   provisioning batch is split at all, why a multi-statement simple query is
- *   illegal for them, and why the orphan sweep has to reach for `dblink` — a
- *   pg_cron job body IS a transaction.
+ *   illegal for them, and why the orphan-preview reap had to leave pg_cron — a
+ *   job body IS a transaction (`orphan-previews.ts`).
  * - **Both are control-plane operations**, not application data: they change
  *   what the cluster contains. On Supabase the supported channel for that is the
  *   Management API, not a Postgres connection that happens to hold `CREATEDB`.
@@ -30,10 +30,11 @@
  * tenant databases in production from a dev machine — so that is a refusal too,
  * not a gap.
  *
- * **What this does NOT move is the orphan-preview sweep.** Its drops run inside
- * Postgres from a pg_cron body and go out through `dblink` (see `pg-cron.ts`); a
- * SQL job body cannot call an HTTPS API. That path is unchanged, and remains the
- * reason `PLATFORM_DB_DSN_SECRET` and `AAI_DBLINK_HOST` still exist.
+ * **Every deprovision goes through here, the orphan-preview reap included.** That
+ * reap used to drop databases in SQL from a pg_cron body, over `dblink`, which
+ * made it a second implementation of this — and a weaker one (primary cluster
+ * only, and it leaked with a warning when its DSN was unresolvable). It moved
+ * into the server with this channel: `orphan-previews.ts`.
  */
 
 import { createPostgresDb } from "@alexkroman1/aai/runtime";

@@ -57,6 +57,7 @@ import { GUEST_ROUTE_EXPOSURE, GUEST_ROUTES } from "./guest-routes.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
+import { startOrphanPreviewSweep } from "./orphan-previews.ts";
 import { createPhoneHandler, PHONE_ROUTE } from "./phone-handler.ts";
 import type { PlatformEvents } from "./platform-events.ts";
 import {
@@ -352,6 +353,19 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     ...omitUndefined({ adminDb: opts.adminDb }),
     ...omitUndefined({ isDraining: opts.isDraining }),
     ...omitUndefined({ extraAppDbClusters: opts.extraAppDbClusters }),
+  });
+
+  // Studio previews nothing references any more (orphan-previews.ts). Wired
+  // beside the wake sweep because it is the same shape — a leader-elected
+  // in-process pass — and because it reaps through `deleteAgentResources`, the
+  // one delete path this surface already owns. It ran in pg_cron until per-app
+  // databases moved to the Management API; that module's doc has the argument.
+  startOrphanPreviewSweep({
+    store: opts.store,
+    secrets: opts.secrets,
+    slugLock: opts.slugLock,
+    ...omitUndefined({ appDb: opts.appDb }),
+    ...omitUndefined({ adminDb: opts.adminDb }),
   });
 
   const agents = new Hono<HonoEnv>();

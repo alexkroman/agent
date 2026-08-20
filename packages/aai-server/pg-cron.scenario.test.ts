@@ -14,25 +14,29 @@
  * into a jsonb column from inside Postgres — an arrow operator, `-`,
  * `jsonb_set`, a predicate in a pg_cron body — needs a test against a real
  * database." Every sweep body does exactly that (`client_files` for the blob GC,
- * `doc->>'previewSlug'` via the generated `preview_slug` column for the
- * orphan-preview sweep), and not one had been EXECUTED by anything.
+ * `doc->>'previewSlug'` via the generated `preview_slug` column, now read by
+ * `orphan-previews.ts`), and not one had been EXECUTED by anything.
  *
  * This is the cheapest version that closes it: apply the migration to a
  * throwaway database, run every body once, and assert what two of them did.
  *
  * ## Why a throwaway database
  *
- * The bodies are GLOBAL by construction — the orphan-preview sweep deletes every
- * stale `-preview` agent no workspace claims, and the runaway sweep terminates
- * backends. Run against the shared stack they would delete a developer's real
- * preview agents. An isolated database makes execution safe AND makes the
- * seeded state the only state, so "it deleted the unclaimed one" is a real
- * assertion rather than a count that drifts with whatever else is in there.
+ * The bodies are GLOBAL by construction — the rate-limit and archive sweeps
+ * delete every expired row, and the runaway sweep terminates backends. Run
+ * against the shared stack they would touch a developer's real state. An
+ * isolated database makes execution safe AND makes the seeded state the only
+ * state, so "it deleted the expired one" is a real assertion rather than a count
+ * that drifts with whatever else is in there.
+ *
+ * The orphan-preview reap is here too, though it is no longer a cron body: its
+ * candidate read is the same `preview_slug` anti-join those bodies had, and it is
+ * the one that had actually gone wrong (see the spec).
  *
  * `supabase_vault` is created here explicitly, because NO migration creates it
- * (Supabase pre-installs it) and the orphan-preview sweep returns early without
- * it — `to_regclass('vault.secrets') is null`. Testing that early return is
- * testing nothing.
+ * (Supabase pre-installs it) and the blob GC returns early without it —
+ * `to_regclass('vault.secrets') is null`, since its Storage key comes from
+ * Vault. Testing that early return is testing nothing.
  *
  * pg_cron itself is single-database (pinned to `cron.database_name`, i.e.
  * `postgres`), so the SCHEDULING half runs against the main database under
@@ -43,9 +47,21 @@ import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
+import { createOrphanPreviewSweep } from "./orphan-previews.ts";
 import { platformCronJobs } from "./pg-cron.ts";
 import type { SqlExec } from "./secret-store.ts";
-import { platformMigrationSql } from "./test-utils.ts";
+import { createMemorySecretStore } from "./secret-store.ts";
+import { createTestStore, fakeAppDatabases, platformMigrationSql } from "./test-utils.ts";
+
+/** The reap's collaborators, none of which this spec exercises. */
+function fakeReapEnv() {
+  return {
+    store: createTestStore(),
+    secrets: createMemorySecretStore(),
+    slugLock: <T>(_slug: string, fn: () => Promise<T>) => fn(),
+    appDb: fakeAppDatabases(),
+  };
+}
 
 /** Every sweep, including the blob GC — which needs a storage config to exist. */
 const JOBS = platformCronJobs({ storage: { url: "https://probe.test", bucket: "blobs" } });
@@ -86,7 +102,7 @@ describeWithStack("the pg_cron sweep bodies", () => {
     url.pathname = `/${dbName}`;
     db = createPostgresDb({ url: url.toString(), max: 2 });
     sql = (query, params) => db.query(query, params);
-    // Vault first: the orphan-preview sweep's own guard returns early without it.
+    // Vault first: the blob GC's own guard returns early without it.
     await sql("create extension if not exists supabase_vault");
     await sql(platformMigrationSql().sql);
   });
@@ -131,12 +147,18 @@ describeWithStack("the pg_cron sweep bodies", () => {
     },
   );
 
-  test("the orphan-preview sweep deletes an UNCLAIMED preview and spares a claimed one", async () => {
+  test("the orphan-preview reap picks the UNCLAIMED preview and spares a claimed one", async () => {
     // The behavioural half, and the one that has actually gone wrong: the guard is
     // `not exists (select 1 from studio_workspaces w where w.preview_slug = a.slug)`,
     // and `preview_slug` is generated from `doc->>'previewSlug'`. On rows written
     // double-encoded that read NULL out of a jsonb *string*, so the guard matched
     // nothing and the sweep deleted LIVE previews on the hour.
+    //
+    // The reap is no longer a cron body (`orphan-previews.ts`) — this executes its
+    // CANDIDATE READ against a real database, which is the half that predicate
+    // lives in. The reap itself is stubbed: what it does with a slug is
+    // `deleteAgentResources`, covered end to end in
+    // `management-provision.scenario.test.ts`.
     const stale = "orphan-x1-preview";
     const claimed = "orphan-x2-preview";
     for (const slug of [stale, claimed]) {
@@ -155,12 +177,19 @@ describeWithStack("the pg_cron sweep bodies", () => {
       [JSON.stringify({ files: {}, previewSlug: claimed })],
     );
 
-    const sweep = JOBS.find((j) => j.name === "aai-sweep-orphan-previews");
-    expect(sweep).toBeDefined();
-    await sql(sweep?.command ?? "");
-
+    const reaped: string[] = [];
+    const sweep = createOrphanPreviewSweep({
+      adminDb: db,
+      env: fakeReapEnv(),
+      reap: async (slug) => {
+        reaped.push(slug);
+      },
+    });
+    expect(await sweep.sweepOnce()).toMatchObject({ swept: true });
+    expect(reaped).toEqual([stale]);
+    // And nothing was deleted by the read itself — the row is the reap's last act.
     const rows = await sql("select slug from aai_platform.agents where slug like 'orphan-%'");
-    expect(rows.map((r) => String(r.slug))).toEqual([claimed]);
+    expect(rows.map((r) => String(r.slug)).sort()).toEqual([stale, claimed].sort());
   });
 
   test("the rate-limit sweep deletes expired windows and keeps live ones", async () => {

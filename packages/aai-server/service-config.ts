@@ -24,7 +24,7 @@ import { createLogger } from "./logger.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
-import { appDbPoolerUrl, platformDbDsn, platformPoolerUrl } from "./platform-connection-config.ts";
+import { appDbPoolerUrl, platformPoolerUrl } from "./platform-connection-config.ts";
 import { announcePlatformDbCapacity } from "./platform-db-capacity.ts";
 import {
   createMemoryPlatformEvents,
@@ -47,7 +47,6 @@ import { createSlotCache } from "./sandbox-slots.ts";
 import {
   createMemorySecretStore,
   createVaultSecretStore,
-  PLATFORM_DB_DSN_SECRET,
   PLATFORM_STORAGE_KEY_SECRET,
   type SecretStore,
   type SqlExec,
@@ -146,27 +145,9 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
   const key = env.SUPABASE_SERVICE_ROLE_KEY;
   const storage = url && bucket && key ? { url, bucket } : undefined;
 
-  // The orphan sweep's deprovision is `drop database`, which pg_cron cannot run
-  // in its transaction, so it goes out through dblink — see PLATFORM_DB_DSN_SECRET.
-  // Announced when it cannot be built: without it the sweep still runs and still
-  // deletes agents rows, it just reclaims no databases, and that is invisible.
-  const dbUrl = env.SUPABASE_DB_URL;
-  const dsn = dbUrl ? platformDbDsn(dbUrl, env.AAI_DBLINK_HOST) : { reason: "no SUPABASE_DB_URL" };
-  if ("reason" in dsn) {
-    log.warn(
-      `orphan-preview sweep cannot deprovision app databases: ${dsn.reason} ` +
-        "Agents rows and Vault secrets will still be swept; the databases will be left behind.",
-    );
-  }
-
   const bootstrap = async (): Promise<void> => {
     const vault = createVaultSecretStore(sql);
     if (storage && key) await vault.put(PLATFORM_STORAGE_KEY_SECRET, key);
-    // Re-written every boot, like the Storage key, so a rotated admin password
-    // reaches the sweep with the next deploy.
-    if ("dsn" in dsn) await vault.put(PLATFORM_DB_DSN_SECRET, dsn.dsn);
-    // No flag for the DSN: the sweep body reads it from Vault at run time, so a
-    // boot-time boolean would be a second source of truth for the same fact.
     await schedulePlatformSweeps(sql, platformCronJobs({ ...omitUndefined({ storage }) }));
   };
   bootstrap().catch((err: unknown) => {
