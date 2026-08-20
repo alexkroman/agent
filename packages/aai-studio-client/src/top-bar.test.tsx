@@ -12,7 +12,7 @@ import { PublishMenu, TopBar } from "./top-bar.tsx";
 const noop = (): void => undefined;
 
 /** Every pane label, in the order the segmented control renders them. */
-const PANE_LABELS = ["API", "UI", "Workflows", "Database", "Code", "Logs", "Secrets", "Settings"];
+const PANE_LABELS = ["UI", "API", "Workflows", "Database", "Code", "Logs", "Secrets", "Settings"];
 
 const barProps = {
   project: "demo" as string | null,
@@ -57,8 +57,8 @@ describe("TopBar", () => {
   test.each([
     ["Code", "code"],
     ["Settings", "settings"],
-    ["API", "docs"],
     ["UI", "preview"],
+    ["API", "docs"],
     ["Workflows", "workflows"],
     ["Database", "database"],
     ["Secrets", "secrets"],
@@ -71,9 +71,9 @@ describe("TopBar", () => {
 
   // The switcher's order is a product decision with nothing else holding it:
   // the panes are peers, so a reshuffle of TABS is invisible to every other
-  // assertion here. API leads UI because the contract comes before the client
-  // that exercises it.
-  test("the switcher runs API before UI, then the rest in order", () => {
+  // assertion here. UI leads API because the client someone can actually use
+  // comes before the contract it exercises.
+  test("the switcher runs UI before API, then the rest in order", () => {
     render(<TopBar {...barProps} />);
     const rendered = screen
       .getAllByRole("button")
