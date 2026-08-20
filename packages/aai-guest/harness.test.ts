@@ -18,7 +18,7 @@ import {
   lazyRuntime,
   loadBundle,
 } from "./harness-bundle.ts";
-import { rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";
+import { hostRequest, rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";
 import type { AgentDef, JsonRpcMessage } from "./harness-types.ts";
 import { executeTool, runCode } from "./trial.ts";
 
@@ -413,6 +413,37 @@ describe("control-channel dispatch", () => {
       expect(last.error?.code).toBe(-32_603);
       expect(last.error?.message).toContain("escapes the workspace");
     });
+  });
+
+  // `dispatchMessage` routes on the SHAPE of the frame, and the two branches
+  // below are the ones a request-shaped test cannot reach: a frame with an `id`
+  // and no `method` is an answer to something the guest asked, and a frame with
+  // a `method` and no `id` is a notification. Getting either wrong sends a
+  // response into the request handler, where it answers -32601 to the host and
+  // strands the promise nobody ever settles.
+  test("a frame with an id and no method settles the host request it answers", async () => {
+    const pending = hostRequest("studio/sync-workspace", {}, 5000);
+    const asked = sent.at(-1) as { id: number };
+
+    dispatchMessage(
+      { jsonrpc: "2.0", id: asked.id, result: { ok: true } } as JsonRpcMessage,
+      makeState(),
+    );
+
+    await expect(pending).resolves.toEqual({ ok: true });
+  });
+
+  test("a frame with a method and no id is a notification, not a request", () => {
+    const before = sent.length;
+
+    dispatchMessage(
+      { jsonrpc: "2.0", method: "not-a-real-notification" } as JsonRpcMessage,
+      makeState(),
+    );
+
+    // An unknown NOTIFICATION is dropped in silence — answering it would be
+    // answering a frame that carries no id to answer.
+    expect(sent).toHaveLength(before);
   });
 
   test("shutdown notification exits the process", () => {

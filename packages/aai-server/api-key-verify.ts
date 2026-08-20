@@ -40,6 +40,9 @@
 import { hash } from "node:crypto";
 import { createSingleFlight } from "./_memo.ts";
 import { TtlCache } from "./_ttl-cache.ts";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("auth");
 
 /**
  * Answers "did AssemblyAI issue this key". Resolves false only on a definite
@@ -148,8 +151,8 @@ export function createApiKeyVerifierFromEnv(
   opts: { localDev: boolean },
 ): ApiKeyVerifier | undefined {
   if (env.AAI_VERIFY_API_KEYS === "0") {
-    console.warn(
-      "[auth] AAI_VERIFY_API_KEYS=0 — raw API keys are NOT verified; any bearer string is accepted",
+    log.warn(
+      "AAI_VERIFY_API_KEYS=0 — raw API keys are NOT verified; any bearer string is accepted",
     );
     return;
   }

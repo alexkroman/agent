@@ -28,9 +28,12 @@ import { TtlCache } from "./_ttl-cache.ts";
 import type { AgentRecord, AgentRows } from "./agent-store.ts";
 import type { BlobStorage } from "./blob-storage.ts";
 import { MAX_ENV_SIZE } from "./constants.ts";
+import { createLogger } from "./logger.ts";
 import { EnvSchema } from "./schemas.ts";
 import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+
+const log = createLogger("store.bundle");
 
 export type { BundleStore } from "./store-types.ts";
 
@@ -204,9 +207,11 @@ export function createBundleStore(
   function retryBlobOp<T>(verb: string, key: string, op: () => Promise<T>): Promise<T> {
     return retryOnTransient(op, {
       onRetry: (attempt, attempts, err) => {
-        console.warn(
-          `Transient storage error ${verb} ${key} (attempt ${attempt}/${attempts}): ${errorMessage(err)}`,
-        );
+        log.warn(`transient storage error ${verb} ${key}`, {
+          attempt,
+          attempts,
+          error: errorMessage(err),
+        });
       },
     });
   }

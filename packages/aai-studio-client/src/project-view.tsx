@@ -21,6 +21,7 @@ import { ChatPanel } from "./chat.tsx";
 import { DatabasePane } from "./database.tsx";
 import { DocsPane } from "./docs.tsx";
 import { bufferFor, useFileDrafts } from "./file-drafts.ts";
+import { LogsView } from "./logs-view.tsx";
 import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { SecretsPane } from "./secrets.tsx";
@@ -377,6 +378,13 @@ export function ProjectView(props: ProjectViewProps) {
               }}
             />
           </Suspense>
+        )}
+        {tab === "logs" && (
+          <LogsView
+            bearer={bearer}
+            previewSlug={workspace.data?.previewSlug}
+            deployedSlug={deployedSlug}
+          />
         )}
         {tab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
         {tab === "settings" && (

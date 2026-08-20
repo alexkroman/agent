@@ -29,7 +29,10 @@ import { errorMessage } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
 
 import { envMs } from "./constants.ts";
+import { createLogger } from "./logger.ts";
 import { retireSlot, type SlotCache } from "./sandbox-slots.ts";
+
+const log = createLogger("sandbox.teardown");
 
 /**
  * How long to keep serving after `draining` flips, before tearing anything
@@ -103,7 +106,7 @@ export async function teardownSandboxes(targets: TeardownTargets): Promise<void>
 
   for (const result of await Promise.allSettled(work)) {
     if (result.status === "rejected") {
-      console.warn("Sandbox teardown failed:", errorMessage(result.reason));
+      log.warn("teardown failed", { error: errorMessage(result.reason) });
     }
   }
 }

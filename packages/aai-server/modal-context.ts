@@ -26,8 +26,8 @@ import {
   Probe,
   type SandboxCreateParams,
 } from "modal";
-import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync, memoAsync } from "./_memo.ts";
+import { createLogger } from "./logger.ts";
 import { createHarnessImageResolver } from "./modal-harness-image.ts";
 import {
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
@@ -36,6 +36,8 @@ import {
 } from "./modal-sandbox-env.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
 import { type SandboxRole, sandboxTags } from "./sandbox-role.ts";
+
+const log = createLogger("modal");
 
 // ── Structural Modal types ───────────────────────────────────────────────────
 // Minimal shapes of the Modal SDK objects we touch. Structural rather than the
@@ -293,7 +295,7 @@ export async function resolveSpawnImage(opts: {
   const { imageTag, env = process.env } = opts;
   if (!imageTag) return await opts.current();
   if (env.SANDBOX_IGNORE_IMAGE_PINS === "1") {
-    console.warn("SANDBOX_IGNORE_IMAGE_PINS=1: ignoring pinned harness image", { imageTag });
+    log.warn("SANDBOX_IGNORE_IMAGE_PINS=1: ignoring pinned harness image", { imageTag });
     return await opts.current();
   }
   return await opts.fromName(imageTag).catch((err: unknown) => {
@@ -390,9 +392,9 @@ export function prewarmModal(harnessPath?: string): void {
     if (!harnessPath) return;
     const started = Date.now();
     await ctx.prepareGuestImage(await harnessCode(harnessPath));
-    debug("Guest harness image ready", { ms: Date.now() - started });
+    log.debug("Guest harness image ready", { ms: Date.now() - started });
   })().catch((err: unknown) => {
-    console.warn(`Modal prewarm failed: ${errorMessage(err)}`);
+    log.warn("prewarm failed", { error: errorMessage(err) });
   });
 }
 

@@ -13,7 +13,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { debug } from "./_debug-log.ts";
+import { createLogger } from "./logger.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import type { Sandbox } from "./sandbox.ts";
 import {
@@ -29,6 +29,8 @@ import {
   terminateSlot,
   withSlugLock,
 } from "./sandbox-slots.ts";
+
+const log = createLogger("sandbox.invalidate");
 
 /**
  * THE mover of resident sandboxes on mutations. The agents row's change
@@ -79,11 +81,11 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
           // Row gone: a resident for a deleted agent always terminates —
           // never compared against the slot's stamp, which a slot built
           // before the stamp landed may not carry.
-          console.info(`Resident sandbox's agent deleted (${cause}); terminating`, { slug });
+          log.info(`resident sandbox's agent deleted (${cause}); terminating`, { slug });
           await terminateSlot(slot);
           deleteSlot(opts.slots, slug);
         } else if (version !== slot.version) {
-          console.info(`Resident sandbox superseded (${cause}); booting replacement`, {
+          log.info(`resident sandbox superseded (${cause}); booting replacement`, {
             slug,
             version,
           });
@@ -92,12 +94,12 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
       } catch (err) {
         // An unreadable version must never take down a healthy sandbox; the
         // next change event (or a redeploy) retries.
-        console.warn(`Invalidation (${cause}) failed for ${slug}: ${errorMessage(err)}`);
+        log.warn(`invalidation (${cause}) failed`, { slug, error: errorMessage(err) });
       }
     }).catch((err: unknown) => {
       // Only reachable from the lock acquisition itself — the body above
       // catches its own. Logged rather than rethrown: see the doc comment.
-      console.warn(`Invalidation (${cause}) could not lock ${slug}: ${errorMessage(err)}`);
+      log.warn(`invalidation (${cause}) could not lock`, { slug, error: errorMessage(err) });
     });
 
   return events.watchAgents(
@@ -125,7 +127,7 @@ export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSand
       // (a deleted agent drops its slot).
       const slugs = [...opts.slots.values()].map((slot) => slot.slug);
       if (slugs.length === 0) return;
-      debug("Agents stream (re)joined; reconciling residents", { count: slugs.length });
+      log.debug("Agents stream (re)joined; reconciling residents", { count: slugs.length });
       // Concurrent: each takes its own slug's lock, and one slug's slow
       // handover must not hold up another slug's delete.
       return Promise.all(slugs.map((slug) => reconcileSlug(slug, "stream rejoin")));
@@ -172,7 +174,7 @@ async function handoverSlot(
     // calls for nothing — every surviving replica gets the same event and does
     // the handover properly.
     if (err instanceof DrainingError) {
-      debug("Draining; leaving the superseded resident to the surviving replicas", { slug });
+      log.debug("Draining; leaving the superseded resident to the surviving replicas", { slug });
       return;
     }
     throw err;
@@ -180,7 +182,7 @@ async function handoverSlot(
   try {
     await replacement.sessionUrl();
   } catch (err) {
-    console.error("Replacement sandbox failed to boot; retiring old resident", {
+    log.error("replacement sandbox failed to boot; retiring old resident", {
       slug,
       error: errorMessage(err),
     });

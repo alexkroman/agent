@@ -7,7 +7,7 @@
  * numbers are the only actionable part of the warning.
  */
 
-import { describe, expect, type MockInstance, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   APP_DB_CONNECTION_LIMIT,
   MAX_ACTIVE_APP_DATABASES,
@@ -19,6 +19,7 @@ import {
   readPlatformDbCapacity,
 } from "./platform-db-capacity.ts";
 import type { SqlExec } from "./secret-store.ts";
+import { captureLogs } from "./test-utils.ts";
 
 /**
  * A `SqlExec` that answers the two reads by SHAPE rather than by call order.
@@ -37,13 +38,13 @@ function fakeSql(maxConnections: unknown, inUse: unknown): SqlExec {
  * microtasks later — `vi.waitFor` rather than a fixed number of yields, which is
  * a count that goes stale the moment the read gains an await.
  */
-const logged = (spy: MockInstance): Promise<void> =>
+const logged = (read: () => readonly unknown[]): Promise<void> =>
   vi.waitFor(() => {
     // A throw is how `vi.waitFor` is told to retry. Deliberately not an
     // `expect` — biome's `noMisplacedAssertion` rejects one outside a test
     // body, and it is right to: an assertion in a helper reports against
     // whichever test happens to await it.
-    if (spy.mock.calls.length === 0) throw new Error("nothing logged yet");
+    if (read().length === 0) throw new Error("nothing logged yet");
   });
 
 describe("platformDbBudget", () => {
@@ -131,20 +132,19 @@ describe("readPlatformDbCapacity", () => {
 });
 
 describe("announcePlatformDbCapacity", () => {
-  test("warns with the arithmetic when the budget overruns the instance", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+  const logs = captureLogs();
 
+  test("warns with the arithmetic when the budget overruns the instance", async () => {
     // A reading that really overruns: the budget plus this much other load is
     // past 60. Deliberately NOT the (60, 17) production reading this used to
     // use — that one FITS now (see `platformDbBudget` above), and a warning
     // asserted against a fitting reading is how the double count stayed green.
     const inUse = 60 - platformDbBudget() + 5;
     announcePlatformDbCapacity(fakeSql(60, inUse));
-    await logged(warn);
+    await logged(logs.warns);
 
-    expect(info).not.toHaveBeenCalled();
-    const message = String(warn.mock.calls[0]?.[0]);
+    expect(logs.infos()).toEqual([]);
+    const message = String(logs.warns()[0]);
     expect(message).toContain("OVERRUNS");
     // By how much, and out of what — a warning without the numbers is not
     // actionable, and the overrun is the only number an operator can act on.
@@ -155,25 +155,21 @@ describe("announcePlatformDbCapacity", () => {
   });
 
   test("reports the spare capacity when the budget fits", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
-
     announcePlatformDbCapacity(fakeSql(500, 20));
-    await logged(info);
+    await logged(logs.infos);
 
-    expect(warn).not.toHaveBeenCalled();
-    expect(String(info.mock.calls[0]?.[0])).toContain(`${500 - 20 - platformDbBudget()} spare`);
+    expect(logs.warns()).toEqual([]);
+    expect(String(logs.infos()[0])).toContain(`${500 - 20 - platformDbBudget()} spare`);
   });
 
   test("a failed reading warns instead of rejecting into the boot path", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const failing: SqlExec = () => Promise.reject(new Error("connection refused"));
 
     // Fire-and-forget: the contract is that it returns void and never throws,
     // because boot must not be able to fail on a projection.
     expect(announcePlatformDbCapacity(failing)).toBeUndefined();
-    await logged(warn);
+    await logged(logs.warns);
 
-    expect(String(warn.mock.calls[0]?.[0])).toContain("Could not read");
+    expect(String(logs.warns()[0])).toContain("could not read");
   });
 });

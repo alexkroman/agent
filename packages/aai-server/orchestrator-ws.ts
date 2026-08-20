@@ -23,11 +23,15 @@
  * bundles. Host mode remains an `aai dev` feature.)
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import { requestPath, requestQuery } from "@alexkroman1/aai/internal";
 import { answerUpgrade } from "./_upgrade-reply.ts";
+import { createLogger } from "./logger.ts";
 import { brokerSessionUrl } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
+
+const log = createLogger("http.ws");
 
 /**
  * The upgrade path grammar: `/<slug>/websocket`.
@@ -168,7 +172,7 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
       });
 
       void handleUpgradeRequest(req, socket).catch((err: unknown) => {
-        console.error("WebSocket upgrade error:", err);
+        log.error("upgrade error", { error: errorMessage(err) });
         answerUpgrade(socket, "500 Internal Server Error", "internal error\n");
       });
     });

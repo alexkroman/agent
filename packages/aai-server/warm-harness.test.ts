@@ -11,6 +11,7 @@ import net, { type AddressInfo } from "node:net";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import { forgetObservedPublicOrigin, rememberPublicOrigin } from "./public-origin.ts";
+import { captureLogs } from "./test-utils.ts";
 import { agentBootEnv, dialGuest, drainProcStream } from "./warm-harness.ts";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
@@ -24,18 +25,16 @@ function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
 }
 
 describe("drainProcStream", () => {
+  const logs = captureLogs();
   it("logs guest output under the label and skips blank chunks", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await drainProcStream(streamOf(["boom at line 3\n", "   \n"]), "[container:x] stderr");
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith("[container:x] stderr: boom at line 3");
+    expect(logs.warns()).toEqual(["guest [container:x] stderr: boom at line 3"]);
   });
 
   it("stops logging past the byte cap but keeps draining to stream end", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const big = "x".repeat(64 * 1024); // one chunk exhausts the cap
     await expect(drainProcStream(streamOf([big, "after the cap"]), "[l]")).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalledTimes(1); // the capped chunk only
+    expect(logs.warns()).toHaveLength(1); // the capped chunk only
   });
 
   it("swallows a stream that errors mid-read", async () => {

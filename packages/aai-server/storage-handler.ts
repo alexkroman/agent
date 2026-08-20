@@ -17,8 +17,14 @@
  * per-slug surface.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
-import { type AppDatabases, type AppDbUsage, parseAppDbMeta } from "./app-database.ts";
+import {
+  type AppDatabases,
+  type AppDbUsage,
+  parseAppDbMeta,
+  reconcileSessionGrants,
+} from "./app-database.ts";
 import {
   type AppTable,
   type AppTablePage,
@@ -27,8 +33,11 @@ import {
   readAppTable,
 } from "./app-db-browse.ts";
 import type { AppContext } from "./context.ts";
+import { createLogger } from "./logger.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import { appDbSecretName, type SecretStore, type SqlExec } from "./secret-store.ts";
+
+const log = createLogger("storage");
 
 /** What the storage core needs from the server bindings. */
 export type StorageEnv = {
@@ -64,7 +73,7 @@ export async function storageUsage(env: StorageEnv, slug: string): Promise<AppDb
   // cluster the META locates, which is the same rule `deprovision` states — a
   // recomputed placement points at a cluster that never hosted this app.
   return appDb.usage(slug, meta).catch((err: unknown) => {
-    console.warn("App database usage read failed", { slug, error: String(err) });
+    log.warn("app database usage read failed", { slug, error: String(err) });
     return null;
   });
 }
@@ -136,12 +145,25 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
   return env.slugLock(slug, async () => {
-    if ((await env.secrets.get(appDbSecretName(slug))) !== null) {
+    const existing = parseAppDbMeta(await env.secrets.get(appDbSecretName(slug)));
+    if (existing) {
+      // Already provisioned, so this is a no-op for the CREDENTIAL — but it is
+      // the one place an existing app database is touched without rotating it,
+      // which makes it the heal for a database provisioned before the session
+      // event log became append-only (`reconcileSessionGrants`). Best-effort:
+      // enabling storage must not fail because a grant could not be reconciled.
+      // `try`, not `.catch`: a stubbed-out or misconfigured opener can throw
+      // SYNCHRONOUSLY, which no rejection handler on the returned promise sees.
+      try {
+        await appDb.withAppDb(existing, (sql) => reconcileSessionGrants(sql, slug));
+      } catch (err) {
+        log.warn("session-table grants not reconciled", { slug, error: errorMessage(err) });
+      }
       return { enabled: true as const };
     }
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
-    console.info("Storage enabled", { slug, role: meta.role });
+    log.info("enabled", { slug, role: meta.role });
     return { enabled: true as const };
   });
 }
@@ -158,7 +180,7 @@ export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled
     const meta = parseAppDbMeta(await env.secrets.get(appDbSecretName(slug)));
     await appDb.deprovision(slug, meta);
     await env.secrets.delete(appDbSecretName(slug));
-    console.info("Storage disabled", { slug });
+    log.info("disabled", { slug });
     return { enabled: false as const };
   });
 }

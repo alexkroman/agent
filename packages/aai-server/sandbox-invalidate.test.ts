@@ -9,13 +9,13 @@
  * — the same cut the source made.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { watchAgentInvalidation } from "./sandbox-invalidate.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestStore } from "./test-utils.ts";
+import { captureLogs, createTestStore } from "./test-utils.ts";
 
 const { mockSpawnAgentServer } = vi.hoisted(() => {
   const mockSpawnAgentServer = vi.fn().mockResolvedValue({
@@ -104,11 +104,7 @@ async function seedAgent(slug: string) {
 }
 
 describe("agents-row change stream drives sandbox invalidation", () => {
-  beforeEach(() => {
-    vi.spyOn(console, "info").mockImplementation(() => undefined);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-  });
-
+  const logs = captureLogs();
   it("reuses the resident sandbox while nothing changed", async () => {
     const deps = await seedAgent("stable");
     const first = await resolveSandbox("stable", deps);
@@ -361,13 +357,12 @@ describe("agents-row change stream drives sandbox invalidation", () => {
   it("an unreadable version store never takes down a healthy sandbox", async () => {
     const deps = await seedAgent("db-blip");
     const first = await resolveSandbox("db-blip", deps);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     deps.store.getAgentVersion = () => Promise.reject(new Error("db down"));
 
     await deps.redeploy();
 
     // The handler logged and left the resident alone; sessions continue.
-    expect(warn).toHaveBeenCalled();
+    expect(logs.warns()).not.toHaveLength(0);
     await expect(resolveSandbox("db-blip", deps)).resolves.toBe(first);
     await first?.shutdown();
     deps.unwatch();

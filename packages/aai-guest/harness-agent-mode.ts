@@ -41,6 +41,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { verifyBearer } from "./harness-auth.ts";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { bundleSourceOf, readVerifiedBundle } from "./harness-bundle-source.ts";
+import { guestLogBuffer, parseLogQuery } from "./harness-logs.ts";
 import { guestSdkVersion } from "./harness-sdk-version.ts";
 import { AGENT_IDLE_EXIT_MS, AGENT_IDLE_POLL_MS, GUEST_CONTRACT_VERSION } from "./limits.ts";
 
@@ -111,6 +112,7 @@ async function readAgentEnvFile(envPath: string | undefined): Promise<Record<str
 /** Paths of the token-gated management surface. */
 export const MANAGE_STATUS_PATH = "/manage/status";
 export const MANAGE_DRAIN_PATH = "/manage/drain";
+export const MANAGE_LOGS_PATH = "/manage/logs";
 
 export type ManageDeps = {
   /** The per-sandbox bearer (AAI_GUEST_TOKEN) gating this surface. */
@@ -172,6 +174,14 @@ export function createManageHandler(
     if (method === "POST" && url === MANAGE_DRAIN_PATH) {
       deps.startDrain(drainDeadlineMs(req));
       sendJson(res, 200, { ok: true, draining: true });
+      return true;
+    }
+    // This guest's own stdout/stderr, by cursor. Served from here rather than
+    // from the host because a buffer in host memory is readable on one replica
+    // only — see harness-logs.ts.
+    if (method === "GET" && url === MANAGE_LOGS_PATH) {
+      const { after, limit } = parseLogQuery(requestQuery(req.url));
+      sendJson(res, 200, guestLogBuffer().read(after, limit));
       return true;
     }
     sendJson(res, 404, { error: "not found" });

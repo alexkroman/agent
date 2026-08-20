@@ -10,10 +10,12 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { debug } from "./_debug-log.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
+import { createLogger } from "./logger.ts";
 import { guestOrigin, type ModalSpawnContext, modalContext } from "./modal-context.ts";
 import { agentSandboxName, type SandboxDirectory } from "./sandbox-directory.ts";
+
+const log = createLogger("modal.directory");
 
 /**
  * The Modal-backed {@link SandboxDirectory}: ask Modal whether a RUNNING
@@ -39,7 +41,7 @@ export function createModalSandboxDirectory(ctx?: ModalSpawnContext): SandboxDir
         const origin = guestOrigin(await sb.tunnels());
         return { sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session), guestOrigin: origin };
       } catch (err) {
-        debug("Sandbox directory lookup failed", { name, error: errorMessage(err) });
+        log.debug("Sandbox directory lookup failed", { name, error: errorMessage(err) });
         return null;
       }
     },

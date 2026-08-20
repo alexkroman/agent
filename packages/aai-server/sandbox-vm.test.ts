@@ -8,6 +8,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { baseOpts, makeHarnessFile } from "./_sandbox-vm-test-utils.ts";
+import { emptyLogPage } from "./agent-logs.ts";
 import { DEFAULT_SANDBOX_IMAGE } from "./modal-context.ts";
 import { localHarnessImageTag } from "./modal-harness-image.ts";
 import { agentSandboxName } from "./sandbox-directory.ts";
@@ -23,6 +24,7 @@ function fakeHandle(): AgentServerHandle {
     guestOrigin: "wss://tunnel.test:443",
     activeSessions: vi.fn(async () => 0),
     drain: vi.fn(async () => undefined),
+    logs: vi.fn(async () => emptyLogPage()),
     alive: () => true,
     onExit: () => undefined,
     shutdown: vi.fn(async () => undefined),
@@ -81,6 +83,10 @@ describe("spawnAgentServer", () => {
     expect(spawn).toHaveBeenCalledWith({
       harnessPath: opts.harnessPath,
       slug: opts.slug,
+      // `name` is NOT a Modal-only field: both backends derive the guest's
+      // manage token from it, so dropping it here would make the subprocess
+      // backend the one place a token is random (see guest-token.ts).
+      name: agentSandboxName(opts.slug, opts.version),
       worker: opts.worker,
       agentEnv: opts.env,
       onSpawned,

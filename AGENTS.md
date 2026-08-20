@@ -1928,8 +1928,9 @@ back to the host's `process.env`.
 
 ### Open testability work
 
-One known gap: **`aai-server` writes to `console.*` directly**, with no logger
-seam, so most of the repo's `spyOn(console, …)` calls exist purely to keep test
-output quiet. Sized, not stuck — the count and the plan are in "The missing
-logger seam" in `packages/aai-server/CLAUDE.md`, which is where they stay: the
-copy that used to be here had drifted to a different pair of numbers.
+The `aai-server` logger seam that used to be named here is DONE — every line in
+that package goes through `logger.ts` and a spec silences it with
+`captureLogs()` rather than `spyOn(console, …)` (see "Every line goes through
+`logger.ts`" in `packages/aai-server/CLAUDE.md`). What that leaves is the same
+job in the other packages: `aai-studio-server` and `aai-cli` still write to
+`console.*` in places, and the SDK publishes a `Logger` either could take.

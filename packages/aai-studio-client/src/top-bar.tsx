@@ -158,15 +158,19 @@ export type StudioTab =
   | "workflows"
   | "database"
   | "code"
+  | "logs"
   | "secrets"
   | "settings";
 
+// Logs sits directly after Code, which is where its use is: you write
+// something, you run it, you read what it printed.
 const TABS: { id: StudioTab; label: string }[] = [
   { id: "preview", label: "UI" },
   { id: "docs", label: "API" },
   { id: "workflows", label: "Workflows" },
   { id: "database", label: "Database" },
   { id: "code", label: "Code" },
+  { id: "logs", label: "Logs" },
   { id: "secrets", label: "Secrets" },
   { id: "settings", label: "Settings" },
 ];

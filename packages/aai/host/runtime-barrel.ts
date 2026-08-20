@@ -87,6 +87,23 @@ export {
   type HostServerOptions,
   type HostSessionDefaults,
 } from "./host-server.ts";
+// The guest's own stdout/stderr ring, and the platform's client of it. Shared
+// rather than guest-local because both ends of one wire read this shape: the
+// guest fills it (`aai-guest/harness-logs.ts`) and the platform serialises what
+// it reads back out (`aai-server/agent-logs.ts`). One definition, or the two
+// sides can disagree about what a cursor means.
+export {
+  createLogBuffer,
+  DEFAULT_LOG_BUFFER_LINES,
+  DEFAULT_LOG_LINE_BYTES,
+  DEFAULT_LOG_PAGE_LINES,
+  LOG_LINE_TRUNCATED,
+  type LogBuffer,
+  type LogBufferOptions,
+  type LogLine,
+  type LogPage,
+  type LogStream,
+} from "./log-buffer.ts";
 export {
   type CloseableDb,
   type CreatePostgresDbOptions,

@@ -3,15 +3,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerLiveStream, resetLiveStreams } from "./live-streams.ts";
 import { createShutdownHandler, startService } from "./serve-lifecycle.ts";
+import { captureLogs } from "./test-utils.ts";
 
 beforeEach(() => {
   // Reset, not drain: a shutdown latches the registry closed, so draining here
   // would make every registerLiveStream below end its stream on the spot.
   resetLiveStreams();
-  vi.spyOn(console, "info").mockImplementation(() => undefined);
-  vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
+
+// Every spec here drives a shutdown or a listen, both of which announce
+// themselves; two also assert on what was announced.
+const logs = captureLogs();
 
 describe("createShutdownHandler", () => {
   it("runs teardown, then closes the server, then exits 0", async () => {
@@ -92,7 +94,11 @@ describe("createShutdownHandler", () => {
 
     expect(closeServer).toHaveBeenCalledOnce();
     expect(exit).toHaveBeenCalledWith(0);
-    expect(console.warn).toHaveBeenCalledWith("Shutdown teardown failed:", "sandbox boom");
+    expect(logs.all()).toContainEqual({
+      level: "warn",
+      msg: "serve shutdown teardown failed",
+      ctx: { error: "sandbox boom" },
+    });
   });
 
   // The `fallbackMs` timer below is armed only AFTER onShutdown settles, so it
@@ -124,10 +130,11 @@ describe("createShutdownHandler", () => {
       await vi.advanceTimersByTimeAsync(1);
 
       expect(settled).toHaveBeenCalled();
-      expect(console.warn).toHaveBeenCalledWith(
-        "Shutdown teardown failed:",
-        "teardown exceeded 20000ms; exiting anyway",
-      );
+      expect(logs.all()).toContainEqual({
+        level: "warn",
+        msg: "serve shutdown teardown failed",
+        ctx: { error: "teardown exceeded 20000ms; exiting anyway" },
+      });
       expect(closeServer).toHaveBeenCalledOnce();
       expect(exit).toHaveBeenCalledWith(0);
     } finally {
@@ -154,8 +161,8 @@ describe("createShutdownHandler", () => {
 
       await vi.advanceTimersByTimeAsync(3000);
 
-      expect(console.warn).toHaveBeenCalledWith(
-        "Shutdown timed out waiting for connections to close; exiting",
+      expect(logs.warns()).toContain(
+        "serve shutdown timed out waiting for connections to close; exiting",
       );
       expect(exit).toHaveBeenCalledWith(0);
     } finally {
@@ -194,9 +201,7 @@ describe("startService", () => {
     });
 
     expect(injectWebSocket).toHaveBeenCalledOnce();
-    expect(console.info).toHaveBeenCalledWith(
-      "AAI test service listening on http://localhost:1234",
-    );
+    expect(logs.infos()).toContain("serve AAI test service listening on http://localhost:1234");
   });
 
   it("passes the caller's fetch and port to the server", async () => {

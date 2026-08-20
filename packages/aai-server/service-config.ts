@@ -21,11 +21,10 @@ import {
   ADMIN_POOL_MAX,
   APP_DB_ADMIN_POOL_MAX,
   APP_DB_TARGET_POOL_MAX,
-  resolveHarnessPath,
   SLUG_LOCK_POOL_MAX,
 } from "./constants.ts";
-import { endLiveStreams } from "./live-streams.ts";
-import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-context.ts";
+import { assertGuestTokenSecret } from "./guest-token.ts";
+import { createLogger } from "./logger.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
 import { platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
@@ -47,7 +46,7 @@ import {
 } from "./platform-lock.ts";
 import { buildStorage, buildUploadBytes } from "./platform-storage-config.ts";
 import { createRealtimePlatformEvents } from "./realtime-events.ts";
-import { describeSandboxBackend, resolveSandboxBackend } from "./sandbox-backend.ts";
+import { resolveSandboxBackend } from "./sandbox-backend.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
   createMemorySecretStore,
@@ -63,6 +62,9 @@ import {
   createPgWorkspaceStore,
   type WorkspaceStore,
 } from "./workspace-store.ts";
+
+const log = createLogger("service");
+const _sandboxLog = createLogger("sandbox");
 
 /** Comma-separated extra placement clusters (APP_DB_URLS) → pooled targets. */
 function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
@@ -168,8 +170,8 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
   const dbUrl = env.SUPABASE_DB_URL;
   const dsn = dbUrl ? platformDbDsn(dbUrl, env.AAI_DBLINK_HOST) : { reason: "no SUPABASE_DB_URL" };
   if ("reason" in dsn) {
-    console.warn(
-      `Orphan-preview sweep cannot deprovision app databases: ${dsn.reason} ` +
+    log.warn(
+      `orphan-preview sweep cannot deprovision app databases: ${dsn.reason} ` +
         "Agents rows and Vault secrets will still be swept; the databases will be left behind.",
     );
   }
@@ -185,7 +187,9 @@ function bootstrapPlatformDb(sql: SqlExec, env: NodeJS.ProcessEnv): void {
     await schedulePlatformSweeps(sql, platformCronJobs({ ...omitUndefined({ storage }) }));
   };
   bootstrap().catch((err: unknown) => {
-    console.error("pg_cron sweep scheduling failed — janitorial sweeps will not run:", err);
+    log.error("pg_cron sweeps not scheduled — janitorial sweeps will not run", {
+      error: errorMessage(err),
+    });
   });
 }
 
@@ -226,8 +230,8 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
 } {
   const url = env.SUPABASE_DB_URL;
   if (!url) {
-    console.info(
-      "No SUPABASE_DB_URL: in-memory secret/agents/workspace/chat stores, no per-app " +
+    log.info(
+      "no SUPABASE_DB_URL: in-memory secret/agents/workspace/chat stores, no per-app " +
         "databases — DEPLOYED AGENTS ARE LOST ON RESTART. `supabase start` for the durable tier.",
     );
     return {
@@ -257,8 +261,8 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   // left quietly wrong.
   const poolerUrl = platformPoolerUrl(env);
   if (poolerUrl === undefined) {
-    console.warn(
-      "No PLATFORM_POOLER_URL: the admin pool is opening DIRECT connections, so this " +
+    log.warn(
+      "no PLATFORM_POOLER_URL: the admin pool is opening DIRECT connections, so this " +
         `replica costs ${ADMIN_POOL_MAX} more of the instance's max_connections than ` +
         "MAX_PLATFORM_DB_CONNECTIONS accounts for. Set it to Supavisor's " +
         "TRANSACTION-mode URL (port 6543).",
@@ -350,6 +354,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   // the misleading ones the assertion exists to pre-empt (a deploy that fails on
   // `storage.objects` RLS; a Realtime channel that rejoins in silence forever).
   if (env.SUPABASE_SERVICE_ROLE_KEY) assertServiceRoleKey(env.SUPABASE_SERVICE_ROLE_KEY);
+  assertGuestTokenSecret(env, hasPlatformDb(env));
   const storage = buildStorage(env);
   const uploadBytes = buildUploadBytes(env);
   const {
@@ -382,9 +387,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   // than fail.
   const auth = createStudioAuthFromEnv(env);
   if (!auth) {
-    console.warn(
-      "[auth] SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY not set — studio browser login is disabled",
-    );
+    log.warn("SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY not set — studio browser login is disabled");
   }
   // Raw API-key bearers are verified against AssemblyAI before they can claim
   // a slug or spawn a sandbox (api-key-verify.ts). Undefined only under an
@@ -418,77 +421,10 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   };
 }
 
-/**
- * Boot-time sandbox-backend check, so a misconfiguration fails (or warns)
- * where the cause is obvious instead of on the first session's spawn.
- *
- * The selected backend is logged unconditionally. Previously this only spoke
- * up for missing Modal credentials, so the most confusing configuration of
- * all — auto-selection quietly landing on a backend the developer did not
- * choose — was the one that produced no output at all, and surfaced instead
- * as a spawn failure naming an unexpected backend. That log line also carries
- * the isolation warning: `subprocess` runs tenant code (and the studio coding
- * agent's `bash`/`run_code`) with this process's uid.
- *
- * `subprocess` has no prerequisite to check — that is the point of it being
- * the local-dev default. `modal` needs credentials: fatal in production, a
- * warning in local dev so non-sandbox surfaces stay usable.
- */
-export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
-  const { backend, reason } = describeSandboxBackend(env);
-  console.info(`[sandbox] backend=${backend} (${reason})`);
-
-  if (backend === "subprocess") {
-    console.warn(
-      "[sandbox] WARNING: guests run as child processes with NO isolation — " +
-        "agent code and the studio agent's shell tools share this process's uid, " +
-        "filesystem, and network. Set SANDBOX_BACKEND=modal for real sandboxes.",
-    );
-    return;
-  }
-
-  if (!isModalConfigured()) {
-    if (isLocalDev(env)) {
-      console.warn(
-        "[sandbox] WARNING: Modal credentials not configured " +
-          "(MODAL_TOKEN_ID/MODAL_TOKEN_SECRET). Sandbox creation will fail.",
-      );
-    } else {
-      throw modalRequiredError();
-    }
-  } else {
-    // Resolve the Modal context AND bake/publish the guest snapshot image now
-    // (fire-and-forget), so neither the gRPC round trip nor — far more
-    // expensive, and unavoidable on the first boot of every new harness
-    // version — the image build lands on the first session's cold start.
-    // The harness path is resolved separately: it throws when the harness
-    // isn't built, which must not take down boot for a prewarm.
-    prewarmModal(harnessPathOrWarn());
-  }
-}
-
-/** The built harness, or undefined with a warning — a prewarm may not fail boot. */
-function harnessPathOrWarn(): string | undefined {
-  try {
-    return resolveHarnessPath();
-  } catch (err) {
-    console.warn(`[sandbox] guest image prewarm skipped: ${errorMessage(err)}`);
-  }
-}
-
-/** Process-level safety nets, registered before anything else at boot. */
-export function installProcessSafetyNets(): void {
-  process.on("unhandledRejection", (err) => {
-    console.error("Unhandled rejection:", err);
-  });
-  process.on("uncaughtException", (err) => {
-    console.error("Uncaught exception:", err);
-    // The other way this process dies with responses open. `process.exit`
-    // destroys sockets mid-body, so every live SSE stream would be cut before
-    // its terminating chunk — the `TransferEncodingError` of live-streams.ts,
-    // with a crash rather than a scale-in behind it. Ending them is synchronous
-    // and cannot make the crash worse.
-    endLiveStreams();
-    process.exit(1);
-  });
-}
+// The boot ANNOUNCEMENTS and the process safety nets live in service-boot.ts —
+// re-exported here because this is the subpath the service entry imports, so
+// the split stays internal to the package.
+export {
+  assertSandboxBackendOrWarn,
+  installProcessSafetyNets,
+} from "./service-boot.ts";

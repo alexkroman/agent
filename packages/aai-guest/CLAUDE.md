@@ -362,6 +362,122 @@ have written that file itself.
   never spliced into that source — a quote in the agent's program must not be
   able to end the harness's.
 
+## Why the buffer lives in the guest
+
+`harness-logs.ts` tees both process streams into a bounded, cursor-indexed ring
+(`createLogBuffer`, `@alexkroman1/aai/runtime`) and `GET /manage/logs` serves
+it — the source behind the studio's Logs pane and `aai logs`.
+
+**The obvious alternative does not work on this platform.** A guest's stdout has
+always reached the host (`startGuestLogging` drains both streams into the
+platform's log the moment the process exists); what it could never reach is the
+person who wrote the tool. Buffering it host-side, next to that relay, fails for
+the same reason `sandbox-directory.ts` exists: a sandbox is resident on ONE
+replica, and a replica that does not hold it never proxies for the one that does
+— it looks the sandbox up and dials the sandbox's own tunnel. So a host-side
+buffer is readable from exactly one replica of N, chosen by which one happened
+to spawn the guest. A buffer in the GUEST is reachable from all of them, by the
+same URL everything else uses.
+
+**What that costs, said plainly.** The ring dies with the sandbox, and an agent
+guest self-exits on idle — so this is "what my agent printed recently", never
+"what it printed last Tuesday". And a bundle that throws at LOAD exits before
+the server binds, so its stderr is only in the host log; the studio reports that
+case through `previewError` instead.
+
+**Capture is a `write` tee, not a console patch.** `console.log`, an uncaught
+exception's trace, and a dependency writing straight to the fd all funnel
+through `process.stdout.write` / `process.stderr.write`; patching `console`
+catches only the first, and the traces are the half worth reading. The original
+write still runs, so the host relay and Modal's own log see what they always
+saw. `main()` installs it before anything else can write — every line produced
+earlier is a line the pane cannot show.
+
+## The manage token is derived, not random
+
+`AAI_GUEST_TOKEN` is HMAC over the sandbox's fleet-wide name
+(`aai-server/guest-token.ts`), not `randomBytes(32)`.
+
+Random put the token in one replica's closure and nowhere else, which quietly
+made the whole `/manage/*` surface REPLICA-LOCAL — fine while its only callers
+were retirement (which owns the resident) and a diagnostic probe, and four
+requests in five wrong for a user-facing log pane. Deriving it from
+`agentSandboxName(slug, version)` — already the identity `sandboxes.create`
+races on — lets every replica compute the same answer from a slug and a version
+it reads out of the agents row.
+
+Three properties are preserved: unguessable without the platform secret,
+distinct per sandbox, and rotated on redeploy (the version is in the name). What
+is given up is rotation on RESPAWN of the same version — a guest rebuilt after
+an idle exit gets its predecessor's token. Small, and the token never leaves the
+platform. An unset `AAI_GUEST_TOKEN_SECRET` falls back to a per-process key,
+which is exactly the old behaviour, and boot announces it.
+
+## A phone call is an ordinary session
+
+The SDK's `aai/host/telephony/` — so `packages/aai/CLAUDE.md` owns the code, and
+this guide holds the detail because the process that serves `/phone` in
+production is this harness (and, under `aai dev`, the same `createServer`). Both
+of the other guides are at their length caps; the platform's TwiML webhook route
+stays in `packages/aai-server/CLAUDE.md`, "Telephony".
+
+`WS /phone` (`host/telephony/`) accepts a carrier's bidirectional media
+stream — Twilio Media Streams, Telnyx media streaming — and runs it as an
+ordinary session. `createServer` serves it by default, so `aai dev`, a
+self-hosted server and every deployed agent all answer phone calls with no
+per-agent configuration — the platform route above is only what points a carrier
+at it.
+
+**Nothing in the session stack knows about telephony, and that is the whole
+design.** `SessionCore` talks to a `ClientSink`; `wireSessionSocket` talks to
+a `SessionWebSocket`. So the adapter is a socket-shaped SHIM
+(`createTelephonyBridge`) that speaks the client protocol on one side and the
+carrier's JSON framing on the other, handed straight to
+`runtime.startSession`. Turn-taking, barge-in, tool calls, the audio pacer and
+its ordering rules, session eviction, keepalives, start timeouts and teardown
+are not reimplemented for phone — a call gets them because it runs the same
+code the browser does. Resist adding a telephony branch anywhere below the
+bridge; if one seems necessary, the bridge is the wrong shape.
+
+Four things that are easy to get wrong here, each of which was a decision:
+
+- **Pacing stays ON.** A carrier accepts audio far faster than it plays it and
+  buffers the rest — exactly the shape that made unpaced host-mode sessions
+  destroy 36% of all agent audio (see "Host-mode audio pacing" in
+  `packages/aai-cli/CLAUDE.md`): the
+  backlog builds on the FAR side, where `PacedAudioSink.clear()` cannot reach
+  it. So the bridge sets no `audioLeadMs` and a barge-in additionally sends the
+  carrier's own `clear` frame, which is the only way to drop what it already
+  holds. Without that frame the caller talks over an agent that keeps speaking
+  for seconds after being interrupted.
+- **The rates are LEARNED from the `config` frame**, not configured. The first
+  thing any runtime sends a session is `{ sampleRate, ttsSampleRate }`, so the
+  bridge builds its converters from that — which lets one adapter serve a
+  16 kHz pipeline agent and a 24 kHz S2S agent, and avoids plumbing a rate
+  through `createServer`, whose runtime is a LAZY facade in the guest harness
+  and cannot answer a rate question before the first session exists.
+- **Downsampling must low-pass first, and both converters are STATEFUL**
+  (`telephony/resample.ts`) — decimating without the filter folds everything
+  above 4 kHz back into the speech band, and rebuilding a converter per 20 ms
+  chunk puts a click at every boundary, 50 a second. That module's doc carries
+  the measurement; `telephony/mulaw.ts`'s carries why the G.711 curve is kept
+  sample-exact rather than approximated.
+- **This does not contradict "the host does not resample"** (see the S2S
+  section). That rule says rate conversion belongs at the EDGE, because every
+  client owns its own rate and asking it to send the advertised one is cheaper
+  and more honest. A carrier is the one client that cannot comply — 8 kHz
+  μ-law is what the PSTN carries — and the bridge IS the edge. The rule put
+  the conversion exactly here.
+
+Adding a carrier is one `CarrierCodec` in `telephony/carriers.ts` and nothing
+else — that module's doc owns the two properties every codec owes (decoding
+NEVER throws, and a media frame on a non-`inbound` track is DROPPED) and why
+these frames are narrowed by hand rather than by a Zod schema.
+
+**Known gaps**, both deliberate: no `mark` frames, so `playback_progress` is
+unused and the pipeline falls back to its open-loop estimate; and DTMF is
+ignored rather than surfaced as a custom event.
+
 ## Dev/prod parity
 
 **The guest IS the dev server — and the runtime IS the user's.** The

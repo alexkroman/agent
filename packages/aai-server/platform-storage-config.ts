@@ -22,11 +22,14 @@ import {
   createSupabaseBlobStorage,
   type SupabaseBlobStorageOptions,
 } from "./blob-storage.ts";
+import { createLogger } from "./logger.ts";
 import {
   createMemoryUploadBytes,
   createSupabaseUploadBytes,
   type UploadBytes,
 } from "./upload-bytes.ts";
+
+const log = createLogger("platform.storage");
 
 /**
  * Verify the deploy-artifact bucket at boot — see {@link assertBucketPrivate}
@@ -75,8 +78,8 @@ function storageOptions(env: NodeJS.ProcessEnv): SupabaseBlobStorageOptions {
  */
 export function buildUploadBytes(env: NodeJS.ProcessEnv): UploadBytes {
   if (!hasPlatformDb(env)) {
-    console.info(
-      "No SUPABASE_DB_URL: in-memory storage for workflow upload bytes — " +
+    log.info(
+      "no SUPABASE_DB_URL: in-memory storage for workflow upload bytes — " +
         "uploads are LOST on restart",
     );
     return createMemoryUploadBytes();
@@ -86,8 +89,8 @@ export function buildUploadBytes(env: NodeJS.ProcessEnv): UploadBytes {
 
 export function buildStorage(env: NodeJS.ProcessEnv): BlobStorage {
   if (!hasPlatformDb(env)) {
-    console.info(
-      "No SUPABASE_DB_URL: in-memory blob storage for deploy artifacts — " +
+    log.info(
+      "no SUPABASE_DB_URL: in-memory blob storage for deploy artifacts — " +
         "deploys are LOST on restart",
     );
     return createMemoryBlobStorage();

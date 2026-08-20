@@ -12,11 +12,15 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import type { LogPage } from "@alexkroman1/aai/runtime";
 import pTimeout from "p-timeout";
-import { debug } from "./_debug-log.ts";
+import { emptyLogPage, LOGS_READY_TIMEOUT_MS } from "./agent-logs.ts";
 import { resolveHarnessPath, SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";
+import { createLogger } from "./logger.ts";
 import { spawnAgentServer, type WorkerSource } from "./sandbox-vm.ts";
 import type { AgentServerHandle } from "./warm-harness.ts";
+
+const log = createLogger("sandbox");
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -72,6 +76,16 @@ export type Sandbox = {
    * sandbox-retire.ts).
    */
   drain(deadlineMs?: number): Promise<void>;
+  /**
+   * This guest's buffered stdout/stderr (`GET /manage/logs`), for the studio's
+   * Logs pane and `aai logs`.
+   *
+   * NEVER rejects, and a sandbox that is still BOOTING resolves an empty page
+   * rather than waiting out its readiness: a log pane polls, and a poll that
+   * blocks for the boot budget is a pane that hangs for two minutes on the one
+   * agent whose output the user most wants to see.
+   */
+  logs(opts?: { after?: number; limit?: number }): Promise<LogPage>;
   /**
    * False once this sandbox is unusable — the VM failed to start, or the
    * guest process exited. A sandbox still booting reports true: pending is
@@ -138,18 +152,18 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   vmReady
     .then((handle) => {
-      debug("Sandbox ready", { slug });
+      log.debug("Sandbox ready", { slug });
       handle.onExit(() => {
-        console.warn("Sandbox guest exited", { slug });
+        log.warn("guest exited", { slug });
         markLost();
       });
     })
     .catch((err: unknown) => {
-      console.error("Sandbox VM failed to start", { slug, error: errorMessage(err) });
+      log.error("VM failed to start", { slug, error: errorMessage(err) });
       markLost(err);
     });
 
-  debug("Sandbox initializing", { slug });
+  log.debug("Sandbox initializing", { slug });
 
   // The readiness wait the TEARDOWN paths take, bounded and memoized.
   //
@@ -183,6 +197,13 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   return {
     sessionUrl: () => vmReady.then((handle) => handle.sessionUrl),
+    // Bounded rather than awaited: see the doc on `logs` above. `pTimeout`
+    // rather than a race against a timer — `guard-invariants` rule 3.
+    logs: (logOpts) =>
+      pTimeout(
+        vmReady.then((handle) => handle.logs(logOpts)),
+        { milliseconds: LOGS_READY_TIMEOUT_MS, fallback: () => emptyLogPage(logOpts?.after) },
+      ).catch(() => emptyLogPage(logOpts?.after)),
 
     guestOrigin: () => vmReady.then((handle) => handle.guestOrigin),
 
@@ -225,7 +246,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       try {
         await terminateUnready?.();
       } catch (err: unknown) {
-        debug("Failed to terminate a still-booting sandbox", { slug, error: errorMessage(err) });
+        log.debug("Failed to terminate a still-booting sandbox", {
+          slug,
+          error: errorMessage(err),
+        });
       }
     },
   };

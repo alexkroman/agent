@@ -18,8 +18,11 @@
  */
 
 import type { AppContext, ValidatedAppContext, ValidatedParamContext } from "./context.ts";
+import { createLogger } from "./logger.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import type { BundleStore } from "./store-types.ts";
+
+const log = createLogger("secrets");
 
 /**
  * What a secret mutation needs, independent of HTTP.
@@ -50,7 +53,7 @@ export function setSlugSecrets(
     const existing = (await env.store.getEnv(slug)) ?? {};
     const merged = { ...existing, ...updates };
     await env.store.putEnv(slug, merged);
-    console.info("Secret updated", { slug, keyCount: Object.keys(updates).length });
+    log.info("updated", { slug, keyCount: Object.keys(updates).length });
     return Object.keys(merged);
   });
 }
@@ -61,7 +64,7 @@ export function deleteSlugSecret(env: SecretEnv, slug: string, key: string): Pro
     const existing = (await env.store.getEnv(slug)) ?? {};
     delete existing[key];
     await env.store.putEnv(slug, existing);
-    console.info("Secret deleted", { slug });
+    log.info("deleted", { slug });
   });
 }
 

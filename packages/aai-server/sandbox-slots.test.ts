@@ -16,6 +16,7 @@ import {
   setSlot,
   terminateSlot,
 } from "./sandbox-slots.ts";
+import { captureLogs } from "./test-utils.ts";
 
 function makeSandbox(overrides: Partial<NonNullable<AgentSlot["sandbox"]>> = {}) {
   return {
@@ -26,6 +27,7 @@ function makeSandbox(overrides: Partial<NonNullable<AgentSlot["sandbox"]>> = {})
 }
 
 describe("slot cache", () => {
+  const logs = captureLogs();
   it("set/get/delete round-trips slots by slug", () => {
     const cache = createSlotCache();
     const slot: AgentSlot = { slug: "a" };
@@ -62,13 +64,12 @@ describe("slot cache", () => {
   });
 
   it("terminateSlot swallows shutdown errors", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const slot: AgentSlot = {
       slug: "boom",
       sandbox: { shutdown: vi.fn().mockRejectedValue(new Error("boom")) },
     };
     await expect(terminateSlot(slot)).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalled();
+    expect(logs.warns()).not.toHaveLength(0);
   });
 
   it("retireSlot detaches synchronously and hands the sandbox its drain budget", async () => {

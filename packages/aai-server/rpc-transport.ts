@@ -18,6 +18,9 @@ import {
   JSONRPCServer,
 } from "json-rpc-2.0";
 import { z } from "zod";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("rpc");
 
 const JsonRpcResponseSchema = z.object({
   jsonrpc: z.literal("2.0"),
@@ -211,7 +214,9 @@ export function createRpcConnection<S extends RpcSchema = RpcSchema>(
             if (response) send(response);
           })
           .catch((err: unknown) => {
-            console.error(`RPC request handler "${req.method}" rejected: ${errorMessage(err)}`);
+            log.error(`request handler "${req.method}" rejected`, {
+              error: errorMessage(err),
+            });
           });
         return;
       }
@@ -224,14 +229,14 @@ export function createRpcConnection<S extends RpcSchema = RpcSchema>(
         if (!handler) return;
         try {
           Promise.resolve(handler(msg.data.params)).catch((err: unknown) => {
-            console.error(
-              `RPC notification handler "${msg.data.method}" rejected: ${errorMessage(err)}`,
-            );
+            log.error(`notification handler "${msg.data.method}" rejected`, {
+              error: errorMessage(err),
+            });
           });
         } catch (err) {
-          console.error(
-            `RPC notification handler "${msg.data.method}" threw: ${errorMessage(err)}`,
-          );
+          log.error(`notification handler "${msg.data.method}" threw`, {
+            error: errorMessage(err),
+          });
         }
         return;
       }

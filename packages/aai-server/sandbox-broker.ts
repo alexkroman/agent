@@ -11,13 +11,15 @@
 
 import { HTTPException } from "hono/http-exception";
 import pTimeout from "p-timeout";
-import { debug } from "./_debug-log.ts";
 import { BROKER_READY_TIMEOUT_MS } from "./constants.ts";
+import { createLogger } from "./logger.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { SandboxNameTakenError } from "./sandbox-directory.ts";
 import { findPeerSession } from "./sandbox-peers.ts";
 import { type ResolveSandboxOpts, resolveSandbox } from "./sandbox-resolve.ts";
 import { isLive } from "./sandbox-slots.ts";
+
+const log = createLogger("sandbox.broker");
 
 export type BrokeredSession =
   | { ok: true; sessionUrl: string; guestOrigin: string }
@@ -54,7 +56,7 @@ export async function brokerSessionUrl(
     // the orphan; this is the polite 503 — the client re-brokers, and the
     // proxy routes that retry to a live replica.
     if (opts.isDraining?.()) {
-      debug("Refusing to boot a sandbox while draining", { slug });
+      log.debug("Refusing to boot a sandbox while draining", { slug });
       return { ok: false, status: 503 };
     }
   }
@@ -140,7 +142,7 @@ async function awaitBrokeredUrl(
     // directory rather than retrying a spawn that can only lose again — the
     // peer's guest serves this client exactly as well as a local one.
     if (err instanceof SandboxNameTakenError) {
-      debug("Lost the sandbox name race; routing to the peer", { slug });
+      log.debug("Lost the sandbox name race; routing to the peer", { slug });
       const peer = await findPeerSession(slug, opts);
       if (peer) return peer;
       // The winner has not published a tunnel yet, or already went away: a
@@ -151,7 +153,7 @@ async function awaitBrokeredUrl(
     // worth a quiet line: the failure path already logs (and detaches) via
     // `Sandbox VM failed to start`.
     if (sandbox.alive()) {
-      debug("Sandbox still booting; answering 503 while it continues", {
+      log.debug("Sandbox still booting; answering 503 while it continues", {
         slug,
         waitedMs: readyTimeoutMs,
       });

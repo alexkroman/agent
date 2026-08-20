@@ -19,7 +19,7 @@ import { type AdminDb, SLUG_LOCK_NAMESPACE } from "./platform-lock.ts";
 import type { BrokeredSession } from "./sandbox-broker.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { APP_DB_SECRET_PREFIX, type SqlExec } from "./secret-store.ts";
-import { createTestStore, fakeAppDatabases } from "./test-utils.ts";
+import { captureLogs, createTestStore, fakeAppDatabases } from "./test-utils.ts";
 import { createWorkflowWakeSweep } from "./workflow-wake.ts";
 
 /**
@@ -151,6 +151,7 @@ describe("the sweep's advisory-lock key", () => {
 });
 
 describe("createWorkflowWakeSweep", () => {
+  const logs = captureLogs();
   test("wakes a slug whose hint is due", async () => {
     const { sweep, wake } = sweepWith({ hints: { "sleepy-agent": past } });
     const result = await sweep.sweepOnce();
@@ -276,7 +277,6 @@ describe("createWorkflowWakeSweep", () => {
   });
 
   test("a read failure fails the pass, not the sweep", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const adminDb: AdminDb = { reserve: () => Promise.reject(new Error("no connections")) };
     const sweep = createWorkflowWakeSweep({
       adminDb,
@@ -287,11 +287,10 @@ describe("createWorkflowWakeSweep", () => {
     });
 
     await expect(sweep.sweepOnce()).resolves.toMatchObject({ swept: false });
-    expect(warn).toHaveBeenCalled();
+    expect(logs.warns()).not.toHaveLength(0);
   });
 
   test("a wake that throws is reported and does not abandon the remaining slugs", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { sweep, wake } = sweepWith({
       hints: { "a-agent": past, "b-agent": past },
       wake: (slug) =>
@@ -301,7 +300,7 @@ describe("createWorkflowWakeSweep", () => {
     const result = await sweep.sweepOnce();
     expect(wake).toHaveBeenCalledTimes(2);
     expect(result.woken).toContain("b-agent");
-    expect(warn).toHaveBeenCalled();
+    expect(logs.warns()).not.toHaveLength(0);
   });
 
   test("the statement timeout is scoped to the transaction, not the pooled connection", () => {

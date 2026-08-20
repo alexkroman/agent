@@ -52,12 +52,14 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
-import { debug } from "./_debug-log.ts";
 import type { AppContext } from "./context.ts";
 import { forwardToGuest, NEVER_RETURNED, passThroughHeaders } from "./guest-forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
+import { createLogger } from "./logger.ts";
 import { AGENT_UNAVAILABLE_MESSAGE, brokerSessionUrl, notFoundMessage } from "./sandbox-broker.ts";
 import type { ResolveSandboxOpts } from "./sandbox-resolve.ts";
+
+const log = createLogger("workflow.webhook");
 
 /**
  * This route's own path under `/:slug`.
@@ -129,7 +131,7 @@ export function createWorkflowWebhookHandler(
       // the boot continues server-side and the sender's retry joins the same
       // readiness promise (see BROKER_READY_TIMEOUT_MS), which is the same
       // deal a browser gets for free by re-brokering.
-      debug("Workflow webhook arrived while the sandbox was booting", { slug });
+      log.debug("Workflow webhook arrived while the sandbox was booting", { slug });
       // Not `brokerSessionUrlOrThrow`: this route answers with `Retry-After`
       // rather than a thrown `HTTPException`, because a webhook sender has its
       // own retry loop to steer. The SENTENCE is still the broker's, so the two
@@ -168,7 +170,7 @@ export function createWorkflowWebhookHandler(
       // steady-state line, unlike the booting case above. 502 rather than 503:
       // every sender retries a 5xx, and this one says the hop that failed was
       // ours to the guest.
-      console.warn(`Workflow webhook delivery failed for ${slug}: ${errorMessage(err)}`);
+      log.warn("delivery failed", { slug, error: errorMessage(err) });
       throw new HTTPException(502, { message: "workflow webhook delivery failed", cause: err });
     }
   };

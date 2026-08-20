@@ -136,3 +136,32 @@ export type StudioStatus = {
   provider?: string;
   model?: string;
 };
+
+/** One line of a deployed agent's captured output. */
+export type AgentLogLine = {
+  /** Monotonic position. Pass the page's `cursor` back to read what follows. */
+  seq: number;
+  /** Epoch milliseconds, stamped in the guest when the line was written. */
+  at: number;
+  stream: "stdout" | "stderr";
+  text: string;
+};
+
+/**
+ * One read of an agent's log ring (`GET /:slug/logs`).
+ *
+ * `running` is what separates "up and quiet" from "nothing running", which an
+ * empty `lines` cannot: the two call for opposite things from the reader, and a
+ * pane that guesses gets the first open of every agent wrong.
+ *
+ * `dropped` counts lines evicted before this read reached them — the guest's
+ * ring is bounded, so a tab left closed while the agent was busy comes back to
+ * a gap, and a tail that hides it is indistinguishable from an agent that went
+ * quiet.
+ */
+export type AgentLogsPage = {
+  lines: AgentLogLine[];
+  cursor: number;
+  dropped: number;
+  running: boolean;
+};

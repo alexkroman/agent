@@ -9,6 +9,7 @@ import {
   createAssemblyAiKeyVerifier,
   DEFAULT_KEY_VERIFY_URL,
 } from "./api-key-verify.ts";
+import { captureLogs } from "./test-utils.ts";
 
 /**
  * A fetch double answering one status for every call, counting calls.
@@ -110,6 +111,8 @@ describe("createAssemblyAiKeyVerifier", () => {
 });
 
 describe("createApiKeyVerifierFromEnv", () => {
+  const logs = captureLogs();
+
   test("production gets a verifier — a forgotten variable is not a hole", () => {
     expect(createApiKeyVerifierFromEnv({}, { localDev: false })).toBeTypeOf("function");
   });
@@ -119,11 +122,10 @@ describe("createApiKeyVerifierFromEnv", () => {
   });
 
   test("the opt-out is explicit and loud", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     expect(
       createApiKeyVerifierFromEnv({ AAI_VERIFY_API_KEYS: "0" }, { localDev: false }),
     ).toBeUndefined();
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("NOT verified"));
+    expect(logs.warns()).toContainEqual(expect.stringContaining("NOT verified"));
   });
 
   // `test.each`, not a `for…of` over the cases: the reporter names the value

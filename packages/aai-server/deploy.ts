@@ -1,15 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
-import { debug } from "./_debug-log.ts";
 import type { AgentRecord } from "./agent-store.ts";
 import type { ValidatedAppContext } from "./context.ts";
+import { createLogger } from "./logger.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
 import { generatedSlug } from "./slug-generate.ts";
 import type { BundleStore } from "./store-types.ts";
+
+const log = createLogger("agent.deploy");
 
 /** Server-level dependencies the deploy core needs (a subset of Bindings). */
 export type DeployDeps = {
@@ -164,7 +166,7 @@ async function deployLocked(
   // No local slot surgery here: mutation handlers write rows, the change
   // stream moves sandboxes.
 
-  debug("Deploy received", { slug });
+  log.debug("Deploy received", { slug });
 
   return { ok: true, slug, message: `Deployed ${slug}` };
 }

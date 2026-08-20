@@ -11,11 +11,11 @@
  * the token-gated `/manage/*` pair.
  */
 
-import { randomBytes } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
-import { debug } from "./_debug-log.ts";
 import { GUEST_READY_TIMEOUT_MS, raceGuestExit } from "./guest-readiness.ts";
+import { guestTokenFor } from "./guest-token.ts";
+import { createLogger } from "./logger.ts";
 import {
   GUEST_PORT,
   guestOrigin,
@@ -35,6 +35,8 @@ import {
   type GuestFetch,
   startGuestLogging,
 } from "./warm-harness.ts";
+
+const log = createLogger("modal.agent-sandbox");
 
 /** Where agent-mode boot artifacts land in the sandbox (written pre-exec). */
 export const AGENT_BUNDLE_REMOTE_PATH = "/tmp/aai-agent-bundle.mjs";
@@ -133,7 +135,7 @@ export async function spawnModalAgentServer(
       sb.filesystem.writeText(JSON.stringify(opts.agentEnv), AGENT_ENV_REMOTE_PATH),
     ]);
 
-    const token = randomBytes(32).toString("hex");
+    const token = guestTokenFor(opts.name);
     const [proc, tunnels] = await Promise.all([
       sb.exec(["node", HARNESS_REMOTE_PATH], {
         mode: "binary",
@@ -164,7 +166,7 @@ export async function spawnModalAgentServer(
     // that throws at load exits here, and its stderr IS the diagnosis.
     await raceGuestExit(sb.waitUntilReady(GUEST_READY_TIMEOUT_MS), proc);
 
-    debug("Modal agent server spawned", {
+    log.debug("Modal agent server spawned", {
       sandboxId: sb.sandboxId,
       slug: opts.slug,
       ms: Math.round(performance.now() - t0),

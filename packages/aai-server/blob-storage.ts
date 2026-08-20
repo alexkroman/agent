@@ -32,6 +32,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { StorageClient } from "@supabase/storage-js";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("storage.blob");
 
 /**
  * The blob operations the bundle store needs. Two implementations, matching
@@ -153,9 +156,10 @@ export async function assertBucketPrivate(opts: SupabaseBlobStorageOptions): Pro
     );
   }
   if (error || !data) {
-    console.warn(
-      `[storage] Could not verify bucket "${opts.bucket}": ${errorMessage(error)}. ` +
-        "Continuing — this is a reachability failure, not a configuration one.",
+    log.warn(
+      `could not verify bucket "${opts.bucket}" — continuing, this is a reachability ` +
+        "failure rather than a configuration one",
+      { error: errorMessage(error) },
     );
     return;
   }

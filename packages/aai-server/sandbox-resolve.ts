@@ -13,10 +13,10 @@
  * sides must build a sandbox identically.
  */
 
-import { debug } from "./_debug-log.ts";
 import type { AgentRecord } from "./agent-store.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import { BROKER_READY_TIMEOUT_MS, resolveHarnessPath } from "./constants.ts";
+import { createLogger } from "./logger.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxDirectory } from "./sandbox-directory.ts";
 import {
@@ -31,6 +31,8 @@ import {
 import { guestUnderstandsBundleUrl, type WorkerSource } from "./sandbox-vm.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+
+const log = createLogger("sandbox.resolve");
 
 type ResolveAppDbOpts = {
   secrets?: SecretStore | undefined;
@@ -308,7 +310,7 @@ async function rebuildSlot(
       deleteSlot(slots, slug);
       return null;
     }
-    if (created) debug("Lazy-discovered agent from store", { slug });
+    if (created) log.debug("Lazy-discovered agent from store", { slug });
 
     const sandbox = buildSlotSandbox(slug, parts, opts);
 
@@ -356,7 +358,7 @@ export async function resolveSandbox(
       // Dead guest: nothing to drain, and the bundle is unchanged so the
       // caches stay warm — only the sandbox is replaced. Reached when the
       // guest died between the exit notification and its async detach.
-      debug("Resident sandbox lost (guest exited); rebuilding", { slug });
+      log.debug("Resident sandbox lost (guest exited); rebuilding", { slug });
       await terminateSlot(slot);
     }
     return rebuildSlot(slug, slot, opts);

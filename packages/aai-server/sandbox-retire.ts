@@ -26,6 +26,9 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { SANDBOX_RETIRE_DRAIN_MS } from "./constants.ts";
+import { createLogger } from "./logger.ts";
+
+const log = createLogger("sandbox.retire");
 
 /** The slice of a sandbox retirement needs. */
 export type RetirableSandbox = {
@@ -58,14 +61,14 @@ export async function retireSandbox(
   }
   try {
     await sandbox.drain(timeoutMs);
-    console.info("Retired sandbox draining in-guest", {
+    log.info("retired sandbox draining in-guest", {
       slug: opts.slug,
       reason: opts.reason,
       timeoutMs,
     });
   } catch (err: unknown) {
     // Unreachable guest — drained by definition; reclaim it now.
-    console.warn("Retired sandbox unreachable for drain; terminating", {
+    log.warn("retired sandbox unreachable for drain; terminating", {
       slug: opts.slug,
       error: errorMessage(err),
     });

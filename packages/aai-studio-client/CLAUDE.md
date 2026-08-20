@@ -390,6 +390,35 @@ so every piece of per-project state resets on a switch with no effect to do it.
   - It is deliberately READ-ONLY: editing a tenant's rows from a console is a
     different feature with a different blast radius (no undo, no migration, no
     record of who did it), and nothing here needs it.
+- **The Logs pane TAILS the agent, and says which of two silences it is**
+  (`logs-view.tsx` → `GET /:slug/logs`, the platform route — same posture as the
+  Secrets card talking to `/:slug/secret`, and for the same reason: that route
+  already owns the ownership check, so a studio proxy in front of it would be a
+  second place to get it wrong). It polls by CURSOR and appends; a stream would
+  be the nicer shape and the source is not one — the guest holds a bounded RING
+  with a cursor, which a reconnecting stream would have to re-derive anyway.
+  - **`running` is read from the response, never from `lines.length`.** An empty
+    page means two different things — the agent is up and has printed nothing,
+    or nothing is running to print — and they want opposite things from the
+    reader (wait, versus go send it a request). A pane that guessed would get
+    the first open of every project wrong.
+  - **A gap is a ROW, not a silence.** `dropped` counts lines the ring evicted
+    before this pane read them; rendering nothing for them is indistinguishable
+    from an agent that went quiet, which is the one thing a log must never be
+    ambiguous about.
+  - **It follows the bottom only while the reader is there** (`FOLLOW_SLACK_PX`
+    — an exact `scrollTop + clientHeight === scrollHeight` is false through most
+    of a smooth scroll and at any fractional device-pixel ratio, so a pane
+    visually at the bottom would stop following). Scrolling up to read something
+    is exactly when a forced scroll is worst.
+  - **The footer says the log is not durable**, once, because it is not: the
+    ring lives in the sandbox and goes when the sandbox does (see "Why the
+    buffer lives in the guest" in `packages/aai-guest/CLAUDE.md`). A pane that
+    presented this as a log FILE would be lying about what it can show.
+  - Preview is the default target because it is what the pane beside it shows —
+    the agent the user is iterating on; Production is a deliberate switch, and
+    each is disabled until that environment has an agent.
+
 - **The Settings pane is also where the CLI round-trip is discoverable**
   (`cli-commands.tsx`, the "Work locally" section): the install / `aai login`
   / `aai pull <project>` / `aai dev` sequence with the project name filled

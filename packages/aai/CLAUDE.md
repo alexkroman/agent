@@ -1381,8 +1381,10 @@ the client protocol on one side and the carrier's JSON framing on the other,
 handed straight to `runtime.startSession`. Resist adding a telephony branch
 anywhere below the bridge; if one seems necessary, the bridge is the wrong shape.
 
-**Both halves of the phone-call surface are documented together in
-`packages/aai-server/CLAUDE.md`, "Telephony"** — the platform's TwiML webhook
+**The four SDK-side decisions are in `packages/aai-guest/CLAUDE.md`, "A phone
+call is an ordinary session"** (the harness is what serves `/phone` in
+production, and it is the guide with room); the platform's TwiML webhook route
+is in `packages/aai-server/CLAUDE.md`, "Telephony" — the platform's TwiML webhook
 route beside the four SDK-side decisions this guide used to carry (why pacing
 stays ON and a barge-in sends the carrier's own `clear` frame, why the rates are
 LEARNED from the `config` frame, why downsampling must low-pass first, and why
