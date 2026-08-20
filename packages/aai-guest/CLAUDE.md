@@ -794,6 +794,25 @@ enabled) had never been met; enabling the database by default for studio project
 is what surfaced it. Ask of any new dependency whether it reads its own
 directory.
 
+**The same hazard's other flavour is a package reading its own `package.json`,
+and there `neverBundle` is the WRONG fix.** `@workflow/world-local` versions its
+data directory from `<its module dir>/../package.json`; bundled, that resolves
+beside `harness.mjs` — `packages/aai-guest/package.json` under the subprocess
+backend (wrong version, but parseable) and NOTHING at `/opt/package.json` in the
+baked image. The unreadable case fell back to the string `"bundled"`, which the
+package's own `parseVersion` rejects, so every databaseless deployed agent that
+declared a workflow logged `Workflow world (local) failed to start: Invalid
+version string: "bundled"` and got no workflows at all. Externalizing it would
+cost every spawn: `@workflow/core` imports it STATICALLY, so the harness would
+evaluate it (plus undici, zod, ulid, async-sema) even for the voice agents that
+declare no workflow — where `@workflow/world-postgres` is a runtime `require`
+and stays lazy. The fix is the repo's one pnpm patch
+(`patches/@workflow__world-local@4.2.4.patch`, pinned in `pnpm-workspace.yaml`),
+returning the real version from a constant with no disk read. Two things keep it
+honest: pnpm fails the install outright if the patch stops applying, and
+`harness-externals.test.ts` asserts the sentinel is absent from the built
+artifact.
+
 `harness-externals.test.ts` pins both halves, and `aai-guest#test` declares its
 own `build` so it asserts on the real artifact — a suite that skipped itself
 without one would be the silent skip that let this ship. Verified by A/B:

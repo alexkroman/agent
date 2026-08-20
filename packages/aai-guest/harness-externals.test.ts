@@ -134,6 +134,34 @@ describe("the built harness", () => {
     ).toBe(true);
   });
 
+  test("carries a PARSEABLE version for the bundled local workflow world", () => {
+    // The other half of the bundling hazard, and the one a `neverBundle` entry
+    // would be the wrong fix for. `@workflow/world-local` reads its OWN
+    // `package.json` at `<its module dir>/../package.json` to version the data
+    // directory — so bundled it reads whatever sits beside `harness.mjs`
+    // instead: `packages/aai-guest/package.json` under the subprocess backend
+    // (wrong, but parseable), and NOTHING at `/opt/package.json` in the baked
+    // image. The unreadable case fell back to the literal string `"bundled"`,
+    // which the package's own `parseVersion` rejects — so every databaseless
+    // deployed agent that declared a workflow logged
+    // `Workflow world (local) failed to start: Invalid version string:
+    // "bundled"` and had no workflows at all.
+    //
+    // Externalizing it is not the remedy: `@workflow/core` imports it
+    // STATICALLY, so the harness would evaluate it (and undici, zod, ulid,
+    // async-sema) on every spawn, including the voice agents that declare no
+    // workflow. The fix is the pnpm patch in `patches/`, which returns the
+    // package's real version from a constant and never touches the disk. This
+    // asserts on the artifact that actually ships.
+    expect(bundle, "world-local is not in the bundle — has it become external?").toContain(
+      '"@workflow/world-local"',
+    );
+    expect(
+      bundle,
+      "the unparseable version sentinel is back — is the pnpm patch applied?",
+    ).not.toMatch(/version:\s*"bundled"/);
+  });
+
   test("keeps the build toolchain external too", () => {
     // The older half of the list, asserted the same way — it is the precedent
     // `@workflow/world-postgres` now follows, and bundling rolldown's native
