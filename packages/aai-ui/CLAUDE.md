@@ -760,8 +760,9 @@ because the reload this exists for happens in between.
 It follows that re-submitting a file already stored in this tab reuses that
 upload instead of sending it again — the same mechanism seen from the other side,
 and correct, since an upload is content rather than part of a run. A spec that
-wants a second transfer needs a second file, which is why
-`use-workflow-form.test.ts` clears `sessionStorage` between specs.
+wants a second transfer needs a second file, which is why both submit suites
+clear `sessionStorage` between specs — the hook half of this lives in
+`use-workflow-form-recall.test.ts`, the store's own in `_upload-recall.test.ts`.
 
 `useWorkflowStream` deliberately does NOT recall: its id goes into a run input,
 so reusing one across a reload would start a second run against the first run's
