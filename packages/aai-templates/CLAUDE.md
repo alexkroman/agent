@@ -163,6 +163,7 @@ once, and the templates are now their reference use:
 | `mapConcurrent`, `emit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
 | `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-workflow`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-and-execute`, from an ordinary tool body, which is the case the module was published for |
 | `stepSpeak` + `writeUpload` + `WorkflowApi.download` | `spoken-summary` ONLY, and it is the whole reason that template exists — the audio round trip a workflow could not make before. See "A step that SPEAKS returns an id" below |
+| `stepTranscribeUpload` / `Submit` / `Poll`, and `stepTranscribeSync` | all three templates that transcribe, and the clearest case yet of the extract-on-the-third-copy rule above — `spoken-summary` and `transcription-workflow` had the async API's ~200 lines EACH, reworded and identical in behaviour, and `recap-workflow` a third variant. `transcription-workflow` is the reference for both halves (`batch.ts` for the job API, `sync-api.ts` for the one-request endpoint it fans out over); `recap-workflow` converts its SUBMIT only, and says in place why its poll must not follow — see "A transcription step is the SDK's; the boundaries are the template's" below |
 | `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, which is the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails |
 
 ## A step that SPEAKS returns an id
@@ -218,6 +219,53 @@ gets wrong:
 It transcribes through the ASYNC API rather than cutting the file up, and that
 is a deliberate narrowing: the fan-out is a whole subject and it already has a
 template. Here the transcription should be the boring leg.
+
+## A transcription step is the SDK's; the boundaries are the template's
+
+The way IN is now `stepTranscribeUpload` / `stepTranscribeSubmit` /
+`stepTranscribePoll` (the async job API) and `stepTranscribeSync` (the
+one-request endpoint), all on `@alexkroman1/aai/utils`. Before them all three
+transcribing templates carried their own copy of AssemblyAI's HTTP: the URL, the
+raw-key auth (no `Bearer`, which is a 401 that reads like a wrong key), the
+windowed streaming upload, the PLURAL `speech_models` field, and the failure
+classification. `spoken-summary` and `transcription-workflow` had the SAME ~200
+lines, reworded, drifting at the edges.
+
+**What did NOT move is the step boundaries, and that is structural rather than
+tidy.** The WDK builder transforms exactly the files under a project's
+`workflows/` directory, so a `"use step"` shipped inside the SDK would be
+scanned by nothing, transformed into nothing, and would run inline as an
+ordinary function with no journal and no retry — with no symptom saying so. So
+the SDK owns what happens INSIDE a step and the template owns which steps exist,
+which is the same thing as owning what gets journaled and what a retry repeats.
+Each template's step is now four lines: a `report`, the SDK call, and
+`.catch(throwStepError)`.
+
+Three things the conversion settled, each worth knowing before the next one:
+
+- **The upload/submit split survives, because it was paid for.** Folding them
+  into one step made the DevKit re-upload 24 MB on all five retries of a
+  deprecated JSON field. That measurement is a property of the BOUNDARY, so it
+  stays in the templates and in the SDK's module doc rather than in one of them.
+- **Polling READS.** Both templates polled `GET /v2/transcript/:id` for a status
+  and then fetched the identical URL again for the text the completed poll
+  already had in its hand. `stepTranscribePoll` answers with the transcript, so
+  a finished job costs one round trip and the value journaled by the last poll
+  IS the result. Four steps became three.
+- **`recap-workflow` converts its SUBMIT and deliberately not its POLL.** Its
+  `checkTranscript` returns the provider's status as a VALUE — read by the Query
+  port (`recap_status`) while the run is still going, and branched on by the saga
+  to unwind the compensation stack — where `stepTranscribePoll` answers `done`
+  and THROWS on a job the provider gave up on. That state machine is the
+  template's whole subject, so converting it would trade the thing being
+  demonstrated for a throw. The module says so in place, because the next reader
+  will otherwise finish the job.
+
+**A provider refusal is where `TranscribeError` earns its keep.** It carries
+`retryable`/`retryAfter` the way `StepGenerateError` does and `toStepError` reads
+both — which is the only way a failed job or a recording with no speech can be
+TERMINAL, since either arrives with a 200 and no status to judge. A template's
+`.catch(throwStepError)` is what turns that into the DevKit's verdict.
 
 **`research-workflow` is the workflow template, and its shape is dictated by the
 Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies
