@@ -13,6 +13,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockWorkflowApi, refuseNetwork, workflowRun as run } from "./_react-test-utils.ts";
+import { recallUploadId, rememberUploadId } from "./_upload-recall.ts";
 import { useWorkflowSubmit, useWorkflows } from "./use-workflow-form.ts";
 import { MAX_MISSING_READS } from "./use-workflow-run.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
@@ -65,6 +66,10 @@ beforeEach(refuseNetwork);
 afterEach(() => {
   // `useFakeTimers` is outside `restoreMocks`; one spec below installs them.
   vi.useRealTimers();
+  // So is `sessionStorage`, and an upload id lives there for the life of the tab
+  // (`_upload-recall.ts`) — which across specs means one spec's stored file
+  // deciding the next spec's upload, in file order.
+  sessionStorage.clear();
 });
 
 describe("useWorkflows", () => {
@@ -172,12 +177,17 @@ describe("useWorkflowSubmit", () => {
     });
 
     const plain = fakeApi();
+    // Its OWN file, because the one above is now stored: an id survives the tab
+    // (`_upload-recall.ts`), so re-submitting the same file reuses the upload
+    // instead of sending it again — which is the point of that mechanism and
+    // would leave this spec with no second upload to read the options off.
+    const other = new File(["abc"], "planning.wav", { type: "audio/wav" });
     const without = renderHook(() =>
       useWorkflowSubmit("digest", { api: plain, intervalMs: POLL_MS }),
     );
-    await act(() => without.result.current.submit({ recording: file }));
-    expect(plain.uploadStream).toHaveBeenCalledWith(expect.any(String), file, {
-      name: "standup.wav",
+    await act(() => without.result.current.submit({ recording: other }));
+    expect(plain.uploadStream).toHaveBeenCalledWith(expect.any(String), other, {
+      name: "planning.wav",
       signal: expect.any(AbortSignal),
       onProgress: expect.any(Function),
     });
@@ -304,6 +314,149 @@ describe("useWorkflowSubmit", () => {
     const ids = vi.mocked(api.uploadStream).mock.calls.map(([id]) => id);
     expect(ids[1]).toBe(ids[2]);
     expect(api.start).toHaveBeenCalledWith("digest", { recordings: [ids[0], ids[1]] }, {});
+  });
+
+  describe("a reload resumes the upload rather than restarting it", () => {
+    /**
+     * A file with a FIXED identity, twice.
+     *
+     * A reload empties the input, so the person picks the file again and gets a
+     * brand-new `File` — which is the case the recall has to survive, and the
+     * reason it keys on the four fields rather than on the object.
+     */
+    const pick = () =>
+      new File(["a".repeat(64)], "standup.wav", { type: "audio/wav", lastModified: 1 });
+
+    test("sends only what is missing, under the id the previous load minted", async () => {
+      const api = fakeApi({
+        // What the agent says about the id the load that is gone was using: half
+        // the recording landed, as windows.
+        uploadInfo: vi.fn(async (id: string) => ({
+          id,
+          name: "standup.wav",
+          type: "audio/wav",
+          size: 32,
+          complete: false,
+          ranges: [{ start: 0, end: 32 }],
+        })),
+      });
+      rememberUploadId("digest", pick(), "upl_from_the_last_load");
+      const { result } = renderHook(() =>
+        useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }),
+      );
+
+      await act(() => result.current.submit({ recording: pick() }));
+
+      // The SAME id, and claimed as this load's own — without `resume` the parts
+      // path reads its own 409 as somebody else holding the id.
+      expect(api.uploadStream).toHaveBeenCalledWith(
+        "upl_from_the_last_load",
+        expect.any(File),
+        expect.objectContaining({ resume: true }),
+      );
+      expect(api.start).toHaveBeenCalledWith("digest", { recording: "upl_from_the_last_load" }, {});
+    });
+
+    test("an upload that already finished is not sent again at all", async () => {
+      // The refresh that costs one GET instead of a second 200 MB upload: the
+      // bytes are all in, so the run starts on the id and nothing is uploaded.
+      const api = fakeApi();
+      rememberUploadId("digest", pick(), "upl_all_in");
+      const { result } = renderHook(() =>
+        useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }),
+      );
+
+      await act(() => result.current.submit({ recording: pick() }));
+
+      expect(api.uploadStream).not.toHaveBeenCalled();
+      expect(api.start).toHaveBeenCalledWith("digest", { recording: "upl_all_in" }, {});
+    });
+
+    test("a swept id is forgotten and the file gets a fresh one", async () => {
+      // The agent no longer has it — an upload the sweep collected, or an agent
+      // redeployed onto a fresh database. Reusing the id would send the file to
+      // an upload nothing will read.
+      const api = fakeApi({
+        uploadInfo: vi.fn(async () => {
+          throw new Error("no such upload");
+        }),
+      });
+      rememberUploadId("digest", pick(), "upl_gone");
+      const { result } = renderHook(() =>
+        useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }),
+      );
+
+      await act(() => result.current.submit({ recording: pick() }));
+
+      const [id, , options] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
+      expect(id).not.toBe("upl_gone");
+      // A fresh id has nothing to resume, and saying otherwise waives the refusal
+      // that makes a caller-chosen id safe.
+      expect(options).not.toMatchObject({ resume: true });
+      // Dropped, so the next submission of this file does not pay for the same
+      // 404 again for the life of the tab — and re-remembered under the new id.
+      expect(recallUploadId("digest", pick())).toBe(id);
+    });
+
+    test("an unfinished upload with NO windows gets a fresh id", async () => {
+      // A partial single `PUT` — which the store answers a second `PUT` to with a
+      // 409 rather than an append, so reusing that id turns a reload into a
+      // failure the person cannot clear.
+      const api = fakeApi({
+        uploadInfo: vi.fn(async (id: string) => ({
+          id,
+          name: "standup.wav",
+          type: "audio/wav",
+          size: 32,
+          complete: false,
+        })),
+      });
+      rememberUploadId("digest", pick(), "upl_partial_put");
+      const { result } = renderHook(() =>
+        useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }),
+      );
+
+      await act(() => result.current.submit({ recording: pick() }));
+
+      const [id] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
+      expect(id).not.toBe("upl_partial_put");
+    });
+
+    test("a file whose upload never started is remembered before its first byte", async () => {
+      // The reload this exists for happens DURING the upload, so an id written
+      // when the last byte lands is an id written for the one case that did not
+      // need it.
+      const held = Promise.withResolvers<void>();
+      const api = fakeApi({
+        uploadStream: vi.fn(async (_id: string, _file, options) => {
+          held.resolve();
+          // Held open until `reset()` aborts it, rather than never settling: a
+          // submission left pending past the end of the spec is a React update
+          // landing on an unmounted tree.
+          await new Promise((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => {
+              reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+            });
+          });
+          throw new Error("unreachable");
+        }),
+      });
+      const { result } = renderHook(() =>
+        useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }),
+      );
+
+      await act(async () => {
+        void result.current.submit({ recording: pick() });
+        await held.promise;
+      });
+
+      const [id] = vi.mocked(api.uploadStream).mock.calls[0] ?? [];
+      expect(recallUploadId("digest", pick())).toBe(id);
+      await act(async () => {
+        result.current.reset();
+        await Promise.resolve();
+      });
+    });
   });
 
   test("reset abandons an upload in flight rather than reporting it as failed", async () => {

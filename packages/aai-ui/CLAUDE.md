@@ -722,6 +722,51 @@ which took two header-allowlist entries, `Range` in and `Content-Range` /
 `Accept-Ranges` back, without which a caller asking for 64 KB of a 200 MB
 recording is answered with the whole thing, correctly and uselessly.
 
+### A RELOAD picks the upload back up too
+
+Pausing works because a streamed upload's id outlives the attempt that began it.
+A reload is the same interruption with one difference: it takes the id with it.
+Everything else was already in place — the windows were still stored, the agent
+could still name them (`UploadInfo.ranges`), and the id was minted in the browser
+— so a person who refreshed at 90% of a 200 MB recording sent the whole file
+again, which is the interruption they are most likely to cause on purpose.
+
+`_upload-recall.ts` writes the id down. It is `sessionStorage`, the same call
+`session-resume-store.ts` makes for a session id and for a stronger reason here:
+a reload and a same-tab navigation are what this is for, and an id from yesterday
+names an upload the agent's sweep has very likely collected. It is what
+tus-js-client's `urlStorage` and Uppy's Golden Retriever sell, at about a hundred
+lines and no dependency.
+
+Two things about it are load-bearing.
+
+**The key is a FINGERPRINT, and the AGENT is what decides.** A picked file
+carries no path and no handle, so the entry is keyed on what tus-js-client
+fingerprints: size, last-modified, type and name. Two different files can agree
+on all four — so a recalled id is a CANDIDATE, and `claimId` in
+`_upload-files.ts` reads `uploadInfo` before a byte is sent to it. Three answers:
+complete means the transfer is skipped outright and the run starts on the id
+(the refresh that costs one `GET` instead of a second upload); unfinished WITH
+windows is resumed, and the first attempt must pass `resume` because the id was
+claimed by a load that is gone; anything else — a 404, a failure, or an
+unfinished upload reporting NO windows — takes a fresh id. That last case is the
+one worth stating: no windows means a partial single `PUT`, which the store
+answers a second `PUT` to with a **409** rather than an append, so reusing that
+id would turn a reload into a failure the person cannot clear.
+
+**The id is written before the first byte leaves**, not when the last one lands,
+because the reload this exists for happens in between.
+
+It follows that re-submitting a file already stored in this tab reuses that
+upload instead of sending it again — the same mechanism seen from the other side,
+and correct, since an upload is content rather than part of a run. A spec that
+wants a second transfer needs a second file, which is why
+`use-workflow-form.test.ts` clears `sessionStorage` between specs.
+
+`useWorkflowStream` deliberately does NOT recall: its id goes into a run input,
+so reusing one across a reload would start a second run against the first run's
+upload. Its pause and its outage resume are unchanged.
+
 ### The run a page just started, and the ones before it
 
 `useWorkflowRun` watches ONE run by id, which is right for the run a form just

@@ -58,9 +58,15 @@ describe("session-resume-store", () => {
     const boom = () => {
       throw new Error("SecurityError");
     };
-    vi.spyOn(globalThis.sessionStorage, "getItem").mockImplementation(boom);
-    vi.spyOn(globalThis.sessionStorage, "setItem").mockImplementation(boom);
-    vi.spyOn(globalThis.sessionStorage, "removeItem").mockImplementation(boom);
+    // `Storage.prototype`, not the instance: jsdom implements a `Storage` as a
+    // proxy over named properties, so spying the INSTANCE is taken as a write of
+    // an entry called `getItem` and the real method still answers. This spec was
+    // stubbing nothing — it passed because nothing had been written yet, so the
+    // real `getItem` also answered undefined. See `_upload-recall.test.ts`.
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(boom);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(boom);
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(boom);
+    writeStoredSessionId(AGENT, "sess-unwritable");
     expect(readStoredSessionId(AGENT)).toBeUndefined();
     expect(() => writeStoredSessionId(AGENT, "sess-x")).not.toThrow();
     expect(() => clearStoredSessionId(AGENT)).not.toThrow();
