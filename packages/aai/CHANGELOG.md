@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 6.10.0
+
+### Minor Changes
+
+- 1a76804: Workflow uploads no longer need a database: with no `DATABASE_URL` the store now follows the local workflow world into its own data directory, so a databaseless agent's uploads are exactly as durable as the runs that read them. A database with no bucket is the one configuration that still refuses.
+
 ## 6.9.1
 
 ### Patch Changes
