@@ -23,7 +23,7 @@ import { readUpload, uploadInfo } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
 import agentDef, { spokenSummary } from "./agent.ts";
-import { speak, summarize } from "./workflows/summarize.ts";
+import { speak, spokenSummaryFlow, summarize } from "./workflows/summarize.ts";
 import {
   countWords,
   createJob,
@@ -242,5 +242,98 @@ describe("countWords", () => {
   test("counts words rather than characters, and answers 0 for nothing", () => {
     expect(countWords("we shipped it on tuesday")).toBe(5);
     expect(countWords("  ")).toBe(0);
+  });
+});
+
+describe("the whole run", () => {
+  /**
+   * Answer every leg's HTTP, so the BODY can be driven end to end.
+   *
+   * Imported through vitest with no bundler in the path, a `"use workflow"`
+   * function is an ordinary async function — so what this exercises is the
+   * ORDER the legs are wired in and the shape they hand each other, which is
+   * the one thing the per-leg specs above cannot see. Durability, suspension
+   * and replay are not testable here and are not what this claims.
+   *
+   * The job answers `completed` on its FIRST poll, deliberately: a second poll
+   * would reach the durable `sleep`, which outside a real run is not a wait
+   * this spec should be taking.
+   *
+   * **The model call goes through this too, not `installStubGateway`.** A
+   * published `stepFetch` is what `stepGenerate` makes its request with, so a
+   * global-fetch stub is never reached once one exists — which is exactly the
+   * point `stubStepFetch` exists to make.
+   */
+  function stubProvider(reply: { headline: string; points: string[]; spoken: string }) {
+    let reads = 0;
+    return stubStepFetch((request) => {
+      if (request.url.includes("llm-gateway")) {
+        return { body: { choices: [{ message: { content: JSON.stringify(reply) } }] } };
+      }
+      if (request.url.endsWith("/v2/upload")) return { body: { upload_url: "https://cdn/aai/1" } };
+      if (request.method === "POST") return { body: { id: "t_1" } };
+      reads += 1;
+      return reads === 1
+        ? { body: { status: "completed" } }
+        : { body: { text: "we ship tuesday and two bugs are left", audio_duration: 42 } };
+    });
+  }
+
+  test("transcribes, summarizes, speaks, and reports the file it made", async () => {
+    restores.push(
+      stubProvider({
+        headline: "Launch is on",
+        points: ["Ship Tuesday"],
+        spoken: "The launch is on for Tuesday.",
+      }).restore,
+      stubReporter().restore,
+      stubSpeech().restore,
+    );
+
+    const summary = await spokenSummaryFlow({ recording: UPLOAD_ID });
+
+    expect(summary).toEqual({
+      source: "standup.wav",
+      durationMs: 42_000,
+      words: 8,
+      headline: "Launch is on",
+      points: ["Ship Tuesday"],
+      spoken: "The launch is on for Tuesday.",
+      transcript: "we ship tuesday and two bugs are left",
+      // The output carries an ID, never the audio — the rule the whole
+      // template exists to demonstrate.
+      audio: "upl_stub_1",
+      audioDurationMs: 250,
+    });
+  });
+
+  test("the voice the form chose reaches the synthesizer", async () => {
+    const speech = stubSpeech();
+    restores.push(
+      stubProvider({ headline: "Launch is on", points: ["Ship Tuesday"], spoken: "Spoken." })
+        .restore,
+      stubReporter().restore,
+      speech.restore,
+    );
+
+    await spokenSummaryFlow({ recording: UPLOAD_ID, voice: "michael" });
+
+    expect(speech.calls[0]).toMatchObject({ text: "Spoken.", voice: "michael" });
+  });
+
+  test("a recording the provider gave up on fails the run rather than half-summarizing", async () => {
+    restores.push(
+      stubStepFetch((request) =>
+        request.url.endsWith("/v2/upload")
+          ? { body: { upload_url: "https://cdn/aai/1" } }
+          : request.method === "POST"
+            ? { body: { id: "t_1" } }
+            : { body: { status: "error", error: "corrupt audio" } },
+      ).restore,
+      stubReporter().restore,
+      stubSpeech().restore,
+    );
+
+    await expect(spokenSummaryFlow({ recording: UPLOAD_ID })).rejects.toThrow("corrupt audio");
   });
 });
