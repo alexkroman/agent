@@ -103,7 +103,14 @@ export type ProjectDatabaseState = {
   environments: ProjectDatabaseEnvironmentState[];
 };
 
-function storageEnvOf(env: ProjectDatabaseEnv): StorageEnv {
+/**
+ * The per-slug storage bindings, out of the project-level env.
+ *
+ * Exported for `studio-database-browse.ts`, which needs the identical three
+ * fields to read a tenant's tables — the alternative was a second literal that
+ * a field added to `StorageEnv` would leave behind.
+ */
+export function storageEnvOf(env: ProjectDatabaseEnv): StorageEnv {
   return { secrets: env.secrets, appDb: env.appDb, slugLock: env.slugLock };
 }
 

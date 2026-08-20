@@ -1,13 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
-// The Preview pane — it shows the PREVIEW deploy of the workspace, which is
-// auto-deployed after every agent turn and editor save, so edits show up
-// here without publishing. Publish is the only thing that touches the
-// production slug. Before any preview exists, a quiet placeholder (falling
-// back to the production agent for projects published before previews
-// existed); once deployed, the preview agent embedded same-origin (iframe
-// with microphone delegation) — but only once the platform really serves
-// that page (see useAgentPageReady), so a preview still deploying shows the
-// pane's own screen instead of the platform's raw 404 body.
+// The Preview pane, labelled **Playground** in the top bar — it shows the
+// PREVIEW deploy of the workspace, auto-deployed after every agent turn and
+// editor save, so edits show up here without publishing. Publish is the only
+// thing that touches the production slug. Before any preview exists, a quiet
+// placeholder (falling back to the production agent for projects published
+// before previews existed); once deployed, the preview agent embedded
+// same-origin (iframe with microphone delegation) — but only once the
+// platform really serves that page (see useAgentPageReady), so a preview
+// still deploying shows the pane's own screen instead of the platform's raw
+// 404 body.
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api.ts";

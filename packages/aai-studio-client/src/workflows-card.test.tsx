@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
-// The Settings pane's Workflows card: what durable work a project declares and
-// how its recent runs are doing.
+// The Workflows pane's card: what durable work a project declares and how its
+// recent runs are doing.
 //
 // What matters here is that it reads the AGENT'S own brokered API rather than a
 // studio route, that it falls back to the PREVIEW agent before a first publish

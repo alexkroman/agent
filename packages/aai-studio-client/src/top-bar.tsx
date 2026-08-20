@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's shared 60px top bar (brand, project name, Preview/Code
-// segmented control, Settings, Publish, Log out) and the Publish dropdown it
+// The studio's shared 60px top bar (brand, project name, the six-pane
+// segmented control, Publish, Account, Log out) and the Publish dropdown it
 // opens.
 // Split from app.tsx, which owns all the state these render. Project
 // switching lives in the home sidebar (brand → home), not here.
@@ -121,17 +121,37 @@ export function PublishMenu(props: PublishMenuProps) {
 }
 
 /**
- * The three project panes, all peers in the segmented control.
+ * The six project panes, all peers in the segmented control.
  *
  * Settings joined them rather than staying a dropdown: it holds secrets, the
  * CLI round-trip, and Delete project, which is more than a floating panel can
  * lay out. Nothing here gates on a build or a deploy — Delete project has to
- * work before anything has ever been published.
+ * work before anything has ever been published, and the API pane says what the
+ * agent will answer once something is.
+ *
+ * The order is the deployed agent first (talk to it, call it, watch what it is
+ * still doing, read what it stored), then the workspace: API sits between
+ * Playground and Code because it is the same question as Playground — "what
+ * does this thing do?" — asked by a caller rather than a user; Workflows
+ * follows it because a run is that API's output outliving the request that made
+ * it; and Database is the same again one step further out, the rows still there
+ * when every run has finished.
+ *
+ * **The first tab's id is `preview` and its label is "Playground".** The id
+ * names a platform concept the whole product spells that way — the auto-deployed
+ * PREVIEW agent, its `previewSlug`, `previewVersion` and `previewStale` — and
+ * renaming the state to match a button would put a second word for one thing
+ * into the codebase. The label is what needed to change: what the pane offers
+ * is somewhere to talk to the agent, and "Preview" reads as a rendering of the
+ * code rather than an invitation to use it.
  */
-export type StudioTab = "preview" | "code" | "settings";
+export type StudioTab = "preview" | "docs" | "workflows" | "database" | "code" | "settings";
 
 const TABS: { id: StudioTab; label: string }[] = [
-  { id: "preview", label: "Preview" },
+  { id: "preview", label: "Playground" },
+  { id: "docs", label: "API" },
+  { id: "workflows", label: "Workflows" },
+  { id: "database", label: "Database" },
   { id: "code", label: "Code" },
   { id: "settings", label: "Settings" },
 ];

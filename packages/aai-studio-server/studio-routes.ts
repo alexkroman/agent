@@ -15,6 +15,11 @@
  *   `ctx.db` database, one switch across BOTH deployed agents (production and
  *   preview). See studio-database.ts: per-slug provisioning is the platform
  *   primitive (`aai storage enable`), and a project is two slugs.
+ * - `GET /studio/projects/:project/database/{tables,rows}` — the read-only
+ *   table viewer behind the studio's Database pane (studio-database-browse.ts).
+ *   `?environment=` is required and validated rather than defaulted: which
+ *   agent's rows a caller is reading is the difference between "my tool saved
+ *   nothing" and "my tool saved it in the preview".
  *
  * - `GET/PUT/DELETE /studio/projects/:project/secret` — the project's
  *   secrets, written to BOTH deployed agents. The per-slug `/:slug/secret`

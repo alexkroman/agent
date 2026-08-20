@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Everything that exists only while a project is open: its workspace, chat
-// history and brokered sandbox, the three panes, Publish, and the unsaved
+// history and brokered sandbox, the six panes, Publish, and the unsaved
 // editor drafts.
 //
 // Split out of app.tsx because `project` is a REQUIRED prop here. In one
@@ -18,6 +18,8 @@ import { api, type ChatSession, type ProjectData, type StudioStatus } from "./ap
 import { errorText, isTransientError } from "./api-error.ts";
 import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
 import { ChatPanel } from "./chat.tsx";
+import { DatabasePane } from "./database.tsx";
+import { DocsPane } from "./docs.tsx";
 import { bufferFor, useFileDrafts } from "./file-drafts.ts";
 import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
@@ -25,9 +27,10 @@ import { SettingsPane } from "./settings.tsx";
 import { lazyRetry } from "./stale-build.ts";
 import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
 import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
+import { WorkflowsPane } from "./workflows.tsx";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
-// default (Preview) path shouldn't pay for it.
+// default (Playground) path shouldn't pay for it.
 //
 // Wrapped in `lazyRetry` because that laziness is exactly what a deploy
 // breaks: the chunk URL is content-hashed and served `immutable`, so a tab
@@ -319,6 +322,18 @@ export function ProjectView(props: ProjectViewProps) {
             onPreviewMissing={wakePreview}
           />
         )}
+        {tab === "docs" && (
+          <DocsPane
+            bearer={bearer}
+            project={project}
+            deployedSlug={deployedSlug}
+            previewSlug={workspace.data?.previewSlug}
+          />
+        )}
+        {tab === "workflows" && (
+          <WorkflowsPane deployedSlug={deployedSlug} previewSlug={workspace.data?.previewSlug} />
+        )}
+        {tab === "database" && <DatabasePane bearer={bearer} project={project} />}
         {tab === "code" && (
           <Suspense
             fallback={<div className="flex flex-1 items-center justify-center text-subtle" />}
@@ -340,8 +355,6 @@ export function ProjectView(props: ProjectViewProps) {
           <SettingsPane
             bearer={bearer}
             project={project}
-            deployedSlug={deployedSlug}
-            previewSlug={workspace.data?.previewSlug}
             onDeleteProject={() => deleteProject.mutate()}
             deleting={deleteProject.isPending}
           />

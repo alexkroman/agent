@@ -56,8 +56,18 @@ export type DatabaseUsage = {
   bytes: number;
 };
 
+/**
+ * Which of a project's two deployed agents an answer is about.
+ *
+ * Named as its own type because the Database pane's reads take it as an
+ * ARGUMENT (see `api.listTables`) rather than only receiving it in a payload —
+ * an inline union at each of those call sites is how one of them ends up
+ * accepting a string the server 400s.
+ */
+export type DatabaseEnvironmentName = "production" | "preview";
+
 export type DatabaseEnvironment = {
-  environment: "production" | "preview";
+  environment: DatabaseEnvironmentName;
   /** The deployed slug; absent until that environment has deployed. */
   slug?: string;
   enabled: boolean;
@@ -81,6 +91,33 @@ export type DatabaseState = {
   environments: DatabaseEnvironment[];
   /** An environment that could not be switched, when others succeeded. */
   warning?: string;
+};
+
+/** One of an app's tables, with the exact number of rows in it. */
+export type TableSummary = { schema: string; name: string; rows: number };
+
+/** `GET …/database/tables` — the tables one environment holds. */
+export type TableListing = {
+  environment: DatabaseEnvironmentName;
+  /** Which deployed agent answered, so the pane can name it. */
+  slug: string;
+  tables: TableSummary[];
+};
+
+/**
+ * `GET …/database/rows` — one page of one table.
+ *
+ * Cells arrive as strings the server has already rendered, with `null` kept
+ * distinct: the values are whatever a tenant's columns hold (Buffers, Dates,
+ * int8-as-string, parsed JSON), and a browser has no type map to format that
+ * lot with. `null` survives because a column may legitimately hold the empty
+ * string, and the pane has to be able to show the difference.
+ */
+export type TablePage = {
+  columns: string[];
+  rows: (string | null)[][];
+  /** Rows in the whole table, so the pager can say where it is. */
+  total: number;
 };
 
 /** `GET /studio/status` — which LLM the studio's chat runs on. */

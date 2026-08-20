@@ -25,4 +25,39 @@ export const queryKeys = {
    * show production's runs against the preview after a publish.
    */
   workflowRuns: (slug: string | undefined) => ["workflow-runs", slug] as const,
+  /**
+   * The workflows an agent DECLARES, keyed by slug for the same reason its runs
+   * are: production and preview are separate agents and can be at separate
+   * versions, so one key for both would document the wrong deployment.
+   *
+   * Separate from `workflowRuns` rather than a slice of it: the declarations are
+   * static per deploy (the Docs pane holds them forever), while the runs card
+   * re-reads on demand — sharing a key would make its Refresh button discard
+   * this pane's cache and re-boot the sandbox.
+   */
+  workflowDeclarations: (slug: string) => ["workflow-declarations", slug] as const,
+  /**
+   * The Database pane's reads, keyed by PROJECT and environment.
+   *
+   * By project rather than by slug, unlike the workflow keys above: these go
+   * through a studio route that resolves the environment to a slug itself, so
+   * the project and the environment are the whole of what the request says —
+   * a slug in the key would be a second name for the same thing, read from a
+   * payload that may not have arrived yet.
+   */
+  /**
+   * One agent's `GET /:slug/client-config` — what it says it IS. Keyed by
+   * slug, like the workflow declarations: production and preview can be at
+   * different versions and so can disagree about the answer.
+   */
+  clientConfig: (slug: string) => ["client-config", slug] as const,
+  tables: (project: string, environment: string) => ["tables", project, environment] as const,
+  /** One page of one table. The OFFSET is in the key: each page is its own read. */
+  tableRows: (
+    project: string,
+    environment: string,
+    schema: string,
+    table: string,
+    offset: number,
+  ) => ["table-rows", project, environment, schema, table, offset] as const,
 };

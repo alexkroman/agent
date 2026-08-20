@@ -6,6 +6,8 @@
  * - `GET    …/database` — the switch's state, per environment
  * - `POST   …/database` — provision it for both environments
  * - `DELETE …/database` — drop both, with all their data
+ * - `GET    …/database/tables` — one environment's tables (the viewer)
+ * - `GET    …/database/rows` — one page of one table
  *
  * One switch per PROJECT rather than per slug, because a project is two
  * deployed agents (production and preview). studio-database.ts owns the
@@ -21,6 +23,8 @@ import {
   reconcileProjectDatabase,
   setProjectDatabase,
 } from "./studio-database.ts";
+import { projectTableRows, projectTables } from "./studio-database-browse.ts";
+import { PROJECT_ENVIRONMENTS, type ProjectEnvironment } from "./studio-project-slugs.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import type { AfterDeploy } from "./studio-session-publish.ts";
 import { schedulePreviewFor } from "./studio-settled-edit.ts";
@@ -76,6 +80,76 @@ export function registerDatabaseRoutes(
 
   studio.post("/projects/:project/database", (c) => setDatabase(c, true));
   studio.delete("/projects/:project/database", (c) => setDatabase(c, false));
+
+  // The read-only viewer. Both routes answer 404 for every "nothing to show
+  // you" — no such project, an environment that has not deployed, a slug the
+  // caller does not own, storage off — because the pane makes one statement
+  // for all of them and telling them apart would be an ownership oracle over
+  // the slug namespace (see studio-database-browse.ts).
+  studio.get("/projects/:project/database/tables", async (c) => {
+    const environment = environmentParam(c);
+    if (!environment) return c.json({ error: BAD_ENVIRONMENT }, 400);
+    const tables = await projectTables(databaseEnvFor(c), {
+      scope: c.var.scope,
+      project: c.var.project,
+      apiKey: c.var.apiKey,
+      environment,
+    });
+    if (!tables) return c.json({ error: NO_DATABASE }, 404);
+    return c.json(tables);
+  });
+
+  studio.get("/projects/:project/database/rows", async (c) => {
+    const environment = environmentParam(c);
+    if (!environment) return c.json({ error: BAD_ENVIRONMENT }, 400);
+    const url = new URL(c.req.url);
+    const schema = url.searchParams.get("schema");
+    const table = url.searchParams.get("table");
+    if (schema === null || table === null) {
+      return c.json({ error: "schema and table are required" }, 400);
+    }
+    const page = await projectTableRows(databaseEnvFor(c), {
+      scope: c.var.scope,
+      project: c.var.project,
+      apiKey: c.var.apiKey,
+      environment,
+      schema,
+      table,
+      // Clamped by `readAppTable` itself rather than here — a cap enforced at
+      // the route is a cap the next caller of the core does not get.
+      limit: positiveParam(url.searchParams.get("limit"), DEFAULT_ROWS),
+      offset: positiveParam(url.searchParams.get("offset"), 0),
+    });
+    // A table that is gone (a migration between the list and the click) is the
+    // same 404 as no database: the pane re-reads its list either way.
+    if (!page) return c.json({ error: NO_DATABASE }, 404);
+    return c.json(page);
+  });
+}
+
+/** Rows a page carries when the caller does not say. */
+const DEFAULT_ROWS = 50;
+
+const BAD_ENVIRONMENT = `environment must be one of: ${PROJECT_ENVIRONMENTS.join(", ")}`;
+const NO_DATABASE = "No database to read for this environment";
+
+/**
+ * The `?environment=` query value, or undefined when it is not one of ours.
+ *
+ * Validated rather than defaulted: which agent's rows you are looking at is the
+ * difference between "my tool saved nothing" and "my tool saved it in the
+ * preview", so a typo has to be a 400 instead of quietly answering for
+ * production.
+ */
+function environmentParam(c: Context<StudioHonoEnv>): ProjectEnvironment | undefined {
+  const value = new URL(c.req.url).searchParams.get("environment");
+  return PROJECT_ENVIRONMENTS.find((environment) => environment === value);
+}
+
+/** A non-negative integer query parameter, or the default for anything else. */
+function positiveParam(value: string | null, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 /**
