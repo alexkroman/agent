@@ -349,6 +349,40 @@ so every piece of per-project state resets on a switch with no effect to do it.
     whole reason the pane can exist without somebody maintaining it. The
     property NAME is the placeholder (`"<topic>"`), because a generic
     `"string"` reads as a value somebody meant to keep.
+  - **Each half is offered only to the agents it is TRUE for.** The pane used
+    to show every card to every project, so a workflow app was told to paste a
+    Twilio webhook into a carrier console and a voice agent got twelve workflow
+    routes it had nothing to call them with. Both halves are now gated on what
+    the agent ITSELF answers:
+    - **No carrier webhook for a workflow app.** `page: "static"` declines
+      `/websocket` with a reason and defaults telephony OFF (`AgentDef.page`),
+      so a phone number pointed at one answers and hangs up — the worst kind of
+      wrong documentation, since it is only wrong at the end of an afternoon in
+      somebody's carrier console. `frontDoorEndpoints(page)` drops the
+      `POST /phone` row and the Phone card goes with it; the page and its
+      config stay, because they are how a caller discovers the shape at all.
+    - **No workflow routes for an agent that declares no workflow.** This is a
+      question about DECLARATIONS, not about routes: the platform proxies
+      `/:slug/workflows/*` for every agent, so the table would be true for a
+      voice agent and useless to it — `POST /workflows/runs` needs a `workflow`
+      name and there is none to put there. What is left is the one sentence
+      saying the project declares none, which is not a route table: this pane
+      exists on the argument that the API surface is the least discoverable
+      thing about a deployment, and "you could have workflows" is part of that
+      surface.
+    - **Neither gate DEFAULTS while the answer is outstanding.** Both reads are
+      one-shot (`staleTime: Infinity`), and defaulting to the fuller shape
+      would put the Phone card and the route tables on screen for a moment and
+      then take them away on every open — which reads as a glitch, not as a
+      judgement. The front-door card is held back until `client-config`
+      answers; the workflow half shows one line (reading / could not read /
+      declares none) until the listing does. A FAILED `client-config` does
+      default to voice, since `page` is optional and absent has always read
+      that way.
+    - `docs.test.tsx` pins both, and each negative sits beside a positive:
+      a `queryByText(…)).toBeNull()` pair passes just as well for a pane that
+      renders nothing, so the voice-agent test asserting all of it is what
+      makes the absences a decision rather than a bug.
   - **Whether the agent is a voice session or a page is asked of the AGENT**
     (`GET /:slug/client-config`), never read off the project's stored `kind`.
     That field selects the coding agent's system prompt and is explicitly a
