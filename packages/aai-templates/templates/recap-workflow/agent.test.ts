@@ -408,13 +408,21 @@ describe("submitRecording", () => {
 
     const call = calls[0];
     expect(call?.init.method).toBe("POST");
+    // `speaker_labels` is this desk's own request, carried through the SDK's
+    // `params` passthrough; the model field is the SDK's and is PLURAL.
     expect(JSON.parse(String(call?.init.body))).toMatchObject({
       audio_url: "https://example.com/a.mp3",
+      speaker_labels: true,
     });
-    // AssemblyAI's `authorization` takes the key RAW — no `Bearer` prefix,
-    // unlike the OpenAI-compatible LLM gateway `summarize` calls.
+    // AssemblyAI takes the key RAW — no `Bearer` prefix, unlike the
+    // OpenAI-compatible LLM gateway `summarize` calls. The SDK spells the
+    // header `Authorization`; HTTP header names are case-insensitive, so the
+    // lookup is too rather than pinning one casing.
     const headers = call?.init.headers as Record<string, string> | undefined;
-    expect(headers?.authorization).toBe("sk-test");
+    const auth = Object.entries(headers ?? {}).find(
+      ([name]) => name.toLowerCase() === "authorization",
+    );
+    expect(auth?.[1]).toBe("sk-test");
   });
 
   test("fails FATALLY on a bad key and plainly on a rate limit", async () => {

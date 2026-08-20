@@ -40,6 +40,11 @@ import { isRecord } from "./is-record.ts";
 import { statusWithPreview } from "./response-body.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
 
+export {
+  TRANSCRIBE_TIMEOUT_MS,
+  TranscribeError,
+  type TranscribeRequestOptions,
+} from "./_transcribe-shared.ts";
 export { linkConfirmationCode } from "./cli-link.ts";
 export { isRecord } from "./is-record.ts";
 export {
@@ -81,6 +86,25 @@ export {
   STEP_SPEAK_TIMEOUT_MS,
   stepSpeak,
 } from "./step-speak.ts";
+export {
+  stepTranscribePoll,
+  stepTranscribeSubmit,
+  stepTranscribeUpload,
+  TRANSCRIBE_API,
+  TRANSCRIBE_MODELS,
+  TRANSCRIBE_UPLOAD_TIMEOUT_MS,
+  TRANSCRIBE_WINDOW_BYTES,
+  type TranscribeProgress,
+  type TranscribeSubmitOptions,
+  type Transcript,
+} from "./step-transcribe.ts";
+export {
+  stepTranscribeSync,
+  TRANSCRIBE_SYNC_ENDPOINT,
+  TRANSCRIBE_SYNC_MODEL,
+  TRANSCRIBE_SYNC_TIMEOUT_MS,
+  type TranscribeSyncOptions,
+} from "./step-transcribe-sync.ts";
 export {
   type ReadUploadOptions,
   readUpload,

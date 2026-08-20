@@ -23,7 +23,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
-import { createJob, pollTranscript, readTranscript, uploadToProvider } from "./workflows/batch.ts";
+import { createJob, pollTranscript, uploadToProvider } from "./workflows/batch.ts";
 import { planStreamed, probeUpload } from "./workflows/stream.ts";
 import {
   clock,
@@ -819,45 +819,59 @@ describe("the async flow", () => {
     stubBatch(() => ({ body: { status: "error", error: "audio too quiet" } }));
     // The provider has decided; no number of polls changes it, so this must not come
     // back as "not done yet".
-    await expect(pollTranscript("tr_1")).rejects.toBeInstanceOf(FatalError);
+    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).rejects.toBeInstanceOf(FatalError);
   });
 
   test("pollTranscript answers `done` on completed and not before", async () => {
     publishRecording(new Uint8Array(10));
     stubBatch(() => ({ body: { status: "processing" } }));
-    await expect(pollTranscript("tr_1")).resolves.toEqual({ done: false, status: "processing" });
+    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toEqual({ done: false });
   });
 
   test("an unknown status is NOT done, so a new one cannot end a run early", async () => {
     publishRecording(new Uint8Array(10));
     stubBatch(() => ({ body: {} }));
-    await expect(pollTranscript("tr_1")).resolves.toMatchObject({ done: false });
+    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toMatchObject({
+      done: false,
+    });
   });
 
-  test("readTranscript reports the provider's own duration and ONE segment", async () => {
+  test("a completed poll carries the transcript — ONE request, not two", async () => {
     publishRecording(new Uint8Array(10), "standup.wav");
-    stubBatch(() => ({ body: { text: "  hello there  ", audio_duration: 12.5 } }));
-    await expect(readTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toMatchObject({
-      source: "standup.wav",
-      // Not a fudge: the async API transcribed the recording in one piece, which is
-      // the difference this flow is here to show.
-      segments: 1,
-      durationMs: 12_500,
-      words: 2,
-      transcript: "hello there",
+    // It used to poll for a status and then fetch the identical URL again for the
+    // text the poll already had in its hand.
+    const calls = stubBatch(() => ({
+      body: { status: "completed", text: "  hello there  ", audio_duration: 12.5 },
+    }));
+    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toMatchObject({
+      done: true,
+      transcript: {
+        source: "standup.wav",
+        // Not a fudge: the async API transcribed the recording in one piece, which is
+        // the difference this flow is here to show.
+        segments: 1,
+        durationMs: 12_500,
+        words: 2,
+        transcript: "hello there",
+      },
     });
+    expect(calls).toHaveLength(1);
   });
 
   test("a rate limit is RETRYABLE, so a busy minute does not fail the run", async () => {
     publishRecording(new Uint8Array(10));
     stubBatch(() => ({ status: 429, body: { error: "slow down" } }));
-    await expect(pollTranscript("tr_1")).rejects.toBeInstanceOf(RetryableError);
+    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).rejects.toBeInstanceOf(
+      RetryableError,
+    );
   });
 
   test("all three flows report the same SHAPE, which is what lets one page render any", async () => {
     publishRecording(new Uint8Array(10), "standup.wav");
-    stubBatch(() => ({ body: { text: "hi", audio_duration: 1 } }));
-    const batched = await readTranscript(UPLOAD_ID, "tr_1", STARTED_AT);
+    stubBatch(() => ({ body: { status: "completed", text: "hi", audio_duration: 1 } }));
+    const progress = await pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT);
+    if (!progress.done) return expect.fail("the stub reports a completed job");
+    const batched = progress.transcript;
     // One key set, so the page's summary line renders every flow's output. A field on
     // one flow and not the others is a panel that shows it for some runs and not
     // others, with nothing saying why.

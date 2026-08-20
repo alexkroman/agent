@@ -474,14 +474,10 @@ export const WS_OPEN = 1;
 export const WS_NORMAL_CLOSURE = 1000;
 
 /**
- * Single source of truth — used by `secureHeaders` middleware and
- * per-response CSP headers across self-hosted and platform agent UIs.
+ * The agent UI's Content-Security-Policy.
  *
- * @internal
+ * Re-exported so the import path is unchanged; it lives in its own module
+ * because it is an HTTP header policy rather than a magic number, and because
+ * the argument its `media-src` needs is longer than the header.
  */
-export const AGENT_CSP =
-  "default-src 'self'; script-src 'self' 'unsafe-eval' blob:; " +
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-  "connect-src 'self' wss: ws:; img-src 'self' data:; " +
-  "font-src 'self' https://fonts.gstatic.com; " +
-  "object-src 'none'; base-uri 'self'";
+export { AGENT_CSP } from "./agent-csp.ts";

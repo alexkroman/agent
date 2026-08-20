@@ -51,6 +51,7 @@
  */
 
 import { FatalError, RetryableError } from "workflow";
+import { TranscribeError } from "./_transcribe-shared.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { StepGenerateError } from "./step-generate.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
@@ -65,8 +66,12 @@ import { errorMessage } from "./utils.ts";
  * - A **`Response`** — a non-2xx from an API the step called. Transient by
  *   `isTransientStatus` (`/utils`), with the delay from its `Retry-After` when it
  *   named one.
- * - A **`StepGenerateError`** (`/utils`) — the LLM gateway, which has already made
- *   the same judgement and recorded it on `retryable`/`retryAfter`.
+ * - A **`StepGenerateError`** or a **`TranscribeError`** (both `/utils`) — the
+ *   LLM gateway and the transcription endpoints, each of which has already made
+ *   the same judgement and recorded it on `retryable`/`retryAfter`. A
+ *   transcription refusal the PROVIDER decided — a failed job, a recording with
+ *   no speech in it — arrives with `retryable: false`, which is the whole reason
+ *   it is carried rather than re-derived from a status that is not there.
  * - **Anything else** — a verdict this function cannot reach, so it does not
  *   invent one: the value is returned unchanged if it is an `Error` and wrapped
  *   in a plain `Error` if it is not. Both are retryable by the DevKit's default,
@@ -99,6 +104,11 @@ export function toStepError(cause: unknown, message?: string): Error {
     return retryableError(sentence, retryAfter(cause));
   }
   if (cause instanceof StepGenerateError) {
+    const sentence = message ?? cause.message;
+    if (!cause.retryable) return new FatalError(sentence);
+    return retryableError(sentence, cause.retryAfter);
+  }
+  if (cause instanceof TranscribeError) {
     const sentence = message ?? cause.message;
     if (!cause.retryable) return new FatalError(sentence);
     return retryableError(sentence, cause.retryAfter);

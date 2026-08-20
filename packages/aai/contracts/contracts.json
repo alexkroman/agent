@@ -88,6 +88,11 @@
       "7": "`ToolContext` and `ToolDef` take no state type parameter: a tool reads and writes session state through a sessionSlot, which types the value in the module that declares it."
     }
   },
+  "transcribe": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "tts": {
     "current": 1,
     "supported": [1],

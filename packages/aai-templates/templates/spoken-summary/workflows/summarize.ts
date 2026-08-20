@@ -55,18 +55,17 @@ import {
   report,
   stepGenerateJson,
   stepSpeak,
+  TRANSCRIBE_API,
   writeUpload,
 } from "@alexkroman1/aai/utils";
 import { sleep } from "workflow";
 import { z } from "zod";
 import {
-  API,
   countWords,
   createJob,
   MAX_POLLS,
   POLL_INTERVAL,
   pollTranscript,
-  readTranscript,
   type Transcript,
   uploadToProvider,
 } from "./transcribe.ts";
@@ -169,8 +168,8 @@ async function transcribe(recording: string): Promise<Transcript> {
   const job = await createJob(audioUrl);
 
   for (let poll = 0; poll < MAX_POLLS; poll += 1) {
-    const status = await pollTranscript(job.id);
-    if (status.done) return await readTranscript(recording, job.id);
+    const progress = await pollTranscript(recording, job.id);
+    if (progress.done) return progress.transcript;
     await sleep(POLL_INTERVAL);
   }
   // A plain throw: this is the BODY, where the fatal/retryable distinction has
@@ -178,7 +177,7 @@ async function transcribe(recording: string): Promise<Transcript> {
   // it is rather than only that the wait ran out.
   throw new Error(
     `Transcript ${job.id} was still unfinished after ${MAX_POLLS} polls. It is not lost — ` +
-      `read it directly with GET ${API}/v2/transcript/${job.id}.`,
+      `read it directly with GET ${TRANSCRIBE_API}/v2/transcript/${job.id}.`,
   );
 }
 

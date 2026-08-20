@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { FatalError, RetryableError } from "workflow";
+import { TranscribeError } from "./_transcribe-shared.ts";
 import { throwFatalStepError, throwStepError, toStepError } from "./step-errors.ts";
 import { StepGenerateError } from "./step-generate.ts";
 
@@ -80,6 +81,31 @@ describe("toStepError, given a StepGenerateError", () => {
     const at = new Date(Date.now() + 45_000);
     const err = toStepError(
       new StepGenerateError("slow down", { status: 429, retryable: true, retryAfter: at }),
+    );
+
+    expect(devKitVerdict(err)).toMatchObject({ retryable: true, retryAfter: at });
+  });
+});
+
+describe("toStepError, given a TranscribeError", () => {
+  test("takes a PROVIDER refusal as terminal, where no status could say so", () => {
+    // The case a status-based verdict cannot reach: the job came back 200 and
+    // the provider said the recording could not be transcribed. Retrying asks
+    // the same question and gets the same answer.
+    const err = toStepError(
+      new TranscribeError("no speech in that recording", { retryable: false }),
+    );
+
+    expect(devKitVerdict(err)).toEqual({ fatal: true, retryable: false });
+    expect(err.message).toBe("no speech in that recording");
+  });
+
+  test("reads the delay a rate-limited endpoint asked for", () => {
+    // Matters most on the sync endpoint, where a fan-out hits the limit all at
+    // once: on the default backoff every segment asks again a second later.
+    const at = new Date(Date.now() + 30_000);
+    const err = toStepError(
+      new TranscribeError("slow down", { status: 429, retryable: true, retryAfter: at }),
     );
 
     expect(devKitVerdict(err)).toMatchObject({ retryable: true, retryAfter: at });

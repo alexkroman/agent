@@ -76,6 +76,7 @@ import {
   requireStepEnv,
   stepFetch,
   stepGenerateJson,
+  stepTranscribeSubmit,
 } from "@alexkroman1/aai/utils";
 import { createHook, FatalError, sleep } from "workflow";
 import { z } from "zod";
@@ -358,14 +359,13 @@ export async function submitRecording(url: string): Promise<{ id: string }> {
 
   await report(`Submitting ${new URL(url).hostname} for transcription…`);
 
-  const response = await request(TRANSCRIPT_ENDPOINT, {
-    method: "POST",
-    body: JSON.stringify({ audio_url: url, speaker_labels: true }),
-  });
-  const body = await response.json();
-  const id = readString(body, "id");
-  if (!id) throw new Error("The provider accepted the recording but named no transcript id.");
-  return { id };
+  // `stepTranscribeSubmit` owns the endpoint, the raw-key auth, the PLURAL
+  // `speech_models` field and the failure classification. `speaker_labels` is
+  // this desk's own request, which is what `params` is for — the async API's
+  // surface is large and the SDK deliberately does not mirror it.
+  return await stepTranscribeSubmit(url, { params: { speaker_labels: true } }).catch(
+    throwStepError,
+  );
 }
 
 /**
@@ -374,6 +374,17 @@ export async function submitRecording(url: string): Promise<{ id: string }> {
  * One poll is one step, so each attempt is journaled on its own: a run that dies
  * mid-wait resumes knowing what the last answer was instead of starting the
  * recording over.
+ *
+ * **Deliberately NOT `stepTranscribePoll`, though its sibling above did move to
+ * the SDK.** That helper answers `done` and THROWS on a job the provider gave
+ * up on, which is the right shape for a flow whose only question is "is the
+ * text ready". This desk's question is different: `status` is a VALUE here,
+ * read by the Query port (`recap_status`) while the run is still going, and an
+ * `error` status is the branch that unwinds the saga's compensation stack
+ * rather than a failure to propagate. Converting this would trade a documented
+ * state machine — the thing this template is actually about — for a throw.
+ * The provider's status union is the template's subject, so it stays in the
+ * template.
  */
 export async function checkTranscript(id: string): Promise<TranscriptState> {
   "use step";
