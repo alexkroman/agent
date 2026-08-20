@@ -2,6 +2,14 @@
 // "Phone number" — the carrier webhook URLs for this project's published
 // agent, one per carrier, each with a copy button and its signing secret.
 //
+// It renders on the API pane (`docs.tsx`) rather than in Settings, where it
+// used to sit: a webhook URL is how a CARRIER calls this agent, which is that
+// pane's subject, and it was the one card in Settings documenting a request
+// instead of configuring the project. The signing-secret hints therefore point
+// ACROSS to Settings → Secrets rather than "below" — a direction that was only
+// ever true of the old placement, and the sort of copy that silently stops
+// being true when a section moves.
+//
 // The whole integration on the user's side is pasting one of these into a
 // phone number's voice webhook, so the URL is the entire feature as far as
 // this pane is concerned. It is not derivable by hand: it needs the platform
@@ -94,7 +102,7 @@ function SecretHint({ carrier, state }: { carrier: Carrier; state: SecretState }
   }
   return (
     <span className="text-[11px] text-muted">
-      Add <code className="font-mono">{carrier.secret}</code> in Secrets below to verify calls
+      Add <code className="font-mono">{carrier.secret}</code> in Settings → Secrets to verify calls
       really came from {carrier.label} ({carrier.secretSource}). Until then anyone with this URL can
       start calls on your account.
     </span>
@@ -124,7 +132,7 @@ export function PhoneCard({ deployedSlug, secretNames, pendingSecrets }: PhoneCa
   return (
     <Card
       title="Phone number"
-      blurb="Point a phone number's voice webhook at one of these and calls to it reach this agent. Each carrier also needs its signing secret set below before the platform will verify the calls are really from them."
+      blurb="Point a phone number's voice webhook at one of these and calls to it reach this agent. Each carrier also needs its signing secret set in Settings → Secrets before the platform will verify the calls are really from them."
     >
       {deployedSlug === undefined ? (
         <p className="m-0 text-[13px] leading-5 text-muted">

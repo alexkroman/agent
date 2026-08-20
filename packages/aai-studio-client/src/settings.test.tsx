@@ -5,9 +5,9 @@
 // writes both of a project's agents AND the project's own record, so the pane
 // no longer mirrors anything and needs no publish first. A change here writes
 // nothing into the conversation — the transcript is the user's. Every section
-// works with no published slug,
-// and they run in a fixed order (Work locally, Phone number, Database,
-// Secrets, Danger zone) that the Phone card's copy points into.
+// works with no published slug — literally every one of them now that the
+// carrier webhook URLs and the workflow runs live on their own panes — and
+// they run in a fixed order (Work locally, Database, Secrets, Danger zone).
 
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -59,13 +59,15 @@ afterEach(() => {
 
 describe("SettingsPane", () => {
   test("the sections run in the order a project needs them", async () => {
-    // Setting up first, provider keys last: the CLI round-trip, the webhook
-    // URLs, the Database switch, the Workflows read, Secrets, and Delete
-    // project at the bottom. Workflows sits with Database because the two are
-    // one subject — the correlation index a run is found by is a table in the
-    // project's own schema, so a workflow app has storage on.
-    // The order is also what two pieces of Phone card copy point at — both
-    // send the reader to "Secrets below" for a carrier's signing secret.
+    // Setting up first, provider keys last: the CLI round-trip, the Database
+    // switch, Secrets, and Delete project at the bottom.
+    //
+    // Two cards LEFT this pane and the list is what says so: the carrier
+    // webhook URLs and the workflow runs are both about a deployed agent —
+    // how something calls it, and what it is still doing — which is the API
+    // and Workflows panes' subject, not this one's. Everything remaining
+    // works from the moment a project exists, which is what makes "nothing
+    // here gates on a deploy" literally true rather than nearly.
     stubFetch({
       ...DATABASE_STATE,
       "GET /studio/projects/demo/secret": () => jsonResponse({ vars: [], pending: [] }),
@@ -75,14 +77,7 @@ describe("SettingsPane", () => {
     // Card titles are eyebrow spans rather than headings, and inside this
     // pane every one of them is a section title.
     const titles = [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
-    expect(titles).toEqual([
-      "Work locally",
-      "Phone number",
-      "Database",
-      "Workflows",
-      "Secrets",
-      "Danger zone",
-    ]);
+    expect(titles).toEqual(["Work locally", "Database", "Secrets", "Danger zone"]);
   });
 
   test("the box is usable with nothing published — no publish-first gate", async () => {

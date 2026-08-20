@@ -27,8 +27,11 @@ The browser studio's server side (documented below):
   (`StudioBuildError`), `studio-deploy.ts` (guest build → validate config →
   deploy), `studio-database.ts` + `studio-database-routes.ts` (the project
   database switch across both environments, and the post-deploy hook that
-  provisions a newly claimed slug), `studio-workspace.ts` (project file
-  store), `studio-prompt.ts`
+  provisions a newly claimed slug), `studio-database-browse.ts` (the READ
+  behind the studio's Database pane — which agent, and may this caller read
+  it; the SQL is aai-server's `app-db-browse.ts`, and one 404 covers every
+  "nothing to read here" so the routes cannot become an ownership oracle),
+  `studio-workspace.ts` (project file store), `studio-prompt.ts`
   (system prompt from the scaffold CLAUDE.md, one per project kind),
   `studio-project-kind.ts` (voice agent vs static workflow app — the
   new-project switcher's choice), `studio-preamble-mode.ts` (the five preamble

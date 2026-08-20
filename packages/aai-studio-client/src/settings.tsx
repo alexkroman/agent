@@ -1,14 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The Settings pane — a full page beside the chat panel, selected from the
-// top bar's Preview/Code/Settings switcher like the other two. It used to be
+// top bar's Preview/API/Code/Settings switcher like the other three. It used to be
 // a floating 384px dropdown that scrolled itself; three unrelated sections
 // (secrets, the CLI round-trip, delete) never fit that, so it is laid out as
 // a real page instead.
 //
 // The sections run in the order a project needs them: the CLI round-trip
-// (cli-commands.tsx), the carrier webhook URLs (phone-card.tsx), the Database
-// switch (database-card.tsx), agent secrets, and the delete-project button
-// last.
+// (cli-commands.tsx), the Database switch (database-card.tsx), the workflow
+// runs card, agent secrets, and the delete-project button last. The carrier
+// webhook URLs used to sit second and now live on the API pane (docs.tsx):
+// they are how something CALLS this agent, which is that pane's whole subject,
+// and they were the only thing here that documented a request rather than
+// configuring the project.
 //
 // Secrets are their own UI, not part of Publish, and like every other section
 // here they work from the moment a project exists. The project holds its own
@@ -26,10 +29,9 @@ import { api, parseSecrets } from "./api.ts";
 import { errorText } from "./api-error.ts";
 import { CliCommands } from "./cli-commands.tsx";
 import { DatabaseCard } from "./database-card.tsx";
-import { PhoneCard } from "./phone-card.tsx";
+import { PaneShell } from "./pane-shell.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
-import { WorkflowsCard } from "./workflows-card.tsx";
 
 /**
  * Secrets the PLATFORM manages, which this pane neither lists, deletes, nor
@@ -44,31 +46,22 @@ import { WorkflowsCard } from "./workflows-card.tsx";
  */
 const PLATFORM_MANAGED_SECRETS: readonly string[] = ["ASSEMBLYAI_API_KEY"];
 
+/**
+ * No slug of any kind: every card left here works from the moment a project
+ * exists, which is what "nothing on this pane gates on a deploy" now means
+ * literally rather than nearly. The two cards that needed a deployed agent —
+ * the carrier webhook URLs and the workflow runs — are panes of their own.
+ */
 type SettingsPaneProps = {
   bearer: string;
   /** The open project's name — the target of the Delete project button. */
   project: string;
-  /** The project's published slug, if it has one — see PhoneCard. */
-  deployedSlug?: string | undefined;
-  /**
-   * The auto-deployed preview's slug. Only WorkflowsCard reads it, and only as
-   * a fallback: a project's workflows are worth looking at before its first
-   * publish, and the preview agent is the only thing running until then.
-   */
-  previewSlug?: string | undefined;
   /** Delete the project (workspace + chat). The app navigates home after. */
   onDeleteProject: () => void;
   deleting: boolean;
 };
 
-export function SettingsPane({
-  bearer,
-  project,
-  deployedSlug,
-  previewSlug,
-  onDeleteProject,
-  deleting,
-}: SettingsPaneProps) {
+export function SettingsPane({ bearer, project, onDeleteProject, deleting }: SettingsPaneProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
   /** Managed key names the last save refused (see PLATFORM_MANAGED_SECRETS). */
@@ -126,129 +119,118 @@ export function SettingsPane({
   const pending = secrets.data?.pending ?? [];
 
   return (
-    // min-w-0 keeps the page from stretching the flex row sideways, exactly
-    // as the Code pane does. The page scrolls itself; the shell does not.
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-cream">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-8 py-8">
-        <header className="flex flex-col gap-1">
-          <h1 className="m-0 font-serif text-[26px] leading-8 text-fg">Settings</h1>
-          <p className="m-0 text-[13px] leading-5 text-muted">
-            Project <span className="font-mono text-fg">{project}</span>
-          </p>
-        </header>
+    <PaneShell
+      title="Settings"
+      subtitle={
+        <>
+          Project <span className="font-mono text-fg">{project}</span>
+        </>
+      }
+    >
+      {/* Unconditional — pulling a project locally needs no published slug. */}
+      <Card
+        title="Work locally"
+        blurb={
+          <>
+            Pull this project's files with the <code className="font-mono">aai</code> CLI, edit them
+            in your own editor, then <code className="font-mono">aai push</code> to sync them back
+            (or <code className="font-mono">aai publish</code> to sync and ship to production).
+          </>
+        }
+      >
+        <CliCommands project={project} />
+      </Card>
 
-        {/* Unconditional — pulling a project locally needs no published slug. */}
-        <Card
-          title="Work locally"
-          blurb={
-            <>
-              Pull this project's files with the <code className="font-mono">aai</code> CLI, edit
-              them in your own editor, then <code className="font-mono">aai push</code> to sync them
-              back (or <code className="font-mono">aai publish</code> to sync and ship to
-              production).
-            </>
-          }
-        >
-          <CliCommands project={project} />
-        </Card>
-
-        {/* Gated on a published slug, unlike the cards around it — a
-            webhook URL is not an intent a later deploy can pick up. */}
-        <PhoneCard deployedSlug={deployedSlug} secretNames={names} pendingSecrets={pending} />
-
-        {/* Unconditional, like the cards above and below: a database is
+      {/* Unconditional, like the cards above and below: a database is
             provisioned per environment as each one deploys, so it can be
             switched on before the project has ever been published. */}
-        <DatabaseCard bearer={bearer} project={project} />
-        <WorkflowsCard deployedSlug={deployedSlug} previewSlug={previewSlug} />
+      <DatabaseCard bearer={bearer} project={project} />
 
-        <Card
-          title="Secrets"
-          blurb={
-            <>
-              Third-party keys for your agent, readable as{" "}
-              <code className="font-mono">ctx.env</code> — one{" "}
-              <code className="font-mono">KEY=value</code> per line. They reach both the preview and
-              production agents; the preview redeploys with them right away, production when you
-              publish. <code className="font-mono">ASSEMBLYAI_API_KEY</code> is set and managed for
-              you, so it is not listed here.
-            </>
-          }
-        >
-          {names.length > 0 && (
-            <ul className="m-0 flex list-none flex-col overflow-hidden rounded-md border border-line p-0">
-              {names.map((name) => (
-                <li
-                  key={name}
-                  className="flex items-center gap-3 border-b border-line bg-cream px-3 py-2 last:border-b-0"
-                >
-                  <code className="min-w-0 flex-1 truncate font-mono text-xs">{name}</code>
-                  {/* Saved, but not on every agent yet — the honest state for
+      <Card
+        title="Secrets"
+        blurb={
+          <>
+            Third-party keys for your agent, readable as <code className="font-mono">ctx.env</code>{" "}
+            — one <code className="font-mono">KEY=value</code> per line. They reach both the preview
+            and production agents; the preview redeploys with them right away, production when you
+            publish. <code className="font-mono">ASSEMBLYAI_API_KEY</code> is set and managed for
+            you, so it is not listed here.
+          </>
+        }
+      >
+        {names.length > 0 && (
+          <ul className="m-0 flex list-none flex-col overflow-hidden rounded-md border border-line p-0">
+            {names.map((name) => (
+              <li
+                key={name}
+                className="flex items-center gap-3 border-b border-line bg-cream px-3 py-2 last:border-b-0"
+              >
+                <code className="min-w-0 flex-1 truncate font-mono text-xs">{name}</code>
+                {/* Saved, but not on every agent yet — the honest state for
                       a project that hasn't published, and the one a bare list
                       would misreport as live everywhere. */}
-                  {pending.includes(name) && (
-                    <span className="text-[11px] text-muted">on next deploy</span>
-                  )}
-                  <span className="font-mono text-[11px] text-subtle" aria-hidden>
-                    ••••••••
-                  </span>
-                  <button
-                    type="button"
-                    className="btn px-2 py-1 text-xs"
-                    onClick={() => remove.mutate(name)}
-                    disabled={remove.isPending}
-                  >
-                    Delete
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <textarea
-            className="field h-28 resize-y py-2 font-mono text-xs"
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              setRejected([]);
-            }}
-            placeholder="OPENAI_API_KEY=..."
-            spellCheck={false}
-          />
-          <button
-            type="button"
-            className="btn btn-primary self-start"
-            onClick={onSave}
-            disabled={save.isPending}
-          >
-            {save.isPending ? "Saving…" : "Save secrets"}
-          </button>
-          {rejected.length > 0 && (
-            <p className="m-0 text-xs text-err">
-              {rejected.join(", ")} {rejected.length > 1 ? "are" : "is"} managed for you and can't
-              be set here.
-            </p>
-          )}
-          {message && <p className="m-0 text-xs text-err">{message}</p>}
-        </Card>
-
-        <Card
-          title="Danger zone"
-          blurb="Deletes this project — its files and chat history. Already-published agents stay live."
+                {pending.includes(name) && (
+                  <span className="text-[11px] text-muted">on next deploy</span>
+                )}
+                <span className="font-mono text-[11px] text-subtle" aria-hidden>
+                  ••••••••
+                </span>
+                <button
+                  type="button"
+                  className="btn px-2 py-1 text-xs"
+                  onClick={() => remove.mutate(name)}
+                  disabled={remove.isPending}
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <textarea
+          className="field h-28 resize-y py-2 font-mono text-xs"
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setRejected([]);
+          }}
+          placeholder="OPENAI_API_KEY=..."
+          spellCheck={false}
+        />
+        <button
+          type="button"
+          className="btn btn-primary self-start"
+          onClick={onSave}
+          disabled={save.isPending}
         >
-          <button
-            type="button"
-            className="btn self-start text-err hover:border-err"
-            onClick={() => {
-              if (window.confirm(`Delete the project "${project}"? This cannot be undone.`)) {
-                onDeleteProject();
-              }
-            }}
-            disabled={deleting}
-          >
-            {deleting ? "Deleting…" : "Delete project"}
-          </button>
-        </Card>
-      </div>
-    </div>
+          {save.isPending ? "Saving…" : "Save secrets"}
+        </button>
+        {rejected.length > 0 && (
+          <p className="m-0 text-xs text-err">
+            {rejected.join(", ")} {rejected.length > 1 ? "are" : "is"} managed for you and can't be
+            set here.
+          </p>
+        )}
+        {message && <p className="m-0 text-xs text-err">{message}</p>}
+      </Card>
+
+      <Card
+        title="Danger zone"
+        blurb="Deletes this project — its files and chat history. Already-published agents stay live."
+      >
+        <button
+          type="button"
+          className="btn self-start text-err hover:border-err"
+          onClick={() => {
+            if (window.confirm(`Delete the project "${project}"? This cannot be undone.`)) {
+              onDeleteProject();
+            }
+          }}
+          disabled={deleting}
+        >
+          {deleting ? "Deleting…" : "Delete project"}
+        </button>
+      </Card>
+    </PaneShell>
   );
 }

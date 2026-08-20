@@ -156,3 +156,148 @@ describe("project database routes", () => {
     ).toBe(true);
   });
 });
+
+describe("the table viewer's routes", () => {
+  /**
+   * A project whose database is provisioned and readable, with a fake executor
+   * standing in for the app's own Postgres.
+   *
+   * `withAppDb` is what the browse readers go through, and `fakeAppDatabases`
+   * leaves it deliberately unstubbed — so a suite that needs to READ a tenant
+   * database has to say what that database answers, which is `fakeAppDb`'s
+   * one argument.
+   */
+  async function readableProject(respond: (query: string) => Record<string, unknown>[]) {
+    const combined = await createTestCombined({ appDb: fakeAppDb(respond) });
+    await createProject(combined.fetch);
+    for (const slug of ["proj", "proj-preview"]) {
+      await claimSlug(combined.store, slug, "key1");
+    }
+    await mutateWorkspace(combined.workspaces, studioScope("key1"), "proj", (current) => ({
+      ...current,
+      deployedSlug: "proj",
+      previewSlug: "proj-preview",
+    }));
+    // Provision, which is what stores the `app-db:` secret the readers resolve.
+    await authFetch(combined.fetch, "/studio/projects/proj/database", { body: {} });
+    return combined;
+  }
+
+  /** Answers the three reads `readAppTable` makes. */
+  function tenantRows(query: string): Record<string, unknown>[] {
+    if (query.includes("information_schema.tables") && query.includes("$1")) {
+      return [{ table_schema: "public", table_name: "notes" }];
+    }
+    if (query.includes("information_schema.tables")) {
+      return [{ table_schema: "public", table_name: "notes", rows: "1" }];
+    }
+    if (query.includes("information_schema.columns")) return [{ column_name: "body" }];
+    if (query.includes("count(*)")) return [{ total: "1" }];
+    return [{ body: "hello" }];
+  }
+
+  test("the viewer requires auth", async () => {
+    const { fetch } = await createTestCombined();
+    expect(
+      (await fetch("/studio/projects/proj/database/tables?environment=production")).status,
+    ).toBe(401);
+  });
+
+  test("lists one environment's tables and names the agent that answered", async () => {
+    const { fetch } = await readableProject(tenantRows);
+    const res = await authFetch(
+      fetch,
+      "/studio/projects/proj/database/tables?environment=production",
+      {
+        method: "GET",
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      environment: "production",
+      slug: "proj",
+      tables: [{ schema: "public", name: "notes", rows: 1 }],
+    });
+  });
+
+  test("reads one page of one table", async () => {
+    const { fetch } = await readableProject(tenantRows);
+    const res = await authFetch(
+      fetch,
+      "/studio/projects/proj/database/rows?environment=production&schema=public&table=notes",
+      { method: "GET" },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ columns: ["body"], rows: [["hello"]], total: 1 });
+  });
+
+  test("an environment it does not know is a 400, never production by default", async () => {
+    // Which agent's rows you are looking at is the difference between "my tool
+    // saved nothing" and "my tool saved it in the preview", so a typo must not
+    // be answered for the wrong one.
+    const { fetch } = await readableProject(tenantRows);
+    const res = await authFetch(fetch, "/studio/projects/proj/database/tables?environment=prod", {
+      method: "GET",
+    });
+    expect(res.status).toBe(400);
+    const missing = await authFetch(fetch, "/studio/projects/proj/database/tables", {
+      method: "GET",
+    });
+    expect(missing.status).toBe(400);
+  });
+
+  test("rows without a table named is a 400", async () => {
+    const { fetch } = await readableProject(tenantRows);
+    const res = await authFetch(
+      fetch,
+      "/studio/projects/proj/database/rows?environment=production",
+      {
+        method: "GET",
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  test("each environment answers for its OWN agent", async () => {
+    // The two keep separate schemas, so an answer that fell back to the other
+    // would put production's rows under a preview heading.
+    const { fetch } = await readableProject(tenantRows);
+    const res = await authFetch(
+      fetch,
+      "/studio/projects/proj/database/tables?environment=preview",
+      {
+        method: "GET",
+      },
+    );
+    expect(await res.json()).toMatchObject({ environment: "preview", slug: "proj-preview" });
+  });
+
+  test("an environment that has never deployed is a 404, not an empty list", async () => {
+    // Undeployed, unowned, switched off — the pane makes one statement for all
+    // of them, and telling them apart would be an ownership oracle over the
+    // slug namespace. An empty list would additionally be a LIE: it reads as
+    // "your agent stored nothing".
+    const { fetch } = await createTestCombined({ appDb: fakeAppDb() });
+    await createProject(fetch);
+    const res = await authFetch(
+      fetch,
+      "/studio/projects/proj/database/tables?environment=production",
+      {
+        method: "GET",
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test("a project that does not exist reads the same as one with no database", async () => {
+    const { fetch } = await createTestCombined({ appDb: fakeAppDb() });
+    const res = await authFetch(
+      fetch,
+      "/studio/projects/ghost/database/tables?environment=production",
+      {
+        method: "GET",
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+});

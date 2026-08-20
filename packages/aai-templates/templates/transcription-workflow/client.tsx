@@ -168,7 +168,6 @@ import {
 } from "@alexkroman1/aai-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { transcribe } from "./agent.ts";
-import { ApiHelp } from "./api-help.tsx";
 import {
   clock,
   countWords,
@@ -463,10 +462,6 @@ function TranscriptionDesk() {
         openId={openId}
         onOpen={(runId) => setOpenId((current) => (current === runId ? undefined : runId))}
       />
-
-      {/* The most useful thing about a workflow app is the least discoverable:
-          this page is one caller of an ordinary HTTP API. See `api-help.tsx`. */}
-      <ApiHelp />
     </main>
   );
 }

@@ -19,9 +19,16 @@
 
 import { HTTPException } from "hono/http-exception";
 import { type AppDatabases, type AppDbUsage, parseAppDbMeta } from "./app-database.ts";
+import {
+  type AppTable,
+  type AppTablePage,
+  listAppTables,
+  type ReadAppTableParams,
+  readAppTable,
+} from "./app-db-browse.ts";
 import type { AppContext } from "./context.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
-import { appDbSecretName, type SecretStore } from "./secret-store.ts";
+import { appDbSecretName, type SecretStore, type SqlExec } from "./secret-store.ts";
 
 /** What the storage core needs from the server bindings. */
 export type StorageEnv = {
@@ -53,10 +60,57 @@ export async function storageUsage(env: StorageEnv, slug: string): Promise<AppDb
   if (!appDb) return null;
   const meta = parseAppDbMeta(await env.secrets.get(appDbSecretName(slug)));
   if (!meta) return null;
+  // `usage` rather than `withAppDatabase` below: it opens the connection on the
+  // cluster the META locates, which is the same rule `deprovision` states — a
+  // recomputed placement points at a cluster that never hosted this app.
   return appDb.usage(slug, meta).catch((err: unknown) => {
     console.warn("App database usage read failed", { slug, error: String(err) });
     return null;
   });
+}
+
+/**
+ * Run `fn` on a connection into one app's database, or answer `null` when
+ * there is no database to open (storage off, or this server cannot provision).
+ *
+ * The one place the `app-db:<slug>` secret is turned into a live executor for
+ * an arbitrary READ: is there an `appDb`, is there a stored meta, open, close —
+ * and the last is the one a caller forgets. `withAppDb` locates the cluster
+ * from the meta, which is the placement rule `deprovision` documents.
+ */
+async function withAppDatabase<T>(
+  env: StorageEnv,
+  slug: string,
+  fn: (sql: SqlExec) => Promise<T>,
+): Promise<T | null> {
+  const appDb = env.appDb;
+  if (!appDb) return null;
+  const meta = parseAppDbMeta(await env.secrets.get(appDbSecretName(slug)));
+  if (!meta) return null;
+  return appDb.withAppDb(meta, fn);
+}
+
+/**
+ * The app's tables, or `null` when it has no database.
+ *
+ * A failed read THROWS here, unlike {@link storageUsage}, and the difference is
+ * what the caller is showing. Usage is a number offered beside a switch whose
+ * own state is already known, so a cluster hiccup must degrade the number
+ * rather than the pane. This IS the pane: an empty table list that really means
+ * "the read failed" tells the author their agent has stored nothing, which is
+ * the one answer a viewer must never invent.
+ */
+export function storageTables(env: StorageEnv, slug: string): Promise<AppTable[] | null> {
+  return withAppDatabase(env, slug, listAppTables);
+}
+
+/** One page of one of the app's tables, or `null` with no database to read. */
+export function storageTableRows(
+  env: StorageEnv,
+  slug: string,
+  params: ReadAppTableParams,
+): Promise<AppTablePage | null> {
+  return withAppDatabase(env, slug, (sql) => readAppTable(sql, params));
 }
 
 /**

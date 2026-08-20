@@ -53,6 +53,7 @@
   },
   "exports": {
     "./app-database": "./app-database.ts",
+    "./app-db-browse": "./app-db-browse.ts",
     "./chat-store": "./chat-store.ts",
     "./secret-store": "./secret-store.ts",
     "./secret-handler": "./secret-handler.ts",

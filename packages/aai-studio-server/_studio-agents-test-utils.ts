@@ -18,6 +18,7 @@
  */
 
 import { type AppDatabases, type AppDbMeta, appDbIdentifier } from "aai-server/app-database";
+import type { SqlExec } from "aai-server/secret-store";
 import { hashApiKey } from "aai-server/secrets";
 import type { BundleStore } from "aai-server/store-types";
 import { fakeAppDatabases } from "aai-server/test-utils";
@@ -39,10 +40,29 @@ export type FakeAppDb = AppDatabases & {
   deprovision: ReturnType<typeof vi.fn>;
 };
 
-/** Provisioning that records its calls and mints a per-slug meta. */
-export function fakeAppDb(): FakeAppDb {
+/**
+ * What a fake app database ANSWERS when something reads it.
+ *
+ * A `SqlExec` over the app's own database, which is what `withAppDb` hands its
+ * caller — the seam the studio's table viewer goes through
+ * (`studio-database-browse.ts`). Declared here so a suite that needs one says
+ * what the tenant's Postgres replies and nothing else: the alternative was
+ * `{ ...fakeAppDb(), withAppDb } as unknown as FakeAppDb` at the call site,
+ * and a cast stops reporting the moment `AppDatabases` grows a method.
+ */
+export type FakeAppDbReads = (query: string, params?: unknown[]) => Record<string, unknown>[];
+
+/**
+ * Provisioning that records its calls and mints a per-slug meta.
+ *
+ * With `reads`, the app's own database answers them through `withAppDb`.
+ * Without, that method is left UNSTUBBED — `fakeAppDatabases` throws naming
+ * it, which is what stops a suite silently reading an empty tenant database
+ * and concluding the agent stored nothing.
+ */
+export function fakeAppDb(reads?: FakeAppDbReads): FakeAppDb {
   let issued = 0;
-  return fakeAppDatabases({
+  const provisioning: Partial<AppDatabases> = {
     provision: vi.fn(async (slug: string): Promise<AppDbMeta> => {
       // A FRESH password per call — the real provisioner rotates, which is
       // exactly why an enabled slug must never be re-provisioned. Counted
@@ -56,5 +76,10 @@ export function fakeAppDb(): FakeAppDb {
     // could not host the Workflow DevKit.
     connectionUrl: (meta) => `postgres://app@db/${meta.role}`,
     usage: async () => ({ tables: 0, rows: 0, bytes: 0 }),
-  }) as FakeAppDb;
+  };
+  if (reads !== undefined) {
+    provisioning.withAppDb = <T>(_meta: AppDbMeta, fn: (sql: SqlExec) => Promise<T>): Promise<T> =>
+      fn(async (query, params) => reads(query, params));
+  }
+  return fakeAppDatabases(provisioning) as FakeAppDb;
 }

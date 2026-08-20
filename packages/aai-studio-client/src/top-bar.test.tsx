@@ -36,18 +36,24 @@ describe("TopBar", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
-  test("no project → no name label and no Preview/Code/Settings switcher", () => {
+  test("no project → no name label and no pane switcher", () => {
     render(<TopBar {...barProps} project={null} />);
     expect(screen.queryByText("demo")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Playground" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Code" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   });
 
+  // The first tab's LABEL and its id deliberately differ: `preview` is the
+  // platform's word for the auto-deployed agent this pane frames, and
+  // "Playground" is what the pane offers a person.
   test.each([
     ["Code", "code"],
     ["Settings", "settings"],
-    ["Preview", "preview"],
+    ["Playground", "preview"],
+    ["API", "docs"],
+    ["Workflows", "workflows"],
+    ["Database", "database"],
   ])("the switcher moves to the %s pane", (label, id) => {
     const onSelectTab = vi.fn();
     render(<TopBar {...barProps} onSelectTab={onSelectTab} />);
@@ -60,7 +66,9 @@ describe("TopBar", () => {
     expect(screen.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBe(
       "page",
     );
-    expect(screen.getByRole("button", { name: "Preview" }).getAttribute("aria-current")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Playground" }).getAttribute("aria-current"),
+    ).toBeNull();
   });
 
   test("Publish locks until there is a build; Settings stays reachable", () => {

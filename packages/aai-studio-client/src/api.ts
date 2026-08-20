@@ -1,11 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 // REST helpers for the studio's project/file/deploy endpoints.
 
+import {
+  CLIENT_CONFIG_PATH,
+  type ClientConfigResponse,
+  ClientConfigResponseSchema,
+} from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UIMessage } from "ai";
 import { parse } from "dotenv";
 import { ApiError } from "./api-error.ts";
 import { type StreamDownReason, watchEventStream } from "./api-events.ts";
+import { tableReads } from "./api-tables.ts";
 import type {
   Account,
   AuthConfig,
@@ -23,11 +29,15 @@ export type {
   AuthConfig,
   ChatSession,
   DatabaseEnvironment,
+  DatabaseEnvironmentName,
   DatabaseState,
   DatabaseUsage,
   ProjectData,
   ProjectKind,
   StudioStatus,
+  TableListing,
+  TablePage,
+  TableSummary,
 } from "./api-types.ts";
 
 /**
@@ -178,6 +188,23 @@ function request<T>(key: string, path: string, init: ApiInit = {}): Promise<T> {
 }
 
 export const api = {
+  ...tableReads(request),
+
+  /**
+   * What a deployed agent says it is: its name, greeting, and whether its
+   * front door is a voice session or a static page.
+   *
+   * Unauthenticated and cross-route by design — this is the agent's own public
+   * endpoint, the same one a browser client reads before it dials, not a
+   * studio route. Parsed with the SDK's schema rather than trusted: unknown
+   * fields are stripped, so an agent deployed against an older SDK still
+   * answers something this can read.
+   */
+  clientConfig: (base: string): Promise<ClientConfigResponse> =>
+    fetchJson<unknown>(`${base}/${CLIENT_CONFIG_PATH}`).then((body) =>
+      ClientConfigResponseSchema.parse(body),
+    ),
+
   /**
    * Which LLM the studio's chat runs on. Public, and deadlined for the reason
    * {@link DEFAULT_REQUEST_TIMEOUT_MS} exists — see
@@ -410,6 +437,9 @@ export const api = {
       method: "POST",
       body: "{}",
     }),
+
+  // The Database pane's two reads live in `api-tables.ts` and are spread in
+  // below — same surface to a caller, and this file is at its length cap.
 
   /** Drop both environments' databases — and all their data. */
   disableDatabase: (key: string, project: string) =>

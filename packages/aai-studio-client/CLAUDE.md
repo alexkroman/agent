@@ -12,16 +12,18 @@ workspace package built into its `dist/` by
 over HTTP/SSE (no code imports in either direction); aai-server serves
 the built artifact, resolved via `require.resolve` in
 `studio-static.ts` the same way aai-ui's `dist/default-client` is.
-Panes: `chat.tsx` (chat + composer), and the three the top bar's
-segmented control switches between — `preview.tsx`, `code-view.tsx`,
-`settings.tsx`.
+Panes: `chat.tsx` (chat + composer), and the six the top bar's
+segmented control switches between — `preview.tsx` (labelled **Playground**),
+`docs.tsx` (**API**), `workflows.tsx`, `database.tsx`, `code-view.tsx`,
+`settings.tsx`. The five page-shaped ones share `pane-shell.tsx`; only the
+Playground and Code panes have layouts of their own.
 
 **The shell splits on whether a project is open**, and the split is what makes
 `project` a `string` rather than a `string | null` everywhere below it.
 `app.tsx` owns the account-scoped half — routing (`project-route.ts`), the
 project list, the home hero, the account menu — and `project-view.tsx` owns
 everything that only exists while a project is open: its workspace, chat and
-sandbox queries, the three panes, Publish, and the unsaved editor drafts. In
+sandbox queries, the panes, Publish, and the unsaved editor drafts. In
 one component the six calls that take a project name all narrowed it with
 `project as string`, a cast standing in for the `enabled:` flag two lines
 above — an agreement nothing checks. `ProjectView` is mounted `key={project}`,
@@ -56,23 +58,43 @@ so every piece of per-project state resets on a switch with no effect to do it.
     buttons with `aria-pressed`: arrow-key navigation and the group's
     accessible name then come from the markup, and the segmented look is
     entirely on the labels.
-- **Settings is a PANE, not a dropdown** (`settings.tsx`): the top bar's
-  segmented control switches Preview / Code / Settings, all three peers
-  rendering full-width beside the chat panel (`StudioTab` in `top-bar.ts`
-  is the one union; `app.tsx`'s `tab` state is the only selection). It was
+- **The switcher runs deployed-agent-first, then workspace**: Playground,
+  API, Workflows, Database, Code, Settings (`StudioTab` in `top-bar.tsx` is
+  the one union; `project-view.tsx`'s `tab` state is the only selection). The
+  first four are all about the agent that is RUNNING — talk to it, call it,
+  watch what it is still doing, read what it stored — where Code and Settings
+  are about the workspace and the project. API sits second because it is the
+  same question as Playground asked by a caller rather than a person.
+  - **The first tab's id is `preview` and its label is "Playground".** The id
+    names a platform concept the whole product spells that way (the
+    auto-deployed PREVIEW agent, `previewSlug`, `previewVersion`,
+    `previewStale`), so renaming the state to match a button would put a
+    second word for one thing into the codebase. The LABEL is what needed to
+    change: the pane offers somewhere to talk to the agent, and "Preview"
+    reads as a rendering of the code rather than an invitation to use it.
+    `top-bar.test.tsx` pins the pairs, label against id, for exactly this
+    reason.
+- **Settings is a PANE, not a dropdown** (`settings.tsx`): it renders
+  full-width beside the chat panel like every other pane. It was
   a floating 384px panel that scrolled itself — three unrelated sections
   (secrets, the CLI round-trip, Delete project) never laid out in that
   width. Nothing on the pane gates on a build or a deploy: Delete project
   has to work before anything has ever been published, so Settings is
   reachable whenever a project is open.
-- **The sections are in a FIXED order, and copy points into it**: Work
-  locally, Phone number, Database, Secrets, Danger zone — setting up first,
-  provider keys after, destruction last. The order is not cosmetic: the Phone
-  card sends the reader to "Secrets **below**" twice (its blurb, and the
-  per-carrier missing-secret hint), which was pointing the wrong way while
-  Secrets sat at the top. `settings.test.tsx` asserts the sequence of card
-  titles, so moving one means updating that list — and re-reading any copy
-  that names a neighbour's direction.
+- **The sections are in a FIXED order**: Work locally, Database, Secrets,
+  Danger zone — setting up first, provider keys after, destruction last.
+  `settings.test.tsx` asserts the sequence of card titles, so moving one means
+  updating that list — and re-reading any copy that names a neighbour's
+  direction, which is the trap this used to carry: the Phone card said
+  "Secrets **below**" twice while sitting above it, and then moved panes
+  entirely.
+  - **Two cards LEFT this pane**, and what they have in common is the
+    subject. The carrier webhook URLs and the workflow runs are both about a
+    DEPLOYED agent — how something calls it, and what it is still doing —
+    which is the API and Workflows panes' subject rather than this one's.
+    What that buys is that "nothing here gates on a deploy" is now literally
+    true rather than nearly: every remaining card works from the moment a
+    project exists, so `SettingsPane` takes no slug of any kind.
 - **Secrets have their own section; storage has none.** Agent secrets are
   managed in the Settings pane's Secrets card, which talks to the project
   route (`/studio/projects/:project/secret`). Every card on this pane reports
@@ -152,12 +174,19 @@ so every piece of per-project state resets on a switch with no effect to do it.
     a workspace naming a foreign slug must not become a lever on, or an
     oracle for, someone else's agent.
 - **The Phone number card hands out the carrier webhook URLs**
-  (`phone-card.tsx`) — one per carrier, each with a copy button, pointing at
+  (`phone-card.tsx`, rendered on the **API** pane) — one per carrier, each
+  with a copy button, pointing at
   the platform's `/:slug/phone` route (see "Telephony" in
   `packages/aai-server/CLAUDE.md`). Pasting one into a phone number's voice
   webhook is the whole integration on the user's side, and the URL is not
   derivable by hand: it needs the platform origin, the project's PUBLISHED
   slug rather than its name, and the `?carrier=` value.
+  - It sits with the API docs rather than in Settings because a webhook URL is
+    how a CARRIER calls this agent, which is that pane's whole subject — it
+    was the one card in Settings documenting a request instead of configuring
+    the project. The signing-secret hints therefore point ACROSS to
+    "Settings → Secrets" rather than "below"; a direction is copy that stops
+    being true when a section moves, and this one already had.
   - **`?carrier=` is spelled out even for Twilio**, which the platform already
     defaults to. This string is pasted into a carrier console once and never
     looked at again, so it has to keep meaning the same thing — the default is
@@ -184,11 +213,15 @@ so every piece of per-project state resets on a switch with no effect to do it.
     every button, and there is one live timer so a second click cannot have
     its flash cleared early by the first click's timeout.
 
-- **The Workflows card reads the AGENT's own brokered API, not a studio route**
-  (`workflows-card.tsx` → `/:slug/workflows`). A workflow run is the one thing
+- **The Workflows PANE reads the AGENT's own brokered API, not a studio route**
+  (`workflows.tsx` → the card in `workflows-card.tsx` → `/:slug/workflows`). A
+  workflow run is the one thing
   in this product that OUTLIVES every surface the studio already shows: the
-  Preview pane frames a page, the transcript shows a conversation, and a run
+  Playground frames a page, the transcript shows a conversation, and a run
   started an hour ago by a caller who has since hung up appears in neither.
+  That is also why it is a pane rather than the Settings card it began as: a
+  live view of a RUNNING system does not belong behind a page about
+  configuration.
   There is deliberately no studio endpoint in front of it — the platform already
   brokers that path for exactly this shape of caller and the studio shares the
   origin, so `connect-src 'self'` permits it; a second route would be a second
@@ -217,6 +250,66 @@ so every piece of per-project state resets on a switch with no effect to do it.
     503 while a sandbox boots reads very differently from the 404 an agent that
     declares no workflows answers, and that text is the whole difference.
 
+- **The API pane is GENERATED from the running agent, never written**
+  (`docs.tsx` + `docs-content.ts` → `GET /:slug/workflows`). A deployed agent
+  IS an API — `client-config` and a carrier webhook for a voice agent,
+  `GET|POST|PUT|DELETE /workflows/*` for a workflow app — and that is
+  simultaneously the most useful thing about the shape and the least
+  discoverable: nothing in a framed page suggests the same work is three
+  `curl` calls, that a run id is the entire handle (no session, no cookie), or
+  that a result can be collected days later from another machine.
+  - **The request bodies come from the agent's own input schemas.**
+    `WorkflowSummary.inputSchema` is the same JSON a workflow app's page
+    renders its form from, so `sampleInput` builds an example carrying THIS
+    deployment's field names at the version that is deployed right now. A
+    workflow that gains a field gains it here on the next read, which is the
+    whole reason the pane can exist without somebody maintaining it. The
+    property NAME is the placeholder (`"<topic>"`), because a generic
+    `"string"` reads as a value somebody meant to keep.
+  - **Whether the agent is a voice session or a page is asked of the AGENT**
+    (`GET /:slug/client-config`), never read off the project's stored `kind`.
+    That field selects the coding agent's system prompt and is explicitly a
+    default rather than a cage — a project can be told to change shape
+    mid-conversation and nothing rewrites the stamp — so it can disagree with
+    what is deployed. `client-config` cannot: it is the same route a browser
+    client reads before it dials.
+  - **Whether a snippet carries `Authorization` is read off the project's
+    secrets**, not left in prose as a caveat: the workflow API is open unless
+    the agent's env sets `AAI_WORKFLOW_API_TOKEN`, and the pane shares the
+    Settings pane's own secrets query key to find out.
+  - **The endpoint tables cannot import `GUEST_ROUTE_EXPOSURE`** — this
+    package may not depend on server code — so the tie to what the platform
+    really proxies is the shared `WORKFLOW_API_PREFIX` constant plus
+    aai-server's own parity test. `docs-content.test.ts` asserts all four
+    methods are documented, because a table listing only GET and POST would
+    hide exactly the bug that table exists to catch.
+  - The builders are a separate module from the pane for the reason every
+    extracted-logic module here is one: a snippet whose field is spelled
+    differently than the workflow declared it renders perfectly and 400s when
+    somebody pastes it, so it is worth asserting directly rather than through
+    a render.
+- **The Database pane is a read-only table viewer**
+  (`database.tsx` → `GET …/database/tables` and `…/database/rows`). The
+  Settings card beside it answers "is the database on" and "how many rows",
+  which is the question one step before the one people have: a count moving
+  from 3 to 4 says a tool wrote SOMETHING, not whether it wrote the field you
+  meant. Finding that out used to mean asking the coding agent to write a tool
+  that reads the table back — a turn and an edit to the project.
+  - **The environment is an explicit choice, never a default.** Production and
+    preview are separate agents with separate schemas, so "my tool saved
+    nothing" versus "my tool saved it in the preview" is the confusion this
+    pane can most easily either cause or resolve: the picker is always
+    visible, the pane names the slug that answered, and the environment
+    travels to the server, which 400s a value it does not know rather than
+    picking one.
+  - **A table's rows are keyed by the table**, so switching cannot leave the
+    previous table's rows under a new heading while the next read is in
+    flight — the one wrong answer a data viewer can give.
+  - **NULL renders as a value.** A text column may legitimately hold the empty
+    string, and the two must not look identical.
+  - It is deliberately READ-ONLY: editing a tenant's rows from a console is a
+    different feature with a different blast radius (no undo, no migration, no
+    record of who did it), and nothing here needs it.
 - **The Settings pane is also where the CLI round-trip is discoverable**
   (`cli-commands.tsx`, the "Work locally" section): the install / `aai login`
   / `aai pull <project>` / `aai dev` sequence with the project name filled
