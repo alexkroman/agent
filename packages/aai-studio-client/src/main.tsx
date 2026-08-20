@@ -43,6 +43,8 @@ import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
 import { clearCliLinkCode, consumeCliLinkCode } from "./cli-link.ts";
 import { GateCard, GateProblem, gateProblem } from "./gate-card.tsx";
 import { CliLinkGate, KeyGate, SignInGate } from "./gates.tsx";
+import { apiDocsSlugFromPath } from "./project-route.ts";
+import { PublicApiPage } from "./public-api.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { installStaleBuildRecovery } from "./stale-build.ts";
 import "./styles.css";
@@ -175,10 +177,28 @@ function Root() {
 
 const container = document.getElementById("root");
 if (!container) throw new Error("Studio shell is missing its #root element");
+
+/**
+ * The public API page is chosen HERE rather than inside `Root`, and that is the
+ * whole of what makes it public.
+ *
+ * `Root` calls `useStudioAuth` unconditionally — an early return inside it
+ * would have to sit above that hook (a rule violation the moment the path can
+ * change under a `pushState`) or below it, which is the version that reads
+ * `/studio/auth`, restores a Supabase session, and can flash a sign-in screen
+ * at a reader who has no account and needs none. Deciding before either tree
+ * mounts costs one regex against a pathname the shell was served for.
+ *
+ * The path never changes without a navigation — the page has no router and
+ * links away rather than pushing state — so one read at startup is the whole
+ * lifetime of the decision.
+ */
+const publicApiSlug = apiDocsSlugFromPath(window.location.pathname);
+
 createRoot(container).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <Root />
+      {publicApiSlug === null ? <Root /> : <PublicApiPage slug={publicApiSlug} />}
     </QueryClientProvider>
   </StrictMode>,
 );

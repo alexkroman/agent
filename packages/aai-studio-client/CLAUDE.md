@@ -16,7 +16,10 @@ Panes: `chat.tsx` (chat + composer), and the seven the top bar's
 segmented control switches between — `docs.tsx` (**API**), `preview.tsx`
 (labelled **UI**), `workflows.tsx`, `database.tsx`, `code-view.tsx`,
 `secrets.tsx`, `settings.tsx`. The six page-shaped ones share
-`pane-shell.tsx`; only the UI and Code panes have layouts of their own.
+`pane-shell.tsx`; only the UI and Code panes have layouts of their own. One
+page lives OUTSIDE that shell — `public-api.tsx` at `/studio/api/<slug>`, which
+needs no session and is chosen before the auth gate (see "The same
+documentation is served PUBLICLY" below).
 
 **The shell splits on whether a project is open**, and the split is what makes
 `project` a `string` rather than a `string | null` everywhere below it.
@@ -420,6 +423,36 @@ so every piece of per-project state resets on a switch with no effect to do it.
     differently than the workflow declared it renders perfectly and 400s when
     somebody pastes it, so it is worth asserting directly rather than through
     a render.
+- **The same documentation is served PUBLICLY at `/studio/api/<slug>`, and the
+  API pane links to it** (`public-api.tsx`, the shared body in `api-docs.tsx`,
+  the path pair in `project-route.ts`). The pane is behind sign-in and scoped
+  to the account that owns the project, so the one question it could not answer
+  is the common one — "send me your API docs" — and every link it could hand a
+  colleague, a customer, or whoever is integrating against the agent landed
+  them on somebody else's sign-in screen.
+  - **It discloses nothing new.** Both reads are the AGENT's own already-public
+    routes (`GET /:slug/client-config`, `GET /:slug/workflows`), so a reader
+    could have had all of it from two `curl` calls against a slug they already
+    know; what the page adds is that they no longer have to know to try. That
+    is also why the server route needs no ownership check — the response is the
+    app shell, and the browser does the reading.
+  - **Two things stay behind the studio**, and `AgentApiDocs` is split exactly
+    along that line: the project's SECRETS (hence `token={false}` on the public
+    page — a closed workflow API refuses the listing and the card quotes the
+    agent's own 401, which beats printing an `Authorization` line nobody can
+    fill in) and the carrier webhook CARD, which reads those secrets to report
+    whether request signing is live. The `POST /:slug/phone` route ROW stays on
+    both: it is a public route this agent answers, which is the page's subject.
+  - **The page is chosen before the auth gate, in `main.tsx`'s render call**,
+    not by an early return inside `Root`. `Root` calls `useStudioAuth`
+    unconditionally, so an early return would sit above that hook (a rule
+    violation the moment a path can change under a `pushState`) or below it —
+    the version that reads `/studio/auth`, restores a session, and can flash a
+    sign-in screen at a reader who will never have an account.
+  - **The link names whichever agent the pane is documenting**, so before a
+    first publish it points at the PREVIEW — replaced on every edit, swept with
+    the project — and the card says so rather than handing out a URL that dies
+    on the next turn.
 - **The Database pane is a read-only table viewer**
   (`database.tsx` → `GET …/database/tables` and `…/database/rows`), offered
   only once the project has opted into a database — see the switcher's gate
