@@ -62,13 +62,23 @@ so every piece of per-project state resets on a switch with no effect to do it.
   Workflows, Database, Code, Secrets, Settings (`StudioTab` in `top-bar.tsx`
   is the one union; `project-view.tsx`'s `selectedTab` state is the only
   selection).
-  - **Database is the one pane a project can LACK**, and everything else is
-    offered from the moment a project exists. It is gated on
-    `ProjectData.databaseEnabled` through `isTabVisible` — a database is an
-    opt-in taken in Settings, and before it is taken the pane could only show
-    an empty table list. A tab that answers no question reads as a broken
-    feature rather than an unused one, and it drew "where is my data" from
-    users who had never switched anything on.
+  - **Database and Workflows are the panes a project can LACK, and ONE flag
+    decides both**, where everything else is offered from the moment a project
+    exists. Both are gated on `ProjectData.databaseEnabled` through
+    `isTabVisible` — a database is an opt-in taken in Settings, and before it is
+    taken the Database pane could only show an empty table list. A tab that
+    answers no question reads as a broken feature rather than an unused one, and
+    it drew "where is my data" from users who had never switched anything on.
+    - **Workflows rides on the same flag because a run is only DURABLE with a
+      database behind it.** `configureWorkflowWorld`
+      (`aai/host/workflow-world.ts`) picks the Postgres world off the app's
+      `DATABASE_URL`; with none, the guest gets the LOCAL world, whose queue is
+      in memory and whose data directory is per-process under `tmpdir()`. So the
+      pane's own subtitle — runs that "keep going after the call, the page, or
+      the request that began them" — is false for a databaseless project, and a
+      list of runs that die with the sandbox is a worse answer than no tab
+      because it looks like the feature working. `TabGates` therefore still
+      carries ONE entry: two panes, but the same fact about the project.
     - **The gate rides on the PROJECT payload, not on the database-state
       route the Settings card reads.** Recording the intent stamps the
       workspace, which pushes a `project` frame down the SSE stream
@@ -88,6 +98,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
       selection.
     - The switcher's left borders index the VISIBLE list, or a missing pane
       leaves a seam where it used to be.
+    - **The Database card's copy is what makes either pane discoverable**, so
+      its off-state blurb names both (`database-card.tsx`): the switch is the
+      only place in the studio that says the Workflows pane exists.
   The first four are all about the agent that is RUNNING — call it, talk to
   it, watch what it is still doing, read what it stored — where Code, Secrets
   and Settings are about the workspace and the project. API LEADS and UI sits
@@ -297,7 +310,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
     its flash cleared early by the first click's timeout.
 
 - **The Workflows PANE reads the AGENT's own brokered API, not a studio route**
-  (`workflows.tsx` → the card in `workflows-card.tsx` → `/:slug/workflows`). A
+  (`workflows.tsx` → the card in `workflows-card.tsx` → `/:slug/workflows`), and
+  the pane is only OFFERED once the project has a database — see the switcher
+  above. A
   workflow run is the one thing
   in this product that OUTLIVES every surface the studio already shows: the
   UI pane frames a page, the transcript shows a conversation, and a run

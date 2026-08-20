@@ -4,8 +4,9 @@
 // Split from app.tsx, which owns all the state these render. Project
 // switching lives in the home sidebar (brand → home), not here.
 //
-// The switcher was "the seven panes" and is six or seven now: Database is
-// offered only once the project has opted into a database (`isTabVisible`).
+// The switcher was "the seven panes" and is six or eight now: Workflows and
+// Database are both offered only once the project has opted into a database
+// (`isTabVisible`).
 
 import clsx from "clsx";
 import { useRef } from "react";
@@ -124,8 +125,8 @@ export function PublishMenu(props: PublishMenuProps) {
 
 /**
  * The project panes, all peers in the segmented control. Every one of them is
- * offered from the moment a project exists EXCEPT `database`, which the project
- * has to opt into — see {@link isTabVisible}.
+ * offered from the moment a project exists EXCEPT `workflows` and `database`,
+ * which the project has to opt into — see {@link isTabVisible}.
  *
  * Settings joined them rather than staying a dropdown: it holds the CLI
  * round-trip, the Database switch and Delete project, which is more than a
@@ -177,10 +178,11 @@ const TABS: { id: StudioTab; label: string }[] = [
 ];
 
 /**
- * What a pane can be gated on. One entry today, and it is the only gate in the
- * switcher: everything else here is reachable from the moment a project exists
- * (Settings holds Delete project, Secrets holds the key the first build needs),
- * so a second gate is a claim about the switcher's invariant and not a flag.
+ * What a pane can be gated on. One entry today — it gates two panes, but on the
+ * same fact — and it is the only gate in the switcher: everything else here is
+ * reachable from the moment a project exists (Settings holds Delete project,
+ * Secrets holds the key the first build needs), so a second gate is a claim
+ * about the switcher's invariant and not a flag.
  */
 export type TabGates = {
   /** The project opted into a database — see `ProjectData.databaseEnabled`. */
@@ -190,12 +192,22 @@ export type TabGates = {
 /**
  * Whether a pane is offered at all.
  *
- * **Database is the one pane a project can lack.** A database is an opt-in
- * taken in Settings (studio-database.ts), and until it is taken the pane could
- * only ever show an empty table list — a tab that answers no question reads as
- * a broken feature rather than as an unused one, and it invited the question
- * "where is my data" from users who had never turned anything on. So the switch
- * reveals the pane rather than merely un-erroring it.
+ * **Database and Workflows are the panes a project can lack, and one opt-in
+ * decides both.** A database is taken in Settings (studio-database.ts), and
+ * until it is taken the Database pane could only ever show an empty table list
+ * — a tab that answers no question reads as a broken feature rather than as an
+ * unused one, and it invited the question "where is my data" from users who had
+ * never turned anything on. So the switch reveals the pane rather than merely
+ * un-erroring it.
+ *
+ * Workflows rides on the same flag because a run is only DURABLE when there is
+ * a database behind it: `configureWorkflowWorld` picks the Postgres world off
+ * the app's `DATABASE_URL`, and without one a guest gets the local world, whose
+ * queue is in memory and whose data directory is per-process under `tmpdir()`
+ * (see `aai/host/workflow-world.ts`). A pane whose subtitle promises runs that
+ * "keep going after the call, the page, or the request that began them" would
+ * then be listing runs that die with the sandbox — which is a worse answer than
+ * no tab, because it looks like the feature working.
  *
  * Exported because TWO callers need one answer: the switcher, which decides
  * what to render, and `project-view.tsx`, which has to decide what a SELECTION
@@ -204,7 +216,7 @@ export type TabGates = {
  * spelled twice.
  */
 export function isTabVisible(tab: StudioTab, gates: TabGates): boolean {
-  return tab === "database" ? gates.databaseEnabled : true;
+  return tab === "database" || tab === "workflows" ? gates.databaseEnabled : true;
 }
 
 type TopBarProps = {
@@ -213,10 +225,10 @@ type TopBarProps = {
   deployedSlug?: string | undefined;
   hasBuild: boolean;
   /**
-   * The project opted into a database, which is what puts the **Database** tab
-   * in the switcher at all (see {@link isTabVisible}). Required rather than
-   * defaulted: the default is "no tab", and a caller that forgets to thread it
-   * would silently hide a pane the project paid for.
+   * The project opted into a database, which is what puts the **Workflows** and
+   * **Database** tabs in the switcher at all (see {@link isTabVisible}).
+   * Required rather than defaulted: the default is "no tab", and a caller that
+   * forgets to thread it would silently hide two panes the project paid for.
    */
   databaseEnabled: boolean;
   /** A chat turn is streaming — Publish locks until it settles (see PublishMenuProps). */
@@ -283,7 +295,7 @@ export function TopBar(props: TopBarProps) {
         <div className="flex flex-none overflow-hidden rounded-sm border border-line">
           {/* `i` indexes the VISIBLE list, so the left border still falls
               between neighbours when a pane is missing — indexing TABS would
-              leave a seam where the Database tab used to be. */}
+              leave a seam where the gated tabs used to be. */}
           {TABS.filter((entry) => isTabVisible(entry.id, props)).map((entry, i) => (
             <button
               key={entry.id}
