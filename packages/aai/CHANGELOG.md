@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 6.9.1
+
+### Patch Changes
+
+- 9d45c1e: Run databaseless workflows in the local world with a data directory of their own, and rebuild a deployed agent when its database is provisioned
+
 ## 6.9.0
 
 ### Minor Changes
