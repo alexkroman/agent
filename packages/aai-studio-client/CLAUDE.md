@@ -13,8 +13,8 @@ over HTTP/SSE (no code imports in either direction); aai-server serves
 the built artifact, resolved via `require.resolve` in
 `studio-static.ts` the same way aai-ui's `dist/default-client` is.
 Panes: `chat.tsx` (chat + composer), and the seven the top bar's
-segmented control switches between — `preview.tsx` (labelled **UI**),
-`docs.tsx` (**API**), `workflows.tsx`, `database.tsx`, `code-view.tsx`,
+segmented control switches between — `docs.tsx` (**API**), `preview.tsx`
+(labelled **UI**), `workflows.tsx`, `database.tsx`, `code-view.tsx`,
 `secrets.tsx`, `settings.tsx`. The six page-shaped ones share
 `pane-shell.tsx`; only the UI and Code panes have layouts of their own.
 
@@ -58,7 +58,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
     buttons with `aria-pressed`: arrow-key navigation and the group's
     accessible name then come from the markup, and the segmented look is
     entirely on the labels.
-- **The switcher runs deployed-agent-first, then workspace**: UI, API,
+- **The switcher runs deployed-agent-first, then workspace**: API, UI,
   Workflows, Database, Code, Secrets, Settings (`StudioTab` in `top-bar.tsx`
   is the one union; `project-view.tsx`'s `selectedTab` state is the only
   selection).
@@ -88,13 +88,17 @@ so every piece of per-project state resets on a switch with no effect to do it.
       selection.
     - The switcher's left borders index the VISIBLE list, or a missing pane
       leaves a seam where it used to be.
-  The first four are all about the agent that is RUNNING — talk to it, call
+  The first four are all about the agent that is RUNNING — call it, talk to
   it, watch what it is still doing, read what it stored — where Code, Secrets
-  and Settings are about the workspace and the project. API sits second
-  because it is the same question as UI asked by a caller rather than a
-  person, and Secrets sits before Settings because a key is what a WORKING
-  project needs where Settings ends in Delete project.
-  - **The first tab's id is `preview` and its label is "UI".** The id names a
+  and Settings are about the workspace and the project. API LEADS and UI sits
+  beside it: the two ask one question of a caller and of a person, so the
+  contract comes before the client that exercises it. Secrets sits before
+  Settings because a key is what a WORKING project needs where Settings ends
+  in Delete project. The order is a product decision nothing else here holds —
+  the panes are peers, so a reshuffle of `TABS` is invisible to every other
+  assertion in `top-bar.test.tsx`, which is why one test pins the rendered
+  sequence.
+  - **The UI tab's id is `preview` and its label is "UI".** The id names a
     platform concept the whole product spells that way (the auto-deployed
     PREVIEW agent, `previewSlug`, `previewVersion`, `previewStale`), so
     renaming the state to match a button would put a second word for one
@@ -345,6 +349,40 @@ so every piece of per-project state resets on a switch with no effect to do it.
     whole reason the pane can exist without somebody maintaining it. The
     property NAME is the placeholder (`"<topic>"`), because a generic
     `"string"` reads as a value somebody meant to keep.
+  - **Each half is offered only to the agents it is TRUE for.** The pane used
+    to show every card to every project, so a workflow app was told to paste a
+    Twilio webhook into a carrier console and a voice agent got twelve workflow
+    routes it had nothing to call them with. Both halves are now gated on what
+    the agent ITSELF answers:
+    - **No carrier webhook for a workflow app.** `page: "static"` declines
+      `/websocket` with a reason and defaults telephony OFF (`AgentDef.page`),
+      so a phone number pointed at one answers and hangs up — the worst kind of
+      wrong documentation, since it is only wrong at the end of an afternoon in
+      somebody's carrier console. `frontDoorEndpoints(page)` drops the
+      `POST /phone` row and the Phone card goes with it; the page and its
+      config stay, because they are how a caller discovers the shape at all.
+    - **No workflow routes for an agent that declares no workflow.** This is a
+      question about DECLARATIONS, not about routes: the platform proxies
+      `/:slug/workflows/*` for every agent, so the table would be true for a
+      voice agent and useless to it — `POST /workflows/runs` needs a `workflow`
+      name and there is none to put there. What is left is the one sentence
+      saying the project declares none, which is not a route table: this pane
+      exists on the argument that the API surface is the least discoverable
+      thing about a deployment, and "you could have workflows" is part of that
+      surface.
+    - **Neither gate DEFAULTS while the answer is outstanding.** Both reads are
+      one-shot (`staleTime: Infinity`), and defaulting to the fuller shape
+      would put the Phone card and the route tables on screen for a moment and
+      then take them away on every open — which reads as a glitch, not as a
+      judgement. The front-door card is held back until `client-config`
+      answers; the workflow half shows one line (reading / could not read /
+      declares none) until the listing does. A FAILED `client-config` does
+      default to voice, since `page` is optional and absent has always read
+      that way.
+    - `docs.test.tsx` pins both, and each negative sits beside a positive:
+      a `queryByText(…)).toBeNull()` pair passes just as well for a pane that
+      renders nothing, so the voice-agent test asserting all of it is what
+      makes the absences a decision rather than a bug.
   - **Whether the agent is a voice session or a page is asked of the AGENT**
     (`GET /:slug/client-config`), never read off the project's stored `kind`.
     That field selects the coding agent's system prompt and is explicitly a

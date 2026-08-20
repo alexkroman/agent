@@ -37,29 +37,54 @@ export type DocEndpoint = {
 };
 
 /**
- * The voice agent's public surface.
- *
- * Short because it genuinely is: a browser reads `client-config` once and then
- * talks WebSocket, and the socket is not an HTTP route a reader could call by
- * hand — so it is described in the pane's prose rather than listed as a row
- * somebody might try to `curl`.
+ * The front door EVERY agent has, whichever shape it is: the page it serves and
+ * the config that says what that page is.
  *
  * `client-config` names its own path from the SDK constant every server that
  * serves it also uses, so a rename cannot leave this table behind.
  */
-export const VOICE_ENDPOINTS: readonly DocEndpoint[] = [
+export const PAGE_ENDPOINTS: readonly DocEndpoint[] = [
   { method: "GET", path: "", summary: "The agent's page — the voice client, or a workflow app." },
   {
     method: "GET",
     path: CLIENT_CONFIG_PATH,
-    summary: "Name, greeting, page kind, and the WebSocket URL for a live session.",
+    summary:
+      "Name, greeting, page kind, and — for a voice agent — the live session's WebSocket URL.",
   },
+];
+
+/**
+ * What a VOICE agent answers on top of that.
+ *
+ * Short because it genuinely is: a browser reads `client-config` once and then
+ * talks WebSocket, and the socket is not an HTTP route a reader could call by
+ * hand — so it is described in the pane's prose rather than listed as a row
+ * somebody might try to `curl`. That leaves the carrier webhook as the only
+ * voice-only ROUTE, which is why this table has one row rather than being
+ * folded into the one above.
+ */
+export const VOICE_ENDPOINTS: readonly DocEndpoint[] = [
   {
     method: "POST",
     path: "phone",
     summary: "Carrier webhook — answers with the media-stream document for the call.",
   },
 ];
+
+/**
+ * The routes to document for one agent's front door, given what the agent says
+ * it IS (`ClientConfigResponse.page`, absent reading as `"voice"`).
+ *
+ * **A workflow app is not offered the carrier webhook.** `page: "static"`
+ * declines `/websocket` with a reason and defaults telephony OFF (see
+ * `AgentDef.page`), so a phone number pointed at one answers and hangs up —
+ * documenting the route would be an invitation to spend an afternoon in a
+ * carrier console over a call that cannot connect. The page and its config
+ * stay: they are how a caller discovers the shape in the first place.
+ */
+export function frontDoorEndpoints(page: "voice" | "static"): readonly DocEndpoint[] {
+  return page === "static" ? PAGE_ENDPOINTS : [...PAGE_ENDPOINTS, ...VOICE_ENDPOINTS];
+}
 
 /**
  * The durable-workflow API, in the order a caller meets it: list, start, read,

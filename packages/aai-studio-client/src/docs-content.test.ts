@@ -14,6 +14,8 @@ import {
   curlPoll,
   curlStart,
   endpointUrl,
+  frontDoorEndpoints,
+  PAGE_ENDPOINTS,
   sampleInput,
   startBody,
   tsStart,
@@ -173,8 +175,26 @@ describe("the endpoint tables", () => {
   });
 
   test("every row says what it is for", () => {
-    for (const row of [...VOICE_ENDPOINTS, ...WORKFLOW_ENDPOINTS]) {
+    for (const row of [...PAGE_ENDPOINTS, ...VOICE_ENDPOINTS, ...WORKFLOW_ENDPOINTS]) {
       expect(row.summary.length).toBeGreaterThan(0);
     }
+  });
+
+  test("a workflow app's front door is the page and its config, with no phone", () => {
+    // `page: "static"` declines `/websocket` and defaults telephony OFF, so
+    // the carrier webhook would be a URL that answers a call and hangs up.
+    const paths = frontDoorEndpoints("static").map((row) => row.path);
+    expect(paths).toEqual(["", "client-config"]);
+    expect(paths).not.toContain("phone");
+  });
+
+  test("a voice agent's front door adds the carrier webhook", () => {
+    // The negative above holds for a builder that returns nothing, so this is
+    // what says the phone row is WITHHELD rather than gone.
+    expect(frontDoorEndpoints("voice").map((row) => row.path)).toEqual([
+      "",
+      "client-config",
+      "phone",
+    ]);
   });
 });

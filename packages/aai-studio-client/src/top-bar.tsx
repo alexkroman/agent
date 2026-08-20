@@ -133,17 +133,18 @@ export function PublishMenu(props: PublishMenuProps) {
  * Delete project has to work before anything has ever been published, and the
  * API pane says what the agent will answer once something is.
  *
- * The order is the deployed agent first (talk to it, call it, watch what it is
+ * The order is the deployed agent first (call it, talk to it, watch what it is
  * still doing, read what it stored), then the workspace and the project's own
- * configuration: API sits between UI and Code because it is the same question
- * as UI — "what does this thing do?" — asked by a caller rather than a user;
- * Workflows follows it because a run is that API's output outliving the
+ * configuration: API LEADS, and UI sits beside it because the two ask one
+ * question — "what does this thing do?" — of a caller and of a person
+ * respectively, so the contract comes before the client that exercises it.
+ * Workflows follows them because a run is that API's output outliving the
  * request that made it; and Database is the same again one step further out,
  * the rows still there when every run has finished. Secrets and Settings come
  * last, in that order: a key is something a working project needs, where
  * Settings ends in Delete project.
  *
- * **The first tab's id is `preview` and its label is "UI".** The id names a
+ * **The UI tab's id is `preview` and its label is "UI".** The id names a
  * platform concept the whole product spells that way — the auto-deployed
  * PREVIEW agent, its `previewSlug`, `previewVersion` and `previewStale` — and
  * renaming the state to match a button would put a second word for one thing
@@ -153,8 +154,8 @@ export function PublishMenu(props: PublishMenuProps) {
  * for without naming what it is.
  */
 export type StudioTab =
-  | "preview"
   | "docs"
+  | "preview"
   | "workflows"
   | "database"
   | "code"
@@ -165,8 +166,8 @@ export type StudioTab =
 // Logs sits directly after Code, which is where its use is: you write
 // something, you run it, you read what it printed.
 const TABS: { id: StudioTab; label: string }[] = [
-  { id: "preview", label: "UI" },
   { id: "docs", label: "API" },
+  { id: "preview", label: "UI" },
   { id: "workflows", label: "Workflows" },
   { id: "database", label: "Database" },
   { id: "code", label: "Code" },

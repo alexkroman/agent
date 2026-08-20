@@ -10,6 +10,15 @@
 // the entire handle (no session, no cookie), or that a result can be collected
 // days later from another machine.
 //
+// **Each half is offered only to the agents it is TRUE for.** A workflow app is
+// not shown the carrier webhook — `page: "static"` declines `/websocket` and
+// defaults telephony off, so a number pointed at one answers and hangs up — and
+// an agent that declares no workflow is not shown the workflow routes, which
+// the platform proxies for every agent and which need a `workflow` name it has
+// none of. Both are read off the AGENT rather than the project's stored kind,
+// and neither defaults while the read is outstanding: the fuller shape
+// appearing and then vanishing on every open reads as a glitch.
+//
 // **The workflow half is GENERATED, not written.** `GET /workflows` serves each
 // workflow's name, description and input schema (`WorkflowSummary`), which is
 // the same JSON a page renders its form from — so the request bodies here carry
@@ -38,8 +47,8 @@ import {
   curlStart,
   type DocEndpoint,
   endpointUrl,
+  frontDoorEndpoints,
   tsStart,
-  VOICE_ENDPOINTS,
   WORKFLOW_API_TOKEN_SECRET,
   WORKFLOW_ENDPOINTS,
 } from "./docs-content.ts";
@@ -124,6 +133,97 @@ function WorkflowDocs({
   );
 }
 
+/**
+ * The workflow half of the pane: the route table, and one generated section per
+ * workflow the agent declares.
+ *
+ * **Nothing here renders for an agent that declares no workflow**, which is a
+ * question about DECLARATIONS rather than about routes — the platform proxies
+ * `/:slug/workflows/*` for every agent, so the table would be true for a voice
+ * agent and useless to it: `POST /workflows/runs` needs a `workflow` name, and
+ * there is none to put there. What it gets instead is the one sentence saying
+ * so, because this pane exists on the argument that the API surface is the
+ * least discoverable thing about a deployment, and "you could have workflows"
+ * is part of that surface where a route table for nothing is not.
+ *
+ * Its own component because `DeployedDocs` was over the cognitive-complexity
+ * cap with it inline — four states in one function beside two other cards.
+ */
+function WorkflowApi({
+  base,
+  token,
+  declared,
+  pending,
+  error,
+}: {
+  base: string;
+  token: boolean;
+  /** The agent's own listing. `undefined` until it answers, and if it cannot. */
+  declared: readonly WorkflowSummary[] | undefined;
+  /** Still reading — the listing may be waiting out a sandbox boot. */
+  pending: boolean;
+  /** The agent's own sentence, when the listing could not be read. */
+  error: string | undefined;
+}) {
+  if (declared !== undefined && declared.length > 0) {
+    return (
+      <>
+        <Card
+          title="Workflows"
+          blurb={
+            token
+              ? "Durable runs over HTTP. This agent sets AAI_WORKFLOW_API_TOKEN, so every call needs that bearer — the snippets below carry it."
+              : "Durable runs over HTTP: start one, then read it back by id from anywhere, minutes or days later. Open by default — set AAI_WORKFLOW_API_TOKEN in the Secrets pane to require a bearer."
+          }
+        >
+          <Endpoints base={base} rows={WORKFLOW_ENDPOINTS} />
+        </Card>
+
+        <Card
+          title="Running a workflow"
+          blurb="Generated from this agent's own GET /workflows — the field names below are the ones it declared, at the version that is deployed right now."
+        >
+          <div className="flex flex-col gap-4">
+            {declared.map((workflow) => (
+              <WorkflowDocs key={workflow.name} base={base} workflow={workflow} token={token} />
+            ))}
+            <div className="flex flex-col gap-2 border-t border-line pt-4">
+              <span className="text-[11px] text-muted">
+                Read a run back later — the id is the whole handle.
+              </span>
+              <Snippet code={curlPoll(base, token)} label="read a run back" />
+            </div>
+          </div>
+        </Card>
+      </>
+    );
+  }
+  return (
+    <Card
+      title="Workflows"
+      blurb="Durable runs over HTTP, for work that has to outlive the request that started it."
+    >
+      {pending && (
+        <p className="m-0 text-[13px] text-muted" role="status">
+          Reading this agent's workflows…
+        </p>
+      )}
+      {/* Quoted verbatim: a 503 while a sandbox boots and a 404 for an agent
+          that serves no workflow API read very differently, and that text is
+          the whole difference. */}
+      {error !== undefined && (
+        <p className="m-0 text-[13px] text-err">Could not read the workflows: {error}</p>
+      )}
+      {declared?.length === 0 && (
+        <p className="m-0 text-[13px] leading-5 text-muted">
+          This project declares no workflows. A voice agent does not need any — they are for work
+          that has to outlive the call that started it.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 type DocsPaneProps = {
   bearer: string;
   /** The open project — the secrets read is keyed by it. */
@@ -195,7 +295,15 @@ function DeployedDocs({ bearer, project, deployedSlug, slug }: DocsPaneProps & {
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   });
-  const staticPage = config.data?.page === "static";
+  // Three states, not two, and the third is why this is not `data?.page`
+  // inline: until the agent answers we do not KNOW which shape it is, and a
+  // default of "voice" would put the phone card on screen for a second and
+  // then take it away again on every open of a workflow app's pane. A
+  // FAILED read does default to voice — `page` is optional and absent has
+  // always read as voice, so an agent that cannot be reached is documented
+  // the way every agent built before the field is.
+  const page = config.isPending ? undefined : (config.data?.page ?? "voice");
+  const staticPage = page === "static";
 
   return (
     <>
@@ -210,71 +318,41 @@ function DeployedDocs({ bearer, project, deployedSlug, slug }: DocsPaneProps & {
         <Snippet code={base} label="the agent's base URL" />
       </Card>
 
-      <Card
-        title={staticPage ? "The page" : "Sessions"}
-        blurb={
-          staticPage
-            ? 'This agent serves a page rather than a voice session, and client-config says so (page: "static") — which is how a client knows not to open a socket the agent would decline. The routes are still there and still answer.'
-            : "A browser reads the config below, then opens the WebSocket it names. The URL changes when the sandbox is replaced, so clients re-read it on every connect rather than storing one — @alexkroman1/aai-ui does this for you."
-        }
-      >
-        <Endpoints base={base} rows={VOICE_ENDPOINTS} />
-      </Card>
+      {/* Held back until the agent has answered, rather than defaulted: this
+          card's title, blurb and rows all three differ by shape, so a default
+          would render the voice version of all of them and then replace it. */}
+      {page !== undefined && (
+        <Card
+          title={staticPage ? "The page" : "Sessions"}
+          blurb={
+            staticPage
+              ? 'This agent serves a page rather than a voice session, and client-config says so (page: "static") — which is how a client knows not to open a socket the agent would decline. The routes below are still there and still answer.'
+              : "A browser reads the config below, then opens the WebSocket it names. The URL changes when the sandbox is replaced, so clients re-read it on every connect rather than storing one — @alexkroman1/aai-ui does this for you."
+          }
+        >
+          <Endpoints base={base} rows={frontDoorEndpoints(page)} />
+        </Card>
+      )}
 
-      <PhoneCard
-        deployedSlug={deployedSlug}
-        secretNames={secretNames}
-        pendingSecrets={secrets.data?.pending ?? []}
+      {/* Telephony is a VOICE surface: a workflow app declines `/websocket`
+          and defaults telephony off, so a number pointed at one answers and
+          hangs up. Nothing here is merely inapplicable — it is a webhook that
+          would be pasted into a carrier console and then debugged. */}
+      {page === "voice" && (
+        <PhoneCard
+          deployedSlug={deployedSlug}
+          secretNames={secretNames}
+          pendingSecrets={secrets.data?.pending ?? []}
+        />
+      )}
+
+      <WorkflowApi
+        base={base}
+        token={token}
+        declared={workflows.data}
+        pending={workflows.isPending}
+        error={workflows.isError ? workflows.error.message : undefined}
       />
-
-      <Card
-        title="Workflows"
-        blurb={
-          token
-            ? "Durable runs over HTTP. This agent sets AAI_WORKFLOW_API_TOKEN, so every call needs that bearer — the snippets below carry it."
-            : "Durable runs over HTTP: start one, then read it back by id from anywhere, minutes or days later. Open by default — set AAI_WORKFLOW_API_TOKEN in the Secrets pane to require a bearer."
-        }
-      >
-        <Endpoints base={base} rows={WORKFLOW_ENDPOINTS} />
-      </Card>
-
-      <Card
-        title="Running a workflow"
-        blurb="Generated from this agent's own GET /workflows — the field names below are the ones it declared, at the version that is deployed right now."
-      >
-        {workflows.isPending && (
-          <p className="m-0 text-[13px] text-muted" role="status">
-            Reading this agent's workflows…
-          </p>
-        )}
-        {/* Quoted verbatim: a 503 while a sandbox boots and a 404 for an agent
-            that serves no workflow API read very differently, and that text is
-            the whole difference. */}
-        {workflows.isError && (
-          <p className="m-0 text-[13px] text-err">
-            Could not read the workflows: {workflows.error.message}
-          </p>
-        )}
-        {workflows.data?.length === 0 && (
-          <p className="m-0 text-[13px] leading-5 text-muted">
-            This project declares no workflows. A voice agent does not need any — they are for work
-            that has to outlive the call that started it.
-          </p>
-        )}
-        {workflows.data !== undefined && workflows.data.length > 0 && (
-          <div className="flex flex-col gap-4">
-            {workflows.data.map((workflow) => (
-              <WorkflowDocs key={workflow.name} base={base} workflow={workflow} token={token} />
-            ))}
-            <div className="flex flex-col gap-2 border-t border-line pt-4">
-              <span className="text-[11px] text-muted">
-                Read a run back later — the id is the whole handle.
-              </span>
-              <Snippet code={curlPoll(base, token)} label="read a run back" />
-            </div>
-          </div>
-        )}
-      </Card>
     </>
   );
 }
