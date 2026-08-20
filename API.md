@@ -5044,6 +5044,7 @@ type WorkflowSummary = {
 // @internal
 type WorkflowSupport = {
     uploads: UploadStore;
+    directParts: boolean;
     close(): Promise<void>;
 };
 

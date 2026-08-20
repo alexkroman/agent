@@ -124,6 +124,34 @@ const UPLOAD_ENV_EXAMPLE = [
 ].join("\n");
 
 /**
+ * Whether this store's bytes live somewhere OTHER than the container serving it.
+ *
+ * The one question a CLAIM has to answer, and the reason it is a function rather
+ * than a second reading of the same env: `directParts` tells a client to send its
+ * windows straight to the platform's bucket and then ask this agent to RECORD
+ * them, so it may only be advertised when {@link createUploadStore} really took
+ * the arm that reads that bucket. Derived from the same two inputs that choose the
+ * arm, so the claim and the store cannot disagree.
+ *
+ * They did. `directParts` was derived from the broker URL alone, which the platform
+ * sets for every agent it can name an origin for — including one with no database,
+ * where the store deliberately ignores a resolved bucket and uses its own directory
+ * (see below). Every parts upload on a databaseless agent therefore put its windows
+ * in the bucket, asked the agent to record them, and got
+ * `No bytes are stored for the part at <offset>` from a store looking at a directory
+ * nobody had written to. That is every upload over one part (8 MiB) on the studio's
+ * default configuration; a single-request upload was unaffected, because its bytes
+ * go to the agent.
+ *
+ * @internal
+ */
+export function uploadBytesAreRemote<
+  T extends { db?: Db | undefined; blobs?: UploadBlobs | undefined },
+>(opts: T): opts is T & { db: Db; blobs: UploadBlobs } {
+  return Boolean(opts.db && opts.blobs);
+}
+
+/**
  * Build the store for one server, choosing the home that matches its world.
  *
  * `db` present is the DURABLE arm and needs a bucket to go with it; `db` absent is
@@ -158,7 +186,7 @@ export function createUploadStore(opts: {
     // directory on this one machine cannot serve a run resumed by another process,
     // which is the whole failure `_upload-files.ts` describes. Refused rather than
     // downgraded: the local arm would be a QUIETER version of that bug, not a fix.
-    if (!opts.blobs) {
+    if (!uploadBytesAreRemote(opts)) {
       return createUnavailableUploadStore(
         `somewhere to put the bytes (\`${UPLOAD_STORAGE_URL_ENV}\`)`,
       );

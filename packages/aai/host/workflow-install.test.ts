@@ -133,6 +133,49 @@ describe("installWorkflowSupport", () => {
     await brokered.close();
   });
 
+  test("a broker with NO database does not claim `directParts`", async () => {
+    // The regression this pair exists for. The platform sets `AAI_UPLOAD_BROKER_URL`
+    // for every agent it can name an origin for, database or not — and with no
+    // database the store deliberately uses its own directory rather than the bucket
+    // (`uploadBytesAreRemote`). Claiming the direct path there sent every window over
+    // 8 MiB into the platform's bucket and then asked THIS store to record bytes it
+    // had never been given, which it correctly refused: `No bytes are stored for the
+    // part at 8388608`. Measured against a real deploy before the fix.
+    const local = installWorkflowSupport({
+      uploadBroker: "https://platform.test/digest-desk",
+      logger: quietLogger(),
+    });
+    expect(local.directParts).toBe(false);
+    await local.close();
+  });
+
+  test("a broker WITH a database claims it, because the store reads that bucket", async () => {
+    const durable = installWorkflowSupport({
+      env: { DATABASE_URL: "postgres://user:pw@127.0.0.1:1/db" },
+      uploadBroker: "https://platform.test/digest-desk",
+      logger: quietLogger(),
+    });
+    expect(durable.directParts).toBe(true);
+    await durable.close();
+  });
+
+  test("an agent's OWN bucket never claims `directParts` — no platform serves it", async () => {
+    // `aai dev` and a self-hosted server hold the credential themselves, so there is
+    // no platform byte route to send a window to. The broker is still NECESSARY, which
+    // is the half the fix had to keep.
+    const own = installWorkflowSupport({
+      env: {
+        DATABASE_URL: "postgres://user:pw@127.0.0.1:1/db",
+        AAI_UPLOAD_STORAGE_URL: "https://s.example",
+        AAI_UPLOAD_STORAGE_KEY: "k",
+        AAI_UPLOAD_STORAGE_BUCKET: "b",
+      },
+      logger: quietLogger(),
+    });
+    expect(own.directParts).toBe(false);
+    await own.close();
+  });
+
   test("reads the bucket out of the env, so `aai dev` gets a real store", async () => {
     // The three keys together — two of three resolves nothing, deliberately, so a
     // typo cannot half-configure a bucket. With a DATABASE_URL beside them that is a

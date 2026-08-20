@@ -252,11 +252,10 @@ export function createServer(options: ServerOptions): AgentServer {
   const workflowApi = createWorkflowApi({
     engine: () => runtime.workflows,
     uploads: workflowSupport.uploads,
-    // Derived from the one option rather than passed separately, so the two cannot
-    // disagree: a claim advertising a route nothing serves is a client sending
-    // megabytes into a 404 — which is exactly what reusing `publicUrl` here would do
-    // to a self-hosted agent behind a proxy.
-    directParts: Boolean(options.uploadBroker?.trim()),
+    // Reported by the call that BUILT the store rather than re-derived here, so the
+    // claim and the store cannot disagree — which they did, for every databaseless
+    // agent. See `uploadBytesAreRemote`.
+    directParts: workflowSupport.directParts,
     ...omitUndefined({ token: env?.[WORKFLOW_API_TOKEN_ENV] }),
     logger,
   });
