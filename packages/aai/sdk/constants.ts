@@ -362,7 +362,6 @@ export {
   STT_FRAME_TARGET_MS,
   TAIL_RESUME_MIN_UNHEARD_MS,
   TTS_CANCEL_ACK_TIMEOUT_MS,
-  TTS_COALESCE_MAX_CHARS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./pipeline-tuning-constants.ts";
 export { HEARD_AUDIO_LAG_MS, PIPELINE_PLAYBACK_GRACE_MS } from "./playback-timing-constants.ts";

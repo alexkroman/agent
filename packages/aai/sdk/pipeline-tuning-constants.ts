@@ -175,20 +175,6 @@ export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
 
 /**
- * Pipeline mode: max characters of LLM text batched before a TTS provider
- * send. The word-coalescing stream transform (pipeline-smooth.ts) emits
- * one chunk per word; forwarding each word as its own provider message is
- * ~1 wire frame per word. The TTS send path batches to sentence-terminal
- * punctuation (`.!?…`, never `,;:` — see `pipeline-stream.ts`) or this many
- * characters — after the first chunk, which is always forwarded immediately
- * to preserve time-to-first-byte. With clause marks no longer breaking a
- * batch, this cap is what bounds an unterminated one.
- *
- * @internal
- */
-export const TTS_COALESCE_MAX_CHARS = 32;
-
-/**
  * STT frame coalescing (host-side provider openers). Browser/telephony
  * clients stream ~20 ms mic frames; forwarding each one is ~50 provider
  * messages per second (and AssemblyAI rejects frames outside [50, 1000] ms).
