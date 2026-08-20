@@ -24,13 +24,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
 import agentDef, { spokenSummary } from "./agent.ts";
 import { speak, spokenSummaryFlow, summarize } from "./workflows/summarize.ts";
-import {
-  countWords,
-  createJob,
-  pollTranscript,
-  readTranscript,
-  uploadToProvider,
-} from "./workflows/transcribe.ts";
+import { countWords, createJob, pollTranscript, uploadToProvider } from "./workflows/transcribe.ts";
 
 /** The id every spec below uploads under. */
 const UPLOAD_ID = "upl_test";
@@ -118,37 +112,42 @@ describe("transcribing", () => {
       stubStepFetch(() => ({ body: { status: "error", error: "corrupt audio" } })).restore,
     );
 
-    await expect(pollTranscript("t_1")).rejects.toThrow("corrupt audio");
-    await expect(pollTranscript("t_1")).rejects.toBeInstanceOf(FatalError);
+    await expect(pollTranscript(UPLOAD_ID, "t_1")).rejects.toThrow("corrupt audio");
+    await expect(pollTranscript(UPLOAD_ID, "t_1")).rejects.toBeInstanceOf(FatalError);
   });
 
   test("`done` is decided here, so the body never reads a provider's vocabulary", async () => {
     restores.push(stubStepFetch(() => ({ body: { status: "queued" } })).restore);
 
-    await expect(pollTranscript("t_1")).resolves.toEqual({ done: false, status: "queued" });
+    await expect(pollTranscript(UPLOAD_ID, "t_1")).resolves.toEqual({ done: false });
   });
 
-  test("reads the transcript back with the FILENAME, not the opaque id", async () => {
-    restores.push(
-      stubStepFetch(() => ({ body: { text: "  we shipped it  ", audio_duration: 12.4 } })).restore,
-      stubReporter().restore,
-    );
+  test("a finished poll carries the transcript, named by the FILENAME", async () => {
+    // ONE request, not two: this used to poll for a status and then fetch the
+    // identical URL again for the text the poll already had in its hand.
+    const fetches = stubStepFetch(() => ({
+      body: { status: "completed", text: "  we shipped it  ", audio_duration: 12.4 },
+    }));
+    restores.push(fetches.restore, stubReporter().restore);
 
-    await expect(readTranscript(UPLOAD_ID, "t_1")).resolves.toEqual({
-      source: "standup.wav",
-      durationMs: 12_400,
-      text: "we shipped it",
+    await expect(pollTranscript(UPLOAD_ID, "t_1")).resolves.toEqual({
+      done: true,
+      transcript: { source: "standup.wav", durationMs: 12_400, text: "we shipped it" },
     });
+    expect(fetches.calls).toHaveLength(1);
   });
 
   test("a recording of silence is FATAL rather than an empty summary", async () => {
     // The failure this template is most likely to meet: silence transcribes
     // successfully to nothing, and everything downstream would then be asked to
     // summarize and speak no words at all.
-    restores.push(stubStepFetch(() => ({ body: { text: "   ", audio_duration: 3 } })).restore);
+    restores.push(
+      stubStepFetch(() => ({ body: { status: "completed", text: "   ", audio_duration: 3 } }))
+        .restore,
+    );
 
-    await expect(readTranscript(UPLOAD_ID, "t_1")).rejects.toThrow("no speech in that recording");
-    await expect(readTranscript(UPLOAD_ID, "t_1")).rejects.toBeInstanceOf(FatalError);
+    await expect(pollTranscript(UPLOAD_ID, "t_1")).rejects.toThrow("no speech in that recording");
+    await expect(pollTranscript(UPLOAD_ID, "t_1")).rejects.toBeInstanceOf(FatalError);
   });
 });
 
@@ -265,17 +264,22 @@ describe("the whole run", () => {
    * point `stubStepFetch` exists to make.
    */
   function stubProvider(reply: { headline: string; points: string[]; spoken: string }) {
-    let reads = 0;
     return stubStepFetch((request) => {
       if (request.url.includes("llm-gateway")) {
         return { body: { choices: [{ message: { content: JSON.stringify(reply) } }] } };
       }
       if (request.url.endsWith("/v2/upload")) return { body: { upload_url: "https://cdn/aai/1" } };
       if (request.method === "POST") return { body: { id: "t_1" } };
-      reads += 1;
-      return reads === 1
-        ? { body: { status: "completed" } }
-        : { body: { text: "we ship tuesday and two bugs are left", audio_duration: 42 } };
+      // One GET, carrying both the status and the text. It used to take two —
+      // a poll that read a status and threw the transcript away, then a fetch
+      // of the identical URL for the text it had just discarded.
+      return {
+        body: {
+          status: "completed",
+          text: "we ship tuesday and two bugs are left",
+          audio_duration: 42,
+        },
+      };
     });
   }
 

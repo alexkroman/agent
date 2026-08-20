@@ -1,0 +1,338 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * `stepTranscribe*()` — turning a recording into text from inside a
+ * `"use step"` function.
+ *
+ * The counterpart of {@link stepSpeak}, and the other half of a workflow's
+ * round trip: that one makes audio out of words, this one makes words out of
+ * audio. It exists for the same reason — a step is handed no `ToolContext`, so
+ * the session's provider stack is not in scope — but the shape is different in
+ * one way that decides this whole module, and it is worth stating before the
+ * API rather than after it.
+ *
+ * ## Why this is FOUR calls and `stepSpeak` is one
+ *
+ * Synthesis is a request: text in, audio out, seconds later. Transcription of a
+ * two-hour recording is a JOB — submitted, worked on elsewhere, collected — and
+ * a step that waited for one would be a step holding its process open for an
+ * hour, journaling nothing, and starting over from the upload after a crash.
+ *
+ * The durable shape is a body that calls a step per phase and `sleep`s between
+ * polls, and **the SDK cannot own that body**: the Workflow DevKit's builder
+ * transforms exactly the files under a project's `workflows/` directory, so a
+ * `"use step"` in this package would be scanned by nothing, transformed into
+ * nothing, and would run inline as an ordinary function with no journal and no
+ * retry — with no symptom saying so. Every step in this repository is a user's.
+ *
+ * So the division is: **the caller owns the four steps and the loop, this owns
+ * everything inside them.** That is the same division `stepGenerate` and
+ * `stepFetch` already keep, and it is why nothing here carries a directive.
+ *
+ * ```ts no-check
+ * import { sleep } from "workflow";
+ * import { throwStepError } from "@alexkroman1/aai/step-errors";
+ * import { stepTranscribePoll, stepTranscribeSubmit, stepTranscribeUpload } from "@alexkroman1/aai/utils";
+ *
+ * export async function upload(recording: string) {
+ *   "use step";
+ *   return await stepTranscribeUpload(recording).catch(throwStepError);
+ * }
+ * export async function submit(audioUrl: string) {
+ *   "use step";
+ *   return await stepTranscribeSubmit(audioUrl).catch(throwStepError);
+ * }
+ * export async function poll(id: string) {
+ *   "use step";
+ *   return await stepTranscribePoll(id).catch(throwStepError);
+ * }
+ *
+ * export async function transcribe(recording: string) {
+ *   "use workflow";
+ *   const { audioUrl } = await upload(recording);
+ *   const { id } = await submit(audioUrl);
+ *   for (let n = 0; n < 360; n += 1) {
+ *     const progress = await poll(id);
+ *     if (progress.done) return progress.transcript;
+ *     await sleep("10s");
+ *   }
+ *   throw new Error(`Transcript ${id} is still unfinished.`);
+ * }
+ * ```
+ *
+ * ## The phase boundaries are a MEASUREMENT, not a taste
+ *
+ * Upload and submit look like one operation — an `upload_url` is useless alone
+ * and expires — and both templates that own this flow began that way. The first
+ * live run is what split them: the create call failed on a deprecated field,
+ * the DevKit retried the whole step five times, and 24 MB went up the wire on
+ * every attempt to fix a fault in a JSON body. A retry that repeats the
+ * expensive half to fix the cheap half is not a retry. The risk that makes the
+ * split look wrong is real and far smaller — if the URL expires before the next
+ * step runs, one fresh upload happens, once, instead of five.
+ *
+ * ## Polling READS, so there is no separate read
+ *
+ * Both templates polled `GET /v2/transcript/:id` for a status and then fetched
+ * the identical URL again for the text — the completed poll had the transcript
+ * in its hand and threw it away. {@link stepTranscribePoll} answers with it, so
+ * a finished job costs one round trip rather than two and the value journaled
+ * by the last poll IS the transcript.
+ *
+ * The provider's vocabulary stays in here: the caller branches on `done`, never
+ * on a status string, so a new status the service invents cannot read as "not
+ * finished yet" forever.
+ *
+ * ## For a recording that fits in one request, use the sync endpoint
+ *
+ * `step-transcribe-sync.ts` is one call with no job and no polling, and it is
+ * the better answer whenever the audio fits inside its 120-second, 40 MB
+ * ceiling. This module is for everything that does not.
+ *
+ * @module step-transcribe
+ */
+
+import {
+  type TranscribeRequestOptions,
+  transcribeFailure,
+  transcribeKey,
+  transcribeRefusal,
+  transcribeSignal,
+} from "./_transcribe-shared.ts";
+import { stepFetch } from "./step-fetch.ts";
+import { readUpload, uploadInfo } from "./step-uploads.ts";
+
+/** The async API's base. */
+export const TRANSCRIBE_API = "https://api.assemblyai.com";
+
+/**
+ * The models a job asks for when a caller names none.
+ *
+ * `speech_models`, PLURAL and an array. The singular `speech_model` is
+ * deprecated on the async API and answers **400** for any current model name —
+ * which is exactly the fault that produced the retry measurement in the module
+ * doc. Omitting the field entirely is legal and routes to the service's
+ * default; naming it is what stops a default change silently moving a
+ * workflow's output.
+ */
+export const TRANSCRIBE_MODELS: readonly string[] = ["universal-3-5-pro"];
+
+/**
+ * How much of a stored upload one outbound window carries.
+ *
+ * The recording is never held whole — see {@link stepTranscribeUpload}.
+ */
+export const TRANSCRIBE_WINDOW_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Deadline for the upload leg.
+ *
+ * Its own budget because it is the one request whose duration is a function of
+ * the FILE rather than of the service, and a deadline sized for a JSON round
+ * trip would cancel exactly the uploads this exists to handle.
+ */
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS = 30 * 60_000;
+
+/** A finished transcript, as {@link stepTranscribePoll} answers with one. */
+export type Transcript = {
+  /** The job id, so a caller can quote it in a log or fetch it again later. */
+  id: string;
+  /** What was said, trimmed. Never empty — see {@link stepTranscribePoll}. */
+  text: string;
+  /**
+   * How long the recording runs, from the PROVIDER's own measurement rather
+   * than from a byte count — it decoded the file and this did not.
+   */
+  durationMs: number;
+};
+
+/**
+ * Where a submitted job has got to.
+ *
+ * A discriminated union rather than `{ done, transcript? }`, so a caller that
+ * checks `done` has the transcript without a second narrowing and one that
+ * forgets cannot read `undefined` text.
+ */
+export type TranscribeProgress =
+  | { done: false; status: string }
+  | { done: true; status: string; transcript: Transcript };
+
+/** What {@link stepTranscribeSubmit} accepts. */
+export type TranscribeSubmitOptions = TranscribeRequestOptions & {
+  /** Models to ask for. Defaults to {@link TRANSCRIBE_MODELS}. */
+  models?: readonly string[] | undefined;
+  /**
+   * Extra fields merged into the create-job body, VERBATIM.
+   *
+   * The async API has a large surface this deliberately does not mirror —
+   * `speaker_labels`, `language_code`, `redact_pii`, `auto_chapters` — and
+   * mirroring it would mean a wrapper that goes stale against the service every
+   * time it grows a feature. Nothing here interprets these; they are the
+   * caller's request, sent as given.
+   *
+   * `audio_url` and `speech_models` are set from this function's own arguments
+   * and cannot be overridden here, so the two ways to say the same thing cannot
+   * disagree.
+   */
+  params?: Record<string, unknown> | undefined;
+};
+
+/**
+ * Send a stored upload to the provider, and answer with the URL it gave.
+ *
+ * The recording STREAMS out of the app's own store: `readUpload` hands back
+ * bytes and a two-hour recording is not a value this process can hold, so the
+ * body is an async iterable of windows — which `stepFetch` accepts precisely
+ * for this. Nothing is buffered beyond one window, and one window of READ-AHEAD
+ * keeps the store and the socket busy at the same time.
+ *
+ * @param uploadId - An upload in the agent's own store, as `writeUpload` or a
+ *   page's `api.upload(file)` produced.
+ *
+ * @throws {TranscribeError} on a refusal, carrying the verdict `toStepError`
+ *   reads. Give this step extra retries: it is the one call here worth another
+ *   attempt, and the only one whose cost is the file.
+ *
+ * @public
+ */
+export async function stepTranscribeUpload(
+  uploadId: string,
+  opts: TranscribeRequestOptions = {},
+): Promise<{ audioUrl: string }> {
+  const stored = await uploadInfo(uploadId);
+  const response = await stepFetch(`${TRANSCRIBE_API}/v2/upload`, {
+    method: "POST",
+    // The raw key — this API takes it unprefixed, and a `Bearer ` in front of
+    // it is a 401 that reads like a wrong key.
+    headers: {
+      Authorization: transcribeKey(opts),
+      "Content-Type": "application/octet-stream",
+    },
+    body: uploadWindows(uploadId, stored.size),
+    signal: transcribeSignal({
+      ...opts,
+      timeoutMs: opts.timeoutMs ?? TRANSCRIBE_UPLOAD_TIMEOUT_MS,
+    }),
+  });
+  if (!response.ok) throw await transcribeFailure(response, "Upload");
+
+  const { upload_url: audioUrl } = (await response.json()) as { upload_url?: string };
+  if (!audioUrl) {
+    throw transcribeRefusal("The async API accepted the upload but named no URL.");
+  }
+  return { audioUrl };
+}
+
+/**
+ * Create the transcription job, and answer with the id that outlives this run.
+ *
+ * @param audioUrl - What to transcribe. {@link stepTranscribeUpload}'s answer,
+ *   or any URL the service can reach — a recording already sitting in a bucket
+ *   never needs to pass through this process at all.
+ *
+ * @throws {TranscribeError} on a refusal, or when the API creates no id.
+ *
+ * @public
+ */
+export async function stepTranscribeSubmit(
+  audioUrl: string,
+  opts: TranscribeSubmitOptions = {},
+): Promise<{ id: string }> {
+  const response = await stepFetch(`${TRANSCRIBE_API}/v2/transcript`, {
+    method: "POST",
+    headers: { Authorization: transcribeKey(opts), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      // The caller's extras FIRST, so the two arguments this function takes
+      // cannot be shadowed by a `params` key saying something else.
+      ...opts.params,
+      audio_url: audioUrl,
+      speech_models: opts.models ?? TRANSCRIBE_MODELS,
+    }),
+    signal: transcribeSignal(opts),
+  });
+  if (!response.ok) throw await transcribeFailure(response, "Submit");
+
+  const { id } = (await response.json()) as { id?: string };
+  if (!id) throw transcribeRefusal("The async API created no transcript id.");
+  return { id };
+}
+
+/**
+ * Ask once whether a job has finished, and read it when it has.
+ *
+ * One request answers both questions — see "Polling READS" in the module doc.
+ *
+ * @throws {TranscribeError}, NOT retryable, when the provider failed the job or
+ *   transcribed no words at all. A recording of silence succeeds and answers
+ *   with an empty string, which is the failure this flow is most likely to meet
+ *   and the one that reads least like a failure: everything downstream would
+ *   otherwise be handed no words and asked to work anyway.
+ *
+ * @public
+ */
+export async function stepTranscribePoll(
+  id: string,
+  opts: TranscribeRequestOptions = {},
+): Promise<TranscribeProgress> {
+  const response = await stepFetch(`${TRANSCRIBE_API}/v2/transcript/${id}`, {
+    headers: { Authorization: transcribeKey(opts) },
+    signal: transcribeSignal(opts),
+  });
+  if (!response.ok) throw await transcribeFailure(response, `Transcript ${id}`);
+
+  const body = (await response.json()) as {
+    status?: string;
+    error?: string;
+    text?: string;
+    audio_duration?: number;
+  };
+  const status = body.status ?? "unknown";
+  if (status === "error") {
+    // The provider has decided; no number of polls changes it.
+    throw transcribeRefusal(
+      `That recording could not be transcribed: ${body.error ?? "no reason given"}`,
+    );
+  }
+  if (status !== "completed") return { done: false, status };
+
+  const text = (body.text ?? "").trim();
+  if (text.length === 0) {
+    throw transcribeRefusal("There is no speech in that recording — nothing was transcribed.");
+  }
+  return {
+    done: true,
+    status,
+    // `audio_duration` is the provider's measurement, in seconds.
+    transcript: { id, text, durationMs: Math.round((body.audio_duration ?? 0) * 1000) },
+  };
+}
+
+/**
+ * A stored upload as a sequence of windows, with the next one already in flight.
+ *
+ * A generator rather than one `readUpload`, because the whole point is that the
+ * file is never held: each window is read, sent, and dropped. `readUpload`
+ * clamps to what is stored, so the loop ends on the real end of the file even
+ * if `size` moved under it.
+ *
+ * **One window of READ-AHEAD**, which is the whole concurrency available here:
+ * the consumer is a socket and the producer is the app's own store, so
+ * read-then-send makes them strictly alternate. Issuing the next read before
+ * yielding the current window overlaps them, and a large upload then pays the
+ * larger of the two rather than their sum.
+ */
+async function* uploadWindows(uploadId: string, size: number): AsyncGenerator<Uint8Array> {
+  const read = (at: number): Promise<Uint8Array> =>
+    readUpload(uploadId, { start: at, end: at + TRANSCRIBE_WINDOW_BYTES }).then(
+      (slice) => slice.bytes,
+    );
+  let at = 0;
+  let next = at < size ? read(at) : undefined;
+  while (next !== undefined) {
+    const bytes = await next;
+    if (bytes.length === 0) return;
+    at += TRANSCRIBE_WINDOW_BYTES;
+    // Issued BEFORE the yield, so the store is fetching while the socket sends.
+    next = at < size ? read(at) : undefined;
+    yield bytes;
+  }
+}

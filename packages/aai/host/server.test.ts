@@ -187,6 +187,28 @@ describe("createServer", () => {
     expect(headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
   });
 
+  // The directive above is asserted only for PRESENCE, which is what let a
+  // workflow app ship with its player broken: an upload's bytes reach an
+  // `<audio>` as a `blob:` object URL (the byte route wants an `Authorization`
+  // header no `src` can send), and with no `media-src` that falls back to
+  // `default-src 'self'`, which a blob URL is not. `<a download>` on the SAME
+  // url kept working, so the page looked half-fine. `data:` is the caption
+  // `<track>`, which CSP governs with this directive too.
+  test("the CSP lets a page play a blob: object URL", async () => {
+    const { runtime } = makeRuntime();
+    server = createServer({ runtime, logger: silentLogger });
+    await server.listen(0);
+
+    const { headers } = await get(`http://localhost:${server.port}/health`);
+    const media = (headers.get("Content-Security-Policy") ?? "")
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("media-src"));
+    expect(media).toBeDefined();
+    expect(media).toContain("blob:");
+    expect(media).toContain("data:");
+  });
+
   test("GET /client-config defaults to the agent kind", async () => {
     const { runtime } = makeRuntime({ name: "cfg-agent" });
     server = createServer({ runtime, name: "cfg-agent", logger: silentLogger });

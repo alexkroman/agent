@@ -6684,6 +6684,24 @@ export type StepGenerateOptions = {
 export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
 
 // @public
+export function stepTranscribePoll(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+
+// @public
+export function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+    id: string;
+}>;
+
+// @public
+export function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
+    text: string;
+}>;
+
+// @public
+export function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+    audioUrl: string;
+}>;
+
+// @public
 export class StepTransportError extends Error {
     constructor(url: string, options: {
         cause: unknown;
@@ -6704,6 +6722,80 @@ export type ToolFailure = {
 
 // @public
 export function toolFailure(message: string): ToolFailure;
+
+// @public
+export const TRANSCRIBE_API = "https://api.assemblyai.com";
+
+// @public
+export const TRANSCRIBE_MODELS: readonly string[];
+
+// @public
+export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
+
+// @public
+export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
+
+// @public
+export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
+
+// @public
+export const TRANSCRIBE_TIMEOUT_MS = 60000;
+
+// @public
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
+
+// @public
+export const TRANSCRIBE_WINDOW_BYTES: number;
+
+// @public
+export class TranscribeError extends Error {
+    constructor(message: string, init: {
+        status?: number | undefined;
+        retryable: boolean;
+        retryAfter?: Date | undefined;
+    });
+    readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
+    readonly status: number | undefined;
+}
+
+// @public
+export type TranscribeProgress = {
+    done: false;
+    status: string;
+} | {
+    done: true;
+    status: string;
+    transcript: Transcript;
+};
+
+// @public
+export type TranscribeRequestOptions = {
+    apiKeyEnv?: string | undefined;
+    timeoutMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type TranscribeSubmitOptions = TranscribeRequestOptions & {
+    models?: readonly string[] | undefined;
+    params?: Record<string, unknown> | undefined;
+};
+
+// @public
+export type TranscribeSyncOptions = TranscribeRequestOptions & {
+    model?: string | undefined;
+    filename?: string | undefined;
+    type?: string | undefined;
+    label?: string | undefined;
+};
+
+// @public
+export type Transcript = {
+    id: string;
+    text: string;
+    durationMs: number;
+};
 
 // @public
 export type UploadInfo = {
