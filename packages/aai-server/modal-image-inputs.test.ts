@@ -134,6 +134,74 @@ describe("modal image install inputs", () => {
 });
 
 /**
+ * `patchedDependencies` in pnpm-workspace.yaml names a patch FILE per
+ * dependency, and pnpm reads that file during install to hash the patched
+ * tarball against what the lockfile records. The yaml is copied byte-for-byte
+ * into the install layer, so a declaration whose file is NOT staged beside it
+ * fails the layer outright:
+ *
+ *     ENOENT: no such file or directory, open '/app/patches/<name>.patch'
+ *
+ * Observed on a real `modal deploy`, and the reason it is a test rather than a
+ * comment is that every OTHER signal is green: the patch is in the tree, so
+ * `pnpm install` works for every developer and every CI job, and only the
+ * install layer — which sees a staged subset of the repo — is missing it. It
+ * is the same drift this file's other tests cover, by a route the whitelist of
+ * manifest FIELDS cannot see: the input is a whole file, named from the yaml.
+ */
+describe("modal image patched dependencies", () => {
+  /** The patch paths the declaration names, parsed independently of the Python. */
+  function declaredPatches(): string[] {
+    const body = /^patchedDependencies:[ \t]*\n((?:[ \t]+\S.*\n)+)/m.exec(workspaceYaml)?.[1];
+    if (body === undefined) return [];
+    // Greedy up to the LAST colon: the key is quoted and carries an `@version`.
+    return [...body.matchAll(/^[ \t]+\S.*:[ \t]*(\S+?)[ \t]*$/gm)].map((m) =>
+      (m[1] as string).replaceAll(/^["']|["']$/g, ""),
+    );
+  }
+
+  test("stages every patch file the workspace declares", () => {
+    const patches = declaredPatches();
+    // No patches is a legitimate state — but then the yaml must not declare
+    // any, or the parse above has silently stopped matching.
+    if (patches.length === 0) {
+      expect(workspaceYaml).not.toMatch(/^patchedDependencies:/m);
+      return;
+    }
+    // A declared patch that is not in the tree fails the install layer the
+    // same way a missing one does, so both halves are checked here.
+    for (const rel of patches) {
+      expect(rel).toMatch(/\.patch$/);
+      expect(() => readFileSync(path.join(REPO_ROOT, rel))).not.toThrow();
+    }
+    // And the stager has to actually copy them. Named rather than inlined so
+    // the container re-import suite below can hold every repo read in one
+    // place; the call is what wires it in.
+    expect(modalImagePy).toMatch(/def _stage_install_inputs[\s\S]*?_patch_paths\(/);
+  });
+
+  test("derives the paths from the declaration instead of listing them", () => {
+    // A listed `patches/…` would be a second place to remember, which is the
+    // whole failure: the declaration and the staged tree disagreed.
+    for (const file of pyTuple("INSTALL_ROOT_FILES")) expect(file).not.toMatch(/\.patch$/);
+    expect(modalImagePy).toMatch(
+      /PATCHED_DEPENDENCIES_BLOCK = re\.compile\(\s*r?"\^patchedDependencies:/,
+    );
+  });
+
+  test("refuses a declaration it cannot read, rather than staging nothing", () => {
+    // The regex handles the block form the yaml uses today. Reformatted to
+    // flow style (`patchedDependencies: {…}`) it would match nothing — and
+    // returning `[]` there hands back the ENOENT above, one layer later and
+    // with nothing pointing here. So the empty parse must raise.
+    const body = /^def _patch_paths\([\s\S]*?\n(?=\S)/m.exec(modalImagePy)?.[0];
+    expect(body, "def _patch_paths not found in scripts/modal_image.py").toBeDefined();
+    expect(body).toMatch(/if not paths and PATCHED_DEPENDENCIES_KEY\.search\(/);
+    expect(body).toContain("raise RuntimeError");
+  });
+});
+
+/**
  * Modal re-imports the deploy script INSIDE every container to hydrate the
  * function, so `build_image` runs twice in two different filesystems: once
  * locally with the repo present, and once in a container where it is not and
