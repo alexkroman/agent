@@ -173,7 +173,7 @@ function withoutReasoning(m: ModelMessage): ModelMessage | null {
  * Those interim snapshots are not a superset of `heard`, and that is the point:
  * they carry what reached the TTS provider, while the model's own text also
  * includes whatever was still inside the TTS batch coalescer
- * (`TTS_COALESCE_MAX_CHARS`) when the abort discarded it. So the client shows
+ * (`createTtsTextCoalescer`) when the abort discarded it. So the client shows
  * what the caller actually heard, where the removed frame replaced it with words
  * that were never synthesized.
  */

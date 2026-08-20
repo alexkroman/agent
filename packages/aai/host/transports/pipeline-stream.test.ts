@@ -4,7 +4,7 @@
 // turn-level behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
-import { PIPELINE_FLUSH_TIMEOUT_MS, TTS_COALESCE_MAX_CHARS } from "../../sdk/constants.ts";
+import { PIPELINE_FLUSH_TIMEOUT_MS } from "../../sdk/constants.ts";
 import { silentLogger } from "../_test-utils.ts";
 import { createTtsTextCoalescer, flushTtsAndWait } from "./pipeline-stream.ts";
 import type { SendTtsText } from "./types.ts";
@@ -101,15 +101,18 @@ describe("createTtsTextCoalescer", () => {
     expect(sent).toEqual(["He ", 'said "hi," and "left." ']);
   });
 
-  test("flushes once the pending batch reaches TTS_COALESCE_MAX_CHARS without punctuation", () => {
+  test("an unterminated batch is held however long it runs — no character cap", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
     c.send("first ");
+    // A 32-char cap used to cut here, wherever the count landed, handing the
+    // provider a mid-clause fragment to read with a falling final intonation.
     const word = "aaaa "; // 5 chars, no punctuation
-    const wordsToCap = Math.ceil(TTS_COALESCE_MAX_CHARS / word.length);
-    for (let i = 0; i < wordsToCap; i++) c.send(word);
-    expect(sent.length).toBe(2); // first chunk + one size-capped batch
-    expect(sent[1]?.length).toBeGreaterThanOrEqual(TTS_COALESCE_MAX_CHARS);
+    for (let i = 0; i < 40; i++) c.send(word);
+    expect(sent).toEqual(["first "]);
+    c.send("done. ");
+    expect(sent.length).toBe(2);
+    expect(sent[1]).toBe(`${word.repeat(40)}done. `);
   });
 
   test("flush() sends any trailing fragment and is a no-op when empty", () => {

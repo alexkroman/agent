@@ -10,11 +10,7 @@
 
 import type { ModelMessage } from "ai";
 import pTimeout from "p-timeout";
-import {
-  DEFAULT_DEAD_AIR_COVER_MS,
-  PIPELINE_FLUSH_TIMEOUT_MS,
-  TTS_COALESCE_MAX_CHARS,
-} from "../../sdk/constants.ts";
+import { DEFAULT_DEAD_AIR_COVER_MS, PIPELINE_FLUSH_TIMEOUT_MS } from "../../sdk/constants.ts";
 
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
@@ -117,9 +113,18 @@ export type TtsTextCoalescer = {
  * given a falling final intonation and its own utterance padding, which is
  * heard as a clipped, over-punctuated read of a sentence the model wrote as
  * one. `assemblyai-segment.ts` had already reached the same conclusion on the
- * provider side of the same text; this is the pipeline half of it. The
- * {@link TTS_COALESCE_MAX_CHARS} cap still bounds how long an unterminated
- * batch waits, so a comma-heavy reply cannot stall time-to-audio.
+ * provider side of the same text; this is the pipeline half of it.
+ *
+ * Terminal punctuation is now the ONLY thing that ends a batch. There used to
+ * be a 32-character cap beside it, on the theory that it bounded how long an
+ * unterminated batch could wait — but a cap cuts wherever the count lands,
+ * which is mid-clause far more often than not, and hands the provider exactly
+ * the fragment the paragraph above is about: falling intonation plus utterance
+ * padding, heard as an obvious pause a few words into a sentence the model
+ * wrote as one. Time-to-audio is not what it was protecting either — the first
+ * chunk of every segment is forwarded immediately, so audio is already playing
+ * while the rest of the sentence buffers, and `boundary()` releases the buffer
+ * at every segment end and before every tool call.
  */
 const TERMINAL_BOUNDARY_RE = /[.!?…]["')\]]*\s*$/;
 
@@ -132,9 +137,10 @@ const TERMINAL_BOUNDARY_RE = /[.!?…]["')\]]*\s*$/;
  * unaffected — this only batches what reaches `sendText`.
  *
  * The first chunk is forwarded immediately (preserves time-to-first-byte);
- * subsequent text batches until a sentence-terminal punctuation boundary or
- * {@link TTS_COALESCE_MAX_CHARS} characters accumulate. Callers must
- * `flush()` when the stream ends so a trailing fragment is still spoken.
+ * subsequent text batches until a sentence-terminal punctuation boundary, which
+ * is the only thing that ends a batch (see `TERMINAL_BOUNDARY_RE`).
+ * Callers must `flush()` when the stream ends so a trailing fragment is still
+ * spoken.
  */
 export function createTtsTextCoalescer(sendRaw: SendTtsText): TtsTextCoalescer {
   let pending = "";
@@ -160,7 +166,7 @@ export function createTtsTextCoalescer(sendRaw: SendTtsText): TtsTextCoalescer {
         return;
       }
       pending += text;
-      if (pending.length >= TTS_COALESCE_MAX_CHARS || TERMINAL_BOUNDARY_RE.test(pending)) flush();
+      if (TERMINAL_BOUNDARY_RE.test(pending)) flush();
     },
     flush,
     boundary(): void {
