@@ -139,17 +139,51 @@ export function wdkAdapter(): WdkAdapter {
       }
     },
 
-    streamTail(runId: string, options: WdkStreamOptions): Promise<number> {
+    async streamTail(runId: string, options: WdkStreamOptions): Promise<number> {
       // `getTailIndex` is a method WDK hangs on the readable, so the stream has
-      // to be constructed to ask — which costs nothing, being lazy.
-      return getRun(runId).getReadable(omitUndefined(options)).getTailIndex();
+      // to be constructed to ask — and it MUST then be cancelled, because
+      // constructing one is not free the way this used to claim.
+      //
+      // `getReadable()` hands back the readable end of a TransformStream that a
+      // BACKGROUND PUMP (`flushablePipe` in `@workflow/core`) is already filling.
+      // The pump pulls immediately, the pull calls `world.readFromStream`, and
+      // the local world answers that by attaching a `chunk:<stream>` and a
+      // `close:<stream>` listener to a process-wide emitter. `getTailIndex`
+      // itself never touches the stream — it asks the world for
+      // `getStreamInfo` — so every tail read left a whole live reader behind
+      // with nobody to cancel it.
+      //
+      // That is one leaked pair per call, and this is called on the hot path:
+      // `workflow-api-stream.ts` reads the tail before every
+      // `GET /runs/:id/stream`, and a page watching a run's progress re-opens
+      // that once a second. Measured against the real streamer, 15 tail reads
+      // attached 15 pairs and freed none — Node's
+      // `MaxListenersExceededWarning` at 11, then unbounded — and a leaked
+      // reader is not merely idle: it is still mid-disk-read, so its chunk
+      // listener copies every chunk the run writes afterwards into a buffer
+      // nothing will drain (the measurement is in the #1196 commit message,
+      // which fixed the OTHER leak into the same emitter).
+      //
+      // Cancelling propagates the whole way down: it errors the transform's
+      // writable, the pump's `writer.closed` rejects, and its `finally` cancels
+      // the world reader, which detaches both listeners. Verified against the
+      // real `@workflow/world-local` streamer — 15 calls, 0 listeners left.
+      const readable = getRun(runId).getReadable(omitUndefined(options));
+      try {
+        return await readable.getTailIndex();
+      } finally {
+        // Not awaited: the answer is already in hand, and a cancel that fails
+        // has nothing to tell a caller who asked for an index.
+        void readable.cancel().catch(() => undefined);
+      }
     },
 
     readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown> {
-      // `getReadable` is lazy — it defers the run lookup and the encryption-key
-      // resolution until the first chunk is pulled — so this constructs nothing
-      // and a stream nobody reads costs nothing. That laziness is also why a
-      // missing run surfaces at READ time rather than here.
+      // The run lookup and the encryption-key resolution are deferred to the
+      // first chunk, so a missing run surfaces at READ time rather than here —
+      // but the stream itself is NOT free (see `streamTail` above: a background
+      // pump opens a world reader straight away). **The caller must cancel it**,
+      // read or not. `workflow-api-stream.ts` does so in a `finally`.
       return getRun(runId).getReadable(omitUndefined(options));
     },
 
