@@ -212,7 +212,7 @@ export function createPostgresStateBackend(opts: { db: Db }): SessionStateBacken
     async discard(sessionId) {
       // SLOTS only. The event table is append-only to this role by grant — a
       // log a tool can delete is not a log (see `grantSessionTables` in
-      // `aai-server/app-database.ts`) — so its rows are reclaimed by the
+      // `aai-server/app-db-session-tables.ts`) — so its rows are reclaimed by the
       // platform's own retention sweep, which runs as the admin. The cost is
       // that a discarded session's events outlive its slots by up to the
       // retention window rather than going at the same moment; they are a few
