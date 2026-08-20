@@ -78,6 +78,26 @@ describe("DatabasePane", () => {
     });
   });
 
+  test("picking another table re-reads for THAT table", async () => {
+    // The rows query is keyed by the table, so the previous table's rows can
+    // never sit under a new heading while the next read is in flight.
+    const fetchMock = stubFetch({
+      [`GET ${TABLES}`]: tableListing,
+      [`GET ${ROWS}`]: () => jsonResponse({ columns: ["id"], rows: [["1"]], total: 1 }),
+    });
+    renderPane();
+    await waitFor(() => expect(screen.getByText("id")).toBeTruthy());
+
+    fireEvent.click(button(/^people/));
+    await waitFor(() => {
+      const tables = fetchMock.mock.calls
+        .map(([input]) => new URL(String(input), window.location.origin))
+        .filter((url) => url.pathname === ROWS)
+        .map((url) => url.searchParams.get("table"));
+      expect(tables).toEqual(["notes", "people"]);
+    });
+  });
+
   test("renders NULL as a value, not as an empty cell", async () => {
     // A text column may hold the empty string, and the two must not look
     // identical — that is the one distinction a data viewer owes.
@@ -126,6 +146,9 @@ describe("DatabasePane", () => {
     await waitFor(() => expect(screen.getByText(/of 120/)).toBeTruthy());
     expect(button("Previous").disabled).toBe(true);
     fireEvent.click(button("Next"));
-    await waitFor(() => expect(button("Previous").disabled).toBe(false));
+    await waitFor(() => expect(screen.getByText(/^51–/)).toBeTruthy());
+    expect(button("Previous").disabled).toBe(false);
+    fireEvent.click(button("Previous"));
+    await waitFor(() => expect(button("Previous").disabled).toBe(true));
   });
 });
