@@ -11,7 +11,11 @@
 
 import { isAbsolute } from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { configureWorkflowWorld, startWorkflowWorldIfDeclared } from "./workflow-world.ts";
+import {
+  configureWorkflowWorld,
+  localWorkflowDataDir,
+  startWorkflowWorldIfDeclared,
+} from "./workflow-world.ts";
 
 /** A fresh env per case, so nothing leaks between them. */
 function env(over: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -158,6 +162,28 @@ describe("configureWorkflowWorld", () => {
     const e = env();
     expect(configureWorkflowWorld({ databaseUrl: "", port: 3000, env: e })).toBe("local");
     expect(e.WORKFLOW_TARGET_WORLD).toBe("local");
+  });
+});
+
+describe("localWorkflowDataDir", () => {
+  test("answers the directory configureWorkflowWorld agreed on", () => {
+    const vars = env();
+    configureWorkflowWorld({
+      databaseUrl: undefined,
+      port: 3000,
+      dataDir: "/data/here",
+      env: vars,
+    });
+    // READ from the env rather than recomputed: the upload store needs the same
+    // directory the runs are in, and two callers deriving it independently is how
+    // they come to disagree — silently, since neither errors.
+    expect(localWorkflowDataDir(vars)).toBe("/data/here");
+  });
+
+  test("answers a per-process directory when nothing configured one", () => {
+    // A `createServer` that never called `configureWorkflowWorld` — a self-hosted
+    // embedder. Per-process is the honest answer there: so are its runs.
+    expect(localWorkflowDataDir(env())).toContain(`aai-workflow-data-${process.pid}`);
   });
 });
 

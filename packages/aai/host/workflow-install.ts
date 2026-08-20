@@ -29,6 +29,7 @@ import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { createStepReporter } from "./workflow-report.ts";
 import { createUploadStore, resolveUploadBlobs, type UploadStore } from "./workflow-uploads.ts";
+import { localWorkflowDataDir } from "./workflow-world.ts";
 
 /**
  * How many connections the upload pool may hold.
@@ -76,11 +77,15 @@ type WorkflowSupport = {
 /**
  * Build the upload store for one server and publish all three step slots.
  *
- * An upload needs BOTH halves — `DATABASE_URL` for the record and somewhere to put
- * the bytes — and a server missing either gets a store that refuses by name
- * (`createUnavailableUploadStore`). There is deliberately no local-directory
- * fallback any more: it stored a dev upload perfectly well and lost it by the time
- * a resumed run read it, with nothing reporting a thing.
+ * **The store's home follows the WORLD's, off the same input.**
+ * `configureWorkflowWorld` reads `DATABASE_URL` to choose between a Postgres world
+ * and the local one; this reads it to choose where an upload lives, so the two can
+ * only ever agree — which is the invariant `workflow-uploads.ts` states and the one
+ * the deleted file backend broke. With a database the record goes in it and the
+ * bytes need a bucket (no bucket, no store: a refusal naming it). Without one, both
+ * live in the local world's own data directory, so a databaseless agent has working
+ * uploads that are exactly as durable as its runs — which is what a workflow app in
+ * the studio is, where a database is opt-in.
  *
  * @internal
  */
@@ -110,17 +115,36 @@ export function installWorkflowSupport(opts: {
   const db: CloseableDb | undefined = databaseUrl
     ? createPostgresDb({ url: databaseUrl, max: UPLOAD_DB_POOL })
     : undefined;
+  // A value that is not a positive number is IGNORED rather than treated as zero: a
+  // typo'd env var must not make every upload fail as "too large". An operator knob
+  // rather than a tuning one: what it bounds is how much of their storage one upload
+  // may take, and only they know that.
+  const maxBytes = positiveBytes(opts.env?.[MAX_UPLOAD_BYTES_ENV]);
+  // The local directory is resolved WHETHER OR NOT it is used, because asking for it
+  // is free and the alternative is a conditional whose two arms drift. `db` is what
+  // decides: `createUploadStore` ignores `localDir` when there is a database, and a
+  // bucket when there is not (its own doc carries why each is right).
+  const localDir = localWorkflowDataDir();
   const store = createUploadStore({
     db,
+    localDir,
     ...omitUndefined({
       blobs: resolveUploadBlobs(omitUndefined({ env: opts.env, broker: opts.uploadBroker })),
-      // A value that is not a positive number is IGNORED rather than treated as
-      // zero: a typo'd env var must not make every upload fail as "too large".
-      // An operator knob rather than a tuning one: what it bounds is how much of
-      // their storage one upload may take, and only they know that.
-      maxBytes: positiveBytes(opts.env?.[MAX_UPLOAD_BYTES_ENV]),
+      maxBytes,
     }),
   });
+  if (!db) {
+    // ANNOUNCED, once, at construction. A store that quietly loses an upload with
+    // its container is the shape this repo keeps paying for; a store that says which
+    // directory it is using, and that its runs go the same way, is a documented
+    // tradeoff. The local world logs its own line beside this one.
+    opts.logger.info(
+      `workflow uploads are LOCAL (${localDir}): no DATABASE_URL, so an upload lives ` +
+        "as long as this process does — exactly as long as the runs that read it. " +
+        "Enable a database (`aai storage enable`, or Settings → Database in the " +
+        "studio) for uploads and runs that outlive a deploy.",
+    );
+  }
   publishUploadReader(store);
   publishStepReporter(createStepReporter(opts.logger));
   // The third step slot, and the one whose absence is silent: an unpublished

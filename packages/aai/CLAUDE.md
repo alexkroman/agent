@@ -502,29 +502,33 @@ descriptor's `apiKeyEnv` now, like every other stage; they resolve through
 `resolveS2sEnvVar`, so the key a session reads is by construction the key
 the preflight asked for.
 
-## An upload's bytes are OBJECTS, and its record is a row
+## An upload's bytes are OBJECTS, and its record has two homes
 
-One store (`host/_upload-store-blobs.ts`): a row in the app's own database, and
-one object per `UPLOAD_PART_BYTES` window behind a two-method `UploadBlobs`. It
-used to hold the bytes itself — a `bytea` row per megabyte, or a file per upload
-under `aai dev` — and **`host/_upload-blobs.ts` carries why they left**: 6x the
-storage cost, every byte in the WAL and every base backup, the app's own queries
-sharing a pool with them (p50 1.34s against 0.43s), and the platform's forward
-reading a slow drain as a dead guest.
+One store (`host/_upload-store-blobs.ts`) over two interfaces — `UploadRecords`
+for the record, `UploadBlobs` for one object per `UPLOAD_PART_BYTES` window — and
+it names neither's home. It used to hold the bytes itself, a `bytea` row per
+megabyte or a file per upload under `aai dev`, and **`host/_upload-blobs.ts`
+carries the four costs that got them out of Postgres** — storage price, WAL and
+backup amplification, the app's own queries sharing their pool, and the
+platform's forward reading a slow drain as a dead guest.
 
-The file backend went with it. It was justified as "a valid double for the
-Postgres one", which was the wrong axis — what a double has to stand in for here
-is BYTES, not records — so the seam moved down to `UploadBlobs`, whose whole
-contract is a window read and a length. There is no fallback left: a deployment
-with no database or no bucket has no uploads and says so by name.
+**The pairing follows the WORLD, off the same `DATABASE_URL`: an upload must
+be at least as durable as the runs that read it.** With a database the record
+goes in it and the bytes need a bucket — no bucket is the ONE refusal left,
+since those runs outlive this container and a directory here cannot serve one
+resuming elsewhere. With none the world is LOCAL, so both go in its data
+directory (`host/_upload-files.ts`): per-process in a guest, the project's
+`.workflow-data` under `aai dev`, where a restart re-enqueues the runs it finds
+and finds their uploads. Same shape as the deleted file backend, opposite of
+its bug — which was pairing a directory with runs in POSTGRES — and it is what
+gives a databaseless studio agent uploads at all. `installWorkflowSupport`
+ANNOUNCES the local home once: a tradeoff absent from the log reads as a bug.
 
 **Neither direction takes turns with the socket.** A whole-file write puts
 `UPLOAD_WINDOW_CONCURRENCY` windows while the next one is still arriving, and the
 byte route reads `UPLOAD_READ_AHEAD` chunks ahead of what it has written — both
-`mapStream` (below), which is where the ordering and the memory bound are argued.
-A window is still buffered WHOLE before its write starts, deliberately: that is
-what keeps the bytes in hand for as long as the write takes, so a failed one is
-re-sendable. Overlapping decides when a write runs, never what it holds.
+`mapStream` (below), which is where the ordering, the memory bound, and the
+whole-window buffering that keeps a failed write re-sendable are argued.
 
 ## An upload can be read while it is still arriving
 

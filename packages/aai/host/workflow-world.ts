@@ -176,6 +176,26 @@ function defaultLocalDataDir(): string {
 }
 
 /**
+ * The directory the LOCAL world keeps its run state in — the one every host has
+ * already agreed on by the time anything asks.
+ *
+ * Read from the env rather than recomputed, because {@link configureWorkflowWorld}
+ * has already written it there (`??=`, so an operator's own value wins) and the
+ * DevKit reads the same key. Two callers deriving it independently is how they come
+ * to disagree, and a disagreement here is silent: uploads under one directory, runs
+ * under another, and no error anywhere.
+ *
+ * The fallback is for a `createServer` that never called `configureWorkflowWorld` —
+ * a self-hosted embedder — where nothing has been agreed and a per-process
+ * directory is the honest answer, since that host's runs are per-process too.
+ *
+ * @internal
+ */
+export function localWorkflowDataDir(env: NodeJS.ProcessEnv = process.env): string {
+  return env[LOCAL_DATA_DIR_ENV] ?? defaultLocalDataDir();
+}
+
+/**
  * Prepare the configured world to run: migrate it, then subscribe to its queue.
  *
  * Both halves are expensive and neither means anything for an agent that

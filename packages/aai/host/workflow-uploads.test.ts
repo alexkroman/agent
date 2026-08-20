@@ -151,12 +151,28 @@ describe("the store", () => {
 
 describe("a deployment with nowhere to put uploads", () => {
   test("refuses every operation, naming what is missing", async () => {
-    // Never a quiet fallback to a directory or to memory: that WAS the file backend,
-    // and it stored a dev upload perfectly well and lost it by the time a resumed run
-    // read it, with nothing reporting a thing.
+    // Nothing at all: no database, and no local directory to fall back into. Only a
+    // caller that resolved neither reaches this — every host in this repo passes a
+    // `localDir`, because `localWorkflowDataDir()` always answers one.
     const store = createUploadStore({});
     await expect(store.create({}, body(ramp(4)))).rejects.toThrow(/DATABASE_URL/);
     await expect(store.create({}, body(ramp(4)))).rejects.toThrow(/AAI_UPLOAD_STORAGE_URL/);
+  });
+
+  test("a DATABASE with no bucket refuses, rather than downgrading to the local home", async () => {
+    // The one combination that has no answer. The local home would store this
+    // upload perfectly well and lose it by the time a run resumed in another
+    // process — which is exactly the deleted file backend's failure, and a database
+    // is the thing that makes such a resume possible. So it refuses, and the remedy
+    // it names is a durable byte store.
+    const { db } = memoryStore();
+    const store = createUploadStore({ db, localDir: "/should/not/be/used" });
+    const failed = await store
+      .create({}, body(ramp(4)))
+      .then(() => expect.fail("the store accepted an upload with nowhere durable to put it"))
+      .catch((err: unknown) => err as Error);
+    expect(failed.message).toContain("AAI_UPLOAD_STORAGE_URL");
+    expect(failed.message).toContain("supabase status -o env");
   });
 
   test("DIAGNOSES only the half that is missing", async () => {

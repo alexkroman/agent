@@ -15,20 +15,31 @@
  * a PARTS one arrives over several connections at once and publishes only its
  * contiguous prefix as `size`). Read it before changing the store.
  *
- * ## One store, two things it needs, and neither is optional
+ * ## One store, two homes, and the rule that picks between them
  *
- * `_upload-store-blobs.ts` is the only store: the RECORD is a row in the app's own
- * database, and the BYTES are objects reached through {@link UploadBlobs}. There
- * used to be two backends — chunk rows in Postgres, files in a dev directory — and
- * `_upload-blobs.ts` carries why the bytes left the database.
+ * `_upload-store-blobs.ts` is the only store, and it names neither half's home: a
+ * RECORD through {@link UploadRecords}, BYTES through {@link UploadBlobs}. What
+ * this module owns is the pairing, and it follows ONE rule — **an upload must be at
+ * least as durable as the runs that read it** — which makes it the same decision
+ * `workflow-world.ts` already makes off the same input:
  *
- * So an upload needs a database AND a bucket, and a deployment with either one
- * missing has no uploads at all. That case is answered by
- * {@link createUnavailableUploadStore} rather than by a third backend: every method
- * throws, and the message NAMES what is missing. The alternative — quietly falling
- * back to a directory, or to memory — is what the old file backend was, and it is
- * the shape this repo keeps paying for: an upload that stores perfectly well and is
- * gone by the time a resumed run reads it, with nothing reporting a thing.
+ * - **`DATABASE_URL` set** → the Postgres world. Runs outlive every process and
+ *   every machine, so the record goes in the app's own database and the bytes in a
+ *   bucket. With no bucket there is nowhere durable for them, and THAT is the one
+ *   case with no store at all: {@link createUnavailableUploadStore} refuses every
+ *   method, naming what is missing.
+ * - **absent** → the LOCAL world, whose run state is a directory and whose queue is
+ *   in memory. Record and bytes go in that same directory (`_upload-files.ts`), so
+ *   the two lifetimes are equal by construction.
+ *
+ * That second arm looks like the file backend this store used to have, and the
+ * difference is exactly the rule above. The old one paired a DIRECTORY with runs
+ * that lived in Postgres, so it stored a dev upload perfectly well and lost it by
+ * the time a resumed run read it, with nothing reporting a thing. Pairing it with
+ * the local world's own directory makes that unreachable — a run that survives to
+ * re-read an upload is a run whose directory survived too — and it is what lets an
+ * author try a workflow app before provisioning anything, which the studio's
+ * database-off default makes the FIRST experience of one rather than an edge case.
  *
  * This module re-exports the contract's names so it stays the ONE import path for
  * the store: `runtime-barrel.ts` and six call sites already name it.
@@ -46,6 +57,8 @@ import {
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
 } from "./_upload-env.ts";
+import { createFileUploadBlobs, createFileUploadRecords } from "./_upload-files.ts";
+import { createPostgresUploadRecords } from "./_upload-records.ts";
 import { type UploadStore, UploadsUnavailableError } from "./_upload-store.ts";
 import { createBlobUploadStore } from "./_upload-store-blobs.ts";
 
@@ -111,33 +124,71 @@ const UPLOAD_ENV_EXAMPLE = [
 ].join("\n");
 
 /**
- * Build the store for one server.
+ * Build the store for one server, choosing the home that matches its world.
  *
- * Both `db` and `blobs` are required for a working store, and passing neither is a
- * legitimate call: a `createServer` with no `DATABASE_URL` and no bucket still has
- * to answer the upload routes, and what it answers is a refusal naming what it
- * lacks.
+ * `db` present is the DURABLE arm and needs a bucket to go with it; `db` absent is
+ * the LOCAL arm and needs `localDir`, which is the local workflow world's own data
+ * directory. See the module doc for the rule, and `_upload-files.ts` for why the
+ * second arm is not the file backend this store used to have.
+ *
+ * Passing neither is still a legitimate call — a bare `createServer` with nothing
+ * configured has to answer the upload routes somehow — and what it answers is a
+ * refusal naming what it lacks.
  *
  * @internal
  */
 export function createUploadStore(opts: {
   db?: Db | undefined;
   blobs?: UploadBlobs | undefined;
+  /**
+   * Where the LOCAL workflow world keeps its run state, for a deployment with no
+   * database. Both halves of the store live under it, so an upload and the runs
+   * that read it share one filesystem lifetime.
+   */
+  localDir?: string | undefined;
   /** Key prefix for this deployment's objects. Defaults to {@link UPLOAD_KEY_PREFIX}. */
   prefix?: string | undefined;
   /** Cap for a body that names none. Defaults to `MAX_WORKFLOW_UPLOAD_BYTES`. */
   maxBytes?: number | undefined;
 }): UploadStore {
-  const missing = [
-    ...(opts.db ? [] : ["a database (`DATABASE_URL`)"]),
-    ...(opts.blobs ? [] : [`somewhere to put the bytes (\`${UPLOAD_STORAGE_URL_ENV}\`)`]),
-  ];
-  if (!(opts.db && opts.blobs)) return createUnavailableUploadStore(missing.join(" and "));
+  const prefix = opts.prefix ?? UPLOAD_KEY_PREFIX;
+  const maxBytes = opts.maxBytes ?? MAX_WORKFLOW_UPLOAD_BYTES;
+  if (opts.db) {
+    // A database means durable runs, so the bytes have to be durable too — a
+    // directory on this one machine cannot serve a run resumed by another process,
+    // which is the whole failure `_upload-files.ts` describes. Refused rather than
+    // downgraded: the local arm would be a QUIETER version of that bug, not a fix.
+    if (!opts.blobs) {
+      return createUnavailableUploadStore(
+        `somewhere to put the bytes (\`${UPLOAD_STORAGE_URL_ENV}\`)`,
+      );
+    }
+    return createBlobUploadStore({
+      records: createPostgresUploadRecords(opts.db),
+      blobs: opts.blobs,
+      prefix,
+      maxBytes,
+    });
+  }
+  // No database AND nowhere local to put anything. Reachable only from a caller
+  // that resolved neither — every host in this repo passes a `localDir`, because
+  // `localWorkflowDataDir()` always answers one — so the message names the two
+  // things a deployment can be given rather than guessing which was meant.
+  if (opts.localDir === undefined) {
+    return createUnavailableUploadStore(
+      "a database (`DATABASE_URL`) and somewhere to put the bytes " +
+        `(\`${UPLOAD_STORAGE_URL_ENV}\`)`,
+    );
+  }
+  // The bucket is deliberately NOT used here, even when one resolved. Without a
+  // record nothing can name an object again, and there is no sweep that reclaims
+  // one (see `create`) — so bytes in a shared bucket behind a record that dies
+  // with the container are a permanent leak, where bytes in the container are not.
   return createBlobUploadStore({
-    db: opts.db,
-    blobs: opts.blobs,
-    prefix: opts.prefix ?? UPLOAD_KEY_PREFIX,
-    maxBytes: opts.maxBytes ?? MAX_WORKFLOW_UPLOAD_BYTES,
+    records: createFileUploadRecords({ dir: opts.localDir }),
+    blobs: createFileUploadBlobs({ dir: opts.localDir }),
+    prefix,
+    maxBytes,
   });
 }
 
@@ -193,6 +244,25 @@ export function resolveUploadBlobs(opts: {
  * misconfiguration indistinguishable from an id nobody uploaded, which is exactly
  * the confusion an operator cannot debug from the outside.
  *
+ * **The message reaches a BROWSER**, which is what makes its wording load-bearing:
+ * `UploadsUnavailableError` is answered as a 501 carrying its body, precisely so a
+ * named configuration condition is not thrown away as "Internal server error".
+ *
+ * It used to be the answer for a deployed agent with no database, and it named one
+ * remedy — `aai storage enable`, a CLI command — to a reader who is usually in the
+ * STUDIO, where a workflow app's page is where an upload happens and the switch is
+ * Settings → Database. Worse, "a DEPLOYED agent gets both from the platform" reads
+ * as "the platform will supply this", so the message's own advice was to deploy
+ * again: a database is OFF until a project asks for one, so no number of redeploys
+ * added a `DATABASE_URL`, and the report was exactly that — still refusing after
+ * repeated project redeploys.
+ *
+ * That case is not a refusal any more (the local arm serves it), which is the real
+ * fix; what is left here is the HALF-CONFIGURED one, where a database's runs
+ * outlive any one container and the bytes have nowhere durable to go. So the
+ * message no longer talks about switching a database on: it names the missing half
+ * and the `.env` block that supplies it.
+ *
  * @internal
  */
 export function createUnavailableUploadStore(missing: string): UploadStore {
@@ -205,8 +275,10 @@ export function createUnavailableUploadStore(missing: string): UploadStore {
       new UploadsUnavailableError(
         `Workflow uploads need ${missing}.\n\n` +
           "A DEPLOYED agent gets both from the platform, and its env comes from Vault rather " +
-          "than from your project's `.env` — so `DATABASE_URL` appears only once the app " +
-          "database is provisioned: `aai storage enable`.\n\n" +
+          "than from your project's `.env`. An app with NO database needs neither — its " +
+          "uploads live in the local workflow world, beside its runs — so what is missing " +
+          "here is the durable half a database's runs require: they outlive any one " +
+          "container, and bytes that do not cannot serve one that resumes.\n\n" +
           "Running LOCALLY, both come from the project's `.env`. `supabase start`, then " +
           "`supabase status -o env` for API_URL and SERVICE_ROLE_KEY:\n\n" +
           `${UPLOAD_ENV_EXAMPLE}\n`,
