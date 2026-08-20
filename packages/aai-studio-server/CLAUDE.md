@@ -726,7 +726,7 @@ voice agents without the CLI:
     `packages/aai-studio-client/CLAUDE.md`), so the preamble tells the agent it
     will not see a publish and to ask the user what the menu said.
     Missing credentials only ever WARN, which is what a first publish needs:
-    the Secrets panel has nowhere to attach a secret until a slug is deployed,
+    the Secrets pane has nowhere to attach a secret until a slug is deployed,
     so a hard preflight failure would deadlock every agent needing a
     third-party key. That used to be an opt-in the guest passed
     (`--allow-missing-secrets`, which asked the SERVER to warn); the server

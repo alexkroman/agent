@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Everything that exists only while a project is open: its workspace, chat
-// history and brokered sandbox, the six panes, Publish, and the unsaved
+// history and brokered sandbox, the seven panes, Publish, and the unsaved
 // editor drafts.
 //
 // Split out of app.tsx because `project` is a REQUIRED prop here. In one
@@ -23,6 +23,7 @@ import { DocsPane } from "./docs.tsx";
 import { bufferFor, useFileDrafts } from "./file-drafts.ts";
 import { PreviewPane } from "./preview.tsx";
 import { queryKeys } from "./query-keys.ts";
+import { SecretsPane } from "./secrets.tsx";
 import { SettingsPane } from "./settings.tsx";
 import { lazyRetry } from "./stale-build.ts";
 import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
@@ -30,7 +31,7 @@ import { type StreamHandlers, useEventStream } from "./use-event-stream.ts";
 import { WorkflowsPane } from "./workflows.tsx";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
-// default (Playground) path shouldn't pay for it.
+// default (UI) path shouldn't pay for it.
 //
 // Wrapped in `lazyRetry` because that laziness is exactly what a deploy
 // breaks: the chunk URL is content-hashed and served `immutable`, so a tab
@@ -351,6 +352,7 @@ export function ProjectView(props: ProjectViewProps) {
             />
           </Suspense>
         )}
+        {tab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
         {tab === "settings" && (
           <SettingsPane
             bearer={bearer}

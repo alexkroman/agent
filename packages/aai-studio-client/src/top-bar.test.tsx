@@ -39,21 +39,22 @@ describe("TopBar", () => {
   test("no project → no name label and no pane switcher", () => {
     render(<TopBar {...barProps} project={null} />);
     expect(screen.queryByText("demo")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Playground" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "UI" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Code" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   });
 
   // The first tab's LABEL and its id deliberately differ: `preview` is the
-  // platform's word for the auto-deployed agent this pane frames, and
-  // "Playground" is what the pane offers a person.
+  // platform's word for the auto-deployed agent this pane frames, and "UI" is
+  // what the pane offers a person.
   test.each([
     ["Code", "code"],
     ["Settings", "settings"],
-    ["Playground", "preview"],
+    ["UI", "preview"],
     ["API", "docs"],
     ["Workflows", "workflows"],
     ["Database", "database"],
+    ["Secrets", "secrets"],
   ])("the switcher moves to the %s pane", (label, id) => {
     const onSelectTab = vi.fn();
     render(<TopBar {...barProps} onSelectTab={onSelectTab} />);
@@ -66,17 +67,17 @@ describe("TopBar", () => {
     expect(screen.getByRole("button", { name: "Settings" }).getAttribute("aria-current")).toBe(
       "page",
     );
-    expect(
-      screen.getByRole("button", { name: "Playground" }).getAttribute("aria-current"),
-    ).toBeNull();
+    expect(screen.getByRole("button", { name: "UI" }).getAttribute("aria-current")).toBeNull();
   });
 
-  test("Publish locks until there is a build; Settings stays reachable", () => {
+  test("Publish locks until there is a build; the project panes stay reachable", () => {
     // Settings must never gate on a build or a deploy — the pane holds the
-    // Delete project button, which has to work before anything is published.
+    // Delete project button, which has to work before anything is published —
+    // and neither must Secrets: a provider key is what the FIRST build needs.
     render(<TopBar {...barProps} hasBuild={false} />);
     expect(button("Publish").disabled).toBe(true);
     expect(button("Settings").disabled).toBe(false);
+    expect(button("Secrets").disabled).toBe(false);
   });
 
   test("Publish locks while a chat turn streams, even with a build", () => {

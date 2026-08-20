@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's shared 60px top bar (brand, project name, the six-pane
+// The studio's shared 60px top bar (brand, project name, the seven-pane
 // segmented control, Publish, Account, Log out) and the Publish dropdown it
 // opens.
 // Split from app.tsx, which owns all the state these render. Project
@@ -82,7 +82,7 @@ export function PublishMenu(props: PublishMenuProps) {
       <p className="m-0 text-[13px] leading-5 text-muted">
         Ships the current workspace to production with <code className="font-mono">aai deploy</code>
         . The preview updates on its own as you edit — only this touches production. Any build or
-        deploy error shows up here; third-party keys live under Settings.
+        deploy error shows up here; third-party keys live under Secrets.
       </p>
       <button
         type="button"
@@ -121,38 +121,49 @@ export function PublishMenu(props: PublishMenuProps) {
 }
 
 /**
- * The six project panes, all peers in the segmented control.
+ * The seven project panes, all peers in the segmented control.
  *
- * Settings joined them rather than staying a dropdown: it holds secrets, the
- * CLI round-trip, and Delete project, which is more than a floating panel can
- * lay out. Nothing here gates on a build or a deploy — Delete project has to
- * work before anything has ever been published, and the API pane says what the
- * agent will answer once something is.
+ * Settings joined them rather than staying a dropdown: it holds the CLI
+ * round-trip, the Database switch and Delete project, which is more than a
+ * floating panel can lay out. Nothing here gates on a build or a deploy —
+ * Delete project has to work before anything has ever been published, and the
+ * API pane says what the agent will answer once something is.
  *
  * The order is the deployed agent first (talk to it, call it, watch what it is
- * still doing, read what it stored), then the workspace: API sits between
- * Playground and Code because it is the same question as Playground — "what
- * does this thing do?" — asked by a caller rather than a user; Workflows
- * follows it because a run is that API's output outliving the request that made
- * it; and Database is the same again one step further out, the rows still there
- * when every run has finished.
+ * still doing, read what it stored), then the workspace and the project's own
+ * configuration: API sits between UI and Code because it is the same question
+ * as UI — "what does this thing do?" — asked by a caller rather than a user;
+ * Workflows follows it because a run is that API's output outliving the
+ * request that made it; and Database is the same again one step further out,
+ * the rows still there when every run has finished. Secrets and Settings come
+ * last, in that order: a key is something a working project needs, where
+ * Settings ends in Delete project.
  *
- * **The first tab's id is `preview` and its label is "Playground".** The id
- * names a platform concept the whole product spells that way — the auto-deployed
+ * **The first tab's id is `preview` and its label is "UI".** The id names a
+ * platform concept the whole product spells that way — the auto-deployed
  * PREVIEW agent, its `previewSlug`, `previewVersion` and `previewStale` — and
  * renaming the state to match a button would put a second word for one thing
- * into the codebase. The label is what needed to change: what the pane offers
- * is somewhere to talk to the agent, and "Preview" reads as a rendering of the
- * code rather than an invitation to use it.
+ * into the codebase. The label is what the pane OFFERS: the client the project
+ * serves, which is where you talk to the agent. "Preview" read as a rendering
+ * of the code rather than something to use, and "Playground" said what it was
+ * for without naming what it is.
  */
-export type StudioTab = "preview" | "docs" | "workflows" | "database" | "code" | "settings";
+export type StudioTab =
+  | "preview"
+  | "docs"
+  | "workflows"
+  | "database"
+  | "code"
+  | "secrets"
+  | "settings";
 
 const TABS: { id: StudioTab; label: string }[] = [
-  { id: "preview", label: "Playground" },
+  { id: "preview", label: "UI" },
   { id: "docs", label: "API" },
   { id: "workflows", label: "Workflows" },
   { id: "database", label: "Database" },
   { id: "code", label: "Code" },
+  { id: "secrets", label: "Secrets" },
   { id: "settings", label: "Settings" },
 ];
 

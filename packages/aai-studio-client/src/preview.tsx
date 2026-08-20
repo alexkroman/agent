@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-// The Preview pane, labelled **Playground** in the top bar — it shows the
+// The Preview pane, labelled **UI** in the top bar — it shows the
 // PREVIEW deploy of the workspace, auto-deployed after every agent turn and
 // editor save, so edits show up here without publishing. Publish is the only
 // thing that touches the production slug. Before any preview exists, a quiet

@@ -232,7 +232,7 @@ function DeployedDocs({ bearer, project, deployedSlug, slug }: DocsPaneProps & {
         blurb={
           token
             ? "Durable runs over HTTP. This agent sets AAI_WORKFLOW_API_TOKEN, so every call needs that bearer — the snippets below carry it."
-            : "Durable runs over HTTP: start one, then read it back by id from anywhere, minutes or days later. Open by default — set AAI_WORKFLOW_API_TOKEN in Settings → Secrets to require a bearer."
+            : "Durable runs over HTTP: start one, then read it back by id from anywhere, minutes or days later. Open by default — set AAI_WORKFLOW_API_TOKEN in the Secrets pane to require a bearer."
         }
       >
         <Endpoints base={base} rows={WORKFLOW_ENDPOINTS} />

@@ -12,11 +12,11 @@ workspace package built into its `dist/` by
 over HTTP/SSE (no code imports in either direction); aai-server serves
 the built artifact, resolved via `require.resolve` in
 `studio-static.ts` the same way aai-ui's `dist/default-client` is.
-Panes: `chat.tsx` (chat + composer), and the six the top bar's
-segmented control switches between — `preview.tsx` (labelled **Playground**),
+Panes: `chat.tsx` (chat + composer), and the seven the top bar's
+segmented control switches between — `preview.tsx` (labelled **UI**),
 `docs.tsx` (**API**), `workflows.tsx`, `database.tsx`, `code-view.tsx`,
-`settings.tsx`. The five page-shaped ones share `pane-shell.tsx`; only the
-Playground and Code panes have layouts of their own.
+`secrets.tsx`, `settings.tsx`. The six page-shaped ones share
+`pane-shell.tsx`; only the UI and Code panes have layouts of their own.
 
 **The shell splits on whether a project is open**, and the split is what makes
 `project` a `string` rather than a `string | null` everywhere below it.
@@ -58,22 +58,30 @@ so every piece of per-project state resets on a switch with no effect to do it.
     buttons with `aria-pressed`: arrow-key navigation and the group's
     accessible name then come from the markup, and the segmented look is
     entirely on the labels.
-- **The switcher runs deployed-agent-first, then workspace**: Playground,
-  API, Workflows, Database, Code, Settings (`StudioTab` in `top-bar.tsx` is
-  the one union; `project-view.tsx`'s `tab` state is the only selection). The
-  first four are all about the agent that is RUNNING — talk to it, call it,
-  watch what it is still doing, read what it stored — where Code and Settings
-  are about the workspace and the project. API sits second because it is the
-  same question as Playground asked by a caller rather than a person.
-  - **The first tab's id is `preview` and its label is "Playground".** The id
-    names a platform concept the whole product spells that way (the
-    auto-deployed PREVIEW agent, `previewSlug`, `previewVersion`,
-    `previewStale`), so renaming the state to match a button would put a
-    second word for one thing into the codebase. The LABEL is what needed to
-    change: the pane offers somewhere to talk to the agent, and "Preview"
-    reads as a rendering of the code rather than an invitation to use it.
-    `top-bar.test.tsx` pins the pairs, label against id, for exactly this
-    reason.
+- **The switcher runs deployed-agent-first, then workspace**: UI, API,
+  Workflows, Database, Code, Secrets, Settings (`StudioTab` in `top-bar.tsx`
+  is the one union; `project-view.tsx`'s `tab` state is the only selection).
+  The first four are all about the agent that is RUNNING — talk to it, call
+  it, watch what it is still doing, read what it stored — where Code, Secrets
+  and Settings are about the workspace and the project. API sits second
+  because it is the same question as UI asked by a caller rather than a
+  person, and Secrets sits before Settings because a key is what a WORKING
+  project needs where Settings ends in Delete project.
+  - **The first tab's id is `preview` and its label is "UI".** The id names a
+    platform concept the whole product spells that way (the auto-deployed
+    PREVIEW agent, `previewSlug`, `previewVersion`, `previewStale`), so
+    renaming the state to match a button would put a second word for one
+    thing into the codebase. The LABEL is what has moved twice: "Preview"
+    read as a rendering of the code rather than something to use, and
+    "Playground" said what the pane was FOR without naming what it is — the
+    client the project serves. `top-bar.test.tsx` pins the pairs, label
+    against id, for exactly this reason.
+  - **The coding agent's preamble says "UI pane" too**
+    (`aai-studio-server/studio-preamble.ts`, `studio-preamble-mode.ts`). It
+    told users to "try it in the Preview pane" through both label changes,
+    naming a tab that has never existed under that name — the one copy in the
+    product that a relabel here silently invalidates, because it lives in
+    another package and no test reads it.
 - **Settings is a PANE, not a dropdown** (`settings.tsx`): it renders
   full-width beside the chat panel like every other pane. It was
   a floating 384px panel that scrolled itself — three unrelated sections
@@ -81,27 +89,53 @@ so every piece of per-project state resets on a switch with no effect to do it.
   width. Nothing on the pane gates on a build or a deploy: Delete project
   has to work before anything has ever been published, so Settings is
   reachable whenever a project is open.
-- **The sections are in a FIXED order**: Work locally, Database, Secrets,
-  Danger zone — setting up first, provider keys after, destruction last.
-  `settings.test.tsx` asserts the sequence of card titles, so moving one means
-  updating that list — and re-reading any copy that names a neighbour's
-  direction, which is the trap this used to carry: the Phone card said
-  "Secrets **below**" twice while sitting above it, and then moved panes
-  entirely.
-  - **Two cards LEFT this pane**, and what they have in common is the
-    subject. The carrier webhook URLs and the workflow runs are both about a
-    DEPLOYED agent — how something calls it, and what it is still doing —
-    which is the API and Workflows panes' subject rather than this one's.
-    What that buys is that "nothing here gates on a deploy" is now literally
-    true rather than nearly: every remaining card works from the moment a
-    project exists, so `SettingsPane` takes no slug of any kind.
-- **Secrets have their own section; storage has none.** Agent secrets are
-  managed in the Settings pane's Secrets card, which talks to the project
-  route (`/studio/projects/:project/secret`). Every card on this pane reports
-  its own outcome and writes NOTHING into the conversation — see "No studio
-  action writes into the transcript" below.
+- **The sections are in a FIXED order**: Work locally, Database, Danger zone
+  — setting up first, destruction last. `settings.test.tsx` asserts the
+  sequence of card titles, so moving one means updating that list — and
+  re-reading any copy that names a neighbour's direction, which is the trap
+  this used to carry: the Phone card said "Secrets **below**" twice while
+  sitting above it, and then moved panes entirely.
+  - **Three subjects LEFT this pane.** The carrier webhook URLs and the
+    workflow runs are both about a DEPLOYED agent — how something calls it,
+    and what it is still doing — which is the API and Workflows panes'
+    subject rather than this one's. Secrets left for a different reason (see
+    below). What that buys is that "nothing here gates on a deploy" is now
+    literally true rather than nearly: every remaining card works from the
+    moment a project exists, so `SettingsPane` takes no slug of any kind, and
+    with the secrets query gone it makes no request of its own at all —
+    `settings.test.tsx` asserts it never touches `/secret`, which is what
+    would catch a copy of the card coming back.
+- **Secrets are a PANE; storage has none.** `secrets.tsx` talks to the
+  project route (`/studio/projects/:project/secret`) and, like every pane,
+  reports its own outcome and writes NOTHING into the conversation — see "No
+  studio action writes into the transcript" below.
 
-  **The card is UNGATED — no publish first.** It used to render "Publish the
+  **It was a card in Settings, and what forced the move was its UI rather
+  than its subject.** The whole control was one textarea of `KEY=value`
+  lines: attaching a single key meant typing a shell assignment into a
+  free-text box, the value sat in plaintext beside its own name, and an
+  emptied box was the only report that anything had happened. Secrets are also
+  the one piece of project configuration people come BACK to — a rotated key,
+  a provider added weeks later — which sits badly on a page whose other half
+  deletes the project.
+
+  **Two forms, one endpoint, and the split is the design.** A NAME/VALUE pair
+  is the primary path (the value in a `type="password"` field, the name
+  checked against `VALID_NAME` here rather than by a round trip that answers
+  "`my key` was never going to work"); the `.env` textarea stays for the bulk
+  case and keeps the dotenv parse that makes quoted multi-line values — PEM
+  keys, service-account JSON — work at all. They are two `useMutation`s over
+  the same PUT, not one: `isPending` and `error` are read beside the button
+  that fired them, so a shared mutation would put "Saving…" on the .env
+  button while a one-key add was in flight and print a failed paste's error
+  under both. Each form clears only on its OWN success — a draft is what the
+  user would otherwise retype.
+
+  **Deleting asks first.** A row's Delete used to fire on the click; the value
+  cannot be read back, so an accidental one costs a trip to the provider to
+  reissue the key.
+
+  **The pane is UNGATED — no publish first.** It used to render "Publish the
   project first" until `deployedSlug` existed, which asks for the one order
   that cannot work: an agent needs its provider key to run at all, so the
   sequence was ship it broken, attach the key, ship again. And production is
@@ -111,19 +145,26 @@ so every piece of per-project state resets on a switch with no effect to do it.
   slug as a deploy claims one (`aai-studio-server/studio-secrets.ts`), so a
   save before anything is deployed is durable rather than a write reaching
   nobody. A name no deployed agent carries yet is labelled **"on next
-  deploy"** from the response's `pending` list — a bare list would report a
-  saved-but-undelivered key as live everywhere.
+  deploy"** from the response's `pending` list, against **"live"** for the
+  rest — a bare list would report a saved-but-undelivered key as live
+  everywhere.
   **`ASSEMBLYAI_API_KEY` is platform-managed and the pane neither lists,
-  deletes, nor sets it** (`PLATFORM_MANAGED_SECRETS` in `settings.tsx`): it
+  deletes, nor sets it** (`PLATFORM_MANAGED_SECRETS` in `secrets.tsx`): it
   is seeded at publish from the caller's own account key, so it is not a
   third-party key the user attached, and deleting it takes the agent off the
   air (an empty bearer → `unauthorized` from AssemblyAI) with nothing in the
   pane to put it back. Filtering it out of the list is also what withholds
   its Delete button — there is no row to hang one on. Setting it is refused
-  by name rather than accepted: a save that then vanished from the list
-  reads as a failed write. Overriding it with another account's key stays a
-  CLI action (`aai secret`, or `.env` + `aai publish`), where it is
+  by name rather than accepted, in BOTH forms: a save that then vanished from
+  the list reads as a failed write. Overriding it with another account's key
+  stays a CLI action (`aai secret`, or `.env` + `aai publish`), where it is
   deliberate.
+
+  **Anything that POINTS here names the pane, never a path inside Settings.**
+  The Phone card's signing-secret hints, the API pane's workflow-token line
+  and the coding agent's preamble all said "Settings → Secrets", which is
+  furniture that has moved twice now — the same failure as the Phone card's
+  "Secrets **below**".
 - **The Database card switches `ctx.db` on per PROJECT, across both
   environments** (`database-card.tsx` → `GET/POST/DELETE
   /studio/projects/:project/database` → `aai-studio-server/
@@ -184,9 +225,10 @@ so every piece of per-project state resets on a switch with no effect to do it.
   - It sits with the API docs rather than in Settings because a webhook URL is
     how a CARRIER calls this agent, which is that pane's whole subject — it
     was the one card in Settings documenting a request instead of configuring
-    the project. The signing-secret hints therefore point ACROSS to
-    "Settings → Secrets" rather than "below"; a direction is copy that stops
-    being true when a section moves, and this one already had.
+    the project. The signing-secret hints therefore point ACROSS to the
+    **Secrets pane** rather than "below" — and name the pane rather than a
+    path inside Settings, because a direction is copy that stops being true
+    when a section moves, and this one has now moved twice.
   - **`?carrier=` is spelled out even for Twilio**, which the platform already
     defaults to. This string is pasted into a carrier console once and never
     looked at again, so it has to keep meaning the same thing — the default is
@@ -198,8 +240,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
     resolves to nothing and the caller hears the agent-not-found message and
     is hung up on — a dead URL is a worse answer than "publish first".
   - **Each carrier names its signing secret and says whether it is LIVE**,
-    read off the Secrets card's own two lists (`secretState`). The three-way
-    split is the point: a `pending` secret is visible in the list above but
+    read off the same two lists the Secrets pane renders (`secretState`, over
+    the shared secrets query key). The three-way split is the point: a
+    `pending` secret is visible in that pane but
     has not reached the published agent, so verification is not running, and
     reporting it as set would tell someone their webhook is protected while it
     still accepts anything. The missing case names where to find the value
@@ -217,7 +260,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
   (`workflows.tsx` → the card in `workflows-card.tsx` → `/:slug/workflows`). A
   workflow run is the one thing
   in this product that OUTLIVES every surface the studio already shows: the
-  Playground frames a page, the transcript shows a conversation, and a run
+  UI pane frames a page, the transcript shows a conversation, and a run
   started an hour ago by a caller who has since hung up appears in neither.
   That is also why it is a pane rather than the Settings card it began as: a
   live view of a RUNNING system does not belong behind a page about
@@ -276,7 +319,7 @@ so every piece of per-project state resets on a switch with no effect to do it.
   - **Whether a snippet carries `Authorization` is read off the project's
     secrets**, not left in prose as a caveat: the workflow API is open unless
     the agent's env sets `AAI_WORKFLOW_API_TOKEN`, and the pane shares the
-    Settings pane's own secrets query key to find out.
+    Secrets pane's own query key to find out.
   - **The endpoint tables cannot import `GUEST_ROUTE_EXPOSURE`** — this
     package may not depend on server code — so the tie to what the platform
     really proxies is the shared `WORKFLOW_API_PREFIX` constant plus
@@ -622,9 +665,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
   is a record of a conversation, and every one of those messages put words in
   the user's mouth for something a pane already reports beside the control that
   did it. Each surface now answers for itself — the PublishMenu renders
-  `publish.data.output` and `publish.error`, the Secrets card clears its
-  textarea only on a successful save, the Database card seeds the new state
-  from its own response.
+  `publish.data.output` and `publish.error`, each form on the Secrets pane
+  clears its own input only on a successful save, the Database card seeds the
+  new state from its own response.
 
   What that gives up, stated because it is real: **the coding agent cannot see
   a secret, a database switch, or a failed deploy**, and the preamble tells it
