@@ -67,6 +67,7 @@ describe("createWorkflowApi", () => {
     const api = createWorkflowApi({ baseUrl: "https://agents.example/a" });
     expect(Object.keys(api).sort()).toEqual([
       "cancel",
+      "download",
       "find",
       "get",
       "list",

@@ -428,6 +428,9 @@ export function createMockWorkflowApi(over: Partial<WorkflowApi> = {}): Workflow
       size: 0,
       complete: true,
     })),
+    // An empty Blob rather than nothing: a page that plays what a run produced
+    // calls `URL.createObjectURL` on this, and jsdom's stub takes any Blob.
+    download: vi.fn(async () => new Blob([])),
     list: vi.fn(async () => []),
     start: vi.fn(async () => "wrun_1"),
     startAndWait: vi.fn(async () => snapshot),

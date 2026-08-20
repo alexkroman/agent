@@ -55,7 +55,10 @@ export async function store(bytes: Uint8Array, opts: WriteUploadOptions): Promis
 export async function storeStreamed(chunks: AsyncIterable<Uint8Array>): Promise<string> {
   "use step";
 
-  const record = await writeUpload(chunks, { name: "output.bin", type: "application/octet-stream" });
+  const record = await writeUpload(chunks, {
+    name: "output.bin",
+    type: "application/octet-stream",
+  });
   return record.id;
 }
 

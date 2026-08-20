@@ -16,8 +16,8 @@ import {
   type StubSpeech,
   type StubSpeechCall,
   type StubSpeechOptions,
-  stubSpeech,
   type StubUploadsOptions,
+  stubSpeech,
   stubUploads,
 } from "../../../sdk/testing.ts";
 
