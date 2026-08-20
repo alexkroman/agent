@@ -18,7 +18,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@ai-sdk/react": "^4.0.65",
+    "@ai-sdk/react": "^4.0.69",
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@codemirror/lang-javascript": "^6.2.5",

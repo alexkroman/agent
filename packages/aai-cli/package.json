@@ -48,7 +48,7 @@
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@clack/prompts": "^1.7.0",
-    "@workflow/builders": "4.1.7",
+    "@workflow/builders": "4.1.8",
     "chokidar": "^5.0.0",
     "citty": "^0.2.2",
     "env-paths": "^4.0.0",
@@ -66,7 +66,7 @@
     "tsdown": "catalog:",
     "verdaccio": "^6.9.2",
     "vitest": "catalog:",
-    "workflow": "4.8.2"
+    "workflow": "4.8.3"
   },
   "peerDependencies": {
     "vitest": "^4.1.10"

@@ -32,7 +32,7 @@
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "workflow": "4.8.2",
+    "workflow": "4.8.3",
     "ws": "catalog:",
     "zod": "catalog:"
   },
