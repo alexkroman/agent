@@ -217,9 +217,17 @@ async function serveWindow(
 
   // No signing backend — memory, i.e. `aai dev` and the tests. The window is served
   // from here, which is exactly the behaviour that predates signing.
+  //
+  // SIZE FIRST, which settles the 404 in one lookup. Reading first and then asking
+  // for the size to tell "empty window" from "no window" cost a read plus a lookup
+  // on exactly the miss path, and it read to `MAX_SAFE_INTEGER` — so a rangeless GET
+  // of a full window materialized `MAX_UPLOAD_WINDOW_BYTES` (64 MiB) in one buffer
+  // on a developer's machine to answer a request whose production twin moves no
+  // bytes at all. The end is now the object's own length.
+  const size = await bytes.size(key);
+  if (size === undefined) return c.body(null, 404);
   const range = parseRange(c.req.header("range"));
-  const found = await bytes.read(key, range?.start ?? 0, range?.end ?? Number.MAX_SAFE_INTEGER);
-  if (found.length === 0 && (await bytes.size(key)) === undefined) return c.body(null, 404);
+  const found = await bytes.read(key, range?.start ?? 0, Math.min(range?.end ?? size, size));
   // `new Response` rather than `c.body`, whose `Data` is `string | ArrayBuffer |
   // ReadableStream` — a `Uint8Array` is a perfectly good `BodyInit` and the only way
   // through that signature is a cast that stops reporting if the type ever moves.

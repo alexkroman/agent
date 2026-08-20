@@ -104,8 +104,12 @@ describe("provisionAppDatabase", () => {
     expect(statements).toContain(`create database "${id}"`);
     // THE tenant boundary. Postgres grants CONNECT on a new database to PUBLIC,
     // so without this revoke every app role can open every other app's database.
-    expect(statements).toContain(`revoke connect on database "${id}" from public`);
-    expect(statements).toContain(`grant connect, temporary, create on database "${id}" to "${id}"`);
+    // Batched with the grant beside it — one round trip, since they address the
+    // same object and neither reads the other — so this is a substring check
+    // rather than a whole-statement one.
+    const boundary = statements.find((s) => s.includes("revoke connect on database"));
+    expect(boundary).toContain(`revoke connect on database "${id}" from public`);
+    expect(boundary).toContain(`grant connect, temporary, create on database "${id}" to "${id}"`);
 
     // The locator records which cluster the app was placed on.
     expect(meta.url).toBe("postgres://admin@primary/db");

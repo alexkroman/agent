@@ -11,6 +11,7 @@
  * guest cannot rewrite the hint, and sweeping on ten replicas at once.
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { WORKFLOW_WAKE_NAMESPACE } from "./_workflow-wake-read.ts";
@@ -68,32 +69,69 @@ function fakeAdminDb(opts: {
   };
 }
 
-/** Serves each app's hint from its own database, and records which were opened. */
-function fakeWakeAppDb(hints: Record<string, Date | null | undefined | Error>): AppDatabases & {
-  opened: string[];
-} {
+/**
+ * Serves each app's hint from its own database, recording which were opened and
+ * — because the read phase fans out now — how many were open AT ONCE.
+ *
+ * `peak` is what holds `WORKFLOW_WAKE_READ_CONCURRENCY` to a real bound: the
+ * width is a property of a semaphore rather than of the loop shape, so a spec
+ * that only counted calls would pass for any width including unbounded.
+ * `delays` makes a named app's read settle later than the others, which is how
+ * the ordering guard below gets to observe completion order diverging from slug
+ * order — index-aligned results are the only reason `due` still means what
+ * `workflow-wake.ts`'s per-tick cap needs it to.
+ */
+function fakeWakeAppDb(
+  hints: Record<string, Date | null | undefined | Error>,
+  delays: Record<string, number> = {},
+): AppDatabases & { opened: string[]; peak: () => number } {
   const byRole = new Map(
     Object.entries(hints).map(([slug, value]) => [appDbIdentifier(slug), value] as const),
   );
+  const delayByRole = new Map(
+    Object.entries(delays).map(([slug, ms]) => [appDbIdentifier(slug), ms] as const),
+  );
   const opened: string[] = [];
+  const tracker = { peak: 0 };
+  let inFlight = 0;
   return Object.assign(
     fakeAppDatabases({
       withAppDb: async (meta, fn) => {
         opened.push(meta.role);
-        const hint = byRole.get(meta.role);
-        // Typed as the real `SqlExec` rather than cast: the contract is what a
-        // spec is standing in for, and a cast stops reporting the moment it moves.
-        const sql: SqlExec = async (query) => {
-          if (query.startsWith("set ")) return [];
-          if (query.includes("to_regclass")) return [{ present: hint !== undefined }];
-          if (hint instanceof Error) throw hint;
-          return [{ wake_at: hint ?? null }];
-        };
-        return await fn(sql);
+        inFlight += 1;
+        tracker.peak = Math.max(tracker.peak, inFlight);
+        try {
+          // A real wait, so overlap is observable at all: every read resolving
+          // in one microtask would make any width look like a width of one.
+          await sleep(delayByRole.get(meta.role) ?? 1);
+          return await servedHint(byRole, meta.role, fn);
+        } finally {
+          inFlight -= 1;
+        }
       },
     }),
-    { opened },
+    // A function, not a getter: `Object.assign` copies a getter's VALUE at
+    // assign time, which is 0 before any read has run.
+    { opened, peak: () => tracker.peak },
   );
+}
+
+/** One app's hint read, on a `SqlExec` typed as the real contract. */
+function servedHint<T>(
+  byRole: Map<string, Date | null | undefined | Error>,
+  role: string,
+  fn: (sql: SqlExec) => Promise<T>,
+): Promise<T> {
+  const hint = byRole.get(role);
+  // Typed as the real `SqlExec` rather than cast: the contract is what a spec is
+  // standing in for, and a cast stops reporting the moment it moves.
+  const sql: SqlExec = async (query) => {
+    if (query.startsWith("set ")) return [];
+    if (query.includes("to_regclass")) return [{ present: hint !== undefined }];
+    if (hint instanceof Error) throw hint;
+    return [{ wake_at: hint ?? null }];
+  };
+  return fn(sql);
 }
 
 /** A store whose `listSlugs` answers what the agents table would. */
@@ -119,12 +157,16 @@ function sweepWith(
     now?: () => number;
     retryMs?: number;
     maxPerTick?: number;
+    readConcurrency?: number;
+    readTimeoutMs?: number;
+    /** Per-slug read latency, so completion order can diverge from slug order. */
+    delays?: Record<string, number>;
   } = {},
 ) {
   const hints = opts.hints ?? {};
   const wake = vi.fn(opts.wake ?? (() => Promise.resolve(OK)));
   const adminDb = fakeAdminDb({ ...omitUndefined({ locked: opts.locked }), hints });
-  const appDb = fakeWakeAppDb(hints);
+  const appDb = fakeWakeAppDb(hints, opts.delays ?? {});
   const sweep = createWorkflowWakeSweep({
     adminDb,
     appDb,
@@ -134,6 +176,10 @@ function sweepWith(
     ...omitUndefined({ isDraining: opts.isDraining }),
     ...omitUndefined({ now: opts.now }),
     ...omitUndefined({ retryMs: opts.retryMs, maxPerTick: opts.maxPerTick }),
+    ...omitUndefined({
+      readConcurrency: opts.readConcurrency,
+      readTimeoutMs: opts.readTimeoutMs,
+    }),
   });
   return { sweep, wake, adminDb, appDb };
 }
@@ -343,5 +389,92 @@ describe("createWorkflowWakeSweep", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * The read phase's WIDTH, which is the thing a serial loop used to make
+ * incidental.
+ *
+ * These reads each open a real connection into one tenant's database, so the
+ * width is a term in the platform's connection budget
+ * (`APP_DB_ADMIN_POOL_MAX`'s doc names this constant as the bound). It used to be
+ * one-at-a-time, which bounded the connections at 1 and the pass duration at
+ * nothing — at a few hundred apps a pass outran its own 60s interval, and an
+ * overrunning pass is skipped rather than queued, so the sweep rate silently
+ * halved. What matters in both directions is asserted here: that it really does
+ * overlap (a cap alone would pass for a width of one) and that it really does
+ * cap (a fan-out alone would pass for a width of the app count).
+ */
+describe("the read phase's concurrency", () => {
+  const logs = captureLogs();
+  const eight = Object.fromEntries(
+    ["a", "b", "c", "d", "e", "f", "g", "h"].map((n) => [`app-${n}`, past] as const),
+  );
+
+  test("reads several app databases at once, and never more than the width", async () => {
+    const { sweep, appDb } = sweepWith({ hints: eight, readConcurrency: 3, maxPerTick: 0 });
+    const result = await sweep.sweepOnce();
+
+    expect(appDb.opened).toHaveLength(8);
+    expect(appDb.peak()).toBe(3);
+    expect(result.due).toBe(8);
+    expect(logs.errors()).toEqual([]);
+  });
+
+  test("a width of 1 is the serial pass it replaced", async () => {
+    // The documented escape hatch (`WORKFLOW_WAKE_READ_CONCURRENCY=1`), and the
+    // control for the test above: same fan-out code, no overlap.
+    const { sweep, appDb } = sweepWith({ hints: eight, readConcurrency: 1, maxPerTick: 0 });
+    await sweep.sweepOnce();
+
+    expect(appDb.opened).toHaveLength(8);
+    expect(appDb.peak()).toBe(1);
+  });
+
+  test("due slugs keep SLUG order however the databases answer", async () => {
+    // The hazard the fan-out introduces and the reason results are reduced in
+    // index order rather than appended from inside the tasks: `workflow-wake.ts`
+    // takes the first `maxPerTick` of `due` and rests on that order being the
+    // slug order, so the cap cannot starve one agent forever. Here the first
+    // slug's database is the slowest to answer, so completion order is the
+    // reverse of what the cap needs.
+    const { sweep, wake } = sweepWith({
+      hints: { "app-a": past, "app-b": past, "app-c": past },
+      delays: { "app-a": 30, "app-b": 15, "app-c": 1 },
+      readConcurrency: 3,
+      maxPerTick: 2,
+    });
+    const result = await sweep.sweepOnce();
+
+    expect(result.woken).toEqual(["app-a", "app-b"]);
+    expect(result.skipped).toBe(1);
+    expect(wake).toHaveBeenCalledTimes(2);
+  });
+
+  test("EVERY app is read, however slow the ones ahead of it are", async () => {
+    // The property a bounded width must not cost, and the bug the first draft of
+    // this fan-out had: with a semaphore, every candidate asks for its slot at
+    // t=0, so the acquire deadline is measured from then rather than from its
+    // turn. At K=4 with a 5s deadline that silently drops everything past ~the
+    // two-hundredth app on EVERY tick — worse than the serial loop, which was
+    // slow but read everyone. A worker pool has no such deadline.
+    const slow = Object.fromEntries(
+      Array.from({ length: 12 }, (_, i) => [`app-${String(i).padStart(2, "0")}`, past] as const),
+    );
+    const { sweep, appDb } = sweepWith({
+      hints: slow,
+      // Every read slower than any per-read budget would be.
+      delays: Object.fromEntries(Object.keys(slow).map((slug) => [slug, 20] as const)),
+      readConcurrency: 2,
+      readTimeoutMs: 5,
+      maxPerTick: 0,
+    });
+    const result = await sweep.sweepOnce();
+
+    expect(appDb.opened).toHaveLength(12);
+    expect(result.candidates).toBe(12);
+    expect(result.due).toBe(12);
+    expect(logs.errors()).toEqual([]);
   });
 });

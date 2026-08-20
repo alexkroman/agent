@@ -180,8 +180,16 @@ $$`,
   // The revoke is what stops every app role connecting to every app database;
   // `create` is what lets the Workflow DevKit make its `workflow` and
   // `graphile_worker` schemas.
-  await sql(`revoke connect on database "${id}" from public`);
-  await sql(`grant connect, temporary, create on database "${id}" to "${id}"`);
+  //
+  // ONE batch, like step 1. They address the same object and neither reads the
+  // other, so the two round trips bought nothing — and unlike step 2 there is no
+  // transaction-block rule in the way here: that one is `create database`'s, and
+  // it is what forced the four-step split in the first place. This is latency on
+  // `POST /:slug/storage`, which a human is waiting on.
+  await sql(
+    `revoke connect on database "${id}" from public;
+grant connect, temporary, create on database "${id}" to "${id}"`,
+  );
 
   // Step 4 — inside the new database, on the ADMIN role (it owns it).
   const appDb = open(withDatabase(targetUrl, id));

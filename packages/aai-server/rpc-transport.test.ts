@@ -115,6 +115,30 @@ describe("createRpcConnection", () => {
     });
   });
 
+  it("caps the pre-listen buffer, keeping the OLDEST frames", async () => {
+    // "The guest sends nothing unprompted" is a property of the peer, and the
+    // peer is a sandbox running tenant code. Overflow drops the NEWEST frame:
+    // this is a replay buffer, so the first frame is the one a handler is
+    // waiting for — a ring would discard exactly the wrong end.
+    const socket = createFakeGuestSocket();
+    const conn = createRpcConnection(socket.ws);
+    const flood = 200;
+    for (let id = 0; id < flood; id++) {
+      socket.receive({ jsonrpc: "2.0", id, method: "early", params: { id } });
+    }
+    conn.onRequest("early", (params) => params);
+    conn.listen();
+
+    await vi.waitFor(() => {
+      // The first frame survived...
+      expect(socket.sentMessages().find((m) => m.id === 0)?.result).toEqual({ id: 0 });
+    });
+    // ...the last did not, and the replay is bounded rather than the flood's size.
+    expect(socket.sentMessages().find((m) => m.id === flood - 1)).toBeUndefined();
+    expect(socket.sentMessages().length).toBeLessThan(flood);
+    expect(logs.warns().join("\n")).toContain("before listen()");
+  });
+
   it("routes notifications and contains handler throws", async () => {
     const socket = createFakeGuestSocket();
     const conn = createRpcConnection(socket.ws);

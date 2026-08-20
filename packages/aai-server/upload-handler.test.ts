@@ -186,3 +186,62 @@ describe("a window of upload bytes", () => {
     expect(res.status).toBe(404);
   });
 });
+
+/**
+ * The unsigned arm — memory bytes, i.e. `aai dev` and these specs. Production
+ * redirects to a signed URL and moves nothing, so what is asserted here is that
+ * the fallback stays cheap rather than that it is the normal path.
+ */
+describe("the unsigned read arm", () => {
+  /** Memory bytes that count what the handler actually asked for. */
+  function countingBytes() {
+    const inner = createMemoryUploadBytes();
+    const calls: string[] = [];
+    const bytes: UploadBytes = {
+      ...inner,
+      read: (key, start, end) => {
+        calls.push(`read(${start},${end})`);
+        return inner.read(key, start, end);
+      },
+      size: (key) => {
+        calls.push("size");
+        return inner.size(key);
+      },
+    };
+    return { bytes, calls };
+  }
+
+  test("a missing window is one lookup, not a read and then a lookup", async () => {
+    const { bytes, calls } = countingBytes();
+    const { call } = await serve(bytes);
+
+    expect((await call("/desk/uploads/upl_nothinghere/0")).status).toBe(404);
+    expect(calls).toEqual(["size"]);
+  });
+
+  test("a rangeless read is bounded by the object, not by MAX_SAFE_INTEGER", async () => {
+    // The end used to be `Number.MAX_SAFE_INTEGER`, which asks the store for
+    // everything and leans on it to clamp — on a route whose window cap is 64 MiB.
+    const { bytes, calls } = countingBytes();
+    const { call } = await serve(bytes);
+    await call("/desk/uploads/upl_sized/0", { method: "PUT", body: ramp(32) });
+    calls.length = 0;
+
+    const res = await call("/desk/uploads/upl_sized/0");
+    expect(res.status).toBe(200);
+    expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([...ramp(32)]);
+    expect(calls).toEqual(["size", "read(0,32)"]);
+  });
+
+  test("a Range still narrows it", async () => {
+    const { bytes, calls } = countingBytes();
+    const { call } = await serve(bytes);
+    await call("/desk/uploads/upl_ranged/0", { method: "PUT", body: ramp(64) });
+    calls.length = 0;
+
+    const res = await call("/desk/uploads/upl_ranged/0", { headers: { range: "bytes=4-7" } });
+    expect(res.status).toBe(206);
+    expect([...new Uint8Array(await res.arrayBuffer())]).toEqual([...ramp(4, 4)]);
+    expect(calls).toEqual(["size", "read(4,8)"]);
+  });
+});

@@ -27,13 +27,42 @@ import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AgentRecord, AgentRows } from "./agent-store.ts";
 import type { BlobStorage } from "./blob-storage.ts";
-import { MAX_ENV_SIZE } from "./constants.ts";
+import { envCount, MAX_ENV_SIZE } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import { EnvSchema } from "./schemas.ts";
 import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 const log = createLogger("store.bundle");
+
+/**
+ * How many of a deploy's blobs are written to Storage AT ONCE.
+ *
+ * Here rather than in `constants.ts` because it is this concern's number and not
+ * a term in the connection budget — the same placement rule
+ * `LOGS_READY_TIMEOUT_MS` follows, and that file is at its line cap.
+ *
+ * A deploy's blob writes are independent by construction — content-addressed
+ * keys, `upsert: true`, nothing references them until the row lands — so they go
+ * out together rather than one at a time. What they had no bound on was HOW MANY
+ * together: `DeployBodySchema` permits 100 client files, so one deploy was up to
+ * 102 simultaneous PUTs at a single Supabase Storage endpoint, and
+ * `DEPLOY_BODY_CONCURRENCY` allows two deploys in flight — ~204 sockets from one
+ * replica, a width set by the caller's payload rather than by us.
+ *
+ * That is the shape `_semaphore.ts` exists to refuse, and here it has a symptom
+ * on record: {@link writeBlob} is wrapped in `retryOnTransient` because a single
+ * reset used to fail a whole deploy, and `_retry.ts`'s code list (`ECONNRESET`,
+ * `UND_ERR_SOCKET`, `UND_ERR_CONNECT_TIMEOUT`) is documented as written FOR this
+ * endpoint. Those are what an S3-compatible endpoint returns to a client opening
+ * far more sockets than it should, so the retry was treating this fan-out's
+ * symptom.
+ *
+ * 12 costs a deploy almost nothing — 100 small files is nine rounds — and keeps
+ * every write's retries, so it strictly reduces the number of resets there are
+ * retries to spend. Override with `DEPLOY_BLOB_CONCURRENCY`.
+ */
+export const DEPLOY_BLOB_CONCURRENCY = envCount(process.env.DEPLOY_BLOB_CONCURRENCY, 12);
 
 export type { BundleStore } from "./store-types.ts";
 
@@ -101,6 +130,42 @@ export function createBlobCache(
     sizeCalculation: (value) =>
       (typeof value === "string" ? value.length : 0) + BYTE_CACHE_ENTRY_OVERHEAD,
   });
+}
+
+/**
+ * Run every write, at most {@link DEPLOY_BLOB_CONCURRENCY} at a time, and settle
+ * once they all have.
+ *
+ * A worker pool rather than `_semaphore.ts`, and the reason is that primitive's
+ * own contract: its wait is BOUNDED by design, so a lapsed acquire returns null
+ * and the caller answers 503. That is right for a request path and wrong here —
+ * there is nobody to answer, and a lapse would mean silently not writing a blob
+ * the row is about to reference. (`acquire(Infinity)` is not the way out either:
+ * Node clamps an out-of-range `setTimeout` delay to 1ms, so every queued write
+ * would lapse immediately.) Workers draining a cursor have no deadline to get
+ * wrong: the queue moves at the rate Storage accepts writes, which is the
+ * behaviour wanted.
+ *
+ * Rejects with the FIRST failure, like the `Promise.all` it replaces — a deploy
+ * that could not write a blob must not publish its row. What it does not do is
+ * cancel the rest, and that is deliberate: every key here is a content hash and
+ * every write is idempotent, so a blob that lands for a deploy that then failed
+ * is an orphan — the same orphan a superseded deploy leaves, which
+ * `aai-sweep-blob-gc` already reclaims — while a half-written set the retry has
+ * to redo from nothing is strictly worse. Every worker's promise is passed to
+ * `Promise.all` up front, so a later failure is observed rather than unhandled.
+ */
+async function writeAll(writes: (() => Promise<void>)[]): Promise<void> {
+  let next = 0;
+  const drain = async (): Promise<void> => {
+    // Read the entry and test IT rather than the index, so the cursor needs no
+    // cast under `noUncheckedIndexedAccess`.
+    for (let write = writes[next++]; write; write = writes[next++]) {
+      await write();
+    }
+  };
+  const workers = Math.min(DEPLOY_BLOB_CONCURRENCY, writes.length);
+  await Promise.all(Array.from({ length: workers }, drain));
 }
 
 export function createBundleStore(
@@ -301,13 +366,22 @@ export function createBundleStore(
         clientBlobs.map(([path, fileHash]) => [path, fileHash]),
       );
 
-      // Blobs and env first, in parallel — all immutable or idempotent
-      // writes to keys nothing references yet. Only after every one has
+      // Blobs and env first — all immutable or idempotent writes to keys
+      // nothing references yet, so they overlap. Only after every one has
       // landed does the row upsert publish the deploy.
-      await Promise.all([
-        writeEnv(bundle.slug, bundle.env),
-        writeBlob(workerHash, bundle.worker),
-        ...clientBlobs.map(([, fileHash, content]) => writeBlob(fileHash, content)),
+      //
+      // BOUNDED, because the width was otherwise the caller's to choose: 100
+      // client files are permitted, so this was up to 102 simultaneous PUTs at
+      // one Storage endpoint per deploy. See `DEPLOY_BLOB_CONCURRENCY` for why
+      // that is the fan-out the retries below were quietly paying for.
+      await writeAll([
+        () => writeEnv(bundle.slug, bundle.env),
+        () => writeBlob(workerHash, bundle.worker),
+        ...clientBlobs.map(
+          ([, fileHash, content]) =>
+            () =>
+              writeBlob(fileHash, content),
+        ),
       ]);
 
       await agents.put({

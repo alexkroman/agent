@@ -14,10 +14,12 @@
  * relayed through a body THIS replica can end cleanly on shutdown.
  */
 
+import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { GUEST_ROUTE_EXPOSURE } from "./guest-routes.ts";
 import { endLiveStreams, resetLiveStreams } from "./live-streams.ts";
+import type { RateLimiter } from "./rate-limit.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
 import { createTestOrchestrator, deployAgent, fakeSandbox, type TestFetch } from "./test-utils.ts";
 
@@ -47,9 +49,18 @@ function json(body: unknown, status = 200): Response {
 }
 
 /** An orchestrator with a deployed agent and a live resident sandbox. */
-async function residentHarness(guestFetch?: typeof globalThis.fetch) {
+async function residentHarness(
+  guestFetch?: typeof globalThis.fetch,
+  /** Per-IP limiters for this surface — the rate-limit specs pin their order. */
+  limiters: { surface?: RateLimiter; start?: RateLimiter } = {},
+) {
   const slots = createSlotCache();
-  const harness = await createTestOrchestrator({ slots, ...omitUndefined({ guestFetch }) });
+  const harness = await createTestOrchestrator({
+    slots,
+    ...omitUndefined({ guestFetch }),
+    ...omitUndefined({ workflowRateLimiter: limiters.surface }),
+    ...omitUndefined({ workflowStartRateLimiter: limiters.start }),
+  });
   await deployAgent(harness.fetch, "my-agent");
   setSlot(slots, {
     slug: "my-agent",
@@ -275,5 +286,108 @@ describe("availability", () => {
     const harness = await residentHarness(() => Promise.reject(new Error("ECONNREFUSED")));
     const res = await get(harness.fetch, "/my-agent/workflows");
     expect(res.status).toBe(503);
+  });
+});
+
+/**
+ * The surface's two per-IP limits, and the ONE round trip they now cost.
+ *
+ * A start is counted against both — the surface cap and the much tighter start
+ * cap — and the two used to be awaited one after the other. Against the durable
+ * limiter (`createPgRateLimiter`, one upsert each on the shared admin connection)
+ * that was two serial round trips in front of the one route whose work outlives
+ * its reply. Concurrent, the ordering that decides WHICH limit a caller is told
+ * about has to survive being read back rather than short-circuited, so that is
+ * what these assert.
+ */
+describe("the workflow surface's rate limits", () => {
+  /**
+   * A limiter that refuses from `after` calls on, recording its ENTRY and its
+   * EXIT.
+   *
+   * Both, because entry order alone cannot tell concurrent from serial — a serial
+   * caller asks in the same order. What separates them is whether the second
+   * limiter was entered before the first had answered, which needs a real wait in
+   * between (`sleep`, not a microtask: awaiting a resolved promise lets a serial
+   * caller finish the first check before the second is even started).
+   */
+  function limiter(name: string, order: string[], after = Number.POSITIVE_INFINITY) {
+    let seen = 0;
+    return {
+      check: async () => {
+        order.push(`enter:${name}`);
+        seen += 1;
+        await sleep(5);
+        order.push(`exit:${name}`);
+        return seen > after
+          ? ({ ok: false, retryAfterSeconds: name === "surface" ? 11 : 22 } as const)
+          : ({ ok: true } as const);
+      },
+    };
+  }
+
+  const startPath = "/my-agent/workflows/runs";
+
+  test("a start asks both limiters, and asks them together", async () => {
+    const order: string[] = [];
+    const harness = await residentHarness(() => Promise.resolve(new Response("{}")), {
+      surface: limiter("surface", order),
+      start: limiter("start", order),
+    });
+
+    await harness.fetch(`http://platform.test${startPath}`, { method: "POST", body: "{}" });
+
+    // Both entered before either answered. Serially this is
+    // enter:surface, exit:surface, enter:start, exit:start.
+    expect(order.slice(0, 2)).toEqual(["enter:surface", "enter:start"]);
+    expect(order.slice(2).sort()).toEqual(["exit:start", "exit:surface"]);
+  });
+
+  test("a read asks only the surface limiter", async () => {
+    const order: string[] = [];
+    const harness = await residentHarness(() => Promise.resolve(new Response("{}")), {
+      surface: limiter("surface", order),
+      start: limiter("start", order),
+    });
+
+    await get(harness.fetch, "/my-agent/workflows");
+
+    expect(order).toEqual(["enter:surface", "exit:surface"]);
+  });
+
+  test("the SURFACE limit is what a refused start is told about", async () => {
+    // Ascending tightness, preserved without the short-circuit: both verdicts are
+    // in hand, and the first refusal in that order is the one reported. Counting
+    // the tighter limit instead would make the one route whose cost outlives its
+    // reply the only route escaping the surface cap.
+    const order: string[] = [];
+    const harness = await residentHarness(() => Promise.resolve(new Response("{}")), {
+      surface: limiter("surface", order, 0),
+      start: limiter("start", order, 0),
+    });
+
+    const res = await harness.fetch(`http://platform.test${startPath}`, {
+      method: "POST",
+      body: "{}",
+    });
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("11");
+  });
+
+  test("the start limit refuses on its own once the surface one is satisfied", async () => {
+    const order: string[] = [];
+    const harness = await residentHarness(() => Promise.resolve(new Response("{}")), {
+      surface: limiter("surface", order),
+      start: limiter("start", order, 0),
+    });
+
+    const res = await harness.fetch(`http://platform.test${startPath}`, {
+      method: "POST",
+      body: "{}",
+    });
+
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("22");
   });
 });
