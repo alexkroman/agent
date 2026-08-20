@@ -13,6 +13,14 @@
  *   `api-key-verify.ts`). It is deliberately not inferred from anything: absent,
  *   both decisions fall to their production branch, so a deploy that forgets a
  *   variable gets the safe answer rather than a hole.
+ * - **A local stand-in for Supabase's Management API**, because per-app
+ *   databases are created and dropped through it and through nothing else
+ *   (`aai-server/app-db-admin.ts`). The local stack has no control plane, so
+ *   this starts `aai-server/dev-management-api.ts` on loopback with a per-run
+ *   throwaway token and hands the server its URL — the server then takes the
+ *   SAME code path it takes in production, and `ctx.db`, agent storage and
+ *   durable workflows work locally. Set `SUPABASE_ACCESS_TOKEN` yourself (a
+ *   scratch project's) and this gets out of the way, like every other layer.
  * - **The platform Supabase env** (`SUPABASE_DB_URL` and the three settings that
  *   travel with it), which is what decides whether platform state is DURABLE.
  *   Without it the server runs on memory stores, and a restart erases every
@@ -49,6 +57,8 @@
  * ```
  */
 
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { runChild } from "./_run-child.mjs";
@@ -109,29 +119,13 @@ const PLATFORM_ENV = {
 };
 
 /**
- * The two settings a local stack needs that `supabase status -o env` does not
+ * The one setting a local stack needs that `supabase status -o env` does not
  * report — DERIVED from `supabase/config.toml` and the stack's own DB_URL, so
- * local dev exercises the SAME code paths production does.
+ * local dev exercises the SAME code path production does.
  *
- * Both exist because a name that is right from OUTSIDE the compose network is
- * wrong from inside it, which is the one way local and production genuinely
- * differ here:
- *
- * - **`AAI_DBLINK_HOST`** — the orphan-preview sweep's deprovision is `drop
- *   database`, which pg_cron cannot run in its transaction, so it goes out
- *   through dblink. pg_cron's worker connects over LOOPBACK, and dblink refuses a
- *   non-superuser connection whose password was never used (`2F003`) — which is
- *   what a `trust` rule on 127.0.0.1 produces. `db` is the compose service name,
- *   a non-loopback path that hits a scram rule; verified by dropping a database
- *   from inside a real cron job. The `:5432` matters — that is the port inside the
- *   compose network, where the admin URL's published 54322 answers nothing.
- *   Production needs no override: its `SUPABASE_DB_URL` host is already
- *   non-loopback and its port is the real one.
- * - **`PLATFORM_POOLER_URL`** — Supavisor's TRANSACTION-mode URL, which the admin
- *   pool uses so its connections do not count against the instance's
- *   `max_connections` (see `platformDbConnectionsPerReplica`). The stack publishes
- *   the pooler on `[db.pooler].port` and the CLI's tenant is `pooler-dev`, neither
- *   of which `supabase status -o env` reports.
+ * (`AAI_DBLINK_HOST` used to be the other one. It went with the pg_cron
+ * orphan-preview sweep, whose deprovision now runs in the server through the
+ * Management API — see `aai-server/orphan-previews.ts`.)
  *
  * Skipped when the pooler stanza is disabled, so a developer who turns it off
  * gets the direct path and the boot warning that names it, rather than a URL
@@ -140,10 +134,7 @@ const PLATFORM_ENV = {
 function localStackExtras(dbUrl) {
   const file = path.join(REPO_ROOT, "supabase", "config.toml");
   const config = existsSync(file) ? readFileSync(file, "utf-8") : "";
-  // `db:5432` — the compose service name AND the port Postgres listens on INSIDE
-  // the network. The host alone would be paired with the admin URL's published
-  // port (54322), which nothing inside the network answers on.
-  const env = { AAI_DBLINK_HOST: "db:5432" };
+  const env = {};
   const pooler = /^\[db\.pooler\]([\s\S]*?)(?=^\[|Z)/m.exec(config)?.[1] ?? "";
   const enabled = /^enabled\s*=\s*true/m.test(pooler);
   const port = /^port\s*=\s*(\d+)/m.exec(pooler)?.[1];
@@ -229,6 +220,100 @@ just is not durable, and it is not a bug when it happens.
 
   supabase start        # from the repo root, for the durable tier`;
 
+/**
+ * A project ref shaped like Supabase's (20 lowercase alphanumerics) that names no
+ * real project. The server derives one from `SUPABASE_DB_URL` when it can, and a
+ * loopback URL carries none — so the stand-in needs a ref of its own, and it must
+ * be one that cannot possibly resolve upstream.
+ */
+const DEV_PROJECT_REF = "localdevlocaldevloca";
+
+/**
+ * Start the local Management API stand-in and return the three variables the
+ * server needs to call it, or a reason there is none.
+ *
+ * Skipped whenever the developer supplied `SUPABASE_ACCESS_TOKEN` or
+ * `SUPABASE_MANAGEMENT_URL` themselves: that means a real project (or their own
+ * mock), and layer 1 always wins. Skipped with no `SUPABASE_DB_URL` too — there
+ * is nothing to create a database on, and the server is on memory stores anyway.
+ *
+ * The URL comes back over the child's STDOUT rather than from a port this script
+ * picks: an ephemeral port cannot collide with whatever else is running, and the
+ * handshake makes "the stand-in is up" a precondition instead of a hope.
+ *
+ * @param {Record<string, string|undefined>} resolved the platform env so far
+ * @returns {Promise<{env: Record<string,string>, note?: string, why?: string}>}
+ */
+async function startControlPlane(resolved) {
+  const dbUrl = process.env.SUPABASE_DB_URL ?? resolved.SUPABASE_DB_URL;
+  if (!dbUrl) return { env: {}, why: "no SUPABASE_DB_URL — nothing to provision on" };
+  if (process.env.SUPABASE_ACCESS_TOKEN || process.env.SUPABASE_MANAGEMENT_URL) {
+    return { env: {}, note: "Management API credentials already set — using them as-is" };
+  }
+  const token = randomUUID().replaceAll("-", "");
+  const ref = process.env.SUPABASE_PROJECT_REF ?? DEV_PROJECT_REF;
+  const child = spawn(
+    process.execPath,
+    ["--conditions=@dev/source", path.join(REPO_ROOT, "packages/aai-server/dev-management-api.ts")],
+    {
+      stdio: ["ignore", "pipe", "inherit"],
+      env: {
+        ...process.env,
+        AAI_LOCAL_DEV: "1",
+        SUPABASE_DB_URL: dbUrl,
+        SUPABASE_PROJECT_REF: ref,
+        SUPABASE_ACCESS_TOKEN: token,
+      },
+    },
+  );
+  // The stand-in outlives nothing: it holds an admin connection and an endpoint
+  // that runs DDL, so it dies with this script however this script ends.
+  const kill = () => child.kill("SIGTERM");
+  process.on("exit", kill);
+  const url = await firstUrl(child);
+  if (url === undefined) {
+    process.off("exit", kill);
+    return { env: {}, why: "the local Management API stand-in did not start (see its output)" };
+  }
+  return {
+    env: {
+      SUPABASE_MANAGEMENT_URL: url,
+      SUPABASE_ACCESS_TOKEN: token,
+      SUPABASE_PROJECT_REF: ref,
+    },
+    note: `local Management API stand-in on ${url} (project ${ref})`,
+  };
+}
+
+/**
+ * The URL from the stand-in's first stdout line, or undefined if it exits first.
+ * Its output is forwarded either way, so a failure to start is readable.
+ *
+ * @param {import("node:child_process").ChildProcess} child
+ * @returns {Promise<string|undefined>}
+ */
+function firstUrl(child) {
+  return new Promise((resolve) => {
+    let buffered = "";
+    let settled = false;
+    const done = (value) => {
+      if (!settled) {
+        settled = true;
+        resolve(value);
+      }
+    };
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk) => {
+      buffered += chunk;
+      process.stdout.write(chunk);
+      const match = /listening on (http:\/\/\S+)/.exec(buffered);
+      if (match) done(match[1]);
+    });
+    child.once("exit", () => done(undefined));
+    child.once("error", () => done(undefined));
+  });
+}
+
 // Before the resolution, never after: the layering is the whole contract.
 const envFile = loadEnvFile();
 if (envFile?.note) console.log(`dev-server: ${envFile.note}`);
@@ -257,6 +342,15 @@ if (PRINT_ONLY) {
     // A URL and a bucket name are safe to print; the two keys are not.
     if (value) console.log(`${name}=${name.endsWith("_KEY") ? "<set>" : value}`);
   }
+  // NOT started here — it holds a connection and an endpoint that runs DDL, and
+  // `--print` answers a question rather than running anything. Named instead,
+  // because "where does SUPABASE_ACCESS_TOKEN come from" is exactly the kind of
+  // thing this mode exists to answer.
+  console.log(
+    effective.SUPABASE_ACCESS_TOKEN
+      ? "SUPABASE_ACCESS_TOKEN=<set>  # your own; the stand-in stays out of the way"
+      : "SUPABASE_MANAGEMENT_URL=<a local stand-in, started on an ephemeral port>",
+  );
   process.exit(0);
 }
 
@@ -265,11 +359,18 @@ if (command.length === 0) {
   process.exit(1);
 }
 
+// After the command check and before the server starts: per-app databases are
+// created and dropped through the Management API and nothing else, so without
+// this the server would refuse them for the whole run.
+const controlPlane = await startControlPlane(platform.env);
+if (controlPlane.note) console.log(`dev-server: ${controlPlane.note}`);
+if (controlPlane.why) console.warn(`dev-server: no per-app databases — ${controlPlane.why}`);
+
 // Ctrl-C is how a dev server is MEANT to end, so it exits 0 — and the wrapper
 // stays alive until the child has drained rather than dying with it. See
 // `_run-child.mjs` for what each of those costs when it is missing.
 runChild(command, {
-  env: { ...localDev, ...platform.env },
+  env: { ...localDev, ...platform.env, ...controlPlane.env },
   label: "dev-server",
   interruptExitCode: 0,
 });

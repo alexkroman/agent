@@ -1,8 +1,9 @@
 -- Materialize the back-reference the orphan-preview sweep joins on.
 --
--- `aai-sweep-orphan-previews` (pg-cron.ts) keeps a `<project>-preview` agent
--- alive while some workspace still names it, which before this was a join on a
--- field dug out of the document:
+-- The reap (`orphan-previews.ts` in the server; it was the pg_cron job
+-- `aai-sweep-orphan-previews` when this migration was written) keeps a
+-- `<project>-preview` agent alive while some workspace still names it, which
+-- before this was a join on a field dug out of the document:
 --
 --   not exists (select 1 from aai_platform.studio_workspaces w
 --               where w.doc->>'previewSlug' = a.slug)

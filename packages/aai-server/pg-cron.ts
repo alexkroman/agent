@@ -21,24 +21,16 @@
  * {@link platformCronJobs} is the whole truth about what the platform runs.
  */
 
-import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
-import {
-  AGENT_ENV_SECRET_PREFIX,
-  APP_DB_SECRET_PREFIX,
-  PLATFORM_DB_DSN_SECRET,
-  PLATFORM_STORAGE_KEY_SECRET,
-  type SqlExec,
-} from "./secret-store.ts";
+import { PLATFORM_STORAGE_KEY_SECRET, type SqlExec } from "./secret-store.ts";
 
 /**
  * Refuse a constant that cannot be interpolated into these sweep bodies.
  *
- * Three ways an innocuous constant change would break the SQL silently: a `'`
- * would close the literal it sits in, and `%` or `_` are LIKE WILDCARDS — so a
- * suffix that grew one would start matching slugs the sweep must not delete,
- * which is a deleting sweep given a wider net with no error anywhere. Today's
- * values are plain, so this only ever fires at boot for a change that has to be
- * thought about (an `escape` clause, or a `right(slug, n) =` rewrite).
+ * Two ways an innocuous constant change would break the SQL silently: a `'`
+ * would close the literal it sits in, and `%` / `_` / `\` are LIKE wildcards.
+ * It guards ONE name now — the slug-suffix and Vault-prefix entries went with
+ * the orphan-preview sweep, which is the reap in `orphan-previews.ts` and binds
+ * its parameters instead of interpolating them.
  */
 function assertSqlLiteralSafe(value: string, name: string): string {
   if (/['%_\\]/.test(value)) {
@@ -50,18 +42,8 @@ function assertSqlLiteralSafe(value: string, name: string): string {
   return value;
 }
 
-for (const [name, value] of [
-  ["PREVIEW_SLUG_SUFFIX", PREVIEW_SLUG_SUFFIX],
-  ["AGENT_ENV_SECRET_PREFIX", AGENT_ENV_SECRET_PREFIX],
-  ["APP_DB_SECRET_PREFIX", APP_DB_SECRET_PREFIX],
-  // Both Vault NAMES the bodies look secrets up by. Neither was on this list
-  // while both were already interpolated — the same class of hazard as the
-  // prefixes above, and a `'` in either would close its literal identically.
-  ["PLATFORM_STORAGE_KEY_SECRET", PLATFORM_STORAGE_KEY_SECRET],
-  ["PLATFORM_DB_DSN_SECRET", PLATFORM_DB_DSN_SECRET],
-] as const) {
-  assertSqlLiteralSafe(value, name);
-}
+// The Vault NAME the blob-GC body looks its Storage key up by.
+assertSqlLiteralSafe(PLATFORM_STORAGE_KEY_SECRET, "PLATFORM_STORAGE_KEY_SECRET");
 
 export type CronJob = {
   /** Unique job name — `cron.schedule` upserts by it. */
@@ -114,120 +96,6 @@ const SWEEP_PREVIEW_ARCHIVE = guarded(
  * lease any longer than the sweep interval.
  */
 const SWEEP_STUDIO_SESSIONS = "delete from aai_platform.studio_sessions where expires_at <= now()";
-
-/**
- * Orphaned preview agents: `<project>-preview` deploys whose studio project
- * was deleted (project deletion removes the workspace and chat rows but the
- * preview agent — deployed through the standard deploy path — has no other
- * reaper). Matched by the workspace rows' `previewSlug` back-reference, with
- * an age floor so a preview whose workspace stamp hasn't landed yet (the
- * deploy returns before `previewSlug` is written) is never reaped mid-birth.
- *
- * The back-reference is joined through `studio_workspaces.preview_slug` — a
- * STORED generated column over `doc->>'previewSlug'`
- * (`20260810020000_preview_slug_column.sql`), indexed. Reading the field out of
- * `doc` here instead would detoast the whole project file map for every
- * workspace row, once an hour, forever; that migration's header has the
- * measurement and the reason an expression index does not fix it.
- *
- * Each reaped slug is cleaned up the way the delete route would: its app
- * database is deprovisioned FIRST (database + role, named by the `role` in the
- * stored `app-db:` meta — dropping the secret before the database would strand
- * an unreachable database whose credentials are gone), then its Vault secrets
- * (`agent-env:`/`app-db:`) go. Deprovisioning is best-effort per slug and
- * primary-cluster only — pg_cron runs here, and an app sharded to an extra
- * APP_DB_URLS cluster has no local database/role, so the drops no-op there.
- * Content-addressed blobs are accepted orphans, as everywhere else.
- *
- * **The drops go out through `dblink`, because `drop database` cannot run in
- * pg_cron's transaction** (`25001`). `dblink` opens a second connection, so the
- * statement executes outside the caller's transaction — which is what makes it
- * work and also why the drops are the LAST thing each iteration does: the remote
- * commit is independent, so a drop that has happened stays happened even if the
- * surrounding transaction rolls back. The connection string comes from Vault
- * (`PLATFORM_DB_DSN_SECRET`), never from `inet_server_addr()` — inside a cron job
- * that is the loopback address, which dblink refuses (see that constant's doc).
- *
- * When no DSN is stored the body still sweeps rows and secrets and RAISES A
- * WARNING per slug rather than skipping quietly: the databases are then genuinely
- * leaked, and an operator has to be able to find out from the log rather than by
- * noticing disk growth.
- *
- * The `-preview` suffix is therefore studio-owned: a CLI deploy that claims
- * a `*-preview` slug with no workspace referencing it will be swept.
- */
-const SWEEP_ORPHAN_PREVIEWS = `do $$
-declare
-  target record;
-  app_id text;
-  admin_dsn text;
-begin
-  -- The suffix and the two Vault prefixes below are INTERPOLATED from the
-  -- constants that define them (PREVIEW_SLUG_SUFFIX in the SDK's slug contract,
-  -- AGENT_ENV_SECRET_PREFIX/APP_DB_SECRET_PREFIX in secret-store.ts). They were
-  -- literals, which is the one shape this repo already calls out as silent data
-  -- loss: three independent things key off the suffix, and a sweep whose
-  -- prefixes have drifted from the writer's deletes nothing while reporting
-  -- nothing. assertSqlLiteralSafe above is what makes putting them in a
-  -- literal (and the suffix in a LIKE) safe rather than assumed.
-  -- Only vault.secrets needs guarding: the aai_platform tables come from
-  -- migrations, but Vault belongs to Supabase and may not be provisioned.
-  if to_regclass('vault.secrets') is null then
-    return;
-  end if;
-  -- Read once per pass, not per slug. Null is a legitimate state (a platform
-  -- booted without a resolvable dblink host) and is reported per reaped slug
-  -- below rather than here, so the message names what was actually leaked.
-  select decrypted_secret into admin_dsn from vault.decrypted_secrets
-  where name = '${PLATFORM_DB_DSN_SECRET}';
-  for target in
-    with deleted as (
-      delete from aai_platform.agents a
-      where a.slug like '%${PREVIEW_SLUG_SUFFIX}'
-        and a.updated_at < now() - interval '1 hour'
-        and not exists (
-          select 1 from aai_platform.studio_workspaces w
-          where w.preview_slug = a.slug
-        )
-      returning slug
-    )
-    select d.slug,
-      (select s.decrypted_secret from vault.decrypted_secrets s
-       where s.name = '${APP_DB_SECRET_PREFIX}' || d.slug) as app_db_meta
-    from deleted d
-  loop
-    -- Secrets go BEFORE the drops, reversing the old order deliberately. The
-    -- drops are non-transactional (dblink commits independently), so they cannot
-    -- be undone by a later failure in this iteration — which makes "drop last"
-    -- the only ordering where a mid-iteration failure leaves a state the next
-    -- pass can still finish. The stranding this used to guard against is gone
-    -- with it: the meta is already in the loop record, read before the delete.
-    delete from vault.secrets s
-    where s.name in ('${AGENT_ENV_SECRET_PREFIX}' || target.slug,
-                     '${APP_DB_SECRET_PREFIX}' || target.slug);
-    begin
-      app_id := (target.app_db_meta::jsonb)->>'role';
-      -- Same identifier shape assertion as app-database.ts, so a corrupt
-      -- meta can never steer the drops at an arbitrary database/role.
-      if app_id ~ '^app_[a-f0-9]{16}$' then
-        if admin_dsn is null then
-          raise warning 'orphan-preview sweep: no dblink DSN, LEAKING database % for slug %',
-            app_id, target.slug;
-        else
-          -- drop database cannot run here directly (25001): pg_cron wraps this
-          -- body in a transaction. dblink runs it on its own connection.
-          perform aai_admin.dblink_exec(admin_dsn,
-            format('drop database if exists %I with (force)', app_id));
-          perform aai_admin.dblink_exec(admin_dsn,
-            format('drop role if exists %I', app_id));
-        end if;
-      end if;
-    exception when others then
-      raise warning 'orphan-preview sweep: deprovision failed for %: %',
-        target.slug, sqlerrm;
-    end;
-  end loop;
-end $$`;
 
 /**
  * pg_cron's own run log. It records a row per job execution and Supabase
@@ -369,17 +237,14 @@ export type PlatformCronStorage = {
  * unschedules it rather than leaving it firing against a bucket name from a
  * previous config.
  *
- * Minutes are spread deliberately: the three hourly jobs sit at :07, :23 and
- * :51 so the busiest one (the orphan-preview sweep, which anti-joins every
- * workspace) never shares a minute with the blob GC's Storage fan-out. The daily
- * ones are spread for the same reason — the session-state sweep runs one delete
- * per app schema, so it stays off the blob GC's minute and the cron history's.
+ * Minutes are spread deliberately: no two jobs share one, so the blob GC's
+ * Storage fan-out never runs beside another sweep's scan. (:23 is free since the
+ * orphan-preview reap moved into the server — `orphan-previews.ts`.)
  */
 export function platformCronJobs(opts: { storage?: PlatformCronStorage } = {}): readonly CronJob[] {
   return [
     { name: "aai-sweep-rate-limits", schedule: "7 * * * *", command: SWEEP_RATE_LIMITS },
     { name: "aai-sweep-studio-sessions", schedule: "*/30 * * * *", command: SWEEP_STUDIO_SESSIONS },
-    { name: "aai-sweep-orphan-previews", schedule: "23 * * * *", command: SWEEP_ORPHAN_PREVIEWS },
     {
       name: "aai-sweep-preview-archive",
       schedule: "41 3 * * *",
@@ -451,7 +316,7 @@ export async function schedulePlatformSweeps(
   if (!installed) {
     throw new Error(
       "pg_cron is not installed, so the janitorial sweeps (dead rate-limit windows, " +
-        "orphaned -preview agents, unreferenced deploy blobs, runaway tenant queries) will " +
+        "unreferenced deploy blobs, archived queue jobs, runaway tenant queries) will " +
         "not run. It is declared in supabase/migrations/*_platform_schema.sql — apply " +
         "migrations against this database (`supabase db push`, or `supabase start` locally).",
     );

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, vi } from "vitest";
 import { emptyLogPage } from "./agent-logs.ts";
 import { createMemoryAgentRows } from "./agent-store.ts";
 import { type AppDatabases, appDbIdentifier } from "./app-database.ts";
+import type { DatabaseAdmin } from "./app-db-admin.ts";
 import { createMemoryBlobStorage } from "./blob-storage.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
@@ -99,6 +100,35 @@ export function fakeAppDatabases(overrides?: Partial<AppDatabases>): AppDatabase
     usage: unstubbed("usage"),
     withAppDb: unstubbed("withAppDb"),
     ...overrides,
+  };
+}
+
+/**
+ * A recording {@link DatabaseAdmin} — the Management API channel `create
+ * database` / `drop database` go out on, without speaking HTTP.
+ *
+ * There is no SQL implementation of that channel any more (see
+ * `app-db-admin.ts`), so every caller of `provisionAppDatabase` /
+ * `deprovisionAppDatabase` / `createAppDatabases` has to pass one, and a spec
+ * asserting WHICH CLUSTER a drop landed on now reads it here rather than out of
+ * the recorded SQL. `created`/`dropped` hold the identifiers in call order.
+ */
+export function fakeDatabaseAdmin(ref = "testreftestreftestre"): DatabaseAdmin & {
+  created: string[];
+  dropped: string[];
+} {
+  const created: string[] = [];
+  const dropped: string[] = [];
+  return {
+    ref,
+    created,
+    dropped,
+    createDatabase: async (id) => {
+      created.push(id);
+    },
+    dropDatabase: async (id) => {
+      dropped.push(id);
+    },
   };
 }
 

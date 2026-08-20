@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
-import { omitUndefined, PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import {
   APP_CRON_JOB_PREFIX,
@@ -10,12 +10,7 @@ import {
   SWEEP_APP_SESSION_STATE,
 } from "./_session-state-sweep.ts";
 import { CRON_JOB_PREFIX, platformCronJobs, schedulePlatformSweeps } from "./pg-cron.ts";
-import {
-  AGENT_ENV_SECRET_PREFIX,
-  APP_DB_SECRET_PREFIX,
-  PLATFORM_DB_DSN_SECRET,
-  type SqlExec,
-} from "./secret-store.ts";
+import type { SqlExec } from "./secret-store.ts";
 
 /**
  * Capture every statement; `scheduled` is what `cron.job` already holds.
@@ -110,95 +105,18 @@ test("tolerates an unschedule that finds nothing", async () => {
  */
 test("only sweeps over tables migrations do not own are guarded", () => {
   const guarded = platformCronJobs().filter((job) => job.command.includes("to_regclass"));
-  expect(guarded.map((job) => job.name).sort()).toEqual([
-    "aai-sweep-orphan-previews",
-    "aai-sweep-preview-archive",
-  ]);
+  expect(guarded.map((job) => job.name).sort()).toEqual(["aai-sweep-preview-archive"]);
 });
 
-test("the orphan-preview sweep only reaps unreferenced, aged preview slugs", () => {
-  const orphans = platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews");
-  expect(orphans).toBeDefined();
-  const command = orphans?.command ?? "";
-  // Only `-preview` slugs, never production agents.
-  expect(command).toContain("like '%-preview'");
-  // The workspace back-reference is what marks a preview as live, joined
-  // through the indexed generated column rather than dug out of `doc` — see
-  // 20260810020000_preview_slug_column.sql.
-  expect(command).toContain("w.preview_slug = a.slug");
-  expect(command).not.toContain("doc->>'previewSlug'");
-  // Age floor: a preview whose workspace stamp hasn't landed yet is not an
-  // orphan.
-  expect(command).toContain("interval '1 hour'");
-  // The slug's Vault secrets go with the row.
-  expect(command).toContain("'agent-env:' || target.slug");
-  expect(command).toContain("'app-db:' || target.slug");
-});
-
-test("the sweep's suffix and Vault prefixes come from the constants, not literals", () => {
-  // These three strings are spelled in SQL that no type-checker relates to the
-  // writers, and the guide names PREVIEW_SLUG_SUFFIX's consumers explicitly
-  // "because a disagreement is silent data loss" — a sweep whose prefix has
-  // drifted deletes nothing and says nothing. Asserting against the CONSTANTS
-  // rather than the strings is what makes this a link instead of a second copy.
-  const command = platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews")?.command;
-  expect(command).toContain(`like '%${PREVIEW_SLUG_SUFFIX}'`);
-  expect(command).toContain(`'${AGENT_ENV_SECRET_PREFIX}' || target.slug`);
-  expect(command).toContain(`'${APP_DB_SECRET_PREFIX}' || target.slug`);
-  expect(command).toContain(`'${APP_DB_SECRET_PREFIX}' || d.slug`);
-  // ...and the interpolation is only safe while the values carry no quote and
-  // no LIKE wildcard, which the module asserts at import.
-  for (const value of [PREVIEW_SLUG_SUFFIX, AGENT_ENV_SECRET_PREFIX, APP_DB_SECRET_PREFIX]) {
-    expect(value).not.toMatch(/['%_\\]/);
-  }
-});
-
-test("the orphan-preview sweep deprovisions the app database like the delete route", () => {
-  const orphans = platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews");
-  const command = orphans?.command ?? "";
-  // Database + role go the way deprovisionAppDatabase drops them…
-  expect(command).toContain("drop database if exists %I with (force)");
-  expect(command).toContain("drop role if exists %I");
-  // …named by the stored app-db meta, shape-asserted like app-database.ts
-  // so a corrupt meta can never steer the drops at an arbitrary identifier.
-  expect(command).toContain("->>'role'");
-  expect(command).toContain("'^app_[a-f0-9]{16}$'");
-  // Best-effort: a failed drop must not abort the sweep (or the row delete).
-  expect(command).toContain("exception when others");
-});
-
-test("the orphan-preview sweep drops the database through dblink, not directly", () => {
-  // `drop database` cannot run in pg_cron's transaction (25001), so it goes out
-  // on dblink's own connection. Asserted as a shape because the failure mode is
-  // an hourly warning swallowed by the body's own exception handler — i.e. a
-  // sweep that deletes rows and reclaims nothing.
-  const command =
-    platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews")?.command ?? "";
-  expect(command).toContain("aai_admin.dblink_exec");
-  // Qualified with the schema the migration installs it into, and NOT reachable
-  // unqualified: dblink ships 39 PUBLIC-executable functions, so a tenant that
-  // can resolve them can execute as the admin.
-  expect(command).not.toMatch(/(?<!aai_admin\.)\bdblink_exec\(/);
-  // The DSN comes from Vault, never from the job text (plaintext in cron.job)
-  // and never from inet_server_addr() — inside a cron job that is the LOOPBACK
-  // address, which dblink refuses with 2F003.
-  expect(command).toContain(PLATFORM_DB_DSN_SECRET);
-  expect(command).not.toContain("inet_server_addr");
-  // A missing DSN is announced per leaked database rather than skipped quietly.
-  expect(command).toContain("LEAKING database");
-});
-
-test("the orphan-preview sweep deletes secrets BEFORE the non-transactional drops", () => {
-  // dblink commits independently, so a drop cannot be undone by a later failure
-  // in the same iteration. That makes "drop last" the only ordering where a
-  // mid-iteration failure leaves a state the next pass can finish.
-  const command =
-    platformCronJobs().find((j) => j.name === "aai-sweep-orphan-previews")?.command ?? "";
-  expect(command.indexOf("delete from vault.secrets")).toBeLessThan(
-    command.indexOf("drop database if exists"),
-  );
-});
-
+/**
+ * The orphan-preview reap is NOT here any more: it deprovisions through the
+ * Management API, which SQL cannot call, so it runs in the server
+ * (`orphan-previews.ts`, and its own spec). What used to be asserted about its
+ * job body — the suffix, the workspace anti-join, the age floor, the dblink
+ * drops and their ordering — moved with it, and the parts that were only true of
+ * a cron body (interpolated constants, an exception handler swallowing a failed
+ * drop) are gone rather than restated.
+ */
 test("lease sweeps delete only expired rows", () => {
   const limits = platformCronJobs().find((j) => j.name === "aai-sweep-rate-limits");
   expect(limits?.command).toContain("reset_at <= now()");

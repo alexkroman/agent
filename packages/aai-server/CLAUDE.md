@@ -133,23 +133,30 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   `PlatformEvents.health()` reports it in `/health`'s BODY — never as a 503,
   since the causes are project-wide and every replica would leave rotation at
   once, turning a feature outage into a total one.
-- `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
-  orphaned `-preview` agents + their app database/role and Vault secrets,
-  unreferenced deploy blobs, runaway tenant queries, pg_cron's own run log),
-  installed idempotently at boot.
+- `orphan-previews.ts` — the reap for studio previews nothing references: a
+  leader-elected in-process pass (same shape as the wake sweep) that SELECTS aged
+  `*-preview` agents no workspace points at and hands each to
+  `deleteAgentResources`, so the reap and `DELETE /:slug` are one path.
 
-  **The orphan sweep drops its databases through `dblink`, because `DROP DATABASE`
-  cannot run in pg_cron's transaction** (`25001`). dblink runs it on a second
-  connection, so it is outside the caller's transaction — and it SURVIVES a
-  rollback, which is why the drops must be the LAST thing a job body does. Three
-  things it needs, each verified and each argued at its own site: a non-loopback
-  host (`AAI_DBLINK_HOST` — over loopback a `trust` rule means the password is
-  never used and dblink answers `2F003`), the credential from Vault
-  (`PLATFORM_DB_DSN_SECRET`, never the job text), and the extension in a schema
-  NOTHING has `USAGE` on (`aai_admin`) — dblink ships 39 `PUBLIC`-executable
-  functions and a tenant reaching any of them executes as the ADMIN. That
-  escalation was reproduced; revoking the overloads by name does not hold, the
-  schema is the only chokepoint that does.
+  It ran in pg_cron until per-app databases moved to the Management API; the
+  module doc carries what that bought (multi-cluster correctness, no leak path,
+  a crash that is retryable because the ROW goes last) and what it cost (a reap
+  needs a live replica, which the wake sweep already required).
+- `pg-cron.ts` — janitorial sweeps as pg_cron jobs (dead rate-limit windows,
+  archived queue jobs, unreferenced deploy blobs, runaway tenant queries,
+  pg_cron's own run log), installed idempotently at boot.
+
+  **The orphan-preview reap is NOT one of them any more — see
+  `orphan-previews.ts`.** It deprovisioned in SQL, which meant `drop database`
+  through `dblink` (pg_cron wraps every body in a transaction, `25001`), and that
+  was the last second implementation of deprovisioning once create/drop moved to
+  the Management API. It was also the weaker one: primary-cluster only, so it
+  reclaimed nothing on a sharded fleet, and with no resolvable DSN it deleted the
+  row and LEAKED the database with a warning. It is now a leader-elected
+  in-process pass calling `deleteAgentResources` — the one delete path — and
+  `platformDbDsn`, `PLATFORM_DB_DSN_SECRET` and `AAI_DBLINK_HOST` went with it.
+  The `aai_admin` dblink extension stays installed (unused, and no `USAGE`
+  granted) so a rollback needs no migration.
 
   **Per-app maintenance is `cron.schedule_in_database` instead** — pg_cron 1.6.4,
   usable by Supabase's non-superuser `postgres`, and it really fires into a
@@ -300,10 +307,10 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   warning and continuing — which deleted the `app-db:<slug>` secret and the
   agents row, leaving the tenant schema and login role alive with their only
   credential record gone and nothing naming the slug (`slugs()` no longer lists
-  it; the orphan sweep matches `%-preview` only). The comment claimed "a later
-  retry can finish the job"; there was none. Throwing makes it true: nothing is
-  deleted, and the drops are `if exists` so a retry is a no-op on whatever the
-  first attempt managed
+  it; the orphan-preview reap matches `%-preview` only). The comment claimed
+  "a later retry can finish the job"; there was none. Throwing makes it true:
+  nothing is deleted, and the drops are `if exists` so a retry is a no-op on
+  whatever the first attempt managed
 - `secret-handler.ts` — secret management
 - `secret-store.ts` — `SecretStore` interface: Supabase Vault
   (`createVaultSecretStore`, over the `SUPABASE_DB_URL` Postgres
@@ -321,41 +328,41 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `app-database.ts` — per-app Postgres DATABASE/role provisioning in the
   platform's Supabase instance (`provisionAppDatabase`,
   `deprovisionAppDatabase`, `withAppDb`).
-
   **A DATABASE per app, not a schema, and the Workflow DevKit is why.**
-  `@workflow/world-postgres` puts its run journal in a `workflow` schema and its
-  queue in `graphile_worker` — DATABASE-level names it cannot nest inside
-  `app_<hex>`. Creating them needs `CREATE ON DATABASE`, which a shared database
-  cannot grant a tenant, so the DevKit's migration failed
-  `42501 permission denied for database postgres` and every durable workflow
-  silently had nowhere to live. Measured on PG 17.6: under the old grants both
-  `create schema` statements are denied; inside the app's own database both
-  succeed. It also closes a catalog leak for free — an app role could enumerate
-  every other tenant's schema and role name out of `pg_namespace`/`pg_roles`.
+  `@workflow/world-postgres` needs a `workflow` and a `graphile_worker` schema —
+  DATABASE-level names that cannot nest inside `app_<hex>` and whose creation
+  needs `CREATE ON DATABASE`, which a shared database cannot grant a tenant, so
+  the DevKit's migration failed `42501 permission denied for database postgres`
+  and every durable workflow silently had nowhere to live (PG 17.6; the module
+  doc has the A/B). It also closes a catalog leak — an app role could enumerate
+  every other tenant's schema and role out of `pg_namespace`/`pg_roles`.
 
-  Three properties the module doc argues in full, each learned by getting it
-  wrong: the database is owned by the ADMIN role (a non-superuser cannot drop a
-  database it does not own — `42501 must be owner of database` — even one it
-  created); **`revoke connect … from public` IS the tenant boundary** now, since
-  Postgres grants `CONNECT` on a new database to `PUBLIC`; and `grant … on schema
-  public` is required because PG15+ makes `public` writable by nobody else.
-  `search_path` pinning is gone — an app owns `public` in its own database.
+  Three properties the module doc argues: the database is owned by the ADMIN
+  role, **`revoke connect … from public` IS the tenant boundary** (Postgres grants
+  `CONNECT` to `PUBLIC`), and `grant … on schema public` is required because PG15+
+  makes it writable by nobody else. `search_path` pinning is gone.
 
-  **Deprovision follows the app's stored LOCATOR, never a recomputed
-  placement**, and so does `usage`: changing `APP_DB_URLS` re-shuffles every
-  existing app, so the `url` in its `app-db:<slug>` meta is the only record of
-  where it lives. `AppDatabases.deprovision`'s own doc comment carries what
-  recomputing costs — silent no-op drops beside a deleted credential, i.e. tenant
-  data left unreachable with nothing raised — and why a meta-less sweep of every
-  cluster is safe. Read it there.
+  **Deprovision follows the app's stored LOCATOR, never a recomputed placement**,
+  and so does `usage`: changing `APP_DB_URLS` re-shuffles every existing app, so
+  the `url` in its `app-db:<slug>` meta is the only record of where it lives.
+  What recomputing costs is on `AppDatabases.deprovision`.
 
   **The per-tenant caps differ in strength, and only two are controls.**
-  `connection limit` is superuser-only to raise and `temp_file_limit` is
-  `SUSET` (lowerable, never raisable), but `statement_timeout` is `USERSET` —
-  tenant code holding the credential can `set statement_timeout = 0`. The 10s
-  setting is what a well-behaved app sees; the enforceable half is
-  `aai-sweep-app-db-runaways`, which terminates `app\_%` backends active past
-  a much higher ceiling. Never treat the role setting as isolation.
+  `connection limit` is superuser-only to raise and `temp_file_limit` is `SUSET`
+  (lowerable, never raisable), but `statement_timeout` is `USERSET` — tenant code
+  holding the credential can `set statement_timeout = 0`. The enforceable half is
+  `aai-sweep-app-db-runaways`, which terminates `app\_%` backends active past a
+  much higher ceiling. Never treat the role setting as isolation.
+- `app-db-admin.ts` + `supabase-management.ts` — **`create database` / `drop
+  database` go through the Supabase MANAGEMENT API (`supabase-management-js`) and
+  nothing else does**, so `SUPABASE_ACCESS_TOKEN` plus a project ref
+  (`SUPABASE_PROJECT_REF`, else derived per cluster) is required alongside
+  `SUPABASE_DB_URL`. No SQL fallback: boot refuses without it, and local dev gets
+  a loopback STAND-IN (`dev-management-api.ts`, started by `dev-server.mjs`) so
+  the dev flow takes the production path instead of a second one. The rest stays
+  SQL on the admin connection, which must therefore BE the project's `postgres`
+  role. All three module docs carry the argument.
+
 - `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
   toggling the app's database, plus the reads over it: `storageUsage` (how
   much is in it) and, over `app-db-browse.ts`, `storageTables` /
