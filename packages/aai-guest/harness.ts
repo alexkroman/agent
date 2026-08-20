@@ -76,6 +76,7 @@ import { mainAgent } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
 import { emptyHarnessState, type HarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
+import { installLeakWatch } from "./harness-leak-watch.ts";
 import { captureGuestOutput } from "./harness-logs.ts";
 import {
   handleHostResponse,
@@ -199,6 +200,11 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
 
 function main(): void {
   installCrashGuards();
+  // After the crash guards and before the capture: Node warns about a listener
+  // leak exactly ONCE per emitter and then never again, so this is what turns
+  // that single line into a report that keeps pace with the leak. Its own
+  // module doc carries the measurement.
+  installLeakWatch();
   // Before anything else can write: this tees both process streams into the
   // ring `GET /manage/logs` serves, and every line produced before it is
   // installed is a line the studio's Logs pane cannot show.
