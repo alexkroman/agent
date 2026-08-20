@@ -281,7 +281,7 @@ export function useWorkflowSubmit<R = unknown>(
       // A submission that is starting takes the pause controls from whatever was
       // there before, so a stale gate cannot park the new one.
       session.current?.gate.cancel();
-      const current = createUploadSession();
+      const current = createUploadSession(workflow);
       session.current = current;
       try {
         const options = omitUndefined({ key });

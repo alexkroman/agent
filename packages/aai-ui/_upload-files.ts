@@ -14,6 +14,7 @@
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadParallel } from "@alexkroman1/aai/workflow-api";
+import { forgetUploadId, recallUploadId, rememberUploadId } from "./_upload-recall.ts";
 import {
   createUploadGate,
   randomUploadId,
@@ -37,19 +38,83 @@ import type { WorkflowApi } from "./workflow-client.ts";
  * minted per attempt would make each round a fresh upload of the whole file.
  */
 export type UploadSession = {
+  /**
+   * What this form's remembered ids are filed under (`_upload-recall.ts`).
+   *
+   * The workflow's name, so two forms on one page do not read each other's
+   * entries. It is not a SAFETY boundary and does not need to be — a recalled id
+   * is checked against the agent before anything is sent to it — it just keeps a
+   * form from spending a round trip on another form's upload.
+   */
+  scope: string;
   /** The id each file is being stored under, minted once. */
   ids: Map<File, string>;
   /** Files whose every byte has landed, by the id they landed under. */
   stored: Map<File, string>;
-  /** Files that have had an attempt, so the next one must claim the id as its own. */
+  /**
+   * Files that have had an attempt, so the next one must claim the id as its own.
+   *
+   * `sendThroughGate` tracks this itself WITHIN one file's attempts. What this
+   * carries is the attempt made by a page load that is gone: an id recalled from
+   * storage was claimed by whoever minted it, so the first attempt of this load is
+   * a resume even though this load has sent nothing.
+   */
   tried: Set<File>;
   /** The person's pause. */
   gate: UploadGate;
 };
 
-/** A fresh session for one submission. */
-export function createUploadSession(): UploadSession {
-  return { ids: new Map(), stored: new Map(), tried: new Set(), gate: createUploadGate() };
+/** A fresh session for one submission of `workflow`. */
+export function createUploadSession(workflow: string): UploadSession {
+  return {
+    scope: workflow,
+    ids: new Map(),
+    stored: new Map(),
+    tried: new Set(),
+    gate: createUploadGate(),
+  };
+}
+
+/**
+ * The id to store this file under: the one a previous page load was using, or a
+ * fresh one.
+ *
+ * **The AGENT decides, never the fingerprint.** Two files can agree on every
+ * field `_upload-recall.ts` keys by, so the recalled id is a candidate that has to
+ * be checked before a byte is sent to it — and the check is cheap and exact,
+ * because `uploadInfo` is the same record a resume already reads.
+ *
+ * Three answers, and the third is why this is not just a storage lookup:
+ *
+ * - **Complete.** Every byte is in from a load that is gone, so there is nothing
+ *   to send: the caller takes the id and starts the run. This is the refresh that
+ *   costs one `GET` instead of a second 200 MB upload.
+ * - **Unfinished, with windows.** `UploadInfo.ranges` is what makes an
+ *   upload resumable at all, so the id is reused and the attempt claims it.
+ * - **Anything else.** A 404 (swept, or never seen), a failure, or an unfinished
+ *   upload reporting NO windows — which is a partial single `PUT`, and a second
+ *   `PUT` to that id is a 409 rather than an append (`streamUploadFile`). Reusing
+ *   it would turn a reload into a failure the person cannot clear, so the entry is
+ *   dropped and the file gets a fresh id.
+ */
+async function claimId(
+  api: WorkflowApi,
+  session: UploadSession,
+  file: File,
+): Promise<{ id: string; complete: boolean }> {
+  const remembered = recallUploadId(session.scope, file);
+  if (remembered === undefined) return { id: randomUploadId(), complete: false };
+  // A rejection is an ANSWER here rather than something to retry: the file is in
+  // hand and sending it is always available, so there is nothing this could be
+  // waiting for.
+  const info = await api.uploadInfo(remembered).catch(() => undefined);
+  if (info?.complete === true) return { id: remembered, complete: true };
+  if (info !== undefined && (info.ranges?.length ?? 0) > 0) {
+    session.tried.add(file);
+    return { id: remembered, complete: false };
+  }
+  forgetUploadId(session.scope, file);
+  return { id: randomUploadId(), complete: false };
 }
 
 /**
@@ -97,12 +162,26 @@ export async function uploadFiles(
     index += 1;
     const done = session.stored.get(file);
     if (done !== undefined) return done;
-    let id = session.ids.get(file);
-    if (id === undefined) {
-      id = randomUploadId();
-      session.ids.set(file, id);
-    }
     const position = { name: file.name, index, count };
+    const known = session.ids.get(file);
+    const claimed =
+      known === undefined ? await claimId(api, session, file) : { id: known, complete: false };
+    const id = claimed.id;
+    if (known === undefined) {
+      session.ids.set(file, id);
+      // Remembered before the first byte leaves — see `rememberUploadId`. A
+      // recalled id is re-written rather than skipped, which is what keeps the file
+      // being uploaded RIGHT NOW from ageing out of a full store.
+      rememberUploadId(session.scope, file, id);
+    }
+    if (claimed.complete) {
+      // Every byte was already in, from a load that is gone. Reported full rather
+      // than skipped in silence, so a submission whose first of three files is
+      // already stored still counts "1 of 3" over a bar that reached the end.
+      report({ ...position, loaded: file.size, total: file.size, fraction: 1, paused: false });
+      session.stored.set(file, id);
+      return id;
+    }
     await sendThroughGate(session.gate, async (resume) => {
       await api.uploadStream(id, file, {
         name: file.name,
@@ -115,7 +194,12 @@ export async function uploadFiles(
         // Files stay SEQUENTIAL above whatever this says: `parallel` splits ONE
         // file across connections, and a form sending two recordings at once would
         // still have them competing for the same link with two bars to explain it.
-        ...omitUndefined({ parallel, resume: resume ? true : undefined }),
+        // A recalled id was claimed by the load that minted it, so this load's FIRST
+        // attempt is already a resume — which is what `session.tried` carries.
+        ...omitUndefined({
+          parallel,
+          resume: resume || session.tried.has(file) ? true : undefined,
+        }),
       });
     });
     session.stored.set(file, id);
