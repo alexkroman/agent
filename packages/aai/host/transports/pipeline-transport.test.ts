@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { getMaxListeners } from "node:events";
 import { describe, expect, test, vi } from "vitest";
 import type { SttOpener, SttSession } from "../../sdk/providers.ts";
 import {
@@ -575,5 +576,44 @@ describe("PipelineTransport", () => {
       for (const text of ["hi", "hello", "still there?"]) expect(prompt).toContain(text);
       await t.stop();
     });
+  });
+});
+
+describe("session signal listener budget", () => {
+  // An `AbortSignal` is an EventTarget, and Node's max-listeners warning covers
+  // EventEmitter ONLY — so without this opt-in a per-turn listener that is never
+  // removed accumulates on the session signal for the whole call with NOTHING
+  // reported. The signal reaches the STT opener, which is where a spec can see
+  // the same object the transport opted in.
+  test("opts the session signal into Node's leak warning", async () => {
+    const { opts, stt } = makeOpts();
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    const signal = stt.last()?.opts.signal;
+    expect(signal).toBeDefined();
+    // A signal nobody opted in answers Node's default of 10, so a distinct
+    // finite value is the observable proof the call happened.
+    expect(getMaxListeners(signal as AbortSignal)).toBe(50);
+
+    await t.stop();
+  });
+
+  test("the budget is above what a live turn legitimately holds", async () => {
+    const { opts, stt } = makeOpts();
+    const t = createPipelineTransport(opts);
+    await t.start();
+    const signal = stt.last()?.opts.signal as AbortSignal;
+    stt.last()?.fireFinal("hello there");
+    await vi.advanceTimersByTimeAsync(50);
+
+    // A turn attaches several at once (its `AbortSignal.any` composite, the TTS
+    // drain, the provider sessions), so a budget at Node's default of 10 would
+    // warn on healthy traffic — which is the failure mode that trains people to
+    // raise the number until it never fires again.
+    expect(getMaxListeners(signal)).toBeGreaterThan(10);
+    expect(getMaxListeners(signal)).toBeLessThan(Number.POSITIVE_INFINITY);
+
+    await t.stop();
   });
 });

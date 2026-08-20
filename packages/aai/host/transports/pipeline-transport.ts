@@ -7,6 +7,7 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
+import { setMaxListeners } from "node:events";
 import type { Message } from "../../sdk/types.ts";
 import { normalizeSpeechText } from "../../sdk/utils.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
@@ -29,6 +30,17 @@ import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
 import type { SendTtsOptions, Transport } from "./types.ts";
+
+/**
+ * `abort` listeners one session's signal may hold before Node calls it a leak.
+ *
+ * A LEAK threshold, not a capacity one — see the `setMaxListeners` call below
+ * for why the signal needs opting in at all and why nothing legitimate comes
+ * near this. Raising it to silence a warning is the wrong move: the warning
+ * fires ONCE per signal and then never again however far the count climbs, so a
+ * number chosen to be quiet is a number that reports nothing.
+ */
+const SESSION_SIGNAL_MAX_LISTENERS = 50;
 
 export type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
 
@@ -59,6 +71,20 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const emitError = createEmitError(callbacks);
 
   const sessionAbort = new AbortController();
+  // An `AbortSignal` is an EventTarget, and Node's max-listeners warning covers
+  // `EventEmitter` ONLY — 12 `addEventListener("abort", …)` on a signal produce
+  // no warning at all, where 11 on an emitter produce one. This signal lives for
+  // the whole CALL while almost everything attaching to it is per-TURN, so it is
+  // the one place in this transport where a missing `removeEventListener` would
+  // accumulate silently for the length of a conversation. Opting the signal in
+  // buys the same alarm the emitters get for free.
+  //
+  // 50 rather than the default 10 because a legitimate turn holds several at
+  // once — the turn's `AbortSignal.any` composite, the speculation's, the TTS
+  // drain, each provider session — and a barge-in can overlap two turns'
+  // teardown. The number is a LEAK threshold, not a capacity one: nothing here
+  // approaches it, so a run that reaches it is a bug rather than a busy call.
+  setMaxListeners(SESSION_SIGNAL_MAX_LISTENERS, sessionAbort.signal);
   // Turn-crash handler for turnChain.chain call sites — see turnCrashLogger.
   const logTurnCrash = turnCrashLogger(log, opts.sid);
   let terminated = false;
