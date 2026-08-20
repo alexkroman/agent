@@ -122,17 +122,20 @@ describeWithStack("the pg_cron sweep bodies", () => {
     // file exists to end. The blob GC is named because it is the one that is
     // CONDITIONAL on a storage config — with none, `platformCronJobs()` omits it
     // and every assertion below would quietly cover one sweep less.
-    // 7 since the session-state sweep left this list: it is one job per APP now,
-    // scheduled into that app's own database by `provisionAppDatabase`, because
-    // per-app databases put a tenant's tables outside this database's catalog
-    // entirely (`_session-state-sweep.ts`). Lowered deliberately — a floor is only
-    // a floor while it matches the real count.
-    expect(JOBS.length).toBeGreaterThanOrEqual(7);
+    // Lowered as jobs leave this list, deliberately and each time: a floor is only
+    // a floor while it matches the real count. 8 → 7 when the session-state sweep
+    // became one job per APP, scheduled into that app's own database because
+    // per-app databases put a tenant's tables outside this catalog entirely
+    // (`_session-state-sweep.ts`); 7 → 6 when the orphan-preview reap moved into
+    // the server, because its drop is a Management API call and SQL cannot make
+    // one (`orphan-previews.ts`).
+    expect(JOBS.length).toBeGreaterThanOrEqual(6);
     expect(JOBS.map((j) => j.name)).toContain("aai-sweep-blob-gc");
-    // And the one that left is really gone from here, rather than renamed: a
-    // platform job sweeping a catalog that no longer holds tenant tables would run
-    // daily and reclaim nothing.
+    // And the two that left are really gone from here, rather than renamed: a
+    // platform job sweeping a catalog that no longer holds what it looks for runs
+    // on its schedule forever and reclaims nothing.
     expect(JOBS.map((j) => j.name)).not.toContain("aai-sweep-session-state");
+    expect(JOBS.map((j) => j.name)).not.toContain("aai-sweep-orphan-previews");
   });
 
   test.each(JOBS.filter((j) => !NEEDS_CRON_SCHEMA(j)).map((j) => [j.name, j.command] as const))(
