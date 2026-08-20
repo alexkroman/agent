@@ -1,5 +1,23 @@
 # @alexkroman1/aai-server
 
+## 3.6.0
+
+### Minor Changes
+
+- 46db894: The orphan-preview reap moves out of pg_cron into the server: a leader-elected in-process pass that reaps through deleteAgentResources, the same delete path DELETE /:slug uses. Deleting its SQL body removes the last second implementation of deprovisioning, along with dblink's whole support cast (platformDbDsn, PLATFORM_DB_DSN_SECRET, AAI_DBLINK_HOST) — and fixes the reap on sharded fleets, where the SQL version silently reclaimed nothing.
+- 46db894: Per-app database create/drop now go through the Supabase Management API (supabase-management-js) instead of DDL on the platform admin connection. There is no SQL fallback: SUPABASE_ACCESS_TOKEN (plus a project ref, derived from SUPABASE_DB_URL or set via SUPABASE_PROJECT_REF) is required alongside SUPABASE_DB_URL outside local dev, and a local run without it has no per-app databases at all.
+
+### Patch Changes
+
+- 46db894: Local dev gets a loopback stand-in for the Supabase Management API (dev-management-api.ts, started by dev-server.mjs), so per-app databases work on the local stack while the server still takes the production create/drop code path. A scenario suite provisions and drops a real database through the real SDK over HTTP against it.
+- Updated dependencies [ebd3c39]
+- Updated dependencies [203c2d4]
+- Updated dependencies [bbde9f9]
+- Updated dependencies [a8e74a9]
+  - @alexkroman1/aai-ui@6.9.0
+  - @alexkroman1/aai@6.9.0
+  - aai-guest@0.4.27
+
 ## 3.5.19
 
 ### Patch Changes
