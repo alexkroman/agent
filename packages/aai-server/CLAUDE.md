@@ -350,10 +350,11 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   database` go through the Supabase MANAGEMENT API (`supabase-management-js`) and
   nothing else does**, so `SUPABASE_ACCESS_TOKEN` plus a project ref
   (`SUPABASE_PROJECT_REF`, else derived per cluster) is required alongside
-  `SUPABASE_DB_URL`. No SQL fallback: without it there are no per-app databases
-  at all — boot refuses outside local dev, storage 503s inside it. The rest stays
+  `SUPABASE_DB_URL`. No SQL fallback: boot refuses without it, and local dev gets
+  a loopback STAND-IN (`dev-management-api.ts`, started by `dev-server.mjs`) so
+  the dev flow takes the production path instead of a second one. The rest stays
   SQL on the admin connection, which must therefore BE the project's `postgres`
-  role. Both module docs carry the argument.
+  role. All three module docs carry the argument.
 
 - `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
   toggling the app's database, plus the reads over it: `storageUsage` (how
