@@ -1296,8 +1296,8 @@ The service image installs, then builds, and the two halves have deliberately
 different cache keys:
 
 1. **Install inputs only** — the lockfile, `pnpm-workspace.yaml`, `.npmrc`,
-   and every workspace manifest, staged into a temp dir by
-   `_stage_install_inputs`.
+   every workspace manifest, and every patch file `patchedDependencies` names,
+   staged into a temp dir by `_stage_install_inputs`.
 2. `pnpm install --frozen-lockfile`.
 3. **The source tree** (`add_local_dir(REPO_ROOT, …)`), which merges into the
    installed `/app` rather than replacing it — `BUILD_IGNORE` keeps
@@ -1351,6 +1351,13 @@ verbatim, the install layer would therefore miss on every production deploy.
 `version` and `scripts` are dropped, so the layer survives a release and
 misses only on a real dependency change. The full manifests still land in the
 source layer, so the built image carries each package's true version.
+
+**A `patchedDependencies` entry names a FILE, and that file is an install
+input** — the yaml is copied byte-for-byte, so a declared patch not staged
+beside it fails the layer with `ENOENT: … open '/app/patches/<name>.patch'`
+while pnpm hashes it against the lockfile. Every other signal is green, the
+patch being in the tree. `_patch_paths` carries why it derives the paths and
+raises on a declaration it cannot read; `modal-image-inputs.test.ts` pins it.
 
 **The image also bakes the SERVER's V8 compile cache**, the same trick the
 guest snapshot bakes for the harness. After `BUILD_COMMAND`, a build step runs

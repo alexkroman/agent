@@ -23,6 +23,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -141,6 +142,54 @@ INSTALL_MANIFEST_FIELDS = (
 # the source layer replaces the normalized manifests).
 INSTALL_ROOT_FILES = ("pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc")
 
+# `patchedDependencies` in the workspace yaml names a patch FILE per dependency,
+# and pnpm reads that file during install to verify the patched tarball against
+# the hash the lockfile records. So copying the yaml byte-for-byte above without
+# the files it points at makes the install layer fail outright:
+#
+#     ENOENT: no such file or directory, open '/app/patches/<name>.patch'
+#
+# The paths are DERIVED from the declaration rather than listed, because a
+# listed `patches/` would be a second place to remember: the whole failure is
+# that the declaration and the staged tree disagreed. Regex rather than a YAML
+# parse because the deploy environment is `pip install modal` and nothing else
+# (see .github/workflows/deploy.yml) — the block is a flat map of scalars, and a
+# declaration this cannot read fails loudly below rather than staging nothing.
+PATCHED_DEPENDENCIES_KEY = re.compile(r"^patchedDependencies:", re.M)
+PATCHED_DEPENDENCIES_BLOCK = re.compile(
+    r"^patchedDependencies:[ \t]*\n((?:[ \t]+\S.*\n)+)", re.M
+)
+
+
+def _patch_paths(workspace_yaml: str) -> list[str]:
+    """The repo-relative patch files `patchedDependencies` names, if any.
+
+    Pure — takes the yaml TEXT, so every filesystem read in this module stays
+    inside `_stage_install_inputs`, behind its `modal.is_local()` guard. See
+    that docstring for why a repo read outside it crash-loops the container.
+    """
+    block = PATCHED_DEPENDENCIES_BLOCK.search(workspace_yaml)
+    # The key is quoted and holds an `@version`, so split on the LAST colon.
+    paths = (
+        [
+            value
+            for line in block.group(1).splitlines()
+            if (value := line.rpartition(":")[2].strip().strip("\"'"))
+        ]
+        if block is not None
+        else []
+    )
+    # A declaration this cannot read — flow style, or a body the block regex
+    # does not match — must not degrade to staging nothing: that is exactly the
+    # ENOENT above, one layer later and with no clue pointing here.
+    if not paths and PATCHED_DEPENDENCIES_KEY.search(workspace_yaml):
+        raise RuntimeError(
+            "pnpm-workspace.yaml declares patchedDependencies but no patch path "
+            "could be read from it — see _patch_paths in scripts/modal_image.py"
+        )
+    return paths
+
+
 # Workspace members, mirroring `pnpm-workspace.yaml`. A new glob there needs a
 # matching entry here or its package is missing at install time — which
 # `--frozen-lockfile` reports as a lockfile mismatch, loudly, at image build.
@@ -185,6 +234,11 @@ def _stage_install_inputs() -> Path:
 
     for name in INSTALL_ROOT_FILES:
         shutil.copyfile(REPO_ROOT / name, staged / name)
+
+    for rel in _patch_paths((REPO_ROOT / "pnpm-workspace.yaml").read_text()):
+        destination = staged / rel
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO_ROOT / rel, destination)
 
     manifests = [Path("package.json")]
     for pattern in WORKSPACE_MANIFEST_GLOBS:
