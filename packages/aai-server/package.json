@@ -34,6 +34,7 @@
     "quick-lru": "^7.3.0",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "supabase-management-js": "^2.0.2",
     "tailwindcss": "catalog:",
     "ws": "catalog:",
     "zod": "catalog:"

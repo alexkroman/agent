@@ -31,7 +31,6 @@
     "packages/aai-guest/studio-session-init.test.ts": 2,
     "packages/aai-guest/studio-turn-stream.test.ts": 2,
     "packages/aai-server/app-database.test.ts": 1,
-    "packages/aai-server/app-database.ts": 2,
     "packages/aai-server/modal-agent-sandbox.test.ts": 1,
     "packages/aai-server/modal-context.test.ts": 1,
     "packages/aai-server/modal-harness-image.test.ts": 4,

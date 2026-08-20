@@ -36,7 +36,14 @@ Required Modal Secret named ``aai-server`` with (at least):
   needs no credential of its own. Also the sentinel that distinguishes a
   production boot from local dev (see ``isLocalDev``)
 - ``SUPABASE_DB_URL`` — service-role Postgres connection string (Vault
-  secrets + per-app databases)
+  secrets + per-app databases). Must be the project's own ``postgres`` role:
+  a per-app database is created by the Management API as ``postgres``, and
+  ``revoke connect on database`` requires ownership of it
+- ``SUPABASE_ACCESS_TOKEN`` — Supabase personal access token (``sbp_...``).
+  ``create database`` / ``drop database`` for per-app databases go through the
+  Supabase Management API and have no SQL fallback, so without this the server
+  REFUSES TO BOOT. Optionally ``SUPABASE_PROJECT_REF`` when the project ref
+  cannot be derived from ``SUPABASE_DB_URL``
 - ``SUPABASE_URL`` / ``SUPABASE_PUBLISHABLE_KEY`` — Supabase Auth (studio
   browser/CLI email login; the publishable ``sb_publishable_...`` key from
   the dashboard's API Keys page). Missing means browser login is disabled

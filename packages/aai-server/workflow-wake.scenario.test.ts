@@ -47,7 +47,7 @@ import {
 import type { BrokeredSession } from "./sandbox-broker.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { APP_DB_SECRET_PREFIX, createVaultSecretStore } from "./secret-store.ts";
-import { createTestStore } from "./test-utils.ts";
+import { createTestStore, fakeDatabaseAdmin } from "./test-utils.ts";
 import { createWorkflowWakeSweep } from "./workflow-wake.ts";
 
 /**
@@ -208,6 +208,11 @@ describeWithPg("durable-run wake over a real Postgres", () => {
         const db = createPostgresDb({ url: appUrl, max: 1 });
         return { query: (query, params) => db.query(query, params), close: () => db.close() };
       },
+      // Create/drop are Supabase Management API calls, and this stack is a local
+      // Postgres with no control plane — so the two databases above are made by
+      // hand and this suite never provisions through the channel. A recording
+      // fake keeps that explicit rather than reaching for a live token.
+      admin: fakeDatabaseAdmin(),
     });
   });
 

@@ -321,41 +321,40 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
 - `app-database.ts` — per-app Postgres DATABASE/role provisioning in the
   platform's Supabase instance (`provisionAppDatabase`,
   `deprovisionAppDatabase`, `withAppDb`).
-
   **A DATABASE per app, not a schema, and the Workflow DevKit is why.**
-  `@workflow/world-postgres` puts its run journal in a `workflow` schema and its
-  queue in `graphile_worker` — DATABASE-level names it cannot nest inside
-  `app_<hex>`. Creating them needs `CREATE ON DATABASE`, which a shared database
-  cannot grant a tenant, so the DevKit's migration failed
-  `42501 permission denied for database postgres` and every durable workflow
-  silently had nowhere to live. Measured on PG 17.6: under the old grants both
-  `create schema` statements are denied; inside the app's own database both
-  succeed. It also closes a catalog leak for free — an app role could enumerate
-  every other tenant's schema and role name out of `pg_namespace`/`pg_roles`.
+  `@workflow/world-postgres` needs a `workflow` and a `graphile_worker` schema —
+  DATABASE-level names that cannot nest inside `app_<hex>` and whose creation
+  needs `CREATE ON DATABASE`, which a shared database cannot grant a tenant, so
+  the DevKit's migration failed `42501 permission denied for database postgres`
+  and every durable workflow silently had nowhere to live (PG 17.6; the module
+  doc has the A/B). It also closes a catalog leak — an app role could enumerate
+  every other tenant's schema and role out of `pg_namespace`/`pg_roles`.
 
-  Three properties the module doc argues in full, each learned by getting it
-  wrong: the database is owned by the ADMIN role (a non-superuser cannot drop a
-  database it does not own — `42501 must be owner of database` — even one it
-  created); **`revoke connect … from public` IS the tenant boundary** now, since
-  Postgres grants `CONNECT` on a new database to `PUBLIC`; and `grant … on schema
-  public` is required because PG15+ makes `public` writable by nobody else.
-  `search_path` pinning is gone — an app owns `public` in its own database.
+  Three properties the module doc argues: the database is owned by the ADMIN
+  role, **`revoke connect … from public` IS the tenant boundary** (Postgres grants
+  `CONNECT` to `PUBLIC`), and `grant … on schema public` is required because PG15+
+  makes it writable by nobody else. `search_path` pinning is gone.
 
-  **Deprovision follows the app's stored LOCATOR, never a recomputed
-  placement**, and so does `usage`: changing `APP_DB_URLS` re-shuffles every
-  existing app, so the `url` in its `app-db:<slug>` meta is the only record of
-  where it lives. `AppDatabases.deprovision`'s own doc comment carries what
-  recomputing costs — silent no-op drops beside a deleted credential, i.e. tenant
-  data left unreachable with nothing raised — and why a meta-less sweep of every
-  cluster is safe. Read it there.
+  **Deprovision follows the app's stored LOCATOR, never a recomputed placement**,
+  and so does `usage`: changing `APP_DB_URLS` re-shuffles every existing app, so
+  the `url` in its `app-db:<slug>` meta is the only record of where it lives.
+  What recomputing costs is on `AppDatabases.deprovision`.
 
   **The per-tenant caps differ in strength, and only two are controls.**
-  `connection limit` is superuser-only to raise and `temp_file_limit` is
-  `SUSET` (lowerable, never raisable), but `statement_timeout` is `USERSET` —
-  tenant code holding the credential can `set statement_timeout = 0`. The 10s
-  setting is what a well-behaved app sees; the enforceable half is
-  `aai-sweep-app-db-runaways`, which terminates `app\_%` backends active past
-  a much higher ceiling. Never treat the role setting as isolation.
+  `connection limit` is superuser-only to raise and `temp_file_limit` is `SUSET`
+  (lowerable, never raisable), but `statement_timeout` is `USERSET` — tenant code
+  holding the credential can `set statement_timeout = 0`. The enforceable half is
+  `aai-sweep-app-db-runaways`, which terminates `app\_%` backends active past a
+  much higher ceiling. Never treat the role setting as isolation.
+- `app-db-admin.ts` + `supabase-management.ts` — **`create database` / `drop
+  database` go through the Supabase MANAGEMENT API (`supabase-management-js`) and
+  nothing else does**, so `SUPABASE_ACCESS_TOKEN` plus a project ref
+  (`SUPABASE_PROJECT_REF`, else derived per cluster) is required alongside
+  `SUPABASE_DB_URL`. No SQL fallback: without it there are no per-app databases
+  at all — boot refuses outside local dev, storage 503s inside it. The rest stays
+  SQL on the admin connection, which must therefore BE the project's `postgres`
+  role. Both module docs carry the argument.
+
 - `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
   toggling the app's database, plus the reads over it: `storageUsage` (how
   much is in it) and, over `app-db-browse.ts`, `storageTables` /

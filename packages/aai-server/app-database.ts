@@ -36,6 +36,14 @@
  * schema grant; here it is this one statement, which is why it is not optional
  * and is asserted by the tests.
  *
+ * **`create database` and `drop database` go through the Supabase MANAGEMENT
+ * API, and only through it** — they are control-plane statements, and there is
+ * no SQL implementation to fall back to. `app-db-admin.ts` owns that client, the
+ * statement text and the `DatabaseAdmin` seam every caller here passes. The rest
+ * is ordinary SQL on the admin connection, which must therefore be the project's
+ * own `postgres` role: `revoke connect on database` requires ownership of a
+ * database the API's `postgres` role created.
+ *
  * Identifiers are `app_` + the first 16 hex chars of sha256(slug), naming the
  * database AND the role, so they are always `[a-z0-9_]` and safe to interpolate
  * into DDL after the shape assertion below. The role's password is crypto-random
@@ -45,7 +53,9 @@
 import { hash, randomBytes } from "node:crypto";
 import { errorMessage, safeJsonParse } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
+import { scrubSecret } from "./_scrub-secret.ts";
 import { scheduleAppSweeps, unscheduleAppSweeps } from "./_session-state-sweep.ts";
+import type { DatabaseAdmin } from "./app-db-admin.ts";
 import { appDbIdentifier, assertIdentifier } from "./app-db-identifier.ts";
 import { APP_DB_SCHEMA, ensureSessionTables, grantSessionTables } from "./app-db-session-tables.ts";
 import { appDbAdminUrl, appDbUrlFor, withDatabase } from "./app-db-url.ts";
@@ -115,14 +125,16 @@ export type AppDbOpener = (url: string) => { query: SqlExec; close(): Promise<vo
  * `create database` cannot run inside a transaction block, and a multi-statement
  * simple query IS one — `25001 DROP DATABASE cannot run inside a transaction
  * block` is the same rule from the other side. So the role DDL is one batch, the
- * database is its own statement, its grants are another, and the in-database
- * work needs a second connection.
+ * database is its own Management API call, its grants are another statement, and
+ * the in-database work needs a second connection.
  */
 export async function provisionAppDatabase(
   sql: SqlExec,
   slug: string,
   targetUrl: string,
   open: AppDbOpener,
+  /** The Management API channel `create database` goes out on. */
+  admin: DatabaseAdmin,
 ): Promise<AppDbMeta> {
   const id = assertIdentifier(appDbIdentifier(slug));
   const password = randomBytes(16).toString("hex");
@@ -162,15 +174,17 @@ $$`,
   );
   if (failure !== null) throw scrubSecret(failure, password);
 
-  // Step 2 — the database itself. `create database` has no `if not exists`, so
-  // existence is checked first and the duplicate SQLSTATE is absorbed: two
-  // provisions racing (the slug lock makes this unlikely, not impossible) must
-  // both succeed, since the second one's real work is the password rotation
-  // above. Read the SQLSTATE, never the message.
+  // Step 2 — the database itself, on the control plane (`app-db-admin.ts`). The
+  // existence check stays here: it is a catalog read on a connection that is open
+  // anyway, and `create database` has no `if not exists`. A duplicate is absorbed
+  // by SQLSTATE, because two provisions racing (the slug lock makes this
+  // unlikely, not impossible) must both succeed — the second one's real work is
+  // the password rotation above. Read the SQLSTATE, never the message; the
+  // Management API's failures are normalized onto the same `code`.
   const existing = await sql("select 1 from pg_database where datname = $1", [id]);
   if (existing.length === 0) {
     try {
-      await sql(`create database "${id}"`);
+      await admin.createDatabase(id);
     } catch (err) {
       if (sqlState(err) !== DUPLICATE_DATABASE) throw err;
     }
@@ -211,30 +225,14 @@ $$`,
 
 const DUPLICATE_DATABASE = "42P04";
 
-/** The driver attaches SQLSTATE as `code`; read it rather than the message. */
-function sqlState(err: unknown): string | undefined {
-  return isRecord(err) && typeof err.code === "string" ? err.code : undefined;
-}
-
 /**
- * Remove every occurrence of `secret` from an error before it can reach a
- * log: the message and every string own property (postgres drivers attach
- * the failing `query`/`parameters` there). Mutate-and-rethrow rather than
- * wrap, so the stack and type survive; a non-Error value is rendered to a
- * scrubbed message instead.
+ * The SQLSTATE a failure carries, or `undefined`. Read the SQLSTATE, never the
+ * message: drivers attach it as `code`, and `supabase-management.ts` normalizes
+ * the Management API's own failures onto the same property. Exported because
+ * `app-db-admin.ts` reads it for `25001` and the dev stand-in renders it.
  */
-function scrubSecret(failure: unknown, secret: string): unknown {
-  if (!(failure instanceof Error)) {
-    return typeof failure === "string" ? failure.replaceAll(secret, "[redacted]") : failure;
-  }
-  failure.message = failure.message.replaceAll(secret, "[redacted]");
-  for (const key of Object.keys(failure)) {
-    const value = (failure as unknown as Record<string, unknown>)[key];
-    if (typeof value === "string" && value.includes(secret)) {
-      (failure as unknown as Record<string, unknown>)[key] = "[redacted]";
-    }
-  }
-  return failure;
+export function sqlState(err: unknown): string | undefined {
+  return isRecord(err) && typeof err.code === "string" ? err.code : undefined;
 }
 
 /**
@@ -245,17 +243,23 @@ function scrubSecret(failure: unknown, secret: string): unknown {
  * a delete does not wait for a sandbox to retire. Without it the drop fails
  * `55006 database is being accessed by other users`.
  *
- * **Neither statement may run inside a transaction** (`25001`), which also means
+ * The drop is a Management API call (`app-db-admin.ts`); the role drop after it
+ * is SQL. **Neither may run inside a transaction** (`25001`), which is also why
  * this cannot be a pg_cron job body — see the orphan sweep's caller. The role
  * drop comes second because a role owning objects in a live database cannot be
  * dropped (`2BP01`); once the database is gone there is nothing left to depend
  * on it.
  */
-export async function deprovisionAppDatabase(sql: SqlExec, slug: string): Promise<void> {
+export async function deprovisionAppDatabase(
+  sql: SqlExec,
+  slug: string,
+  /** The Management API channel `drop database` goes out on. */
+  admin: DatabaseAdmin,
+): Promise<void> {
   const id = assertIdentifier(appDbIdentifier(slug));
   // Before the drop — a cron job naming a dropped database fails forever.
   await unscheduleAppSweeps(sql, id);
-  await sql(`drop database if exists "${id}" with (force)`);
+  await admin.dropDatabase(id);
   // A SCHEMA of the same name, from an app provisioned before per-app databases.
   //
   // Not backward compatibility — there is nothing to keep working — but the drop
@@ -325,8 +329,12 @@ export type AppDatabases = {
   withAppDb<T>(meta: AppDbMeta, fn: (sql: SqlExec) => Promise<T>): Promise<T>;
 };
 
-/** One placement target: a cluster's admin URL plus an executor over it. */
-export type AppDbTarget = { url: string; sql: SqlExec };
+/**
+ * One placement target: a cluster's admin URL, an executor over it, and the
+ * Management API channel its `create database` / `drop database` go out on —
+ * per cluster, because the project ref is (see `app-db-admin.ts`).
+ */
+export type AppDbTarget = { url: string; sql: SqlExec; admin: DatabaseAdmin };
 
 /** Deterministic placement: hash the slug across the configured clusters. */
 export function pickAppDbTarget(targets: AppDbTarget[], slug: string): AppDbTarget {
@@ -347,8 +355,13 @@ export function createAppDatabases(opts: {
   poolerUrl?: string | undefined;
   /** Additional placement clusters (cellular sharding); primary is always a target. */
   extraTargets?: AppDbTarget[];
+  /** The PRIMARY cluster's Management API channel — see `appDbAdmin`. */
+  admin: DatabaseAdmin;
 }): AppDatabases {
-  const targets: AppDbTarget[] = [{ url: opts.url, sql: opts.sql }, ...(opts.extraTargets ?? [])];
+  const targets: AppDbTarget[] = [
+    { url: opts.url, sql: opts.sql, admin: opts.admin },
+    ...(opts.extraTargets ?? []),
+  ];
   const targetFor = (url: string | undefined): AppDbTarget =>
     targets.find((t) => t.url === url) ?? (targets[0] as AppDbTarget);
   const withAppDb = async <T>(meta: AppDbMeta, fn: (sql: SqlExec) => Promise<T>): Promise<T> => {
@@ -362,13 +375,14 @@ export function createAppDatabases(opts: {
   return {
     provision: (slug) => {
       const target = pickAppDbTarget(targets, slug);
-      return provisionAppDatabase(target.sql, slug, target.url, opts.open);
+      return provisionAppDatabase(target.sql, slug, target.url, opts.open, target.admin);
     },
     // Deprovision on the cluster the app's own locator names — never on a
     // recomputed placement (see the doc on AppDatabases.deprovision).
     deprovision: async (slug, meta) => {
       if (meta?.url) {
-        await deprovisionAppDatabase(targetFor(meta.url).sql, slug);
+        const target = targetFor(meta.url);
+        await deprovisionAppDatabase(target.sql, slug, target.admin);
         return;
       }
       // Unknown locator: sweep every cluster rather than guess one. Each drop
@@ -378,7 +392,7 @@ export function createAppDatabases(opts: {
       let failure: unknown;
       for (const target of targets) {
         try {
-          await deprovisionAppDatabase(target.sql, slug);
+          await deprovisionAppDatabase(target.sql, slug, target.admin);
         } catch (err) {
           failure ??= err;
         }

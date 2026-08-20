@@ -12,7 +12,9 @@ import {
   parseAppDbMeta,
   provisionAppDatabase,
 } from "./app-database.ts";
+import type { DatabaseAdmin } from "./app-db-admin.ts";
 import type { SqlExec } from "./secret-store.ts";
+import { fakeDatabaseAdmin } from "./test-utils.ts";
 
 function captureSql(respond: (query: string) => Record<string, unknown>[] = () => []) {
   const calls: { query: string; params?: unknown[] | undefined }[] = [];
@@ -30,9 +32,29 @@ function captureSql(respond: (query: string) => Record<string, unknown>[] = () =
  * `deprovisionAppDatabase`), so an exact statement list would couple every
  * cluster-routing assertion below to that bookkeeping. What those specs are about
  * is WHICH CLUSTER the drops landed on.
+ *
+ * `drop database` is NOT among these: it goes out on the Management API channel
+ * (`app-db-admin.ts`), so it is read off the {@link fakeDatabaseAdmin} instead.
  */
 function dropStatements(calls: { query: string }[]): string[] {
   return calls.map((c) => c.query).filter((q) => q.startsWith("drop "));
+}
+
+/**
+ * A {@link DatabaseAdmin} that records into the SAME log as the SQL executor, so
+ * a spec can assert the ORDER of a statement issued over HTTP against one issued
+ * on the connection — which is the whole content of "unschedule before drop".
+ */
+function interleavedAdmin(calls: { query: string }[]): DatabaseAdmin {
+  return {
+    ref: "testreftestreftestre",
+    createDatabase: async (id) => {
+      calls.push({ query: `create database "${id}"` });
+    },
+    dropDatabase: async (id) => {
+      calls.push({ query: `drop database if exists "${id}" with (force)` });
+    },
+  };
 }
 
 /**
@@ -74,7 +96,14 @@ describe("provisionAppDatabase", () => {
   test("creates the role, then the DATABASE, then its grants", async () => {
     const { sql, calls } = captureSql();
     const { open, urls } = captureOpener();
-    const meta = await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db", open);
+    const admin = fakeDatabaseAdmin();
+    const meta = await provisionAppDatabase(
+      sql,
+      "my-agent",
+      "postgres://admin@primary/db",
+      open,
+      admin,
+    );
     const id = appDbIdentifier("my-agent");
 
     expect(meta.role).toBe(id);
@@ -101,7 +130,9 @@ describe("provisionAppDatabase", () => {
     expect(query).not.toContain("search_path");
 
     const statements = calls.map((c) => c.query);
-    expect(statements).toContain(`create database "${id}"`);
+    // The DATABASE itself is created through the Supabase Management API, so it
+    // is not on the admin connection at all — only its grants are.
+    expect(admin.created).toEqual([id]);
     // THE tenant boundary. Postgres grants CONNECT on a new database to PUBLIC,
     // so without this revoke every app role can open every other app's database.
     expect(statements).toContain(`revoke connect on database "${id}" from public`);
@@ -113,17 +144,17 @@ describe("provisionAppDatabase", () => {
     expect(urls).toEqual([`postgres://admin@primary/${id}`]);
   });
 
-  test("issues `create database` as its own statement, never inside a batch", async () => {
-    // `create database` cannot run in a transaction block, and a multi-statement
-    // simple query IS one — the mirror of the `25001` that stops the orphan sweep
-    // dropping a database from a pg_cron body. So it must be alone.
+  test("never puts `create database` on the admin SQL connection", async () => {
+    // It cannot run in a transaction block, and a multi-statement simple query IS
+    // one — the mirror of the `25001` that stops the orphan sweep dropping a
+    // database from a pg_cron body. It goes out on the control plane instead, and
+    // there is no SQL implementation left to fall back to.
     const { sql, calls } = captureSql();
     const { open } = captureOpener();
-    await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db", open);
-    const id = appDbIdentifier("my-agent");
-    const createDb = calls.filter((c) => c.query.includes("create database"));
-    expect(createDb).toHaveLength(1);
-    expect(createDb[0]?.query).toBe(`create database "${id}"`);
+    const admin = fakeDatabaseAdmin();
+    await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db", open, admin);
+    expect(admin.created).toEqual([appDbIdentifier("my-agent")]);
+    expect(calls.filter((c) => c.query.includes("create database"))).toEqual([]);
   });
 
   test("skips `create database` when it already exists, and absorbs a lost race", async () => {
@@ -131,26 +162,35 @@ describe("provisionAppDatabase", () => {
     // SQLSTATE is absorbed because two provisions racing must both succeed — the
     // second one's real work is the password rotation.
     const existing = captureSql((q) => (q.includes("pg_database") ? [{ "?column?": 1 }] : []));
+    const skipped = fakeDatabaseAdmin();
     await provisionAppDatabase(
       existing.sql,
       "my-agent",
       "postgres://admin@primary/db",
       captureOpener().open,
+      skipped,
     );
-    expect(existing.calls.map((c) => c.query)).not.toContain(
-      `create database "${appDbIdentifier("my-agent")}"`,
-    );
+    // The existence check stays a catalog READ on the open connection; only the
+    // create itself crosses to the control plane, and here it never happens.
+    expect(existing.calls.some((c) => c.query.includes("pg_database"))).toBe(true);
+    expect(skipped.created).toEqual([]);
 
-    const raced: SqlExec = vi.fn(async (query) => {
-      if (query.startsWith("create database")) {
-        const err = new Error("duplicate") as Error & { code: string };
-        err.code = "42P04";
-        throw err;
-      }
-      return [];
-    });
+    // A lost race is absorbed by SQLSTATE, whichever channel reported it — the
+    // Management API normalizes its own failures onto `code` for exactly this.
+    const raced: DatabaseAdmin = {
+      ref: "testreftestreftestre",
+      createDatabase: () =>
+        Promise.reject(Object.assign(new Error("already exists"), { code: "42P04" })),
+      dropDatabase: async () => undefined,
+    };
     await expect(
-      provisionAppDatabase(raced, "my-agent", "postgres://a@p/db", captureOpener().open),
+      provisionAppDatabase(
+        captureSql().sql,
+        "my-agent",
+        "postgres://a@p/db",
+        captureOpener().open,
+        raced,
+      ),
     ).resolves.toMatchObject({ role: appDbIdentifier("my-agent") });
   });
 
@@ -160,7 +200,13 @@ describe("provisionAppDatabase", () => {
     // Postgres connection is bound to one database.
     const { sql } = captureSql();
     const opener = captureOpener();
-    await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db", opener.open);
+    await provisionAppDatabase(
+      sql,
+      "my-agent",
+      "postgres://admin@primary/db",
+      opener.open,
+      fakeDatabaseAdmin(),
+    );
     const id = appDbIdentifier("my-agent");
 
     const inDb = opener.calls.map((c) => c.query);
@@ -213,7 +259,13 @@ describe("provisionAppDatabase", () => {
       },
     });
     await expect(
-      provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db", open),
+      provisionAppDatabase(
+        sql,
+        "my-agent",
+        "postgres://admin@primary/db",
+        open,
+        fakeDatabaseAdmin(),
+      ),
     ).rejects.toThrow("in-database DDL failed");
     expect(closed).toBe(1);
   });
@@ -221,8 +273,21 @@ describe("provisionAppDatabase", () => {
   test("two provisions issue distinct random passwords", async () => {
     const { sql } = captureSql(() => []);
     const { open } = captureOpener();
-    const a = await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db", open);
-    const b = await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db", open);
+    const admin = fakeDatabaseAdmin();
+    const a = await provisionAppDatabase(
+      sql,
+      "my-agent",
+      "postgres://admin@primary/db",
+      open,
+      admin,
+    );
+    const b = await provisionAppDatabase(
+      sql,
+      "my-agent",
+      "postgres://admin@primary/db",
+      open,
+      admin,
+    );
     expect(a.password).not.toBe(b.password);
   });
 
@@ -240,6 +305,7 @@ describe("provisionAppDatabase", () => {
       "my-agent",
       "postgres://admin@primary/db",
       captureOpener().open,
+      fakeDatabaseAdmin(),
     ).then(
       () => null,
       (err: unknown) => err as Error & { query?: string },
@@ -256,11 +322,12 @@ describe("provisionAppDatabase", () => {
 describe("deprovisionAppDatabase", () => {
   test("drops the database with (force), then the role", async () => {
     const { sql, calls } = captureSql();
-    await deprovisionAppDatabase(sql, "my-agent");
+    await deprovisionAppDatabase(sql, "my-agent", interleavedAdmin(calls));
     const id = appDbIdentifier("my-agent");
     expect(dropStatements(calls)).toEqual([
       // `with (force)` because the app's guest normally still holds a ctx.db
       // pool — without it the drop fails `55006 being accessed by other users`.
+      // Issued on the Management API channel, recorded here by `interleavedAdmin`.
       `drop database if exists "${id}" with (force)`,
       // A leftover SCHEMA from an app provisioned before per-app databases. It
       // has to go before the role: a role owning it cannot be dropped (`2BP01`),
@@ -279,7 +346,7 @@ describe("deprovisionAppDatabase", () => {
     const { sql, calls } = captureSql((q) =>
       q.includes("from cron.job") ? [{ jobname: "aai-app-session-state-x" }] : [],
     );
-    await deprovisionAppDatabase(sql, "my-agent");
+    await deprovisionAppDatabase(sql, "my-agent", interleavedAdmin(calls));
     const queries = calls.map((c) => c.query);
     expect(queries.findIndex((q) => q.includes("cron.unschedule"))).toBeLessThan(
       queries.findIndex((q) => q.includes("drop database")),
@@ -293,7 +360,9 @@ describe("deprovisionAppDatabase", () => {
       if (query.includes("cron.")) throw new Error("pg_cron is not installed");
       return [];
     });
-    await expect(deprovisionAppDatabase(sql, "my-agent")).resolves.toBeUndefined();
+    await expect(
+      deprovisionAppDatabase(sql, "my-agent", fakeDatabaseAdmin()),
+    ).resolves.toBeUndefined();
   });
 });
 
@@ -409,14 +478,18 @@ describe("appDbUrlFor", () => {
 describe("createAppDatabases", () => {
   test("binds provision/deprovision to the injected sql handle", async () => {
     const { sql, calls } = captureSql(() => []);
+    const admin = fakeDatabaseAdmin();
     const appDb = createAppDatabases({
       url: "postgres://postgres:pw@localhost:5432/postgres",
       sql,
       open: captureOpener().open,
+      admin,
     });
     await appDb.provision("slug-a");
     await appDb.deprovision("slug-a");
     expect(calls.length).toBeGreaterThan(0);
+    expect(admin.created).toEqual([appDbIdentifier("slug-a")]);
+    expect(admin.dropped).toEqual([appDbIdentifier("slug-a")]);
   });
 
   /**
@@ -435,11 +508,14 @@ describe("createAppDatabases", () => {
     const primary = captureSql();
     const secondary = captureSql();
     const secondaryUrl = "postgres://postgres:pw@cluster-b.example:5432/postgres";
+    const primaryAdmin = fakeDatabaseAdmin("aaaaaaaaaaaaaaaaaaaa");
+    const secondaryAdmin = fakeDatabaseAdmin("bbbbbbbbbbbbbbbbbbbb");
     const appDb = createAppDatabases({
       url: "postgres://postgres:pw@primary.example:5432/postgres",
       sql: primary.sql,
       open: captureOpener().open,
-      extraTargets: [{ url: secondaryUrl, sql: secondary.sql }],
+      admin: primaryAdmin,
+      extraTargets: [{ url: secondaryUrl, sql: secondary.sql, admin: secondaryAdmin }],
     });
 
     await appDb.deprovision("slug-a", {
@@ -448,8 +524,12 @@ describe("createAppDatabases", () => {
       url: secondaryUrl,
     });
 
+    // The database drop goes out on THAT cluster's control-plane channel — a
+    // project ref is per cluster, so a mis-routed drop now also means a drop
+    // aimed at another Supabase project.
+    expect(secondaryAdmin.dropped).toEqual([appDbIdentifier("slug-a")]);
+    expect(primaryAdmin.dropped).toEqual([]);
     expect(dropStatements(secondary.calls)).toEqual([
-      `drop database if exists "${appDbIdentifier("slug-a")}" with (force)`,
       `drop schema if exists "${appDbIdentifier("slug-a")}" cascade`,
       `drop role if exists "${appDbIdentifier("slug-a")}"`,
     ]);
@@ -465,36 +545,57 @@ describe("createAppDatabases", () => {
   test("deprovision without a locator sweeps every cluster", async () => {
     const primary = captureSql();
     const secondary = captureSql();
+    const primaryAdmin = fakeDatabaseAdmin("aaaaaaaaaaaaaaaaaaaa");
+    const secondaryAdmin = fakeDatabaseAdmin("bbbbbbbbbbbbbbbbbbbb");
     const appDb = createAppDatabases({
       url: "postgres://postgres:pw@primary.example:5432/postgres",
       sql: primary.sql,
       open: captureOpener().open,
+      admin: primaryAdmin,
       extraTargets: [
-        { url: "postgres://postgres:pw@cluster-b.example:5432/postgres", sql: secondary.sql },
+        {
+          url: "postgres://postgres:pw@cluster-b.example:5432/postgres",
+          sql: secondary.sql,
+          admin: secondaryAdmin,
+        },
       ],
     });
 
     await appDb.deprovision("slug-a");
 
-    expect(dropStatements(primary.calls)).toHaveLength(3);
-    expect(dropStatements(secondary.calls)).toHaveLength(3);
+    expect(primaryAdmin.dropped).toEqual([appDbIdentifier("slug-a")]);
+    expect(secondaryAdmin.dropped).toEqual([appDbIdentifier("slug-a")]);
+    expect(dropStatements(primary.calls)).toHaveLength(2);
+    expect(dropStatements(secondary.calls)).toHaveLength(2);
   });
 
   /** One unreachable cluster must not leave the others provisioned. */
   test("a failing cluster does not skip the rest, and still reports", async () => {
-    const failing: SqlExec = vi.fn(() => Promise.reject(new Error("cluster down")));
     const healthy = captureSql();
+    const healthyAdmin = fakeDatabaseAdmin("bbbbbbbbbbbbbbbbbbbb");
     const appDb = createAppDatabases({
       url: "postgres://postgres:pw@primary.example:5432/postgres",
-      sql: failing,
+      sql: captureSql().sql,
       open: captureOpener().open,
+      // The control plane for the primary is unreachable: with no SQL path left,
+      // this is now the shape a dead cluster takes.
+      admin: {
+        ref: "aaaaaaaaaaaaaaaaaaaa",
+        createDatabase: () => Promise.reject(new Error("cluster down")),
+        dropDatabase: () => Promise.reject(new Error("cluster down")),
+      },
       extraTargets: [
-        { url: "postgres://postgres:pw@cluster-b.example:5432/postgres", sql: healthy.sql },
+        {
+          url: "postgres://postgres:pw@cluster-b.example:5432/postgres",
+          sql: healthy.sql,
+          admin: healthyAdmin,
+        },
       ],
     });
 
     await expect(appDb.deprovision("slug-a")).rejects.toThrow("cluster down");
-    expect(dropStatements(healthy.calls)).toHaveLength(3);
+    expect(healthyAdmin.dropped).toEqual([appDbIdentifier("slug-a")]);
+    expect(dropStatements(healthy.calls)).toHaveLength(2);
   });
 });
 

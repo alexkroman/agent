@@ -14,15 +14,11 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { assertServiceRoleKey, hasPlatformDb, isLocalDev, requireEnv } from "./_boot.ts";
 import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { createApiKeyVerifierFromEnv } from "./api-key-verify.ts";
-import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
+import { type AppDatabases, createAppDatabases } from "./app-database.ts";
+import { appDbAdmin, extraAppDbTargets } from "./app-db-admin.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
-import {
-  ADMIN_POOL_MAX,
-  APP_DB_ADMIN_POOL_MAX,
-  APP_DB_TARGET_POOL_MAX,
-  SLUG_LOCK_POOL_MAX,
-} from "./constants.ts";
+import { ADMIN_POOL_MAX, APP_DB_ADMIN_POOL_MAX, SLUG_LOCK_POOL_MAX } from "./constants.ts";
 import { assertGuestTokenSecret } from "./guest-token.ts";
 import { createLogger } from "./logger.ts";
 import { createModalSandboxDirectory } from "./modal-sandbox-directory.ts";
@@ -65,19 +61,6 @@ import {
 
 const log = createLogger("service");
 const _sandboxLog = createLogger("sandbox");
-
-/** Comma-separated extra placement clusters (APP_DB_URLS) → pooled targets. */
-function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
-  if (!raw) return [];
-  return raw
-    .split(",")
-    .map((url) => url.trim())
-    .filter(Boolean)
-    .map((url) => {
-      const db = createPostgresDb({ url, max: APP_DB_TARGET_POOL_MAX });
-      return { url, sql: (query, params) => db.query(query, params) } satisfies AppDbTarget;
-    });
-}
 
 // Re-exported for the studio entry, which calls it at boot; `buildStorage` is
 // NOT re-exported — this module is its only caller, and the studio reaches the
@@ -270,7 +253,11 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   }
   const admin = createPostgresDb({ url: poolerUrl ?? url, max: ADMIN_POOL_MAX });
   const exec: SqlExec = (query, params) => admin.query(query, params);
-  const extraTargets = parseExtraAppDbTargets(env.APP_DB_URLS);
+  const extraTargets = extraAppDbTargets(env);
+  // `create database` / `drop database` are Management API calls and nothing
+  // else, so this is also the answer to "does this deployment have per-app
+  // databases at all" — it THROWS outside local dev rather than degrade quietly.
+  const appDbChannel = appDbAdmin({ url, env, refOverride: env.SUPABASE_PROJECT_REF });
   // Change notifications ride Supabase Realtime — the Postgres rows are the
   // emitters (postgres_changes), so unlike the memory path the stores need no
   // write-side wrapping. Required rather than optional: a platform database with
@@ -291,30 +278,37 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       url: realtime.SUPABASE_URL,
       key: realtime.SUPABASE_SERVICE_ROLE_KEY,
     }),
-    appDb: createAppDatabases({
-      url,
-      sql: exec,
-      // Per-app DATABASES mean the admin pool above cannot reach a tenant's
-      // tables at all: a Postgres connection is bound to one database, so
-      // provisioning's in-database steps, the usage read and the wake-hint read
-      // each need a connection of their own. Short-lived and single, rather than
-      // a retained pool per app: these are per-app-lifecycle or per-tick
-      // operations, and N retained pools is exactly the arithmetic
-      // MAX_PLATFORM_DB_CONNECTIONS exists to bound.
-      open: (appUrl) => {
-        const db = createPostgresDb({ url: appUrl, max: APP_DB_ADMIN_POOL_MAX });
-        return { query: (query, params) => db.query(query, params), close: () => db.close() };
-      },
-      // Every app-database connection — the guest's `DATABASE_URL` and the
-      // platform's own reads alike — goes through Supavisor, which is what keeps
-      // a per-app connection out of the DIRECT budget (see `withPoolerHost`).
-      // Session mode only: transaction mode breaks graphile-worker's prepared
-      // statements and world-postgres's LISTEN.
-      ...omitUndefined({ poolerUrl: appDbPoolerUrl(env) }),
-      // Cellular sharding: APP_DB_URLS lists additional Supabase clusters
-      // new apps may be placed on. Each app's cluster is recorded in its
-      // app-db:<slug> locator, so agent code never notices placement.
-      extraTargets,
+    // Absent only in local dev without Management API credentials — there is no
+    // SQL path to create a database on, so the storage routes 503 (appDbAdmin).
+    ...omitUndefined({
+      appDb:
+        appDbChannel &&
+        createAppDatabases({
+          admin: appDbChannel,
+          url,
+          sql: exec,
+          // Per-app DATABASES mean the admin pool above cannot reach a tenant's
+          // tables at all: a Postgres connection is bound to one database, so
+          // provisioning's in-database steps, the usage read and the wake-hint read
+          // each need a connection of their own. Short-lived and single, rather than
+          // a retained pool per app: these are per-app-lifecycle or per-tick
+          // operations, and N retained pools is exactly the arithmetic
+          // MAX_PLATFORM_DB_CONNECTIONS exists to bound.
+          open: (appUrl) => {
+            const db = createPostgresDb({ url: appUrl, max: APP_DB_ADMIN_POOL_MAX });
+            return { query: (query, params) => db.query(query, params), close: () => db.close() };
+          },
+          // Every app-database connection — the guest's `DATABASE_URL` and the
+          // platform's own reads alike — goes through Supavisor, which is what keeps
+          // a per-app connection out of the DIRECT budget (see `withPoolerHost`).
+          // Session mode only: transaction mode breaks graphile-worker's prepared
+          // statements and world-postgres's LISTEN.
+          ...omitUndefined({ poolerUrl: appDbPoolerUrl(env) }),
+          // Cellular sharding: APP_DB_URLS lists additional Supabase clusters
+          // new apps may be placed on. Each app's cluster is recorded in its
+          // app-db:<slug> locator, so agent code never notices placement.
+          extraTargets,
+        }),
     }),
     // Cross-request coordination lives in Postgres too, so any replica (and
     // either service) can serve any request: per-slug mutation exclusion
