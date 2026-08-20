@@ -66,14 +66,14 @@ function openFile(selected: string | null, files: Record<string, string>): strin
  *
  * The same rule as {@link openFile} one function up — a selection of something
  * that has stopped existing is not a selection, derived during render rather
- * than corrected by an effect. Only `database` can vanish under a selection
- * (see `isTabVisible`), and it vanishes when someone turns the database off,
- * which is a thing that happens in ANOTHER tab: this one is sitting on the
- * pane while the project frame arrives saying the pane is gone.
+ * than corrected by an effect. Only `database` and `workflows` can vanish under
+ * a selection (see `isTabVisible`), and they vanish when someone turns the
+ * database off, which is a thing that happens in ANOTHER tab: this one is
+ * sitting on the pane while the project frame arrives saying the pane is gone.
  *
  * Settings rather than the default UI pane, because Settings is where the
- * switch that did this lives — the pane a user is looking for after the
- * Database tab disappears is the one that can bring it back.
+ * switch that did this lives — the pane a user is looking for after those tabs
+ * disappear is the one that can bring them back.
  */
 function shownTab(selected: StudioTab, databaseEnabled: boolean): StudioTab {
   return isTabVisible(selected, { databaseEnabled }) ? selected : "settings";
@@ -194,10 +194,12 @@ export function ProjectView(props: ProjectViewProps) {
 
   const files = workspace.data?.files ?? EMPTY_FILES;
   const deployedSlug = workspace.data?.deployedSlug;
-  // The Database tab's gate. It rides on the project payload rather than the
-  // database-state route the Settings card reads, so the tab appears the moment
-  // the switch is flipped: recording the intent stamps the workspace, which
-  // pushes a `project` frame down the stream above (see studio-sse.ts).
+  // The Database and Workflows tabs' gate — one flag, because a durable run
+  // needs the same database (see `isTabVisible`). It rides on the project
+  // payload rather than the database-state route the Settings card reads, so
+  // the tabs appear the moment the switch is flipped: recording the intent
+  // stamps the workspace, which pushes a `project` frame down the stream above
+  // (see studio-sse.ts).
   const databaseEnabled = workspace.data?.databaseEnabled === true;
   const tab = shownTab(selectedTab, databaseEnabled);
   // "Publish unlocks after your first build" — there must be an agent to ship.

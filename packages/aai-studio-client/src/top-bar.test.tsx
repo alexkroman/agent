@@ -18,9 +18,9 @@ const barProps = {
   project: "demo" as string | null,
   tab: "preview" as const,
   hasBuild: true,
-  // The Database pane is the one gated tab, and the default here is ON so the
-  // switcher assertions below cover the full set. Its OFF behaviour is its own
-  // pair of tests.
+  // Workflows and Database are the gated tabs, and the default here is ON so
+  // the switcher assertions below cover the full set. The OFF behaviour is its
+  // own pair of tests.
   databaseEnabled: true,
   onGoHome: noop,
   onSelectTab: noop,
@@ -82,21 +82,26 @@ describe("TopBar", () => {
     expect(rendered).toEqual(PANE_LABELS);
   });
 
-  test("no database means no Database tab — the pane is an opt-in", () => {
+  test("no database means no Database and no Workflows tab — both are opt-ins", () => {
     // A project that never turned the database on has nothing to browse, and a
     // tab onto an empty database reads as a broken feature rather than an
-    // unused one. Every other pane stays: they are all reachable from the
-    // moment a project exists.
+    // unused one. Workflows goes with it: without a database a guest runs the
+    // LOCAL workflow world, whose queue is in memory and whose data directory
+    // is per-process, so a pane promising runs that outlive the request would
+    // be listing runs that die with the sandbox. Every other pane stays: they
+    // are all reachable from the moment a project exists.
     render(<TopBar {...barProps} databaseEnabled={false} />);
     expect(screen.queryByRole("button", { name: "Database" })).toBeNull();
-    for (const label of ["UI", "API", "Workflows", "Code", "Secrets", "Settings"]) {
+    expect(screen.queryByRole("button", { name: "Workflows" })).toBeNull();
+    for (const label of ["UI", "API", "Code", "Logs", "Secrets", "Settings"]) {
       expect(screen.getByRole("button", { name: label })).toBeDefined();
     }
   });
 
-  test("enabling the database is what puts the tab in the switcher", () => {
+  test("enabling the database is what puts both tabs in the switcher", () => {
     render(<TopBar {...barProps} databaseEnabled={true} />);
     expect(screen.getByRole("button", { name: "Database" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Workflows" })).toBeDefined();
   });
 
   test("the open pane is the current one", () => {

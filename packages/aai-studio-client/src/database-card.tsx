@@ -15,10 +15,12 @@
 // production waits for a Publish; and disabling drops the schemas with all
 // their data.
 //
-// A third thing it now says: this switch is what puts the **Database pane** in
-// the top bar. The pane is gated on the same project-level flag (see
-// `isTabVisible` in top-bar.tsx), so before the opt-in there is no tab onto an
-// empty database — which makes this card the only place the capability is
+// A third thing it now says: this switch is what puts the **Database pane** —
+// and the **Workflows pane**, whose runs are only durable when there is a
+// database behind them — in the top bar. Both are gated on the same
+// project-level flag (see `isTabVisible` in top-bar.tsx), so before the opt-in
+// there is no tab onto an empty database and none onto runs that would die with
+// the sandbox — which makes this card the only place either capability is
 // discoverable, and the copy has to carry that weight.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -201,8 +203,10 @@ function Blurb({ enabled, unavailable }: { enabled: boolean; unavailable: boolea
     <>
       Give this project's tools a SQL database, reached as <code className="font-mono">ctx.db</code>{" "}
       — for anything that has to outlive a single call. Off until you turn it on, which also adds
-      the <strong>Database</strong> pane for browsing what your agent stored; scratch that only one
-      call needs belongs in <code className="font-mono">ctx.state</code>.
+      the <strong>Database</strong> pane for browsing what your agent stored and the{" "}
+      <strong>Workflows</strong> pane for its durable runs, which need this database to outlive the
+      sandbox that started them; scratch that only one call needs belongs in{" "}
+      <code className="font-mono">ctx.state</code>.
     </>
   );
 }
