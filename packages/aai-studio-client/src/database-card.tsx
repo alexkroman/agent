@@ -14,6 +14,12 @@
 // reads DATABASE_URL at boot), so the preview redeploys itself while
 // production waits for a Publish; and disabling drops the schemas with all
 // their data.
+//
+// A third thing it now says: this switch is what puts the **Database pane** in
+// the top bar. The pane is gated on the same project-level flag (see
+// `isTabVisible` in top-bar.tsx), so before the opt-in there is no tab onto an
+// empty database — which makes this card the only place the capability is
+// discoverable, and the copy has to carry that weight.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type DatabaseEnvironment, type DatabaseState } from "./api.ts";
@@ -100,6 +106,12 @@ export function DatabaseCard({ bearer, project }: DatabaseCardProps) {
       // The response IS the new state, so seed the cache with it rather than
       // invalidating: a re-read costs a credential lookup per environment.
       queryClient.setQueryData(queryKeys.database(project), state);
+      // The project payload carries the Database TAB's gate, so it has to move
+      // with this switch or the pane the user just enabled is one stream frame
+      // away. The stamped workspace does push that frame (studio-sse.ts) —
+      // this is what makes the tab appear on the click rather than on the
+      // round trip, and what covers a stream that happens to be reconnecting.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.project(project) });
     },
   });
 
@@ -181,15 +193,16 @@ function Blurb({ enabled, unavailable }: { enabled: boolean; unavailable: boolea
       <>
         Tools can persist data with <code className="font-mono">ctx.db</code>. The preview and
         production agents each get their OWN schema, so trying something out can never touch
-        published data.
+        published data — browse either one in the <strong>Database</strong> pane.
       </>
     );
   }
   return (
     <>
       Give this project's tools a SQL database, reached as <code className="font-mono">ctx.db</code>{" "}
-      — for anything that has to outlive a single call. Off by default; scratch that only one call
-      needs belongs in <code className="font-mono">ctx.state</code>.
+      — for anything that has to outlive a single call. Off until you turn it on, which also adds
+      the <strong>Database</strong> pane for browsing what your agent stored; scratch that only one
+      call needs belongs in <code className="font-mono">ctx.state</code>.
     </>
   );
 }

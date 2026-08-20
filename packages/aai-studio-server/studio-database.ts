@@ -16,14 +16,27 @@
  * is where half-finished tool code runs, and a shared schema would let a
  * preview turn drop the production table.
  *
- * **A studio project has a database by DEFAULT** — `databaseEnabled` absent
- * means on, and only an explicit `false` turns it off. The agent the coding
- * agent writes should be able to call `ctx.db` in its first tool; the
- * alternative is that it reaches for storage, gets the enablement error, and the
- * user has to know a settings pane exists. Because the default is applied at
- * READ time, projects that predate it are covered with nothing to backfill.
- * The cost is a schema and a login role per project per environment, which the
- * orphan-preview sweep and `deleteAgentResources` already reclaim.
+ * **A database is OFF until the project asks for one** — `databaseEnabled`
+ * absent means off, and only an explicit `true` turns it on
+ * ({@link wantsDatabase} is the one reader of that default). It ran the other
+ * way for a while, on the argument that the agent the coding agent writes
+ * should be able to call `ctx.db` in its first tool rather than hit the
+ * enablement error. What that bought in practice was a schema and a login role
+ * per environment for every project ever created, most of which never call
+ * `ctx.db` at all, plus a Database pane in the top bar of every one of them
+ * opening onto a database with nothing in it — a tab that answers no question
+ * is worse than an absent one, because it reads as a feature that is broken.
+ * So enabling is a decision, taken in Settings, and the pane appears with it
+ * (the client gates the tab on `databaseEnabled` in the project payload —
+ * studio-sse.ts). The coding agent's preamble already told users to go there,
+ * which is what made the default the odd one out: it promised a switch the
+ * user never had to touch while telling them to touch it.
+ *
+ * Because the default is applied at READ time there is nothing to backfill.
+ * Projects that already carry an explicit `true` — anyone who used the switch —
+ * keep their database; the ones that never touched it lose a schema they were
+ * not using, which the orphan-preview sweep and `deleteAgentResources` reclaim
+ * on the paths they already cover.
  *
  * **Intent is stamped on the workspace (`databaseEnabled`); provisioning
  * follows the SLUG.** A database can be switched on before either agent
@@ -66,7 +79,12 @@ import {
   type ProjectEnvironment,
   projectSlugFor,
 } from "./studio-project-slugs.ts";
-import { getWorkspace, type StudioWorkspace, stampWorkspaceMeta } from "./studio-workspace.ts";
+import {
+  getWorkspace,
+  type StudioWorkspace,
+  stampWorkspaceMeta,
+  wantsDatabase,
+} from "./studio-workspace.ts";
 
 /** What this module needs from the studio's request bindings. */
 export type ProjectDatabaseEnv = {
@@ -158,8 +176,8 @@ async function stateFor(
     PROJECT_ENVIRONMENTS.map((environment) => environmentState(env, owned, workspace, environment)),
   );
   return {
-    // Absent means ON — see StudioWorkspace.databaseEnabled.
-    enabled: workspace.databaseEnabled !== false,
+    // Absent means OFF — the default lives in `wantsDatabase`, not here.
+    enabled: wantsDatabase(workspace),
     configured: env.appDb !== undefined,
     environments,
   };
@@ -215,9 +233,10 @@ export async function setProjectDatabase(
 ): Promise<SetProjectDatabaseResult | null> {
   const { scope, project, apiKey, enabled } = params;
   const workspace = await stampWorkspaceMeta(env.workspaces, scope, project, {
-    // Stored EXPLICITLY in both directions. Absent means ON (see
-    // StudioWorkspace.databaseEnabled), so a disable that cleared the field
-    // would read as enabled again on the very next request.
+    // Stored EXPLICITLY in both directions. `true` is the opt-in the default
+    // is absent of; `false` is stored rather than cleared because it is a
+    // decision the user made, and a field that means "off" either way is
+    // cheaper than one whose two spellings a future flip would separate.
     databaseEnabled: enabled,
   });
   if (!workspace) return null;
@@ -294,7 +313,7 @@ export async function reconcileProjectDatabase(
 ): Promise<void> {
   if (!env.appDb) return;
   const workspace = await getWorkspace(env.workspaces, params.scope, params.project);
-  // A project that never touched the switch still gets one: absent means ON.
-  if (workspace?.databaseEnabled === false) return;
+  // A project that never asked for one does not get one: absent means OFF.
+  if (!(workspace && wantsDatabase(workspace))) return;
   await applyToSlug(env, params.slug, true);
 }

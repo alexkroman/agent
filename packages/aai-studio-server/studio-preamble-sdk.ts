@@ -30,9 +30,11 @@ export const STUDIO_SDK_GUIDANCE = `## Data Persistence and Storage
   session state.
 - Parameterize every query — never interpolate user input into SQL.
 - You cannot enable the database yourself, but the USER can, with one
-  click: Settings pane → Database → Enable database. It covers both the
-  preview and published agents (separate schemas). Build with ctx.db, then
-  tell them to turn it on there — \`ctx.db\` throws until they do.
+  click: Settings pane → Database → Enable database. It is off until they
+  do, and it covers both the preview and published agents (separate
+  schemas). Build with ctx.db, then tell them to turn it on there —
+  \`ctx.db\` throws until they do, and the Database pane they can browse
+  the rows in only appears once they have.
   (\`aai storage enable <slug>\` is the CLI equivalent; the pane is the
   answer for someone with no terminal.)
 

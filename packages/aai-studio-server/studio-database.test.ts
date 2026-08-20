@@ -151,8 +151,10 @@ describe("setProjectDatabase", () => {
       "demo-preview",
     ]);
     expect(await appDbSecret(h.secrets, "demo")).toBeNull();
-    // RECORDED as `false`, not cleared: absent means ON, so a cleared field
-    // would have the next read — and the next deploy — re-enable it.
+    // RECORDED as `false`, not cleared. Absent reads the same now, so this is
+    // no longer load-bearing for correctness — it keeps the field an honest
+    // record of a decision the user took, which is what the next flip of this
+    // default would need to tell apart from "never asked".
     expect((await getWorkspace(h.workspaces, SCOPE, PROJECT))?.databaseEnabled).toBe(false);
     // A recorded opt-out means a later deploy must NOT hand the agent a database
     // back — the switch is off.
@@ -240,21 +242,39 @@ describe("setProjectDatabase", () => {
 });
 
 describe("projectDatabaseState", () => {
-  test("reports ON by default, configured, and both environments before anything is deployed", async () => {
-    // A studio project HAS a database unless it said otherwise — the flag being
-    // absent is the default-on case, and each environment is still off until its
-    // slug exists to provision (provisioning follows the SLUG).
+  test("reports OFF by default, configured, and both environments before anything is deployed", async () => {
+    // A studio project has NO database until it asks for one — the flag being
+    // absent is the default-off case, which is also what gates the client's
+    // Database tab. Each environment is off for the second reason too: there is
+    // no slug to provision for yet (provisioning follows the SLUG).
     const h = await harness();
     expect(
       await projectDatabaseState(h.env, { scope: SCOPE, project: PROJECT, apiKey: KEY }),
     ).toEqual({
-      enabled: true,
+      enabled: false,
       configured: true,
       environments: [
         { environment: "production", enabled: false },
         { environment: "preview", enabled: false },
       ],
     });
+  });
+
+  test("reports ON once the project has opted in", async () => {
+    // The opt-in is an explicit `true`. Asserted separately from the switch
+    // above because this is the READ path's default resolution, and a reader
+    // that ignored the flag entirely would still pass the default-off case.
+    const h = await harness();
+    await mutateWorkspace(h.workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      databaseEnabled: true,
+    }));
+    const state = await projectDatabaseState(h.env, {
+      scope: SCOPE,
+      project: PROJECT,
+      apiKey: KEY,
+    });
+    expect(state?.enabled).toBe(true);
   });
 
   test("reports an unconfigured platform, so the client can hide the switch", async () => {
@@ -276,15 +296,31 @@ describe("projectDatabaseState", () => {
 });
 
 describe("reconcileProjectDatabase", () => {
-  test("provisions a project that never touched the switch — absent means ON", async () => {
+  test("provisions a project that OPTED IN before the slug existed", async () => {
+    // The case this hook exists for: the switch was flipped with no production
+    // deploy, and the first Publish is what claims the slug.
     const h = await harness({ deployedSlug: "demo" });
+    await mutateWorkspace(h.workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      databaseEnabled: true,
+    }));
     await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo" });
     expect(h.env.appDb.provision).toHaveBeenCalled();
   });
 
+  test("does nothing for a project that never asked — absent means OFF", async () => {
+    // Every deploy of every project passes through here, so this is what keeps
+    // a schema and a login role from being created for projects that will
+    // never call ctx.db. It is also the polarity that flipped: a reader still
+    // testing `!== false` provisions for all of them and nothing else notices.
+    const h = await harness({ deployedSlug: "demo" });
+    await reconcileProjectDatabase(h.env, { scope: SCOPE, project: PROJECT, slug: "demo" });
+    expect(h.env.appDb.provision).not.toHaveBeenCalled();
+  });
+
   test("does nothing when the project OPTED OUT", async () => {
-    // The opt-out is an explicit `false`, which is why disabling stores it rather
-    // than clearing the field: a cleared field reads as the default, i.e. on.
+    // An explicit `false` reads the same as absent. It is stored rather than
+    // cleared because it records a decision the user made.
     const h = await harness({ deployedSlug: "demo" });
     await mutateWorkspace(h.workspaces, SCOPE, PROJECT, (current) => ({
       ...current,

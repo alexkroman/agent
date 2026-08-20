@@ -27,7 +27,11 @@ The browser studio's server side (documented below):
   (`StudioBuildError`), `studio-deploy.ts` (guest build → validate config →
   deploy), `studio-database.ts` + `studio-database-routes.ts` (the project
   database switch across both environments, and the post-deploy hook that
-  provisions a newly claimed slug), `studio-database-browse.ts` (the READ
+  provisions a newly claimed slug) — **a database is OFF until the
+  project asks for one** (`wantsDatabase` in `studio-workspace.ts` is the
+  one reader of that default, and `projectPayload` carries it so the client
+  can gate the Database TAB on it; the module doc has why the default
+  flipped), `studio-database-browse.ts` (the READ
   behind the studio's Database pane — which agent, and may this caller read
   it; the SQL is aai-server's `app-db-browse.ts`, and one 404 covers every
   "nothing to read here" so the routes cannot become an ownership oracle),

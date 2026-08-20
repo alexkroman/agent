@@ -60,7 +60,34 @@ so every piece of per-project state resets on a switch with no effect to do it.
     entirely on the labels.
 - **The switcher runs deployed-agent-first, then workspace**: UI, API,
   Workflows, Database, Code, Secrets, Settings (`StudioTab` in `top-bar.tsx`
-  is the one union; `project-view.tsx`'s `tab` state is the only selection).
+  is the one union; `project-view.tsx`'s `selectedTab` state is the only
+  selection).
+  - **Database is the one pane a project can LACK**, and everything else is
+    offered from the moment a project exists. It is gated on
+    `ProjectData.databaseEnabled` through `isTabVisible` — a database is an
+    opt-in taken in Settings, and before it is taken the pane could only show
+    an empty table list. A tab that answers no question reads as a broken
+    feature rather than an unused one, and it drew "where is my data" from
+    users who had never switched anything on.
+    - **The gate rides on the PROJECT payload, not on the database-state
+      route the Settings card reads.** Recording the intent stamps the
+      workspace, which pushes a `project` frame down the SSE stream
+      (`withWorkspaceEvents` → `projectPayload`), so every open tab gains or
+      loses the pane on its own. The card additionally invalidates the project
+      query on a successful toggle, which is what makes the tab appear on the
+      CLICK rather than on the round trip — and covers a stream that happens
+      to be reconnecting.
+    - **`isTabVisible` is shared with `project-view.tsx` deliberately.** Two
+      callers need one answer: the switcher decides what to render, and the
+      view decides what a SELECTION of a now-hidden pane means. Those
+      disagreeing is a tab bar with no `aria-current` beside a blank pane.
+      `shownTab` falls back to **Settings**, not to the default UI pane,
+      because Settings is where the switch that hid it lives — same rule as
+      `openFile` beside it, derived during render rather than corrected by an
+      effect, since a selection of something that stopped existing is not a
+      selection.
+    - The switcher's left borders index the VISIBLE list, or a missing pane
+      leaves a seam where it used to be.
   The first four are all about the agent that is RUNNING — talk to it, call
   it, watch what it is still doing, read what it stored — where Code, Secrets
   and Settings are about the workspace and the project. API sits second
@@ -168,8 +195,16 @@ so every piece of per-project state resets on a switch with no effect to do it.
 - **The Database card switches `ctx.db` on per PROJECT, across both
   environments** (`database-card.tsx` → `GET/POST/DELETE
   /studio/projects/:project/database` → `aai-studio-server/
-  studio-database.ts`). The platform primitive is per SLUG (`aai storage
-  enable <slug>`, `/:slug/storage`) and a project is two deployed agents, so
+  studio-database.ts`). **It is OFF by default**, so this card is the only
+  place the capability is discoverable — the pane it fronts does not exist
+  until the switch is flipped (see the switcher above) — which is why the
+  blurb names the Database pane rather than only describing `ctx.db`.
+  A test consequence worth knowing: the card's own blurb contains the word
+  "Database", so `getByText("Database")` in `settings.test.tsx` matches the
+  title AND the blurb — read card titles through `.eyebrow` instead.
+
+  The platform primitive is per SLUG (`aai storage enable <slug>`,
+  `/:slug/storage`) and a project is two deployed agents, so
   a per-slug toggle here would have made that the user's bookkeeping — and
   "enable the database" that only reached the preview would be a broken
   promise either way. Each environment gets its OWN schema: the preview is
@@ -332,7 +367,9 @@ so every piece of per-project state resets on a switch with no effect to do it.
     somebody pastes it, so it is worth asserting directly rather than through
     a render.
 - **The Database pane is a read-only table viewer**
-  (`database.tsx` → `GET …/database/tables` and `…/database/rows`). The
+  (`database.tsx` → `GET …/database/tables` and `…/database/rows`), offered
+  only once the project has opted into a database — see the switcher's gate
+  above. The
   Settings card beside it answers "is the database on" and "how many rows",
   which is the question one step before the one people have: a count moving
   from 3 to 4 says a tool wrote SOMETHING, not whether it wrote the field you

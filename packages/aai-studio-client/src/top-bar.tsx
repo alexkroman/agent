@@ -1,9 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's shared 60px top bar (brand, project name, the seven-pane
-// segmented control, Publish, Account, Log out) and the Publish dropdown it
-// opens.
+// The studio's shared 60px top bar (brand, project name, the pane segmented
+// control, Publish, Account, Log out) and the Publish dropdown it opens.
 // Split from app.tsx, which owns all the state these render. Project
 // switching lives in the home sidebar (brand → home), not here.
+//
+// The switcher was "the seven panes" and is six or seven now: Database is
+// offered only once the project has opted into a database (`isTabVisible`).
 
 import clsx from "clsx";
 import { useRef } from "react";
@@ -121,7 +123,9 @@ export function PublishMenu(props: PublishMenuProps) {
 }
 
 /**
- * The seven project panes, all peers in the segmented control.
+ * The project panes, all peers in the segmented control. Every one of them is
+ * offered from the moment a project exists EXCEPT `database`, which the project
+ * has to opt into — see {@link isTabVisible}.
  *
  * Settings joined them rather than staying a dropdown: it holds the CLI
  * round-trip, the Database switch and Delete project, which is more than a
@@ -167,11 +171,49 @@ const TABS: { id: StudioTab; label: string }[] = [
   { id: "settings", label: "Settings" },
 ];
 
+/**
+ * What a pane can be gated on. One entry today, and it is the only gate in the
+ * switcher: everything else here is reachable from the moment a project exists
+ * (Settings holds Delete project, Secrets holds the key the first build needs),
+ * so a second gate is a claim about the switcher's invariant and not a flag.
+ */
+export type TabGates = {
+  /** The project opted into a database — see `ProjectData.databaseEnabled`. */
+  databaseEnabled: boolean;
+};
+
+/**
+ * Whether a pane is offered at all.
+ *
+ * **Database is the one pane a project can lack.** A database is an opt-in
+ * taken in Settings (studio-database.ts), and until it is taken the pane could
+ * only ever show an empty table list — a tab that answers no question reads as
+ * a broken feature rather than as an unused one, and it invited the question
+ * "where is my data" from users who had never turned anything on. So the switch
+ * reveals the pane rather than merely un-erroring it.
+ *
+ * Exported because TWO callers need one answer: the switcher, which decides
+ * what to render, and `project-view.tsx`, which has to decide what a SELECTION
+ * of a now-hidden pane means. Those disagreeing is a tab bar with no
+ * `aria-current` beside a blank pane — so the predicate is shared rather than
+ * spelled twice.
+ */
+export function isTabVisible(tab: StudioTab, gates: TabGates): boolean {
+  return tab === "database" ? gates.databaseEnabled : true;
+}
+
 type TopBarProps = {
   project: string | null;
   tab: StudioTab;
   deployedSlug?: string | undefined;
   hasBuild: boolean;
+  /**
+   * The project opted into a database, which is what puts the **Database** tab
+   * in the switcher at all (see {@link isTabVisible}). Required rather than
+   * defaulted: the default is "no tab", and a caller that forgets to thread it
+   * would silently hide a pane the project paid for.
+   */
+  databaseEnabled: boolean;
   /** A chat turn is streaming — Publish locks until it settles (see PublishMenuProps). */
   chatBusy?: boolean;
   /**
@@ -234,7 +276,10 @@ export function TopBar(props: TopBarProps) {
       {/* The pane switcher is project-scoped — the hero home has no panes. */}
       {props.project && (
         <div className="flex flex-none overflow-hidden rounded-sm border border-line">
-          {TABS.map((entry, i) => (
+          {/* `i` indexes the VISIBLE list, so the left border still falls
+              between neighbours when a pane is missing — indexing TABS would
+              leave a seam where the Database tab used to be. */}
+          {TABS.filter((entry) => isTabVisible(entry.id, props)).map((entry, i) => (
             <button
               key={entry.id}
               type="button"

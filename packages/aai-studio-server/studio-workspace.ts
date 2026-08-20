@@ -75,18 +75,17 @@ export type StudioWorkspace = {
    * rather than state: it can be set before either agent is deployed, and each
    * environment's schema is provisioned as its slug appears.
    *
-   * **Absent means ON.** A studio project gets a database by default, so the
-   * agent the coding agent writes can call `ctx.db` in its first tool without
-   * anyone finding a settings pane first — reaching for storage and getting the
-   * enablement error is the wrong first experience, and the switch was
-   * discoverable only to someone who already knew it existed. An explicit
-   * `false` is the opt-out, which is why disabling STORES that rather than
-   * clearing the field: the convention used to be the other way round, and
-   * under it a cleared field would silently re-enable on the next read.
+   * **Absent means OFF.** A database is an opt-in, taken in Settings, and
+   * until it is taken the project has no Database pane at all — a schema and a
+   * login role per environment for every project that never asked is real
+   * infrastructure standing behind a capability most agents never call, and
+   * the pane it fronted was a tab into an empty database.
    *
-   * Every reader therefore tests `!== false`, never `=== true`. Defaulting at
-   * READ time rather than stamping the flag at project creation is what makes
-   * this hold for projects that already exist — there is nothing to backfill.
+   * Read it through {@link wantsDatabase}, never by hand — this field flipped
+   * direction once already (absent used to mean ON, and every reader tested
+   * `!== false`). Defaulting at READ time is what makes the flip hold for
+   * projects that already exist: there is nothing to backfill, and the ones
+   * that took the old opt-out carry an explicit `false` either way.
    */
   databaseEnabled?: boolean;
   updatedAt: number;
@@ -128,6 +127,17 @@ export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
  */
 export function hasPreviewChanges(workspace: StudioWorkspace): boolean {
   return workspace.previewHash !== currentFilesHash(workspace);
+}
+
+/**
+ * True when the project has asked for a database (`ctx.db`) — the ONE place
+ * {@link StudioWorkspace.databaseEnabled}'s default is resolved, so its three
+ * readers cannot disagree about it. A function rather than a `=== true` per
+ * reader because the default flipped once: a reader left on the old polarity
+ * gives every project a schema and nothing notices. See studio-database.ts.
+ */
+export function wantsDatabase(workspace: StudioWorkspace): boolean {
+  return workspace.databaseEnabled === true;
 }
 
 /**

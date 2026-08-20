@@ -14,6 +14,7 @@ import {
   hasPreviewChanges,
   hasUnpublishedChanges,
   type StudioWorkspace,
+  wantsDatabase,
 } from "./studio-workspace.ts";
 
 /** Keep intermediaries (the studio proxy included) from timing the stream out. */
@@ -52,6 +53,20 @@ export type ProjectPayload = {
   previewStale: boolean;
   /** CLI output of the last failed preview deploy, for the pane's banner. */
   previewError?: string | undefined;
+  /**
+   * The project has asked for a database (`ctx.db`) — what the client gates
+   * the **Database tab** on, so a project that never opted in has no pane
+   * onto an empty database (studio-database.ts).
+   *
+   * Resolved here rather than passed through as the raw optional field, for
+   * the same reason `kind` is: the default is the server's to decide, and a
+   * client reading `undefined` would have to know which way it currently
+   * runs. It rides on THIS payload rather than the database state route
+   * because the tab has to appear the moment the switch is flipped — the
+   * `stampWorkspaceMeta` that records the intent pushes a `project` frame
+   * (see `withWorkspaceEvents`), so every open tab re-reads it for free.
+   */
+  databaseEnabled: boolean;
 };
 
 /**
@@ -73,6 +88,7 @@ export function projectPayload(workspace: StudioWorkspace): ProjectPayload {
     ...(workspace.previewHash && { previewVersion: workspace.previewHash }),
     previewStale: hasPreviewChanges(workspace),
     ...(workspace.previewError && { previewError: workspace.previewError }),
+    databaseEnabled: wantsDatabase(workspace),
   };
 }
 
