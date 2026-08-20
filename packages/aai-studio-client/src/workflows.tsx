@@ -5,7 +5,7 @@
 // It was a card in Settings, which put the one live view of a RUNNING system
 // behind a page about configuration. A run is not a setting: it is the only
 // thing in this product that outlives every other surface the studio shows —
-// the Playground frames a page or a voice client, the transcript shows a
+// the UI pane frames a page or a voice client, the transcript shows a
 // conversation, and a run started an hour ago by a caller who has since hung
 // up appears in neither — so it is worth a tab of its own, beside the API pane
 // that documents how to start one.

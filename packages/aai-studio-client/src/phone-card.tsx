@@ -6,9 +6,11 @@
 // used to sit: a webhook URL is how a CARRIER calls this agent, which is that
 // pane's subject, and it was the one card in Settings documenting a request
 // instead of configuring the project. The signing-secret hints therefore point
-// ACROSS to Settings → Secrets rather than "below" — a direction that was only
+// ACROSS to the Secrets pane rather than "below" — a direction that was only
 // ever true of the old placement, and the sort of copy that silently stops
-// being true when a section moves.
+// being true when a section moves. They name a PANE rather than a path inside
+// one for the same reason: Secrets left Settings for a pane of its own, and
+// "Settings → Secrets" was copy describing furniture that had been moved.
 //
 // The whole integration on the user's side is pasting one of these into a
 // phone number's voice webhook, so the URL is the entire feature as far as
@@ -67,7 +69,7 @@ export function phoneWebhookUrl(origin: string, slug: string, carrier: string): 
 export type SecretState = "missing" | "pending" | "live";
 
 /**
- * Resolve a signing secret's state from the Secrets card's own two lists.
+ * Resolve a signing secret's state from the Secrets pane's own two lists.
  *
  * `pending` is the one worth distinguishing: the project holds the value but
  * no deploy has carried it onto the published agent yet, so verification is
@@ -102,7 +104,7 @@ function SecretHint({ carrier, state }: { carrier: Carrier; state: SecretState }
   }
   return (
     <span className="text-[11px] text-muted">
-      Add <code className="font-mono">{carrier.secret}</code> in Settings → Secrets to verify calls
+      Add <code className="font-mono">{carrier.secret}</code> in the Secrets pane to verify calls
       really came from {carrier.label} ({carrier.secretSource}). Until then anyone with this URL can
       start calls on your account.
     </span>
@@ -119,7 +121,7 @@ type PhoneCardProps = {
    * gets hung up on, which is a worse answer than not showing a URL yet.
    */
   deployedSlug?: string | undefined;
-  /** Secret names this project holds — the Secrets card's own list. */
+  /** Secret names this project holds — the Secrets pane's own list. */
   secretNames: readonly string[];
   /** Of those, the ones no deployed agent carries yet. */
   pendingSecrets: readonly string[];
@@ -132,7 +134,7 @@ export function PhoneCard({ deployedSlug, secretNames, pendingSecrets }: PhoneCa
   return (
     <Card
       title="Phone number"
-      blurb="Point a phone number's voice webhook at one of these and calls to it reach this agent. Each carrier also needs its signing secret set in Settings → Secrets before the platform will verify the calls are really from them."
+      blurb="Point a phone number's voice webhook at one of these and calls to it reach this agent. Each carrier also needs its signing secret set in the Secrets pane before the platform will verify the calls are really from them."
     >
       {deployedSlug === undefined ? (
         <p className="m-0 text-[13px] leading-5 text-muted">

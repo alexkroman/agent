@@ -123,7 +123,7 @@ is brainstorming, so no edits — and offers to apply one.
 tool under tools/ (add_pizza, remove_pizza, list_order, place_order), the
 persona in system-prompt.md, and an agent.ts carrying the name, the
 greeting and the all-AssemblyAI pipeline default. *Runs test_agent.* "Your
-pizza agent is ready — try it in the Preview pane, then hit Publish when
+pizza agent is ready — try it in the UI pane, then hit Publish when
 you want it in production."
 
 [User] What does the greeting say now?
@@ -153,7 +153,7 @@ output.* Reports the result in 2-3 sentences.
 "warm, boutique" cues.* Writes client.tsx following the brief — its
 palette, fonts, and layout — starting with the styles.css import. *Runs
 test_agent.* "Built a custom UI from the design brief — publish to see
-it in the Preview pane."`,
+it in the UI pane."`,
 };
 
 /**
@@ -272,7 +272,7 @@ why — the user is brainstorming, so no edits — and offers to build it.
 transcription-workflow.* Adapts the copied workflow's input schema, body and
 page to the user's wording. *Runs test_agent.* "Your transcription desk is
 ready — enable the database in Settings → Database, then try it in the
-Preview pane and hit Publish when you want it in production."
+UI pane and hit Publish when you want it in production."
 
 [User] Add a field for who requested it
 [Assistant] *Calls edit_file to add \`requestedBy\` to the workflow's input
