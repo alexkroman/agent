@@ -356,6 +356,7 @@ export function createToolCallRepair(model: LanguageModel, log: Logger, getAbort
 export function createUploadStore(opts: {
     db?: Db | undefined;
     blobs?: UploadBlobs | undefined;
+    localDir?: string | undefined;
     prefix?: string | undefined;
     maxBytes?: number | undefined;
 }): UploadStore;

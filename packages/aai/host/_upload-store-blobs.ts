@@ -1,14 +1,18 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The upload store: one metadata row in the app's database, bytes as objects.
+ * The upload store: one record, bytes as objects — and NEITHER half names where it
+ * lives.
  *
- * The ONLY store. There used to be two — chunk rows in Postgres, files under
- * `aai dev` — and both held the bytes themselves. `_upload-blobs.ts` carries why
- * they are gone; what this module owns is the half that stayed in Postgres, which
- * is the record: who the upload is, how much of it is readable, whether that is
- * all of it, and which objects hold which windows.
+ * The ONLY store, written over two interfaces: {@link UploadRecords} for the
+ * record (who the upload is, how much of it is readable, whether that is all of
+ * it, and which objects hold which windows) and {@link UploadBlobs} for the bytes.
+ * Each has two implementations, and the pairing is decided once — in
+ * `workflow-uploads.ts` — by whether the deployment has a `DATABASE_URL`: the
+ * app's own database plus a bucket when it does, the local workflow world's data
+ * directory when it does not (`_upload-files.ts`, which carries why that is not
+ * the file backend this store used to have).
  *
- * ## The row is the record; the bucket is the bytes
+ * ## The record is the record; the bucket is the bytes
  *
  * Splitting them is what makes a part's arrival cheap. A part goes from the
  * browser straight to the bucket, so the only thing that crosses the guest is one
@@ -37,25 +41,24 @@
  * drops an arrival. `ctx.db` exposes one method and no transaction, and the pool
  * gives no connection affinity, so `SELECT … FOR UPDATE` is not available to us
  * here; `createKeyedLock` per upload id is, and it is sound because one guest
- * process serves one sandbox's routes. The file store serialized its sidecar the
- * same way and for the same reason.
+ * process serves one sandbox's routes. It is also what the file home relies on
+ * outright — a JSON record has no atomic read-modify-write of its own — which is
+ * why the lock lives HERE, above both implementations, rather than in either.
  */
 
 import { mapStream } from "../sdk/_map-stream.ts";
-import type { Db } from "../sdk/db.ts";
 import { createKeyedLock, withLock } from "../sdk/keyed-lock.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { assertUploadToken, type UploadInfo } from "../sdk/step-uploads.ts";
 import { UPLOAD_PART_BYTES } from "../sdk/upload-constants.ts";
-import { ensureOnce } from "./_ensure-once.ts";
 import {
   partKey,
   partsCovering,
-  partsOf,
   rangesOf,
   type UploadBlobs,
   type UploadPart,
 } from "./_upload-blobs.ts";
+import type { UploadRecord, UploadRecords } from "./_upload-records.ts";
 import {
   assertPartOffset,
   assertPartTotal,
@@ -65,8 +68,6 @@ import {
   newUploadId,
   UnknownUploadError,
   UPLOAD_WINDOW_CONCURRENCY,
-  UPLOADS_TABLE,
-  UploadIdTakenError,
   UploadPartError,
   type UploadStore,
   UploadTooLargeError,
@@ -74,19 +75,6 @@ import {
 
 /** One cut window and the byte it starts at — see {@link windows}. */
 type PlacedWindow = { at: number; bytes: Uint8Array };
-
-/** What one upload's row holds beyond {@link UploadInfo}. */
-type StoredRow = {
-  name: string;
-  type: string;
-  complete: boolean;
-  expected: string | null;
-  /**
-   * The boundary list AS THE DRIVER GIVES IT — a `::text` string, so `unknown` here and
-   * `partsOf` at every read. See `partsOf` for the bug that made this explicit.
-   */
-  parts: unknown;
-};
 
 /**
  * Build the store.
@@ -96,62 +84,30 @@ type StoredRow = {
  * though the bucket is shared.
  */
 export function createBlobUploadStore(opts: {
-  db: Db;
+  records: UploadRecords;
   blobs: UploadBlobs;
   prefix: string;
   maxBytes: number;
 }): UploadStore {
-  const { db, blobs, prefix, maxBytes } = opts;
+  const { records, blobs, prefix, maxBytes } = opts;
   // Serialized per upload, because every write is a read-modify-write of one row's
   // `parts` — see the module doc.
   const boundaries = createKeyedLock();
 
-  const ensureTables = ensureOnce(async () => {
-    // Created lazily and idempotently rather than by a migration step, for the
-    // reason `workflow-keys.ts` gives: an agent's first workflow may be its first
-    // ever deploy, and there is no provisioning pass to hang a DDL step off.
-    await db.query(`create table if not exists ${UPLOADS_TABLE} (
-      id text primary key,
-      name text not null default '',
-      type text not null default '',
-      size bigint not null,
-      complete boolean not null default true,
-      expected bigint,
-      parts jsonb,
-      created_at timestamptz not null default now()
-    )`);
-    // ADDED by `alter`, because `create table if not exists` is a NO-OP against a
-    // table that already exists — so an agent that stored an upload before this
-    // column existed would keep a column-short table forever and every read would
-    // fail on an unknown column. There is no chunk table to add: the only
-    // deployments that ever had one are unreleased.
-    await db.query(`alter table ${UPLOADS_TABLE} add column if not exists parts jsonb`);
-  });
-
   const key = (id: string, at: number): string => partKey(prefix, id, at);
 
-  /** The row, or undefined when nothing has begun under `id`. */
-  async function row(id: string): Promise<(StoredRow & { size: string }) | undefined> {
-    const rows = await db.query<StoredRow & { size: string }>(
-      `select name, type, size, complete, expected, parts from ${UPLOADS_TABLE} where id = $1`,
-      [id],
-    );
-    return rows[0];
-  }
-
-  /** The record as a caller sees it, derived from one row. */
-  function record(id: string, held: StoredRow, size: number): UploadInfo {
-    const complete = held.complete !== false;
+  /** What a caller sees, derived from one record. */
+  function info(id: string, held: UploadRecord, size = held.size): UploadInfo {
     // Only while there is something to resume: a finished upload is covered end to
     // end, and a reader's answer to an absent list is to assume nothing — see
     // `UploadInfo.ranges`.
-    const ranges = held.expected !== null && !complete ? rangesOf(partsOf(held.parts)) : undefined;
+    const ranges = held.expected !== undefined && !held.complete ? rangesOf(held.parts) : undefined;
     return {
       id,
       name: held.name,
       type: held.type,
       size,
-      complete,
+      complete: held.complete,
       ...omitUndefined({ ranges }),
     };
   }
@@ -167,49 +123,19 @@ export function createBlobUploadStore(opts: {
     return await withLock(boundaries, id, async () => {
       // Re-read INSIDE the lock: the copy read before the bytes went is stale by
       // exactly the parts that landed while they did.
-      const held = await row(id);
+      const held = await records.read(id);
       if (!held) throw new UnknownUploadError(id);
-      const parts = [...partsOf(held.parts).filter((one) => one.at !== part.at), part];
+      const parts = [...held.parts.filter((one) => one.at !== part.at), part];
       const size = contiguousBytes(rangesOf(parts));
       // A declared total is the ONLY thing that can make an upload complete here. A
       // streamed one declares none, and its prefix reaching its own length says
       // nothing — every window satisfies that — so its `complete` is left alone and
       // `stream` sets it when the BODY ends, which is the only moment anything knows
       // there is no more coming.
-      const complete =
-        held.expected === null ? held.complete !== false : size >= Number(held.expected);
-      await db.query(
-        // `$2::text::jsonb`, NOT `$2::jsonb` — see `partsOf` for what the missing
-        // `::text` stored.
-        `update ${UPLOADS_TABLE} set parts = $2::text::jsonb, size = $3, complete = $4
-         where id = $1`,
-        [id, JSON.stringify(parts), size, complete],
-      );
-      // The merged list as an ARRAY, not the string that was read: `record` goes back
-      // through `partsOf`, which accepts either.
-      return record(id, { ...held, parts, complete }, size);
+      const complete = held.expected === undefined ? held.complete : size >= held.expected;
+      await records.update(id, { parts, size, complete });
+      return info(id, { ...held, parts, complete }, size);
     });
-  }
-
-  /**
-   * Claim an id, refusing one that is already held.
-   *
-   * `returning id` rather than a read-back: a row comes back only when THIS
-   * statement inserted it, so an id already held is refused even by a caller
-   * declaring an identical upload — which is what makes a caller-chosen id safe.
-   */
-  async function claim(
-    id: string,
-    meta: { name: string; type: string },
-    expected: number | null,
-    complete: boolean,
-  ): Promise<void> {
-    const claimed = await db.query<{ id: string }>(
-      `insert into ${UPLOADS_TABLE} (id, name, type, size, complete, expected, parts)
-       values ($1, $2, $3, 0, $4, $5, '[]'::jsonb) on conflict (id) do nothing returning id`,
-      [id, meta.name, meta.type, complete, expected],
-    );
-    if (claimed.length === 0) throw new UploadIdTakenError(id);
   }
 
   /**
@@ -268,7 +194,7 @@ export function createBlobUploadStore(opts: {
 
   return {
     async create(meta, body, options): Promise<UploadInfo> {
-      await ensureTables();
+      await records.ensure();
       const id = newUploadId();
       const name = meta.name ?? "";
       const type = meta.type ?? "";
@@ -277,17 +203,18 @@ export function createBlobUploadStore(opts: {
       // upload leaves objects nothing can reach; the sweep that reclaims them is
       // not written.
       const size = await putWindows(id, body, options?.limit ?? maxBytes, false);
-      await db.query(
-        // `$5::text::jsonb` for the reason `addPart`'s update carries — `partsOf` owns it.
-        `insert into ${UPLOADS_TABLE} (id, name, type, size, complete, parts)
-         values ($1, $2, $3, $4, true, $5::text::jsonb)`,
-        [id, name, type, size, JSON.stringify(windowList(size))],
-      );
+      await records.insert(id, {
+        name,
+        type,
+        size,
+        complete: true,
+        parts: windowList(size),
+      });
       return { id, name, type, size, complete: true };
     },
 
     async stream(id, meta, body, options): Promise<UploadInfo> {
-      await ensureTables();
+      await records.ensure();
       // Validated here as well as at the route: this id becomes part of an object
       // KEY, so a token that escaped the check would address another prefix.
       assertUploadToken(id);
@@ -296,29 +223,33 @@ export function createBlobUploadStore(opts: {
       // The row goes FIRST here, which is the whole point of this method: the record
       // has to exist before the bytes do, so a run can be started on it and read
       // what has arrived.
-      await claim(id, { name, type }, null, false);
+      await records.claim(id, { name, type, size: 0, complete: false, parts: [] });
       const size = await putWindows(id, body, options?.limit ?? maxBytes, true);
-      await db.query(`update ${UPLOADS_TABLE} set size = $2, complete = true where id = $1`, [
-        id,
-        size,
-      ]);
+      await records.finish(id, size);
       return { id, name, type, size, complete: true };
     },
 
     async beginParts(id, meta, total, options): Promise<UploadInfo> {
-      await ensureTables();
+      await records.ensure();
       assertUploadToken(id);
       assertPartTotal(total, options?.limit ?? maxBytes);
       const name = meta.name ?? "";
       const type = meta.type ?? "";
       // An upload of NO bytes is finished the moment it is declared: no part can
       // ever arrive to close it, so anything else is a record that waits forever.
-      await claim(id, { name, type }, total, total === 0);
+      await records.claim(id, {
+        name,
+        type,
+        size: 0,
+        complete: total === 0,
+        expected: total,
+        parts: [],
+      });
       return { id, name, type, size: 0, complete: total === 0 };
     },
 
     async writePart(id, offset, body): Promise<UploadInfo> {
-      await ensureTables();
+      await records.ensure();
       assertPartOffset(offset);
       const held = await declared(id, offset);
       // The refusal is a {@link UploadPartError} rather than the
@@ -341,7 +272,7 @@ export function createBlobUploadStore(opts: {
     },
 
     async recordPart(id, offset): Promise<UploadInfo> {
-      await ensureTables();
+      await records.ensure();
       assertPartOffset(offset);
       const held = await declared(id, offset);
       // Asked of the BUCKET, never taken from the caller — see the module doc. A
@@ -376,19 +307,16 @@ export function createBlobUploadStore(opts: {
     },
 
     async info(id): Promise<UploadInfo | undefined> {
-      await ensureTables();
-      const held = await row(id);
-      // `bigint` comes back as a string from the driver — `Number` rather than
-      // trusting the shape, so a column type change is a NaN here instead of a
-      // string silently used as a byte count.
-      return held ? record(id, held, Number(held.size)) : undefined;
+      await records.ensure();
+      const held = await records.read(id);
+      return held ? info(id, held) : undefined;
     },
 
     async read(id, start, end): Promise<Uint8Array> {
-      await ensureTables();
-      const held = await row(id);
+      await records.ensure();
+      const held = await records.read(id);
       if (!held) return new Uint8Array(0);
-      const wanted = partsCovering(partsOf(held.parts), start, end);
+      const wanted = partsCovering(held.parts, start, end);
       // One read per object the window overlaps, in order. A window inside a single
       // part is one read, which is the ordinary case: a header probe, or a segment
       // cut to the part size.
@@ -404,12 +332,12 @@ export function createBlobUploadStore(opts: {
 
   /** The declared shape a part has to fit, or the reason it cannot. */
   async function declared(id: string, offset: number): Promise<{ type: string; total: number }> {
-    const held = await row(id);
+    const held = await records.read(id);
     if (!held) throw new UnknownUploadError(id);
-    if (held.expected === null) {
+    if (held.expected === undefined) {
       throw new UploadPartError(`Upload ${id} was not begun as a parts upload.`);
     }
-    const total = Number(held.expected);
+    const total = held.expected;
     if (offset > total) {
       throw new UploadPartError(`A part at ${offset} starts past this upload's ${total} bytes.`);
     }

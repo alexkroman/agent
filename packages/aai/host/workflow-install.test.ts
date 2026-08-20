@@ -11,6 +11,9 @@
  * That is the failure this file exists for; the module had no spec at all.
  */
 
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { publishStepFetch, stepFetch } from "../sdk/step-fetch.ts";
 import { publishStepReporter, report } from "../sdk/step-report.ts";
@@ -21,15 +24,30 @@ import {
 } from "../sdk/step-uploads.ts";
 import { installWorkflowSupport } from "./workflow-install.ts";
 
-beforeEach(() => {
+/**
+ * Where the LOCAL world would keep its run state, and so where a databaseless
+ * store puts its uploads.
+ *
+ * Stubbed rather than left to the default, because the default is a real directory
+ * under `tmpdir()` keyed by pid — every spec here that installs without a database
+ * would create one and leave it behind. Stubbing the same key
+ * `configureWorkflowWorld` writes is also the claim under test: the store reads the
+ * world's own directory rather than one of its own.
+ */
+let dataDir: string;
+
+beforeEach(async () => {
   // Every slot is process-global, so a test has to start from nothing published
   // or it cannot tell "installed it" from "a previous test left it".
   publishUploadReader(undefined);
   publishStepReporter(undefined);
   publishStepFetch(undefined);
+  dataDir = await mkdtemp(join(tmpdir(), "aai-install-data-"));
+  vi.stubEnv("WORKFLOW_LOCAL_DATA_DIR", dataDir);
 });
 
 afterEach(async () => {
+  await rm(dataDir, { recursive: true, force: true });
   publishUploadReader(undefined);
   publishStepReporter(undefined);
   publishStepFetch(undefined);
@@ -39,6 +57,11 @@ afterEach(async () => {
   // every request with `Response("global")`.
   vi.unstubAllGlobals();
 });
+
+/** Four bytes, as the routes hand a body over: an async iterable of chunks. */
+async function* oneChunk(): AsyncGenerator<Uint8Array> {
+  yield new Uint8Array([1, 2, 3, 4]);
+}
 
 /** A logger that records nothing anybody asserts on — see the `report` test for one that does. */
 function quietLogger() {
@@ -54,11 +77,39 @@ describe("installWorkflowSupport", () => {
     await expect(readUpload("upl_missing")).rejects.toThrow(UPLOADS_UNAVAILABLE_MESSAGE);
     install();
     // A DIFFERENT failure, which is the point: the slot is filled and the store is
-    // the thing that answered. With no database and no bucket configured, what it
-    // answers is a refusal naming both — never `undefined`, which would make a
-    // misconfigured platform indistinguishable from an id nobody uploaded.
+    // the thing that answered. With no database that store is the LOCAL one, so what
+    // it answers for an id nobody uploaded is "no such upload" — the honest answer,
+    // where the unpublished slot's message is about this process's wiring.
     await expect(readUpload("upl_missing")).rejects.not.toThrow(UPLOADS_UNAVAILABLE_MESSAGE);
-    await expect(readUpload("upl_missing")).rejects.toThrow(/DATABASE_URL/);
+    await expect(readUpload("upl_missing")).rejects.toThrow(/No upload with id upl_missing/);
+  });
+
+  test("with no database, uploads WORK and live under the world's data directory", async () => {
+    // The pairing this module exists to make automatic: `configureWorkflowWorld`
+    // reads `DATABASE_URL` to pick the local world, and this reads it to pick the
+    // local store — so an upload and the runs that read it share one directory and
+    // one lifetime. A databaseless agent used to have no uploads at all.
+    const local = install();
+    const created = await local.uploads.create({ name: "a.wav" }, oneChunk());
+    expect(created).toMatchObject({ name: "a.wav", size: 4, complete: true });
+    // Compared as VALUES: `concat` answers whatever its pieces are, and Node's
+    // `Buffer.concat` makes that a Buffer for every multi-piece read in every home.
+    expect(Array.from(await local.uploads.read(created.id, 0, 4))).toEqual([1, 2, 3, 4]);
+    // Under the STUBBED directory, which is what says it took the world's rather
+    // than minting one of its own.
+    expect((await readdir(dataDir)).toSorted()).toEqual(["objects", "records"]);
+    await local.close();
+  });
+
+  test("a database with no bucket REFUSES, naming the durable half", async () => {
+    // The one combination with no answer: a database's runs outlive this container,
+    // and the local directory cannot serve one that resumes elsewhere.
+    const half = installWorkflowSupport({
+      env: { DATABASE_URL: "postgres://user:pw@127.0.0.1:1/db" },
+      logger: quietLogger(),
+    });
+    await expect(half.uploads.info("upl_x")).rejects.toThrow(/AAI_UPLOAD_STORAGE_URL/);
+    await half.close();
   });
 
   test("brokers the bytes when a PLATFORM says it serves them, ignoring the env", async () => {
@@ -84,12 +135,18 @@ describe("installWorkflowSupport", () => {
 
   test("reads the bucket out of the env, so `aai dev` gets a real store", async () => {
     // The three keys together — two of three resolves nothing, deliberately, so a
-    // typo is a refusal naming the key rather than a 500 on the first upload.
+    // typo cannot half-configure a bucket. With a DATABASE_URL beside them that is a
+    // refusal naming the key; the arm below is the configured one.
     const half = installWorkflowSupport({
-      env: { AAI_UPLOAD_STORAGE_URL: "https://s.example", AAI_UPLOAD_STORAGE_KEY: "k" },
+      env: {
+        DATABASE_URL: "postgres://user:pw@127.0.0.1:1/db",
+        AAI_UPLOAD_STORAGE_URL: "https://s.example",
+        AAI_UPLOAD_STORAGE_KEY: "k",
+      },
       logger: quietLogger(),
     });
     await expect(half.uploads.info("upl_x")).rejects.toThrow(/AAI_UPLOAD_STORAGE_URL/);
+    await half.close();
 
     const whole = installWorkflowSupport({
       env: {

@@ -10,7 +10,7 @@
  *
  * The condition is not the neighbour's `uploads: undefined`, which is "no store, so
  * the routes are not mounted" and answers 404. `installWorkflowSupport` ALWAYS
- * builds a store, and `createUploadStore` returns the refusing one when either half
+ * builds a store, and `createUploadStore` returns the refusing one for the one pairing
  * is missing, so the routes are mounted and every call reaches a method that
  * rejects. That is what a deployed agent with no database or no bucket really is,
  * and all of them used to answer `{"error":"Internal server error"}`.
@@ -33,7 +33,10 @@ afterEach(async () => {
 });
 
 /** The API over a store that refuses everything, on a real loopback server. */
-async function serveUnavailable(missing = "a database"): Promise<string> {
+// The one combination that really refuses: a database with no bucket behind it.
+async function serveUnavailable(
+  missing = "somewhere to put the bytes (`AAI_UPLOAD_STORAGE_URL`)",
+): Promise<string> {
   const api = createWorkflowApi({
     engine: () => ({
       ...rejectingWorkflows("no run route is exercised here"),
@@ -54,10 +57,11 @@ async function serveUnavailable(missing = "a database"): Promise<string> {
 describe("a deployment whose upload store is UNAVAILABLE", () => {
   // Distinct from `uploads: undefined` above, which is "no store, so no routes" and
   // answers 404. Here the routes ARE mounted — `installWorkflowSupport` always builds
-  // a store, and `createUploadStore` returns the refusing one when a half is missing
-  // — so every call reaches a method that rejects. That is what a deployed agent with
-  // no database or no bucket really is, and it used to answer `{"error":"Internal
-  // server error"}` on all of them.
+  // a store, and `createUploadStore` returns the refusing one for the one combination
+  // it cannot serve: a DATABASE with nowhere durable for the bytes. (No database at
+  // all is not this case; it takes the local world's directory, which is what
+  // `workflow-uploads.test.ts` covers.) It used to answer
+  // `{"error":"Internal server error"}` on all of them.
   const unavailable = () => serveUnavailable();
 
   test("a write answers 501 and NAMES what the deployment is missing", async () => {
@@ -65,10 +69,13 @@ describe("a deployment whose upload store is UNAVAILABLE", () => {
     const res = await fetch(`${base}/workflows/uploads`, { method: "POST", body: "x" });
     expect(res.status).toBe(501);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("a database");
+    expect(body.error).toContain("somewhere to put the bytes");
     // The remedy, which is the entire reason this message is worth a status of its
-    // own — an operator reading it needs no access to the guest's logs.
-    expect(body.error).toContain("aai storage enable");
+    // own — an operator reading it needs no access to the guest's logs. The `.env`
+    // block is the whole of it: what a half-configured deployment is missing is the
+    // durable byte store, and these are the keys that name one.
+    expect(body.error).toContain("AAI_UPLOAD_STORAGE_URL=");
+    expect(body.error).toContain("supabase status -o env");
   });
 
   test("the parts claim answers 501 too, not the 409 a taken id gets", async () => {
