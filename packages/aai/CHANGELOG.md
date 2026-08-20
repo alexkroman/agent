@@ -1,5 +1,17 @@
 # @alexkroman1/aai
 
+## 6.9.0
+
+### Minor Changes
+
+- bbde9f9: Add an agent log surface: a bounded ring in the guest, `GET /:slug/logs`, a studio Logs pane, and `aai logs`.
+  
+  `aai` gains `createLogBuffer` on `/runtime` — the cursor-indexed ring both ends of the wire derive from. The guest tees its own stdout/stderr into it and serves `GET /manage/logs`; the platform reads that and answers `GET /:slug/logs` without booting a sandbox. The session event log is append-only to the app role now, so `ctx.db` can no longer delete an agent's own audit trail, and a discarded session's events are reclaimed by the retention sweep rather than by the runtime.
+
+### Patch Changes
+
+- 203c2d4: Overlap the upload byte pipeline with itself: a whole-file write now puts several windows while the next one is still arriving, and the byte route reads chunks ahead of the socket instead of paying a round trip per megabyte. A window is still buffered whole before its write starts, so a failed write is still re-sendable. Also stops the read route leaking a `close` listener per chunk it paces.
+
 ## 6.8.0
 
 ## 6.7.2

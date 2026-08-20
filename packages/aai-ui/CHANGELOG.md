@@ -1,5 +1,18 @@
 # @alexkroman1/aai-ui
 
+## 6.9.0
+
+### Minor Changes
+
+- ebd3c39: Remember a workflow form's upload ids in sessionStorage, so a page reload resumes an interrupted upload instead of sending the file again. A recalled id is checked against the agent's own upload record before anything is sent to it: a complete upload skips the transfer entirely, an unfinished one with stored windows is resumed, and anything else gets a fresh id.
+- a8e74a9: useAgentState now accepts a slot projection directly: `useAgentState(cartProjection)` infers the state's type from the projection and derives the pre-first-push frame by running it, memoized on the projection's identity. This closes a round-trip authors were wiring by hand — the projection had to be composed at both ends (`syncState` on the agent, again in the client) with nothing checking that the two named the same view, the empty frame was derived with `slot.projection(view)(undefined)`, and the state's type was restated three times. The two existing overloads are unchanged; prefer the `fallback` one only when a slot's `create()` is expensive to import into the browser, since the projection overload calls it.
+
+### Patch Changes
+
+- Updated dependencies [203c2d4]
+- Updated dependencies [bbde9f9]
+  - @alexkroman1/aai@6.9.0
+
 ## 6.8.0
 
 ### Minor Changes

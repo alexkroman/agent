@@ -1,5 +1,29 @@
 # aai-studio-server
 
+## 0.8.0
+
+### Minor Changes
+
+- b5fa695: Studio: an API pane generated from each agent's own workflow schemas, Workflows and Database panes of their own, and Preview renamed to Playground
+- 9134a61: Studio: the Playground tab is now labelled UI, and secrets move out of Settings into a Secrets pane of their own — a name/value form with the value in a password field, a live/on-next-deploy list with confirm-before-delete, and the .env paste box kept for bulk adds
+- f802fac: Databases are off by default: a studio project now has no ctx.db until it is enabled in Settings, and the Database pane appears only once it is.
+
+### Patch Changes
+
+- Updated dependencies [ebd3c39]
+- Updated dependencies [203c2d4]
+- Updated dependencies [46db894]
+- Updated dependencies [bbde9f9]
+- Updated dependencies [a8e74a9]
+- Updated dependencies [46db894]
+- Updated dependencies [9134a61]
+- Updated dependencies [f802fac]
+- Updated dependencies [46db894]
+  - @alexkroman1/aai-ui@6.9.0
+  - @alexkroman1/aai@6.9.0
+  - aai-server@3.6.0
+  - aai-studio-client@0.6.0
+
 ## 0.7.11
 
 ### Patch Changes
