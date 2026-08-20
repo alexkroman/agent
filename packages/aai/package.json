@@ -109,7 +109,7 @@
     "@ai-sdk/mistral": "^4.0.29",
     "@ai-sdk/openai": "^4.0.40",
     "@ai-sdk/xai": "^4.0.36",
-    "@cartesia/cartesia-js": "^3.5.1",
+    "@cartesia/cartesia-js": "^4.0.1",
     "@deepgram/sdk": "^5.8.0",
     "@elevenlabs/elevenlabs-js": "^2.63.0",
     "@sindresorhus/slugify": "^3.0.0",

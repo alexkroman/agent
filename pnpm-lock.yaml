@@ -199,8 +199,8 @@ importers:
         specifier: ^4.0.36
         version: 4.0.36(zod@4.4.3)
       '@cartesia/cartesia-js':
-        specifier: ^3.5.1
-        version: 3.5.1(ws@8.21.3)
+        specifier: ^4.0.1
+        version: 4.0.1(ws@8.21.3)
       '@deepgram/sdk':
         specifier: ^5.8.0
         version: 5.8.0
@@ -1140,8 +1140,8 @@ packages:
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
 
-  '@cartesia/cartesia-js@3.5.1':
-    resolution: {integrity: sha512-ZVmblhEW8pZOR4+yfFD2DvWNXlIEgfIV+HmW2H3Yc/OxXZAiLbYImx34uMcAwHOx6F4fOrB2N1aGzVq+0PlKPw==}
+  '@cartesia/cartesia-js@4.0.1':
+    resolution: {integrity: sha512-oe331sn6wwuKf4EGZR340mEAnYG6bxvTTeu4QViKBxEu2vdSlJ2Aq9stdEYOi5CmjzsXnVtqlBMIMJCxoS/GRA==}
     peerDependencies:
       ws: ^8.18.0
     peerDependenciesMeta:
@@ -1252,6 +1252,9 @@ packages:
 
   '@codemirror/commands@6.10.4':
     resolution: {integrity: sha512-Ryk9y9T0FFVF0cUGhAknveAyUOl/A1qReTFi+qPKtOh2Z9F4AUBz3XOrYD4ZEgZirdugVzHvd/2/Wcwy5OliTg==}
+
+  '@codemirror/commands@6.11.0':
+    resolution: {integrity: sha512-/K4Rl5BN0OtTiPWmJCdqODu38XnDMsDxKY5rgrPnCkutPTJf2wVbkoixLfealF5Kwse/s8P8M5jAiURiwSwnFA==}
 
   '@codemirror/lang-javascript@6.2.5':
     resolution: {integrity: sha512-zD4e5mS+50htS7F+TYjBPsiIFGanfVqg4HyUz6WNFikgOPf2BgKlx+TQedI1w6n/IqRBVBbBWmGFdLB/7uxO4A==}
@@ -3833,6 +3836,9 @@ packages:
 
   brace-expansion@2.1.2:
     resolution: {integrity: sha512-w5JZcKgdhDOgOwm8H+KgbosopHMuGcl6qbulwjtz3SM7I7P3yW1eAjzMPLrIE+NQ9vjgANKHWeMHnrT0OXW1oA==}
+
+  brace-expansion@2.1.4:
+    resolution: {integrity: sha512-hGfVzPxthbf3+2yjg/RBs60cB0FhqBS/zvdV/4wn4/BmN0bNMMHPc4V/BbFieqf1TKAGGAHnY4eSjajCl0f2Xg==}
 
   brace-expansion@5.0.7:
     resolution: {integrity: sha512-7oFy703dxfY3/NLxC1fh2SUCQ0H9rmAY+5EpDVfXjUTTs+HEwR2nYaqLv+GWcTsumwxPfiz6CzCNkwXwBUwqCA==}
@@ -8101,7 +8107,7 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
-  '@cartesia/cartesia-js@3.5.1(ws@8.21.3)':
+  '@cartesia/cartesia-js@4.0.1(ws@8.21.3)':
     optionalDependencies:
       ws: 8.21.3
 
@@ -8247,6 +8253,13 @@ snapshots:
       '@lezer/common': 1.5.2
 
   '@codemirror/commands@6.10.4':
+    dependencies:
+      '@codemirror/language': 6.12.4
+      '@codemirror/state': 6.7.1
+      '@codemirror/view': 6.43.7
+      '@lezer/common': 1.5.2
+
+  '@codemirror/commands@6.11.0':
     dependencies:
       '@codemirror/language': 6.12.4
       '@codemirror/state': 6.7.1
@@ -10760,6 +10773,10 @@ snapshots:
     dependencies:
       balanced-match: 1.0.2
 
+  brace-expansion@2.1.4:
+    dependencies:
+      balanced-match: 1.0.2
+
   brace-expansion@5.0.7:
     dependencies:
       balanced-match: 4.0.4
@@ -10967,7 +10984,7 @@ snapshots:
   codemirror@6.0.2:
     dependencies:
       '@codemirror/autocomplete': 6.20.3
-      '@codemirror/commands': 6.10.4
+      '@codemirror/commands': 6.11.0
       '@codemirror/language': 6.12.4
       '@codemirror/lint': 6.9.7
       '@codemirror/search': 6.7.1
@@ -12974,7 +12991,7 @@ snapshots:
 
   minimatch@9.0.9:
     dependencies:
-      brace-expansion: 2.1.2
+      brace-expansion: 2.1.4
 
   minimist@1.2.8: {}
 
