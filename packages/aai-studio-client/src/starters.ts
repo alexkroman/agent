@@ -76,10 +76,12 @@ export const AGENT_STARTERS: Starter[] = [
 /**
  * Workflow apps — `workflowApp()`, a form, durable runs, no session.
  *
- * The two template-backed entries come first because they are the shape the
+ * The three template-backed entries come first because they are the shape the
  * mode's system prompt tells the agent to start from; `transcription-workflow` is
- * the fuller of the two (an upload, a webhook resume, a fan-out) and
- * `link-digest` the same thing at its smallest. The prose entries below them
+ * the fuller of them (an upload, a webhook resume, a fan-out), `link-digest` the
+ * same thing at its smallest, and `spoken-summary` the one whose ANSWER is a
+ * file — a step speaks and stores, and the page plays what the run made. The
+ * prose entries below them
  * are jobs of the same shape with no template to copy — a form in, a durable
  * run, a result to come back to.
  */
@@ -91,6 +93,10 @@ export const WORKFLOW_STARTERS: Starter[] = [
   {
     label: "A link digest that summarizes a URL",
     prompt: "Use the link-digest template.",
+  },
+  {
+    label: "A recording summarized, and read back aloud",
+    prompt: "Use the spoken-summary template.",
   },
   {
     label: "A batch job that enriches a list of companies",

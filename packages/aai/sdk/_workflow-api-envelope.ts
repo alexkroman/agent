@@ -16,6 +16,7 @@
 
 import { readJsonBody } from "./response-body.ts";
 import { isRecord, responseErrorMessage } from "./utils.ts";
+import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /**
  * Path prefix every route lives under, relative to the agent's own base URL.
@@ -93,4 +94,20 @@ export function failureStatus(err: unknown): number | undefined {
  */
 export function readApiJson<T>(res: Response): Promise<T> {
   return readJsonBody<T>(res, WORKFLOW_API_ERROR_LABEL);
+}
+
+/**
+ * The snapshot a `startAndWait` falls back to when the run exists and cannot be
+ * read back.
+ *
+ * Reachable only against an agent that answered `{ runId }` and then reported no
+ * such run — a replica that has not yet seen its own write. Saying `pending` is
+ * both true and useful: the caller has the id, and reading it again takes it
+ * from there.
+ *
+ * Here rather than beside its one caller because `workflow-api-client.ts` is at
+ * the 500-line cap and this is envelope-shaping, which is what this module is.
+ */
+export function pendingRun(runId: string, workflow: string): WorkflowRunSnapshot {
+  return { runId, workflow, createdAt: Date.now(), status: "pending" };
 }

@@ -29,16 +29,28 @@ export type { SttOpener, TtsOpener } from "../sdk/providers.ts";
 // bundles it. Only a host calls this: the guest at bundle load, `aai dev` on
 // every rebuild.
 export { publishStepEnv } from "../sdk/step-env.ts";
-// The three step slots' publishers. `installWorkflowSupport` below is what
+// The four step slots' publishers. `installWorkflowSupport` below is what
 // calls all of them for an ordinary server; these are for a process that
 // assembles its own.
 export { publishStepFetch, type StepFetch } from "../sdk/step-fetch.ts";
 export { publishStepReporter, type StepReporter } from "../sdk/step-report.ts";
 export {
+  publishSpeechSynthesizer,
+  SPEECH_UNAVAILABLE_MESSAGE,
+  type SpeechSynthesizer,
+} from "../sdk/step-speak.ts";
+export {
   publishUploadReader,
   UPLOADS_UNAVAILABLE_MESSAGE,
+  type UploadAccess,
   type UploadReader,
+  // `UploadAccess` is an intersection of these two, and a type a public
+  // signature MENTIONS but does not export is a docs-build warning — see the
+  // `UploadRange` note in `sdk/utils.ts` for the rule.
+  type UploadWriteMeta,
+  type UploadWriter,
 } from "../sdk/step-uploads.ts";
+export { UPLOAD_WRITES_UNAVAILABLE_MESSAGE } from "../sdk/step-uploads-write.ts";
 // The two sizes an upload is measured in, plus the id grammar. Exported for the
 // PLATFORM, which owns the byte route a deployed guest brokers through: its window
 // cap and its key derivation have to be stated in the same units the SDK cuts in,
@@ -207,6 +219,10 @@ export {
 // reporter. Exported for the embedders that build a server by hand — and for a
 // spec, which publishes a fake rather than standing a store up.
 export { createStepFetch } from "./step-fetch.ts";
+// `speakOverWebSocket` is the implementation `installWorkflowSupport` publishes,
+// exported for the same reason the publishers are: a process assembling its own
+// step surface needs the default to hand to one.
+export { speakOverWebSocket } from "./step-speak.ts";
 export {
   CARRIER_CODECS,
   type CarrierCodec,

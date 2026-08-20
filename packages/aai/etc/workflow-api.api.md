@@ -95,6 +95,9 @@ export type WorkflowApi = {
     wake(runId: string): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     uploadInfo(id: string): Promise<UploadInfo>;
+    download(id: string, options?: {
+        signal?: AbortSignal;
+    }): Promise<Blob>;
 };
 
 // @public

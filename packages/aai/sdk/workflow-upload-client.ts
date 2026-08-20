@@ -435,6 +435,38 @@ export async function streamUploadFile(
  *
  * @internal
  */
+/**
+ * Read an upload's BYTES, as a `Blob` a page can play or save.
+ *
+ * The counterpart of {@link readUploadInfo}, and the browser half of
+ * `writeUpload` — a run whose output is a file returns the id, and this is how
+ * that id becomes something to hand an `<audio>` element or a download link.
+ *
+ * **A `Blob` rather than a URL, and the auth is why.** The byte route takes the
+ * same `Authorization` header every other route here does, and neither
+ * `<audio src>` nor `<a href>` can send one — so a page built on a URL works
+ * against `aai dev`, where there is no token, and 401s the moment the agent has
+ * one. Reading it here and calling `URL.createObjectURL` on the result works in
+ * both, at the cost of holding the file in the tab, which for anything a person
+ * is about to look at is what a browser does anyway.
+ *
+ * @internal — reached through `WorkflowApi.download`.
+ */
+export async function downloadUpload(
+  base: string,
+  headers: Record<string, string>,
+  fail: (res: Response) => Promise<Error>,
+  id: string,
+  signal?: AbortSignal | undefined,
+): Promise<Blob> {
+  const res = await fetch(`${base}/uploads/${encodeURIComponent(id)}`, {
+    headers,
+    ...omitUndefined({ signal }),
+  });
+  if (!res.ok) throw await fail(res);
+  return await res.blob();
+}
+
 export async function readUploadInfo(
   base: string,
   headers: Record<string, string>,

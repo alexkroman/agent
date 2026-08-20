@@ -12,6 +12,10 @@
  * template's fan-out is written on top of, and none of it moves when a
  * zero-dependency helper next door does.
  *
+ * `writeUpload` is here for the same reason and not in `utils`: it is the same
+ * store from the other side — the way a step hands a file it PRODUCED to a
+ * caller that can only read JSON.
+ *
  * Re-exported from `@alexkroman1/aai/utils`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
  * report for this capability alone, hash it, and hold it to a committed epoch.
@@ -25,4 +29,6 @@ export {
   type UploadRange,
   type UploadSlice,
   uploadInfo,
+  type WriteUploadOptions,
+  writeUpload,
 } from "../../sdk/utils.ts";

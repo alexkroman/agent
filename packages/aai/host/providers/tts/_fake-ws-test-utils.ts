@@ -100,6 +100,19 @@ export class FakeWebSocket {
     this._fire("close");
   }
 
+  /**
+   * Real `ws`'s abrupt close — no close frame, no handshake.
+   *
+   * Modelled because `host/step-speak.ts` uses it for the one case where a
+   * polite close is pointless (a socket that never opened, or an exchange that
+   * already failed), and a fake without it turns that path into a TypeError
+   * that reads as a bug in the code under test.
+   */
+  terminate() {
+    this.readyState = FakeWebSocket.CLOSED;
+    this._fire("close");
+  }
+
   _fire(event: WsEvent, ...args: unknown[]) {
     for (const fn of this.listeners.get(event) ?? []) fn(...args);
   }

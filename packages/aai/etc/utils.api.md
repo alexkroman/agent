@@ -14,6 +14,9 @@ export function createKeyedLock(): KeyedLock;
 export function emit<T>(namespace: string, chunk: T): Promise<void>;
 
 // @public
+export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -91,6 +94,16 @@ export function omitUndefined<T extends object>(obj: T): {
 };
 
 // @public
+export function pcmDurationMs(byteLength: number, format: PcmFormat): number;
+
+// @public
+export type PcmFormat = {
+    sampleRate: number;
+    channels?: number | undefined;
+    bitsPerSample?: number | undefined;
+};
+
+// @public
 export const PREVIEW_SLUG_SUFFIX = "-preview";
 
 // @public
@@ -126,6 +139,24 @@ export function retryAfter(from: {
 export function safeJsonParse(text: string): unknown;
 
 // @public
+export type SpeakOptions = {
+    voice?: string | undefined;
+    language?: string | undefined;
+    sampleRate?: number | undefined;
+    apiKeyEnv?: string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type SpokenAudio = {
+    audio: Uint8Array<ArrayBuffer>;
+    pcm: Uint8Array;
+    sampleRate: number;
+    durationMs: number;
+    voice: string;
+};
+
+// @public
 interface StandardSchemaIssue {
     // (undocumented)
     readonly message: string;
@@ -155,6 +186,12 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
         } | undefined;
     };
 }
+
+// @public
+export const STEP_SPEAK_SAMPLE_RATE = 24000;
+
+// @public
+export const STEP_SPEAK_TIMEOUT_MS = 120000;
 
 // @public
 export function stepEnv(name: string): string | undefined;
@@ -204,6 +241,9 @@ export type StepGenerateOptions = {
     temperature?: number;
     maxTokens?: number;
 };
+
+// @public
+export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
 
 // @public
 export class StepTransportError extends Error {
@@ -258,7 +298,19 @@ export type UploadSlice = {
 export const VALID_SLUG_RE: RegExp;
 
 // @public
+export const WAV_HEADER_BYTES = 44;
+
+// @public
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
+
+// @public
+export function writeUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
+
+// @public
+export type WriteUploadOptions = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
 
 // (No @packageDocumentation comment for this package)
 

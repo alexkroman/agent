@@ -127,7 +127,6 @@
     "ASSEMBLYAI_TTS_DEPRECATED_VOICES",
     "ASSEMBLYAI_TTS_KIND",
     "ASSEMBLYAI_TTS_LANGUAGES",
-    "ASSEMBLYAI_TTS_VOICES",
     "AssemblyAITtsLanguage",
     "AssemblyAITtsOptions",
     "AssemblyAITtsProvider",

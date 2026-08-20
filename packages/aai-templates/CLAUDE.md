@@ -162,6 +162,62 @@ once, and the templates are now their reference use:
 | `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-workflow` and `recap-workflow` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
 | `mapConcurrent`, `emit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
 | `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-workflow`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-and-execute`, from an ordinary tool body, which is the case the module was published for |
+| `stepSpeak` + `writeUpload` + `WorkflowApi.download` | `spoken-summary` ONLY, and it is the whole reason that template exists — the audio round trip a workflow could not make before. See "A step that SPEAKS returns an id" below |
+| `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, which is the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails |
+
+## A step that SPEAKS returns an id
+
+`spoken-summary` is the audio round trip — upload a recording, get back a
+summary you can read AND one you can listen to — and it is the reference use of
+three SDK additions that only make sense together. It is worth reading against
+`transcription-workflow`, which owns the way IN (uploads, and what it costs to
+cut a long recording up) and stops at text.
+
+```text
+   a WAV  →  transcript  →  summary  →  a WAV of the summary
+              async STT     LLM Gateway   streaming TTS
+```
+
+The first three arrows are ordinary step work. The fourth needed the SDK to
+grow, twice:
+
+- **`stepSpeak`** synthesizes from inside a step. The session TTS surface cannot
+  be used there at all — a `TtsSession` is an event stream wired into a live
+  pipeline's playback, with a turn tracker and barge-in behind it, and a step has
+  no turn to be part of and has to return a VALUE. `sdk/step-speak.ts` and
+  `host/step-speak.ts` carry the argument, including why the one-socket exchange
+  reuses nothing from the session opener.
+- **`writeUpload`** is `readUpload`'s other direction. A run's OUTPUT is read
+  back as JSON, so audio cannot travel in one — the same rule that keeps a
+  recording's bytes out of a run's INPUT, arriving at the other end of the run.
+- **`api.download(id)`** is the browser half, and it answers a `Blob` rather
+  than a URL for a reason a page cannot discover on its own: the byte route
+  takes the same bearer every other route does, and neither `<audio src>` nor
+  `<a href>` can send one — so a page built on a URL works under `aai dev` and
+  401s the moment the agent has a token.
+
+Three rules the template is written to demonstrate, each of which a first draft
+gets wrong:
+
+- **Speak and store in ONE step.** A step is journaled by its RETURN VALUE, so
+  an id is replayed and bytes are not; split in two, the audio crosses the queue
+  between them on every resume. The cost is that a retried step writes a second
+  upload and abandons the first — cheap next to a step that cannot retry.
+- **Ask the model for a SPOKEN script, not just points.** A template that
+  synthesized its own bullet list produces a voice reading "one. two. three."
+  with no connective tissue, so the schema asks for both and only the script is
+  spoken. It is the same decision `recap-workflow` makes for the sentence it
+  reads down a phone, and one a prompt alone does not hold — hence a required
+  `spoken` field rather than a defaulted one, so a missing script is a retry
+  instead of half a second of silence.
+- **Derive the voice list from `ASSEMBLYAI_TTS_VOICES`.** A wrong voice id is a
+  SILENT failure — the service accepts the socket and refuses in band — so the
+  form's enum is read from the SDK's catalog rather than typed out, which also
+  makes the control a `<select>` for free.
+
+It transcribes through the ASYNC API rather than cutting the file up, and that
+is a deliberate narrowing: the fan-out is a whole subject and it already has a
+template. Here the transcription should be the boring leg.
 
 **`research-workflow` is the workflow template, and its shape is dictated by the
 Workflow DevKit rather than chosen.** The `"use workflow"` / `"use step"` bodies

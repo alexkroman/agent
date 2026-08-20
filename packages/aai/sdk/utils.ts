@@ -9,6 +9,11 @@
  * other heavy runtime dependencies so the CLI can import it on every
  * invocation without a startup cost.
  *
+ * That budget is also why `stepSpeak` is here at all rather than beside the TTS
+ * providers: the synthesizer needs a WebSocket client, so what this module
+ * carries is the SLOT and the WAV framing — the same split `stepFetch` makes
+ * with its undici dispatcher, and for the same measured reason.
+ *
  * That zod-free property is why `omitUndefined` lives here rather than on
  * `/internal` alongside the other cross-package infrastructure: `/internal`
  * re-exports `formatSchemaIssues` from `sdk/schema.ts`, so importing anything
@@ -70,6 +75,13 @@ export {
 export { emit, report } from "./step-report.ts";
 export { isTransientStatus, retryAfter } from "./step-retry.ts";
 export {
+  type SpeakOptions,
+  type SpokenAudio,
+  STEP_SPEAK_SAMPLE_RATE,
+  STEP_SPEAK_TIMEOUT_MS,
+  stepSpeak,
+} from "./step-speak.ts";
+export {
   type ReadUploadOptions,
   readUpload,
   type UploadInfo,
@@ -80,6 +92,8 @@ export {
   type UploadSlice,
   uploadInfo,
 } from "./step-uploads.ts";
+export { type WriteUploadOptions, writeUpload } from "./step-uploads-write.ts";
+export { encodeWav, type PcmFormat, pcmDurationMs, WAV_HEADER_BYTES } from "./wav.ts";
 
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {

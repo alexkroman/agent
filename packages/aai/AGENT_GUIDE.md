@@ -477,6 +477,64 @@ Three rules come with it:
 `stepGenerate` already goes through this, so a step that only calls a model gets
 it for free.
 
+### A step can SPEAK, and store the file it made
+
+A workflow whose answer is a FILE — a summary read aloud, a rendered image, a
+generated PDF — needs two things a first draft reaches for and does not find.
+Both are on `@alexkroman1/aai/utils`, and `spoken-summary` is the template that
+shows the whole round trip.
+
+```ts no-check
+import { stepSpeak, writeUpload } from "@alexkroman1/aai/utils";
+
+export async function narrate(script: string) {
+  "use step";
+
+  const spoken = await stepSpeak(script, { voice: "jane" });
+  const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
+  return { audio: stored.id, durationMs: spoken.durationMs };
+}
+```
+
+**`stepSpeak` is `stepGenerate` for the voice.** A step is handed no
+`ToolContext`, so the provider stack your `agent()` declares is not in scope —
+and the session TTS surface would not help anyway: it is an event stream wired
+into a live pipeline's playback, and a step has no turn to be part of and has to
+return a value. So this is the smaller thing: text in, the whole utterance out
+as a WAV, on the same `ASSEMBLYAI_API_KEY` everything else uses. Voices come
+from `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai/tts`) — read that list rather
+than typing an id, because a wrong one is refused *after* the socket opens and
+produces silence rather than an error.
+
+**`writeUpload` is `readUpload`'s other direction, and you need it.** A run's
+output is read back as JSON, so audio cannot travel in one — the same rule that
+keeps an uploaded recording's bytes out of a run's INPUT, arriving at the other
+end of the run. Store the bytes, return the **id**, and let the page fetch it
+with `api.download(id)`.
+
+Three rules come with it:
+
+- **Speak and store in ONE step.** A step is journaled by its return value, so
+  an id is replayed on a resume and bytes are not. Split in two, the audio
+  crosses the queue between them every time the run resumes.
+- **A retried step writes a SECOND upload** and abandons the first — the store
+  cannot know two calls meant one file. That is the price of the step being
+  retryable at all, and it is the right trade.
+- **Name and TYPE what you store.** The byte route serves the `type` it was
+  given, and a browser will not play inline a file it was handed as
+  `application/octet-stream`.
+
+On the page, `api.download(id)` answers a `Blob`, not a URL — the byte route
+takes the same bearer every other route does, and neither `<audio src>` nor
+`<a href>` can send one, so a page built on a URL works in `aai dev` and 401s
+once the agent has a token. `URL.createObjectURL(blob)` is what those elements
+take; revoke it when the id changes.
+
+Test both with `stubSpeech()` and `stubUploads(files, { writable: true })`
+(`@alexkroman1/aai/testing`). The write half is opt-in on purpose: a store that
+silently accepted writes could not fail a spec whose step stored a file nobody
+meant it to.
+
 ### A builtin's failure is its RESULT, so narrow it
 
 `webSearch`, `visitWebpage` and `fetchJson` (`@alexkroman1/aai/tools`) answer

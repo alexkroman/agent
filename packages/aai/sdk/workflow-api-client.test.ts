@@ -449,6 +449,28 @@ describe("streamed uploads", () => {
     await expect(client().uploadStream("abc", "hi")).rejects.toThrow("upload abc already exists");
   });
 
+  test("downloads an upload's bytes as a Blob a page can play", async () => {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "audio/wav" } }),
+    );
+
+    const blob = await client({ token: "tok" }).download("abc");
+
+    expect(call()[0]).toBe(`${BASE}workflows/uploads/abc`);
+    expect(blob.size).toBe(3);
+    // The header is exactly why this is a Blob rather than a URL — see the
+    // method's own doc: neither `<audio src>` nor `<a href>` can send one.
+    const headers = call()[1]?.headers as Record<string, string> | undefined;
+    expect(headers?.Authorization).toBe("Bearer tok");
+  });
+
+  test("a failed download reports the agent's own sentence", async () => {
+    fetchMock.mockImplementation(async () => json({ error: "no upload with id abc" }, 404));
+
+    await expect(client().download("abc")).rejects.toThrow("no upload with id abc");
+  });
+
   test("reads an upload's record, including how much has arrived", async () => {
     fetchMock.mockImplementation(async () =>
       json({ id: "abc", name: "a.wav", type: "audio/wav", size: 512, complete: false }),

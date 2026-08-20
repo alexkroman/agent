@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Reading an uploaded file from inside a `"use step"` function.
+ * Reading — and writing — a file from inside a `"use step"` function.
  *
  * A workflow's input is journaled and replayed on every resume, so a file's
  * BYTES cannot live in it: they would be re-read for the life of the run, and
@@ -89,6 +89,16 @@
  *   :id/wake` ends a pending `sleep`, so a client that wakes the run when its
  *   upload finishes gets the tail for free — and one that does not still works,
  *   one poll interval behind.
+ *
+ * ## The store is also where a step PUTS a file
+ *
+ * {@link writeUpload} is the other direction, and it is the same rule arriving
+ * at the other end of the run: an OUTPUT is journaled and read back as JSON, so
+ * audio, an image or a PDF cannot travel in one either. A step writes the bytes
+ * here, the output carries the id, and a page turns it back into a file with
+ * `api.download(id)`. Its own doc carries what that obliges — chiefly that the
+ * write belongs in the step that MAKES the file, so a resumed run replays an id
+ * rather than redoing the work.
  *
  * ## Why a published slot rather than an HTTP call
  *
@@ -216,11 +226,50 @@ export type UploadReader = {
   read(id: string, start: number, end: number): Promise<Uint8Array>;
 };
 
+/** What an uploader may declare about a file it is storing. */
+export type UploadWriteMeta = {
+  /** Filename to store. Stored, never interpreted. */
+  name?: string | undefined;
+  /** MIME type to store. Stored, never sniffed from the bytes. */
+  type?: string | undefined;
+};
+
+/**
+ * The half of an upload store {@link writeUpload} needs: minting a new file.
+ *
+ * Separate from {@link UploadReader} rather than an optional method on it, and
+ * the reason is mechanical as well as tidy. `UploadStore` in `host/` already
+ * declares its own `create` with a third `{ limit }` parameter — an
+ * INTERSECTION with a second declaration of the same method makes an
+ * overloaded type its own implementation no longer satisfies, which is a
+ * compile error in the store rather than at any call site. Keeping the two
+ * halves apart and intersecting them only at the SLOT leaves each declaration
+ * the single one for its method.
+ *
+ * @internal
+ */
+export type UploadWriter = {
+  /** Store a file, minting its id, and answer with the finished record. */
+  create(meta: UploadWriteMeta, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
+};
+
+/**
+ * What may be published: a reader, and OPTIONALLY a writer.
+ *
+ * The write half is optional and that is not an oversight — a store that only
+ * reads is a legitimate thing to publish (a spec supplying its own bytes is
+ * the common one), and {@link writeUpload} naming what is missing beats every
+ * stub in the repo having to grow a writer it does not use.
+ *
+ * @internal
+ */
+export type UploadAccess = UploadReader & Partial<UploadWriter>;
+
 /** The registry-wide slot — see the module doc for why it is not a module-level `let`. */
 const UPLOAD_READER_SLOT = Symbol.for("@alexkroman1/aai.uploadReader");
 
 /** The shape stored in the slot. `undefined` means nothing has published. */
-type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadReader };
+type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadAccess };
 
 /**
  * Publish the upload store for this process's `"use step"` functions.
@@ -231,7 +280,7 @@ type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadReader };
  *
  * @internal — a host concern, exported from `@alexkroman1/aai/runtime`.
  */
-export function publishUploadReader(reader: UploadReader | undefined): void {
+export function publishUploadReader(reader: UploadAccess | undefined): void {
   if (reader === undefined) delete (globalThis as UploadReaderSlot)[UPLOAD_READER_SLOT];
   else (globalThis as UploadReaderSlot)[UPLOAD_READER_SLOT] = reader;
 }
@@ -250,8 +299,16 @@ export const UPLOADS_UNAVAILABLE_MESSAGE =
   "deployed agent, every self-hosted server and `aai dev` go through. In a test, publish " +
   "a reader of your own with the `publishUploadReader` helper on the runtime subpath.";
 
-/** The published store, or a failure naming why there is none. */
-function requireReader(): UploadReader {
+/**
+ * The published store, or a failure naming why there is none.
+ *
+ * Exported so the WRITE half (`step-uploads-write.ts`, split out for the file
+ * cap) resolves the same slot rather than a second copy of the lookup — two
+ * would be one rename away from disagreeing about which store a process has.
+ *
+ * @internal
+ */
+export function requireUploadAccess(): UploadAccess {
   const reader = (globalThis as UploadReaderSlot)[UPLOAD_READER_SLOT];
   if (!reader) throw new Error(UPLOADS_UNAVAILABLE_MESSAGE);
   return reader;
@@ -271,7 +328,7 @@ function requireReader(): UploadReader {
  * @public
  */
 export async function uploadInfo(id: string): Promise<UploadInfo> {
-  const info = await requireReader().info(id);
+  const info = await requireUploadAccess().info(id);
   if (!info) throw new Error(`No upload with id ${id}`);
   return info;
 }
@@ -293,7 +350,7 @@ export async function uploadInfo(id: string): Promise<UploadInfo> {
  * @public
  */
 export async function readUpload(id: string, opts: ReadUploadOptions = {}): Promise<UploadSlice> {
-  const reader = requireReader();
+  const reader = requireUploadAccess();
   const info = await reader.info(id);
   if (!info) throw new Error(`No upload with id ${id}`);
   const start = clamp(opts.start ?? 0, 0, info.size);
