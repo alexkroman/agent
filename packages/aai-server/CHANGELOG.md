@@ -1,5 +1,15 @@
 # @alexkroman1/aai-server
 
+## 3.6.1
+
+### Patch Changes
+
+- 866d17f: Bound the wake sweep's per-app database reads and a deploy's blob writes to declared widths, correct the connection-budget invariant they rest on, and take the second rate-limit round trip off the run-start path.
+- Updated dependencies [9d45c1e]
+  - @alexkroman1/aai@6.9.1
+  - aai-guest@0.4.28
+  - @alexkroman1/aai-ui@6.9.1
+
 ## 3.6.0
 
 ### Minor Changes
