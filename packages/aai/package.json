@@ -78,6 +78,11 @@
       "types": "./dist/sdk/providers/s2s-barrel.d.ts",
       "import": "./dist/sdk/providers/s2s-barrel.js"
     },
+    "./ffmpeg": {
+      "@dev/source": "./host/ffmpeg.ts",
+      "types": "./dist/host/ffmpeg.d.ts",
+      "import": "./dist/host/ffmpeg.js"
+    },
     "./tools": {
       "@dev/source": "./host/agent-tools.ts",
       "types": "./dist/host/agent-tools.d.ts",

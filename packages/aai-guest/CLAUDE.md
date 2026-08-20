@@ -767,6 +767,75 @@ this package's.
   keeps the path covered on any runner by spawning the harness there directly
   and publishing through the real CLI to a real listening orchestrator.
 
+## ffmpeg is installed, and a step reaches it through the SDK
+
+A media pipeline hits the same wall on its first real recording: it is an `.m4a`
+off someone's phone, and every byte offset a workflow computes — cutting,
+planning a fan-out, reading a header — assumes linear PCM. The transcription
+template says so out loud, and its remedy used to be a sentence telling the
+CALLER to run `ffmpeg -i in.m4a -c:a pcm_s16le out.wav` on their own machine
+first. That is work the platform should be doing.
+
+So **`GUEST_SYSTEM_PACKAGES`** (`aai-server/modal-system-packages.ts`) installs
+`ffmpeg` — which is also where `ffprobe` comes from — and
+**`@alexkroman1/aai/ffmpeg`** is how a step reaches it:
+
+```ts no-check
+import { readUpload } from "@alexkroman1/aai/utils";
+import { probeMedia, transcodeToWav } from "@alexkroman1/aai/ffmpeg";
+
+export async function toPcm(uploadId: string) {
+  "use step";
+  const { bytes } = await readUpload(uploadId);
+  const info = await probeMedia(bytes);
+  return info.audio?.codec === "pcm_s16le"
+    ? bytes
+    : await transcodeToWav(bytes, { sampleRate: 16_000, channels: 1 });
+}
+```
+
+Five things about that pairing, each of which is a decision:
+
+- **apt, not an npm binary package.** `ffmpeg-static` is GPL-3.0, ships one
+  binary per install, and would land in a PUBLISHED package's dependency tree,
+  where the artifact-size budget counts it against every consumer. A layer in an
+  image the platform builds costs a tenant who never transcodes nothing at all.
+- **The package list is in the image FINGERPRINT** (`toolchainFingerprint`), so
+  adding one mints a new tag rather than reusing a published snapshot that lacks
+  the binary. That failure would be silent in the worst way — a guest that boots
+  fine and fails the first step that spawns. Its layer is FIRST, because it is
+  the layer that changes least: an SDK release invalidates the toolchain below
+  it and this one stays a cache hit.
+- **The runner is ours, and the argv is yours.** `runFfmpeg` passes `args`
+  verbatim — no `-y`, no `-loglevel` — so the argv in a failure is the command
+  you paste into a shell; the standing flags live in `probeMedia`,
+  `transcodeToWav` and `wavEncodeArgs`, which is where a policy belongs. What the
+  runner adds is the four properties every wrapper on npm gets wrong for a guest:
+  a capped stderr TAIL (ffmpeg's log is progress lines, so the diagnosis is the
+  last one), a capped stdout (64 MiB — a guest reserves ~1 GiB and an hour of
+  16 kHz mono PCM is ~115 MB, so "buffer whatever comes" is a decision to fall
+  over on a long recording), one `AbortSignal.any` of the caller's signal and a
+  deadline, and a `FfmpegError.kind` that separates a `timeout` worth retrying
+  from an `exit` on a file that will fail identically forever.
+- **`aai dev` uses the developer's own ffmpeg**, from `PATH` or
+  `AAI_FFMPEG_PATH` / `FFMPEG_PATH`. That is the one place dev/prod parity is
+  partial, so ENOENT is reported as an instruction — how to install one — rather
+  than as `spawn ffmpeg ENOENT`, and `ffmpegVersion()` answers `undefined` for a
+  missing binary so a step can preflight.
+- **The argv is covered by a REAL binary.** `host/ffmpeg.test.ts` drives a fake
+  child (that is where the four properties above are asserted, in memory);
+  whether `-print_format json` is spelled right is `host/ffmpeg.scenario.test.ts`,
+  which generates its own input with `lavfi` and skips — ANNOUNCING it, like
+  `describeWithPg` — when there is no ffmpeg. CI's Linux leg installs one and
+  sets **`AAI_REQUIRE_FFMPEG=1`**, which turns that skip into a hard failure, so
+  a broken install step cannot read as a green run (declared in `check:scenario`'s
+  `env` in `turbo.json`, or strict env mode would strip it and the enforcement
+  would silently do nothing).
+
+Adding a second package is one entry in `GUEST_SYSTEM_PACKAGES`. It is not free:
+every guest image carries it, and the tag it mints re-pays the apt layer once for
+the whole fleet.
+
 ## A `neverBundle` package must be INSTALLED beside the harness
 
 `tsdown.config.ts` bundles everything except a `neverBundle` list, and the

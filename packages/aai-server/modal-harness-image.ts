@@ -2,9 +2,14 @@
 /**
  * Harness-baked snapshot images (see modal-sandbox.ts for the spawn flow).
  *
- * Built at most once per (base image, harness code, toolchain) triple, in two
+ * Built at most once per (base image, harness code, toolchain) triple, in
  * halves that fail and cache very differently:
  *
+ * 0. **The system packages are a native image layer too**
+ *    (`systemPackagesImage`, `GUEST_SYSTEM_PACKAGES`) — `apt-get install
+ *    ffmpeg`, so a workflow step can transcode and probe media. FIRST, because
+ *    it is the layer that changes least: an SDK release invalidates the
+ *    toolchain below it and this one stays a cache hit.
  * 1. **The toolchain is a native image LAYER** (`toolchainImage`): a
  *    `dockerfileCommands` `RUN npm install`, built by Modal's own image
  *    builder and cached by Modal on those commands. So a harness rebuild —
@@ -57,6 +62,11 @@ import pTimeout from "p-timeout";
 import { keyedMemoAsync } from "./_memo.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { createLogger } from "./logger.ts";
+import {
+  GUEST_SYSTEM_PACKAGES,
+  systemPackageList,
+  systemPackagesImage,
+} from "./modal-system-packages.ts";
 
 const log = createLogger("modal.harness-image");
 
@@ -255,8 +265,16 @@ export function resolveSdkSpecs(): string[] {
  * transitive change that leaves every direct version alone still mints a new
  * tag instead of quietly reusing one.
  */
-export function toolchainFingerprint(specs: string[], lock: ToolchainLock): string[] {
-  return [...specs, `lock:${hash("sha256", lock.lock)}`];
+export function toolchainFingerprint(
+  specs: string[],
+  lock: ToolchainLock,
+  systemPackages: readonly string[],
+): string[] {
+  return [
+    ...specs,
+    `lock:${hash("sha256", lock.lock)}`,
+    `apt:${systemPackageList(systemPackages)}`,
+  ];
 }
 
 /**
@@ -300,7 +318,7 @@ export function localHarnessImageTag(baseTag: string, code: string): string {
   return harnessImageTag(
     baseTag,
     code,
-    toolchainFingerprint(resolveSdkSpecs(), readToolchainLock()),
+    toolchainFingerprint(resolveSdkSpecs(), readToolchainLock(), GUEST_SYSTEM_PACKAGES),
   );
 }
 
@@ -423,7 +441,11 @@ export function createHarnessImageResolver(deps: {
     // builds it if these exact commands have never been built, and hands back
     // the cached layer otherwise. Network stays on for the npm registry; no
     // tenant code runs in an image build.
-    const base = await toolchainImage(baseImage, resolveSdkSpecs(), readToolchainLock()).build(app);
+    const base = await toolchainImage(
+      systemPackagesImage(baseImage, GUEST_SYSTEM_PACKAGES),
+      resolveSdkSpecs(),
+      readToolchainLock(),
+    ).build(app);
     // Only the harness file write needs a sandbox — it is a local ~13 MB
     // blob, and an image build has no context to COPY it from.
     const builder = await client.sandboxes.create(app, base, {

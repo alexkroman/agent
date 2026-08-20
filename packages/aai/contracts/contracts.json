@@ -27,6 +27,11 @@
       "1": "Three constants left the root barrel for @alexkroman1/aai/internal: MAX_PLAYBACK_BUFFERED_MS and PLAYBACK_PROGRESS_INTERVAL_MS are client-audio budgets and DEFAULT_SESSION_START_TIMEOUT_MS is a runtime deadline, none of which an agent() field sets. This capability is the published answer to 'what happens if I leave this field off', and those three answer no field."
     }
   },
+  "ffmpeg": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "llm": {
     "current": 1,
     "supported": [1],

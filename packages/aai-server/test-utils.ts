@@ -2,6 +2,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { Image } from "modal";
 import { afterEach, beforeEach, vi } from "vitest";
 import { emptyLogPage } from "./agent-logs.ts";
 import { createMemoryAgentRows } from "./agent-store.ts";
@@ -553,4 +554,24 @@ export function captureLogs(): {
     errors: at("error"),
     infos: at("info"),
   };
+}
+
+/**
+ * A Modal `Image` double that records every layer's commands, in order.
+ *
+ * The one cast for this shape in the package: `Image` is a class with private
+ * fields, so a structural stand-in cannot satisfy it, and the fake was written
+ * twice with the cast spelled out at each site. Narrowing once here is the same
+ * typed-seam rule the root guide states for a concentration of identical casts.
+ */
+export function fakeModalImage(): Image & { commands: string[][] } {
+  const commands: string[][] = [];
+  const image = {
+    commands,
+    dockerfileCommands(next: string[]) {
+      commands.push(next);
+      return image;
+    },
+  } as unknown as Image & { commands: string[][] };
+  return image;
 }

@@ -251,6 +251,12 @@
         "AAI_TEST_SUPABASE_SERVICE_KEY",
         "AAI_TEST_SUPABASE_ANON_KEY",
         "AAI_REQUIRE_STACK",
+        // ffmpeg for `aai/host/ffmpeg.scenario.test.ts`, the only thing that
+        // checks the ARGV those helpers build against a real binary. Declared
+        // for the same reason as the two above: strict env mode strips an
+        // undeclared variable, so "a skip here is a failure" would be inert —
+        // and this suite skips SILENTLY useful only if nobody relies on it.
+        "AAI_REQUIRE_FFMPEG",
         "AAI_FAULT_PROFILE",
         "VITEST_PROFILE",
         "VITEST_INCLUDE",

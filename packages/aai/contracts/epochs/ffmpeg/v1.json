@@ -1,0 +1,29 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "ffmpeg",
+  "epoch": 1,
+  "sha256": "ab75f0baac6d68a63bfac650db22f541b241c68ef519ed6160481a5e3bbaeba8",
+  "exports": [
+    "DEFAULT_FFMPEG_TIMEOUT_MS",
+    "DEFAULT_MAX_FFMPEG_OUTPUT_BYTES",
+    "FFMPEG_PATH_ENV",
+    "FFMPEG_STDERR_TAIL_CHARS",
+    "FFPROBE_PATH_ENV",
+    "FfmpegError",
+    "FfmpegFailureKind",
+    "FfmpegRunOptions",
+    "FfmpegRunResult",
+    "MediaInfo",
+    "MediaSource",
+    "MediaStream",
+    "ProbeOptions",
+    "TranscodeToWavOptions",
+    "WavEncodeOptions",
+    "ffmpegVersion",
+    "isFfmpegError",
+    "probeMedia",
+    "runFfmpeg",
+    "transcodeToWav",
+    "wavEncodeArgs"
+  ]
+}
