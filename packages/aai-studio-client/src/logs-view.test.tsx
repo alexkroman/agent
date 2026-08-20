@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { button } from "./_test-utils.ts";
 import type { AgentLogsPage } from "./api-types.ts";
@@ -142,5 +142,111 @@ describe("LogsView", () => {
     render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
 
     expect(await screen.findByText(/goes when the sandbox does/)).toBeTruthy();
+  });
+});
+
+/**
+ * jsdom computes no layout, so the three numbers the follow test reads are
+ * defined per element with a real backing store: `scrollTop` has to be
+ * writable for the assertion to mean anything.
+ */
+function stubScroll(el: Element, box: { scrollHeight: number; clientHeight: number; top: number }) {
+  let top = box.top;
+  Object.defineProperty(el, "scrollHeight", { value: box.scrollHeight, configurable: true });
+  Object.defineProperty(el, "clientHeight", { value: box.clientHeight, configurable: true });
+  Object.defineProperty(el, "scrollTop", {
+    configurable: true,
+    get: () => top,
+    set: (v: number) => {
+      top = v;
+    },
+  });
+}
+
+const scrollerIn = (root: HTMLElement) => {
+  const el = root.querySelector(".overflow-auto");
+  if (el === null) throw new Error("the pane has no scroller");
+  return el;
+};
+
+describe("following the bottom", () => {
+  test("a new line scrolls the pane down while the reader is at the bottom", async () => {
+    serve([
+      page({ lines: [line(0, "first")], cursor: 0 }),
+      page({ lines: [line(1, "second")], cursor: 1 }),
+    ]);
+    const view = render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
+    await screen.findByText("first");
+
+    const el = scrollerIn(view.container);
+    stubScroll(el, { scrollHeight: 1000, clientHeight: 100, top: 900 });
+    fireEvent.scroll(el);
+
+    await screen.findByText("second");
+    expect(el.scrollTop).toBe(1000);
+  });
+
+  test("but not while they have scrolled up to read something", async () => {
+    serve([
+      page({ lines: [line(0, "first")], cursor: 0 }),
+      page({ lines: [line(1, "second")], cursor: 1 }),
+    ]);
+    const view = render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
+    await screen.findByText("first");
+
+    const el = scrollerIn(view.container);
+    stubScroll(el, { scrollHeight: 1000, clientHeight: 100, top: 0 });
+    fireEvent.scroll(el);
+
+    await screen.findByText("second");
+    expect(el.scrollTop).toBe(0);
+  });
+});
+
+test("one dropped line is not reported as lines", async () => {
+  serve([page({ lines: [line(3, "after")], cursor: 3, dropped: 1 })]);
+
+  render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
+
+  expect(await screen.findByText(/1 earlier line dropped/)).toBeTruthy();
+});
+
+test("a production agent that goes away mid-view says it is not published", async () => {
+  serve([page({ lines: [line(0, "prod line")], cursor: 0 })]);
+  const view = render(<LogsView bearer="k" previewSlug="p" deployedSlug="proj" />);
+  await screen.findByText("prod line");
+  button(/Production/).click();
+  await screen.findByText("prod line");
+
+  view.rerender(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
+
+  expect(screen.getByText("Not published yet")).toBeTruthy();
+});
+
+describe("a poll that lands after the pane closes", () => {
+  test("does not render what came back", async () => {
+    const { promise, resolve } = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, "fetch").mockReturnValue(promise);
+    const view = render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
+    view.unmount();
+
+    resolve(new Response(JSON.stringify(page({ lines: [line(0, "late")] })), { status: 200 }));
+    await promise;
+
+    expect(screen.queryByText("late")).toBeNull();
+  });
+
+  test("does not report its failure either", async () => {
+    const { promise, reject } = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, "fetch").mockReturnValue(promise);
+    const view = render(<LogsView bearer="k" previewSlug="p" deployedSlug={undefined} />);
+    view.unmount();
+
+    reject(new Error("network down"));
+    // The pane's own catch is what this asserts about; the rejection is
+    // settled here only so the assertion runs after it.
+    await promise.catch(() => undefined);
+
+    expect(screen.queryByText(/network down/)).toBeNull();
   });
 });
