@@ -175,6 +175,24 @@ describe("a deployment with nowhere to put uploads", () => {
     expect(failed.message).toContain("supabase status -o env");
   });
 
+  test("names BOTH ways to enable a database, and rules the redeploy out", async () => {
+    // This message reaches a browser (a 501 carrying its body) and its reader is
+    // usually in the studio, where there is no terminal for `aai storage enable` and
+    // the switch is Settings → Database. Naming only the CLI left the studio reader
+    // with the one line that sounded like an action — "a DEPLOYED agent gets both
+    // from the platform" — and the reported symptom was redeploying against a
+    // database that is OFF until the app asks for one.
+    const store = createUploadStore({ blobs: createMemoryUploadBlobs() });
+    const failed = await store
+      .create({}, body(ramp(4)))
+      .then(() => expect.fail("the store accepted an upload with nowhere to record it"))
+      .catch((err: unknown) => err as Error);
+    expect(failed.message).toContain("aai storage enable");
+    expect(failed.message).toContain("Settings → Database in the studio");
+    // The claim the redeploy loop rested on, stated the other way round.
+    expect(failed.message).toMatch(/no redeploy needed/);
+  });
+
   test("refuses the READS too, so a misconfiguration cannot look like a missing id", async () => {
     // `info` answering undefined would make "this platform stores no uploads"
     // indistinguishable from "nobody uploaded that", which is the one confusion an

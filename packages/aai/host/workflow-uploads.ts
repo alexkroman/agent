@@ -193,6 +193,27 @@ export function resolveUploadBlobs(opts: {
  * misconfiguration indistinguishable from an id nobody uploaded, which is exactly
  * the confusion an operator cannot debug from the outside.
  *
+ * **The deployed remedy names BOTH ways to switch a database on, and naming only
+ * the CLI cost real time.** This message reaches a browser (`UploadsUnavailableError`
+ * is a 501 with its body, precisely so the remedy is not thrown away), and the reader
+ * is usually in the STUDIO — a workflow app's page is where an upload happens — where
+ * there is no terminal to run `aai storage enable` in and the switch is Settings →
+ * Database. Worse, "a DEPLOYED agent gets both from the platform" reads as "the
+ * platform will supply this", so the message's own advice was to deploy again: a
+ * database is OFF until the app asks for one (aai-studio-server/studio-database.ts),
+ * so no number of redeploys adds a `DATABASE_URL`, and the observed report is exactly
+ * that — "still getting this after project redeploys". The other three enablement
+ * messages in the repo (`STORAGE_DISABLED_MESSAGE` in `sdk/db.ts` and its pinned
+ * duplicate in `aai-guest/limits.ts`, `WORKFLOWS_UNAVAILABLE_MESSAGE`) all name both
+ * paths already; this one was the odd one out, and the only one whose reader has no
+ * CLI. Phrasing mirrors them rather than inventing a fourth voice for one remedy.
+ *
+ * It also says that provisioning REBUILDS the running agent, because that is the
+ * question a reader asks next and the answer changed: enabling a database bumps the
+ * agents row so the resident guest is respawned with the new env
+ * (aai-server/storage-handler.ts), so the switch is the whole fix and a deploy is not
+ * part of it.
+ *
  * @internal
  */
 export function createUnavailableUploadStore(missing: string): UploadStore {
@@ -205,8 +226,10 @@ export function createUnavailableUploadStore(missing: string): UploadStore {
       new UploadsUnavailableError(
         `Workflow uploads need ${missing}.\n\n` +
           "A DEPLOYED agent gets both from the platform, and its env comes from Vault rather " +
-          "than from your project's `.env` — so `DATABASE_URL` appears only once the app " +
-          "database is provisioned: `aai storage enable`.\n\n" +
+          "than from your project's `.env` — so deploying your files again does not add a " +
+          "`DATABASE_URL`. A database is off until the app asks for one: enable it with " +
+          "`aai storage enable` (CLI) or Settings → Database in the studio. Provisioning " +
+          "rebuilds the running agent, so that is the whole fix — no redeploy needed.\n\n" +
           "Running LOCALLY, both come from the project's `.env`. `supabase start`, then " +
           "`supabase status -o env` for API_URL and SERVICE_ROLE_KEY:\n\n" +
           `${UPLOAD_ENV_EXAMPLE}\n`,
