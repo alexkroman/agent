@@ -1,0 +1,65 @@
+diff --git a/dist/init.js b/dist/init.js
+index 0e75a52c967be1870badb3e7a064cf3fdddd19bc..35a180bac551806e85a11fdd8fd90b9fb4bbb963 100644
+--- a/dist/init.js
++++ b/dist/init.js
+@@ -1,49 +1,25 @@
+ import { access, constants, mkdir, readFile, unlink, writeFile, } from 'node:fs/promises';
+ import path from 'node:path';
+-import { fileURLToPath } from 'node:url';
+ /** Package name - hardcoded since it doesn't change */
+ const PACKAGE_NAME = '@workflow/world-local';
++/** Package version - kept in step with package.json by the patch's own version pin. */
++const PACKAGE_VERSION = '4.2.4';
+ let cachedPackageInfo = null;
+ /**
+- * Get the directory path for this module.
+- * Works in ESM and falls back to a constant in CJS contexts (which shouldn't happen)
+- */
+-function getModuleDir() {
+-    // In bundled CJS contexts, import.meta.url may be undefined or empty
+-    if (typeof import.meta.url === 'string' && import.meta.url) {
+-        return path.dirname(fileURLToPath(import.meta.url));
+-    }
+-    return null;
+-}
+-/**
+- * Returns the package name and version from package.json.
+- * The result is cached after the first read.
++ * Returns the package name and version.
+  *
+- * In bundled contexts where package.json cannot be read,
+- * returns 'bundled' as the version.
++ * Read from a constant rather than from `package.json` on disk: the file is
++ * located relative to THIS MODULE, so any consumer that bundles world-local
++ * into a single artifact reads whatever `package.json` happens to sit beside
++ * that artifact, or none at all. The unresolvable case fell back to the string
++ * `'bundled'`, which `parseVersion` below rejects — so `initDataDir` threw
++ * `Invalid version string: "bundled"` and the world could not start at all.
+  */
+ export async function getPackageInfo() {
+-    if (cachedPackageInfo) {
+-        return cachedPackageInfo;
+-    }
+-    const moduleDir = getModuleDir();
+-    if (moduleDir) {
+-        try {
+-            const content = await readFile(path.join(moduleDir, '../package.json'), 'utf-8');
+-            cachedPackageInfo = JSON.parse(content);
+-            return cachedPackageInfo;
+-        }
+-        catch {
+-            // Fall through to bundled fallback
+-        }
+-    }
+-    // Bundled context - package.json not accessible
+-    cachedPackageInfo = {
+-        name: PACKAGE_NAME,
+-        version: 'bundled',
+-    };
++    cachedPackageInfo ??= { name: PACKAGE_NAME, version: PACKAGE_VERSION };
+     return cachedPackageInfo;
+ }
++
+ /** Filename for storing version information in the data directory */
+ const VERSION_FILENAME = 'version.txt';
+ /**

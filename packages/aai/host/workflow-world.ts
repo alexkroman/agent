@@ -198,8 +198,12 @@ async function migrateAndSubscribe(kind: WorldKind): Promise<void> {
   const { getWorld } = await import("workflow/runtime");
   // The Postgres world's queue is graphile-worker POLLING the database, so
   // nothing runs until a long-lived process subscribes — without this a run sits
-  // `pending` forever with no error anywhere. The local world has no `start`,
-  // hence the optional call.
+  // `pending` forever with no error anywhere.
+  //
+  // The LOCAL world has a `start` too, and it is not a no-op: it initializes the
+  // data directory (see `defaultLocalDataDir`) and re-enqueues runs it finds
+  // there. `?.` is kept because the World interface declares it optional — an
+  // operator-supplied world may genuinely have none.
   await getWorld().start?.();
 }
 

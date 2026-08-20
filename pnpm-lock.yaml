@@ -104,6 +104,11 @@ catalogs:
 overrides:
   unrun: 0.2.39
 
+patchedDependencies:
+  '@workflow/world-local@4.2.4':
+    hash: 7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa
+    path: patches/@workflow__world-local@4.2.4.patch
+
 importers:
 
   .:
@@ -10127,7 +10132,7 @@ snapshots:
       '@workflow/utils': 4.1.4
       '@workflow/web': 4.1.18
       '@workflow/world': 4.3.1
-      '@workflow/world-local': 4.2.4(@opentelemetry/api@1.9.1)
+      '@workflow/world-local': 4.2.4(patch_hash=7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa)(@opentelemetry/api@1.9.1)
       '@workflow/world-vercel': 4.6.2(@opentelemetry/api@1.9.1)
       boxen: 8.0.1
       builtin-modules: 5.0.0
@@ -10163,7 +10168,7 @@ snapshots:
       '@workflow/serde': 4.1.2
       '@workflow/utils': 4.1.4
       '@workflow/world': 4.3.1
-      '@workflow/world-local': 4.2.4(@opentelemetry/api@1.9.1)
+      '@workflow/world-local': 4.2.4(patch_hash=7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa)(@opentelemetry/api@1.9.1)
       '@workflow/world-vercel': 4.6.2(@opentelemetry/api@1.9.1)
       debug: 4.4.3(supports-color@8.1.1)
       devalue: 5.8.1
@@ -10300,7 +10305,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@workflow/world-local@4.2.4(@opentelemetry/api@1.9.1)':
+  '@workflow/world-local@4.2.4(patch_hash=7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa)(@opentelemetry/api@1.9.1)':
     dependencies:
       '@vercel/queue': 0.3.1
       '@workflow/errors': 4.2.1
@@ -10319,7 +10324,7 @@ snapshots:
       '@workflow/errors': 4.2.1
       '@workflow/utils': 4.1.4
       '@workflow/world': 4.3.1
-      '@workflow/world-local': 4.2.4(@opentelemetry/api@1.9.1)
+      '@workflow/world-local': 4.2.4(patch_hash=7c83bbb4eb7e15e930f69f9da8119e1d28c832bd8acd4874ab65918baf44a7fa)(@opentelemetry/api@1.9.1)
       cbor-x: 1.6.0
       dotenv: 17.3.1
       drizzle-orm: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.20.0)(postgres@3.4.9)
