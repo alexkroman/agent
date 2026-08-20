@@ -23,6 +23,9 @@ const AGENT = "ws://localhost:3000";
 const OTHER = "ws://localhost:3000/other-agent/";
 
 afterEach(() => {
+  // Unstubbed FIRST: the spec below replaces the global with a hostile `Storage`,
+  // and `restoreMocks`/`unstubEnvs` cover spies and env vars, not globals.
+  vi.unstubAllGlobals();
   sessionStorage.clear();
 });
 
@@ -58,14 +61,28 @@ describe("session-resume-store", () => {
     const boom = () => {
       throw new Error("SecurityError");
     };
-    // `Storage.prototype`, not the instance: jsdom implements a `Storage` as a
-    // proxy over named properties, so spying the INSTANCE is taken as a write of
-    // an entry called `getItem` and the real method still answers. This spec was
-    // stubbing nothing — it passed because nothing had been written yet, so the
-    // real `getItem` also answered undefined. See `_upload-recall.test.ts`.
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(boom);
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(boom);
-    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(boom);
+    // The GLOBAL is replaced, rather than a method spied, because
+    // `globalThis.sessionStorage` is the expression the module evaluates and
+    // `vi.stubGlobal` replaces it whether it is an accessor or a value. This
+    // spec was stubbing NOTHING for as long as it existed: spying the instance is
+    // taken by jsdom's named-property proxy as a write of an entry called
+    // `getItem`, and it passed because nothing had been written yet, so the real
+    // `getItem` also answered null. `Storage.prototype` is no better — it works
+    // on Node 22 and is a no-op on Node 26, where the global `Storage` is not the
+    // class behind jsdom's instance. `_upload-recall.test.ts` carries the rest.
+    vi.stubGlobal("sessionStorage", {
+      length: 0,
+      clear: () => {
+        // Nothing to clear; teardown unstubs this before clearing the real one.
+      },
+      getItem: boom,
+      key: () => null,
+      removeItem: boom,
+      setItem: boom,
+    });
+    // Proof the stub bites. Without it this spec passes while intercepting
+    // nothing, which is what it did.
+    expect(() => globalThis.sessionStorage.setItem("k", "v")).toThrow(/SecurityError/);
     writeStoredSessionId(AGENT, "sess-unwritable");
     expect(readStoredSessionId(AGENT)).toBeUndefined();
     expect(() => writeStoredSessionId(AGENT, "sess-x")).not.toThrow();

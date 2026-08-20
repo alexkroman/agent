@@ -13,7 +13,30 @@ function pick(name: string, bytes = "abc", lastModified = 1_700_000_000_000): Fi
   return new File([bytes], name, { type: "audio/wav", lastModified });
 }
 
+/**
+ * A `Storage` that throws on every read and write, as Safari private mode and a
+ * blocking policy both do.
+ *
+ * `clear` is the exception and has to be: `restoreMocks` restores spies before
+ * each test, so this suite's own teardown runs with the stub still installed.
+ */
+function unavailableStorage(boom: () => never): Storage {
+  return {
+    length: 0,
+    clear: () => {
+      // Nothing to clear; teardown unstubs this before clearing the real one.
+    },
+    getItem: boom,
+    key: () => null,
+    removeItem: boom,
+    setItem: boom,
+  };
+}
+
 afterEach(() => {
+  // Unstubbed FIRST: one spec replaces the global with a hostile `Storage`, and
+  // `restoreMocks`/`unstubEnvs` cover spies and env vars, not globals.
+  vi.unstubAllGlobals();
   sessionStorage.clear();
 });
 
@@ -94,15 +117,18 @@ describe("_upload-recall", () => {
       throw new Error("SecurityError");
     };
     const file = pick("standup.wav");
-    // **`Storage.prototype`, not the instance.** jsdom implements a `Storage` as a
-    // PROXY over named properties, so `vi.spyOn(sessionStorage, "getItem")` is
-    // taken as a write of an entry called `getItem` and the real method still
-    // answers — a stub that intercepts nothing while the spec passes. Verified by
-    // A/B, and `session-resume-store.test.ts` had it the ineffective way.
-    // `clear` is deliberately left alone: this suite's teardown calls it.
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(boom);
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(boom);
-    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(boom);
+    vi.stubGlobal("sessionStorage", unavailableStorage(boom));
+    // **Proof the stub BITES, before anything is asserted through it.** Two
+    // earlier drafts intercepted nothing and passed anyway, which is the same
+    // failure this spec exists to catch one level up. Spying the INSTANCE is
+    // taken by jsdom's named-property proxy as a write of an entry called
+    // `getItem`, so the real method still answers. Spying `Storage.prototype`
+    // works under Node 22 and intercepted NOTHING in CI under Node 26 —
+    // measured, both ways — so the global `Storage` there is evidently not the
+    // class behind jsdom's instance. Replacing the global is the one seam that
+    // cannot miss either way: `globalThis.sessionStorage` is the expression the
+    // module evaluates.
+    expect(() => globalThis.sessionStorage.setItem("k", "v")).toThrow(/SecurityError/);
     expect(() => rememberUploadId("digest", file, "upl_1")).not.toThrow();
     expect(recallUploadId("digest", file)).toBeUndefined();
     expect(() => forgetUploadId("digest", file)).not.toThrow();
