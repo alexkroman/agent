@@ -767,6 +767,19 @@ voice agents without the CLI:
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
 
+- **One studio path serves the shell to callers with NO session**:
+  `GET /studio/api/<slug>`, the public API page for one deployed agent
+  (`studio-app.ts`, rendered by `aai-studio-client/src/public-api.tsx`). It is
+  registered above `app.route("/studio", …)` deliberately, so it never passes
+  under the auth middleware that router hangs on its own subtrees — a link to
+  it has to work for somebody with no studio account, which is the whole
+  feature. It carries no ownership check for the same reason it needs no auth:
+  the response is the app SHELL, and the reading is done by the browser against
+  the agent's own already-public routes (`client-config`, `GET /workflows`).
+  The path is under `/studio` so `RESERVED_SLUGS` and `isStudioPath` already
+  cover it — no new reservation, no dispatcher change — and its param carries
+  `SLUG_PATTERN_SOURCE`, so a path that could never name an agent 404s rather
+  than serving a shell that would document nothing.
 - **The app shell is `no-store`; its assets are `immutable`. Those two go
   together** (`studio-static.ts`). `index.html` names content-hashed assets
   that exist only in the container image it was built into, so a cached

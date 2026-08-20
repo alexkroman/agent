@@ -9,6 +9,12 @@
 // so, and that the carrier webhook URLs live on this pane now (they are how
 // something CALLS this agent, which is this pane's subject).
 //
+// It also hands out the PUBLIC link (`/studio/api/<slug>`) — the one thing
+// this pane cannot do for itself, being behind sign-in and scoped to the
+// account that owns the project. The page behind that link is public-api.tsx,
+// whose own suite pins the boundary; here it is the link, and which agent it
+// names before a first publish.
+//
 // And that each half is offered only to the agents it is TRUE for: no carrier
 // webhook for a workflow app (`page: "static"` defaults telephony off, so a
 // number pointed at one answers and hangs up), and no workflow routes for an
@@ -186,6 +192,39 @@ describe("DocsPane", () => {
     });
     renderPane({ deployedSlug: "demo" });
     await waitFor(() => expect(screen.getByText(/serves a page rather than/)).toBeTruthy());
+  });
+
+  test("hands out the PUBLIC link for this agent's API", async () => {
+    // The one thing this pane cannot do for itself: it is behind sign-in and
+    // scoped to the owning account, so "send me your API docs" has no answer
+    // without a link that needs no session. Both forms are on screen because
+    // the two uses differ — pasting it to somebody else, and opening it to
+    // check what they will see.
+    stubFetch(listing());
+    renderPane({ deployedSlug: "demo" });
+
+    const url = `${window.location.origin}/studio/api/demo`;
+    await waitFor(() => expect(screen.getByText(url)).toBeTruthy());
+    const link = screen.getByRole("link", { name: /Open the public page/ });
+    expect(link.getAttribute("href")).toBe(url);
+  });
+
+  test("and says the link is the PREVIEW's before a first publish", async () => {
+    // A preview slug is replaced on every edit and swept with the project, so
+    // a link to one is not a link worth sending — and the pane documents that
+    // agent whether or not anything is published, so the URL is real either
+    // way. Naming which is the whole difference.
+    stubFetch({
+      "GET /demo-preview/workflows": () => jsonResponse({ workflows: [] }),
+      "GET /demo-preview/client-config": () => jsonResponse({ page: "voice" }),
+      [`GET ${SECRETS}`]: () => jsonResponse({ vars: [], pending: [] }),
+    });
+    renderPane({ previewSlug: "demo-preview" });
+
+    await waitFor(() =>
+      expect(screen.getByText(`${window.location.origin}/studio/api/demo-preview`)).toBeTruthy(),
+    );
+    expect(screen.getByText(/points at the PREVIEW agent/)).toBeTruthy();
   });
 
   test("carries the carrier webhook URLs, which moved off Settings", async () => {
