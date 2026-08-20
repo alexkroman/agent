@@ -50,14 +50,21 @@
  * them. The invariant that buys: an app database exists only for a deployed,
  * owned slug.
  *
- * **It takes effect on the agent's next DEPLOY.** `DATABASE_URL` is read from
- * the `app-db:` secret when a sandbox is BUILT (sandbox-resolve.ts), and
- * deploy/delete are the only mutations that move sandboxes — the same trade
- * secret changes make. The preview is therefore force-redeployed here (clear
- * `previewHash`, schedule; the `wakeProjectPreview` pattern) so the
- * environment the user is looking at picks the change up on its own.
- * Production needs a Publish, which is the user's call to make and which the
- * pane says out loud.
+ * **It reaches a RUNNING agent, and that took a bump.** `DATABASE_URL` is read
+ * from the `app-db:` secret when a sandbox is BUILT (sandbox-resolve.ts), so a
+ * resident guest holds whatever its spawn was handed; provisioning therefore
+ * bumps the agents row (`storage-handler.ts`), which is the one cross-replica
+ * signal that rebuilds one. Before that bump the switch reached production on
+ * the next Publish AND NOT EVEN THEN in the ordinary case — the deploy's own
+ * handover boots the replacement before {@link reconcileProjectDatabase}
+ * provisions, so the first publish after enabling produced a sandbox with no
+ * `DATABASE_URL` that then stayed that way.
+ *
+ * The preview is still force-redeployed here (clear `previewHash`, schedule;
+ * the `wakeProjectPreview` pattern), because a preview should be running the
+ * current FILES as well as the current environment; production still needs a
+ * Publish for its files, which is the user's call to make and which the pane
+ * says out loud.
  */
 
 import type { AppDatabases, AppDbUsage } from "aai-server/app-database";
@@ -124,12 +131,16 @@ export type ProjectDatabaseState = {
 /**
  * The per-slug storage bindings, out of the project-level env.
  *
- * Exported for `studio-database-browse.ts`, which needs the identical three
- * fields to read a tenant's tables — the alternative was a second literal that
- * a field added to `StorageEnv` would leave behind.
+ * Exported for `studio-database-browse.ts`, which needs the identical fields
+ * to read a tenant's tables — the alternative was a second literal that a
+ * field added to `StorageEnv` would leave behind.
+ *
+ * `store` rides along because provisioning bumps the agents row so a running
+ * guest is rebuilt with its new `DATABASE_URL` (see `storage-handler.ts`); the
+ * project env already holds the same store it uses for its ownership reads.
  */
 export function storageEnvOf(env: ProjectDatabaseEnv): StorageEnv {
-  return { secrets: env.secrets, appDb: env.appDb, slugLock: env.slugLock };
+  return { secrets: env.secrets, appDb: env.appDb, slugLock: env.slugLock, store: env.store };
 }
 
 async function environmentState(

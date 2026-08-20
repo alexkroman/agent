@@ -177,9 +177,24 @@ describe("studioSystemPrompt", () => {
     // with the discriminant already set, and the fields it refuses are refused
     // on purpose.
     expect(prompt).toContain('agent({ page: "static" })');
-    // Bodies are transformed only under workflows/, and runs need the database.
+    // Bodies are transformed only under workflows/.
     expect(prompt).toContain("Bodies go in `workflows/*.ts` and nowhere else");
+  });
+
+  test("the workflow prompt does not gate the build on a database", () => {
+    // A databaseless agent takes the DevKit's LOCAL world
+    // (`aai/host/workflow-world.ts`), so a workflow app runs on a studio
+    // project as created — and a database is opt-in since #1178. The prompt
+    // told the agent the opposite ("It NEEDS the database … until they do,
+    // starting a run fails"), which turned every workflow project's first
+    // turn into an instruction to go flip a switch it did not need.
+    const prompt = studioSystemPrompt("workflow").replace(/\s+/g, " ");
+    expect(prompt).toContain("It runs with the database OFF");
+    expect(prompt).not.toContain("It NEEDS the database");
+    // Still named, for the two things that really do need it: durability, and
+    // an upload's record.
     expect(prompt).toContain("Settings → Database");
+    expect(prompt).toContain("A file upload is the one exception");
   });
 
   test("the two prompts share everything that is not mode-specific", () => {

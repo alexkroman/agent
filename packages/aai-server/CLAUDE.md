@@ -678,9 +678,13 @@ Two rules from it that a reader of THIS package needs in front of them:
   caller's to write, so a use inside the request is self-directed (a caller who
   lies gets its own lie back) while one that outlives it is an injection — see
   "Durable workflows" below for the shipped instance.
-- **Deploy and delete are the ONLY mutations that move sandboxes.** Secret and
-  storage changes write Vault and bump nothing; the documented way to apply a
-  secret is to redeploy.
+- **Deploy, delete, and PROVISIONING a database move sandboxes; a secret change
+  does not.** All three write the agents row, whose `version` is the one
+  cross-replica invalidation signal (`sandbox-invalidate.ts`); the documented
+  way to apply a secret is still to redeploy. Storage was on the other side of
+  that line until enabling one was found to reach production NEVER, not merely
+  late — `storage-handler.ts`'s module doc has the failure and why the bump is
+  scoped to a change that really happened.
 
 ## Modal sandbox notes
 

@@ -337,6 +337,14 @@ export function withAgentEvents(rows: AgentRows, emit: (slug: string) => void): 
       await rows.delete(slug);
       emit(slug);
     },
+    // EVERY mutator, for the reason `withWorkspaceEvents` states below: a
+    // version bump nobody hears about is a resident sandbox left on the
+    // environment it was spawned with, which is the whole point of the bump.
+    async touch(slug) {
+      const bumped = await rows.touch(slug);
+      if (bumped) emit(slug);
+      return bumped;
+    },
   };
 }
 

@@ -69,8 +69,11 @@
  * thing that changes under `aai dev` (the key has to be in `.env`, not just your
  * shell).
  *
- * Requires storage (`aai storage enable`, or `DATABASE_URL` under `aai dev`) —
- * runs and the key index both live there.
+ * Storage is what makes it DURABLE (`aai storage enable`, Settings → Database
+ * in the studio, or `DATABASE_URL` under `aai dev`) — runs and the key index
+ * both live there. Without it both live in the process, so a run in flight is
+ * lost when the agent restarts, redeploys or goes idle; everything below still
+ * works, which is what lets you try it before provisioning anything.
  */
 
 import { agent } from "@alexkroman1/aai";

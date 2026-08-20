@@ -95,6 +95,33 @@ describe("configureWorkflowWorld", () => {
     expect(e.WORKFLOW_LOCAL_BASE_URL).toContain("127.0.0.1");
   });
 
+  test("names a data dir of its own rather than inheriting the DevKit's cwd default", () => {
+    // `.workflow-data` relative to `process.cwd()` is what the DevKit picks on
+    // its own, and a guest's cwd is not a location it chose: the platform image
+    // sets no WORKDIR, and the subprocess backend hands EVERY guest `tmpdir()`.
+    const e = env();
+    configureWorkflowWorld({ databaseUrl: undefined, port: 3000, env: e });
+    const dir = e.WORKFLOW_LOCAL_DATA_DIR ?? "";
+    expect(isAbsolute(dir)).toBe(true);
+    // Per process, because this world's queue is in memory: a successor
+    // inheriting the directory recovers runs whose queue died with it.
+    expect(dir).toContain(String(process.pid));
+  });
+
+  test("takes the caller's data dir over the default", () => {
+    // `aai dev` passes the project directory — there a restart is a save, and
+    // the runs are meant to survive it.
+    const e = env();
+    configureWorkflowWorld({ databaseUrl: undefined, port: 3000, dataDir: "/srv/app", env: e });
+    expect(e.WORKFLOW_LOCAL_DATA_DIR).toBe("/srv/app");
+  });
+
+  test("leaves an operator's own data dir alone", () => {
+    const e = env({ WORKFLOW_LOCAL_DATA_DIR: "/var/runs" });
+    configureWorkflowWorld({ databaseUrl: undefined, port: 3000, dataDir: "/srv/app", env: e });
+    expect(e.WORKFLOW_LOCAL_DATA_DIR).toBe("/var/runs");
+  });
+
   test("leaves an operator's own base URL alone", () => {
     const e = env({ WORKFLOW_LOCAL_BASE_URL: "https://tunnel.example" });
     configureWorkflowWorld({ databaseUrl: undefined, port: 3000, env: e });

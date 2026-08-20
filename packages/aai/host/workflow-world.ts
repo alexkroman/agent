@@ -8,10 +8,13 @@
  * - **Postgres** when the agent has a database. Runs, events and the job queue
  *   live in the app's own database, which is why creating a workflow app switches
  *   storage on. This is production.
- * - **Local** otherwise — `aai dev` against a project with no `DATABASE_URL`.
- *   State goes in `.workflow-data/` and the queue is in memory, so a restart
- *   forgets in-flight runs. That is the honest dev tradeoff, and it is what lets
- *   an author try a workflow before provisioning anything.
+ * - **Local** otherwise — `aai dev` against a project with no `DATABASE_URL`,
+ *   and any deployed agent whose database is off (the studio's default). State
+ *   goes in a directory ({@link defaultLocalDataDir}) and the queue is in
+ *   memory, so a restart forgets in-flight runs and a redeploy forgets them all.
+ *   That is the honest tradeoff, and it is what lets an author try a workflow
+ *   before provisioning anything — which is the whole first experience of a
+ *   workflow app in the studio, where a database is opt-in.
  *
  * ## The world is chosen by ENVIRONMENT, and it is cached on first read
  *
@@ -31,6 +34,8 @@
  * to reach us.
  */
 
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { errorMessage } from "../sdk/utils.ts";
 import { claimPoolPresenceAndSweep } from "./workflow-lock-sweep.ts";
 import { resolveWorldSpecifier } from "./workflow-resolve.ts";
@@ -103,15 +108,15 @@ export function configureWorkflowWorld(opts: {
   /** The port this guest listens on, for the local world's callbacks. */
   port: number;
   /**
-   * Where the local world keeps its run state. Defaults to the DevKit's own
-   * `.workflow-data` relative to `process.cwd()`.
+   * Where the local world keeps its run state. Defaults to a per-process
+   * directory under `tmpdir()` — see {@link defaultLocalDataDir}.
    *
    * `aai dev` passes the project directory, because the two are not the same
    * thing there: `--cwd` (and any wrapper script) leaves the shell's directory
    * as the process cwd, so a project's durable runs would land wherever the
    * developer happened to be standing and a second `aai dev` from elsewhere
-   * would silently see none of them. The guest passes nothing — its cwd is its
-   * own and the container is discarded either way.
+   * would silently see none of them. A guest passes nothing and takes the
+   * default, which is the one it wants: its runs die with it either way.
    */
   dataDir?: string;
   env?: NodeJS.ProcessEnv;
@@ -141,8 +146,33 @@ export function configureWorkflowWorld(opts: {
   env[TARGET_WORLD_ENV] = "local";
   // Loopback, not the bind host: this URL is only ever dialled by this process.
   env[LOCAL_BASE_URL_ENV] ??= `http://127.0.0.1:${opts.port}`;
-  if (opts.dataDir !== undefined) env[LOCAL_DATA_DIR_ENV] ??= opts.dataDir;
+  env[LOCAL_DATA_DIR_ENV] ??= opts.dataDir ?? defaultLocalDataDir();
   return "local";
+}
+
+/**
+ * Where the local world's run state goes when the caller names nowhere.
+ *
+ * The DevKit's own default is `.workflow-data` relative to `process.cwd()`, and
+ * a cwd is not something every host PICKS. A deployed guest's is whatever its
+ * image left it (`/` on the platform's snapshot image, which sets no `WORKDIR`),
+ * and under the subprocess backend `aai-server/subprocess-sandbox.ts`
+ * deliberately hands every guest the same neutral one — `tmpdir()`. That second
+ * case is the bug this default closes: two databaseless agents beside each other
+ * shared ONE `.workflow-data`, and the local world lists a directory rather than
+ * a namespace, so each saw the other's runs and `start()` re-enqueued them.
+ *
+ * Per PROCESS, which is the honest scope for this world: its queue is in memory,
+ * so a run is exactly as durable as the process holding it, and a successor
+ * inheriting the directory would recover runs whose queue entries died with
+ * their predecessor. A host that wants better says so — `aai dev` passes the
+ * project directory, where a restart is a save rather than a new deployment.
+ *
+ * `tmpdir()`, never a literal `/tmp` (`guard-invariants` rule 11): that string
+ * is drive-relative on Windows, and `aai dev` runs on the developer's machine.
+ */
+function defaultLocalDataDir(): string {
+  return join(tmpdir(), `aai-workflow-data-${process.pid}`);
 }
 
 /**

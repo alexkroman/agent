@@ -311,8 +311,17 @@ callback. Reach for `agent()` when someone is on the line — a voice agent can
 also START a workflow from a tool (`ctx.workflows.start(def, input)`) and
 answer the turn, which is the other shape.
 
-**Requires storage** (`aai storage enable`, or `DATABASE_URL` under
-`aai dev`): runs live in the database.
+**Storage is OPTIONAL, and what it buys is DURABILITY.** With a database
+(`aai storage enable`, Settings → Database in the studio, or `DATABASE_URL`
+under `aai dev`) runs live in it and survive a restart, a redeploy and an idle
+sandbox. Without one they live in the process that started them — you can
+submit the form, watch the run and read its result, and everything in flight is
+lost when that process goes away. That is the honest tradeoff, and it is what
+lets you build a workflow app before provisioning anything.
+
+Two things do need the database whatever the run does: `ctx.db`, and a workflow
+**upload** — an upload's record is a row, so `api.upload` and the file-taking
+form hooks refuse by name until storage is on (see "Database API" below).
 
 ### Workflow bodies live in `workflows/`
 
@@ -1532,8 +1541,9 @@ Common mistakes when working in aai projects:
 - **`ctx.db` throws until the database is enabled.** Enable it with
   `aai storage enable` (CLI), Settings → Database (studio), or
   `DATABASE_URL` in `.env` (`aai dev`) before shipping tools that persist
-  data. In the studio it takes effect when each agent next deploys — the
-  preview redeploys itself, production on the next publish.
+  data. A deployed agent reads its connection string when its sandbox is
+  built, so enabling rebuilds it — the change reaches a running agent
+  without a redeploy.
 - **The database is per-app.** Rows are shared by every session of one
   deployment — key them yourself if sessions must not see each other's data
   (or keep session-scoped data in a `sessionSlot`).

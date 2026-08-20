@@ -1380,12 +1380,13 @@ down, like the file-length allowlist.
   and cannot repair one that dropped and recovered on its own — the common
   case, and the silent one.
 
-  **Deploy and delete are the ONLY mutations that move sandboxes.** Secret
-  and storage changes write Vault and bump nothing — they take effect on
-  the agent's next deploy (or whenever its sandbox is next rebuilt). That
-  trade deleted the whole secret-invalidation mechanism (the old
-  `aai_platform.slug_epochs` table); the documented way to apply a secret
-  now is to redeploy.
+  **Deploy, delete, and provisioning a database move sandboxes; a SECRET
+  change does not** — it writes Vault and bumps nothing, taking effect on the
+  agent's next deploy (or whenever its sandbox is next rebuilt). That trade
+  deleted the whole secret-invalidation mechanism (the old
+  `aai_platform.slug_epochs` table); the documented way to apply a secret is
+  still to redeploy. A database is different because a guest cannot re-read
+  one — see `aai-server/storage-handler.ts`.
 
   **Supabase setup this depends on lives in `supabase/migrations`**, applied
   with `supabase db push` BEFORE the code that queries it: the `aai_platform`

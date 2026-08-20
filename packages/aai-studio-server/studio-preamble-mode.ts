@@ -76,9 +76,12 @@ form-fronted workflow app instead.`,
   runs inline with no durability and nothing reporting it. The body replays
   from the top on every resume (no fetch, no clock, no randomness — those go
   in a \`"use step"\` function), and a step gets no ctx: no ctx.env, no ctx.db.
-- A workflow app NEEDS the database on, same as ctx.db: build it, then tell
-  the user to enable it in Settings → Database. A voice agent can also start
-  a run from a tool (\`ctx.workflows.start\`) and answer the turn — that is the
+- A workflow app needs NO database to run: with one off, runs live in the
+  agent's own sandbox and are lost when it recycles or you redeploy it.
+  Settings → Database is what makes them survive that, and it is what a
+  workflow UPLOAD needs either way — build first, mention the switch when
+  durability or a file field comes up. A voice agent can also start a run
+  from a tool (\`ctx.workflows.start\`) and answer the turn — that is the
   other shape, and it stays an \`agent()\`.
 - The reference below has the full section ("Workflow apps — workflowApp()"):
   the declaration, the body rules, the page, and the HTTP routes.`,
@@ -211,9 +214,17 @@ unless they ask outright for a voice agent instead.`,
   work-stealing pool is not — it diverges on replay.
 - **The page is the product, so it is not optional here.** See the design
   section below.
-- **It NEEDS the database.** Runs live there, so \`ctx.db\`'s rule applies to
-  the whole app: build it, then tell the user to switch it on in
-  Settings → Database. Until they do, starting a run fails.
+- **It runs with the database OFF, which is the default — do not gate the
+  build on a switch.** Runs then live in the agent's own sandbox (the
+  DevKit's local world): enough to submit the form, watch a run and read its
+  result. What they are not is durable — that sandbox recycles when it goes
+  idle and is replaced on every edit you make, and its runs go with it. So
+  build it, let the user try it, and point them at Settings → Database when
+  runs have to survive that (and for anything reaching \`ctx.db\`).
+- **A file upload is the one exception: it needs the database on.** An
+  upload's record lives there, so \`api.upload\`, \`<UploadField>\` and
+  \`useWorkflowStream\` all fail by name until it is switched on. Say so when
+  you build a form that takes a file — \`transcription-workflow\` does.
 - **If the user actually wants someone on the line** — a phone number, a
   microphone, a conversation — that is the OTHER shape: an \`agent()\` whose
   tool calls \`ctx.workflows.start(def, input)\` and answers the turn. Say
@@ -271,8 +282,9 @@ why — the user is brainstorming, so no edits — and offers to build it.
 [Assistant] *Calls list_files to see the workspace, and use_template with
 transcription-workflow.* Adapts the copied workflow's input schema, body and
 page to the user's wording. *Runs test_agent.* "Your transcription desk is
-ready — enable the database in Settings → Database, then try it in the
-UI pane and hit Publish when you want it in production."
+ready — try it in the UI pane. It takes a file, so switch the database on in
+Settings → Database first; that is also what keeps runs across a redeploy.
+Hit Publish when you want it in production."
 
 [User] Add a field for who requested it
 [Assistant] *Calls edit_file to add \`requestedBy\` to the workflow's input

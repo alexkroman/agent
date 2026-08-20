@@ -221,13 +221,14 @@ so every piece of per-project state resets on a switch with no effect to do it.
     claim them — hung off the ONE hook (`afterDeploy` on the session broker's
     single publisher) that both Publish and the auto preview pass through.
     The invariant: an app database exists only for a deployed, owned slug.
-  - **It reaches an agent on that agent's next DEPLOY** — `DATABASE_URL` is
-    read from the `app-db:` secret when a sandbox is BUILT, and deploy/delete
-    are the only mutations that move sandboxes (the same trade secret changes
-    make). So the switch force-redeploys the PREVIEW (clear `previewHash`,
-    schedule — the `wakeProjectPreview` pattern), because that is the
-    environment the user is looking at, while production waits for a Publish,
-    which the card says out loud.
+  - **It reaches a RUNNING agent** — `DATABASE_URL` is read from the `app-db:`
+    secret when a sandbox is BUILT, so provisioning bumps that slug's agents
+    row and the change stream rebuilds the guest (`aai-server/
+    storage-handler.ts`, which carries the failure that made the bump
+    necessary). The switch ALSO force-redeploys the PREVIEW (clear
+    `previewHash`, schedule — the `wakeProjectPreview` pattern), because that
+    environment should be running the current files too; production still
+    waits for a Publish for its FILES, which the card says out loud.
   - **An already-provisioned slug is never re-provisioned**: `provision`
     rotates the role's password on every call, so re-running it would
     invalidate the `DATABASE_URL` a live sandbox is holding.

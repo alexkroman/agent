@@ -36,6 +36,16 @@ export type BundleStore = {
    * against — cached much more briefly than `getAgent`.
    */
   getAgentVersion(slug: string): Promise<number | null>;
+  /**
+   * Bump the slug's deploy version without changing the deploy, so every
+   * replica's resident sandbox is rebuilt (`watchAgentInvalidation`). False
+   * when no such agent exists.
+   *
+   * For a mutation that changes what a guest's ENVIRONMENT is rather than what
+   * its code is — provisioning or dropping the app database, which is where
+   * `DATABASE_URL` comes from. See `AgentRows.touch`.
+   */
+  touchAgent(slug: string): Promise<boolean>;
   getWorkerCode(slug: string): Promise<string | null>;
   /**
    * A time-boxed read URL for the slug's worker blob, for a guest to fetch

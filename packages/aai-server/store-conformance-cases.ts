@@ -286,6 +286,21 @@ export function agentRowsConformance(make: () => AgentRows): void {
     expect(await rows.getVersion(slug)).toBeNull();
   });
 
+  test("touch bumps an existing row's version, leaves its deploy alone, and creates none", async () => {
+    // Provisioning the app database changes a guest's ENVIRONMENT without
+    // changing its code, and the version is the only invalidation signal — so
+    // the bump has to land while the row's deploy stays exactly as it was.
+    const rows = make();
+    const slug = uid();
+    expect(await rows.touch(slug)).toBe(false);
+    expect(await rows.get(slug)).toBeNull();
+    const put = { credential_hashes: ["sha256:abc"], worker_hash: "wh-1" };
+    await rows.put({ slug, client_files: { "a.html": "ch-1" }, ...put });
+    const before = await rows.get(slug);
+    expect(await rows.touch(slug)).toBe(true);
+    expect(await rows.get(slug)).toMatchObject({ ...put, version: (before?.version ?? 0) + 1 });
+  });
+
   test("put + get round-trips every column, the nullable pin included", async () => {
     const rows = make();
     const slug = uid();

@@ -16,9 +16,11 @@
  * from, and the agents row's change stream retires residents at another
  * version (`watchAgentInvalidation` in sandbox-resolve.ts — there is no
  * per-broker check or idle-sweep probe). This replaced the separate
- * `aai_platform.slug_epochs` counter — deploy/delete are the only mutations
- * that move sandboxes now; secret and storage changes take effect on the
- * next deploy (or sandbox rebuild), by design.
+ * `aai_platform.slug_epochs` counter. Deploy and delete are the mutations that
+ * WRITE a row; {@link AgentRows.touch} bumps the version on its own, for the
+ * one mutation that changes a guest's environment without changing its code
+ * (provisioning the app database — see `storage-handler.ts`). A secret change
+ * still takes effect on the next deploy, by design.
  *
  * Postgres (`aai_platform.agents`) in production, memory in dev/tests —
  * the same two-implementation pattern as the other platform stores.
@@ -58,6 +60,20 @@ export type AgentRows = {
   /** Current version, or null when the agent does not exist (deleted). */
   getVersion(slug: string): Promise<number | null>;
   /**
+   * Bump `version` on an EXISTING row without touching the deploy it points
+   * at. False when there is no such row.
+   *
+   * The version is the cross-replica invalidation signal, so this is how a
+   * mutation that changes a guest's ENVIRONMENT rather than its code — today,
+   * provisioning or dropping the app database — gets the resident sandbox
+   * rebuilt. `DATABASE_URL` is composed when a sandbox is BUILT
+   * (`sandbox-resolve.ts`), so without a bump the running guest keeps the env
+   * it was spawned with and the change silently takes effect on some later
+   * deploy. Nothing else here may reach for it: a change to the deploy itself
+   * goes through {@link put}, which bumps on its own.
+   */
+  touch(slug: string): Promise<boolean>;
+  /**
    * Every deployed slug.
    *
    * The one read here that is not per-slug, and it has exactly one caller: the
@@ -89,6 +105,10 @@ on conflict (slug) do update set
   updated_at = now()`;
 
 const DELETE_SQL = `delete from ${TABLE} where slug = $1`;
+// `returning` rather than a separate existence read: one statement, and it
+// answers the "no such row" case without a race against a concurrent delete.
+const TOUCH_SQL = `update ${TABLE} set version = version + 1, updated_at = now()
+where slug = $1 returning version`;
 const VERSION_SQL = `select version from ${TABLE} where slug = $1`;
 const SLUGS_SQL = `select slug from ${TABLE} order by slug`;
 
@@ -150,6 +170,11 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
       return raw == null ? null : Number(raw);
     },
 
+    async touch(slug) {
+      const rows = await sql(TOUCH_SQL, [slug]);
+      return rows.length > 0;
+    },
+
     async slugs() {
       const rows = await sql(SLUGS_SQL);
       // A non-string slug cannot exist (the column is text and the pattern is
@@ -188,6 +213,12 @@ export function createMemoryAgentRows(): AgentRows {
     },
     getVersion(slug) {
       return Promise.resolve(rows.get(slug)?.version ?? null);
+    },
+    touch(slug) {
+      const row = rows.get(slug);
+      if (!row) return Promise.resolve(false);
+      rows.set(slug, { ...row, version: row.version + 1 });
+      return Promise.resolve(true);
     },
     slugs() {
       // Sorted, like the Postgres half: a caller that caps how much it does per
