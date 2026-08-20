@@ -765,6 +765,9 @@ export type ProviderEnv = Record<string, string> & {
 };
 
 // @internal
+export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefined): void;
+
+// @internal
 export function publishStepEnv(env: Readonly<Record<string, string | undefined>> | undefined): void;
 
 // @internal
@@ -774,7 +777,7 @@ export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 export function publishStepReporter(reporter: StepReporter | undefined): void;
 
 // @internal
-export function publishUploadReader(reader: UploadReader | undefined): void;
+export function publishUploadReader(reader: UploadAccess | undefined): void;
 
 // @public
 type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
@@ -1327,6 +1330,22 @@ type SlotStore = {
 };
 
 // @internal
+export const speakOverWebSocket: SpeechSynthesizer;
+
+// @internal
+export const SPEECH_UNAVAILABLE_MESSAGE: string;
+
+// @internal
+export type SpeechSynthesizer = (request: {
+    text: string;
+    apiKey: string;
+    voice: string;
+    language?: string | undefined;
+    sampleRate: number;
+    signal: AbortSignal;
+}) => Promise<Uint8Array>;
+
+// @internal
 export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
 
 // @internal
@@ -1720,6 +1739,12 @@ export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
 // @public
 export const UPLOAD_TOKEN_RE: RegExp;
 
+// @internal
+export const UPLOAD_WRITES_UNAVAILABLE_MESSAGE: string;
+
+// @internal
+export type UploadAccess = UploadReader & Partial<UploadWriter>;
+
 // @public
 export type UploadBlobs = {
     put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
@@ -1794,6 +1819,17 @@ export class UploadsUnavailableError extends Error {
 export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }
+
+// @public
+export type UploadWriteMeta = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
+
+// @internal
+export type UploadWriter = {
+    create(meta: UploadWriteMeta, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
+};
 
 // @internal
 export type WakeHintOptions = {

@@ -401,6 +401,9 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+export const STUB_SPEECH_PCM_BYTES = 12000;
+
+// @public
 export type StubEmitted = {
     namespace: string;
     chunk: unknown;
@@ -466,6 +469,30 @@ export type StubReporter = {
 export function stubReporter(): StubReporter;
 
 // @public
+export type StubSpeech = {
+    calls: StubSpeechCall[];
+    restore(): void;
+};
+
+// @public
+export function stubSpeech(options?: StubSpeechOptions): StubSpeech;
+
+// @public
+export type StubSpeechCall = {
+    text: string;
+    apiKey: string;
+    voice: string;
+    language: string | undefined;
+    sampleRate: number;
+};
+
+// @public
+export type StubSpeechOptions = {
+    pcmBytes?: number | undefined;
+    error?: Error | undefined;
+};
+
+// @public
 export type StubStepFetch = {
     calls: StubStepRequest[];
     restore: () => void;
@@ -499,7 +526,13 @@ export type StubUpload = Uint8Array | {
 };
 
 // @public
-export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => void;
+export function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): () => void;
+
+// @public
+export type StubUploadsOptions = {
+    writable?: boolean | undefined;
+    idPrefix?: string | undefined;
+};
 
 // @public
 export type TestToolContext = ToolContext & {

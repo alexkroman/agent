@@ -1,7 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { emit, publishStepReporter, report } from "./step-report.ts";
-import { createStubWorkflows, createToolContext, createUnusedDb, stubReporter } from "./testing.ts";
+import { publishUploadReader, readUpload, uploadInfo } from "./step-uploads.ts";
+import { writeUpload } from "./step-uploads-write.ts";
+import {
+  createStubWorkflows,
+  createToolContext,
+  createUnusedDb,
+  stubReporter,
+  stubUploads,
+} from "./testing.ts";
 
 describe("createToolContext", () => {
   test("supplies every ToolContext field", () => {
@@ -212,5 +220,49 @@ describe("stubReporter", () => {
     expect(reported.lines).toEqual([]);
     // Back to the console fallback, which is what an unpublished slot means.
     expect(spy).toHaveBeenCalled();
+  });
+});
+
+describe("stubUploads", () => {
+  afterEach(() => publishUploadReader(undefined));
+
+  test("serves the files it was given to a step's reader", async () => {
+    stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
+
+    await expect(uploadInfo("upl_1")).resolves.toMatchObject({ size: 3, complete: true });
+    expect([...(await readUpload("upl_1")).bytes]).toEqual([1, 2, 3]);
+  });
+
+  test("is READ-ONLY by default, so a step that writes cannot do so unnoticed", async () => {
+    stubUploads({ upl_1: new Uint8Array([1]) });
+
+    await expect(writeUpload(new Uint8Array([9]))).rejects.toThrow("read-only");
+  });
+
+  test("`writable` mints assertable ids and makes what was written readable", async () => {
+    stubUploads({}, { writable: true });
+
+    const stored = await writeUpload(new Uint8Array([4, 5]), {
+      name: "summary.wav",
+      type: "audio/wav",
+    });
+
+    expect(stored).toEqual({
+      id: "upl_stub_1",
+      name: "summary.wav",
+      type: "audio/wav",
+      size: 2,
+      complete: true,
+    });
+    expect([...(await readUpload(stored.id)).bytes]).toEqual([4, 5]);
+  });
+
+  test("counts up, so two writes in one run are distinguishable", async () => {
+    stubUploads({}, { writable: true, idPrefix: "wav_" });
+
+    const first = await writeUpload(new Uint8Array([1]));
+    const second = await writeUpload(new Uint8Array([2]));
+
+    expect([first.id, second.id]).toEqual(["wav_1", "wav_2"]);
   });
 });

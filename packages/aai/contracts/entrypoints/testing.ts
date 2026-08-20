@@ -4,9 +4,10 @@
  *
  * Testing a tool's `execute` in a user's own project: a `ToolContext` with
  * inert defaults and a recording `send`, the fakes its collaborators are driven
- * by (a model, a workflow client, a gateway), the two slots a `"use step"` body
- * reaches through — the upload store, and the HTTP `stepFetch` makes its request
- * with — and `withDiscoveredTools`, which is how a spec gets the def a DEPLOYED
+ * by (a model, a workflow client, a gateway), the three slots a `"use step"`
+ * body reaches through — the upload store, the HTTP `stepFetch` makes its
+ * request with, and the synthesizer `stepSpeak` speaks through — and
+ * `withDiscoveredTools`, which is how a spec gets the def a DEPLOYED
  * agent runs when the project's tools are files rather than inline.
  *
  * Re-exported from `@alexkroman1/aai/testing` and its `/vitest` half — one
@@ -28,6 +29,7 @@ export {
   type RunSnapshotOverrides,
   runTool,
   type SentEvent,
+  STUB_SPEECH_PCM_BYTES,
   type StubEmitted,
   type StubGateway,
   type StubGatewayCall,
@@ -37,12 +39,17 @@ export {
   type StubGenerateReply,
   type StubGenerateRoute,
   type StubReporter,
+  type StubSpeech,
+  type StubSpeechCall,
+  type StubSpeechOptions,
   type StubStepFetch,
   type StubStepRequest,
   type StubUpload,
+  type StubUploadsOptions,
   stubGateway,
   stubGenerate,
   stubReporter,
+  stubSpeech,
   stubStepFetch,
   stubUploads,
   type TestToolContext,

@@ -19,7 +19,6 @@ import type { Db } from "./db.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
 import { publishStepFetch, type StepFetchInit } from "./step-fetch.ts";
 import { publishStepReporter } from "./step-report.ts";
-import { publishUploadReader } from "./step-uploads.ts";
 import type { ToolContext } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
@@ -38,7 +37,15 @@ export {
   type StubGenerateRoute,
   stubGenerate,
 } from "./testing-generate.ts";
+export {
+  STUB_SPEECH_PCM_BYTES,
+  type StubSpeech,
+  type StubSpeechCall,
+  type StubSpeechOptions,
+  stubSpeech,
+} from "./testing-speech.ts";
 export { runTool, type ToolBearingAgent, toolOf } from "./testing-tools.ts";
+export { type StubUpload, type StubUploadsOptions, stubUploads } from "./testing-uploads.ts";
 export {
   createProgressStream,
   createRunSnapshot,
@@ -203,90 +210,6 @@ export function createToolContext(overrides: Partial<ToolContext> = {}): TestToo
     sent,
     ...overrides,
   };
-}
-
-/**
- * One file a {@link stubUploads} store answers for.
- *
- * A bare `Uint8Array` is the common case and means "these bytes, no name".
- *
- * @public
- */
-export type StubUpload =
-  | Uint8Array
-  | {
-      bytes: Uint8Array;
-      name?: string;
-      type?: string;
-      /**
-       * Whether every byte is in. Defaults to `true`.
-       *
-       * `false` stages a STREAMED upload that is still arriving, which is the state
-       * a step polling one has to handle and the only one where `readUpload`
-       * legitimately comes back short. Being able to write that down is most of why
-       * this field exists: a body that treats a stalled size as the end returns a
-       * transcript of most of a recording and reports success, and a spec cannot
-       * catch that without an incomplete upload to hand it.
-       */
-      complete?: boolean;
-    };
-
-/**
- * Publish an in-memory upload store, so a `"use step"` function that calls
- * `readUpload` can be tested without a server.
- *
- * A step reads uploads through a process-wide slot rather than dialling
- * anything (see `sdk/step-uploads.ts`), which is what makes this possible at
- * all: a spec supplies its own bytes and the step under test is unchanged.
- *
- * Returns the UNPUBLISH function, and calling it in an `afterEach` is not
- * optional — a store left published makes the next file's steps read this
- * one's bytes, which is the kind of cross-file leak that presents as a passing
- * test somewhere else.
- *
- * @example
- * ```ts
- * import { stubUploads } from "@alexkroman1/aai/testing";
- *
- * const restore = stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
- * // … call the step …
- * restore();
- *
- * // A streamed upload mid-flight: `readUpload` comes back short and
- * // `uploadInfo(...).complete` is false, which is what a polling body sees.
- * const firstHalf = new Uint8Array([1, 2]);
- * stubUploads({ upl_2: { bytes: firstHalf, complete: false } });
- * ```
- *
- * @param files - Keyed by upload id — the same string a run input would carry.
- * @public
- */
-export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => void {
-  const stored = new Map(
-    Object.entries(files).map(([id, file]) => [
-      id,
-      file instanceof Uint8Array ? { bytes: file } : file,
-    ]),
-  );
-  publishUploadReader({
-    info: (id) => {
-      const file = stored.get(id);
-      return Promise.resolve(
-        file
-          ? {
-              id,
-              name: file.name ?? "",
-              type: file.type ?? "",
-              size: file.bytes.length,
-              complete: file.complete !== false,
-            }
-          : undefined,
-      );
-    },
-    read: (id, start, end) =>
-      Promise.resolve(stored.get(id)?.bytes.subarray(start, end) ?? new Uint8Array(0)),
-  });
-  return () => publishUploadReader(undefined);
 }
 
 /**

@@ -3975,6 +3975,9 @@ export type ProviderEnv = Record<string, string> & {
 };
 
 // @internal
+export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefined): void;
+
+// @internal
 export function publishStepEnv(env: Readonly<Record<string, string | undefined>> | undefined): void;
 
 // @internal
@@ -3984,7 +3987,7 @@ export function publishStepFetch(fetchFn: StepFetch | undefined): void;
 export function publishStepReporter(reporter: StepReporter | undefined): void;
 
 // @internal
-export function publishUploadReader(reader: UploadReader | undefined): void;
+export function publishUploadReader(reader: UploadAccess | undefined): void;
 
 // @public
 type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
@@ -4537,6 +4540,22 @@ type SlotStore = {
 };
 
 // @internal
+export const speakOverWebSocket: SpeechSynthesizer;
+
+// @internal
+export const SPEECH_UNAVAILABLE_MESSAGE: string;
+
+// @internal
+export type SpeechSynthesizer = (request: {
+    text: string;
+    apiKey: string;
+    voice: string;
+    language?: string | undefined;
+    sampleRate: number;
+    signal: AbortSignal;
+}) => Promise<Uint8Array>;
+
+// @internal
 export function ssrfSafeFetch(url: string, init: RequestInit, fetchFn: typeof globalThis.fetch): Promise<Response>;
 
 // @internal
@@ -4930,6 +4949,12 @@ export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
 // @public
 export const UPLOAD_TOKEN_RE: RegExp;
 
+// @internal
+export const UPLOAD_WRITES_UNAVAILABLE_MESSAGE: string;
+
+// @internal
+export type UploadAccess = UploadReader & Partial<UploadWriter>;
+
 // @public
 export type UploadBlobs = {
     put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
@@ -5004,6 +5029,17 @@ export class UploadsUnavailableError extends Error {
 export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }
+
+// @public
+export type UploadWriteMeta = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
+
+// @internal
+export type UploadWriter = {
+    create(meta: UploadWriteMeta, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
+};
 
 // @internal
 export type WakeHintOptions = {
@@ -5854,6 +5890,9 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
+export const STUB_SPEECH_PCM_BYTES = 12000;
+
+// @public
 export type StubEmitted = {
     namespace: string;
     chunk: unknown;
@@ -5919,6 +5958,30 @@ export type StubReporter = {
 export function stubReporter(): StubReporter;
 
 // @public
+export type StubSpeech = {
+    calls: StubSpeechCall[];
+    restore(): void;
+};
+
+// @public
+export function stubSpeech(options?: StubSpeechOptions): StubSpeech;
+
+// @public
+export type StubSpeechCall = {
+    text: string;
+    apiKey: string;
+    voice: string;
+    language: string | undefined;
+    sampleRate: number;
+};
+
+// @public
+export type StubSpeechOptions = {
+    pcmBytes?: number | undefined;
+    error?: Error | undefined;
+};
+
+// @public
 export type StubStepFetch = {
     calls: StubStepRequest[];
     restore: () => void;
@@ -5952,7 +6015,13 @@ export type StubUpload = Uint8Array | {
 };
 
 // @public
-export function stubUploads(files: Readonly<Record<string, StubUpload>>): () => void;
+export function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): () => void;
+
+// @public
+export type StubUploadsOptions = {
+    writable?: boolean | undefined;
+    idPrefix?: string | undefined;
+};
 
 // @public
 export type TestToolContext = ToolContext & {
@@ -6383,6 +6452,9 @@ export function createKeyedLock(): KeyedLock;
 export function emit<T>(namespace: string, chunk: T): Promise<void>;
 
 // @public
+export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -6460,6 +6532,16 @@ export function omitUndefined<T extends object>(obj: T): {
 };
 
 // @public
+export function pcmDurationMs(byteLength: number, format: PcmFormat): number;
+
+// @public
+export type PcmFormat = {
+    sampleRate: number;
+    channels?: number | undefined;
+    bitsPerSample?: number | undefined;
+};
+
+// @public
 export const PREVIEW_SLUG_SUFFIX = "-preview";
 
 // @public
@@ -6495,6 +6577,24 @@ export function retryAfter(from: {
 export function safeJsonParse(text: string): unknown;
 
 // @public
+export type SpeakOptions = {
+    voice?: string | undefined;
+    language?: string | undefined;
+    sampleRate?: number | undefined;
+    apiKeyEnv?: string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type SpokenAudio = {
+    audio: Uint8Array<ArrayBuffer>;
+    pcm: Uint8Array;
+    sampleRate: number;
+    durationMs: number;
+    voice: string;
+};
+
+// @public
 interface StandardSchemaIssue {
     // (undocumented)
     readonly message: string;
@@ -6524,6 +6624,12 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
         } | undefined;
     };
 }
+
+// @public
+export const STEP_SPEAK_SAMPLE_RATE = 24000;
+
+// @public
+export const STEP_SPEAK_TIMEOUT_MS = 120000;
 
 // @public
 export function stepEnv(name: string): string | undefined;
@@ -6573,6 +6679,9 @@ export type StepGenerateOptions = {
     temperature?: number;
     maxTokens?: number;
 };
+
+// @public
+export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
 
 // @public
 export class StepTransportError extends Error {
@@ -6627,7 +6736,19 @@ export type UploadSlice = {
 export const VALID_SLUG_RE: RegExp;
 
 // @public
+export const WAV_HEADER_BYTES = 44;
+
+// @public
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
+
+// @public
+export function writeUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
+
+// @public
+export type WriteUploadOptions = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
 ```
 
 ## `@alexkroman1/aai/workflow-api`
@@ -6724,6 +6845,9 @@ export type WorkflowApi = {
     wake(runId: string): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     uploadInfo(id: string): Promise<UploadInfo>;
+    download(id: string, options?: {
+        signal?: AbortSignal;
+    }): Promise<Blob>;
 };
 
 // @public

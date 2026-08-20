@@ -59,6 +59,7 @@
 import {
   apiRoot,
   apiFailure as failure,
+  pendingRun,
   readApiJson as readJson,
 } from "./_workflow-api-envelope.ts";
 import { omitUndefined } from "./omit-undefined.ts";
@@ -70,6 +71,7 @@ import {
   type WorkflowRunSnapshot,
 } from "./workflow-run.ts";
 import {
+  downloadUpload,
   readUploadInfo,
   streamUploadFile,
   type UploadBody,
@@ -269,6 +271,14 @@ export type WorkflowApi = {
    * which a slow link and a dead client both produce.
    */
   uploadInfo(id: string): Promise<UploadInfo>;
+  /**
+   * Read an upload's BYTES, as a `Blob` — the other end of a run that PRODUCED
+   * a file (`writeUpload` stores it, the output carries the id). A `Blob`
+   * rather than a URL because the byte route takes the same bearer every route
+   * here does and neither `<audio src>` nor `<a href>` can send one;
+   * `downloadUpload` carries the rest.
+   */
+  download(id: string, options?: { signal?: AbortSignal }): Promise<Blob>;
 };
 
 // The prefix is declared beside the resolver that joins it and re-exported here,
@@ -456,6 +466,9 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
 
     uploadInfo: (id: string) => readUploadInfo(base, auth, failure, id),
 
+    // No `deadline()`: like an upload, its duration is a function of the FILE.
+    download: (id, options) => downloadUpload(base, auth, failure, id, options?.signal),
+
     async wake(runId: string): Promise<number> {
       const res = await fetch(`${base}/runs/${encodeURIComponent(runId)}/wake`, {
         method: "POST",
@@ -483,17 +496,4 @@ export function createWorkflowApiClient(opts: WorkflowApiClientOptions): Workflo
   };
 
   return api;
-}
-
-/**
- * The snapshot a `startAndWait` falls back to when the run exists and cannot be
- * read back.
- *
- * Reachable only against an agent that answered `{ runId }` and then reported no
- * such run — a replica that has not yet seen its own write. Saying `pending` is
- * both true and useful: the caller has the id, and reading it again takes it
- * from there.
- */
-function pendingRun(runId: string, workflow: string): WorkflowRunSnapshot {
-  return { runId, workflow, createdAt: Date.now(), status: "pending" };
 }

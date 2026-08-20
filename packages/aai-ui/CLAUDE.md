@@ -645,6 +645,28 @@ why the XHR answer is converted back into a `Response` at the boundary — one
 error vocabulary and one JSON guard above both paths, rather than two ways for
 this route to describe the same 413.
 
+### A run can PRODUCE a file, and `api.download` is how a page plays it
+
+Every upload above travels one way — a person's file, in. The store serves the
+other direction too, and it is what makes a workflow app whose answer is not
+text possible at all: a run's OUTPUT is read back as JSON, so a step that made
+audio, an image or a PDF stores it with `writeUpload` and returns the ID, and
+`api.download(id)` reads the bytes back as a `Blob`.
+
+**A `Blob` rather than a URL, and the reason is one a page cannot discover on
+its own.** `GET /workflows/uploads/:id` takes the same `Authorization` header
+every other route here does, and neither `<audio src>` nor `<a href>` can send
+one — so a page written as `src={`/workflows/uploads/${id}`}` works against
+`aai dev`, where there is no token, and 401s the moment the agent has one.
+`URL.createObjectURL(blob)` is what those two elements take, and it makes
+`download` on the anchor work as a bonus, the bytes already being in the tab.
+
+**Revoke the object URL when the id changes.** It pins its blob for the life of
+the document, so a page that summarized five recordings holds five files it can
+no longer reach. `spoken-summary`'s `useAudioUrl` is the shape to copy — the
+revoke and the "a second run settled while the first download was in flight"
+guard are the whole of what a hook buys over four lines in the component.
+
 ### Starting a run BEFORE its file has finished uploading
 
 Everything above is the `POST` path, and it forces one order: store the whole

@@ -8,6 +8,12 @@
  * ends of a platform interaction have to derive identically (the slug shape and
  * the `aai login` confirmation code).
  *
+ * `stepSpeak` and `encodeWav`/`pcmDurationMs` are part of it too, and they are
+ * the reason to read this contract beside `uploads`: a step that SPEAKS is
+ * useless without somewhere to put what it made. `stepSpeak` is a slot the way
+ * `stepFetch` is — the synthesizer needs a WebSocket client, which this subpath
+ * may not carry — and the WAV framing is the zero-dependency half.
+ *
  * `stepFetch`/`multipartBody`/`StepTransportError` are part of it and are the
  * ones an author must not be steered off: a step that reaches for `fetch`
  * instead speaks HTTP/2, and a fan-out over one connection is where a capacity
@@ -22,6 +28,7 @@
 export {
   createKeyedLock,
   emit,
+  encodeWav,
   errorDetail,
   errorMessage,
   isRecord,
@@ -38,13 +45,19 @@ export {
   multipartBody,
   normalizeSpeechText,
   omitUndefined,
+  type PcmFormat,
   PREVIEW_SLUG_SUFFIX,
+  pcmDurationMs,
   pushCapped,
   RESERVED_SLUGS,
   report,
   requireStepEnv,
   responseErrorMessage,
   retryAfter,
+  type SpeakOptions,
+  type SpokenAudio,
+  STEP_SPEAK_SAMPLE_RATE,
+  STEP_SPEAK_TIMEOUT_MS,
   type StepFetchInit,
   StepGenerateError,
   type StepGenerateJsonOptions,
@@ -55,7 +68,9 @@ export {
   stepFetch,
   stepGenerate,
   stepGenerateJson,
+  stepSpeak,
   stripJsonFence,
   VALID_SLUG_RE,
+  WAV_HEADER_BYTES,
   withLock,
 } from "../../sdk/utils.ts";

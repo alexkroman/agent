@@ -22,11 +22,13 @@
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { publishStepFetch } from "../sdk/step-fetch.ts";
 import { publishStepReporter } from "../sdk/step-report.ts";
+import { publishSpeechSynthesizer } from "../sdk/step-speak.ts";
 import { publishUploadReader } from "../sdk/step-uploads.ts";
 import { MAX_UPLOAD_BYTES_ENV } from "../sdk/upload-constants.ts";
 import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
+import { speakOverWebSocket } from "./step-speak.ts";
 import { createStepReporter } from "./workflow-report.ts";
 import {
   createUploadStore,
@@ -158,6 +160,10 @@ export function installWorkflowSupport(opts: {
   }
   publishUploadReader(store);
   publishStepReporter(createStepReporter(opts.logger));
+  // The speech slot. Nothing to close and nothing to pool: `stepSpeak` opens
+  // one socket per utterance and drops it — see `host/step-speak.ts` for why a
+  // step has nothing for a connection to be reused by.
+  publishSpeechSynthesizer(speakOverWebSocket);
   // The third step slot, and the one whose absence is silent: an unpublished
   // `stepFetch` degrades to `globalThis.fetch`, which WORKS and speaks HTTP/2 —
   // so a fan-out that lost this line would collect stream resets rather than an
