@@ -624,6 +624,25 @@ code regardless: `buildAgentBundle` does NOT pass `configFile: false` (only
 the guest's untrusted-workspace builds do), so the project's `vite.config.ts`
 runs at build time either way.
 
+## A step that uses ffmpeg wants a LOCAL ffmpeg under `aai dev`
+
+`@alexkroman1/aai/ffmpeg` spawns `ffmpeg`/`ffprobe` by name, and a deployed
+guest always has them — the sandbox image installs them (see "ffmpeg is
+installed, and a step reaches it through the SDK" in
+`packages/aai-guest/CLAUDE.md`). `aai dev` runs the agent on the developer's own
+machine, so there the binary is whatever is on `PATH`, or what
+`AAI_FFMPEG_PATH` / `AAI_FFPROBE_PATH` (or the conventional `FFMPEG_PATH` /
+`FFPROBE_PATH`) name.
+
+**This is the one place that parity is partial, so the FAILURE is written for
+it**: ENOENT is reported as "ffmpeg is not installed. A deployed agent's sandbox
+has it; under `aai dev` install ffmpeg locally …" rather than as
+`spawn ffmpeg ENOENT`. `ffmpegVersion()` answers `undefined` for a missing
+binary, so a step can preflight instead of failing mid-conversion. Nothing in
+the CLI installs or checks for one: a project whose steps never touch media
+should not be asked for a 100 MB dependency, and a deploy of that project works
+either way.
+
 ## The e2e suite is pnpm-only in CI
 
 `aai init` scaffolds a project that `e2e.test.ts` then installs from a mock

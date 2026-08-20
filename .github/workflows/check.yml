@@ -402,8 +402,11 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends ffmpeg
           fi
-          ffmpeg -version | head -1
-          ffprobe -version | head -1
+          # `sed -n 1p` rather than `head -1`: head exits after the first line
+          # and, under `pipefail`, a SIGPIPE'd producer would fail this step for
+          # printing its own version. sed drains the input.
+          ffmpeg -version | sed -n 1p
+          ffprobe -version | sed -n 1p
           echo "AAI_REQUIRE_FFMPEG=1" >> "$GITHUB_ENV"
       # Both slow tiers below e2e, in one job. They are separate TASKS — the
       # integration tier is in-memory only and the scenario tier is what needs the
