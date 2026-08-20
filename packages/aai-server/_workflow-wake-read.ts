@@ -37,12 +37,26 @@
  *   connection cannot do that: a read that throws takes down a connection nothing
  *   else is using. The isolation is now structural rather than bookkept.
  *
- * **Reads are SERIAL, deliberately.** Each one opens a real connection
- * (`APP_DB_ADMIN_POOL_MAX` is 1), and the fleet-wide direct-connection budget is
- * the scarce thing here — `MAX_PLATFORM_DB_CONNECTIONS` cannot bound a number
- * that scales with the app count. Serial means the pass costs ONE extra
- * connection at a time regardless of how many apps exist, at the cost of latency
- * inside a 60s interval that has room for it.
+ * **Reads fan out to a CONSTANT width, and the constant is the whole point.**
+ * Each one opens a real connection (`APP_DB_ADMIN_POOL_MAX` is 1), and the
+ * fleet-wide direct-connection budget is the scarce thing here —
+ * `MAX_PLATFORM_DB_CONNECTIONS` cannot bound a number that scales with the app
+ * count. So the width is `WORKFLOW_WAKE_READ_CONCURRENCY`, held by a worker pool
+ * (see {@link readHints} for why a semaphore is the wrong primitive here): the
+ * pass costs K extra connections regardless of how many apps exist, which keeps the budget independent of the app count exactly as a serial
+ * loop did, and takes the pass duration to 1/K of it.
+ *
+ * It WAS serial, argued as "at the cost of latency inside a 60s interval that has
+ * room for it". The interval has room for a fixed cost, not for a linear one:
+ * per-app connect plus two or three statements is tens of seconds at a few
+ * hundred apps, and `readTimeoutMs` is per app, so a handful of tenants with a
+ * bloated hint table add five seconds each to the same pass. What made that worse
+ * than slow is that the whole pass runs inside the leader transaction — so it is
+ * also a reserved admin connection and an advisory lock held that long — and that
+ * `start()` skips a tick while one is running, so overrunning the interval halves
+ * the sweep rate of the only mechanism that wakes a run nobody is delivering to.
+ * K is a declared bound where serial was a property of the loop shape; see the
+ * constant's own doc for why it is four.
  *
  * **The candidate filter changed shape too.** It used to be one catalog query on
  * the admin connection naming every app schema that had a hint table, so an app
@@ -63,12 +77,37 @@ import {
   appDbIdentifier,
   parseAppDbMeta,
 } from "./app-database.ts";
+import { envCount } from "./constants.ts";
 import { createLogger } from "./logger.ts";
 import type { AdminDb } from "./platform-lock.ts";
 import { APP_DB_SECRET_PREFIX, type SqlExec } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 const log = createLogger("workflow.wake");
+
+/**
+ * How many app databases the read phase opens AT ONCE.
+ *
+ * Here rather than in `constants.ts` because it is this concern's number and that
+ * file is at its line cap — the placement rule `LOGS_READY_TIMEOUT_MS` follows.
+ * `APP_DB_ADMIN_POOL_MAX`'s doc CITES it, though, because it is what makes the
+ * platform's transient app-database connections a constant rather than a function
+ * of the app count, which is the premise on which they are left out of
+ * `platformDbConnectionsPerReplica`.
+ *
+ * Four. K-wide costs K transient connections instead of 1 — still a CONSTANT,
+ * which is the whole property, since the app count is the one variable
+ * `MAX_PLATFORM_DB_CONNECTIONS` cannot bound — for 1/K of the duration.
+ * Fleet-wide K, not per-replica: the pass holds a transaction-scoped advisory
+ * lock, so one replica sweeps per tick. Against the ~20 connections that budget
+ * leaves the rest of the instance, four is comfortable and forty is not.
+ *
+ * Override with `WORKFLOW_WAKE_READ_CONCURRENCY`; 1 restores the serial pass.
+ */
+export const WORKFLOW_WAKE_READ_CONCURRENCY = envCount(
+  process.env.WORKFLOW_WAKE_READ_CONCURRENCY,
+  4,
+);
 
 /**
  * Advisory-lock namespace for the wake sweep — the first of the two-int key,
@@ -156,6 +195,13 @@ export type ReadDueOptions = {
   appDb: AppDatabases;
   /** `set local statement_timeout` for the pass, in ms. */
   readTimeoutMs: number;
+  /**
+   * How many app databases may be read at once — see
+   * `WORKFLOW_WAKE_READ_CONCURRENCY` in `constants.ts`. Passed rather than read from the
+   * constant here so a spec can pin the width it is asserting on; the sweep
+   * supplies the default.
+   */
+  readConcurrency: number;
 };
 
 /**
@@ -221,18 +267,64 @@ async function readOneHint(
   }
 }
 
+/**
+ * Read every candidate's hint, at most `WORKFLOW_WAKE_READ_CONCURRENCY` at a
+ * time, answering in the order they were given.
+ *
+ * **A worker pool, and NOT `_semaphore.ts`, because every candidate would have to
+ * ask for its slot at once.** That primitive's wait is bounded by design — right
+ * for a request path, wrong here, and wrong in a way that is invisible until the
+ * app count grows. The deadline would run from the moment `acquire` is called,
+ * which for a `map` over the candidates is t=0 for all of them: with K=4, reads
+ * of ~100ms and a 5s deadline, everything past roughly the two-hundredth app
+ * lapses on EVERY tick and is reported "not due" without ever being read. That is
+ * strictly worse than the serial loop this replaced, which was slow but did
+ * eventually read every app. Workers pulling from a cursor have no such deadline:
+ * an app's wait is bounded by the work ahead of it, and every app is read.
+ *
+ * `readTimeoutMs` is still a bound, in the place it belongs — the `statement_timeout`
+ * inside {@link readOneHint}, which is what stops one tenant's bloated table
+ * costing the pass more than one read's worth of time.
+ */
+async function readHints(
+  opts: ReadDueOptions,
+  candidates: [slug: string, meta: AppDbMeta][],
+): Promise<{ slug: string; present: boolean; due: boolean }[]> {
+  const hints: { slug: string; present: boolean; due: boolean }[] = [];
+  let next = 0;
+  const drain = async (): Promise<void> => {
+    // Read the entry and test IT rather than the index, so the cursor needs no
+    // cast under `noUncheckedIndexedAccess`. `at` is captured before the await,
+    // so each result lands at its OWN index — `due`'s order is the slug order the
+    // per-tick cap depends on, never completion order.
+    for (let at = next++, entry = candidates[at]; entry; at = next++, entry = candidates[at]) {
+      const [slug, meta] = entry;
+      hints[at] = { slug, ...(await readOneHint(opts.appDb, slug, meta, opts.readTimeoutMs)) };
+    }
+  };
+  const workers = Math.min(Math.max(1, Math.round(opts.readConcurrency)), candidates.length);
+  await Promise.all(Array.from({ length: workers }, drain));
+  return hints;
+}
+
 /** The read phase's body, with the leader lock held. */
 async function readDueLocked(reserved: ReservedDb, opts: ReadDueOptions): Promise<DueRead> {
   await reserved.query(`set local statement_timeout = ${opts.readTimeoutMs}`);
   const metas = await metasBySlug((query, params) => reserved.query(query, params), opts.store);
 
+  // Fanned out to a constant width — see the module doc on why the width is a
+  // constant and not the app count. Mapped over an ARRAY and reduced in index
+  // order, never appended to from inside the tasks, because `due`'s ORDER is
+  // load-bearing: the wake loop's per-tick cap takes the first N, and
+  // `workflow-wake.ts` rests on that order being the slug order so the cap
+  // cannot starve one agent forever. Completion order is whatever the databases
+  // answer in, which is neither stable nor the slug order.
+  const hints = await readHints(opts, [...metas]);
   const due: string[] = [];
   let candidates = 0;
-  // Serial — see the module doc on why this must not fan out.
-  for (const [slug, meta] of metas) {
-    const hint = await readOneHint(opts.appDb, slug, meta, opts.readTimeoutMs);
+  for (const hint of hints) {
     if (hint.present) candidates += 1;
-    if (hint.due) due.push(slug);
+    if (hint.due) due.push(hint.slug);
   }
   return { locked: true, candidates, due };
 }

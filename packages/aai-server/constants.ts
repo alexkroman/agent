@@ -54,6 +54,9 @@ export const MAX_WORKER_SIZE = 30_000_000;
  * the cap is what makes the SIZE limit survivable, so the two move together
  * — raising `MAX_WORKER_SIZE` (bundles do grow) means re-checking this.
  * Override with `DEPLOY_BODY_CONCURRENCY`.
+ *
+ * **`gzip-request.ts` carries the rest**: which allocation the 28 KB makes worth
+ * attacking, and the synchronous parse stall this bounds the OVERLAP of.
  */
 export const DEPLOY_BODY_CONCURRENCY = envCount(process.env.DEPLOY_BODY_CONCURRENCY, 2);
 
@@ -319,11 +322,13 @@ export const APP_DB_TARGET_POOL_MAX = 4;
  * the number of APPS, which is the one variable `MAX_PLATFORM_DB_CONNECTIONS`
  * cannot bound. These are opened, used, and closed.
  *
- * The concurrency bound therefore lives at the CALLER: the wake sweep reads at
- * most `WORKFLOW_WAKE_MAX_PER_TICK` app databases per tick, and provisioning is
- * serialized per slug by the mutation lock. That is why this does not appear in
- * `platformDbConnectionsPerReplica` — it is a transient, bounded by a policy
- * above it, not a resident pool.
+ * The concurrency bound therefore lives at the CALLER, and each caller has to
+ * name its own: the wake sweep reads at most `WORKFLOW_WAKE_READ_CONCURRENCY`
+ * (`_workflow-wake-read.ts`) app databases at once, and provisioning and the
+ * usage read are serialized per slug by the mutation lock. That is why this does
+ * not appear in `platformDbConnectionsPerReplica` — it is a transient, bounded by
+ * a policy above it, not a resident pool. **That citation is asserted**: it named
+ * the wrong constant for a long time — `platform-db-budget.test.ts` has the story.
  */
 export const APP_DB_ADMIN_POOL_MAX = 1;
 

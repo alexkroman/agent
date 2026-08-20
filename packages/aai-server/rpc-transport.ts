@@ -54,6 +54,16 @@ type JsonRpcResponse = z.infer<typeof JsonRpcResponseSchema>;
  */
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
+/**
+ * Cap on frames buffered between the socket opening and `listen()`.
+ *
+ * Generous relative to what the window can legitimately hold — every caller
+ * registers handlers and calls `listen()` in the same task, so nothing should
+ * arrive at all — and finite because the peer is a sandbox running tenant code.
+ * See {@link createRpcConnection} for why overflow drops the newest.
+ */
+const MAX_PRE_LISTEN_FRAMES = 64;
+
 /** Method-name → `{ params, result }` map for one direction of an RPC link. */
 export type RpcMethodMap = Record<string, { params: unknown; result: unknown }>;
 
@@ -149,6 +159,14 @@ function parseJsonRpcMessage(raw: unknown): ParsedMessage {
  * message is dispatched, and the socket starts delivering the moment it
  * opens. In practice the guest sends nothing unprompted, but the buffer
  * makes the ordering a non-event rather than a race.
+ *
+ * That buffer is CAPPED ({@link MAX_PRE_LISTEN_FRAMES}). "The guest sends nothing
+ * unprompted" is a property of the peer asserted in a comment, and the peer is a
+ * sandbox running tenant code; every caller registers its handlers and calls
+ * `listen()` in the same task, so the window is a task long and a cap costs
+ * nothing. Overflow drops the NEWEST frame and warns — not the oldest, which is
+ * what a ring would do and is exactly backwards here: this is a replay buffer, so
+ * the first frame is the one a handler is waiting for.
  */
 export function createRpcConnection<S extends RpcSchema = RpcSchema>(
   ws: RpcWebSocket,
@@ -156,6 +174,7 @@ export function createRpcConnection<S extends RpcSchema = RpcSchema>(
   let disposed = false;
   let listening = false;
   const preListenBuffer: unknown[] = [];
+  let droppedPreListen = 0;
 
   const notificationHandlers = new Map<string, (params?: unknown) => void>();
 
@@ -246,8 +265,23 @@ export function createRpcConnection<S extends RpcSchema = RpcSchema>(
   }
 
   ws.on("message", (data) => {
-    if (listening) handleFrame(data);
-    else preListenBuffer.push(data);
+    if (listening) {
+      handleFrame(data);
+      return;
+    }
+    if (preListenBuffer.length >= MAX_PRE_LISTEN_FRAMES) {
+      // Warn ONCE per connection: a peer flooding a closed window would
+      // otherwise make the log the flood.
+      droppedPreListen += 1;
+      if (droppedPreListen === 1) {
+        log.warn(
+          `dropping frames sent before listen() — more than ${MAX_PRE_LISTEN_FRAMES} arrived ` +
+            "while handlers were still being registered",
+        );
+      }
+      return;
+    }
+    preListenBuffer.push(data);
   });
   ws.on("close", () => {
     rejectAllPending("Connection closed");

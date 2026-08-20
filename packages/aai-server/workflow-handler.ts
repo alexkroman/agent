@@ -258,13 +258,25 @@ export function createWorkflowRateLimitMw(
     const ip = clientIp(c.req.raw);
     const isStart = c.req.method === "POST" && c.req.path.endsWith(startPath);
     const applicable = isStart ? [surface, start] : [surface];
-    for (const limiter of applicable) {
-      const verdict = await limiter.check(ip);
-      if (!verdict.ok) {
-        return c.json({ error: "Too many workflow requests — try again later" }, 429, {
-          "Retry-After": String(verdict.retryAfterSeconds),
-        });
-      }
+    // CONCURRENT, and the ordering above survives it: the verdicts are read back
+    // in ascending tightness, so a start refused by both still reports the
+    // surface limit's `Retry-After`. Serially this was two round trips on the
+    // durable arm (`createPgRateLimiter` is one upsert each, on the shared admin
+    // connection) in front of the one route whose work outlives its reply.
+    //
+    // It does change what gets COUNTED, which is the reason this is a comment and
+    // not a one-line edit: a request the surface limit refuses now also increments
+    // the start window, where the short-circuit used to spare it. For a
+    // fixed-window abuse limit that is the stricter reading and the harmless one —
+    // `CHECK_SQL` only moves `reset_at` when the window has expired, so extra
+    // counting inside a window cannot extend it, and a caller already being
+    // refused is not owed a spared counter.
+    const verdicts = await Promise.all(applicable.map((limiter) => limiter.check(ip)));
+    const refused = verdicts.find((verdict) => !verdict.ok);
+    if (refused && !refused.ok) {
+      return c.json({ error: "Too many workflow requests — try again later" }, 429, {
+        "Retry-After": String(refused.retryAfterSeconds),
+      });
     }
     await next();
   });

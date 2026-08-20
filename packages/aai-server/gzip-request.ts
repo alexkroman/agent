@@ -16,6 +16,17 @@
  *   inflation the moment the output would exceed the cap — a tiny compressed
  *   payload cannot balloon past `MAX_INFLATED_BODY_BYTES` in memory.
  * Oversized bodies get a 413, matching the CLI's "bundle too large" hint.
+ *
+ * **What this middleware hands downstream is a synchronous STALL, and that is
+ * worth knowing here because this is where the body becomes parseable.**
+ * `zValidator` then runs `JSON.parse` over up to {@link MAX_INFLATED_BODY_BYTES},
+ * which is hundreds of milliseconds during which this replica answers no health
+ * check, brokers no session, and relays no SSE frame — so a deploy landing on a
+ * replica is a latency event for every other tenant on it. `DEPLOY_BODY_CONCURRENCY`
+ * bounds how many of those stalls OVERLAP; nothing makes one of them yield, and
+ * nothing can short of a streaming parser. Tolerable for the reason that constant
+ * is 2: a deploy is rare and human-initiated. Recorded because the ~164 MB figure
+ * beside it reads as the whole cost and is not.
  */
 
 import { promisify } from "node:util";
@@ -45,6 +56,18 @@ function isOutputTooLarge(err: unknown): boolean {
 /**
  * Buffer a request body while counting bytes; returns null the moment the
  * running total exceeds `maxBytes` (the stream is cancelled, not drained).
+ *
+ * **Preallocating from `Content-Length` was tried and is NOT here**, because the
+ * copy it removes is the wrong one. A chunk list plus `Buffer.concat` does hold
+ * the compressed bytes twice — but `DEPLOY_BODY_CONCURRENCY`'s own measurement
+ * says a max-size deploy is **28 KB on the wire**, since the worker gzips
+ * ~1000:1, so that second copy is tens of kilobytes and the ~164 MB it reports
+ * is all downstream: the inflated buffer, the re-wrapped `Request`, and
+ * `JSON.parse`'s UTF-16 string plus object graph. Allocating `Content-Length`
+ * bytes up front would trade a 28 KB saving for a 120 MB allocation an
+ * authenticated caller could trigger with a declared length and an empty body,
+ * plus a lying-sender branch to get wrong. The single-chunk case below is the
+ * part that is free.
  */
 async function readBodyCapped(req: Request, maxBytes: number): Promise<Buffer | null> {
   const body = req.body;
@@ -62,6 +85,11 @@ async function readBodyCapped(req: Request, maxBytes: number): Promise<Buffer | 
     }
     chunks.push(value);
   }
+  // `Buffer.concat` copies even for one chunk, and one chunk is the ordinary
+  // case for a body this small — the CLI's gzipped deploy arrives well inside a
+  // single read. `Buffer.from` over the existing memory rather than a copy of it.
+  const only = chunks.length === 1 ? chunks[0] : undefined;
+  if (only) return Buffer.from(only.buffer, only.byteOffset, only.byteLength);
   return Buffer.concat(chunks);
 }
 

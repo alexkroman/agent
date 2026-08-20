@@ -54,8 +54,11 @@
  *   connection per candidate app.** The reservation comes out of the existing
  *   admin pool, so the fleet-wide DIRECT budget
  *   (`MAX_PLATFORM_DB_CONNECTIONS`) is unchanged; the per-app reads go through
- *   Supavisor and are serialized, so a pass costs one pooled connection at a time
- *   however many apps exist. See `_workflow-wake-read.ts` on why serial.
+ *   Supavisor under a semaphore, so a pass costs at most
+ *   {@link WORKFLOW_WAKE_READ_CONCURRENCY} pooled connections at a time however
+ *   many apps exist — a constant, which is the property the budget needs. See
+ *   `_workflow-wake-read.ts` for why the width is a constant and not the app
+ *   count, and for what the serial version it replaced cost.
  *
  * ## How "due" is known without reading tenant queue state
  *
@@ -108,7 +111,12 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { type DueRead, NOT_LOCKED, readDueWork } from "./_workflow-wake-read.ts";
+import {
+  type DueRead,
+  NOT_LOCKED,
+  readDueWork,
+  WORKFLOW_WAKE_READ_CONCURRENCY,
+} from "./_workflow-wake-read.ts";
 import type { AppDatabases } from "./app-database.ts";
 import {
   WORKFLOW_WAKE_INTERVAL_MS,
@@ -154,6 +162,11 @@ export type WorkflowWakeOptions = {
   retryMs?: number | undefined;
   maxPerTick?: number | undefined;
   readTimeoutMs?: number | undefined;
+  /**
+   * How many app databases the read phase may open at once. Defaults to
+   * `WORKFLOW_WAKE_READ_CONCURRENCY`; a spec pins it to assert the width.
+   */
+  readConcurrency?: number | undefined;
   /** Injectable clock for the backoff (tests). */
   now?: (() => number) | undefined;
   /**
@@ -220,6 +233,10 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
     1,
     Math.round(opts.readTimeoutMs ?? WORKFLOW_WAKE_READ_TIMEOUT_MS),
   );
+  const readConcurrency = Math.max(
+    1,
+    Math.round(opts.readConcurrency ?? WORKFLOW_WAKE_READ_CONCURRENCY),
+  );
   // Waking is `brokerSessionUrl` with the READINESS WAIT cut short, because this
   // caller is not a client: nobody is holding a request open for the answer, and
   // the sweep only needs the boot STARTED. Left at `BROKER_READY_TIMEOUT_MS`
@@ -281,6 +298,7 @@ export function createWorkflowWakeSweep(opts: WorkflowWakeOptions): WorkflowWake
       store: opts.store,
       appDb: opts.appDb,
       readTimeoutMs,
+      readConcurrency,
     }).catch((err: unknown) => {
       // The pass, not the sweep: the interval keeps ticking. Warn rather than
       // debug — a sweep that cannot read is a feature that has silently stopped

@@ -232,6 +232,16 @@ in `packages/aai-guest/CLAUDE.md`, and the studio service in
   blobs (`blobs/<sha256>` — worker + client files) committed
   by the agents-row upsert, which is the deploy's ATOMIC publish point.
 
+  **The writes overlap, and the WIDTH is ours rather than the caller's**
+  (`DEPLOY_BLOB_CONCURRENCY`). `DeployBodySchema` permits 100 client files, so an
+  unbounded `Promise.all` was up to 102 sockets at one Storage endpoint per deploy
+  — and the transient codes `_retry.ts` retries (`ECONNRESET`, `UND_ERR_SOCKET`)
+  are what an S3-compatible endpoint returns to a client opening far more than it
+  should, so the retry was treating this fan-out's symptom. A worker pool rather
+  than `_semaphore.ts`: that primitive's wait is bounded by design so a request
+  path can answer 503, and a lapse here would mean silently not writing a blob the
+  row is about to reference.
+
   **Its caches are read-through, and read-through has a hole a TTL cannot
   close: the burst that arrives while the FIRST read is in flight.** Every
   cache here serves a read that already happened, so a cold replica — the
@@ -1604,21 +1614,26 @@ Four properties, each the answer to a way this could go wrong:
   the reserved admin connection that also carries the pass's `set local
   statement_timeout`. Efficiency, not correctness: `brokerSessionUrl` is
   idempotent fleet-wide, which is why a lost lock is a silent skip.
-- **The per-app reads are one SHORT-LIVED connection each, taken SERIALLY.** A
-  Postgres connection is bound to one database, so the admin connection cannot
-  read a tenant's hint however it is qualified. Serial keeps a pass at one extra
-  connection at a time however many apps exist. The SAVEPOINT per tenant is gone
-  with the shared transaction and so is its reason: a read that throws now takes
-  down a connection nothing else is using, so one broken tenant cannot deny
-  every later one its wake. The candidate filter changed too — the old catalog
-  query is per-database now, so the cheap filter is the `app-db:` credential
-  itself, read for the fleet in one query over the same Vault view the sweeps use.
-
-**Each tenant's read sits in a SAVEPOINT, and that is not tidiness.** The hint
-table is tenant-owned, so a dropped, reshaped, or hugely-grown one makes that
-read fail — and a failed statement aborts the whole transaction, which without a
-savepoint means the first broken tenant costs EVERY later tenant its wake in the
-same pass: a cross-tenant denial of the only mechanism a parked run has.
+- **The per-app reads are one SHORT-LIVED connection each, at most
+  `WORKFLOW_WAKE_READ_CONCURRENCY` of them at a time.** A Postgres connection is
+  bound to one database, so the admin connection cannot read a tenant's hint
+  however it is qualified. The width is a CONSTANT — that is the property the
+  connection budget needs, since `MAX_PLATFORM_DB_CONNECTIONS` cannot bound a
+  number that scales with the app count — and it used to be a constant of one.
+  Serial bounded the connections and bounded the pass duration at nothing: at a
+  few hundred apps a pass runs tens of seconds against a 60s interval, with
+  `WORKFLOW_WAKE_READ_TIMEOUT_MS` applying PER APP, and the whole pass sits inside
+  the leader transaction holding a reserved connection and the advisory lock. An
+  overrunning pass is skipped rather than queued, so the sweep rate halves — on
+  the only mechanism that wakes a run nobody is delivering to. See
+  `APP_DB_ADMIN_POOL_MAX`'s doc, which used to cite `WORKFLOW_WAKE_MAX_PER_TICK`
+  as this bound; that constant caps how many sandboxes a tick BOOTS and is checked
+  after every app has already been read. The SAVEPOINT per tenant is gone with the
+  shared transaction and so is its reason: a read that throws takes down a
+  connection nothing else is using, so one broken tenant cannot deny every later
+  one its wake. The candidate filter changed too — the old catalog query is
+  per-database now, so the cheap filter is the `app-db:` credential itself, read
+  for the fleet in one query over the same Vault view the sweeps use.
 
 **Two things it does not cover, both inherited.** Apps on an extra
 `APP_DB_URLS` cluster are not swept — those pool their own connections, which

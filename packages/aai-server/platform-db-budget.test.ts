@@ -24,6 +24,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
+import { WORKFLOW_WAKE_READ_CONCURRENCY } from "./_workflow-wake-read.ts";
 import {
   ADMIN_POOL_MAX,
   APP_DB_ADMIN_POOL_MAX,
@@ -132,6 +133,61 @@ describe("platform database connection budget", () => {
         "utf-8",
       ),
     ).toContain("APP_DB_POOLER_URL");
+  });
+
+  /**
+   * The platform's own transient connections into app databases are left out of
+   * the per-replica arithmetic on the grounds that a policy above them bounds
+   * their number. That is only true if such a policy EXISTS, and for the wake
+   * sweep it did not: `APP_DB_ADMIN_POOL_MAX`'s doc cited
+   * `WORKFLOW_WAKE_MAX_PER_TICK`, which caps how many sandboxes a tick may BOOT
+   * and is checked after the read phase has already connected to every
+   * provisioned app. What actually held the budget was that the read loop
+   * happened to be serial — a property of the loop shape, in a file whose one
+   * paragraph on the subject told the next reader the bound was elsewhere.
+   *
+   * So the constant is asserted, and so is the citation: the exclusion in the
+   * budget and the width in the sweep are one decision, and the failure mode is
+   * that they stop referring to each other.
+   */
+  test("the wake sweep's app-db read width is a declared bound, and the budget cites it", () => {
+    // Fleet-wide rather than per-replica: the read phase runs under a
+    // transaction-scoped advisory lock, so one replica sweeps per tick.
+    expect(WORKFLOW_WAKE_READ_CONCURRENCY).toBeGreaterThanOrEqual(1);
+    // Bounded against the nearest COUNTED term rather than against the budget
+    // total, which `platformDbBudget()` returns as the whole
+    // `MAX_PLATFORM_DB_CONNECTIONS` (that is the point of it — see its doc). A
+    // whole placement cluster's per-replica pool is the right comparison: these
+    // transients are the same kind of connection, and one leader's pass must not
+    // cost more of the instance than a cluster's resident pool does.
+    expect(
+      WORKFLOW_WAKE_READ_CONCURRENCY,
+      "a leader's wake pass must not out-consume a placement cluster's own pool",
+    ).toBeLessThanOrEqual(APP_DB_TARGET_POOL_MAX);
+
+    // The citation, read out of the doc block that PRECEDES the exclusion —
+    // anywhere-in-the-file would pass on the constant's own definition below it.
+    const constants = readFileSync(
+      path.join(REPO_ROOT, "packages/aai-server/constants.ts"),
+      "utf-8",
+    );
+    const declaredAt = constants.indexOf("export const APP_DB_ADMIN_POOL_MAX");
+    expect(declaredAt).toBeGreaterThan(0);
+    const doc = constants.slice(0, declaredAt);
+    expect(doc.lastIndexOf("/**")).toBeGreaterThan(0);
+    expect(doc.slice(doc.lastIndexOf("/**"))).toContain("WORKFLOW_WAKE_READ_CONCURRENCY");
+
+    // And the width is enforced by a bounded RUNNER that reads the constant,
+    // rather than by the loop happening to be serial — the distinction this whole
+    // test exists for. (A worker pool and not a semaphore: with every candidate
+    // asking for a slot at once, a bounded acquire measures its deadline from t=0
+    // and silently drops the tail of a large fleet. `readHints`'s own doc has it.)
+    const read = readFileSync(
+      path.join(REPO_ROOT, "packages/aai-server/_workflow-wake-read.ts"),
+      "utf-8",
+    );
+    expect(read).toContain("readConcurrency");
+    expect(read).toContain("readHints");
   });
 
   test("extra APP_DB_URLS clusters are counted, because each pools its own", () => {
