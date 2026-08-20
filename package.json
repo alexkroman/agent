@@ -84,7 +84,7 @@
     "react": "catalog:",
     "sherif": "1.13.0",
     "syncpack": "^15.3.3",
-    "turbo": "^2.10.9",
+    "turbo": "^2.10.10",
     "typescript": "catalog:",
     "vitest": "catalog:",
     "yaml": "^2.9.0"
