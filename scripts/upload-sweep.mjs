@@ -166,16 +166,28 @@ function installCountingFetch() {
     const method = init?.method ?? "GET";
     const bytes = bodyBytes(init?.body);
     const kind = classify(method, bytes);
+    // How many windows a body-less claim named. That is the whole subject of
+    // `UPLOAD_CLAIM_BATCH`, and without it a falling `record` count is
+    // indistinguishable from windows going missing.
+    const named = kind === "record" ? countOffsets(url) : 0;
     const started = performance.now();
     try {
       const res = await real(input, init);
-      requests.push({ kind, method, status: res.status, bytes, ms: performance.now() - started });
+      requests.push({
+        kind,
+        method,
+        named,
+        status: res.status,
+        bytes,
+        ms: performance.now() - started,
+      });
       origins.add(new URL(url).origin);
       return res;
     } catch (err) {
       requests.push({
         kind,
         method,
+        named,
         status: 0,
         bytes,
         ms: performance.now() - started,
@@ -202,6 +214,22 @@ function installCountingFetch() {
  * landed, while under `aai dev` the bytes go to the agent. "A PUT with a body is
  * the bytes" holds in both, so one classifier covers both topologies.
  */
+/**
+ * How many windows one claim named, off its query.
+ *
+ * A claim may name several (`?offset=&offset=…&stored=1`) when the agent
+ * advertised `claimBatch` — see `UPLOAD_CLAIM_BATCH`. Reported so a run against a
+ * batching agent is legible: the `record` count drops on purpose, and the number
+ * of windows those requests carried is what says so.
+ */
+function countOffsets(url) {
+  try {
+    return new URL(url).searchParams.getAll("offset").length;
+  } catch {
+    return 0;
+  }
+}
+
 function classify(method, bytes) {
   if (method === "POST") return "claim";
   if (method !== "PUT") return "info";
@@ -294,6 +322,8 @@ async function runOnce(api, blob, parallel) {
     origins: [...counted.origins],
     requests: requests.length,
     parts: byteRequests.length,
+    claims: requests.filter((r) => r.kind === "record").length,
+    claimed: requests.reduce((sum, r) => sum + r.named, 0),
     // The parts path DECLINES rather than failing — a file that fits in one part
     // is the case this sweep can walk into by accident (`--mib 8` against the
     // 8 MiB default part size), and it would then report a single-request row

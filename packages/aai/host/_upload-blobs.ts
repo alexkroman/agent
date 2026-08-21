@@ -281,7 +281,7 @@ export const IDENTITY_ENCODING: Readonly<Record<string, string>> = {
  * implementations under a comment promising that an unmeasurable answer reads as
  * absent, returned `0` for the one case that comment was about.
  *
- * What that cost: `UploadStore.recordPart` asks this before recording a window, and
+ * What that cost: `UploadStore.recordParts` asks this before recording a window, and
  * `undefined` is the answer it refuses on. `0` it accepts — so every part of every
  * parts upload was recorded as a ZERO-LENGTH window, the contiguous prefix never
  * advanced past byte 0, and the record stayed `size: 0, complete: false` while the

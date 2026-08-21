@@ -87,6 +87,14 @@ export type Script = {
    */
   direct?: boolean;
   /**
+   * How many landed offsets the claim says one request may name (`claimBatch`).
+   *
+   * Absent means the field is OMITTED, which is an agent that predates batching and
+   * the answer a client must read as "one offset per claim". Only meaningful
+   * alongside {@link Script.direct}, exactly as the route only sends it there.
+   */
+  claimBatch?: number;
+  /**
    * Whether the CLOSING `…/info` read reports an upload that never got recorded.
    *
    * The production shape: every window was sent and acknowledged, and the store
@@ -199,7 +207,14 @@ function answerBegin(script: Script, attempt: number): Response {
   if (status !== 201) return json(status, { error: "no such route" });
   // Omitted rather than false when the bytes come to the agent, exactly as the route
   // omits it — so a fake cannot make the client take a path a real agent would not.
-  return json(201, { ...record(0, false), directParts: script.direct ? true : undefined });
+  return json(201, {
+    ...record(0, false),
+    directParts: script.direct ? true : undefined,
+    // Omitted unless a spec asks for it, and only on the direct path — the two
+    // capabilities shipped separately, so a fake that coupled them could not
+    // reproduce the skew the client's own default exists for.
+    claimBatch: script.direct ? script.claimBatch : undefined,
+  });
 }
 
 /**
@@ -242,28 +257,38 @@ async function answerPart(
   await Promise.resolve();
   await Promise.resolve();
   flight.now -= 1;
-  const offset = Number(call.url.searchParams.get("offset"));
-  if (script.hold?.includes(offset)) {
+  // A BATCHED claim names several — see `Script.claimBatch` — so `hold` and `refuse`
+  // match on ANY offset the request carries. The first one is what the request is
+  // named by in the ledgers, which for the unbatched form is the only one there is.
+  const offsets = call.url.searchParams.getAll("offset").map(Number);
+  const held = script.hold?.find((one) => offsets.includes(one));
+  if (held !== undefined) {
     return await new Promise<Response>((_resolve, reject) => {
       const signal = call.signal;
       if (!signal) return;
       signal.addEventListener("abort", () => {
-        agent.aborted.push(offset);
+        agent.aborted.push(held);
         reject(new DOMException("aborted", "AbortError"));
       });
     });
   }
-  if (script.refuse?.offset === offset && stillRefusing(script, refusals, offset)) {
-    if (script.refuse.network) throw new TypeError("the upload did not reach the agent");
+  const refused = script.refuse;
+  if (
+    refused !== undefined &&
+    offsets.includes(refused.offset) &&
+    stillRefusing(script, refusals, refused.offset)
+  ) {
+    if (refused.network) throw new TypeError("the upload did not reach the agent");
     return json(
-      script.refuse.status ?? 400,
+      refused.status ?? 400,
       { error: "refused" },
-      script.refuse.retryAfter === undefined
-        ? undefined
-        : { "Retry-After": script.refuse.retryAfter },
+      refused.retryAfter === undefined ? undefined : { "Retry-After": refused.retryAfter },
     );
   }
-  return json(200, record(offset + call.bytes, false));
+  // The largest window named, which for a batch is the furthest the record could
+  // have reached — the real store publishes the contiguous prefix and this fake's
+  // callers only read that it answered.
+  return json(200, record(Math.max(...offsets) + call.bytes, false));
 }
 
 /** Request headers as a plain lower-cased record, whatever shape they arrived in. */

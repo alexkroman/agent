@@ -218,7 +218,7 @@ describe("brokered through the platform", () => {
     // `identity`, `gzip` and `gzip, deflate, br` all answered `content-length:
     // 8388608` where `zstd` answered nothing. `Number(null)` is 0, a perfectly safe
     // non-negative integer, so this used to report a stored 8 MiB window as EMPTY and
-    // `recordPart` recorded it as a zero-length hole.
+    // `recordParts` recorded it as a zero-length hole.
     const { blobs } = open(
       () => new Response(null, { status: 200, headers: { "content-encoding": "zstd" } }),
     );

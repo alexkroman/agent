@@ -134,7 +134,7 @@ describe("routing", () => {
       stream: (id: string) => Promise.resolve({ id, name: "", type: "", size: 0, complete: true }),
       beginParts: (id: string) =>
         Promise.resolve({ id, name: "", type: "", size: 0, complete: false }),
-      recordPart: (id: string) =>
+      recordParts: (id: string) =>
         Promise.resolve({ id, name: "", type: "", size: 0, complete: false }),
       writePart: (id: string) =>
         Promise.resolve({ id, name: "", type: "", size: 0, complete: false }),

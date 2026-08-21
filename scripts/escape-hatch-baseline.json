@@ -99,7 +99,6 @@
     "packages/aai-templates/templates/solo-rpg/agent.test.ts": 6,
     "packages/aai/host/agent-tools.ts": 2,
     "packages/aai/host/transports/pipeline-stream.test.ts": 3,
-    "packages/aai/host/workflow-api-uploads.test.ts": 1,
     "packages/aai/host/workflow-keys.test.ts": 1,
     "packages/aai/host/workflow-notify.test.ts": 2,
     "packages/aai/host/workflow-wake-hint.test.ts": 2,

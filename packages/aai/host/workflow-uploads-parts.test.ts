@@ -228,9 +228,78 @@ describe("a parts upload", () => {
     await store.beginParts("abc", {}, TOTAL);
     await blobs.put(`uploads/abc/${UPLOAD_CHUNK_BYTES}`, body(ramp(UPLOAD_CHUNK_BYTES)));
     await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES)));
-    expect(await store.recordPart("abc", UPLOAD_CHUNK_BYTES)).toMatchObject({ size: 0 });
-    expect(await store.recordPart("abc", 0)).toMatchObject({ size: TOTAL, complete: true });
+    expect(await store.recordParts("abc", [UPLOAD_CHUNK_BYTES])).toMatchObject({ size: 0 });
+    expect(await store.recordParts("abc", [0])).toMatchObject({ size: TOTAL, complete: true });
     expect([...(await store.read("abc", 0, 4))]).toEqual([...ramp(4)]);
+  });
+
+  test("records SEVERAL windows in one call, which is what a batched claim is", async () => {
+    // The batch. One call, one lock acquisition, one whole-array write — and the
+    // record it leaves is indistinguishable from the same windows claimed one at a
+    // time, which is what lets a client batch or not without a reader knowing.
+    const { store, blobs } = memoryStore();
+    await store.beginParts("abc", {}, TOTAL);
+    await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES)));
+    await blobs.put(`uploads/abc/${UPLOAD_CHUNK_BYTES}`, body(ramp(UPLOAD_CHUNK_BYTES)));
+    expect(await store.recordParts("abc", [0, UPLOAD_CHUNK_BYTES])).toMatchObject({
+      size: TOTAL,
+      complete: true,
+    });
+    expect([...(await store.read("abc", 0, 4))]).toEqual([...ramp(4)]);
+  });
+
+  test("records a batch in ANY order, because a claim names what landed", async () => {
+    // The offsets arrive in the order the windows finished, which is not the order
+    // they sit in the file — so the merge cannot depend on it, and `size` is still
+    // the contiguous prefix rather than the sum of what arrived.
+    const { store, blobs } = memoryStore();
+    await store.beginParts("abc", {}, TOTAL);
+    await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES)));
+    await blobs.put(`uploads/abc/${UPLOAD_CHUNK_BYTES}`, body(ramp(UPLOAD_CHUNK_BYTES)));
+    expect(await store.recordParts("abc", [UPLOAD_CHUNK_BYTES, 0])).toMatchObject({
+      size: TOTAL,
+      complete: true,
+    });
+  });
+
+  test("records NONE of a batch holding one part nobody uploaded", async () => {
+    // All or nothing, and the order of the checks is what makes it true: every window
+    // is measured against the bucket before any is written. Recording the good ones
+    // and reporting the bad would leave a client that re-sends the batch unable to
+    // tell which half it is repeating.
+    const { store, blobs } = memoryStore();
+    await store.beginParts("abc", {}, TOTAL);
+    await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES)));
+    await expect(store.recordParts("abc", [0, UPLOAD_CHUNK_BYTES])).rejects.toBeInstanceOf(
+      UploadPartError,
+    );
+    // The window that WAS in the bucket is not in the record either.
+    expect(await store.info("abc")).toMatchObject({ size: 0, complete: false, ranges: [] });
+  });
+
+  test("refuses a claim that names the same part twice", async () => {
+    // A caller that has lost track of its own windows. The merge would quietly keep
+    // whichever copy came last rather than saying so, and a duplicate is the shape a
+    // retry-plus-batch bug takes.
+    const { store, blobs } = memoryStore();
+    await store.beginParts("abc", {}, TOTAL);
+    await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES)));
+    await expect(store.recordParts("abc", [0, 0])).rejects.toBeInstanceOf(UploadPartError);
+  });
+
+  test("refuses a claim that names no parts at all", async () => {
+    const store = open();
+    await store.beginParts("abc", {}, TOTAL);
+    await expect(store.recordParts("abc", [])).rejects.toBeInstanceOf(UploadPartError);
+  });
+
+  test("refuses a batch in which ANY offset is misaligned", async () => {
+    // The grid rule is per window, and a batch that checked only its first offset
+    // would put a part boundary inside a stored chunk for every one after it.
+    const { store, blobs } = memoryStore();
+    await store.beginParts("abc", {}, TOTAL);
+    await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES)));
+    await expect(store.recordParts("abc", [0, 1])).rejects.toBeInstanceOf(UploadPartError);
   });
 
   test("refuses a part nobody uploaded, rather than advancing past a hole", async () => {
@@ -239,7 +308,7 @@ describe("a parts upload", () => {
     // SILENCE — a gap in a transcript with nothing anywhere reporting one.
     const store = open();
     await store.beginParts("abc", {}, TOTAL);
-    await expect(store.recordPart("abc", 0)).rejects.toBeInstanceOf(UploadPartError);
+    await expect(store.recordParts("abc", [0])).rejects.toBeInstanceOf(UploadPartError);
     expect(await store.info("abc")).toMatchObject({ size: 0, complete: false });
   });
 
@@ -252,7 +321,7 @@ describe("a parts upload", () => {
     const { store, blobs } = memoryStore();
     await store.beginParts("abc", {}, TOTAL);
     await blobs.put("uploads/abc/0", body(new Uint8Array(0)));
-    await expect(store.recordPart("abc", 0)).rejects.toBeInstanceOf(UploadPartError);
+    await expect(store.recordParts("abc", [0])).rejects.toBeInstanceOf(UploadPartError);
     expect(await store.info("abc")).toMatchObject({ size: 0, complete: false });
     // And the record holds NO range for it — the refusal is what keeps the row honest.
     expect(await store.info("abc")).toMatchObject({ ranges: [] });
@@ -264,18 +333,18 @@ describe("a parts upload", () => {
     const { store, blobs } = memoryStore();
     await store.beginParts("abc", {}, TOTAL);
     await blobs.put("uploads/abc/0", body(ramp(64)));
-    expect(await store.recordPart("abc", 0)).toMatchObject({ size: 64, complete: false });
+    expect(await store.recordParts("abc", [0])).toMatchObject({ size: 64, complete: false });
   });
 
   test("refuses a recorded part whose object runs past the declared total", async () => {
     const { store, blobs } = memoryStore();
     await store.beginParts("abc", {}, UPLOAD_CHUNK_BYTES);
     await blobs.put("uploads/abc/0", body(ramp(UPLOAD_CHUNK_BYTES + 1)));
-    await expect(store.recordPart("abc", 0)).rejects.toBeInstanceOf(UploadPartError);
+    await expect(store.recordParts("abc", [0])).rejects.toBeInstanceOf(UploadPartError);
   });
 
   test("refuses a recorded part for an upload nobody began", async () => {
     const store = open();
-    await expect(store.recordPart("abc", 0)).rejects.toBeInstanceOf(UnknownUploadError);
+    await expect(store.recordParts("abc", [0])).rejects.toBeInstanceOf(UnknownUploadError);
   });
 });

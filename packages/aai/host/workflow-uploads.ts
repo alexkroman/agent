@@ -317,7 +317,7 @@ export function createUnavailableUploadStore(missing: string): UploadStore {
     stream: refuse<UploadInfo>,
     beginParts: refuse<UploadInfo>,
     writePart: refuse<UploadInfo>,
-    recordPart: refuse<UploadInfo>,
+    recordParts: refuse<UploadInfo>,
     info: refuse<UploadInfo | undefined>,
     read: refuse<Uint8Array>,
   };

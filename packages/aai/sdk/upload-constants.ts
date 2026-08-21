@@ -57,30 +57,30 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * single request this exists to beat, and a part that fails is a part that has to
  * be sent again in full.
  *
- * **8 MiB, and it stays there because a part pays a FIXED cost that has nothing to
- * do with its size.** On the direct path (a deployed agent — see
- * `_upload-blobs-brokered.ts`) every part is two requests: the window goes to the
- * platform, and a body-less `PUT …/parts?offset=…&stored=1` tells the agent it
- * landed. Measured against a deployed agent, per 4 MiB part:
+ * **8 MiB, and the reason it sat here has now been REMOVED — so this number is due a
+ * re-measurement.** On the direct path (a deployed agent — see
+ * `_upload-blobs-brokered.ts`) a part used to be two serialized requests: the window
+ * to the platform, then a body-less `PUT …/parts?offset=…&stored=1` telling the agent
+ * it landed. Measured against a deployed agent, per 4 MiB part:
  *
  * | | time | rate |
  * | --- | --- | --- |
  * | byte `PUT` to the platform | 926-2121 ms | 1.9-4.3 MB/s |
  * | `stored=1` claim, brokered to the guest | 1604-1969 ms | no body at all |
  *
- * So roughly half a part's wall time is a round trip carrying nothing, and it is
- * per-PART rather than per-byte. Halving this constant doubles how many times that
- * toll is paid: the same 32 MiB costs four claims at 8 MiB and eight at 4 MiB.
- * Extrapolated over a 660 MB recording at width 8, 8 MiB parts finish in ~38s
- * against ~56s for 4 MiB ones — the fixed cost dominates, and it dominates harder
- * the smaller the part.
+ * Roughly half a part's wall time was a round trip carrying nothing, paid per PART
+ * rather than per byte — so a bigger window was attractive mostly because it
+ * amortized a fixed cost, and halving this constant doubled how many times that cost
+ * was paid. That is what {@link UPLOAD_CLAIM_BATCH} took away: a claim now names
+ * every window that has landed since the last one, so the toll is per-BATCH.
  *
  * **This reverses a first attempt at 4 MiB**, which reasoned that a smaller window
  * makes a reset cheaper (true, and measured: at four wide, 8 MiB bodies reset where
- * 4 MiB, 2 MiB and 1 MiB passed). It is the right trade only if the part's cost is
- * mostly its bytes, and it is not. The claim is the argument for not going smaller.
+ * 4 MiB, 2 MiB and 1 MiB passed). That was the right trade only if the part's cost is
+ * mostly its bytes — which it was not, and which batching now makes it much closer to
+ * being. Both directions are open again on evidence rather than on this paragraph.
  *
- * ## And 16 MiB measures BETTER, which is not the same as being right
+ * ## 16 MiB measured better BEFORE batching, and worse after — which settles it
  *
  * Three runs per size, alternating order so a drifting link cannot favour one, one
  * part per run:
@@ -95,7 +95,30 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * never leaves TCP slow-start, which is also why 4 MiB was the worst of all four
  * sizes measured (1.8 MB/s). 32 MiB buys nothing over 16 and is the noisiest.
  *
- * It is not taken, because the number the platform reacts to is the PRODUCT with
+ * **Re-measured against a deployed agent once the claims were batched
+ * ({@link UPLOAD_CLAIM_BATCH}), and the advantage inverted.** 128 MiB file, width 8,
+ * three runs per cell, alternating order, pinned HTTP/1.1 on a fresh connection with
+ * 30s between runs:
+ *
+ * | part | wall p50 | range | MB/s | windows per claim | part re-sent |
+ * | --- | --- | --- | --- | --- | --- |
+ * | 8 MiB | **23.2s** | 19.3-29.0s | **5.5** | 16 in 3-5 | 0 of 3 runs |
+ * | 16 MiB | 28.2s | 24.4-30.0s | 4.5 | 8 in 4-5 | **2 of 3 runs** |
+ *
+ * So the 28% was never a property of the SIZE. It was the fixed per-part claim being
+ * amortized over more bytes, and with the claim batched a 16 MiB window is 22% slower
+ * on the median and re-sent a part in two runs of three where 8 MiB re-sent none —
+ * 8 x 16 MiB is 128 MiB in flight, the same row the reset shoulder appeared on below.
+ *
+ * **Read that as "16 MiB is not better", not as "8 MiB is faster."** The ranges
+ * overlap heavily — 8 MiB's worst run (29.0s) is slower than 16 MiB's median — and
+ * three runs bound a shape rather than pin a knee. What is no longer available is the
+ * argument for MOVING this constant, which is what the old table supplied. The
+ * re-sent parts are the firmer half of the finding: 0 of 3 against 2 of 3 is about a
+ * limit being approached, not about which median won.
+ *
+ * The pre-batching table below is kept because it is what the reversal is a reversal
+ * OF. It is not taken, because the number the platform reacts to is the PRODUCT with
  * `UPLOAD_PART_CONCURRENCY`, and three costs land on it rather than on the
  * size alone:
  *
@@ -110,15 +133,12 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  *   gets no retry at all. At 8 MiB that floor is 16 MB; at 16 MiB it is 32 MB, which
  *   is a regression for every recording in between.
  *
- * So the order to do this in is: batch the claims, then re-measure. Batching removes
- * the fixed toll that makes a larger part attractive, and the 28% is then weighed
- * against those three costs on its own rather than bundled with a round trip.
- *
- * The real lever is neither, and it is not a constant: **batch the claims.** One
- * request naming several landed offsets would collapse N tolls into one, and the
- * platform cannot record a part itself — the record lives in the app's own database,
- * which only the guest can reach, which is exactly why the guest is told. Until
- * then this number is a compromise with a round trip.
+ * The order to do this in was: batch the claims, then re-measure. **Both halves are
+ * done** — the claim is batched and the re-measurement is the table above — and the
+ * answer was to leave this number alone. Note two of the three costs never moved with
+ * batching anyway: the platform still buffers a whole window to hand Storage a length,
+ * and `partsPlan` still declines a plan of fewer than two parts, so the 16 MB
+ * parallelism floor would have become 32 MB.
  *
  * Two costs of the size that are unchanged and still real: too small and an upload
  * is mostly per-request overhead, too large and the parallelism disappears (a 20 MB
@@ -135,12 +155,19 @@ export const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
 /**
  * How many parts a parallel upload keeps in flight, by default.
  *
- * **Eight, doubled from four, and it is the one knob that pays here.** Every part on
- * the direct path costs a fixed ~1.7s body-less round trip to the guest on top of
- * its bytes ({@link UPLOAD_PART_BYTES} carries the table). That toll is per-part and
- * independent of size, so the only thing that hides it is OVERLAP — which is what
- * this number is. Extrapolated over a 660 MB recording: ~77s at four wide against
- * ~38s at eight.
+ * **Eight, doubled from four.** It was doubled because every part on the direct path
+ * cost a fixed ~1.7s body-less round trip to the guest on top of its bytes
+ * ({@link UPLOAD_PART_BYTES} carries the table): a per-part toll independent of size,
+ * whose only concealment is OVERLAP — which is what this number is. Extrapolated over
+ * a 660 MB recording at the time: ~77s at four wide against ~38s at eight.
+ *
+ * **That argument is now mostly spent, and the number stays anyway.**
+ * {@link UPLOAD_CLAIM_BATCH} removed the per-part toll, so width no longer has a
+ * round trip to hide; what it still buys is bytes in flight, and the three reasons
+ * below say why more of those is not worth having. Eight is therefore held by the
+ * reset shoulder rather than by the claim — a different argument for the same value,
+ * which is worth stating because the OLD one would have justified going wider and
+ * this one does not.
  *
  * ## Why not wider, which is the obvious question
  *
@@ -212,6 +239,39 @@ export const UPLOAD_PART_CONCURRENCY = 8;
  * of it.
  */
 export const UPLOAD_PART_ATTEMPTS = 4;
+/**
+ * How many landed offsets one claim may name.
+ *
+ * **The batch that removes the toll {@link UPLOAD_PART_BYTES} spent a page arguing
+ * around.** On the direct path a part used to be two serialized requests — the
+ * window to the platform, then a body-less `PUT …/parts?offset=…&stored=1` telling
+ * the agent it landed — and the second one measured 1604-1969 ms against a deployed
+ * agent, roughly half of a part's wall time, carrying nothing. It was paid per PART,
+ * so it set the floor under every other number here: it is why a bigger window
+ * measured faster (it amortizes a fixed cost), and why eight parts in flight beat
+ * four (overlap was the only thing hiding it).
+ *
+ * A claim now names every window that has landed since the last one went out, so N
+ * parts cost far fewer than N claims — and the guest's side collapses with it, from
+ * N lock acquisitions and N whole-array record writes to one of each per request.
+ * Measured against a deployed agent: a 128 MiB file in 8 MiB windows recorded its
+ * **16 parts in 3 to 5 claims**. The batch sizes ITSELF rather than being tuned —
+ * one claim is in flight at a time and everything landing during it coalesces into
+ * the next — so the ratio is whatever the link and the round trip make it.
+ *
+ * The cap is what a single request may ask for, and it bounds three things at once:
+ * the guest's concurrent `size` probes, the size of the merged write under the
+ * record lock, and what one hostile caller can make one request do. Thirty-two is
+ * four times the default width, so the client's own accumulation never reaches it
+ * and the number is a ceiling rather than a divisor.
+ *
+ * **A client may only batch when the agent SAID SO** — `UploadCreated.claimBatch`,
+ * decided by the claim exactly as `directParts` is. Guessing is the one thing that
+ * cannot be allowed here: an agent that reads a single `?offset=` would record the
+ * first window, answer 200, and leave the rest as holes that read as silence, which
+ * is the failure `recordParts` asks the bucket about every window to prevent.
+ */
+export const UPLOAD_CLAIM_BATCH = 32;
 
 /**
  * The first backoff between attempts, doubling from there.
