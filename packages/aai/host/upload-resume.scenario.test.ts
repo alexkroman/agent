@@ -18,15 +18,27 @@
  * The socket is really cut, mid-file, which is what a pause is: `_upload-session.ts`
  * aborts the request in flight and the store keeps whatever windows landed.
  *
- * `concurrency: 1` is the only tuning, and it is what makes the assertion an
- * ASSERTION: with the default width every window of a small file is in flight at
- * once on loopback, so the upload finishes before an abort can land anywhere
- * interesting. Serial windows put the cut in a knowable place.
+ * `concurrency: 1` is the only tuning, and it puts the windows in a knowable ORDER:
+ * with the default width every window of a small file is in flight at once on
+ * loopback, so there is no "second window" to speak of.
+ *
+ * **Order is not the same as timing, and waiting for progress is not a cut.** The
+ * first version of this polled `store.info` until a window had landed and then
+ * aborted, on the reasoning that serial windows leave something still to send. Six
+ * 1 MiB windows into an in-memory store over loopback take a few milliseconds, which
+ * is less than `vi.waitFor`'s first sample — so on a fast machine the poll's opening
+ * observation was already `size: 6291456, complete: true`, the abort arrived after
+ * the upload had resolved, and the spec failed on a green tree. It is a race in
+ * either direction: the machine that fails it is the one that is fast enough.
+ *
+ * So the SERVER holds the second window's `PUT` instead. The cut is then a fact
+ * about the test rather than about the host it runs on — exactly one window has
+ * landed, one is genuinely in flight, and four have not been sent.
  */
 
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test } from "vitest";
 import { requestPath } from "../sdk/request-url.ts";
 import { UPLOAD_CHUNK_BYTES } from "../sdk/upload-constants.ts";
 import { createWorkflowApiClient } from "../sdk/workflow-api-client.ts";
@@ -52,24 +64,47 @@ afterEach(async () => {
  *
  * `sent` counts the bytes each `PUT` DECLARED rather than draining the body: a
  * listener that consumed it would steal the bytes from the route.
+ *
+ * The SECOND window's `PUT` is held before it reaches the router, and `inFlight`
+ * resolves when it arrives. That is what makes the pause deterministic: awaiting it
+ * means one window is stored and one is on the wire, whatever the host's speed.
+ * Nothing releases the hold — the client's abort is what ends that request, which is
+ * what a pause IS.
  */
 async function serve() {
   const { store } = memoryStore();
   const api = createWorkflowApi({ engine, uploads: store, logger: silentLogger });
   const sent = { bytes: 0 };
+  const arrived = Promise.withResolvers<void>();
+  let puts = 0;
   const server = http.createServer((req, res) => {
-    if (req.method === "PUT") sent.bytes += Number(req.headers["content-length"] ?? 0);
+    if (req.method === "PUT") {
+      sent.bytes += Number(req.headers["content-length"] ?? 0);
+      puts += 1;
+      // Held, never answered. The route is not called at all, so this window cannot
+      // land — and the request stays open until the abort cuts it.
+      if (puts === 2) {
+        arrived.resolve();
+        return;
+      }
+    }
     if (api(req, res, requestPath(req.url), req.method ?? "GET")) return;
     res.writeHead(404).end();
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  close = () => new Promise<void>((resolve) => server.close(() => resolve()));
+  // `closeAllConnections` first: the held request above is still open, and
+  // `server.close` alone waits for it forever.
+  close = () =>
+    new Promise<void>((resolve) => {
+      server.closeAllConnections();
+      server.close(() => resolve());
+    });
   const { port } = server.address() as AddressInfo;
-  return { store, sent, base: `http://127.0.0.1:${port}` };
+  return { store, sent, inFlight: arrived.promise, base: `http://127.0.0.1:${port}` };
 }
 
 test("a recording cut mid-upload resumes, sending only the windows that are missing", async () => {
-  const { store, sent, base } = await serve();
+  const { store, sent, inFlight, base } = await serve();
   const client = createWorkflowApiClient({ baseUrl: base });
   const recording = new Blob([new Uint8Array(TOTAL).fill(7)], { type: "audio/wav" });
   const parallel = { concurrency: 1 };
@@ -82,12 +117,10 @@ test("a recording cut mid-upload resumes, sending only the windows that are miss
     signal: paused.signal,
     parallel,
   });
-  // Cut it once a window has really landed, so there is something to resume and
-  // something left to send.
-  await vi.waitFor(async () => {
-    const info = await store.info("bbbb");
-    expect(info?.size).toBeGreaterThanOrEqual(UPLOAD_CHUNK_BYTES);
-  });
+  // Cut it once a window has really landed and the next is really on the wire — a
+  // FACT the server establishes, not a duration this test waits out. See `serve`.
+  await inFlight;
+  expect(await store.info("bbbb")).toMatchObject({ size: UPLOAD_CHUNK_BYTES });
   paused.abort();
   await expect(first).rejects.toThrow(/abort/i);
 

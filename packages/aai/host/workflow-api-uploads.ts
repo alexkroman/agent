@@ -7,6 +7,7 @@
  * PUT  /workflows/uploads/:id?name=…           → 201 { id, …, complete: true }
  * POST /workflows/uploads/:id/parts?total=…    → 201 { id, …, complete: false }
  * PUT  /workflows/uploads/:id/parts?offset=…   → 200 { id, …, complete }
+ * PUT  …/parts?offset=&offset=…&stored=1       → 200 { id, …, complete }
  * ```
  *
  * The two `GET`s are `workflow-api-uploads-read.ts`, which carries why the halves
@@ -56,7 +57,7 @@
 import type http from "node:http";
 import { requestQuery } from "../sdk/request-url.ts";
 import type { UploadInfo } from "../sdk/step-uploads.ts";
-import { UPLOAD_TOKEN_RE } from "../sdk/upload-constants.ts";
+import { UPLOAD_CLAIM_BATCH, UPLOAD_TOKEN_RE } from "../sdk/upload-constants.ts";
 import { WORKFLOW_API_PREFIX } from "../sdk/workflow-api-client.ts";
 import { sendUploadFailure } from "./_upload-route-failures.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -90,6 +91,22 @@ export type UploadCreated = UploadInfo & {
    * answer and the right one.
    */
   directParts?: boolean | undefined;
+  /**
+   * How many landed offsets one `stored=1` claim may name, when batching is on.
+   *
+   * Present only alongside {@link directParts}, because a part whose BODY comes
+   * here is recorded by the request that carries it — there is no separate claim
+   * to batch. Absent means one offset per claim, which is what an agent deployed
+   * before this answers and what a client must therefore assume.
+   *
+   * **A client may not infer this from `directParts`.** The two shipped in
+   * different versions, and guessing wrong is the one mistake with no symptom: an
+   * agent reading a single `?offset=` out of a batched claim would record the
+   * first window, answer 200, and leave the rest as holes that read as silence
+   * later, in a step, with nothing reporting an error. See
+   * `UPLOAD_CLAIM_BATCH`.
+   */
+  claimBatch?: number | undefined;
   /**
    * Where the bytes are, relative to the API's own prefix.
    *
@@ -199,6 +216,9 @@ export async function beginUploadParts(
       // also what an agent deployed before this existed answers — one shape for "send
       // the body to me", not two.
       directParts: directParts ? true : undefined,
+      // Same presence rule and the same reason: a client reads whether the field is
+      // THERE, and absent is what every older agent answers.
+      claimBatch: directParts ? UPLOAD_CLAIM_BATCH : undefined,
     } satisfies UploadCreated);
   } catch (err: unknown) {
     if (sendUploadFailure(res, err)) return;
@@ -228,9 +248,28 @@ export async function beginUploadParts(
  * operation with one set of refusals, and a second route is a second place for the
  * offset rule, the 404 and the 400 to drift.
  *
- * The flag says nothing about how big the part is. `recordPart` asks the STORE, and
+ * The flag says nothing about how big the part is. `recordParts` asks the STORE, and
  * that is the whole defence: a client claiming a part it never uploaded would
  * otherwise advance `size` past a hole, and a step reading there gets silence.
+ *
+ * ## A claim may name SEVERAL windows, and that is where an upload's time went
+ *
+ * `?offset=0&offset=8388608&…&stored=1`. The claim carries no bytes and measured
+ * 1604-1969 ms against a deployed agent — per PART, about half of an upload's wall
+ * clock — because it crosses the platform into the sandbox and then costs the guest
+ * a record read, a bucket probe and a locked read-modify-write of the whole part
+ * list. Naming several windows in one request collapses every one of those to one,
+ * and `UPLOAD_CLAIM_BATCH` carries the measurement.
+ *
+ * Repeated query parameters rather than a JSON body, because the request that has
+ * always been body-less staying body-less is what lets this be the same route: a
+ * body here would have to be read, capped and parsed, and `writePart`'s body is the
+ * FILE. `UPLOAD_CLAIM_BATCH` bounds the list so one request cannot ask for
+ * unbounded work.
+ *
+ * **Only the body-less form is a list.** A part carrying bytes names the one byte
+ * they start at, and a second offset beside a body is a 400 rather than something
+ * to interpret.
  */
 export async function writeUploadPart(
   req: http.IncomingMessage,
@@ -238,18 +277,40 @@ export async function writeUploadPart(
   store: UploadStore,
   id: string,
 ): Promise<void> {
-  const declared = requestQuery(req.url).get("offset");
-  const offset = Number(declared);
-  if (declared === null || !Number.isFinite(offset)) {
+  const query = requestQuery(req.url);
+  // `getAll`, because a claim may name every window that has landed since the last
+  // one — see `UPLOAD_CLAIM_BATCH`. One `?offset=` is the same request with a
+  // list of one, which is what keeps the batched and unbatched forms one route with
+  // one set of refusals.
+  const offsets = query.getAll("offset").map(Number);
+  // `first === undefined` IS the no-offset case under `noUncheckedIndexedAccess`, so
+  // reading it here is both the guard and what saves a cast at the `writePart` call.
+  const [first] = offsets;
+  if (first === undefined || offsets.some((one) => !Number.isFinite(one))) {
     sendJson(res, 400, { error: "A part names the byte it starts at as `?offset=`." });
     return;
   }
-  const stored = requestQuery(req.url).get("stored") !== null;
+  if (offsets.length > UPLOAD_CLAIM_BATCH) {
+    sendJson(res, 400, {
+      error: `A claim names at most ${UPLOAD_CLAIM_BATCH} parts; this one named ${offsets.length}.`,
+    });
+    return;
+  }
+  const stored = query.get("stored") !== null;
+  // A BODY carries one window and names where it starts, so a second offset is a
+  // caller that has composed the wrong request rather than one asking for something
+  // this route could do. Only the body-less claim is a list.
+  if (!stored && offsets.length > 1) {
+    sendJson(res, 400, {
+      error: "A part carrying a body names one `?offset=`; several is only for `&stored=1`.",
+    });
+    return;
+  }
   try {
     sendJson(
       res,
       200,
-      stored ? await store.recordPart(id, offset) : await store.writePart(id, offset, req),
+      stored ? await store.recordParts(id, offsets) : await store.writePart(id, first, req),
     );
   } catch (err: unknown) {
     if (sendUploadFailure(res, err)) return;

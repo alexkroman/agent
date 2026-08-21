@@ -1807,7 +1807,7 @@ export type UploadStore = UploadReader & {
         limit?: number;
     }): Promise<UploadInfo>;
     writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
-    recordPart(id: string, offset: number): Promise<UploadInfo>;
+    recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
 };
 
 // @public

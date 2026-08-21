@@ -18,6 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { client, PART, recording, scriptAgent, TOTAL } from "./_upload-parts-test-utils.ts";
+import { UPLOAD_CHUNK_BYTES } from "./constants.ts";
 import { directBytesBase } from "./workflow-upload-parts.ts";
 
 afterEach(() => {
@@ -98,6 +99,102 @@ describe("a deployed agent's parts", () => {
       agent.bytes.filter((call) => call.url.pathname.endsWith(`/${offset}`)).length;
     expect(at(0)).toBe(2);
     expect(at(PART)).toBe(1);
+  });
+});
+
+describe("a batched claim", () => {
+  test("names several landed windows in ONE request when the agent said it may", async () => {
+    // The whole point of the batch. A claim carries no bytes and cost ~1.7s against a
+    // deployed agent, per part — about half of an upload's wall clock — so what is
+    // asserted here is that three windows are claimed in fewer than three requests,
+    // and that between them they name every one.
+    const agent = scriptAgent({ direct: true, claimBatch: 32 });
+    const stored = await client().upload(recording(), { name: "call.wav", parallel: true });
+
+    const told = agent.parts.filter((call) => call.method === "PUT");
+    expect(told.length).toBeLessThan(3);
+    const claimed = told.flatMap((call) => call.url.searchParams.getAll("offset").map(Number));
+    expect([...claimed].sort((a, b) => a - b)).toEqual([0, PART, PART * 2]);
+    // Still body-less, and still the request that makes a window count.
+    expect(told.map((call) => call.bytes)).toEqual(told.map(() => 0));
+    for (const call of told) expect(call.url.searchParams.get("stored")).toBe("1");
+    // And every window's BYTES still went to the platform, one request each: batching
+    // is about the receipt, never about the bodies.
+    expect(agent.bytes).toHaveLength(3);
+    expect(stored).toMatchObject({ size: TOTAL, complete: true });
+  });
+
+  test("claims ONE offset per request against an agent that did not advertise a batch", async () => {
+    // The skew that has no symptom. `directParts` and `claimBatch` shipped in
+    // different versions, so an agent may serve the direct path and still read a
+    // single `?offset=` — which would record the first window of a batch, answer 200,
+    // and leave the rest as holes that read as silence in a step, minutes later.
+    const agent = scriptAgent({ direct: true });
+    await client().upload(recording(), { parallel: true });
+
+    const told = agent.parts.filter((call) => call.method === "PUT");
+    expect(told).toHaveLength(3);
+    for (const call of told) {
+      expect(call.url.searchParams.getAll("offset")).toHaveLength(1);
+    }
+  });
+
+  test("refuses a batch the agent advertised as one, which is not a batch", async () => {
+    // `claimBatch: 1` and an absent field are the same instruction, and a client that
+    // read `1` as "batch of one" would compose the same request either way — so this
+    // pins that the floor is a NUMBER ABOVE ONE rather than mere presence.
+    const agent = scriptAgent({ direct: true, claimBatch: 1 });
+    await client().upload(recording(), { parallel: true });
+    const told = agent.parts.filter((call) => call.method === "PUT");
+    expect(told).toHaveLength(3);
+  });
+
+  test("honours the agent's CAP rather than sending every pending offset", async () => {
+    // The cap is the agent's number, and a client that ignored it would compose a
+    // request the route answers 400 — a refusal, so not retried, so the whole upload.
+    const agent = scriptAgent({ direct: true, claimBatch: 2 });
+    await client().upload(recording(), { parallel: true });
+    const told = agent.parts.filter((call) => call.method === "PUT");
+    for (const call of told) {
+      expect(call.url.searchParams.getAll("offset").length).toBeLessThanOrEqual(2);
+    }
+    const claimed = told.flatMap((call) => call.url.searchParams.getAll("offset").map(Number));
+    expect([...claimed].sort((a, b) => a - b)).toEqual([0, PART, PART * 2]);
+  });
+
+  test("collapses the MANY claims a resumable upload's chunk-sized windows create", async () => {
+    // The two changes meet here. A caller-named upload is cut at `UPLOAD_CHUNK_BYTES`
+    // rather than at the part size, so it can resume from where it stopped — which
+    // turns an ordinary phone recording into eight windows where the speed path would
+    // have sent one. Each of those used to owe its own body-less claim, so the fix
+    // that made small uploads resumable also multiplied the receipt toll by eight.
+    const agent = scriptAgent({ direct: true, claimBatch: 32 });
+    const windows = 8;
+    await client().uploadStream("abc", recording(UPLOAD_CHUNK_BYTES * windows), {
+      parallel: true,
+    });
+
+    const told = agent.parts.filter((call) => call.method === "PUT");
+    expect(agent.bytes).toHaveLength(windows);
+    expect(told.length).toBeLessThan(windows);
+    const claimed = told.flatMap((call) => call.url.searchParams.getAll("offset").map(Number));
+    expect([...claimed].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: windows }, (_unused, at) => at * UPLOAD_CHUNK_BYTES),
+    );
+  });
+
+  test("fails the upload when a batched claim is refused", async () => {
+    // Every window a failed claim named is a stored object the agent has no record
+    // of, so this must not resolve: the closing read would otherwise report an upload
+    // the agent acknowledged and did not write. The refusal is `always`, since one is
+    // absorbed by the retry inside the round.
+    const agent = scriptAgent({
+      direct: true,
+      claimBatch: 32,
+      refuse: { offset: 0, always: true },
+    });
+    await expect(client().upload(recording(), { parallel: true })).rejects.toThrow();
+    expect(agent.bytes).not.toHaveLength(0);
   });
 });
 

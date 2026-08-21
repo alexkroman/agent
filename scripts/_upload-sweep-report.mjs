@@ -63,6 +63,15 @@ export function reportTable(results, fileBytes) {
               median(cell.runs.map((r) => r.partMsP95)) / 1000,
               2,
             )}s`,
+      // Claims against the windows they named — `12/96` is a path paying its
+      // per-part toll eight times over, `2/96` is one that batched. A dash where
+      // the bytes came to the agent, which records a window with the request that
+      // carries it and has no separate claim at all.
+      claims: (() => {
+        const sent = cell.runs.reduce((sum, r) => sum + r.claims, 0);
+        const named = cell.runs.reduce((sum, r) => sum + r.claimed, 0);
+        return named === 0 ? "—" : `${sent}/${named}`;
+      })(),
       retry: String(cell.runs.reduce((sum, r) => sum + r.retryable, 0)),
       fail: String(cell.runs.reduce((sum, r) => sum + r.failures, 0)),
       reset: String(cell.runs.reduce((sum, r) => sum + r.resets, 0)),
@@ -78,11 +87,12 @@ export function reportTable(results, fileBytes) {
     "range",
     "MB/s",
     "part p50/p95",
+    "claims/win",
     "429+503",
     "4xx/5xx",
     "resets",
   ];
-  const keys = ["label", "ok", "wall", "range", "rate", "part", "retry", "fail", "reset"];
+  const keys = ["label", "ok", "wall", "range", "rate", "part", "claims", "retry", "fail", "reset"];
   const widths = keys.map((key, i) =>
     Math.max(header[i].length, ...rows.map((row) => row[key].length)),
   );

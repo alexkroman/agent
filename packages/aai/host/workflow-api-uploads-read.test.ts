@@ -86,7 +86,7 @@ function gatedReadStore(size: number): UploadStore & {
     stream: refuse,
     beginParts: refuse,
     writePart: refuse,
-    recordPart: refuse,
+    recordParts: refuse,
   };
 }
 

@@ -113,7 +113,7 @@
  * contract, the same way the chosen id is: overlapping ones corrupt an upload the
  * caller alone can read.
  *
- * {@link UploadStore.recordPart} is the same write with NO body — for a part whose
+ * {@link UploadStore.recordParts} is the same write with NO body — for a part whose
  * bytes went from the browser to the bucket without passing through this process at
  * all. It is the reason the two are separate methods rather than one with an
  * optional body: a part that arrived here is measured as it streams, and a part
@@ -307,23 +307,41 @@ export type UploadStore = UploadReader & {
    */
   writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
   /**
-   * Record a part whose bytes are ALREADY stored, without carrying them.
+   * Record parts whose bytes are ALREADY stored, without carrying them.
    *
-   * The write for the direct path: the browser sent the window to the bucket itself,
-   * so there is no body here and nothing for this process to stream. Answers the
-   * same record `writePart` above does, so a client cannot tell which route it took
-   * from the response.
+   * The write for the direct path: the browser sent each window to the bucket
+   * itself, so there is no body here and nothing for this process to stream.
+   * Answers the same record `writePart` above does, so a client cannot tell which
+   * route it took from the response.
    *
-   * The size is asked of the STORE, never taken from the caller. A client that named
-   * a part it never uploaded would otherwise advance `size` past a hole, and a step
-   * reading there gets silence rather than an error — a gap in a transcript with
-   * nothing anywhere reporting one.
+   * The size of each window is asked of the STORE, never taken from the caller. A
+   * client that named a part it never uploaded would otherwise advance `size` past
+   * a hole, and a step reading there gets silence rather than an error — a gap in a
+   * transcript with nothing anywhere reporting one.
+   *
+   * ## Several offsets, because the CLAIM is what an upload spends its time on
+   *
+   * This takes a list rather than one offset, and that is the whole shape of it: a
+   * claim carries no bytes and cost 1604-1969 ms against a deployed agent, per
+   * PART, which was about half of an upload's wall clock
+   * (`UPLOAD_CLAIM_BATCH` carries the measurement). Batching collapses the
+   * network toll for the client and three per-part costs here — the declared-total
+   * read, the record lock, and the whole-array write of `parts` — into one of each,
+   * however many windows the request names.
+   *
+   * **All or nothing, and the order of the checks is what makes that true.** Every
+   * named window is measured against the bucket BEFORE anything is written, so a
+   * batch holding one bad offset records none of it. The alternative — recording
+   * the good ones and reporting the bad — would leave a client that retries the
+   * whole batch unable to tell which half it is repeating, against a store whose
+   * one job here is that a hole never becomes a readable byte.
    *
    * @throws {UnknownUploadError} when nothing has begun under `id`.
-   * @throws {UploadPartError} when `offset` is misaligned, when no bytes are stored
-   *   for it, or when what is stored runs past the declared total.
+   * @throws {UploadPartError} when `offsets` is empty or names the same byte twice,
+   *   when an offset is misaligned, when no bytes are stored for one, or when what
+   *   is stored runs past the declared total.
    */
-  recordPart(id: string, offset: number): Promise<UploadInfo>;
+  recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
 };
 
 /**

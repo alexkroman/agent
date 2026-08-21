@@ -38,7 +38,7 @@
  * can do.
  *
  * What it does NOT do is make the object count for anything. A window in the bucket
- * that no `recordPart` ever named is invisible to every reader: `size` comes from the
+ * that no `recordParts` ever named is invisible to every reader: `size` comes from the
  * agent's own row, and the store asks the bucket for a part's length before it
  * records one. So the worst an unrecorded write achieves is an orphan.
  *

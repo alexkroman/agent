@@ -84,11 +84,11 @@
  * which is what it is — `_upload-retry.ts` owns that vocabulary.
  */
 
-import { type Part, sliceOf, type UploadPartsPlan } from "./_upload-parts-plan.ts";
+import { createClaimer } from "./_upload-claims.ts";
+import type { Part, UploadPartsPlan } from "./_upload-parts-plan.ts";
+import { createPartSender, type SendPart, sendEveryPart } from "./_upload-parts-send.ts";
 import { withRetries } from "./_upload-retry.ts";
 import { WORKFLOW_API_PREFIX } from "./_workflow-api-envelope.ts";
-import { mapConcurrent } from "./map-concurrent.ts";
-import { omitUndefined } from "./omit-undefined.ts";
 import { readJsonBody } from "./response-body.ts";
 import type { UploadInfo, UploadRange } from "./step-uploads.ts";
 import { UPLOAD_PART_ATTEMPTS, UPLOAD_PART_CONCURRENCY } from "./upload-constants.ts";
@@ -149,15 +149,6 @@ export function partsSettings(
   return parallel === undefined || parallel === true ? {} : parallel;
 }
 
-/** How a part's request is issued — `sendUpload`, injected so this module owns no transport. */
-type SendPart = (
-  method: "PUT",
-  url: string,
-  headers: Record<string, string>,
-  body: UploadBody,
-  options: UploadOptions | undefined,
-) => Promise<Response>;
-
 /** What {@link uploadInParts} needs to do its job. */
 export type UploadPartsRequest = {
   /** The API root (`…/workflows`), as the client resolved it. */
@@ -213,6 +204,21 @@ export function directBytesBase(base: string): string | undefined {
 }
 
 /**
+ * How many landed offsets one claim may name, as the AGENT answered — never this
+ * SDK's own constant.
+ *
+ * The two capabilities shipped in different versions, so an agent may serve the
+ * direct path and still read a single `?offset=`; batching against one records the
+ * first window, answers 200, and leaves the rest as holes that read as silence in a
+ * step much later. So anything that is not a whole number above one — absent, `1`,
+ * a float, a string a JSON body smuggled in — means one offset per claim, which is
+ * the behaviour every agent has.
+ */
+function claimBatchOf(advertised: number | undefined): number {
+  return Number.isInteger(advertised) && (advertised ?? 0) > 1 ? (advertised ?? 1) : 1;
+}
+
+/**
  * Store one file as concurrent parts, or resolve `undefined` to say this path
  * declined.
  *
@@ -260,12 +266,12 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
   // Where the bytes go, decided by the CLAIM — see the module doc. A 409'd claim
   // carries no body to read the flag from, so a resume reads it off the record
   // instead of assuming: an upload begun on the direct path is finished on it.
+  type Claim = { directParts?: boolean; claimBatch?: number };
   const claimed = begun.ok
-    ? await readJsonBody<{ directParts?: boolean }>(begun, "Workflow API").catch(
-        () => ({}) as { directParts?: boolean },
-      )
+    ? await readJsonBody<Claim>(begun, "Workflow API").catch(() => ({}) as Claim)
     : {};
   const bytesBase = claimed.directParts === true ? directBytesBase(req.base) : undefined;
+  const claimBatch = claimBatchOf(claimed.claimBatch);
 
   // What is already stored, so a resume sends the windows that are MISSING rather
   // than the file. Only asked for when the claim says the upload already existed —
@@ -273,76 +279,53 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
   const landed = begunAlready ? await storedRanges(req, uploads, signal, attempts) : undefined;
   const missing = landed ? parts.filter((part) => !covers(landed, part)) : parts;
 
+  const claimer = createClaimer({
+    uploads,
+    headers: req.headers,
+    batch: claimBatch,
+    attempts,
+    signal,
+    fail: req.fail,
+    // A claim that will not land makes every window it named an orphan, so the
+    // windows still going are bytes nobody will read — the same abort a failed part
+    // takes, for the same reason.
+    onFail: (err) => failed.abort(err),
+  });
+
   const report = partReporter(total, parts.length, req.options?.onProgress);
   // A skipped part is a part the BAR should already be past: a resume that started
   // its progress at zero would report a nearly-finished file as barely begun.
   for (const part of parts) {
     if (!missing.includes(part)) report(part.index, part.end - part.start);
   }
-  const sendPart = async (part: Part): Promise<void> => {
-    // Where the bytes go. The whole window is retried as ONE unit even on the direct
-    // path, and it has to be: a stored object that was never recorded is an orphan
-    // nothing reads, so re-sending the bytes and re-recording them is the only repair
-    // that leaves the record and the bucket agreeing.
-    const target = bytesBase
-      ? `${bytesBase}/${encodeURIComponent(req.id)}/${part.start}`
-      : `${uploads}/parts?offset=${part.start}`;
-    const { res } = await withRetries(
-      () => {
-        // Reset before every attempt, so a retried part does not leave the bytes of
-        // its failed try counted in the total.
-        report(part.index, 0);
-        return req.send(
-          "PUT",
-          target,
-          // No auth headers on the direct path: it is the PLATFORM's route, and the
-          // agent's own `AAI_WORKFLOW_API_TOKEN` means nothing there. Sending them
-          // would leak the agent's bearer to a surface that never checks it.
-          bytesBase ? { "Content-Type": req.type } : { ...req.headers, "Content-Type": req.type },
-          sliceOf(req.file, part.start, part.end),
-          partOptions(options, part, report),
-        );
-      },
-      { attempts, signal },
-    );
-    if (!res.ok) throw await req.fail(res);
-    // The window is in the bucket and the agent has not heard. Recorded as its own
-    // retried request, because the two failures are different: the bytes are already
-    // stored, so a lost receipt costs one small request rather than the window.
-    if (bytesBase) {
-      const { res: recorded } = await withRetries(
-        () =>
-          fetch(`${uploads}/parts?offset=${part.start}&stored=1`, {
-            method: "PUT",
-            headers: req.headers,
-            signal,
-          }),
-        { attempts, signal },
-      );
-      if (!recorded.ok) throw await req.fail(recorded);
-    }
-    report(part.index, part.end - part.start);
-  };
+  const sendPart = createPartSender({
+    req,
+    bytesBase,
+    uploads,
+    options,
+    attempts,
+    signal,
+    report,
+    claimer,
+  });
 
   // `mapConcurrent` rather than a pool written here, and it is the SDK's own — a
   // window over a cursor with exactly the semantics this needs, including the one
   // the local copy got wrong: a rejection stops the other slots taking new items,
   // where the local pool kept them pulling from the cursor and relied on the abort
   // below to make each new request fail on arrival.
-  await mapConcurrent(
+  await sendEveryPart({
     missing,
-    req.settings.concurrency ?? UPLOAD_PART_CONCURRENCY,
-    async (part) => {
-      try {
-        await sendPart(part);
-      } catch (err: unknown) {
-        // Before re-throwing, so the parts already ON THE WIRE stop too — stopping
-        // the window is not the same as abandoning the requests it has issued.
-        failed.abort(err);
-        throw err;
-      }
-    },
-  );
+    width: req.settings.concurrency ?? UPLOAD_PART_CONCURRENCY,
+    sendPart,
+    failed,
+    claimer,
+  });
+  // Before the closing read, and this is the ordering the whole batched path rests
+  // on: `/info` is what decides the upload is complete, and a claim still in the air
+  // is a window the agent has not recorded yet. Draining here is also what surfaces
+  // a claim that failed after its window's bytes had already been reported.
+  await claimer.drain();
   // The record as the agent has it, rather than one assembled here: `complete` is
   // the agent's own answer about whether every byte landed, which is the one claim
   // this path must not make on its behalf. Retried like everything else on this
@@ -424,28 +407,6 @@ async function storedRanges(
 /** Whether one window is wholly inside what has landed. */
 function covers(landed: readonly UploadRange[], part: Part): boolean {
   return landed.some((range) => range.start <= part.start && range.end >= part.end);
-}
-
-/**
- * The per-part options: the caller's signal, and a progress callback scoped to one
- * part.
- *
- * The name and type are already on the URL and the header, so nothing else of the
- * caller's options survives here — in particular a caller's own `onProgress` must
- * NOT be passed through, or it would receive one part's bytes as though they were
- * the file's.
- */
-function partOptions(
-  options: UploadOptions | undefined,
-  part: Part,
-  report: (index: number, loaded: number) => void,
-): UploadOptions {
-  return {
-    ...omitUndefined({ signal: options?.signal }),
-    ...(options?.onProgress
-      ? { onProgress: (progress: UploadProgress) => report(part.index, progress.loaded) }
-      : {}),
-  };
 }
 
 /**
