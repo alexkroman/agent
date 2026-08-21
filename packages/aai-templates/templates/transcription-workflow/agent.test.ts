@@ -17,6 +17,7 @@
  * the decoder happily transcribes into confident nonsense.
  */
 
+import { FfmpegError } from "@alexkroman1/aai/ffmpeg";
 import { stubReporter, stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
 import { omitUndefined, readUpload } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -24,6 +25,7 @@ import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/batch.ts";
+import { classifyFfmpeg, cuttable, normalizeRecording } from "./workflows/normalize.ts";
 import { planStreamed, probeUpload } from "./workflows/stream.ts";
 import {
   clock,
@@ -885,5 +887,123 @@ describe("the async flow", () => {
     ]);
     // And the wall clock really is measured from what it was handed.
     expect(batched.elapsedMs).toBeGreaterThan(0);
+  });
+});
+
+describe("normalizing the recording", () => {
+  /**
+   * The CONVERSION is not driven here, and the reason is the tier rather than the
+   * code: it spawns ffmpeg and writes a temp file, neither of which a unit test
+   * may do. What is reachable is everything that DECIDES — whether a file needs
+   * converting at all, and how a conversion's failure is classified — and those
+   * are the two places a mistake is silent. A file wrongly passed through fails
+   * later in `splitRecording` with a message about a header; a `timeout`
+   * classified as fatal is a run that gives up on work that would have finished.
+   */
+  test("a canonical WAV is cuttable, so the desk converts nothing", () => {
+    expect(cuttable(wavFile(MONO_16K, 32_000), 44 + 32_000)).toBe(true);
+  });
+
+  test("an extra chunk before the samples is still cuttable", () => {
+    // The `LIST`-chunk case, which is the reason the probe window is 64 KB rather
+    // than 44 bytes: a file the walk CAN read must not be re-encoded.
+    const head = wavFile(MONO_16K, 32_000, { extraChunk: "recorder" });
+    expect(cuttable(head, head.length + 32_000)).toBe(true);
+  });
+
+  test("an m4a is not, which is what puts ffmpeg in the path", () => {
+    // An MPEG-4 `ftyp` box — what a phone recording really starts with.
+    const m4a = new Uint8Array([
+      0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20, 0, 0, 0, 0,
+    ]);
+    expect(cuttable(m4a, 4_000_000)).toBe(false);
+  });
+
+  test("a WAV whose encoding is not linear PCM is not", () => {
+    // The case an `ffprobe`-based check gets WRONG, which is why the check is
+    // `parseWav` itself: this file reports a PCM codec to ffprobe and is refused
+    // by the parser, so a probe would pass it through and the cut would fail.
+    const extensible = wavFile(MONO_16K, 32_000);
+    new DataView(extensible.buffer).setUint16(20, 0xff_fe, true);
+    expect(cuttable(extensible, 44 + 32_000)).toBe(false);
+  });
+
+  test("a WAV too dense to cut is not, and downsampling is what repairs it", () => {
+    // Past `MAX_BYTES_PER_SECOND`, so `parseWav` refuses it — and a conversion to
+    // 16 kHz mono makes it cuttable, which is a fix the desk gets for free from
+    // asking the parser rather than asking about the codec.
+    const dense = wavFile({ sampleRate: 4_000_000, channels: 8, bitsPerSample: 32 }, 32_000);
+    expect(cuttable(dense, 44 + 32_000)).toBe(false);
+  });
+
+  test("an already-cuttable recording keeps the id it came in under", async () => {
+    // The property that matters: no second upload, so the fan-out reads the file
+    // the caller stored. A step that copied it would double the storage every run
+    // pays for and would still report success.
+    publishRecording(wavFile(MONO_16K, 32_000), "standup.wav");
+    const reporter = stubReporter();
+    try {
+      await expect(normalizeRecording(UPLOAD_ID)).resolves.toEqual({
+        recording: UPLOAD_ID,
+        converted: false,
+      });
+      expect(reporter.lines.join(" ")).toContain("already linear-PCM WAV");
+    } finally {
+      reporter.restore();
+    }
+  });
+
+  test("a conversion that ffmpeg REFUSED is fatal, so it is not attempted five times", () => {
+    // `exit` means ffmpeg read the file and would read it the same way again.
+    expect(() =>
+      classifyFfmpeg(
+        new FfmpegError({
+          kind: "exit",
+          message: "Invalid data found when processing input",
+          binary: "ffmpeg",
+          argv: [],
+          exitCode: 1,
+        }),
+      ),
+    ).toThrow(FatalError);
+  });
+
+  test("a conversion that ran out of time keeps its retries, and its argv", () => {
+    // Rethrown UNCHANGED rather than wrapped, which is what `toStepError` does
+    // with an error carrying no verdict — and the DevKit's default for anything
+    // that is not a `FatalError` is to retry. Asserting the class survives is
+    // asserting the diagnosis does: `argv` is the command you paste into a shell,
+    // and a `new RetryableError(message)` here would throw it away.
+    const timedOut = new FfmpegError({
+      kind: "timeout",
+      message: "timed out",
+      binary: "ffmpeg",
+      argv: ["-i", "source"],
+    });
+    expect(() => classifyFfmpeg(timedOut)).toThrow(timedOut);
+    expect(() => classifyFfmpeg(timedOut)).not.toThrow(FatalError);
+  });
+
+  test("no ffmpeg at all is fatal — a retry cannot install one", () => {
+    // The `aai dev` case. Fatal deliberately: the message already carries the
+    // install instructions, and four more attempts only delay a person reading it.
+    expect(() =>
+      classifyFfmpeg(
+        new FfmpegError({
+          kind: "missing-binary",
+          message: "ffmpeg is not installed",
+          binary: "ffmpeg",
+          argv: [],
+        }),
+      ),
+    ).toThrow(FatalError);
+  });
+
+  test("something that is not an ffmpeg failure at all is fatal", () => {
+    // The store rejecting a write, say. Fatal rather than retryable because this
+    // step's own `maxRetries` exists for the I/O halves that report themselves as
+    // transient; an unrecognized error has said nothing about being worth another
+    // attempt, and guessing yes is how a run burns its budget before failing.
+    expect(() => classifyFfmpeg(new Error("no space left on device"))).toThrow(FatalError);
   });
 });

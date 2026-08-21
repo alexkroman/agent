@@ -26,6 +26,21 @@
  * anything else by name rather than trying to be clever — an MP3 or an M4A frame
  * boundary cannot be found by arithmetic, and finding it means shipping a
  * decoder into a step.
+ *
+ * ## Who READS the refusals below
+ *
+ * {@link UnsupportedRecordingError} is raised from here and handled in two
+ * completely different ways, which is worth knowing before editing a message:
+ *
+ * - The plain `transcribe` flow CONVERTS rather than refusing. `normalize.ts`
+ *   calls {@link parseWav} as a QUESTION — a throw is its signal to hand the file
+ *   to ffmpeg — so on that path no message here reaches a person, and a file this
+ *   module rejects for a huge {@link MAX_BYTES_PER_SECOND} is one that
+ *   normalization fixes by downsampling.
+ * - `transcribeStream` still refuses, and has to: it cuts a recording while the
+ *   bytes are still arriving, and a partial file is not something ffmpeg can
+ *   transcode. There the sentences below are the whole of what a person is told,
+ *   so they keep naming the `ffmpeg` line that fixes the file.
  */
 
 /** What the sync endpoint will accept in one request. */
@@ -56,6 +71,22 @@ export const MAX_SEGMENT_BYTES = 40 * 1024 * 1024;
 
 /** The sync endpoint refuses audio shorter than this. */
 export const MIN_SEGMENT_MS = 80;
+
+/**
+ * Bytes probed for the WAV header.
+ *
+ * The canonical header is 44 bytes; a recorder that writes a `LIST` or `bext`
+ * chunk in front of the samples pushes the `data` chunk further out, and 64 KB
+ * covers every such file anyone has produced by accident.
+ *
+ * Declared HERE because three callers need the same window, and the third one is
+ * what made a shared constant the rule rather than a preference: `splitRecording`
+ * cuts on it, `planFromHead` in `stream.ts` cuts on it, and `normalize.ts` decides
+ * whether to CONVERT on it. Two of those probing a different amount than the third
+ * is a file the desk converts and then cannot cut, or refuses and then converts —
+ * both silent, and neither reproducible from any one module.
+ */
+export const HEADER_PROBE_BYTES = 64 * 1024;
 
 /**
  * The largest `bytesPerSecond` this desk will cut, and the reason it is checked

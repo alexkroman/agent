@@ -21,10 +21,14 @@
  *   `DATABASE_URL` under `aai dev`). REQUIRED here, unlike most workflow apps:
  *   a run survives without it, but an UPLOAD's record is a row, so the form
  *   below refuses by name until storage is on.
- * - **A linear-PCM WAV.** The cutting is arithmetic over byte offsets, which is
- *   only possible on uncompressed audio; `workflows/wav.ts` says so in more
- *   detail, and an unsupported file fails the run by name with the `ffmpeg`
- *   line that fixes it.
+ * - **ffmpeg, under `aai dev` only.** A deployed guest's image installs it; on a
+ *   laptop it is whatever is on `PATH` (or `AAI_FFMPEG_PATH`). The `transcribe`
+ *   flow needs it for anything that is not already a linear-PCM WAV, because the
+ *   cutting is arithmetic over byte offsets and that is only possible on
+ *   uncompressed audio — `workflows/normalize.ts` is the conversion and
+ *   `workflows/wav.ts` is why it has to happen. A WAV needs no ffmpeg at all,
+ *   and `transcribeStream` never uses it: a recording that is still uploading is
+ *   not something a decoder can be pointed at.
  *
  * ## The recording is UPLOADED, and the run carries its id
  *
@@ -49,7 +53,8 @@
  * | client sends | `POST /uploads` | `PUT /uploads/<id>` | `POST /uploads` |
  * | shape | plan, fan out, merge | poll, fan out, merge | submit, poll, read |
  * | client hook | `useWorkflowSubmit` | `useWorkflowStream` | `useWorkflowSubmit` |
- * | accepts | linear-PCM WAV | linear-PCM WAV | **any audio** |
+ * | accepts | **any audio** | linear-PCM WAV | **any audio** |
+ * | converts first | when it must | never | not needed |
  * | segments | 7 for 10 minutes | 7 | **1** |
  *
  * The first two are the same fan-out arranged two ways, and the difference between
@@ -102,7 +107,12 @@ export const transcribe = workflow({
   input: z.object({
     // A plain string, because an upload id is what the run really receives. What
     // makes it a file picker rather than a text box is the `uploads` line below.
-    recording: z.string().describe("A linear-PCM WAV recording (16-bit or 8-bit, any rate)"),
+    //
+    // It says "any recording" now, and that is the whole of what
+    // `workflows/normalize.ts` bought: this used to name linear-PCM WAV and mean
+    // it, so the desk's real front door was a sentence telling the caller to run
+    // ffmpeg themselves. The cut still needs WAV — the run makes one.
+    recording: z.string().describe("Any recording — WAV, MP3, M4A, or a video's audio track"),
   }),
   // The one line that makes the form take a file: `<WorkflowFields>` renders a
   // picker for this property, `useWorkflowSubmit` stores the chosen file, and
@@ -128,6 +138,10 @@ export const transcribe = workflow({
 export const transcribeStream = workflow({
   description: "Transcribe a recording while it is still uploading",
   input: z.object({
+    // Still WAV, and this is the one flow where that is not a limitation to be
+    // fixed: it cuts the recording while the bytes are arriving, and a partial
+    // file is not something ffmpeg can transcode. `transcribe` converts because
+    // it has the whole file before it plans anything.
     recording: z.string().describe("A linear-PCM WAV recording (16-bit or 8-bit, any rate)"),
   }),
   uploads: ["recording"],

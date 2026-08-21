@@ -151,6 +151,7 @@ import {
   transcribeSegment,
 } from "./transcribe.ts";
 import {
+  HEADER_PROBE_BYTES,
   offsetToMs,
   parseWav,
   planSegments,
@@ -175,9 +176,6 @@ const POLL_INTERVAL = "5s";
  * as long as something arrives every five minutes.
  */
 const MAX_IDLE_POLLS = 60;
-
-/** Bytes probed for the WAV header — the same window `splitRecording` uses. */
-const HEADER_PROBE_BYTES = 64 * 1024;
 
 /** What one poll of the upload found. */
 export type UploadProgressView = {

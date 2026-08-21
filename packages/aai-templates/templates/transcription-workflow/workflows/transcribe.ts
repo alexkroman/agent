@@ -7,14 +7,20 @@
  * every directive body obeys — replayed from the top, so no live handles and no
  * undurable decisions; step arguments and return values are serialized, so pass
  * an id and not a payload — and both hold here unchanged. What this template
- * adds is the shape a real provider limit forces on a workflow, and it is three
+ * adds is the shape a real provider limit forces on a workflow, and it is four
  * steps in a straight line:
  *
  * ```text
+ *   normalizeRecording  one step   →  an upload id in a format that can be cut
  *   splitRecording      one step   →  the format + a byte range per segment
  *   transcribeSegment   N steps    →  one sync API request each, bounded
  *   mergeTranscript     one step   →  the stitched transcript
  * ```
+ *
+ * The first is the newest and the one a reader is least likely to expect, since
+ * everything below it is arithmetic over a WAV and real recordings are not WAVs.
+ * `normalize.ts` is where ffmpeg enters, and its module doc carries why the
+ * conversion is file-to-file and why a temp file may not outlive its step.
  *
  * ## Why the SYNC endpoint, and why that forces a fan-out
  *
@@ -59,6 +65,7 @@
 
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { emit, mapConcurrent, readUpload, report, uploadInfo } from "@alexkroman1/aai/utils";
+import { normalizeRecording } from "./normalize.ts";
 import {
   clock,
   countWords,
@@ -69,6 +76,7 @@ import {
 import { elapsed, timed, transcribeWav } from "./sync-api.ts";
 import {
   bytesPerSecond,
+  HEADER_PROBE_BYTES,
   parseWav,
   planSegments,
   SEGMENT_OVERLAP_SECONDS,
@@ -187,15 +195,6 @@ export function segmentConcurrency(format: WavFormat): number {
 }
 
 /**
- * Bytes probed for the WAV header.
- *
- * The canonical header is 44 bytes; a recorder that writes a `LIST` or `bext`
- * chunk in front of the samples pushes the `data` chunk further out, and 64 KB
- * covers every such file anyone has produced by accident.
- */
-const HEADER_PROBE_BYTES = 64 * 1024;
-
-/**
  * What a finished run reports, whichever flow produced it.
  *
  * Declared once and shared by all three, because the page renders any of them with
@@ -234,7 +233,16 @@ export async function transcribeFlow(input: { recording: string }) {
   // round trip instead of two before any audio is read. The ORDER is still a
   // pure function of this line — the two calls go out synchronously, left to
   // right — which is what a replay reproduces.
-  const [startedAt, plan] = await Promise.all([startClock(), splitRecording(input.recording)]);
+  //
+  // The clock starts before the conversion rather than after it, because a
+  // reader comparing the three flows over one file is comparing what the desk
+  // COST them, and re-encoding an m4a is part of that.
+  const [startedAt, ready] = await Promise.all([startClock(), normalizeRecording(input.recording)]);
+
+  // `ready.recording` from here on, not `input.recording`: a converted file is a
+  // DIFFERENT upload, and cutting the original by offsets planned against the
+  // converted one is a fan-out of garbage that still reports success.
+  const plan = await splitRecording(ready.recording);
 
   // One step per segment, bounded, in an order a replay reproduces exactly.
   // A failed segment fails the RUN, deliberately: every sibling that finished is
@@ -242,11 +250,12 @@ export async function transcribeFlow(input: { recording: string }) {
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
   const parts = await mapConcurrent(plan.segments, segmentConcurrency(plan.format), (segment) =>
-    transcribeSegment(input.recording, plan.format, segment),
+    transcribeSegment(ready.recording, plan.format, segment),
   );
 
-  // Whatever this returns is what a caller reads as `output` on a completed run
-  // — so it is what the page renders, typed through `WorkflowOutputOf`.
+  // The ORIGINAL id, and only here: `mergeTranscript` uses it for the filename a
+  // reader sees, and `standup.m4a` is the recording they uploaded — where the
+  // converted copy is an artifact of how the desk works.
   return await mergeTranscript(input.recording, plan.durationMs, parts, startedAt);
 }
 
