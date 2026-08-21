@@ -41,11 +41,11 @@ const TEMPLATES = path.resolve(import.meta.dirname, "../aai-templates/templates"
  *
  * A floor because this file's whole output is otherwise a count: a `readdir`
  * that stopped matching, or a rename of `templates/`, would build nothing and
- * report every template as passing. Seven today — `call-audit`, `link-digest`,
- * `recap-workflow`, `redline`, `research-workflow`, `spoken-summary`,
- * `transcription-workflow`.
+ * report every template as passing. Eight today — `call-audit`, `link-digest`,
+ * `podcast-digest`, `recap-workflow`, `redline`, `research-workflow`,
+ * `spoken-summary`, `transcription-workflow`.
  */
-const MIN_WORKFLOW_TEMPLATES = 7;
+const MIN_WORKFLOW_TEMPLATES = 8;
 
 /**
  * Code-unit order, never `localeCompare` — with no explicit locale that answers

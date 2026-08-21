@@ -67,7 +67,7 @@
  * just your shell.
  */
 
-import { throwStepError, toStepError } from "@alexkroman1/aai/step-errors";
+import { stepFetchOk, throwStepError, toStepError } from "@alexkroman1/aai/step-errors";
 import {
   errorMessage,
   isRecord,
@@ -519,27 +519,24 @@ async function request(
   url: string,
   init: { method?: string; body?: string } = {},
 ): Promise<Response> {
-  // `stepFetch`, not `fetch`: it pins HTTP/1.1, so several concurrent runs (and
-  // this workflow POLLS, so one run is many requests) get a socket each rather
-  // than N streams on one connection — and a connection failure arrives as a
-  // `StepTransportError` naming its cause instead of a bare
+  // Through `stepFetch`, not `fetch`: it pins HTTP/1.1, so several concurrent
+  // runs (and this workflow POLLS, so one run is many requests) get a socket
+  // each rather than N streams on one connection — and a connection failure
+  // arrives as a `StepTransportError` naming its cause instead of a bare
   // `TypeError: fetch failed`, which for a template whose whole subject is
   // durability is the difference between a diagnosable resume and a mystery.
   // `sdk/step-fetch.ts` carries the measurements.
-  const response = await stepFetch(url, {
+  // `stepFetchOk` makes the three-way retry decision: a 401 or a 400 answers the
+  // same way on the fourth attempt and burns the step, a 429 or a 5xx is what
+  // retries are for, and a `Retry-After` the provider named is waited out rather
+  // than replaced by the DevKit's one-second default — which matters here more
+  // than usual, because a fan-out of segments hits a rate limit together. The
+  // DELETE below stays on plain `stepFetch`, because there a 404 is a SUCCESS.
+  return await stepFetchOk(url, {
     ...init,
     headers: { authorization: requireStepEnv(API_KEY_ENV), "content-type": "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  // The three-way retry decision, made by the SDK: a 401 or a 400 answers the
-  // same way on the fourth attempt and burns the step, a 429 or a 5xx is what
-  // retries are for, and a `Retry-After` the provider named is waited out rather
-  // than replaced by the DevKit's one-second default — which matters here more
-  // than usual, because a fan-out of segments hits a rate limit together.
-  if (!response.ok) {
-    throw toStepError(response, `${init.method ?? "GET"} ${url} failed: HTTP ${response.status}`);
-  }
-  return response;
 }
 
 /** A string field of a JSON body, when it really is one. */
