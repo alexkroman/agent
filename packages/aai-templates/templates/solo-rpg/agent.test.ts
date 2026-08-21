@@ -802,6 +802,19 @@ describe("the story flow", () => {
     expect(burned.newResultCode).toBe("STRONG_HIT");
   });
 
+  test("a value stored before a field existed does not read as a standing roll", () => {
+    // Slot values are fail-open across a redeploy, so a field the previous
+    // version lacked reads `undefined`. The position must fail SAFE: an absent
+    // `lastRoll` is no roll, not a burn window against a roll nobody made.
+    const ctx = makeCtx();
+    const legacy: Record<string, unknown> = { ...playingState() };
+    delete legacy.lastRoll;
+    delete legacy.gameOver;
+    ctx.slots.write("game", legacy, gameSlot.durable);
+
+    expect(storyFlow.position(ctx).state).toBe("playing.awaitingRoll");
+  });
+
   test("an uninitialized campaign locates awaitingSetup, however it was written", () => {
     const ctx = makeCtx();
     // Not reachable through `save_game` (it is gated out of `awaitingSetup`), but

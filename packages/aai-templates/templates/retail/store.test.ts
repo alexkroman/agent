@@ -305,6 +305,23 @@ describe("retailTool", () => {
 });
 
 describe("the call flow", () => {
+  test("a value stored before `transferred` existed does not read as serving", () => {
+    // Slot values are fail-open across a redeploy: a value written by the
+    // previous version parses as-is, so fields it lacked read `undefined`. The
+    // position must fail SAFE — never claiming an identified customer, and never
+    // claiming a handoff — because both are more permissive than the truth.
+    const ctx = makeCtx();
+    const legacy: Record<string, unknown> = { ...createDefaultState() };
+    delete legacy.transferred;
+    delete legacy.authenticatedUserId;
+    // Written through the STORE rather than `slot.set`, because that is what a
+    // previous deploy left behind — a value the current type cannot describe, so
+    // there is no cast here that could quietly stop reporting.
+    ctx.slots.write("retail", legacy, retailSlot.durable);
+
+    expect(callFlow.position(ctx).state).toBe("identifying");
+  });
+
   test("a fresh call is identifying, and nothing is latched", () => {
     const ctx = makeCtx();
     expect(callFlow.position(ctx).state).toBe("identifying");

@@ -26,7 +26,14 @@ const agentDef = withDiscoveredTools(
 import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./graph.ts";
 import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
 import type { SearchFn } from "./shared.ts";
-import { MAX_PAST_STEPS, planFlow, planProjection, planSlot, planView } from "./shared.ts";
+import {
+  emptyPlan,
+  MAX_PAST_STEPS,
+  planFlow,
+  planProjection,
+  planSlot,
+  planView,
+} from "./shared.ts";
 
 /**
  * What a `planFlow.tool` answers, unwrapped.
@@ -469,5 +476,25 @@ describe("planView projection", () => {
     expect(view.progress).toBeCloseTo(1 / 3, 5);
     expect(view.done[0]?.step).toBe("One");
     expect(view.plan).toEqual(["Two", "Three"]);
+  });
+});
+
+describe("the plan flow's derivation", () => {
+  test("a value stored before a field existed does not announce an answer", () => {
+    // Slot values are fail-open across a redeploy, so a field the previous
+    // version lacked reads `undefined`. The position must fail SAFE: an absent
+    // `response` is not an answer.
+    const ctx = makeCtx(scriptedModel().generate);
+    const legacy: Record<string, unknown> = { ...emptyPlan(), objective: "a weekend in Lisbon" };
+    delete legacy.response;
+    ctx.slots.write("plan", legacy, planSlot.durable);
+
+    expect(planFlow.position(ctx).state).toBe("working");
+  });
+
+  test("locate is a total function of the plan, with no session at all", () => {
+    expect(planFlow.locate(emptyPlan())).toBe("idle");
+    expect(planFlow.locate({ ...emptyPlan(), objective: "x" })).toBe("working");
+    expect(planFlow.locate({ ...emptyPlan(), objective: "x", response: "done" })).toBe("answered");
   });
 });

@@ -154,7 +154,14 @@ const callMachine = setup({}).createMachine({
  */
 export const callFlow = derivedFlow(callMachine, retailSlot, (state) => {
   if (state.transferred) return "transferred";
-  return state.authenticatedUserId === null ? "identifying" : "serving";
+  // TRUTHINESS, not `=== null`, and the reason is shape drift. Slot values are
+  // fail-open across a redeploy (see `host/session-state-store.ts`): a value
+  // stored by the previous version parses as-is, so a field that version did not
+  // have reads `undefined`. Under `=== null` that flips this into `serving` —
+  // the position claiming an identified customer when there is none, which is
+  // the one direction this must never fail in. A user id is never the empty
+  // string, so the two readings agree on every legitimate value.
+  return state.authenticatedUserId ? "serving" : "identifying";
 });
 
 /** Every state a tool may run in before the call is handed to a human — i.e.

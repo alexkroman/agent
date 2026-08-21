@@ -134,7 +134,10 @@ const planMachine = setup({}).createMachine({
  */
 export const planFlow = derivedFlow(planMachine, planSlot, (plan) => {
   if (!plan.objective) return "idle";
-  return plan.response === null ? "working" : "answered";
+  // Truthiness rather than `=== null`, for the reason `retail`'s `callFlow`
+  // gives: a slot value written by an older deploy reads absent fields as
+  // `undefined`, and this must not announce an answer that does not exist.
+  return plan.response ? "answered" : "working";
 });
 
 /**

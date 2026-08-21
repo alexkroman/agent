@@ -451,7 +451,10 @@ const storyMachine = setup({}).createMachine({
 export const storyFlow = derivedFlow(storyMachine, gameSlot, (game) => {
   if (game.gameOver) return "gameOver";
   if (!game.initialized) return "awaitingSetup";
-  return game.lastRoll === null ? "playing.awaitingRoll" : "playing.rollResolved";
+  // Truthiness rather than `=== null`: an absent `lastRoll` from an older
+  // deploy's stored value would otherwise read as a roll STANDING, opening a
+  // burn window against a roll nobody made.
+  return game.lastRoll ? "playing.rollResolved" : "playing.awaitingRoll";
 });
 
 /**
