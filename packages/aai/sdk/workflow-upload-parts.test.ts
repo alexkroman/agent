@@ -32,7 +32,7 @@ import {
   UPLOAD_RETRY_BASE_MS,
 } from "./constants.ts";
 import type { UploadProgress } from "./workflow-upload-client.ts";
-import { planParts } from "./workflow-upload-parts.ts";
+import { partsPlan, planParts } from "./workflow-upload-parts.ts";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -141,6 +141,55 @@ describe("declining, rather than failing", () => {
   test("`parallel: false` opts OUT, and is the only way to", async () => {
     const agent = scriptAgent();
     await client().upload(recording(), { parallel: false });
+    expect(agent.calls).toHaveLength(1);
+  });
+});
+
+describe("a CALLER-NAMED upload is cut so it can be resumed", () => {
+  /** A recording well under one part — the ordinary size of one off a phone. */
+  const SMALL = UPLOAD_CHUNK_BYTES * 4;
+  const small = () => recording(SMALL);
+
+  test("into chunk-sized windows, because a part is ALL-OR-NOTHING", async () => {
+    const agent = scriptAgent();
+    await client().uploadStream("abc", small());
+    // `upload` sends this file in one request and is right to — there the path only
+    // buys speed and one window has nothing to overlap. Here it buys resumability,
+    // and one window of the whole file is a resume that re-sends the whole file.
+    expect(agent.parts.map((one) => Number(one.url.searchParams.get("offset")))).toEqual([
+      0,
+      UPLOAD_CHUNK_BYTES,
+      UPLOAD_CHUNK_BYTES * 2,
+      UPLOAD_CHUNK_BYTES * 3,
+    ]);
+  });
+
+  test("so a PAUSE at 90% resumes rather than starting over", async () => {
+    // What shipped: the file fit in one part, so this went as a single `PUT` — a
+    // shape with nothing to resume, because a second `PUT` to a chosen id is the
+    // 409 that makes choosing one safe. So resuming sent the whole recording again
+    // from byte zero and was THEN refused as a taken id.
+    const agent = scriptAgent({
+      begin: 409,
+      landed: [{ start: 0, end: UPLOAD_CHUNK_BYTES * 3 }],
+    });
+    const stored = await client().uploadStream("abc", small(), { resume: true });
+    expect(agent.parts.map((one) => Number(one.url.searchParams.get("offset")))).toEqual([
+      UPLOAD_CHUNK_BYTES * 3,
+    ]);
+    expect(stored.complete).toBe(true);
+  });
+
+  test("and an EMPTY file is still declined, having nothing to resume", async () => {
+    const agent = scriptAgent();
+    await client().uploadStream("abc", recording(0));
+    expect(agent.calls).toHaveLength(1);
+    expect(agent.calls[0]?.method).toBe("PUT");
+  });
+
+  test("`parallel: false` still opts out — and out of resuming with it", async () => {
+    const agent = scriptAgent();
+    await client().uploadStream("abc", small(), { parallel: false });
     expect(agent.calls).toHaveLength(1);
   });
 });
@@ -485,5 +534,26 @@ describe("planning the windows", () => {
 
   test("plans nothing for an empty file", () => {
     expect(planParts(0, PART)).toEqual([]);
+  });
+
+  test("declines one part, and re-cuts it at a chunk when it must be resumable", () => {
+    // Two whole chunks at the default part size is one window, which the speed-only
+    // caller declines and the resumable one cuts into windows a resume can address.
+    const small = recording(UPLOAD_CHUNK_BYTES * 2);
+    expect(partsPlan(small, {})).toBeUndefined();
+    expect(partsPlan(small, {}, { resumable: true })).toEqual({
+      total: UPLOAD_CHUNK_BYTES * 2,
+      parts: [
+        { start: 0, end: UPLOAD_CHUNK_BYTES, index: 0 },
+        { start: UPLOAD_CHUNK_BYTES, end: UPLOAD_CHUNK_BYTES * 2, index: 1 },
+      ],
+    });
+    // A file under one chunk has nothing finer to be cut into, so it stays one
+    // window — resumable in SHAPE, which is what stops the 409.
+    expect(partsPlan(recording(1024), {}, { resumable: true })?.parts).toEqual([
+      { start: 0, end: 1024, index: 0 },
+    ]);
+    // And an empty file declines either way: nothing to send, nothing to resume.
+    expect(partsPlan(recording(0), {}, { resumable: true })).toBeUndefined();
   });
 });

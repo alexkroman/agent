@@ -603,7 +603,9 @@ re-enter (an abort — also how a person's PAUSE arrives — a refusal status, a
 record the agent acknowledged and never wrote).
 
 The client path DECLINES rather than fails (an
-uncuttable string body, a file that fits in one part, an agent answering 404 to
+uncuttable string body, a one-part file — for `upload` only, since `uploadStream`
+buys RESUMABILITY here rather than speed and re-cuts such a file at the chunk
+grid — an agent answering 404 to
 the declaration), which is what makes it safe as a default rather than an opt-in
 — and it is also the only upload path that can RETRY, since a single-request
 `POST` retried after a lost response mints a SECOND upload and a `PUT` retried
