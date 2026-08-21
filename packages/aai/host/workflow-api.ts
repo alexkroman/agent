@@ -329,7 +329,7 @@ const ROUTES: readonly Route[] = [
       const store = requireUploads(res, ctx);
       if (!store) return;
       const id = uploadIdOr400(res, url, "/info");
-      if (id !== undefined) await readUploadInfoRoute(res, store, id);
+      if (id !== undefined) await readUploadInfoRoute(res, store, id, ctx.directParts === true);
     },
   },
   {

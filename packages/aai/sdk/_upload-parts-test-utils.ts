@@ -228,13 +228,23 @@ function answerInfo(script: Script, attempt: number): Response {
   if (status !== 200) return json(status, { error: "no" });
   // The closing read, which is every read but a resume's first. `neverRecorded` is
   // what a store that acknowledged each window and recorded none answers with.
+  // The same two capability fields the CLAIM answers with. The real route sends them
+  // here too, and it has to: a resume's claim is answered 409, which carries no body,
+  // so this read is the only place the client can learn where its remaining windows
+  // go. A fake that omitted them would make every resume spec measure the fallback.
+  const capability = script.direct
+    ? { directParts: true, claimBatch: script.claimBatch }
+    : undefined;
   if (!script.landed || attempt !== 1) {
-    return json(200, script.neverRecorded ? record(0, false) : record(TOTAL, true));
+    return json(200, {
+      ...(script.neverRecorded ? record(0, false) : record(TOTAL, true)),
+      ...capability,
+    });
   }
   const first = script.landed[0];
   // The contiguous prefix, which is what the store would publish as `size`.
   const prefix = first?.start === 0 ? first.end : 0;
-  return json(200, { ...record(prefix, false), ranges: script.landed });
+  return json(200, { ...record(prefix, false), ranges: script.landed, ...capability });
 }
 
 /**

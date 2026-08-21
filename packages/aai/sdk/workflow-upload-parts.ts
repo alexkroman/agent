@@ -181,6 +181,16 @@ export type UploadPartsRequest = {
 // split above is a file-size seam, not an API change.
 export { partsPlan, planParts, type UploadPartsPlan } from "./_upload-parts-plan.ts";
 
+/**
+ * The two capability fields a DEPLOYMENT answers with — see `UploadCreated`.
+ *
+ * Read off the claim on a fresh upload and off `…/info` on a resume, because a 409
+ * has no body. Both routes answer the same pair for the same reason: they describe
+ * where an upload's bytes go and how its receipts may be batched, and neither is a
+ * property of the FILE.
+ */
+type UploadCapability = { directParts?: boolean; claimBatch?: number };
+
 /** Statuses that mean "this agent has no `/parts` routes", as opposed to a failure. */
 const NO_SUCH_ROUTE = new Set([404, 405]);
 
@@ -201,6 +211,51 @@ export function directBytesBase(base: string): string | undefined {
   const trimmed = base.replace(/\/+$/, "");
   if (!trimmed.endsWith(WORKFLOW_API_PREFIX)) return undefined;
   return `${trimmed.slice(0, -WORKFLOW_API_PREFIX.length)}/uploads`;
+}
+
+/**
+ * What the DEPLOYMENT can do, and what this upload still owes — resolved together
+ * because on a resume they come from the same request.
+ *
+ * Its own function because `uploadInParts` is at the cognitive-complexity cap and
+ * this is the part of it with one subject: reconciling a claim's answer, a 409's
+ * silence, and the record.
+ */
+async function openedUpload(ctx: {
+  req: UploadPartsRequest;
+  begun: Response;
+  /** Whether the 409 is OURS — see the caller. */
+  begunAlready: boolean;
+  uploads: string;
+  signal: AbortSignal;
+  attempts: number;
+  parts: readonly Part[];
+}): Promise<{ bytesBase: string | undefined; claimBatch: number; missing: readonly Part[] }> {
+  const { req, begun, begunAlready, uploads, signal, attempts, parts } = ctx;
+  const claimed = begun.ok
+    ? await readJsonBody<UploadCapability>(begun, "Workflow API").catch(
+        () => ({}) as UploadCapability,
+      )
+    : {};
+
+  // What is already stored, so a resume sends the windows that are MISSING rather
+  // than the file. Only asked for when the claim says the upload already existed — a
+  // fresh one has nothing in it, and this is a round trip.
+  const resumed = begunAlready ? await storedRanges(req, uploads, signal, attempts) : undefined;
+
+  // Where the bytes go, decided by the CLAIM — see the module doc. **A 409'd claim
+  // carries no body to read the flag from, so a resume reads it off the RECORD.**
+  // The module doc described exactly that for a while and the code did not do it:
+  // this was `{}` on the 409 path, so every resumed upload silently abandoned the
+  // direct path and sent its bytes to the agent — which works, and is the topology
+  // this path exists to avoid, and which the platform's forward measures as a
+  // stalled guest.
+  const capability = begun.ok ? claimed : (resumed?.capability ?? {});
+  return {
+    bytesBase: capability.directParts === true ? directBytesBase(req.base) : undefined,
+    claimBatch: claimBatchOf(capability.claimBatch),
+    missing: resumed ? parts.filter((part) => !covers(resumed.ranges, part)) : parts,
+  };
 }
 
 /**
@@ -263,21 +318,15 @@ export async function uploadInParts(req: UploadPartsRequest): Promise<UploadRef 
   const begunAlready = begun.status === 409 && (claims > 1 || req.options?.resume === true);
   if (!(begun.ok || begunAlready)) throw await req.fail(begun);
 
-  // Where the bytes go, decided by the CLAIM — see the module doc. A 409'd claim
-  // carries no body to read the flag from, so a resume reads it off the record
-  // instead of assuming: an upload begun on the direct path is finished on it.
-  type Claim = { directParts?: boolean; claimBatch?: number };
-  const claimed = begun.ok
-    ? await readJsonBody<Claim>(begun, "Workflow API").catch(() => ({}) as Claim)
-    : {};
-  const bytesBase = claimed.directParts === true ? directBytesBase(req.base) : undefined;
-  const claimBatch = claimBatchOf(claimed.claimBatch);
-
-  // What is already stored, so a resume sends the windows that are MISSING rather
-  // than the file. Only asked for when the claim says the upload already existed —
-  // a fresh one has nothing in it, and this is a round trip.
-  const landed = begunAlready ? await storedRanges(req, uploads, signal, attempts) : undefined;
-  const missing = landed ? parts.filter((part) => !covers(landed, part)) : parts;
+  const { bytesBase, claimBatch, missing } = await openedUpload({
+    req,
+    begun,
+    begunAlready,
+    uploads,
+    signal,
+    attempts,
+    parts,
+  });
 
   const claimer = createClaimer({
     uploads,
@@ -394,14 +443,21 @@ async function storedRanges(
   uploads: string,
   signal: AbortSignal,
   attempts: number,
-): Promise<readonly UploadRange[]> {
+): Promise<{ ranges: readonly UploadRange[]; capability: UploadCapability }> {
   const { res } = await withRetries(
     () => fetch(`${uploads}/info`, { headers: req.headers, signal }),
     { attempts, signal },
   );
   if (!res.ok) throw await req.fail(res);
-  const info = await readJsonBody<UploadInfo>(res, "Workflow API");
-  return info.complete ? [{ start: 0, end: info.size }] : (info.ranges ?? []);
+  const info = await readJsonBody<UploadInfo & UploadCapability>(res, "Workflow API");
+  return {
+    ranges: info.complete ? [{ start: 0, end: info.size }] : (info.ranges ?? []),
+    // The record answers the same two capability fields the claim does, precisely so
+    // this read can serve the 409 the claim answered with nothing. An agent too old
+    // to send them answers as one where the bytes come to it, which is the right
+    // degradation in both cases.
+    capability: info,
+  };
 }
 
 /** Whether one window is wholly inside what has landed. */

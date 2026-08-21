@@ -6,28 +6,6 @@ import type { BuiltinTool } from "./types.ts";
 export const DEFAULT_STT_SAMPLE_RATE = 16_000;
 /** @internal */
 export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
-/**
- * The ONLY sample rate AssemblyAI's Voice Agent API accepts, in both
- * directions. Measured against the live service with a standalone WebSocket
- * client: declaring 8000 or 16000 for either `input.format` or `output.format`
- * is answered ~10s later with `session.error{code:"internal_error"}` and close
- * 1011; 24000 is accepted.
- *
- * Sending audio at another rate is worse than declaring one, because it has NO
- * symptom: the service applies 24 kHz regardless, so 16 kHz capture is decoded
- * 1.5x fast and produces no `input.speech.started`, no `transcript.user` and no
- * error at all. The agent greets normally and is then permanently deaf, which
- * reads as a model or service outage rather than an audio bug.
- *
- * Hence two users of this constant, not one: `pinAssemblyS2sRates` makes the
- * host say 24 kHz everywhere (ready frame included, so a client that captures
- * off that frame is right by construction), and `assertHostRatesSupported`
- * REFUSES a host-mode client that declares it will send something else — the
- * case the pin cannot reach, because it can change every number and no byte.
- *
- * @internal
- */
-export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24_000;
 
 /** Wall-clock budget (ms) for one tool `execute` call before it is aborted. */
 export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
@@ -365,6 +343,9 @@ export {
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./pipeline-tuning-constants.ts";
 export { HEARD_AUDIO_LAG_MS, PIPELINE_PLAYBACK_GRACE_MS } from "./playback-timing-constants.ts";
+// The Voice Agent API's one sample rate, split off for the same file-length reason
+// and re-exported for the same import-path one.
+export { ASSEMBLYAI_S2S_SAMPLE_RATE } from "./s2s-constants.ts";
 export {
   STEP_FETCH_CONNECTIONS,
   STEP_FETCH_KEEP_ALIVE_MS,

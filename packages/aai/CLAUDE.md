@@ -127,40 +127,18 @@ present in the `agent()` config:
   only the `s2s` descriptor selects it.
 
   **The Voice Agent API accepts ONE sample rate — 24 kHz, both directions — so
-  the CLIENT must send true 24 kHz audio, not 16 kHz relabelled as 24.** The
-  host pins and advertises the rate and refuses a client that declares another;
-  it does NOT resample (see the end of this section for why). Measured
-  against the live service (2026-08-05) with a standalone WebSocket client,
-  feeding the same real utterance three ways:
+  the CLIENT must send true 24 kHz audio, not 16 kHz relabelled as 24.** The host
+  pins and advertises the rate and refuses a client that declares another; it does
+  NOT resample. Relabelled audio is the case to know about because it has NO
+  symptom — the agent greets normally and is then permanently deaf, which
+  reads as a service outage rather than an audio bug.
 
-  | sent | declared | result |
-  | --- | --- | --- |
-  | 16 kHz bytes | 24 kHz | `session.ready`, then **nothing at all** |
-  | resampled to true 24 kHz | 24 kHz | speech edges, correct transcript, 279 KB of reply audio |
-  | 16 kHz bytes | 16 kHz | `session.error{internal_error}` + close **1011** |
-
-  Row one is the whole problem: relabelled audio produces no error at all, so
-  the agent greets normally and is then permanently deaf. **Why that is silent,
-  why `S2SConfig.inputSampleRate` cannot simply be changed, and why pinning the
-  rate is necessary and NOT sufficient are in the module docs that own the
-  mechanism** — `ASSEMBLYAI_S2S_SAMPLE_RATE` in `sdk/constants.ts` and
-  `pinAssemblyS2sRates` in `host/runtime-config.ts`, which also record the 2/25
-  tau2 run measured with the pin in place. The counterpart the pin cannot
-  reach is `assertHostRatesSupported` (`host-mode.ts`), which REJECTS a
-  host-mode handshake declaring a rate this transport cannot honour.
-
-  Two numbers those docs do not carry. That 2/25 was against **15/25 and 18/25
-  for the two pipeline transports running the same tasks at the same minute**,
-  which is what makes it a transport finding rather than a bad afternoon. And
-  **the host does not resample, deliberately.** A resampler was built and
-  reverted: it worked (16 kHz converted to true 24 kHz transcribed correctly
-  5/5 live, against 4/5 returning nothing when relabelled), but upsampling can
-  only preserve or degrade — it invents no bandwidth — and it put ~150 lines of
-  stateful DSP in the hot audio path to paper over a client that could simply
-  send the right rate. Every client already owns its own rate conversion: the
-  browser's WebAudio does it, tau2 resamples from 8 kHz μ-law regardless, so
-  making it 8→24 costs nothing. Rate conversion belongs at the edge; the host's
-  job is to state the requirement and refuse a client that will not meet it.
+  **`ASSEMBLYAI_S2S_SAMPLE_RATE` (`sdk/s2s-constants.ts`) owns all of it**: the
+  three-way live measurement, the tau2 scores with the pin in place, and why a
+  resampler was built and reverted. `pinAssemblyS2sRates` (`host/runtime-config.ts`)
+  is the pin; `assertHostRatesSupported` (`host-mode.ts`) is the counterpart it
+  cannot reach, refusing a host-mode handshake that declares a rate this
+  transport cannot honour.
 
   **S2S has no agent captions on tool-call turns, and `transcript.agent.delta`
   is the remedy.** Neither reply of a tool-call turn emits `transcript.agent`, so

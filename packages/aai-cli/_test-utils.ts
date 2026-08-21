@@ -69,21 +69,49 @@ function isEexist(err: unknown): boolean {
  * `zod`) resolves — a real project always has the SDK installed.
  *
  * The `"dir"` type argument is a no-op on POSIX and the only correct value on
- * Windows, where a symlink's kind is fixed at creation. An EEXIST is ignored
- * (a caller may link twice into the same fixture); anything else is a real
- * failure and is rethrown, since the alternative is a module-resolution error
- * several layers away from its cause.
+ * Windows, where a symlink's kind is fixed at creation.
+ *
+ * ## An EEXIST is forgiven only when it is ALREADY THIS LINK
+ *
+ * A caller may link twice into the same fixture, so an EEXIST cannot simply be an
+ * error — and for a long time it was simply IGNORED, which is worse. A fixture that
+ * already holds a `node_modules` of its own keeps it, the SDK is never linked, and
+ * the failure surfaces as `Could not resolve "@alexkroman1/aai/utils"` from esbuild
+ * with no mention of a symlink anywhere: the exact "module-resolution error several
+ * layers away from its cause" this rethrow exists to prevent, arriving through the
+ * one path that did not rethrow.
+ *
+ * It is not hypothetical. A stray `node_modules/.vite` left in
+ * `templates/transcription-workflow` by some earlier vite run travelled into the
+ * COPY `template-workflows.test.ts` builds, silently won this EEXIST, and turned a
+ * green tree red on one developer's machine and nowhere else — which reads as a bug
+ * in the template rather than as detritus in a directory.
+ *
+ * So the target is inspected: our own link is a no-op, and anything else THROWS
+ * naming what is there. Fixing the fixture is the caller's job — this helper cannot
+ * know whether that directory was something the test meant to put there.
  */
 export async function linkSdkNodeModules(dir: string): Promise<void> {
-  await fs
-    .symlink(
-      path.resolve(import.meta.dirname, "node_modules"),
-      path.join(dir, "node_modules"),
-      "dir",
-    )
+  const target = path.resolve(import.meta.dirname, "node_modules");
+  const link = path.join(dir, "node_modules");
+  const failed = await fs
+    .symlink(target, link, "dir")
+    .then(() => undefined)
     .catch((err: unknown) => {
-      if (!isEexist(err)) throw err;
+      if (isEexist(err)) return err;
+      throw err;
     });
+  if (failed === undefined) return;
+  // `readlink` rather than `stat`: the question is what this entry IS, and a `stat`
+  // would follow a link to some other package's tree and call it a match.
+  const existing = await fs.readlink(link).catch(() => undefined);
+  if (existing !== undefined && path.resolve(dir, existing) === target) return;
+  throw new Error(
+    `${link} already exists and is not a link to ${target}, so the SDK will not ` +
+      "resolve there. A fixture that carries its own node_modules (stray build " +
+      "output copied in, most likely) has to drop it before linking.",
+    { cause: failed },
+  );
 }
 
 /**
