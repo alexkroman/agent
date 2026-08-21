@@ -1,0 +1,259 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The step where ffmpeg turns an arbitrary recording into something the rest of
+ * the desk can reason about.
+ *
+ * ```text
+ *   materialize   the upload → a temp file   (windowed, nothing on the heap)
+ *   probe         ffprobe                    → what it WAS
+ *   measure       loudnorm pass one          → five numbers
+ *   normalize     loudnorm pass two          → levelled raw PCM + every pause
+ *   store         the PCM → an upload        (streamed)
+ * ```
+ *
+ * Five things, ONE step, and that is the decision in this file worth arguing
+ * about — so here is the argument.
+ *
+ * ## Why not five steps
+ *
+ * Splitting steps buys a cheaper retry: a failure re-runs one stage instead of
+ * five. It costs a MATERIALIZATION each, because a temp file cannot cross a step
+ * boundary (see `temp-media.ts`) — so a five-step version reads the whole
+ * recording out of the upload store five times, and on a 700 MB file that is the
+ * expensive part by an order of magnitude. The decode passes are cheap: ffmpeg
+ * resamples two orders of magnitude faster than realtime, so a two-hour recording
+ * is seconds of CPU.
+ *
+ * The retry it would buy is also mostly imaginary. The stages here fail together:
+ * a corrupt file fails the probe and would have failed both passes, and a
+ * conversion that ran out of time re-runs from the beginning anyway. The one
+ * genuine case — pass two failing after pass one succeeded — is a `timeout`,
+ * which is exactly the case a retry re-does wholesale.
+ *
+ * So: one materialization, three invocations, one journal entry. What that entry
+ * holds is an upload id and some numbers, which is the rule this template obeys
+ * everywhere — a step is replayed by its return value, so bytes must never be in
+ * one.
+ *
+ * ## The two analyses come back by different routes
+ *
+ * `media.ts`'s module doc carries this in full, and it is the single most
+ * surprising thing about the file: loudness arrives on **stderr** (one block,
+ * printed last, so a capped tail holds it) and the pauses arrive in a **file**
+ * (one event per pause, so their size grows with the recording and a tail would
+ * silently drop the earliest ones). Both are read here.
+ */
+
+import { readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { isFfmpegError, probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
+import { throwFatalStepError, throwStepError } from "@alexkroman1/aai/step-errors";
+import { pcmDurationMs, report, uploadInfo, writeUpload } from "@alexkroman1/aai/utils";
+import {
+  ANALYSIS_FORMAT,
+  clock,
+  type Loudness,
+  MediaAnalysisError,
+  measureLoudnessArgs,
+  normalizeArgs,
+  parseLoudness,
+  parseSilences,
+  type Silence,
+  speechFraction,
+} from "./media.ts";
+import { fileChunks, materializeUpload, withTempDir } from "./temp-media.ts";
+
+/**
+ * How long any one ffmpeg invocation may run before it is killed.
+ *
+ * Well past what the work takes, because the reason for a bound at all is a file
+ * that makes a decoder pathological rather than one that is merely long. A
+ * `timeout` is retryable and an `exit` is not; see {@link classifyFfmpeg}.
+ */
+const FFMPEG_TIMEOUT_MS = 20 * 60_000;
+
+/** What the ingest step hands the rest of the run. Numbers and an id — never bytes. */
+export type Ingested = {
+  /**
+   * Upload id of the normalized audio: headerless raw PCM in
+   * {@link ANALYSIS_FORMAT}.
+   *
+   * Every later step addresses this rather than the caller's file, and reads it
+   * by byte range. Because it has no header, byte zero is second zero.
+   */
+  audio: string;
+  /** The uploaded file's own name, so a reader knows which run they are looking at. */
+  source: string;
+  /** What ffprobe made of the original — `aac`, `mp3`, `pcm_s16le`. */
+  codec: string;
+  /** Length of the audio, measured from the PCM byte count rather than from a header. */
+  durationMs: number;
+  /** Size of the normalized PCM. */
+  bytes: number;
+  /** What the recording measured before it was levelled. */
+  loudness: Loudness;
+  /** Every pause long enough to cut in. The fan-out's cut points come from these. */
+  silences: Silence[];
+};
+
+/**
+ * Convert, level, and map the pauses in the recording.
+ *
+ * A step for the ordinary two reasons — it does I/O, and its RESULT is what
+ * everything later addresses — plus one that is specific to what it produces: the
+ * normalization writes a file, so journaling the id means a resumed run reads the
+ * file that already exists instead of paying to make a second one.
+ */
+export async function ingestRecording(uploadId: string): Promise<Ingested> {
+  "use step";
+
+  const stored = await uploadInfo(uploadId);
+  await report(`Reading ${stored.name || uploadId} (${mb(stored.size)}).`);
+
+  return await withTempDir(async (dir) => {
+    const source = join(dir, "source");
+    const normalized = join(dir, "audio.pcm");
+    const silenceLog = join(dir, "silence.txt");
+
+    await materializeUpload(uploadId, stored.size, source);
+
+    // What it WAS, for the progress log and the page. Worth one ffprobe: "41
+    // minutes of aac" explains the shape of the run, where "the recording" leaves
+    // a reader guessing what the desk decided. On a temp FILE rather than a pipe,
+    // so a trailing index is readable.
+    const probed = await probeMedia(source, { timeoutMs: FFMPEG_TIMEOUT_MS }).catch(classifyFfmpeg);
+    const codec = probed.audio?.codec ?? "unknown";
+    await report(
+      `Levelling ${describeSource(codec, probed.durationSec)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
+    );
+
+    // Pass one: measure. `-f null -` decodes every frame and writes no audio, so
+    // this costs a decode and produces five numbers.
+    const measured = await runFfmpeg(measureLoudnessArgs(source), {
+      timeoutMs: FFMPEG_TIMEOUT_MS,
+    }).catch(classifyFfmpeg);
+    const loudness = analyse(() => parseLoudness(measured.stderr));
+
+    // Pass two: apply the measurement, find the pauses, write the audio.
+    await runFfmpeg(normalizeArgs(source, loudness, normalized, silenceLog), {
+      timeoutMs: FFMPEG_TIMEOUT_MS,
+    }).catch(classifyFfmpeg);
+
+    // The duration comes from the BYTE COUNT, not from the original's header or
+    // from ffprobe. It is the only measurement that agrees with the byte offsets
+    // the fan-out will use — a container's declared duration can disagree with
+    // what was actually decoded (an AAC file's encoder padding puts this one ~16ms
+    // over), and a segment planned against the wrong one runs off the end.
+    const bytes = (await stat(normalized)).size;
+    const durationMs = pcmDurationMs(bytes, ANALYSIS_FORMAT);
+
+    // Verified on ffmpeg 6.1: `ametadata` creates the file at filter-init, so a
+    // recording with no pause in it leaves an EMPTY log rather than no log. A
+    // missing file here is therefore a real failure and not a case to tolerate.
+    const log = await readFile(silenceLog, "utf-8");
+    const silences = analyse(() => parseSilences(log, durationMs / 1000));
+
+    const written = await writeUpload(fileChunks(normalized), {
+      // Named after the original, so a download reads as the recording it came
+      // from. `.pcm` because that is what it is — raw samples with no header, and
+      // a `.wav` name on a headerless file is one no player will open.
+      name: `${baseName(stored.name || uploadId)}.pcm`,
+      // Not `audio/wav`: the type is served back on the byte route, and claiming a
+      // container this file does not have would be a lie a browser acts on. Not
+      // `audio/L16` either, which looks right and is not — that type is defined as
+      // BIG-endian 16-bit PCM, where this is `s16le`. Nothing plays this file; the
+      // fan-out reads byte ranges out of it and puts a real header back on each one
+      // with `encodeWav`.
+      type: "application/octet-stream",
+    });
+
+    await report(
+      `Levelled ${clock(durationMs)} from ${loudness.inputLufs} LUFS, ` +
+        `${Math.round(speechFraction(silences, durationMs / 1000) * 100)}% speech across ` +
+        `${silences.length} pause${silences.length === 1 ? "" : "s"}.`,
+    );
+
+    return {
+      audio: written.id,
+      source: stored.name || uploadId,
+      codec,
+      durationMs,
+      bytes,
+      loudness,
+      silences,
+    };
+  });
+}
+
+/**
+ * Retries beyond the default 3.
+ *
+ * Not because a conversion is flaky — a corrupt file fails identically forever,
+ * and {@link classifyFfmpeg} is what stops the DevKit retrying that. It is the
+ * two I/O halves that are worth another attempt: this step reads a whole
+ * recording out of the store and writes a whole one back, and either can lose a
+ * connection on a file this size.
+ */
+ingestRecording.maxRetries = 5;
+
+/**
+ * Turn an ffmpeg failure into the DevKit's verdict.
+ *
+ * The whole reason `FfmpegError.kind` exists, used the way it was meant to be: an
+ * `exit` is ffmpeg having read the file and refused it, so every retry re-reads
+ * the same bytes and reaches the same conclusion while burning the budget a real
+ * transient needs. A `timeout` or an `aborted` is worth another attempt, and a
+ * `missing-binary` is `aai dev` on a laptop with no ffmpeg — fatal, and already
+ * carrying the install instructions in its message.
+ *
+ * **The retryable arm goes through `throwStepError` even though it classifies
+ * nothing**, which is deliberate. `toStepError` reaches a verdict from a
+ * `Response` or from an SDK error that already carries one; an `FfmpegError` is
+ * neither, so it is rethrown UNCHANGED — which the DevKit treats as retryable by
+ * default, the outcome this arm wants. Constructing a `RetryableError` here
+ * instead would replace ffmpeg's own message and its `argv` with a sentence, and
+ * the argv is the thing you paste into a shell.
+ */
+export function classifyFfmpeg(err: unknown): never {
+  if (isFfmpegError(err) && (err.kind === "timeout" || err.kind === "aborted")) {
+    return throwStepError(err);
+  }
+  return throwFatalStepError(err);
+}
+
+/**
+ * Run a `media.ts` reader, turning "I cannot read this analysis" into a terminal
+ * failure.
+ *
+ * Fatal rather than retryable, and the distinction is real: a
+ * {@link MediaAnalysisError} means ffmpeg SUCCEEDED and printed something this
+ * desk does not understand — a version whose `loudnorm` renamed a key, an argv
+ * that lost `-loglevel info`. Every retry runs the same binary with the same argv
+ * and prints the same thing, so the retries only delay a person reading the
+ * message.
+ */
+export function analyse<T>(read: () => T): T {
+  try {
+    return read();
+  } catch (err: unknown) {
+    if (err instanceof MediaAnalysisError) return throwFatalStepError(err);
+    throw err;
+  }
+}
+
+/** `41:20 of aac`, or as much of that as ffprobe would say. */
+function describeSource(codec: string, durationSec: number | undefined): string {
+  const length = durationSec === undefined ? undefined : clock(Math.round(durationSec * 1000));
+  return length === undefined ? codec : `${length} of ${codec}`;
+}
+
+/** A filename without its extension, so a new one can be put on. */
+function baseName(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
+/** A size a person can read, because the number that matters is the scale. */
+function mb(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
