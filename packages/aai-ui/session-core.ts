@@ -24,6 +24,7 @@ import {
   type SessionConfigMessage,
 } from "./session-core-messages.ts";
 import { reconnectPending } from "./session-core-reconnect.ts";
+import { createSessionStateMachine } from "./session-core-state.ts";
 import type {
   ConnState,
   SessionCore,
@@ -90,7 +91,22 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   /** Snapshot fields whose changes bump `contentVersion` (rendered conversation content). */
   const contentKeys = ["messages", "toolCalls", "userTranscript", "agentTranscript"] as const;
 
+  /** Does `partial` leave this field exactly as it already is? */
+  function isUnchanged(key: keyof SessionSnapshot, partial: Partial<SessionSnapshot>): boolean {
+    return partial[key] === currentSnapshot[key];
+  }
+
   function updateState(partial: Partial<SessionSnapshot>): void {
+    // A write that changes no field still notified, so every consumer
+    // re-rendered on every server event that "cleared" an already-null error or
+    // re-announced a state it was already in. Two call sites used to guard that
+    // themselves by reading the snapshot back first; now that the state machine
+    // answers "did anything move" — a declined transition returns the position
+    // unchanged — the check belongs here, where it covers the other thirty
+    // callers too. `session-core-events.test.ts` pins both cases.
+    if (Object.keys(partial).every((key) => isUnchanged(key as keyof SessionSnapshot, partial))) {
+      return;
+    }
     const contentChanged = contentKeys.some(
       (key) => key in partial && partial[key] !== currentSnapshot[key],
     );
@@ -113,10 +129,16 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   // ─── Connection state ───────────────────────────────────────────────────
 
+  /**
+   * The session's `state` and `error`, as one fact rather than two fields
+   * thirteen call sites wrote independently — see `session-core-state.ts`,
+   * which carries the three shipped bugs that arrangement produced.
+   */
+  const agentState = createSessionStateMachine();
+
   const conn: ConnState = {
     ws: null,
     retiredByServer: false,
-    fatalError: false,
     voiceIO: null,
     audioSetupInFlight: false,
     generation: createEpoch(),
@@ -181,6 +203,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     getSnapshot,
     updateState,
     conn,
+    agentState,
     cleanupAudio,
   });
 
@@ -188,6 +211,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     sendJson,
     sendAudio,
     updateState,
+    agentState,
     settleWhenAudioDrained,
     cleanupAudio,
   };
@@ -228,7 +252,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       disconnect();
       return;
     }
-    updateState({ state: "connecting", error: null });
+    updateState(agentState.apply({ type: "CONNECT" }));
     // Prefetch the audio module + worklet sources so the chunk fetch overlaps
     // the WebSocket handshake instead of starting only when the server's
     // `config` frame arrives. Failures are reported by initAudioCapture,
@@ -267,7 +291,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       onRetry: () => {
         cleanupAudio();
         conn.generation.bump();
-        updateState({ state: "connecting", recording: false });
+        updateState({ ...agentState.apply({ type: "CONNECT" }), recording: false });
       },
       onExhausted: () => {
         cleanupAudio();
@@ -276,14 +300,18 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         controller.abort();
         socket.close();
         conn.ws = null;
-        updateState({ state: "error", error: HANDSHAKE_ERROR, running: false, recording: false });
+        updateState({
+          ...agentState.apply({ type: "FAILED", error: HANDSHAKE_ERROR }),
+          running: false,
+          recording: false,
+        });
       },
     });
 
     socket.addEventListener(
       "open",
       () => {
-        updateState({ state: "ready" });
+        updateState(agentState.apply({ type: "SOCKET_OPEN" }));
         handshake.arm();
       },
       { signal: sig },
@@ -330,7 +358,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           // A socket error here is part of the retry cycle, not terminal —
           // clear it so a later clean disconnect isn't misreported.
           socketErrored = false;
-          updateState({ state: "connecting", recording: false });
+          updateState({ ...agentState.apply({ type: "CONNECT" }), recording: false });
           return;
         }
         // Terminal: explicit close, or retries exhausted. Abort first (detaches
@@ -340,21 +368,19 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         controller.abort();
         socket.close();
         conn.ws = null;
-        if (socketErrored) {
-          updateState({
-            state: "error",
-            error: { code: "connection", message: "WebSocket connection error" },
-            running: false,
-            recording: false,
-          });
-        } else if (currentSnapshot.state === "error") {
-          // Keep a fatal error on screen — downgrading it to "disconnected"
-          // would hide why the session ended.
-          updateState({ running: false, recording: false });
-        } else {
-          // A clean close also retires any lingering non-fatal error banner.
-          updateState({ state: "disconnected", error: null, running: false, recording: false });
-        }
+        // One event for what used to be a three-way branch on the snapshot. A
+        // close behind an `error` phase KEEPS it — downgrading to
+        // "disconnected" would hide why the session ended — and a clean close
+        // anywhere else retires a lingering non-fatal banner; which of those
+        // happens is the `error` state's own `CLOSED` handler, not this
+        // caller's to work out. See `session-core-state.ts`.
+        const closed = socketErrored
+          ? agentState.apply({
+              type: "FAILED",
+              error: { code: "connection", message: "WebSocket connection error" },
+            })
+          : agentState.apply({ type: "CLOSED" });
+        updateState({ ...closed, running: false, recording: false });
       },
       { signal: sig },
     );
@@ -369,7 +395,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     // drain, whose continuation must not outlive the turn it belonged to.
     conn.turn.bump();
     conn.voiceIO?.flush();
-    updateState({ state: "listening" });
+    updateState(agentState.apply({ type: "LISTEN" }));
     sendJson({ type: "cancel" });
   }
 
@@ -392,7 +418,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   function disconnect(): void {
     teardownConnection();
-    updateState({ state: "disconnected", running: false, recording: false });
+    // `DISCONNECT` rather than `CLOSED`: it deliberately does NOT clear the
+    // error, so the banner explaining why a session ended survives the hang-up
+    // that follows it.
+    updateState({ ...agentState.apply({ type: "DISCONNECT" }), running: false, recording: false });
   }
 
   function start(): void {
@@ -417,7 +446,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     dialer.forget();
     updateState({
       ...CLEARED_SESSION_STATE,
-      state: "disconnected",
+      ...agentState.apply({ type: "END" }),
       started: false,
       running: false,
       recording: false,

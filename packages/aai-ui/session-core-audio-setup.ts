@@ -13,6 +13,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
+import type { SessionStateMachine } from "./session-core-state.ts";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
 
 /** Dependencies `initAudioCapture` needs from the owning session core. */
@@ -20,6 +21,8 @@ export type AudioSetupDeps = {
   sendJson: (msg: ClientMessage) => void;
   sendAudio: (bytes: ArrayBuffer) => void;
   updateState: (partial: Partial<SessionSnapshot>) => void;
+  /** The session's state and error, as one fact — see `session-core-state.ts`. */
+  agentState: SessionStateMachine;
   /** Turn-boundary-guarded drain from the message handlers — replays a
    *  buffered `audio_done` without stomping a barge-in's state. */
   settleWhenAudioDrained: (io: VoiceIO) => void;
@@ -79,9 +82,11 @@ export async function initAudioCapture(
     // leave the healthy capture worklet streaming into the socket with the
     // mic indicator lit.
     deps.cleanupAudio();
+    // `FAILED`, not `FATAL`: the socket may well still be fine, so a later
+    // server frame is allowed to recover this banner. See
+    // `session-core-state.ts`.
     deps.updateState({
-      state: "error",
-      error: { code: "audio", message },
+      ...deps.agentState.apply({ type: "FAILED", error: { code: "audio", message } }),
       running: false,
       recording: false,
     });
@@ -153,7 +158,7 @@ export async function initAudioCapture(
       conn.preInitDone = false;
       deps.settleWhenAudioDrained(io);
     } else {
-      deps.updateState({ state: "listening" });
+      deps.updateState(deps.agentState.apply({ type: "LISTEN" }));
     }
   } catch (err: unknown) {
     if (stale()) return;

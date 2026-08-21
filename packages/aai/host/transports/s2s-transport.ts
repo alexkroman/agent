@@ -1,7 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 // S2S transport — wraps connectS2s and forwards typed callbacks into the SessionCore.
 
-import { S2S_MAX_RESUME_ATTEMPTS } from "../../sdk/constants.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger, S2SConfig } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
@@ -14,6 +13,7 @@ import {
   type S2sSessionConfig,
 } from "../s2s.ts";
 import { createEmitError } from "./pipeline-error.ts";
+import { createS2sLifecycle } from "./s2s-lifecycle.ts";
 import type { Transport, TransportCallbacks } from "./types.ts";
 
 /** @internal Exposed for testing — allows spying on connectS2s in unit tests. */
@@ -60,25 +60,11 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   const emitError = createEmitError(opts.callbacks);
   let handle: S2sHandle | null = null;
   let currentReplyId: string | null = null;
-  let providerSessionId: string | null = null;
-  let closing = false;
-  // True between sending `session.resume` and the next `session.ready`.
-  // Distinguishes a resume failure (close before ready) from a normal close
-  // and prevents back-to-back reconnect loops if the resumed socket also drops.
-  let reconnecting = false;
-  // Consecutive resume attempts with no real progress in between. Reset when a
-  // resumed session actually does work (a reply starts); caps a server that
-  // keeps accepting a resume then immediately dropping it (flapping loop).
-  let resumeAttempts = 0;
   // Set by cancelReply(): AssemblyAI S2S has no cancel RPC, so audio for the
   // cancelled reply can still be on the wire after the client presses stop.
   // Drop those chunks until the next reply starts, or they resume playback of
   // the very reply the user interrupted.
   let suppressAudioUntilReply = false;
-  // Latched once we surface a fatal connection error (failed/abandoned resume,
-  // fatal close). The session is over; any trailing close from a dead socket
-  // must not re-emit an error or start another resume loop.
-  let sessionEnded = false;
   // Tool results that could not be delivered because the socket was down
   // (dropped mid-tool, awaiting resume). The provider restores the session
   // server-side with its tool calls still unanswered, so these must be
@@ -89,6 +75,71 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   // Aborted by stop() to abandon a handshake that has not completed yet — see
   // stop() and `ConnectS2sOptions.signal`.
   const teardown = new AbortController();
+
+  /**
+   * Where this connection is — `connecting`, `live`, `resuming`, `ended`,
+   * `closed` — and every rule about which of those may become which.
+   *
+   * This replaced `closing`, `sessionEnded`, `reconnecting` and
+   * `resumeAttempts`, along with the dedup each of them doubled as. See
+   * `s2s-lifecycle.ts`; the effects below are the transport's half.
+   */
+  /**
+   * Close and forget the link, absorbing a `close()` that throws.
+   *
+   * Best-effort by nature — the socket is already gone on almost every path
+   * here — and best-effort is also REQUIRED, because both callers run inside a
+   * lifecycle action: XState catches what an action throws, puts the actor into
+   * `status: "error"`, and every later event is then ignored. So a throwing
+   * `close()` would not merely fail to close, it would silently retire the
+   * machine that decides whether inbound frames may still reach the client.
+   * `stop()` is the one place a close failure must propagate, and it does its
+   * own — outside the machine, for exactly this reason.
+   */
+  function closeQuietly(): void {
+    const dying = handle;
+    handle = null;
+    try {
+      dying?.close();
+    } catch (err) {
+      log.warn("S2S close failed", { sid: opts.sid, error: errorMessage(err) });
+    }
+  }
+
+  const lifecycle = createS2sLifecycle({
+    resume: (sessionId: string) => resume(sessionId),
+    dropLink(): void {
+      // Retiring the session must also DROP THE LINK. Most paths reach here
+      // from a close, where the socket is already gone — but not all: when the
+      // service rejects our `session.resume` with `session_not_found` it
+      // reports that IN BAND and leaves the socket OPEN. The transport went on
+      // holding a live (billed) provider session and relaying its frames — user
+      // transcripts, replies, audio — to a client it had just told the call was
+      // over, i.e. one that has released its microphone (aai-ui's
+      // `handleErrorEvent`). Found by
+      // `integration/s2s-fuzz.integration.test.ts`, which reaches the ordering
+      // only when the rejection lands before the resumed socket reports ready.
+      //
+      // Closing here cannot loop: the resulting close event arrives in `ended`,
+      // which only logs it. Queued tool results go too — there is no longer any
+      // socket that could carry them.
+      closeQuietly();
+      pendingToolResults = [];
+    },
+    closeHandle: closeQuietly,
+    // No `fatal` key: this is the one path that really ends an S2S session.
+    reportFatal: (detail: string) => emitError("connection", detail),
+    cancelInFlightReply(): void {
+      if (currentReplyId === null) return;
+      currentReplyId = null;
+      opts.callbacks.report({ type: "reply.cancelled" });
+    },
+    flushPendingToolResults,
+    notifyReady: (sessionId: string) => opts.callbacks.onSessionReady?.(sessionId),
+    currentReplyId: () => currentReplyId,
+    log: (level, message, fields) =>
+      log[level](message, { sid: opts.sid, agent: opts.agent, ...fields }),
+  });
 
   /**
    * Redeliver tool results the dead socket dropped — the restored provider
@@ -107,43 +158,20 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     }
   }
 
-  /** Surface a fatal connection error exactly once and retire the session. */
-  function endSession(detail: string): void {
-    if (sessionEnded) return;
-    sessionEnded = true;
-    // Retiring the session must also DROP THE LINK. Most paths reach here from a
-    // close, where the socket is already gone — but not all: when the service
-    // rejects our `session.resume` with `session_not_found` it reports that IN
-    // BAND and leaves the socket OPEN. The transport went on holding a live
-    // (billed) provider session and relaying its frames — user transcripts,
-    // replies, audio — to a client it had just told the call was over, i.e. one
-    // that has released its microphone (aai-ui's `handleErrorEvent`). Found by
-    // `integration/s2s-fuzz.integration.test.ts`, which reaches the ordering
-    // only when the rejection lands before the resumed socket reports ready.
-    //
-    // Closing here is idempotent and cannot loop: the resulting close event hits
-    // the `sessionEnded` guard at the top of handleClose. Queued tool results go
-    // too — there is no longer any socket that could carry them.
-    handle?.close();
-    handle = null;
-    pendingToolResults = [];
-    // No `fatal` key: this is the one path that really ends an S2S session.
-    emitError("connection", detail);
-  }
-
   /**
    * Gate an inbound provider event on the session still being live.
    *
-   * Closing the socket in `endSession` is the fix; this is the rest of it.
-   * `close()` asks the peer to hang up — it does not un-deliver what is already
-   * buffered, so `ws` can still emit `message` events between the call and the
-   * socket actually closing. Every one of those would be relayed to a client
-   * that has been told the call is over and has released its microphone
-   * (aai-ui's `handleErrorEvent`), which is the thing being fixed.
+   * Closing the socket in the lifecycle's `dropLink` is the fix; this is the
+   * rest of it. `close()` asks the peer to hang up — it does not un-deliver
+   * what is already buffered, so `ws` can still emit `message` events between
+   * the call and the socket actually closing. Every one of those would be
+   * relayed to a client that has been told the call is over and has released
+   * its microphone (aai-ui's `handleErrorEvent`), which is the thing being
+   * fixed.
    */
   function whileLive<A extends unknown[]>(fn: (...args: A) => void): (...args: A) => void {
     return (...args: A) => {
-      if (sessionEnded || closing) return;
+      if (!lifecycle.acceptsInbound()) return;
       fn(...args);
     };
   }
@@ -165,21 +193,11 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
 
   function buildCallbacks(): S2sCallbacks {
     return {
-      // NOT gated, deliberately, and the only three: they carry their own
-      // latches (`sessionEnded`, `closing`, `reconnecting`), they are what
-      // DRIVES the retirement the gate reads, and `onClose` still has logging
-      // to do after it.
-      onSessionExpired: () => {
-        // Server reports session no longer exists (likely session_not_found
-        // in response to our resume). Surface as fatal — nothing to resume.
-        if (reconnecting) {
-          log.warn("S2S resume rejected: session expired", { sid: opts.sid });
-          failResume("S2S resume failed: session expired");
-          return;
-        }
-        log.info("S2S session expired", { sid: opts.sid });
-        handle?.close();
-      },
+      // NOT gated, deliberately, and the only three: they DRIVE the phase the
+      // gate reads, so gating them on it would be circular — a close could
+      // never retire a session, because retirement is what the gate consults.
+      // What "in a resume, or not" means to each is the lifecycle's business.
+      onSessionExpired: () => lifecycle.send({ type: "EXPIRED" }),
       // An in-band service error is NOT the end of the session, and must not be
       // reported as one. Neither this path nor `connectS2s` closes the socket:
       // `session.error` with a non-expiry code (a rate limit, a rejected field)
@@ -196,30 +214,23 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       // (`clearRecoveredError`), leaving a session that looks live and can never
       // hear the user again.
       //
-      // Session death has exactly one reporter: `endSession`, driven by the
-      // close and failed-resume paths, which are the only places that know the
-      // link is gone. An error that really is terminal is followed by the
-      // service closing the socket, so it still surfaces there — with the close
-      // code attached, which is strictly more diagnostic than this frame.
+      // Session death has exactly one reporter: the lifecycle's `reportFatal`,
+      // driven by the close and failed-resume paths, which are the only places
+      // that know the link is gone. An error that really is terminal is
+      // followed by the service closing the socket, so it still surfaces there
+      // — with the close code attached, which is strictly more diagnostic than
+      // this frame.
       onError: (err) => emitError("internal", err.message, { fatal: false }),
       onClose: (code, reason) => handleClose(code, reason),
       ...gateInbound({
-        onSessionReady: (id: string) => {
-          const isFirstReady = providerSessionId === null;
-          providerSessionId = id;
-          if (reconnecting) {
-            reconnecting = false;
-            log.info("S2S resumed", { sid: opts.sid, sessionId: id });
-          } else if (isFirstReady) {
-            log.info("S2S session ready", { sid: opts.sid, sessionId: id });
-          }
-          flushPendingToolResults();
-          opts.callbacks.onSessionReady?.(id);
-        },
+        // Which log line this deserves — first ready, a resume, or a rename —
+        // is a question about the phase, so the lifecycle answers it and owns
+        // the flush and the notify that follow.
+        onSessionReady: (id: string) => lifecycle.send({ type: "READY", sessionId: id }),
         onReplyStarted: (replyId: string) => {
           // A reply on the (possibly resumed) socket is real progress — the
           // session is healthy again, so clear the flapping-resume counter.
-          resumeAttempts = 0;
+          lifecycle.send({ type: "PROGRESS" });
           suppressAudioUntilReply = false;
           currentReplyId = replyId;
           opts.callbacks.onReplyStarted(replyId);
@@ -263,117 +274,17 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     };
   }
 
-  function canResumeAfter(code: number): boolean {
-    return TRANSIENT_CLOSE_CODES.has(code) && providerSessionId !== null && !reconnecting;
-  }
-
   /**
-   * Report a failed resume exactly once. A failed resume attempt surfaces
-   * through up to two paths — the resume socket's `close` event and the
-   * rejected `connectS2s` promise — in either order depending on how the
-   * socket died; the `reconnecting` guard makes whichever lands first the
-   * only one that emits. Clearing `providerSessionId` retires the session
-   * (single resume attempt), so a trailing transient `close` can't loop
-   * back into `startResume`.
+   * Handle the close by handing the lifecycle the ONE fact it cannot read off a
+   * phase: whether this close code is a network blip or a protocol verdict.
+   *
+   * Everything the four latches used to decide here — is this our own hang-up,
+   * a trailing close from a session already retired, a failed resume, a
+   * resumable drop, or the end — is now which phase the `CLOSED` event arrives
+   * in. See `s2s-lifecycle.ts`.
    */
-  function failResume(detail: string): void {
-    if (!reconnecting) return;
-    reconnecting = false;
-    providerSessionId = null;
-    endSession(detail);
-  }
-
-  function emitFatalClose(code: number, reason: string, wasReconnecting: boolean): void {
-    if (wasReconnecting) {
-      // Fresh resume socket closed before session.ready — resume failed.
-      failResume(`S2S resume failed (code=${code})`);
-      return;
-    }
-    if (currentReplyId !== null) {
-      log.warn("S2S closed with active reply", {
-        sid: opts.sid,
-        agent: opts.agent,
-        activeReplyId: currentReplyId,
-        code,
-        reason,
-      });
-      endSession(`S2S closed mid-reply (code=${code})`);
-      return;
-    }
-    // An unexpected close with no reply in flight is NOT harmless: a
-    // client-initiated close was already filtered out in handleClose (the
-    // `closing` guard) and a session already declared dead is filtered by the
-    // `sessionEnded` guard, so reaching here means the provider dropped a live
-    // idle session. Staying silent left the client "connected" while every
-    // later utterance vanished into a dead handle until the idle timeout.
-    log.warn("S2S closed unexpectedly while idle", {
-      sid: opts.sid,
-      agent: opts.agent,
-      code,
-      reason,
-    });
-    endSession(`S2S closed unexpectedly (code=${code})`);
-  }
-
-  function startResume(prevId: string, code: number, reason: string): void {
-    // Bound a flapping server that keeps accepting a resume then dropping it.
-    // resumeAttempts resets on real progress (onReplyStarted), so a healthy
-    // session that drops once always gets a fresh budget.
-    if (resumeAttempts >= S2S_MAX_RESUME_ATTEMPTS) {
-      log.warn("S2S giving up on resume — attempt cap reached", {
-        sid: opts.sid,
-        agent: opts.agent,
-        attempts: resumeAttempts,
-        code,
-      });
-      providerSessionId = null;
-      endSession(`S2S resume abandoned after ${resumeAttempts} attempts (code=${code})`);
-      return;
-    }
-    resumeAttempts++;
-    reconnecting = true;
-    log.warn("S2S unexpected close — attempting resume", {
-      sid: opts.sid,
-      agent: opts.agent,
-      code,
-      reason,
-      prevSessionId: prevId,
-    });
-    // The in-flight reply is gone; unblock SessionCore's turn promise.
-    if (currentReplyId !== null) {
-      currentReplyId = null;
-      opts.callbacks.report({ type: "reply.cancelled" });
-    }
-    void resume(prevId).catch((err: unknown) => {
-      // Throw-safe: the logger and onError sink are caller-injectable, and a
-      // throw from this handler would itself be an unhandled rejection.
-      try {
-        const msg = errorMessage(err);
-        log.warn("S2S resume failed", { sid: opts.sid, error: msg });
-        failResume(`S2S resume failed: ${msg}`);
-      } catch {
-        // Nothing further to report the failure to.
-      }
-    });
-  }
-
   function handleClose(code: number, reason: string): void {
-    if (closing) {
-      log.info("S2S closed", { code, reason });
-      return;
-    }
-    if (sessionEnded) {
-      // Trailing close from a socket whose session we already declared dead.
-      log.info("S2S trailing close after session ended", { code, reason });
-      return;
-    }
-    const wasReconnecting = reconnecting;
-    const prevId = providerSessionId;
-    if (!canResumeAfter(code) || prevId === null) {
-      emitFatalClose(code, reason, wasReconnecting);
-      return;
-    }
-    startResume(prevId, code, reason);
+    lifecycle.send({ type: "CLOSED", code, reason, transient: TRANSIENT_CLOSE_CODES.has(code) });
   }
 
   async function connect(onReady: (h: S2sHandle) => void): Promise<void> {
@@ -390,17 +301,20 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       });
     } catch (err) {
       // We abandoned this handshake ourselves in stop(); the client is gone, so
-      // there is nothing to report and no session left to fail.
-      if (closing) return;
+      // there is nothing to report and no session left to fail. A rejection in
+      // any other phase is the caller's to see: on the resume path it is the
+      // invoked actor's failure (see `s2s-lifecycle.ts`), and on the first
+      // handshake it rejects `start()`.
+      if (lifecycle.phase() === "closed") return;
       throw err;
     }
-    // stop() may have run while the handshake was in flight (client
-    // disconnected during connect). At that point `handle` was still null, so
-    // stop()'s close() was a no-op — close the resolved socket now or it leaks
-    // a live (billed) provider session. `sessionEnded` is the same situation
-    // arrived at differently: the session was retired mid-handshake, so
-    // installing this socket would resume a session already declared dead.
-    if (closing || sessionEnded) {
+    // The phase may have moved while the handshake was in flight — a client
+    // disconnect, or a session retired mid-handshake. `handle` was still null
+    // then, so the teardown's close() was a no-op; close the resolved socket
+    // now or it leaks a live (billed) provider session. This check survives the
+    // move to a statechart because the socket is opened by a PROMISE the
+    // machine does not own: stopping the invoked actor cannot un-resolve it.
+    if (!lifecycle.acceptsInbound()) {
       newHandle.close();
       return;
     }
@@ -417,14 +331,22 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   async function stop(): Promise<void> {
-    closing = true;
-    // Abandons a handshake that has not completed yet. `handle?.close()` below
-    // can only reach a socket that OPENED — a resume still waiting on its `open`
-    // has produced no handle, and `ws` sets no handshakeTimeout, so without this
-    // a client that hangs up mid-resume left a half-open (billed) provider
-    // connection pinned for the life of the process. Found by
-    // `integration/s2s-fuzz.integration.test.ts`, which shrank it to two
-    // commands: session.ready, then a transient drop.
+    // The phase first: entering `closed` stops any resume actor in flight,
+    // which is the half that used to be missing — the `closing` latch could be
+    // set while `reconnecting` was still true.
+    lifecycle.send({ type: "STOP" });
+    // Then the teardown, HERE rather than as the machine's entry action: XState
+    // turns what an action throws into an actor error, and a throwing
+    // `handle.close()` has to reach the caller — the runtime's shutdown warning
+    // is the only thing that tells an operator a provider link leaked.
+    //
+    // `teardown.abort()` abandons a handshake that has not completed yet.
+    // `handle?.close()` can only reach a socket that OPENED — a resume still
+    // waiting on its `open` has produced no handle, and `ws` sets no
+    // handshakeTimeout, so without the abort a client that hangs up mid-resume
+    // left a half-open (billed) provider connection pinned for the life of the
+    // process. Found by `integration/s2s-fuzz.integration.test.ts`, which
+    // shrank it to two commands: session.ready, then a transient drop.
     teardown.abort();
     pendingToolResults = [];
     handle?.close();
@@ -442,7 +364,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       // (reassigned only when the replacement connects), so the send reports
       // failure; queue for redelivery once the resumed session is ready.
       const delivered = handle?.sendToolResult(callId, result) === true;
-      if (!(delivered || closing || sessionEnded)) {
+      if (!delivered && lifecycle.acceptsInbound()) {
         log.info("S2S tool.result queued for redelivery", { sid: opts.sid, callId });
         pendingToolResults.push({ callId, result });
       }

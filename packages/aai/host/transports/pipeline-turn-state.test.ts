@@ -96,4 +96,83 @@ describe("createTurnMachine", () => {
     turns.openAudioGate();
     expect(turns.audioGateOpen()).toBe(true);
   });
+
+  test("draining brackets the drain and is only ever true in flight", () => {
+    const turns = createTurnMachine();
+    const ctl = new AbortController();
+    expect(turns.draining()).toBe(false);
+
+    turns.begin(ctl);
+    turns.setDraining(true);
+    expect(turns.draining()).toBe(true);
+    expect(turns.inFlight()).toBe(true);
+
+    turns.setDraining(false);
+    expect(turns.draining()).toBe(false);
+  });
+
+  test("a turn that settles mid-drain leaves nothing draining", () => {
+    const turns = createTurnMachine();
+    const ctl = new AbortController();
+    turns.begin(ctl);
+    turns.setDraining(true);
+
+    // `runReply` pairs setDraining(false) in a finally, so this is the abort
+    // path — where the drain state is discarded rather than closed. It is a
+    // substate of `running`, so leaving the turn takes it along: a
+    // `draining() && !inFlight()` reading is unrepresentable.
+    turns.settle(ctl);
+
+    expect(turns.inFlight()).toBe(false);
+    expect(turns.draining()).toBe(false);
+  });
+
+  test("a replacement turn does not inherit the previous one's drain", () => {
+    const turns = createTurnMachine();
+    turns.begin(new AbortController());
+    turns.setDraining(true);
+
+    turns.begin(new AbortController());
+
+    expect(turns.inFlight()).toBe(true);
+    expect(turns.draining()).toBe(false);
+  });
+
+  test("an interrupt mid-drain clears it along with the turn", () => {
+    const turns = createTurnMachine();
+    const ctl = new AbortController();
+    turns.begin(ctl);
+    turns.setDraining(true);
+
+    turns.interrupt();
+
+    expect(ctl.signal.aborted).toBe(true);
+    expect(turns.draining()).toBe(false);
+    expect(turns.inFlight()).toBe(false);
+  });
+
+  test("a resume scope with no turn in it is not a resume in flight", () => {
+    const turns = createTurnMachine();
+    const ctl = new AbortController();
+
+    // The scope brackets the whole chained call, so it opens before `begin`
+    // and closes after `settle` — the two moments this predicate exists for.
+    turns.setResumeScope(true);
+    expect(turns.resumeInFlight()).toBe(false);
+
+    turns.begin(ctl);
+    expect(turns.resumeInFlight()).toBe(true);
+
+    turns.settle(ctl);
+    expect(turns.resumeInFlight()).toBe(false);
+
+    turns.setResumeScope(false);
+    expect(turns.resumeInFlight()).toBe(false);
+  });
+
+  test("an ordinary turn inside no resume scope is not a resume", () => {
+    const turns = createTurnMachine();
+    turns.begin(new AbortController());
+    expect(turns.resumeInFlight()).toBe(false);
+  });
 });
