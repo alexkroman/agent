@@ -15,8 +15,8 @@
 
 import {
   type DeepReadonly,
+  derivedFlow,
   type FlowPosition,
-  flow,
   pushCapped,
   sessionSlot,
 } from "@alexkroman1/aai";
@@ -88,11 +88,7 @@ export const planSlot = sessionSlot("plan", emptyPlan);
  * three because `start_plan` is always legal — a caller may re-plan from
  * scratch at any point, which is the one transition that is not a progression.
  */
-const planMachine = setup({
-  types: {} as {
-    events: { type: "PLANNED" } | { type: "ANSWERED" } | { type: "REOPENED" };
-  },
-}).createMachine({
+const planMachine = setup({}).createMachine({
   id: "plan",
   initial: "idle",
   states: {
@@ -121,11 +117,25 @@ const planMachine = setup({
 });
 
 /**
- * The flow. Its own slot key, because a flow stores an actor snapshot and
- * {@link planSlot} stores the plan — the position and the payload are two
- * things, and one tool call moves both.
+ * The flow, DERIVED from the plan.
+ *
+ * The three states were already three readings of `PlanState`, which is what the
+ * removed guards were doing by hand — `!plan.objective` IS `idle`, and a
+ * `response` IS `answered`. So the position is those fields read through the
+ * machine's vocabulary rather than a snapshot beside them, and the three events
+ * are gone: `start_plan` writing an objective and clearing the response is what
+ * moves the flow to `working`, and `work_next_step` writing a response is what
+ * moves it to `answered`.
+ *
+ * What that removes is the class of bug where a tool wrote the data and forgot
+ * the event (or sent the event and did not write). `work_next_step`'s
+ * `sendFrom` had to derive `ANSWERED` from the very field the position is now
+ * read from — the same fact, computed twice, one of them optional.
  */
-export const planFlow = flow("planFlow", planMachine);
+export const planFlow = derivedFlow(planMachine, planSlot, (plan) => {
+  if (!plan.objective) return "idle";
+  return plan.response === null ? "working" : "answered";
+});
 
 /**
  * How the stage reads to a caller, from the flow's own position.

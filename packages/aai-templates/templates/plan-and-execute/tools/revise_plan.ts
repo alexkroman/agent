@@ -34,8 +34,6 @@ export default planFlow.tool({
       .describe("What the caller now wants changed, in their own words"),
   }),
   when: ["working", "answered"],
-  sendFrom: (outcome: { finished: boolean }) =>
-    outcome.finished ? ({ type: "ANSWERED" } as const) : ({ type: "REOPENED" } as const),
   async execute(args, ctx) {
     try {
       const act = await replanNode(ctx.generate, planSlot.get(ctx), {

@@ -492,3 +492,102 @@ describe("stored shape", () => {
     expect(claim.position(ctx).state).toBe("verifying");
   });
 });
+
+describe("the invariant", () => {
+  /**
+   * A flow beside the slot it is ABOUT, wired the way a template wires one: the
+   * position says a quote is in progress, and `quoted` is the data that has to
+   * agree with it.
+   */
+  function quoteFlow(store: { quoted: boolean }) {
+    return flow("claim", claimMachine(), {
+      invariant: (at) =>
+        at.state === "quoting" && !store.quoted
+          ? "the position says quoting but no quote was recorded."
+          : undefined,
+    });
+  }
+
+  test("agreeing position and data let a gated tool through", async () => {
+    const store = { quoted: true };
+    const claim = quoteFlow(store);
+    const tool = claim.tool({ description: "d", when: "quoting", execute: () => ({ ok: true }) });
+    const ctx = createToolContext();
+    claim.send(ctx, { type: "VERIFIED" });
+
+    expect(claim.check(ctx)).toBeUndefined();
+    expect(await run(tool, ctx)).toMatchObject({ state: "quoting", result: { ok: true } });
+  });
+
+  test("a disagreement refuses the call and NAMES it, rather than gating on it", async () => {
+    // The failure this exists to prevent: without the invariant the position is
+    // `quoting`, the gate passes, and the body runs against data that never had
+    // a quote in it. With it, the refusal says which two things disagree.
+    const store = { quoted: false };
+    const claim = quoteFlow(store);
+    const ran = { body: false };
+    const tool = claim.tool({
+      description: "d",
+      when: "quoting",
+      execute: () => {
+        ran.body = true;
+        return { ok: true };
+      },
+    });
+    const ctx = createToolContext();
+    claim.send(ctx, { type: "VERIFIED" });
+
+    const answered = await run(tool, ctx);
+    expect(isToolFailure(answered)).toBe(true);
+    expect(isToolFailure(answered) && answered.error).toContain("no quote was recorded");
+    expect(isToolFailure(answered) && answered.error).toContain("bug in the agent");
+    // The body did not run, and the refusal is NOT the ordinary out-of-state one.
+    expect(ran.body).toBe(false);
+    expect(isToolFailure(answered) && answered.error).not.toContain("Not available yet");
+  });
+
+  test("check() answers at the seam that breaks it, before any tool is called", () => {
+    const store = { quoted: false };
+    const claim = quoteFlow(store);
+    const ctx = createToolContext();
+    expect(claim.check(ctx)).toBeUndefined(); // `verifying` — nothing claimed yet
+    claim.send(ctx, { type: "VERIFIED" });
+    expect(claim.check(ctx)).toContain("no quote was recorded");
+  });
+
+  test("a flow that declares no invariant always agrees", async () => {
+    const claim = flow("claim", claimMachine());
+    const tool = claim.tool({ description: "d", when: "verifying", execute: () => 1 });
+    const ctx = createToolContext();
+    expect(claim.check(ctx)).toBeUndefined();
+    expect(await run(tool, ctx)).toMatchObject({ result: 1 });
+  });
+
+  test("the invariant is read BEFORE the gate, so a stale position cannot mask it", async () => {
+    // Out of state AND disagreeing: the disagreement is the more useful fact,
+    // because the out-of-state refusal would send the model to fix the wrong
+    // thing — it names a position that is itself untrustworthy.
+    const store = { quoted: false };
+    const claim = quoteFlow(store);
+    const tool = claim.tool({ description: "d", when: "verifying", execute: () => 1 });
+    const ctx = createToolContext();
+    claim.send(ctx, { type: "VERIFIED" }); // now in `quoting`, which disagrees
+
+    const answered = await run(tool, ctx);
+    expect(isToolFailure(answered) && answered.error).toContain("disagree");
+  });
+
+  test("a ToolFailure body still blocks the transition with an invariant declared", async () => {
+    const store = { quoted: true };
+    const claim = quoteFlow(store);
+    const tool = claim.tool({
+      description: "d",
+      when: "verifying",
+      send: { type: "VERIFIED" },
+      execute: () => toolFailure("nope"),
+    });
+    const ctx = createToolContext();
+    expect(await run(tool, ctx)).toEqual({ error: "nope" });
+    expect(claim.position(ctx).state).toBe("verifying");
+  });
+});

@@ -37,10 +37,9 @@
 
 import {
   type DeepReadonly,
-  flow,
+  derivedFlow,
   pushCapped,
   sessionSlot,
-  type ToolContext,
   type ToolFailure,
 } from "@alexkroman1/aai";
 import { setup } from "xstate";
@@ -366,9 +365,7 @@ export function note(state: TripState, entry: string): void {
  * only say "you are in awaitingConfirmation", since a state's instruction is
  * static. So the specific refusal stays where it is and the flow follows it.
  */
-const gateMachine = setup({
-  types: {} as { events: { type: "STAGED" } | { type: "SETTLED" } },
-}).createMachine({
+const gateMachine = setup({}).createMachine({
   id: "gate",
   initial: "browsing",
   states: {
@@ -377,6 +374,9 @@ const gateMachine = setup({
         instruction:
           "Nothing is waiting for the caller's yes. Stage a change with a booking tool first.",
       },
+      // The transitions are for a READER and a visualizer: a derived flow's
+      // position comes from `pending`, so these document the two edges that
+      // field can take rather than enforcing them.
       on: { STAGED: "awaitingConfirmation" },
     },
     awaitingConfirmation: {
@@ -390,16 +390,24 @@ const gateMachine = setup({
 });
 
 /**
- * Whether a change is waiting on the caller's word.
+ * Whether a change is waiting on the caller's word — DERIVED from the trip.
  *
- * Its own slot, beside {@link tripSlot}: the flow holds the POSITION and the
- * trip holds the staged action itself, because an inspectable
- * {@link PendingAction} is what `confirm_action` re-derives the effect from. One
- * tool call always moves both — {@link stageAction} sends `STAGED` in the same
- * synchronous window it writes `pending` in, and the two settling tools send
- * `SETTLED` only on success.
+ * There is nothing here to keep in step. `pending` IS the gate: a staged action
+ * is a change awaiting a yes, and no staged action is not one, so the position
+ * is that field read through the machine's vocabulary rather than a second value
+ * beside it.
+ *
+ * It used to be a `flow()` with its own slot, and the seam it removed is the one
+ * worth naming: {@link stageAction} had to send `STAGED` in the same synchronous
+ * window it wrote `pending` in, and the two settling tools had to remember
+ * `SETTLED`. Three places had to agree, each of them correct, and the
+ * "reachable only if the position and the payload disagree" arms below existed
+ * because nothing enforced that they did. A derived position cannot disagree
+ * with the field it is computed from.
  */
-export const gateFlow = flow("gate", gateMachine);
+export const gateFlow = derivedFlow(gateMachine, tripSlot, (trip) =>
+  trip.pending ? "awaitingConfirmation" : "browsing",
+);
 
 /**
  * Describe a staged action in one sentence, in the second person — this is
@@ -456,7 +464,6 @@ export function describeAction(action: DeepReadonly<PendingAction>): string | To
  * model ask about that one first and restage the rest afterwards.
  */
 export function stageAction(
-  ctx: ToolContext,
   state: TripState,
   action: PendingAction,
 ):
@@ -473,12 +480,9 @@ export function stageAction(
         "Only one change can be waiting at a time — nothing about this request has been staged.",
     };
   }
+  // This write IS the transition: `gateFlow` reads `pending`, so the position is
+  // `awaitingConfirmation` from here on with nothing else to send.
   state.pending = action;
-  // The flow moves in the SAME synchronous window `pending` is written in, so
-  // the position and the payload cannot be observed disagreeing. `gateFlow` is
-  // a different slot from `tripSlot`, so this is not a nested write to the draft
-  // being held — the open-draft guard is per slot.
-  gateFlow.send(ctx, { type: "STAGED" });
   note(state, `Awaiting confirmation: ${described}`);
   return {
     awaitingConfirmation: true,

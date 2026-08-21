@@ -1,0 +1,18 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "flow",
+  "epoch": 2,
+  "sha256": "e318efb60b943c1afa620e7d5e618b225cbca344767db5497b5bb49d87f6a346",
+  "exports": [
+    "DerivedFlow",
+    "DerivedFlowToolDef",
+    "Flow",
+    "FlowOptions",
+    "FlowPosition",
+    "FlowToolDef",
+    "FlowToolResult",
+    "UnknownFlowStateError",
+    "derivedFlow",
+    "flow"
+  ]
+}

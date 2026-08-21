@@ -1,6 +1,5 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
-import { flow, isToolFailure, pushCapped, sessionSlot } from "@alexkroman1/aai";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { derivedFlow, isToolFailure, pushCapped, sessionSlot } from "@alexkroman1/aai";
 import { setup } from "xstate";
 import type { z } from "zod";
 import seedJson from "./seed.json";
@@ -106,9 +105,7 @@ export const retailSlot = sessionSlot("retail", createDefaultState);
  * WHO it is identified as are two facts: this holds the first,
  * `authenticatedUserId` holds the second.
  */
-const callMachine = setup({
-  types: {} as { events: { type: "IDENTIFIED" } | { type: "TRANSFERRED" } },
-}).createMachine({
+const callMachine = setup({}).createMachine({
   id: "call",
   initial: "identifying",
   states: {
@@ -146,10 +143,19 @@ const callMachine = setup({
 });
 
 /**
- * The flow. Its own slot key beside {@link retailSlot}: the flow holds the
- * POSITION and the store holds the customer, the orders and the activity feed.
+ * The flow, DERIVED from the store rather than stored beside it.
+ *
+ * The three positions were already three facts about the store — nobody
+ * identified, one customer latched, handed to a human — so holding a second
+ * copy in an actor snapshot bought nothing and cost the two `send`s the finders
+ * and the transfer had to remember. `authenticatedUserId` is what `serving`
+ * MEANS, which is why the `authenticatedUser` guard below is no longer a second
+ * reading of the same question: it and the gate now read one field.
  */
-export const callFlow = flow("call", callMachine);
+export const callFlow = derivedFlow(callMachine, retailSlot, (state) => {
+  if (state.transferred) return "transferred";
+  return state.authenticatedUserId === null ? "identifying" : "serving";
+});
 
 /** Every state a tool may run in before the call is handed to a human — i.e.
  *  everything but `transferred`. What the five formerly `requiresAuth: false`
@@ -296,10 +302,6 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
    * being the same claim, and they were never the same claim.
    */
   when: string | readonly string[];
-  /** The event to send once the body has succeeded, for a tool that MOVES the
-   *  call. Three do: the two finders send `IDENTIFIED`, the transfer sends
-   *  `TRANSFERRED`. Nothing is sent when the body answers a `ToolFailure`. */
-  send?: { type: "IDENTIFIED" } | { type: "TRANSFERRED" };
   summary: (args: z.output<S>, result: R) => string;
   /**
    * Handed the store as its second argument, and SYNCHRONOUS.
@@ -372,11 +374,6 @@ export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
     description: spec.description,
     inputSchema: spec.inputSchema,
     when: spec.when,
-    // `omitUndefined` rather than a conditional spread: `exactOptionalPropertyTypes`
-    // is on, so an explicit `send: undefined` is not the same as an absent one —
-    // and only three of the fifteen tools declare an event (guard-invariants
-    // rule 2).
-    ...omitUndefined({ send: spec.send }),
     execute: (args, ctx) =>
       retailSlot.update(ctx, (state) => {
         const typedArgs = args as z.output<S>;

@@ -123,6 +123,16 @@ export interface RetailState {
   store: Store;
   /** Set by the two finder tools. Null until the caller is identified. */
   authenticatedUserId: string | null;
+  /**
+   * Whether the call has been handed to a human.
+   *
+   * A DATA field because `callFlow` is derived from this state, and the terminal
+   * position has to be readable from it. It used to exist only inside the flow's
+   * stored snapshot, which meant the one fact the policy cares about most — "say
+   * nothing after the transfer" — was invisible to the store, to the projection
+   * and to every test that read the state.
+   */
+  transferred: boolean;
   /** Monotonic. Every tool call increments it, which is what guarantees the
    *  projection differs and therefore gets pushed — `syncState` sends only
    *  when the projected result changed. */
@@ -156,6 +166,7 @@ export function emptyRetailState(): RetailState {
   return {
     store: { users: {}, orders: {}, products: {} },
     authenticatedUserId: null,
+    transferred: false,
     callSeq: 0,
     activity: [],
     focus: {},

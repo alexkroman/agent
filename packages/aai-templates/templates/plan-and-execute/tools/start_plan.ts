@@ -1,7 +1,7 @@
 import { errorMessage, tool, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { planNode } from "../graph.ts";
-import { noteRevision, planFlow, planSlot } from "../shared.ts";
+import { noteRevision, planSlot } from "../shared.ts";
 
 /**
  * Their `plan_step`, as the call's opening move.
@@ -38,11 +38,11 @@ export default tool({
       return toolFailure(`The planner failed: ${errorMessage(err)}`);
     }
 
-    // The flow moves first: `work_next_step` gates on `working`, and a plan
-    // written to the slot while the flow still said `idle` would be refused by
-    // its own next tool call.
-    planFlow.send(ctx, { type: "PLANNED" });
-
+    // No transition to order against the write any more: `planFlow` is derived
+    // from the plan, so writing the objective IS the move to `working`. This used
+    // to `send({ type: "PLANNED" })` BEFORE the update, because a plan written
+    // while the position still said `idle` would be refused by its own next tool
+    // call — an ordering hazard the derived shape cannot have.
     return planSlot.update(ctx, (plan) => {
       plan.objective = args.objective;
       plan.plan = steps;

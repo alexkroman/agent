@@ -71,8 +71,6 @@ export default planFlow.tool({
     "step — never in a loop. Say a short 'let me look into that' first, since " +
     "the step may take a few seconds.",
   when: "working",
-  sendFrom: (outcome: StepOutcome) =>
-    outcome.response === undefined ? undefined : ({ type: "ANSWERED" } as const),
   async execute(_args, ctx) {
     // The whole read-and-claim, in one window nothing can interleave with.
     const claimed = planSlot.update(ctx, (plan): Claim => {

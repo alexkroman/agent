@@ -85,12 +85,4 @@ export default storyFlow.tool({
         gameOver: state.gameOver,
       };
     }),
-  // A burn CONSUMES the standing roll (`lastRoll` is cleared), so the resting
-  // event is `SETTLED` rather than `ROLLED` — where `action_roll` leaves one
-  // standing, this one spends it. A burn that emptied the last track is as
-  // final as a roll that did.
-  sendFrom: (result) =>
-    "gameOver" in result && result.gameOver
-      ? { type: "DOWNED" as const }
-      : { type: "SETTLED" as const },
 });

@@ -522,6 +522,27 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
 export type DefaultToolResult = any;
 
 // @public
+export interface DerivedFlow<M extends AnyStateMachine, T> {
+    locate(data: DeepReadonly<T>): string;
+    readonly machine: M;
+    matches(ctx: ToolContext, state: string): boolean;
+    position(ctx: ToolContext): FlowPosition;
+    projection<V>(project: (position: FlowPosition) => V): StateProjection<V>;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DerivedFlowToolDef<P, R>): ToolDef<P>;
+}
+
+// @public
+export function derivedFlow<M extends AnyStateMachine, K extends string, T>(machine: M, slot: SessionSlot<K, T>, locate: (data: DeepReadonly<T>) => string): DerivedFlow<M, T>;
+
+// @public
+export interface DerivedFlowToolDef<P extends ToolInputSchema, R> {
+    description: string;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
+    inputSchema?: P;
+    when: string | readonly string[];
+}
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public
@@ -534,6 +555,7 @@ export type FindOptions = {
 
 // @public
 export interface Flow<M extends AnyStateMachine> {
+    check(ctx: ToolContext): string | undefined;
     readonly key: string;
     readonly machine: M;
     matches(ctx: ToolContext, state: string): boolean;
@@ -550,6 +572,7 @@ export function flow<M extends AnyStateMachine>(key: string, machine: M, options
 // @public
 export interface FlowOptions {
     durable?: boolean;
+    invariant?: (position: FlowPosition, ctx: ToolContext) => string | undefined;
 }
 
 // @public
@@ -1142,6 +1165,12 @@ export type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
+
+// @public
+export class UnknownFlowStateError extends Error {
+    constructor(machineId: string, state: string, valid: ReadonlySet<string>);
+    readonly state: string;
+}
 
 // @public
 export type WakeUpOptions = {

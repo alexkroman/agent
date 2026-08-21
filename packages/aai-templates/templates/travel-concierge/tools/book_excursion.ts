@@ -9,8 +9,8 @@ export default tripSlot.updateTool({
   inputSchema: z.object({
     excursionId: z.string().max(20).describe("The excursion id from search_excursions, e.g. 'E2'"),
   }),
-  execute(args, trip, ctx) {
-    return stageAction(ctx, trip, {
+  execute(args, trip) {
+    return stageAction(trip, {
       kind: "book_excursion",
       excursionId: args.excursionId.toUpperCase(),
     });

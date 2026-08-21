@@ -105,3 +105,67 @@ export function statePaths(machine: AnyStateMachine): Set<string> {
   walk(machine.states as Parameters<typeof walk>[0], "");
   return paths;
 }
+
+/**
+ * One state node's declared `meta.instruction`, walking a DOTTED PATH.
+ *
+ * The snapshot version above reads `getMeta()`, which only a live actor sitting
+ * in the state can produce. A DERIVED flow has no actor — its position is a
+ * function of the data — so the instruction has to come off the machine's own
+ * definition instead, and the two must agree on the rule: **the deepest node
+ * that declares one wins.** Here that is a walk down the path keeping the last
+ * instruction seen, which is the same answer `toInstruction`'s longest-key rule
+ * gives for the same active path.
+ *
+ * `undefined` when no node on the path declares one, and when the path does not
+ * exist — a caller that cares about the second asks {@link statePaths}.
+ */
+export function instructionAt(machine: AnyStateMachine, path: string): string | undefined {
+  let states: Record<string, StateNodeShape> | undefined = machine.states as Record<
+    string,
+    StateNodeShape
+  >;
+  let instruction: string | undefined;
+  for (const segment of path.split(".")) {
+    const node: StateNodeShape | undefined = states?.[segment];
+    if (node === undefined) return instruction;
+    const declared = isRecord(node.meta) ? node.meta.instruction : undefined;
+    if (typeof declared === "string") instruction = declared;
+    states = node.states;
+  }
+  return instruction;
+}
+
+/** The shape this module needs off a state node, which XState types as `any`. */
+type StateNodeShape = {
+  meta?: unknown;
+  type?: unknown;
+  states?: Record<string, StateNodeShape>;
+};
+
+/**
+ * EVERY state path declared `type: "final"`, at any depth.
+ *
+ * All depths rather than the top level, because a nested final is legal XState
+ * and means something DIFFERENT: a final child of a compound state completes
+ * that REGION — it is what `onDone` fires on — while the machine itself is done
+ * only when its ROOT reaches a final state. Collecting both is what lets a
+ * caller tell those apart; collecting only the top level would make the
+ * distinction unrepresentable and the caller's root check dead code.
+ *
+ * So a caller answering "is the machine done" asks about the path's FIRST
+ * segment, and one answering "is this region complete" asks about the whole
+ * path. {@link DerivedFlow.position} does the first.
+ */
+export function finalPaths(machine: AnyStateMachine): Set<string> {
+  const paths = new Set<string>();
+  const walk = (states: Record<string, StateNodeShape>, prefix: string) => {
+    for (const [key, node] of Object.entries(states)) {
+      const path = prefix === "" ? key : `${prefix}.${key}`;
+      if (node.type === "final") paths.add(path);
+      if (isRecord(node.states)) walk(node.states as Record<string, StateNodeShape>, path);
+    }
+  };
+  walk(machine.states as Record<string, StateNodeShape>, "");
+  return paths;
+}

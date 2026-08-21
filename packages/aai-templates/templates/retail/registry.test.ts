@@ -4,7 +4,7 @@ import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
 import { createToolContext, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
-import { callFlow, retailSlot } from "./store.ts";
+import { retailSlot } from "./store.ts";
 
 /** Tools that legitimately run before the caller is identified — the six
  *  declaring `when: BEFORE_TRANSFER`. Everything else must refuse. Listed here
@@ -39,11 +39,13 @@ const registry = Object.entries(retailAgent.tools);
 const makeCtx = (): ToolContext => createToolContext();
 
 /** A context whose call flow is in `serving`, so a `when: "serving"` tool can
- *  reach its body. Moved through the FLOW rather than by writing
- *  `authenticatedUserId`, because the gate reads the machine. */
+ *  reach its body. Written as DATA, because the gate is derived from it — there
+ *  is no separate position to move, which is the whole point of the shape. */
 function servingCtx(): ToolContext {
   const ctx = makeCtx();
-  callFlow.send(ctx, { type: "IDENTIFIED" });
+  retailSlot.update(ctx, (state) => {
+    state.authenticatedUserId = "sara_doe_496";
+  });
   return ctx;
 }
 
@@ -219,7 +221,9 @@ describe("agent config", () => {
 describe("the transfer is terminal", () => {
   test.each(registry)("%s refuses once the call is with a human", async (name, def) => {
     const ctx = servingCtx();
-    callFlow.send(ctx, { type: "TRANSFERRED" });
+    retailSlot.update(ctx, (state) => {
+      state.transferred = true;
+    });
 
     const result = await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
     // EVERY tool, the six public ones and `transfer_to_human_agents` itself

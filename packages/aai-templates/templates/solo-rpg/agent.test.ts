@@ -10,7 +10,6 @@ import {
   MAX_NPCS,
   MIN_MOMENTUM,
   makeNpc,
-  resumeStory,
   rollAction,
   storyFlow,
 } from "./shared.ts";
@@ -93,17 +92,15 @@ function playingState(): GameState {
 }
 
 /**
- * Seed a context with a mid-game campaign AND the matching flow position.
+ * Seed a context with a mid-game campaign.
  *
- * Writing the slot alone is no longer enough: `action_roll`, `update_state`,
- * `burn_momentum` and `save_game` gate on `storyFlow`, so a campaign installed
- * behind the machine's back leaves every one of them refusing. That is the point
- * of the gate, and it is what this helper exists to satisfy honestly — through
- * the flow's own event, not by writing its snapshot.
+ * Writing the slot IS the whole seed, because `storyFlow` is derived from it —
+ * there is no position to move into agreement, which is what this helper used to
+ * exist for. A campaign cannot be installed "behind the machine's back" any
+ * more: the machine reads the campaign.
  */
 function seedPlaying(ctx: ToolContext, state: GameState = playingState()): GameState {
   gameSlot.set(ctx, state);
-  storyFlow.send(ctx, { type: "SETUP" });
   return state;
 }
 
@@ -306,12 +303,9 @@ describe("burn_momentum", () => {
         clockTicks: 1,
       },
     };
+    // Setting `lastRoll` above is what puts the flow in `playing.rollResolved` —
+    // the state `burn_momentum` gates on. One write, one position.
     seedPlaying(ctx, state);
-    // The campaign records a roll, so the FLOW has to say one is standing —
-    // `playing.rollResolved` is the state `burn_momentum` gates on. Sent as an
-    // event rather than written into the snapshot, so the seed goes through the
-    // same door `action_roll` does.
-    storyFlow.send(ctx, { type: "ROLLED" });
   }
 
   test("a legal burn reverts the miss's consequences, upgrades, and resets momentum", async () => {
@@ -794,7 +788,6 @@ describe("the story flow", () => {
       },
     };
     seedPlaying(sessionA, standing);
-    storyFlow.send(sessionA, { type: "ROLLED" });
     expect(storyFlow.position(sessionA).state).toBe("playing.rollResolved");
     ok(await saveGame.execute({ slot: "mid-roll" }, sessionA));
 
@@ -809,13 +802,20 @@ describe("the story flow", () => {
     expect(burned.newResultCode).toBe("STRONG_HIT");
   });
 
-  test("resumeStory leaves an uninitialized campaign awaiting setup", () => {
+  test("an uninitialized campaign locates awaitingSetup, however it was written", () => {
     const ctx = makeCtx();
     // Not reachable through `save_game` (it is gated out of `awaitingSetup`), but
     // a slot written by anything else must not resume into play with no character.
-    const at = resumeStory(ctx, structuredClone(DEFAULT_STATE));
-    expect(at.state).toBe("awaitingSetup");
+    gameSlot.set(ctx, structuredClone(DEFAULT_STATE));
     expect(storyFlow.position(ctx).state).toBe("awaitingSetup");
+  });
+
+  test("locate is a total function of the campaign, with no session at all", () => {
+    // The derivation on its own — the property the derived shape exists to buy.
+    const base = structuredClone(DEFAULT_STATE);
+    expect(storyFlow.locate(base)).toBe("awaitingSetup");
+    expect(storyFlow.locate({ ...base, initialized: true })).toBe("playing.awaitingRoll");
+    expect(storyFlow.locate({ ...base, initialized: true, gameOver: true })).toBe("gameOver");
   });
 
   test("a save whose game was over resumes as over", async () => {

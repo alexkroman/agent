@@ -1,7 +1,7 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { GameState } from "../shared.ts";
-import { gameSlot, loadState, resumeStory, saveSlotKey, saveSlotParam } from "../shared.ts";
+import { gameSlot, loadState, saveSlotKey, saveSlotParam, storyFlow } from "../shared.ts";
 
 // Requires storage — `aai storage enable` (or DATABASE_URL in .env under
 // `aai dev`); the rest of the game works without it.
@@ -11,13 +11,12 @@ export default tool({
   async execute(args, ctx) {
     const saved = await loadState<GameState>(ctx, saveSlotKey(args.slot));
     if (!saved) return { error: "No save found." };
+    // The restore is the whole move: `storyFlow` is derived from the campaign, so
+    // writing it puts the position wherever the saved data says it already was —
+    // a standing roll included. This used to rebuild the position by hand and
+    // dropped `lastRoll` doing it, which refused a legal burn after every reload.
     gameSlot.set(ctx, saved);
-
-    // The flow has to be restored alongside the campaign, or a loaded game would
-    // still be sitting in `awaitingSetup` with every roll tool refusing. The
-    // mapping from saved data to position is `resumeStory`'s, exhaustively and in
-    // one place — see its doc for the standing roll this used to drop.
-    const at = resumeStory(ctx, saved);
+    const at = storyFlow.position(ctx);
 
     return {
       loaded: true,

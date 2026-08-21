@@ -12,15 +12,16 @@ export default retailTool({
   }),
   // Legal before the handoff from either side: someone who cannot be identified
   // is exactly who needs a human, and blocking the escape hatch behind an auth
-  // gate would trap them. `TRANSFERRED` is the one transition into the terminal
-  // state, which is what makes "say nothing else after this" enforced rather
-  // than asked for — every tool, this one included, refuses afterwards.
+  // gate would trap them.
   when: BEFORE_TRANSFER,
-  send: { type: "TRANSFERRED" },
   summary: () => "transferred to a human agent",
-  execute: (args) => ({
-    transferred: true,
-    summary: args.summary,
-    message: "Transfer successful.",
-  }),
+  // Setting the FIELD is what makes "say nothing else after this" enforced
+  // rather than asked for: `callFlow` derives `transferred` from it, so every
+  // tool — this one included — refuses from here on. It used to be a
+  // `send: { type: "TRANSFERRED" }` beside a `transferred: true` that was only
+  // ever part of the RESULT, so the store itself never recorded the handoff.
+  execute: (args, state) => {
+    state.transferred = true;
+    return { transferred: true, summary: args.summary, message: "Transfer successful." };
+  },
 });

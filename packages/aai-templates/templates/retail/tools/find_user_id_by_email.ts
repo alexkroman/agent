@@ -17,7 +17,6 @@ export default retailTool({
   // customer. The `IDENTIFIED` event is not sent on that refusal — a flow tool
   // sends nothing when its body answers a `ToolFailure`.
   when: BEFORE_TRANSFER,
-  send: { type: "IDENTIFIED" },
   execute: (args, state) => {
     const target = args.email.trim().toLowerCase();
     const match = Object.values(state.store.users).find(

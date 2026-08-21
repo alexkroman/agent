@@ -62,12 +62,13 @@ import {
   toInstruction,
   toStatePath,
 } from "./_flow-snapshot.ts";
+import { buildFlowTool } from "./_flow-tool.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import { type SessionSlot, sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
-import { isToolFailure, type ToolFailure, toolFailure } from "./utils.ts";
+import type { ToolFailure } from "./utils.ts";
 
 /**
  * Where a flow currently is.
@@ -195,6 +196,15 @@ export interface Flow<M extends AnyStateMachine> {
   send(ctx: ToolContext, event: EventFromLogic<M>): FlowPosition;
   /** Discard this session's progress and start the flow over. */
   reset(ctx: ToolContext): FlowPosition;
+  /**
+   * Run this flow's {@link FlowOptions.invariant}, if it declares one.
+   *
+   * `undefined` when the position and its data agree — and always when no
+   * invariant is declared. Public so a spec can assert agreement DIRECTLY at the
+   * seam that breaks it (after a restore, after a migration) rather than only
+   * observing the wrong refusal a gated tool would give downstream.
+   */
+  check(ctx: ToolContext): string | undefined;
   /** Declare a tool gated on this flow's state. See {@link FlowToolDef}. */
   tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
     def: FlowToolDef<P, R, EventFromLogic<M>>,
@@ -219,6 +229,41 @@ export interface FlowOptions {
    * construction, so there is nothing here that cannot be stored.
    */
   durable?: boolean;
+  /**
+   * Assert that the position and the data it is ABOUT still agree, and describe
+   * the disagreement when they do not.
+   *
+   * A stored position is a second source of truth. The first one is the slot the
+   * agent actually keeps its state in, and the two are kept in step by
+   * convention — every tool moves both. When a convention is what holds an
+   * invariant, the invariant eventually does not hold, and the failure mode here
+   * is the expensive kind: **the refusal a stale position produces reads
+   * correct.** It names a real state and quotes that state's real instruction,
+   * so nothing looks wrong. The model apologizes and retries something that
+   * cannot work.
+   *
+   * That is not hypothetical. `solo-rpg`'s `save_game` is legal while a roll is
+   * standing, and `load_game` rebuilt the position without looking at the roll —
+   * so a reloaded save refused a `burn_momentum` the campaign data plainly
+   * allowed, and told the model to go and roll instead. An invariant of
+   * `lastRoll !== null` against `matches("playing.rollResolved")` would have
+   * failed the first save-and-reload test that ran.
+   *
+   * Return `undefined` when they agree, or a sentence naming the disagreement.
+   * It is checked at the GATE of every {@link Flow.tool} — the moment a wrong
+   * position becomes a wrong decision — and a violation REFUSES the call with
+   * the disagreement spelled out, rather than throwing. A live call is the wrong
+   * place to raise, and the module's own rule about not crashing over a
+   * transition applies here too; what makes it loud is that the message is
+   * unmistakable and that a test asserting success fails on it.
+   *
+   * **Prefer {@link derivedFlow} to an invariant where the position IS a
+   * function of the data.** An invariant detects a divergence that the derived
+   * flow makes unrepresentable, and unrepresentable beats detected. Reach for
+   * this when the position genuinely carries history the data does not —
+   * `dispatch-center`'s triage-then-dispatch order is the case in this repo.
+   */
+  invariant?: (position: FlowPosition, ctx: ToolContext) => string | undefined;
 }
 
 /**
@@ -373,6 +418,15 @@ export function flow<M extends AnyStateMachine>(
       }
     });
 
+  /**
+   * The declared invariant, read against the CURRENT position.
+   *
+   * A total function whether or not one is declared, so the gate needs no
+   * branch and `check` is safe to call from anywhere.
+   */
+  const invariantOf = (ctx: ToolContext): string | undefined =>
+    options.invariant?.(position(ctx), ctx);
+
   const matches = (ctx: ToolContext, state: string): boolean => {
     const actor = actorFor(readState(slot.get(ctx)));
     try {
@@ -404,59 +458,33 @@ export function flow<M extends AnyStateMachine>(
           actor.stop();
         }
       }),
+    check: (ctx) => invariantOf(ctx),
     tool: <P extends ToolInputSchema = ToolInputSchema, R = unknown>(
       def: FlowToolDef<P, R, EventFromLogic<M>>,
     ): ToolDef<P> => {
-      const allowed = typeof def.when === "string" ? [def.when] : def.when;
-      for (const state of allowed) {
-        if (valid.has(state)) continue;
-        throw new Error(
-          `Flow "${key}" has no state "${state}", so a tool gated on it could never run. Its states are: ${[...valid].sort().join(", ")}.`,
-        );
-      }
       if (def.send !== undefined && def.sendFrom !== undefined) {
         throw new Error(
           `A tool on flow "${key}" declares both send and sendFrom. Pick one: send for a fixed transition, sendFrom when the result decides it.`,
         );
       }
-      const { execute, when: _when, send: fixed, sendFrom, ...rest } = def;
-      return {
-        // Spread rather than restating `inputSchema`, for the reason
-        // `SessionSlot.tool` gives: rebuilding it field by field cannot preserve
-        // its optionality against a still-generic `P`.
-        ...rest,
-        // ASYNC, and it has to be: a voice tool routinely awaits a model call or
-        // an HTTP request, and the failure check and the transition both read
-        // the SETTLED value. A synchronous version tested `isToolFailure` on a
-        // pending promise (always false) and handed that promise to `sendFrom`,
-        // so an async tool that failed advanced the flow anyway — the one bug
-        // this primitive most needs not to have.
-        execute: async (args, ctx): Promise<FlowToolResult<R> | ToolFailure> => {
-          // The gate is read BEFORE the body runs, which is the moment that
-          // matters: it is what the caller's turn is allowed to do.
-          const at = position(ctx);
-          if (!allowed.some((state) => matches(ctx, state))) {
-            // The refusal is what the model recovers from, so it says where the
-            // conversation IS and what the flow expects there — not merely that
-            // this was not allowed.
-            const expectation = at.instruction ?? `reach ${allowed.join(" or ")} first`;
-            return toolFailure(
-              `Not available yet: this conversation is at "${at.state}". ${expectation}`,
-            );
-          }
-          const result = await execute(args, ctx);
-          // A failed tool did not do the thing, so the flow must not move past
-          // it. See FlowToolDef.send.
-          if (isToolFailure(result)) return result;
-          const event = sendFrom === undefined ? fixed : sendFrom(result);
-          // Re-READ rather than reusing `at` when nothing is sent: the LLM loop
-          // runs a step's tool calls concurrently, so a sibling may have moved
-          // the flow while this body was awaiting, and reporting the position
-          // this call started at would describe a conversation that has moved on.
-          const moved = event === undefined ? position(ctx) : send(ctx, event);
-          return { ...moved, result };
+      const { send: fixed, sendFrom, ...spec } = def;
+      return buildFlowTool<P, R>(
+        {
+          key,
+          valid,
+          position,
+          matches,
+          check: invariantOf,
+          // The one thing an EVENT flow does that a derived one cannot: move a
+          // stored position. `undefined` from `sendFrom` means stay put, which
+          // the gate reads as "re-read where we already are".
+          advance: (result, ctx) => {
+            const event = sendFrom === undefined ? fixed : sendFrom(result);
+            return event === undefined ? position(ctx) : send(ctx, event);
+          },
         },
-      };
+        spec,
+      );
     },
   };
 }

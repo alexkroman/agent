@@ -8,6 +8,7 @@ function makeState(authenticatedUserId: string | null): RetailState {
   return {
     store: seedStore(),
     authenticatedUserId,
+    transferred: false,
     callSeq: 3,
     activity: [{ seq: 3, tool: "get_order_details", summary: "read #W5866402", at: 0 }],
     focus: { orderId: "#W5866402" },

@@ -321,7 +321,33 @@ const callMachine = setup({
  * call moves both — every converted tool opens `dispatchSlot.update` inside its
  * `execute` and lets the flow's own `send` follow it.
  */
-export const callFlow = flow("call", callMachine);
+export const callFlow = flow("call", callMachine, {
+  /**
+   * The half of this position that IS a function of the board, asserted.
+   *
+   * This template is the one that keeps a stored `flow()` rather than a
+   * {@link derivedFlow}, and the reason is the three children of `working`:
+   * whether a call is at `triaging`, `dispatching` or `monitoring` records what
+   * the DISPATCHER has already done, and the same board is reachable at any of
+   * them, so it cannot be computed from the incidents. The top LEVEL can be —
+   * `standby` means nothing is logged — and that half is what the invariant
+   * holds, so the part of the position that has a right answer cannot drift from
+   * it while the part that does not is left alone.
+   *
+   * A violation refuses the call naming both facts, rather than producing the
+   * refusal a stale position gives: one that names a real state, quotes its real
+   * instruction, and sends the model to fix the wrong thing.
+   */
+  invariant: (at, ctx) => {
+    const logged = Object.keys(dispatchSlot.get(ctx).incidents).length;
+    if (at.state === "standby" && logged > 0) {
+      return `the position says nothing is logged, but the board holds ${logged} incident(s).`;
+    }
+    if (at.state !== "standby" && logged === 0) {
+      return "the position says a call is being worked, but no incident is logged.";
+    }
+  },
+});
 
 /**
  * The board as a READ hands it out: deep-frozen, and typed to say so.

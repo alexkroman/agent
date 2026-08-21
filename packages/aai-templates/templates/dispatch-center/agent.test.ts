@@ -264,3 +264,46 @@ describe("the call flow", () => {
     expect(result.at).toBe("working.triaging");
   });
 });
+
+describe("the flow's invariant", () => {
+  test("a position claiming a working call with an empty board refuses, naming both", async () => {
+    // dispatch-center keeps a STORED position because its three `working`
+    // children are not a function of the board. The invariant holds the half
+    // that is: a call cannot be being worked with nothing logged. Without it the
+    // gate passes and every tool runs against an incident that does not exist,
+    // reporting a plausible refusal one level down instead.
+    const ctx = makeCtx();
+    callFlow.send(ctx, { type: "LOGGED" });
+    expect(callFlow.position(ctx).state).toBe("working.triaging");
+
+    const disagreement = callFlow.check(ctx);
+    expect(disagreement).toContain("no incident is logged");
+
+    const refused = await incidentTriage.execute(
+      { incidentId: "INC-0001", severity: "moderate", type: "medical" },
+      ctx,
+    );
+    expect(isToolFailure(refused)).toBe(true);
+    expect(isToolFailure(refused) && refused.error).toContain("disagree");
+    expect(isToolFailure(refused) && refused.error).toContain("bug in the agent");
+  });
+
+  test("a logged incident and a working position agree", async () => {
+    const ctx = makeCtx();
+    await incidentCreate.execute(
+      {
+        location: "12 Dock Road",
+        description: "smoke from a window",
+        callerName: "Mira",
+        callerPhone: "555-0100",
+      },
+      ctx,
+    );
+    expect(callFlow.check(ctx)).toBeUndefined();
+    expect(callFlow.position(ctx).state).toBe("working.triaging");
+  });
+
+  test("a fresh shift agrees: standby with an empty board", () => {
+    expect(callFlow.check(makeCtx())).toBeUndefined();
+  });
+});

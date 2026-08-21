@@ -64,6 +64,13 @@ export * from "./sdk/db.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
 /**
+ * The OTHER flow: a position COMPUTED from the data rather than stored beside
+ * it, so the two cannot come apart. Prefer it wherever the position is a
+ * function of the slot — `sdk/derived-flow.ts` owns the argument and names the
+ * one shape that still wants `flow()`.
+ */
+export * from "./sdk/derived-flow.ts";
+/**
  * The dialog statechart — next to `agent()`/`tool()` because it is how a guided
  * agent declares what it may do NEXT, which is authoring rather than an
  * optional utility. Its machine comes from `xstate`, which an author imports

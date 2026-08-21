@@ -200,9 +200,12 @@ describe("retailTool", () => {
     execute: () => ({ error: "nope" }),
   });
 
-  /** Put the call where a `when: "serving"` tool can run, through the flow
-   *  rather than by writing the store — the gate reads the machine. */
-  const serve = (ctx: ToolContext) => callFlow.send(ctx, { type: "IDENTIFIED" });
+  /** Put the call where a `when: "serving"` tool can run, by writing the store —
+   *  the gate is DERIVED from it, so this is the only move there is. */
+  const serve = (ctx: ToolContext) =>
+    retailSlot.update(ctx, (state) => {
+      state.authenticatedUserId = "sara_doe_496";
+    });
 
   test("increments callSeq and logs activity on every call", async () => {
     const ctx = makeCtx();
@@ -265,18 +268,22 @@ describe("retailTool", () => {
   });
 
   test("a body that failed does not move the call", async () => {
+    // A derived flow cannot advance past a failure by construction: the position
+    // is the store, and a body that returned a `ToolFailure` before writing
+    // `authenticatedUserId` left the store where it was. There is no separate
+    // event that could have fired on its own.
     const ctx = makeCtx();
     const moves = retailTool({
       name: "moves",
       description: "test tool that would identify the caller and fails instead",
       inputSchema: z.object({}),
       when: BEFORE_TRANSFER,
-      send: { type: "IDENTIFIED" },
       summary: () => "moved",
       execute: () => ({ error: "no such customer" }),
     });
     expect(isToolFailure(await moves.execute({}, ctx))).toBe(true);
     expect(callFlow.position(ctx).state).toBe("identifying");
+    expect(retailSlot.get(ctx).authenticatedUserId).toBeNull();
   });
 
   test("activity is capped so a long call cannot grow the payload", async () => {
@@ -316,7 +323,10 @@ describe("the call flow", () => {
     });
     expect(ok(await anywhere.execute({}, ctx))).toEqual({ ok: true });
 
-    const at = callFlow.send(ctx, { type: "TRANSFERRED" });
+    retailSlot.update(ctx, (state) => {
+      state.transferred = true;
+    });
+    const at = callFlow.position(ctx);
     expect(at.state).toBe("transferred");
     expect(at.done).toBe(true);
 

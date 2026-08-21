@@ -25,9 +25,11 @@ import {
  * is `setup_character`'s whole job, and the prompt says not to call this after
  * it), and nothing to sync after the story has ended.
  *
- * It sends `SETTLED`, because moving the scene on is what SPENDS a standing
+ * It CLEARS `lastRoll`, because moving the scene on is what SPENDS a standing
  * roll: once the narrator has changed the location or logged the scene, the
- * player's window to burn momentum on the last roll has closed.
+ * player's window to burn momentum on the last roll has closed. `storyFlow` is
+ * derived from that field, so the clear is the transition — where this used to
+ * send `SETTLED` and leave the roll recorded, saying both at once.
  */
 export default storyFlow.tool({
   description:
@@ -175,6 +177,12 @@ export default storyFlow.tool({
       // Crisis check
       updateCrisisFlags(state);
 
+      // Settling the scene CLOSES the burn window, and clearing the roll is what
+      // says so. This used to send `SETTLED` while leaving `lastRoll` set, so the
+      // position said no roll was standing and the data still held one — the two
+      // answers `storyFlow` is now derived from, and they have to be one.
+      state.lastRoll = null;
+
       return {
         success: true,
         ...(warnings.length > 0 ? { warnings } : {}),
@@ -182,6 +190,4 @@ export default storyFlow.tool({
         ...stateSummary(state),
       };
     }),
-  sendFrom: (result) =>
-    result.gameOver ? { type: "DOWNED" as const } : { type: "SETTLED" as const },
 });

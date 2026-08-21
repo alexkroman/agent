@@ -126,7 +126,6 @@ export const confirmAction = gateFlow.tool({
     "Apply the change the caller has just confirmed out loud. Only call this " +
     "after you have read the change back and heard a clear yes.",
   when: "awaitingConfirmation",
-  send: { type: "SETTLED" },
   execute: (_args, ctx) => tripSlot.update(ctx, (trip) => applyPending(trip)),
 });
 
@@ -141,7 +140,6 @@ export const cancelAction = gateFlow.tool({
     "Discard the change the caller just declined. Call this when they say no, " +
     "or when they want to change the details before confirming.",
   when: "awaitingConfirmation",
-  send: { type: "SETTLED" },
   execute: (_args, ctx) =>
     tripSlot.update(ctx, (trip) => {
       const action = trip.pending;

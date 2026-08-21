@@ -207,9 +207,11 @@ export default tool({
     state.initialized = true;
     state.sceneCount = 1;
 
+    // `initialized` is what `playing` MEANS, so this write is the whole
+    // transition — and because a fresh `state` carries `gameOver: false` and
+    // `lastRoll: null`, starting over from an ending needs no reset either.
     gameSlot.set(ctx, state);
-    storyFlow.reset(ctx);
-    const at = storyFlow.send(ctx, { type: "SETUP" });
+    const at = storyFlow.position(ctx);
 
     return {
       success: true,

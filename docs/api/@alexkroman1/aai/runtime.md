@@ -1670,7 +1670,7 @@ through it.
 
 ##### messages?
 
-readonly [`Message`](index.md#message-2)[]
+readonly [`Message`](index.md#message-3)[]
 
 ##### opts?
 

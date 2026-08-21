@@ -956,19 +956,26 @@ What it cost was two round trips and a `42P07` NOTICE per guest boot, in the log
 an operator reads to diagnose a session. A missing table now surfaces as the
 honest error it is — this app's schema was never provisioned with one.
 
-**`flow()` is the other primitive built on a slot** — what an agent may do NEXT,
-gated at EXECUTION. `sdk/flow.ts`'s module doc owns it.
+**Three machine primitives sit on a slot, and choosing between them is the whole
+of it.** `sdk/derived-flow.ts`, `sdk/flow.ts` and `sdk/graph.ts` own the
+arguments; which to reach for:
 
-**And `graph()` is its sibling, for the OTHER kind of machine.** A flow is where
-a conversation IS: persisted in a slot, moved one event at a time by the caller's
-turns. A graph is one unit of WORK inside a single tool call: never stored,
-driving itself through invoked actors, so its context may hold a `GenerateFn` no
-slot could. `run(input, { signal })` is the whole surface, and it exists because
-`toPromise` on a STOPPED actor resolves `undefined` rather than rejecting — so a
-hand-written lifecycle hands a half-finished graph back typed as a finished one.
-`sdk/graph.ts` owns the argument; `support-line`'s CRAG loop is the worked
-example. Neither models a per-ENTITY lifecycle (a status per row in a
-collection); that is a third shape with no primitive.
+- **`derivedFlow(machine, slot, locate)` — the DEFAULT.** The position is a pure
+  function of the slot, so `locate` is a total function a spec drives with no
+  session, the body's own write IS the transition (no `send`/`sendFrom`/`reset`),
+  and no actor is started. Four templates of five.
+- **`flow()` STORES a position and moves it with events**, making it a second
+  source of truth whose divergence produces a refusal that READS CORRECT —
+  `solo-rpg` shipped that bug. Keep it only where the position carries HISTORY
+  the data does not (`dispatch-center`'s triage-then-dispatch), and declare
+  `FlowOptions.invariant`; `flow.check(ctx)` runs it on demand.
+- **`graph()` — one unit of WORK inside one tool call.** Never stored, driving
+  itself through invoked actors, so its context may hold a `GenerateFn` no slot
+  could. `run(input, { signal })` is the surface; it exists because `toPromise`
+  on a STOPPED actor resolves `undefined`. `support-line` is the example.
+
+None of the three models a per-ENTITY lifecycle (a status per row in a
+collection); that is a fourth shape with no primitive.
 
 **A slot is also the only thing carrying a state TYPE into a tool, because a tool
 is a FILE.** `agent()` takes no `tools` argument — `tools/incident_create.ts` that

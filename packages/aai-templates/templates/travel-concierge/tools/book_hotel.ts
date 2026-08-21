@@ -10,8 +10,8 @@ export default tripSlot.updateTool({
     hotelId: z.string().max(20).describe("The hotel id from search_hotels, e.g. 'H1'"),
     nights: z.number().int().min(1).max(30).describe("How many nights"),
   }),
-  execute(args, trip, ctx) {
-    return stageAction(ctx, trip, {
+  execute(args, trip) {
+    return stageAction(trip, {
       kind: "book_hotel",
       hotelId: args.hotelId.toUpperCase(),
       nights: args.nights,

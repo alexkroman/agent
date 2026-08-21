@@ -103,12 +103,4 @@ export default storyFlow.tool({
         burnWouldYield: burnTarget ? RESULT_LABELS[burnTarget] : undefined,
       };
     }),
-  // AFTER `execute`, because TS infers this wrapper's result type from it and
-  // reads an object literal's properties in source order — see
-  // `dispatch-center`'s `resources_dispatch` for the same note.
-  //
-  // A roll that emptied both tracks ends the story; anything else leaves a
-  // standing roll that `burn_momentum` may still upgrade.
-  sendFrom: (result) =>
-    result.gameOver ? { type: "DOWNED" as const } : { type: "ROLLED" as const },
 });

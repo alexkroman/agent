@@ -1,10 +1,4 @@
-import {
-  type DeepReadonly,
-  type FlowPosition,
-  flow,
-  sessionSlot,
-  type ToolContext,
-} from "@alexkroman1/aai";
+import { type DeepReadonly, derivedFlow, sessionSlot, type ToolContext } from "@alexkroman1/aai";
 import { setup } from "xstate";
 import { z } from "zod";
 
@@ -384,11 +378,7 @@ export const gameProjection = gameSlot.projection((game) => game);
  * resets for the same reason. `SETUP` therefore appears once, on the only state
  * that can be transitioned out of.
  */
-const storyMachine = setup({
-  types: {} as {
-    events: { type: "SETUP" } | { type: "ROLLED" } | { type: "SETTLED" } | { type: "DOWNED" };
-  },
-}).createMachine({
+const storyMachine = setup({}).createMachine({
   id: "story",
   initial: "awaitingSetup",
   states: {
@@ -436,50 +426,33 @@ const storyMachine = setup({
 });
 
 /**
- * The flow. Its own slot key beside {@link gameSlot}, and the reason it is not
- * folded into the campaign is that the campaign is what the browser renders: a
- * flow stores an XState snapshot, which is not a character sheet.
+ * The flow, DERIVED from the campaign.
+ *
+ * Every position here was already a field: `initialized` says whether there is a
+ * character, `gameOver` says whether the story ended, and `lastRoll` says
+ * whether a roll is standing — which is precisely what `playing.rollResolved`
+ * MEANS. So the machine names those readings rather than holding a second copy
+ * of them, and the four events are gone.
+ *
+ * **This is the template the divergence actually bit.** With a stored position,
+ * `save_game` was legal while a roll was standing and `load_game` rebuilt the
+ * position without looking at `lastRoll`, so a reloaded save sat in
+ * `awaitingRoll` with a roll still recorded and `burn_momentum` refused a burn
+ * the data allowed — quoting an instruction that told the model to go and roll.
+ * A restore is now `gameSlot.set` and nothing else: there is no second value to
+ * rebuild, so there is none to rebuild incompletely, and the `resumeStory`
+ * helper that existed only to keep the two in step is gone with it.
+ *
+ * It also forced one honest data change. `update_state` used to send `SETTLED`
+ * while leaving `lastRoll` set, so "the burn window is closed" and "a roll is
+ * recorded" were two different answers to one question. It clears the roll now,
+ * which is what settling a scene always meant.
  */
-export const storyFlow = flow("story", storyMachine);
-
-/**
- * Put the flow where a RESTORED campaign says it already is.
- *
- * `load_game` writes a whole campaign into the slot behind the machine's back,
- * so the position has to be rebuilt from that data or every gated tool refuses a
- * game that is plainly in progress. This is the ONE place that mapping lives,
- * and it is deliberately exhaustive over the three fields that carry a position:
- *
- * | field | position |
- * | --- | --- |
- * | `!initialized` | `awaitingSetup` — nothing to resume |
- * | `gameOver` | `gameOver`, and nothing else matters once it is set |
- * | `lastRoll !== null` | `playing.rollResolved` — a burn window is still open |
- * | otherwise | `playing.awaitingRoll` |
- *
- * **`lastRoll` used to be dropped here, and that was a bug.** `save_game` is
- * legal in `playing.rollResolved` — its `when` is `["playing", "gameOver"]`, and
- * `playing` matches either child — so a save really can be taken with a roll
- * standing. Reloading it landed in `awaitingRoll` while `lastRoll` was still
- * set, and `burn_momentum` (gated on `playing.rollResolved`) then refused a burn
- * the campaign data plainly allowed, quoting an instruction telling the model to
- * go and roll. The comment that stood here claimed a save "is written from a
- * settled scene", which the gate above never required.
- *
- * That is the failure mode a position stored BESIDE its data has, and the reason
- * this is a function rather than three lines in a tool: a fourth field that
- * carries a position is one edit here, not a hunt through the restore paths.
- */
-export function resumeStory(ctx: ToolContext, saved: FrozenGameState): FlowPosition {
-  storyFlow.reset(ctx);
-  if (!saved.initialized) return storyFlow.position(ctx);
-  const at = storyFlow.send(ctx, { type: "SETUP" });
-  // `gameOver` is final, so it wins outright — a standing roll under a finished
-  // story is not a burn window, it is the roll that ended it.
-  if (saved.gameOver) return storyFlow.send(ctx, { type: "DOWNED" });
-  if (saved.lastRoll !== null) return storyFlow.send(ctx, { type: "ROLLED" });
-  return at;
-}
+export const storyFlow = derivedFlow(storyMachine, gameSlot, (game) => {
+  if (game.gameOver) return "gameOver";
+  if (!game.initialized) return "awaitingSetup";
+  return game.lastRoll === null ? "playing.awaitingRoll" : "playing.rollResolved";
+});
 
 /**
  * The game as a READ hands it out: deep-frozen, and typed to say so.
