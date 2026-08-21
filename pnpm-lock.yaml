@@ -105,6 +105,9 @@ overrides:
   unrun: 0.2.39
 
 patchedDependencies:
+  '@workflow/core@4.8.2':
+    hash: 862efb574e1256597c4d18c5623a0854549b0dc620784c7b603f01dc51a73347
+    path: patches/@workflow__core@4.8.2.patch
   '@workflow/world-local@4.2.4':
     hash: adb1aecc5b2367e81d7889576fdf7aa790a87132c832d32efbffc64e2849949c
     path: patches/@workflow__world-local@4.2.4.patch
@@ -10092,7 +10095,7 @@ snapshots:
   '@workflow/builders@4.1.7(@opentelemetry/api@1.9.1)(ws@8.21.3)':
     dependencies:
       '@swc/core': 1.15.3
-      '@workflow/core': 4.8.2(@opentelemetry/api@1.9.1)(ws@8.21.3)
+      '@workflow/core': 4.8.2(patch_hash=862efb574e1256597c4d18c5623a0854549b0dc620784c7b603f01dc51a73347)(@opentelemetry/api@1.9.1)(ws@8.21.3)
       '@workflow/errors': 4.2.1
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
       '@workflow/utils': 4.1.4
@@ -10116,7 +10119,7 @@ snapshots:
       '@swc/core': 1.15.3
       '@vercel/cli-auth': 0.0.1
       '@workflow/builders': 4.1.7(@opentelemetry/api@1.9.1)(ws@8.21.3)
-      '@workflow/core': 4.8.2(@opentelemetry/api@1.9.1)(ws@8.21.3)
+      '@workflow/core': 4.8.2(patch_hash=862efb574e1256597c4d18c5623a0854549b0dc620784c7b603f01dc51a73347)(@opentelemetry/api@1.9.1)(ws@8.21.3)
       '@workflow/errors': 4.2.1
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
       '@workflow/utils': 4.1.4
@@ -10147,7 +10150,7 @@ snapshots:
       - supports-color
       - ws
 
-  '@workflow/core@4.8.2(@opentelemetry/api@1.9.1)(ws@8.21.3)':
+  '@workflow/core@4.8.2(patch_hash=862efb574e1256597c4d18c5623a0854549b0dc620784c7b603f01dc51a73347)(@opentelemetry/api@1.9.1)(ws@8.21.3)':
     dependencies:
       '@aws-sdk/credential-provider-web-identity': 3.972.49
       '@jridgewell/trace-mapping': 0.3.31
@@ -10198,7 +10201,7 @@ snapshots:
     dependencies:
       '@swc/core': 1.15.3
       '@workflow/builders': 4.1.7(@opentelemetry/api@1.9.1)(ws@8.21.3)
-      '@workflow/core': 4.8.2(@opentelemetry/api@1.9.1)(ws@8.21.3)
+      '@workflow/core': 4.8.2(patch_hash=862efb574e1256597c4d18c5623a0854549b0dc620784c7b603f01dc51a73347)(@opentelemetry/api@1.9.1)(ws@8.21.3)
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
       semver: 7.7.4
       watchpack: 2.5.1
@@ -10212,7 +10215,7 @@ snapshots:
     dependencies:
       '@swc/core': 1.15.3
       '@workflow/builders': 4.1.7(@opentelemetry/api@1.9.1)(ws@8.21.3)
-      '@workflow/core': 4.8.2(@opentelemetry/api@1.9.1)(ws@8.21.3)
+      '@workflow/core': 4.8.2(patch_hash=862efb574e1256597c4d18c5623a0854549b0dc620784c7b603f01dc51a73347)(@opentelemetry/api@1.9.1)(ws@8.21.3)
       '@workflow/rollup': 4.0.17(@opentelemetry/api@1.9.1)(ws@8.21.3)
       '@workflow/swc-plugin': 4.1.2(@swc/core@1.15.3)
       '@workflow/vite': 4.0.17(@opentelemetry/api@1.9.1)(ws@8.21.3)
@@ -14786,7 +14789,7 @@ snapshots:
     dependencies:
       '@workflow/astro': 4.0.17(@opentelemetry/api@1.9.1)(ws@8.21.3)
       '@workflow/cli': 4.3.6(@opentelemetry/api@1.9.1)(ws@8.21.3)
-      '@workflow/core': 4.8.2(@opentelemetry/api@1.9.1)(ws@8.21.3)
+      '@workflow/core': 4.8.2(patch_hash=862efb574e1256597c4d18c5623a0854549b0dc620784c7b603f01dc51a73347)(@opentelemetry/api@1.9.1)(ws@8.21.3)
       '@workflow/errors': 4.2.1
       '@workflow/nest': 4.0.18(@nestjs/common@11.1.29(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.29(@nestjs/common@11.1.29(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@opentelemetry/api@1.9.1)(@swc/cli@0.8.1(@swc/core@1.15.3)(chokidar@5.0.0))(@swc/core@1.15.3)(ws@8.21.3)
       '@workflow/next': 4.1.6(@opentelemetry/api@1.9.1)(ws@8.21.3)

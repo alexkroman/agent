@@ -90,14 +90,27 @@ export async function streamRunOutput(
   // simply not in this read's budget — it belongs to the reader's next one. The
   // other order would let the budget name an index the read has to wait for.
   const tail = await engine.streamTail(runId, options);
+  // `tail` is an absolute index and `startIndex` may be negative (counting back
+  // from the end), so the BUDGET is what this read may emit, not a position.
+  const budget = budgetFor(tail, startIndex);
+  const complete = isTerminal(run);
+  // A budget of zero opens NOTHING. This is the poll a caught-up page makes
+  // every second — `useWorkflowProgress` advances `startIndex` by what it has
+  // consumed, so a run that is mid-step and writing nothing answers 0 for as
+  // long as the step lasts — and opening a stream to read no chunks from it is
+  // both a world read for nothing and the exact shape that leaks: a reader
+  // cancelled before its own background connect has finished used to strand a
+  // `chunk:`/`close:` listener pair per request (see the `@workflow/core`
+  // patch). The frames a caller receives are unchanged: an empty read was
+  // already a bare `done`.
+  if (budget === 0) {
+    res.writeHead(200, SSE_HEADERS);
+    res.write(sseFrame("done", { runId, complete }));
+    res.end();
+    return;
+  }
   const stream = await engine.stream(runId, options);
-  await pipeChunksAsSse(res, stream, {
-    runId,
-    // `tail` is an absolute index and `startIndex` may be negative (counting back
-    // from the end), so the BUDGET is what this read may emit, not a position.
-    budget: budgetFor(tail, startIndex),
-    complete: isTerminal(run),
-  });
+  await pipeChunksAsSse(res, stream, { runId, budget, complete });
 }
 
 /**
