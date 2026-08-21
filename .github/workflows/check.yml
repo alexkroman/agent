@@ -158,6 +158,13 @@ jobs:
           # it is the gate that forces a signature change to be classified —
           # retained with a frozen compiling example, or dropped with a reason.
           pnpm run check:api-contracts
+          # The committed markdown API reference (`docs/api/`). Same emitted
+          # dist/*.d.ts as the reports above, read for the opposite half: the
+          # reports are signatures with every doc comment stripped, this is
+          # TypeDoc's own prose output, one file per published entry point, so
+          # an agent working in the repo can read the API without fetching the
+          # rendered site.
+          pnpm run check:docs-md
           pnpm run check:doc-examples
           # In scripts/check.sh since it was written, but missing here — the
           # same CI-never-invokes-check.sh gap the ratchets below document.

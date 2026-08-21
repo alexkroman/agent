@@ -758,6 +758,10 @@ rather than here:
 | `packages/aai-templates/CLAUDE.md` | Templates + scaffold packaging. Note `scaffold/CLAUDE.md` is a product artifact, not repo docs |
 | `packages/aai-evals/CLAUDE.md` | Eval tier: recorded assertions, the spread report, why it does not gate, the two levels |
 
+One guide sits outside `packages/`: `docs/CLAUDE.md`, for the `aai-docs`
+workspace — both TypeDoc renderings, the committed markdown reference, and
+the `typescript@6` pin. See "API reference docs".
+
 ### A guide says what to do in code that EXISTS
 
 There used to be a `research/` directory for issue-backed plans — a design doc
@@ -1725,40 +1729,34 @@ bumped automatically.
 
 **Checking status:** `pnpm changeset status --since=origin/main`
 
-### API reference docs (TypeDoc)
+### API reference docs
 
-`pnpm docs:api` generates the SDK API reference into `docs/dist` with
-[TypeDoc](https://typedoc.org), covering the published surface of `aai`
-and `aai-ui` (built `dist/*.d.ts`; the aai-cli subpaths are internal
-build hooks and deliberately not documented). Entry points live in each
-package's `typedoc.json`; a new subpath export needs an entry there too.
-`docs/typedoc.json` sets `excludeInternal` — tag a symbol `@internal` to
-keep it exported but out of the docs — and `treatWarningsAsErrors`, so a
-broken `{@link}` or a type referenced by a public signature but not
-exported **fails the build**. The generation runs as the turbo `docs`
-task, wired into `pnpm check` and the CI check job as a merge gate; keep
-it at zero warnings rather than downgrading the option.
-**Code examples in docs compile**: `pnpm check:doc-examples`
-(`scripts/check-doc-examples.mjs`, in `pnpm check` and the CI check job)
-extracts every ```` ```ts ````/```` ```tsx ```` fence from published-package
-doc comments, the scaffold CLAUDE.md, READMEs, and the studio prompt
-modules, and compiles each as a self-contained module under the scaffold
-tsconfig. A deliberate fragment opts out with `no-check` in the fence info
-string (```` ```ts no-check ````). The
-`.github/workflows/docs.yml` workflow publishes the site to GitHub Pages
-(`https://alexkroman.github.io/agent/`) on every push to `main`. The
-docs tooling lives in its own `docs/` workspace package
-because TypeDoc needs the JS TypeScript compiler API — the one TS 5/6
-shipped, which the TS 7 native compiler does not — so `docs/` pins
-its own `typescript@6`, and `check:sherif` ignores the `aai-docs` package
-to allow that one deliberate version split.
+Two renderings of the published type surface, both from TypeDoc over the built
+`dist/*.d.ts` of `aai` and `aai-ui`:
 
-Precisely: TS 7.0 is not API-less, it is DIFFERENTLY-API'd. It ships
-`typescript/unstable/{sync,async,fs,proto}` and `typescript/unstable/ast`
-(scanner, parser, factory, visitor) — enough that the old "TS 7 exposes no
-`createSourceFile`" line, which `aai-guest/studio-syntax.ts` also carried,
-was wrong. The pin stays until TypeDoc itself migrates; nothing here can be
-fixed by reaching for those subpaths.
+- **`pnpm docs:api`** → `docs/dist/**`, HTML, published to GitHub Pages by
+  `.github/workflows/docs.yml`. Runs as the turbo `docs` task, a merge gate in
+  `pnpm check` and CI, with `treatWarningsAsErrors` — a broken `{@link}` fails
+  the build.
+- **`pnpm docs:md`** → `docs/api/**`, markdown, **committed**, one file per
+  published entry point, so an agent can `cat` the API reference instead of
+  fetching a rendered site. `pnpm check:docs-md` fails when it is stale.
+
+Entry points live in each package's `typedoc.json`; a new subpath export needs
+an entry there, and an `@module` tag naming it, or it renders under its
+emitted-file path.
+
+Neither is the same artifact as the API reports — those are signatures with
+every doc comment stripped (see "Published type signatures are a committed
+report"), and the comments are what these carry.
+
+**The rest is in [`docs/CLAUDE.md`](docs/CLAUDE.md)**: the four load-bearing
+options in `typedoc.markdown.json`, why the markdown rendering is committed and
+floored, the `@module` rule and the latent broken link it surfaced, why `docs/`
+pins its own `typescript@6`, and why knip has to be told about the second
+config. `pnpm check:doc-examples` — every ```` ```ts ```` fence in
+published-package doc comments, READMEs, the scaffold guide and the studio
+prompts compiles under the scaffold tsconfig — is documented there too.
 
 ### Git hooks (lefthook)
 
