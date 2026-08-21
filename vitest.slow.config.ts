@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { sharedConfig } from "./vitest.shared.ts";
+import { sharedConfig, sharedSetupFiles } from "./vitest.shared.ts";
 
 /**
  * The three slow tiers, separated by what a test may TOUCH rather than by how
@@ -79,8 +79,15 @@ export default defineConfig({
      * `~/.config/aai/config.json` — the exact machine-contamination that file
      * exists to prevent, and the reason its scenario suite had to re-implement
      * the credential scrub by hand.
+     *
+     * `sharedSetupFiles` leads and is NOT selectable, for the reason it exists:
+     * a `VITEST_SETUP` naming a package's own file would otherwise replace the
+     * whole array and drop the listener-leak gate from every slow tier — which
+     * is precisely where a leak is most likely, these being the suites that open
+     * real sockets, spawn real subprocesses and run thousands of fast-check
+     * iterations against one long-lived signal.
      */
-    setupFiles: process.env.VITEST_SETUP?.split(",") ?? [],
+    setupFiles: [...sharedSetupFiles, ...(process.env.VITEST_SETUP?.split(",") ?? [])],
     pool: process.env.VITEST_POOL === "forks" ? "forks" : "threads",
   },
 });

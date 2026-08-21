@@ -144,9 +144,18 @@ await server.listen(Number(process.env.PORT ?? 3000), host);
 console.log(`${agent.name} listening on http://${host ?? "127.0.0.1"}:${server.port}`);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.once(signal, async () => {
+  // A SYNCHRONOUS listener. An `async` one hands its promise to `process`,
+  // which discards what a listener returns — so a `close()` that rejects would
+  // surface as an unhandled rejection, i.e. a crash with a stack trace on
+  // Ctrl-C, instead of the non-zero exit a failed shutdown should be.
+  process.once(signal, () => {
     // close() shuts the runtime down too — no separate runtime.shutdown().
-    await server.close();
-    process.exit(0);
+    server.close().then(
+      () => process.exit(0),
+      (error) => {
+        console.error(`shutdown failed: ${error?.message ?? error}`);
+        process.exit(1);
+      },
+    );
   });
 }

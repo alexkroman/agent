@@ -528,6 +528,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 20 | no changeset naming a package or bump type that does not exist | the real name from its package.json |
   | 21 | no `expect.poll` — a `test.concurrent` sibling clears the pointer it reads | `vi.waitFor()` |
   | 22 | no truthiness-guarded conditional spread — `...(x && { x })` | a judgement: see the rule's remedy |
+  | 23 | no `async` function handed straight to `.on`/`addEventListener` | a sync listener + `void p.catch(report)` |
 
   Rule IDs are **stable** — the numbers appear in commit messages and in the
   baseline, so a deleted rule leaves its number retired rather than letting a
@@ -599,7 +600,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   2's widening did — four reviewers reported the same frozen file
   independently.
 
-  **Three of these rules found real bugs on the day they were written**, which is
+  **Four of these rules found real bugs on the day they were written**, which is
   the argument for the whole gate. Rule 2 caught two `omitUndefined`
   conversions the documented 44-site sweep had missed (`host/s2s.ts`,
   `secret-handler.test.ts`). Rule 11 came out of a Windows CI leg that failed on
@@ -607,6 +608,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   drive-relative on Windows — both of which run on a developer's own machine
   under `aai dev`, so the bug was never guest-only. See "Windows is NOT tested,
   and is currently broken".
+
+  Rule 23 found the fourth, in the SHIPPED `scaffold/server.mjs`, which
+  `biome.json` excluded from linting until this change.
 
   **Rule 20 (from vercel/eve's rule 29) closes a gate that reported success over
   a mistake**, in the release path. A changeset whose package key is a typo is
@@ -626,18 +630,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
   path), so its gate spec asserts every path exists; it also found
   `SELF_REFERENTIAL` too blunt to be per-FILE, so exemptions are per rule now.
 
-  Two things any new rule must respect. **A pattern that matches nothing prints
-  the same checkmark as a rule being upheld**, so
-  `packages/aai-templates/guard-invariants-gate.test.ts` feeds every rule a
-  positive sample it must catch and a negative twin it must spare, importing the
-  rules as real values rather than scraping them out of the source. Rule 4
-  shipped its first draft with `[^)]*` between `new Promise(` and `setTimeout(`,
-  which cannot cross the arrow's own parameter list — 0 reported against five
-  real occurrences, the same silently-dead-pattern shape as the `\b` bug in
-  `check-escape-hatches.mjs`. And **the rules module matches most of its own
-  rules**, since every `label` and `re` describes what it bans; it, the gate,
-  the baseline and the gate's spec are all in the script's `SELF_REFERENTIAL`
-  set. That is the third and fourth time this trap has been paid for here.
+  Two things any new rule must respect — a dead pattern prints the same
+  checkmark as a rule upheld, and the rules module matches its own rules.
+  `guard-invariants-gate.test.ts` specs both; aai-templates' guide argues it.
+
 - **`pnpm check:agent-guide`** (`scripts/sync-agent-guide.mjs`) — asserts
   `packages/aai/AGENT_GUIDE.md` is the current copy of
   `packages/aai-templates/scaffold/CLAUDE.md`. See "The authoring guide ships
@@ -1341,6 +1337,9 @@ you only need to list one package.
   `...sharedConfig.test` REPLACES that object rather than extending it, which
   is how every package silently lost `reporters` while each re-declared
   `restoreMocks` by hand.
+- **A listener LEAK fails the run**, via `scripts/fail-on-process-warning.mjs`,
+  a `setupFiles` entry every project loads through `sharedSetupFiles`
+  (`vitest.shared.ts`). Its doc and `packages/aai-templates/CLAUDE.md` say why.
 - **Snapshots are pinned to CI semantics (`update: "none"`), so an obsolete
   one FAILS locally.** Vitest otherwise resolves this from `process.env.CI`:
   `new` locally (write what is missing, merely REPORT what is obsolete) and
@@ -1909,6 +1908,10 @@ back to the host's `process.env`.
 
 ### Known limitations
 
+- **Biome's promise rules cannot see a `node:` builtin**, and typescript-eslint
+  cannot close it — `typescript@7` ships no compiler API. `guard-invariants`
+  rule 23 covers the listener half; the measurements are in
+  `packages/aai-templates/CLAUDE.md`.
 - **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
   plus the provider descriptors) and `aai-ui` (`.` — the four generic hooks a
   custom client is written against). Subpath exports (e.g. `./protocol`) are

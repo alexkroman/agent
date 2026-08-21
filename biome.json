@@ -12,7 +12,6 @@
       "!**/.aai",
       "!**/.dev-workflow-fixture",
       "!**/__snapshots__",
-      "!**/scaffold",
       "!tmp",
       "!.worktrees",
       "!.claude"

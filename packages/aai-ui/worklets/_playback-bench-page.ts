@@ -274,6 +274,12 @@ const ms = (n) => ((n / SAMPLE_RATE) * 1000).toFixed(0) + " ms";
 const blobUrl = (src) => URL.createObjectURL(new Blob([src], { type: "application/javascript" }));
 
 let last = null;
+// guard-invariants rule 23 baseline: an async listener whose ENTIRE body is a
+// try/catch/finally, so it cannot reject and the rule's hazard does not apply.
+// A line-based scan cannot see the wrapping; this is the shape the rule
+// nominates as the remedy, spelled the other way round. Kept as-is rather than
+// inverted into void run().catch(report) because the finally block re-enables the
+// buttons and reads better attached to the click that disabled them.
 el("play").addEventListener("click", async () => {
   el("play").disabled = true; el("stop").disabled = false; el("save").disabled = true;
   try {

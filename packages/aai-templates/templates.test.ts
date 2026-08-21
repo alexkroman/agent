@@ -29,6 +29,7 @@ import {
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { ASSEMBLYAI_TTS_DEPRECATED_VOICES, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
+import biomeConfig from "../../biome.json?raw";
 import { templatePromptFiles, withTemplatePrompt, withTemplateTools } from "./_discovery.ts";
 // `?raw` rather than node:fs — this package's tsconfig has no node types, and
 // the raw-import shape is the one the CLI bundler supports anyway.
@@ -194,4 +195,36 @@ describe("scaffold pnpm-workspace.yaml", () => {
       );
     },
   );
+});
+
+/**
+ * The scaffold is LINTED, and it must stay that way.
+ *
+ * `biome.json` used to carry a negated scaffold glob in its `files.includes`
+ * (spelled out in the assertion below rather than here, a literal one closing
+ * this very comment), so every file `aai init` copies into a user's project was
+ * checked by nothing — not the
+ * per-package `biome check .`, not `pnpm lint`, not CI. It was inherited rather
+ * than argued for: the exclusion arrived with the whole config file (#1159) and
+ * no comment ever gave a reason.
+ *
+ * It cost a real bug. `scaffold/server.mjs` registered its SIGINT/SIGTERM
+ * handler as an "async" listener, so a rejecting `server.close()` became an
+ * unhandled rejection — a stack trace on Ctrl-C in every project ever
+ * scaffolded. `guard-invariants` rule 23 found it because that gate scans the
+ * whole tree; Biome's own `noMisusedPromises` could not, having been told not to
+ * look. Removing the exclusion cost exactly one import-order fix.
+ *
+ * Asserted here rather than left to the linter itself for the reason this file
+ * exists: a re-added exclusion makes the linter QUIETER, so nothing fails and
+ * the loss is invisible. Note the scaffold ships to users, which makes it the
+ * LAST place in the repo that should be unchecked.
+ */
+describe("scaffold is linted", () => {
+  test("biome.json does not exclude it", () => {
+    expect(biomeConfig).not.toMatch(/!\*\*\/scaffold/);
+    // The positive half: `packages/**` is what pulls the scaffold in, so a
+    // narrowed root pattern would exclude it just as effectively.
+    expect(biomeConfig).toMatch(/"packages\/\*\*"/);
+  });
 });

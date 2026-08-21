@@ -187,6 +187,40 @@ export const RACE_CONTINUES = "Promise\\.race\\(\\[?$";
  * by a rule that has nothing to say about it.
  */
 export const TIMERS_PROMISES = `setTimeout as ${IDENT}`;
+/**
+ * The event-registration methods a listener is handed to.
+ *
+ * `on` and `once` last is not cosmetic: POSIX ERE alternation is leftmost-LONGEST
+ * rather than leftmost-first, but git's matcher is only ever asked whether the
+ * line matches, so the order is free — spelled longest-first anyway so a reader
+ * checking `addListener` against `addEventListener` does not have to reason
+ * about it.
+ */
+const LISTENER_REGISTER =
+  "(addEventListener|prependOnceListener|prependListener|addListener|once|on)";
+/**
+ * An `async` function handed STRAIGHT to an event registration.
+ *
+ * The rejection of an async listener is returned to the emitter, which
+ * discards it — so a throw inside becomes an unhandled rejection that takes
+ * down the process instead of failing the operation it belongs to. Exactly the
+ * shape of the shipped bug in `packages/aai/CHANGELOG.md` (cartesia-js's bare
+ * `Promise.reject` on a socket with no `error` listener).
+ *
+ * Biome's `noMisusedPromises` catches this for a listener slot declared in
+ * LOCAL source and cannot see one typed by `@types/node` or `lib.dom` —
+ * measured: `local.on("x", async …)` on a hand-written class is reported,
+ * `emitter.on("x", async …)` on a real `EventEmitter` is not, and neither is
+ * `signal.addEventListener("abort", async …)`. That gap is the whole reason
+ * this rule exists, and it is why the rule may not be retired in favour of the
+ * linter without re-measuring it.
+ *
+ * `[^,)]*` is the event-name argument and CANNOT cross a comma, which is what
+ * keeps a router's third-positional handler out — `app.on("GET", "/x", async
+ * (c) => …)` is a hono handler the framework really does await. Verified
+ * against it.
+ */
+export const ASYNC_LISTENER = `\\.${LISTENER_REGISTER}\\([^,)]*, *async[ (]`;
 /** Line start plus indentation: where a property or method is DECLARED. */
 export const AT_LINE_START = "^ *";
 /**

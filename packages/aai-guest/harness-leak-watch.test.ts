@@ -7,6 +7,22 @@ import { EventEmitter } from "node:events";
 import { afterEach, expect, test, vi } from "vitest";
 import { installLeakWatch } from "./harness-leak-watch.ts";
 
+/**
+ * This suite's SUBJECT is `MaxListenersExceededWarning`: it synthesizes them
+ * through `process.emit` and attaches 88 real listeners to a real emitter, so it
+ * trips the repo-wide gate in `scripts/fail-on-process-warning.mjs` nine times
+ * by construction. Opting out here rather than narrowing that gate keeps the
+ * gate absolute everywhere else — this is the one suite in the repo for which
+ * such a warning is the expected output rather than a defect, and
+ * `aai-templates/vitest-setup-wiring.test.ts` asserts it stays the only one.
+ *
+ * Typed as a slot in the shape `sdk/step-env.ts` uses, because indexing bare
+ * `globalThis` with a symbol is `TS7053`.
+ */
+const EXPECTS_PROCESS_WARNINGS = Symbol.for("aai.expectsProcessWarnings");
+type WarningGateSlot = { [EXPECTS_PROCESS_WARNINGS]?: boolean };
+(globalThis as WarningGateSlot)[EXPECTS_PROCESS_WARNINGS] = true;
+
 const SWEEP_MS = 60_000;
 
 let stop: (() => void) | undefined;
