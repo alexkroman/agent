@@ -144,6 +144,13 @@
       // bundle at a real copy. On the subprocess backend that walk-up lands in
       // THIS package's node_modules, so the declaration is what puts one there.
       // A string inside a bundled dependency is not something knip can see.
+      //
+      // The rest are declared so a STUDIO WORKSPACE can resolve them, not
+      // because this package imports them: they are the third-party half of
+      // `WORKSPACE_DEPENDENCIES`, and declaring them here is what lets
+      // `sync-guest-toolchain.mjs` read the version this checkout installed —
+      // which is the only thing keeping the baked toolchain and the toolchain
+      // the repo builds and tests with from drifting.
       "ignoreDependencies": [
         "@alexkroman1/aai-ui",
         "@types/react",
@@ -152,7 +159,8 @@
         "react",
         "react-dom",
         "tailwindcss",
-        "workflow"
+        "workflow",
+        "xstate"
       ]
     },
     "packages/aai-server": {

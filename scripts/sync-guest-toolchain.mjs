@@ -79,6 +79,7 @@ const LOCKED_PACKAGES = [
   "typescript",
   "vite",
   "vitest",
+  "xstate",
   "zod",
 ];
 
