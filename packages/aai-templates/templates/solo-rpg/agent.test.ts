@@ -10,6 +10,7 @@ import {
   MAX_NPCS,
   MIN_MOMENTUM,
   makeNpc,
+  resumeStory,
   rollAction,
   storyFlow,
 } from "./shared.ts";
@@ -754,6 +755,67 @@ describe("the story flow", () => {
 
     // And the play tools are available in the resumed session.
     ok(await updateState.execute({ location: "Back at the Docks" }, sessionB));
+  });
+
+  test("a save taken with a roll standing resumes with the burn window open", async () => {
+    // `save_game`'s `when` is ["playing", "gameOver"], and `playing` matches
+    // either child — so a save really can be taken from `playing.rollResolved`.
+    // Restoring it used to land in `awaitingRoll` with `lastRoll` still set, so
+    // `burn_momentum` refused a burn the campaign data allowed. See `resumeStory`.
+    const { db } = makeDb();
+    const sessionA = makeCtx(db);
+    const standing = playingState();
+    standing.momentum = 8; // beats both challenge dice below
+    standing.lastRoll = {
+      d1: 2,
+      d2: 2,
+      c1: 3,
+      c2: 5,
+      statName: "iron",
+      statValue: 2,
+      actionScore: 6,
+      result: "MISS",
+      move: "clash",
+      match: false,
+      position: "risky",
+      effect: "standard",
+      targetNpcId: null,
+      deltas: {
+        health: 0,
+        spirit: 0,
+        supply: 0,
+        momentum: 0,
+        npcId: null,
+        bond: 0,
+        dispositionFrom: null,
+        dispositionTo: null,
+        clockId: null,
+        clockTicks: 0,
+      },
+    };
+    seedPlaying(sessionA, standing);
+    storyFlow.send(sessionA, { type: "ROLLED" });
+    expect(storyFlow.position(sessionA).state).toBe("playing.rollResolved");
+    ok(await saveGame.execute({ slot: "mid-roll" }, sessionA));
+
+    const sessionB = makeCtx(db);
+    const loaded = (await loadGame.execute({ slot: "mid-roll" }, sessionB)) as { at?: string };
+    expect(loaded.at).toBe("playing.rollResolved");
+
+    // And the burn the data allows actually goes through, rather than being
+    // refused by a position that disagreed with the campaign it was restored from.
+    const burned = ok<Record<string, unknown>>(await callNoArgs(burnMomentum, sessionB));
+    expect(burned.burned).toBe(true);
+    expect(burned.newResultCode).toBe("STRONG_HIT");
+  });
+
+  test("resumeStory leaves an uninitialized campaign awaiting setup", () => {
+    const ctx = makeCtx();
+    // Not reachable through `save_game` (it is gated out of `awaitingSetup`), but
+    // a slot written by anything else must not resume into play with no character.
+    const at = resumeStory(ctx, structuredClone(DEFAULT_STATE));
+    expect(at.state).toBe("awaitingSetup");
+    expect(storyFlow.position(ctx).state).toBe("awaitingSetup");
   });
 
   test("a save whose game was over resumes as over", async () => {
