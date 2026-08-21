@@ -419,7 +419,8 @@ so every piece of per-project state resets on a switch with no effect to do it.
     methods are documented, because a table listing only GET and POST would
     hide exactly the bug that table exists to catch.
   - **Every example DEFAULTS to the aai SDK, and `curl` is a disclosure**
-    (`docs-snippets.ts`, and the `Examples` component in `api-docs.tsx`). The
+    (`docs-snippets.ts`, and the `Examples` component in `docs-examples.tsx`,
+    shared by the pane and the upload card). The
     pane used to lead with `curl` in every section, which teaches the HTTP shape
     and leaves the reader to re-derive everything the client they already have
     knows: that `startAndWait` is ONE held-open request rather than a poll loop,
@@ -447,6 +448,34 @@ so every piece of per-project state resets on a switch with no effect to do it.
       `recordingUpload.id`, which is also what says the bytes go in once. That is
       why `sampleInput` takes an `upload` renderer — the same schema has to come
       out as data for one language and as an expression for the other.
+    - **And the page documents how to DO the upload, not only how to use one**
+      (`docs-uploads.tsx`, the "Sending a file" card). The four
+      `/workflows/uploads` routes have been in the table since the pane existed
+      and every generated run body for an upload-carrying workflow carried an
+      id, but the only worked example of OBTAINING one was the `agent.upload`
+      line inside the SDK start snippet — so a reader in a shell, or anyone
+      reading the run body to find out what the field wants, was told the
+      property takes an upload id and left to reverse-engineer the route that
+      mints one from a summary line. The card leads with the client SDK
+      (`agent.upload` / `agent.uploadStream` / `agent.uploadInfo` — uploads are
+      a call on the client, not something a caller assembles), covers the two
+      ORDERS (send the file and get an id back; or mint the id, start the run,
+      and stream the bytes into it while the run reads the prefix), and is
+      generated from the agent's own listing so the start-first example names a
+      real workflow and a real property. It renders only for an agent some
+      workflow of which declares an upload — the same judgement that keeps the
+      workflow table off a voice agent.
+    - **The shell alternate really uploads.** `curlStart` now emits the upload
+      command above the run, leaving the id in a shell variable the run body
+      EXPANDS (`"'"$AUDIO_FILE_UPLOAD_ID"'"` — the shell's own spelling for an
+      expansion inside a single-quoted JSON argument), so the pair runs as
+      pasted. Before that the body carried `<upload id for audio_file>`, which
+      is a placeholder with no documented way to fill it in. Two details are
+      load-bearing: the `curl` example file is a CONCRETE name rather than the
+      `<angle bracket>` placeholder every other snippet uses, because an angle
+      bracket is a shell redirect; and the bearer reaches the upload command as
+      well as the start, since closing the workflow API closes the upload
+      routes with it.
   - The builders are a separate module from the pane for the reason every
     extracted-logic module here is one: a snippet whose field is spelled
     differently than the workflow declared it renders perfectly and 400s when

@@ -16,6 +16,9 @@ import {
   curlFollow,
   curlPoll,
   curlStart,
+  curlUpload,
+  curlUploadInfo,
+  curlUploadStream,
   SDK_INSTALL,
   sdkClient,
   sdkConfig,
@@ -23,6 +26,9 @@ import {
   sdkFollowOutput,
   sdkRead,
   sdkStart,
+  sdkUpload,
+  sdkUploadInfo,
+  sdkUploadStream,
 } from "./docs-snippets.ts";
 
 /** A workflow as `GET /workflows` lists one, with the schema under test. */
@@ -106,6 +112,92 @@ describe("reading a run back, and following one", () => {
   test("the config read destructures what a caller actually branches on", () => {
     expect(sdkConfig(BASE, false)).toContain("await agent.config()");
     expect(sdkConfig(BASE, false)).toContain("page");
+  });
+});
+
+/** A workflow whose input carries a file, which is what the upload snippets serve. */
+const RECORDING = workflow(
+  { type: "object", properties: { topic: { type: "string" }, audio_file: { type: "string" } } },
+  ["audio_file"],
+);
+
+describe("actually doing the upload", () => {
+  test("the default is ONE client-SDK call, and it reports its own progress", () => {
+    // The point of the section: the run body next door carries an upload id, and
+    // this is the call that produces one. `onProgress` is in the snippet rather
+    // than in prose because a reader who discovers it later has already written
+    // the version without a progress bar.
+    const code = sdkUpload(BASE, false);
+    expect(code).toContain("await agent.upload(file, {");
+    expect(code).toContain("onProgress:");
+    expect(code).toContain("stored.id");
+  });
+
+  test("the shell alternate sends the RAW bytes, with the name and type it stores", () => {
+    // The one thing about this route a reader cannot guess from the other POSTs
+    // on the page: the body is the file, not JSON and not a multipart envelope.
+    const code = curlUpload(BASE, false);
+    expect(code).toContain(`curl -X POST "${BASE}/workflows/uploads?name=recording.wav"`);
+    expect(code).toContain(`-H "Content-Type: audio/wav"`);
+    expect(code).toContain("--data-binary @recording.wav");
+  });
+
+  test("the run's own curl uploads first and expands the id into the body", () => {
+    // Before this the shell reader was handed a body carrying `<upload id for
+    // audio_file>` and no documented way to obtain one. The two commands have to
+    // COMPOSE: `"'"$VAR"'"` is the shell's spelling for an expansion inside a
+    // single-quoted JSON argument, so the pair runs as pasted.
+    const code = curlStart(BASE, RECORDING, false);
+    expect(code).toContain("AUDIO_FILE_UPLOAD_ID=$(curl -s -X POST");
+    expect(code).toContain("--data-binary @recording.wav | jq -r .id)");
+    expect(code).toContain(
+      `-d '{"workflow":"digest","input":{"topic":"<topic>","audio_file":"'"$AUDIO_FILE_UPLOAD_ID"'"}}'`,
+    );
+    // The sentinel that made the substitution possible must never survive it.
+    expect(code).not.toContain("@@upload");
+    expect(code).not.toContain("<upload id");
+  });
+
+  test("a workflow with no uploads gets no upload commands", () => {
+    expect(curlStart(BASE, TOPIC, false)).not.toContain("uploads");
+  });
+
+  test("the bearer reaches the upload command too, not just the start", () => {
+    // An agent that closed its workflow API closed the upload routes with it, so
+    // an upload command without the header 401s halfway through the paste.
+    const code = curlStart(BASE, RECORDING, true);
+    expect(code.match(/Authorization: Bearer \$AAI_WORKFLOW_API_TOKEN/g)).toHaveLength(2);
+    expect(curlUpload(BASE, true)).toContain("Authorization");
+    expect(curlUpload(BASE, false)).not.toContain("Authorization");
+  });
+
+  test("the start-first shape mints the id BEFORE the run, in both languages", () => {
+    // The whole difference between the two shapes is the order of three lines:
+    // the caller owns the id, so the run can start while the bytes are still on
+    // the wire. An id minted after the start would document the other shape.
+    const code = sdkUploadStream(BASE, RECORDING, false);
+    const mint = code.indexOf("const audioFileUploadId = crypto.randomUUID()");
+    const start = code.indexOf("await agent.start(");
+    const send = code.indexOf("await agent.uploadStream(audioFileUploadId, file");
+    expect(mint).toBeGreaterThan(-1);
+    expect(start).toBeGreaterThan(mint);
+    expect(send).toBeGreaterThan(start);
+    // The input carries the id itself, not a `.id` read off an UploadRef the
+    // caller does not have yet.
+    expect(code).toContain(`"audio_file":audioFileUploadId`);
+
+    const shell = curlUploadStream(BASE, RECORDING, false);
+    expect(shell.indexOf("AUDIO_FILE_UPLOAD_ID=$(uuidgen")).toBe(0);
+    expect(shell.indexOf("workflows/runs")).toBeLessThan(shell.indexOf("-X PUT"));
+    expect(shell).toContain(
+      `curl -X PUT "${BASE}/workflows/uploads/$AUDIO_FILE_UPLOAD_ID?name=recording.wav"`,
+    );
+  });
+
+  test("the progress read names the route and the field a caller branches on", () => {
+    expect(sdkUploadInfo(BASE, false)).toContain(`await agent.uploadInfo("<upload id>")`);
+    expect(sdkUploadInfo(BASE, false)).toContain("info.complete");
+    expect(curlUploadInfo(BASE, false)).toBe(`curl "${BASE}/workflows/uploads/$UPLOAD_ID/info"`);
   });
 });
 
