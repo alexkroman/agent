@@ -6,6 +6,7 @@ import { assertCanCoverDiff, planItemSwap } from "../swap.ts";
 
 export default retailTool({
   name: "exchange_delivered_order_items",
+  when: "serving",
   description:
     "Request an exchange of items in a delivered order for different options of the SAME products. " +
     "Only a 'delivered' order can be exchanged, and only once. Remind the caller to name EVERY " +

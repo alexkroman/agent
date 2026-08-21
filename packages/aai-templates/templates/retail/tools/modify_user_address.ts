@@ -5,6 +5,7 @@ import { requireOwnUser, retailTool } from "../store.ts";
 
 export default retailTool({
   name: "modify_user_address",
+  when: "serving",
   description:
     "Change the customer's default address, used for future orders. Read the new address back and " +
     "get an explicit yes before calling this. This does not change the address on any existing " +

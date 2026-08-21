@@ -1,17 +1,26 @@
 import { z } from "zod";
-import { gameSlot, saveSlotKey, saveSlotParam, saveState } from "../shared.ts";
+import { gameSlot, saveSlotKey, saveSlotParam, saveState, storyFlow } from "../shared.ts";
 
 // Requires storage — `aai storage enable` (or DATABASE_URL in .env under
 // `aai dev`); the rest of the game works without it.
 //
-// `gameSlot.tool` even though the body AWAITS: the reading half places no
-// constraint on the body (only `updateTool` must be synchronous, because its
-// draft is stored when it returns). What it does place is the frozen value, and
-// a save is the purest read there is.
-export default gameSlot.tool({
+/**
+ * Gated on `playing` or `gameOver` — i.e. anything but `awaitingSetup`.
+ *
+ * Saving before a character exists writes an empty campaign under a slot name,
+ * and `load_game` would then cheerfully restore it over a real game. That is a
+ * position, so it is a `when`.
+ *
+ * The body AWAITS, which a flow tool allows: only `slot.updateTool` must be
+ * synchronous, because its draft is stored when it returns. What a save needs is
+ * the frozen value, and `gameSlot.get` is what hands it over.
+ */
+export default storyFlow.tool({
   description: "Save current game to persistent storage.",
   inputSchema: z.object({ slot: saveSlotParam }),
-  async execute(args, game, ctx) {
+  when: ["playing", "gameOver"],
+  async execute(args, ctx) {
+    const game = gameSlot.get(ctx);
     await saveState(ctx, saveSlotKey(args.slot), game);
     return {
       saved: true,

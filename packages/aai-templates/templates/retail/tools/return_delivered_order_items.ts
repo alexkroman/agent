@@ -11,6 +11,7 @@ import {
 
 export default retailTool({
   name: "return_delivered_order_items",
+  when: "serving",
   description:
     "Request a return of items from a delivered order. Only a 'delivered' order can be returned, " +
     "and only once. The refund must go to the order's ORIGINAL payment method or to one of the " +

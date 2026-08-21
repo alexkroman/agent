@@ -4,6 +4,7 @@ import { requireOwnUser, retailTool } from "../store.ts";
 
 export default retailTool({
   name: "get_user_details",
+  when: "serving",
   description:
     "Get the authenticated customer's profile: name, email, default address, payment methods " +
     "(with gift-card balances) and their order ids with each order's status.",

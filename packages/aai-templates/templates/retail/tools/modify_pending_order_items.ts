@@ -6,6 +6,7 @@ import { applySwap, assertCanCoverDiff, planItemSwap } from "../swap.ts";
 
 export default retailTool({
   name: "modify_pending_order_items",
+  when: "serving",
   description:
     "Change items in a pending order to different options of the SAME products. This can be done " +
     "ONCE per order and is irreversible — afterwards the order can no longer be cancelled or " +

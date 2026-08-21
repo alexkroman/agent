@@ -178,6 +178,8 @@ once, and the templates are now their reference use:
 | `useUserTranscript` | the same three. Each had written `userTranscript !== null && (… === "" ? "…" : …)` by hand, re-deriving a PROTOCOL distinction (`null` is silence, `""` is speech detected with no words yet) from the type |
 | `WorkflowProgress` | `transcription-workflow` and `redline` — the two that render a run's whole narration; they had the component byte-identical, both comments included. `link-digest` keeps the raw `useWorkflowProgress`, since its page renders the newest line only |
 | `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
+| `flow()` + `flow.tool` + `flow.send` | six templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity) |
+| `graph()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
 | `workflow()` + `ctx.workflows` + `isTerminal` | `research-workflow` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below); `recap-workflow` is the same shape with `cancel` and a live-run check on top |
 | `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-workflow` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
@@ -199,6 +201,71 @@ once, and the templates are now their reference use:
 | `encodeWav` + `pcmDurationMs` (`@alexkroman1/aai/utils`) | `call-audit` — the pair that makes a headerless intermediate workable: the store holds raw PCM so a byte offset is a timestamp, and each span gets a header back for the one request that needs one. `transcription-workflow` hand-rolls the equivalent in 25 lines of `DataView` writes, which is what a second copy of this would have been |
 | `isFfmpegError` + `FfmpegError.kind` | `call-audit` and `transcription-workflow`, both through a `classifyFfmpeg` that maps `exit` and `missing-binary` to fatal and `timeout`/`aborted` to a retry — the distinction the field exists for, and the one a spec can reach when the spawn itself cannot |
 | `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, which is the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails |
+
+## A flow is WHERE A CONVERSATION IS, and a board is not one
+
+Five templates declare a `flow()`, and the interesting one is the template that
+almost could not. `dispatch-center` holds many incidents at once and a flow is
+bound to a session, so it has exactly ONE position — and the first instinct, a
+machine per incident over `Incident.status`, is not available at all.
+
+**The resolution is that a position is a fact about the CONVERSATION, not about
+the world.** `working.monitoring` there means "the incident this dispatcher last
+touched has units on it", never "every incident does"; per-incident status stays
+on `Incident.status` and every gated tool stays addressed by id. What its six
+gated tools actually need is one bit — "has anything been logged this shift" — so
+they gate on the PARENT state, and the three children exist to carry the
+instruction for the step in front of the dispatcher. Do not read a position as a
+summary of the data, and do not reach for a flow when the thing to constrain is
+per-entity; a `ToolFailure` from a data lookup is what that is for. Read the
+other four in this order: `travel-concierge` (two states, one gate),
+`plan-and-execute` (three, a lifecycle), `retail` (a call ending in a TERMINAL
+state), `solo-rpg` (nested, plus a `final` one).
+
+Four rules came out of converting `dispatch-center`, `retail` and `solo-rpg`,
+each a trap rather than a preference:
+
+- **A tool legal in EVERY state is not a flow tool.** `when` is required, so an
+  ungated one would list every state — a gate that gates nothing, paying the
+  wrapper for it. It stays an ordinary `tool()`/`slot.updateTool` and calls
+  `flow.send` itself, which is what that method is public for
+  (`incident_create`, `setup_character`, `load_game`, `start_plan`). Each still
+  reports the position it landed in: the READOUT is most of the value and needs
+  no gate.
+- **`sendFrom` must be declared AFTER `execute`.** TS infers the result type from
+  `execute` and reads an object literal in source order, so a `sendFrom` above it
+  gets `unknown` and its narrowing stops meaning anything — the same trap
+  `retail`'s own wrapper documents for its `summary`. It is also the field for
+  "did this actually do the thing": `resources_dispatch` sends nothing when every
+  requested callsign was busy.
+- **A `final` state delivers no events, so restarting is `flow.reset`.** An `on:
+  { SETUP }` on `solo-rpg`'s `gameOver` was dead config that read as live, caught
+  by a test asserting the POSITION rather than a refusal. Resetting is the honest
+  mirror anyway — `setup_character` replaces the campaign with a pristine
+  default, so it replaces the position too.
+- **A refusal short-circuits before the tool's own body, bookkeeping included.**
+  `retail`'s wrapper logs an activity entry and bumps `callSeq` on every call, and
+  a gated refusal no longer reaches it — so a blocked call stopped appearing in
+  the sidebar. Stated where the wrapper is, because the natural reading of a
+  missing line is a bug. It is the right trade (the refusal reaches the MODEL,
+  which a sidebar line never did) and it is a trade.
+
+**Two things a flow deleted outright, and both were dead guarantees.** `retail`'s
+policy said to say one sentence after `transfer_to_human_agents` "and nothing
+else", enforced by nothing — every tool stayed callable, so a model that kept
+going kept acting on a call it had given away. `solo-rpg`'s `gameOver` was written
+by `updateCrisisFlags` and read by nobody who could act on it, so a player with
+both tracks empty could roll forever. A terminal state is one line of config for
+each. `solo-rpg` also lost a FIELD: `phase: "genre" | "playing"` was
+`initialized` spelled twice and neither gated anything.
+
+**A spec is what makes the gate true.** Each of the three carries an `ok<T>()`
+unwrap — a flow tool answers the body's value under `result`, wrapped in the
+position — the same typed seam `retail` already had for its casts, and the reason
+that conversion cost two lines rather than twenty-four. Pin the POSITION as well
+as the refusal: that a tool refuses in the wrong state is half of it, and that
+the position moved (and did NOT move on a failure) is the half a dead transition
+hides in.
 
 ## A run can be the SCHEDULE
 

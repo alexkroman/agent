@@ -8,12 +8,21 @@ import {
   MOVES,
   RESULT_LABELS,
   rollAction,
+  storyFlow,
   updateChaosFactor,
 } from "../shared.ts";
 
-export default gameSlot.updateTool({
+/**
+ * Gated on `playing`, which is what makes "never narrate a success without
+ * rolling" hold from the other side too: before `setup_character` there are no
+ * stats to roll against, and this used to roll 2d6 against nobody and apply
+ * consequences to a game that did not exist. After a game over it refuses
+ * outright — `gameOver` was a flag nothing acted on.
+ */
+export default storyFlow.tool({
   description:
     "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action. Pure conversation needs no roll.",
+  when: "playing",
   inputSchema: z.object({
     move: z.enum(MOVES).describe("Which move the player is making"),
     stat: z.enum(["edge", "heart", "iron", "shadow", "wits"]).describe("Which stat to roll"),
@@ -24,73 +33,82 @@ export default gameSlot.updateTool({
     purpose: z.string().max(300).describe("What the character is attempting"),
     targetNpcId: z.string().max(32).describe("Target NPC id for social moves").optional(),
   }),
-  execute(args, state) {
-    const statValue = state[args.stat];
-    const roll = rollAction(args.stat, statValue, args.move);
+  execute: (args, ctx) =>
+    gameSlot.update(ctx, (state) => {
+      const statValue = state[args.stat];
+      const roll = rollAction(args.stat, statValue, args.move);
 
-    // Apply consequences
-    const { consequences, clockEvents, deltas } = applyConsequences(
-      state,
-      roll,
-      args.position,
-      args.effect,
-      args.targetNpcId ?? null,
-    );
+      // Apply consequences
+      const { consequences, clockEvents, deltas } = applyConsequences(
+        state,
+        roll,
+        args.position,
+        args.effect,
+        args.targetNpcId ?? null,
+      );
 
-    // Persist the roll (with the exact deltas applied) so burn_momentum can
-    // validate against it and revert it — the model never supplies dice.
-    state.lastRoll = {
-      ...roll,
-      position: args.position,
-      effect: args.effect,
-      targetNpcId: args.targetNpcId ?? null,
-      deltas,
-    };
+      // Persist the roll (with the exact deltas applied) so burn_momentum can
+      // validate against it and revert it — the model never supplies dice.
+      state.lastRoll = {
+        ...roll,
+        position: args.position,
+        effect: args.effect,
+        targetNpcId: args.targetNpcId ?? null,
+        deltas,
+      };
 
-    // Update chaos factor
-    updateChaosFactor(state, roll.result);
+      // Update chaos factor
+      updateChaosFactor(state, roll.result);
 
-    // Check for chaos interrupt
-    const interrupt = checkChaosInterrupt(state);
+      // Check for chaos interrupt
+      const interrupt = checkChaosInterrupt(state);
 
-    // Increment scene count
-    state.sceneCount++;
+      // Increment scene count
+      state.sceneCount++;
 
-    // Can burn momentum?
-    const burnTarget = canBurnMomentum(state, roll);
+      // Can burn momentum?
+      const burnTarget = canBurnMomentum(state, roll);
 
-    return {
-      purpose: args.purpose,
-      move: MOVE_LABELS[args.move] || args.move,
-      moveCode: args.move,
-      stat: args.stat,
-      statValue,
-      actionDice: [roll.d1, roll.d2],
-      challengeDice: [roll.c1, roll.c2],
-      actionScore: roll.actionScore,
-      result: RESULT_LABELS[roll.result],
-      resultCode: roll.result,
-      match: roll.match,
-      matchNote: roll.match
-        ? roll.result === "STRONG_HIT" || roll.result === "WEAK_HIT"
-          ? "Fateful roll. Both challenge dice match. An unexpected advantage or twist."
-          : "Fateful roll. Both challenge dice match. A dire and dramatic escalation."
-        : undefined,
-      position: args.position,
-      effect: args.effect,
-      consequences,
-      clockEvents,
-      chaosInterrupt: interrupt,
-      currentHealth: state.health,
-      currentSpirit: state.spirit,
-      currentSupply: state.supply,
-      currentMomentum: state.momentum,
-      chaosFactor: state.chaosFactor,
-      crisisMode: state.crisisMode,
-      gameOver: state.gameOver,
-      sceneCount: state.sceneCount,
-      canBurnMomentum: Boolean(burnTarget),
-      burnWouldYield: burnTarget ? RESULT_LABELS[burnTarget] : undefined,
-    };
-  },
+      return {
+        purpose: args.purpose,
+        move: MOVE_LABELS[args.move] || args.move,
+        moveCode: args.move,
+        stat: args.stat,
+        statValue,
+        actionDice: [roll.d1, roll.d2],
+        challengeDice: [roll.c1, roll.c2],
+        actionScore: roll.actionScore,
+        result: RESULT_LABELS[roll.result],
+        resultCode: roll.result,
+        match: roll.match,
+        matchNote: roll.match
+          ? roll.result === "STRONG_HIT" || roll.result === "WEAK_HIT"
+            ? "Fateful roll. Both challenge dice match. An unexpected advantage or twist."
+            : "Fateful roll. Both challenge dice match. A dire and dramatic escalation."
+          : undefined,
+        position: args.position,
+        effect: args.effect,
+        consequences,
+        clockEvents,
+        chaosInterrupt: interrupt,
+        currentHealth: state.health,
+        currentSpirit: state.spirit,
+        currentSupply: state.supply,
+        currentMomentum: state.momentum,
+        chaosFactor: state.chaosFactor,
+        crisisMode: state.crisisMode,
+        gameOver: state.gameOver,
+        sceneCount: state.sceneCount,
+        canBurnMomentum: Boolean(burnTarget),
+        burnWouldYield: burnTarget ? RESULT_LABELS[burnTarget] : undefined,
+      };
+    }),
+  // AFTER `execute`, because TS infers this wrapper's result type from it and
+  // reads an object literal's properties in source order — see
+  // `dispatch-center`'s `resources_dispatch` for the same note.
+  //
+  // A roll that emptied both tracks ends the story; anything else leaves a
+  // standing roll that `burn_momentum` may still upgrade.
+  sendFrom: (result) =>
+    result.gameOver ? { type: "DOWNED" as const } : { type: "ROLLED" as const },
 });

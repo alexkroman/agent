@@ -1,4 +1,5 @@
-import type { Db, ToolContext } from "@alexkroman1/aai";
+import type { Db, ToolContext, ToolDef } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import {
@@ -10,6 +11,7 @@ import {
   MIN_MOMENTUM,
   makeNpc,
   rollAction,
+  storyFlow,
 } from "./shared.ts";
 import actionRoll from "./tools/action_roll.ts";
 import burnMomentum from "./tools/burn_momentum.ts";
@@ -76,7 +78,6 @@ const SETUP_ARGS = {
 function playingState(): GameState {
   const state = structuredClone(DEFAULT_STATE);
   state.initialized = true;
-  state.phase = "playing";
   state.sceneCount = 3;
   state.npcs.push(makeNpc({ id: "npc_1", name: "Mira", disposition: "neutral" }));
   state.clocks.push({
@@ -88,6 +89,46 @@ function playingState(): GameState {
     triggerDescription: "The doom arrives",
   });
   return state;
+}
+
+/**
+ * Seed a context with a mid-game campaign AND the matching flow position.
+ *
+ * Writing the slot alone is no longer enough: `action_roll`, `update_state`,
+ * `burn_momentum` and `save_game` gate on `storyFlow`, so a campaign installed
+ * behind the machine's back leaves every one of them refusing. That is the point
+ * of the gate, and it is what this helper exists to satisfy honestly — through
+ * the flow's own event, not by writing its snapshot.
+ */
+function seedPlaying(ctx: ToolContext, state: GameState = playingState()): GameState {
+  gameSlot.set(ctx, state);
+  storyFlow.send(ctx, { type: "SETUP" });
+  return state;
+}
+
+/**
+ * Call a tool that declares no `inputSchema`.
+ *
+ * `ToolDef["execute"]`'s first parameter is derived from the schema, so a tool
+ * with none types it as a shape no object literal satisfies — and nine call
+ * sites here had each cast their way past it. This is the one narrowing they all
+ * wanted: `check_state` and `burn_momentum` really do take no arguments, and a
+ * helper says that once where a cast per call site said nothing.
+ */
+function callNoArgs(def: ToolDef, ctx: ToolContext): Promise<unknown> {
+  return Promise.resolve((def.execute as (args: unknown, c: ToolContext) => unknown)({}, ctx));
+}
+
+/**
+ * The success half of a `storyFlow.tool` result.
+ *
+ * A flow tool answers the body's own value under `result`, wrapped in the
+ * position the call landed in — so the four gated tools here need one unwrap,
+ * and a refusal fails HERE naming what the flow refused.
+ */
+function ok<T>(result: unknown): T {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  return (result as { result: T }).result;
 }
 
 // ── setup_character ──────────────────────────────────────────────────────────
@@ -147,7 +188,7 @@ describe("setup_character", () => {
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
     await setupCharacter.execute(SETUP_ARGS, makeCtx());
-    const other = (await checkState.execute({} as never, makeCtx())) as {
+    const other = (await callNoArgs(checkState, makeCtx())) as {
       initialized: boolean;
     };
     expect(other.initialized).toBe(false);
@@ -264,14 +305,19 @@ describe("burn_momentum", () => {
         clockTicks: 1,
       },
     };
-    gameSlot.set(ctx, state);
+    seedPlaying(ctx, state);
+    // The campaign records a roll, so the FLOW has to say one is standing —
+    // `playing.rollResolved` is the state `burn_momentum` gates on. Sent as an
+    // event rather than written into the snapshot, so the seed goes through the
+    // same door `action_roll` does.
+    storyFlow.send(ctx, { type: "ROLLED" });
   }
 
   test("a legal burn reverts the miss's consequences, upgrades, and resets momentum", async () => {
     const ctx = makeCtx();
     seedRolledState(8, ctx); // 8 beats both dice (3, 5)
 
-    const result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
+    const result = ok<Record<string, unknown>>(await callNoArgs(burnMomentum, ctx));
     expect(result.burned).toBe(true);
     expect(result.newResultCode).toBe("STRONG_HIT");
 
@@ -285,20 +331,26 @@ describe("burn_momentum", () => {
   test("momentum beating only one die upgrades a MISS to WEAK_HIT", async () => {
     const ctx = makeCtx();
     seedRolledState(4, ctx); // beats 3, not 5
-    const result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
+    const result = ok<Record<string, unknown>>(await callNoArgs(burnMomentum, ctx));
     expect(result.newResultCode).toBe("WEAK_HIT");
   });
 
-  test("burn is refused with no stored roll, insufficient momentum, or a strong hit", async () => {
+  test("burn is refused with no roll standing, insufficient momentum, or a strong hit", async () => {
     const ctx = makeCtx();
 
-    // No roll yet
-    let result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
-    expect(result.error).toMatch(/No recent action roll/);
+    // No roll yet — and this refusal is now the FLOW's rather than a null check
+    // inside the body: nothing has rolled, so the game is in
+    // `playing.awaitingRoll` and this tool is not available there. The message
+    // names the position and quotes what that state expects.
+    seedPlaying(ctx);
+    let result = (await callNoArgs(burnMomentum, ctx)) as Record<string, unknown>;
+    expect(result.error).toMatch(/awaitingRoll/);
+    expect(result.error).toMatch(/action_roll/);
 
-    // Momentum too low to beat either die
+    // Momentum too low to beat either die — a DATA rule, so it stays in the
+    // body and the tool still runs.
     seedRolledState(2, ctx);
-    result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
+    result = (await callNoArgs(burnMomentum, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/not high enough/);
 
     // Strong hits cannot be upgraded
@@ -306,13 +358,13 @@ describe("burn_momentum", () => {
     gameSlot.update(ctx, (state) => {
       state.lastRoll!.result = "STRONG_HIT";
     });
-    result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
+    result = (await callNoArgs(burnMomentum, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/already a Strong Hit/);
   });
 
   test("action_roll persists the roll so burn needs no dice arguments", async () => {
     const ctx = makeCtx();
-    gameSlot.set(ctx, playingState());
+    seedPlaying(ctx);
     await actionRoll.execute(
       { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "attack" },
       ctx,
@@ -385,7 +437,7 @@ describe("oracle", () => {
     const ctx = makeCtx();
     const state = playingState();
     state.chaosFactor = 9; // threshold 6 — a roll of 1 lands
-    gameSlot.set(ctx, state);
+    seedPlaying(ctx, state);
     mockRoll(1, 10);
 
     const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
@@ -405,7 +457,7 @@ describe("oracle", () => {
     const ctx = makeCtx();
     const state = playingState();
     state.chaosFactor = 3; // threshold 0 — `checkChaosInterrupt` returns early
-    gameSlot.set(ctx, state);
+    seedPlaying(ctx, state);
 
     const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
       interrupted: boolean;
@@ -419,7 +471,7 @@ describe("oracle", () => {
     const ctx = makeCtx();
     const state = playingState();
     state.chaosFactor = 5; // threshold 2
-    gameSlot.set(ctx, state);
+    seedPlaying(ctx, state);
     mockRoll(10, 10); // past the threshold
 
     const result = (await oracle.execute({ type: "chaos_check" }, ctx)) as {
@@ -460,7 +512,7 @@ describe("oracle", () => {
 
   test("the four inspiration branches answer without touching the game", async () => {
     const ctx = makeCtx();
-    gameSlot.set(ctx, playingState());
+    seedPlaying(ctx);
     const before = structuredClone(gameSlot.get(ctx));
 
     const reaction = (await oracle.execute({ type: "npc_reaction" }, ctx)) as { reaction: string };
@@ -485,7 +537,7 @@ describe("oracle", () => {
 describe("update_state", () => {
   test("clock ids never collide after a removal (max-scan, not length+1)", async () => {
     const ctx = makeCtx();
-    gameSlot.set(ctx, playingState()); // has clock_1
+    seedPlaying(ctx); // has clock_1
 
     await updateState.execute({ addClockName: "Second" }, ctx); // clock_2
     await updateState.execute({ removeClockName: "Doom" }, ctx); // removes clock_1
@@ -501,11 +553,11 @@ describe("update_state", () => {
     const ctx = makeCtx();
     const state = playingState();
     state.clocks[0]!.filled = 3; // 3 of 4
-    gameSlot.set(ctx, state);
+    seedPlaying(ctx, state);
 
-    const result = (await updateState.execute({ advanceClockName: "Doom" }, ctx)) as {
-      clockEvents: { clock: string; trigger: string }[];
-    };
+    const result = ok<{ clockEvents: { clock: string; trigger: string }[] }>(
+      await updateState.execute({ advanceClockName: "Doom" }, ctx),
+    );
     expect(result.clockEvents).toEqual([{ clock: "Doom", trigger: "The doom arrives" }]);
   });
 
@@ -515,11 +567,11 @@ describe("update_state", () => {
     while (state.npcs.length < MAX_NPCS) {
       state.npcs.push(makeNpc({ id: `npc_${state.npcs.length + 1}`, name: "Extra" }));
     }
-    gameSlot.set(ctx, state);
+    seedPlaying(ctx, state);
 
-    const result = (await updateState.execute({ addNpcName: "One Too Many" }, ctx)) as {
-      warnings?: string[];
-    };
+    const result = ok<{ warnings?: string[] }>(
+      await updateState.execute({ addNpcName: "One Too Many" }, ctx),
+    );
     expect(result.warnings?.[0]).toMatch(/NPC limit/);
     const after = gameSlot.get(ctx);
     expect(after.npcs).toHaveLength(MAX_NPCS);
@@ -555,11 +607,10 @@ describe("save_game / load_game", () => {
     const played = playingState();
     played.playerName = "Kael";
     played.sceneCount = 7;
-    gameSlot.set(sessionA, played);
-    const saved = (await saveGame.execute({ slot: "chapter-2" }, sessionA)) as Record<
-      string,
-      unknown
-    >;
+    seedPlaying(sessionA, played);
+    const saved = ok<Record<string, unknown>>(
+      await saveGame.execute({ slot: "chapter-2" }, sessionA),
+    );
     expect(saved.saved).toBe(true);
     expect(saved.slot).toBe("chapter-2");
     expect(rows.get("save:chapter-2")).toMatchObject({ playerName: "Kael", sceneCount: 7 });
@@ -585,7 +636,7 @@ describe("save_game / load_game", () => {
   test("saving twice to one slot upserts — the newer save wins", async () => {
     const { db, rows } = makeDb();
     const ctx = makeCtx(db);
-    gameSlot.set(ctx, playingState());
+    seedPlaying(ctx);
     await saveGame.execute({}, ctx); // autosave
     gameSlot.update(ctx, (game) => {
       game.sceneCount = 9;
@@ -593,5 +644,132 @@ describe("save_game / load_game", () => {
     await saveGame.execute({}, ctx);
     expect(rows.size).toBe(1);
     expect(rows.get("save:autosave")).toMatchObject({ sceneCount: 9 });
+  });
+});
+
+// ── the story flow ───────────────────────────────────────────────────────────
+
+describe("the story flow", () => {
+  test("a fresh session is awaiting setup, and the play tools refuse there", async () => {
+    const ctx = makeCtx();
+    expect(storyFlow.position(ctx).state).toBe("awaitingSetup");
+
+    // All three of these used to RUN before a character existed: `action_roll`
+    // rolled 2d6 against the stats of nobody and applied consequences to a game
+    // that was not there, and `save_game` wrote an empty campaign to a slot
+    // `load_game` would later restore over a real one.
+    for (const call of [
+      actionRoll.execute(
+        { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "swing" },
+        ctx,
+      ),
+      updateState.execute({ location: "Nowhere" }, ctx),
+      callNoArgs(burnMomentum, ctx),
+      saveGame.execute({}, ctx),
+    ]) {
+      const refusal = await call;
+      expect(isToolFailure(refusal)).toBe(true);
+      expect(isToolFailure(refusal) && refusal.error).toMatch(/awaitingSetup/);
+      expect(isToolFailure(refusal) && refusal.error).toMatch(/setup_character/);
+    }
+
+    // And nothing ran.
+    expect(gameSlot.get(ctx).initialized).toBe(false);
+  });
+
+  test("setup opens play, a roll leaves one standing, and settling closes the window", async () => {
+    const ctx = makeCtx();
+    const created = (await setupCharacter.execute(SETUP_ARGS, ctx)) as {
+      at: string;
+      next?: string;
+    };
+    expect(created.at).toBe("playing.awaitingRoll");
+    expect(created.next).toMatch(/action_roll/);
+
+    ok(
+      await actionRoll.execute(
+        { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "swing" },
+        ctx,
+      ),
+    );
+    expect(storyFlow.position(ctx).state).toBe("playing.rollResolved");
+
+    // Moving the scene on SPENDS the roll: the burn window is closed.
+    ok(await updateState.execute({ location: "The Bridge" }, ctx));
+    expect(storyFlow.position(ctx).state).toBe("playing.awaitingRoll");
+    expect(isToolFailure(await callNoArgs(burnMomentum, ctx))).toBe(true);
+  });
+
+  test("check_state reports the position and is legal before setup", async () => {
+    const ctx = makeCtx();
+    const before = (await callNoArgs(checkState, ctx)) as {
+      at: string;
+      next?: string;
+      storyOver: boolean;
+      initialized: boolean;
+    };
+    expect(before.at).toBe("awaitingSetup");
+    expect(before.next).toMatch(/setup_character/);
+    expect(before.storyOver).toBe(false);
+    expect(before.initialized).toBe(false);
+  });
+
+  test("a game over is terminal: nothing rolls, and setup starts a new story", async () => {
+    const ctx = makeCtx();
+    const dead = playingState();
+    dead.health = 0;
+    dead.spirit = 0;
+    seedPlaying(ctx, dead);
+
+    // `updateCrisisFlags` writes `gameOver`, and the tool's `sendFrom` is what
+    // turns that into a position — the flag used to be read by nobody who could
+    // act on it, so a player could keep rolling after both tracks emptied.
+    ok(await updateState.execute({ health: 0, spirit: 0 }, ctx));
+    const at = storyFlow.position(ctx);
+    expect(at.state).toBe("gameOver");
+    expect(at.done).toBe(true);
+
+    const refused = await actionRoll.execute(
+      { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "swing" },
+      ctx,
+    );
+    expect(isToolFailure(refused)).toBe(true);
+    expect(isToolFailure(refused) && refused.error).toMatch(/gameOver/);
+
+    // Starting over is legal from anywhere, the ending included.
+    const restarted = (await setupCharacter.execute(SETUP_ARGS, ctx)) as { at: string };
+    expect(restarted.at).toBe("playing.awaitingRoll");
+  });
+
+  test("a loaded game resumes in play rather than awaiting setup", async () => {
+    const { db } = makeDb();
+    const sessionA = makeCtx(db);
+    seedPlaying(sessionA);
+    ok(await saveGame.execute({ slot: "resume" }, sessionA));
+
+    const sessionB = makeCtx(db);
+    expect(storyFlow.position(sessionB).state).toBe("awaitingSetup");
+    const loaded = (await loadGame.execute({ slot: "resume" }, sessionB)) as { at?: string };
+    expect(loaded.at).toBe("playing.awaitingRoll");
+
+    // And the play tools are available in the resumed session.
+    ok(await updateState.execute({ location: "Back at the Docks" }, sessionB));
+  });
+
+  test("a save whose game was over resumes as over", async () => {
+    const { db } = makeDb();
+    const sessionA = makeCtx(db);
+    const dead = playingState();
+    dead.health = 0;
+    dead.spirit = 0;
+    dead.gameOver = true;
+    dead.crisisMode = true;
+    seedPlaying(sessionA, dead);
+    ok(await saveGame.execute({ slot: "ended" }, sessionA));
+
+    const sessionB = makeCtx(db);
+    const loaded = (await loadGame.execute({ slot: "ended" }, sessionB)) as { at?: string };
+    expect(loaded.at).toBe("gameOver");
+    expect(storyFlow.position(sessionB).done).toBe(true);
   });
 });

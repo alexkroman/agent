@@ -12,6 +12,7 @@ import {
 
 export default retailTool({
   name: "modify_pending_order_payment",
+  when: "serving",
   description:
     "Change which payment method a pending order is charged to. The new method must be different " +
     "from the current one, and a gift card must hold enough to cover the whole order. The original " +

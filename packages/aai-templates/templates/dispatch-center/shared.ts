@@ -1,7 +1,8 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 import type { DeepReadonly, ToolFailure } from "@alexkroman1/aai";
-import { pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { flow, pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { setup } from "xstate";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -217,6 +218,110 @@ export const dispatchSlot = sessionSlot("dispatch", createDefaultState, {
 
 /** The projection BOTH ends use: `syncState` on the agent, `useAgentState` in the client. */
 export const dashboardProjection = dispatchSlot.projection(dashboardView);
+
+// ─── The call in hand ────────────────────────────────────────────────────────
+
+/**
+ * Where the dispatcher is on the call in hand, as a declared machine.
+ *
+ * The system prompt used to carry this as prose — "incident_triage: After
+ * creating, assess severity", "Critical incidents get immediate dispatch",
+ * "Never leave a critical incident without at least one resource dispatched" —
+ * which is advice to a model rather than a property of the agent. Two things
+ * change by declaring it.
+ *
+ * **The gate is real.** Six mutating tools take an incident id and did their own
+ * "does this exist" check through {@link findIncident}, whose answer on an empty
+ * board is `Incident INC-0001 not found` — a data answer to a positional
+ * question, and the wrong sentence for a dispatcher who has logged nothing yet.
+ * `when: "working"` is that check now, and the SDK's refusal names where the
+ * shift actually is and quotes the state's instruction.
+ *
+ * **The instruction rides every result.** A flow tool answers with the position
+ * it landed in, so `incident_create`'s result now ends with "confirm the
+ * severity and type with incident_triage" and `incident_triage`'s with "assign
+ * units" — the tool-by-tool sequencing the prompt was spending paragraphs on,
+ * arriving in the last thing the model reads before it speaks.
+ *
+ * **What this position is NOT is per-incident.** A flow is bound to a session
+ * and holds one position, and this board holds many incidents at once — so
+ * `working.monitoring` means "the incident this dispatcher last touched has
+ * units on it", not "every incident does". Per-incident status stays where it
+ * belongs, on {@link Incident.status}, and the tools stay addressed by id. That
+ * is also why `working` is a PARENT state: what every gated tool actually needs
+ * is "something has been logged on this shift", and the three children exist to
+ * carry the instruction for the step in front of the dispatcher rather than to
+ * gate anything.
+ *
+ * `LOGGED` is accepted from every state because a new 911 call is always legal —
+ * the one transition that is not a progression.
+ */
+const callMachine = setup({
+  types: {} as {
+    events:
+      | { type: "LOGGED" }
+      | { type: "TRIAGED" }
+      | { type: "DISPATCHED" }
+      | { type: "ESCALATED" };
+  },
+}).createMachine({
+  id: "call",
+  initial: "standby",
+  states: {
+    standby: {
+      meta: {
+        instruction:
+          "Nothing is logged on this shift. Take the call — location first, then the " +
+          "nature of the emergency, then the caller's name and callback — and log it " +
+          "with incident_create.",
+      },
+      on: { LOGGED: "working" },
+    },
+    working: {
+      initial: "triaging",
+      // Declared on the PARENT so all three children inherit it, which is what
+      // makes a new call legal mid-incident without repeating the transition
+      // three times. The children re-target each other below.
+      on: { LOGGED: ".triaging" },
+      states: {
+        triaging: {
+          meta: {
+            instruction:
+              "Logged, not yet triaged. Confirm or override the severity and type with " +
+              "incident_triage. For a critical call, dispatch first and triage alongside it.",
+          },
+          on: { TRIAGED: "dispatching", DISPATCHED: "monitoring", ESCALATED: "dispatching" },
+        },
+        dispatching: {
+          meta: {
+            instruction:
+              "Triaged, nothing rolling. Assign units with resources_dispatch — never " +
+              "leave a critical incident without at least one.",
+          },
+          on: { DISPATCHED: "monitoring", TRIAGED: "dispatching", ESCALATED: "dispatching" },
+        },
+        monitoring: {
+          meta: {
+            instruction:
+              "Units are assigned. Work it — status updates as they radio in, notes as " +
+              "the picture changes, escalate if it outgrows the response, and close it " +
+              "with incident_update_status.",
+          },
+          on: { TRIAGED: "dispatching", DISPATCHED: "monitoring", ESCALATED: "dispatching" },
+        },
+      },
+    },
+  },
+});
+
+/**
+ * The flow. Its own slot key beside {@link dispatchSlot}: the flow holds the
+ * POSITION and the board holds the incidents, because the position is one fact
+ * about the conversation and the board is many facts about the world. One tool
+ * call moves both — every converted tool opens `dispatchSlot.update` inside its
+ * `execute` and lets the flow's own `send` follow it.
+ */
+export const callFlow = flow("call", callMachine);
 
 /**
  * The board as a READ hands it out: deep-frozen, and typed to say so.

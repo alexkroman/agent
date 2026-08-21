@@ -1,6 +1,6 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { findProduct, retailTool, setFocus } from "../store.ts";
+import { BEFORE_TRANSFER, findProduct, retailTool, setFocus } from "../store.ts";
 
 export default retailTool({
   name: "get_product_details",
@@ -10,7 +10,7 @@ export default retailTool({
   inputSchema: z.object({
     product_id: z.string().max(60).describe("The product id, e.g. '6086499569'"),
   }),
-  requiresAuth: false,
+  when: BEFORE_TRANSFER,
   execute: (args, state) => {
     const product = findProduct(state, args.product_id);
     if (isToolFailure(product)) return product;

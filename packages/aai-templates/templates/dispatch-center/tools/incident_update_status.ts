@@ -1,9 +1,17 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { assertNotResolved, dispatchSlot, findIncident, logEvent } from "../shared.ts";
+import { assertNotResolved, callFlow, dispatchSlot, findIncident, logEvent } from "../shared.ts";
 
-export default dispatchSlot.updateTool({
+/**
+ * Gated on `working`; sends nothing. A status update moves the INCIDENT, not
+ * the call — the dispatcher is still in `monitoring` afterwards, and closing
+ * one incident says nothing about the others still on the board. Omitting both
+ * `send` and `sendFrom` is how a flow tool reads without advancing, and the
+ * result still carries the position it read.
+ */
+export default callFlow.tool({
   description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
+  when: "working",
   inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     status: z.enum(["en_route", "on_scene", "resolved", "escalated"]).describe("New status"),
@@ -16,51 +24,52 @@ export default dispatchSlot.updateTool({
       .describe("Updated casualty numbers")
       .optional(),
   }),
-  execute(args, state) {
-    const inc = findIncident(state, args.incidentId);
-    if (isToolFailure(inc)) return inc;
-    const blocked = assertNotResolved(inc, `set status to ${args.status}`);
-    if (blocked) return blocked;
+  execute: (args, ctx) =>
+    dispatchSlot.update(ctx, (state) => {
+      const inc = findIncident(state, args.incidentId);
+      if (isToolFailure(inc)) return inc;
+      const blocked = assertNotResolved(inc, `set status to ${args.status}`);
+      if (blocked) return blocked;
 
-    inc.status = args.status;
-    logEvent(inc, `Status → ${args.status}${args.notes ? `: ${args.notes}` : ""}`);
+      inc.status = args.status;
+      logEvent(inc, `Status → ${args.status}${args.notes ? `: ${args.notes}` : ""}`);
 
-    if (args.casualtyUpdate) {
-      if (args.casualtyUpdate.confirmed !== undefined) {
-        inc.casualties.confirmed = args.casualtyUpdate.confirmed;
+      if (args.casualtyUpdate) {
+        if (args.casualtyUpdate.confirmed !== undefined) {
+          inc.casualties.confirmed = args.casualtyUpdate.confirmed;
+        }
+        if (args.casualtyUpdate.treated !== undefined) {
+          inc.casualties.treated = args.casualtyUpdate.treated;
+        }
       }
-      if (args.casualtyUpdate.treated !== undefined) {
-        inc.casualties.treated = args.casualtyUpdate.treated;
+
+      // Only touch resources still assigned to THIS incident — a unit that
+      // radioed available and was re-dispatched elsewhere belongs to its
+      // new incident now.
+      const ownResources = state.resources.filter((r) => r.assignedIncident === inc.id);
+
+      if (args.status === "resolved") {
+        for (const r of ownResources) {
+          r.status = "returning";
+          r.assignedIncident = null;
+          r.eta = null;
+        }
+        inc.assignedResources = [];
+        logEvent(inc, "All resources released — incident closed");
       }
-    }
 
-    // Only touch resources still assigned to THIS incident — a unit that
-    // radioed available and was re-dispatched elsewhere belongs to its
-    // new incident now.
-    const ownResources = state.resources.filter((r) => r.assignedIncident === inc.id);
-
-    if (args.status === "resolved") {
-      for (const r of ownResources) {
-        r.status = "returning";
-        r.assignedIncident = null;
-        r.eta = null;
+      if (args.status === "en_route" || args.status === "on_scene") {
+        for (const r of ownResources) {
+          r.status = args.status;
+          if (args.status === "on_scene") r.eta = null;
+        }
       }
-      inc.assignedResources = [];
-      logEvent(inc, "All resources released — incident closed");
-    }
 
-    if (args.status === "en_route" || args.status === "on_scene") {
-      for (const r of ownResources) {
-        r.status = args.status;
-        if (args.status === "on_scene") r.eta = null;
-      }
-    }
-
-    return {
-      incidentId: args.incidentId,
-      newStatus: args.status,
-      timeline: inc.timeline.slice(-5).map((t) => t.event),
-      casualties: inc.casualties,
-    };
-  },
+      return {
+        incidentId: args.incidentId,
+        newStatus: args.status,
+        timeline: inc.timeline.slice(-5).map((t) => t.event),
+        casualties: inc.casualties,
+      };
+    }),
 });

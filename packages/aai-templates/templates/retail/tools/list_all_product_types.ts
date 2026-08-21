@@ -1,6 +1,6 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { retailTool } from "../store.ts";
+import { BEFORE_TRANSFER, retailTool } from "../store.ts";
 
 export default retailTool({
   name: "list_all_product_types",
@@ -10,7 +10,9 @@ export default retailTool({
   // Empty schema rather than omitting it: the wrapper has one code path, and
   // that is where the per-call UI-update invariant lives.
   inputSchema: z.object({}),
-  requiresAuth: false,
+  // The catalogue is not customer data, so it needs no identified caller — but
+  // it is still off limits once the call belongs to a human.
+  when: BEFORE_TRANSFER,
   execute: (_args, state) => {
     const entries = Object.values(state.store.products)
       .map((product) => [product.name, product.product_id] as const)

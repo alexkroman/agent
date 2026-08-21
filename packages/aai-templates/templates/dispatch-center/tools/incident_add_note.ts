@@ -1,25 +1,28 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { dispatchSlot, findIncident, logEvent } from "../shared.ts";
+import { callFlow, dispatchSlot, findIncident, logEvent } from "../shared.ts";
 
-export default dispatchSlot.updateTool({
+/** Gated on `working` — there is nothing to annotate before anything is logged. */
+export default callFlow.tool({
   description: "Add a situational update note to an incident's timeline.",
+  when: "working",
   inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     note: z.string().max(1000).describe("The note to add"),
     source: z.string().max(100).describe("Who reported this — unit callsign or caller").optional(),
   }),
-  execute(args, state) {
-    const inc = findIncident(state, args.incidentId);
-    if (isToolFailure(inc)) return inc;
+  execute: (args, ctx) =>
+    dispatchSlot.update(ctx, (state) => {
+      const inc = findIncident(state, args.incidentId);
+      if (isToolFailure(inc)) return inc;
 
-    const entry = args.source ? `[${args.source}] ${args.note}` : args.note;
-    logEvent(inc, entry);
+      const entry = args.source ? `[${args.source}] ${args.note}` : args.note;
+      logEvent(inc, entry);
 
-    return {
-      incidentId: args.incidentId,
-      noteAdded: entry,
-      timelineEntries: inc.timeline.length,
-    };
-  },
+      return {
+        incidentId: args.incidentId,
+        noteAdded: entry,
+        timelineEntries: inc.timeline.length,
+      };
+    }),
 });

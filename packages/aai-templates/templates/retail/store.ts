@@ -1,5 +1,6 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
-import { isToolFailure, pushCapped, sessionSlot, toolFailure } from "@alexkroman1/aai";
+import { flow, isToolFailure, omitUndefined, pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { setup } from "xstate";
 import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
@@ -71,6 +72,89 @@ export function seedStore(): Store {
  */
 export const retailSlot = sessionSlot("retail", createDefaultState);
 
+// ─── The call, as a machine ──────────────────────────────────────────────────
+
+/**
+ * Where this call is, and what may be done from here.
+ *
+ * The policy's first two sections — "Authenticate first" and "Handing off to a
+ * human" — used to be prose plus a boolean. `requiresAuth` was that boolean:
+ * fifteen tools declared it (five opting out), the wrapper below read it, and a
+ * refusal answered one fixed sentence. Three things change by declaring the
+ * states instead.
+ *
+ * **`transferred` is a real terminal state, and it was not enforced at all.**
+ * The policy says to call `transfer_to_human_agents` and then say exactly one
+ * sentence "and nothing else" — which nothing checked, so every tool stayed
+ * callable after the handoff and a model that kept going would keep acting on a
+ * call it had already given away. It is a `final` state now: no tool declares
+ * itself legal there, so every one of them refuses.
+ *
+ * **The refusal quotes the state.** `when` names where a tool may run and the
+ * SDK writes the sentence, so the message is one thing rather than a constant
+ * threaded through a wrapper — and it says where the call actually is, which
+ * "Not authenticated" could not.
+ *
+ * **The position rides every result.** A flow tool answers the author's value
+ * wrapped in the position it landed in, so the stage and its instruction reach
+ * the model on every call rather than only when the prompt is still in context.
+ *
+ * `IDENTIFIED` is declared on `serving` as well, because a caller repeating
+ * their email must not hit an error — see `authenticateAs`, which is what
+ * refuses a switch to a DIFFERENT customer. Whether the flow is identified and
+ * WHO it is identified as are two facts: this holds the first,
+ * `authenticatedUserId` holds the second.
+ */
+const callMachine = setup({
+  types: {} as { events: { type: "IDENTIFIED" } | { type: "TRANSFERRED" } },
+}).createMachine({
+  id: "call",
+  initial: "identifying",
+  states: {
+    identifying: {
+      meta: {
+        // The instruction NAMES the two tools, because this sentence is what a
+        // refusal quotes and a refusal is the model's recovery path — the same
+        // job the removed `NOT_AUTHENTICATED` constant did, now attached to the
+        // state that means it.
+        instruction:
+          "You do not know who this is yet. Identify the caller with " +
+          "find_user_id_by_email, or find_user_id_by_name_zip if they cannot " +
+          "remember the email. Do this even if they volunteer a user id.",
+      },
+      on: { IDENTIFIED: "serving", TRANSFERRED: "transferred" },
+    },
+    serving: {
+      meta: {
+        instruction:
+          "You are helping one identified customer, and only that one. Say what you " +
+          "are about to change — the order, the items, the amounts, where the money " +
+          "goes — and wait for an explicit yes before you call anything that changes it.",
+      },
+      on: { IDENTIFIED: "serving", TRANSFERRED: "transferred" },
+    },
+    transferred: {
+      type: "final",
+      meta: {
+        instruction:
+          "The call belongs to a human agent now. Say nothing beyond the transfer " +
+          "sentence, and do nothing else.",
+      },
+    },
+  },
+});
+
+/**
+ * The flow. Its own slot key beside {@link retailSlot}: the flow holds the
+ * POSITION and the store holds the customer, the orders and the activity feed.
+ */
+export const callFlow = flow("call", callMachine);
+
+/** Every state a tool may run in before the call is handed to a human — i.e.
+ *  everything but `transferred`. What the five formerly `requiresAuth: false`
+ *  tools declare, so the terminal state gates them without an auth gate. */
+export const BEFORE_TRANSFER = ["identifying", "serving"] as const;
+
 export function setFocus(
   state: RetailState,
   focus: { orderId?: string; productId?: string },
@@ -128,12 +212,26 @@ export function findPaymentMethod(user: User, methodId: string): PaymentMethod |
 
 // ─── Guards ──────────────────────────────────────────────────────────────────
 
-const NOT_AUTHENTICATED =
-  "Not authenticated. Identify the customer first with find_user_id_by_email, " +
-  "or find_user_id_by_name_zip if they cannot remember their email.";
-
+/**
+ * The customer on this call.
+ *
+ * The null arm is reachable only if the POSITION and the STORE disagree — the
+ * flow says `serving` while nothing latched a user id — which no code path
+ * produces, since `authenticateAs` is what both writes the id and lets the
+ * `IDENTIFIED` event through. It is kept and reported rather than thrown for the
+ * reason `travel-concierge`'s `cancel_action` keeps its own: this runs mid-call,
+ * and a sentence the model can act on beats an exception. The GATE that a
+ * customer is identified at all is `callFlow`'s, declared per tool as `when`.
+ */
 export function authenticatedUser(state: RetailState): User | ToolFailure {
-  if (!state.authenticatedUserId) return { error: NOT_AUTHENTICATED };
+  if (!state.authenticatedUserId) {
+    return {
+      error:
+        "No customer is latched onto this call yet. Identify them with " +
+        "find_user_id_by_email, or find_user_id_by_name_zip if they cannot " +
+        "remember their email.",
+    };
+  }
   return findUser(state, state.authenticatedUserId);
 }
 
@@ -187,9 +285,20 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
   /** Required even for no-arg tools — pass `z.object({})`. One code path in the
    *  wrapper is worth more than saving a line at one call site. */
   inputSchema: S;
-  /** Default true. Only the two finder tools and the three catalog tools opt
-   *  out; everything else touches customer data. */
-  requiresAuth?: boolean;
+  /**
+   * The state(s) this tool may run in, as `callFlow`'s states spell them.
+   *
+   * Replaces the `requiresAuth` boolean this spec used to carry. Ten tools want
+   * `"serving"`; the two finders, the three catalog reads and the transfer want
+   * {@link BEFORE_TRANSFER}, which is every state but the terminal one — so
+   * "does not need a customer" and "is still legal after the handoff" stopped
+   * being the same claim, and they were never the same claim.
+   */
+  when: string | readonly string[];
+  /** The event to send once the body has succeeded, for a tool that MOVES the
+   *  call. Three do: the two finders send `IDENTIFIED`, the transfer sends
+   *  `TRANSFERRED`. Nothing is sent when the body answers a `ToolFailure`. */
+  send?: { type: "IDENTIFIED" } | { type: "TRANSFERRED" };
   summary: (args: z.output<S>, result: R) => string;
   /**
    * Handed the store as its second argument, and SYNCHRONOUS.
@@ -231,13 +340,26 @@ function record(state: RetailState, name: string, summary: string): void {
 }
 
 /**
- * Every retail tool is built through this. It owns three things no tool body
- * may re-implement:
+ * Every retail tool is built through this. It owns two things no tool body may
+ * re-implement:
  *
- * 1. the authentication gate,
- * 2. serialization of the state mutation,
- * 3. the `callSeq` increment + activity entry — the reason the UI moves on
- *    EVERY tool call rather than only when a projected value happens to differ.
+ * 1. the mutation window the body's draft comes from,
+ * 2. the `callSeq` increment + activity entry — the reason the UI moves on
+ *    every tool call rather than only when a projected value happens to differ.
+ *
+ * The third thing it used to own — the authentication gate — is
+ * {@link callFlow}'s now, declared per tool as `when`. What that buys is in the
+ * machine's own doc; what it COSTS is one line of the activity feed: a refused
+ * call short-circuits before this wrapper's body runs, so a blocked call no
+ * longer records `blocked: not authenticated` and no longer bumps `callSeq`.
+ * That is the right trade — the refusal reaches the model, which the sidebar
+ * line never did, and it carries the state and its instruction rather than one
+ * fixed sentence.
+ *
+ * **`callFlow.tool` rather than `retailSlot.updateTool`**, so the body opens the
+ * store's window itself. A flow tool's own `execute` is handed `(args, ctx)`;
+ * everything else about a tool body here is unchanged, including that it is
+ * synchronous — the window cannot span an await.
  *
  * `focus` is deliberately left to tool bodies (`setFocus`): it is a UI nicety,
  * not an invariant, and only the body knows what the call was about.
@@ -245,26 +367,25 @@ function record(state: RetailState, name: string, summary: string): void {
 export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
   spec: RetailToolSpec<S, R>,
 ) {
-  const requiresAuth = spec.requiresAuth ?? true;
-  // `updateTool` rather than `tool` + a hand-written `retailSlot.update`: it runs
-  // the body inside the slot's mutation window and hands it the draft, so this
-  // wrapper is left with only what is specific to THIS agent.
-  return retailSlot.updateTool({
+  return callFlow.tool({
     description: spec.description,
     inputSchema: spec.inputSchema,
-    execute: (args, state, ctx) => {
-      const typedArgs = args as z.output<S>;
-      if (requiresAuth && !state.authenticatedUserId) {
-        record(state, spec.name, "blocked: not authenticated");
-        return toolFailure(NOT_AUTHENTICATED);
-      }
-      const result = spec.execute(typedArgs, state, ctx);
-      record(
-        state,
-        spec.name,
-        isToolFailure(result) ? `error: ${result.error}` : spec.summary(typedArgs, result),
-      );
-      return result;
-    },
+    when: spec.when,
+    // `omitUndefined` rather than a conditional spread: `exactOptionalPropertyTypes`
+    // is on, so an explicit `send: undefined` is not the same as an absent one —
+    // and only three of the fifteen tools declare an event (guard-invariants
+    // rule 2).
+    ...omitUndefined({ send: spec.send }),
+    execute: (args, ctx) =>
+      retailSlot.update(ctx, (state) => {
+        const typedArgs = args as z.output<S>;
+        const result = spec.execute(typedArgs, state, ctx);
+        record(
+          state,
+          spec.name,
+          isToolFailure(result) ? `error: ${result.error}` : spec.summary(typedArgs, result),
+        );
+        return result;
+      }),
   });
 }

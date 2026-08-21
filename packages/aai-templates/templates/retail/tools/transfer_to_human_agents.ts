@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { retailTool } from "../store.ts";
+import { BEFORE_TRANSFER, retailTool } from "../store.ts";
 
 export default retailTool({
   name: "transfer_to_human_agents",
@@ -10,9 +10,13 @@ export default retailTool({
   inputSchema: z.object({
     summary: z.string().max(2000).describe("A short summary of the caller's issue for the human"),
   }),
-  // No authentication: someone who cannot be identified is exactly who needs a
-  // human, and blocking the escape hatch behind the gate would trap them.
-  requiresAuth: false,
+  // Legal before the handoff from either side: someone who cannot be identified
+  // is exactly who needs a human, and blocking the escape hatch behind an auth
+  // gate would trap them. `TRANSFERRED` is the one transition into the terminal
+  // state, which is what makes "say nothing else after this" enforced rather
+  // than asked for — every tool, this one included, refuses afterwards.
+  when: BEFORE_TRANSFER,
+  send: { type: "TRANSFERRED" },
   summary: () => "transferred to a human agent",
   execute: (args) => ({
     transferred: true,
