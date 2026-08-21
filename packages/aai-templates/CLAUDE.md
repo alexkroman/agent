@@ -276,13 +276,13 @@ Four rules came out of building it, each of which a first draft gets wrong:
 - **Plan byte offsets from the BYTE COUNT, never from a duration.**
   `pcmDurationMs` answers whole milliseconds, so a 640,500-byte file reports
   20,016 ms where it holds 20,015.625 — and planning from that put the last
-  segment's `endByte` twelve bytes past the end of the file. `readUpload` clamps a
-  window to the stored size, so nothing threw; the plan simply described audio
-  that did not exist. `planSegments` therefore takes the byte count and derives
-  its own seconds. **It was found by running the real argv against a real
-  ffmpeg**, which is the only place a twelve-byte error was ever going to surface,
-  and it is the reason the spec's fixtures are captured from ffmpeg 6.1.1 verbatim
-  rather than typed from the documentation.
+  segment's `endByte` twelve bytes past the end of the file. `readUpload`
+  clamps a window to the stored size, so nothing threw; the plan simply
+  described audio that did not exist. `planSegments` therefore takes the byte
+  count and derives its own seconds. **It was found by running the real argv
+  against a real ffmpeg**, which is the only place a twelve-byte error was ever
+  going to surface, and it is the reason the spec's fixtures are captured from
+  ffmpeg 6.1.1 verbatim rather than typed from the documentation.
 
 **The desk stays honest about the case it cannot serve.** A stretch of unbroken
 speech longer than the cap has no pause to cut in, so it gets the blind cut —
