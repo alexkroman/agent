@@ -56,7 +56,7 @@
 import type http from "node:http";
 import { mapStream } from "../sdk/_map-stream.ts";
 import type { UploadInfo } from "../sdk/step-uploads.ts";
-import { UPLOAD_CHUNK_BYTES } from "../sdk/upload-constants.ts";
+import { UPLOAD_CHUNK_BYTES, UPLOAD_CLAIM_BATCH } from "../sdk/upload-constants.ts";
 import { sendUploadFailure } from "./_upload-route-failures.ts";
 import { sendJson } from "./workflow-api-http.ts";
 import type { UploadStore } from "./workflow-uploads.ts";
@@ -107,6 +107,7 @@ export async function readUploadInfoRoute(
   res: http.ServerResponse,
   store: UploadStore,
   id: string,
+  directParts = false,
 ): Promise<void> {
   const info = await readInfoOrFail(res, store, id);
   if (info === undefined) return;
@@ -114,7 +115,22 @@ export async function readUploadInfoRoute(
     sendJson(res, 404, { error: `No upload with id ${id}` });
     return;
   }
-  sendJson(res, 200, info);
+  // The same two capability fields the CLAIM answers with, and for the case the
+  // claim cannot serve: a RESUME re-declares an id it already owns, the store
+  // answers 409, and a 409 carries no body to read them from. Without them here a
+  // resumed upload silently abandoned the direct path — it still worked, sending
+  // every window's bytes to the agent instead of to the platform, which is the
+  // topology this whole path exists to avoid and the one the forward reads as a
+  // stalled guest. They are a property of the DEPLOYMENT, so they are the same
+  // answer whichever route is asked.
+  // `undefined` rather than a conditional spread, and `sendJson`'s `JSON.stringify`
+  // drops it — the same spelling `beginUploadParts` uses, for the same reason: a
+  // client reads the field's PRESENCE, and absent is what an older agent answers.
+  sendJson(res, 200, {
+    ...info,
+    directParts: directParts ? true : undefined,
+    claimBatch: directParts ? UPLOAD_CLAIM_BATCH : undefined,
+  });
 }
 
 /** `GET /workflows/uploads/:id` — the bytes, whole or by range. */

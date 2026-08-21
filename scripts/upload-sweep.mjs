@@ -74,8 +74,9 @@
  */
 
 import { randomFillSync } from "node:crypto";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import path from "node:path";
 import { sleep } from "../packages/aai/sdk/sleep.ts";
 import {
   UPLOAD_PART_BYTES,
@@ -91,6 +92,7 @@ import {
   reportKnee,
   reportTable,
 } from "./_upload-sweep-report.mjs";
+import { defaultJsonPath, describeError, installCountingFetch } from "./_upload-sweep-requests.mjs";
 
 const MIB = 1024 * 1024;
 
@@ -157,55 +159,6 @@ const config = {
  * classifier keyed on the path would need to know which, where "a PUT carrying
  * a body is the bytes" is true of both.
  */
-function installCountingFetch() {
-  const real = globalThis.fetch;
-  const requests = [];
-  const origins = new Set();
-  globalThis.fetch = async (input, init) => {
-    const url = typeof input === "string" ? input : String(input?.url ?? input);
-    const method = init?.method ?? "GET";
-    const bytes = bodyBytes(init?.body);
-    const kind = classify(method, bytes);
-    // How many windows a body-less claim named. That is the whole subject of
-    // `UPLOAD_CLAIM_BATCH`, and without it a falling `record` count is
-    // indistinguishable from windows going missing.
-    const named = kind === "record" ? countOffsets(url) : 0;
-    const started = performance.now();
-    try {
-      const res = await real(input, init);
-      requests.push({
-        kind,
-        method,
-        named,
-        status: res.status,
-        bytes,
-        ms: performance.now() - started,
-      });
-      origins.add(new URL(url).origin);
-      return res;
-    } catch (err) {
-      requests.push({
-        kind,
-        method,
-        named,
-        status: 0,
-        bytes,
-        ms: performance.now() - started,
-        err: describeError(err),
-      });
-      origins.add(new URL(url).origin);
-      throw err;
-    }
-  };
-  return {
-    requests,
-    origins,
-    restore: () => {
-      globalThis.fetch = real;
-    },
-  };
-}
-
 /**
  * What a request IS, from its method and whether it carries bytes.
  *
@@ -215,6 +168,13 @@ function installCountingFetch() {
  * the bytes" holds in both, so one classifier covers both topologies.
  */
 /**
+ * Where the run's ids go when `--json` did not say.
+ *
+ * `reports/` rather than `tmpdir()`: the point is that the ids OUTLIVE the run, and
+ * a temp directory is the one place the operating system is entitled to delete. It
+ * is gitignored, so nothing here reaches a commit.
+ */
+/**
  * How many windows one claim named, off its query.
  *
  * A claim may name several (`?offset=&offset=…&stored=1`) when the agent
@@ -222,20 +182,6 @@ function installCountingFetch() {
  * batching agent is legible: the `record` count drops on purpose, and the number
  * of windows those requests carried is what says so.
  */
-function countOffsets(url) {
-  try {
-    return new URL(url).searchParams.getAll("offset").length;
-  } catch {
-    return 0;
-  }
-}
-
-function classify(method, bytes) {
-  if (method === "POST") return "claim";
-  if (method !== "PUT") return "info";
-  return bytes > 0 ? "bytes" : "record";
-}
-
 /**
  * An error with its CAUSE CHAIN, because the top of one says nothing here.
  *
@@ -246,24 +192,6 @@ function classify(method, bytes) {
  * HTTP/1.1 for; a harness whose whole output is a failure column has no excuse
  * for reprinting the useless half.
  */
-function describeError(err) {
-  const parts = [];
-  for (let at = err, depth = 0; at !== undefined && at !== null && depth < 4; depth += 1) {
-    const code = at.code === undefined ? "" : ` (${at.code})`;
-    parts.push(`${at.name ?? "Error"}: ${at.message ?? String(at)}${code}`);
-    at = at.cause;
-  }
-  return parts.join(" <- ");
-}
-
-function bodyBytes(body) {
-  if (body === undefined || body === null) return 0;
-  if (typeof body === "string") return Buffer.byteLength(body);
-  if (typeof body.size === "number") return body.size;
-  if (typeof body.byteLength === "number") return body.byteLength;
-  return 0;
-}
-
 /**
  * Pin the transport, and hand back a way to start a run on a FRESH connection.
  *
@@ -486,13 +414,20 @@ async function main() {
   const rows = reportTable(results, config.fileBytes);
   reportKnee(rows);
 
-  if (config.json !== undefined) {
-    writeFileSync(
-      config.json,
-      `${JSON.stringify({ config: { ...config, token: config.token === undefined ? undefined : "set" }, results }, null, 2)}\n`,
-    );
-    console.log(`\nwrote ${config.json} — it carries every upload id this run minted, for cleanup`);
-  }
+  // ALWAYS written, `--json` only chooses where. Every upload this run stored is
+  // permanent — there is no delete route, and `aai-sweep-blob-gc` matches
+  // `blobs/%`, so nothing reclaims the `uploads/` prefix — which makes the minted
+  // ids the only handle a future cleanup could have. Making that conditional on a
+  // flag meant the ordinary run (no flag) put a gigabyte somewhere unnameable, and
+  // it did: the run that produced the table on `UPLOAD_PART_BYTES` is recoverable
+  // only because somebody remembered to pass it.
+  const out = config.json ?? defaultJsonPath();
+  mkdirSync(path.dirname(out), { recursive: true });
+  writeFileSync(
+    out,
+    `${JSON.stringify({ config: { ...config, token: config.token === undefined ? undefined : "set" }, results }, null, 2)}\n`,
+  );
+  console.log(`\nwrote ${out} — it carries every upload id this run minted, for cleanup`);
 }
 
 await main();

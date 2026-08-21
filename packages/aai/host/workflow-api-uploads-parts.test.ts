@@ -86,6 +86,28 @@ describe("the parts routes", () => {
     await expect(res.json()).resolves.toMatchObject({ directParts: true });
   });
 
+  test("`…/info` answers the same capability the claim does", async () => {
+    // Because a RESUME cannot read it from the claim: re-declaring an id the store
+    // already holds is answered 409, and a 409 carries no body. Without it here the
+    // client falls back to sending bytes to the agent, which works and is the
+    // topology the direct path exists to avoid.
+    const base = await serve({ directParts: true });
+    await begin(base, "abc", 8);
+    const res = await fetch(`${base}/workflows/uploads/abc/info`);
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      directParts: true,
+      claimBatch: UPLOAD_CLAIM_BATCH,
+    });
+  });
+
+  test("`…/info` says nothing about a deployment whose bytes come to the AGENT", async () => {
+    const base = await serve();
+    await begin(base, "abc", 8);
+    const res = await fetch(`${base}/workflows/uploads/abc/info`);
+    await expect(res.json()).resolves.not.toHaveProperty("directParts");
+  });
+
   test("`stored=1` records a window without carrying it", async () => {
     // The direct path's write. No body: the bytes went to the platform, and the store
     // measures the object itself rather than trusting anything here.

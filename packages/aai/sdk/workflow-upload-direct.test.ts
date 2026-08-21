@@ -183,6 +183,47 @@ describe("a batched claim", () => {
     );
   });
 
+  test("a RESUME stays on the direct path, reading the flag off the record", async () => {
+    // A resume re-declares an id it already owns, so the store answers 409 — and a
+    // 409 carries no body to read `directParts` from. This used to fall back to
+    // sending every remaining window's BYTES to the agent: it works, and it is the
+    // topology the direct path exists to avoid, and the platform's forward measures
+    // that drain to decide whether a guest is alive.
+    const agent = scriptAgent({
+      direct: true,
+      claimBatch: 32,
+      begin: 409,
+      landed: [{ start: 0, end: PART }],
+    });
+    const stored = await client().uploadStream("abc", recording(), {
+      parallel: true,
+      resume: true,
+    });
+
+    // The two windows still owed went to the PLATFORM, not to the agent.
+    expect(agent.bytes.map((call) => call.url.pathname.split("/").at(-1))).toEqual([
+      String(PART),
+      String(PART * 2),
+    ]);
+    // And the agent heard about them the body-less way, batched.
+    const told = agent.parts.filter((call) => call.method === "PUT");
+    expect(told.map((call) => call.bytes)).toEqual(told.map(() => 0));
+    const claimed = told.flatMap((call) => call.url.searchParams.getAll("offset").map(Number));
+    expect([...claimed].sort((a, b) => a - b)).toEqual([PART, PART * 2]);
+    expect(stored).toMatchObject({ size: TOTAL, complete: true });
+  });
+
+  test("a resume against an agent whose RECORD says nothing sends bodies, as before", async () => {
+    // The degradation, and it has to stay: an agent too old to answer the capability
+    // on `…/info` is the same answer as one where the bytes come to it, and guessing
+    // otherwise sends a window into a 404.
+    const agent = scriptAgent({ begin: 409, landed: [{ start: 0, end: PART }] });
+    await client().uploadStream("abc", recording(), { parallel: true, resume: true });
+    expect(agent.bytes).toHaveLength(0);
+    const told = agent.parts.filter((call) => call.method === "PUT");
+    expect(told.map((call) => call.bytes)).toEqual([PART, PART]);
+  });
+
   test("fails the upload when a batched claim is refused", async () => {
     // Every window a failed claim named is a stored object the agent has no record
     // of, so this must not resolve: the closing read would otherwise report an upload

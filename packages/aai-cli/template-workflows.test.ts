@@ -88,7 +88,15 @@ describe("every template's workflow surface builds", async () => {
   test.each(names)("%s", { timeout: 120_000 }, async (name) => {
     await withTempDir(async (dir) => {
       const project = path.join(dir, name);
-      await fs.cp(path.join(TEMPLATES, name), project, { recursive: true });
+      // `node_modules` is FILTERED, and the filter is the fix rather than a
+      // tidiness: a template directory somebody has run vite or `aai dev` in holds
+      // one, copying it in makes `linkSdkNodeModules` a no-op, and the build then
+      // fails on an unresolvable SDK import. The helper reports that now; not
+      // copying it is what stops it happening.
+      await fs.cp(path.join(TEMPLATES, name), project, {
+        recursive: true,
+        filter: (src) => path.basename(src) !== "node_modules",
+      });
       await linkSdkNodeModules(project);
       const built = await buildWorkflows(project);
       expect(built?.workflowCode).toBeTruthy();
