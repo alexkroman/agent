@@ -415,6 +415,19 @@ position. `api.streamOutput()` is the client half, resolving the raw
 `Response` for the same reason `watch` does: an agent deployed before the
 route existed answers 404, which is a normal path.
 
+**`follow`/`followOutput` are the `for await` iterators over those two routes**,
+and they hold the protocol's two continuation rules so that a caller does not
+have to: the state stream hands the client back with an `idle` frame after its
+own duration cap (a re-open, not an ending), and one output read is bounded by
+the tail it saw, so the next resumes from an absolute index. A stream that ends
+with the run still unsettled THROWS rather than reading as a run that finished.
+`watch`/`streamOutput` stay raw for exactly the caller described above — one
+writing its own 404 fallback — and there is deliberately no fallback inside the
+iterators. `readEventStream` is the SSE parser under both, public on
+`@alexkroman1/aai/workflow-api` so this package carries no second copy; the
+private `_sse.ts` is deleted rather than duplicated, and `eventsource-parser`
+moved down a layer with it.
+
 **`wake` is what makes a long `sleep()` usable.** `POST /runs/:id/wake` ends a
 run's pending sleeps and reports how many (`api.wake()`,
 `ctx.workflows.wakeUp()`); `woken: 0` is an answer, not a failure — the run

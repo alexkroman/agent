@@ -65,6 +65,44 @@ const READS = 12;
 /** How many world streams have been opened, and how many of those were cancelled. */
 type OpenLedger = { opened: number; cancelled: number };
 
+/**
+ * The DevKit's `World`, reached through the runtime module's own signature.
+ *
+ * `@workflow/world` owns the interface, but it is a transitive dependency here
+ * rather than a declared one — so it is read off the function that consumes it
+ * instead, which keeps the fake below honest without this package taking a
+ * dependency on a package it does not import.
+ */
+type WorldArg = Parameters<typeof import("workflow/runtime")["setWorld"]>[0];
+/** The same, without the `undefined` that clearing the world allows. */
+type World = NonNullable<WorldArg>;
+
+/**
+ * The slice of `World` the fake below really implements.
+ *
+ * A `World` is some twenty-seven members across `Queue`, `Storage` and
+ * `Streamer`, so a fake that satisfied it outright would be a hundred lines of
+ * throwing stubs for methods this test never reaches. Naming the slice instead
+ * buys the half that matters: the three stream members are checked against the
+ * DevKit's own signatures, so a fake that drifts out of step with the interface
+ * it stands in for fails to COMPILE — where a `Record<string, unknown>` return
+ * type checked none of them and a rename would have left this suite passing
+ * against a shape no real world has.
+ */
+type WorldSlice = Pick<World, "specVersion" | "readFromStream" | "getStreamInfo"> & {
+  /** Narrower than the real overloaded `runs`, which this fake only ever rejects from. */
+  runs: { get: () => Promise<never> };
+};
+
+/**
+ * The one widening in this file: a partial fake of a third-party interface
+ * cannot be assigned to it. Concentrating it here is what lets every member of
+ * `WorldSlice` stay genuinely type-checked at the fake's own definition.
+ */
+function asWorld(slice: WorldSlice): World {
+  return slice as unknown as World;
+}
+
 let ledger: OpenLedger;
 /** The DevKit's run handle. Resolved dynamically, so its type is not in scope here. */
 let run: {
@@ -80,7 +118,7 @@ let restoreWorld: () => void;
  * it. That is also what makes an uncancelled read permanent rather than merely
  * slow.
  */
-function ledgerWorld(into: OpenLedger): Record<string, unknown> {
+function ledgerWorld(into: OpenLedger): WorldSlice {
   return {
     specVersion: 2,
     async readFromStream(): Promise<ReadableStream<Uint8Array>> {
@@ -118,14 +156,14 @@ beforeEach(async () => {
   const { getRun } = await import("workflow/api");
   // Captured rather than assumed: another suite in this process may have
   // resolved a world already, and leaving ours installed would leak across files.
-  let previous: unknown;
+  let previous: WorldArg;
   try {
     previous = getWorld();
   } catch {
     previous = undefined;
   }
-  setWorld(ledgerWorld(ledger) as never);
-  restoreWorld = (): void => setWorld(previous as never);
+  setWorld(asWorld(ledgerWorld(ledger)));
+  restoreWorld = (): void => setWorld(previous);
   run = getRun(RUN_ID) as typeof run;
 });
 

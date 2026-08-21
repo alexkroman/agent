@@ -79,6 +79,7 @@
     "packages/aai/host/transports/pipeline-openai-replay.test.ts": 2,
     "packages/aai/host/transports/pipeline-smooth.test.ts": 1,
     "packages/aai/host/transports/s2s-transport.test.ts": 2,
+    "packages/aai/host/workflow-stream-readers.test.ts": 1,
     "packages/aai/host/ws-frames.ts": 1,
     "packages/aai/sdk/protocol-compat.test.ts": 1
   },
