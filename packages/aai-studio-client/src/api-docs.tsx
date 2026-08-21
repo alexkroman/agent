@@ -55,6 +55,7 @@ import {
   frontDoorEndpoints,
   WORKFLOW_ENDPOINTS,
 } from "./docs-content.ts";
+import { Examples } from "./docs-examples.tsx";
 import {
   cliCommands,
   curlConfig,
@@ -69,6 +70,7 @@ import {
   sdkRead,
   sdkStart,
 } from "./docs-snippets.ts";
+import { UploadApi } from "./docs-uploads.tsx";
 import { platformOrigin } from "./platform-origin.ts";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
@@ -100,41 +102,6 @@ function Endpoints({ base, rows }: { base: string; rows: readonly DocEndpoint[] 
         </li>
       ))}
     </ul>
-  );
-}
-
-/**
- * One example: the SDK call, with the other ways to make it a click away.
- *
- * The DEFAULT is the SDK for every section on this page — see `docs-snippets.ts`
- * for why — and `curl` and the CLI are `<details>` rather than a language
- * switcher because they are answers to a different question ("I am not in
- * TypeScript") rather than a preference to remember. A `<details>` also keeps
- * both in the DOM, so a reader searching the page for `curl` still finds it.
- */
-function Examples({
-  code,
-  label,
-  alternates = [],
-}: {
-  code: string;
-  label: string;
-  alternates?: readonly { language: string; code: string }[];
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Snippet code={code} label={label} />
-      {alternates.map((alt) => (
-        <details key={alt.language}>
-          <summary className="cursor-pointer text-[11px] text-muted">
-            Same call with {alt.language}
-          </summary>
-          <div className="pt-2">
-            <Snippet code={alt.code} label={`${label} with ${alt.language}`} />
-          </div>
-        </details>
-      ))}
-    </div>
   );
 }
 
@@ -253,6 +220,12 @@ function WorkflowApi({
             </div>
           </div>
         </Card>
+
+        {/* After the run examples, not before: the run body is where a reader
+            meets an upload id, and the card is the answer to the question that
+            raises. It renders only for an agent some workflow of which declares
+            one — see docs-uploads.tsx. */}
+        <UploadApi base={base} token={token} declared={declared} />
       </>
     );
   }

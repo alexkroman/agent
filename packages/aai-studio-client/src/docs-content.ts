@@ -31,6 +31,16 @@ import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/workflow-api";
  */
 export const WORKFLOWS_PATH = WORKFLOW_API_PREFIX.replace(/^\//, "");
 
+/**
+ * The upload routes' root, with no leading slash.
+ *
+ * Derived from {@link WORKFLOWS_PATH} rather than spelled, for the reason that
+ * one is derived from the SDK constant: the route table, the SDK snippets and
+ * the shell snippets all name this path, and three literals is how one of them
+ * comes to name a prefix the platform no longer routes.
+ */
+export const UPLOADS_PATH = `${WORKFLOWS_PATH}/uploads`;
+
 /** Methods the documented routes use. Mirrors the platform's own registrations. */
 export type DocMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -165,25 +175,28 @@ export const WORKFLOW_ENDPOINTS: readonly DocEndpoint[] = [
   },
   {
     method: "POST",
-    path: `${WORKFLOWS_PATH}/uploads`,
-    summary: "Reserve an upload id, to pass as an input property.",
+    // The body is the FILE, raw: the name rides in `?name=` and the type in
+    // `Content-Type`. Said here because it is the one row on this table a reader
+    // would otherwise assume is JSON like every other POST above it.
+    path: `${UPLOADS_PATH}?name=`,
+    summary: "Send a file — body is the raw bytes. Answers with the id a run input carries.",
     sdk: "agent.upload(file)",
   },
   {
     method: "PUT",
-    path: `${WORKFLOWS_PATH}/uploads/:id`,
-    summary: "Stream an upload's bytes.",
+    path: `${UPLOADS_PATH}/:id?name=`,
+    summary: "Send a file under an id YOU chose, so a run can start before the bytes are in.",
     sdk: "agent.uploadStream(id, file)",
   },
   {
     method: "POST",
-    path: `${WORKFLOWS_PATH}/uploads/:id/parts`,
+    path: `${UPLOADS_PATH}/:id/parts`,
     summary: "Begin a parallel, resumable upload; PUT each window to the same path.",
     sdk: "agent.upload(file, { parallel: true }) — the default",
   },
   {
     method: "GET",
-    path: `${WORKFLOWS_PATH}/uploads/:id/info`,
+    path: `${UPLOADS_PATH}/:id/info`,
     summary: "How much of an upload landed.",
     sdk: "agent.uploadInfo(id)",
   },
@@ -284,10 +297,43 @@ export function sampleInput(
   return sampleObject(workflow.inputSchema, { uploads: workflow.uploads ?? [], upload }, 0);
 }
 
-/** The `POST /workflows/runs` body for one workflow, example input included. */
-export function startBody(workflow: WorkflowSummary): Record<string, unknown> {
-  const input = sampleInput(workflow);
+/**
+ * The `POST /workflows/runs` body for one workflow, example input included.
+ *
+ * Takes the same {@link SampleOptions} the input sampler does, because the shell
+ * snippets need the upload properties to come out as a SHELL EXPANSION rather
+ * than as a placeholder string — a `curl` that uploads the file and then starts
+ * the run has the id in a variable, and a body carrying `<upload id for x>`
+ * beside it would be the one line the reader has to edit by hand.
+ */
+export function startBody(
+  workflow: WorkflowSummary,
+  options: SampleOptions = {},
+): Record<string, unknown> {
+  const input = sampleInput(workflow, options);
   return input === undefined ? { workflow: workflow.name } : { workflow: workflow.name, input };
+}
+
+/**
+ * The first declared workflow that takes an upload, and the first property of it
+ * that does.
+ *
+ * What the upload card documents ITSELF with: the routes are the same for every
+ * agent, but the worked "start the run, then send the bytes" example needs a real
+ * workflow name and a real property to put the id in, and inventing one would put
+ * a `400` in front of anyone who pasted it. `undefined` for an agent no workflow
+ * of which declares an upload, which is what decides whether the card renders at
+ * all — the routes exist for every agent, and documenting a file upload to a
+ * project with nothing to upload to is a page teaching a call nobody can make.
+ */
+export function uploadingWorkflow(
+  declared: readonly WorkflowSummary[],
+): { workflow: WorkflowSummary; property: string } | undefined {
+  for (const workflow of declared) {
+    const property = workflow.uploads?.[0];
+    if (property !== undefined) return { workflow, property };
+  }
+  return undefined;
 }
 
 /** The secret whose presence closes the workflow API. */

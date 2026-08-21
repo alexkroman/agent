@@ -17,6 +17,8 @@ import {
   PAGE_ENDPOINTS,
   sampleInput,
   startBody,
+  UPLOADS_PATH,
+  uploadingWorkflow,
   VOICE_ENDPOINTS,
   WORKFLOW_ENDPOINTS,
 } from "./docs-content.ts";
@@ -145,5 +147,40 @@ describe("the endpoint tables", () => {
       "client-config",
       "phone",
     ]);
+  });
+});
+
+describe("the workflow the upload card documents itself with", () => {
+  test("is the first one that declares an upload, with its first such property", () => {
+    // The routes are the same for every agent; what the card needs from the
+    // listing is a real workflow name and a real property to put the id in,
+    // because the start-first example invents a `400` otherwise.
+    const declared = [
+      workflow({ type: "object", properties: { topic: { type: "string" } } }),
+      { ...workflow({ type: "object" }, ["audio_file", "cover"]), name: "transcribe" },
+    ];
+    expect(uploadingWorkflow(declared)).toEqual({
+      workflow: declared[1],
+      property: "audio_file",
+    });
+  });
+
+  test("is undefined when no declared workflow takes a file", () => {
+    // The gate on the whole card: documenting a file upload to a project with
+    // nothing to upload to teaches a call nobody there can make.
+    expect(uploadingWorkflow([workflow()])).toBeUndefined();
+    expect(uploadingWorkflow([])).toBeUndefined();
+    // An EMPTY `uploads` is the same answer as none — `?.[0]` covers both, and
+    // a length check that read `uploads !== undefined` would not.
+    expect(uploadingWorkflow([workflow(undefined, [])])).toBeUndefined();
+  });
+
+  test("the upload routes hang off the workflow prefix, spelled once", () => {
+    expect(UPLOADS_PATH).toBe("workflows/uploads");
+    // Every upload row in the table is built from it, so a prefix rename cannot
+    // leave half the rows behind.
+    const uploadRows = WORKFLOW_ENDPOINTS.filter((row) => row.path.includes("uploads"));
+    expect(uploadRows).toHaveLength(4);
+    for (const row of uploadRows) expect(row.path.startsWith(UPLOADS_PATH)).toBe(true);
   });
 });
