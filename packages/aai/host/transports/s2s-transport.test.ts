@@ -465,6 +465,33 @@ describe("S2sTransport reconnect", () => {
     expect(callbacks.reported("error.reported")).not.toHaveBeenCalled();
   });
 
+  test("a close() that throws does not retire the lifecycle that reads it", async () => {
+    // A throw from inside a lifecycle ACTION puts the XState actor into
+    // `status: "error"`, after which every later event is ignored — so an
+    // unguarded `handle.close()` in `dropLink` would not merely fail to close,
+    // it would silently freeze the machine that decides whether inbound frames
+    // may still reach a client already told the call is over.
+    const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const h1 = expectAt(handles, 0, "first handle");
+    vi.mocked(h1.close).mockImplementation(() => {
+      throw new Error("close failed");
+    });
+    const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
+    cb1.onSessionReady("sess_abc");
+    // A fatal close: `dropLink` runs, and its close() throws.
+    cb1.onClose(1008, "unauthorized");
+
+    // Reported once — the retirement completed despite the throw.
+    expect(callbacks.reported("error.reported")).toHaveBeenCalledOnce();
+    // And the machine is still answering: a trailing frame is refused rather
+    // than relayed, which is what a frozen actor would have allowed through.
+    cb1.onUserTranscript("still talking");
+    expect(callbacks.reported("user-transcript.committed")).not.toHaveBeenCalled();
+  });
+
   test("cancelReply drops in-flight audio until the next reply starts", async () => {
     const { callbacks, capturedCallbacks } = setupSpiedTransport();
     const t = createS2sTransport(makeTransportOptions({ callbacks }));

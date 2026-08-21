@@ -783,6 +783,9 @@ importers:
       use-sync-external-store:
         specifier: ^1.6.0
         version: 1.6.0(react@19.2.8)
+      xstate:
+        specifier: 'catalog:'
+        version: 5.32.5
     devDependencies:
       '@tailwindcss/vite':
         specifier: 'catalog:'

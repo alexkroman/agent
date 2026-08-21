@@ -33,14 +33,45 @@
  * TurnMachine.inFlight}. They are {@link TurnMachine.draining} and {@link
  * TurnMachine.resumeInFlight} now, so "what is true of the turn in flight" is
  * answered in one place.
+ *
+ * ## Why the four facts are PARALLEL REGIONS
+ *
+ * Naming the transitions was most of the win, and it left the last part
+ * undone: the phase was a discriminated union, and `spoke`, `audioGateOpen`,
+ * `draining` and `resumeScope` were four free booleans beside it. Two of those
+ * are only meaningful WHILE a turn runs, and nothing said so —
+ * `draining() && !inFlight()` was representable, and `resumeInFlight()` had to
+ * spell the conjunction by hand ("both halves, because a resume scope with no
+ * turn in it is not a resume in flight"). As four parallel regions, `draining`
+ * is a SUBSTATE of `running`, so the first is unrepresentable and the second is
+ * a query across two regions rather than a rule a reader has to be told.
+ *
+ * It also fixes a reset by omission: `begin` cleared `spoke` and left
+ * `draining` alone, which was safe only because `runReply` pairs
+ * `setDraining(false)` in a `finally`. Entering `running` now starts at its
+ * initial `body` substate, so a new turn cannot inherit the previous one's
+ * drain whatever the caller does.
+ *
+ * The one thing that stays OUTSIDE the machine is the `abort()` itself, and
+ * `abortCurrent` below says why.
  */
 
-/** The turn phase: either no turn exists, or exactly one abortable reply. */
-export type TurnPhase =
-  | { readonly kind: "idle" }
-  | { readonly kind: "running"; readonly ctl: AbortController };
+import { assign, createActor, setup } from "xstate";
 
-const IDLE: TurnPhase = { kind: "idle" };
+/** Everything that happens to a turn. */
+type TurnEvent =
+  | { type: "BEGIN"; ctl: AbortController }
+  | { type: "SETTLE"; ctl: AbortController }
+  /** Kill the turn in flight. The `abort()` itself is the wrapper's. */
+  | { type: "ABORT" }
+  /** Barge-in / cancel / reset — reaches three regions at once. */
+  | { type: "INTERRUPT" }
+  | { type: "MARK_SPOKE" }
+  | { type: "OPEN_GATE" }
+  | { type: "DRAIN_START" }
+  | { type: "DRAIN_END" }
+  | { type: "RESUME_SCOPE_ENTER" }
+  | { type: "RESUME_SCOPE_EXIT" };
 
 export interface TurnMachine {
   /** True while a turn is in flight server-side (an abortable reply exists). */
@@ -98,55 +129,144 @@ export interface TurnMachine {
   setResumeScope(resume: boolean): void;
 }
 
+/**
+ * The four facts, as four parallel regions.
+ *
+ * `turn` is the only one with a substate, and that is the point: `draining`
+ * lives INSIDE `running`, so a drain with no turn behind it cannot be
+ * described. `gate` and `voice` are genuinely independent of it — the gate
+ * closes on a barge-in whose turn already settled, and `spoke` outlives the
+ * turn it describes (see {@link TurnMachine.spoke}) — which is why they are
+ * siblings rather than substates.
+ */
+const turnStateMachine = setup({
+  types: {} as { context: { ctl: AbortController | null }; events: TurnEvent },
+  guards: {
+    /**
+     * Is this settle the CURRENT turn's? The identity check a nullable
+     * `if (turnController === ctl)` used to spell, so a turn whose scaffold
+     * unwinds after a replacement began cannot retire the replacement.
+     */
+    settlesCurrent: ({ context, event }) => event.type === "SETTLE" && context.ctl === event.ctl,
+  },
+  actions: {
+    holdController: assign({
+      ctl: ({ context, event }) => (event.type === "BEGIN" ? event.ctl : context.ctl),
+    }),
+    releaseController: assign({ ctl: null }),
+  },
+}).createMachine({
+  id: "turnState",
+  type: "parallel",
+  context: { ctl: null },
+  states: {
+    /** Whether a turn is in flight, and how far through it is. */
+    turn: {
+      initial: "idle",
+      states: {
+        idle: { on: { BEGIN: { target: "running", actions: "holdController" } } },
+        running: {
+          initial: "body",
+          on: {
+            // `reenter`, so a turn that replaces another starts at `body`
+            // rather than inheriting its drain.
+            BEGIN: { target: "running", reenter: true, actions: "holdController" },
+            SETTLE: {
+              guard: "settlesCurrent",
+              target: "idle",
+              actions: "releaseController",
+            },
+            ABORT: { target: "idle", actions: "releaseController" },
+            INTERRUPT: { target: "idle", actions: "releaseController" },
+          },
+          states: {
+            /** The reply is still being produced. */
+            body: { on: { DRAIN_START: "draining" } },
+            /** The body is persisted; only the TTS drain remains. */
+            draining: { on: { DRAIN_END: "body" } },
+          },
+        },
+      },
+    },
+    /** Whether TTS provider audio may reach the client. Starts OPEN: the
+     *  greeting's audio has to pass before any turn text has been sent. */
+    gate: {
+      initial: "open",
+      states: {
+        open: { on: { INTERRUPT: "closed" } },
+        closed: { on: { OPEN_GATE: "open" } },
+      },
+    },
+    /** Whether the current/most recent turn put audio on the wire. */
+    voice: {
+      initial: "unspoken",
+      states: {
+        unspoken: { on: { MARK_SPOKE: "spoken" } },
+        // Cleared by a new turn and by an interrupt, NOT by a settle — see
+        // {@link TurnMachine.spoke}.
+        spoken: { on: { BEGIN: "unspoken", INTERRUPT: "unspoken" } },
+      },
+    },
+    /**
+     * Whether the chained call in progress is a false-interruption resume.
+     *
+     * Set around the whole chained call, so it brackets the moment before
+     * `BEGIN` and the moment after `SETTLE` — which is why
+     * {@link TurnMachine.resumeInFlight} reads this region AND `turn`.
+     */
+    resume: {
+      initial: "outside",
+      states: {
+        outside: { on: { RESUME_SCOPE_ENTER: "inside" } },
+        inside: { on: { RESUME_SCOPE_EXIT: "outside" } },
+      },
+    },
+  },
+});
+
 /** Create a {@link TurnMachine}; the gate starts open for the greeting. */
 export function createTurnMachine(): TurnMachine {
-  let phase: TurnPhase = IDLE;
-  let spoke = false;
-  let audioGateOpen = true;
-  let draining = false;
-  let resumeScope = false;
+  const actor = createActor(turnStateMachine).start();
+  const inFlight = (): boolean => actor.getSnapshot().matches({ turn: "running" });
 
   function abortCurrent(): void {
-    if (phase.kind !== "running") return;
-    // Abort while still "running": abort listeners fire synchronously and
-    // may consult inFlight(), which must describe the turn being killed.
-    phase.ctl.abort();
-    phase = IDLE;
+    const snapshot = actor.getSnapshot();
+    if (!snapshot.matches({ turn: "running" })) return;
+    // The abort runs HERE rather than as a machine action, and the ordering is
+    // why: abort listeners fire synchronously and may consult `inFlight()`,
+    // which must still describe the turn being killed. An action would have to
+    // rely on XState committing the next snapshot only after actions run —
+    // true today, and not a contract this module should rest an invariant on.
+    snapshot.context.ctl?.abort();
+    actor.send({ type: "ABORT" });
   }
 
   return {
-    inFlight: () => phase.kind === "running",
-    spoke: () => spoke,
-    audioGateOpen: () => audioGateOpen,
-    draining: () => draining,
-    // Both halves, because a resume scope with no turn in it is not a resume in
-    // flight — the scope is set around the whole chained call, which includes
-    // the moment before `begin` and the moment after `settle`.
-    resumeInFlight: () => resumeScope && phase.kind === "running",
-    begin(ctl: AbortController): void {
-      phase = { kind: "running", ctl };
-      spoke = false;
+    inFlight,
+    spoke: () => actor.getSnapshot().matches({ voice: "spoken" }),
+    audioGateOpen: () => actor.getSnapshot().matches({ gate: "open" }),
+    // Unrepresentable outside `running` now: `draining` is its substate.
+    draining: () => actor.getSnapshot().matches({ turn: { running: "draining" } }),
+    resumeInFlight: () => {
+      const snapshot = actor.getSnapshot();
+      return snapshot.matches({ resume: "inside" }) && snapshot.matches({ turn: "running" });
     },
-    settle(ctl: AbortController): void {
-      if (phase.kind === "running" && phase.ctl === ctl) phase = IDLE;
-    },
+    begin: (ctl: AbortController) => actor.send({ type: "BEGIN", ctl }),
+    settle: (ctl: AbortController) => actor.send({ type: "SETTLE", ctl }),
     abortCurrent,
     interrupt(): void {
-      abortCurrent();
-      audioGateOpen = false;
-      spoke = false;
+      // Same ordering rule as `abortCurrent`, and this one runs even with no
+      // turn in flight — a playback-tail barge-in still closes the gate and
+      // clears `spoke`.
+      const snapshot = actor.getSnapshot();
+      if (snapshot.matches({ turn: "running" })) snapshot.context.ctl?.abort();
+      actor.send({ type: "INTERRUPT" });
     },
-    markSpoke(): void {
-      spoke = true;
-    },
-    openAudioGate(): void {
-      audioGateOpen = true;
-    },
-    setDraining(value: boolean): void {
-      draining = value;
-    },
-    setResumeScope(value: boolean): void {
-      resumeScope = value;
-    },
+    markSpoke: () => actor.send({ type: "MARK_SPOKE" }),
+    openAudioGate: () => actor.send({ type: "OPEN_GATE" }),
+    setDraining: (draining: boolean) =>
+      actor.send({ type: draining ? "DRAIN_START" : "DRAIN_END" }),
+    setResumeScope: (resume: boolean) =>
+      actor.send({ type: resume ? "RESUME_SCOPE_ENTER" : "RESUME_SCOPE_EXIT" }),
   };
 }

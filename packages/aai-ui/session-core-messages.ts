@@ -18,6 +18,7 @@ import {
   type SessionEvent,
 } from "@alexkroman1/aai/protocol";
 import { omitUndefined, toArgsRecord } from "@alexkroman1/aai/utils";
+import type { SessionStateMachine } from "./session-core-state.ts";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
 
 /** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
@@ -66,6 +67,8 @@ type MessageHandlerDeps = {
   getSnapshot: () => SessionSnapshot;
   updateState: (partial: Partial<SessionSnapshot>) => void;
   conn: ConnState;
+  /** The session's state and error, as one fact — see `session-core-state.ts`. */
+  agentState: SessionStateMachine;
   /** Release the microphone/VoiceIO (the session core's `cleanupAudio`). */
   cleanupAudio: () => void;
 };
@@ -101,7 +104,7 @@ type MessageHandlers = {
  * `ConnState.turn`).
  */
 export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers {
-  const { getSnapshot, updateState, conn, cleanupAudio } = deps;
+  const { getSnapshot, updateState, conn, agentState, cleanupAudio } = deps;
 
   /** Monotonically increasing counter for custom events -- used by useEvent to deduplicate. */
   let customEventSeq = 0;
@@ -133,7 +136,12 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         { id: ++messageSeq, role: "user" as const, content: text },
         MAX_MESSAGES,
       ),
-      state: "thinking",
+      // `THINK`, not `state: "thinking"`: this was the fourth site that should
+      // have consulted the fatal latch and did not, so a
+      // `user-transcript.committed` arriving behind a fatal error painted a
+      // working state over the banner. Declining it is now the machine's, not
+      // this caller's, so the site could not have missed it.
+      ...agentState.apply({ type: "THINK" }),
     });
   }
 
@@ -177,47 +185,46 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   /** Clear error state when a non-error event arrives — proves the session
    *  is functional (e.g. audio init failed but WebSocket still works).
    *
-   *  A FATAL error is exempt, and that exemption is the whole reason the flag
-   *  exists (see `ConnState.fatalError`): the host's teardown emits, so the
-   *  frames that follow a fatal error are a consequence of it rather than
-   *  evidence against it. Recovering on them left the one message that says
-   *  what to fix — a missing provider key — on screen for a fraction of a
-   *  second, over a session that could no longer hear anyone. */
+   *  A FATAL session is exempt, and that exemption is the whole reason the
+   *  `fatal` region exists: the host's teardown emits, so the frames that
+   *  follow a fatal error are a consequence of it rather than evidence
+   *  against it. Recovering on them left the one message that says what to
+   *  fix — a missing provider key — on screen for a fraction of a second,
+   *  over a session that could no longer hear anyone. */
   function clearRecoveredError(): void {
-    if (conn.fatalError) return;
-    const snap = getSnapshot();
-    if (snap.state === "error") {
-      // The socket is demonstrably open (we're handling a server event), so
-      // recover to "listening" — "disconnected" would misreport a live session.
-      updateState({ state: "listening", error: null });
-    } else if (snap.error !== null) {
-      // Lingering non-fatal error banner (fatal: false) — the session kept
-      // running, so any later activity clears it.
-      updateState({ error: null });
-    }
+    // One event for both arms the hand-written version spelled — recover from
+    // `error` (to "listening", not "disconnected": the socket is demonstrably
+    // open, we are handling a server event) and clear a lingering non-fatal
+    // banner from anywhere else — and for the fatal exemption that gated both.
+    // See `session-core-state.ts`.
+    updateState(agentState.apply({ type: "ACTIVITY" }));
   }
 
   /**
    * Return to "listening" at a turn boundary — unless the session is over.
    *
    * `reply.completed`, `reply.cancelled` and `session.reset` each wrote
-   * `state: "listening"`
-   * unconditionally, which is the second half of the same bug
-   * `clearRecoveredError`'s latch covers: the host's fatal paths all call
+   * `state: "listening"` unconditionally, which is the second half of the same
+   * bug `clearRecoveredError` covers: the host's fatal paths all call
    * `terminate()`, and terminating emits `onCancelled()`. So the frame that
    * ANNOUNCES the session's death was also the frame that painted a live-mic
    * state over the error it had just reported.
+   *
+   * The exemption is not restated here: `LISTEN` is declined while the `fatal`
+   * region says so, which is what makes this the whole of the rule rather than
+   * one of four sites that had to remember it.
    */
   function toListening(extra: Partial<SessionSnapshot> = {}): void {
-    updateState(conn.fatalError ? extra : { ...extra, state: "listening" });
+    updateState({ ...extra, ...agentState.apply({ type: "LISTEN" }) });
   }
 
   function handleErrorEvent(e: Extract<SessionEvent, { type: "error.reported" }>): void {
     console.error("Agent error:", e.message);
+    const error = { code: e.code, message: e.message };
     if (e.fatal === false) {
       // Turn-level failure (e.g. one upload's transcription failed): show
       // the banner but keep the session usable — the server kept running.
-      updateState({ error: { code: e.code, message: e.message } });
+      updateState(agentState.apply({ type: "TURN_ERROR", error }));
     } else {
       // Fatal: the session is over — release the microphone too, or the
       // capture worklet keeps streaming into a socket the server may hold
@@ -229,10 +236,8 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       // grant would otherwise pass the same-generation guard, assign a live
       // VoiceIO, and flip the state back to "listening" over this error.
       conn.generation.bump();
-      conn.fatalError = true;
       updateState({
-        state: "error",
-        error: { code: e.code, message: e.message },
+        ...agentState.apply({ type: "FATAL", error }),
         running: false,
         recording: false,
       });
@@ -306,10 +311,13 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "session.reset": {
         conn.turn.bump();
         conn.voiceIO?.flush();
-        // A fatal session keeps its banner here too: CLEARED_SESSION_STATE
-        // nulls `error`, and the point of the latch is that only a fresh
-        // handshake may do that.
-        toListening(conn.fatalError ? {} : CLEARED_SESSION_STATE);
+        // A fatal session keeps its banner AND its conversation:
+        // CLEARED_SESSION_STATE nulls `error`, and only a fresh handshake may
+        // do that. `RESET` is the machine's half (listening + the banner
+        // cleared, or nothing at all); this decides the CONVERSATION, which is
+        // the one thing outside the machine's remit.
+        const next = agentState.apply({ type: "RESET" });
+        updateState(agentState.fatal() ? next : { ...CLEARED_SESSION_STATE, ...next });
         break;
       }
       case "custom.emitted":
@@ -365,13 +373,13 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
 
   /** Enqueue a PCM16 audio chunk for playback. Transitions state to `"speaking"` on the first chunk. */
   function playAudioChunk(chunk: ArrayBuffer): void {
-    const snap = getSnapshot();
     // Binary frames bypass clearRecoveredError on purpose — a straggler chunk
     // must not flip an errored (or error-disconnected) session to "speaking".
-    if (snap.state === "error" || (snap.state === "disconnected" && snap.error !== null)) return;
-    if (snap.state !== "speaking") {
-      updateState({ state: "speaking" });
-    }
+    // That used to be a hand-written pair of state reads here; `SPEAK` is
+    // simply not a transition `error` offers, and `disconnected` offers it only
+    // with no banner up. A declined event leaves the phase where it was, so
+    // this stays one write whether it moved or not.
+    updateState(agentState.apply({ type: "SPEAK" }));
     if (conn.voiceIO) {
       conn.voiceIO.enqueue(chunk);
     } else if (conn.preInitAudio.length < MAX_PREINIT_AUDIO_CHUNKS) {
@@ -389,7 +397,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       .done()
       .then(() => {
         if (!conn.turn.isCurrent(gen)) return;
-        updateState({ state: "listening" });
+        updateState(agentState.apply({ type: "LISTEN" }));
       })
       .catch((err: unknown) => {
         console.warn("Audio playback done failed:", err);
@@ -412,7 +420,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       // shorter than the worklet's jitter buffer never starts playing. Still
       // transition optimistically (no audio pipeline → nothing to wait for).
       conn.preInitDone = true;
-      updateState({ state: "listening" });
+      updateState(agentState.apply({ type: "LISTEN" }));
     }
   }
 
@@ -442,9 +450,11 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
     if (msg.type === "session.configured") {
       // A completed handshake is a live session, so it supersedes whatever
       // ended the last one — the only frame that may clear the fatal latch
-      // (see `ConnState.fatalError`), since everything else a dying session
-      // emits arrives after the error and before any retry.
-      conn.fatalError = false;
+      // (see the `fatal` region in `session-core-state.ts`), since everything
+      // else a dying session emits arrives after the error and before any
+      // retry. It moves no phase of its own: the socket's `open` already
+      // reported `ready`.
+      agentState.apply({ type: "HANDSHAKE_COMPLETE" });
       return {
         sampleRate: msg.sampleRate,
         ttsSampleRate: msg.ttsSampleRate,

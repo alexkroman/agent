@@ -1190,11 +1190,8 @@ key surfaces as `Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the
 agent env.` (`requireApiKey`, `aai/host/providers/_utils.ts`) — reported by
 `onProviderError`, which is fatal precisely because it terminates.
 
-So `ConnState.fatalError` latches on the fatal branch of `handleErrorEvent`,
-`clearRecoveredError` returns early while it is set, and the three turn
-boundaries go through `toListening`, which drops the state field when it is
-set (the `reset` case additionally keeps its `error`, since
-`CLEARED_SESSION_STATE` nulls it). **Exactly one thing clears it: the next
+So the fatal branch of `handleErrorEvent` latches, every recovery path is
+declined while the latch holds, and **exactly one thing clears it: the next
 `config` frame.** That is a completed handshake, i.e. a live session — the
 one frame a dying session cannot produce, and per CONNECTION rather than per
 session, so partysocket's automatic retries reaching a healthy peer are not
@@ -1202,6 +1199,40 @@ pinned to the dead one's banner. A NON-fatal error (`fatal: false`) is
 untouched by all of this: the server said the session survived, so later
 activity still retires its banner, which is the case the recovery was
 written for.
+
+### The latch is a REGION, not a boolean, and that is what closed the last hole
+
+`state` and `error` were two snapshot fields written independently from
+thirteen sites across `session-core.ts`, `session-core-messages.ts` and
+`session-core-audio-setup.ts`, each deciding for itself whether its write was
+legal by reading the snapshot back first — `if (snap.state === "error" || …)`
+in `playAudioChunk`, `if (conn.fatalError) return` in `clearRecoveredError`,
+`conn.fatalError ? extra : {…}` in `toListening`. That is a rule enforced by
+every author remembering it, and **one of them did not**:
+`handleUserTranscriptEvent` wrote `state: "thinking"` unconditionally, so a
+`user-transcript.committed` arriving behind a fatal error painted a working
+state over the banner this whole section exists to protect.
+
+`session-core-state.ts` is the statechart that replaced them. The seven
+`AgentState` names are one region and the fatal latch is a SECOND one —
+`stateIn({ fatal: "yes" })` rather than a substate of `error`, because the
+latch outlives that phase: between the error and the `config` frame the phase
+runs `error → connecting → ready` while the latch stays set. A caller now
+sends what HAPPENED (`LISTEN`, `ACTIVITY`, `SPEAK`, `THINK`) and folds the
+returned projection into its one `updateState` call; whether the transition
+was legal is answered once, in the machine.
+
+Two things it turned up that the boolean version could not. **XState falls
+through to an ancestor's handler when a child's guard fails** — so a
+root-level `ACTIVITY` that cleared the banner ran after `error`'s own
+fatal-guarded recovery declined, and `fuzz-session-core.test.ts` shrank it to
+four ops reported as "error state carries no error". Both handlers carry the
+guard now. And **a declined transition returns the position unchanged**,
+which made `updateState` publish a snapshot that differed in nothing: the two
+call sites that used to guard that by hand ("clear an error already null",
+"announce speaking while already speaking") were the two the churn specs in
+`session-core-events.test.ts` pin, so the check moved into `updateState`,
+where it covers the other thirty callers too.
 
 **And the banner is ANNOUNCED.** `ConsoleShell` renders it with `role="alert"`,
 the same way `Form` renders a submit failure, because the latch above makes this

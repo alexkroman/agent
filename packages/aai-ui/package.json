@@ -37,7 +37,8 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "use-stick-to-bottom": "catalog:",
-    "use-sync-external-store": "^1.6.0"
+    "use-sync-external-store": "^1.6.0",
+    "xstate": "catalog:"
   },
   "peerDependencies": {
     "react": "^19.0.0",

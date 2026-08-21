@@ -12,6 +12,7 @@
 //
 // The turn orchestration that consumes both lives in pipeline-user-speech.ts.
 
+import { createActor, setup } from "xstate";
 import { createRestartableTimer } from "../_timer.ts";
 import type { TransportEventBody } from "./types.ts";
 
@@ -34,7 +35,14 @@ export interface SpeechEdgeTracker {
    * `interruptionMinDurationMs` barge-in gate.
    */
   durationMs(): number;
-  /** Forget the current edge without emitting (session reset / teardown). */
+  /**
+   * Forget the current edge without emitting (session reset / teardown).
+   *
+   * Propagates to the OUTWARD gate — see {@link GatedSpeechEdges.reset}. It has
+   * to: dropping the edge here while the gate keeps a held one leaves the gate
+   * holding an utterance nobody tracks, and a later `release` reports a
+   * `speech_started` for it.
+   */
   reset(): void;
 }
 
@@ -63,6 +71,12 @@ export function createSpeechEdgeTracker(
   callbacks: {
     onSpeechStarted(): void;
     onSpeechStopped(): void;
+    /**
+     * Forget any edge downstream too, emitting nothing. Optional so a test can
+     * pass a bare pair of spies; {@link GatedSpeechEdges} supplies it, which is
+     * what the transport actually wires here.
+     */
+    reset?(): void;
   },
   opts: {
     idleTimeoutMs: number;
@@ -102,6 +116,7 @@ export function createSpeechEdgeTracker(
     reset(): void {
       idleWatchdog.clear();
       speaking = false;
+      callbacks.reset?.();
     },
   };
 }
@@ -146,7 +161,97 @@ export interface GatedSpeechEdges {
    * No-op when nothing is held.
    */
   release(): void;
+  /**
+   * Forget the current edge without emitting, for a session reset.
+   *
+   * The mirror of {@link SpeechEdgeTracker.reset}, and it has to exist for the
+   * same reason that one does: the tracker drops an open edge silently, so
+   * without this the gate keeps a `held` edge belonging to an utterance nobody
+   * is tracking any more — which a later {@link release} would then emit a
+   * `speech_started` for. The two halves describe ONE edge and cannot be reset
+   * independently.
+   */
+  reset(): void;
 }
+
+/** Events the gate accepts. The names are the machine's, not the wire's. */
+type GateEvent =
+  | { type: "SPEECH_STARTED" }
+  | { type: "SPEECH_STOPPED" }
+  | { type: "RELEASE" }
+  | { type: "RESET" };
+
+type GateInput = {
+  report: (event: TransportEventBody) => void;
+  agentIsSpeaking: () => boolean;
+};
+
+/**
+ * The gate's three positions, as a statechart.
+ *
+ * This was a pair of booleans — `held` ("an edge the client has not been told
+ * about") and `emitted` ("one it has") — which is four combinations for three
+ * positions, and the fourth was reachable: `onSpeechStarted` while already
+ * `emitted` set `held` on top of it, so a following {@link
+ * GatedSpeechEdges.release} reported a SECOND `speech_started` with no
+ * `speech_stopped` between them. Unpaired edges are the one thing this gate
+ * exists to prevent, and the pair of flags could not say so. Here `emitted`
+ * simply does not handle `SPEECH_STARTED`, so the client has been told once and
+ * is told again only after a stop.
+ *
+ * The wire emits are the state's ENTRY and EXIT rather than statements inside a
+ * setter, which is what makes that true: `speech_started` cannot be reported
+ * without arriving in `emitted`, and `speech_stopped` cannot be reported
+ * without leaving it.
+ */
+const gatedSpeechEdgesMachine = setup({
+  types: {} as { context: GateInput; input: GateInput; events: GateEvent },
+  guards: {
+    /** The agent is talking, so the edge waits rather than telling the client. */
+    agentHoldsFloor: ({ context }) => context.agentIsSpeaking(),
+  },
+  actions: {
+    reportStarted: ({ context }) => context.report({ type: "speech.started" }),
+    reportStopped: ({ context }) => context.report({ type: "speech.stopped" }),
+  },
+}).createMachine({
+  id: "gatedSpeechEdges",
+  context: ({ input }) => input,
+  initial: "silent",
+  // A reset is legal from anywhere and emits nothing — see
+  // {@link GatedSpeechEdges.reset}. Root-level, because "forget where we are"
+  // is not a fact about any one position.
+  on: { RESET: ".silent" },
+  states: {
+    /** No edge: the client believes the user is not speaking, and is right. */
+    silent: {
+      on: {
+        SPEECH_STARTED: [{ guard: "agentHoldsFloor", target: "held" }, { target: "emitted" }],
+      },
+    },
+    /**
+     * An edge the client has NOT been told about, because the agent had the
+     * floor when it opened.
+     *
+     * `SPEECH_STARTED` here is the tracker re-reporting an utterance that is
+     * already open (`reset()` having dropped its speaking flag): it re-asks the
+     * guard, so an agent that has since gone quiet releases the edge instead of
+     * holding it for a `release` that may never come.
+     */
+    held: {
+      on: {
+        SPEECH_STARTED: [{ guard: "agentHoldsFloor" }, { target: "emitted" }],
+        SPEECH_STOPPED: "silent",
+        RELEASE: "emitted",
+      },
+    },
+    /** The client has been told. Only leaving here may report the stop. */
+    emitted: {
+      entry: "reportStarted",
+      on: { SPEECH_STOPPED: { target: "silent", actions: "reportStopped" } },
+    },
+  },
+});
 
 export function createGatedSpeechEdges(deps: {
   /**
@@ -157,34 +262,15 @@ export function createGatedSpeechEdges(deps: {
   report: (event: TransportEventBody) => void;
   agentIsSpeaking: () => boolean;
 }): GatedSpeechEdges {
-  // `held` is an edge the client has not been told about yet; `emitted` is one
-  // it has. Only an emitted edge may produce `speech_stopped` — an unpaired
-  // stop is as confusing as the premature start this gate exists to prevent.
-  let held = false;
-  let emitted = false;
-
-  function emit(): void {
-    held = false;
-    emitted = true;
-    deps.report({ type: "speech.started" });
-  }
-
+  // Long-lived and never persisted: the gate's position is per CONNECTION, and
+  // a reconnect builds a new transport. So this is `createActor(...).start()`
+  // once, not the read-snapshot-write-snapshot shape `sdk/flow.ts` needs for a
+  // position that has to survive the process.
+  const actor = createActor(gatedSpeechEdgesMachine, { input: deps }).start();
   return {
-    onSpeechStarted(): void {
-      if (deps.agentIsSpeaking()) {
-        held = true;
-        return;
-      }
-      emit();
-    },
-    onSpeechStopped(): void {
-      held = false;
-      if (!emitted) return;
-      emitted = false;
-      deps.report({ type: "speech.stopped" });
-    },
-    release(): void {
-      if (held) emit();
-    },
+    onSpeechStarted: () => actor.send({ type: "SPEECH_STARTED" }),
+    onSpeechStopped: () => actor.send({ type: "SPEECH_STOPPED" }),
+    release: () => actor.send({ type: "RELEASE" }),
+    reset: () => actor.send({ type: "RESET" }),
   };
 }
