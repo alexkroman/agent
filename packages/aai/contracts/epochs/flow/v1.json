@@ -2,6 +2,6 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "flow",
   "epoch": 1,
-  "sha256": "b710855cf79786c8101d7e86aaf8d90c39e251a0d56a8ac7720105f1cc7e5378",
+  "sha256": "c15112ee8d64b0b16d8cc93b0f0a560bbfe5670e6559440d3d8c36d7e0f4c9c4",
   "exports": ["Flow", "FlowOptions", "FlowPosition", "FlowToolDef", "FlowToolResult", "flow"]
 }

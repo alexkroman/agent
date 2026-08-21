@@ -733,7 +733,7 @@ export interface FlowPosition {
 // @public
 export interface FlowToolDef<P extends ToolInputSchema, R, E> {
     description: string;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
     send?: E;
     sendFrom?: (result: R) => E | undefined;
