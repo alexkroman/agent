@@ -15,13 +15,20 @@
  * is not a limitation — it is why adoption needs no ownership transfer.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ChatStore } from "aai-server/chat-store";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import type { WarmHarness } from "aai-server/sandbox-vm";
 import { SafePathSchema } from "aai-server/schemas";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import { z } from "zod";
+import {
+  DEFAULT_LOG_TOOL_LINES,
+  MAX_LOG_TOOL_LINES,
+  readProjectLogs,
+} from "./studio-agent-logs.ts";
 import type { PreviewTarget } from "./studio-preview.ts";
+import { PROJECT_ENVIRONMENTS } from "./studio-project-slugs.ts";
 import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
 import { mutateWorkspace } from "./studio-workspace.ts";
 
@@ -48,6 +55,18 @@ const GuestFilesSchema = z.object({
 // accepted as a blob of unknowns.
 const GuestChatSchema = z.object({
   messages: z.array(UiMessageSchema).max(MAX_STUDIO_CHAT_MESSAGES),
+});
+
+/**
+ * What the coding agent's `read_logs` tool may ask for.
+ *
+ * An ENVIRONMENT, never a slug — see "The guest never names a slug" in
+ * studio-agent-logs.ts. `limit` is clamped there rather than here, because the
+ * clamp is the tool's contract and the schema is the wire's.
+ */
+const GuestLogsSchema = z.object({
+  environment: z.enum(PROJECT_ENVIRONMENTS).optional(),
+  limit: z.number().int().min(1).max(MAX_LOG_TOOL_LINES).optional(),
 });
 
 export type GuestWiringDeps = {
@@ -107,6 +126,25 @@ export function wireGuest(
     const target = parsed.data.done ? deps.previewTarget() : null;
     if (target) deps.schedulePreview(scope, project, target);
     return { ok: true };
+  });
+  // The coding agent reading its own project's deployed output. It reuses the
+  // preview target for the two things the read needs — the public origin and
+  // the account key the project's agents were deployed with — which is also
+  // what scopes it: no target means this sandbox is no longer the project's (or
+  // was brokered without a server URL), and neither state may read anything.
+  warm.conn.onRequest("studio/agent-logs", async (params) => {
+    deps.touch();
+    const parsed = GuestLogsSchema.safeParse(params);
+    if (!parsed.success) throw new Error(`Invalid log read: ${parsed.error.message}`);
+    const target = deps.previewTarget();
+    if (!target) throw new Error("This session cannot read the project's agent logs");
+    return await readProjectLogs(
+      { workspaces: deps.workspaces, scope, project, target },
+      omitUndefined({
+        environment: parsed.data.environment,
+        limit: parsed.data.limit ?? DEFAULT_LOG_TOOL_LINES,
+      }),
+    );
   });
   warm.conn.onRequest("studio/persist-chat", async (params) => {
     deps.touch();

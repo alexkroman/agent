@@ -74,6 +74,7 @@ export const STUDIO_TOOL_LABELS: Readonly<Record<string, string>> = {
   use_template: "Use template",
   generate_design_inspiration: "Design inspiration",
   todo_write: "Update plan",
+  read_logs: "Read agent logs",
   test_agent: "Test agent",
   web_search: "Search the web",
   visit_webpage: "Read webpage",

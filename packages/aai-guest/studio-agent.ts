@@ -25,12 +25,14 @@
  * - **The tools go on with `withTools`, because they are not files.** A user's
  *   agent declares no tools at all: `tools/` IS the list, enumerated where the
  *   bundle is assembled, and `agent({ tools })` is a compile error naming the
- *   file to create. These four families cannot be files — every one of them
+ *   file to create. These families cannot be files — almost every one of them
  *   closes over ONE session's workspace directory and its type-check runner, and
  *   they are built per turn precisely so a re-installed session cannot serve
  *   tools bound to the previous tree. `withTools` is the seam a resolved
  *   registry goes on through, and that is what this is: a registry resolved from
- *   the session rather than from a directory.
+ *   the session rather than from a directory. (`read_logs` closes over nothing —
+ *   it asks the HOST, which resolves the project from the sandbox's own pinned
+ *   identity — and joins here because the registry is where the tool set is.)
  */
 
 import { type AgentDef, agent, type BuiltinTool } from "@alexkroman1/aai";
@@ -38,6 +40,7 @@ import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import { withTools } from "@alexkroman1/aai/manifest";
 import type { HarnessBundleAccess } from "./harness-types.ts";
 import { buildWorkspaceDir } from "./studio-build.ts";
+import { createLogsTool } from "./studio-logs-tool.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import type { StudioSession } from "./studio-session.ts";
 import { createTemplateTools } from "./studio-template-tools.ts";
@@ -108,6 +111,10 @@ export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps)
   // of the same name; this ordering is about the three studio families.)
   return withTools(authored, {
     ...createDesignInspirationTool(),
+    // Reads the project's DEPLOYED agent, over the host control channel — the
+    // one tool here that looks outside this sandbox, and so the only one that
+    // closes over nothing (see studio-logs-tool.ts).
+    ...createLogsTool(),
     ...createProjectTools({ dir }),
     ...createTemplateTools({
       dir,

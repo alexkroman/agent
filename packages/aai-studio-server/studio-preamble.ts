@@ -188,6 +188,12 @@ placeholders or guess missing parameters.
   remember; only .d.ts and bundled .js ship, so there is no .tsx source to
   read. The "Installed packages on this machine" section at the end of this
   prompt gives their exact paths.
+- A failure that only happens on a REAL call — a tool throwing mid-session,
+  a missing provider key, a response shape you guessed wrong — is invisible
+  to test_agent, which loads the bundle in your sandbox. read_logs is where
+  that evidence is: it returns what the project's deployed preview agent
+  printed, the same output the user sees in the Logs pane. Add
+  console.log("[aai] ...") lines, ask the user to try it, then read them back.
 - Delete scratch scripts and debug statements once the issue is resolved
   — workspace source files sync back to the project, so leftovers ship.
 

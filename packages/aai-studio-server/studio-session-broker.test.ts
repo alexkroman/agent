@@ -213,6 +213,55 @@ describe("studio session broker", () => {
   });
 
   /**
+   * `read_logs`. The guest names an environment and the HOST resolves the slug
+   * from the workspace, so a sandbox that is no longer the project's — or one
+   * brokered with no platform origin — can read nothing at all.
+   */
+  test("guest agent-logs reads the project's own preview agent, or refuses", async () => {
+    const guest = fakeGuest();
+    const { broker, workspaces } = await makeBroker([guest]);
+    await broker.ensureSession(SCOPE, PROJECT, "caller-key", {
+      serverUrl: "https://platform.example",
+      userId: "user-1",
+    });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (w) => ({
+      ...w,
+      previewSlug: "proj-preview",
+    }));
+    const logs = guest.handlers.get("studio/agent-logs");
+    const fetchFn = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ lines: [], cursor: -1, dropped: 0, running: true })),
+      );
+
+    expect(await logs?.({})).toMatchObject({ slug: "proj-preview", running: true });
+    // The account key the project's agents were deployed with, at the public
+    // origin — the same pair the preview deploy uses.
+    expect(String(fetchFn.mock.calls[0]?.[0])).toBe(
+      "https://platform.example/proj-preview/logs?after=-1",
+    );
+
+    // A slug is not something the guest may pass — the schema drops it, and the
+    // read still resolves the project's own preview agent.
+    await expect(Promise.resolve(logs?.({ environment: "nowhere" }))).rejects.toThrow(
+      /Invalid log read/,
+    );
+    await broker.dispose();
+  });
+
+  test("a sandbox with no preview target may read no logs at all", async () => {
+    const guest = fakeGuest();
+    // Brokered WITHOUT a preview origin: no public origin, no caller key here.
+    const { broker } = await makeBroker([guest]);
+    await broker.ensureSession(SCOPE, PROJECT, "caller-key");
+    await expect(Promise.resolve(guest.handlers.get("studio/agent-logs")?.({}))).rejects.toThrow(
+      /cannot read/,
+    );
+    await broker.dispose();
+  });
+
+  /**
    * The auto preview trigger is the guest's TURN-COMPLETE sync (`done:
    * true`, the analog of opencode's `session.idle` / codex's
    * `agent-turn-complete`). Mid-turn checkpoints share the RPC method but

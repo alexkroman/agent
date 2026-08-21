@@ -88,6 +88,13 @@ export type GuestRpcSchema = {
     "studio/sync-workspace": { params: unknown; result: unknown };
     /** End-of-turn conversation snapshot into the project's chat row. */
     "studio/persist-chat": { params: unknown; result: unknown };
+    /**
+     * The coding agent's `read_logs`: what the project's own deployed agent
+     * printed. The guest names an ENVIRONMENT, never a slug — the host resolves
+     * that against the (scope, project) this sandbox is pinned to
+     * (aai-studio-server/studio-agent-logs.ts).
+     */
+    "studio/agent-logs": { params: unknown; result: unknown };
   };
   notificationsOut: {
     shutdown: undefined;
