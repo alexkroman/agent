@@ -34,6 +34,36 @@ documentation for this repo.
     deliberately sets no `AAI_TEMPLATES_DIR` — that override used to pin
     every e2e run to the workspace sources.
 
+## The scaffold is LINTED, and the exclusion that hid it
+
+`biome.json`'s `files.includes` used to carry a negated scaffold glob, so every
+file `aai init` copies into a user's project was checked by nothing — not the
+per-package `biome check .`, not `pnpm lint`, not CI. It was never argued for:
+the entry arrived with the whole config file (#1159) under no comment, and the
+scaffold is the LAST tree in the repo that should go unchecked, being the only
+one that lands in somebody else's project.
+
+**It cost a real bug, and a gate that scans the whole tree is what found it.**
+`scaffold/server.mjs` registered its `SIGINT`/`SIGTERM` handler as an `async`
+listener, so a rejecting `server.close()` became an unhandled rejection — a
+stack trace and a nonzero exit on Ctrl-C, in every project ever scaffolded.
+`guard-invariants` rule 23 caught it because that gate walks `packages/`
+directly; Biome's own `noMisusedPromises`, which is on and would have flagged it,
+had been told not to look.
+
+**Removing the exclusion cost one import-order fix** in `vite.config.ts` — six
+code files checked, nothing else to report. `noUndeclaredDependencies` in
+particular does NOT fire here, because the scaffold ships its own
+`package.json` declaring what it imports; that is the objection this exclusion
+looked like it existed for, and it does not hold.
+
+`templates.test.ts` asserts the exclusion stays gone, in BOTH directions (no
+negated scaffold glob, and `packages/**` still present to pull it in). That is
+the same argument as every other assertion in that file: the failure mode here
+makes the linter QUIETER, so nothing goes red and the loss is invisible in a
+diff. A/B'd against the re-added exclusion before landing, per the non-vacuity
+rule the gate specs carry.
+
 ## `check:scaffold` exists because the sync ran only during a release
 
 `scripts/sync-scaffold-versions.mjs --check` asserts `scaffold/package.json`

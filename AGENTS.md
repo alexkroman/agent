@@ -610,7 +610,7 @@ one commit of history. A file in the tree has no merge base and no such modes.
   and is currently broken".
 
   Rule 23 found the fourth, in the SHIPPED `scaffold/server.mjs`, which
-  `biome.json` excludes from linting entirely.
+  `biome.json` excluded from linting until this change.
 
   **Rule 20 (from vercel/eve's rule 29) closes a gate that reported success over
   a mistake**, in the release path. A changeset whose package key is a typo is
