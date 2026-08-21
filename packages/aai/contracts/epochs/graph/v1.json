@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "graph",
+  "epoch": 1,
+  "sha256": "1ece5e3637584e4ffa964e236603f27a02c12fbbd696b5d6338097c6081d04bc",
+  "exports": ["Graph", "GraphNotFinishedError", "GraphRunOptions", "graph"]
+}

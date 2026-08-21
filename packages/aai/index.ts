@@ -71,6 +71,12 @@ export * from "./sdk/define.ts";
  */
 export * from "./sdk/flow.ts";
 export * from "./sdk/generate.ts";
+/**
+ * The other machine: one unit of WORK inside a tool call, where a flow is where
+ * a CONVERSATION is. On the root beside it because an author reaching for one
+ * needs to see the other to pick correctly.
+ */
+export * from "./sdk/graph.ts";
 // The one preset that belongs next to `agent()` rather than behind a provider
 // subpath: it IS the recommended configuration, and requiring three more
 // imports to reach it is what made the wrong mode the easy one.

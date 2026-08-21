@@ -34,6 +34,8 @@
     "GenerateObjectResult",
     "GenerateOptions",
     "GenerateResult",
+    "Graph",
+    "GraphRunOptions",
     "InferSchemaOutput",
     "InferToolInput",
     "InferToolOutput",

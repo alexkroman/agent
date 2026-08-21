@@ -959,6 +959,17 @@ honest error it is — this app's schema was never provisioned with one.
 **`flow()` is the other primitive built on a slot** — what an agent may do NEXT,
 gated at EXECUTION. `sdk/flow.ts`'s module doc owns it.
 
+**And `graph()` is its sibling, for the OTHER kind of machine.** A flow is where
+a conversation IS: persisted in a slot, moved one event at a time by the caller's
+turns. A graph is one unit of WORK inside a single tool call: never stored,
+driving itself through invoked actors, so its context may hold a `GenerateFn` no
+slot could. `run(input, { signal })` is the whole surface, and it exists because
+`toPromise` on a STOPPED actor resolves `undefined` rather than rejecting — so a
+hand-written lifecycle hands a half-finished graph back typed as a finished one.
+`sdk/graph.ts` owns the argument; `support-line`'s CRAG loop is the worked
+example. Neither models a per-ENTITY lifecycle (a status per row in a
+collection); that is a third shape with no primitive.
+
 **A slot is also the only thing carrying a state TYPE into a tool, because a tool
 is a FILE.** `agent()` takes no `tools` argument — `tools/incident_create.ts` that
 default-exports `tool({ … })` IS the tool `incident_create`, and the table is

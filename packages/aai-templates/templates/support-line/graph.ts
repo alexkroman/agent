@@ -40,16 +40,21 @@
  * air on a phone. The grades are independent, so the fan-out is free — it lives
  * inside the `gradeDocuments` node (`nodes.ts`), not in the routing.
  *
- * Two things about this machine are deliberately unlike a {@link flow}. It is
- * NOT persisted — it lives and dies inside one `answer_question` call, so its
- * context may hold a `GenerateFn`, which no stored slot could. And it drives
- * ITSELF to completion through invoked actors, where a flow is moved one event
- * at a time by the caller's turns. A flow models where a CONVERSATION is; this
- * models one unit of work inside a single tool call.
+ * **`graph()` is what runs it, and no actor appears in this template.** The two
+ * SDK machine primitives are for different jobs and the split is worth knowing:
+ * a `flow()` is where a CONVERSATION is (persisted in a slot, moved one event at
+ * a time by the caller's turns), and a `graph()` is one unit of WORK inside a
+ * single tool call (never stored, driving itself through invoked actors). This is
+ * the second, so its context may hold a `GenerateFn` that no stored slot could.
+ *
+ * `graph().run` is also what makes the loop interruptible: it takes
+ * `ctx.signal`, so a caller who barges in on the second of nine model calls is
+ * not charged for the remaining seven.
  */
 
-import type { GenerateFn } from "@alexkroman1/aai";
-import { assign, createActor, fromPromise, setup, toPromise } from "xstate";
+import { type GenerateFn, graph } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
+import { assign, fromPromise, setup } from "xstate";
 import {
   generateAnswer,
   gradeDocuments,
@@ -378,19 +383,26 @@ const machine = setup({
   }),
 });
 
+const rag = graph(machine);
+
 /**
  * Run the graph for one caller question.
  *
  * Never throws for a bad ANSWER — every way of failing to answer is a final
- * STATE, and the trace says which one. A broken model call is different and does
- * throw: an invoked actor's rejection has no `onError` here, so it stops the
- * machine and `toPromise` rejects, which is the tool's to report.
+ * STATE, and the trace says which one. Two things DO throw, and both are the
+ * tool's to report: a broken model call (an invoked actor's rejection has no
+ * `onError` here, so it stops the machine) and an aborted run.
+ *
+ * `signal` is optional only so the graph stays drivable from a spec that has no
+ * context; a tool body should always pass `ctx.signal`.
  */
 export async function runCorrectiveRag(
   generate: GenerateFn,
   question: string,
+  signal?: AbortSignal,
 ): Promise<AnswerTrace> {
-  const actor = createActor(machine, { input: { generate, question } });
-  actor.start();
-  return await toPromise(actor);
+  // `omitUndefined` rather than a conditional spread: `GraphRunOptions.signal`
+  // is optional, and under `exactOptionalPropertyTypes` a present-and-undefined
+  // key is not the same as an absent one.
+  return await rag.run({ generate, question }, omitUndefined({ signal }));
 }

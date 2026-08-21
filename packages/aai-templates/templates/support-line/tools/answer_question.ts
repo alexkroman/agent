@@ -1,4 +1,4 @@
-import { errorMessage, tool, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, GraphNotFinishedError, tool, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { runCorrectiveRag } from "../graph.ts";
 import { recordQuestion, supportSlot } from "../shared.ts";
@@ -26,9 +26,22 @@ export default tool({
   async execute(args, ctx) {
     let trace: Awaited<ReturnType<typeof runCorrectiveRag>>;
     try {
-      trace = await runCorrectiveRag(ctx.generate, args.question);
+      // `ctx.signal` is what stops the graph on a barge-in: this loop is five
+      // to nine model calls, and a caller who interrupts on the second should
+      // not be charged for the rest.
+      trace = await runCorrectiveRag(ctx.generate, args.question, ctx.signal);
     } catch (err: unknown) {
-      // A broken model call is the tool's to report: the model can tell the
+      // An INTERRUPTED lookup is not a broken one, and the difference is worth
+      // a sentence: `ctx.signal` aborts on a barge-in AND on this call's own
+      // timeout, and telling the model the knowledge base failed would have it
+      // apologize for an outage that did not happen.
+      if (err instanceof GraphNotFinishedError) {
+        return toolFailure(
+          "That lookup was cut short before it finished. Offer to look again, " +
+            "or to log a ticket with log_ticket.",
+        );
+      }
+      // A broken model call IS the tool's to report: the model can tell the
       // caller the lookup failed, which is a better turn than silence.
       return toolFailure(`The knowledge base lookup failed: ${errorMessage(err)}`);
     }

@@ -179,6 +179,8 @@ export type WavEncodeOptions = {
 ```ts
 import { AnyStateMachine } from 'xstate';
 import { EventFromLogic } from 'xstate';
+import { InputFrom } from 'xstate';
+import { OutputFrom } from 'xstate';
 import { z } from 'zod';
 
 // @public
@@ -777,6 +779,27 @@ export type GenerateResult = {
     text: string;
     object?: unknown;
 };
+
+// @public
+export interface Graph<M extends AnyStateMachine> {
+    readonly machine: M;
+    run(input: InputFrom<M>, options?: GraphRunOptions): Promise<OutputFrom<M>>;
+}
+
+// @public
+export function graph<M extends AnyStateMachine>(machine: M): Graph<M>;
+
+// @public
+export class GraphNotFinishedError extends Error {
+    constructor(graph: string, aborted: boolean);
+    readonly aborted: boolean;
+    readonly graph: string;
+}
+
+// @public
+export interface GraphRunOptions {
+    signal?: AbortSignal;
+}
 
 // @public
 export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
