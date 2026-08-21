@@ -15,6 +15,7 @@ import http from "node:http";
 import escapeHtml from "escape-html";
 import { WebSocketServer } from "ws";
 import { buildClientConfig, CLIENT_CONFIG_PATH } from "../sdk/client-config.ts";
+import { CLIENT_CONFIG_METHODS } from "../sdk/client-config-path.ts";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { requestPath, requestQuery } from "../sdk/request-url.ts";
@@ -298,7 +299,7 @@ export function createServer(options: ServerOptions): AgentServer {
   ): Promise<void> {
     // Registered before static serving so a client asset can never shadow
     // the client-config endpoint.
-    if (method === "GET" && url === `/${CLIENT_CONFIG_PATH}`) {
+    if (CLIENT_CONFIG_METHODS.includes(method) && url === `/${CLIENT_CONFIG_PATH}`) {
       sendClientConfig(res);
       return;
     }

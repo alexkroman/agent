@@ -2704,6 +2704,9 @@ export function buildReadyConfig(s2sConfig: {
 }): ReadyConfig;
 
 // @public
+export const CLIENT_CONFIG_METHODS: readonly string[];
+
+// @public
 export const CLIENT_CONFIG_PATH = "client-config";
 
 // @public
@@ -5098,6 +5101,9 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
 // @public
 export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
+
+// @internal
+export const WORKFLOW_API_METHODS: readonly string[];
 
 // @public
 export const WORKFLOW_API_PREFIX = "/workflows";

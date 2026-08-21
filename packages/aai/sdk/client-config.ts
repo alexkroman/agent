@@ -18,7 +18,7 @@ import { omitUndefined } from "./omit-undefined.ts";
 // The endpoint's path lives in a leaf module and is re-exported here, so this
 // module stays the one place a caller reads it from while the zod-free half of
 // the SDK can import it without pulling a schema in. See that module.
-export { CLIENT_CONFIG_PATH } from "./client-config-path.ts";
+export { CLIENT_CONFIG_METHODS, CLIENT_CONFIG_PATH } from "./client-config-path.ts";
 
 /**
  * Body of `GET /client-config`. Unknown fields are stripped, so a response

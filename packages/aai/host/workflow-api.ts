@@ -410,6 +410,22 @@ const ROUTES: readonly Route[] = [
 ];
 
 /**
+ * The HTTP methods this API answers, DERIVED from {@link ROUTES} — sorted, so a
+ * comparison against it is stable.
+ *
+ * Exported for the same reason {@link WORKFLOW_API_PREFIX} is: the platform must
+ * proxy this surface, and a path both ends name is worth nothing if they
+ * disagree about the VERBS. `aai-server`'s `GUEST_ROUTE_EXPOSURE` used to list
+ * them from memory and this table twice grew one it did not have — see that
+ * constant's doc for what each cost. Derived, so adding a route below is enough.
+ *
+ * @internal
+ */
+export const WORKFLOW_API_METHODS: readonly string[] = [
+  ...new Set(ROUTES.map((r) => r.method)),
+].sort();
+
+/**
  * Create the workflow API request handler.
  *
  * The returned function matches `ServerOptions.request`: it returns true when it

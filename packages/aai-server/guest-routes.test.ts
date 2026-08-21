@@ -23,11 +23,14 @@
  * whether the route EXISTS, not what it answers.
  */
 
+import { CLIENT_CONFIG_METHODS } from "@alexkroman1/aai/protocol";
+import { WORKFLOW_API_METHODS } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
 import {
   GUEST_ROUTE_EXPOSURE,
   GUEST_ROUTES,
   type GuestRouteExposure,
+  PROXIED_HTTP_METHODS,
   proxiedGuestRoutes,
 } from "./guest-routes.ts";
 import { createOrchestrator } from "./orchestrator.ts";
@@ -123,6 +126,95 @@ describe("guest route exposure", () => {
         hit,
         `${key} is declared ${exposure.via} but the platform registers ${hit?.method} /:slug${path}`,
       ).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * Where each proxied route's methods COME FROM, on the guest's side.
+ *
+ * The suite above checks the declaration against the platform's router; both
+ * halves of that live in this package, so it passes whenever they agree with
+ * each other — including when they agree and are both wrong about the guest.
+ * That is the half every real incident came from. `GUEST_ROUTE_EXPOSURE` says
+ * outright that "the methods are the ones the GUEST answers" and that "the
+ * declaration is written from the guest's dispatch", and nothing checked it:
+ *
+ * - `api.cancel(runId)` is a DELETE. The guest answered it, the declaration did
+ *   not list it, so declaration and platform agreed — and every Stop button on
+ *   a deployed agent 404'd while `aai dev` worked.
+ * - `api.uploadStream(id, file)` is a PUT. Same shape, and worse to read: the
+ *   hook took the 404 for a failed upload and CANCELLED the run half a second
+ *   after starting it, logging `Workflow run cancelled`.
+ *
+ * So each proxied route names the SDK export that owns its verbs. Two of the
+ * three are derived from the guest's own dispatch, which is what makes adding a
+ * route to `workflow-api.ts`'s table enough on its own.
+ */
+/**
+ * Code-unit order, spelled out — the default `.sort()` already applies to
+ * strings, made explicit because `useArraySortCompare` cannot see the element
+ * type through a `.map()`. NOT `localeCompare`: with no explicit locale that
+ * answers to the runtime's ICU, so the same tree would compare differently on
+ * another machine (the rule `API-EXPORTS.json`'s sort follows for the same
+ * reason).
+ */
+const byCodeUnit = (a: string, b: string): number => {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+};
+
+const METHOD_SOURCES: Record<string, { source: string; methods: readonly string[] }> = {
+  // `host/server.ts` gates the endpoint on this very array.
+  clientConfig: { source: "CLIENT_CONFIG_METHODS", methods: CLIENT_CONFIG_METHODS },
+  // Derived from the `ROUTES` table that dispatches them.
+  workflows: { source: "WORKFLOW_API_METHODS", methods: WORKFLOW_API_METHODS },
+  // Not derived, because there is nothing to derive from: `pickWorkflowHandler`
+  // gates flow and step on POST and applies NO method check to a webhook, since
+  // the URL goes to a third party that picks its own verb. "The guest gates
+  // nothing" is therefore asserted as "the declaration lists the whole
+  // vocabulary" — which is why that vocabulary is one exported constant.
+  workflowWebhook: { source: "PROXIED_HTTP_METHODS", methods: PROXIED_HTTP_METHODS },
+};
+
+describe("proxied methods match what the guest answers", () => {
+  test("every proxied route names where its methods come from", () => {
+    // The anti-vacuous half, and the reason this is a map rather than three
+    // assertions: a NEW proxied route is silently unchecked otherwise, which is
+    // exactly how the workflow API went two verbs unguarded. Failing here forces
+    // one decision — which SDK export owns this route's verbs — at the moment
+    // the route is declared.
+    expect(Object.keys(METHOD_SOURCES).sort(byCodeUnit)).toEqual(
+      proxiedGuestRoutes()
+        .map((r) => r.key)
+        .sort(byCodeUnit),
+    );
+  });
+
+  test("a method source is never empty", () => {
+    // `methods: []` on either side would make the comparison below pass by
+    // having nothing to compare — the same vacuous pass the sibling suite
+    // guards against, one layer down.
+    for (const [key, { source, methods }] of Object.entries(METHOD_SOURCES)) {
+      expect(methods, `${key}: ${source} resolved to no methods`).not.toHaveLength(0);
+    }
+  });
+
+  test("the declared methods are exactly the ones the guest answers", () => {
+    for (const { key, path, methods } of proxiedGuestRoutes()) {
+      const expected = METHOD_SOURCES[key];
+      // The completeness test above owns the missing-entry case; skipping here
+      // keeps this failure about verbs rather than reporting the same gap twice.
+      if (!expected) continue;
+      expect(
+        [...methods].sort(byCodeUnit),
+        `${key} declares [${[...methods].sort(byCodeUnit).join(", ")}] for ${path}, but the guest ` +
+          `answers [${[...expected.methods].sort(byCodeUnit).join(", ")}] per ${expected.source}. A verb ` +
+          "answers and the platform does not register 404s only once deployed — `aai dev` serves " +
+          "the guest directly. Update the methods in guest-routes.ts (and the platform route in " +
+          "orchestrator.ts, which the sibling suite then checks).",
+      ).toEqual([...expected.methods].sort(byCodeUnit));
     }
   });
 });
