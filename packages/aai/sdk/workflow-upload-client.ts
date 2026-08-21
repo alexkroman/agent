@@ -370,6 +370,13 @@ export async function uploadFile(
  * not already exist — a second PUT to the same id is a 409 rather than an append,
  * which is what makes a chosen id safe.
  *
+ * That refusal is also why this plans as `resumable` where {@link uploadFile} does
+ * not: the parts routes are the only shape an interrupted upload can be picked up
+ * in, so a one-part file declining them is a caller-named upload that cannot be
+ * resumed — which is the one thing this call exists to provide. The extra round
+ * trips buy that rather than speed; `_upload-parts-plan.ts`'s module doc carries
+ * the rest, including why one part is not enough on its own.
+ *
  * @internal
  */
 export async function streamUploadFile(
@@ -382,7 +389,7 @@ export async function streamUploadFile(
 ): Promise<UploadRef> {
   const { name, type } = describeUpload(file, options);
   const settings = partsSettings(options?.parallel);
-  const plan = settings && partsPlan(file, settings);
+  const plan = settings && partsPlan(file, settings, { resumable: true });
   if (settings && plan) {
     // The caller's OWN id, which is the difference from `uploadFile` and is why
     // parts compose with this at all: a run started on this id reads the

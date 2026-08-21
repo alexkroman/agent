@@ -39,8 +39,12 @@
  * - **A body that cannot be cut by BYTE.** A `Blob` and an `ArrayBuffer` slice
  *   exactly; a `string` does not — its byte length is its UTF-8 encoding's, so
  *   cutting it by character would put a part boundary inside a code point.
- * - **A file that fits in one part.** There is nothing to parallelize, and the
- *   `POST`+`PUT` pair would be strictly more requests than the single call.
+ * - **A file that fits in one part**, for `upload` only. There is nothing to
+ *   parallelize, and the `POST`+`PUT` pair would be strictly more requests than
+ *   the single call. `uploadStream` takes the path anyway, because for a
+ *   CALLER-NAMED id the path buys resumability rather than speed and a one-part
+ *   file needs that as much as any other — `_upload-parts-plan.ts`'s module doc
+ *   carries the rule.
  * - **An agent that does not serve `/parts`.** A deploy older than this answers
  *   404 or 405 to the `POST`, which is an ANSWER: the same file goes up the
  *   ordinary way, one request later. That is the same shape `watch`'s 404
