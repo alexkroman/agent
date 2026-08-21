@@ -250,6 +250,7 @@
     "withTools"
   ],
   "@alexkroman1/aai/protocol": [
+    "CLIENT_CONFIG_METHODS",
     "CLIENT_CONFIG_PATH",
     "CLIENT_MESSAGE_TYPES",
     "ClientConfigResponse",
@@ -396,6 +397,7 @@
     "UploadWriteMeta",
     "UploadWriter",
     "UploadsUnavailableError",
+    "WORKFLOW_API_METHODS",
     "WORKFLOW_API_PREFIX",
     "WORKFLOW_API_TOKEN_ENV",
     "WORKFLOW_FLOW_PATH",

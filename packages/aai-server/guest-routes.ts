@@ -130,10 +130,24 @@ export type GuestRoute = (typeof GUEST_ROUTES)[keyof typeof GUEST_ROUTES];
  *   guarding it: writing one of these down as `host-only` would describe a
  *   gate that is not there.
  */
+/**
+ * Every method a `proxied` route may declare.
+ *
+ * A runtime constant with the union DERIVED from it, rather than the union alone,
+ * because `guest-routes.test.ts` has to name the whole vocabulary: the webhook
+ * route answers whatever verb the far side sends (`pickWorkflowHandler` in
+ * `aai/host/workflow-serve.ts` gates only flow and step on POST), so "the guest
+ * gates nothing here" is asserted as "the declaration lists them all". Spelled
+ * once, a method added here cannot be missing from that assertion.
+ */
+export const PROXIED_HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const;
+
+export type ProxiedHttpMethod = (typeof PROXIED_HTTP_METHODS)[number];
+
 export type GuestRouteExposure =
   | {
       via: "proxied";
-      methods: readonly ("GET" | "POST" | "PUT" | "DELETE" | "PATCH")[];
+      methods: readonly ProxiedHttpMethod[];
       /**
        * Extra path pattern the PLATFORM route carries beyond the guest path.
        *
@@ -277,7 +291,11 @@ export const GUEST_ROUTE_EXPOSURE = {
  * is a plain string rather than a {@link GuestRoute}: `/:slug<path>` is what the
  * orchestrator has to register for a request to match.
  */
-export function proxiedGuestRoutes(): { path: string; methods: readonly string[] }[] {
+export function proxiedGuestRoutes(): {
+  key: keyof typeof GUEST_ROUTES;
+  path: string;
+  methods: readonly string[];
+}[] {
   // flatMap rather than filter+map so `via` narrows `methods` into existence,
   // instead of needing an `in` check whose else-branch cannot be reached.
   // Widened to the declared type before iterating: the literal object narrows
@@ -288,6 +306,12 @@ export function proxiedGuestRoutes(): { path: string; methods: readonly string[]
     exposure.via === "proxied"
       ? [
           {
+            // The KEY travels too: the methods a route answers have a different
+            // SOURCE per route (the SDK's own route table, its client-config
+            // dispatch, or "any verb"), and `guest-routes.test.ts` maps each key
+            // to the one that owns it. Path is the wrong join column for that —
+            // it carries the suffix.
+            key: key as keyof typeof GUEST_ROUTES,
             path: `${GUEST_ROUTES[key as keyof typeof GUEST_ROUTES]}${exposure.suffix ?? ""}`,
             methods: exposure.methods,
           },

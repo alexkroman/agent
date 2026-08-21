@@ -289,6 +289,7 @@ export type {
 export {
   createWorkflowApi,
   MAX_WORKFLOW_INPUT_BYTES,
+  WORKFLOW_API_METHODS,
   WORKFLOW_API_PREFIX,
   WORKFLOW_API_TOKEN_ENV,
   type WorkflowApiEngine,

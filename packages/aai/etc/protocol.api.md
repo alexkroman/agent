@@ -21,6 +21,9 @@ export function buildReadyConfig(s2sConfig: {
 }): ReadyConfig;
 
 // @public
+export const CLIENT_CONFIG_METHODS: readonly string[];
+
+// @public
 export const CLIENT_CONFIG_PATH = "client-config";
 
 // @public

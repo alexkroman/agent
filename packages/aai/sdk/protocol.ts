@@ -19,6 +19,7 @@ import { type SessionEvent, SessionEventSchema } from "./protocol-events.ts";
 // same protocol surface — re-exported so clients import one subpath.
 export {
   buildClientConfig,
+  CLIENT_CONFIG_METHODS,
   CLIENT_CONFIG_PATH,
   type ClientConfigResponse,
   ClientConfigResponseSchema,
