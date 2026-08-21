@@ -5,6 +5,17 @@
 ```ts
 
 // @public
+type StepFetchInit = {
+    method?: string | undefined;
+    headers?: Record<string, string> | undefined;
+    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export function stepFetchOk(url: string, init?: StepFetchInit): Promise<Response>;
+
+// @public
 export function throwFatalStepError(cause: unknown, message?: string): never;
 
 // @public

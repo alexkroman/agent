@@ -182,7 +182,8 @@ once, and the templates are now their reference use:
 | `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-workflow` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
 | `TextAreaField` beside `<WorkflowFields>` | `redline` — the MIXED form: three scalars declared by the schema, one array field written by hand in the same `<Form>` and mapped on submit. The case "Forms" in `packages/aai-ui/CLAUDE.md` describes, which no template used to exercise |
-| `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-workflow` and `link-digest` for the HTTP classification each had hand-written identically, `research-workflow`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-workflow` for the two `catch`-block fatals, `recap-workflow` for both halves of a provider call it also polls |
+| `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-workflow` and `link-digest` for the HTTP classification each had hand-written identically, `research-workflow`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-workflow` for the two `catch`-block fatals, `recap-workflow` for both halves of a provider call it also polls, `podcast-digest` for the 4xx `FatalError` its Slack step raises from a body it has read |
+| `stepFetchOk` (`@alexkroman1/aai/step-errors`) | `link-digest`, `recap-workflow`'s `request()` and `podcast-digest`'s `fetchText` — the THIRD copy is what extracted it, on the rule below. Each had written `stepFetch` + `if (!res.ok) throw toStepError(…)`, and each threw the response BODY away, so a 4xx that said what was wrong arrived as a number. The two places that stay on raw `stepFetch` are the ones where a status is not simply a failure: `recap-workflow`'s DELETE, where a 404 means already-deleted, and `podcast-digest`'s Slack post, whose 4xx body decides which advice to print |
 | `stepGenerateJson` + `stripJsonFence` | `research-workflow` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one), `redline` (the critic's findings) and `recap-workflow` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
 | `stubGateway` (`@alexkroman1/aai/testing`) | reached through `installStubGateway` below; the bare form is exercised by no template and sits in the allowlist |
 | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-workflow`, `link-digest`, `redline` and `recap-workflow` specs — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
@@ -198,6 +199,47 @@ once, and the templates are now their reference use:
 | `encodeWav` + `pcmDurationMs` (`@alexkroman1/aai/utils`) | `call-audit` — the pair that makes a headerless intermediate workable: the store holds raw PCM so a byte offset is a timestamp, and each span gets a header back for the one request that needs one. `transcription-workflow` hand-rolls the equivalent in 25 lines of `DataView` writes, which is what a second copy of this would have been |
 | `isFfmpegError` + `FfmpegError.kind` | `call-audit` and `transcription-workflow`, both through a `classifyFfmpeg` that maps `exit` and `missing-binary` to fatal and `timeout`/`aborted` to a retry — the distinction the field exists for, and the one a spec can reach when the spawn itself cannot |
 | `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, which is the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails |
+
+## A run can be the SCHEDULE
+
+`podcast-digest` is the only template whose run is periodic, and it is worth
+reading for that one property rather than for podcasts. It watches some feeds,
+transcribes what is new, summarizes it, posts a Slack digest — and then
+`sleep`s and does it again, for as many digests as it was asked for.
+
+There is **no cron anywhere in it**. A durable `sleep()` inside the body IS the
+scheduler: the run suspends, nothing is resident, nothing is billed, and the
+platform brings it back days later. That makes a recurring job something a
+template can demonstrate in forty lines with no infrastructure behind it, and it
+is the cheapest correct answer to "run this every morning" on this platform.
+
+Three consequences the template states in place, because each is a trap:
+
+- **Storage stops being optional.** Every other template treats the database as
+  a durability upgrade you can defer. A multi-day sleep does not survive in
+  process memory, so without it the first digest arrives and the second never
+  does — a failure with no error attached. Build it on `intervalUnit: "minutes"`
+  and it works either way, which is exactly what hides the problem.
+- **A run is asked when to STOP.** `daysToRun` is an input rather than a
+  constant: a run that repeats forever is a resource nobody can see and nobody
+  remembers to cancel. Its page pairs `cancel` with `wake`, which is the other
+  half — a sleeping run needs "send it now" to be a different button from
+  "throw it away".
+- **Batch polling is not the single-transcript loop.** `spoken-summary` and
+  `transcription-workflow` wait for ONE transcript, so their body is
+  `for (…) { if (done) return; await sleep(…) }`. Here N episodes finish out of
+  order, so the loop carries a SHRINKING pending set and lets finished episodes
+  drop out — otherwise the whole digest waits on its slowest episode. One that
+  never finishes degrades to a stated reason in the digest rather than failing
+  the run, because a partial digest beats none.
+
+It is also the template that shows what a scaffolded project may DEPEND on. The
+studio app it came from imported `spotify-uri` and `@extractus/feed-extractor`;
+neither is in `scaffold/package.json`, so neither could ship. The first became
+six lines of `URL` parsing and the second was already dead code. A template may
+import the SDK, `workflow`, `zod` and React — anything else has to earn a place
+in the scaffold manifest first, or the starter fails to build the moment
+somebody runs it.
 
 ## A step that SPEAKS returns an id
 

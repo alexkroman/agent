@@ -519,6 +519,7 @@
     "slugifyName"
   ],
   "@alexkroman1/aai/step-errors": [
+    "stepFetchOk",
     "throwFatalStepError",
     "throwStepError",
     "toStepError"

@@ -14,4 +14,9 @@
  * See `scripts/api-contracts.mjs`.
  */
 
-export { throwFatalStepError, throwStepError, toStepError } from "../../sdk/step-errors.ts";
+export {
+  stepFetchOk,
+  throwFatalStepError,
+  throwStepError,
+  toStepError,
+} from "../../sdk/step-errors.ts";

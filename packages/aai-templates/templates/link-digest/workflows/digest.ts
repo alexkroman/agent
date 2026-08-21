@@ -24,8 +24,8 @@
  * fetched text crosses a queue between them, which is what the cap on it is for.
  */
 
-import { throwStepError, toStepError } from "@alexkroman1/aai/step-errors";
-import { report, stepFetch, stepGenerateJson } from "@alexkroman1/aai/utils";
+import { stepFetchOk, throwStepError } from "@alexkroman1/aai/step-errors";
+import { report, stepGenerateJson } from "@alexkroman1/aai/utils";
 import { FatalError, sleep } from "workflow";
 import { z } from "zod";
 
@@ -120,18 +120,18 @@ export async function fetchArticle(url: string): Promise<Article> {
   // reset with no HTTP status, which `toStepError` below has nothing to read.
   // It also reports a connection failure with its whole `cause` chain instead
   // of a bare `TypeError: fetch failed`. Redirects are followed by default.
-  const response = await stepFetch(url, {
+  // `stepFetchOk` rather than `stepFetch` + an `ok` check: it makes the
+  // retryable/terminal split for us — a 404 or a 403 answers the same way on
+  // the fourth attempt, while a rate limit is exactly what retries are for, and
+  // its `Retry-After` reaches the DevKit's schedule instead of the default
+  // backoff. It also puts the server's own error text in the message.
+  const response = await stepFetchOk(url, {
     // Some sites answer a bare request with a challenge page; asking for HTML
     // at least says what we want. Nothing here defeats a real bot wall, and a
     // template pretending otherwise would be the dishonest version.
     headers: { Accept: "text/html,application/xhtml+xml" },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
-  // The retryable/terminal split, for the page we were pointed at: a 404 or a
-  // 403 answers the same way on the fourth attempt, while a rate limit is
-  // exactly what retries are for — and `toStepError` is what carries its
-  // `Retry-After` into the DevKit's schedule instead of the default backoff.
-  if (!response.ok) throw toStepError(response, `GET ${url} failed: HTTP ${response.status}`);
 
   const html = await response.text();
   const text = extractText(html);

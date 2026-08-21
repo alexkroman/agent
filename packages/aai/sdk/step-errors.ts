@@ -53,9 +53,10 @@
 import { FatalError, RetryableError } from "workflow";
 import { TranscribeError } from "./_transcribe-shared.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import { type StepFetchInit, stepFetch } from "./step-fetch.ts";
 import { StepGenerateError } from "./step-generate.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
-import { errorMessage } from "./utils.ts";
+import { errorMessage, responseErrorMessage } from "./utils.ts";
 
 /**
  * The DevKit error one failure deserves.
@@ -148,6 +149,64 @@ export function toStepError(cause: unknown, message?: string): Error {
  */
 export function throwStepError(cause: unknown, message?: string): never {
   throw toStepError(cause, message);
+}
+
+/**
+ * `stepFetch`, with the non-2xx branch every caller was writing by hand.
+ *
+ * A step whose job is one HTTP call ends up writing the same three lines —
+ * make the request, check `ok`, hand the `Response` to {@link toStepError} —
+ * and three templates had each arrived at their own copy of it: `recap-workflow`
+ * wrapped it in a local `request()`, `link-digest` inlined it, and
+ * `podcast-digest` wrote a `fetchText` around it. This is that line, and the
+ * argument for hoisting it is the one in this module's own doc: a snippet
+ * copied verbatim into three places is a function that has not been written
+ * yet.
+ *
+ * It answers a `Response` on 2xx, so nothing about the success path changes —
+ * the caller still chooses `.text()`, `.json()` or the stream. It is only the
+ * failure path that is taken over, and the takeover is worth having for two
+ * reasons beyond the line count:
+ *
+ * - **The body reaches the error.** `responseErrorMessage` prefers a JSON
+ *   `error` field when the far side sent one and falls back to the status with
+ *   a bounded preview. Hand-written versions throw away the body — so a `400`
+ *   that said exactly what was wrong with the request arrives as the number
+ *   `400`, and whoever reads the run has to reproduce the call to find out.
+ * - **The verdict stays with `toStepError`.** Transient by `isTransientStatus`,
+ *   waiting out a `Retry-After` the server named rather than the DevKit's
+ *   one-second default. That distinction is the reason a step should never
+ *   throw a bare `Error` on a bad response, and it is easy to forget in the
+ *   fourth call site of a file.
+ *
+ * Reach for `stepFetch` directly where the failure is not simply a
+ * failure: a `404` that means "already deleted", or a `4xx` whose body decides
+ * which advice to print. `podcast-digest`'s Slack step is the worked example of
+ * that second case.
+ *
+ * @example
+ * ```ts
+ * import { stepFetchOk } from "@alexkroman1/aai/step-errors";
+ *
+ * export async function readFeed(url: string): Promise<string> {
+ *   "use step";
+ *   return await (await stepFetchOk(url, { signal: AbortSignal.timeout(30_000) })).text();
+ * }
+ * ```
+ *
+ * @throws {Error} a `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @public
+ */
+export async function stepFetchOk(url: string, init?: StepFetchInit): Promise<Response> {
+  const response = await stepFetch(url, init);
+  if (response.ok) return response;
+  // The label is the REQUEST, because a run's log holds many of these and the
+  // status alone does not say which call answered. `responseErrorMessage`
+  // appends the status and the body preview.
+  throw toStepError(
+    response,
+    await responseErrorMessage(response, `${init?.method ?? "GET"} ${url}`),
+  );
 }
 
 /**
