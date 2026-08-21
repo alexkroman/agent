@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
-import { buildWorkflows } from "./workflow-bundler.ts";
+import { buildWorkflows, findVmRequires } from "./workflow-bundler.ts";
 
 /**
  * A minimal project with one workflow body and two steps.
@@ -199,6 +199,157 @@ async function probe() {
       // would reach their working tree.
       const scratch = path.join(dir, ".aai", "workflow-build");
       await expect(fs.stat(scratch)).rejects.toThrow();
+    });
+  });
+});
+
+/**
+ * A project whose `workflows/` module reaches a Node builtin THROUGH A PACKAGE,
+ * with the import written across several lines.
+ *
+ * Every detail here is load-bearing, and together they are the deployed shape
+ * that `createNodeModuleErrorPlugin` cannot see:
+ *
+ * - the builtin is imported by a file under `node_modules`, so the plugin
+ *   attributes the violation to the package rather than to a source line;
+ * - `node_modules` is a REAL directory holding a real package, not a symlink
+ *   into the workspace — esbuild resolves realpaths, so a workspace package
+ *   linked in looks first-party and IS reported;
+ * - the import in `flow.ts` spans lines, which the plugin's single-line
+ *   location regex does not match, so it reports nothing and marks the builtin
+ *   external in silence;
+ * - `classify` is an ordinary export, so workflow mode keeps it and its
+ *   import — only a `"use step"` body is removed.
+ */
+async function writeSilentBuiltinProject(dir: string): Promise<void> {
+  const modules = path.join(dir, "node_modules");
+  await fs.mkdir(path.join(modules, "spawner"), { recursive: true });
+  // Only the WDK has to resolve; it is external in both bundles, but esbuild
+  // still resolves it to decide it is a package.
+  for (const dep of ["workflow", "@workflow"]) {
+    await fs.symlink(
+      path.join(import.meta.dirname, "node_modules", dep),
+      path.join(modules, dep),
+      "dir",
+    );
+  }
+  await fs.writeFile(
+    path.join(modules, "spawner", "package.json"),
+    JSON.stringify({ name: "spawner", version: "1.0.0", type: "module", main: "index.js" }),
+    "utf-8",
+  );
+  await fs.writeFile(
+    path.join(modules, "spawner", "index.js"),
+    `import { spawn } from "node:child_process";
+
+export function isSpawnError(err) {
+  return err instanceof Error;
+}
+
+export function run(cmd) {
+  return spawn(cmd);
+}
+`,
+    "utf-8",
+  );
+  await fs.mkdir(path.join(dir, "workflows"), { recursive: true });
+  await fs.writeFile(
+    path.join(dir, "workflows", "flow.ts"),
+    `import {
+  isSpawnError,
+  run,
+} from "spawner";
+
+export async function mainFlow() {
+  "use workflow";
+  return await work();
+}
+
+async function work() {
+  "use step";
+  return run("ls");
+}
+
+export function classify(err: unknown): boolean {
+  return isSpawnError(err);
+}
+`,
+    "utf-8",
+  );
+}
+
+describe("findVmRequires", () => {
+  test("names the builtin and the module esbuild attributed it to", () => {
+    const found = findVmRequires(
+      [
+        "// node_modules/@alexkroman1/aai/dist/host/ffmpeg.js",
+        'var import_node_child_process = require("node:child_process");',
+      ].join("\n"),
+    );
+    expect(found).toEqual([
+      {
+        specifier: "node:child_process",
+        module: "node_modules/@alexkroman1/aai/dist/host/ffmpeg.js",
+      },
+    ]);
+  });
+
+  test("passes a bundle that requires nothing, which every healthy build is", () => {
+    // The five templates with a `workflows/` directory and no ffmpeg in it all
+    // measure zero here, so this is the normal case rather than a lucky one.
+    expect(findVmRequires("// workflows/flow.ts\nasync function mainFlow() {}\n")).toEqual([]);
+  });
+
+  test("ignores esbuild's own __require shim and any non-builtin specifier", () => {
+    // The shim is the STEP bundle's mechanism (see `STEP_REQUIRE_SHIM`) and a
+    // bare package name cannot reach this bundle — the builder marks nothing
+    // external but builtins, so flagging one would be a false report.
+    const code = [
+      'var __require = typeof require !== "undefined" ? require : (x) => { throw x; };',
+      '__require("node:assert");',
+      'const dynamic = require("some-package");',
+    ].join("\n");
+    expect(findVmRequires(code)).toEqual([]);
+  });
+});
+
+describe("the flow bundle may not require anything", () => {
+  test("fails the build, naming the builtin and the module that reached it", {
+    timeout: 60_000,
+  }, async () => {
+    await withTempDir(async (dir) => {
+      await writeSilentBuiltinProject(dir);
+      // Without this check the build SUCCEEDS here — reproduced — and every run
+      // of every workflow in the project then dies at replay with
+      // `ReferenceError: require is not defined`, from a line of generated code
+      // inside a dependency. A deploy is the earliest anyone finds out.
+      const failure = await buildWorkflows(dir).catch((err: unknown) => err as Error);
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toContain("node:child_process");
+      expect((failure as Error).message).toContain("node_modules/spawner/index.js");
+      // The remedy, not just the diagnosis: the author's file holds the import
+      // at module scope and nothing in the stack trace would say so.
+      expect((failure as Error).message).toContain('"use step"');
+    });
+  });
+
+  test("accepts the same project once the import is only a step body's", {
+    timeout: 60_000,
+  }, async () => {
+    await withTempDir(async (dir) => {
+      await writeSilentBuiltinProject(dir);
+      // The one-line fix this gate exists to force: drop the export that holds
+      // the package at module scope, and the transform drops the import with
+      // the body it belongs to.
+      const flow = path.join(dir, "workflows", "flow.ts");
+      const source = await fs.readFile(flow, "utf-8");
+      await fs.writeFile(
+        flow,
+        source.slice(0, source.indexOf("export function classify")),
+        "utf-8",
+      );
+      const built = await buildWorkflows(dir);
+      expect(findVmRequires(built?.workflowCode ?? "")).toEqual([]);
     });
   });
 });

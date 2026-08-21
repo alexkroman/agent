@@ -333,6 +333,44 @@ included. `transcribeStream` still refuses, and has to: it cuts while the bytes
 are still arriving, and a partial file is not something a decoder can be pointed
 at.
 
+### A `workflows/` module may not hold a Node-only import at module scope
+
+Both ffmpeg templates shipped broken, in the same way, and it is the trap any
+template reaching for a Node-only SDK module will hit next.
+
+**Only a `"use step"` BODY is removed from the workflow bundle.** That is the
+whole point of the transform — what is left is a stub that enqueues — so swc
+drops an import the body was the only user of, and KEEPS one that any surviving
+top-level declaration still names. `call-audit` and `transcription-workflow` each
+kept an exported `classifyFfmpeg` beside its step, and its one reference to
+`isFfmpegError` held `@alexkroman1/aai/ffmpeg` — which spawns a child process —
+inside a bundle compiled in a `node:vm` Script with no `require`. Both templates
+built, type-checked, passed their specs, deployed, and then failed EVERY run at
+replay with `ReferenceError: require is not defined`, pointing at a line of
+generated code inside the SDK.
+
+The fix is a module boundary only a step body crosses:
+`workflows/ffmpeg-verdict.ts` in both, holding `classifyFfmpeg` (and
+`call-audit`'s `analyse`), imported by the step module and used only inside its
+body. Nothing about the step changed — a step
+runs in an ordinary Node process, where `child_process` is exactly what it should
+be using — and both files carry the argument, because the natural edit is to move
+them back.
+
+Two things generalize:
+
+- **The test is not "does this file spawn", it is "does anything the transform
+  KEEPS name it".** An exported helper, a module constant, a default argument —
+  a spec importing the helper is the usual reason it is exported at all.
+- **In-tree this failed LOUDLY and in production it did not.** The WDK's
+  detector reports a builtin only when it can point at the import line in a
+  first-party file; pnpm links the workspace SDK and esbuild resolves realpaths,
+  so in this repo `packages/aai/dist/host/ffmpeg.js` looks first-party. Against
+  an installed `@alexkroman1/aai` under `node_modules` it does not. The
+  gate that now catches both is `aai-cli`'s `template-workflows.test.ts`, over
+  the built artifact — see "And the FLOW bundle may `require` NOTHING" in
+  `packages/aai-cli/CLAUDE.md`.
+
 ## A transcription step is the SDK's; the boundaries are the template's
 
 The way IN is now `stepTranscribeUpload` / `stepTranscribeSubmit` /

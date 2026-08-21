@@ -44,7 +44,7 @@ import {
   writeUpload,
 } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { classifyFfmpeg } from "./ingest.ts";
+import { classifyFfmpeg } from "./ffmpeg-verdict.ts";
 import { clock, masterArgs } from "./media.ts";
 import { fileChunks, withTempDir } from "./temp-media.ts";
 

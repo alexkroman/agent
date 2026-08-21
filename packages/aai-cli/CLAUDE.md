@@ -284,6 +284,46 @@ Every gate short of `check:e2e` was green. `workflow-bundler.test.ts` therefore
 asserts the ORDERING rather than the throw, which is the half that is checkable
 here.
 
+**And the FLOW bundle may `require` NOTHING, which is a separate failure the
+WDK's own gate misses.** `assertNoVmRequires` (`workflow-bundler.ts`) scans the
+built flow artifact for a `require("node:…")` and fails the build naming the
+builtin AND the bundled module esbuild wrote it for. The bundle is compiled in a
+`node:vm` `Script` whose context has `module` and `exports` and no `require`, so
+one of these is not a slow path or a degraded mode: every run of every workflow
+in the project dies at replay with `ReferenceError: require is not defined`,
+from a line of generated code inside a dependency.
+
+The DevKit bundles everything for exactly this reason and carries
+`createNodeModuleErrorPlugin` to refuse a builtin import at build time. It has
+two blind spots, and both are the DEPLOYED shape rather than an exotic one —
+each reproduced before this was written:
+
+- it reports a violation only when it can point at the import LINE in a
+  first-party file, found with a **single-line** regex, so
+  `import {\n  x,\n} from "pkg"` matches nothing and the builtin is marked
+  external in silence;
+- it resolves that file against `process.cwd()`, which is not the project being
+  built when the STUDIO builds a workspace, so the read fails and the same
+  silent path is taken.
+
+In-tree the plugin is loud, because pnpm links the workspace SDK and esbuild
+resolves realpaths — `packages/aai/dist/host/ffmpeg.js` has no `node_modules` in
+it, so it looks first-party and gets reported. Against an installed
+`@alexkroman1/aai` it does not. Same green-in-tree/red-in-production asymmetry
+as the shim above, one artifact over.
+
+Two things about the scan. It is restricted to BUILTIN specifiers, because those
+are the only ones this builder leaves external — it marks nothing else so,
+precisely so nothing can need a `require` — and a narrow set is what keeps a
+prompt's own text from reading as a violation. And it excludes `__require` with
+a lookbehind: that is the step bundle's shim above, and flagging it would fail
+every build with a CJS dependency.
+
+`template-workflows.test.ts` is the gate above it: every shipped template with a
+`workflows/` directory is built in a temp copy, and two of the seven were broken
+this way — see "A `workflows/` module may not hold a Node-only import at module
+scope" in `packages/aai-templates/CLAUDE.md`.
+
 **Both Vite entry points dedupe React** (`DEDUPED_PEERS`, `_vite-env.ts`) and
 the two symptoms look nothing alike, which is why the dev half was missing for
 so long. `buildClient`'s is a publish that dies with *"Rolldown failed to

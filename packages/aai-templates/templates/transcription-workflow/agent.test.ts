@@ -27,7 +27,8 @@ import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/batch.ts";
-import { classifyFfmpeg, cuttable, normalizeRecording } from "./workflows/normalize.ts";
+import { classifyFfmpeg } from "./workflows/ffmpeg-verdict.ts";
+import { cuttable, normalizeRecording } from "./workflows/normalize.ts";
 import { expectedSegments, planStreamed, probeUpload } from "./workflows/stream.ts";
 import {
   clock,

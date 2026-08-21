@@ -67,6 +67,7 @@
  */
 
 import fs from "node:fs/promises";
+import { builtinModules } from "node:module";
 import path from "node:path";
 import {
   applySwcTransform,
@@ -136,6 +137,124 @@ const STEP_REQUIRE_SHIM = [
   "const require = __aaiCreateRequire(import.meta.url);",
   "",
 ].join("\n");
+
+/**
+ * Every Node builtin, in both spellings esbuild can emit for one.
+ *
+ * `node:child_process` and bare `child_process` are the same module and the
+ * bundle may name it either way — a bare name only reaches the output when the
+ * source imported it bare, which npm is still full of.
+ */
+const RUNTIME_MODULES: ReadonlySet<string> = new Set([
+  ...builtinModules,
+  ...builtinModules.map((name) => `node:${name}`),
+]);
+
+/**
+ * A `require(…)` CALL, excluding esbuild's own `__require` shim.
+ *
+ * The lookbehind is what separates the two: `__require` is the shim esbuild
+ * writes for a bundled CJS module's dynamic requires, and the STEP bundle
+ * defines a real `require` for it (see {@link STEP_REQUIRE_SHIM}). A bare
+ * `require` in the FLOW bundle is the different thing this scan is for.
+ */
+const REQUIRE_CALL = /(?<![\w$.])require\(\s*"([^"]+)"\s*\)/g;
+
+/** esbuild's per-module header — `// node_modules/pkg/index.js`, and nothing else. */
+const MODULE_COMMENT = /^\/\/ (\S+\.[cm]?[jt]sx?)$/;
+
+/** One `require` the workflow VM cannot answer, and the module it was written for. */
+export type VmRequireSite = {
+  /** The module specifier — `node:child_process`. */
+  specifier: string;
+  /** The bundled file esbuild attributed it to, or `undefined` when it said none. */
+  module: string | undefined;
+};
+
+/**
+ * Find the Node builtins a flow bundle would `require` at load.
+ *
+ * The flow bundle is compiled in a `node:vm` `Script` whose context has
+ * `module` and `exports` and **no `require`**, so one of these is a run that
+ * dies at replay with `ReferenceError: require is not defined` — never a build
+ * failure, and never a symptom before the first run. The WDK's own builder
+ * bundles everything for exactly this reason and carries
+ * `createNodeModuleErrorPlugin` to reject a builtin import at build time.
+ *
+ * That plugin has two blind spots this scan covers, and both are the DEPLOYED
+ * shape rather than an exotic one:
+ *
+ * - It reports a violation only when it can point at the import LINE in a
+ *   first-party file, matched with a single-line regex — so a multi-line
+ *   `import {\n  x,\n} from "pkg"` finds nothing and the builtin is marked
+ *   external in silence.
+ * - It resolves that file against `process.cwd()`, which is not the project
+ *   being built when the studio builds a workspace, so the read fails and the
+ *   same silent path is taken.
+ *
+ * Both were reproduced. What reaches the VM either way is
+ * `var import_node_child_process = require("node:child_process");` at the top
+ * of the bundle, i.e. every run of every workflow in the project fails, and the
+ * stack names a line of generated code inside a dependency.
+ *
+ * Restricted to builtin specifiers deliberately: those are the only ones this
+ * builder leaves external (it marks nothing else so, precisely so nothing can
+ * need a `require`), and a narrow set is what keeps the scan from reading the
+ * text of a prompt as a violation.
+ *
+ * @internal
+ */
+export function findVmRequires(workflowCode: string): VmRequireSite[] {
+  const found: VmRequireSite[] = [];
+  const seen = new Set<string>();
+  let module: string | undefined;
+  for (const line of workflowCode.split("\n")) {
+    const header = MODULE_COMMENT.exec(line.trim());
+    if (header) {
+      module = header[1];
+      continue;
+    }
+    for (const [, specifier] of line.matchAll(REQUIRE_CALL)) {
+      if (specifier === undefined || !RUNTIME_MODULES.has(specifier)) continue;
+      const key = `${specifier} ${module ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({ specifier, module });
+    }
+  }
+  return found;
+}
+
+/**
+ * Fail the build when the flow bundle carries a `require` — see
+ * {@link findVmRequires} for what that means and why nothing upstream catches it.
+ *
+ * The message has to name the MODULE as well as the specifier, because the
+ * import that caused it is not in the file an author is looking at: only a
+ * `"use step"` body is stripped from this bundle, so a value a `workflows/`
+ * module holds at module scope — an exported helper, a constant — keeps its
+ * import, and that import's whole graph rides into the VM.
+ */
+function assertNoVmRequires(workflowCode: string): void {
+  const sites = findVmRequires(workflowCode);
+  if (sites.length === 0) return;
+  const lines = sites.map(
+    ({ specifier, module }) => `  ${specifier}${module === undefined ? "" : ` — from ${module}`}`,
+  );
+  throw new Error(
+    [
+      "This project's workflows cannot run: the workflow bundle requires " +
+        `${sites.length === 1 ? "a Node module" : "Node modules"} that the workflow VM has no ` +
+        "`require` for.",
+      ...lines,
+      "",
+      'Only a `"use step"` body is removed from this bundle, so anything a `workflows/` ' +
+        "module holds at MODULE scope keeps its import — including an exported helper that " +
+        "a step body is the only caller of. Move that use inside the step body, or into a " +
+        "module only a step body imports.",
+    ].join("\n"),
+  );
+}
 
 /** What a guest needs to serve workflows for one agent. */
 export type WorkflowBundleOutput = {
@@ -240,6 +359,9 @@ class AaiWorkflowBuilder extends BaseBuilder {
       fs.readFile(this.flowFile, "utf-8"),
       fs.readFile(this.stepFile, "utf-8"),
     ]);
+    // Before the artifacts are handed back, because the alternative is a deploy
+    // that succeeds and a run that dies at replay — see `findVmRequires`.
+    assertNoVmRequires(workflowCode);
     this.output = { workflowCode, stepCode: STEP_REQUIRE_SHIM + stepCode, manifest, inputFiles };
   }
 }
