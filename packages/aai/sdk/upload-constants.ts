@@ -80,47 +80,34 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * mostly its bytes — which it was not, and which batching now makes it much closer to
  * being. Both directions are open again on evidence rather than on this paragraph.
  *
- * ## 16 MiB measured better BEFORE batching, and worse after — which settles it
+ * ## 16 MiB is SLOWER, measured after the claims were batched
  *
- * Three runs per size, alternating order so a drifting link cannot favour one, one
- * part per run:
- *
- * | part | per-byte rate | median | spread |
- * | --- | --- | --- | --- |
- * | 8 MiB | 2.5, 2.1, 3.8 MB/s | 2.5 | 1.8x |
- * | 16 MiB | 3.2, 3.3, 3.2 MB/s | **3.2** | **1.03x** |
- * | 32 MiB | 2.9, 4.0, 2.0 MB/s | 2.9 | 2.0x |
- *
- * 16 MiB is ~28% quicker per byte than 8 and far more predictable — a small transfer
- * never leaves TCP slow-start, which is also why 4 MiB was the worst of all four
- * sizes measured (1.8 MB/s). 32 MiB buys nothing over 16 and is the noisiest.
- *
- * **Re-measured against a deployed agent once the claims were batched
- * ({@link UPLOAD_CLAIM_BATCH}), and the advantage inverted.** 128 MiB file, width 8,
- * three runs per cell, alternating order, pinned HTTP/1.1 on a fresh connection with
- * 30s between runs:
+ * 128 MiB file, width 8, three runs per cell, alternating order so a drifting link
+ * cannot favour one, pinned HTTP/1.1 on a fresh connection with 30s between runs:
  *
  * | part | wall p50 | range | MB/s | windows per claim | part re-sent |
  * | --- | --- | --- | --- | --- | --- |
  * | 8 MiB | **23.2s** | 19.3-29.0s | **5.5** | 16 in 3-5 | 0 of 3 runs |
  * | 16 MiB | 28.2s | 24.4-30.0s | 4.5 | 8 in 4-5 | **2 of 3 runs** |
  *
- * So the 28% was never a property of the SIZE. It was the fixed per-part claim being
- * amortized over more bytes, and with the claim batched a 16 MiB window is 22% slower
- * on the median and re-sent a part in two runs of three where 8 MiB re-sent none —
- * 8 x 16 MiB is 128 MiB in flight, the same row the reset shoulder appeared on below.
- *
  * **Read that as "16 MiB is not better", not as "8 MiB is faster."** The ranges
  * overlap heavily — 8 MiB's worst run (29.0s) is slower than 16 MiB's median — and
- * three runs bound a shape rather than pin a knee. What is no longer available is the
- * argument for MOVING this constant, which is what the old table supplied. The
- * re-sent parts are the firmer half of the finding: 0 of 3 against 2 of 3 is about a
- * limit being approached, not about which median won.
+ * three runs bound a shape rather than pin a knee. The re-sent parts are the firmer
+ * half: 0 of 3 against 2 of 3 is about a limit being approached rather than about
+ * which median won, and 8 x 16 MiB is 128 MiB in flight — the same row the reset
+ * shoulder appears on below.
  *
- * The pre-batching table below is kept because it is what the reversal is a reversal
- * OF. It is not taken, because the number the platform reacts to is the PRODUCT with
- * `UPLOAD_PART_CONCURRENCY`, and three costs land on it rather than on the
- * size alone:
+ * **A pre-batching table here reported 16 MiB ~28% FASTER per byte, and it is
+ * DELETED rather than corrected.** It was measuring the fixed per-part claim being
+ * amortized over more bytes — so it was a fact about the round trip, not about the
+ * part size, and nothing in it can be rescued now the round trip is batched. Same
+ * rule, and the same reason, as the contaminated h2 table under
+ * {@link UPLOAD_PART_CONCURRENCY}: a plausible table is worse than none, because it
+ * is the thing a later reader reaches for instead of measuring.
+ *
+ * Three costs land on the PRODUCT of this and `UPLOAD_PART_CONCURRENCY` rather than
+ * on the size alone, and they are why a future re-measurement that flatters 16 MiB
+ * still would not settle it on its own:
  *
  * - **Platform memory.** `_upload-blobs-http.ts` buffers a whole window to hand
  *   Storage a length — unavoidable, and the reason the cap is a window rather than a
@@ -129,21 +116,15 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * - **The reset shoulder.** 128 MiB in flight is the row where a reset appeared
  *   (31 of 32); 64 MiB, which eight 8 MiB parts hold, did not.
  * - **The parallelism FLOOR.** `partsPlan` declines a plan of fewer than two parts,
- *   so this constant sets the size below which a file takes the single request and
- *   gets no retry at all. At 8 MiB that floor is 16 MB; at 16 MiB it is 32 MB, which
- *   is a regression for every recording in between.
+ *   so this constant sets the size below which `upload()` takes the single request
+ *   and gets no retry at all: 16 MB at 8 MiB, 32 MB at 16 MiB, a regression for every
+ *   recording in between. Note this bounds the SPEED path only — a caller-named
+ *   upload passes `resumable`, which re-cuts at {@link UPLOAD_CHUNK_BYTES} precisely
+ *   so a small file still has windows to resume from.
  *
- * The order to do this in was: batch the claims, then re-measure. **Both halves are
- * done** — the claim is batched and the re-measurement is the table above — and the
- * answer was to leave this number alone. Note two of the three costs never moved with
- * batching anyway: the platform still buffers a whole window to hand Storage a length,
- * and `partsPlan` still declines a plan of fewer than two parts, so the 16 MB
- * parallelism floor would have become 32 MB.
- *
- * Two costs of the size that are unchanged and still real: too small and an upload
- * is mostly per-request overhead, too large and the parallelism disappears (a 20 MB
- * recording in 32 MB parts is one part, which is the single request this exists to
- * beat, and a failed part is re-sent in full).
+ * None of the three moved with batching, which is why they still decide this: two are
+ * properties of a window's size against a memory-bounded process, and the third is a
+ * property of the plan. The claim was the only cost batching could reach.
  *
  * **Legal against any server version, in both directions.** `assertPartOffset`
  * aligns on {@link UPLOAD_CHUNK_BYTES} (1 MiB), never on this — so a client cutting

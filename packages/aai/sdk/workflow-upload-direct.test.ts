@@ -18,6 +18,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { client, PART, recording, scriptAgent, TOTAL } from "./_upload-parts-test-utils.ts";
+import { UPLOAD_CHUNK_BYTES } from "./constants.ts";
 import { directBytesBase } from "./workflow-upload-parts.ts";
 
 afterEach(() => {
@@ -159,6 +160,27 @@ describe("a batched claim", () => {
     }
     const claimed = told.flatMap((call) => call.url.searchParams.getAll("offset").map(Number));
     expect([...claimed].sort((a, b) => a - b)).toEqual([0, PART, PART * 2]);
+  });
+
+  test("collapses the MANY claims a resumable upload's chunk-sized windows create", async () => {
+    // The two changes meet here. A caller-named upload is cut at `UPLOAD_CHUNK_BYTES`
+    // rather than at the part size, so it can resume from where it stopped — which
+    // turns an ordinary phone recording into eight windows where the speed path would
+    // have sent one. Each of those used to owe its own body-less claim, so the fix
+    // that made small uploads resumable also multiplied the receipt toll by eight.
+    const agent = scriptAgent({ direct: true, claimBatch: 32 });
+    const windows = 8;
+    await client().uploadStream("abc", recording(UPLOAD_CHUNK_BYTES * windows), {
+      parallel: true,
+    });
+
+    const told = agent.parts.filter((call) => call.method === "PUT");
+    expect(agent.bytes).toHaveLength(windows);
+    expect(told.length).toBeLessThan(windows);
+    const claimed = told.flatMap((call) => call.url.searchParams.getAll("offset").map(Number));
+    expect([...claimed].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: windows }, (_unused, at) => at * UPLOAD_CHUNK_BYTES),
+    );
   });
 
   test("fails the upload when a batched claim is refused", async () => {
