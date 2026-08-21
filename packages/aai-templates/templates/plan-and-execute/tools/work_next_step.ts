@@ -1,6 +1,37 @@
-import { errorMessage, isToolFailure, tool, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, type ToolFailure, toolFailure } from "@alexkroman1/aai";
 import { executeStep, replanNode } from "../graph.ts";
-import { liveSearch, noteRevision, type PastStep, planSlot, recordStep } from "../shared.ts";
+import {
+  liveSearch,
+  noteRevision,
+  type PastStep,
+  planFlow,
+  planSlot,
+  recordStep,
+} from "../shared.ts";
+
+/** What one turn of the loop reports. `response` drives the flow's transition. */
+type StepOutcome = {
+  finished: boolean;
+  message: string;
+  step?: string;
+  result?: string;
+  searches?: string[];
+  remaining?: readonly string[];
+  response?: string;
+};
+
+/**
+ * What the claim window decided, as a DISCRIMINATED union.
+ *
+ * The three arms used to be told apart by `"done" in claimed`, which stopped
+ * working once the outcome had a declared type: union normalization gives every
+ * arm the other arms' keys as `?: never`, and `in` cannot rule out a key that is
+ * optional-never. A `kind` tag is both narrower and easier to read.
+ */
+type Claim =
+  | { kind: "failed"; failure: ToolFailure }
+  | { kind: "dry"; outcome: StepOutcome }
+  | { kind: "step"; step: string; objective: string; pastSteps: PastStep[] };
 
 /**
  * One turn of their execute→replan loop: do the head step, then let the
@@ -22,33 +53,55 @@ import { liveSearch, noteRevision, type PastStep, planSlot, recordStep } from ".
  * behind each other to get the same guarantee. A step whose work then FAILS is
  * put back, because a failed model call is worth retrying and a silently dropped
  * step leaves the caller with a plan that skipped something.
+ *
+ * **`when: "working"` replaced two hand-rolled guards** — the `!plan.objective`
+ * check and the already-answered one — and neither was a data check: both asked
+ * where the conversation was. See {@link planFlow}. The flow is what refuses now,
+ * naming the state and quoting its instruction, so this body only ever runs when
+ * there is a plan in progress.
+ *
+ * **`ANSWERED` is sent only when the replanner produced a RESPONSE.** A plan
+ * that merely ran out of steps stays in `working`: nothing was concluded, and
+ * the caller can still revise or add to it. Conflating the two would announce an
+ * answer that does not exist.
  */
-export default tool({
+export default planFlow.tool({
   description:
     "Do the next step of the plan and report what it found. Call this once per " +
     "step — never in a loop. Say a short 'let me look into that' first, since " +
     "the step may take a few seconds.",
+  when: "working",
+  sendFrom: (outcome: StepOutcome) =>
+    outcome.response === undefined ? undefined : ({ type: "ANSWERED" } as const),
   async execute(_args, ctx) {
     // The whole read-and-claim, in one window nothing can interleave with.
-    const claimed = planSlot.update(ctx, (plan) => {
-      if (!plan.objective) return toolFailure("There is no plan yet — use start_plan first.");
-      if (plan.response) {
-        return {
-          done: true as const,
-          response: plan.response,
-          message: "The plan is already finished.",
-        };
+    const claimed = planSlot.update(ctx, (plan): Claim => {
+      // `when: "working"` means there IS a plan, so this arm is unreachable by
+      // the flow's own guarantee — kept because the slot and the flow are two
+      // values, and a plan cleared by something else should refuse rather than
+      // claim a step off an empty objective.
+      if (!plan.objective) {
+        return { kind: "failed", failure: toolFailure("There is no plan yet — use start_plan.") };
       }
       const step = plan.plan.shift();
       if (!step) {
         return {
-          done: true as const,
-          message: "No steps are left. Ask the caller what they want next.",
+          kind: "dry",
+          outcome: {
+            finished: true,
+            message: "No steps are left. Ask the caller what they want next.",
+          },
         };
       }
-      return { step, objective: plan.objective, pastSteps: [...plan.pastSteps] as PastStep[] };
+      return {
+        kind: "step",
+        step,
+        objective: plan.objective,
+        pastSteps: [...plan.pastSteps] as PastStep[],
+      };
     });
-    if (isToolFailure(claimed) || "done" in claimed) return claimed;
+    if (claimed.kind === "failed") return claimed.failure;
+    if (claimed.kind === "dry") return claimed.outcome;
     const { step, objective, pastSteps } = claimed;
 
     try {
@@ -69,7 +122,7 @@ export default tool({
           plan.plan = [];
           noteRevision(plan, `Finished after ${plan.pastSteps.length} step(s)`);
           return {
-            done: true,
+            finished: true,
             step,
             result: outcome.result,
             searches: outcome.searches,
@@ -82,7 +135,7 @@ export default tool({
         plan.plan = act.steps;
         if (changed) noteRevision(plan, `Replanned to ${act.steps.length} step(s) after: ${step}`);
         return {
-          done: false,
+          finished: false,
           step,
           result: outcome.result,
           searches: outcome.searches,

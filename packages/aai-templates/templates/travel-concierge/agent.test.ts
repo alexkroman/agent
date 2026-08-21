@@ -18,7 +18,14 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-import { activeAssistant, FLIGHTS, tripProjection, tripSlot, tripView } from "./shared.ts";
+import {
+  activeAssistant,
+  FLIGHTS,
+  gateFlow,
+  tripProjection,
+  tripSlot,
+  tripView,
+} from "./shared.ts";
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
 
@@ -116,36 +123,48 @@ describe("sensitive tools stage rather than act", () => {
     const ctx = makeCtx();
     await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
 
-    const applied = (await run("confirm_action", {}, ctx)) as {
-      applied: string;
-      reference: string;
+    // Staging moved the gate, in the same window it wrote `pending`.
+    expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
+
+    // A gated tool answers the flow's POSITION wrapped around the body's own
+    // return value, so the applied sentence is under `result`.
+    const confirmed = (await run("confirm_action", {}, ctx)) as {
+      state: string;
+      result: { applied: string; reference: string };
     };
-    expect(applied.applied).toContain("Harborview Suites");
+    expect(confirmed.result.applied).toContain("Harborview Suites");
     // 3 nights at $265.
-    expect(applied.applied).toContain("$795");
+    expect(confirmed.result.applied).toContain("$795");
+    // SETTLED: the gate re-armed as part of the same call.
+    expect(confirmed.state).toBe("browsing");
 
     const state = stateOf(ctx);
     expect(state.pending).toBeNull();
     expect(state.bookings).toHaveLength(1);
-    expect(state.bookings[0]?.reference).toBe(applied.reference);
+    expect(state.bookings[0]?.reference).toBe(confirmed.result.reference);
 
-    // The gate re-arms: a second confirm has nothing to apply.
-    expect(await run("confirm_action", {}, ctx)).toEqual({
-      error: "Nothing is waiting for confirmation. Use the booking tool first.",
+    // The gate re-arms, and now REFUSES rather than reporting an empty apply —
+    // `when: "awaitingConfirmation"` is what a second confirm meets.
+    expect(await run("confirm_action", {}, ctx)).toMatchObject({
+      error: expect.stringContaining('this conversation is at "browsing"'),
     });
   });
 
   test("cancel_action drops the staged change and leaves the booking alone", async () => {
     const ctx = makeCtx();
     await run("update_ticket", { flightId: "LX54" }, ctx);
-    const dropped = (await run("cancel_action", {}, ctx)) as { discarded: string };
-    expect(dropped.discarded).toContain("LX54");
+    const dropped = (await run("cancel_action", {}, ctx)) as {
+      state: string;
+      result: { discarded: string };
+    };
+    expect(dropped.result.discarded).toContain("LX54");
+    expect(dropped.state).toBe("browsing");
 
     const state = stateOf(ctx);
     expect(state.pending).toBeNull();
     expect(state.ticket?.flightId).toBe("LX40");
-    expect(await run("cancel_action", {}, ctx)).toEqual({
-      message: "Nothing was waiting for confirmation.",
+    expect(await run("cancel_action", {}, ctx)).toMatchObject({
+      error: expect.stringContaining('this conversation is at "browsing"'),
     });
   });
 
@@ -193,8 +212,11 @@ describe("sensitive tools stage rather than act", () => {
 
     // The first staging is untouched, and it is what a yes applies.
     expect(stateOf(ctx).pending).toEqual({ kind: "update_ticket", flightId: "LX52" });
-    const applied = (await run("confirm_action", {}, ctx)) as { applied: string };
-    expect(applied.applied).toContain("LX52");
+    // A refused SECOND staging must not have moved the gate either — it was
+    // already `awaitingConfirmation` and the refusal changed nothing.
+    expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
+    const applied = (await run("confirm_action", {}, ctx)) as { result: { applied: string } };
+    expect(applied.result.applied).toContain("LX52");
     expect(stateOf(ctx).bookings).toEqual([]);
 
     // Once the queue is clear, the hotel can be staged after all.
@@ -229,8 +251,10 @@ describe("sensitive tools stage rather than act", () => {
 
     expect(activeAssistant(stateOf(second))).toBe("primary");
     expect(stateOf(second).bookings).toEqual([]);
-    expect(await run("confirm_action", {}, second)).toEqual({
-      error: "Nothing is waiting for confirmation. Use the booking tool first.",
+    // The GATE is per-session too, not just the trip.
+    expect(gateFlow.position(second).state).toBe("browsing");
+    expect(await run("confirm_action", {}, second)).toMatchObject({
+      error: expect.stringContaining('this conversation is at "browsing"'),
     });
     expect(stateOf(first).bookings).toHaveLength(1);
   });

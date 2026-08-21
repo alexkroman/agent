@@ -63,7 +63,20 @@ export {
 export * from "./sdk/db.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
+/**
+ * The dialog statechart — next to `agent()`/`tool()` because it is how a guided
+ * agent declares what it may do NEXT, which is authoring rather than an
+ * optional utility. Its machine comes from `xstate`, which an author imports
+ * directly; nothing here re-exports it.
+ */
+export * from "./sdk/flow.ts";
 export * from "./sdk/generate.ts";
+/**
+ * The other machine: one unit of WORK inside a tool call, where a flow is where
+ * a CONVERSATION is. On the root beside it because an author reaching for one
+ * needs to see the other to pick correctly.
+ */
+export * from "./sdk/graph.ts";
 // The one preset that belongs next to `agent()` rather than behind a provider
 // subpath: it IS the recommended configuration, and requiring three more
 // imports to reach it is what made the wrong mode the easy one.

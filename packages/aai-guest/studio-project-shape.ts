@@ -135,6 +135,7 @@ export const WORKSPACE_DEPENDENCIES = [
   "react",
   "react-dom",
   "tailwindcss",
+  "xstate",
   "zod",
 ] as const;
 

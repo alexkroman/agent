@@ -231,7 +231,8 @@ These CLI-specific parts do NOT apply in AssemblyAI Build:
   global.d.ts, and vite.config.ts (missing ones are filled in from the
   scaffold — edit them if you need to). Imports resolve like a normal npm
   project. Preinstalled: workspace files, "@alexkroman1/aai" (any subpath),
-  "zod", and — for client.tsx — "@alexkroman1/aai-ui" and "react".
+  "zod", "xstate", and — for client.tsx — "@alexkroman1/aai-ui" and
+  "react".
 - Adding dependencies: if the request truly needs another npm package,
   check it with npm_info (real version and exports, not a guess), FIRST
   install it with add_dependency, and THEN write the code that imports

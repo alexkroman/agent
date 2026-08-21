@@ -177,6 +177,10 @@ export type WavEncodeOptions = {
 ## `@alexkroman1/aai`
 
 ```ts
+import { AnyStateMachine } from 'xstate';
+import { EventFromLogic } from 'xstate';
+import { InputFrom } from 'xstate';
+import { OutputFrom } from 'xstate';
 import { z } from 'zod';
 
 // @public
@@ -702,6 +706,48 @@ export type FindOptions = {
 };
 
 // @public
+export interface Flow<M extends AnyStateMachine> {
+    readonly key: string;
+    readonly machine: M;
+    matches(ctx: ToolContext, state: string): boolean;
+    position(ctx: ToolContext): FlowPosition;
+    projection<V>(project: (position: FlowPosition) => V): StateProjection<V>;
+    reset(ctx: ToolContext): FlowPosition;
+    send(ctx: ToolContext, event: EventFromLogic<M>): FlowPosition;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: FlowToolDef<P, R, EventFromLogic<M>>): ToolDef<P>;
+}
+
+// @public
+export function flow<M extends AnyStateMachine>(key: string, machine: M, options?: FlowOptions): Flow<M>;
+
+// @public
+export interface FlowOptions {
+    durable?: boolean;
+}
+
+// @public
+export interface FlowPosition {
+    readonly done: boolean;
+    readonly instruction?: string;
+    readonly state: string;
+}
+
+// @public
+export interface FlowToolDef<P extends ToolInputSchema, R, E> {
+    description: string;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
+    inputSchema?: P;
+    send?: E;
+    sendFrom?: (result: R) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
+export interface FlowToolResult<R> extends FlowPosition {
+    readonly result: R;
+}
+
+// @public
 export type FrontDoorField = "page";
 
 // @public
@@ -733,6 +779,27 @@ export type GenerateResult = {
     text: string;
     object?: unknown;
 };
+
+// @public
+export interface Graph<M extends AnyStateMachine> {
+    readonly machine: M;
+    run(input: InputFrom<M>, options?: GraphRunOptions): Promise<OutputFrom<M>>;
+}
+
+// @public
+export function graph<M extends AnyStateMachine>(machine: M): Graph<M>;
+
+// @public
+export class GraphNotFinishedError extends Error {
+    constructor(graph: string, aborted: boolean);
+    readonly aborted: boolean;
+    readonly graph: string;
+}
+
+// @public
+export interface GraphRunOptions {
+    signal?: AbortSignal;
+}
 
 // @public
 export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;

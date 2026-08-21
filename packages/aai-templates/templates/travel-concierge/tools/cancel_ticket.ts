@@ -9,8 +9,8 @@ export default tripSlot.updateTool({
   description:
     "Cancel the caller's ticket outright. This does NOT cancel anything yet — " +
     "it stages the cancellation so you can read it back and hear a yes.",
-  execute(_args, trip) {
+  execute(_args, trip, ctx) {
     if (!trip.ticket) return { error: "There is no ticket to cancel." };
-    return stageAction(trip, { kind: "cancel_ticket" });
+    return stageAction(ctx, trip, { kind: "cancel_ticket" });
   },
 });

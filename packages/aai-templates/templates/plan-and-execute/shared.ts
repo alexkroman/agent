@@ -13,9 +13,16 @@
  * a different template (`solo-rpg` has the save-slot version).
  */
 
-import { type DeepReadonly, pushCapped, sessionSlot } from "@alexkroman1/aai";
+import {
+  type DeepReadonly,
+  type FlowPosition,
+  flow,
+  pushCapped,
+  sessionSlot,
+} from "@alexkroman1/aai";
 import { webSearch } from "@alexkroman1/aai/tools";
 import { isToolFailure } from "@alexkroman1/aai/utils";
+import { setup } from "xstate";
 
 /** One completed step — their `past_steps`, as a pair rather than a tuple. */
 export interface PastStep {
@@ -60,6 +67,79 @@ export function emptyPlan(): PlanState {
 }
 
 export const planSlot = sessionSlot("plan", emptyPlan);
+
+/**
+ * The plan's LIFECYCLE, as a declared machine rather than a guard per tool.
+ *
+ * Three of the four tools used to open with the same shape — `if
+ * (!plan.objective) return toolFailure("There is no plan yet …")`, and
+ * `work_next_step` carried a second one for the already-answered case. Those are
+ * not data checks, they are the question "where is this conversation", and
+ * getting one wrong is silent: the tool runs, the model reads a plausible
+ * result, and the caller is told about a plan that does not exist. A fifth tool
+ * would have had to remember both.
+ *
+ * `when` is that check now, and it is the SDK's rather than this template's — so
+ * the refusal names where the call actually is and quotes the instruction below,
+ * which is what lets the model recover on its own turn instead of apologizing.
+ *
+ * The states are the notebook's own, read off `PlanExecute`: no `input` yet,
+ * an `input` with steps left, and a `response`. `PLANNED` is accepted from all
+ * three because `start_plan` is always legal — a caller may re-plan from
+ * scratch at any point, which is the one transition that is not a progression.
+ */
+const planMachine = setup({
+  types: {} as {
+    events: { type: "PLANNED" } | { type: "ANSWERED" } | { type: "REOPENED" };
+  },
+}).createMachine({
+  id: "plan",
+  initial: "idle",
+  states: {
+    idle: {
+      meta: {
+        instruction:
+          "There is no plan yet. Find out what the caller wants to get done, then use start_plan.",
+      },
+      on: { PLANNED: "working" },
+    },
+    working: {
+      meta: {
+        instruction:
+          "Work the plan one step at a time with work_next_step, reporting after each step.",
+      },
+      on: { ANSWERED: "answered", PLANNED: "working" },
+    },
+    answered: {
+      meta: {
+        instruction:
+          "The plan is finished — give the caller the answer. Use revise_plan if they change their mind.",
+      },
+      on: { REOPENED: "working", PLANNED: "working" },
+    },
+  },
+});
+
+/**
+ * The flow. Its own slot key, because a flow stores an actor snapshot and
+ * {@link planSlot} stores the plan — the position and the payload are two
+ * things, and one tool call moves both.
+ */
+export const planFlow = flow("planFlow", planMachine);
+
+/**
+ * How the stage reads to a caller, from the flow's own position.
+ *
+ * A helper over a {@link FlowPosition} rather than over {@link PlanState}, which
+ * is the point: "where is this call" is the machine's answer, and deriving it a
+ * second time from the plan's fields is what the three removed guards were
+ * doing. `plan_status` reads this, and so would any prompt that wants to say it
+ * aloud.
+ */
+export function stageLabel(at: FlowPosition): string {
+  if (at.state === "idle") return "no plan yet";
+  return at.state === "answered" ? "finished" : "in progress";
+}
 
 export function noteRevision(state: PlanState, entry: string): void {
   pushCapped(state.revisions, entry, MAX_REVISIONS);

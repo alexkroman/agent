@@ -16,6 +16,7 @@
     "oxc-parser": "^0.144.0",
     "vite": "catalog:",
     "workflow": "4.8.2",
+    "xstate": "catalog:",
     "zod": "catalog:"
   }
 }

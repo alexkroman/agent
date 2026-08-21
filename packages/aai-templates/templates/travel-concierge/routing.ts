@@ -24,6 +24,7 @@ import {
   activeAssistant,
   applyPending,
   describeAction,
+  gateFlow,
   note,
   SPECIALISTS,
   type SpecialistId,
@@ -111,28 +112,46 @@ export const completeOrEscalate = tripSlot.updateTool({
  * halts before a sensitive tool and resumes on approval; the halt here is that
  * every sensitive tool stages instead of acting, so the approval has somewhere
  * to arrive.
+ *
+ * **`when: "awaitingConfirmation"` is the other side of that halt.** It used to
+ * be a null check inside {@link applyPending} — "Nothing is waiting for
+ * confirmation. Use the booking tool first." — which is the question "where is
+ * this conversation", asked of the payload. The gate asks the machine instead,
+ * and its refusal carries the state's own instruction. `SETTLED` fires only when
+ * the body did NOT answer with a {@link ToolFailure}, so an application that
+ * failed leaves the change staged and the caller still being asked.
  */
-export const confirmAction = tripSlot.updateTool({
+export const confirmAction = gateFlow.tool({
   description:
     "Apply the change the caller has just confirmed out loud. Only call this " +
     "after you have read the change back and heard a clear yes.",
-  execute(_args, trip) {
-    return applyPending(trip);
-  },
+  when: "awaitingConfirmation",
+  send: { type: "SETTLED" },
+  execute: (_args, ctx) => tripSlot.update(ctx, (trip) => applyPending(trip)),
 });
 
-/** `cancel_action` — the caller said no. Drops the staged action, changes nothing. */
-export const cancelAction = tripSlot.updateTool({
+/**
+ * `cancel_action` — the caller said no. Drops the staged action, changes nothing.
+ *
+ * Gated for the same reason as `confirm_action`, and its own "nothing was
+ * waiting" arm is gone with the same argument.
+ */
+export const cancelAction = gateFlow.tool({
   description:
     "Discard the change the caller just declined. Call this when they say no, " +
     "or when they want to change the details before confirming.",
-  execute(_args, trip) {
-    const action = trip.pending;
-    if (!action) return { message: "Nothing was waiting for confirmation." };
-    trip.pending = null;
-    const described = describeAction(action);
-    const summary = typeof described === "string" ? described : action.kind;
-    note(trip, `Declined: ${summary}`);
-    return { discarded: summary, message: "Nothing was changed." };
-  },
+  when: "awaitingConfirmation",
+  send: { type: "SETTLED" },
+  execute: (_args, ctx) =>
+    tripSlot.update(ctx, (trip) => {
+      const action = trip.pending;
+      // Reachable only if the position and the payload disagree; see
+      // `applyPending`. Reported rather than thrown, mid-call.
+      if (!action) return { discarded: null, message: "Nothing was staged after all." };
+      trip.pending = null;
+      const described = describeAction(action);
+      const summary = typeof described === "string" ? described : action.kind;
+      note(trip, `Declined: ${summary}`);
+      return { discarded: summary, message: "Nothing was changed." };
+    }),
 });

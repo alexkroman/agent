@@ -33,6 +33,7 @@ catalog:
   vite: ^8.2.1
   vitest: ^4.1.10
   ws: ^8.21.3
+  xstate: ^5.32.5
   zod: ^4.4.3
 
 catalogs:

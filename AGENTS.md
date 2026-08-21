@@ -923,7 +923,7 @@ Two are repo-wide rather than this SDK's, and stay here:
 ### Dependency versions live in the pnpm catalog
 
 Shared dependency versions are declared once, in `pnpm-workspace.yaml`'s
-`catalog:` block, and packages reference them as `"zod": "catalog:"`. Twenty-nine
+`catalog:` block, and packages reference them as `"zod": "catalog:"`. Thirty-two
 dependencies are in it. Two things stay OUT, and both are load-bearing:
 
 - **peerDependencies.** `react`, `react-dom`, `tailwindcss` and `vitest` are
