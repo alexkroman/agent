@@ -1,7 +1,7 @@
 import { errorMessage, tool, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { planNode } from "../graph.ts";
-import { noteRevision, planSlot } from "../shared.ts";
+import { noteRevision, planFlow, planSlot } from "../shared.ts";
 
 /**
  * Their `plan_step`, as the call's opening move.
@@ -13,6 +13,12 @@ import { noteRevision, planSlot } from "../shared.ts";
  * version guarded against is unchanged (the LLM loop runs a step's tool calls
  * concurrently, so two plans started at once must not interleave); what changed
  * is that the window is now too short to interleave IN.
+ *
+ * **This one is an ordinary `tool()` and NOT a `planFlow.tool`, deliberately.**
+ * `PLANNED` is accepted in all three states — re-planning from scratch is always
+ * legal — so a `when` listing every state would be a gate that gates nothing,
+ * paying the wrapper for it. It sends the event itself instead, which is what
+ * `flow.send` is public for.
  */
 export default tool({
   description:
@@ -31,6 +37,11 @@ export default tool({
     } catch (err: unknown) {
       return toolFailure(`The planner failed: ${errorMessage(err)}`);
     }
+
+    // The flow moves first: `work_next_step` gates on `working`, and a plan
+    // written to the slot while the flow still said `idle` would be refused by
+    // its own next tool call.
+    planFlow.send(ctx, { type: "PLANNED" });
 
     return planSlot.update(ctx, (plan) => {
       plan.objective = args.objective;

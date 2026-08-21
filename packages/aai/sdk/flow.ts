@@ -150,8 +150,21 @@ export interface FlowToolDef<P extends ToolInputSchema, R, E> {
    * error.
    */
   sendFrom?: (result: R) => E | undefined;
-  /** The tool body. Runs only in one of `when`'s states. */
-  execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+  /**
+   * The tool body. Runs only in one of `when`'s states.
+   *
+   * May be async: the result is AWAITED before the failure check and the
+   * transition, so `sendFrom` and `result` both see the settled value. Unlike
+   * {@link SessionSlot.updateTool} there is no synchronous requirement here —
+   * this opens no mutation window around the body, only inside `send`.
+   *
+   * **`ToolFailure` is in the return type rather than in `R`**, which is what
+   * lets `sendFrom` be typed over the SUCCESS value alone. A body that can fail
+   * is the ordinary case — it is how a tool reports something the model should
+   * recover from — and folding the failure into `R` made every `sendFrom`
+   * narrow a value it is never handed: the failure check returns before it runs.
+   */
+  execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
 /**
@@ -412,7 +425,15 @@ export function flow<M extends AnyStateMachine>(
         // `SessionSlot.tool` gives: rebuilding it field by field cannot preserve
         // its optionality against a still-generic `P`.
         ...rest,
-        execute: (args, ctx): FlowToolResult<R> | ToolFailure => {
+        // ASYNC, and it has to be: a voice tool routinely awaits a model call or
+        // an HTTP request, and the failure check and the transition both read
+        // the SETTLED value. A synchronous version tested `isToolFailure` on a
+        // pending promise (always false) and handed that promise to `sendFrom`,
+        // so an async tool that failed advanced the flow anyway — the one bug
+        // this primitive most needs not to have.
+        execute: async (args, ctx): Promise<FlowToolResult<R> | ToolFailure> => {
+          // The gate is read BEFORE the body runs, which is the moment that
+          // matters: it is what the caller's turn is allowed to do.
           const at = position(ctx);
           if (!allowed.some((state) => matches(ctx, state))) {
             // The refusal is what the model recovers from, so it says where the
@@ -423,12 +444,16 @@ export function flow<M extends AnyStateMachine>(
               `Not available yet: this conversation is at "${at.state}". ${expectation}`,
             );
           }
-          const result = execute(args, ctx);
+          const result = await execute(args, ctx);
           // A failed tool did not do the thing, so the flow must not move past
           // it. See FlowToolDef.send.
           if (isToolFailure(result)) return result;
           const event = sendFrom === undefined ? fixed : sendFrom(result);
-          const moved = event === undefined ? at : send(ctx, event);
+          // Re-READ rather than reusing `at` when nothing is sent: the LLM loop
+          // runs a step's tool calls concurrently, so a sibling may have moved
+          // the flow while this body was awaiting, and reporting the position
+          // this call started at would describe a conversation that has moved on.
+          const moved = event === undefined ? position(ctx) : send(ctx, event);
           return { ...moved, result };
         },
       };

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { GenerateFn, ToolContext } from "@alexkroman1/aai";
+import type { FlowToolResult, GenerateFn, ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   runTool,
@@ -26,7 +26,24 @@ const agentDef = withDiscoveredTools(
 import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./graph.ts";
 import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
 import type { SearchFn } from "./shared.ts";
-import { MAX_PAST_STEPS, planProjection, planSlot, planView } from "./shared.ts";
+import { MAX_PAST_STEPS, planFlow, planProjection, planSlot, planView } from "./shared.ts";
+
+/**
+ * What a `planFlow.tool` answers, unwrapped.
+ *
+ * A gated tool's result is `{ state, done, instruction?, result }` — the flow's
+ * position wrapped around the body's own return value — so every assertion on
+ * what a step FOUND reads `.result`, and the ones about where the CALL is read
+ * `.state`. The wrapper is the SDK's, not this template's, and it is what puts
+ * the current instruction in front of the model on every call.
+ */
+function outcomeOf<T>(answered: unknown): FlowToolResult<T> {
+  const wrapped = answered as FlowToolResult<T> & { error?: string };
+  if (wrapped.error !== undefined) {
+    throw new Error(`expected a step outcome, got a refusal: ${wrapped.error}`);
+  }
+  return wrapped;
+}
 
 // ─── A scripted model ────────────────────────────────────────────────────────
 //
@@ -214,12 +231,20 @@ describe("start_plan", () => {
 });
 
 describe("work_next_step", () => {
-  test("refuses before there is a plan", async () => {
+  test("is refused before there is a plan, by the flow rather than by the body", async () => {
     const { generate } = scriptedModel();
     const ctx = makeCtx(generate);
-    expect(await run("work_next_step", {}, ctx)).toEqual({
-      error: "There is no plan yet — use start_plan first.",
+    // The gate is `when: "working"`, so the refusal names the state the call is
+    // actually in and quotes that state's instruction — which is what the model
+    // needs in order to do the right thing on its own next turn.
+    expect(await run("work_next_step", {}, ctx)).toMatchObject({
+      error: expect.stringContaining('this conversation is at "idle"'),
     });
+    expect(await run("work_next_step", {}, ctx)).toMatchObject({
+      error: expect.stringContaining("use start_plan"),
+    });
+    // Refused means the body did not run: nothing was claimed off the plan.
+    expect(stateOf(ctx).pastSteps).toEqual([]);
   });
 
   test("does the head step, records it, and takes the replanner's next plan", async () => {
@@ -231,16 +256,18 @@ describe("work_next_step", () => {
     const ctx = makeCtx(generate);
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
 
-    const first = (await run("work_next_step", {}, ctx)) as {
-      done: boolean;
+    const first = outcomeOf<{
+      finished: boolean;
       step: string;
       result: string;
       remaining: string[];
-    };
-    expect(first.done).toBe(false);
-    expect(first.step).toBe("Check prices");
-    expect(first.result).toContain("180");
-    expect(first.remaining).toEqual(["Compare hotels"]);
+    }>(await run("work_next_step", {}, ctx));
+    expect(first.result.finished).toBe(false);
+    expect(first.result.step).toBe("Check prices");
+    expect(first.result.result).toContain("180");
+    expect(first.result.remaining).toEqual(["Compare hotels"]);
+    // Still working: nothing was concluded, so the flow has not moved on.
+    expect(first.state).toBe("working");
 
     const state = stateOf(ctx);
     expect(state.pastSteps).toHaveLength(1);
@@ -256,17 +283,27 @@ describe("work_next_step", () => {
     });
     const ctx = makeCtx(generate);
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
-    const result = (await run("work_next_step", {}, ctx)) as { done: boolean; response: string };
+    const answered = outcomeOf<{ finished: boolean; response: string }>(
+      await run("work_next_step", {}, ctx),
+    );
 
-    expect(result.done).toBe(true);
-    expect(result.response).toContain("180");
+    expect(answered.result.finished).toBe(true);
+    expect(answered.result.response).toContain("180");
+    // A response is what sends ANSWERED — the flow and the data agree because
+    // one tool call moved both.
+    expect(answered.state).toBe("answered");
+    expect(planFlow.position(ctx).state).toBe("answered");
+
     const state = stateOf(ctx);
     // The replanner deciding early is a good outcome, so the pending step goes.
     expect(state.plan).toEqual([]);
-    expect(state.response).toBe(result.response);
+    expect(state.response).toBe(answered.result.response);
 
-    // A finished plan is not worked again.
-    expect(await run("work_next_step", {}, ctx)).toMatchObject({ done: true });
+    // A finished plan is not worked again, and now it CANNOT be: the tool is
+    // gated out of `answered` rather than returning a done-shaped result.
+    expect(await run("work_next_step", {}, ctx)).toMatchObject({
+      error: expect.stringContaining('this conversation is at "answered"'),
+    });
     expect(stateOf(ctx).pastSteps).toHaveLength(1);
   });
 
@@ -307,8 +344,10 @@ describe("work_next_step", () => {
 
     await run("start_plan", { objective: "mine" }, first);
     expect(stateOf(second).objective).toBeNull();
+    // The FLOW is per-session too, not just the plan — `second` is still idle.
+    expect(planFlow.position(second).state).toBe("idle");
     expect(await run("work_next_step", {}, second)).toMatchObject({
-      error: "There is no plan yet — use start_plan first.",
+      error: expect.stringContaining('this conversation is at "idle"'),
     });
   });
 });
@@ -328,12 +367,14 @@ describe("revise_plan", () => {
     await run("work_next_step", {}, ctx);
     expect(stateOf(ctx).response).not.toBeNull();
 
-    const revised = (await run("revise_plan", { instruction: "make it Porto instead" }, ctx)) as {
-      done: boolean;
-      remaining: string[];
-    };
-    expect(revised.done).toBe(false);
-    expect(revised.remaining).toEqual(["Check Porto prices"]);
+    const revised = outcomeOf<{ finished: boolean; remaining: string[] }>(
+      await run("revise_plan", { instruction: "make it Porto instead" }, ctx),
+    );
+    expect(revised.result.finished).toBe(false);
+    expect(revised.result.remaining).toEqual(["Check Porto prices"]);
+    // REOPENED: the one transition that goes backwards, and the reason
+    // `revise_plan` is legal in `answered` at all.
+    expect(revised.state).toBe("working");
 
     const state = stateOf(ctx);
     // The old answer is no longer the answer — the caller moved the goalposts.
@@ -346,12 +387,26 @@ describe("revise_plan", () => {
     expect(calls.at(-1)?.prompt).toContain("make it Porto instead");
   });
 
-  test("refuses before there is a plan", async () => {
+  test("is refused before there is a plan", async () => {
     const { generate } = scriptedModel();
     const ctx = makeCtx(generate);
-    expect(await run("revise_plan", { instruction: "change it" }, ctx)).toEqual({
-      error: "There is no plan to revise — use start_plan first.",
+    expect(await run("revise_plan", { instruction: "change it" }, ctx)).toMatchObject({
+      error: expect.stringContaining('this conversation is at "idle"'),
     });
+  });
+
+  test("a revision that answers outright lands in `answered`", async () => {
+    const { generate } = scriptedModel({
+      steps: ["Check Lisbon prices"],
+      acts: [{ kind: "respond", response: "Nothing to do — you already booked it." }],
+    });
+    const ctx = makeCtx(generate);
+    await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
+    const revised = outcomeOf<{ finished: boolean }>(
+      await run("revise_plan", { instruction: "never mind, it is booked" }, ctx),
+    );
+    expect(revised.result.finished).toBe(true);
+    expect(revised.state).toBe("answered");
   });
 });
 
@@ -363,13 +418,19 @@ describe("plan_status", () => {
       acts: [{ kind: "plan", steps: ["Book"] }],
     });
     const ctx = makeCtx(generate);
-    expect(await run("plan_status", {}, ctx)).toEqual({
-      message: "No plan yet. Ask what they want to get done.",
+    // Legal in every state, so it READS the position rather than being gated on
+    // one — and "no plan yet" is the flow's own answer, not a third derivation
+    // of `!objective`.
+    expect(await run("plan_status", {}, ctx)).toMatchObject({
+      stage: "idle",
+      next: expect.stringContaining("start_plan"),
+      objective: null,
     });
 
     await run("start_plan", { objective: "a weekend in Lisbon" }, ctx);
     await run("work_next_step", {}, ctx);
     expect(await run("plan_status", {}, ctx)).toMatchObject({
+      stage: "working",
       objective: "a weekend in Lisbon",
       remaining: ["Book"],
       response: null,

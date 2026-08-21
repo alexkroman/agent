@@ -1,8 +1,8 @@
-import { errorMessage, tool, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { replanNode } from "../graph.ts";
 import { REVISE_SYSTEM } from "../prompts.ts";
-import { noteRevision, planSlot } from "../shared.ts";
+import { noteRevision, planFlow, planSlot } from "../shared.ts";
 
 /**
  * The replanner, driven by the caller instead of by a step result.
@@ -16,8 +16,14 @@ import { noteRevision, planSlot } from "../shared.ts";
  * The await-then-mutate shape is `start_plan`'s, for the reason it gives — and
  * note the READ before the await is `planSlot.get`, which the replanner only
  * needs to look at.
+ *
+ * **Legal in `working` AND `answered`, which is the whole point of it.** A
+ * finished plan is exactly what a caller most often wants changed, so this is
+ * the one tool that reopens one — `REOPENED` takes the flow back to `working`,
+ * and the body's clearing of `plan.response` is the same decision at the data
+ * level. Its `!objective` guard is gone: `when` is that check now.
  */
-export default tool({
+export default planFlow.tool({
   description:
     "Rewrite the remaining plan because the caller changed what they want. " +
     "Pass their instruction as they said it. Completed steps are never redone.",
@@ -27,11 +33,10 @@ export default tool({
       .max(400)
       .describe("What the caller now wants changed, in their own words"),
   }),
+  when: ["working", "answered"],
+  sendFrom: (outcome: { finished: boolean }) =>
+    outcome.finished ? ({ type: "ANSWERED" } as const) : ({ type: "REOPENED" } as const),
   async execute(args, ctx) {
-    if (!planSlot.get(ctx).objective) {
-      return toolFailure("There is no plan to revise — use start_plan first.");
-    }
-
     try {
       const act = await replanNode(ctx.generate, planSlot.get(ctx), {
         system: REVISE_SYSTEM,
@@ -43,7 +48,7 @@ export default tool({
         if (act.kind === "respond") {
           plan.plan = [];
           plan.response = act.response;
-          return { done: true, response: act.response, message: "Nothing is left to do." };
+          return { finished: true, response: act.response, message: "Nothing is left to do." };
         }
 
         plan.plan = act.steps;
@@ -51,7 +56,7 @@ export default tool({
         // moved the goalposts, so the old answer is no longer the answer.
         plan.response = null;
         return {
-          done: false,
+          finished: false,
           remaining: act.steps,
           message: "Read the revised steps back and ask if that is right.",
         };

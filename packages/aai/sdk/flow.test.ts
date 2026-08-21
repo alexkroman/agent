@@ -308,6 +308,74 @@ describe("tool transitions", () => {
     expect(claim.position(ctx).state).toBe("verifying");
   });
 
+  test("awaits an async body before deciding the transition", async () => {
+    const claim = flow("claim", claimMachine());
+    const verify = claim.tool({
+      description: "Verify the policy",
+      when: "verifying",
+      send: { type: "VERIFIED" },
+      execute: async () => {
+        await Promise.resolve();
+        return { checked: true };
+      },
+    });
+    const ctx = createToolContext();
+    expect(await run(verify, ctx)).toMatchObject({
+      state: "quoting",
+      result: { checked: true },
+    });
+  });
+
+  test("an ASYNC body returning a ToolFailure does not advance either", async () => {
+    const claim = flow("claim", claimMachine());
+    const verify = claim.tool({
+      description: "Verify the policy",
+      when: "verifying",
+      send: { type: "VERIFIED" },
+      execute: async () => {
+        await Promise.resolve();
+        return toolFailure("not on file");
+      },
+    });
+    const ctx = createToolContext();
+    const out = await run(verify, ctx);
+    expect(isToolFailure(out)).toBe(true);
+    expect(claim.position(ctx).state).toBe("verifying");
+  });
+
+  test("sendFrom sees the SETTLED value of an async body", async () => {
+    const claim = flow("claim", claimMachine());
+    const verify = claim.tool({
+      description: "Verify the policy",
+      when: "verifying",
+      sendFrom: (result: { ok: boolean }) =>
+        result.ok ? ({ type: "VERIFIED" } as const) : ({ type: "ABANDON" } as const),
+      execute: async () => {
+        await Promise.resolve();
+        return { ok: true };
+      },
+    });
+    expect(await run(verify, createToolContext())).toMatchObject({ state: "quoting" });
+  });
+
+  test("a non-advancing tool reports the position as of when it SETTLED", async () => {
+    const claim = flow("claim", claimMachine());
+    let advance: (() => void) | undefined;
+    const read = claim.tool({
+      description: "Read the file",
+      when: "verifying",
+      execute: async () => {
+        advance?.();
+        await Promise.resolve();
+        return "read";
+      },
+    });
+    const ctx = createToolContext();
+    // A concurrent sibling moves the flow while this body is awaiting.
+    advance = () => void claim.send(ctx, { type: "VERIFIED" });
+    expect(await run(read, ctx)).toMatchObject({ state: "quoting", result: "read" });
+  });
+
   test("preserves the tool's inputSchema", () => {
     const claim = flow("claim", claimMachine());
     const schema = z.object({ note: z.string() });
