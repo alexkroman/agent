@@ -10,8 +10,8 @@ export default tripSlot.updateTool({
     carId: z.string().max(20).describe("The car id from search_car_rentals, e.g. 'C2'"),
     days: z.number().int().min(1).max(60).describe("How many days"),
   }),
-  execute(args, trip) {
-    return stageAction(trip, {
+  execute(args, trip, ctx) {
+    return stageAction(ctx, trip, {
       kind: "book_car",
       carId: args.carId.toUpperCase(),
       days: args.days,

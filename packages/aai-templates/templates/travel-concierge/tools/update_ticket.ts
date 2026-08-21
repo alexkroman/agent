@@ -13,10 +13,10 @@ export default tripSlot.updateTool({
   inputSchema: z.object({
     flightId: z.string().max(20).describe("The flight to move to, e.g. 'LX52'"),
   }),
-  execute(args, trip) {
+  execute(args, trip, ctx) {
     if (!trip.ticket) {
       return { error: "This caller has no ticket to move — it was cancelled on this call." };
     }
-    return stageAction(trip, { kind: "update_ticket", flightId: args.flightId.toUpperCase() });
+    return stageAction(ctx, trip, { kind: "update_ticket", flightId: args.flightId.toUpperCase() });
   },
 });
