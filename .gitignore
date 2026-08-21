@@ -57,3 +57,8 @@ supabase/.branches/
 
 # Scratch for the capability-contract extractor (removed on exit)
 .api-contracts-cache/
+
+# Scenario-test fixture (`dev-workflow.scenario.test.ts`): written inside the
+# package because both bundlers resolve `workflow` by walking up from the
+# project, and removed in the test's `afterAll`. Present only mid-run.
+packages/aai-cli/.dev-workflow-fixture/

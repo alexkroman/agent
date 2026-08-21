@@ -10,6 +10,7 @@
       "!**/.studio-build",
       "!**/.workspaces",
       "!**/.aai",
+      "!**/.dev-workflow-fixture",
       "!**/__snapshots__",
       "!**/scaffold",
       "!tmp",
