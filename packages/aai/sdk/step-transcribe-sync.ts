@@ -95,8 +95,7 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
    */
   type?: string | undefined;
   /**
-   * How this piece is named in a failure message. Defaults to
-   * {@link TranscribeSyncOptions.filename}.
+   * How this piece is named in a failure message. Defaults to `filename`.
    *
    * The CALLER's vocabulary, because a fan-out's log is read by someone holding
    * segment numbers rather than filenames.
