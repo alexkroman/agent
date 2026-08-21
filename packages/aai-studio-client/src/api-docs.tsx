@@ -45,21 +45,30 @@
 // re-boot the sandbox for a listing that has not moved.
 
 import type { WorkflowSummary } from "@alexkroman1/aai";
-import { createWorkflowApiClient } from "@alexkroman1/aai/workflow-api";
+import { createAgentClient } from "@alexkroman1/aai/workflow-api";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { api } from "./api.ts";
 import {
   agentBase,
-  cliCommands,
-  curlPoll,
-  curlStart,
   type DocEndpoint,
   endpointUrl,
   frontDoorEndpoints,
-  tsStart,
   WORKFLOW_ENDPOINTS,
 } from "./docs-content.ts";
+import {
+  cliCommands,
+  curlConfig,
+  curlFollow,
+  curlPoll,
+  curlStart,
+  SDK_INSTALL,
+  sdkClient,
+  sdkConfig,
+  sdkFollow,
+  sdkFollowOutput,
+  sdkRead,
+  sdkStart,
+} from "./docs-snippets.ts";
 import { platformOrigin } from "./platform-origin.ts";
 import { queryKeys } from "./query-keys.ts";
 import { Card } from "./settings-card.tsx";
@@ -68,7 +77,14 @@ import { Snippet } from "./snippet.tsx";
 /** Deadline on the listing read — generous because it may be waiting out a boot. */
 const LISTING_TIMEOUT_MS = 20_000;
 
-/** One route table: method, absolute URL, what it does. */
+/**
+ * One route table: method, absolute URL, what it does, and the SDK call for it.
+ *
+ * The SDK line is what turns this from a list of URLs into an index into the
+ * client every example below uses — a reader who has found the route they want
+ * can stop reading here. It is absent for the two rows that are nobody's method
+ * to call: the page itself, and the carrier webhook a phone company posts to.
+ */
 function Endpoints({ base, rows }: { base: string; rows: readonly DocEndpoint[] }) {
   return (
     <ul className="m-0 flex list-none flex-col gap-2 p-0">
@@ -78,13 +94,51 @@ function Endpoints({ base, rows }: { base: string; rows: readonly DocEndpoint[] 
             <span className="text-indigo">{row.method}</span> {endpointUrl(base, row)}
           </code>
           <span className="text-[11px] text-muted">{row.summary}</span>
+          {row.sdk !== undefined && (
+            <code className="font-mono text-[11px] break-all text-subtle">{row.sdk}</code>
+          )}
         </li>
       ))}
     </ul>
   );
 }
 
-/** One declared workflow: what it is, and the three ways to run it. */
+/**
+ * One example: the SDK call, with the other ways to make it a click away.
+ *
+ * The DEFAULT is the SDK for every section on this page — see `docs-snippets.ts`
+ * for why — and `curl` and the CLI are `<details>` rather than a language
+ * switcher because they are answers to a different question ("I am not in
+ * TypeScript") rather than a preference to remember. A `<details>` also keeps
+ * both in the DOM, so a reader searching the page for `curl` still finds it.
+ */
+function Examples({
+  code,
+  label,
+  alternates = [],
+}: {
+  code: string;
+  label: string;
+  alternates?: readonly { language: string; code: string }[];
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Snippet code={code} label={label} />
+      {alternates.map((alt) => (
+        <details key={alt.language}>
+          <summary className="cursor-pointer text-[11px] text-muted">
+            Same call with {alt.language}
+          </summary>
+          <div className="pt-2">
+            <Snippet code={alt.code} label={`${label} with ${alt.language}`} />
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+/** One declared workflow: what it is, and the call that runs it. */
 function WorkflowDocs({
   base,
   workflow,
@@ -107,12 +161,14 @@ function WorkflowDocs({
           </span>
         )}
       </div>
-      <Snippet code={curlStart(base, workflow, token)} label={`start ${workflow.name} with curl`} />
-      <Snippet
-        code={tsStart(base, workflow, token)}
-        label={`start ${workflow.name} in TypeScript`}
+      <Examples
+        code={sdkStart(base, workflow, token)}
+        label={`run ${workflow.name} with the SDK`}
+        alternates={[
+          { language: "curl", code: curlStart(base, workflow, token) },
+          { language: "the aai CLI", code: cliCommands(workflow).join("\n") },
+        ]}
       />
-      <Snippet code={cliCommands(workflow).join("\n")} label={`${workflow.name} CLI commands`} />
     </div>
   );
 }
@@ -173,9 +229,27 @@ function WorkflowApi({
             ))}
             <div className="flex flex-col gap-2 border-t border-line pt-4">
               <span className="text-[11px] text-muted">
-                Read a run back later — the id is the whole handle.
+                Read a run back later — the id is the whole handle, from any machine.
               </span>
-              <Snippet code={curlPoll(base, token)} label="read a run back" />
+              <Examples
+                code={sdkRead(base, token)}
+                label="read a run back"
+                alternates={[
+                  { language: "curl", code: curlPoll(base, token) },
+                  { language: "the aai CLI", code: "aai workflow show $RUN_ID" },
+                ]}
+              />
+            </div>
+            <div className="flex flex-col gap-2 border-t border-line pt-4">
+              <span className="text-[11px] text-muted">
+                Follow one as it goes — its status, and everything it writes.
+              </span>
+              <Examples
+                code={sdkFollow(base, token)}
+                label="follow a run's status"
+                alternates={[{ language: "curl", code: curlFollow(base, token) }]}
+              />
+              <Snippet code={sdkFollowOutput(base, token)} label="read a run's output stream" />
             </div>
           </div>
         </Card>
@@ -247,6 +321,11 @@ export type AgentApiDocsProps = {
  */
 export function AgentApiDocs({ slug, token, baseBlurb, voiceOnly }: AgentApiDocsProps) {
   const base = agentBase(platformOrigin(), slug);
+  // The page's own reads go through the SAME client every snippet on it shows —
+  // `createAgentClient` covers the listing and the front-door config, so this
+  // component is one worked example of the thing it documents rather than a
+  // second, hand-rolled way of asking the same two questions.
+  const agent = createAgentClient({ baseUrl: base, timeoutMs: LISTING_TIMEOUT_MS });
 
   // The declared workflows, from the agent itself. `staleTime: Infinity` and no
   // retry: this read can boot a sandbox, so it happens once per pane open, and
@@ -254,7 +333,7 @@ export function AgentApiDocs({ slug, token, baseBlurb, voiceOnly }: AgentApiDocs
   // agent that declares no workflows gives) rather than something to hammer.
   const workflows = useQuery({
     queryKey: queryKeys.workflowDeclarations(slug),
-    queryFn: () => createWorkflowApiClient({ baseUrl: base, timeoutMs: LISTING_TIMEOUT_MS }).list(),
+    queryFn: () => agent.list(),
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   });
@@ -267,7 +346,7 @@ export function AgentApiDocs({ slug, token, baseBlurb, voiceOnly }: AgentApiDocs
   // This cannot. Same one-read-per-open posture as the listing above.
   const config = useQuery({
     queryKey: queryKeys.clientConfig(slug),
-    queryFn: () => api.clientConfig(base),
+    queryFn: () => agent.config(),
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   });
@@ -287,6 +366,21 @@ export function AgentApiDocs({ slug, token, baseBlurb, voiceOnly }: AgentApiDocs
         <Snippet code={base} label="the agent's base URL" />
       </Card>
 
+      {/* Ahead of the routes, because it is what every example below IS. The
+          alternative — routes first, snippets each rebuilding a client — is how
+          the pane read before, and it left the reader to discover that the
+          client they already have knows the protocol rules the shell examples
+          silently leave out. */}
+      <Card
+        title="Calling it from TypeScript"
+        blurb="One client for everything below: the front door and every workflow route. It is the same client this page reads the agent with, and it works from a script, a server, or another agent."
+      >
+        <div className="flex flex-col gap-2">
+          <Snippet code={SDK_INSTALL} label="install the SDK" />
+          <Snippet code={sdkClient(base, token)} label="build the client" />
+        </div>
+      </Card>
+
       {/* Held back until the agent has answered, rather than defaulted: this
           card's title, blurb and rows all three differ by shape, so a default
           would render the voice version of all of them and then replace it. */}
@@ -299,7 +393,14 @@ export function AgentApiDocs({ slug, token, baseBlurb, voiceOnly }: AgentApiDocs
               : "A browser reads the config below, then opens the WebSocket it names. The URL changes when the sandbox is replaced, so clients re-read it on every connect rather than storing one — @alexkroman1/aai-ui does this for you."
           }
         >
-          <Endpoints base={base} rows={frontDoorEndpoints(page)} />
+          <div className="flex flex-col gap-4">
+            <Endpoints base={base} rows={frontDoorEndpoints(page)} />
+            <Examples
+              code={sdkConfig(base, token)}
+              label="read the agent's config"
+              alternates={[{ language: "curl", code: curlConfig(base) }]}
+            />
+          </div>
         </Card>
       )}
 

@@ -6846,8 +6846,42 @@ export type WriteUploadOptions = {
 ## `@alexkroman1/aai/workflow-api`
 
 ```ts
+import { z } from 'zod';
+
+// @public
+export type AgentClient = WorkflowApi & {
+    config(): Promise<ClientConfigResponse>;
+    readonly baseUrl: string;
+};
+
+// @public
+export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
+
+// @public
+const ClientConfigResponseSchema: z.ZodObject<{
+    name: z.ZodOptional<z.ZodString>;
+    greeting: z.ZodOptional<z.ZodString>;
+    sessionUrl: z.ZodOptional<z.ZodString>;
+    page: z.ZodOptional<z.ZodEnum<{
+        static: "static";
+        voice: "voice";
+    }>>;
+}, z.core.$strip>;
+
+// @public
+export function createAgentClient(opts: WorkflowApiClientOptions): AgentClient;
+
 // @public
 export function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
+
+// @public
+export type EventStreamFrame = {
+    event: string;
+    data: unknown;
+};
+
+// @public
+export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
 
 // @public
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
@@ -6934,6 +6968,14 @@ export type WorkflowApi = {
         startIndex?: number;
         signal?: AbortSignal;
     }): Promise<Response>;
+    follow(runId: string, options?: {
+        signal?: AbortSignal;
+    }): AsyncIterable<WorkflowRunSnapshot>;
+    followOutput(runId: string, options?: {
+        namespace?: string;
+        fromIndex?: number;
+        signal?: AbortSignal;
+    }): AsyncIterable<unknown>;
     wake(runId: string): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
     uploadInfo(id: string): Promise<UploadInfo>;
@@ -6945,8 +6987,8 @@ export type WorkflowApi = {
 // @public
 export type WorkflowApiClientOptions = {
     baseUrl: string;
-    token?: string;
-    timeoutMs?: number;
+    token?: string | undefined;
+    timeoutMs?: number | undefined;
 };
 
 // @public

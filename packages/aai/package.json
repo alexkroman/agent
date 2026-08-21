@@ -29,9 +29,9 @@
       "import": "./dist/sdk/step-errors.js"
     },
     "./workflow-api": {
-      "@dev/source": "./sdk/workflow-api-client.ts",
-      "types": "./dist/sdk/workflow-api-client.d.ts",
-      "import": "./dist/sdk/workflow-api-client.js"
+      "@dev/source": "./sdk/workflow-api-barrel.ts",
+      "types": "./dist/sdk/workflow-api-barrel.d.ts",
+      "import": "./dist/sdk/workflow-api-barrel.js"
     },
     "./protocol": {
       "@dev/source": "./sdk/protocol.ts",
@@ -124,6 +124,7 @@
     "assemblyai": "^4.36.7",
     "bogon": "^1.3.0",
     "escape-html": "^1.0.3",
+    "eventsource-parser": "catalog:",
     "expr-eval-fork": "^3.0.3",
     "html-to-text": "^10.0.0",
     "htmlparser2": "^12.0.0",

@@ -76,6 +76,31 @@ describe("DocsPane", () => {
     expect(screen.getByText(new RegExp(`curl -X POST ${origin}/demo/workflows/runs`))).toBeTruthy();
   });
 
+  test("every example is an SDK call, with curl one disclosure away", async () => {
+    // The pane used to lead with `curl` everywhere, which taught the routes and
+    // left the reader to re-derive what the client already knows — that
+    // `startAndWait` is one held-open request rather than a poll loop, that an
+    // `idle` frame means re-open, that an upload's bytes go in once. So the SDK
+    // is the default and the shell is a disclosure, not a tab nobody finds.
+    stubFetch(listing());
+    renderPane({ deployedSlug: "demo" });
+
+    await waitFor(() => expect(screen.getByText(/agent\.startAndWait\("digest"/)).toBeTruthy());
+    // The client the snippets are written against is offered before the routes.
+    expect(screen.getByText("npm i @alexkroman1/aai")).toBeTruthy();
+    expect(screen.getAllByText(/createAgentClient\(/).length).toBeGreaterThan(1);
+    // The reads a caller reaches for next, in the same client.
+    expect(screen.getByText(/agent\.get\("<run id>"/)).toBeTruthy();
+    expect(screen.getByText(/for await \(const run of agent\.follow\("<run id>"\)\)/)).toBeTruthy();
+    // The route table indexes into it rather than only listing URLs.
+    expect(screen.getByText("agent.list()")).toBeTruthy();
+    // Every alternate really is behind a disclosure — a `<summary>` a reader
+    // opens, so nothing on the page presents the shell version as the way in.
+    const disclosures = screen.getAllByText(/^Same call with /);
+    expect(disclosures.length).toBeGreaterThan(2);
+    for (const disclosure of disclosures) expect(disclosure.tagName).toBe("SUMMARY");
+  });
+
   test("reads the AGENT's own API, not a studio route", async () => {
     const fetchMock = stubFetch(listing());
     renderPane({ deployedSlug: "demo" });

@@ -396,6 +396,11 @@ export function refuseNetwork(): void {
   );
 }
 
+/** An async iterable that ends immediately — the inert default for a stream. */
+async function* emptyIterable<T>(): AsyncGenerator<T> {
+  // Deliberately empty.
+}
+
 /**
  * A `WorkflowApi` whose every method is a spy with an inert default.
  *
@@ -440,6 +445,12 @@ export function createMockWorkflowApi(over: Partial<WorkflowApi> = {}): Workflow
     cancel: vi.fn(async () => true),
     watch: vi.fn(async () => new Response(null, { status: 404 })),
     streamOutput: vi.fn(async () => new Response(null, { status: 404 })),
+    // Nothing in this package iterates these — the hooks want the raw `Response`
+    // so they can see a 404 and fall through to their poll. An EMPTY iterable is
+    // the inert default: it yields nothing and ends, so a test that reaches one
+    // by accident hangs on nothing and reports nothing.
+    follow: vi.fn(() => emptyIterable<WorkflowRun>()),
+    followOutput: vi.fn(() => emptyIterable<unknown>()),
     wake: vi.fn(async () => 0),
     ...over,
   };

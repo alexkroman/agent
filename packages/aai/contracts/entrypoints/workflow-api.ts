@@ -12,14 +12,21 @@
  * page, a shell script, a cron job. A route added to the API moves this contract
  * and says nothing about how a workflow is declared.
  *
- * Re-exported from `@alexkroman1/aai/workflow-api`. This file is not shipped and
+ * Re-exported from `@alexkroman1/aai/workflow-api`, which is now a barrel over
+ * four modules — the agent client (a superset of the workflow one), the workflow
+ * client, the SSE reader both stream with, and the call set. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
  * report for this capability alone, hash it, and hold it to a committed epoch.
  * See `scripts/api-contracts.mjs`.
  */
 
 export {
+  type AgentClient,
+  type ClientConfigResponse,
+  createAgentClient,
   createWorkflowApiClient,
+  type EventStreamFrame,
+  readEventStream,
   type UploadBody,
   type UploadOptions,
   type UploadParallel,
@@ -29,4 +36,4 @@ export {
   WORKFLOW_API_PREFIX,
   type WorkflowApi,
   type WorkflowApiClientOptions,
-} from "../../sdk/workflow-api-client.ts";
+} from "../../sdk/workflow-api-barrel.ts";

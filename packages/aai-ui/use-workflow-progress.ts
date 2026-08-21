@@ -44,9 +44,9 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { readEventStream } from "@alexkroman1/aai/workflow-api";
 import { useEffect, useState } from "react";
 import { repeatUntil } from "./_repeat-until.ts";
-import { sseFrames } from "./_sse.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
 
@@ -99,7 +99,7 @@ async function consumeFrames<T>(
 ): Promise<{ ending: Ending; chunks: T[] }> {
   const chunks: T[] = [];
   let ending: Ending = "partial";
-  for await (const frame of sseFrames(body, signal)) {
+  for await (const frame of readEventStream(body, signal)) {
     if (frame.event === "chunk") {
       chunks.push(frame.data as T);
     } else if (frame.event === "done") {
