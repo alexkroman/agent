@@ -9,7 +9,7 @@
  * @internal
  */
 
-import { sseFrames } from "./_sse.ts";
+import { readEventStream } from "@alexkroman1/aai/workflow-api";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
 /**
@@ -70,7 +70,7 @@ export function watchRunEvents<R>(
     // A non-2xx, or a body-less response, is an agent that does not serve this —
     // the ordinary case for one deployed before the route existed.
     if (!(res.ok && res.body)) return "fallback";
-    for await (const frame of sseFrames(res.body, controller.signal)) {
+    for await (const frame of readEventStream(res.body, controller.signal)) {
       if (frame.event === "run" && frame.data) onRun(frame.data as WorkflowRun<R>);
       const outcome = endingFor(frame.event);
       if (outcome) return outcome;
@@ -100,5 +100,7 @@ function endingFor(event: string): "settled" | "fallback" | undefined {
   return event === "idle" ? "fallback" : undefined;
 }
 
-// The SSE parser lives in `_sse.ts`, shared with the progress stream — see that
-// module for why it uses `eventsource-parser` and which three edges that fixed.
+// The SSE parser is the SDK's (`@alexkroman1/aai/workflow-api`), shared with the
+// progress stream and with the SDK's own `follow`/`followOutput` iterators — see
+// `sdk/event-stream.ts` for why it uses `eventsource-parser` and which three
+// edges that fixed. This package used to carry its own copy of it.

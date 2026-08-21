@@ -705,6 +705,9 @@
     "writeUpload"
   ],
   "@alexkroman1/aai/workflow-api": [
+    "AgentClient",
+    "ClientConfigResponse",
+    "EventStreamFrame",
     "UploadBody",
     "UploadInfo",
     "UploadOptions",
@@ -716,7 +719,9 @@
     "WORKFLOW_API_PREFIX",
     "WorkflowApi",
     "WorkflowApiClientOptions",
-    "createWorkflowApiClient"
+    "createAgentClient",
+    "createWorkflowApiClient",
+    "readEventStream"
   ],
   "@alexkroman1/aai/workspace-files": [
     "IGNORED_WORKSPACE_DIRS",

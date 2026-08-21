@@ -69,6 +69,8 @@ describe("createWorkflowApi", () => {
       "cancel",
       "download",
       "find",
+      "follow",
+      "followOutput",
       "get",
       "list",
       "recent",

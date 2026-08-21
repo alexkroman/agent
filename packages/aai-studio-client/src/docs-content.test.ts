@@ -1,24 +1,22 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The API pane's generated content: the example request bodies it builds from
-// a workflow's own input schema, and the snippets those bodies go into.
+// The API pane's generated content: the route tables, and the example inputs it
+// builds from a workflow's own input schema.
 //
 // This is the half of the pane that can be WRONG in a way no screenshot shows.
-// A snippet with the field spelled differently than the workflow declared it
-// renders perfectly and 400s when somebody pastes it, so the assertions here
-// are about the field names and the shapes, not about the prose around them.
+// An example input with the field spelled differently than the workflow declared
+// it renders perfectly and 400s when somebody pastes it, so the assertions here
+// are about the field names and the shapes, not about the prose around them. The
+// snippets those inputs go into are `docs-snippets.test.ts`.
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import {
   agentBase,
-  curlPoll,
-  curlStart,
   endpointUrl,
   frontDoorEndpoints,
   PAGE_ENDPOINTS,
   sampleInput,
   startBody,
-  tsStart,
   VOICE_ENDPOINTS,
   WORKFLOW_ENDPOINTS,
 } from "./docs-content.ts";
@@ -37,8 +35,6 @@ function workflow(inputSchema?: unknown, uploads?: readonly string[]) {
     ...omitUndefined({ inputSchema, uploads }),
   };
 }
-
-const BASE = "https://build.test/demo-x7k2mq";
 
 describe("sampleInput", () => {
   test("uses the declared property NAMES as the placeholders", () => {
@@ -79,7 +75,7 @@ describe("sampleInput", () => {
     const input = sampleInput(
       workflow({ type: "object", properties: { audio: { type: "string" } } }, ["audio"]),
     );
-    expect(input).toEqual({ audio: "<upload id from POST /workflows/uploads>" });
+    expect(input).toEqual({ audio: "<upload id for audio>" });
   });
 
   test("follows nested objects", () => {
@@ -101,53 +97,6 @@ describe("sampleInput", () => {
 
   test("a schema that is not an object is not guessed at", () => {
     expect(sampleInput(workflow("not a schema"))).toBeUndefined();
-  });
-});
-
-describe("curlStart", () => {
-  const declared = workflow({ type: "object", properties: { topic: { type: "string" } } });
-
-  test("posts the run body to this agent's own runs route", () => {
-    const script = curlStart(BASE, declared, false);
-    expect(script).toContain(`curl -X POST ${BASE}/workflows/runs`);
-    expect(script).toContain(`-d '{"workflow":"digest","input":{"topic":"<topic>"}}'`);
-  });
-
-  test("carries a bearer only when the agent's env closes the API", () => {
-    // Whether a caller needs `Authorization` is a fact about this project's
-    // secrets, not a caveat to leave in prose for the reader to work out.
-    expect(curlStart(BASE, declared, false)).not.toContain("Authorization");
-    expect(curlStart(BASE, declared, true)).toContain(
-      "Authorization: Bearer $AAI_WORKFLOW_API_TOKEN",
-    );
-    expect(curlPoll(BASE, true)).toContain("Authorization");
-    expect(curlPoll(BASE, false)).not.toContain("Authorization");
-  });
-
-  test("the poll reads a run back by id, waiting for it to settle", () => {
-    expect(curlPoll(BASE, false)).toContain(`${BASE}/workflows/runs/$RUN_ID?wait=30000`);
-  });
-});
-
-describe("tsStart", () => {
-  test("passes the workflow name and the example input to the SDK client", () => {
-    const script = tsStart(
-      BASE,
-      workflow({ type: "object", properties: { topic: { type: "string" } } }),
-      false,
-    );
-    expect(script).toContain(`createWorkflowApiClient({ baseUrl: "${BASE}" })`);
-    expect(script).toContain(`api.startAndWait("digest", {"topic":"<topic>"})`);
-  });
-
-  test("a schema-less workflow starts with the name alone", () => {
-    expect(tsStart(BASE, workflow(), false)).toContain(`api.startAndWait("digest")`);
-  });
-
-  test("reads the token from the env rather than inlining one", () => {
-    // The snippet is copied into a file and committed; a literal there is a
-    // credential in somebody's repository.
-    expect(tsStart(BASE, workflow(), true)).toContain("token: process.env.AAI_WORKFLOW_API_TOKEN");
   });
 });
 

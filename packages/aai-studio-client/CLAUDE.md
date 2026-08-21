@@ -418,11 +418,42 @@ so every piece of per-project state resets on a switch with no effect to do it.
     aai-server's own parity test. `docs-content.test.ts` asserts all four
     methods are documented, because a table listing only GET and POST would
     hide exactly the bug that table exists to catch.
+  - **Every example DEFAULTS to the aai SDK, and `curl` is a disclosure**
+    (`docs-snippets.ts`, and the `Examples` component in `api-docs.tsx`). The
+    pane used to lead with `curl` in every section, which teaches the HTTP shape
+    and leaves the reader to re-derive everything the client they already have
+    knows: that `startAndWait` is ONE held-open request rather than a poll loop,
+    that an `idle` frame on the event stream means re-open rather than "the run
+    ended", that a progress read is bounded by the tail so a live run's next read
+    must resume from an absolute index, and that an upload's bytes go in once and
+    the run carries the id. A reader who pastes the shell version writes a worse
+    client than the one in their dependencies. So each section shows the SDK call
+    and puts `curl` and `aai workflow` behind a `<summary>` — a `<details>` rather
+    than a language switcher, because they answer "I am not in TypeScript" rather
+    than a preference worth remembering, and both stay in the DOM so a reader
+    searching the page for `curl` still finds it.
+    - **The route rows name their SDK call too** (`DocEndpoint.sdk`), which is
+      what turns the table from a list of URLs into an index into that client.
+      Absent on the two rows that are nobody's method to call: the page a browser
+      fetches, and the carrier webhook a phone company posts to.
+    - **The pane reads the agent through the same client it documents.** Both
+      reads go through one `createAgentClient` — `agent.list()` and
+      `agent.config()` — so the component is a worked example of the thing on
+      screen rather than a second, hand-rolled way of asking the same two
+      questions. `api.clientConfig` was that second way and is deleted.
+    - **An upload property renders as a CALL, not a placeholder.** JSON can only
+      say "get an id from this route"; the SDK snippet shows
+      `const recordingUpload = await agent.upload(file, …)` and references
+      `recordingUpload.id`, which is also what says the bytes go in once. That is
+      why `sampleInput` takes an `upload` renderer — the same schema has to come
+      out as data for one language and as an expression for the other.
   - The builders are a separate module from the pane for the reason every
     extracted-logic module here is one: a snippet whose field is spelled
     differently than the workflow declared it renders perfectly and 400s when
     somebody pastes it, so it is worth asserting directly rather than through
-    a render.
+    a render. They are `docs-snippets.ts` now — the route tables and the schema
+    sampling stayed in `docs-content.ts`, which is one subject where three
+    languages' worth of code generation is another.
 - **The same documentation is served PUBLICLY at `/studio/api/<slug>`, and the
   API pane links to it** (`public-api.tsx`, the shared body in `api-docs.tsx`,
   the path pair in `project-route.ts`). The pane is behind sign-in and scoped

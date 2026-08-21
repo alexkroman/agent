@@ -1,11 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 // REST helpers for the studio's project/file/deploy endpoints.
 
-import {
-  CLIENT_CONFIG_PATH,
-  type ClientConfigResponse,
-  ClientConfigResponseSchema,
-} from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UIMessage } from "ai";
 import { parse } from "dotenv";
@@ -132,21 +127,6 @@ function request<T>(key: string, path: string, init: ApiInit = {}): Promise<T> {
 
 export const api = {
   ...tableReads(request),
-
-  /**
-   * What a deployed agent says it is: its name, greeting, and whether its
-   * front door is a voice session or a static page.
-   *
-   * Unauthenticated and cross-route by design — this is the agent's own public
-   * endpoint, the same one a browser client reads before it dials, not a
-   * studio route. Parsed with the SDK's schema rather than trusted: unknown
-   * fields are stripped, so an agent deployed against an older SDK still
-   * answers something this can read.
-   */
-  clientConfig: (base: string): Promise<ClientConfigResponse> =>
-    fetchJson<unknown>(`${base}/${CLIENT_CONFIG_PATH}`).then((body) =>
-      ClientConfigResponseSchema.parse(body),
-    ),
 
   /**
    * A deployed agent's captured stdout/stderr, after `after`.

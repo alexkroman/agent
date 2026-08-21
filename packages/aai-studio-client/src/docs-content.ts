@@ -22,8 +22,14 @@ import { CLIENT_CONFIG_PATH } from "@alexkroman1/aai/protocol";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/workflow-api";
 
-/** The workflow API's root path under an agent, with no leading slash. */
-const WORKFLOWS = WORKFLOW_API_PREFIX.replace(/^\//, "");
+/**
+ * The workflow API's root path under an agent, with no leading slash.
+ *
+ * Exported because the `curl` builders next door spell the same paths, and a
+ * second literal there is how one of the two comes to name a prefix the
+ * platform no longer routes.
+ */
+export const WORKFLOWS_PATH = WORKFLOW_API_PREFIX.replace(/^\//, "");
 
 /** Methods the documented routes use. Mirrors the platform's own registrations. */
 export type DocMethod = "GET" | "POST" | "PUT" | "DELETE";
@@ -34,6 +40,16 @@ export type DocEndpoint = {
   /** Path under the agent base — no leading slash, `:param` for a segment. */
   path: string;
   summary: string;
+  /**
+   * The SDK call that makes this request, as a reader would write it.
+   *
+   * Present on every route a client HAS a call for, which is what turns the
+   * table from a list of URLs into an index into the client every example on the
+   * page uses. Absent for the two that are nobody's method to call — the page
+   * itself, which a browser fetches, and the carrier webhook, which a phone
+   * company posts to.
+   */
+  sdk?: string;
 };
 
 /**
@@ -101,55 +117,75 @@ export function frontDoorEndpoints(page: "voice" | "static"): readonly DocEndpoi
 export const WORKFLOW_ENDPOINTS: readonly DocEndpoint[] = [
   {
     method: "GET",
-    path: WORKFLOWS,
+    path: WORKFLOWS_PATH,
     summary: "The workflows this agent declares, each with its input schema.",
+    sdk: "agent.list()",
   },
   {
     method: "POST",
-    path: `${WORKFLOWS}/runs`,
+    path: `${WORKFLOWS_PATH}/runs`,
     summary: "Start a run. Body: { workflow, input, key?, wait? } → { runId }.",
+    sdk: "agent.start(name, input) / agent.startAndWait(name, input)",
   },
   {
     method: "GET",
-    path: `${WORKFLOWS}/runs`,
+    path: `${WORKFLOWS_PATH}/runs`,
     summary: "Recent runs. Query: workflow, key?, limit?.",
+    sdk: "agent.recent(name) / agent.find(name, key)",
   },
   {
     method: "GET",
-    path: `${WORKFLOWS}/runs/:runId`,
+    path: `${WORKFLOWS_PATH}/runs/:runId`,
     summary: "One run's snapshot. `?wait=ms` holds the request open until it settles.",
+    sdk: "agent.get(runId, { wait })",
   },
   {
     method: "GET",
-    path: `${WORKFLOWS}/runs/:runId/events`,
+    path: `${WORKFLOWS_PATH}/runs/:runId/events`,
     summary: "Server-sent events for one run's progress.",
+    sdk: "agent.follow(runId) — an async iterable of snapshots",
   },
   {
     method: "GET",
-    path: `${WORKFLOWS}/runs/:runId/stream`,
+    path: `${WORKFLOWS_PATH}/runs/:runId/stream`,
     summary: "Server-sent events carrying the run's streamed output.",
+    sdk: "agent.followOutput(runId) — an async iterable of chunks",
   },
   {
     method: "POST",
-    path: `${WORKFLOWS}/runs/:runId/wake`,
+    path: `${WORKFLOWS_PATH}/runs/:runId/wake`,
     summary: "Deliver a wake to a parked run.",
+    sdk: "agent.wake(runId)",
   },
-  { method: "DELETE", path: `${WORKFLOWS}/runs/:runId`, summary: "Cancel a run." },
+  {
+    method: "DELETE",
+    path: `${WORKFLOWS_PATH}/runs/:runId`,
+    summary: "Cancel a run.",
+    sdk: "agent.cancel(runId)",
+  },
   {
     method: "POST",
-    path: `${WORKFLOWS}/uploads`,
+    path: `${WORKFLOWS_PATH}/uploads`,
     summary: "Reserve an upload id, to pass as an input property.",
+    sdk: "agent.upload(file)",
   },
-  { method: "PUT", path: `${WORKFLOWS}/uploads/:id`, summary: "Stream an upload's bytes." },
+  {
+    method: "PUT",
+    path: `${WORKFLOWS_PATH}/uploads/:id`,
+    summary: "Stream an upload's bytes.",
+    sdk: "agent.uploadStream(id, file)",
+  },
   {
     method: "POST",
-    path: `${WORKFLOWS}/uploads/:id/parts`,
+    path: `${WORKFLOWS_PATH}/uploads/:id/parts`,
     summary: "Begin a parallel, resumable upload; PUT each window to the same path.",
+    sdk: "agent.upload(file, { parallel: true }) — the default",
   },
   {
     method: "GET",
-    path: `${WORKFLOWS}/uploads/:id/info`,
+    path: `${WORKFLOWS_PATH}/uploads/:id/info`,
     summary: "How much of an upload landed.",
+    sdk: "agent.uploadInfo(id)",
   },
 ];
 
@@ -168,6 +204,22 @@ export function endpointUrl(base: string, endpoint: DocEndpoint): string {
   return endpoint.path === "" ? `${base}/` : `${base}/${endpoint.path}`;
 }
 
+/**
+ * How the example value for an UPLOAD-carrying property is written.
+ *
+ * The two callers need different things from the same schema, and neither is a
+ * formatting preference. A shell reader is told what the field takes and where
+ * to get one; an SDK reader is shown the call that produces it, so the value has
+ * to come out as an EXPRESSION (`recordingUpload.id`) rather than as a string
+ * nobody can paste anywhere. See `docs-snippets.ts`.
+ */
+export type SampleOptions = {
+  upload?: (name: string) => unknown;
+};
+
+/** What {@link sampleValue} carries down a nested schema. */
+type SampleContext = { uploads: readonly string[]; upload: (name: string) => unknown };
+
 /** How deep {@link sampleInput} will follow a nested object before giving up. */
 const MAX_SAMPLE_DEPTH = 3;
 
@@ -180,16 +232,11 @@ const MAX_SAMPLE_DEPTH = 3;
  * `enum` answers with its first member instead — that IS a real value, and a
  * legal one.
  */
-function sampleValue(
-  name: string,
-  schema: unknown,
-  uploads: readonly string[],
-  depth: number,
-): unknown {
+function sampleValue(name: string, schema: unknown, ctx: SampleContext, depth: number): unknown {
   if (!isRecord(schema)) return `<${name}>`;
   const { enum: choices } = schema;
   if (Array.isArray(choices) && choices.length > 0) return choices[0];
-  if (uploads.includes(name)) return "<upload id from POST /workflows/uploads>";
+  if (ctx.uploads.includes(name)) return ctx.upload(name);
   switch (schema.type) {
     case "number":
     case "integer":
@@ -197,9 +244,9 @@ function sampleValue(
     case "boolean":
       return false;
     case "array":
-      return depth >= MAX_SAMPLE_DEPTH ? [] : [sampleValue(name, schema.items, uploads, depth + 1)];
+      return depth >= MAX_SAMPLE_DEPTH ? [] : [sampleValue(name, schema.items, ctx, depth + 1)];
     case "object":
-      return depth >= MAX_SAMPLE_DEPTH ? {} : sampleObject(schema, uploads, depth + 1);
+      return depth >= MAX_SAMPLE_DEPTH ? {} : sampleObject(schema, ctx, depth + 1);
     default:
       return `<${name}>`;
   }
@@ -208,7 +255,7 @@ function sampleValue(
 /** Every declared property of an object schema, in declaration order. */
 function sampleObject(
   schema: Record<string, unknown>,
-  uploads: readonly string[],
+  ctx: SampleContext,
   depth: number,
 ): Record<string, unknown> {
   const { properties } = schema;
@@ -216,7 +263,7 @@ function sampleObject(
   return Object.fromEntries(
     Object.entries(properties).map(([name, property]) => [
       name,
-      sampleValue(name, property, uploads, depth),
+      sampleValue(name, property, ctx, depth),
     ]),
   );
 }
@@ -228,9 +275,13 @@ function sampleObject(
  * is optional), and the snippets then omit the field rather than sending an
  * empty object that reads as a required-but-unknown body.
  */
-export function sampleInput(workflow: WorkflowSummary): Record<string, unknown> | undefined {
+export function sampleInput(
+  workflow: WorkflowSummary,
+  options: SampleOptions = {},
+): Record<string, unknown> | undefined {
   if (!isRecord(workflow.inputSchema)) return undefined;
-  return sampleObject(workflow.inputSchema, workflow.uploads ?? [], 0);
+  const upload = options.upload ?? ((name: string) => `<upload id for ${name}>`);
+  return sampleObject(workflow.inputSchema, { uploads: workflow.uploads ?? [], upload }, 0);
 }
 
 /** The `POST /workflows/runs` body for one workflow, example input included. */
@@ -239,70 +290,10 @@ export function startBody(workflow: WorkflowSummary): Record<string, unknown> {
   return input === undefined ? { workflow: workflow.name } : { workflow: workflow.name, input };
 }
 
-/**
- * The `Authorization` header line a caller needs, or nothing.
- *
- * The workflow API is OPEN unless the agent's env sets
- * `AAI_WORKFLOW_API_TOKEN` — so whether a snippet should carry a bearer is a
- * fact about this project's secrets, not a caveat to leave in prose for the
- * reader to work out. See `WORKFLOW_API_TOKEN_SECRET`.
- */
-function authLine(token: boolean): string {
-  return token ? `\n  -H "Authorization: Bearer $AAI_WORKFLOW_API_TOKEN" \\` : "";
-}
-
 /** The secret whose presence closes the workflow API. */
 export const WORKFLOW_API_TOKEN_SECRET = "AAI_WORKFLOW_API_TOKEN";
 
-/**
- * `curl` that starts a run of one workflow.
- *
- * The body is compact rather than pretty-printed: it sits inside single quotes
- * on one shell line, and a multi-line `-d` is the version that breaks when
- * somebody copies half of it.
- */
-export function curlStart(base: string, workflow: WorkflowSummary, token: boolean): string {
-  return [
-    `curl -X POST ${base}/${WORKFLOWS}/runs \\${authLine(token)}`,
-    `  -H "Content-Type: application/json" \\`,
-    `  -d '${JSON.stringify(startBody(workflow))}'`,
-  ].join("\n");
-}
-
-/** `curl` that reads a run back, waiting up to 30s for it to settle. */
-export function curlPoll(base: string, token: boolean): string {
-  return `curl "${base}/${WORKFLOWS}/runs/$RUN_ID?wait=30000"${
-    token ? ` \\\n  -H "Authorization: Bearer $AAI_WORKFLOW_API_TOKEN"` : ""
-  }`;
-}
-
-/**
- * The same call in TypeScript, through the SDK's own client.
- *
- * Worth showing beside the `curl` because `startAndWait` is not a convenience
- * over the two requests above — it is the one call that holds the connection
- * open across the run, so the naive "start then poll in a loop" a reader would
- * otherwise write is strictly worse than what the SDK already does.
- */
-export function tsStart(base: string, workflow: WorkflowSummary, token: boolean): string {
-  const input = sampleInput(workflow);
-  const args =
-    input === undefined
-      ? JSON.stringify(workflow.name)
-      : `${JSON.stringify(workflow.name)}, ${JSON.stringify(input)}`;
-  const options = token
-    ? `{ baseUrl: "${base}", token: process.env.${WORKFLOW_API_TOKEN_SECRET} }`
-    : `{ baseUrl: "${base}" }`;
-  return [
-    `import { createWorkflowApiClient } from "@alexkroman1/aai/workflow-api";`,
-    "",
-    `const api = createWorkflowApiClient(${options});`,
-    `const run = await api.startAndWait(${args});`,
-    `console.log(run.status, run.status === "completed" ? run.output : run);`,
-  ].join("\n");
-}
-
-/** The `aai` CLI equivalents, so a reader who has the CLI does not build a curl. */
-export function cliCommands(workflow: WorkflowSummary): string[] {
-  return ["aai workflow list", `aai workflow runs ${workflow.name}`, "aai workflow show $RUN_ID"];
-}
+// Every snippet on the pane — the SDK calls it defaults to, and the `curl` and
+// CLI equivalents behind them — is built in `docs-snippets.ts`. Split when the
+// SDK became the default: the tables and the schema sampling here are one
+// subject, and five languages' worth of code generation is another.

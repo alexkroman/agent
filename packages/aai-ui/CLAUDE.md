@@ -35,7 +35,7 @@ new one fails `pnpm check:api-contracts` until it joins one:
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system a custom chrome is assembled from |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
-| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`. At **epoch 5** since the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type |
+| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`. At **epoch 5** since the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type. That re-export is also what carries `follow`/`followOutput` here for free — this package's own readers do NOT use them, because a hook needs the raw `Response` to see a 404 and fall through to its poll |
 | `theme` | `ClientTheme` + `useTheme` — its own contract because a token is a name in somebody's CSS |
 | `client-dir` | `defaultClientDir()`, the one export a SERVER calls |
 

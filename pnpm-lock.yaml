@@ -233,6 +233,9 @@ importers:
       escape-html:
         specifier: ^1.0.3
         version: 1.0.3
+      eventsource-parser:
+        specifier: 'catalog:'
+        version: 4.0.0
       expr-eval-fork:
         specifier: ^3.0.3
         version: 3.0.3
@@ -741,9 +744,6 @@ importers:
       clsx:
         specifier: 'catalog:'
         version: 2.1.1
-      eventsource-parser:
-        specifier: 'catalog:'
-        version: 4.0.0
       partysocket:
         specifier: ^1.3.0
         version: 1.3.0(react@19.2.8)
