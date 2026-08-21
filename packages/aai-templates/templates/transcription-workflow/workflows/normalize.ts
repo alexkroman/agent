@@ -153,6 +153,14 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
     return { recording: uploadId, converted: false };
   }
 
+  // Named before any work starts, because everything below is minutes of it on a
+  // long recording and a run that says nothing until the conversion finishes looks
+  // stuck. It is also the line that distinguishes "this file needs converting" from
+  // the fast path above.
+  await report(
+    `Converting ${stored.name || uploadId} (${mb(stored.size)}) — not a WAV we can cut.`,
+  );
+
   const dir = await mkdtemp(join(tmpdir(), "aai-normalize-"));
   try {
     const source = join(dir, "source");
@@ -166,7 +174,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
     // On a temp file rather than a pipe, so a trailing index is readable.
     const info = await probeMedia(source, { timeoutMs: CONVERT_TIMEOUT_MS }).catch(classifyFfmpeg);
     await report(
-      `Converting ${describeSource(info.audio?.codec, info.durationSec)} to ` +
+      `It is ${describeSource(info.audio?.codec, info.durationSec)} — re-encoding to ` +
         `${NORMALIZED_SAMPLE_RATE / 1000} kHz mono WAV.`,
     );
 
@@ -174,8 +182,8 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
       [
         // The argv is the caller's, verbatim — `runFfmpeg` adds nothing. So the
         // standing flags are here: quiet, non-interactive, overwrite. `-nostdin`
-        // matters most in a guest, where a stdin ffmpeg decides to read is a
-        // process that never exits.
+        // matters most in a guest, where there is no terminal and an ffmpeg that
+        // decides to read stdin is a process that never exits.
         "-hide_banner",
         "-loglevel",
         "error",

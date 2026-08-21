@@ -17,6 +17,8 @@
  * the decoder happily transcribes into confident nonsense.
  */
 
+import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { FfmpegError } from "@alexkroman1/aai/ffmpeg";
 import { stubReporter, stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
 import { omitUndefined, readUpload } from "@alexkroman1/aai/utils";
@@ -26,7 +28,7 @@ import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/batch.ts";
 import { classifyFfmpeg, cuttable, normalizeRecording } from "./workflows/normalize.ts";
-import { planStreamed, probeUpload } from "./workflows/stream.ts";
+import { expectedSegments, planStreamed, probeUpload } from "./workflows/stream.ts";
 import {
   clock,
   mergeTranscript,
@@ -1005,5 +1007,92 @@ describe("normalizing the recording", () => {
     // transient; an unrecognized error has said nothing about being worth another
     // attempt, and guessing yes is how a run burns its budget before failing.
     expect(() => classifyFfmpeg(new Error("no space left on device"))).toThrow(FatalError);
+  });
+});
+
+describe("expectedSegments", () => {
+  /** A plan over 16 kHz mono, cut into three 90-second segments. */
+  const PLAN = {
+    format: { ...MONO_16K, dataStart: 44, dataEnd: 44 + 270 * 32_000 },
+    segments: [0, 1, 2].map((index) => ({
+      index,
+      start: 44 + index * 90 * 32_000,
+      end: 44 + (index + 1) * 90 * 32_000,
+      startMs: index * 90_000,
+      endMs: (index + 1) * 90_000,
+    })),
+  };
+
+  test("counts every segment once the whole recording has arrived", () => {
+    expect(expectedSegments(PLAN, PLAN.format.dataEnd)).toBe(3);
+  });
+
+  test("ignores segments that start past the end of a SHORT upload", () => {
+    // The failure this guards is a run that never ENDS rather than one that fails:
+    // the plan came from the header's declared length, so a recording that came up
+    // short has segments beginning past the last byte, and waiting for them is
+    // waiting for audio nobody is going to send.
+    expect(expectedSegments(PLAN, 44 + 100 * 32_000)).toBe(2);
+    expect(expectedSegments(PLAN, 44 + 1)).toBe(1);
+  });
+
+  test("an upload with nothing in it expects no segments at all", () => {
+    expect(expectedSegments(PLAN, 0)).toBe(0);
+  });
+});
+
+describe("the conversion, up to the spawn", () => {
+  /**
+   * Reaches the point where ffmpeg would run and stops there, DETERMINISTICALLY.
+   *
+   * `AAI_FFPROBE_PATH` names the binary the SDK resolves, so pointing it at a path
+   * that does not exist produces `kind: "missing-binary"` on every machine — one
+   * where ffmpeg is installed, one where it is not, and CI's Linux leg alike. A
+   * test that instead relied on ffmpeg being ABSENT would pass on a laptop and
+   * behave differently in CI.
+   *
+   * What it covers is the whole step up to the subprocess: reading the header,
+   * deciding the file needs converting, and materializing it to a temp file. Plus
+   * the behaviour a developer actually meets — `aai dev` with no ffmpeg is the one
+   * place dev/prod parity is partial, and it must fail FATALLY with an installable
+   * remedy rather than burn five attempts on a binary that will not appear.
+   */
+  test("materializes the recording, then fails fatally with no ffprobe", async () => {
+    vi.stubEnv("AAI_FFPROBE_PATH", "/nonexistent/aai-test/ffprobe");
+    vi.stubEnv("AAI_FFMPEG_PATH", "/nonexistent/aai-test/ffmpeg");
+    // An m4a `ftyp` box, so `cuttable` says no and the conversion path is taken.
+    publishRecording(
+      new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]),
+      "standup.m4a",
+    );
+    const reporter = stubReporter();
+    try {
+      // Fatal, not retryable: four more attempts find the same missing binary, and
+      // the message already carries the install instructions.
+      await expect(normalizeRecording(UPLOAD_ID)).rejects.toThrow(/ffprobe/);
+      await expect(normalizeRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
+      // It got as far as deciding the file needs converting — the failure is the
+      // binary, not the input.
+      expect(reporter.lines.join(" ")).toContain("standup.m4a");
+      expect(normalizeRecording.maxRetries).toBe(5);
+    } finally {
+      reporter.restore();
+    }
+  });
+
+  test("leaves no temp directory behind when the conversion fails", async () => {
+    // The `finally`, on the path that matters: a guest's disk is small, and a step
+    // that leaked a directory per failed run would fill it.
+    vi.stubEnv("AAI_FFPROBE_PATH", "/nonexistent/aai-test/ffprobe");
+    const leaked = (names: string[]) => names.filter((n) => n.startsWith("aai-normalize-"));
+    const before = leaked(await readdir(tmpdir()));
+    publishRecording(new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70]), "standup.m4a");
+    const reporter = stubReporter();
+    try {
+      await expect(normalizeRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
+      expect(leaked(await readdir(tmpdir()))).toEqual(before);
+    } finally {
+      reporter.restore();
+    }
   });
 });

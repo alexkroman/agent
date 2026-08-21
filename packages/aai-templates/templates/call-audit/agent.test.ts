@@ -23,6 +23,9 @@
  * that would have finished.
  */
 
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { FfmpegError } from "@alexkroman1/aai/ffmpeg";
 import { stubReporter, stubSpeech, stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
 import { installStubGateway } from "@alexkroman1/aai/testing/vitest";
@@ -36,7 +39,7 @@ import {
   SEGMENT_CONCURRENCY,
   transcribeSegment,
 } from "./workflows/audit.ts";
-import { analyse, classifyFfmpeg } from "./workflows/ingest.ts";
+import { analyse, classifyFfmpeg, ingestRecording } from "./workflows/ingest.ts";
 import {
   ANALYSIS_FORMAT,
   BYTES_PER_SECOND,
@@ -55,7 +58,8 @@ import {
   type Silence,
   speechFraction,
 } from "./workflows/media.ts";
-import { summarize } from "./workflows/summarize.ts";
+import { narrate, summarize } from "./workflows/summarize.ts";
+import { fileChunks, materializeUpload, withTempDir } from "./workflows/temp-media.ts";
 
 /** The id every spec below uploads under. */
 const UPLOAD_ID = "upl_test";
@@ -152,6 +156,11 @@ function sentBytes(body: unknown): Uint8Array {
     throw new TypeError("the stub records a Uint8Array request body");
   }
   return body;
+}
+
+/** A pause at each of `starts`, each exactly long enough to be a candidate. */
+function pauses(...starts: number[]): Silence[] {
+  return starts.map((startSec) => ({ startSec, endSec: startSec + MIN_SILENCE_SECONDS }));
 }
 
 /** Slots left published reach the next file, so every one is released here. */
@@ -361,11 +370,6 @@ describe("reading the pauses", () => {
 });
 
 describe("planning where to cut", () => {
-  /** A pause at each of `starts`, each exactly long enough to be a candidate. */
-  function pauses(...starts: number[]): Silence[] {
-    return starts.map((startSec) => ({ startSec, endSec: startSec + MIN_SILENCE_SECONDS }));
-  }
-
   test("a recording inside the cap is one segment, whatever its pauses", () => {
     // Nothing to decide, and the pauses must not tempt the planner into cutting: a
     // request per pause would be dozens of requests for a two-minute call.
@@ -425,11 +429,29 @@ describe("planning where to cut", () => {
   });
 
   test("a tail too short to be worth a request joins its predecessor", () => {
-    // The endpoint refuses audio under 80ms, and a 0.4-second tail holds at most
-    // one word — but the word is a word, so it is merged rather than dropped.
-    const segments = planSegments(pauses(109.6), 110.5 * BYTES_PER_SECOND);
-    expect(segments).toHaveLength(1);
-    expect(segments[0]?.endMs).toBe(110_500);
+    // The endpoint refuses audio under 80ms, and a 0.4-second tail holds at most one
+    // word — but the word is a word, so it is merged rather than dropped. A pause at
+    // 150 leaves the predecessor well short of the cap, which is what makes the merge
+    // legal; see the cap test below for when it is not.
+    const segments = planSegments(pauses(150), 200.5 * BYTES_PER_SECOND);
+    expect(segments).toHaveLength(2);
+    expect(segments.at(-1)?.endMs).toBe(200_500);
+  });
+
+  test("a short tail is NOT absorbed into a segment already at the cap", () => {
+    // The greedy loop leaves a final segment of at most `MAX_SEGMENT_SECONDS`, so
+    // merging a sub-second tail into a predecessor already at the cap would make one
+    // 110.5 seconds long — inside the endpoint's own 120-second limit, and outside
+    // the bound this module promises. A short final request is the cheaper mistake,
+    // and it is still an order of magnitude above the 80ms the endpoint refuses.
+    const segments = planSegments([], 110.5 * BYTES_PER_SECOND);
+    expect(segments).toHaveLength(2);
+    for (const segment of segments) {
+      expect(segment.endMs - segment.startMs).toBeLessThanOrEqual(MAX_SEGMENT_SECONDS * 1000);
+    }
+    // Still contiguous, still covering the whole recording.
+    expect(segments[0]?.endByte).toBe(segments[1]?.startByte);
+    expect(segments.at(-1)?.endMs).toBe(110_500);
   });
 
   test("every byte offset lands on a sample-frame boundary", () => {
@@ -777,5 +799,167 @@ describe("the mastered narration", () => {
     // step failing on the subprocess, which is a test of the tier, not the code.
     expect(typeof stubSpeech).toBe("function");
     expect(masterArgs("in.wav", "out.mp3").at(-1)).toBe("out.mp3");
+  });
+});
+
+describe("moving bytes between the store and a local file", () => {
+  /**
+   * These DO touch the filesystem, which the unit tier otherwise avoids — and the
+   * exception is deliberate rather than a slip. A temp directory is hermetic, costs
+   * milliseconds, and is the only way to exercise the one bug this module is written
+   * to prevent: `fileChunks` reuses one buffer across reads, so yielding a view of
+   * it rather than a copy hands the consumer memory the next read overwrites. That
+   * failure produces a stored file made of the LAST chunk repeated, and it does not
+   * reproduce whenever the consumer happens to copy before the next iteration — so
+   * a mock consumer would not see it and only real bytes will.
+   *
+   * `aai-cli`'s unit specs take the same exception through their own `withTempDir`.
+   */
+  test("withTempDir gives the work a private directory and removes it after", async () => {
+    let seen: string | undefined;
+    await withTempDir(async (dir) => {
+      seen = dir;
+      await writeFile(join(dir, "probe"), "x");
+      await expect(stat(join(dir, "probe"))).resolves.toBeTruthy();
+    });
+    expect(seen).toBeTruthy();
+    // Gone. A guest's disk is small, and a step that left a copy of every recording
+    // it touched would fill it.
+    await expect(stat(seen ?? "")).rejects.toThrow();
+  });
+
+  test("the directory is removed even when the work THROWS", async () => {
+    let seen: string | undefined;
+    const boom = new Error("the conversion failed");
+    await expect(
+      withTempDir((dir) => {
+        seen = dir;
+        throw boom;
+      }),
+    ).rejects.toThrow(boom);
+    await expect(stat(seen ?? "")).rejects.toThrow();
+  });
+
+  test("materializeUpload writes the stored bytes to a path, in order", async () => {
+    // The upload store is the seam that makes this testable at all: `readUpload`
+    // reads a process-wide slot rather than dialling anything.
+    const bytes = new Uint8Array(4096).map((_, at) => at % 251);
+    restores.push(stubUploads({ [UPLOAD_ID]: { bytes, name: "call.m4a" } }));
+
+    await withTempDir(async (dir) => {
+      const path = join(dir, "source");
+      // A small window, so the loop really runs four times — at the real 8 MiB one
+      // a 4 KB upload would exercise a single pass and prove nothing about it.
+      await materializeUpload(UPLOAD_ID, bytes.byteLength, path, 1024);
+      expect(new Uint8Array(await readFile(path))).toEqual(bytes);
+    });
+  });
+
+  test("an empty upload materializes an empty file rather than failing", async () => {
+    restores.push(stubUploads({ [UPLOAD_ID]: { bytes: new Uint8Array(0) } }));
+    await withTempDir(async (dir) => {
+      const path = join(dir, "source");
+      await materializeUpload(UPLOAD_ID, 0, path);
+      expect((await stat(path)).size).toBe(0);
+    });
+  });
+
+  test("fileChunks yields the file's real bytes, not a reused buffer", async () => {
+    // The aliasing bug, and the reason these specs touch a disk. Verified to CATCH
+    // it: deleting the `.slice()` in `fileChunks` fails this test.
+    await withTempDir(async (dir) => {
+      const path = join(dir, "audio.pcm");
+      const bytes = new Uint8Array(5000).map((_, at) => (at * 7) % 251);
+      await writeFile(path, bytes);
+
+      // A 1 KB window over 5 KB of bytes, so there are five reads through ONE
+      // buffer. That is what makes the aliasing reachable; collecting the chunks and
+      // concatenating afterwards is what makes it visible, since every earlier chunk
+      // would then read as the last one.
+      const collected: Uint8Array[] = [];
+      for await (const chunk of fileChunks(path, 1024)) collected.push(chunk);
+
+      const rejoined = new Uint8Array(collected.reduce((n, c) => n + c.byteLength, 0));
+      let at = 0;
+      for (const chunk of collected) {
+        rejoined.set(chunk, at);
+        at += chunk.byteLength;
+      }
+      expect(rejoined).toEqual(bytes);
+    });
+  });
+
+  test("fileChunks over an empty file yields nothing rather than one empty chunk", async () => {
+    await withTempDir(async (dir) => {
+      const path = join(dir, "empty");
+      await writeFile(path, new Uint8Array(0));
+      const collected: Uint8Array[] = [];
+      for await (const chunk of fileChunks(path)) collected.push(chunk);
+      expect(collected).toEqual([]);
+    });
+  });
+});
+
+describe("the ffmpeg steps, up to the spawn", () => {
+  /**
+   * These reach the point where ffmpeg would run and stop there, DETERMINISTICALLY
+   * — which is the trick that makes them unit tests rather than scenario tests.
+   *
+   * `AAI_FFMPEG_PATH` / `AAI_FFPROBE_PATH` name the binary the SDK resolves, so
+   * pointing them at a path that does not exist produces `kind: "missing-binary"`
+   * on every machine: one where ffmpeg is installed, one where it is not, and CI's
+   * Linux leg alike. A test that instead relied on ffmpeg being ABSENT would pass
+   * here and behave differently in CI, which is the green-locally/red-in-CI
+   * asymmetry this repo is built to avoid.
+   *
+   * What they cover is everything before the subprocess — reading the upload,
+   * materializing it, building the argv — plus the classification of the failure.
+   * They also pin the behaviour a developer actually meets: `aai dev` on a laptop
+   * with no ffmpeg is the one place dev/prod parity is partial, and it must fail
+   * FATALLY with an installable remedy rather than retry four times.
+   */
+  beforeEach(() => {
+    vi.stubEnv("AAI_FFMPEG_PATH", "/nonexistent/aai-test/ffmpeg");
+    vi.stubEnv("AAI_FFPROBE_PATH", "/nonexistent/aai-test/ffprobe");
+  });
+
+  test("ingestRecording materializes the upload, then fails fatally with no ffprobe", async () => {
+    restores.push(
+      stubUploads({
+        [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+      }),
+      stubReporter().restore,
+    );
+    // Fatal, not retryable: four more attempts find the same missing binary, and the
+    // message already carries the install instructions.
+    await expect(ingestRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
+    // And the retry budget is still raised, for the I/O halves that ARE transient.
+    expect(ingestRecording.maxRetries).toBe(5);
+  });
+
+  test("narrate speaks first, then fails fatally with no ffmpeg to master with", async () => {
+    // `stepSpeak` runs — the synthesis is not what is broken here — so this also
+    // pins the ORDER: a step that mastered before speaking would fail without ever
+    // calling the voice service.
+    const speech = stubSpeech();
+    restores.push(speech.restore, stubReporter().restore, stubUploads({}, { writable: true }));
+
+    await expect(narrate("Read this back.", "jane")).rejects.toBeInstanceOf(FatalError);
+    expect(speech.calls.length).toBe(1);
+    expect(speech.calls[0]?.text).toBe("Read this back.");
+  });
+
+  test("the temp directory is gone even though the mastering pass failed", async () => {
+    // The `finally` in `withTempDir`, on the path that matters: a guest's disk is
+    // small, and a step that leaked a directory per failed run would fill it.
+    const before = await readdir(tmpdir());
+    const speech = stubSpeech();
+    restores.push(speech.restore, stubReporter().restore, stubUploads({}, { writable: true }));
+
+    await expect(narrate("Read this back.")).rejects.toBeInstanceOf(FatalError);
+    const after = await readdir(tmpdir());
+    expect(after.filter((name) => name.startsWith("aai-call-audit-"))).toEqual(
+      before.filter((name) => name.startsWith("aai-call-audit-")),
+    );
   });
 });

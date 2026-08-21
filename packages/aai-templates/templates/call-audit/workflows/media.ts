@@ -488,6 +488,11 @@ export function planSegments(silences: readonly Silence[], totalBytes: number): 
     at = chosen ?? limit;
   }
 
+  // Whether a boundary is a cut this planner INVENTED, rather than a pause it found
+  // or the recording's own end. One expression, used by both branches below —
+  // computing it twice is how they came to disagree in a first draft.
+  const blind = (endSec: number): boolean => cuts.includes(endSec) && !candidates.includes(endSec);
+
   const bounds = [0, ...cuts, durationSec];
   const segments: Segment[] = [];
   for (let i = 0; i + 1 < bounds.length; i += 1) {
@@ -496,11 +501,24 @@ export function planSegments(silences: readonly Silence[], totalBytes: number): 
     // A tail too short to be worth a request joins its predecessor rather than
     // being dropped: the words in it are words, and one longer request is cheaper
     // than one more round trip.
+    //
+    // **Only if the merge stays under the cap.** The greedy loop leaves a final
+    // segment of at most {@link MAX_SEGMENT_SECONDS}, so absorbing a
+    // sub-{@link MIN_SEGMENT_SECONDS} tail into a segment already at the cap makes
+    // one 110.9 seconds long — still inside the endpoint's own 120-second limit,
+    // and outside the bound this module promises. A short final request is the
+    // cheaper mistake, and it is still an order of magnitude above the 80ms the
+    // endpoint refuses.
     const previous = segments.at(-1);
-    if (endSec - startSec < MIN_SEGMENT_SECONDS && previous !== undefined) {
+    const merged = previous === undefined ? 0 : endSec - previous.startMs / 1000;
+    if (
+      endSec - startSec < MIN_SEGMENT_SECONDS &&
+      previous !== undefined &&
+      merged <= MAX_SEGMENT_SECONDS
+    ) {
       previous.endByte = byteAt(endSec);
       previous.endMs = Math.round(endSec * 1000);
-      previous.cutInSpeech = cuts.includes(endSec);
+      previous.cutInSpeech = blind(endSec);
       continue;
     }
     segments.push({
@@ -511,7 +529,7 @@ export function planSegments(silences: readonly Silence[], totalBytes: number): 
       endMs: Math.round(endSec * 1000),
       // Only a bound this planner INVENTED is a cut through speech; a bound that
       // came from `candidates` is a pause, and the recording's own end is neither.
-      cutInSpeech: cuts.includes(endSec) && !candidates.includes(endSec),
+      cutInSpeech: blind(endSec),
     });
   }
   return segments;

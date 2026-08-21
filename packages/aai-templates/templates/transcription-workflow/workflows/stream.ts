@@ -337,8 +337,12 @@ export async function planStreamed(id: string): Promise<StreamPlan> {
  * Not `plan.segments.length`: the plan came from the header's declared length, and a
  * recording that came up short has segments that start past the end of the file.
  * Counting those would leave the run waiting for audio nobody is going to send.
+ *
+ * Exported for its spec. It is the one piece of this flow's exit condition that is
+ * a pure function of journaled values, so it is the one a test can pin — and the
+ * failure it guards is a run that never ends rather than one that fails.
  */
-function expectedSegments(plan: StreamPlan, size: number): number {
+export function expectedSegments(plan: StreamPlan, size: number): number {
   return plan.segments.filter((segment) => segment.start < size).length;
 }
 

@@ -76,18 +76,22 @@ export async function withTempDir<T>(work: (dir: string) => Promise<T>): Promise
  * A `for` loop rather than a fan-out deliberately: the bytes land in one file at
  * one offset each, so concurrency buys nothing and costs exactly the memory the
  * windows are here to bound.
+ *
+ * `windowBytes` defaults to {@link WINDOW_BYTES}; see {@link fileChunks} for why
+ * it is a parameter at all.
  */
 export async function materializeUpload(
   uploadId: string,
   size: number,
   path: string,
+  windowBytes: number = WINDOW_BYTES,
 ): Promise<void> {
   const handle = await open(path, "w");
   try {
-    for (let at = 0; at < size; at += WINDOW_BYTES) {
+    for (let at = 0; at < size; at += windowBytes) {
       const slice = await readUpload(uploadId, {
         start: at,
-        end: Math.min(at + WINDOW_BYTES, size),
+        end: Math.min(at + windowBytes, size),
       });
       await handle.write(slice.bytes);
     }
@@ -108,11 +112,21 @@ export async function materializeUpload(
  * bug whose symptom is a stored file made of the LAST chunk repeated, and which
  * does not reproduce whenever the consumer happens to copy before the next
  * iteration.
+ *
+ * `windowBytes` is a parameter with a default for exactly that reason, and it is
+ * the one testability seam in this template. The aliasing bug above only manifests
+ * across MULTIPLE reads, so at the real 8 MiB window a spec would have to write a
+ * 16 MB file to reach it — and a first draft of that spec used 200 KB, passed with
+ * the `.slice()` deleted, and would have shipped a test proving nothing. A small
+ * window makes the multi-chunk path a few kilobytes instead.
  */
-export async function* fileChunks(path: string): AsyncIterable<Uint8Array> {
+export async function* fileChunks(
+  path: string,
+  windowBytes: number = WINDOW_BYTES,
+): AsyncIterable<Uint8Array> {
   const handle = await open(path, "r");
   try {
-    const buffer = new Uint8Array(WINDOW_BYTES);
+    const buffer = new Uint8Array(windowBytes);
     for (;;) {
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
       if (bytesRead === 0) return;
