@@ -53,6 +53,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { parseArgs } from "node:util";
 import { gzipSync } from "node:zlib";
 import { publishablePackages, readJson, repoRoot, withPackedTarball } from "./_fs.mjs";
 import {
@@ -82,21 +83,24 @@ const BUNDLES = [
 /** Measured: 3 (`aai`, `aai-ui`, `aai-cli`). See the floor's note in `main`. */
 const MIN_PUBLISHABLE_PACKAGES = 3;
 
-function parseArgs(argv) {
-  const args = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const flag = argv[i];
-    if (!flag.startsWith("--")) continue;
-    const key = flag.slice(2);
-    if (key === "help") {
-      args.help = true;
-      continue;
-    }
-    args[key] = argv[i + 1];
-    i += 1;
-  }
-  return args;
-}
+/**
+ * The options this accepts, for `node:util`'s `parseArgs`.
+ *
+ * Declared rather than inferred from argv, which is the whole reason the
+ * hand-rolled loop this replaced is gone. That loop read only the
+ * space-separated form, so `--output-json=/tmp/r.json` set a key literally
+ * named `output-json=/tmp/r.json` and left `args["output-json"]` undefined —
+ * the script then measured every artifact, printed the report to stdout, wrote
+ * NO FILE and exited 0. `strict` also makes a misspelled flag an error instead
+ * of a silently absorbed one.
+ */
+const OPTIONS = {
+  help: { type: "boolean" },
+  "output-json": { type: "string" },
+  "output-markdown": { type: "string" },
+  "baseline-json": { type: "string" },
+  "baseline-label": { type: "string" },
+};
 
 /** Total bytes and file count of a directory tree. */
 function measureTree(dir) {
@@ -269,7 +273,7 @@ export function compareReports(current, baselineReport, baselineLabel) {
 // ---------------------------------------------------------------------------
 
 function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const { values: args } = parseArgs({ options: OPTIONS, strict: true });
   if (args.help) {
     process.stdout.write(
       [

@@ -60,6 +60,9 @@ catalogs:
     mime-types:
       specifier: ^3.0.2
       version: 3.0.2
+    nanoevents:
+      specifier: ^10.0.0
+      version: 10.0.0
     p-timeout:
       specifier: ^7.0.1
       version: 7.0.1
@@ -255,7 +258,7 @@ importers:
         specifier: 'catalog:'
         version: 3.0.2
       nanoevents:
-        specifier: ^10.0.0
+        specifier: 'catalog:'
         version: 10.0.0
       p-event:
         specifier: ^7.1.0
@@ -382,6 +385,9 @@ importers:
       eventsource-parser:
         specifier: 'catalog:'
         version: 4.0.0
+      nanoevents:
+        specifier: 'catalog:'
+        version: 10.0.0
       undici:
         specifier: ^8.10.0
         version: 8.10.0

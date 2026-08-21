@@ -21,6 +21,7 @@ catalog:
   hono: ^4.13.2
   jsdom: ^30.0.1
   mime-types: ^3.0.2
+  nanoevents: ^10.0.0
   p-timeout: ^7.0.1
   react: ^19.2.8
   react-dom: ^19.2.8

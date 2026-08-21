@@ -30,40 +30,12 @@ import {
   type SttOpener,
   type TtsOpener,
 } from "@alexkroman1/aai/runtime";
-import type {
-  SttEvents,
-  SttOpenOptions,
-  SttProvider,
-  SttSession,
-  Unsubscribe,
-} from "@alexkroman1/aai/stt";
+import type { SttEvents, SttOpenOptions, SttProvider, SttSession } from "@alexkroman1/aai/stt";
 import type { TtsEvents, TtsOpenOptions, TtsProvider, TtsSession } from "@alexkroman1/aai/tts";
+import { createNanoEvents } from "nanoevents";
 
 /** The env var the fake stages resolve their (unused) credential from. */
 export const FAKE_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
-
-/** A minimal typed listener set — `nanoevents` without the dependency. */
-function emitter<Events extends Record<string, (...args: never[]) => void>>(): {
-  on<E extends keyof Events>(event: E, fn: Events[E]): Unsubscribe;
-  emit<E extends keyof Events>(event: E, ...args: Parameters<Events[E]>): void;
-} {
-  const listeners = new Map<keyof Events, Set<(...args: never[]) => void>>();
-  return {
-    on(event, fn) {
-      const set = listeners.get(event) ?? new Set();
-      set.add(fn);
-      listeners.set(event, set);
-      return () => {
-        set.delete(fn);
-      };
-    },
-    emit(event, ...args) {
-      for (const fn of [...(listeners.get(event) ?? [])]) {
-        (fn as (...a: Parameters<Events[typeof event]>) => void)(...args);
-      }
-    },
-  };
-}
 
 /** One open fake STT stream, plus the two edges a case drives. */
 export type FakeSttSession = SttSession & {
@@ -109,12 +81,12 @@ export function createFakeSttOpener(name: string): SttOpener & {
     name,
     last: () => last,
     async open(_opts: SttOpenOptions): Promise<SttSession> {
-      const events = emitter<SttEvents>();
+      const events = createNanoEvents<SttEvents>();
       last = {
         sendAudio() {
           // Level 1 sends no audio. A real client's frames would arrive here.
         },
-        on: events.on,
+        on: (event, fn) => events.on(event, fn),
         close: async () => undefined,
         partial(text) {
           events.emit("partial", text);
@@ -137,7 +109,7 @@ export function createFakeTtsOpener(name: string): TtsOpener & {
     name,
     last: () => last,
     async open(_opts: TtsOpenOptions): Promise<TtsSession> {
-      const events = emitter<TtsEvents>();
+      const events = createNanoEvents<TtsEvents>();
       const spoken: string[] = [];
       last = {
         spoken,
@@ -164,7 +136,7 @@ export function createFakeTtsOpener(name: string): TtsOpener & {
         cancel() {
           events.emit("done");
         },
-        on: events.on,
+        on: (event, fn) => events.on(event, fn),
         close: async () => undefined,
       };
       return last;
