@@ -32,6 +32,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "flow": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "llm": {
     "current": 1,
     "supported": [1],

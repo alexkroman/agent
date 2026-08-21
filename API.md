@@ -177,6 +177,8 @@ export type WavEncodeOptions = {
 ## `@alexkroman1/aai`
 
 ```ts
+import { AnyStateMachine } from 'xstate';
+import { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
@@ -700,6 +702,48 @@ export function errorMessage(err: unknown): string;
 export type FindOptions = {
     limit?: number;
 };
+
+// @public
+export interface Flow<M extends AnyStateMachine> {
+    readonly key: string;
+    readonly machine: M;
+    matches(ctx: ToolContext, state: string): boolean;
+    position(ctx: ToolContext): FlowPosition;
+    projection<V>(project: (position: FlowPosition) => V): StateProjection<V>;
+    reset(ctx: ToolContext): FlowPosition;
+    send(ctx: ToolContext, event: EventFromLogic<M>): FlowPosition;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: FlowToolDef<P, R, EventFromLogic<M>>): ToolDef<P>;
+}
+
+// @public
+export function flow<M extends AnyStateMachine>(key: string, machine: M, options?: FlowOptions): Flow<M>;
+
+// @public
+export interface FlowOptions {
+    durable?: boolean;
+}
+
+// @public
+export interface FlowPosition {
+    readonly done: boolean;
+    readonly instruction?: string;
+    readonly state: string;
+}
+
+// @public
+export interface FlowToolDef<P extends ToolInputSchema, R, E> {
+    description: string;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
+    inputSchema?: P;
+    send?: E;
+    sendFrom?: (result: R) => E | undefined;
+    when: string | readonly string[];
+}
+
+// @public
+export interface FlowToolResult<R> extends FlowPosition {
+    readonly result: R;
+}
 
 // @public
 export type FrontDoorField = "page";

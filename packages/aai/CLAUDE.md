@@ -956,6 +956,9 @@ What it cost was two round trips and a `42P07` NOTICE per guest boot, in the log
 an operator reads to diagnose a session. A missing table now surfaces as the
 honest error it is — this app's schema was never provisioned with one.
 
+**`flow()` is the other primitive built on a slot** — what an agent may do NEXT,
+gated at EXECUTION. `sdk/flow.ts`'s module doc owns it.
+
 **A slot is also the only thing carrying a state TYPE into a tool, because a tool
 is a FILE.** `agent()` takes no `tools` argument — `tools/incident_create.ts` that
 default-exports `tool({ … })` IS the tool `incident_create`, and the table is

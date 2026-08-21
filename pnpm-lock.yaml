@@ -96,6 +96,9 @@ catalogs:
     ws:
       specifier: ^8.21.3
       version: 8.21.3
+    xstate:
+      specifier: ^5.32.5
+      version: 5.32.5
     zod:
       specifier: ^4.4.3
       version: 4.4.3
@@ -281,6 +284,9 @@ importers:
       ws:
         specifier: 'catalog:'
         version: 8.21.3
+      xstate:
+        specifier: 'catalog:'
+        version: 5.32.5
       zod:
         specifier: 'catalog:'
         version: 4.4.3
@@ -741,6 +747,9 @@ importers:
       workflow:
         specifier: 4.8.2
         version: 4.8.2(@nestjs/common@11.1.29(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.29(@nestjs/common@11.1.29(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@opentelemetry/api@1.9.1)(@swc/cli@0.8.1(@swc/core@1.15.3)(chokidar@5.0.0))(@swc/core@1.15.3)(magicast@0.5.3)(typescript@7.0.2)(ws@8.21.3)
+      xstate:
+        specifier: 'catalog:'
+        version: 5.32.5
       zod:
         specifier: 'catalog:'
         version: 4.4.3
@@ -7647,6 +7656,9 @@ packages:
 
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
+
+  xstate@5.32.5:
+    resolution: {integrity: sha512-ULazi1oe6wGrXl0Frb6otSlkm5HLifbbVTkMk5kkSKqz4TkxJaVpnl6jOJwKeid3ORPxYyZQgNLUSYX9q65SIA==}
 
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
@@ -14856,6 +14868,8 @@ snapshots:
   xml-name-validator@5.0.0: {}
 
   xmlchars@2.2.0: {}
+
+  xstate@5.32.5: {}
 
   xtend@4.0.2: {}
 

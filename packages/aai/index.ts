@@ -63,6 +63,13 @@ export {
 export * from "./sdk/db.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
+/**
+ * The dialog statechart — next to `agent()`/`tool()` because it is how a guided
+ * agent declares what it may do NEXT, which is authoring rather than an
+ * optional utility. Its machine comes from `xstate`, which an author imports
+ * directly; nothing here re-exports it.
+ */
+export * from "./sdk/flow.ts";
 export * from "./sdk/generate.ts";
 // The one preset that belongs next to `agent()` rather than behind a provider
 // subpath: it IS the recommended configuration, and requiring three more
