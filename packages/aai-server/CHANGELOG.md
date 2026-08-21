@@ -1,5 +1,26 @@
 # @alexkroman1/aai-server
 
+## 3.6.4
+
+### Patch Changes
+
+- 279a986: Remove an unused logger left in service-config, surfaced by enabling noUnusedLocals repo-wide.
+- Updated dependencies [11e4892]
+- Updated dependencies [91364b0]
+- Updated dependencies [3d20929]
+- Updated dependencies [0397945]
+- Updated dependencies [12deeec]
+- Updated dependencies [8958dd1]
+- Updated dependencies [1602a0e]
+- Updated dependencies [0da62af]
+- Updated dependencies [70e3ceb]
+- Updated dependencies [f433015]
+- Updated dependencies [298f3f2]
+- Updated dependencies [1602a0e]
+  - @alexkroman1/aai@6.11.0
+  - aai-guest@0.4.31
+  - @alexkroman1/aai-ui@6.11.0
+
 ## 3.6.3
 
 ### Patch Changes

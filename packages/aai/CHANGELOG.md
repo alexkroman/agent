@@ -1,5 +1,74 @@
 # @alexkroman1/aai
 
+## 6.11.0
+
+### Minor Changes
+
+- 11e4892: Calling a deployed agent is now one client, and the studio's API page is written
+  in it. `createAgentClient` (`@alexkroman1/aai/workflow-api`) is a superset of
+  `createWorkflowApiClient`: every workflow route plus `config()`, the front-door
+  read (`GET /client-config`) that had no client at all — so a caller stops
+  building two things, one of which was a `fetch` and a hand-written URL join.
+  
+  Two new calls cover the streams. `follow(runId)` and `followOutput(runId)` are
+  async iterables — `for await (const run of agent.follow(id))` — and they hold the
+  two protocol rules a hand-written SSE loop gets wrong, neither of which looks
+  like a bug when it goes wrong: the state stream hands the client back with an
+  `idle` frame after its own duration cap (a run may sleep for hours, so that is a
+  re-open, not an ending), and one output read is bounded by the tail it saw (so the
+  next read has to resume from an absolute index). A stream that ends with the run
+  unsettled throws rather than reading as a run that finished. `watch` and
+  `streamOutput` still resolve the raw `Response`, which is what a caller writing
+  its own polling fallback needs; there is deliberately no fallback inside the
+  iterators. `readEventStream` is the SSE parser under them, now public — the
+  browser client's private copy is deleted rather than duplicated.
+  
+  `WorkflowApiClientOptions.token` and `.timeoutMs` accept an explicit `undefined`,
+  so `token: process.env.AAI_WORKFLOW_API_TOKEN` compiles under
+  `exactOptionalPropertyTypes` instead of needing a `!`.
+  
+  The API pane and the public page at `/studio/api/<slug>` now lead with the SDK in
+  every section, with `curl` and `aai workflow` one disclosure away, and each route
+  row names the call that makes it. An upload-carrying input renders as the
+  `agent.upload(...)` call and a reference to its id rather than as a placeholder
+  string, and the page reads the agent through the same client it documents.
+- 3d20929: Add `@alexkroman1/aai/ffmpeg`: run ffmpeg from a step with a bounded, abortable child (`runFfmpeg`), read a file's streams with `probeMedia`, and convert anything to linear-PCM WAV with `transcodeToWav`. Guest sandboxes now ship the ffmpeg binary, so a workflow can transcode and probe media in-pipeline instead of asking the caller to do it first.
+- 0da62af: Export the HTTP methods the guest's proxied routes answer (WORKFLOW_API_METHODS, CLIENT_CONFIG_METHODS), so the platform's route declaration is checked against the guest's own dispatch rather than written from memory.
+- 298f3f2: A workflow can now produce AUDIO, and a page can play it. Three additions on
+  `@alexkroman1/aai/utils` close the return trip that a `"use step"` body could
+  not make before: `stepSpeak(text, opts?)` synthesizes an utterance from inside a
+  step and hands back a complete WAV (the session TTS surface cannot be used
+  there — a `TtsSession` is an event stream wired into a live pipeline's playback,
+  and a step has no turn to be part of and has to return a value); `writeUpload`
+  is `readUpload`'s other direction, so a step can store a file the run's JSON
+  output could never carry and return its id instead; and `encodeWav` /
+  `pcmDurationMs` are the 44 bytes of container arithmetic every project was
+  otherwise copying, with `byteRate` and `blockAlign` derived rather than passed.
+  `WorkflowApi.download(id)` is the browser half — a `Blob` rather than a URL,
+  because the byte route takes the same bearer every other route does and neither
+  `<audio src>` nor `<a href>` can send one.
+  
+  For tests: `stubSpeech()` fills the speech slot and records what a step asked to
+  say, and `stubUploads(files, { writable: true })` accepts writes and mints
+  assertable ids (read-only by default, so a step that stored a file nobody meant
+  it to still fails).
+  
+  The new `spoken-summary` template is the reference use, and it is the whole
+  round trip: upload a recording, it is transcribed by the async API, summarized
+  through the LLM Gateway, and read back as a WAV the page plays and offers as a
+  download.
+- 1602a0e: Add stepTranscribeUpload/Submit/Poll and stepTranscribeSync: AssemblyAI's async job API and sync endpoint as step-callable helpers, with TranscribeError carrying the retry verdict toStepError reads
+
+### Patch Changes
+
+- 91364b0: Update dependencies: ai 7.0.65, assemblyai 4.36.7, hono 4.13.2, @ai-sdk/google 4.0.44, @ai-sdk/xai 4.0.38, @ai-sdk/react 4.0.68
+- 0397945: Fix a TypeDoc link in stepTranscribeSync's options that failed the docs build
+- 12deeec: Stop advertising `directParts` on an agent whose upload store is not the platform's bucket. A databaseless agent keeps its uploads in its own directory, so the direct-parts claim sent every window over 8 MiB to the platform and then asked the agent to record bytes it had never been given — failing every parts upload with `No bytes are stored for the part at <offset>`.
+- 8958dd1: Cancel the readable `streamTail` builds to ask for a run's chunk index. `getReadable()` is not lazy — a background pump opens a world-local stream reader immediately — so every tail read leaked a `chunk:`/`close:` listener pair, once per `GET /workflows/runs/:id/stream` and once per progress tool call.
+- 1602a0e: Allow blob: and data: media in the agent CSP, so a workflow app's inline audio player and caption track load
+- 70e3ceb: Opt the pipeline session's `AbortSignal` into Node's max-listeners warning. Node's leak warning covers `EventEmitter` only, so an abort listener that outlives its turn accumulated on a call-lifetime signal with nothing reported.
+- f433015: Stop leaking a world stream reader on every workflow progress poll: a cancel arriving before the DevKit's background connect resolved detached nothing, and a caught-up page polls once a second.
+
 ## 6.10.1
 
 ### Patch Changes

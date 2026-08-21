@@ -1,5 +1,29 @@
 # @alexkroman1/aai-cli
 
+## 6.11.0
+
+### Minor Changes
+
+- 1334239: Add the call-audit template: a workflow app with ffmpeg on both sides of the model. It levels any recording with a two-pass loudnorm, maps its pauses with silencedetect, cuts the transcription fan-out inside those pauses rather than every 90 seconds (so there is no segment overlap and no seam-stitching), and masters the spoken audit to MP3. transcription-workflow's classic flow now converts non-PCM recordings itself instead of telling the caller to run ffmpeg, so an m4a off a phone works.
+
+### Patch Changes
+
+- 9c73674: Fix the scaffold's SIGINT/SIGTERM handler crashing on shutdown. `server.mjs` registered an `async` listener with `process.once`, and `process` discards what a listener returns — so a `server.close()` that rejected became an unhandled rejection, i.e. a stack trace and a nonzero exit on Ctrl-C instead of the clean shutdown the handler exists for. The listener is synchronous now and reports a failed shutdown on its own. Every project `aai init` created carries the old handler; `biome.json` excludes `**/scaffold`, so no linter could have caught it.
+- Updated dependencies [11e4892]
+- Updated dependencies [91364b0]
+- Updated dependencies [3d20929]
+- Updated dependencies [0397945]
+- Updated dependencies [12deeec]
+- Updated dependencies [8958dd1]
+- Updated dependencies [1602a0e]
+- Updated dependencies [0da62af]
+- Updated dependencies [70e3ceb]
+- Updated dependencies [f433015]
+- Updated dependencies [298f3f2]
+- Updated dependencies [1602a0e]
+  - @alexkroman1/aai@6.11.0
+  - @alexkroman1/aai-ui@6.11.0
+
 ## 6.10.1
 
 ### Patch Changes

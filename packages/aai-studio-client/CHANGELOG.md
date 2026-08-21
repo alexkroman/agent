@@ -1,5 +1,25 @@
 # aai-studio-client
 
+## 0.6.4
+
+### Patch Changes
+
+- aec3aa8: Studio: put the UI tab before the API tab in the pane switcher.
+- Updated dependencies [11e4892]
+- Updated dependencies [91364b0]
+- Updated dependencies [3d20929]
+- Updated dependencies [0397945]
+- Updated dependencies [12deeec]
+- Updated dependencies [8958dd1]
+- Updated dependencies [1602a0e]
+- Updated dependencies [0da62af]
+- Updated dependencies [70e3ceb]
+- Updated dependencies [f433015]
+- Updated dependencies [298f3f2]
+- Updated dependencies [1602a0e]
+  - @alexkroman1/aai@6.11.0
+  - @alexkroman1/aai-ui@6.11.0
+
 ## 0.6.3
 
 ### Patch Changes

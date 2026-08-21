@@ -1,5 +1,27 @@
 # aai-guest
 
+## 0.4.31
+
+### Patch Changes
+
+- Updated dependencies [11e4892]
+- Updated dependencies [91364b0]
+- Updated dependencies [9c73674]
+- Updated dependencies [3d20929]
+- Updated dependencies [0397945]
+- Updated dependencies [1334239]
+- Updated dependencies [12deeec]
+- Updated dependencies [8958dd1]
+- Updated dependencies [1602a0e]
+- Updated dependencies [0da62af]
+- Updated dependencies [70e3ceb]
+- Updated dependencies [f433015]
+- Updated dependencies [298f3f2]
+- Updated dependencies [1602a0e]
+  - @alexkroman1/aai@6.11.0
+  - @alexkroman1/aai-cli@6.11.0
+  - @alexkroman1/aai-ui@6.11.0
+
 ## 0.4.30
 
 ### Patch Changes
