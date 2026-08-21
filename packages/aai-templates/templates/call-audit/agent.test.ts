@@ -39,7 +39,8 @@ import {
   SEGMENT_CONCURRENCY,
   transcribeSegment,
 } from "./workflows/audit.ts";
-import { analyse, classifyFfmpeg, ingestRecording } from "./workflows/ingest.ts";
+import { classifyFfmpeg } from "./workflows/ffmpeg-verdict.ts";
+import { analyse, ingestRecording } from "./workflows/ingest.ts";
 import {
   ANALYSIS_FORMAT,
   BYTES_PER_SECOND,

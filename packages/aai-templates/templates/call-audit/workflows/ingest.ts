@@ -42,13 +42,24 @@
  * printed last, so a capped tail holds it) and the pauses arrive in a **file**
  * (one event per pause, so their size grows with the recording and a tail would
  * silently drop the earliest ones). Both are read here.
+ *
+ * ## The verdict lives in another file, and has to
+ *
+ * `classifyFfmpeg` reads as if it belongs beside the step that calls it, and it
+ * cannot: a name this module holds at MODULE scope keeps its import, and the
+ * workflow bundle — a `node:vm` Script with no `require` — cannot load one that
+ * spawns a child process. `ffmpeg-verdict.ts` carries the argument in full. Its
+ * sibling `analyse` stays here: everything IT names is pure. The ffmpeg calls
+ * below are inside the step body, which the workflow transform removes along
+ * with the imports it is the only user of.
  */
 
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { isFfmpegError, probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
-import { throwFatalStepError, throwStepError } from "@alexkroman1/aai/step-errors";
+import { probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
+import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { pcmDurationMs, report, uploadInfo, writeUpload } from "@alexkroman1/aai/utils";
+import { classifyFfmpeg } from "./ffmpeg-verdict.ts";
 import {
   ANALYSIS_FORMAT,
   clock,
@@ -68,7 +79,7 @@ import { fileChunks, materializeUpload, withTempDir } from "./temp-media.ts";
  *
  * Well past what the work takes, because the reason for a bound at all is a file
  * that makes a decoder pathological rather than one that is merely long. A
- * `timeout` is retryable and an `exit` is not; see {@link classifyFfmpeg}.
+ * `timeout` is retryable and an `exit` is not; see `ffmpeg-verdict.ts`.
  */
 const FFMPEG_TIMEOUT_MS = 20 * 60_000;
 
@@ -189,37 +200,12 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
  * Retries beyond the default 3.
  *
  * Not because a conversion is flaky — a corrupt file fails identically forever,
- * and {@link classifyFfmpeg} is what stops the DevKit retrying that. It is the
+ * and `classifyFfmpeg` is what stops the DevKit retrying that. It is the
  * two I/O halves that are worth another attempt: this step reads a whole
  * recording out of the store and writes a whole one back, and either can lose a
  * connection on a file this size.
  */
 ingestRecording.maxRetries = 5;
-
-/**
- * Turn an ffmpeg failure into the DevKit's verdict.
- *
- * The whole reason `FfmpegError.kind` exists, used the way it was meant to be: an
- * `exit` is ffmpeg having read the file and refused it, so every retry re-reads
- * the same bytes and reaches the same conclusion while burning the budget a real
- * transient needs. A `timeout` or an `aborted` is worth another attempt, and a
- * `missing-binary` is `aai dev` on a laptop with no ffmpeg — fatal, and already
- * carrying the install instructions in its message.
- *
- * **The retryable arm goes through `throwStepError` even though it classifies
- * nothing**, which is deliberate. `toStepError` reaches a verdict from a
- * `Response` or from an SDK error that already carries one; an `FfmpegError` is
- * neither, so it is rethrown UNCHANGED — which the DevKit treats as retryable by
- * default, the outcome this arm wants. Constructing a `RetryableError` here
- * instead would replace ffmpeg's own message and its `argv` with a sentence, and
- * the argv is the thing you paste into a shell.
- */
-export function classifyFfmpeg(err: unknown): never {
-  if (isFfmpegError(err) && (err.kind === "timeout" || err.kind === "aborted")) {
-    return throwStepError(err);
-  }
-  return throwFatalStepError(err);
-}
 
 /**
  * Run a `media.ts` reader, turning "I cannot read this analysis" into a terminal
