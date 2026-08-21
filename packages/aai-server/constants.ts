@@ -395,20 +395,18 @@ export const MAX_PLATFORM_DB_CONNECTIONS = 40;
  *
  * **10, and the number is a SUM a workflow guest really needs**, not a round
  * figure. It was 4, sized when `ctx.db` was the only thing that ever used the
- * role — which was true only because the Workflow DevKit could not connect at all
- * under the per-schema model. Now that it can, one guest holds:
+ * role — true only because the Workflow DevKit could not connect at all under
+ * the per-schema model. At 4 the symptom was every workflow request failing
+ * `too many connections for role "app_…"`.
  *
- * | what | how many |
- * | --- | --- |
- * | the DevKit's world pool (`WORKFLOW_POSTGRES_MAX_POOL_SIZE`) | 4 |
- * | its dedicated `LISTEN` client, outside that pool | 1 |
- * | `ctx.db`'s own pool (`APP_DB_POOL_MAX`) | 4 |
- * | one spare, for the world's migration on boot | 1 |
- *
- * At 4 the symptom was every workflow request failing `too many connections for
- * role "app_…"`. The two sides are pinned against each other on purpose —
- * `aai/host/workflow-world.ts` sets the DevKit's half and carries the same table
- * — so raising one without the other reintroduces exactly that error.
+ * **The terms live in the SDK, not here**: `guestAppDbConnections()`
+ * (`aai/sdk/app-db-budget.ts`) is the table, because the SDK SETS every one of
+ * them and this file only has to cover their sum, which
+ * `platform-db-budget.test.ts` asserts. The table used to be COPIED here and
+ * went stale the way a hand-kept copy does — four consumers counted while a real
+ * guest had six of them, a ceiling of 13 — so the error above was
+ * reported by whichever consumer asked last, in the wild the wake hint on a
+ * guest that had booted beside a draining sibling.
  */
 export const APP_DB_CONNECTION_LIMIT = 10;
 
@@ -425,8 +423,8 @@ export const APP_DB_CONNECTION_LIMIT = 10;
  * `max_connections`, and the budget was a bound on the term that does not grow
  * while ignoring the term that scales with tenants.
  *
- * Measured against a real provisioned app: one workflow guest holds **6**
- * backends at rest (4 for the DevKit's world pool, 2 for `ctx.db`) and is
+ * Measured against a real provisioned app: one workflow guest held **6**
+ * backends at rest before the pools began giving idle connections back and is
  * ENTITLED to {@link APP_DB_CONNECTION_LIMIT}, which is what this budgets
  * against — a ceiling has to assume the ceiling.
  *

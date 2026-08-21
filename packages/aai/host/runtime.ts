@@ -17,7 +17,7 @@ import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import { errorMessage } from "../sdk/utils.ts";
-import { createPostgresDb } from "./postgres-db.ts";
+import { openAppDb } from "./app-db.ts";
 import { describeResolvedProviders } from "./providers/_provider-settings.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "./runtime-config.ts";
 import { createPipelineProviderResolver } from "./runtime-pipeline-providers.ts";
@@ -100,10 +100,15 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // opened itself; an injected Db stays the caller's to dispose. Without the
   // close, `aai dev` (which rebuilds the runtime on every file save) strands
   // the previous pool on each reload.
+  //
+  // What it opens is a LEASE on the process's one pool for this URL rather than a
+  // pool of its own: the upload store and the wake hint want the same
+  // connections, and the app role's `connection limit` is what makes that a
+  // requirement rather than a tidiness (see `host/app-db.ts` and
+  // `sdk/app-db-budget.ts`). Closing it below stays right — the pool outlives
+  // this lease only while somebody else still holds one.
   const ownedDb =
-    !opts.db && providerEnv.DATABASE_URL
-      ? createPostgresDb({ url: providerEnv.DATABASE_URL })
-      : undefined;
+    !opts.db && providerEnv.DATABASE_URL ? openAppDb(providerEnv.DATABASE_URL) : undefined;
   const resolvedDb = opts.db ?? ownedDb;
 
   // Validate against the *effective* providers, not the agent's own fields.

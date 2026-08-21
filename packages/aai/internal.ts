@@ -27,6 +27,20 @@
  * @module internal
  */
 
+// The app-database connection budget: what one workflow guest may hold against
+// its app role. Here because `aai-server` PROVISIONS that role's
+// `connection limit` and has to size it against this sum — two halves of one
+// number, in two packages, which is exactly the shape that drifts. Pure
+// constants, so nothing host-only rides in behind them.
+export {
+  APP_DB_BOOT_SPARE,
+  APP_DB_POOL_MAX,
+  APP_DB_PRESENCE_LOCK,
+  APP_DB_WORLD_LISTEN,
+  APP_DB_WORLD_POOL_MAX,
+  APP_DB_WORLD_WORKER_CONCURRENCY,
+  guestAppDbConnections,
+} from "./sdk/app-db-budget.ts";
 // Client-audio budgets: the browser client's half of wire paths the host
 // enforces the other half of (e.g. MAX_CLIENT_WS_BUFFERED_BYTES), which is why
 // they are declared in the SDK and not in `aai-ui`.

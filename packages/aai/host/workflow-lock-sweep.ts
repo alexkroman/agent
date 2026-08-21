@@ -73,6 +73,7 @@
  * attempts were also reset could retry forever.
  */
 
+import { APP_DB_PRESENCE_LOCK } from "../sdk/app-db-budget.ts";
 import type { CloseableDb, ReservedDb } from "./postgres-db.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 
@@ -151,7 +152,17 @@ export async function claimPoolPresenceAndSweep(
   deps: SweepDeps = {},
 ): Promise<PoolPresence> {
   const log = deps.log ?? ((message: string) => console.error(message));
-  const db = (deps.createDb ?? ((at: string) => createPostgresDb({ url: at, max: 1 })))(url);
+  // One connection, and it is `APP_DB_PRESENCE_LOCK` in the guest's connection
+  // budget (`sdk/app-db-budget.ts`) — resident for the life of the process,
+  // because that is what presence MEANS here. `idleTimeoutSeconds: 0` states
+  // that rather than relying on it: a reserved connection is already exempt from
+  // the pool's idle timer (see `postgres-db.ts`), and a presence lock is the one
+  // thing in the repo that would break silently if it ever stopped being.
+  const db = (
+    deps.createDb ??
+    ((at: string) =>
+      createPostgresDb({ url: at, max: APP_DB_PRESENCE_LOCK, idleTimeoutSeconds: 0 }))
+  )(url);
   let reserved: ReservedDb | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   let released = false;

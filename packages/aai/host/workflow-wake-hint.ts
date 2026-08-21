@@ -67,7 +67,8 @@ import { createCoalescingRunner } from "../sdk/coalescing-runner.ts";
 import type { Db } from "../sdk/db.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { ensureOnce } from "./_ensure-once.ts";
-import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
+import { openAppDb } from "./app-db.ts";
+import type { CloseableDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /**
@@ -169,7 +170,7 @@ export type WakeHintPublisher = {
    * never rejects, and safe to call fire-and-forget from a request path.
    */
   publish(): Promise<void>;
-  /** Stop the periodic republish and drop the connection this module opened. */
+  /** Stop the periodic republish and release the database lease this module took. */
   close(): Promise<void>;
 };
 
@@ -215,11 +216,13 @@ export function createWakeHintPublisher(opts: WakeHintOptions = {}): WakeHintPub
   const owned: CloseableDb | undefined =
     opts.db || !opts.databaseUrl
       ? undefined
-      : // One connection, not a pool: this writes two small statements a minute
-        // at most, and it shares the app role's connection limit
-        // (APP_DB_CONNECTION_LIMIT) with the runtime's `ctx.db` pool and the
-        // world's own.
-        createPostgresDb({ url: opts.databaseUrl, max: 1 });
+      : // A LEASE on the process's one pool for this URL, never a pool of its own.
+        // This writes two small statements a minute at most, so a pool sized for it
+        // was a pool of one — and one connection is 10% of what the whole app role
+        // may hold (`sdk/app-db-budget.ts`), spent on the least important writer in
+        // the process. It was also the consumer that FAILED when the budget was
+        // over-subscribed, since it is usually the last to ask.
+        openAppDb(opts.databaseUrl);
   const db = opts.db ?? owned;
   const logger = opts.logger;
 

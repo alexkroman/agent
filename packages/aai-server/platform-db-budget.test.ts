@@ -23,6 +23,13 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import {
+  APP_DB_BOOT_SPARE,
+  APP_DB_POOL_MAX,
+  APP_DB_WORLD_POOL_MAX,
+  APP_DB_WORLD_WORKER_CONCURRENCY,
+  guestAppDbConnections,
+} from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { WORKFLOW_WAKE_READ_CONCURRENCY } from "./_workflow-wake-read.ts";
 import {
@@ -188,6 +195,48 @@ describe("platform database connection budget", () => {
     );
     expect(read).toContain("readConcurrency");
     expect(read).toContain("readHints");
+  });
+
+  /**
+   * The OTHER half of the per-tenant number, and the half that was uncounted.
+   *
+   * `APP_DB_CONNECTION_LIMIT` is a `connection limit` on a Postgres ROLE, so it
+   * is not a target the guest aims at — it is a refusal, and the guest's own
+   * consumers are what add up to it. Those consumers live in the SDK
+   * (`aai/sdk/app-db-budget.ts`), which is why this reaches across the package
+   * boundary rather than restating them: a copy in this repo has already gone
+   * stale once, counting four consumers where a real guest had six, and the
+   * failure it produced was `too many connections for role "app_…"` from
+   * whichever consumer asked last.
+   *
+   * The ceiling plus the SPARE, not the ceiling alone: the DevKit migrates on
+   * boot, and a replaced sandbox is briefly alive beside its replacement — which
+   * is the overlap the wild failure came out of. A ceiling that exactly filled
+   * the limit would leave neither any room.
+   */
+  test("one guest's connection ceiling fits inside the role's limit", () => {
+    expect(
+      guestAppDbConnections() + APP_DB_BOOT_SPARE,
+      `a workflow guest may hold ${guestAppDbConnections()} connections, plus ` +
+        `${APP_DB_BOOT_SPARE} spare, against a role limited to ${APP_DB_CONNECTION_LIMIT}. ` +
+        "Lower a term in aai/sdk/app-db-budget.ts, or raise the limit — which costs " +
+        "MAX_ACTIVE_APP_DATABASES, per the test above.",
+    ).toBeLessThanOrEqual(APP_DB_CONNECTION_LIMIT);
+  });
+
+  /**
+   * graphile-worker holds one connection out of the pool it is handed for the
+   * life of the process, to `LISTEN` for `jobs:insert` (verified in 0.16.6:
+   * `pgPool.connect(listenForChanges)`). So step concurrency set to the pool size
+   * means the last worker is waiting on a pool that cannot give it anything —
+   * which reads as a hung run, the exact symptom the old comment cited as the
+   * reason for setting them equal.
+   */
+  test("step concurrency leaves the world pool a slot for its own LISTEN", () => {
+    expect(APP_DB_WORLD_WORKER_CONCURRENCY).toBe(APP_DB_WORLD_POOL_MAX - 1);
+    // And the app's own handle is not the whole remainder: the budget has to fit
+    // the world's pool, its streamer LISTEN and the presence lock beside it.
+    expect(APP_DB_POOL_MAX).toBeLessThan(APP_DB_CONNECTION_LIMIT - APP_DB_WORLD_POOL_MAX);
   });
 
   test("extra APP_DB_URLS clusters are counted, because each pools its own", () => {
