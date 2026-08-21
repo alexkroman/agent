@@ -14,6 +14,8 @@
  * Start with `createAgentClient` — one object for everything one agent answers.
  * `createWorkflowApiClient` is the narrower one, for a caller that genuinely
  * only has workflows (a page already knows what it is).
+ *
+ * @module workflow-api
  */
 
 // One client for the WHOLE of an agent's HTTP API: the workflow routes plus the

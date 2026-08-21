@@ -38,7 +38,7 @@
  * `execFileSync` cap is a documented default in one of them), no
  * `AbortSignal`, no timeout, and a killed child reported as an ordinary
  * failure. What a guest step needs instead is exactly four properties, and they
- * are the whole content of {@link spawnFfmpeg}:
+ * are the whole content of `spawnFfmpeg`, this module's internal runner:
  *
  * 1. **Bounded output.** stderr is kept as a TAIL
  *    ({@link FFMPEG_STDERR_TAIL_CHARS}) because ffmpeg's log is progress lines
@@ -79,6 +79,8 @@
  * to a temp file and pass the path. Large media should go file → file anyway:
  * nothing is buffered then, and `output` in an argv you build yourself is the
  * whole difference.
+ *
+ * @module ffmpeg
  */
 
 import { omitUndefined } from "../sdk/omit-undefined.ts";

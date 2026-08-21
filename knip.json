@@ -188,6 +188,21 @@
       ],
       "includeEntryExports": true
     },
+    "docs": {
+      // knip's typedoc plugin discovers `typedoc.json` by name and nothing
+      // else, so the SECOND config — the markdown one `pnpm docs:md` renders
+      // through — was invisible, and the plugin it loads read as an unused
+      // dependency. Naming both is what keeps that honest in the direction
+      // that matters: drop `typedoc-plugin-markdown` from the config and knip
+      // reports the dependency, rather than the config silently rendering
+      // without it.
+      "typedoc": {
+        "config": [
+          "typedoc.json",
+          "typedoc.markdown.json"
+        ]
+      }
+    },
     "packages/aai-studio-server": {
       "entry": [
         "**/*.test.ts"

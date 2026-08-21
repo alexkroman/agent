@@ -149,6 +149,12 @@ if [ "$MODE" = "--local" ]; then
   # turns "the signature moved" into "and it is a major, and here is the frozen
   # example proving epoch N still compiles".
   pnpm run check:api-contracts || exit 1
+  # Same dist/*.d.ts, a different reader. The API reports are signatures with
+  # every doc comment stripped, which is right for reviewing a change and
+  # useless for learning the API — so `docs/api/` is TypeDoc's own output in
+  # markdown, committed, one file per published entry point, for an agent that
+  # cannot fetch the rendered site.
+  pnpm run check:docs-md || exit 1
   # After build on purpose: the scaffold tsconfig has no `@dev/source`
   # condition, so templates resolve the PUBLISHED types here, exactly as a
   # scaffolded project does. Doc examples compile under the same config, so
@@ -238,6 +244,12 @@ else
   # turns "the signature moved" into "and it is a major, and here is the frozen
   # example proving epoch N still compiles".
   pnpm run check:api-contracts || exit 1
+  # Same dist/*.d.ts, a different reader. The API reports are signatures with
+  # every doc comment stripped, which is right for reviewing a change and
+  # useless for learning the API — so `docs/api/` is TypeDoc's own output in
+  # markdown, committed, one file per published entry point, for an agent that
+  # cannot fetch the rendered site.
+  pnpm run check:docs-md || exit 1
   pnpm run check:template-types || exit 1
   pnpm run check:doc-examples || exit 1
 fi

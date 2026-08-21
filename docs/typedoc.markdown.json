@@ -1,0 +1,55 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  // The LLM-readable half of the API docs. Same converter, same entry points,
+  // same `treatWarningsAsErrors` as the site — `extends` is what keeps those
+  // declared once, so a new subpath export cannot reach the site and silently
+  // miss this. Only the OUTPUT differs: markdown, committed under `docs/api/`,
+  // so an agent can `cat` the API reference instead of fetching a rendered
+  // site it has no browser for.
+  //
+  // Written by `scripts/docs-markdown.mjs`, never by `typedoc` directly — the
+  // script is what gives it a `--check` mode and what floors the output.
+  "extends": "./typedoc.json",
+  "out": "api",
+  // `home.md` is the SITE's landing page (badges, links into rendered HTML).
+  // The plugin's generated index is the useful one here: packages and their
+  // modules as relative markdown links a reader can actually follow on disk.
+  "readme": "none",
+  "plugin": ["typedoc-plugin-markdown"],
+  // One file per module — i.e. per published entry point — rather than the
+  // default file-per-symbol. Per-symbol gives ~700 files of a few hundred
+  // bytes, which is the wrong shape for both a diff and a reader: the question
+  // asked here is "what is in `@alexkroman1/aai/tts`", and that should be one
+  // read, not a directory walk.
+  "outputFileStrategy": "modules",
+  // Every entry point is a `dist/*.d.ts`, and there are no declaration maps,
+  // so a source link points at EMITTED output — a path a reader should not
+  // open and a line number that moves on every unrelated rebuild. Committed,
+  // that turns a one-symbol change into a hundred-line diff, which is how a
+  // gate becomes noise. Grep finds the real definition; a wrong pointer does
+  // not.
+  "disableSources": true,
+  // Breadcrumbs and page headers are site navigation. In a file read as text
+  // they are noise repeated on every page.
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
+  // Declarations as fenced code blocks, and object shapes inlined rather than
+  // linked away to. Both trade bytes for a reader not having to follow a link
+  // to learn a shape.
+  "useCodeBlocks": true,
+  "expandObjects": true,
+  "expandParameters": true,
+  // LIST, not table, everywhere a member can carry prose. A markdown table
+  // cell cannot hold a blank line, so the table variants flatten every
+  // multi-paragraph doc comment in this repo into one run-on cell — and those
+  // comments are the entire reason this artifact is worth generating. List
+  // also diffs a single property as three lines instead of rewriting a
+  // 400-character row.
+  "parametersFormat": "list",
+  "typeDeclarationFormat": "list",
+  "interfacePropertiesFormat": "list",
+  "classPropertiesFormat": "list",
+  "typeAliasPropertiesFormat": "list",
+  "propertyMembersFormat": "list",
+  "enumMembersFormat": "list"
+}
