@@ -186,7 +186,9 @@ voice agents without the CLI:
   (windowed, numbered — opencode's read semantics)/write/edit/delete, `glob`,
   `grep`, `bash`
   (real shell in the container, guest token scrubbed from its env),
-  `todo_write`, `test_agent`, the template tools
+  `todo_write`, `test_agent`, `read_logs` (what the project's DEPLOYED preview
+  or production agent printed — see "The coding agent can read its agent's
+  logs" below), the template tools
   (`aai-guest/studio-template-tools.ts`: `list_templates` enumerates the
   worked examples bundled in the toolchain's
   `@alexkroman1/aai-cli/dist/templates`, and `use_template` copies a
@@ -644,6 +646,32 @@ voice agents without the CLI:
   (an early "no slug, give up" return meant exactly those projects could never
   retry).
 
+- **The coding agent can read its agent's logs** (`read_logs`, guest side in
+  `aai-guest/studio-logs-tool.ts`; host side `studio-agent-logs.ts`, reached
+  over the control channel's `studio/agent-logs` RPC). The pane has shown this
+  output to the USER since the ring existed; the agent's only route to it was
+  asking them to read it out, while `test_agent` — which loads the bundle in the
+  coding agent's own sandbox — structurally cannot see anything a real call
+  produced. Four properties:
+  - **The guest names an ENVIRONMENT, never a slug.** The host resolves it with
+    `projectSlugFor` against the workspace of the (scope, project) the sandbox
+    is pinned to. A guest that could pass a slug could read any agent whose slug
+    it guessed, and the bearer is the account's own key, so the far end's
+    ownership check would not stop it.
+  - **It reuses the session's PREVIEW TARGET** for the origin and that key —
+    which is also what scopes it: no target means this sandbox is no longer the
+    project's, or was brokered without a `serverUrl`, and neither may read.
+  - **It goes over HTTP to our own public origin**, like `warmPreviewSandbox`,
+    rather than calling `readAgentLogs` in-process: that would thread the slot
+    cache and the fleet-wide sandbox directory through this app, its routes and
+    the broker, and `GET /:slug/logs` already owns the lookup, the peer
+    fallback, and the ownership check.
+  - **It returns the TAIL.** The ring is cursor-indexed and hands back its
+    OLDEST lines first, which is exactly backwards for "why did it just break",
+    so the host drains forward (bounded at five pages against a 2,000-line ring)
+    and keeps the last N. Eviction is reported, and the three empty states —
+    never deployed, not running, running and silent — are distinguished, because
+    they call for different next moves from the agent.
 - **The coding agent cannot publish.** There is deliberately no deploy
   tool: going to production is the user's call, made with the Publish
   button (`POST /studio/projects/:project/deploy`) — the only path that

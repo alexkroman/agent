@@ -14,6 +14,15 @@
 export const READ_LIMIT = 2000;
 /** Max glob results before truncation. */
 export const GLOB_LIMIT = 100;
+/**
+ * Lines one `read_logs` call may ask for.
+ *
+ * It must not exceed the host's own clamp (`MAX_LOG_TOOL_LINES` in
+ * `aai-studio-server/studio-agent-logs.ts`), which is the authority — the two
+ * are separate because the guest may not import the studio server, and a guest
+ * asking for more than the host admits is a rejected RPC rather than a clamp.
+ */
+export const LOGS_TOOL_MAX_LINES = 500;
 /** Default and max wall-clock for one bash command. */
 export const BASH_TIMEOUT_MS = 60_000;
 export const BASH_TIMEOUT_MAX_MS = 300_000;
@@ -145,6 +154,21 @@ WHEN TO USE:
 - Multi-step work: several named capabilities, or a build plus a redesign. Write the steps up front, then resend the full list as statuses change.
 - Keep exactly one item in_progress at a time, and use milestone-level steps, not micro-steps.
 - SKIP it for single-step changes and questions.`,
+
+  read_logs: `Read what the project's DEPLOYED agent has printed — the same output the user sees in the studio's Logs pane, most recent lines last.
+
+WHEN TO USE:
+- A runtime failure only a real call produces: a tool that throws mid-session, a missing provider key, a response shape that isn't what the code expects. test_agent loads the bundle HERE and cannot see any of that.
+- After asking the user to try something in the Preview pane — their session's output lands here.
+- Add console.log("[aai] ...") lines to the agent, wait for the preview to redeploy, then read them back.
+
+WHICH AGENT:
+- environment: "preview" (the default) is the agent your edits auto-deploy to — nearly always the one to read.
+- environment: "production" is the published agent, and only exists once the user has published.
+
+WHAT IT IS NOT:
+- Not a log FILE: the buffer lives in the agent's sandbox and goes when the sandbox does, so it is recent output only, and an agent nobody has talked to has printed nothing.
+- Not your own output: bash and test_agent already return what they print.`,
 
   test_agent: `Build the workspace and load it into the production agent runtime — the same build path Publish runs, so a clean test_agent means the publish will build.
 

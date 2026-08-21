@@ -385,6 +385,17 @@ guest self-exits on idle — so this is "what my agent printed recently", never
 the server binds, so its stderr is only in the host log; the studio reports that
 case through `previewError` instead.
 
+**The coding agent reads ANOTHER guest's ring, and never its own.** `read_logs`
+(`studio-logs-tool.ts`) is the studio agent's window onto the agent it is
+BUILDING — a tool throwing on a live call, a missing provider key, the
+`console.error` on the branch nobody exercised, none of which `test_agent` can
+see, because it loads the bundle in this sandbox. It is a host RPC
+(`studio/agent-logs`) rather than a fetch: the logs belong to the project's
+deployed preview or production sandbox, and this guest knows neither its slug
+nor the platform origin. So the guest names an ENVIRONMENT and the host resolves
+the rest from the (scope, project) this sandbox is pinned to — see "The guest
+never names a slug" in `aai-studio-server/studio-agent-logs.ts`.
+
 **Capture is a `write` tee, not a console patch.** `console.log`, an uncaught
 exception's trace, and a dependency writing straight to the fd all funnel
 through `process.stdout.write` / `process.stderr.write`; patching `console`
