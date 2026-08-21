@@ -104,7 +104,7 @@ export type UploadCreated = UploadInfo & {
    * agent reading a single `?offset=` out of a batched claim would record the
    * first window, answer 200, and leave the rest as holes that read as silence
    * later, in a step, with nothing reporting an error. See
-   * {@link UPLOAD_CLAIM_BATCH}.
+   * `UPLOAD_CLAIM_BATCH`.
    */
   claimBatch?: number | undefined;
   /**
@@ -259,7 +259,7 @@ export async function beginUploadParts(
  * clock — because it crosses the platform into the sandbox and then costs the guest
  * a record read, a bucket probe and a locked read-modify-write of the whole part
  * list. Naming several windows in one request collapses every one of those to one,
- * and {@link UPLOAD_CLAIM_BATCH} carries the measurement.
+ * and `UPLOAD_CLAIM_BATCH` carries the measurement.
  *
  * Repeated query parameters rather than a JSON body, because the request that has
  * always been body-less staying body-less is what lets this be the same route: a
@@ -279,7 +279,7 @@ export async function writeUploadPart(
 ): Promise<void> {
   const query = requestQuery(req.url);
   // `getAll`, because a claim may name every window that has landed since the last
-  // one — see {@link UPLOAD_CLAIM_BATCH}. One `?offset=` is the same request with a
+  // one — see `UPLOAD_CLAIM_BATCH`. One `?offset=` is the same request with a
   // list of one, which is what keeps the batched and unbatched forms one route with
   // one set of refusals.
   const offsets = query.getAll("offset").map(Number);

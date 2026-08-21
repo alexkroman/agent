@@ -71,7 +71,7 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * Roughly half a part's wall time was a round trip carrying nothing, paid per PART
  * rather than per byte — so a bigger window was attractive mostly because it
  * amortized a fixed cost, and halving this constant doubled how many times that cost
- * was paid. That is what {@link UPLOAD_CLAIM_BATCH} took away: a claim now names
+ * was paid. That is what `UPLOAD_CLAIM_BATCH` took away: a claim now names
  * every window that has landed since the last one, so the toll is per-BATCH.
  *
  * **This reverses a first attempt at 4 MiB**, which reasoned that a smaller window
@@ -102,7 +102,7 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * amortized over more bytes — so it was a fact about the round trip, not about the
  * part size, and nothing in it can be rescued now the round trip is batched. Same
  * rule, and the same reason, as the contaminated h2 table under
- * {@link UPLOAD_PART_CONCURRENCY}: a plausible table is worse than none, because it
+ * `UPLOAD_PART_CONCURRENCY`: a plausible table is worse than none, because it
  * is the thing a later reader reaches for instead of measuring.
  *
  * Three costs land on the PRODUCT of this and `UPLOAD_PART_CONCURRENCY` rather than
@@ -143,7 +143,7 @@ export const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
  * a 660 MB recording at the time: ~77s at four wide against ~38s at eight.
  *
  * **That argument is now mostly spent, and the number stays anyway.**
- * {@link UPLOAD_CLAIM_BATCH} removed the per-part toll, so width no longer has a
+ * `UPLOAD_CLAIM_BATCH` removed the per-part toll, so width no longer has a
  * round trip to hide; what it still buys is bytes in flight, and the three reasons
  * below say why more of those is not worth having. Eight is therefore held by the
  * reset shoulder rather than by the claim — a different argument for the same value,

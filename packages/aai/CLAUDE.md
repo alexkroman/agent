@@ -574,10 +574,8 @@ which path a client takes (`directParts`), because `aai dev`, a self-hosted
 server and an agent deployed before this all answer the same way — see
 `host/_upload-blobs.ts` and `aai-server/upload-handler.ts`.
 
-That receipt is BATCHED — one request naming every window landed since the
-last — and only when the agent SAID SO (`UploadCreated.claimBatch`, never
-inferred). **`UPLOAD_CLAIM_BATCH` owns the measurement, the cap, and why
-guessing is unsafe.**
+That receipt is BATCHED, and only when the agent says so —
+**`UPLOAD_CLAIM_BATCH` and `UploadCreated.claimBatch` own it.**
 
 **And `info` publishes WHICH windows landed** (`UploadInfo.ranges`), for an
 unfinished parts upload and nothing else — a whole-file write has no windows, and
