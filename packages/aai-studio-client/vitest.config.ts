@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
+import { sharedConfig, sharedCoverageExclude, sharedSetupFiles } from "../../vitest.shared.ts";
 
 export default defineConfig({
   ...sharedConfig,
@@ -34,7 +34,7 @@ export default defineConfig({
     testTimeout: 20_000,
     // Raises Testing Library's 1000ms async-utility ceiling, and unmounts
     // every render — see the file.
-    setupFiles: ["./src/_test-setup.ts"],
+    setupFiles: [...sharedSetupFiles, "./src/_test-setup.ts"],
     coverage: {
       // The pane components are browser-heavy (CodeMirror, useChat
       // streaming, the live iframe) and only their extracted logic

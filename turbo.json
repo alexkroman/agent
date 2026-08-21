@@ -31,7 +31,14 @@
     // hash, touch this script, capture again; before this entry the hash was
     // byte-identical, so a change to the harness verify logic replayed a cached
     // green run.
-    "scripts/ensure-guest-harness.mjs"
+    "scripts/ensure-guest-harness.mjs",
+    // Every project's vitest `setupFiles` entry, named by `sharedSetupFiles` in
+    // `vitest.shared.ts` as an absolute path. Fifth instance of the rule above:
+    // `inputs` globs resolve relative to the PACKAGE, so a repo-root file every
+    // test task loads is hashed by none of them — and this one decides whether a
+    // suite FAILS on a listener leak, so a cached green run would replay past a
+    // change to the gate itself.
+    "scripts/fail-on-process-warning.mjs"
   ],
   "globalPassThroughEnv": [
     // Ambient machine config, same class as the proxy/CA vars below. Stripped
@@ -67,7 +74,23 @@
     // The pass/fail is identical either way, which is exactly why this belongs
     // here and not in a task's `env` — putting it there would fragment every
     // task's cache between local and CI runs for a formatting difference.
-    "GITHUB_ACTIONS"
+    "GITHUB_ACTIONS",
+    // The local/deployed Supabase stack: a developer's own `supabase start`
+    // values, read by `scripts/dev-server.mjs` and by `aai-server`'s runtime
+    // config. Ambient machine config in the same sense as the proxy vars above
+    // — no cached task's OUTPUT depends on them (every spec that reads one
+    // `vi.stubEnv`s it), so putting them in a task's `env` would fragment that
+    // task's cache between a developer with a local stack and one without, for
+    // no difference in what the task produces. Declared because biome's turbo
+    // domain rule `noUndeclaredEnvVars` fails `lint:scripts` otherwise, which
+    // is the gate reporting a real gap: an undeclared variable is stripped
+    // SILENTLY by strict env mode.
+    "AAI_LOCAL_DEV",
+    "SUPABASE_ACCESS_TOKEN",
+    "SUPABASE_DB_URL",
+    "SUPABASE_MANAGEMENT_URL",
+    "SUPABASE_PROJECT_REF",
+    "SUPABASE_STORAGE_BUCKET"
   ],
   "tasks": {
     // `$TURBO_DEFAULT$` — every git-tracked file in the package — rather than a

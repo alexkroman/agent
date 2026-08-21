@@ -613,14 +613,12 @@ it honours, and the two bracketing requests that are retried with it.
 
 ## Workflow apps and the workflow HTTP API
 
-`AgentDef.page` declares an agent's front door — `"voice"` (the default, and
-what absent means) or `"static"`, a page over the workflow HTTP API that
-`createServer` mounts. **See "Workflow apps" in `packages/aai-ui/CLAUDE.md`**;
-this guide is at its cap and the author-facing half lives there.
-
-**Declare one with `workflowApp()`** — `sdk/define.ts`, the fourth arm of
-`AgentParams`. Same `AgentDef`, refusing the fields a workflow app cannot use;
-that guide's `workflowApp()` section owns the argument.
+`AgentDef.page` declares an agent's front door: `"voice"` (the default, and what
+absent means) or `"static"` — a page over the workflow HTTP API that
+`createServer` mounts, declared with `workflowApp()` (`sdk/define.ts`, the fourth
+arm of `AgentParams`), which refuses the fields such an app cannot use. **This
+guide is AT its cap: the author-facing half is "Workflow apps" in
+`packages/aai-ui/CLAUDE.md`.**
 
 ## The DevKit is never handed a BARE specifier
 
@@ -711,15 +709,14 @@ no-op). **See `host/workflow-notify.ts`'s module doc** for the rest.
 Read it there; do not restate it here, and do not trust a voice name that isn't
 in it.
 
-That instruction is the whole point of the constant. This section used to
-carry
-its own table, of which every entry was either deprecated or had never existed,
-while the provider's doc comment carried a *different* wrong list — two
-hand-maintained lists, both fiction, both pointed at by anyone looking for a
-voice. The failure is invisible at authoring time: a wrong voice id is rejected
-in-band after the TTS socket opens, so the agent connects, reports ready and is
-permanently silent. Hence one checkable constant, with the accent alongside each
-name and the deprecated set in `ASSEMBLYAI_TTS_DEPRECATED_VOICES`.
+That instruction is the whole point of the constant. This section and the
+provider's doc comment used to carry two DIFFERENT hand-maintained tables, both
+fiction — every entry deprecated or never existing — and both pointed at by
+anyone looking for a voice. The failure is invisible at authoring time: a wrong
+id is rejected in-band after the TTS socket opens, so the agent connects,
+reports ready and is permanently silent. Hence one checkable constant, with the
+accent alongside each name and the deprecated set in
+`ASSEMBLYAI_TTS_DEPRECATED_VOICES`.
 
 On the default pipeline the voice is the top-level `voice` field —
 `agent({ voice: "michael" })`, an author convenience desugared to

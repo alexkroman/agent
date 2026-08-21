@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
+import { sharedConfig, sharedCoverageExclude, sharedSetupFiles } from "../../vitest.shared.ts";
 
 export default defineConfig({
   ...sharedConfig,
@@ -16,7 +16,7 @@ export default defineConfig({
     // also exclude (pentest, run-code-sandbox, integration.test.ts) had all been
     // deleted, and nothing noticed — which is the failure mode a convention avoids.
     exclude: ["**/*.integration.test.ts", "**/*.scenario.test.ts", "node_modules", "dist"],
-    setupFiles: ["./sdk/_test-matchers.ts"],
+    setupFiles: [...sharedSetupFiles, "./sdk/_test-matchers.ts"],
     coverage: {
       // `contracts/` is neither production source nor test infrastructure: the
       // capability roots are pure re-export lists and the compatibility

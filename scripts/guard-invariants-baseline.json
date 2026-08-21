@@ -94,5 +94,8 @@
     "packages/aai/sdk/providers/stt/elevenlabs.ts": 1,
     "packages/aai/sdk/step-fetch.ts": 1,
     "scripts/with-test-pg.mjs": 1
+  },
+  "rule23_asyncEventListener": {
+    "packages/aai-ui/worklets/_playback-bench-page.ts": 1
   }
 }

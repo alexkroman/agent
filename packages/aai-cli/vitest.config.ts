@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
+import { sharedConfig, sharedCoverageExclude, sharedSetupFiles } from "../../vitest.shared.ts";
 
 export default defineConfig({
   ...sharedConfig,
@@ -24,7 +24,7 @@ export default defineConfig({
     ],
     // Isolates the global config dir (API key + approved servers) from the
     // developer's real one — see _test-setup.ts.
-    setupFiles: ["./_test-setup.ts"],
+    setupFiles: [...sharedSetupFiles, "./_test-setup.ts"],
     coverage: {
       // cli.ts is the process entry point — exercised by e2e, not unit tests.
       exclude: [...sharedCoverageExclude, "cli.ts"],

@@ -1,3 +1,29 @@
+import { fileURLToPath } from "node:url";
+
+/**
+ * Setup files EVERY project loads, whatever tier it runs in.
+ *
+ * Spread rather than assigned at each call site, and that is the whole design
+ * problem: `setupFiles` is an ARRAY, so a package config writing
+ * `setupFiles: ["./_jsdom-setup.ts"]` after `...sharedConfig.test` REPLACES
+ * this list instead of extending it — silently. FOUR of the nine packages
+ * declare their own, and `vitest.slow.config.ts` is a fifth config that does.
+ * It is the same trap the root guide records for `test` itself
+ * ("Shared test options live in `vitest.shared.ts` and must be SPREAD IN"),
+ * which is how every package came to drop `reporters`.
+ *
+ * `packages/aai-templates/vitest-setup-wiring.test.ts` is what makes forgetting
+ * the spread a failure rather than a silently unguarded suite: a partial rollout
+ * of a gate reads exactly like a passing one.
+ *
+ * An absolute path, because a repo-root file referenced from nine different
+ * package roots has no usable relative spelling — the same reason
+ * `aai-server`'s `globalSetup` names `ensure-guest-harness.mjs` this way.
+ */
+export const sharedSetupFiles = [
+  fileURLToPath(new URL("./scripts/fail-on-process-warning.mjs", import.meta.url)),
+];
+
 /**
  * Shared Vitest configuration used by the root workspace config
  * and package-specific configs (slow tests, integration tests).
@@ -21,6 +47,10 @@ export const sharedConfig = {
     // default; a helper or fast-check harness that needs a SUB-test boundary
     // still calls `vi.unstubAllEnvs()` itself.
     unstubEnvs: true,
+    // Turns an EventEmitter/AbortSignal listener leak into a failure — see
+    // `sharedSetupFiles` above for why this cannot simply be assigned, and
+    // `scripts/fail-on-process-warning.mjs` for why the signal needed a gate.
+    setupFiles: sharedSetupFiles,
     // Snapshots behave the same locally as they do in CI.
     //
     // Vitest resolves this from `process.env.CI` by default: 'new' locally

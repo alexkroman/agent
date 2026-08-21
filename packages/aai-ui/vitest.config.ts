@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
+import { sharedConfig, sharedCoverageExclude, sharedSetupFiles } from "../../vitest.shared.ts";
 
 export default defineConfig({
   ...sharedConfig,
@@ -11,7 +11,7 @@ export default defineConfig({
     name: "aai-ui",
     globals: true,
     include: ["**/*.test.{ts,tsx}"],
-    setupFiles: ["./_jsdom-setup.ts"],
+    setupFiles: [...sharedSetupFiles, "./_jsdom-setup.ts"],
     coverage: {
       // `contracts/` is neither production source nor test infrastructure, for
       // the reason `packages/aai/vitest.config.ts` gives: the capability roots
