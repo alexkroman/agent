@@ -555,7 +555,9 @@ The cross-replica coordination that lives in this same Postgres:
   Measured, for calibration: the admin pool genuinely multiplexes (4 client
   connections cost 2–3 backends, fleet-wide rather than per replica), the
   slug-lock pool reaches exactly its 4 under concurrent distinct-slug mutations,
-  and one provisioned workflow app holds 6 backends at rest against its 10.
+  and one provisioned workflow app held 6 backends at rest against its 10 —
+  before the pools began returning idle connections (`aai/sdk/app-db-budget.ts`,
+  which is now where every term of that 10 is counted).
 
   **And boot CHECKS the claim** (`platform-db-capacity.ts`): `show
   max_connections` plus a `pg_stat_activity` count against `platformDbBudget()`,

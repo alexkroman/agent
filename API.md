@@ -1358,6 +1358,24 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
+// @public
+export const APP_DB_BOOT_SPARE = 1;
+
+// @public
+export const APP_DB_POOL_MAX = 3;
+
+// @public
+export const APP_DB_PRESENCE_LOCK = 1;
+
+// @public
+export const APP_DB_WORLD_LISTEN = 1;
+
+// @public
+export const APP_DB_WORLD_POOL_MAX = 4;
+
+// @public
+export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
+
 // @internal
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
@@ -1392,6 +1410,9 @@ type FindOptions = {
 
 // @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
+
+// @public
+export function guestAppDbConnections(): number;
 
 // @internal
 export const HEARD_AUDIO_LAG_MS = 150;
@@ -3506,6 +3527,7 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
 export type CreatePostgresDbOptions = {
     url: string;
     max?: number;
+    idleTimeoutSeconds?: number;
     onNotice?: (notice: unknown) => void;
 };
 

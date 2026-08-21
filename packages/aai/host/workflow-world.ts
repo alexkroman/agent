@@ -36,6 +36,7 @@
 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { APP_DB_WORLD_POOL_MAX, APP_DB_WORLD_WORKER_CONCURRENCY } from "../sdk/app-db-budget.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { claimPoolPresenceAndSweep } from "./workflow-lock-sweep.ts";
 import { resolveWorldSpecifier } from "./workflow-resolve.ts";
@@ -49,7 +50,8 @@ const POSTGRES_CONCURRENCY_ENV = "WORKFLOW_POSTGRES_WORKER_CONCURRENCY";
 
 /**
  * How many connections the DevKit's world may hold, and how many steps it runs
- * at once.
+ * at once — both read from the one table that counts every consumer in the guest
+ * (`sdk/app-db-budget.ts`), never spelled here.
  *
  * **Both are PINNED because the world's defaults do not fit a tenant role.** Left
  * alone, `@workflow/world-postgres` builds its `pg.Pool` with no `max`, so
@@ -64,13 +66,16 @@ const POSTGRES_CONCURRENCY_ENV = "WORKFLOW_POSTGRES_WORKER_CONCURRENCY";
  * nothing but `ctx.db` ever used that role — making workflows work is what made
  * the tenant's connection footprint real.
  *
- * `APP_DB_CONNECTION_LIMIT` on the platform side is sized against exactly this
- * sum, so the two move together: pool + LISTEN + `ctx.db` + one spare. Concurrency
- * is kept AT the pool size rather than above it — a worker that cannot get a
- * connection is a step waiting on a pool timeout, which reads as a hung run.
+ * `APP_DB_CONNECTION_LIMIT` on the platform side is sized against the budget
+ * module's sum, so the two move together. **Concurrency is one BELOW the pool**,
+ * which is a correction: it used to be kept AT the pool size on the argument that
+ * "a worker that cannot get a connection is a step waiting on a pool timeout,
+ * which reads as a hung run" — and that was a description of what was happening,
+ * because graphile-worker takes one of these connections and holds it for the
+ * life of the process to `LISTEN` (see the budget module).
  */
-const POSTGRES_MAX_POOL = 4;
-const POSTGRES_WORKER_CONCURRENCY = 4;
+const POSTGRES_MAX_POOL = APP_DB_WORLD_POOL_MAX;
+const POSTGRES_WORKER_CONCURRENCY = APP_DB_WORLD_WORKER_CONCURRENCY;
 /** Full base URL override for the local world's callbacks. */
 const LOCAL_BASE_URL_ENV = "WORKFLOW_LOCAL_BASE_URL";
 /** Where the local world keeps its run state. */

@@ -293,6 +293,7 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
 export type CreatePostgresDbOptions = {
     url: string;
     max?: number;
+    idleTimeoutSeconds?: number;
     onNotice?: (notice: unknown) => void;
 };
 

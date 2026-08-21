@@ -25,7 +25,8 @@ import { publishStepReporter } from "../sdk/step-report.ts";
 import { publishSpeechSynthesizer } from "../sdk/step-speak.ts";
 import { publishUploadReader } from "../sdk/step-uploads.ts";
 import { MAX_UPLOAD_BYTES_ENV } from "../sdk/upload-constants.ts";
-import { type CloseableDb, createPostgresDb } from "./postgres-db.ts";
+import { openAppDb } from "./app-db.ts";
+import type { CloseableDb } from "./postgres-db.ts";
 import type { Logger } from "./runtime-config.ts";
 import { createStepFetch } from "./step-fetch.ts";
 import { speakOverWebSocket } from "./step-speak.ts";
@@ -39,35 +40,19 @@ import {
 import { localWorkflowDataDir } from "./workflow-world.ts";
 
 /**
- * How many connections the upload pool may hold.
- *
- * Two, and it went back DOWN when the bytes left the database. It was sized off the
- * client's fan-out — `UPLOAD_PART_CONCURRENCY + 2` — because every concurrent `PUT`
- * was a request writing chunk ROWS for as long as it lasted, so the parallelism the
- * fan-out exists for was being serialized back down by the store behind it. A part
- * is now one small `update` naming a window that landed, which holds a connection
- * for a round trip rather than for a megabyte, so the pool no longer has to be as
- * wide as the fan-out. Two is one writer plus the reader that runs WHILE a file is
- * arriving, which is the shape the streaming flow is built on: a run polls `info`
- * and reads windows through `readUpload`.
- *
- * That the number could come back down is the measurable half of the change — see
- * `_upload-blobs.ts`, "The pool".
- */
-const UPLOAD_DB_POOL = 2;
-
-/**
  * What one server's workflow support OWNS, so it can give it back.
  *
  * The `close` half is the whole reason this is an object rather than the store
  * on its own. `aai dev` re-runs `createServer` on every file save and
  * `AgentServer.close()` closed the runtime and the sockets and nothing else, so
- * each rebuild stranded a Postgres pool (2 connections, against a documented
- * 4-connection limit — two saves that touched uploads exhausted it) and an
- * undici keep-alive pool. `runtime.ts` fixed exactly this shape for `ownedDb`,
- * with a comment naming the same cause; the same rule applies here, and for the
- * same reason it is stated as OWNERSHIP: what this call opened is what it
- * closes, and a caller-injected handle would stay the caller's.
+ * each rebuild stranded a Postgres pool (2 connections, against a role limit of
+ * 4 at the time — two saves that touched uploads exhausted it) and an undici
+ * keep-alive pool. `runtime.ts` fixed exactly this shape for `ownedDb`, with a
+ * comment naming the same cause; the same rule applies here, and for the same
+ * reason it is stated as OWNERSHIP: what this call opened is what it closes, and
+ * a caller-injected handle would stay the caller's. What it opens is now a LEASE
+ * on a shared pool (`host/app-db.ts`), which is what makes that rule survive the
+ * sharing: releasing this one closes the pool only if nobody else holds one.
  *
  * Not exported from `/runtime`: `createServer` is the only caller and takes it
  * by inference.
@@ -85,7 +70,7 @@ type WorkflowSupport = {
    * cost.
    */
   directParts: boolean;
-  /** Release the pools this call opened. Never rejects. */
+  /** Release what this call opened — its database lease and its fetch pool. Never rejects. */
   close(): Promise<void>;
 };
 
@@ -122,14 +107,22 @@ export function installWorkflowSupport(opts: {
   uploadBroker?: string | undefined;
   logger: Logger;
 }): WorkflowSupport {
-  // A pool of its own rather than the runtime's `ctx.db`: the runtime is built
-  // lazily and may not exist yet (see the module doc), and `createPostgresDb`
-  // connects on first query, so an agent that never uploads anything pays
-  // nothing for holding this handle.
+  // A LEASE on the process's one pool for this URL rather than a pool of its
+  // own. It cannot be the runtime's handle — the runtime is built lazily and may
+  // not exist yet (see the module doc) — but it can be, and now is, the same
+  // CONNECTIONS: the app role's `connection limit` counts pools, not intentions,
+  // and this one used to be two of the guest's ten (`sdk/app-db-budget.ts`).
+  // Connections open on first query, so an agent that never uploads anything
+  // still pays nothing for holding the lease.
+  //
+  // Sharing `ctx.db`'s connections would have been WRONG before the bytes left
+  // the database: a part was a `bytea` row held for a megabyte, and it was
+  // measured slowing every non-upload query on the guest to p50 1.34s against
+  // 0.43s (`_upload-blobs.ts`, "The pool"). What is left here is one small
+  // `update` naming a window that landed — a round trip, like every other
+  // statement on this pool.
   const databaseUrl = opts.env?.DATABASE_URL;
-  const db: CloseableDb | undefined = databaseUrl
-    ? createPostgresDb({ url: databaseUrl, max: UPLOAD_DB_POOL })
-    : undefined;
+  const db: CloseableDb | undefined = databaseUrl ? openAppDb(databaseUrl) : undefined;
   // A value that is not a positive number is IGNORED rather than treated as zero: a
   // typo'd env var must not make every upload fail as "too large". An operator knob
   // rather than a tuning one: what it bounds is how much of their storage one upload

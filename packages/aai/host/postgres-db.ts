@@ -36,12 +36,50 @@ function logNotice(notice: unknown): void {
   });
 }
 
+/**
+ * How long a pooled connection may sit unused before it is closed, in seconds.
+ *
+ * postgres.js never closes an idle connection for being idle by default
+ * (`idle_timeout: null`; its `max_lifetime` recycles one every 30-60 minutes and
+ * reopens it on the next query, which is not the same thing). So a pool's cost is
+ * its HIGH-WATER MARK rather than what it is using — and on the platform every
+ * one of those connections is charged against the app role's `connection limit`
+ * (`sdk/app-db-budget.ts`). Two sandboxes for one agent legitimately overlap
+ * while a replaced one drains, and the resident half of that overlap is what
+ * decides whether the new guest can connect at all.
+ *
+ * 30 seconds: long enough that a busy pool never reconnects mid-conversation
+ * (a session's queries are seconds apart at worst), short enough that a guest
+ * which served a burst and went quiet is not still holding the burst's
+ * connections when its replacement boots.
+ *
+ * **A RESERVED connection is unaffected**, which is what makes this safe for the
+ * one thing in the repo that depends on session lifetime — the workflow lock
+ * sweep's advisory lock. postgres.js starts the idle timer only when a
+ * connection is returned to the pool's `open` queue and cancels it for anything
+ * moved elsewhere (`move()` in the driver, 3.4.9), and a reservation lives in
+ * the `reserved` queue until it is released.
+ */
+const POOL_IDLE_TIMEOUT_SECONDS = 30;
+
 /** Options for {@link createPostgresDb}. */
 export type CreatePostgresDbOptions = {
   /** Postgres connection URL (e.g. the app's `DATABASE_URL`). */
   url: string;
   /** Maximum pooled connections. Defaults to 4. */
   max?: number;
+  /**
+   * Seconds an unused pooled connection is kept. Defaults to 30 — see
+   * `POOL_IDLE_TIMEOUT_SECONDS` in this module for why there is a default at
+   * all. Named rather than linked on purpose: that constant is module-private,
+   * and a doc link from this PUBLISHED signature to it fails the docs build
+   * (TypeDoc runs with `treatWarningsAsErrors`).
+   *
+   * `0` keeps every connection for the life of the pool, which is postgres.js's
+   * own default and is only right for a pool whose connections are all
+   * long-lived by construction.
+   */
+  idleTimeoutSeconds?: number;
   /**
    * Where Postgres NOTICEs go. Defaults to one `debug` line each.
    *
@@ -99,6 +137,7 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
   const sql = postgres(opts.url, {
     max: opts.max ?? 4,
     prepare: false,
+    idle_timeout: opts.idleTimeoutSeconds ?? POOL_IDLE_TIMEOUT_SECONDS,
     onnotice: opts.onNotice ?? logNotice,
   });
 

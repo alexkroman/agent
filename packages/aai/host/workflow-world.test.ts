@@ -11,6 +11,7 @@
 
 import { isAbsolute } from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import { APP_DB_WORLD_POOL_MAX, APP_DB_WORLD_WORKER_CONCURRENCY } from "../sdk/app-db-budget.ts";
 import {
   configureWorkflowWorld,
   localWorkflowDataDir,
@@ -67,6 +68,30 @@ describe("configureWorkflowWorld", () => {
     expect(
       configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 3000, env: inherited }),
     ).toBe("postgres");
+  });
+
+  test("pins the world's pool and concurrency from the guest's connection budget", () => {
+    // The DevKit's own defaults are node-postgres's 10 and a concurrency of 10,
+    // which is more than a whole app role may hold — and the numbers that replace
+    // them are terms in one budget (`sdk/app-db-budget.ts`), not local choices.
+    // What this pins is the WIRING: the DevKit reads exactly these two variables,
+    // so a rename or a dropped assignment is a guest that silently inherits the
+    // defaults and fails `too many connections for role "app_…"`.
+    const e = env();
+    configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 3000, env: e });
+    expect(e.WORKFLOW_POSTGRES_MAX_POOL_SIZE).toBe(String(APP_DB_WORLD_POOL_MAX));
+    expect(e.WORKFLOW_POSTGRES_WORKER_CONCURRENCY).toBe(String(APP_DB_WORLD_WORKER_CONCURRENCY));
+  });
+
+  test("leaves an operator's own pool sizing alone", () => {
+    // `??=`, so a self-hosted deployment running its own Postgres can tune these.
+    const e = env({
+      WORKFLOW_POSTGRES_MAX_POOL_SIZE: "20",
+      WORKFLOW_POSTGRES_WORKER_CONCURRENCY: "20",
+    });
+    configureWorkflowWorld({ databaseUrl: "postgres://x/y", port: 3000, env: e });
+    expect(e.WORKFLOW_POSTGRES_MAX_POOL_SIZE).toBe("20");
+    expect(e.WORKFLOW_POSTGRES_WORKER_CONCURRENCY).toBe("20");
   });
 
   test("sets the connection string explicitly rather than leaning on the DATABASE_URL fallback", () => {

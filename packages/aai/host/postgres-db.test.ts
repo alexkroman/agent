@@ -19,9 +19,14 @@ const postgresMock = vi.fn((..._args: unknown[]) => ({ unsafe: unsafeMock, end: 
  * alternative to which is a cast — and `onnotice` is a FUNCTION three tests
  * invoke, which is exactly where an unchecked read stops being cheap.
  */
-function clientOptions(): { max?: number; prepare?: boolean; onnotice?: (n: unknown) => void } {
+function clientOptions(): {
+  max?: number;
+  prepare?: boolean;
+  idle_timeout?: number;
+  onnotice?: (n: unknown) => void;
+} {
   const [, options] = postgresMock.mock.calls[0] ?? [];
-  return (options ?? {}) as { max?: number; prepare?: boolean; onnotice?: (n: unknown) => void };
+  return (options ?? {}) as ReturnType<typeof clientOptions>;
 }
 
 vi.mock("postgres", () => ({ default: (...args: unknown[]) => postgresMock(...args) }));
@@ -39,8 +44,14 @@ describe("createPostgresDb", () => {
     expect(postgresMock).toHaveBeenCalledExactlyOnceWith("postgres://db.example/app", {
       max: 4,
       prepare: false,
+      // The one option postgres.js has no useful default for: unset, it keeps
+      // every idle connection for the life of the process, and on the platform
+      // those are charged against the app role's `connection limit` whether or
+      // not anything is using them.
+      idle_timeout: expect.any(Number),
       onnotice: expect.any(Function),
     });
+    expect(clientOptions().idle_timeout).toBeGreaterThan(0);
   });
 
   test("a NOTICE prints nothing by default, and does not throw", () => {
@@ -86,11 +97,21 @@ describe("createPostgresDb", () => {
 
   test("honors an explicit max", () => {
     createPostgresDb({ url: "postgres://db.example/app", max: 1 });
-    expect(postgresMock).toHaveBeenCalledExactlyOnceWith("postgres://db.example/app", {
-      max: 1,
-      prepare: false,
-      onnotice: expect.any(Function),
-    });
+    expect(clientOptions().max).toBe(1);
+  });
+
+  test("honors an explicit idle timeout, zero included", () => {
+    // Zero is the meaningful value, not a fallback to the default: postgres.js
+    // treats a falsy `idle_timeout` as "never close", which is what a pool whose
+    // one connection is reserved for the process's life wants (the workflow lock
+    // sweep's presence lock). `?? DEFAULT` would have silently overridden it.
+    createPostgresDb({ url: "postgres://db.example/app", idleTimeoutSeconds: 0 });
+    expect(clientOptions().idle_timeout).toBe(0);
+  });
+
+  test("honors a non-zero idle timeout", () => {
+    createPostgresDb({ url: "postgres://db.example/app", idleTimeoutSeconds: 5 });
+    expect(clientOptions().idle_timeout).toBe(5);
   });
 
   test("query runs the statement with its params and resolves the rows", async () => {
