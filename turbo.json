@@ -52,6 +52,21 @@
     "TMPDIR",
     "TMP",
     "TEMP",
+    // Read by `vitest.shared.ts` to bound `maxWorkers` per run, because turbo's
+    // concurrency bounds TASKS and says nothing about the workers each one
+    // spawns — only the product is what the machine feels. See `workerBudget`
+    // there for the 8-processes-on-4-cores measurement and the push it cost.
+    //
+    // Unlike every other entry in this list, this one is NOT load-bearing for
+    // passthrough, and saying so is the point: `TURBO_*` is turbo's own
+    // namespace and reaches tasks whatever strict env mode does to everything
+    // else. Measured — exported and undeclared, the task still read it. It is
+    // here so the declaration matches what the code reads, which is what
+    // `noUndeclaredEnvVars` checks; a warning nothing fails on is how this repo
+    // gets rules that check nothing. `globalPassThroughEnv` rather than a task
+    // `env` because it changes how many processes run the tests, never what they
+    // conclude, so it must not fragment the cache across core counts.
+    "TURBO_CONCURRENCY",
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "NO_PROXY",
