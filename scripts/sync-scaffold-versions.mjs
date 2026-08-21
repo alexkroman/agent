@@ -65,6 +65,13 @@ const sharedDepSources = {
   // `Cannot find module '@workflow/world-postgres'`.
   workflow: "packages/aai/package.json",
   "@workflow/world-postgres": "packages/aai/package.json",
+  // Same shape as the two above, for the same reason: a template's `agent.ts`
+  // imports `setup` from `xstate` DIRECTLY (a machine is authored, not wrapped),
+  // and xstate reaches a project only through `@alexkroman1/aai` — which npm
+  // hoists and pnpm does not. Without the declaration a scaffolded project that
+  // uses `flow()` fails to resolve it under pnpm and resolves it by accident
+  // under npm, which is the worse of the two.
+  xstate: "packages/aai/package.json",
   typescript: "package.json",
   vitest: "package.json",
   "@types/node": "package.json",
