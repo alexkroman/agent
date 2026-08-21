@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   calculateTriageScore,
+  callFlow,
   createIncident,
   dispatchSlot,
   getApplicableProtocols,
@@ -10,6 +11,18 @@ import {
   resourceBrief,
 } from "../shared.ts";
 
+/**
+ * **Not a `callFlow.tool`, deliberately.** A new 911 call is legal in every
+ * state, so a `when` listing all of them would be a gate that gates nothing —
+ * the same call `plan-and-execute`'s `start_plan` makes. It sends `LOGGED`
+ * itself, which is what `flow.send` is public for, and reports the position it
+ * landed in so the model reads "confirm the severity and type" as part of this
+ * result rather than having to remember it from the prompt.
+ *
+ * The `send` sits INSIDE the board's mutation window, which is safe because it
+ * is a different slot: the re-entrancy guard is per slot, and neither window
+ * spans an await, so the whole call commits atomically.
+ */
 export default dispatchSlot.updateTool({
   description: "Create a new incident from an incoming emergency call.",
   inputSchema: z.object({
@@ -29,7 +42,7 @@ export default dispatchSlot.updateTool({
       .describe("Known hazards: fire, chemical, electrical, structural, weapons")
       .optional(),
   }),
-  execute(args, state) {
+  execute(args, state, ctx) {
     const recSeverity = recommendSeverity(args.description);
     const recType = recommendType(args.description);
     const triageScore = calculateTriageScore(
@@ -60,8 +73,12 @@ export default dispatchSlot.updateTool({
     const protocols = getApplicableProtocols(recType, recSeverity);
     const recommended = recommendResources(recType, recSeverity, state);
 
+    const at = callFlow.send(ctx, { type: "LOGGED" });
+
     return {
       incidentId: id,
+      at: at.state,
+      next: at.instruction,
       recommendedSeverity: recSeverity,
       recommendedType: recType,
       triageScore,

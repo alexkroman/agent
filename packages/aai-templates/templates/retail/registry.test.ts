@@ -4,11 +4,12 @@ import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
 import { createToolContext, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
-import { retailSlot } from "./store.ts";
+import { callFlow, retailSlot } from "./store.ts";
 
-/** Tools that legitimately run before the caller is identified. Everything
- *  else must refuse. Listed here so ADDING an unauthenticated tool is a
- *  deliberate edit to this file, not a silent gap. */
+/** Tools that legitimately run before the caller is identified — the six
+ *  declaring `when: BEFORE_TRANSFER`. Everything else must refuse. Listed here
+ *  so ADDING an unauthenticated tool is a deliberate edit to this file, not a
+ *  silent gap. */
 const PUBLIC_TOOLS = new Set([
   "find_user_id_by_email",
   "find_user_id_by_name_zip",
@@ -36,6 +37,15 @@ const registry = Object.entries(retailAgent.tools);
 // same storability check and freeze the deployed one applies), and each call is a
 // distinct session, which is what these per-tool cases assume.
 const makeCtx = (): ToolContext => createToolContext();
+
+/** A context whose call flow is in `serving`, so a `when: "serving"` tool can
+ *  reach its body. Moved through the FLOW rather than by writing
+ *  `authenticatedUserId`, because the gate reads the machine. */
+function servingCtx(): ToolContext {
+  const ctx = makeCtx();
+  callFlow.send(ctx, { type: "IDENTIFIED" });
+  return ctx;
+}
 
 /** Minimal args satisfying each tool's schema. Deliberately plausible-shaped
  *  but wrong — these calls are expected to fail; what is asserted is that they
@@ -134,7 +144,10 @@ describe("the UI-update invariant", () => {
   // This is the one that fails if a future tool is built with tool() instead of
   // retailTool(): it would work, and the sidebar would sit still through it.
   test.each(registry)("%s increments callSeq and logs activity", async (name, def) => {
-    const ctx = makeCtx();
+    // `serving`, so the flow gate is not what these calls are testing: the
+    // point is that a tool which reaches its BODY moves the sidebar. A refused
+    // call deliberately does not — see `store.test.ts`.
+    const ctx = servingCtx();
     const before = retailSlot.get(ctx).callSeq;
     await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
     const state = retailSlot.get(ctx);
@@ -146,7 +159,7 @@ describe("the UI-update invariant", () => {
   test.each(registry)("%s logs its own registry key as its name", async (name, def) => {
     // Catches a copy-paste where the retailTool `name` and the registry key
     // disagree — the activity feed would then attribute calls to the wrong tool.
-    const ctx = makeCtx();
+    const ctx = servingCtx();
     await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
     expect(retailSlot.get(ctx).activity.at(-1)?.tool).toBe(name);
   });
@@ -159,6 +172,11 @@ describe("the authentication gate", () => {
       const result = await def.execute(SAMPLE_ARGS[name] ?? {}, makeCtx());
       expect(isToolFailure(result), `${name} did not refuse`).toBe(true);
       if (!isToolFailure(result)) return;
+      // The refusal is `callFlow`'s: it names the position, and quotes the
+      // state's instruction — which names the two tools that get out of it.
+      expect(result.error, `${name} refused without naming the position`).toContain(
+        '"identifying"',
+      );
       expect(result.error, `${name} refused for the wrong reason`).toContain(
         "find_user_id_by_email",
       );
@@ -195,5 +213,19 @@ describe("agent config", () => {
     expect(a).not.toBe(b);
     expect(a.store.orders).not.toBe(b.store.orders);
     expect(a.store).toEqual(b.store);
+  });
+});
+
+describe("the transfer is terminal", () => {
+  test.each(registry)("%s refuses once the call is with a human", async (name, def) => {
+    const ctx = servingCtx();
+    callFlow.send(ctx, { type: "TRANSFERRED" });
+
+    const result = await def.execute(SAMPLE_ARGS[name] ?? {}, ctx);
+    // EVERY tool, the six public ones and `transfer_to_human_agents` itself
+    // included: nothing declares itself legal in the final state. Before the
+    // flow, the policy's "say nothing else after that" was enforced by nothing.
+    expect(isToolFailure(result), `${name} still ran after the handoff`).toBe(true);
+    expect(isToolFailure(result) && result.error, name).toContain('"transferred"');
   });
 });

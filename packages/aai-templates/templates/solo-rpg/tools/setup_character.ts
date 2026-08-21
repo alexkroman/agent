@@ -14,10 +14,24 @@ import {
   makeNpc,
   shuffle,
   stateSummary,
+  storyFlow,
   TIME_PHASES,
   TONES,
 } from "../shared.ts";
 
+/**
+ * **Not a `storyFlow.tool`, deliberately.** Setting up is legal in every state —
+ * a player may start over at any point, an ended story included — so a `when`
+ * listing all of them would be a gate that gates nothing. It drives the flow
+ * itself, which is what `flow.reset` and `flow.send` are public for, and reports
+ * the position it landed in so the narrator reads what the opening turn expects.
+ *
+ * **`reset` before `send`, because a restart is not a transition.** This body
+ * replaces the campaign with a pristine `DEFAULT_STATE`; resetting the flow is
+ * the same statement on the other side, and it is what makes starting over work
+ * from `gameOver` — a final state delivers no events, so a `SETUP` transition
+ * out of it would be dead config.
+ */
 export default tool({
   description:
     "Set up the entire game in one call. Starts a completely fresh game (any previous unsaved game is replaced), generates stats, initializes state, and marks the game as ready. After this returns, just narrate the opening scene. No need to call update_state — everything is already done.",
@@ -186,12 +200,16 @@ export default tool({
       storyComplete: false,
     };
 
-    // Mark initialized
+    // Mark initialized. `initialized` is the CLIENT's render flag; the flow is
+    // what gates the tools, and `SETUP` is what puts it in `playing` — so the
+    // roll tools become available in the same call that gives them stats to
+    // roll against.
     state.initialized = true;
-    state.phase = "playing";
     state.sceneCount = 1;
 
     gameSlot.set(ctx, state);
+    storyFlow.reset(ctx);
+    const at = storyFlow.send(ctx, { type: "SETUP" });
 
     return {
       success: true,
@@ -201,6 +219,8 @@ export default tool({
       archetypeLabel: ARCHETYPES[args.archetype as keyof typeof ARCHETYPES] || args.archetype,
       openingSituation: args.openingSituation,
       creativitySeed: creativitySeed(),
+      at: at.state,
+      next: at.instruction,
       // The real saved state — never hardcoded values
       ...stateSummary(state),
     };

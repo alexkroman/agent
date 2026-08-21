@@ -4,6 +4,8 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import {
   authenticatedUser,
+  BEFORE_TRANSFER,
+  callFlow,
   createDefaultState,
   findItem,
   findOrder,
@@ -158,20 +160,33 @@ describe("ownership and authentication guards", () => {
   });
 });
 
+/**
+ * The success half of a `retailTool` result.
+ *
+ * Every tool here is a `callFlow.tool` now, so a result is the body's own value
+ * under `result`, wrapped in the position the call landed in. `agent.test.ts`
+ * carries the same unwrap for the same reason.
+ */
+function ok<T>(result: unknown): T {
+  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
+  return (result as { result: T }).result;
+}
+
 describe("retailTool", () => {
   const echo = retailTool({
     name: "echo",
     description: "test tool",
     inputSchema: z.object({ value: z.string() }),
-    requiresAuth: false,
+    when: BEFORE_TRANSFER,
     summary: (args) => `echoed ${args.value}`,
     execute: (args) => ({ echoed: args.value }),
   });
 
   const gated = retailTool({
     name: "gated",
-    description: "test tool needing auth",
+    description: "test tool needing an identified customer",
     inputSchema: z.object({}),
+    when: "serving",
     summary: () => "ran",
     execute: () => ({ ok: true }),
   });
@@ -180,10 +195,14 @@ describe("retailTool", () => {
     name: "failing",
     description: "test tool that returns an error",
     inputSchema: z.object({}),
-    requiresAuth: false,
+    when: BEFORE_TRANSFER,
     summary: () => "should not be used",
     execute: () => ({ error: "nope" }),
   });
+
+  /** Put the call where a `when: "serving"` tool can run, through the flow
+   *  rather than by writing the store — the gate reads the machine. */
+  const serve = (ctx: ToolContext) => callFlow.send(ctx, { type: "IDENTIFIED" });
 
   test("increments callSeq and logs activity on every call", async () => {
     const ctx = makeCtx();
@@ -203,33 +222,61 @@ describe("retailTool", () => {
     expect(retailSlot.get(ctx).callSeq).toBeGreaterThan(first);
   });
 
-  test("defaults to requiring authentication and does not run execute when blocked", async () => {
+  test("a tool gated on serving refuses while the caller is unidentified", async () => {
     const ctx = makeCtx();
     const result = await gated.execute({}, ctx);
-    expect(isToolFailure(result) && result.error).toContain("find_user_id_by_email");
+    expect(isToolFailure(result)).toBe(true);
+    // The refusal is the SDK's, so it names the position and quotes the
+    // state's own instruction — where `requiresAuth` answered one fixed
+    // sentence that could not say where the call was.
+    expect(isToolFailure(result) && result.error).toContain('"identifying"');
+    expect(isToolFailure(result) && result.error).toMatch(/user id/);
   });
 
-  test("a blocked call is still logged and still bumps callSeq", async () => {
+  test("a refused call touches nothing, callSeq included", async () => {
     const ctx = makeCtx();
     await gated.execute({}, ctx);
     const state = retailSlot.get(ctx);
-    expect(state.callSeq).toBe(1);
-    expect(state.activity[0]?.summary).toContain("blocked");
+    // The gate short-circuits before the wrapper's body, so a blocked call no
+    // longer records an activity entry — the trade `retailTool`'s doc names.
+    // What it buys is that a refusal cannot half-write the store.
+    expect(state.callSeq).toBe(0);
+    expect(state.activity).toEqual([]);
   });
 
-  test("runs once authenticated", async () => {
+  test("runs once the flow says serving", async () => {
     const ctx = makeCtx();
-    retailSlot.update(ctx, (state) => {
-      state.authenticatedUserId = "olivia_ito_3591";
-    });
+    serve(ctx);
+    expect(ok(await gated.execute({}, ctx))).toEqual({ ok: true });
+  });
+
+  test("the result carries the position the call landed in", async () => {
+    const ctx = makeCtx();
+    serve(ctx);
     const result = await gated.execute({}, ctx);
-    expect(result).toEqual({ ok: true });
+    expect(result).toMatchObject({ state: "serving", done: false });
+    expect((result as { instruction?: string }).instruction).toMatch(/one identified customer/);
   });
 
   test("an error result is logged as an error, not through summary()", async () => {
     const ctx = makeCtx();
     await failing.execute({}, ctx);
     expect(retailSlot.get(ctx).activity[0]?.summary).toBe("error: nope");
+  });
+
+  test("a body that failed does not move the call", async () => {
+    const ctx = makeCtx();
+    const moves = retailTool({
+      name: "moves",
+      description: "test tool that would identify the caller and fails instead",
+      inputSchema: z.object({}),
+      when: BEFORE_TRANSFER,
+      send: { type: "IDENTIFIED" },
+      summary: () => "moved",
+      execute: () => ({ error: "no such customer" }),
+    });
+    expect(isToolFailure(await moves.execute({}, ctx))).toBe(true);
+    expect(callFlow.position(ctx).state).toBe("identifying");
   });
 
   test("activity is capped so a long call cannot grow the payload", async () => {
@@ -247,5 +294,34 @@ describe("retailTool", () => {
     const state = retailSlot.get(ctx);
     expect(state.callSeq).toBe(8);
     expect(new Set(state.activity.map((a) => a.seq)).size).toBe(state.activity.length);
+  });
+});
+
+describe("the call flow", () => {
+  test("a fresh call is identifying, and nothing is latched", () => {
+    const ctx = makeCtx();
+    expect(callFlow.position(ctx).state).toBe("identifying");
+    expect(retailSlot.get(ctx).authenticatedUserId).toBeNull();
+  });
+
+  test("transferred is final, so every tool refuses after the handoff", async () => {
+    const ctx = makeCtx();
+    const anywhere = retailTool({
+      name: "anywhere",
+      description: "legal in every state but the terminal one",
+      inputSchema: z.object({}),
+      when: BEFORE_TRANSFER,
+      summary: () => "ran",
+      execute: () => ({ ok: true }),
+    });
+    expect(ok(await anywhere.execute({}, ctx))).toEqual({ ok: true });
+
+    const at = callFlow.send(ctx, { type: "TRANSFERRED" });
+    expect(at.state).toBe("transferred");
+    expect(at.done).toBe(true);
+
+    const refused = await anywhere.execute({}, ctx);
+    expect(isToolFailure(refused)).toBe(true);
+    expect(isToolFailure(refused) && refused.error).toContain('"transferred"');
   });
 });

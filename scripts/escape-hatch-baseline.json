@@ -96,7 +96,6 @@
     "packages/aai-server/realtime-events.test.ts": 1,
     "packages/aai-server/workflow-wake.test.ts": 1,
     "packages/aai-studio-client/src/chat-queue.test.ts": 1,
-    "packages/aai-templates/templates/solo-rpg/agent.test.ts": 6,
     "packages/aai/host/agent-tools.ts": 2,
     "packages/aai/host/transports/pipeline-stream.test.ts": 3,
     "packages/aai/host/workflow-keys.test.ts": 1,

@@ -6,6 +6,7 @@ import { retailTool, setFocus } from "../store.ts";
 
 export default retailTool({
   name: "modify_pending_order_address",
+  when: "serving",
   description:
     "Change the shipping address of a pending order. Read the new address back to the caller and " +
     "get an explicit yes before calling this. This does not change the customer's default address.",

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Incident, IncidentType, Severity } from "../shared.ts";
-import { calculateTriageScore, createIncident, dispatchSlot } from "../shared.ts";
+import { calculateTriageScore, callFlow, createIncident, dispatchSlot } from "../shared.ts";
 
 type ScenarioIncident = Pick<Incident, "location" | "description" | "type" | "severity">;
 type ScenarioDef = { narrative: string; incidents: ScenarioIncident[] };
@@ -116,12 +116,15 @@ const scenarios = {
 type ScenarioName = keyof typeof scenarios;
 const SCENARIO_NAMES = Object.keys(scenarios) as [ScenarioName, ...ScenarioName[]];
 
+/** Logs incidents like a real call does, so it sends `LOGGED` for the same
+ *  reason `incident_create` does — and is ungated for the same reason too: a
+ *  drill may be started at any point in a shift. */
 export default dispatchSlot.updateTool({
   description: "Run a training scenario that creates simulated incidents for dispatch practice.",
   inputSchema: z.object({
     scenario: z.enum(SCENARIO_NAMES).describe("Scenario type to simulate"),
   }),
-  execute(args, state) {
+  execute(args, state, ctx) {
     const s = scenarios[args.scenario];
 
     const created: string[] = [];
@@ -136,10 +139,14 @@ export default dispatchSlot.updateTool({
       created.push(fullInc.id);
     }
 
+    const at = callFlow.send(ctx, { type: "LOGGED" });
+
     return {
       scenario: args.scenario,
       narrative: s.narrative,
       incidentsCreated: created,
+      at: at.state,
+      next: at.instruction,
       message: `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
     };
   },

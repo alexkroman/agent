@@ -9,6 +9,7 @@ const CANCEL_REASONS = ["no longer needed", "ordered by mistake"] as const;
 
 export default retailTool({
   name: "cancel_pending_order",
+  when: "serving",
   description:
     "Cancel a pending order. Only an order whose status is exactly 'pending' can be cancelled — " +
     "check the status first. The reason must be either 'no longer needed' or 'ordered by mistake'. " +

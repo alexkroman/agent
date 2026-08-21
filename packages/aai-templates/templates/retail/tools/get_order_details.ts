@@ -6,6 +6,7 @@ import { retailTool, setFocus } from "../store.ts";
 
 export default retailTool({
   name: "get_order_details",
+  when: "serving",
   description:
     "Get the status and full details of one of the authenticated customer's orders. Accepts the " +
     "order id (e.g. '#W0000000' — note the leading '#'), or a spoken reference such as " +

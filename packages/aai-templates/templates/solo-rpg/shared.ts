@@ -1,4 +1,5 @@
-import { type DeepReadonly, sessionSlot, type ToolContext } from "@alexkroman1/aai";
+import { type DeepReadonly, flow, sessionSlot, type ToolContext } from "@alexkroman1/aai";
+import { setup } from "xstate";
 import { z } from "zod";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
@@ -247,8 +248,16 @@ export interface LastRoll {
 
 // ── Game State ───────────────────────────────────────────────────────────────
 export interface GameState {
+  /**
+   * Whether a character exists. The CLIENT's render flag — `client.tsx` shows
+   * the character sheet on it — and nothing else.
+   *
+   * It used to sit beside `phase: "genre" | "playing"`, which was the same bit
+   * spelled twice: `phase === "playing"` was true exactly when this was, and
+   * neither field gated anything. `phase` is gone and {@link storyFlow} holds
+   * the position now — see its own doc for the split.
+   */
   initialized: boolean;
-  phase: "genre" | "playing";
   settingGenre: string;
   settingTone: string;
   settingArchetype: string;
@@ -285,7 +294,6 @@ export interface GameState {
 
 export const DEFAULT_STATE: GameState = {
   initialized: false,
-  phase: "genre",
   settingGenre: "",
   settingTone: "",
   settingArchetype: "",
@@ -334,6 +342,99 @@ export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE)
  * carries the deep-readonly type the client's components take.
  */
 export const gameProjection = gameSlot.projection((game) => game);
+
+// ── The story, as a machine ──────────────────────────────────────────────────
+
+/**
+ * Where the story is, and what may be done from there.
+ *
+ * Three hand-rolled versions of this question lived in the template, and all
+ * three were positional questions answered from data:
+ *
+ * - **`phase: "genre" | "playing"`** (with `initialized` beside it saying the
+ *   same thing) gated NOTHING. `action_roll`, `update_state` and
+ *   `burn_momentum` all ran happily before a character existed — rolling 2d6
+ *   against the stats of nobody, against clocks that were not there.
+ * - **`burn_momentum`'s `if (!last) return { error: "No recent action roll to
+ *   upgrade. Roll first." }`** is `when` written out by hand. Burning is legal
+ *   for exactly as long as a roll is standing, which is a position.
+ * - **`gameOver`** was set by `updateCrisisFlags` and read by nobody who could
+ *   act on it, so a player whose health and spirit were both gone could keep
+ *   rolling for as long as they liked.
+ *
+ * **What stays in {@link GameState} is what the CLIENT renders** —
+ * `initialized`, `crisisMode`, `gameOver` — because `syncState` carries one
+ * projection and it is the campaign's. The flow holds the POSITION and the slot
+ * holds the campaign, which is the same split `travel-concierge` makes between
+ * its gate and its trip: one tool call moves both, in one synchronous window
+ * each.
+ *
+ * **Starting over is a RESET, not a transition.** `setup_character` replaces the
+ * campaign with a pristine `DEFAULT_STATE`, so the honest mirror on this side is
+ * `storyFlow.reset` — and it is what lets `gameOver` be a genuinely `final`
+ * state, which is the whole point of having one: `position().done` means the
+ * story ended, and XState delivers no events to a done actor, so an `on: {
+ * SETUP }` there would have been dead config that looked live. `load_game`
+ * resets for the same reason. `SETUP` therefore appears once, on the only state
+ * that can be transitioned out of.
+ */
+const storyMachine = setup({
+  types: {} as {
+    events: { type: "SETUP" } | { type: "ROLLED" } | { type: "SETTLED" } | { type: "DOWNED" };
+  },
+}).createMachine({
+  id: "story",
+  initial: "awaitingSetup",
+  states: {
+    awaitingSetup: {
+      meta: {
+        instruction:
+          "There is no character yet. Take whatever the player gave you — a name, a " +
+          "genre, an idea, or nothing — infer the rest yourself, and call " +
+          "setup_character with every field filled in. Ask no follow-up questions.",
+      },
+      on: { SETUP: "playing" },
+    },
+    playing: {
+      initial: "awaitingRoll",
+      on: { DOWNED: "gameOver" },
+      states: {
+        awaitingRoll: {
+          meta: {
+            instruction:
+              "Narrate the scene and offer two or three choices. Any risky action goes " +
+              "through action_roll — never narrate a success or a failure yourself.",
+          },
+          on: { ROLLED: "rollResolved" },
+        },
+        rollResolved: {
+          meta: {
+            instruction:
+              "A roll is standing. burn_momentum can still upgrade it if the player " +
+              "spends momentum; anything that moves the scene on settles it.",
+          },
+          // A second roll replaces the standing one, so `ROLLED` re-enters.
+          on: { ROLLED: "rollResolved", SETTLED: "awaitingRoll" },
+        },
+      },
+    },
+    gameOver: {
+      type: "final",
+      meta: {
+        instruction:
+          "Health and spirit are both gone. Narrate the ending and stop — nothing " +
+          "else may be rolled. setup_character begins a new story.",
+      },
+    },
+  },
+});
+
+/**
+ * The flow. Its own slot key beside {@link gameSlot}, and the reason it is not
+ * folded into the campaign is that the campaign is what the browser renders: a
+ * flow stores an XState snapshot, which is not a character sheet.
+ */
+export const storyFlow = flow("story", storyMachine);
 
 /**
  * The game as a READ hands it out: deep-frozen, and typed to say so.
@@ -468,7 +569,6 @@ export function clockSummary(c: DeepReadonly<Clock>) {
 export function stateSummary(state: FrozenGameState) {
   return {
     initialized: state.initialized,
-    phase: state.phase,
     settingGenre: state.settingGenre,
     settingTone: state.settingTone,
     settingArchetype: state.settingArchetype,

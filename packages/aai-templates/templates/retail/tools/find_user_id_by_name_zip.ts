@@ -1,7 +1,7 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { authenticateAs } from "../authenticate.ts";
-import { retailTool } from "../store.ts";
+import { BEFORE_TRANSFER, retailTool } from "../store.ts";
 
 export default retailTool({
   name: "find_user_id_by_name_zip",
@@ -13,7 +13,8 @@ export default retailTool({
     last_name: z.string().max(100).describe("Last name, e.g. 'Doe'"),
     zip: z.string().max(20).describe("Zip code, e.g. '12345'"),
   }),
-  requiresAuth: false,
+  when: BEFORE_TRANSFER,
+  send: { type: "IDENTIFIED" },
   execute: (args, state) => {
     const first = args.first_name.trim().toLowerCase();
     const last = args.last_name.trim().toLowerCase();

@@ -4,7 +4,7 @@ import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import type { AuthResult } from "./authenticate.ts";
 import type { Address } from "./shared.ts";
-import { retailSlot } from "./store.ts";
+import { callFlow, retailSlot } from "./store.ts";
 import cancelPendingOrder from "./tools/cancel_pending_order.ts";
 import exchangeDeliveredOrderItems from "./tools/exchange_delivered_order_items.ts";
 import findUserIdByEmail from "./tools/find_user_id_by_email.ts";
@@ -45,7 +45,12 @@ function makeCtx(): ToolContext {
  */
 function ok<T>(result: unknown): T {
   if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  return result as T;
+  // The UNWRAP is the second half of the seam, and it arrived with the call
+  // flow: every tool here is a `callFlow.tool` now, so a success is the body's
+  // own value under `result`, wrapped in the position the call landed in. One
+  // helper is why that conversion cost this file two lines instead of
+  // twenty-four — which is the argument for having had the seam.
+  return (result as { result: T }).result;
 }
 
 /** A context already authenticated as `userId`, via the real tool. */
@@ -63,6 +68,8 @@ describe("authentication", () => {
     );
     expect(result.user_id).toBe("olivia_ito_3591");
     expect(retailSlot.get(ctx).authenticatedUserId).toBe("olivia_ito_3591");
+    // Two facts, two homes: the store latches WHO, the flow holds WHETHER.
+    expect(callFlow.position(ctx).state).toBe("serving");
   });
 
   test("an unknown email is refused and leaves the session unauthenticated", async () => {
@@ -70,6 +77,9 @@ describe("authentication", () => {
     const result = await findUserIdByEmail.execute({ email: "nobody@example.com" }, ctx);
     expect(isToolFailure(result)).toBe(true);
     expect(retailSlot.get(ctx).authenticatedUserId).toBeNull();
+    // `IDENTIFIED` is not sent when the body answers a `ToolFailure`, so a
+    // lookup that found nobody cannot leave the call one step ahead of itself.
+    expect(callFlow.position(ctx).state).toBe("identifying");
   });
 
   test("find_user_id_by_name_zip is case-insensitive on names and exact on zip", async () => {
@@ -121,6 +131,9 @@ describe("authentication", () => {
     );
     expect(isToolFailure(switched) && switched.error.toLowerCase()).toContain("one customer");
     expect(retailSlot.get(ctx).authenticatedUserId).toBe("olivia_ito_3591");
+    // The tool is legal in `serving` — the refusal comes from `authenticateAs`,
+    // not from the gate — so the call stays exactly where it was.
+    expect(callFlow.position(ctx).state).toBe("serving");
   });
 
   test("switching via name + zip is refused too — both doors, one lock", async () => {
@@ -1089,5 +1102,21 @@ describe("transfer_to_human_agents", () => {
     );
     expect(isToolFailure(result)).toBe(false);
     expect(result.transferred).toBe(true);
+  });
+
+  test("the handoff is terminal, so the call cannot be worked afterwards", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    ok(await transferToHumanAgents.execute({ summary: "wants a human" }, ctx));
+
+    const at = callFlow.position(ctx);
+    expect(at.state).toBe("transferred");
+    expect(at.done).toBe(true);
+
+    // The policy's "say nothing else after that" used to be enforced by
+    // nothing: every tool stayed callable, so a model that kept going kept
+    // acting on a call it had given away.
+    const refused = await getUserDetails.execute({ user_id: "olivia_ito_3591" }, ctx);
+    expect(isToolFailure(refused)).toBe(true);
+    expect(isToolFailure(refused) && refused.error).toContain('"transferred"');
   });
 });
