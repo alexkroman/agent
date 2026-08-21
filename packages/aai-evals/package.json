@@ -17,6 +17,7 @@
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
     "eventsource-parser": "catalog:",
+    "nanoevents": "catalog:",
     "undici": "^8.10.0"
   },
   "devDependencies": {

@@ -82,6 +82,7 @@ import {
   UPLOAD_PART_CONCURRENCY,
 } from "../packages/aai/sdk/upload-constants.ts";
 import { createWorkflowApiClient } from "../packages/aai/sdk/workflow-api-client.ts";
+import { parseSweepArgs, usage } from "./_upload-sweep-args.mjs";
 import {
   fixed,
   mbPerSecond,
@@ -111,25 +112,7 @@ const UNATTENDED_BYTES_LIMIT = 2 * 1024 * MIB;
  */
 const WARMUP_ATTEMPTS = 3;
 
-function parseArgs(argv) {
-  const args = new Map();
-  const flags = new Set();
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (!arg.startsWith("--")) continue;
-    const name = arg.slice(2);
-    const next = argv[i + 1];
-    if (next === undefined || next.startsWith("--")) {
-      flags.add(name);
-      continue;
-    }
-    args.set(name, next);
-    i += 1;
-  }
-  return { args, flags };
-}
-
-const { args, flags } = parseArgs(process.argv.slice(2));
+const args = parseSweepArgs();
 
 const numbers = (value, fallback) =>
   value === undefined
@@ -139,30 +122,30 @@ const numbers = (value, fallback) =>
         .map((part) => Number(part.trim()))
         .filter((n) => Number.isFinite(n) && n > 0);
 
-const target = args.get("target");
+const target = args.target;
 if (target === undefined) {
-  console.error("usage: node scripts/upload-sweep.mjs --target <agent base url> [options]");
-  console.error("       see this file's doc comment for the whole vocabulary");
+  console.error("upload-sweep: --target is required.");
+  usage();
   process.exit(2);
 }
 
 const config = {
   target,
-  token: args.get("token"),
-  fileBytes: Math.round(Number(args.get("mib") ?? 32) * MIB),
-  widths: numbers(args.get("concurrency"), [1, 2, 4, 8, 16]),
-  partMib: numbers(args.get("part-mib"), [UPLOAD_PART_BYTES / MIB]),
-  repeat: Number(args.get("repeat") ?? 3),
+  token: args.token,
+  fileBytes: Math.round(Number(args.mib ?? 32) * MIB),
+  widths: numbers(args.concurrency, [1, 2, 4, 8, 16]),
+  partMib: numbers(args["part-mib"], [UPLOAD_PART_BYTES / MIB]),
+  repeat: Number(args.repeat ?? 3),
   // 30s, not 1s: the far side's limiter penalises a connection for a while after
   // it trips, so a short gap measures the previous cell as much as this one — see
   // `transport()`. Lower it only for a target with no such limiter.
-  gapMs: Number(args.get("gap-ms") ?? 30_000),
-  json: args.get("json"),
-  h2: flags.has("h2"),
-  shuffle: !flags.has("no-shuffle"),
-  warmup: !flags.has("no-warmup"),
-  single: !flags.has("no-single"),
-  yes: flags.has("yes"),
+  gapMs: Number(args["gap-ms"] ?? 30_000),
+  json: args.json,
+  h2: args.h2,
+  shuffle: !args["no-shuffle"],
+  warmup: !args["no-warmup"],
+  single: !args["no-single"],
+  yes: args.yes,
 };
 
 /**

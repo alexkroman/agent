@@ -25,23 +25,23 @@
  */
 
 import { readFileSync } from "node:fs";
+import { parseArgs } from "node:util";
 
 import { formatBytes, formatRatioPercent, REPORT_KIND } from "./artifact-size-format.mjs";
 
-function parseArgs(argv) {
-  const args = { acknowledged: false };
-  for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === "--acknowledged") {
-      args.acknowledged = true;
-      continue;
-    }
-    if (argv[i] === "--report-json") {
-      args.reportJson = argv[i + 1];
-      i += 1;
-    }
-  }
-  return args;
-}
+/**
+ * The options this accepts, for `node:util`'s `parseArgs`.
+ *
+ * Declared rather than inferred from argv: the hand-rolled loop this replaced
+ * matched only the space-separated form, so `--report-json=<path>` fell through
+ * both of its branches and the run died on the "required" check below with the
+ * path sitting right there in argv. `strict` gets the same treatment for a
+ * misspelled flag, which that loop ignored silently.
+ */
+const OPTIONS = {
+  acknowledged: { type: "boolean", default: false },
+  "report-json": { type: "string" },
+};
 
 function describe(check) {
   if (check.kind === "runtime-dependency") {
@@ -58,13 +58,14 @@ function describe(check) {
   );
 }
 
-const args = parseArgs(process.argv.slice(2));
-if (args.reportJson === undefined) {
+const { values: args } = parseArgs({ options: OPTIONS, strict: true });
+const reportJson = args["report-json"];
+if (reportJson === undefined) {
   console.error("artifact-size-budget: --report-json <path> is required.");
   process.exit(1);
 }
 
-const report = JSON.parse(readFileSync(args.reportJson, "utf8"));
+const report = JSON.parse(readFileSync(reportJson, "utf8"));
 if (report.kind !== REPORT_KIND) {
   console.error(
     `artifact-size-budget: report has kind "${report.kind}", expected "${REPORT_KIND}".`,
