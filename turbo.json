@@ -226,6 +226,7 @@
       "env": [
         "VITEST_PROFILE",
         "VITEST_INCLUDE",
+        "VITEST_SETUP",
         "VITEST_POOL",
         // `pipeline-reference.integration.test.ts` SKIPS without a reference
         // stack and this turns that skip into a hard failure. Same shape and
@@ -283,6 +284,7 @@
         "AAI_FAULT_PROFILE",
         "VITEST_PROFILE",
         "VITEST_INCLUDE",
+        "VITEST_SETUP",
         "VITEST_POOL"
       ],
       "inputs": [
@@ -336,7 +338,18 @@
         "AAI_FAULT_PROFILE",
         "AAI_REQUIRE_REGISTRY",
         "AAI_REQUIRE_BROWSER",
-        "VITEST_POOL"
+        "VITEST_POOL",
+        // `aai-cli`'s `test:e2e` sets it (`VITEST_SETUP=./_test-setup.ts`), and
+        // `vitest.slow.config.ts` reads it to pick `setupFiles` — the file that
+        // points AAI_CONFIG_DIR away from the developer's real
+        // `~/.config/aai/config.json`. Its three siblings were declared and this
+        // one was not, on all four tasks sharing that config. Not a live strip
+        // (the package script assigns it inline, downstream of strict env mode),
+        // so this is the hash half of the rule the VITEST_PROFILE note states:
+        // a variable selecting what a task DOES belongs in the hash. Found by
+        // `noUndeclaredEnvVars` the first time Biome was allowed to read a
+        // root-level file at all.
+        "VITEST_SETUP"
       ]
     },
     // The behaviour eval tier: a live model, a live key, real tokens. NOT in
@@ -378,6 +391,7 @@
         "AAI_STEP_CAP_HINT",
         "VITEST_PROFILE",
         "VITEST_INCLUDE",
+        "VITEST_SETUP",
         "VITEST_POOL"
       ]
     },
@@ -409,10 +423,44 @@
         "**/*.md"
       ]
     },
-    "//#lint:scripts": {
+    // Everything Biome lints that lives OUTSIDE a package, which `turbo run lint`
+    // structurally cannot reach: that task runs `biome check .` from each
+    // PACKAGE directory, so the repo's own root-level TypeScript and `examples/`
+    // were linted by nothing. Adding them to `files.includes` only PERMITS
+    // biome to read them — something still has to point it at the path, which
+    // is the dead-config trap this repo keeps paying for. Verified by injecting
+    // a format error into `vitest.slow.config.ts`: `biome check scripts/` saw
+    // 51 files and not that one, and every package run saw its own 18.
+    //
+    // Renamed from `//#lint:scripts` because the target is no longer only
+    // `scripts/`. `*.ts` is expanded by the SHELL — biome does not expand globs
+    // itself (`biome check "*.ts"` reports "No such file or directory").
+    "//#lint:root": {
       "inputs": [
         "scripts/**",
+        "examples/**",
+        "*.ts",
         "biome.json"
+      ]
+    },
+    // The root-level TypeScript, which no package's `typecheck` could reach:
+    // each of those runs under its own package tsconfig, and the root
+    // `tsconfig.json` is a base nothing points `tsc` at. See
+    // `tsconfig.tools.json` for the injected-error proof.
+    //
+    // `packages/aai/**` and `packages/aai-ui/**` are inputs because the config
+    // `paths`-maps the two published specifiers to workspace SOURCE, so this
+    // task really does read them — the same rule as the root `tsconfig.json` in
+    // `globalDependencies`: a file a task depends on has to be hashed by that
+    // task, and a root task's globs are the only ones that can see outside a
+    // package. No `dependsOn`: it resolves source, so it needs no `dist`.
+    "//#typecheck:tools": {
+      "inputs": [
+        "*.ts",
+        "examples/**/*.ts",
+        "tsconfig.tools.json",
+        "packages/aai/**/*.ts",
+        "packages/aai-ui/**/*.ts"
       ]
     },
     "docs": {

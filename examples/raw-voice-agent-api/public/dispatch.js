@@ -20,7 +20,7 @@ export function createKv() {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const storageKey = localStorage.key(i);
-      if (storageKey && storageKey.startsWith(KV_PREFIX)) {
+      if (storageKey?.startsWith(KV_PREFIX)) {
         const key = storageKey.slice(KV_PREFIX.length);
         mem.set(key, JSON.parse(localStorage.getItem(storageKey)));
       }
@@ -212,7 +212,15 @@ const TYPE_KEYWORDS = {
   ],
   fire: ["fire", "smoke", "flames", "burning", "arson"],
   hazmat: ["chemical", "spill", "gas leak", "fumes", "radiation", "contamination", "hazmat"],
-  traffic: ["accident", "crash", "collision", "vehicle", "rollover", "pedestrian struck", "hit and run"],
+  traffic: [
+    "accident",
+    "crash",
+    "collision",
+    "vehicle",
+    "rollover",
+    "pedestrian struck",
+    "hit and run",
+  ],
   crime: [
     "robbery",
     "assault",
@@ -224,7 +232,15 @@ const TYPE_KEYWORDS = {
     "hostage",
     "active shooter",
   ],
-  natural_disaster: ["earthquake", "flood", "tornado", "hurricane", "landslide", "wildfire", "tsunami"],
+  natural_disaster: [
+    "earthquake",
+    "flood",
+    "tornado",
+    "hurricane",
+    "landslide",
+    "wildfire",
+    "tsunami",
+  ],
   utility: ["power outage", "downed line", "water main", "gas main", "transformer"],
   other: [],
 };
@@ -248,7 +264,10 @@ export function recommendType(description) {
 export const PROTOCOLS = [
   {
     name: "Mass Casualty Incident (MCI)",
-    triggers: { types: ["medical", "fire", "natural_disaster", "traffic"], minSeverity: "critical" },
+    triggers: {
+      types: ["medical", "fire", "natural_disaster", "traffic"],
+      minSeverity: "critical",
+    },
     steps: [
       "Establish Incident Command",
       "Request mutual aid if >10 casualties",
@@ -332,7 +351,9 @@ export const PROTOCOLS = [
 export function getApplicableProtocols(type, severity) {
   const severityRank = { critical: 4, urgent: 3, moderate: 2, minor: 1 };
   return PROTOCOLS.filter(
-    (p) => p.triggers.types.includes(type) && severityRank[severity] >= severityRank[p.triggers.minSeverity],
+    (p) =>
+      p.triggers.types.includes(type) &&
+      severityRank[severity] >= severityRank[p.triggers.minSeverity],
   );
 }
 
@@ -382,7 +403,9 @@ export function recommendResources(type, severity, state) {
 // ─── System alert level calculation ──────────────────────────────────────────────
 
 export function recalculateAlertLevel(state) {
-  const activeIncidents = Object.values(state.incidents).filter((i) => !["resolved"].includes(i.status));
+  const activeIncidents = Object.values(state.incidents).filter(
+    (i) => !["resolved"].includes(i.status),
+  );
   const criticalCount = activeIncidents.filter((i) => i.severity === "critical").length;
   const totalActive = activeIncidents.length;
   const availableResources = state.resources.filter((r) => r.status === "available").length;

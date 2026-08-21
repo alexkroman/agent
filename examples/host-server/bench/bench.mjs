@@ -24,12 +24,10 @@ const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
   return i === -1 ? fallback : process.argv[i + 1];
 };
-const STEPS = String(arg("steps", "25,50,100,200,400"))
-  .split(",")
-  .map(Number);
+const STEPS = String(arg("steps", "25,50,100,200,400")).split(",").map(Number);
 const HOLD_S = Number(arg("hold", 12));
 const FRAME_MS = Number(arg("frame-ms", 20));
-const SAMPLE_RATE = 16000;
+const SAMPLE_RATE = 16_000;
 const PORT = Number(arg("port", 8787));
 
 // One shared buffer for every sender: generating per-connection audio would
@@ -162,13 +160,11 @@ async function main() {
   await new Promise((r) => setTimeout(r, 1500));
 
   const baseline = readProc(child.pid);
-  console.log(
-    `server pid ${child.pid} · baseline RSS ${(baseline.rssKb / 1024).toFixed(1)} MiB\n`,
-  );
+  console.log(`server pid ${child.pid} · baseline RSS ${(baseline.rssKb / 1024).toFixed(1)} MiB\n`);
   console.log(
     "  conns   ready  RSS MiB  KiB/conn   CPU%  drvCPU  loop lag  ready p50/p95   audio in/out",
   );
-  console.log("  " + "─".repeat(84));
+  console.log(`  ${"─".repeat(84)}`);
 
   // One shared timer drives every sender: thousands of per-connection timers
   // would measure the driver's scheduler, not the server.

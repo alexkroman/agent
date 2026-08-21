@@ -13,7 +13,7 @@
 
 import { createKv } from "./dispatch.js";
 import { GREETING, SYSTEM_PROMPT } from "./prompt.js";
-import { TOOLS, TOOL_SCHEMAS } from "./tools.js";
+import { TOOL_SCHEMAS, TOOLS } from "./tools.js";
 
 // The Voice Agent API defaults to audio/pcm at 24 kHz, PCM16 mono, in both
 // directions — so we run the whole audio path at 24 kHz and skip resampling.
@@ -25,7 +25,7 @@ const VOICE = "david"; // deep, calming, conversational — fits a dispatcher
 
 function uint8ToBase64(bytes) {
   let binary = "";
-  const chunk = 0x8000;
+  const chunk = 32_768;
   for (let i = 0; i < bytes.length; i += chunk) {
     binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
   }
@@ -238,7 +238,7 @@ class DispatchSession {
     mic.connect(this.capNode);
     this.capNode.port.onmessage = (e) => {
       if (e.data.event !== "chunk") return;
-      if (!this.running || !this.sessionReady) return;
+      if (!(this.running && this.sessionReady)) return;
       this.sendAudio(new Uint8Array(e.data.buffer));
     };
 
@@ -272,7 +272,9 @@ class DispatchSession {
     ws.addEventListener("close", (ev) => {
       if (!this.sessionReady && this.started) {
         this.ui.showError(
-          ev.code === 1008 ? "Unauthorized — check ASSEMBLYAI_API_KEY" : `Connection closed (code ${ev.code})`,
+          ev.code === 1008
+            ? "Unauthorized — check ASSEMBLYAI_API_KEY"
+            : `Connection closed (code ${ev.code})`,
           "connection",
         );
       }
@@ -454,7 +456,7 @@ class DispatchSession {
     this.toolChain = Promise.resolve();
     try {
       this.capNode?.port.postMessage({ event: "stop" });
-      this.stream?.getTracks().forEach((t) => t.stop());
+      for (const track of this.stream?.getTracks() ?? []) track.stop();
       this.ctx?.close();
     } catch {
       /* ignore */
@@ -469,7 +471,12 @@ class DispatchSession {
 // ─── UI ─────────────────────────────────────────────────────────────────────
 
 const alertColors = { green: "#22c55e", yellow: "#eab308", orange: "#f97316", red: "#ef4444" };
-const severityColors = { critical: "#ef4444", urgent: "#f97316", moderate: "#eab308", minor: "#22c55e" };
+const severityColors = {
+  critical: "#ef4444",
+  urgent: "#f97316",
+  moderate: "#eab308",
+  minor: "#22c55e",
+};
 const statusColors = {
   incoming: "#818cf8",
   triaged: "#a78bfa",
@@ -676,7 +683,8 @@ class UI {
     this.el("stat-active").style.color = active.length > 3 ? "#ef4444" : "#e2e8f0";
     this.el("stat-resolved").textContent = String(resolved);
     this.el("stat-total").textContent = String(list.length);
-    this.el("incident-count").textContent = `${list.length} incident${list.length !== 1 ? "s" : ""} logged`;
+    this.el("incident-count").textContent =
+      `${list.length} incident${list.length !== 1 ? "s" : ""} logged`;
 
     const container = this.el("active-incidents");
     if (active.length === 0) {

@@ -11,11 +11,11 @@
 // pushes a UI event ("incidents") that the dashboard listens to.
 
 import {
-  INCIDENT_INDEX_KEY,
   calculateTriageScore,
   deleteIncidentSnapshot,
   getApplicableProtocols,
   getState,
+  INCIDENT_INDEX_KEY,
   now,
   recalculateAlertLevel,
   recommendResources,
@@ -55,10 +55,16 @@ const incidentCreate = {
     "Create a new incident from an incoming emergency call.",
     {
       location: { type: "string", description: "Address or location description" },
-      description: { type: "string", description: "Nature of the emergency as described by caller" },
+      description: {
+        type: "string",
+        description: "Nature of the emergency as described by caller",
+      },
       callerName: { type: "string", description: "Caller's name" },
       callerPhone: { type: "string", description: "Callback number" },
-      estimatedCasualties: { type: "number", description: "Estimated number of casualties if known" },
+      estimatedCasualties: {
+        type: "number",
+        description: "Estimated number of casualties if known",
+      },
       hazards: {
         type: "array",
         items: { type: "string" },
@@ -141,7 +147,11 @@ const incidentTriage = {
     "Triage an incident — confirm or override severity, type, hazards, and casualty count.",
     {
       incidentId: { type: "string", description: "The incident ID" },
-      severity: { type: "string", enum: SEVERITY_ENUM, description: "Confirmed severity after triage" },
+      severity: {
+        type: "string",
+        enum: SEVERITY_ENUM,
+        description: "Confirmed severity after triage",
+      },
       type: { type: "string", enum: TYPE_ENUM, description: "Confirmed incident type" },
       additionalHazards: {
         type: "array",
@@ -240,8 +250,10 @@ const incidentUpdateStatus = {
     if (args.notes) inc.notes.push(args.notes);
 
     if (args.casualtyUpdate) {
-      if (args.casualtyUpdate.confirmed !== undefined) inc.casualties.confirmed = args.casualtyUpdate.confirmed;
-      if (args.casualtyUpdate.treated !== undefined) inc.casualties.treated = args.casualtyUpdate.treated;
+      if (args.casualtyUpdate.confirmed !== undefined)
+        inc.casualties.confirmed = args.casualtyUpdate.confirmed;
+      if (args.casualtyUpdate.treated !== undefined)
+        inc.casualties.treated = args.casualtyUpdate.treated;
     }
 
     if (args.status === "resolved") {
@@ -345,12 +357,18 @@ const incidentEscalate = {
     if (args.newSeverity) inc.severity = args.newSeverity;
     inc.status = "escalated";
     inc.updatedAt = now();
-    inc.timeline.push({ time: now(), event: `ESCALATED (Level ${inc.escalationLevel}): ${args.reason}` });
+    inc.timeline.push({
+      time: now(),
+      event: `ESCALATED (Level ${inc.escalationLevel}): ${args.reason}`,
+    });
     inc.notes.push(`Escalation: ${args.reason}`);
 
     if (args.requestMutualAid) {
       state.mutualAidRequested = true;
-      inc.timeline.push({ time: now(), event: "Mutual aid requested from neighboring jurisdictions" });
+      inc.timeline.push({
+        time: now(),
+        event: "Mutual aid requested from neighboring jurisdictions",
+      });
       state.resources.push(
         {
           id: `MA-${Date.now()}-1`,
@@ -373,7 +391,12 @@ const incidentEscalate = {
       );
     }
 
-    inc.triageScore = calculateTriageScore(inc.severity, inc.type, inc.casualties.estimated, inc.hazards.length);
+    inc.triageScore = calculateTriageScore(
+      inc.severity,
+      inc.type,
+      inc.casualties.estimated,
+      inc.hazards.length,
+    );
     recalculateAlertLevel(state);
     await saveState(ctx.kv, state);
 
@@ -387,7 +410,10 @@ const incidentEscalate = {
       newSeverity: inc.severity,
       newTriageScore: inc.triageScore,
       mutualAidRequested: args.requestMutualAid,
-      additionalResourcesAvailable: additionalResources.map((r) => ({ callsign: r.callsign, type: r.type })),
+      additionalResourcesAvailable: additionalResources.map((r) => ({
+        callsign: r.callsign,
+        type: r.type,
+      })),
       systemAlertLevel: state.alertLevel,
       message: `ESCALATION CONFIRMED — ${args.incidentId} now Level ${inc.escalationLevel}. ${additionalResources.length} additional resource(s) available for dispatch.`,
     };
@@ -503,7 +529,9 @@ const resourcesDispatch = {
       remainingAvailableResources: availableCount,
       systemAlertLevel: state.alertLevel,
       capacityWarning:
-        availableCount <= 3 ? "WARNING: Resource capacity critically low. Consider mutual aid." : undefined,
+        availableCount <= 3
+          ? "WARNING: Resource capacity critically low. Consider mutual aid."
+          : undefined,
     };
   },
 };
@@ -577,7 +605,9 @@ const resourcesUpdateStatus = {
   ),
   async execute(args, ctx) {
     const state = await getState(ctx.kv);
-    const resource = state.resources.find((r) => r.callsign.toLowerCase() === args.callsign.toLowerCase());
+    const resource = state.resources.find(
+      (r) => r.callsign.toLowerCase() === args.callsign.toLowerCase(),
+    );
     if (!resource) return { error: `Resource ${args.callsign} not found` };
 
     const previousStatus = resource.status;
@@ -638,7 +668,9 @@ const opsDashboard = {
       .filter((i) => i.status !== "resolved")
       .sort((a, b) => b.triageScore - a.triageScore);
 
-    const resolvedCount = Object.values(state.incidents).filter((i) => i.status === "resolved").length;
+    const resolvedCount = Object.values(state.incidents).filter(
+      (i) => i.status === "resolved",
+    ).length;
 
     const resourceSummary = {
       total: state.resources.length,
@@ -731,7 +763,8 @@ const SCENARIOS = {
       },
       {
         location: "Main St and 5th Ave — fuel spill",
-        description: "Diesel fuel spill from delivery truck spreading toward storm drain, ~50 gallons",
+        description:
+          "Diesel fuel spill from delivery truck spreading toward storm drain, ~50 gallons",
         type: "hazmat",
         severity: "urgent",
       },
@@ -743,7 +776,8 @@ const SCENARIOS = {
     incidents: [
       {
         location: "200 Industrial Parkway",
-        description: "3-story warehouse fully involved, possible trapped occupants on 2nd/3rd floor",
+        description:
+          "3-story warehouse fully involved, possible trapped occupants on 2nd/3rd floor",
         type: "fire",
         severity: "critical",
       },
@@ -811,7 +845,8 @@ const SCENARIOS = {
       },
       {
         location: "I-95 southbound — hazmat",
-        description: "Tanker leaking unknown liquid, placards not visible, exclusion zone being set up",
+        description:
+          "Tanker leaking unknown liquid, placards not visible, exclusion zone being set up",
         type: "hazmat",
         severity: "critical",
       },
@@ -826,7 +861,13 @@ const opsRunScenario = {
     {
       scenario: {
         type: "string",
-        enum: ["mass_casualty", "multi_alarm_fire", "active_shooter", "natural_disaster", "highway_pileup"],
+        enum: [
+          "mass_casualty",
+          "multi_alarm_fire",
+          "active_shooter",
+          "natural_disaster",
+          "highway_pileup",
+        ],
         description: "Scenario type to simulate",
       },
     },

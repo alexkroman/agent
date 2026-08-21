@@ -59,7 +59,6 @@ import {
 } from "./workspace-store.ts";
 
 const log = createLogger("service");
-const _sandboxLog = createLogger("sandbox");
 
 // Re-exported for the studio entry, which calls it at boot; `buildStorage` is
 // NOT re-exported — this module is its only caller, and the studio reaches the
