@@ -53,4 +53,5 @@ overrides:
   unrun: 0.2.39
 
 patchedDependencies:
+  '@workflow/core@4.8.2': patches/@workflow__core@4.8.2.patch
   '@workflow/world-local@4.2.4': patches/@workflow__world-local@4.2.4.patch

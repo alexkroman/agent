@@ -529,6 +529,22 @@ describe("GET /runs/:id/stream", () => {
     expect(body).toContain("event: done");
   });
 
+  test("a budget of zero opens NO stream", async () => {
+    // The poll a caught-up page makes once a second: `useWorkflowProgress`
+    // advances `startIndex` by what it has consumed, so a run mid-step answers
+    // this shape for as long as the step writes nothing. Opening a world read to
+    // take no chunks from it is the read that leaked a listener pair per
+    // request — see `workflow-stream-readers.test.ts`.
+    const stream = vi.fn(async () => chunkStream([]));
+    harness = await serve({ engine: () => fakeClient({ stream, streamTail: async () => 2 }) });
+    const body = await (
+      await fetch(`${harness.url}/workflows/runs/wrun_1/stream?startIndex=3`)
+    ).text();
+    expect(stream).not.toHaveBeenCalled();
+    expect(body).not.toContain("event: chunk");
+    expect(body).toContain("event: done");
+  });
+
   test("`complete` reports the RUN's state, which is what stops a reader", async () => {
     harness = await serve({
       engine: () =>
