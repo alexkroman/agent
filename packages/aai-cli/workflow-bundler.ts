@@ -216,7 +216,11 @@ export function findVmRequires(workflowCode: string): VmRequireSite[] {
     }
     for (const [, specifier] of line.matchAll(REQUIRE_CALL)) {
       if (specifier === undefined || !RUNTIME_MODULES.has(specifier)) continue;
-      const key = `${specifier} ${module ?? ""}`;
+      // A NUL separates the two halves (neither can contain one, so the key
+      // cannot collide) and is spelled as an ESCAPE, never the raw byte: one
+      // control character makes a file binary to `git grep`, and every ratchet
+      // here is a `git grep`. See "Never write a control character" in AGENTS.md.
+      const key = `${specifier}\u0000${module ?? ""}`;
       if (seen.has(key)) continue;
       seen.add(key);
       found.push({ specifier, module });
