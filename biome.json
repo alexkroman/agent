@@ -4,6 +4,8 @@
     "includes": [
       "packages/**",
       "scripts/**",
+      "*.ts",
+      "examples/**",
       "!**/node_modules",
       "!**/dist",
       "!**/coverage",
@@ -110,7 +112,7 @@
         "noAssignInExpressions": "error",
         "noDoubleEquals": "error",
         "noEvolvingTypes": "error",
-        "noSkippedTests": "warn",
+        "noSkippedTests": "error",
         "useGuardForIn": "error",
         "noConstantBinaryExpressions": "error",
         "noDeprecatedImports": "error",
@@ -249,6 +251,32 @@
             "noArrayIndexKey": "off",
             "noEvolvingTypes": "off",
             "noEmptyBlockStatements": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["examples/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUndeclaredDependencies": "off",
+            "useImportExtensions": "off"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
+          },
+          "style": {
+            "noNestedTernary": "off",
+            "noNonNullAssertion": "off",
+            "useExplicitLengthCheck": "off"
+          },
+          "security": {
+            "noSecrets": "off"
+          },
+          "suspicious": {
+            "noEmptyBlockStatements": "off",
+            "noEvolvingTypes": "off"
           }
         }
       }

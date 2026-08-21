@@ -22,6 +22,7 @@
     "aai": "node packages/aai-cli/cli.ts",
     "dev:aai-server": "pnpm --filter aai-studio-server dev",
     "typecheck": "turbo run typecheck",
+    "typecheck:tools": "tsc -p tsconfig.tools.json",
     "lint": "turbo run lint",
     "lint:fix": "biome check --write .",
     "check": "bash scripts/check.sh",
@@ -65,7 +66,7 @@
     "release": "turbo run build && changeset publish",
     "prepare": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || lefthook install --force",
     "test:aai-studio-server": "pnpm --filter aai-studio-server test",
-    "lint:scripts": "biome check scripts/"
+    "lint:root": "biome check scripts/ examples/ *.ts"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

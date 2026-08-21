@@ -1,3 +1,4 @@
+import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -23,6 +24,73 @@ import { fileURLToPath } from "node:url";
 export const sharedSetupFiles = [
   fileURLToPath(new URL("./scripts/fail-on-process-warning.mjs", import.meta.url)),
 ];
+
+/**
+ * How many test workers ONE vitest run may spawn.
+ *
+ * Turbo's concurrency caps how many TASKS run at once; it says nothing about
+ * how many processes each one spawns, and vitest's own default is
+ * `max(cpus - 1, 1)` per run. The product is what the machine actually feels,
+ * and nothing bounded it: on a 4-core box `scripts/check.sh` computes
+ * TURBO_CONCURRENCY=2 (`max(2, cores / 2)`), so `pnpm check` ran 2 test tasks x
+ * 3 workers + 2 vitest mains = 8 processes on 4 cores.
+ *
+ * That is not a slowness bug, it is a CORRECTNESS one, and check.sh's own
+ * comment says so — aai-server's credential tests run PBKDF2 at 600k
+ * iterations, which stretches from ~300ms to ~750ms per hash under contention
+ * and pushes whole tests past their timeout. It was measured costing a push:
+ * `aai-cli#test:coverage` failed 4 tests in the full check (wall 364s against
+ * `transform 806.78s`, i.e. ~2.2x oversubscribed) and passed 560/560 in
+ * isolation on the identical commit. The concurrency cap alone could not
+ * prevent that, because it was never the whole product.
+ *
+ * So each run gets `parallelism / TURBO_CONCURRENCY`, which holds the product at
+ * the core count however turbo is invoked. With no TURBO_CONCURRENCY — a bare
+ * `pnpm test:aai-cli`, where nothing else is competing — this reproduces
+ * vitest's own default rather than inventing a different one, so a standalone
+ * run is unchanged. **CI is therefore also unchanged**: its test matrix runs
+ * `turbo run test:coverage --filter <one package>` and exports no
+ * TURBO_CONCURRENCY, so every job keeps the full default budget.
+ *
+ * Verified end to end on 8 CPU-bound files through this very object, 4 cores:
+ * TURBO_CONCURRENCY unset -> 3906ms (budget 3), =2 -> 4825ms (budget 2),
+ * =4 -> 8949ms (budget 1). Monotonic, and the last matches a standalone
+ * `--maxWorkers=1` at 9015ms. The knob was confirmed to work from a CONFIG FILE
+ * and not only as a CLI flag (9015ms vs 2820ms), which is what this relies on.
+ * Note a wall-clock A/B on a real suite proves nothing here: aai-cli's
+ * dev-server specs measured 112s vs 109s at 1 vs 4 workers, because they are
+ * dominated by subprocess spawn and I/O rather than worker parallelism — those
+ * child processes are also why the naive worker arithmetic UNDERSTATES the load
+ * this bound exists to contain.
+ *
+ * Both branches return a NUMBER: a conditional spread of an optional
+ * `maxWorkers` is what `guard-invariants` rules 2 and 22 exist to stop.
+ *
+ * No `?? cpus().length` fallback: `engines` requires Node >= 26 and
+ * `availableParallelism` has existed since 18.14, so as a NAMED ESM import a
+ * missing one would throw at import time and never reach a fallback anyway.
+ *
+ * TURBO_CONCURRENCY does NOT need `globalPassThroughEnv` to reach a task, which
+ * is worth recording because the opposite is this repo's standing rule and the
+ * declaration was written first on that reasoning, before being measured.
+ * `TURBO_*` is turbo's own namespace and reaches tasks whatever strict env mode
+ * does to everything else. A/B on the real gate, `--force` each time: exported
+ * and declared -> the task read 2; exported and UNdeclared -> still 2; not
+ * exported at all -> unset, and this falls back to vitest's default of 3.
+ *
+ * It is declared there anyway, and for the honest reason: `noUndeclaredEnvVars`
+ * flags this line otherwise, and a warning nothing fails on is precisely how
+ * this repo ends up with rules that check nothing. Never in a task's `env` —
+ * it changes how many processes run the tests, never what they conclude, so it
+ * must not fragment the cache across core counts.
+ */
+const workerBudget = () => {
+  const parallelism = availableParallelism();
+  const turboConcurrency = Math.max(1, Number(process.env.TURBO_CONCURRENCY) || 1);
+  return turboConcurrency > 1
+    ? Math.max(1, Math.floor(parallelism / turboConcurrency))
+    : Math.max(parallelism - 1, 1);
+};
 
 /**
  * Shared Vitest configuration used by the root workspace config
@@ -66,6 +134,10 @@ export const sharedConfig = {
     // already true of every change that has to survive CI. `--update` still
     // wins, since a CLI flag overrides config.
     update: "none" as const,
+    // See `workerBudget` above: turbo's concurrency bounds TASKS, this bounds
+    // the WORKERS each task spawns, and only the product is what the machine
+    // feels. Spread into every package config via `...sharedConfig.test`.
+    maxWorkers: workerBudget(),
   },
 };
 

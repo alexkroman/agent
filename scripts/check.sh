@@ -110,9 +110,9 @@ if [ "$MODE" = "--local" ]; then
   # turbo's inputs, and snapshot `update: "none"`). It is close to free:
   # measured on aai-ui, 17.0s → 17.9s.
   if ! pnpm exec turbo run \
-    build typecheck lint check:publint \
+    build typecheck typecheck:tools lint check:publint \
     check:syncpack check:sherif check:knip \
-    lint:scripts \
+    lint:root \
     test:coverage \
     --continue; then
     echo -e "\n${RED}Some checks failed.${NC}"
@@ -124,7 +124,14 @@ if [ "$MODE" = "--local" ]; then
   # a package average by a fraction of a point. `turbo.json` declares
   # `coverage/**` as test:coverage's output, so a cache hit restores the data and
   # this still measures the current tree.
-  pnpm run check:coverage-per-file || failed=1
+  # `|| RATCHET_STATUS=1`, not `|| failed=1`: `failed` is a `local` of
+  # run_ratchets, so at THIS scope it was a fresh global that nothing read —
+  # and the `||` suppresses `set -e` on the way past. The gate could fail and
+  # this script still printed "All checks passed." and exited 0. CI runs the
+  # script directly per matrix package, so the only thing it broke was the
+  # local run and the pre-push hook: the green-locally/red-in-CI shape, on the
+  # one gate whose failure is hardest to predict from a diff.
+  pnpm run check:coverage-per-file || RATCHET_STATUS=1
   pnpm run check:publish-names
   # After build, and it PACKS: `catalog:` / `workspace:` are pnpm-only
   # protocols that pnpm rewrites when it makes a tarball, and that rewrite is
@@ -165,9 +172,9 @@ if [ "$MODE" = "--local" ]; then
 else
   echo -e "\n${YELLOW}Running full CI checks (via turbo)${NC}"
   if ! pnpm exec turbo run \
-    build typecheck lint check:publint check:attw \
+    build typecheck typecheck:tools lint check:publint check:attw \
     check:syncpack check:sherif check:knip check:markdown \
-    lint:scripts \
+    lint:root \
     test:coverage check:integration check:scenario docs \
     --continue; then
     echo -e "\n${RED}Some checks failed.${NC}"
@@ -176,7 +183,14 @@ else
   # See the note on the same call in the --local branch: this reads
   # test:coverage's output and floors the FILE, which the per-package floors
   # cannot see.
-  pnpm run check:coverage-per-file || failed=1
+  # `|| RATCHET_STATUS=1`, not `|| failed=1`: `failed` is a `local` of
+  # run_ratchets, so at THIS scope it was a fresh global that nothing read —
+  # and the `||` suppresses `set -e` on the way past. The gate could fail and
+  # this script still printed "All checks passed." and exited 0. CI runs the
+  # script directly per matrix package, so the only thing it broke was the
+  # local run and the pre-push hook: the green-locally/red-in-CI shape, on the
+  # one gate whose failure is hardest to predict from a diff.
+  pnpm run check:coverage-per-file || RATCHET_STATUS=1
   # check:e2e runs ALONE, in its own invocation after everything else.
   #
   # It is not a well-behaved sibling: the mock registry rebuilds and

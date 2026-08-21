@@ -1,0 +1,39 @@
+{
+  // The files that no other program could see.
+  //
+  // Every package's `typecheck` runs under its OWN tsconfig, and the root
+  // `tsconfig.json` is a base that nothing ever points `tsc` at — so the repo's
+  // own root-level TypeScript was checked by nothing. Verified by injecting
+  // `const x: number = "s"` into `vitest.slow.config.ts`: `turbo run typecheck`
+  // reported 15/15 successful and `biome check` reported the path IGNORED (its
+  // `files.includes` was `packages/**` + `scripts/**`). That file is the config
+  // BOTH slow tiers run under and a `globalDependencies` entry — a type error in
+  // it was unreportable by any gate in the repo.
+  //
+  // `vitest.shared.ts` was the exception and not by design: each package's
+  // `vitest.config.ts` imports it, so it entered those programs transitively.
+  // A root file only gets checked if something happens to import it, which is
+  // not a property to rely on.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./.tsbuildinfo/tools.tsbuildinfo",
+    "types": ["node"],
+    // `examples/` is deliberately NOT a pnpm workspace member (the workspace is
+    // `packages/*` + `docs`), so it has no `node_modules` and its manifest pins
+    // the PUBLISHED `@alexkroman1/aai`. Mapping the two specifiers to workspace
+    // source is the same thing `packages/aai-templates/tsconfig.json` does, and
+    // it checks the question worth asking: does the example still compile
+    // against the SDK as it stands today.
+    "paths": {
+      "@alexkroman1/aai": ["./packages/aai/index.ts"],
+      "@alexkroman1/aai-ui": ["./packages/aai-ui/index.ts"]
+    }
+  },
+  // Generic on purpose: tsc's `include` only sets ROOT files, so anything not
+  // matched here is checked by nothing at all. A glob means the next root-level
+  // config or example is covered on creation rather than on the next edit to
+  // this file — the argument `packages/aai-templates/tsconfig.json` spells out
+  // after its own hand-kept list fell three files behind.
+  "include": ["*.ts", "examples/**/*.ts"]
+}

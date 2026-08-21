@@ -19,12 +19,27 @@ export function makeCert() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bench-tls-"));
   const key = path.join(dir, "key.pem");
   const cert = path.join(dir, "cert.pem");
-  execFileSync("openssl", [
-    "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-    "-keyout", key, "-out", cert, "-days", "1",
-    "-subj", "/CN=127.0.0.1",
-    "-addext", "subjectAltName=IP:127.0.0.1",
-  ], { stdio: "ignore" });
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      key,
+      "-out",
+      cert,
+      "-days",
+      "1",
+      "-subj",
+      "/CN=127.0.0.1",
+      "-addext",
+      "subjectAltName=IP:127.0.0.1",
+    ],
+    { stdio: "ignore" },
+  );
   return { key, cert, dir };
 }
 
@@ -83,7 +98,7 @@ export function startFakeStt({ key, cert, partialEveryFrames = 25 }) {
  * ends the turn. Sizing the audio to the text keeps the outbound byte volume
  * in the right order of magnitude rather than making playback free.
  */
-export function startFakeTts({ key, cert, sampleRate = 16000 }) {
+export function startFakeTts({ key, cert, sampleRate = 16_000 }) {
   const httpsServer = https.createServer({
     key: fs.readFileSync(key),
     cert: fs.readFileSync(cert),
@@ -102,7 +117,9 @@ export function startFakeTts({ key, cert, sampleRate = 16000 }) {
         // ~70ms of speech per word, PCM16 mono.
         const words = Math.max(1, msg.text.trim().split(/\s+/).length);
         const samples = Math.round(sampleRate * 0.07 * words);
-        ws.send(JSON.stringify({ type: "Audio", audio: Buffer.alloc(samples * 2).toString("base64") }));
+        ws.send(
+          JSON.stringify({ type: "Audio", audio: Buffer.alloc(samples * 2).toString("base64") }),
+        );
         return;
       }
       if (msg.type === "Flush") {

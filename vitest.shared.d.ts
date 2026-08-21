@@ -12,20 +12,21 @@
  */
 export declare const sharedSetupFiles: string[];
 export declare const sharedConfig: {
+  resolve: {
+    conditions: string[];
+  };
+  ssr: {
     resolve: {
-        conditions: string[];
+      conditions: string[];
     };
-    ssr: {
-        resolve: {
-            conditions: string[];
-        };
-    };
-    test: {
-        reporters: string[];
-        restoreMocks: boolean;
-        unstubEnvs: boolean;
-        setupFiles: string[];
-        update: "none";
-    };
+  };
+  test: {
+    reporters: string[];
+    restoreMocks: boolean;
+    unstubEnvs: boolean;
+    setupFiles: string[];
+    update: "none";
+    maxWorkers: number;
+  };
 };
 export declare const sharedCoverageExclude: string[];
