@@ -26,7 +26,7 @@
  * ## The endpoint is the SDK's; the STEPS are ours
  *
  * `stepTranscribeUpload` / `stepTranscribeSubmit` / `stepTranscribePoll` on
- * `@alexkroman1/aai/utils` own the URL, the raw-key auth, the windowed streaming
+ * `@alexkroman1/aai/step` own the URL, the raw-key auth, the windowed streaming
  * upload, the PLURAL `speech_models` field and the failure classification. This file
  * used to spell all of that out, and so did `spoken-summary` — the same ~200 lines
  * twice, reworded, identical in behaviour, and drifting apart at the edges.

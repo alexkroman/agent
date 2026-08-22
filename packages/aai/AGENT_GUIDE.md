@@ -370,12 +370,12 @@ Three rules, all of which fail silently if broken:
 ### A step's env, and calling a model from one
 
 A step has no `ctx`, so the two things tool code takes for granted come from
-`@alexkroman1/aai/utils` instead. Import them from THERE and not from
+`@alexkroman1/aai/step` instead. Import them from THERE and not from
 `@alexkroman1/aai` — a `workflows/*.ts` module is bundled separately, and the
 root barrel would drag the whole SDK into that bundle.
 
 ```ts no-check
-import { requireStepEnv, stepEnv, StepGenerateError, stepGenerate } from "@alexkroman1/aai/utils";
+import { requireStepEnv, stepEnv, StepGenerateError, stepGenerate } from "@alexkroman1/aai/step";
 import { FatalError } from "workflow";
 
 async function summarize(url: string, text: string) {
@@ -410,11 +410,11 @@ deploy. Ask it for JSON and parse the reply if you need a shape.
 ### A step's HTTP: use `stepFetch`, not `fetch`
 
 Any outbound request from a step goes through `stepFetch` (also
-`@alexkroman1/aai/utils`). It is not a style preference — `fetch` is the wrong
+`@alexkroman1/aai/step`). It is not a style preference — `fetch` is the wrong
 call to make from a step, for a reason nothing at the call site shows:
 
 ```ts no-check
-import { multipartBody, stepFetch, StepTransportError } from "@alexkroman1/aai/utils";
+import { multipartBody, stepFetch, StepTransportError } from "@alexkroman1/aai/step";
 
 async function transcribeChunk(key: string, bytes: Uint8Array, index: number) {
   "use step";
@@ -444,7 +444,7 @@ async function transcribeChunk(key: string, bytes: Uint8Array, index: number) {
 global `fetch` offers `h2` in ALPN and the far side decides; a server that takes
 it gets every concurrent request from your process multiplexed onto ONE TCP
 connection, sharing one flow-control window. That is fine for small JSON calls
-and pathological for `mapInBatches` over large bodies. Measured on 8 concurrent
+and pathological for `mapConcurrent` over large bodies. Measured on 8 concurrent
 17.66 MB uploads: `fetch` landed 14 of 16 at p50 8094ms, HTTP/1.1 landed 16 of
 16 at p50 3037ms.
 
@@ -481,11 +481,11 @@ it for free.
 
 A workflow whose answer is a FILE — a summary read aloud, a rendered image, a
 generated PDF — needs two things a first draft reaches for and does not find.
-Both are on `@alexkroman1/aai/utils`, and `spoken-summary` is the template that
+Both are on `@alexkroman1/aai/step`, and `spoken-summary` is the template that
 shows the whole round trip.
 
 ```ts no-check
-import { stepSpeak, writeUpload } from "@alexkroman1/aai/utils";
+import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(script: string) {
   "use step";
@@ -571,7 +571,7 @@ request. Everything else is the same file, React and Tailwind included.
 ```tsx no-check
 import { createWorkflowApi, page, useWorkflowRun } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
-import type { WorkflowOutputOf } from "@alexkroman1/aai";
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import { useState } from "react";
 import type { digest } from "./agent.ts";
 

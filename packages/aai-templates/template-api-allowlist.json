@@ -67,6 +67,8 @@
     "assemblyAIS2s",
     "createKeyedLock",
     "errorDetail",
+    "isRecord",
+    "responseErrorMessage",
     "safeJsonParse",
     "spokenOrdinal",
     "withLock"
@@ -195,7 +197,6 @@
   ],
   "@alexkroman1/aai-ui": [
     "AgentCustomEvent",
-    "BaseOptions",
     "ButtonSize",
     "ButtonVariant",
     "CheckboxField",
@@ -203,8 +204,6 @@
     "ClientConfigResponse",
     "ClientHandle",
     "ClientTheme",
-    "ComponentTier",
-    "ConfigTier",
     "Controls",
     "ControlsProps",
     "DEFAULT_PROGRESS_POLL_MS",
@@ -247,7 +246,6 @@
     "UseWorkflowSubmitOptions",
     "UseWorkflowsOptions",
     "UseWorkflowsResult",
-    "VOICE_CAPTURE_CONSTRAINTS",
     "VoiceSessionOptions",
     "WebSocketConstructor",
     "WorkflowApi",

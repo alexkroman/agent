@@ -19,7 +19,7 @@
  * The first three are ordinary step work. The fourth was impossible until two
  * things existed, and they are what this template is the reference use of:
  *
- * - **`stepSpeak`** (`@alexkroman1/aai/utils`) synthesizes from inside a step.
+ * - **`stepSpeak`** (`@alexkroman1/aai/step`) synthesizes from inside a step.
  *   The session TTS surface cannot be used here at all: a `TtsSession` is an
  *   event stream wired into a live pipeline's playback, with a turn tracker and
  *   barge-in behind it, and a step has no turn to be part of and has to return

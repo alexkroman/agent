@@ -24,7 +24,7 @@
  *   run. The bytes go to the store, the output carries the id, and the page
  *   turns it back into something to play with `api.download(id)`.
  *
- * Both are on `@alexkroman1/aai/utils`, imported from THERE rather than the
+ * Both are on `@alexkroman1/aai/step`, imported from THERE rather than the
  * root: a `workflows/*.ts` module is bundled separately by the WDK builder, so
  * the root barrel's module graph would ride into the step bundle.
  *

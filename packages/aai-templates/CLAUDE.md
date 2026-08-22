@@ -187,18 +187,18 @@ once, and the templates are now their reference use:
 | `toStepError` / `throwStepError` / `throwFatalStepError` (`@alexkroman1/aai/step-errors`) | every workflow template — `transcription-workflow` and `link-digest` for the HTTP classification each had hand-written identically, `research-workflow`/`link-digest`/`redline` for the `.catch(throwStepError)` on a model call, `transcription-workflow` for the two `catch`-block fatals, `recap-workflow` for both halves of a provider call it also polls, `podcast-digest` for the 4xx `FatalError` its Slack step raises from a body it has read |
 | `stepFetchOk` (`@alexkroman1/aai/step-errors`) | `link-digest`, `recap-workflow`'s `request()` and `podcast-digest`'s `fetchText` — the THIRD copy is what extracted it, on the rule below. Each had written `stepFetch` + `if (!res.ok) throw toStepError(…)`, and each threw the response BODY away, so a 4xx that said what was wrong arrived as a number. The two places that stay on raw `stepFetch` are the ones where a status is not simply a failure: `recap-workflow`'s DELETE, where a 404 means already-deleted, and `podcast-digest`'s Slack post, whose 4xx body decides which advice to print |
 | `stepGenerateJson` + `stripJsonFence` | `research-workflow` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one), `redline` (the critic's findings) and `recap-workflow` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
-| `stubGateway` (`@alexkroman1/aai/testing`) | reached through `installStubGateway` below; the bare form is exercised by no template and sits in the allowlist |
+| `stubGateway` (`@alexkroman1/aai/testing`) | reached through `installStubGateway` below; the bare form is exercised by no template, and nothing records that — `/testing` is outside the coverage gate's scope, for which see the STEP row below |
 | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-workflow`, `link-digest`, `redline` and `recap-workflow` specs — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
 | `toolOf` / `runTool` (`@alexkroman1/aai/testing`) | `pizza-ordering`, `plan-and-execute`, `support-line`, `travel-concierge` — the four that drive tools through the agent's own table. Each keeps a ONE-LINE `run` bound to its own `agentDef`; what moved is the lookup and its message, not the binding |
 | `withDiscoveredTools` (`@alexkroman1/aai/testing`) | the same four plus `retail` — the five whose tools are FILES, so `def.tools` is empty until something resolves `tools/`. See "A `tools/` file IS the tool" below for why the glob is written per template |
 | `stubGenerate` (`@alexkroman1/aai/testing`) | `support-line` (five nodes over one binary-score schema) and `plan-and-execute` (planner, executor, replanner) — the two whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
 | `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-workflow` and `recap-workflow` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
-| `mapConcurrent`, `emit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/utils`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That import path is also why the coverage gate cannot see them — it scans the root specifier — hence their allowlist entries |
+| `mapConcurrent`, `emit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/step`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That subpath is also outside the coverage gate entirely — `SCOPED_MODULES` in `template-api-coverage.test.ts` is the `aai` root plus `stt`/`tts`/`llm`/`s2s` and the `aai-ui` root, and nothing else — so a step export nothing exercised would be caught by no gate and has no allowlist entry to sit in |
 | `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-workflow`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-and-execute`, from an ordinary tool body, which is the case the module was published for |
 | `stepSpeak` + `writeUpload` + `WorkflowApi.download` | `spoken-summary` ONLY, and it is the whole reason that template exists — the audio round trip a workflow could not make before. See "A step that SPEAKS returns an id" below |
 | `stepTranscribeUpload` / `Submit` / `Poll`, and `stepTranscribeSync` | all three templates that transcribe, and the clearest case yet of the extract-on-the-third-copy rule above — `spoken-summary` and `transcription-workflow` had the async API's ~200 lines EACH, reworded and identical in behaviour, and `recap-workflow` a third variant. `transcription-workflow` is the reference for both halves (`batch.ts` for the job API, `sync-api.ts` for the one-request endpoint it fans out over); `recap-workflow` converts its SUBMIT only, and says in place why its poll must not follow — see "A transcription step is the SDK's; the boundaries are the template's" below |
 | `runFfmpeg` / `probeMedia` / `wavEncodeArgs` (`@alexkroman1/aai/ffmpeg`) | `call-audit` — five invocations, every argv built by a pure function in `workflows/media.ts`; `transcription-workflow`'s `normalize.ts` for the smallest possible use (probe, convert, store). See "ffmpeg is what lets a desk cut a recording where a HUMAN would" below |
-| `encodeWav` + `pcmDurationMs` (`@alexkroman1/aai/utils`) | `call-audit` — the pair that makes a headerless intermediate workable: the store holds raw PCM so a byte offset is a timestamp, and each span gets a header back for the one request that needs one. `transcription-workflow` hand-rolls the equivalent in 25 lines of `DataView` writes, which is what a second copy of this would have been |
+| `encodeWav` + `pcmDurationMs` (`@alexkroman1/aai/step`) | `call-audit` — the pair that makes a headerless intermediate workable: the store holds raw PCM so a byte offset is a timestamp, and each span gets a header back for the one request that needs one. `transcription-workflow` hand-rolls the equivalent in 25 lines of `DataView` writes, which is what a second copy of this would have been |
 | `isFfmpegError` + `FfmpegError.kind` | `call-audit` and `transcription-workflow`, both through a `classifyFfmpeg` that maps `exit` and `missing-binary` to fatal and `timeout`/`aborted` to a retry — the distinction the field exists for, and the one a spec can reach when the spawn itself cannot |
 | `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, which is the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails |
 
@@ -484,7 +484,7 @@ Two things generalize:
 
 The way IN is now `stepTranscribeUpload` / `stepTranscribeSubmit` /
 `stepTranscribePoll` (the async job API) and `stepTranscribeSync` (the
-one-request endpoint), all on `@alexkroman1/aai/utils`. Before them all three
+one-request endpoint), all on `@alexkroman1/aai/step`. Before them all three
 transcribing templates carried their own copy of AssemblyAI's HTTP: the URL, the
 raw-key auth (no `Bearer`, which is a 401 that reads like a wrong key), the
 windowed streaming upload, the PLURAL `speech_models` field, and the failure
@@ -718,7 +718,7 @@ genuinely unavailable is a caller-supplied step key — `ctx.step("chunk-3", …
 the one piece of the pre-DevKit engine's API that did not survive the port.
 
 **That rule is a primitive rather than a loop in a template.** `mapConcurrent`
-(`@alexkroman1/aai/utils`, formerly `mapInBatches` and still exported under that
+(`@alexkroman1/aai/step`, formerly `mapInBatches` and still exported under that
 name, deprecated) is the window; its module doc carries the argument, and
 `sdk/map-concurrent.test.ts` asserts the issue order directly at every width and
 under reversed and shuffled settle orders. Dropping the barrier is worth real
@@ -1007,7 +1007,7 @@ This guide used to say the opposite, and it was the reason all three workflow
 templates returned hard-coded strings: a `"use step"` function is bundled and
 dispatched separately from the agent bundle and is handed no `ToolContext`, so
 nothing in one could reach a credential. Two SDK exports close it, both on
-`@alexkroman1/aai/utils`:
+`@alexkroman1/aai/step`:
 
 - **`stepEnv` / `requireStepEnv`** (`packages/aai/sdk/step-env.ts`) — the agent
   env, published into the process by whatever is serving the workflow (the guest
@@ -1079,7 +1079,7 @@ carries `_`-prefixed parameters rather than naming a call it cannot make. That i
 the one remaining half of a tool context a step does not get.
 
 **`report()` was the one helper copied three times, and it is the SDK's now** —
-`@alexkroman1/aai/utils`, used by every workflow template. The objection recorded
+`@alexkroman1/aai/step`, used by every workflow template. The objection recorded
 here (it imports `getWritable` from `workflow`, which that subpath may not) was
 answered by the same `Symbol.for` slot `stepEnv` uses: `createServer` publishes
 a reporter and the helper stays dependency-free. What forced the question was
