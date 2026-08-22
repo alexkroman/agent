@@ -162,7 +162,16 @@ const UNDOCUMENTED_SUBPATHS = {
       "helpers. Same argument as ./internal — it exists so the runtime can " +
       "reach them without them sitting in an agent author's autocomplete.",
   },
-  "aai-ui": {},
+  "aai-ui": {
+    "./internal":
+      "The escape hatch, not an API. Its eight exports are `@internal` by " +
+      "intent — the two providers `client()` mounts, the default shell's URL " +
+      "chips, the tool-config context and the session's own client-config " +
+      "lookup — and the subpath exists so they are reachable without sitting " +
+      "in a CLIENT author's autocomplete beside `client()` and `<Form>`. " +
+      "Rendering them would undo that. Named in packages/aai-ui/README.md " +
+      "under 'Other subpaths'.",
+  },
   "aai-runtime": {
     ".":
       "The host runtime, ~220 exports aimed at somebody EMBEDDING an agent " +
@@ -173,11 +182,15 @@ const UNDOCUMENTED_SUBPATHS = {
       "published package. Revisit if embedders ask for a rendered page — " +
       "then it gets its own, not a share of the SDK's.",
     "./internal":
-      "Cross-package infrastructure re-exported from @alexkroman1/aai/" +
-      "host-internal, which is undocumented for the same reason on the SDK " +
-      "side: not semver-covered, and nothing an agent author or an embedder " +
-      "writes against. Its whole job is to keep those names OFF the root " +
-      "barrel a reader does autocomplete over.",
+      "Cross-package infrastructure, in two halves: the SDK names " +
+      "re-exported from @alexkroman1/aai/host-internal, undocumented for the " +
+      "same reason on the SDK side, and this package's OWN host plumbing — " +
+      "the transports, the session core, the workflow engine wiring, the " +
+      "state and upload stores — that aai-server, aai-cli and aai-guest " +
+      "import across the package boundary. Neither half is semver-covered " +
+      "and neither is anything an agent author or an embedder writes " +
+      "against. Its whole job is to keep those names OFF the root barrel a " +
+      "reader does autocomplete over.",
   },
 };
 
@@ -186,8 +199,8 @@ const UNDOCUMENTED_SUBPATHS = {
  *
  * Its success output is a count, so a manifest read that stopped finding
  * `exports`, or a package list that emptied, would report "every published
- * subpath is documented ✓" over nothing. Measured actual: 21 (19 on `aai`,
- * 2 on `aai-ui`).
+ * subpath is documented ✓" over nothing. Measured actual: 22 (19 on `aai`,
+ * 3 on `aai-ui`).
  */
 const MIN_SUBPATHS = 15;
 

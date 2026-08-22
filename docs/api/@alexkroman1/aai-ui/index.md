@@ -426,8 +426,8 @@ function StartDigest() {
 
 ```ts
 function fetchClientConfig(platformUrl: string, fetchFn?: {
-  (input: URL | RequestInfo, init?: RequestInit): Promise<Response>;
-  (input: string | URL | Request, init?: RequestInit): Promise<Response>;
+  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
 }): Promise<{
   greeting?: string;
   name?: string;
@@ -467,8 +467,8 @@ endpoint is resolved relative to it.
 ##### fetchFn?
 
 \{
-  (`input`: `URL` \| `RequestInfo`, `init?`: `RequestInit`): `Promise`\<`Response`\>;
-  (`input`: `string` \| `URL` \| `Request`, `init?`: `RequestInit`): `Promise`\<`Response`\>;
+  (`input`: `RequestInfo` \| `URL`, `init?`: `RequestInit`): `Promise`\<`Response`\>;
+  (`input`: `string` \| `Request` \| `URL`, `init?`: `RequestInit`): `Promise`\<`Response`\>;
 \}
 
 Fetch implementation, for tests and for a caller that

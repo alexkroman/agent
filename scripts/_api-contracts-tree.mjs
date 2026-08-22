@@ -50,9 +50,8 @@ export const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
  * the same decision as "is this something we promise an author".
  *
  * A package with no entry here therefore contracts every `.d.ts` subpath it
- * publishes — which is what `aai-ui` wants (both of its two are authoring) and
- * what makes opting a package in cost one directory rather than one directory
- * plus a list.
+ * publishes, which is what makes opting a package in cost one directory rather
+ * than one directory plus a list.
  */
 const NON_AUTHORING_SUBPATHS = {
   aai: {
@@ -63,6 +62,10 @@ const NON_AUTHORING_SUBPATHS = {
     "./internal": "cross-package infrastructure, explicitly not semver-covered",
     "./host-internal":
       "the SDK internals @alexkroman1/aai-runtime needs across the package boundary; not semver-covered",
+  },
+  "aai-ui": {
+    "./internal":
+      "the plumbing `client()` installs for itself — the providers, the URL chips, the pre-connection lookup; not something a `client.tsx` writes against",
   },
   "aai-runtime": {
     "./internal":

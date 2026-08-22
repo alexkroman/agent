@@ -11,12 +11,8 @@
 import http from "node:http";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ClientSink, ReadyConfig, SessionEvent } from "@alexkroman1/aai/protocol";
-import {
-  type SessionCore,
-  type SessionWebSocket,
-  stampSessionEvent,
-  wireSessionSocket,
-} from "@alexkroman1/aai-runtime";
+import type { SessionCore, SessionWebSocket } from "@alexkroman1/aai-runtime";
+import { stampSessionEvent, wireSessionSocket } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { WebSocketServer } from "ws";
 

@@ -170,18 +170,6 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     // `env`; identity here keeps these tests focused on wiring. The helper's
     // own behavior is covered in aai/host/providers/host-env.test.ts.
     withHostCredentialFallback: (env: Record<string, string>) => env,
-    // The console-backed logger the dev server hands the runtime in human
-    // mode (see createDevLogger); these specs only need it to exist.
-    consoleLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-    // The workflow trio. Inert rather than absent: an agent with no
-    // `workflows/` directory is the case every spec in these files uses, and
-    // the real implementations would resolve a DevKit world just to answer
-    // "there is nothing to serve". `dev-workflow.scenario.test.ts` covers
-    // the wired-up path against real bundles.
-    configureWorkflowWorld: vi.fn(() => "local"),
-    createWorkflowSurface: vi.fn(async () => undefined),
-    handleWorkflowRequest: vi.fn(() => false),
-    startWorkflowWorldIfDeclared: vi.fn(async () => undefined),
     // `viteDevConfig` uses this as a proxy KEY, so it has to be a string here
     // or the config these specs build has a hole in it. Spelled out rather
     // than imported: this module IS the factory for the
@@ -201,9 +189,28 @@ export function aaiRuntimeModule(): Record<string, unknown> {
  * only writes a `Symbol.for` slot and these specs serve no workflows, so every
  * spec kept passing while the mock covered nothing. Split rather than dropped:
  * what these specs assert is that `buildServer` publishes no real env.
+ *
+ * The logger and the workflow quartet joined it when the rest of the
+ * `@internal` surface followed `publishStepEnv` off the root barrel — the
+ * factory has to key each name where `_dev-server.ts` imports it from, or the
+ * mock covers nothing for the same silent reason.
  */
 export function aaiRuntimeInternalModule(): Record<string, unknown> {
-  return { publishStepEnv: vi.fn() };
+  return {
+    publishStepEnv: vi.fn(),
+    // The console-backed logger the dev server hands the runtime in human
+    // mode (see createDevLogger); these specs only need it to exist.
+    consoleLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    // The workflow quartet. Inert rather than absent: an agent with no
+    // `workflows/` directory is the case every spec in these files uses, and
+    // the real implementations would resolve a DevKit world just to answer
+    // "there is nothing to serve". `dev-workflow.scenario.test.ts` covers
+    // the wired-up path against real bundles.
+    configureWorkflowWorld: vi.fn(() => "local"),
+    createWorkflowSurface: vi.fn(async () => undefined),
+    handleWorkflowRequest: vi.fn(() => false),
+    startWorkflowWorldIfDeclared: vi.fn(async () => undefined),
+  };
 }
 
 export function configModule(): Record<string, unknown> {

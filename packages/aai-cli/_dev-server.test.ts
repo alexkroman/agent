@@ -46,7 +46,8 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { createDevLogger, loadWorker, startDevServer, watchDirectory } from "./_dev-server.ts";
+import { createDevLogger } from "./_dev-env.ts";
+import { loadWorker, startDevServer, watchDirectory } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining

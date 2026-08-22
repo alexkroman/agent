@@ -10,7 +10,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ToolDef } from "@alexkroman1/aai";
-import { executeToolCall } from "@alexkroman1/aai-runtime";
+import { executeToolCall } from "@alexkroman1/aai-runtime/internal";
 import { afterEach, beforeEach, type MockInstance, vi } from "vitest";
 import { handleHostResponse, setHostSend } from "./harness-rpc.ts";
 import type { JsonRpcMessage, JsonRpcRequest, JsonRpcResponse } from "./harness-types.ts";

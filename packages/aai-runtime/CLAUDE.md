@@ -148,25 +148,61 @@ does — import from two subpaths, one of them labelled not-semver-covered. The
 block's own comment already called those names one contract; the split respects
 it. Do not "tidy" them onto `/internal` later.
 
-`contracts/internal-surface.json` opens at **68** and may only shrink: exports
-tagged `@internal` that are nonetheless reachable from the root barrel. That is
-the same ratchet that took `aai` from 74 to 0.
+### The root barrel is the CONTRACTED surface, and nothing else
+
+`contracts/internal-surface.json` opened at **68** and stands at **0**. Those 68
+were the SECOND tranche off the root barrel, and unlike the 31 above they are
+this package's OWN declarations rather than pass-through of the SDK's: tagged
+`@internal` where they are declared, reachable anyway from the one page an
+embedder autocompletes over, and therefore covered by no capability and promised
+by nothing but a comment. They now sit on `@alexkroman1/aai-runtime/internal`
+beside the pass-through tranche, which is the same move that took `aai` from 74
+to 0.
+
+**The division is now mechanical, and it is worth stating as a rule.**
+
+- **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`)** is exactly the 122 names
+  the twelve capabilities select. A name here has an epoch, a report, and a
+  frozen compiling template behind its capability. Nothing on it is
+  `@internal` — that is what the zero means, and the ratchet is what holds it.
+- **`@alexkroman1/aai-runtime/internal` (`internal.ts`)** is the cross-package
+  infrastructure `aai-server`, `aai-cli` and `aai-guest` need: the host-mode
+  server and its relay, the two transports and the `Transport` contract, the
+  session core's constructor, the session-state backends and their tables, the
+  workflow serving half (handler, surface, world, install), the wake hint, the
+  queue-lock sweep, the step-slot publishers, and the shipped `Logger` values.
+  No capability, no epoch, no semver promise.
+
+Where a capability's TYPE is contracted and its CONSTRUCTOR is not, the two are
+deliberately on different pages and each clause says so: `SessionCore` on the
+barrel and `createSessionCore` on `/internal`, `SessionStateBackend` against
+`createPostgresStateBackend`, `UploadStore` against `createUploadStore`,
+`WorkflowClientOptions` against `createWorkflowClient`, `SweepSkip` against
+`claimPoolPresenceAndSweep`. That asymmetry is a finding, not a shape to copy —
+see "What writing the templates found" below.
+
+**Making one of them public is not a re-export.** The `@internal` tag comes OFF
+at the declaration site and the name joins a capability under
+`contracts/entrypoints/`, which is what buys it an epoch and obliges a template.
+Adding it to `runtime-barrel.ts` with the tag still attached puts it straight
+back on the ratchet, and the ratchet may only shrink — a `/** @internal */` on
+the re-export clause does not help, for the API Extractor reason above.
 
 ### What writing the templates found
 
 Four things the surface cannot currently demonstrate about itself. None is a bug;
 each is a decision worth making rather than inheriting.
 
-- **`uploads` publishes a store TYPE and two blob implementations with no public
-  way to join them** — `createUploadStore` and `resolveUploadBlobs` are
-  `@internal`, so the template has to take the store as
-  a parameter. Honest for an embedder handed one by `createServer`, and it means
-  the capability cannot show its own end-to-end wiring.
+- **`uploads` publishes a store TYPE and two blob implementations with no
+  contracted way to join them** — `createUploadStore` and `resolveUploadBlobs`
+  are `@internal`, so they are on `/internal` and the template has to take the
+  store as a parameter. Honest for an embedder handed one by `createServer`, and
+  it means the capability cannot show its own end-to-end wiring.
 - **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
-  `@public` and `createWorkflowClient` is `@internal`, so a template can assemble
-  the bag and not hand it to anything. Its `logger` field is required and both
-  public `Logger` values (`consoleLogger`, `createConsoleLogger`) are `@internal`
-  too.
+  contracted and `createWorkflowClient` is on `/internal`, so a template can
+  assemble the bag and not hand it to anything. Its `logger` field is required
+  and both shipped `Logger` values (`consoleLogger`, `createConsoleLogger`) are
+  on `/internal` too — only the `Logger` type is contracted.
 - **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
   the honest template is fifty lines of skeleton and anything in the wild will either
   be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way

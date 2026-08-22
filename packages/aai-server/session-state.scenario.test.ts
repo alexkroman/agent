@@ -28,15 +28,15 @@
 
 import { sessionSlot } from "@alexkroman1/aai";
 import { createToolContext } from "@alexkroman1/aai/testing";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import {
-  createPostgresDb,
   createPostgresStateBackend,
   createSessionEventStream,
   createSessionStateStore,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
   sessionStateDdl,
-} from "@alexkroman1/aai-runtime";
+} from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { SWEEP_APP_SESSION_STATE } from "./_session-state-sweep.ts";

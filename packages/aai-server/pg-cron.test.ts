@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai-runtime";
+import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import {
   APP_CRON_JOB_PREFIX,

@@ -4,38 +4,28 @@
 
 ```ts
 
-import type { AgentConfig } from '@alexkroman1/aai/manifest';
 import type { AgentDef } from '@alexkroman1/aai';
 import { AgentEnv } from '@alexkroman1/aai/host-internal';
-import { ClientSink } from '@alexkroman1/aai/protocol';
+import type { ClientSink } from '@alexkroman1/aai/protocol';
 import type { Db } from '@alexkroman1/aai';
 import { Duplex } from 'node:stream';
 import { ExecuteTool } from '@alexkroman1/aai/host-internal';
 import { ExecuteToolOptions } from '@alexkroman1/aai/host-internal';
-import type { GenerateOptions } from '@alexkroman1/aai';
-import type { GenerateResult } from '@alexkroman1/aai';
-import type { HostConfig } from '@alexkroman1/aai/protocol';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
-import type { IncomingMessage } from 'node:http';
 import { LanguageModel } from 'ai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { Message } from '@alexkroman1/aai';
 import { ModelMessage } from 'ai';
-import type { OwnedMap } from '@alexkroman1/aai/host-internal';
 import { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
-import { ReadyConfig } from '@alexkroman1/aai/protocol';
+import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { ServerResponse } from 'node:http';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai/protocol';
 import { SessionEventBody } from '@alexkroman1/aai/protocol';
-import { SlotStore } from '@alexkroman1/aai';
-import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
-import type { StepFetch } from '@alexkroman1/aai/host-internal';
-import type { StepReporter } from '@alexkroman1/aai/host-internal';
+import type { SlotStore } from '@alexkroman1/aai';
 import { StepResult } from 'ai';
 import { streamText } from 'ai';
 import { SttError } from '@alexkroman1/aai/host-internal';
@@ -47,7 +37,6 @@ import { SttSession } from '@alexkroman1/aai/host-internal';
 import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
-import type { ToolDef } from '@alexkroman1/aai';
 import type { ToolSchema } from '@alexkroman1/aai/manifest';
 import { ToolSet } from 'ai';
 import { TtsError } from '@alexkroman1/aai/host-internal';
@@ -62,7 +51,6 @@ import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
-import { WorkflowClient as WorkflowClient_2 } from '@alexkroman1/aai';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
 
 export { AgentEnv }
@@ -92,9 +80,6 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
 }
-
-// @internal
-export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef;
 
 // @public
 export const CARRIER_CODECS: {
@@ -142,40 +127,14 @@ export type CarrierInbound =
 // @public
 export type CarrierName = keyof typeof CARRIER_CODECS;
 
-// @internal
-export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;
-
 // @public
 export type CloseableDb = Db & {
     reserve(): Promise<ReservedDb>;
     close(): Promise<void>;
 };
 
-// @internal
-export function configureWorkflowWorld(opts: {
-    databaseUrl: string | undefined;
-    port: number;
-    dataDir?: string;
-    env?: NodeJS.ProcessEnv;
-}): WorldKind;
-
-// @internal
-export const consoleLogger: Logger;
-
 // @public
 export function createAgentServer(options: AgentServerOptions): AgentServer;
-
-// @internal
-export function createConsoleLogger(debug?: boolean): Logger;
-
-// @internal
-export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn;
-
-// @internal
-export type CreateGenerateFnOptions = {
-    llm?: LlmProvider | undefined;
-    env: ProviderEnv;
-};
 
 // @public (undocumented)
 type CreateHeaderWebSocket = (url: string, opts: {
@@ -194,17 +153,11 @@ export function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
 // @public
 export function createMemoryKeyStore(): WorkflowKeyStore;
 
-// @internal
-export function createMemoryStateBackend(): SessionStateBackend;
-
 // @public
 export function createMemoryUploadBlobs(): UploadBlobs;
 
 // @public (undocumented)
 type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
-
-// @internal
-export function createPipelineTransport(opts: PipelineTransportOptions): Transport;
 
 // @public
 export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
@@ -220,49 +173,14 @@ export type CreatePostgresDbOptions = {
 // @public
 export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 
-// @internal
-export function createPostgresStateBackend(opts: {
-    db: Db;
-}): SessionStateBackend;
-
-// @internal
-export function createRelayExecuteTool(opts: {
-    send: (event: ToolCallEvent) => void;
-    timeoutMs?: number | undefined;
-}): RelayExecuteTool;
-
 // @public
 export function createRuntime(opts: RuntimeOptions): Runtime;
-
-// @internal
-export function createS2sTransport(opts: S2sTransportOptions): Transport;
 
 // @public (undocumented)
 type CreateS2sWebSocket = CreateHeaderWebSocket;
 
 // @public
 export function createServer(options: ServerOptions): AgentServer;
-
-// @internal
-export function createSessionCore(opts: SessionCoreOptions): SessionCore;
-
-// @internal
-export function createSessionEventStream(opts: {
-    backend: SessionStateBackend;
-    logger?: Logger | undefined;
-}): SessionEventStream;
-
-// @internal
-export function createSessionStateStore(opts: {
-    backend: SessionStateBackend;
-    logger?: Logger | undefined;
-}): SessionStateStore;
-
-// @internal
-export function createStepFetch(): StepFetchHandle;
-
-// @internal
-export function createStepReporter(logger: Logger): StepReporter;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
@@ -272,30 +190,6 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent;
 
 // @public
 export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
-
-// @internal
-export function createUploadStore(opts: {
-    db?: Db | undefined;
-    blobs?: UploadBlobs | undefined;
-    localDir?: string | undefined;
-    prefix?: string | undefined;
-    maxBytes?: number | undefined;
-}): UploadStore;
-
-// @internal
-export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublisher;
-
-// @internal
-export function createWorkflowApi(opts: WorkflowApiOptions): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
-
-// @internal
-export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClient;
-
-// @internal
-export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
-
-// @internal
-export const debugLoggingEnabled: boolean;
 
 // @public
 export function decliningRuntime(message: string, logger?: Logger): SessionRuntime;
@@ -312,9 +206,6 @@ export const DEFAULT_LOG_LINE_BYTES = 4096;
 // @public
 export const DEFAULT_LOG_PAGE_LINES = 500;
 
-// @internal
-export const DEFAULT_S2S_CONFIG: S2SConfig;
-
 // @public
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
 
@@ -325,35 +216,7 @@ type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody,
 
 export { ExecuteTool }
 
-// @internal
-export function executeToolCall(name: string, args: Readonly<Record<string, unknown>>, options: ExecuteToolCallOptions): Promise<string>;
-
-// @public (undocumented)
-type ExecuteToolCallOptions = {
-    tool: ToolDef;
-    env: Readonly<Record<string, string>>;
-    slots?: SlotStore | undefined;
-    sessionId?: string | undefined;
-    db?: Db | undefined;
-    messages?: readonly Message[] | undefined;
-    generate?: HostGenerateFn | undefined;
-    logger?: Logger | undefined;
-    send?: ((event: string, data: unknown) => void) | undefined;
-    signal?: AbortSignal | undefined;
-    workflows?: WorkflowClient | undefined;
-    timeoutMs?: number | undefined;
-};
-
 export { ExecuteToolOptions }
-
-// @internal
-type FetchHandler = (req: Request) => Promise<Response>;
-
-// @internal
-export const GRAPHILE_JOB_EXPIRY = "4 hours";
-
-// @internal
-export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string): boolean;
 
 // @public
 type HeaderWebSocket = {
@@ -376,11 +239,6 @@ type HeaderWebSocket = {
 
 export { HostCredentialEnv }
 
-// @internal
-export type HostGenerateFn = (options: GenerateOptions, callOpts?: {
-    signal?: AbortSignal | undefined;
-}) => Promise<GenerateResult>;
-
 // @public
 export interface HostServerOptions extends PassthroughServerOptions {
     defaults?: HostSessionDefaults;
@@ -398,22 +256,6 @@ export type HttpUploadBlobsOptions = {
     bucket: string;
     fetch?: typeof globalThis.fetch | undefined;
 };
-
-// @internal
-export function installWorkflowSupport(opts: {
-    env?: Record<string, string> | undefined;
-    uploadBroker?: string | undefined;
-    logger: Logger;
-}): WorkflowSupport;
-
-// @internal
-export function isDebugEnv(value: string | undefined): boolean;
-
-// @internal
-export function isHostAllowed(env: Record<string, string>): boolean;
-
-// @internal
-export function isPathInside(dir: string, target: string): boolean;
 
 // @public
 export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
@@ -490,59 +332,6 @@ export type PassthroughServerOptions = {
     request?: ServerOptions["request"];
 };
 
-// @internal
-export interface PipelineTransportOptions {
-    callbacks: TransportCallbacks;
-    deadAirCoverMs?: number | undefined;
-    errorPhrase?: string | undefined;
-    executeTool: ExecuteTool;
-    heardLagMs?: number | undefined;
-    heardNow?: (() => number) | undefined;
-    interruptionMinDurationMs?: number | undefined;
-    llm: LanguageModel;
-    logger?: Logger | undefined;
-    maxSteps?: number | undefined;
-    minBargeInWords?: number | undefined;
-    preemptiveGeneration?: boolean | undefined;
-    providerKeys: {
-        stt: string;
-        tts: string;
-    };
-    resumeFalseInterruption?: boolean | undefined;
-    sessionConfig: TransportSessionConfig;
-    sid: string;
-    silencePrompt?: string | undefined;
-    silenceTimeoutMs?: number | undefined;
-    skipGreeting?: SkipGreeting | undefined;
-    speechIdleTimeoutMs?: number | undefined;
-    startFailurePhrase?: string | undefined;
-    stt: SttOpener;
-    sttPrompt?: string | undefined;
-    sttSampleRate?: number | undefined;
-    temperature?: number | undefined;
-    toolChoice?: ToolChoice | undefined;
-    toolSchemas?: readonly ToolSchema[];
-    tts: TtsOpener;
-    ttsSampleRate?: number | undefined;
-}
-
-// @internal
-export type PoolPresence = {
-    swept: readonly string[];
-    skipped: SweepSkip | undefined;
-    held: boolean;
-    release: () => Promise<void>;
-};
-
-// @internal
-export const PRESENCE_LOCK_CLASS = 1094797655;
-
-// @internal (undocumented)
-export const PRESENCE_LOCK_OBJECT = 1;
-
-// @internal
-export const PROVIDER_CREDENTIAL_ENVS: readonly string[];
-
 export { ProviderEnv }
 
 // @public
@@ -550,20 +339,6 @@ export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpen
 
 // @public
 export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void;
-
-// @internal
-export type RelayExecuteTool = {
-    executeTool: ExecuteTool;
-    onToolResult(msg: RelayToolResult): void;
-    dispose(): void;
-};
-
-// @internal
-export type RelayToolResult = {
-    toolCallId: string;
-    result: string;
-    error?: string | undefined;
-};
 
 // @public
 export function requiredProviderEnvVars(agent: {
@@ -592,13 +367,6 @@ export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
 
 // @public
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
-
-// @internal
-export function resolveUploadBlobs(opts: {
-    env?: Record<string, string> | undefined;
-    broker?: string | undefined;
-    fetch?: typeof globalThis.fetch | undefined;
-}): UploadBlobs | undefined;
 
 export { RunCodeExecutor }
 
@@ -651,32 +419,6 @@ export type S2SConfig = {
     outputSampleRate: number;
 };
 
-// @public (undocumented)
-type S2sSessionConfig = {
-    systemPrompt: string;
-    tools: ToolSchema[];
-    greeting?: string;
-    sttPrompt?: string;
-    voice?: string;
-    languages?: readonly string[];
-    keyterms?: readonly string[];
-};
-
-// @internal
-export type S2sTransportOptions = {
-    apiKey: string;
-    s2sConfig: S2SConfig;
-    sessionConfig: S2sSessionConfig;
-    callbacks: TransportCallbacks;
-    sid: string;
-    agent: string;
-    createWebSocket?: CreateS2sWebSocket;
-    logger?: Logger;
-};
-
-// @internal
-export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: Logger): void;
-
 // @public
 export function salvageJson(input: string): Promise<string | null>;
 
@@ -696,15 +438,6 @@ export type ServerOptions = {
     telephony?: boolean;
 };
 
-// @internal
-export function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerResponse, logger: Logger): Promise<boolean>;
-
-// @internal
-export const SESSION_EVENT_TABLE = "aai_session_events";
-
-// @internal
-export const SESSION_STATE_TABLE = "aai_session_state";
-
 // @public
 export type SessionCore = {
     readonly id: string;
@@ -719,28 +452,6 @@ export type SessionCore = {
     report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
-};
-
-// @internal
-export type SessionCoreOptions = {
-    id: string;
-    agent: string;
-    client: ClientSink;
-    emitter: SessionEmitter;
-    agentConfig: AgentConfig;
-    executeTool: ExecuteTool;
-    transport: Transport;
-    logger?: Logger;
-    onToolResult?: (msg: {
-        toolCallId: string;
-        result: string;
-        error?: string;
-    }) => void;
-};
-
-// @public
-type SessionEmitter = {
-    emit(body: SessionEventBody): SessionEvent;
 };
 
 // @public
@@ -788,9 +499,6 @@ export type SessionStateBackend = {
     countEvents(sessionId: string): Promise<number>;
 };
 
-// @internal
-export function sessionStateDdl(schema?: string): string[];
-
 // @public
 export type SessionStateStore = {
     viewFor(sessionId: string): SlotStore;
@@ -826,47 +534,17 @@ export type SessionWebSocket = {
 // @public
 export type SkipGreeting = boolean | (() => boolean);
 
-// @internal
-export const speakOverWebSocket: SpeechSynthesizer;
-
-// @internal
-export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
-
-// @internal
-export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOptions): void;
-
-// @internal
-export type StartHostSessionOptions = {
-    env: Record<string, string> | PromiseLike<Record<string, string>>;
-    startOpts?: SessionStartOptions;
-    logger?: Logger;
-    baseAgent?: AgentDef;
-    handshakeTimeoutMs?: number;
-    relayTimeoutMs?: number;
-    createRuntime?: (opts: RuntimeOptions) => ReturnType<typeof createRuntime>;
-    allowHost?: boolean | undefined;
-};
-
 // @public
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, opts: {
     carrier: CarrierCodec;
     logger?: Logger;
 }): void;
 
-// @internal
-export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
-
 // @public
 export type StateSyncSession = {
     read(key: string): unknown;
     lastPush(): string | undefined;
     recordPush(json: string): void;
-};
-
-// @internal
-type StepFetchHandle = {
-    fetch: StepFetch;
-    close(): Promise<void>;
 };
 
 // @public
@@ -886,12 +564,6 @@ export { SttOpenOptions }
 export { SttSession }
 
 export { SttTurnMeta }
-
-// @public
-type SweepDeps = {
-    createDb?: (url: string) => CloseableDb;
-    log?: (message: string) => void;
-};
 
 // @public
 export type SweepSkip =
@@ -956,43 +628,10 @@ export interface TextTurnOptions {
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
 // @public
-type ToolCallEvent = Extract<SessionEventBody, {
-    type: "tool.called";
-}>;
-
-// @internal
-export interface Transport {
-    cancelReply(): void;
-    injectTurn?(instruction: string): void;
-    onPlaybackProgress?(bufferedMs: number): void;
-    reset?(): void;
-    seedHistory?(messages: readonly Message[]): void;
-    sendToolResult(callId: string, result: string): void;
-    sendUserAudio(bytes: Uint8Array): void;
-    start(): Promise<void>;
-    stop(): Promise<void>;
-}
-
-// @internal
-export type TransportCallbacks = {
-    report(event: TransportEventBody): void;
-    onAudioChunk(bytes: Uint8Array): void;
-    onReplyStarted(replyId: string): void;
-    onSessionReady?(providerSessionId: string): void;
-};
-
-// @public
 export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
 
 // @public
 export type TransportEventType = TransportEventBody["type"];
-
-// @internal
-export type TransportSessionConfig = {
-    systemPrompt: string;
-    greeting?: string;
-    history?: Message[];
-};
 
 export { TtsError }
 
@@ -1073,20 +712,6 @@ export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }
 
-// @internal
-export type WakeHintOptions = {
-    databaseUrl?: string | undefined;
-    db?: Db | undefined;
-    logger?: Logger | undefined;
-    intervalMs?: number | undefined;
-};
-
-// @internal
-export type WakeHintPublisher = {
-    publish(): Promise<void>;
-    close(): Promise<void>;
-};
-
 // @public
 export type WdkAdapter = {
     start(workflowId: string, args: unknown[]): Promise<string>;
@@ -1099,9 +724,6 @@ export type WdkAdapter = {
     streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
     readOutput(runId: string): Promise<unknown>;
 };
-
-// @internal
-export function wdkAdapter(): WdkAdapter;
 
 // @public
 export type WdkRunRecord = {
@@ -1120,43 +742,13 @@ export type WdkStreamOptions = {
     startIndex?: number | undefined;
 };
 
-// @internal
-export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void;
-
 // @public
 export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
-
-// @internal
-export const WORKFLOW_API_METHODS: readonly string[];
 
 export { WORKFLOW_API_PREFIX }
 
 // @public
 export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
-
-// @internal
-export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
-
-// @internal (undocumented)
-export const WORKFLOW_STEP_PATH = "/.well-known/workflow/v1/step";
-
-// @internal
-export const WORKFLOW_WAKE_TABLE = "aai_workflow_wake";
-
-// @internal (undocumented)
-export const WORKFLOW_WEBHOOK_PREFIX = "/.well-known/workflow/v1/webhook/";
-
-// @internal
-export type WorkflowApiEngine = WorkflowClient_2;
-
-// @internal
-export type WorkflowApiOptions = {
-    engine: () => WorkflowApiEngine | undefined;
-    token?: string | undefined;
-    uploads?: UploadStore | undefined;
-    directParts?: boolean | undefined;
-    logger: Logger;
-};
 
 // @public
 export type WorkflowClientOptions = {
@@ -1171,40 +763,6 @@ export type WorkflowClientOptions = {
 export type WorkflowKeyStore = {
     record(workflow: string, key: string, runId: string): Promise<void>;
     lookup(workflow: string, key: string, limit: number): Promise<string[]>;
-};
-
-// @internal
-type WorkflowSupport = {
-    uploads: UploadStore;
-    directParts: boolean;
-    close(): Promise<void>;
-};
-
-// @internal
-export type WorkflowSurface = {
-    flow: FetchHandler;
-    step: FetchHandler;
-    webhook: (token: string, req: Request) => Promise<Response>;
-};
-
-// @internal
-export type WorldKind = "postgres" | "local";
-
-// @public
-type WsSessionOptions = {
-    sessions: OwnedMap<string, SessionCore>;
-    createSession: (sessionId: string, client: ClientSink) => SessionCore;
-    readyConfig: ReadyConfig;
-    logContext?: Record<string, string>;
-    onOpen?: () => void;
-    onClose?: () => void;
-    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
-    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
-    logger?: Logger;
-    audioLeadMs?: number;
-    sessionStartTimeoutMs?: number;
-    keepaliveIntervalMs?: number;
-    resumeFrom?: string;
 };
 
 // (No @packageDocumentation comment for this package)

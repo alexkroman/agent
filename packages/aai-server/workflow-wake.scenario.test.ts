@@ -29,12 +29,8 @@
  * `AAI_TEST_PG_URL`. Core Postgres only — no extensions.
  */
 
-import {
-  type CloseableDb,
-  createPostgresDb,
-  createWakeHintPublisher,
-  WORKFLOW_WAKE_TABLE,
-} from "@alexkroman1/aai-runtime";
+import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai-runtime";
+import { createWakeHintPublisher, WORKFLOW_WAKE_TABLE } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import {

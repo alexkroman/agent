@@ -22,13 +22,22 @@
  *   starting it.
  * - {@link resolveLlm} — turn an LLM descriptor into a Vercel AI SDK model.
  * - {@link createPostgresDb} — the `ctx.db` handle over your own database.
- * - {@link resolveAllBuiltins} — the built-in tool set an agent config names.
- * - {@link safeFetch} — the SSRF-screened `fetch` the built-ins use.
  * - {@link registerSttKind} / {@link registerTtsKind} and the opener contract
  *   below — substituting a speech stage of your own.
  *
- * Everything else is cross-package infrastructure for aai-server and aai-cli,
- * tagged `@internal` at its declaration site.
+ * Everything on this page is CONTRACTED: each name belongs to exactly one of
+ * the twelve capabilities under `contracts/`, so a signature change here is
+ * classified against an epoch rather than discovered by whoever's build breaks.
+ *
+ * The cross-package infrastructure that `aai-server`, `aai-cli` and `aai-guest`
+ * need from this package — the host-mode server, the two transports, the
+ * session core and its state tables, the workflow serving half, the wake hint,
+ * the lock sweep — is deliberately NOT here. It lives on
+ * `@alexkroman1/aai-runtime/internal`, which carries no capability, no epoch
+ * and no semver promise. A name there that wants to become public gets its
+ * `@internal` tag REMOVED at the declaration site and joins a capability under
+ * `contracts/entrypoints/`; it is never re-exported from this file with the tag
+ * still on it (see `internal.ts`, and `contracts/internal-surface.json`).
  *
  * Exports are enumerated explicitly (no `export *`) so the public surface is
  * deliberate: a new symbol in one of these modules does not ship as public API
@@ -78,22 +87,6 @@ export {
   createAgentServer,
 } from "./agent-server.ts";
 export {
-  type CreateGenerateFnOptions,
-  createGenerateFn,
-  type HostGenerateFn,
-} from "./generate.ts";
-export {
-  buildHostAgent,
-  isHostAllowed,
-  type StartHostSessionOptions,
-  startHostSession,
-} from "./host-mode.ts";
-export {
-  createRelayExecuteTool,
-  type RelayExecuteTool,
-  type RelayToolResult,
-} from "./host-relay.ts";
-export {
   createHostServer,
   type HostServerOptions,
   type HostSessionDefaults,
@@ -121,7 +114,7 @@ export {
   createPostgresDb,
   type ReservedDb,
 } from "./postgres-db.ts";
-export { PROVIDER_CREDENTIAL_ENVS, withHostCredentialFallback } from "./providers/host-env.ts";
+export { withHostCredentialFallback } from "./providers/host-env.ts";
 // Narrow named exports rather than the whole module: the rest of resolve.ts is
 // internal descriptor plumbing. `requiredProviderEnvVars` is used by the CLI
 // dev server to check credentials before starting; `resolveLlm` lets host
@@ -148,17 +141,16 @@ export {
   type RuntimeOptions,
   type SessionStartOptions,
 } from "./runtime.ts";
-export {
-  consoleLogger,
-  createConsoleLogger,
-  DEFAULT_S2S_CONFIG,
-  debugLoggingEnabled,
-  isDebugEnv,
-  type LogContext,
-  type LogFn,
-  type Logger,
-  type LogLevel,
-  type S2SConfig,
+// The logger a host passes in, and the S2S tuning bag a config can override.
+// The two shipped `Logger` VALUES (`consoleLogger`, `createConsoleLogger`) and
+// the debug-env predicates are infrastructure — see
+// `@alexkroman1/aai-runtime/internal`.
+export type {
+  LogContext,
+  LogFn,
+  Logger,
+  LogLevel,
+  S2SConfig,
 } from "./runtime-config.ts";
 export {
   type AgentServer,
@@ -169,53 +161,15 @@ export {
   type ServerOptions,
   type SessionRuntime,
 } from "./server.ts";
-// The static-asset half of `createServer`, split out at the file-length cap.
-// `isPathInside` stays exported because the SSRF-adjacent containment rule it
-// encodes is worth one definition, not one per caller.
-export { isPathInside, serveStatic } from "./server-static.ts";
-export { createSessionCore, type SessionCore, type SessionCoreOptions } from "./session-core.ts";
-export {
-  createSessionEventStream,
-  type SessionEventPage,
-  type SessionEventStream,
-  stampSessionEvent,
-} from "./session-event-stream.ts";
-// Session state's two backends and the cache in front of them. `createRuntime`
-// wires them itself, so what a consumer needs is the TABLE NAME: the platform's
-// TTL sweep reads it out of every app schema, and spelling it here rather than in
-// that sweep is what keeps a rename from being two edits that can disagree —
-// exactly the rule `WORKFLOW_WAKE_TABLE` below states for its own table.
-export {
-  createPostgresStateBackend,
-  SESSION_EVENT_TABLE,
-  SESSION_STATE_TABLE,
-  // The tables' DDL, applied by whoever CREATES an app schema — the platform, at
-  // provisioning. Exported for the same reason the two names above are: the
-  // shape is the SDK's and there must be one copy of it, or the schema the
-  // platform creates and the tables this backend queries can disagree.
-  sessionStateDdl,
-} from "./session-state-postgres.ts";
-export {
-  createMemoryStateBackend,
-  createSessionStateStore,
-  type SessionStateBackend,
-  type SessionStateStore,
+export type { SessionCore } from "./session-core.ts";
+export type { SessionEventPage, SessionEventStream } from "./session-event-stream.ts";
+export type {
+  SessionStateBackend,
+  SessionStateStore,
   // `SessionStateBackend.readEvents` returns these, so a host implementing the
   // backend has to name the type. It is only reachable from here.
-  type StoredSessionEvent,
+  StoredSessionEvent,
 } from "./session-state-store.ts";
-// Serving workflows, and choosing the world they live in. Shared rather than
-// guest-only because `aai dev` needs the identical wiring — and the CLI may not
-// import the guest (the dependency edge runs aai-guest -> aai-cli, never back).
-// Uploads and step narration: the store both `/uploads` routes are served from,
-// and the two publishers that hand a `"use step"` function its reader and its
-// reporter. Exported for the embedders that build a server by hand — and for a
-// spec, which publishes a fake rather than standing a store up.
-export { createStepFetch } from "./step-fetch.ts";
-// `speakOverWebSocket` is the implementation `installWorkflowSupport` publishes,
-// exported for the same reason the publishers are: a process assembling its own
-// step surface needs the default to hand to one.
-export { speakOverWebSocket } from "./step-speak.ts";
 export {
   CARRIER_CODECS,
   type CarrierCodec,
@@ -249,52 +203,36 @@ export {
 // its own request against the same model (and because `salvageJson` is the
 // half that costs no tokens).
 export { createToolCallRepair, salvageJson } from "./tool-call-repair.ts";
-export { type ExecuteTool, type ExecuteToolOptions, executeToolCall } from "./tool-executor.ts";
-export {
-  createPipelineTransport,
-  type PipelineTransportOptions,
-} from "./transports/pipeline-transport.ts";
-// `_internals` (the connectS2s spy seam) is deliberately NOT re-exported: it
-// is a mutable object a test patches, and publishing it put a process-wide
-// behaviour switch on the `@alexkroman1/aai-runtime` surface. Tests inside
-// this package import it from the module directly.
-export { createS2sTransport, type S2sTransportOptions } from "./transports/s2s-transport.ts";
+export type { ExecuteTool, ExecuteToolOptions } from "./tool-executor.ts";
 export type {
-  // `PipelineTransportOptions.skipGreeting` names this, so the same rule as
-  // `TransportEventBody` below applies: a caller passing the THUNK form — which
-  // is how a resume that recovered nothing gets greeted — would otherwise have a
-  // type to satisfy and no way to name it.
+  // `PipelineTransportOptions.skipGreeting` names this. That options type is on
+  // `@alexkroman1/aai-runtime/internal`, but the rule is unchanged: a caller
+  // passing the THUNK form — which is how a resume that recovered nothing gets
+  // greeted — would otherwise have a type to satisfy and no way to name it.
   SkipGreeting,
-  Transport,
-  TransportCallbacks,
-  // `TransportCallbacks.report` names this, so anything implementing the one
-  // needs the other — a forgotten export here would be a type a consumer has to
-  // satisfy and has no way to import.
+  // `TransportCallbacks.report` names this, so anything implementing that
+  // interface (it is on `@alexkroman1/aai-runtime/internal`) needs the other —
+  // a forgotten export here would be a type a consumer has to satisfy and has
+  // no way to import.
   TransportEventBody,
   TransportEventType,
-  TransportSessionConfig,
 } from "./transports/types.ts";
-// The workflow HTTP API. `createServer` mounts it itself, so nothing outside
-// this package has to wire a route — what is exported is the token's env var
-// (the guest's deploy path reads it to decide whether a deployed app's API is
-// closed) and the prefix, so the platform's proxy and this server cannot name
-// different paths.
+// The workflow HTTP API's ADDRESSING. `createServer` mounts the route itself,
+// so nothing outside this package has to wire one — what is exported is the
+// token's env var (the guest's deploy path reads it to decide whether a
+// deployed app's API is closed) and the prefix, so the platform's proxy and
+// this server cannot name different paths. The handler and its engine seam are
+// on `@alexkroman1/aai-runtime/internal`.
 export {
-  createWorkflowApi,
   MAX_WORKFLOW_INPUT_BYTES,
-  WORKFLOW_API_METHODS,
   WORKFLOW_API_PREFIX,
   WORKFLOW_API_TOKEN_ENV,
-  type WorkflowApiEngine,
-  type WorkflowApiOptions,
 } from "./workflow-api.ts";
-// The durable-workflow host side. `createWorkflowClient` is what becomes
-// `ctx.workflows`; `wdkAdapter` is the Workflow DevKit binding, separate so the
-// client can be specified without a world. The key
-// store's two factories ride along because the guest picks between them —
-// Postgres on the platform, memory under `aai dev`.
+// The durable-workflow host side's TYPES, plus the key-store resolver: the
+// guest picks between the two stores — Postgres on the platform, memory under
+// `aai dev`. The client that becomes `ctx.workflows`, and the DevKit binding
+// itself, are on `@alexkroman1/aai-runtime/internal`.
 export {
-  createWorkflowClient,
   resolveKeyStore,
   type WdkAdapter,
   type WdkRunRecord,
@@ -304,7 +242,6 @@ export {
   type WdkStreamOptions,
   type WorkflowClientOptions,
 } from "./workflow-client.ts";
-export { installWorkflowSupport } from "./workflow-install.ts";
 export {
   createMemoryKeyStore,
   createPostgresKeyStore,
@@ -312,37 +249,16 @@ export {
   MAX_WORKFLOW_FIND_LIMIT,
   type WorkflowKeyStore,
 } from "./workflow-keys.ts";
-// The startup sweep that clears queue locks no live pool owns, and the advisory
-// lock it contends for. Exported for a SPEC: what a fake cannot check is that
-// `graphile_worker.force_unlock_workers` exists and does what its name says, and
-// the constants' own doc says they exist "so a test or a verification script can
-// contend for the SAME lock without restating the number" — which nothing outside
-// this package could do while they stopped here. See
-// `aai-server/workflow-lock-sweep.scenario.test.ts`.
-export {
-  claimPoolPresenceAndSweep,
-  type PoolPresence,
-  PRESENCE_LOCK_CLASS,
-  PRESENCE_LOCK_OBJECT,
-  type SweepSkip,
-} from "./workflow-lock-sweep.ts";
-export { createStepReporter } from "./workflow-report.ts";
-export {
-  createWorkflowSurface,
-  handleWorkflowRequest,
-  WORKFLOW_FLOW_PATH,
-  WORKFLOW_STEP_PATH,
-  WORKFLOW_WEBHOOK_PREFIX,
-  type WorkflowSurface,
-} from "./workflow-serve.ts";
+// What the startup sweep reports when it declines to run. The sweep itself and
+// the advisory-lock constants it contends for are on
+// `@alexkroman1/aai-runtime/internal`.
+export type { SweepSkip } from "./workflow-lock-sweep.ts";
 export {
   createHttpUploadBlobs,
   createMemoryUploadBlobs,
-  createUploadStore,
   type HttpUploadBlobsOptions,
   partKey,
   partsOf,
-  resolveUploadBlobs,
   UPLOAD_KEY_PREFIX,
   UPLOAD_STORAGE_BUCKET_ENV,
   UPLOAD_STORAGE_KEY_ENV,
@@ -355,20 +271,4 @@ export {
   UploadsUnavailableError,
   UploadTooLargeError,
 } from "./workflow-uploads.ts";
-// The wake hint. Exported for BOTH ends: the guest builds the publisher, and
-// the platform's wake sweep reads the table this names (see workflow-wake-hint.ts
-// — one spelling, so a rename cannot be two edits that disagree).
-export {
-  createWakeHintPublisher,
-  GRAPHILE_JOB_EXPIRY,
-  type WakeHintOptions,
-  type WakeHintPublisher,
-  WORKFLOW_WAKE_TABLE,
-} from "./workflow-wake-hint.ts";
-export { wdkAdapter } from "./workflow-wdk.ts";
-export {
-  configureWorkflowWorld,
-  startWorkflowWorldIfDeclared,
-  type WorldKind,
-} from "./workflow-world.ts";
-export { type SessionWebSocket, safeSend, wireSessionSocket } from "./ws-handler.ts";
+export type { SessionWebSocket } from "./ws-handler.ts";

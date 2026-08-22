@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { sessionStateDdl } from "@alexkroman1/aai-runtime";
+import { sessionStateDdl } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test, vi } from "vitest";
 import {
   type AppDbOpener,
