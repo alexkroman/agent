@@ -512,16 +512,33 @@ describe("sessionSlot", () => {
       expect(capped.get(ctx).items).toEqual(["y", "z"]);
     });
 
-    test("refuses an ASYNC body, naming the rule", () => {
+    test("refuses an ASYNC body at DECLARATION, naming the rule", () => {
       // Its mutations would be committed at the end of the synchronous part and
       // the continuation would then write to a frozen draft — a `TypeError` from
       // somewhere unrelated. Enforced at run time because a conditional return
-      // type cannot be satisfied by a generic wrapper (retail's `retailTool`).
+      // type cannot be satisfied by a generic wrapper (retail's `retailTool`) —
+      // but at DECLARATION rather than on the first call, which is a caller on
+      // the line. The module holding this is loaded by `aai dev`, by the build,
+      // and by the agent's own spec.
+      expect(() =>
+        cartSlot.updateTool({
+          description: "Awaits",
+          execute: async (_args, cart) => {
+            await Promise.resolve();
+            cart.items.push("x");
+          },
+        }),
+      ).toThrow(/must be synchronous, and this one is `async`/);
+    });
+
+    test("refuses a sync body that RETURNS a promise, on the call", () => {
+      // The half the declaration check cannot see: this is an ordinary
+      // function, so only the returned value gives it away.
       const bad = cartSlot.updateTool({
-        description: "Awaits",
-        execute: async (_args, cart) => {
-          await Promise.resolve();
+        description: "Returns a promise",
+        execute: (_args, cart) => {
           cart.items.push("x");
+          return Promise.resolve(1);
         },
       });
       const ctx = createToolContext();

@@ -175,13 +175,18 @@ export interface SessionSlot<K extends string, T> {
    * awaiting in an ordinary `tool()` and calls `update` afterwards; see
    * `update`'s example.
    *
-   * That is enforced at RUN TIME — a body returning a thenable throws naming the
-   * rule — rather than in the type, and the reason is worth knowing before
-   * "fixing" it: a conditional return type (`R extends Promise<unknown> ? never
-   * : R`) cannot be satisfied by a generic WRAPPER around this method, and a
-   * per-agent wrapper is the main way it gets used (`retail`'s `retailTool`).
-   * The runtime check has the better message anyway, and it is the half a user's
-   * project actually runs — neither bundler type-checks user code.
+   * That is enforced at RUN TIME rather than in the type, and the reason is
+   * worth knowing before "fixing" it: a conditional return type
+   * (`R extends Promise<unknown> ? never : R`) cannot be satisfied by a generic
+   * WRAPPER around this method, and a per-agent wrapper is the main way it gets
+   * used (`retail`'s `retailTool`). The runtime check has the better message
+   * anyway, and it is the half a user's project actually runs — neither bundler
+   * type-checks user code.
+   *
+   * **It fires at DECLARATION for the common case.** An `async` body is an
+   * `AsyncFunction`, visible the moment the module loads — under `aai dev`, in
+   * the build, in the agent's own spec. A sync function that RETURNS a promise
+   * is the other half, and only the call can catch it.
    *
    * @example
    * ```ts
@@ -455,22 +460,33 @@ export function sessionSlot<const K extends string, T>(
       ...rest,
       execute: (args, ctx) => execute(args, get(ctx), ctx),
     }),
-    updateTool: ({ execute, ...rest }) => ({
-      ...rest,
-      execute: (args, ctx) =>
-        update(ctx, (draft) => {
-          const result = execute(args, draft, ctx);
-          // An async body would have its mutations committed at the end of the
-          // SYNCHRONOUS part and then go on mutating a frozen draft, which is a
-          // `TypeError` from somewhere unrelated. Named here instead.
-          if (isThenable(result)) {
-            throw new Error(
-              `The body of ${key}.updateTool must be synchronous — its mutations are committed when it returns, so an await inside it writes to a value that has already been stored. Do the awaiting in an ordinary tool() and call ${key}Slot.update afterwards.`,
-            );
-          }
-          return result;
-        }),
-    }),
+    updateTool: ({ execute, ...rest }) => {
+      // At DECLARATION, where the overwhelming majority of this mistake is
+      // visible. The check below still stands for a sync function that RETURNS
+      // a promise, which only the call can see.
+      if (execute.constructor?.name === "AsyncFunction") {
+        throw new Error(
+          `The body of ${key}.updateTool must be synchronous, and this one is \`async\` — its mutations are committed when it returns, so an await inside it writes to a value that has already been stored. Do the awaiting in an ordinary tool() and call the slot's update() afterwards.`,
+        );
+      }
+      return {
+        ...rest,
+        execute: (args, ctx) =>
+          update(ctx, (draft) => {
+            const result = execute(args, draft, ctx);
+            // The half the declaration-time check cannot see. Its mutations
+            // would be committed at the end of the synchronous part and it
+            // would then mutate a frozen draft — a `TypeError` from somewhere
+            // unrelated. Named here instead.
+            if (isThenable(result)) {
+              throw new Error(
+                `The body of ${key}.updateTool must be synchronous — its mutations are committed when it returns, so an await inside it writes to a value that has already been stored. Do the awaiting in an ordinary tool() and call ${key}Slot.update afterwards.`,
+              );
+            }
+            return result;
+          }),
+      };
+    },
     projection(project) {
       const projection = (value?: unknown): ReturnType<typeof project> =>
         project((value === undefined ? create() : value) as DeepReadonly<T>);

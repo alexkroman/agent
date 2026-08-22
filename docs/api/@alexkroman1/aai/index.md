@@ -541,7 +541,7 @@ catalog.
 
 ###### Default Value
 
-`[]` ([DEFAULT\_BUILTIN\_TOOLS](#default_builtin_tools)) — applied by
+`[]` ([DEFAULT\_BUILTIN\_TOOLS](#default_builtin_tools)), applied by
 `host/runtime-tools.ts`.
 
 ##### deadAirCoverMs?
@@ -641,8 +641,8 @@ Sentence spoken when a session starts. Set `""` to start silent.
 
 ###### Default Value
 
-`"Hey there! I'm an AI voice assistant. What can I help you with?"`
-([DEFAULT\_GREETING](#default_greeting))
+`"Hey there! I'm an AI voice assistant. What can I help you
+with?"` ([DEFAULT\_GREETING](#default_greeting))
 
 ##### idleTimeoutMs?
 
@@ -937,9 +937,8 @@ own vocabulary (product names, spelled-out identifiers).
 
 ###### Default Value
 
-`""` ([DEFAULT\_STT\_PROMPT](#default_stt_prompt)) — unbiased transcription.
-That constant's doc shows what an effective prompt looks like, and why a
-generic default is worse than none.
+`""` ([DEFAULT\_STT\_PROMPT](#default_stt_prompt)) — unbiased transcription;
+that constant's doc shows what an effective prompt looks like.
 
 Honoured in both session modes: the pipeline passes it to its STT stage,
 S2S sends it as `input.transcription_prompt` (trimmed to that field's
@@ -1007,9 +1006,8 @@ System prompt driving the LLM.
 ###### Default Value
 
 [DEFAULT\_SYSTEM\_PROMPT](#default_system_prompt) — the framework's own voice-agent
-prompt (role, personality, speaking style, tool etiquette). It is long and
-assembled from parts, so it is the one default here whose VALUE cannot
-usefully be inlined; read the constant.
+prompt. It is assembled from parts, so it is the one default here whose
+VALUE cannot usefully be inlined; read the constant.
 
 ##### text?
 
@@ -1057,8 +1055,7 @@ How the LLM selects tools each step.
 
 ###### Default Value
 
-`"auto"` ([DEFAULT\_TOOL\_CHOICE](#default_tool_choice)) — the model decides
-when to call a tool.
+`"auto"` ([DEFAULT\_TOOL\_CHOICE](#default_tool_choice)) — the model decides.
 
 Honored in pipeline mode and by the OpenAI Realtime transport; the
 AssemblyAI S2S service runs the tool loop service-side and does not
@@ -2231,13 +2228,18 @@ The body must therefore be SYNCHRONOUS. A tool that has to await does the
 awaiting in an ordinary `tool()` and calls `update` afterwards; see
 `update`'s example.
 
-That is enforced at RUN TIME — a body returning a thenable throws naming the
-rule — rather than in the type, and the reason is worth knowing before
-"fixing" it: a conditional return type (`R extends Promise<unknown> ? never
-: R`) cannot be satisfied by a generic WRAPPER around this method, and a
-per-agent wrapper is the main way it gets used (`retail`'s `retailTool`).
-The runtime check has the better message anyway, and it is the half a user's
-project actually runs — neither bundler type-checks user code.
+That is enforced at RUN TIME rather than in the type, and the reason is
+worth knowing before "fixing" it: a conditional return type
+(`R extends Promise<unknown> ? never : R`) cannot be satisfied by a generic
+WRAPPER around this method, and a per-agent wrapper is the main way it gets
+used (`retail`'s `retailTool`). The runtime check has the better message
+anyway, and it is the half a user's project actually runs — neither bundler
+type-checks user code.
+
+**It fires at DECLARATION for the common case.** An `async` body is an
+`AsyncFunction`, visible the moment the module loads — under `aai dev`, in
+the build, in the agent's own spec. A sync function that RETURNS a promise
+is the other half, and only the call can catch it.
 
 ###### Type Parameters
 
