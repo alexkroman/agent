@@ -12,7 +12,8 @@
  * `use-workflow-form.ts` above it as the form-shaped caller.
  */
 
-import { errorMessage, isTerminal } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai";
+import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import { useEffect, useState } from "react";
 import { repeatUntil } from "./_repeat-until.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";

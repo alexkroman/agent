@@ -42,4 +42,4 @@ export {
   type TranscribeSubmitOptions,
   type TranscribeSyncOptions,
   type Transcript,
-} from "../../sdk/utils.ts";
+} from "../../sdk/step-barrel.ts";

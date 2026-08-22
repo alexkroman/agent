@@ -13,7 +13,7 @@
  * step reads exactly the window it needs:
  *
  * ```ts no-check
- * import { readUpload } from "@alexkroman1/aai/utils";
+ * import { readUpload } from "@alexkroman1/aai/step";
  *
  * export async function readHeader(uploadId: string) {
  *   "use step";
@@ -53,7 +53,7 @@
  * fully present, exactly as it would over a finished file:
  *
  * ```ts no-check
- * import { readUpload, uploadInfo } from "@alexkroman1/aai/utils";
+ * import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
  * import { sleep } from "workflow";
  *
  * async function arrived(id: string) {

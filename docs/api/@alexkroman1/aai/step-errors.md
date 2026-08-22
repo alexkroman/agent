@@ -95,7 +95,7 @@ that second case.
 
 ##### init?
 
-[`StepFetchInit`](utils.md#stepfetchinit)
+[`StepFetchInit`](step.md#stepfetchinit)
 
 #### Returns
 
@@ -153,7 +153,7 @@ unretryable.
 #### Example
 
 ```ts
-import { requireStepEnv } from "@alexkroman1/aai/utils";
+import { requireStepEnv } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 
 export function apiKey(): string {
@@ -202,7 +202,7 @@ is being swallowed, because the original is what was passed in.
 #### Example
 
 ```ts
-import { stepGenerate } from "@alexkroman1/aai/utils";
+import { stepGenerate } from "@alexkroman1/aai/step";
 import { throwStepError } from "@alexkroman1/aai/step-errors";
 
 export async function summarize(text: string): Promise<string> {

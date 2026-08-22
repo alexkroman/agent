@@ -21,7 +21,7 @@ import {
   uploadInfo,
   type WriteUploadOptions,
   writeUpload,
-} from "../../../sdk/utils.ts";
+} from "../../../sdk/step-barrel.ts";
 
 /** What a step reports for a file it made: the handle, never the bytes. */
 export type Produced = {

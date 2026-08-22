@@ -3,7 +3,7 @@ import { PRODUCT, supportProjection } from "./shared.ts";
 
 /**
  * A support line that grades its own retrieval before it speaks — the
- * self-RAG / CRAG graph, ported to voice. `graph.ts` holds the loop, `prompts.ts`
+ * self-RAG / CRAG graph, ported to voice. `procedure.ts` holds the loop, `prompts.ts`
  * the attribution and the graders, `shared.ts` the knowledge base and why its
  * retriever is lexical.
  *

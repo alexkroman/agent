@@ -76,7 +76,7 @@ import { mkdtemp, open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { probeMedia, runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
-import { readUpload, report, uploadInfo, writeUpload } from "@alexkroman1/aai/utils";
+import { readUpload, report, uploadInfo, writeUpload } from "@alexkroman1/aai/step";
 import { classifyFfmpeg } from "./ffmpeg-verdict.ts";
 import { clock } from "./stitch.ts";
 import { HEADER_PROBE_BYTES, parseWav, UnsupportedRecordingError } from "./wav.ts";

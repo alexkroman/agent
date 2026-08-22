@@ -1,5 +1,5 @@
 import { errorMessage, type ToolFailure, toolFailure } from "@alexkroman1/aai";
-import { executeStep, replanNode } from "../graph.ts";
+import { executeStep, replanNode } from "../procedure.ts";
 import {
   liveSearch,
   noteRevision,

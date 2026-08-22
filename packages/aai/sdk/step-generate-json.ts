@@ -75,7 +75,7 @@ export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOp
  *
  * @example
  * ```ts
- * import { stepGenerateJson } from "@alexkroman1/aai/utils";
+ * import { stepGenerateJson } from "@alexkroman1/aai/step";
  * import { z } from "zod";
  *
  * const Digest = z.object({ headline: z.string(), points: z.array(z.string()) });

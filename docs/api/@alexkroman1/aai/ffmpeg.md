@@ -19,7 +19,7 @@ Three things, in the order a pipeline needs them:
 - [runFfmpeg](#runffmpeg) — everything else, as an argv you build yourself.
 
 ```ts no-check
-import { readUpload } from "@alexkroman1/aai/utils";
+import { readUpload } from "@alexkroman1/aai/step";
 import { probeMedia, transcodeToWav } from "@alexkroman1/aai/ffmpeg";
 
 export async function toPcm(uploadId: string) {

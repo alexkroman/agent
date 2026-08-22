@@ -203,20 +203,28 @@ export interface AgentDef extends PipelineVoiceTuning {
   /** Display name shown by the default client UI. */
   name: string;
   /**
-   * System prompt driving the LLM. Defaults to
-   * {@link DEFAULT_SYSTEM_PROMPT} when not set on `agent()`.
+   * System prompt driving the LLM.
+   *
+   * @defaultValue {@link DEFAULT_SYSTEM_PROMPT} — the framework's own voice-agent
+   * prompt (role, personality, speaking style, tool etiquette). It is long and
+   * assembled from parts, so it is the one default here whose VALUE cannot
+   * usefully be inlined; read the constant.
    */
   systemPrompt: string;
   /**
-   * Sentence spoken when a session starts. Defaults to
-   * {@link DEFAULT_GREETING}; set `""` to start silent.
+   * Sentence spoken when a session starts. Set `""` to start silent.
+   *
+   * @defaultValue `"Hey there! I'm an AI voice assistant. What can I help you with?"`
+   * ({@link DEFAULT_GREETING})
    */
   greeting: string;
   /**
    * Bias prompt for transcription — use it to teach the transcriber the agent's
-   * own vocabulary (product names, spelled-out identifiers). Defaults to empty
-   * (unbiased transcription); see {@link DEFAULT_STT_PROMPT} for what an
-   * effective prompt looks like, and why a generic default is worse than none.
+   * own vocabulary (product names, spelled-out identifiers).
+   *
+   * @defaultValue `""` ({@link DEFAULT_STT_PROMPT}) — unbiased transcription.
+   * That constant's doc shows what an effective prompt looks like, and why a
+   * generic default is worse than none.
    *
    * Honoured in both session modes: the pipeline passes it to its STT stage,
    * S2S sends it as `input.transcription_prompt` (trimmed to that field's
@@ -227,15 +235,19 @@ export interface AgentDef extends PipelineVoiceTuning {
    */
   sttPrompt?: string;
   /**
-   * Max TOOL-CALLING steps per reply — bounds runaway tool loops. Defaults to
-   * {@link DEFAULT_MAX_STEPS} (10). On reaching the cap the pipeline spends one
-   * more step with `toolChoice: "none"`, so a capped turn still answers rather
-   * than stopping mid-chain in silence.
+   * Max TOOL-CALLING steps per reply — bounds runaway tool loops. On reaching
+   * the cap the pipeline spends one more step with `toolChoice: "none"`, so a
+   * capped turn still answers rather than stopping mid-chain in silence.
+   *
+   * @defaultValue `10` ({@link DEFAULT_MAX_STEPS})
    */
   maxSteps: number;
   /**
-   * How the LLM selects tools each step. Defaults to `"auto"`
-   * ({@link DEFAULT_TOOL_CHOICE}): the model decides when to call a tool.
+   * How the LLM selects tools each step.
+   *
+   * @defaultValue `"auto"` ({@link DEFAULT_TOOL_CHOICE}) — the model decides
+   * when to call a tool.
+   *
    * Honored in pipeline mode and by the OpenAI Realtime transport; the
    * AssemblyAI S2S service runs the tool loop service-side and does not
    * take a tool-choice parameter.
@@ -248,11 +260,8 @@ export interface AgentDef extends PipelineVoiceTuning {
    * omitting the field mean the same thing. See {@link BuiltinTool} for the
    * catalog.
    *
-   * @remarks
-   * This doc used to claim a "cognitive set" default of `think`/`remember`/
-   * `recall`/`calculate`, contradicting {@link BuiltinTool}'s doc in this same
-   * file and the constant itself. The empty default is the real one and is what
-   * `host/runtime-tools.ts` applies.
+   * @defaultValue `[]` ({@link DEFAULT_BUILTIN_TOOLS}) — applied by
+   * `host/runtime-tools.ts`.
    */
   builtinTools?: readonly BuiltinTool[];
   /**
@@ -290,7 +299,8 @@ export interface AgentDef extends PipelineVoiceTuning {
   workflows?: Readonly<Record<string, WorkflowDef>>;
   /**
    * What this agent's front door IS — and so whether it serves voice at all.
-   * Defaults to `"voice"`.
+   *
+   * @defaultValue `"voice"`
    *
    * `"static"` declares a WORKFLOW APP: an ordinary web page over the workflow
    * HTTP API (`/workflows/*`), with no microphone, no WebSocket and no session.
@@ -395,22 +405,25 @@ export interface AgentDef extends PipelineVoiceTuning {
   /**
    * How long the session may go with no inbound audio before it is closed
    * (ms). Measures silence, not call length — re-armed on every audio frame.
-   * Defaults to {@link DEFAULT_IDLE_TIMEOUT_MS} (300 000, 5 minutes); `0` or
-   * a non-finite value disables the timer entirely.
+   * `0` or a non-finite value disables the timer entirely.
+   *
+   * @defaultValue `300_000` (5 minutes, {@link DEFAULT_IDLE_TIMEOUT_MS})
    */
   idleTimeoutMs?: number;
   /**
    * Pipeline mode only. When set, the assistant proactively takes a turn
    * after this many ms of user silence (no speech since the last reply
-   * finished). Unset disables the behavior. Nudges are capped at
-   * `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back until the user speaks
-   * again.
+   * finished). Nudges are capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3)
+   * back-to-back until the user speaks again.
+   *
+   * @defaultValue unset — the behaviour is off.
    */
   silenceTimeoutMs?: number;
   /**
    * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
-   * elapses. Never shown as a user transcript. Defaults to
-   * {@link DEFAULT_SILENCE_PROMPT}. Requires `silenceTimeoutMs`.
+   * elapses. Never shown as a user transcript. Requires `silenceTimeoutMs`.
+   *
+   * @defaultValue {@link DEFAULT_SILENCE_PROMPT}
    */
   silencePrompt?: string;
   /**

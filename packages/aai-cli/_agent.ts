@@ -2,7 +2,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { VALID_SLUG_RE } from "@alexkroman1/aai/utils";
+import { VALID_SLUG_RE } from "@alexkroman1/aai/internal";
 import {
   approveServer,
   ensureApiKey,

@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Zod schemas + limits for the browser studio (coding agent) HTTP surface.
 
+import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/internal";
 import { slugifyName } from "@alexkroman1/aai/slugify";
-import { isRecord, MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
 import { generatedSlug } from "aai-server/slug-generate";
 import { z } from "zod";

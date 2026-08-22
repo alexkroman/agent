@@ -16,7 +16,7 @@
  * `-preview` is mislabeled, harmlessly).
  */
 
-import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
 
 /** What a guest sandbox was spawned (or acquired) to do. */
 export type SandboxRole =

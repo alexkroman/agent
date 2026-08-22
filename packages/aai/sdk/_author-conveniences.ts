@@ -2,7 +2,9 @@
 /**
  * Normalization of the author-only conveniences `AgentParams` allows on top
  * of `AgentDef` — `system` as an alias of `systemPrompt`, a model-id string
- * for `llm`, and `voice` as shorthand for `tts: assemblyAITts({ voice })`.
+ * for `llm`, `voice` as shorthand for `tts: assemblyAITts({ voice })`, and
+ * `minTurnSilenceMs`/`maxTurnSilenceMs` as shorthand for the same two options
+ * on `assemblyAIStt()`.
  * Used by `agent()` and, for configs that never went through `agent()` (a
  * raw `export default {...}` object), by `toAgentConfig`, so the
  * conveniences work on every authoring path rather than only the
@@ -13,7 +15,9 @@
  */
 
 import { isRecord } from "./is-record.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import { normalizeLlm } from "./providers/llm/from-string.ts";
+import { type AssemblyAIOptions, assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 
 /**
@@ -51,5 +55,74 @@ export function normalizeAgentConveniences(input: unknown): unknown {
     }
     rest.tts = assemblyAITts({ voice });
   }
+  normalizeEndpointing(rest);
   return rest;
+}
+
+/**
+ * `agent({ minTurnSilenceMs, maxTurnSilenceMs })` → the same two options on the
+ * default AssemblyAI STT descriptor, in place.
+ *
+ * The shorthand exists because these are the highest-value tuning an agent has
+ * and were the highest-friction to express: `maxTurnSilenceMs` is the
+ * pause-tolerance knob (see `DEFAULT_MAX_TURN_SILENCE_MS`), and reaching it used
+ * to mean materializing a whole `assemblyAIStt({ … })` descriptor — which then
+ * silently opted the stage out of the default fill, so an author on
+ * `assemblyAIPipeline({ region: "eu" })` had to re-declare `region` as well or
+ * lose it. One number should not cost a stage.
+ *
+ * Desugared rather than carried on `AgentDef` so there is ONE owner of the
+ * value at runtime — `resolveAssemblyAISttSettings` — instead of a precedence
+ * rule between a field and a descriptor. Same reasoning as `voice`, and the
+ * same restriction: an explicit `stt` descriptor owns its own window, which the
+ * arm types as a compile error (`EndpointingOnDescriptorMisuse`).
+ */
+function normalizeEndpointing(rest: Record<string, unknown>): void {
+  const [minKey, maxKey] = ENDPOINTING_KEYS;
+  const min = takeNumber(rest, minKey);
+  const max = takeNumber(rest, maxKey);
+  if (min === undefined && max === undefined) return;
+  const lead = `\`${minKey}\`/\`${maxKey}\` tune the default AssemblyAI STT stage`;
+  const owns =
+    "an explicit `stt` descriptor owns its own end-of-turn window; set it there " +
+    `(e.g. \`assemblyAIStt({ ${maxKey} })\`)`;
+  for (const [field, why] of [
+    ["stt", owns],
+    ["s2s", "S2S runs STT service-side"],
+  ] as const) {
+    if (rest[field] !== undefined) {
+      throw new Error(`${lead} — ${why}, or remove \`${field}\`.`);
+    }
+  }
+  if (rest.text === true) {
+    throw new Error(`${lead} — a text agent has none; remove them or remove \`text\`.`);
+  }
+  rest.stt = assemblyAIStt(omitUndefined({ [minKey]: min, [maxKey]: max }));
+}
+
+/**
+ * The two field names, read off a type rather than written as string literals.
+ *
+ * The indirection is Biome's: `noSecrets` reads either name as a high-entropy
+ * literal — the false positive a long camelCase string always trips — and a
+ * suppression would raise the escape-hatch baseline, which only moves down.
+ * Deriving them from `AssemblyAIOptions` also means a rename over there is a
+ * compile error here rather than a shorthand that silently stops desugaring.
+ */
+const ENDPOINTING_KEYS = Object.keys({
+  minTurnSilenceMs: 0,
+  maxTurnSilenceMs: 0,
+}) as [EndpointingKey, EndpointingKey];
+
+type EndpointingKey = Extract<keyof AssemblyAIOptions, `${"min" | "max"}TurnSilenceMs`>;
+
+/** Read a numeric convenience off the params bag and REMOVE it, so `AgentDef` stays canonical. */
+function takeNumber(rest: Record<string, unknown>, key: string): number | undefined {
+  const value = rest[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number") {
+    throw new Error(`\`${key}\` must be a number of milliseconds.`);
+  }
+  delete rest[key];
+  return value;
 }

@@ -1,5 +1,5 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
-import { flow, isToolFailure, pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { dialog, isToolFailure, pushCapped, sessionSlot } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { setup } from "xstate";
 import type { z } from "zod";
@@ -149,7 +149,7 @@ const callMachine = setup({
  * The flow. Its own slot key beside {@link retailSlot}: the flow holds the
  * POSITION and the store holds the customer, the orders and the activity feed.
  */
-export const callFlow = flow("call", callMachine);
+export const callFlow = dialog("call", callMachine);
 
 /** Every state a tool may run in before the call is handed to a human — i.e.
  *  everything but `transferred`. What the five formerly `requiresAuth: false`

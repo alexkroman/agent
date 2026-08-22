@@ -44,7 +44,7 @@
 // key of its own, so the Workflows pane's Refresh button cannot discard it and
 // re-boot the sandbox for a listing that has not moved.
 
-import type { WorkflowSummary } from "@alexkroman1/aai";
+import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { createAgentClient } from "@alexkroman1/aai/workflow-api";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";

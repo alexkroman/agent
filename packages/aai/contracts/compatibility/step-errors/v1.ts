@@ -11,8 +11,8 @@
  * relative.
  */
 
+import { requireStepEnv, stepGenerate } from "../../../sdk/step-barrel.ts";
 import { throwFatalStepError, throwStepError, toStepError } from "../../../sdk/step-errors.ts";
-import { requireStepEnv, stepGenerate } from "../../../sdk/utils.ts";
 
 /** An HTTP failure, classified from the response itself. */
 export async function fetchOrder(id: string): Promise<unknown> {

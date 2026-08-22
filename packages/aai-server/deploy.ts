@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
 import type { AgentRecord } from "./agent-store.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { createLogger } from "./logger.ts";

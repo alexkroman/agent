@@ -23,9 +23,7 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-
-import { sleep } from "@alexkroman1/aai/internal";
-import { linkConfirmationCode } from "@alexkroman1/aai/utils";
+import { linkConfirmationCode, sleep } from "@alexkroman1/aai/internal";
 import { resolveServerUrl } from "./_agent.ts";
 import { approveServer, readGlobalConfig, updateGlobalConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";

@@ -22,7 +22,8 @@
 import type http from "node:http";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { requestQuery } from "../sdk/request-url.ts";
-import { isTerminal, type StreamOptions } from "../sdk/workflow.ts";
+import type { StreamOptions } from "../sdk/workflow-options.ts";
+import { isTerminal } from "../sdk/workflow-run.ts";
 import type { RunReader } from "./workflow-api-events.ts";
 import { SSE_HEADERS, sendJson, sseFrame } from "./workflow-api-http.ts";
 

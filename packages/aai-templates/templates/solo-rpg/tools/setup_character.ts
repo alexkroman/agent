@@ -23,7 +23,7 @@ import {
  * **Not a `storyFlow.tool`, deliberately.** Setting up is legal in every state —
  * a player may start over at any point, an ended story included — so a `when`
  * listing all of them would be a gate that gates nothing. It drives the flow
- * itself, which is what `flow.reset` and `flow.send` are public for, and reports
+ * itself, which is what `dialog.reset` and `dialog.send` are public for, and reports
  * the position it landed in so the narrator reads what the opening turn expects.
  *
  * **`reset` before `send`, because a restart is not a transition.** This body

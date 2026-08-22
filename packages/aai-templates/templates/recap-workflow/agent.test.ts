@@ -27,7 +27,7 @@
  *   runs a real one.
  */
 
-import type { ToolContext, WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
+import type { ToolContext, WorkflowClient } from "@alexkroman1/aai";
 import {
   createProgressStream,
   createRunSnapshot,
@@ -37,6 +37,7 @@ import {
   withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
+import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createHook, type Hook, sleep } from "workflow";
 import authoredAgent from "./agent.ts";

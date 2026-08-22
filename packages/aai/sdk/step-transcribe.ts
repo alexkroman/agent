@@ -31,7 +31,7 @@
  * ```ts no-check
  * import { sleep } from "workflow";
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
- * import { stepTranscribePoll, stepTranscribeSubmit, stepTranscribeUpload } from "@alexkroman1/aai/utils";
+ * import { stepTranscribePoll, stepTranscribeSubmit, stepTranscribeUpload } from "@alexkroman1/aai/step";
  *
  * export async function upload(recording: string) {
  *   "use step";

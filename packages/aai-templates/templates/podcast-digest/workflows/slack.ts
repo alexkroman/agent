@@ -28,8 +28,9 @@
  * fails with `invalid_arguments` and no indication of which name was wrong.
  */
 
+import { report, stepFetch } from "@alexkroman1/aai/step";
 import { toStepError } from "@alexkroman1/aai/step-errors";
-import { report, responseErrorMessage, stepFetch } from "@alexkroman1/aai/utils";
+import { responseErrorMessage } from "@alexkroman1/aai/utils";
 import { FatalError } from "workflow";
 import type { EpisodeDigest } from "./digest.ts";
 

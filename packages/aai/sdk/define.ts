@@ -77,7 +77,7 @@ export function tool<P extends ToolInputSchema = ToolInputSchema>(def: {
  * **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
  * default-exports `tool({ … })` is the tool `echo`, registered by existing, and
  * `agent({ tools })` is a compile error naming the file to create
- * ({@link InlineToolsMisuse}).
+ * (`InlineToolsMisuse`).
  *
  * @example
  * ```ts
@@ -216,24 +216,23 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef {
 type AgentParamsCore = Omit<AgentDef, DefaultedAgentField> &
   Partial<Pick<AgentDef, DefaultedAgentField>>;
 
-// The parameter shape lives in its own module (see its header); re-exported here
-// so `agent()` and its params stay one import for an author, and so the root
-// barrel's surface is unchanged by the split.
+/**
+ * The parameter shape lives in its own module (see its header); the four ARMS
+ * and their union are re-exported here so `agent()` and its params stay one
+ * import for an author.
+ *
+ * The ten FIELD-LIST and MESSAGE types behind them are deliberately NOT — they
+ * are the implementation of a compile error, not something an `agent.ts` names,
+ * and the root barrel's membership test is whether an author would name a
+ * symbol. They still appear in the arms' rendered signatures (which is where
+ * they do their job) and `typedoc.json` lists them as intentionally
+ * unexported.
+ */
 export type {
   AgentParams,
-  DefaultedAgentField,
-  FrontDoorField,
-  InlineToolsField,
-  InlineToolsMisuse,
   PipelineAgentParams,
-  PipelineOnlyField,
-  PipelineOnlyMisuse,
-  ProviderField,
   S2sAgentParams,
   SharedAgentParams,
   StaticAgentParams,
-  StaticFrontDoorMisuse,
   TextAgentParams,
-  WorkflowAppMisuse,
-  WorkflowAppOnlyField,
 } from "./agent-params.ts";

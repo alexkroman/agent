@@ -229,7 +229,7 @@ type RunSnapshotOverrides<R> = Partial<WorkflowRunBase> &
 What [createRunSnapshot](#createrunsnapshot) accepts: the shared fields, plus whatever the
 chosen status requires.
 
-The `status`-bearing half mirrors [WorkflowRunSnapshot](index.md#workflowrunsnapshot)'s own union, so
+The `status`-bearing half mirrors [WorkflowRunSnapshot](workflow-api.md#workflowrunsnapshot)'s own union, so
 asking for `status: "completed"` without an `output` is a compile error rather
 than a fixture that lies.
 
@@ -786,7 +786,7 @@ const workflows = createStubWorkflows({
 function createRunSnapshot<R>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
 ```
 
-Build a [WorkflowRunSnapshot](index.md#workflowrunsnapshot) — the right arm of the union, without a
+Build a [WorkflowRunSnapshot](workflow-api.md#workflowrunsnapshot) — the right arm of the union, without a
 cast.
 
 Defaults to a `running` run, which is the state a tool that has just started
@@ -806,7 +806,7 @@ one reads back.
 
 #### Returns
 
-[`WorkflowRunSnapshot`](index.md#workflowrunsnapshot)\<`R`\>
+[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)\<`R`\>
 
 #### Example
 

@@ -58,7 +58,8 @@
  * longer than the cap gets the blind cut, and says so.
  */
 
-import { isRecord, type PcmFormat } from "@alexkroman1/aai/utils";
+import type { PcmFormat } from "@alexkroman1/aai/step";
+import { isRecord } from "@alexkroman1/aai/utils";
 
 /**
  * The format every recording is converted to before anything measures it.

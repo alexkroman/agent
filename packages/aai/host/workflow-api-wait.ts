@@ -34,7 +34,7 @@
  */
 
 import { sleep } from "../sdk/sleep.ts";
-import { clampWorkflowWait, isTerminal, type WorkflowRunSnapshot } from "../sdk/workflow.ts";
+import { clampWorkflowWait, isTerminal, type WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
 import type { RunReader } from "./workflow-api-events.ts";
 
 /**

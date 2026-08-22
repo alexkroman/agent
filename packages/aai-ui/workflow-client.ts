@@ -26,8 +26,8 @@
  * fast path under it in `workflow-events.ts`.
  */
 
-import type { WorkflowRunSnapshot } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { pageBaseUrl } from "./_utils.ts";
 
@@ -56,7 +56,14 @@ export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
  * A workflow's own output type, and the shape `GET /workflows` lists — both
  * re-exported so a page needs ONE import to type its runs and render its form.
  */
-export type { WorkflowOutputOf, WorkflowSummary } from "@alexkroman1/aai";
+/**
+ * The call set {@link createWorkflowApi} returns.
+ *
+ * Re-exported from the SDK rather than declared here: it IS the SDK's client,
+ * and a structural restatement would be a second thing to keep in step with the
+ * routes for no gain.
+ */
+export type { WorkflowApi, WorkflowOutputOf, WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 /**
  * A run status nothing will change again.
  *
@@ -65,15 +72,7 @@ export type { WorkflowOutputOf, WorkflowSummary } from "@alexkroman1/aai";
  * forever by a page while the agent considered it finished — the kind of drift a
  * status predicate beside the status union cannot have.
  */
-export { isTerminal } from "@alexkroman1/aai";
-/**
- * The call set {@link createWorkflowApi} returns.
- *
- * Re-exported from the SDK rather than declared here: it IS the SDK's client,
- * and a structural restatement would be a second thing to keep in step with the
- * routes for no gain.
- */
-export type { WorkflowApi } from "@alexkroman1/aai/workflow-api";
+export { isTerminal } from "@alexkroman1/aai/workflow-api";
 
 export type WorkflowApiOptions = {
   /**

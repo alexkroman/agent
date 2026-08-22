@@ -30,7 +30,7 @@
  *   guest's BAKED image instead of being inlined. Step bundle: 12 MB → ~7 KB.
  * - **`bundleFinalOutput: false`** — skips wrapping the workflow-mode code in a
  *   runtime host, which is exactly what `workflowEntrypoint(code)` supplies
- *   itself at the other end. Flow bundle: 3.7 MB → ~69 KB.
+ *   itself at the other end. Dialog bundle: 3.7 MB → ~69 KB.
  *
  * So `workflowCode` is passed to `workflowEntrypoint()` in the guest and
  * `stepCode` is evaluated there to register its step functions.

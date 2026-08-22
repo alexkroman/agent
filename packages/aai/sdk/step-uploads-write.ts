@@ -48,7 +48,7 @@ export type WriteUploadOptions = {
  * which a page turns back into a file with `api.download(id)`.
  *
  * ```ts no-check
- * import { stepSpeak, writeUpload } from "@alexkroman1/aai/utils";
+ * import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string) {
  *   "use step";

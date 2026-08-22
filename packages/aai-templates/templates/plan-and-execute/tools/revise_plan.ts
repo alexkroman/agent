@@ -1,6 +1,6 @@
 import { errorMessage, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { replanNode } from "../graph.ts";
+import { replanNode } from "../procedure.ts";
 import { REVISE_SYSTEM } from "../prompts.ts";
 import { noteRevision, planFlow, planSlot } from "../shared.ts";
 

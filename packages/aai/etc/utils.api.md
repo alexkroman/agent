@@ -4,17 +4,8 @@
 
 ```ts
 
-// @internal
-export function capToolResult(result: string): string;
-
 // @public
 export function createKeyedLock(): KeyedLock;
-
-// @public
-export function emit<T>(namespace: string, chunk: T): Promise<void>;
-
-// @public
-export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
 
 // @public
 export function errorDetail(err: unknown): string;
@@ -23,19 +14,10 @@ export function errorDetail(err: unknown): string;
 export function errorMessage(err: unknown): string;
 
 // @public
-type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
-
-// @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
-
-// @internal
-export function isTextAssetPath(assetPath: string): boolean;
 
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
-
-// @public
-export function isTransientStatus(status: number): boolean;
 
 // @public (undocumented)
 export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
@@ -55,227 +37,18 @@ export class KeyedLockTimeoutError extends Error {
 }
 
 // @public
-export function linkConfirmationCode(code: string): string;
-
-// @public
-export function mapConcurrent<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
-
-// @public @deprecated
-export const mapInBatches: typeof mapConcurrent;
-
-// @public
-export const MAX_SLUG_LENGTH = 64;
-
-// @public
-export type MultipartBody = {
-    body: Uint8Array;
-    headers: {
-        "Content-Type": string;
-    };
-};
-
-// @public
-export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody;
-
-// @public
-export type MultipartPart = {
-    name: string;
-    bytes: Uint8Array;
-    filename?: string | undefined;
-    type?: string | undefined;
-};
-
-// @public
-export function normalizeSpeechText(text: string): string;
-
-// @public
 export function omitUndefined<T extends object>(obj: T): {
     [K in keyof T]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined>;
 };
 
 // @public
-export function pcmDurationMs(byteLength: number, format: PcmFormat): number;
-
-// @public
-export type PcmFormat = {
-    sampleRate: number;
-    channels?: number | undefined;
-    bitsPerSample?: number | undefined;
-};
-
-// @public
-export const PREVIEW_SLUG_SUFFIX = "-preview";
-
-// @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
-
-// @public
-export function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
-
-// @public
-export type ReadUploadOptions = {
-    start?: number | undefined;
-    end?: number | undefined;
-};
-
-// @public
-export function report(line: string): Promise<void>;
-
-// @public
-export function requireStepEnv(name: string): string;
-
-// @public
-export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @public
 export function responseErrorMessage(res: Response, label?: string): Promise<string>;
 
 // @public
-export function retryAfter(from: {
-    headers: Headers;
-} | Headers): Date | undefined;
-
-// @public
 export function safeJsonParse(text: string): unknown;
-
-// @public
-export type SpeakOptions = {
-    voice?: string | undefined;
-    language?: string | undefined;
-    sampleRate?: number | undefined;
-    apiKeyEnv?: string | undefined;
-    signal?: AbortSignal | undefined;
-};
-
-// @public
-export type SpokenAudio = {
-    audio: Uint8Array<ArrayBuffer>;
-    pcm: Uint8Array;
-    sampleRate: number;
-    durationMs: number;
-    voice: string;
-};
-
-// @public
-interface StandardSchemaIssue {
-    // (undocumented)
-    readonly message: string;
-    // (undocumented)
-    readonly path?: readonly (PropertyKey | {
-        readonly key: PropertyKey;
-    })[] | undefined;
-}
-
-// @public
-type StandardSchemaResult<Output> = {
-    readonly value: Output;
-    readonly issues?: undefined;
-} | {
-    readonly issues: readonly StandardSchemaIssue[];
-};
-
-// @public
-interface StandardSchemaV1<Input = unknown, Output = Input> {
-    readonly "~standard": {
-        readonly version: 1;
-        readonly vendor: string;
-        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
-        readonly types?: {
-            readonly input: Input;
-            readonly output: Output;
-        } | undefined;
-    };
-}
-
-// @public
-export const STEP_SPEAK_SAMPLE_RATE = 24000;
-
-// @public
-export const STEP_SPEAK_TIMEOUT_MS = 120000;
-
-// @public
-export function stepEnv(name: string): string | undefined;
-
-// @public
-export function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
-
-// @public
-export type StepFetchInit = {
-    method?: string | undefined;
-    headers?: Record<string, string> | undefined;
-    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
-    signal?: AbortSignal | undefined;
-};
-
-// @public
-export function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
-
-// @public
-export class StepGenerateError extends Error {
-    constructor(message: string, opts: {
-        status?: number | undefined;
-        retryable: boolean;
-        retryAfter?: Date | undefined;
-        cause?: unknown;
-    });
-    readonly retryable: boolean;
-    readonly retryAfter: Date | undefined;
-    readonly status: number | undefined;
-}
-
-// @public
-export function stepGenerateJson<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
-
-// @public
-export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
-    schema: S;
-};
-
-// @public
-export type StepGenerateOptions = {
-    system?: string;
-    model?: string;
-    apiKeyEnv?: string;
-    gatewayUrl?: string;
-    timeoutMs?: number;
-    temperature?: number;
-    maxTokens?: number;
-};
-
-// @public
-export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
-
-// @public
-export function stepTranscribePoll(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
-
-// @public
-export function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
-    id: string;
-}>;
-
-// @public
-export function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
-    text: string;
-}>;
-
-// @public
-export function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
-    audioUrl: string;
-}>;
-
-// @public
-export class StepTransportError extends Error {
-    constructor(url: string, options: {
-        cause: unknown;
-    });
-    readonly codes: readonly string[];
-}
-
-// @public
-export function stripJsonFence(reply: string): string;
-
-// @internal
-export function toArgsRecord(input: unknown): Record<string, unknown>;
 
 // @public
 export type ToolFailure = {
@@ -286,123 +59,7 @@ export type ToolFailure = {
 export function toolFailure(message: string): ToolFailure;
 
 // @public
-export const TRANSCRIBE_API = "https://api.assemblyai.com";
-
-// @public
-export const TRANSCRIBE_MODELS: readonly string[];
-
-// @public
-export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
-
-// @public
-export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
-
-// @public
-export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
-
-// @public
-export const TRANSCRIBE_TIMEOUT_MS = 60000;
-
-// @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
-
-// @public
-export const TRANSCRIBE_WINDOW_BYTES: number;
-
-// @public
-export class TranscribeError extends Error {
-    constructor(message: string, init: {
-        status?: number | undefined;
-        retryable: boolean;
-        retryAfter?: Date | undefined;
-    });
-    readonly retryable: boolean;
-    readonly retryAfter: Date | undefined;
-    readonly status: number | undefined;
-}
-
-// @public
-export type TranscribeProgress = {
-    done: false;
-    status: string;
-} | {
-    done: true;
-    status: string;
-    transcript: Transcript;
-};
-
-// @public
-export type TranscribeRequestOptions = {
-    apiKeyEnv?: string | undefined;
-    timeoutMs?: number | undefined;
-    signal?: AbortSignal | undefined;
-};
-
-// @public
-export type TranscribeSubmitOptions = TranscribeRequestOptions & {
-    models?: readonly string[] | undefined;
-    params?: Record<string, unknown> | undefined;
-};
-
-// @public
-export type TranscribeSyncOptions = TranscribeRequestOptions & {
-    model?: string | undefined;
-    filename?: string | undefined;
-    type?: string | undefined;
-    label?: string | undefined;
-};
-
-// @public
-export type Transcript = {
-    id: string;
-    text: string;
-    durationMs: number;
-};
-
-// @public
-export type UploadInfo = {
-    id: string;
-    name: string;
-    type: string;
-    size: number;
-    complete: boolean;
-    ranges?: readonly UploadRange[];
-};
-
-// @public
-export function uploadInfo(id: string): Promise<UploadInfo>;
-
-// @public
-export type UploadRange = {
-    start: number;
-    end: number;
-};
-
-// @public
-export type UploadSlice = {
-    info: UploadInfo;
-    bytes: Uint8Array;
-    start: number;
-    end: number;
-};
-
-// @public
-export const VALID_SLUG_RE: RegExp;
-
-// @public
-export const WAV_HEADER_BYTES = 44;
-
-// @public
 export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
-
-// @public
-export function writeUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
-
-// @public
-export type WriteUploadOptions = {
-    name?: string | undefined;
-    type?: string | undefined;
-};
 
 // (No @packageDocumentation comment for this package)
 

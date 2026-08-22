@@ -15,6 +15,11 @@ Start with `createAgentClient` — one object for everything one agent answers.
 `createWorkflowApiClient` is the narrower one, for a caller that genuinely
 only has workflows (a page already knows what it is).
 
+It also owns the RUN vocabulary — the option bags, the snapshot union, its
+guard, and `WorkflowOutputOf` — which used to sit on the root barrel beside
+`agent()` and `tool()`. See the re-export below for the line that puts it
+here.
+
 ## Type Aliases
 
 ### AgentClient
@@ -96,6 +101,61 @@ this call works with no `token`, and a workflow API closed by
 
 ***
 
+### AnyWorkflowDef
+
+```ts
+type AnyWorkflowDef<R> = {
+  description?: string;
+  input?: ToolInputSchema;
+  run: WorkflowBody<never, R>;
+  uploads?: readonly string[];
+};
+```
+
+Any workflow definition, for a signature that only needs its OUTPUT type.
+
+Not `WorkflowDef<ToolInputSchema, R>`, which is the obvious spelling and does
+not work: a body's input is a function PARAMETER, so it is contravariant, and
+a `run` taking `{ topic: string }` is not assignable to one taking the open
+`Record<string, unknown>`. Every schema-carrying workflow would fail to match.
+Typing the parameter as `never` inverts that — `never` is assignable to every
+parameter type — which is exactly right for a position that only ever reads
+`R`, and makes the def unusable for CALLING the body, which nothing here does.
+
+#### Type Parameters
+
+##### R
+
+`R` = `unknown`
+
+#### Properties
+
+##### description?
+
+```ts
+optional description?: string;
+```
+
+##### input?
+
+```ts
+optional input?: ToolInputSchema;
+```
+
+##### run
+
+```ts
+run: WorkflowBody<never, R>;
+```
+
+##### uploads?
+
+```ts
+optional uploads?: readonly string[];
+```
+
+***
+
 ### ClientConfigResponse
 
 ```ts
@@ -141,6 +201,149 @@ event: string;
 ```
 
 The frame's `event:` name — `run`, `chunk`, `done`, `idle`, `missing`.
+
+***
+
+### FindOptions
+
+```ts
+type FindOptions = {
+  limit?: number;
+};
+```
+
+Options for `WorkflowClient.find`.
+
+#### Properties
+
+##### limit?
+
+```ts
+optional limit?: number;
+```
+
+Most runs to return, newest first. Defaults to
+`DEFAULT_WORKFLOW_FIND_LIMIT` and is clamped to
+`MAX_WORKFLOW_FIND_LIMIT`.
+
+***
+
+### StartOptions
+
+```ts
+type StartOptions = {
+  key?: string;
+  notify?: boolean | string;
+};
+```
+
+Per-run options for `WorkflowClient.start`.
+
+#### Properties
+
+##### key?
+
+```ts
+optional key?: string;
+```
+
+A caller's own handle on this run, for looking it up again later with
+`WorkflowClient.find`.
+
+**This is the one piece of durable-workflow machinery the Workflow DevKit
+has no equivalent for, and it is kept because a VOICE agent is broken
+without it.** `start` resolves with a `runId`; the natural place a tool puts
+it is a `sessionSlot`, and a session's slot values are swept
+`SESSION_RESUME_GRACE_MS`
+after the caller hangs up. So the run outlives the session and the only
+handle to it does not. Passing `key: ctx.sessionId` (or a phone number, an
+account id, an upload id) means the next turn — or the next CALL — can find
+the run again without the agent maintaining its own index in `ctx.db`.
+
+Not unique: starting twice with one key is legal and `find` returns the
+newest first. Deduplicating is a decision only the caller can make.
+
+##### notify?
+
+```ts
+optional notify?: boolean | string;
+```
+
+Have the agent SAY SOMETHING when this run finishes, without being asked.
+
+`true` takes the default instruction ("tell the caller the result, briefly,
+in your own words"); a string replaces it. Either way the agent takes an
+ordinary interruptible turn built from the run's own output — the model
+writes the sentence, because it is the only thing that knows what the
+caller has already heard.
+
+**This is what makes "I'll let you know" true.** A voice tool that starts
+durable work answers the turn immediately and the work lands minutes later
+with no turn to land in, so before this the caller had to think to ask
+again — and an agent that had promised an update never gave one.
+
+Two limits, both by construction. It reaches the session that STARTED the
+run and only while that session is alive: a run outlives the call, and an
+announcement into a call that has ended is nobody's. And it needs a
+transport that can take an unprompted turn — pipeline mode can, S2S has no
+such verb, so on an S2S agent this is a logged no-op rather than an error.
+Both are why `key` stays the durable handle: the next call finds the run.
+
+***
+
+### StreamOptions
+
+```ts
+type StreamOptions = {
+  namespace?: string;
+  startIndex?: number;
+};
+```
+
+Options for `WorkflowClient.stream`.
+
+#### Properties
+
+##### namespace?
+
+```ts
+optional namespace?: string;
+```
+
+Which of the run's streams to read. A run may keep several — `getWritable`
+takes the same option — so a workflow can separate, say, progress from log
+output. Omitted, this is the run's default stream.
+
+##### startIndex?
+
+```ts
+optional startIndex?: number;
+```
+
+Chunk index to start from, 0-based. Negative counts back from the end
+(`-3` reads the last three), which is what a reconnecting reader wants when
+it does not know how far it got.
+
+Defaults to 0 — the whole stream from the beginning, since chunks are
+retained with the run rather than being live-only.
+
+***
+
+### TerminalWorkflowRun
+
+```ts
+type TerminalWorkflowRun<R> = Extract<WorkflowRunSnapshot<R>, {
+  status: "completed" | "failed" | "cancelled";
+}>;
+```
+
+A run in a status nothing will change again.
+
+#### Type Parameters
+
+##### R
+
+`R` = `unknown`
 
 ***
 
@@ -447,6 +650,30 @@ Absolute URL the bytes can be read back from, `Range` included.
 
 ***
 
+### WakeUpOptions
+
+```ts
+type WakeUpOptions = {
+  correlationIds?: string[];
+};
+```
+
+Options for `WorkflowClient.wakeUp`.
+
+#### Properties
+
+##### correlationIds?
+
+```ts
+optional correlationIds?: string[];
+```
+
+Interrupt only the `sleep()` calls carrying these correlation ids. Omitted,
+every pending sleep in the run is interrupted, which is what a "do it now"
+button means.
+
+***
+
 ### WorkflowApi
 
 ```ts
@@ -560,7 +787,7 @@ Runs of `workflow` started with `key`, newest first.
 
 ###### Returns
 
-`Promise`\<[`WorkflowRunSnapshot`](index.md#workflowrunsnapshot)[]\>
+`Promise`\<[`WorkflowRunSnapshot`](#workflowrunsnapshot)[]\>
 
 ##### follow()
 
@@ -605,7 +832,7 @@ instead is the caller [WorkflowApi.watch](#watch) exists for.
 
 ###### Returns
 
-`AsyncIterable`\<[`WorkflowRunSnapshot`](index.md#workflowrunsnapshot)\>
+`AsyncIterable`\<[`WorkflowRunSnapshot`](#workflowrunsnapshot)\>
 
 ##### followOutput()
 
@@ -689,7 +916,7 @@ script reads `output`.
 
 ###### Returns
 
-`Promise`\<[`WorkflowRunSnapshot`](index.md#workflowrunsnapshot) \| `undefined`\>
+`Promise`\<[`WorkflowRunSnapshot`](#workflowrunsnapshot) \| `undefined`\>
 
 ##### list()
 
@@ -701,7 +928,7 @@ Declared workflows: name, description, and the input schema to render.
 
 ###### Returns
 
-`Promise`\<[`WorkflowSummary`](index.md#workflowsummary)[]\>
+`Promise`\<[`WorkflowSummary`](#workflowsummary)[]\>
 
 ##### recent()
 
@@ -732,7 +959,7 @@ meaning "this user's runs" cannot silently widen to every user's.
 
 ###### Returns
 
-`Promise`\<[`WorkflowRunSnapshot`](index.md#workflowrunsnapshot)[]\>
+`Promise`\<[`WorkflowRunSnapshot`](#workflowrunsnapshot)[]\>
 
 ##### start()
 
@@ -820,7 +1047,7 @@ answered.
 
 ###### Returns
 
-`Promise`\<[`WorkflowRunSnapshot`](index.md#workflowrunsnapshot)\>
+`Promise`\<[`WorkflowRunSnapshot`](#workflowrunsnapshot)\>
 
 ##### streamOutput()
 
@@ -925,7 +1152,7 @@ which a slow link and a dead client both produce.
 
 ###### Returns
 
-`Promise`\<[`UploadInfo`](utils.md#uploadinfo)\>
+`Promise`\<[`UploadInfo`](step.md#uploadinfo)\>
 
 ##### uploadStream()
 
@@ -1088,7 +1315,293 @@ is the one line every caller writes. Absent and present-and-undefined mean
 the same thing here (no bearer), so the type says so rather than making a
 reader reach for a `!` or a conditional spread.
 
+***
+
+### WorkflowBody
+
+```ts
+type WorkflowBody<I, R> = (input: I) => Promise<R> | R & {
+  workflowId?: string;
+};
+```
+
+A `"use workflow"` function, as the compiler leaves it.
+
+The `workflowId` property is what the WDK's transform attaches and what
+`start()` reads; it is the whole reason a declaration can name a workflow body
+without importing the engine. Typed as optional-but-present rather than
+required because the property does not exist until the transform runs, and a
+required field would make an untransformed function a compile error at the
+declaration site — which is the wrong place to report it. `ctx.workflows.start`
+checks it instead, at the point the id is actually needed, where the error can
+say that the bundler plugin did not run.
+
+#### Type Declaration
+
+##### workflowId?
+
+```ts
+optional workflowId?: string;
+```
+
+Attached by the WDK compiler: `workflow//{file}//{export}`.
+
+#### Type Parameters
+
+##### I
+
+`I` = `unknown`
+
+The body's single input argument.
+
+##### R
+
+`R` = `unknown`
+
+What the body returns.
+
+***
+
+### WorkflowOutputOf
+
+```ts
+type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
+```
+
+A workflow's OUTPUT type, for a page that polls its runs.
+
+This is the end-to-end typing a static page would otherwise be missing.
+`useWorkflowRun<R>` makes `run.status === "completed"` narrow to a typed
+`run.output`, and without this the page has to name `R` by hand — restating a
+shape the agent module already declares, with nothing checking the two agree.
+
+It needs no build step and no generated `.d.ts`, because the reason a page
+"cannot import the agent" does not survive contact with `import type`: a
+type-only import is ERASED, so it drags no server graph into the browser
+bundle.
+
+#### Type Parameters
+
+##### D
+
+`D`
+
+#### Example
+
+```ts no-check
+// agent.ts
+export const transcribe = workflow({ input: …, run: transcribeFlow });
+
+// client.tsx — `import type` is erased, so nothing server-side is bundled.
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+import type { transcribe } from "./agent.ts";
+
+const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
+if (run?.status === "completed") console.log(run.output.text); // typed
+```
+
+`Awaited` because a body may be sync or async and the snapshot always holds
+the settled value.
+
+***
+
+### WorkflowRunBase
+
+```ts
+type WorkflowRunBase = {
+  createdAt: number;
+  key?: string;
+  runId: string;
+  workflow: string;
+};
+```
+
+Fields every [WorkflowRunSnapshot](#workflowrunsnapshot) member carries, whatever its status.
+
+Exported because it is part of a public type's shape: `WorkflowRunSnapshot`
+intersects it into every member, so TypeDoc's `treatWarningsAsErrors` fails the
+docs build for a type "referenced by a public signature but not exported" —
+which is the rule working, not an inconvenience. Keeping the alias rather than
+inlining the fields five times is what makes a field added here reach every
+status at once.
+
+#### Properties
+
+##### createdAt
+
+```ts
+createdAt: number;
+```
+
+When the run was created, as epoch ms.
+
+##### key?
+
+```ts
+optional key?: string;
+```
+
+The correlation key [WorkflowClient.start](index.md#start) was given, when it was given one.
+
+##### runId
+
+```ts
+runId: string;
+```
+
+##### workflow
+
+```ts
+workflow: string;
+```
+
+Key the workflow is declared under in `agent({ workflows })`.
+
+***
+
+### WorkflowRunSnapshot
+
+```ts
+type WorkflowRunSnapshot<R> = 
+  | WorkflowRunBase & {
+  status: "pending" | "running";
+}
+  | WorkflowRunBase & {
+  output: R;
+  status: "completed";
+}
+  | WorkflowRunBase & {
+  error: string;
+  status: "failed";
+}
+  | WorkflowRunBase & {
+  status: "cancelled";
+};
+```
+
+A run's observable state, as [WorkflowClient.get](index.md#get-1) returns it.
+
+**Discriminated on `status`**, so the field a status defines is present
+exactly when that status holds: narrowing to `"completed"` gives a
+non-optional `output`, and to `"failed"` a non-optional `error`. A flat object
+with optional fields makes every consumer pay a cast — a page rendering a
+result would write `run.status === "completed" ? (run.output as Out) :
+undefined`, re-asserting by hand both halves of what the type can say.
+
+#### Type Parameters
+
+##### R
+
+`R` = `unknown`
+
+The workflow's own return type, when the caller named the
+  workflow (see [WorkflowDef](index.md#workflowdef)); `unknown` otherwise.
+
+***
+
+### WorkflowRunStatus
+
+```ts
+type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+```
+
+Lifecycle of one workflow run.
+
+- `pending` — created, not yet picked up by the queue.
+- `running` — executing, or suspended at a `sleep`/hook waiting to resume.
+- `completed` / `failed` / `cancelled` — terminal.
+
+***
+
+### WorkflowSummary
+
+```ts
+type WorkflowSummary = {
+  description?: string;
+  inputSchema?: unknown;
+  name: string;
+  uploads?: readonly string[];
+};
+```
+
+One declared workflow, as `GET /workflows` lists it.
+
+Here rather than in `host/` because both ends need it and only one of them is
+a Node process: the API serves it, and a static page's client renders a form
+from it.
+
+#### Properties
+
+##### description?
+
+```ts
+optional description?: string;
+```
+
+The workflow's own `description`, when it declared one.
+
+##### inputSchema?
+
+```ts
+optional inputSchema?: unknown;
+```
+
+JSON Schema for the run input, when the workflow declared one — what a page
+renders its form from. Converted at declaration-listing time rather than
+shipped as the Standard Schema itself, because the reader is a browser.
+
+##### name
+
+```ts
+name: string;
+```
+
+Key the workflow is declared under in `agent({ workflows })`.
+
+##### uploads?
+
+```ts
+optional uploads?: readonly string[];
+```
+
+Input properties that carry an upload id — see `WorkflowDef.uploads`.
+
+Served alongside the schema because a form is rendered from BOTH: the schema
+says the property is a string, and this says the string is a file the page
+has to upload first.
+
 ## Variables
+
+### MAX\_WORKFLOW\_WAIT\_MS
+
+```ts
+const MAX_WORKFLOW_WAIT_MS: 60000 = 60000;
+```
+
+Longest a request may hold open waiting for a run to settle — the ceiling on
+the API's SYNCHRONOUS mode.
+
+60s, under every default idle timeout a proxy in the path is likely to carry
+(nginx and most CDNs sit there), because a request cut by an intermediary
+answers the caller with a network error rather than the "still running" the
+API answers a timeout with — and that is the one outcome which loses the run
+id.
+
+The cap is the honest statement of what waiting IS: an optimization over
+reading the run back, never the mechanism. A run can take a week; a request
+cannot.
+
+***
+
+### TERMINAL\_WORKFLOW\_STATUSES
+
+```ts
+const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
+```
+
+Statuses nothing will change again.
+
+***
 
 ### WORKFLOW\_API\_PREFIX
 
@@ -1107,6 +1620,34 @@ proxy getting it wrong is a workflow app that is dead on arrival under
 live in `host/` and be shared, because a browser cannot import that half.
 
 ## Functions
+
+### clampWorkflowWait()
+
+```ts
+function clampWorkflowWait(requested: number | undefined): number;
+```
+
+Clamp a requested wait to what the API will actually hold a socket open for.
+
+Shared by both ends deliberately: the browser client sizes its own `fetch`
+deadline from this same function, so a page can never still be waiting on a
+request the agent already answered — nor give up before it does.
+
+Anything above the cap is CLAMPED rather than rejected, because the caller's
+intent ("wait as long as you can") is unambiguous; anything absent, negative
+or non-finite means "do not wait".
+
+#### Parameters
+
+##### requested
+
+`number` \| `undefined`
+
+#### Returns
+
+`number`
+
+***
 
 ### createAgentClient()
 
@@ -1154,6 +1695,37 @@ render does not restart its watch, but a client built in render is still a new
 #### Returns
 
 [`WorkflowApi`](#workflowapi)
+
+***
+
+### isTerminal()
+
+```ts
+function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
+```
+
+Is this run finished?
+
+A type guard rather than a `boolean`, so the narrow it performs is usable:
+`if (isTerminal(run))` leaves `run.status` as the three-member union a caller
+can switch over exhaustively. Accepts `undefined` (nothing started yet, or the
+first poll has not landed) because that is what every call site holds.
+
+#### Type Parameters
+
+##### R
+
+`R`
+
+#### Parameters
+
+##### run
+
+[`WorkflowRunSnapshot`](#workflowrunsnapshot)\<`R`\> \| `undefined`
+
+#### Returns
+
+`run is TerminalWorkflowRun<R>`
 
 ***
 
@@ -1208,10 +1780,22 @@ shorter than the request's.
 
 ### UploadInfo
 
-Re-exports [UploadInfo](utils.md#uploadinfo)
+Re-exports [UploadInfo](step.md#uploadinfo)
 
 ***
 
 ### UploadRange
 
-Re-exports [UploadRange](utils.md#uploadrange)
+Re-exports [UploadRange](step.md#uploadrange)
+
+***
+
+### WorkflowClient
+
+Re-exports [WorkflowClient](index.md#workflowclient)
+
+***
+
+### WorkflowDef
+
+Re-exports [WorkflowDef](index.md#workflowdef)

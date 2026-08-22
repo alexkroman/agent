@@ -108,7 +108,7 @@ export function publishStepEnv(
  *
  * @example
  * ```ts
- * import { stepEnv } from "@alexkroman1/aai/utils";
+ * import { stepEnv } from "@alexkroman1/aai/step";
  *
  * export async function fetchReport(id: string): Promise<string> {
  *   "use step";

@@ -5,7 +5,7 @@
  * none yet.
  */
 
-import { VALID_SLUG_RE } from "@alexkroman1/aai/utils";
+import { VALID_SLUG_RE } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { previewSlugFor, projectSlugFor } from "./studio-project-slugs.ts";
 import type { StudioWorkspace } from "./studio-workspace.ts";

@@ -49,14 +49,16 @@ import { formatSchemaIssues, toToolJsonSchema } from "../sdk/schema.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type {
   AnyWorkflowDef,
-  FindOptions,
-  StartOptions,
-  StreamOptions,
-  WakeUpOptions,
   WorkflowClient,
   WorkflowDef,
   WorkflowSummary,
 } from "../sdk/workflow.ts";
+import type {
+  FindOptions,
+  StartOptions,
+  StreamOptions,
+  WakeUpOptions,
+} from "../sdk/workflow-options.ts";
 import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
 import {
   MISSING_WORKFLOW_ID_MESSAGE,

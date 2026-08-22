@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import type { LeaderDb } from "./orphan-previews.ts";
 import { createOrphanPreviewSweep, startOrphanPreviewSweep } from "./orphan-previews.ts";

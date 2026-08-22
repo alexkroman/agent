@@ -1,10 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
+// `InlineToolsMisuse` is off the public barrel (it is the implementation of a
+// compile error, not authoring API), so this spec names it at its own module.
+import type { InlineToolsMisuse } from "./agent-params.ts";
 import {
   type AgentParams,
   agent,
-  type InlineToolsMisuse,
   type SharedAgentParams,
   tool,
   type workflowApp,
@@ -200,6 +202,30 @@ test("s2s cannot be combined with pipeline providers or pipeline-only tuning", (
   }>().not.toExtend<AgentParams>();
   // Shared fields stay declarable on an s2s agent.
   expectTypeOf<{ name: string; s2s: S2sProvider; idleTimeoutMs: number }>().toExtend<AgentParams>();
+});
+
+test("the endpointing shorthand is pipeline-only and refuses an explicit stt", () => {
+  // The whole point: one number on a default-pipeline agent, no descriptor.
+  expectTypeOf<{ name: string; maxTurnSilenceMs: number }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; minTurnSilenceMs: number }>().toExtend<AgentParams>();
+  // An explicit stt descriptor owns its own window, so the shorthand is typed
+  // as the message naming where to set it.
+  expectTypeOf<{
+    name: string;
+    stt: SttProvider;
+    maxTurnSilenceMs: number;
+  }>().not.toExtend<AgentParams>();
+  // And it means nothing on the two modes with no pipeline STT stage.
+  expectTypeOf<{
+    name: string;
+    s2s: S2sProvider;
+    maxTurnSilenceMs: number;
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    text: true;
+    maxTurnSilenceMs: number;
+  }>().not.toExtend<AgentParams>();
 });
 
 test("sttPrompt is declarable in BOTH modes", () => {

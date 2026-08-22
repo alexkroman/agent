@@ -13,8 +13,8 @@
  * success, and no spec can catch that without an incomplete upload to hand it.
  */
 
+import { readUpload, uploadInfo } from "../../../sdk/step-barrel.ts";
 import { stubUploads } from "../../../sdk/testing.ts";
-import { readUpload, uploadInfo } from "../../../sdk/utils.ts";
 
 /** The step under test: how far has the upload got? */
 async function arrived(id: string): Promise<{ size: number; complete: boolean }> {

@@ -115,6 +115,7 @@ Full API reference: <https://alexkroman.github.io/agent/>
 - [protocol](protocol.md)
 - [runtime](runtime.md)
 - [s2s](s2s.md)
+- [step](step.md)
 - [step-errors](step-errors.md)
 - [stt](stt.md)
 - [testing](testing.md)

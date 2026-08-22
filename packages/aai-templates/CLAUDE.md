@@ -178,8 +178,8 @@ once, and the templates are now their reference use:
 | `useUserTranscript` | the same three. Each had written `userTranscript !== null && (… === "" ? "…" : …)` by hand, re-deriving a PROTOCOL distinction (`null` is silence, `""` is speech detected with no words yet) from the type |
 | `WorkflowProgress` | `transcription-workflow` and `redline` — the two that render a run's whole narration; they had the component byte-identical, both comments included. `link-digest` keeps the raw `useWorkflowProgress`, since its page renders the newest line only |
 | `resolveOne` + `spokenDigits` (`@alexkroman1/aai`) | `retail` — `resolve.ts`, both halves: an order picked out of the caller's own orders, and a variant picked by the options they named. What stayed there is the store's vocabulary (what an order id looks like, which words name a status); what moved is the never-guess contract |
-| `flow()` + `flow.tool` + `flow.send` | six templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity) |
-| `graph()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
+| `dialog()` + `dialog.tool` + `dialog.send` | six templates, and the split between them is the lesson — see "A flow is WHERE A CONVERSATION IS" below. `travel-concierge` (the confirmation gate, two states), `plan-and-execute` (a plan's lifecycle, three), `retail` (a call's, ending in a TERMINAL state), `solo-rpg` (nested, and a final one), `dispatch-center` (nested, and the one whose position is deliberately NOT per-entity) |
+| `procedure()` | `support-line` — the CRAG loop, driven to completion inside one tool call with `ctx.signal` |
 | `workflow()` + `ctx.workflows` + `isTerminal` | `research-workflow` — the handoff: a VOICE template whose tool starts a run, correlates it with `key`, and reads it back (see below); `recap-workflow` is the same shape with `cancel` and a live-run check on top |
 | `page()` + `createWorkflowApi` + `useWorkflowRun` | `link-digest` — the WORKFLOW APP with the primitives raw: a hand-written `<form>`, its own `useState`, one `createWorkflowApi()` |
 | `Form` + `WorkflowFields` + `useWorkflowSubmit` | `transcription-workflow` — the same front door with the form layer, plus `WorkflowOutputOf`. Its form is ALL declared, so `FileField` is exercised by no template and sits in the allowlist |
@@ -204,7 +204,7 @@ once, and the templates are now their reference use:
 
 ## A flow is WHERE A CONVERSATION IS, and a board is not one
 
-Five templates declare a `flow()`, and the interesting one is the template that
+Five templates declare a `dialog()`, and the interesting one is the template that
 almost could not. `dispatch-center` holds many incidents at once and a flow is
 bound to a session, so it has exactly ONE position — and the first instinct, a
 machine per incident over `Incident.status`, is not available at all.
@@ -228,7 +228,7 @@ each a trap rather than a preference:
 - **A tool legal in EVERY state is not a flow tool.** `when` is required, so an
   ungated one would list every state — a gate that gates nothing, paying the
   wrapper for it. It stays an ordinary `tool()`/`slot.updateTool` and calls
-  `flow.send` itself, which is what that method is public for
+  `dialog.send` itself, which is what that method is public for
   (`incident_create`, `setup_character`, `load_game`, `start_plan`). Each still
   reports the position it landed in: the READOUT is most of the value and needs
   no gate.
@@ -238,7 +238,7 @@ each a trap rather than a preference:
   `retail`'s own wrapper documents for its `summary`. It is also the field for
   "did this actually do the thing": `resources_dispatch` sends nothing when every
   requested callsign was busy.
-- **A `final` state delivers no events, so restarting is `flow.reset`.** An `on:
+- **A `final` state delivers no events, so restarting is `dialog.reset`.** An `on:
   { SETUP }` on `solo-rpg`'s `gameOver` was dead config that read as live, caught
   by a test asserting the POSITION rather than a refusal. Resetting is the honest
   mirror anyway — `setup_character` replaces the campaign with a pristine

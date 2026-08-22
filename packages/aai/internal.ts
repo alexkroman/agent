@@ -21,12 +21,27 @@
  * once in the SDK. The root keeps only the constants that document an
  * `agent()` field.
  *
+ * **This subpath is ZOD-FREE, and that is now a rule rather than an accident.**
+ * It used to reach `formatSchemaIssues` through `sdk/schema.ts`, which imports
+ * zod, so importing anything here pulled zod's module graph — which is exactly
+ * the startup cost `sdk/utils.ts` exists to keep off the CLI's path, and it is
+ * what kept the slug contract and the wire helpers on a PUBLISHED subpath they
+ * had no business being on. The function itself lives in the zod-free
+ * `sdk/standard-schema.ts`; importing it from there is the whole fix.
+ *
  * Named re-exports rather than `export *`: the wildcard form needs a
  * `noReExportAll` suppression, and the escape-hatch ratchet only moves down.
  *
  * @module internal
  */
 
+// The framework's own wire helpers — see `sdk/_wire-helpers.ts`'s module doc.
+export {
+  capToolResult,
+  isTextAssetPath,
+  normalizeSpeechText,
+  toArgsRecord,
+} from "./sdk/_wire-helpers.ts";
 // The app-database connection budget: what one workflow guest may hold against
 // its app role. Here because `aai-server` PROVISIONS that role's
 // `connection limit` and has to size it against this sum — two halves of one
@@ -41,6 +56,11 @@ export {
   APP_DB_WORLD_WORKER_CONCURRENCY,
   guestAppDbConnections,
 } from "./sdk/app-db-budget.ts";
+// The `aai login` confirmation code and the slug shape: the two contracts BOTH
+// ends of a platform interaction must derive identically. They were on `/utils`,
+// which is a published subpath an agent author reads — a platform contract is
+// not authoring API, and neither end that derives one is an agent.
+export { linkConfirmationCode } from "./sdk/cli-link.ts";
 // Client-audio budgets: the browser client's half of wire paths the host
 // enforces the other half of (e.g. MAX_CLIENT_WS_BUFFERED_BYTES), which is why
 // they are declared in the SDK and not in `aai-ui`.
@@ -85,12 +105,22 @@ export {
   PIPELINE_PLAYBACK_GRACE_MS,
 } from "./sdk/playback-timing-constants.ts";
 export { requestPath, requestQuery } from "./sdk/request-url.ts";
-export { formatSchemaIssues } from "./sdk/schema.ts";
 // The one `sleep`. Here rather than on `/utils` because that subpath is where a
 // `workflows/*.ts` module imports its step surface from, and the DevKit's own
 // DURABLE `sleep` is imported from "workflow" in those same files — see the
 // module doc.
 export { type SleepOptions, sleep } from "./sdk/sleep.ts";
+export {
+  MAX_SLUG_LENGTH,
+  PREVIEW_SLUG_SUFFIX,
+  RESERVED_SLUGS,
+  VALID_SLUG_RE,
+} from "./sdk/slug.ts";
+// From `standard-schema.ts`, not from the `schema.ts` that re-exports it: this
+// function is zod-free and that module is not, so routing through it would pull
+// zod's graph into every importer of this subpath — the startup cost the
+// `/utils` module doc has always guarded, now guarded here too.
+export { formatSchemaIssues } from "./sdk/standard-schema.ts";
 // The unavailable-workflows trio. Here rather than on the root barrel because all
 // three are `@internal`: their readers are the tool executor, the two
 // test-context builders, and the guest harness. Keeping them off the root also

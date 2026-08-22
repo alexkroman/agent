@@ -350,12 +350,19 @@ describe("API-EXPORTS.json", () => {
     // Same for `WorkflowClient`, which `createStubWorkflows` takes and returns.
     expect(surface["@alexkroman1/aai"]).toContain("WorkflowClient");
     expect(surface["@alexkroman1/aai/testing"]).not.toContain("WorkflowClient");
-    // …and for `GenerateFn`, `ToolDef` and `WorkflowRunSnapshot`, which the
-    // fakes added in epoch 9 take and return.
-    for (const forgotten of ["GenerateFn", "ToolDef", "WorkflowRunSnapshot"]) {
+    // …and for `GenerateFn` and `ToolDef`, which the fakes added in epoch 9 take
+    // and return.
+    for (const forgotten of ["GenerateFn", "ToolDef"]) {
       expect(surface["@alexkroman1/aai"]).toContain(forgotten);
       expect(surface["@alexkroman1/aai/testing"]).not.toContain(forgotten);
     }
+    // `WorkflowRunSnapshot` is the same shape one subpath over: `/testing`'s
+    // `createRunSnapshot` returns it, and it is EXPORTED from
+    // `@alexkroman1/aai/workflow-api` rather than from the root, because what a
+    // run IS is read by a page or a script and never written in an `agent.ts`.
+    expect(surface["@alexkroman1/aai/workflow-api"]).toContain("WorkflowRunSnapshot");
+    expect(surface["@alexkroman1/aai"]).not.toContain("WorkflowRunSnapshot");
+    expect(surface["@alexkroman1/aai/testing"]).not.toContain("WorkflowRunSnapshot");
     // `ToolModules` is `withDiscoveredTools`'s parameter and lives on
     // `/manifest`, which is not an authoring subpath at all — so it is forgotten
     // HERE and absent from the root too, which is the intended shape: the value a

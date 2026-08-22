@@ -341,10 +341,10 @@ describe("the flow bundle may not require anything", () => {
       // The one-line fix this gate exists to force: drop the export that holds
       // the package at module scope, and the transform drops the import with
       // the body it belongs to.
-      const flow = path.join(dir, "workflows", "flow.ts");
-      const source = await fs.readFile(flow, "utf-8");
+      const flowFile = path.join(dir, "workflows", "flow.ts");
+      const source = await fs.readFile(flowFile, "utf-8");
       await fs.writeFile(
-        flow,
+        flowFile,
         source.slice(0, source.indexOf("export function classify")),
         "utf-8",
       );

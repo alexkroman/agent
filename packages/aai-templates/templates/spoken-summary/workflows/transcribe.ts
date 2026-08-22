@@ -37,14 +37,14 @@
  * the one leg that should be as boring as possible.
  */
 
-import { throwStepError } from "@alexkroman1/aai/step-errors";
 import {
   report,
   stepTranscribePoll,
   stepTranscribeSubmit,
   stepTranscribeUpload,
   uploadInfo,
-} from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai/step";
+import { throwStepError } from "@alexkroman1/aai/step-errors";
 
 /** How long between polls of a submitted job. */
 export const POLL_INTERVAL = "10s";

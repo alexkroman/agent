@@ -63,8 +63,8 @@
  *   `output` exists only when the last segment does.
  */
 
+import { emit, mapConcurrent, readUpload, report, uploadInfo } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
-import { emit, mapConcurrent, readUpload, report, uploadInfo } from "@alexkroman1/aai/utils";
 import { normalizeRecording } from "./normalize.ts";
 import {
   clock,

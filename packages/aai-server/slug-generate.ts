@@ -19,7 +19,7 @@
  */
 
 import { randomInt } from "node:crypto";
-import { VALID_SLUG_RE } from "@alexkroman1/aai/utils";
+import { VALID_SLUG_RE } from "@alexkroman1/aai/internal";
 import { humanId } from "human-id";
 
 export const SLUG_SUFFIX_LENGTH = 6;

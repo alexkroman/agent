@@ -1,6 +1,6 @@
-import { errorMessage, GraphNotFinishedError, tool, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, ProcedureNotFinishedError, tool, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { runCorrectiveRag } from "../graph.ts";
+import { runCorrectiveRag } from "../procedure.ts";
 import { recordQuestion, supportSlot } from "../shared.ts";
 
 /**
@@ -35,7 +35,7 @@ export default tool({
       // a sentence: `ctx.signal` aborts on a barge-in AND on this call's own
       // timeout, and telling the model the knowledge base failed would have it
       // apologize for an outage that did not happen.
-      if (err instanceof GraphNotFinishedError) {
+      if (err instanceof ProcedureNotFinishedError) {
         return toolFailure(
           "That lookup was cut short before it finished. Offer to look again, " +
             "or to log a ticket with log_ticket.",

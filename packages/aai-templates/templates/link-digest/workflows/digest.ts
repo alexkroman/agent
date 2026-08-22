@@ -24,8 +24,8 @@
  * fetched text crosses a queue between them, which is what the cap on it is for.
  */
 
+import { report, stepGenerateJson } from "@alexkroman1/aai/step";
 import { stepFetchOk, throwStepError } from "@alexkroman1/aai/step-errors";
-import { report, stepGenerateJson } from "@alexkroman1/aai/utils";
 import { FatalError, sleep } from "workflow";
 import { z } from "zod";
 

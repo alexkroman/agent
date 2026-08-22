@@ -34,7 +34,7 @@
 import { mkdtemp, open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readUpload } from "@alexkroman1/aai/utils";
+import { readUpload } from "@alexkroman1/aai/step";
 
 /**
  * Bytes moved per `readUpload`, and per write.

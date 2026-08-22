@@ -1,6 +1,6 @@
 import { errorMessage, tool, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { planNode } from "../graph.ts";
+import { planNode } from "../procedure.ts";
 import { noteRevision, planFlow, planSlot } from "../shared.ts";
 
 /**
@@ -18,7 +18,7 @@ import { noteRevision, planFlow, planSlot } from "../shared.ts";
  * `PLANNED` is accepted in all three states — re-planning from scratch is always
  * legal — so a `when` listing every state would be a gate that gates nothing,
  * paying the wrapper for it. It sends the event itself instead, which is what
- * `flow.send` is public for.
+ * `dialog.send` is public for.
  */
 export default tool({
   description:

@@ -1,0 +1,119 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * `@alexkroman1/aai/step` — the surface a `"use step"` body is written
+ * against.
+ *
+ * This is the half of `/utils` that has an AUDIENCE rather than a build
+ * property. That subpath's membership rule was "zod-free, so the CLI can import
+ * it on every invocation without a startup cost" — true, load-bearing, and not
+ * something anybody imports BY: nobody reaches for a module because of its
+ * dependency graph. Seventy-nine exports served three unrelated readers (a step
+ * body, a tool body, and the framework's own plumbing), so the import line said
+ * nothing about which layer you were in and the reference page for the step
+ * vocabulary was a list you had to filter by hand.
+ *
+ * What is here is one reader's whole vocabulary, in the order a pipeline needs
+ * it:
+ *
+ * - **Bounded fan-out** — {@link mapConcurrent}, a WINDOW over a cursor so a
+ *   slow item costs only itself. Replay-safe at any width; its own doc carries
+ *   the rule that makes it so.
+ * - **Environment** — {@link stepEnv} / {@link requireStepEnv}. A step body has
+ *   no `ToolContext`, so this is how it reads `agent({ requiredEnv })`.
+ * - **HTTP** — {@link stepFetch} (HTTP/1.1-pinned; `fetch` speaks h2 and a
+ *   fan-out on one connection turns a rate limit into an unreadable stream
+ *   reset) and {@link multipartBody}.
+ * - **Narration** — {@link report} / {@link emit}, what a page's progress
+ *   stream renders.
+ * - **The model** — {@link stepGenerate} (one `fetch` to the LLM gateway on the
+ *   agent's own key, because the AI SDK would be megabytes in a ~7 KB artifact)
+ *   and {@link stepGenerateJson} / {@link stripJsonFence}.
+ * - **Audio, both directions** — {@link writeUpload} / {@link readUpload} /
+ *   {@link uploadInfo}, {@link stepSpeak} and {@link encodeWav} out, and
+ *   {@link stepTranscribeUpload} / {@link stepTranscribeSubmit} /
+ *   {@link stepTranscribePoll} for the async job API or
+ *   {@link stepTranscribeSync} for the one-request one, back in.
+ * - **Retry classification** — {@link isTransientStatus} / {@link retryAfter},
+ *   for a body deciding whether a failure is worth another round.
+ *
+ * The zod-free budget still applies here and is now a property of BOTH
+ * subpaths rather than the reason one of them exists: a `workflows/*.ts` module
+ * is bundled separately, so the root barrel's graph would ride into the step
+ * bundle. That is also why `stepSpeak` carries the SLOT and the WAV framing
+ * rather than a synthesizer, the same split {@link stepFetch} makes with its
+ * undici dispatcher.
+ *
+ * Two neighbours that are deliberately elsewhere. The failure a body THROWS
+ * (`toStepError` / `throwStepError` / `throwFatalStepError`) is on
+ * `@alexkroman1/aai/step-errors`, which is the one authoring module allowed to
+ * import the DevKit's `workflow` package. And the DevKit's own directives and
+ * its durable `sleep` are imported from `workflow` directly — this SDK owns
+ * what is INSIDE a step and never the steps.
+ *
+ * @module step
+ */
+
+// biome-ignore-all lint/performance/noReExportAll: barrel file by design
+
+export {
+  TRANSCRIBE_TIMEOUT_MS,
+  TranscribeError,
+  type TranscribeRequestOptions,
+} from "./_transcribe-shared.ts";
+export { mapConcurrent, mapInBatches } from "./map-concurrent.ts";
+export { requireStepEnv, stepEnv } from "./step-env.ts";
+export {
+  type MultipartBody,
+  type MultipartPart,
+  multipartBody,
+  type StepFetchInit,
+  StepTransportError,
+  stepFetch,
+} from "./step-fetch.ts";
+export { StepGenerateError, type StepGenerateOptions, stepGenerate } from "./step-generate.ts";
+export {
+  type StepGenerateJsonOptions,
+  stepGenerateJson,
+  stripJsonFence,
+} from "./step-generate-json.ts";
+export { emit, report } from "./step-report.ts";
+export { isTransientStatus, retryAfter } from "./step-retry.ts";
+export {
+  type SpeakOptions,
+  type SpokenAudio,
+  STEP_SPEAK_SAMPLE_RATE,
+  STEP_SPEAK_TIMEOUT_MS,
+  stepSpeak,
+} from "./step-speak.ts";
+export {
+  stepTranscribePoll,
+  stepTranscribeSubmit,
+  stepTranscribeUpload,
+  TRANSCRIBE_API,
+  TRANSCRIBE_MODELS,
+  TRANSCRIBE_UPLOAD_TIMEOUT_MS,
+  TRANSCRIBE_WINDOW_BYTES,
+  type TranscribeProgress,
+  type TranscribeSubmitOptions,
+  type Transcript,
+} from "./step-transcribe.ts";
+export {
+  stepTranscribeSync,
+  TRANSCRIBE_SYNC_ENDPOINT,
+  TRANSCRIBE_SYNC_MODEL,
+  TRANSCRIBE_SYNC_TIMEOUT_MS,
+  type TranscribeSyncOptions,
+} from "./step-transcribe-sync.ts";
+export {
+  type ReadUploadOptions,
+  readUpload,
+  type UploadInfo,
+  // `UploadInfo.ranges` mentions this, and a type a public signature MENTIONS but
+  // does not export is a docs-build warning — which `treatWarningsAsErrors` makes a
+  // failed build. `runtime-barrel.ts` carries the same note for the same reason.
+  type UploadRange,
+  type UploadSlice,
+  uploadInfo,
+} from "./step-uploads.ts";
+export { type WriteUploadOptions, writeUpload } from "./step-uploads-write.ts";
+export { encodeWav, type PcmFormat, pcmDurationMs, WAV_HEADER_BYTES } from "./wav.ts";

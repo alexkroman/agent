@@ -18,8 +18,8 @@
  * the same shape). It is called FROM steps, so it inherits their environment.
  */
 
+import { stepTranscribeSync } from "@alexkroman1/aai/step";
 import { throwStepError } from "@alexkroman1/aai/step-errors";
-import { stepTranscribeSync } from "@alexkroman1/aai/utils";
 
 /**
  * Time one transcription, so the progress log carries LATENCY.

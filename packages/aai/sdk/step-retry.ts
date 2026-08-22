@@ -17,7 +17,7 @@
  *
  * ```ts no-check
  * import { RetryableError } from "workflow";
- * import { isTransientStatus, retryAfter } from "@alexkroman1/aai/utils";
+ * import { isTransientStatus, retryAfter } from "@alexkroman1/aai/step";
  *
  * if (!isTransientStatus(res.status)) throw new FatalError(message);
  * const at = retryAfter(res);

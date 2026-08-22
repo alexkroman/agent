@@ -37,7 +37,7 @@
 
 import {
   type DeepReadonly,
-  flow,
+  dialog,
   pushCapped,
   sessionSlot,
   type ToolContext,
@@ -399,7 +399,7 @@ const gateMachine = setup({
  * synchronous window it writes `pending` in, and the two settling tools send
  * `SETTLED` only on success.
  */
-export const gateFlow = flow("gate", gateMachine);
+export const gateFlow = dialog("gate", gateMachine);
 
 /**
  * Describe a staged action in one sentence, in the second person — this is

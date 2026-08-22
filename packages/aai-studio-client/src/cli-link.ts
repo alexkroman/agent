@@ -68,4 +68,4 @@ export function clearCliLinkCode(): void {
  * derivation is a shared contract (`@alexkroman1/aai/utils`), not a copy each
  * end keeps in step with the other.
  */
-export { linkConfirmationCode } from "@alexkroman1/aai/utils";
+export { linkConfirmationCode } from "@alexkroman1/aai/internal";

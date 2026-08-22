@@ -26,7 +26,7 @@
 // nothing to upload TO is a page teaching a call nobody there can make — the
 // same judgement that keeps the workflow route table off a voice agent.
 
-import type { WorkflowSummary } from "@alexkroman1/aai";
+import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { uploadingWorkflow } from "./docs-content.ts";
 import { Examples } from "./docs-examples.tsx";
 import {

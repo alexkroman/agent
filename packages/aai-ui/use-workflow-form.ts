@@ -34,9 +34,13 @@
  * followed from the same id either way.
  */
 
-import { errorMessage, type WorkflowSummary } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { UploadParallel, UploadProgress } from "@alexkroman1/aai/workflow-api";
+import type {
+  UploadParallel,
+  UploadProgress,
+  WorkflowSummary,
+} from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";

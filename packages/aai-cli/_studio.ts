@@ -9,13 +9,9 @@
  */
 
 import path from "node:path";
+import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX, VALID_SLUG_RE } from "@alexkroman1/aai/internal";
 import { slugifyName } from "@alexkroman1/aai/slugify";
-import {
-  isRecord,
-  MAX_SLUG_LENGTH,
-  PREVIEW_SLUG_SUFFIX,
-  VALID_SLUG_RE,
-} from "@alexkroman1/aai/utils";
+import { isRecord } from "@alexkroman1/aai/utils";
 import {
   isLocalOnlyFile,
   snapshotWorkspaceFiles,

@@ -14,7 +14,7 @@
  * WRITES against the store, and the only thing this must keep doing is compile.
  */
 
-import { readUpload, type UploadInfo, uploadInfo } from "../../../sdk/utils.ts";
+import { readUpload, type UploadInfo, uploadInfo } from "../../../sdk/step-barrel.ts";
 
 /** How much of the file the first step looks at. */
 const HEADER_BYTES = 64 * 1024;

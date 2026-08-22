@@ -1,7 +1,7 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 import type { DeepReadonly, ToolFailure } from "@alexkroman1/aai";
-import { flow, pushCapped, sessionSlot } from "@alexkroman1/aai";
+import { dialog, pushCapped, sessionSlot } from "@alexkroman1/aai";
 import { setup } from "xstate";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
@@ -321,7 +321,7 @@ const callMachine = setup({
  * call moves both — every converted tool opens `dispatchSlot.update` inside its
  * `execute` and lets the flow's own `send` follow it.
  */
-export const callFlow = flow("call", callMachine);
+export const callFlow = dialog("call", callMachine);
 
 /**
  * The board as a READ hands it out: deep-frozen, and typed to say so.

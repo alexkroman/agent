@@ -1052,9 +1052,9 @@ label that does not exist is an API error.
 ### Published type signatures are a committed report
 
 `pnpm api-report` writes `packages/*/etc/<subpath>.api.md` — the rolled-up
-public `.d.ts` for each of the 23 published entry points — plus **`API.md` at
-the repo root, the same 23 reports concatenated**, and **`API-EXPORTS.json`, the
-same 23 entry points' export NAMES**; `pnpm check:api-report` fails when any of
+public `.d.ts` for each of the 24 published entry points — plus **`API.md` at
+the repo root, the same 24 reports concatenated**, and **`API-EXPORTS.json`, the
+same 24 entry points' export NAMES**; `pnpm check:api-report` fails when any of
 them is stale.
 
 **`API-EXPORTS.json` is a second artifact over the same reports, and the split
@@ -1151,7 +1151,7 @@ and the section above admits how it gets made: a judgement from memory, where a
 
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
 `check:api-report` in `scripts/check.sh` and in the CI check job) closes that.
-Twenty-five **capabilities** — named slices of the authoring API, each
+Thirty **capabilities** — named slices of the authoring API, each
 declared by a file under `<package>/contracts/entrypoints/` that may contain
 nothing but
 `export { … } from "<a published subpath>"` — get a report of their own, and what
@@ -1196,7 +1196,7 @@ Four properties are load-bearing:
   That is a test of
   compatibility rather than a claim about it, which is what the `.test-d.ts`
   files cannot be: they pin the CURRENT shape and move with the API. All
-  twenty-one exist from the first commit, so the value does not wait for a bump.
+  every one exists from the first commit, so the value does not wait for a bump.
   The extension is `.tsx` wherever the owning package's tsconfig sets `jsx`
   (DERIVED, not declared) — a component library's authoring example is JSX, and
   one spelled in `createElement` calls would compile while demonstrating an API
@@ -1260,7 +1260,7 @@ a stale report would be believed.
 and it has the same shape as `api-surface-file.test.ts` for the same reason: the
 gate compares two things the script derives, so an extraction that stopped
 finding anything would hash nothing, agree with a committed nothing, and print
-"25 capability contract(s) up to date ✓". The suite reads the contract tree
+"30 capability contract(s) up to date ✓". The suite reads the contract tree
 independently — every package's, by the same discovery rule, so a second package
 is not unguarded by the guard — and asserts every name a capability root selects
 appears in that capability's current epoch, which an empty extraction cannot
