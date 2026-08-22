@@ -135,6 +135,7 @@ describe("createAgentServer", () => {
         new Promise<void>((resolve) => socket.once("open", () => resolve())),
         "the default /phone route did not accept a carrier socket",
       );
+      expect(socket.readyState).toBe(NodeWebSocket.OPEN);
       socket.close();
     });
   });
