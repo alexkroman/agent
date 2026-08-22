@@ -156,8 +156,23 @@ const UNDOCUMENTED_SUBPATHS = {
       "aai-studio-server and the CLI both need them across the package " +
       "boundary, not because an agent author calls them — the surface is " +
       "internal plumbing that happens to cross a package line.",
+    "./host-internal":
+      "The seam @alexkroman1/aai-runtime imports across the package " +
+      "boundary: tuning constants, the resolve*Settings functions and a few " +
+      "helpers. Same argument as ./internal — it exists so the runtime can " +
+      "reach them without them sitting in an agent author's autocomplete.",
   },
   "aai-ui": {},
+  "aai-runtime": {
+    ".":
+      "The host runtime, ~220 exports aimed at somebody EMBEDDING an agent " +
+      "rather than writing one. Rendering it is what this split undid: it " +
+      "was two thirds of a combined reference whose readers are agent " +
+      "authors. Its README and packages/aai-runtime/CLAUDE.md carry the " +
+      "orientation, and the signatures are in etc/*.api.md like every other " +
+      "published package. Revisit if embedders ask for a rendered page — " +
+      "then it gets its own, not a share of the SDK's.",
+  },
 };
 
 /**

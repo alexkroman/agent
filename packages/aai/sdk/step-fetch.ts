@@ -125,7 +125,7 @@ type StepFetchSlot = { [STEP_FETCH_SLOT]?: StepFetch };
  * identically under `aai dev`, on a self-hosted server and in a deployed guest.
  * Pass `undefined` to unpublish.
  *
- * @internal — a host concern, exported from `@alexkroman1/aai/runtime`. A step
+ * @internal — a host concern, exported from `@alexkroman1/aai-runtime`. A step
  * author calls {@link stepFetch}.
  */
 export function publishStepFetch(fetchFn: StepFetch | undefined): void {

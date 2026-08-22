@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "../../.tsbuildinfo/aai-runtime.tsbuildinfo",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/__snapshots__"]
+}

@@ -89,7 +89,7 @@ SDK's web builtins into AI SDK tools through a context whose `db` and
 `generate` both rejected, wrapped every tool in its own 120s deadline, carried
 its own copy of tool-call repair, and re-derived the step budget. Every one of
 those is something `agent()` plus `createTextAgent`
-(`@alexkroman1/aai/runtime`) already is — so each was a second implementation
+(`@alexkroman1/aai-runtime`) already is — so each was a second implementation
 of a shipped rule, free to drift from it, in the process whose whole job is to
 demonstrate the SDK.
 
@@ -365,7 +365,7 @@ have written that file itself.
 ## Why the buffer lives in the guest
 
 `harness-logs.ts` tees both process streams into a bounded, cursor-indexed ring
-(`createLogBuffer`, `@alexkroman1/aai/runtime`) and `GET /manage/logs` serves
+(`createLogBuffer`, `@alexkroman1/aai-runtime`) and `GET /manage/logs` serves
 it — the source behind the studio's Logs pane and `aai logs`.
 
 **The obvious alternative does not work on this platform.** A guest's stdout has

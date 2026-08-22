@@ -191,7 +191,7 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     // `viteDevConfig` uses this as a proxy KEY, so it has to be a string here
     // or the config these specs build has a hole in it. Spelled out rather
     // than imported: this module IS the factory for the
-    // `vi.mock("@alexkroman1/aai/runtime")` call, so importing the real barrel
+    // `vi.mock("@alexkroman1/aai-runtime")` call, so importing the real barrel
     // here is a mock importing the module it mocks — which hangs the run
     // rather than failing it. That the literal still matches the SDK is
     // asserted in `_dev-server-serve.test.ts`, which does not mock the barrel.

@@ -43,8 +43,8 @@
  * throwaway job names and unschedules itself.
  */
 
-import type { CloseableDb } from "@alexkroman1/aai/runtime";
-import { createPostgresDb } from "@alexkroman1/aai/runtime";
+import type { CloseableDb } from "@alexkroman1/aai-runtime";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import { createOrphanPreviewSweep } from "./orphan-previews.ts";

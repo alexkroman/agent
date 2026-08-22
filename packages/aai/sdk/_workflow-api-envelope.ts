@@ -22,7 +22,7 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
  * Path prefix every route lives under, relative to the agent's own base URL.
  *
  * Defined on this side and re-exported by `host/workflow-api.ts` (and so by
- * `@alexkroman1/aai/runtime`, which is where the server and the `aai dev` proxy
+ * `@alexkroman1/aai-runtime`, which is where the server and the `aai dev` proxy
  * table read it from). One literal for both ends: a client asking for a path the
  * server does not serve is a 404 that reads as a missing feature, and the dev
  * proxy getting it wrong is a workflow app that is dead on arrival under

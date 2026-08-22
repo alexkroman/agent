@@ -1,0 +1,177 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The correlation-key index: `(workflow, key) -> runId`.
+ *
+ * **This is the only piece of workflow storage this SDK still owns**, and it
+ * exists because the Workflow Development Kit has no notion of tagging a run.
+ * `start()` takes a `deploymentId`, a `specVersion` and a `world` and nothing
+ * else; `runs.list()` filters by workflow name and status and nothing else. So
+ * "which run belongs to this phone number" is a question WDK cannot be asked.
+ *
+ * Why that question has to be answerable at all is in
+ * `StartOptions.key`'s doc, and it is specifically a VOICE problem: a run
+ * outlives the session that started it, while `ctx.state` — the obvious place to
+ * keep a `runId` — is swept `SESSION_RESUME_GRACE_MS` after the caller hangs up.
+ * Without an index the durable run is unreachable from the next call, which is
+ * the case the whole feature is for.
+ *
+ * Two implementations, because the index has to work in both places a workflow
+ * runs:
+ *
+ * - **Postgres** (`createPostgresKeyStore`) — a single table in the app's own
+ *   `ctx.db` schema, so it needs no second credential and is reaped with the app.
+ *   This is production, and it is why a workflow app has storage switched on when
+ *   it is created: the index is not optional the way `ctx.db` is.
+ * - **Memory** (`createMemoryKeyStore`) — for `aai dev` against the Local World,
+ *   which keeps its own state in `.workflow-data/` and needs no database.
+ *   Deliberately NOT durable: a dev server restart forgets the index, which is
+ *   the same thing the Local World's in-memory queue already does to the runs
+ *   themselves, so degrading further would be dishonest about what dev mode is.
+ *
+ * The table is created lazily and idempotently rather than by a migration step,
+ * for the same reason the world's own `bootstrap` is idempotent: an agent's first
+ * workflow may be its first ever deploy, and there is no separate provisioning
+ * pass to hang a DDL step off.
+ */
+
+import type { Db } from "@alexkroman1/aai";
+import { ensureOnce } from "./_ensure-once.ts";
+
+/** How many runs a keyed or keyless lookup returns when the caller names no limit. */
+export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
+/** Ceiling on `FindOptions.limit`, so one lookup cannot scan a whole history. */
+export const MAX_WORKFLOW_FIND_LIMIT = 100;
+
+/** The table the index lives in. Prefixed so it cannot collide with an app's own. */
+export const WORKFLOW_KEYS_TABLE = "aai_workflow_run_keys";
+
+/**
+ * The index, as the client uses it.
+ *
+ * `record` is called after a run is created and `lookup` when one is sought. Both
+ * take the workflow NAME rather than its `workflowId`, because a name is what
+ * survives a redeploy: `workflowId` embeds the source file path, so moving a
+ * workflow between modules would orphan every key recorded under the old id.
+ */
+export type WorkflowKeyStore = {
+  /** Note that `runId` was started for `key`. */
+  record(workflow: string, key: string, runId: string): Promise<void>;
+  /** Run ids started for `key`, newest first, at most `limit`. */
+  lookup(workflow: string, key: string, limit: number): Promise<string[]>;
+};
+
+/** Clamp a caller's `limit` into the range a single lookup may scan. */
+export function resolveFindLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isFinite(limit)) return DEFAULT_WORKFLOW_FIND_LIMIT;
+  return Math.max(1, Math.min(Math.floor(limit), MAX_WORKFLOW_FIND_LIMIT));
+}
+
+/**
+ * An index in this process's memory, for `aai dev`.
+ *
+ * Newest-first is maintained by UNSHIFTING rather than by sorting on read: the
+ * ordering contract is "the order they were started", and the only clock
+ * available here is the wall clock, whose resolution two `start()` calls in the
+ * same millisecond would collapse.
+ */
+export function createMemoryKeyStore(): WorkflowKeyStore {
+  const byKey = new Map<string, string[]>();
+  // `\u0000` and NOT a raw NUL byte. A single literal NUL makes the whole file
+  // BINARY to `git grep`, which silently exempts it from every guard-invariants
+  // line rule and every check-escape-hatches pattern while the corpus floor
+  // still counts it. That has now happened twice here (see
+  // `host/workflow-notify.ts`), so `assertScanCorpus` diffs `git ls-files`
+  // against `git grep -lI` and fails on a third.
+  const compositeKey = (workflow: string, key: string): string => `${workflow}\u0000${key}`;
+  return {
+    record(workflow, key, runId) {
+      const k = compositeKey(workflow, key);
+      const runs = byKey.get(k);
+      if (runs) runs.unshift(runId);
+      else byKey.set(k, [runId]);
+      return Promise.resolve();
+    },
+    lookup(workflow, key, limit) {
+      return Promise.resolve((byKey.get(compositeKey(workflow, key)) ?? []).slice(0, limit));
+    },
+  };
+}
+
+/**
+ * An index in the workflow database.
+ *
+ * `run_id` is the primary key rather than `(workflow, key)`: a key is
+ * deliberately not unique (see `StartOptions.key`), so keying on the pair
+ * would make a second `start` with the same key either fail or silently replace
+ * the first — and "the newest run for this caller" is a read, not a write
+ * constraint.
+ *
+ * Ordering is by `created_at` DESC with `run_id` DESC as the tiebreak: run ids
+ * are ULIDs, which sort lexicographically by generation time, so two runs
+ * recorded in the same millisecond come back in the order they were started
+ * instead of in whatever order the planner happened to emit.
+ *
+ * **The tiebreak and the index are load-bearing TOGETHER, and neither can be
+ * simplified by testing the other.** The lookup index below already carries
+ * `created_at desc, run_id desc`, so an index-only scan returns the tiebreak
+ * whether or not the query asks for it — deleting `, run_id desc` from the
+ * `ORDER BY` leaves the deployed happy path passing, which is exactly what the
+ * first draft of `aai-server/workflow-keys.scenario.test.ts` discovered. The
+ * clause earns its place on any plan that has to SORT instead: a table created
+ * by a version predating the index (it is a separate `create index if not
+ * exists`), a parallel plan, or a sequential scan. That suite therefore runs the
+ * lookup a second time with index scans disabled, and it is that arm which fails
+ * when the tiebreak goes.
+ */
+export function createPostgresKeyStore(db: Db): WorkflowKeyStore {
+  /**
+   * Create the table once per store.
+   *
+   * `ensureOnce` owns the memo — see its doc for why it has to be on the
+   * PROMISE (concurrent `create table if not exists` on one name take
+   * conflicting locks, so a boolean flipped after the await is a deadlock) and
+   * why a rejection is not remembered as done.
+   */
+  const ensureTable = ensureOnce(async () => {
+    await db.query(`
+      create table if not exists ${WORKFLOW_KEYS_TABLE} (
+        run_id text primary key,
+        workflow text not null,
+        key text not null,
+        created_at timestamptz not null default now()
+      )
+    `);
+    // The only query shape this table serves. Without it a lookup on a busy
+    // agent degrades to a full scan of every run it has ever started.
+    await db.query(`
+      create index if not exists ${WORKFLOW_KEYS_TABLE}_lookup
+        on ${WORKFLOW_KEYS_TABLE} (workflow, key, created_at desc, run_id desc)
+    `);
+  });
+
+  return {
+    async record(workflow, key, runId) {
+      await ensureTable();
+      // `on conflict do nothing` rather than an upsert: a run id is already
+      // unique, so a conflict means this exact run was recorded twice — a retried
+      // `record` after a lost connection, which must be a no-op and not an error
+      // the tool call surfaces.
+      await db.query(
+        `insert into ${WORKFLOW_KEYS_TABLE} (run_id, workflow, key)
+         values ($1, $2, $3) on conflict (run_id) do nothing`,
+        [runId, workflow, key],
+      );
+    },
+    async lookup(workflow, key, limit) {
+      await ensureTable();
+      const rows = await db.query<{ run_id: string }>(
+        `select run_id from ${WORKFLOW_KEYS_TABLE}
+         where workflow = $1 and key = $2
+         order by created_at desc, run_id desc
+         limit $3`,
+        [workflow, key, limit],
+      );
+      return rows.map((r) => r.run_id);
+    },
+  };
+}

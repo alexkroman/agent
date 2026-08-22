@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 // One static import: the runtime barrel is already loaded for the helpers
 // below, so a dynamic import inside startDevServer would defer nothing.
 import {
@@ -27,8 +28,7 @@ import {
   startWorkflowWorldIfDeclared,
   WORKFLOW_API_PREFIX,
   withHostCredentialFallback,
-} from "@alexkroman1/aai/runtime";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";

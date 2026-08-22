@@ -54,7 +54,7 @@ because that default has a measured failure mode with no obvious symptom.
 
 Implementing an STT vendor of your own — `SttOpenOptions`, `SttSession`,
 `SttEvents`, `SttError`, `SttTurnMeta`, `Unsubscribe` — is a HOST job, and
-those types live on `@alexkroman1/aai/runtime` beside `registerSttKind`,
+those types live on `@alexkroman1/aai-runtime` beside `registerSttKind`,
 which is what you hand the opener to. Only [SttProvider](#sttprovider), the
 descriptor a factory here returns, stays on this page.
 

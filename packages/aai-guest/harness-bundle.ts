@@ -13,13 +13,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
+import { isRecord } from "@alexkroman1/aai/utils";
 import {
   createWorkflowSurface,
   publishStepEnv,
   type SessionRuntime,
   type WorkflowSurface,
-} from "@alexkroman1/aai/runtime";
-import { isRecord } from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai-runtime";
 import type { WebSocket } from "ws";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
 import type { StudioSession } from "./studio-session.ts";

@@ -20,7 +20,7 @@
  * | `@alexkroman1/aai/tools` | calling `fetchJson`/`webSearch`/`visitWebpage` from your own tool code |
  * | `@alexkroman1/aai/utils` | small helpers written inside a tool body |
  * | `@alexkroman1/aai/ffmpeg` | running ffmpeg from a step |
- * | `@alexkroman1/aai/runtime` | self-hosting the Node runtime |
+ * | `@alexkroman1/aai-runtime` | self-hosting the Node runtime |
  * | `@alexkroman1/aai/protocol`, `/manifest`, `/internal` | framework internals; not covered by semver |
  *
  * Three primitives here run a defined process, and they are not

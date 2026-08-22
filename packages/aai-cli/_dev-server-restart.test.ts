@@ -31,7 +31,7 @@ import { withTempDir } from "./_test-utils.ts";
 vi.mock("node:fs", async () => (await import("./_dev-server-test-utils.ts")).nodeFsModule());
 vi.mock("chokidar", async () => (await import("./_dev-server-test-utils.ts")).chokidarModule());
 vi.mock("get-port", async () => (await import("./_dev-server-test-utils.ts")).getPortModule());
-vi.mock("@alexkroman1/aai/runtime", async () =>
+vi.mock("@alexkroman1/aai-runtime", async () =>
   (await import("./_dev-server-test-utils.ts")).aaiRuntimeModule(),
 );
 vi.mock("./_config.ts", async () => (await import("./_dev-server-test-utils.ts")).configModule());

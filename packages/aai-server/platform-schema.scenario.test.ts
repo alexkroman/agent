@@ -46,8 +46,8 @@
  * store issued DDL.
  */
 
-import type { CloseableDb } from "@alexkroman1/aai/runtime";
-import { createPostgresDb } from "@alexkroman1/aai/runtime";
+import type { CloseableDb } from "@alexkroman1/aai-runtime";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import { createPgChatStore } from "./chat-store.ts";

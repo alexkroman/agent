@@ -16,7 +16,7 @@
  * said so, at the instant it said so.
  *
  * Registered through `registerSttKind`/`registerTtsKind` on
- * `@alexkroman1/aai/runtime` rather than handed in as pre-resolved openers,
+ * `@alexkroman1/aai-runtime` rather than handed in as pre-resolved openers,
  * because that seam's own doc gives the reason: a fake that goes through the
  * registry resolves exactly like a real provider, its env var included, and
  * production code only ever sees descriptors.
@@ -24,6 +24,11 @@
  * @module
  */
 
+// The two DESCRIPTOR types stay on the authoring subpaths: they are what a
+// factory returns, which is an agent author's concern. Everything else the
+// opener contract needs is on `/runtime`, beside the two register calls above.
+import type { SttProvider } from "@alexkroman1/aai/stt";
+import type { TtsProvider } from "@alexkroman1/aai/tts";
 import {
   registerSttKind,
   registerTtsKind,
@@ -35,12 +40,7 @@ import {
   type TtsOpener,
   type TtsOpenOptions,
   type TtsSession,
-} from "@alexkroman1/aai/runtime";
-// The two DESCRIPTOR types stay on the authoring subpaths: they are what a
-// factory returns, which is an agent author's concern. Everything else the
-// opener contract needs is on `/runtime`, beside the two register calls above.
-import type { SttProvider } from "@alexkroman1/aai/stt";
-import type { TtsProvider } from "@alexkroman1/aai/tts";
+} from "@alexkroman1/aai-runtime";
 import { createNanoEvents } from "nanoevents";
 
 /** The env var the fake stages resolve their (unused) credential from. */

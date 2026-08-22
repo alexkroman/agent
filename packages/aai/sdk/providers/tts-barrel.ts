@@ -41,7 +41,7 @@
  *
  * Implementing a TTS vendor of your own — `TtsOpenOptions`, `TtsSession`,
  * `TtsEvents`, `TtsError`, `TtsWordTiming`, `Unsubscribe` — is a HOST job, and
- * those types live on `@alexkroman1/aai/runtime` beside `registerTtsKind`,
+ * those types live on `@alexkroman1/aai-runtime` beside `registerTtsKind`,
  * which is what you hand the opener to. Only {@link TtsProvider}, the
  * descriptor a factory here returns, stays on this page.
  *

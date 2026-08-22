@@ -44,7 +44,6 @@ const SUBPATH_IMPORTS: ReadonlyArray<readonly [label: string, load: () => Promis
   ["@alexkroman1/aai/step-errors", () => import("@alexkroman1/aai/step-errors")],
   ["@alexkroman1/aai/protocol", () => import("@alexkroman1/aai/protocol")],
   ["@alexkroman1/aai/manifest", () => import("@alexkroman1/aai/manifest")],
-  ["@alexkroman1/aai/runtime", () => import("@alexkroman1/aai/runtime")],
   ["@alexkroman1/aai/s2s", () => import("@alexkroman1/aai/s2s")],
   ["@alexkroman1/aai/stt", () => import("@alexkroman1/aai/stt")],
   ["@alexkroman1/aai/tts", () => import("@alexkroman1/aai/tts")],
@@ -65,7 +64,7 @@ describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {
   // A RULE rather than a record, because a record absorbs whatever it is shown.
   // `_internals` (s2s-transport's connectS2s spy seam) rode the runtime barrel
   // this way: a mutable object a test patches, published as a process-wide
-  // behaviour switch on `@alexkroman1/aai/runtime`, and the export snapshot that
+  // behaviour switch on `@alexkroman1/aai-runtime`, and the export snapshot that
   // used to live here simply recorded it as normal.
   test.each(SUBPATH_IMPORTS)("%s exports no underscore-prefixed name", async (_label, load) => {
     const leaked = Object.keys(await load()).filter((name) => name.startsWith("_"));

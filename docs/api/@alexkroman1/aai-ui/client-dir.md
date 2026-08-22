@@ -40,7 +40,7 @@ this module, so it lands in the same place whether the caller resolved the
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { createAgentServer } from "@alexkroman1/aai/runtime";
+import { createAgentServer } from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 
 const server = createAgentServer({

@@ -22,8 +22,8 @@
  * asserted against nothing but the in-memory queue.
  */
 
-import type { CloseableDb } from "@alexkroman1/aai/runtime";
-import { createPostgresDb } from "@alexkroman1/aai/runtime";
+import type { CloseableDb } from "@alexkroman1/aai-runtime";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import type { SqlExec } from "aai-server/secret-store";
 import { describeWithStack, ensurePlatformTables, pgUrl } from "aai-server/test-utils";
 import { createPgWorkspaceStore } from "aai-server/workspace-store";

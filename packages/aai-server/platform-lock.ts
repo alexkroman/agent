@@ -55,7 +55,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import type { CloseableDb } from "@alexkroman1/aai/runtime";
+import type { CloseableDb } from "@alexkroman1/aai-runtime";
 import { KeyedLockTimeoutError } from "./_keyed-lock.ts";
 import { createLogger } from "./logger.ts";
 import { withSlugLock } from "./sandbox-slots.ts";

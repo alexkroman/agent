@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import type { LogPage } from "@alexkroman1/aai/runtime";
+import type { LogPage } from "@alexkroman1/aai-runtime";
 import { describe, expect, test, vi } from "vitest";
 import { emptyLogPage, parseLogPage, readAgentLogs, readGuestLogs } from "./agent-logs.ts";
 import { GUEST_TOKEN_SECRET_ENV, guestTokenFor } from "./guest-token.ts";

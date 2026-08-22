@@ -9,7 +9,7 @@
 
 import type { AgentDef } from "@alexkroman1/aai";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
-import { resolveAllBuiltins } from "@alexkroman1/aai/runtime";
+import { resolveAllBuiltins } from "@alexkroman1/aai-runtime";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { authHeaders, createTestOrchestrator } from "./test-utils.ts";

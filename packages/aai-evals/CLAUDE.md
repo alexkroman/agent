@@ -203,7 +203,7 @@ have unit and scenario coverage, where "given this utterance, did the agent do
 the right thing" had none.
 
 **The fakes go in through `registerSttKind`/`registerTtsKind` on
-`@alexkroman1/aai/runtime`.** That seam's own doc gives the reason: a fake
+`@alexkroman1/aai-runtime`.** That seam's own doc gives the reason: a fake
 resolving through the registry resolves exactly like a real provider, its env var
 included, and production code only ever sees descriptors. Exporting it widened
 `/runtime` — a NON-authoring subpath, so no capability contract moves — and

@@ -57,12 +57,12 @@ export const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
 const NON_AUTHORING_SUBPATHS = {
   aai: {
     "./protocol": "the wire format both ends of a session derive, not something an agent declares",
-    "./runtime":
-      "the host runtime an operator embeds — createRuntime, createServer, the env brands",
     "./manifest": "the config schema the CLI, the server and the runtime pass between them",
     "./slugify": "how a human name becomes a slug, for the CLI, the platform and the studio",
     "./workspace-files": "the studio's workspace layout, read by the platform and the CLI",
     "./internal": "cross-package infrastructure, explicitly not semver-covered",
+    "./host-internal":
+      "the SDK internals @alexkroman1/aai-runtime needs across the package boundary; not semver-covered",
   },
 };
 

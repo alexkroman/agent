@@ -278,7 +278,7 @@ type UploadReaderSlot = { [UPLOAD_READER_SLOT]?: UploadAccess };
  * `aai dev`, on a self-hosted server and in a deployed guest. Pass `undefined`
  * to unpublish.
  *
- * @internal — a host concern, exported from `@alexkroman1/aai/runtime`.
+ * @internal — a host concern, exported from `@alexkroman1/aai-runtime`.
  */
 export function publishUploadReader(reader: UploadAccess | undefined): void {
   if (reader === undefined) delete (globalThis as UploadReaderSlot)[UPLOAD_READER_SLOT];

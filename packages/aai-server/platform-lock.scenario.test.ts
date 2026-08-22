@@ -35,8 +35,8 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
-import type { CloseableDb, ReservedDb } from "@alexkroman1/aai/runtime";
-import { createPostgresDb } from "@alexkroman1/aai/runtime";
+import type { CloseableDb, ReservedDb } from "@alexkroman1/aai-runtime";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import {

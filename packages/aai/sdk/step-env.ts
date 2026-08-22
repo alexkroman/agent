@@ -86,7 +86,7 @@ function processEnv(): Record<string, string | undefined> {
  * specs did, and which a rename of the constant would have turned into a
  * silent no-op.
  *
- * @internal — a host concern, exported from `@alexkroman1/aai/runtime`. An
+ * @internal — a host concern, exported from `@alexkroman1/aai-runtime`. An
  * agent author calls {@link stepEnv}.
  */
 export function publishStepEnv(

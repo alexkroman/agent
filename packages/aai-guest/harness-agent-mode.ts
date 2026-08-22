@@ -28,6 +28,7 @@
 import { readFile, rm } from "node:fs/promises";
 import type http from "node:http";
 import { requestQuery } from "@alexkroman1/aai/internal";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import {
   configureWorkflowWorld,
   consoleLogger,
@@ -36,8 +37,7 @@ import {
   handleWorkflowRequest,
   startWorkflowWorldIfDeclared,
   type WorkflowSurface,
-} from "@alexkroman1/aai/runtime";
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai-runtime";
 import { verifyBearer } from "./harness-auth.ts";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "./harness-bundle.ts";
 import { bundleSourceOf, readVerifiedBundle } from "./harness-bundle-source.ts";

@@ -12,7 +12,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import type { LogPage } from "@alexkroman1/aai/runtime";
+import type { LogPage } from "@alexkroman1/aai-runtime";
 import pTimeout from "p-timeout";
 import { emptyLogPage, LOGS_READY_TIMEOUT_MS } from "./agent-logs.ts";
 import { resolveHarnessPath, SANDBOX_TEARDOWN_READY_MS } from "./constants.ts";

@@ -33,7 +33,7 @@ import {
   createPostgresDb,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
-} from "@alexkroman1/aai/runtime";
+} from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { createPgAgentRows } from "./agent-store.ts";

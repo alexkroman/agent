@@ -448,7 +448,7 @@ validation.
 
 `"text"` is the one mode with no audio path at all: the agent is an LLM,
 a system prompt and its tools, driven by `createTextAgent`
-(`@alexkroman1/aai/runtime`) over a message list rather than by a
+(`@alexkroman1/aai-runtime`) over a message list rather than by a
 transport over a socket.
 
 ***

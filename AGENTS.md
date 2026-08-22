@@ -705,12 +705,13 @@ move to accommodate a PR, so the earlier that is known the cheaper it is. Both
 
 ## Architecture
 
-Nine workspace packages under `packages/`:
+Ten workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: agent config, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
+| `packages/aai-runtime/` | `@alexkroman1/aai-runtime` | The HOST runtime: `createRuntime`/`createAgentServer`, the session core, transports, provider openers, the workflow API. What runs an `agent.ts`; an `agent.ts` imports none of it |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, list, pull, push, publish, delete, login, secret, storage, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs) |
 | `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs` |
 | `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks |
@@ -751,6 +752,7 @@ rather than here:
 | `packages/aai/CLAUDE.md` | SDK layout (`sdk/` vs `host/`), subpath exports, session modes, STT/LLM/TTS/S2S providers, voices, `ctx.db`, `ctx.generate`, the concurrency primitives, session slots, the canonical agent-config schema, data flow, the defaults/magic-numbers table |
 | `packages/aai-ui/CLAUDE.md` | Browser session, client audio path (capture/playback worklets, pacing, jitter buffer), components, fuzz harnesses, **workflow apps** (`page()`, `createWorkflowApi`, `useWorkflowRun`, and the workflow HTTP API the SDK serves) |
 | `packages/aai-cli/CLAUDE.md` | Subcommands, the studio round-trip (`push`/`pull`/`publish`/`delete`), bundling + Vite rules, credential destinations, `aai dev`'s server and host mode |
+| `packages/aai-runtime/CLAUDE.md` | The host runtime: why it is its own package, the one-way dependency on the SDK, the fifteen `host/` modules that stayed, and the `host-internal` seam |
 | `packages/aai-guest/CLAUDE.md` | The guest harness: one binary / three modes, user-shipped runtime, dev-prod parity, agent guests as servers, guest network access + SSRF, credential separation |
 | `packages/aai-server/CLAUDE.md` | Platform: sandboxes + Modal backends, stateless server, security architecture, auth, telephony, durable-workflow routes, stores/locks |
 | `packages/aai-studio-server/CLAUDE.md` | Browser studio: workspaces, coding agent, previews, Publish, LLM selection, studio evals, the two-package/one-deployment composition |
@@ -1562,50 +1564,12 @@ package.json scripts (not always obvious from test code alone):
 
 #### Windows is NOT tested, and is currently broken
 
-There is no Windows leg in CI. One was added, run once, and removed — and what
-it found is the reason this section exists rather than a TODO.
-
-**No package declares an `os` field, so all three published packages claim
-Windows support by omission**, and `aai-cli` is the one a Windows user actually
-runs: `login.ts` branches on `win32` and four modules split on `path.sep`, so
-the support was considered and then never exercised. One `windows-latest` run
-over `aai`, `aai-ui` and `aai-cli` unit tests failed two of three legs, on two
-unrelated causes:
-
-- **Hardcoded `/tmp` string literals.** On Windows `/tmp/x` is DRIVE-RELATIVE —
-  it resolves to `D:\tmp\x`, which does not exist — so every write failed with
-  ENOENT. Two shipped modules had it (`host/workflow-serve.ts`,
-  `aai-guest/harness-bundle.ts`), and both run on the DEVELOPER's machine under
-  `aai dev`, not only in the Linux guest. **Fixed**, and
-  `guard-invariants.mjs` rule 11 keeps them out; the only baselined occurrences
-  are `modal-agent-sandbox.ts`'s remote paths, which name a location inside the
-  Linux sandbox where `/tmp` is correct and `tmpdir()` would describe the wrong
-  machine.
-- **The `aai` build emits differently on Windows.** `aai-cli`'s dev-server specs
-  died in rolldown with `UNRESOLVED_IMPORT` on `./_internal-types.ts` inside
-  `../aai/dist/sdk/manifest-barrel.js` — i.e. that emitted file carried `.ts`
-  specifiers. On Linux the same file is a normal tsdown bundle importing a
-  hashed chunk (`../_internal-types-DiEjant0.js`), so the Windows build produced
-  unbundled output where Linux produces a bundle. **UNRESOLVED**, and left that
-  way deliberately: it is a toolchain-level difference (tsdown/rolldown, or the
-  DevKit's builder plugin) that cannot be diagnosed without a Windows machine to
-  iterate on, and blind pushes at ~4 minutes per CI round trip are not
-  debugging.
-
-So the state is: Windows is plausibly close to working, two real bugs are fixed,
-and one build-level unknown stands between here and a green leg. **Do not
-re-add the matrix without a Windows machine to reproduce on**, and do not add it
-as `continue-on-error` — a leg that is green while broken is worse than no leg,
-which is the rule the rest of this file's gates are built on.
-
-Note the middle tiers were never the right thing to duplicate onto Windows
-anyway, which is where this diverged from vercel/eve (they run their integration
-tier on a Windows matrix leg). Ten of this repo's fourteen
-`*.scenario.test.ts` files are aai-server's Postgres, WebSocket and bundler
-tests — Linux by design, not by accident. Running them on Windows would test the
-runner rather than the code. The three remaining `*.integration.test.ts` files
-are pure in-memory property tests, so they would tell you about fast-check, not
-about Windows.
+There is no Windows leg in CI. One was added, run once, and removed; it failed
+two of three legs on two unrelated causes, one fixed and one still open. The
+whole account — including why the middle tiers were never the right thing to
+duplicate onto Windows, and why not to re-add the matrix without a Windows
+machine to reproduce on — is in `packages/aai-cli/CLAUDE.md`, the package a
+Windows user actually runs.
 
 #### The e2e suite is pnpm-only in CI
 

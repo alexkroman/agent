@@ -40,6 +40,7 @@ const pkgMap = {
   "@alexkroman1/aai": "packages/aai/package.json",
   "@alexkroman1/aai-ui": "packages/aai-ui/package.json",
   "@alexkroman1/aai-cli": "packages/aai-cli/package.json",
+  "@alexkroman1/aai-runtime": "packages/aai-runtime/package.json",
 };
 
 /**

@@ -12,7 +12,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import type { LogPage } from "@alexkroman1/aai/runtime";
+import type { LogPage } from "@alexkroman1/aai-runtime";
 import { createKeyedLock, type KeyedLockOptions, withLock } from "./_keyed-lock.ts";
 import { createLogger } from "./logger.ts";
 import { type RetirableSandbox, retireSandbox } from "./sandbox-retire.ts";

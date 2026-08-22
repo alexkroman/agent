@@ -173,7 +173,6 @@ Full API reference: <https://alexkroman.github.io/agent/>
 - [llm](llm.md)
 - [manifest](manifest.md)
 - [protocol](protocol.md)
-- [runtime](runtime.md)
 - [s2s](s2s.md)
 - [step](step.md)
 - [step-errors](step-errors.md)

@@ -15,7 +15,7 @@ import {
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
   sessionStateDdl,
-} from "@alexkroman1/aai/runtime";
+} from "@alexkroman1/aai-runtime";
 import { appDbIdentifier, assertIdentifier } from "./app-db-identifier.ts";
 import type { SqlExec } from "./secret-store.ts";
 

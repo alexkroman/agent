@@ -197,54 +197,15 @@ importers:
 
   packages/aai:
     dependencies:
-      '@ai-sdk/anthropic':
-        specifier: ^4.0.38
-        version: 4.0.38(zod@4.4.3)
-      '@ai-sdk/google':
-        specifier: ^4.0.44
-        version: 4.0.44(zod@4.4.3)
-      '@ai-sdk/groq':
-        specifier: ^4.0.28
-        version: 4.0.28(zod@4.4.3)
-      '@ai-sdk/mistral':
-        specifier: ^4.0.29
-        version: 4.0.29(zod@4.4.3)
-      '@ai-sdk/openai':
-        specifier: ^4.0.40
-        version: 4.0.40(zod@4.4.3)
-      '@ai-sdk/xai':
-        specifier: ^4.0.38
-        version: 4.0.38(zod@4.4.3)
-      '@cartesia/cartesia-js':
-        specifier: ^3.5.1
-        version: 3.5.1(ws@8.21.3)
-      '@deepgram/sdk':
-        specifier: ^5.8.0
-        version: 5.8.0
-      '@elevenlabs/elevenlabs-js':
-        specifier: ^2.63.0
-        version: 2.63.0
       '@sindresorhus/slugify':
         specifier: ^3.0.0
         version: 3.0.0
       '@workflow/world':
         specifier: 4.3.1
         version: 4.3.1
-      '@workflow/world-postgres':
-        specifier: 4.3.3
-        version: 4.3.3(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(postgres@3.4.9)(typescript@7.0.2)
-      ai:
-        specifier: 'catalog:'
-        version: 7.0.65(zod@4.4.3)
-      assemblyai:
-        specifier: ^4.36.7
-        version: 4.36.7
       bogon:
         specifier: ^1.3.0
         version: 1.3.0
-      escape-html:
-        specifier: ^1.0.3
-        version: 1.0.3
       eventsource-parser:
         specifier: 'catalog:'
         version: 4.0.0
@@ -257,36 +218,15 @@ importers:
       htmlparser2:
         specifier: ^12.0.0
         version: 12.0.0
-      jsonrepair:
-        specifier: ^3.15.0
-        version: 3.15.0
-      mime-types:
-        specifier: 'catalog:'
-        version: 3.0.2
-      nanoevents:
-        specifier: 'catalog:'
-        version: 10.0.0
-      p-event:
-        specifier: ^7.1.0
-        version: 7.1.0
       p-timeout:
         specifier: 'catalog:'
         version: 7.0.1
-      postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
-      ulid:
-        specifier: 'catalog:'
-        version: 3.0.2
       undici:
         specifier: ^8.10.0
         version: 8.10.0
       workflow:
         specifier: 4.8.2
         version: 4.8.2(@nestjs/common@11.1.29(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.29(@nestjs/common@11.1.29(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@opentelemetry/api@1.9.1)(@swc/cli@0.8.1(@swc/core@1.15.3)(chokidar@5.0.0))(@swc/core@1.15.3)(magicast@0.5.3)(typescript@7.0.2)(ws@8.21.3)
-      ws:
-        specifier: 'catalog:'
-        version: 8.21.3
       xstate:
         specifier: 'catalog:'
         version: 5.32.5
@@ -294,24 +234,15 @@ importers:
         specifier: 'catalog:'
         version: 4.4.3
     devDependencies:
-      '@types/escape-html':
-        specifier: ^1.0.4
-        version: 1.0.4
       '@types/html-to-text':
         specifier: ^9.0.4
         version: 9.0.4
       '@types/json-schema':
         specifier: 'catalog:'
         version: 7.0.15
-      '@types/mime-types':
-        specifier: 'catalog:'
-        version: 3.0.1
       '@types/node':
         specifier: 'catalog:'
         version: 26.2.0
-      '@types/ws':
-        specifier: 'catalog:'
-        version: 8.18.1
       fast-check:
         specifier: 'catalog:'
         version: 4.9.0
@@ -327,6 +258,9 @@ importers:
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
+      '@alexkroman1/aai-runtime':
+        specifier: workspace:*
+        version: link:../aai-runtime
       '@alexkroman1/aai-ui':
         specifier: workspace:*
         version: link:../aai-ui
@@ -401,6 +335,9 @@ importers:
         specifier: ^8.10.0
         version: 8.10.0
     devDependencies:
+      '@alexkroman1/aai-runtime':
+        specifier: workspace:*
+        version: link:../aai-runtime
       aai-studio-client:
         specifier: workspace:*
         version: link:../aai-studio-client
@@ -422,6 +359,9 @@ importers:
       '@alexkroman1/aai-cli':
         specifier: workspace:*
         version: link:../aai-cli
+      '@alexkroman1/aai-runtime':
+        specifier: workspace:*
+        version: link:../aai-runtime
       '@alexkroman1/aai-ui':
         specifier: workspace:*
         version: link:../aai-ui
@@ -496,11 +436,117 @@ importers:
         specifier: 'catalog:'
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
 
+  packages/aai-runtime:
+    dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.38
+        version: 4.0.38(zod@4.4.3)
+      '@ai-sdk/google':
+        specifier: ^4.0.44
+        version: 4.0.44(zod@4.4.3)
+      '@ai-sdk/groq':
+        specifier: ^4.0.28
+        version: 4.0.28(zod@4.4.3)
+      '@ai-sdk/mistral':
+        specifier: ^4.0.29
+        version: 4.0.29(zod@4.4.3)
+      '@ai-sdk/openai':
+        specifier: ^4.0.40
+        version: 4.0.40(zod@4.4.3)
+      '@ai-sdk/xai':
+        specifier: ^4.0.38
+        version: 4.0.38(zod@4.4.3)
+      '@alexkroman1/aai':
+        specifier: workspace:*
+        version: link:../aai
+      '@cartesia/cartesia-js':
+        specifier: ^3.5.1
+        version: 3.5.1(ws@8.21.3)
+      '@deepgram/sdk':
+        specifier: ^5.8.0
+        version: 5.8.0
+      '@elevenlabs/elevenlabs-js':
+        specifier: ^2.63.0
+        version: 2.63.0
+      '@workflow/world-postgres':
+        specifier: 4.3.3
+        version: 4.3.3(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(postgres@3.4.9)(typescript@7.0.2)
+      ai:
+        specifier: 'catalog:'
+        version: 7.0.65(zod@4.4.3)
+      assemblyai:
+        specifier: ^4.36.7
+        version: 4.36.7
+      escape-html:
+        specifier: ^1.0.3
+        version: 1.0.3
+      jsonrepair:
+        specifier: ^3.15.0
+        version: 3.15.0
+      mime-types:
+        specifier: 'catalog:'
+        version: 3.0.2
+      nanoevents:
+        specifier: 'catalog:'
+        version: 10.0.0
+      p-event:
+        specifier: ^7.1.0
+        version: 7.1.0
+      p-timeout:
+        specifier: 'catalog:'
+        version: 7.0.1
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
+      ulid:
+        specifier: 'catalog:'
+        version: 3.0.2
+      undici:
+        specifier: ^8.10.0
+        version: 8.10.0
+      workflow:
+        specifier: 4.8.2
+        version: 4.8.2(@nestjs/common@11.1.29(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.29(@nestjs/common@11.1.29(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(@opentelemetry/api@1.9.1)(@swc/cli@0.8.1(@swc/core@1.15.3)(chokidar@5.0.0))(@swc/core@1.15.3)(magicast@0.5.3)(typescript@7.0.2)(ws@8.21.3)
+      ws:
+        specifier: 'catalog:'
+        version: 8.21.3
+      xstate:
+        specifier: 'catalog:'
+        version: 5.32.5
+      zod:
+        specifier: 'catalog:'
+        version: 4.4.3
+    devDependencies:
+      '@types/escape-html':
+        specifier: ^1.0.4
+        version: 1.0.4
+      '@types/json-schema':
+        specifier: 'catalog:'
+        version: 7.0.15
+      '@types/mime-types':
+        specifier: 'catalog:'
+        version: 3.0.1
+      '@types/ws':
+        specifier: 'catalog:'
+        version: 8.18.1
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.9.0
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.14(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.24.2)(publint@0.3.23)(tsx@4.23.1)(typescript@7.0.2)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(jsdom@30.0.1(@noble/hashes@1.8.0))(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+
   packages/aai-server:
     dependencies:
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
+      '@alexkroman1/aai-runtime':
+        specifier: workspace:*
+        version: link:../aai-runtime
       '@alexkroman1/aai-ui':
         specifier: workspace:*
         version: link:../aai-ui
@@ -677,6 +723,9 @@ importers:
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
+      '@alexkroman1/aai-runtime':
+        specifier: workspace:*
+        version: link:../aai-runtime
       '@alexkroman1/aai-ui':
         specifier: workspace:*
         version: link:../aai-ui
@@ -738,6 +787,9 @@ importers:
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
+      '@alexkroman1/aai-runtime':
+        specifier: workspace:*
+        version: link:../aai-runtime
       '@alexkroman1/aai-ui':
         specifier: workspace:*
         version: link:../aai-ui
@@ -9161,7 +9213,7 @@ snapshots:
 
   '@publint/pack@0.1.6':
     dependencies:
-      tinyexec: 1.2.4
+      tinyexec: 1.3.0
 
   '@quansync/fs@1.0.0':
     dependencies:

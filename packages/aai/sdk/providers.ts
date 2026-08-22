@@ -188,7 +188,7 @@ export interface SttOpenOptions {
  * Part of the host-only opener layer, never constructed by an AGENT.
  *
  * Not `@internal`: it is the parameter of `registerSttKind` on
- * `@alexkroman1/aai/runtime`, which is how a HOST application substitutes a
+ * `@alexkroman1/aai-runtime`, which is how a HOST application substitutes a
  * fake speech stage (the behaviour eval tier's level-1 target does exactly
  * that). It is deliberately absent from `@alexkroman1/aai/stt`, where the rest
  * of the opener-layer types live — an agent author picks a descriptor and never

@@ -84,7 +84,7 @@ import {
   PRESENCE_LOCK_OBJECT,
   type ReservedDb,
   startWorkflowWorldIfDeclared,
-} from "@alexkroman1/aai/runtime";
+} from "@alexkroman1/aai-runtime";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 

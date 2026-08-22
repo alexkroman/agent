@@ -76,7 +76,7 @@
  * the platform a hop it takes anyway.
  */
 
-import { UPLOAD_TOKEN_RE, UploadTooLargeError } from "@alexkroman1/aai/runtime";
+import { UPLOAD_TOKEN_RE, UploadTooLargeError } from "@alexkroman1/aai-runtime";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "./context.ts";

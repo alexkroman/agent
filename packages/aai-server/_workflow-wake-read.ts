@@ -69,7 +69,7 @@
  * which is the price of the DevKit working at all.
  */
 
-import { type ReservedDb, WORKFLOW_WAKE_TABLE } from "@alexkroman1/aai/runtime";
+import { type ReservedDb, WORKFLOW_WAKE_TABLE } from "@alexkroman1/aai-runtime";
 import {
   APP_DB_SCHEMA,
   type AppDatabases,

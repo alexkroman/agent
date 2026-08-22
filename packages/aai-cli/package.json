@@ -46,6 +46,7 @@
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
+    "@alexkroman1/aai-runtime": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@clack/prompts": "^1.7.0",
     "@workflow/builders": "4.1.7",

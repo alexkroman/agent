@@ -17,7 +17,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
-import { createAgentServer, withHostCredentialFallback } from "@alexkroman1/aai/runtime";
+import { createAgentServer, withHostCredentialFallback } from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 
 const root = path.dirname(fileURLToPath(import.meta.url));

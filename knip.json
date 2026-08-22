@@ -82,7 +82,6 @@
     "packages/aai": {
       "entry": [
         "host/_test-utils.ts",
-        "host/integration/**/*.integration.test.ts",
         "**/*.test.ts",
         "**/*.test-d.ts",
         // The capability contracts. Nothing imports either directory and
@@ -93,6 +92,16 @@
         // -bearing in the only sense that matters here.
         "contracts/entrypoints/*.ts",
         "contracts/compatibility/**/*.ts"
+      ]
+    },
+    "packages/aai-runtime": {
+      "entry": [
+        // Test helpers and fuzz harnesses: imported only by sibling specs, and
+        // the fixtures directory is read at runtime by the replay harness.
+        "_test-utils.ts",
+        "**/*-test-utils.ts",
+        "integration/**/*.integration.test.ts",
+        "**/*.test.ts"
       ]
     },
     "packages/aai-ui": {
@@ -129,6 +138,15 @@
       "ignore": [
         "templates/**",
         "scaffold/**"
+      ],
+      // `scaffold/**` is ignored above, and `scaffold/server.mjs` is the only
+      // thing that imports the runtime — but the dependency is real: the
+      // scaffold is shipped to users by `aai init`, and
+      // `check:template-types` compiles that file from inside this package,
+      // so it has to resolve here. Unused by knip's reading, load-bearing by
+      // the gate's.
+      "ignoreDependencies": [
+        "@alexkroman1/aai-runtime"
       ]
     },
     "packages/aai-guest": {

@@ -22,8 +22,8 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import type { LogLine, LogPage, LogStream } from "@alexkroman1/aai/runtime";
 import { isRecord } from "@alexkroman1/aai/utils";
+import type { LogLine, LogPage, LogStream } from "@alexkroman1/aai-runtime";
 import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";
 import type { AppContext } from "./context.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";

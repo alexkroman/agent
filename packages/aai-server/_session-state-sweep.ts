@@ -49,7 +49,7 @@
  * collide.
  */
 
-import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai/runtime";
+import { SESSION_EVENT_TABLE, SESSION_STATE_TABLE } from "@alexkroman1/aai-runtime";
 import type { SqlExec } from "./secret-store.ts";
 
 /**

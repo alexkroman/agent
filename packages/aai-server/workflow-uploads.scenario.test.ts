@@ -48,7 +48,7 @@ import {
   UPLOAD_PART_BYTES,
   UPLOADS_TABLE,
   type UploadStore,
-} from "@alexkroman1/aai/runtime";
+} from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 

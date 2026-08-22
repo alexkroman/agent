@@ -8,7 +8,7 @@
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/runtime";
+import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
 import getPort from "get-port";
 import { describe, expect, test, vi } from "vitest";
 import { agentEnvWarnings, startDevServer, viteDevConfig } from "./_dev-server.ts";
