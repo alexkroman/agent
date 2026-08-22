@@ -3,9 +3,8 @@
  * AssemblyAI Universal-Streaming STT factory — returns a pure descriptor.
  *
  * The descriptor flows through the bundle → server → runtime pipeline
- * without importing the `assemblyai` SDK. The host-side resolver in
- * `host/providers/resolve.ts` turns it into an openable `SttOpener`
- * during `createRuntime`.
+ * without importing the `assemblyai` SDK. The host-side resolver turns
+ * it into an openable `SttOpener` during `createRuntime`.
  *
  * The three AssemblyAI stage factories have distinct names
  * (`assemblyAIStt`, `assemblyAILlm`, `assemblyAITts`), so they can be
@@ -74,10 +73,14 @@ export interface AssemblyAIOptions {
    * Languages to bias the model toward, sent as the `language_codes` connection
    * parameter (e.g. `["en"]`, `["en", "es"]`).
    *
+   * **Unset means DETECT PER TURN, not English** — the same default
+   * `elevenlabs` and `soniox` have, and the opposite of `deepgram`, whose
+   * unset `language` is `"en"`.
+   *
    * Universal-3.5 Pro **code-switches across 18 languages by default**, so an
-   * unset value is not "English" — it is "detect per turn". That default costs
-   * accuracy on a monolingual line in a way that is easy to misread as an audio
-   * problem: measured against tau2-bench, English utterances came back
+   * unset value costs accuracy on a monolingual line in a way that is easy to
+   * misread as an audio problem: measured against tau2-bench, English
+   * utterances came back
    * transliterated into Devanagari and Hebrew script
    * (`Hello? Any update?` → `हेलो एनी अपडेट`), including an authentication turn,
    * so the tool call built from it was garbage. Nothing in the transcript says
@@ -162,6 +165,16 @@ export interface AssemblyAIOptions {
    * rejects a production key and vice versa, and a mixed setup needs both keys
    * live at once. The variable must be present in the agent's env (`.env` or
    * `aai secret put`), like any other credential.
+   *
+   * **Only the three AssemblyAI stages carry this field, and that is
+   * deliberate.** The host reads `apiKeyEnv` off a descriptor generically
+   * (the host reads it generically), so adding it to `deepgram`, `elevenlabs`,
+   * `soniox`, `cartesia`, `rime` or any LLM vendor would be one line each and
+   * work — but none of them has the problem it solves. AssemblyAI keys are
+   * ENVIRONMENT-SCOPED, so a staging cluster and production need two live keys
+   * at once and a per-stage override is the only way to run a mixed pipeline.
+   * Every other vendor here has one account-wide key, which the provider
+   * default already names.
    */
   apiKeyEnv?: string;
 }
@@ -182,6 +195,22 @@ export type AssemblyAIProvider = SttProvider & {
  * Named `assemblyAIStt` (not `assemblyAI`) so the STT, LLM
  * (`assemblyAILlm`), and TTS (`assemblyAITts`) factories can be imported
  * side by side without aliasing.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { assemblyAIStt } from "@alexkroman1/aai/stt";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   stt: assemblyAIStt({ languages: ["en"] }),
+ * });
+ * ```
+ *
+ * Pinning `languages` to one code turns code-switching OFF. Unset means
+ * "detect per turn", which is not "English" — see
+ * {@link AssemblyAIOptions.languages}.
  */
 export function assemblyAIStt(opts: AssemblyAIOptions = {}): AssemblyAIProvider {
   return { kind: ASSEMBLYAI_KIND, options: { ...opts } };

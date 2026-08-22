@@ -1,5 +1,834 @@
 # index
 
+The AAI voice-agent SDK — the AUTHORING surface, and only that.
+
+What an `agent.ts` imports: `agent()` and `tool()`, `sessionSlot()` and
+`workflow()`, the types they take and return, the recommended
+`assemblyAIPipeline()` preset, the `assemblyAIS2s()` opt-in, and the
+`DEFAULT_*` constants that document an `agent()` field's default.
+
+A symbol is on this barrel when an `agent.ts`, a tool module, or a
+`workflow()` would NAME it. Everything else the package publishes is on a
+subpath, chosen by WHO READS IT:
+
+| Subpath | Reach for it when |
+| --- | --- |
+| `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `withDiscoveredTools`, `runTool` |
+| `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
+| `@alexkroman1/aai/step`, `/step-errors` | writing a `"use step"` body inside a workflow |
+| `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |
+| `@alexkroman1/aai/tools` | calling `fetchJson`/`webSearch`/`visitWebpage` from your own tool code |
+| `@alexkroman1/aai/utils` | small helpers written inside a tool body |
+| `@alexkroman1/aai/ffmpeg` | running ffmpeg from a step |
+| `@alexkroman1/aai/runtime` | self-hosting the Node runtime |
+| `@alexkroman1/aai/protocol`, `/manifest`, `/internal` | framework internals; not covered by semver |
+
+Three primitives here run a defined process, and they are not
+interchangeable. A `dialog()` gates a CONVERSATION — what the agent may say
+or do next, across turns. A `procedure()` runs ONE UNIT OF WORK inside a
+single tool call. A `workflow()` runs DURABLY, outliving the session.
+
+## Functions
+
+### agent()
+
+```ts
+function agent(def: AgentParams): AgentDef;
+```
+
+Define an agent: its system prompt, its providers, and its configuration.
+
+Applies sensible defaults for omitted fields. Export as the default
+export of your `agent.ts` file.
+
+**Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
+default-exports `tool({ … })` is the tool `echo`, registered by existing, and
+`agent({ tools })` is a compile error naming the file to create
+(`InlineToolsMisuse`).
+
+#### Parameters
+
+##### def
+
+[`AgentParams`](#agentparams)
+
+#### Returns
+
+[`AgentDef`](#agentdef)
+
+#### Examples
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Echo Agent",
+  greeting: "Say something and I'll say it back.",
+});
+```
+
+**Session state is not declared here either** — a [sessionSlot](#sessionslot-1) owns its
+own default and its own storage, so there is no `state` factory to remember.
+`syncState` takes that slot's projection.
+
+**Default pipeline with a voice and a different LLM**
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "My Agent",
+  voice: "michael",
+  llm: "claude-sonnet-4-6",
+});
+```
+
+#### Remarks
+
+Session mode: with no provider fields the agent runs the default
+all-AssemblyAI cascaded pipeline. Set any subset of `stt`, `llm`, `tts`
+to swap individual stages (unset stages keep the AssemblyAI default), and
+`voice` to pick the default pipeline's TTS voice — or set `s2s` (e.g.
+`assemblyAIS2s()`) to opt into the speech-to-speech path instead. See
+[AgentDef](#agentdef) for every field.
+
+***
+
+### assemblyAIPipeline()
+
+```ts
+function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
+  llm: AssemblyAILlmProvider;
+  stt: AssemblyAIProvider;
+  tts: AssemblyAITtsProvider;
+};
+```
+
+All three pipeline stages on AssemblyAI, ready to spread into `agent()`.
+
+Every stage bills to `ASSEMBLYAI_API_KEY` — the one key a published agent is
+guaranteed to have — so this configuration runs the moment it is deployed.
+
+#### Parameters
+
+##### opts?
+
+[`AssemblyAIPipelineOptions`](#assemblyaipipelineoptions)
+
+#### Returns
+
+```ts
+{
+  llm: AssemblyAILlmProvider;
+  stt: AssemblyAIProvider;
+  tts: AssemblyAITtsProvider;
+}
+```
+
+##### llm
+
+```ts
+llm: AssemblyAILlmProvider;
+```
+
+##### stt
+
+```ts
+stt: AssemblyAIProvider;
+```
+
+##### tts
+
+```ts
+tts: AssemblyAITtsProvider;
+```
+
+***
+
+### assemblyAIS2s()
+
+```ts
+function assemblyAIS2s(opts?: AssemblyAIS2sOptions): AssemblyAIS2sProvider;
+```
+
+Select AssemblyAI's speech-to-speech (Voice Agent API) session mode.
+STT, the LLM loop, and TTS all run service-side over one socket.
+
+#### Parameters
+
+##### opts?
+
+[`AssemblyAIS2sOptions`](#assemblyais2soptions)
+
+#### Returns
+
+[`AssemblyAIS2sProvider`](#assemblyais2sprovider)
+
+#### Example
+
+```ts
+import { agent, assemblyAIS2s } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  s2s: assemblyAIS2s({ voice: "jane", languages: ["en"] }),
+});
+```
+
+Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline, and the
+top-level `voice` convenience is a compile error alongside it — an S2S
+voice rides on the descriptor, because the service synthesizes.
+
+***
+
+### createKeyedLock()
+
+```ts
+function createKeyedLock(): KeyedLock;
+```
+
+Create a [KeyedLock](#keyedlock).
+
+Prefer [withLock](#withlock) at call sites — it releases in every outcome, which
+a bare `lock()` leaves to the caller's `finally`.
+
+#### Returns
+
+[`KeyedLock`](#keyedlock)
+
+***
+
+### dialog()
+
+```ts
+function dialog<M>(
+   key: string, 
+   machine: M, 
+options?: DialogOptions): Dialog<M>;
+```
+
+Declare a dialog statechart for an agent's conversation.
+
+The machine is an ordinary XState machine, so everything XState knows how to
+do with one applies — `@xstate/procedure` can enumerate its paths to generate
+dialog test cases, and the machine is serializable for a visualizer.
+
+#### Type Parameters
+
+##### M
+
+`M` *extends* `AnyStateMachine`
+
+#### Parameters
+
+##### key
+
+`string`
+
+The store key to occupy, like a [sessionSlot](#sessionslot-1)'s. Two flows
+  must not share one, and a dialog must not share one with a slot.
+
+##### machine
+
+`M`
+
+The machine. Give a state a `meta.instruction` and it becomes
+  [DialogPosition.instruction](#instruction) while that state is active — which is what
+  a refusal quotes and what every dialog tool's result carries.
+
+##### options?
+
+[`DialogOptions`](#dialogoptions)
+
+#### Returns
+
+[`Dialog`](#dialog)\<`M`\>
+
+#### Examples
+
+```ts
+// shared.ts — the one place the dialog is declared.
+import { dialog } from "@alexkroman1/aai";
+import { setup } from "xstate";
+
+const machine = setup({
+  types: {} as { events: { type: "VERIFIED" } | { type: "QUOTED" } },
+}).createMachine({
+  id: "claim",
+  initial: "verifying",
+  states: {
+    verifying: {
+      meta: { instruction: "Get the caller's policy number and verify it." },
+      on: { VERIFIED: "quoting" },
+    },
+    quoting: {
+      meta: { instruction: "Read the excess disclosure, then quote." },
+      on: { QUOTED: "done" },
+    },
+    done: { type: "final" },
+  },
+});
+
+export const claim = dialog("claim", machine);
+```
+
+```ts no-check
+// tools/quote_claim.ts — cannot run before the caller is verified.
+// (`no-check`: the point of the example is the OTHER file's declaration.)
+import { claim } from "../shared.ts";
+import { z } from "zod";
+
+export default claim.tool({
+  description: "Quote the claim once the policy is verified",
+  inputSchema: z.object({ excess: z.number() }),
+  when: "quoting",
+  send: { type: "QUOTED" },
+  execute: ({ excess }) => ({ premium: excess * 2 }),
+});
+```
+
+#### Remarks
+
+**Three primitives here run a defined process; pick by SCOPE.** A
+[dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
+across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
+OF WORK inside a single tool call, never stored. A [workflow](#workflow) runs
+DURABLY, outliving the session.
+
+***
+
+### procedure()
+
+```ts
+function procedure<M>(machine: M): Procedure<M>;
+```
+
+Wrap a machine so a tool body can run it without touching an actor.
+
+#### Type Parameters
+
+##### M
+
+`M` *extends* `AnyStateMachine`
+
+#### Parameters
+
+##### machine
+
+`M`
+
+An ordinary XState machine. Give it an `output` — that is
+  what [Procedure.run](#run) resolves with, and a machine with none resolves
+  `undefined`.
+
+#### Returns
+
+[`Procedure`](#procedure-1)\<`M`\>
+
+#### Example
+
+```ts
+import { procedure, tool } from "@alexkroman1/aai";
+import { setup } from "xstate";
+import { z } from "zod";
+
+const machine = setup({
+  types: {} as { input: { topic: string }; output: { verdict: string } },
+}).createMachine({
+  id: "triage",
+  initial: "deciding",
+  context: ({ input }) => ({ topic: input.topic }),
+  states: { deciding: { type: "final" } },
+  output: ({ context }) => ({ verdict: `looked at ${context.topic}` }),
+});
+
+const triage = procedure(machine);
+
+export default tool({
+  description: "Triage a topic",
+  inputSchema: z.object({ topic: z.string() }),
+  // `ctx.signal` is what makes a barge-in stop the procedure mid-run.
+  execute: async ({ topic }, ctx) => await triage.run({ topic }, { signal: ctx.signal }),
+});
+```
+
+#### Remarks
+
+**Three primitives here run a defined process; pick by SCOPE.** A
+[dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
+across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
+OF WORK inside a single tool call, never stored. A [workflow](#workflow) runs
+DURABLY, outliving the session.
+
+***
+
+### resolveOne()
+
+```ts
+function resolveOne<T>(
+   candidates: readonly T[], 
+   spoken: string, 
+   opts: ResolveOneOptions<T>): ToolFailure | T;
+```
+
+Pick the one candidate an utterance names, or fail saying why.
+
+The order is deliberate and is the part worth reusing:
+
+1. **No candidates** — say so, rather than reporting a failed match against an
+   empty list.
+2. **A position** ("the second one", "the last one") — a caller who counts is
+   unambiguous even when nothing else is, and this is the case a scorer alone
+   cannot see.
+3. **The scorer**, when one is given. A single best candidate wins; a tie
+   fails, listing the tied ones only.
+4. **Exactly one candidate left** — it is what they meant.
+5. **Anything else is ambiguous**, and the failure lists the candidates.
+
+The caller is expected to have narrowed first — by an id, by a status word,
+by whatever its domain says an utterance can mean. This resolves what is
+left.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### candidates
+
+readonly `T`[]
+
+##### spoken
+
+`string`
+
+##### opts
+
+[`ResolveOneOptions`](#resolveoneoptions)\<`T`\>
+
+#### Returns
+
+[`ToolFailure`](utils.md#toolfailure) \| `T`
+
+#### Example
+
+```ts
+import { resolveOne } from "@alexkroman1/aai";
+
+type Jacket = { id: string; color: string };
+const jackets: Jacket[] = [
+  { id: "1", color: "blue" },
+  { id: "2", color: "red" },
+];
+
+const picked = resolveOne(jackets, "the blue one", {
+  label: "jacket",
+  describe: (jacket) => `${jacket.id} (${jacket.color})`,
+  score: (jacket, text) => (text.includes(jacket.color) ? 1 : 0),
+});
+// → { id: "1", color: "blue" }
+```
+
+***
+
+### safeJsonParse()
+
+```ts
+function safeJsonParse(text: string): unknown;
+```
+
+Parse JSON, returning `undefined` on malformed input. JSON cannot encode
+`undefined`, so the sentinel is unambiguous.
+
+#### Parameters
+
+##### text
+
+`string`
+
+#### Returns
+
+`unknown`
+
+***
+
+### sessionSlot()
+
+```ts
+function sessionSlot<K, T>(
+   key: K, 
+   create: () => T, 
+options?: SessionSlotOptions<T>): SessionSlot<K, T>;
+```
+
+Declare a named slot of per-session state.
+
+An agent whose tools live in separate modules has no other way to type its
+own state: a tool is a FILE, so there is no map to check it against the
+agent's state shape, and there is no bag to annotate. A slot moves that
+narrowing into ONE typed seam every module imports, and the lazy install with
+it — plus, now, the storage. Nothing else stores session state.
+
+[SessionSlot.tool](#tool-1) and [SessionSlot.updateTool](#updatetool) are the other
+half: a tool declared through them is handed the value directly, so a tool
+module needs neither an annotated context nor a `slot.get(ctx)` line.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* `string`
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### key
+
+`K`
+
+The store key to occupy. Two slots must not share one.
+
+##### create
+
+() => `T`
+
+Factory for a fresh value. Called once per session on first
+  access (and again on `reset`), so a shared module-level default must be
+  cloned here — `() => structuredClone(DEFAULT)` — or every session mutates
+  the same object.
+
+##### options?
+
+[`SessionSlotOptions`](#sessionslotoptions)\<`T`\>
+
+#### Returns
+
+[`SessionSlot`](#sessionslot)\<`K`, `T`\>
+
+#### Examples
+
+```ts
+// shared.ts — the one place the slot is declared.
+import { sessionSlot } from "@alexkroman1/aai";
+
+export type Cart = { items: string[] };
+export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }));
+```
+
+```ts no-check
+// tools/add_item.ts — no cast, no annotation, no lazy-init boilerplate.
+// (`no-check`: the point of the example is the OTHER file, so it cannot be
+// self-contained.)
+import { cartSlot } from "../shared.ts";
+import { z } from "zod";
+
+export default cartSlot.updateTool({
+  description: "Add an item to the cart",
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }, cart) => {
+    cart.items.push(item);
+    return { count: cart.items.length };
+  },
+});
+```
+
+***
+
+### spokenDigits()
+
+```ts
+function spokenDigits(spoken: string): string;
+```
+
+The digits of a spoken number, with everything else dropped.
+
+STT renders a read-aloud id every way a human says one — `"8642 1975"`,
+`"8642-1975"`, `"864 219 75"` — and none of them equals the stored id. All of
+them have the same digits in the same order.
+
+#### Parameters
+
+##### spoken
+
+`string`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { spokenDigits } from "@alexkroman1/aai";
+
+spokenDigits("that's 864-219-75"); // "86421975"
+```
+
+***
+
+### spokenOrdinal()
+
+```ts
+function spokenOrdinal(spoken: string): number | undefined;
+```
+
+The position an utterance names, as an index, or `undefined` if it names none.
+
+`-1` means the LAST candidate, following `Array.prototype.at` — which is also
+how "the last one" has to be read, since it is a position from the other end.
+
+Matched on word boundaries, so "firstly" and "the 21st" do not read as
+positions — a substring test finds `first` in one and `1st` in the other, and
+both would pick a candidate the caller never named.
+
+What a boundary cannot rule out is a position word used as an ordinary noun:
+"the first aid kit" really does contain the word "first". That is the reason
+[resolveOne](#resolveone) takes a position only AFTER the caller has narrowed by
+whatever its domain understands — an id, a status word — rather than before.
+
+#### Parameters
+
+##### spoken
+
+`string`
+
+#### Returns
+
+`number` \| `undefined`
+
+#### Example
+
+```ts
+import { spokenOrdinal } from "@alexkroman1/aai";
+
+spokenOrdinal("cancel the second one"); // 1
+spokenOrdinal("cancel the last one"); // -1
+spokenOrdinal("cancel my order"); // undefined
+```
+
+***
+
+### tool()
+
+```ts
+function tool<P, R>(def: ToolDef<P, R>): ToolDef<P, R>;
+```
+
+Define a tool with a typed input schema and execute function.
+
+Identity function for type inference — returns the input unchanged.
+Follows the Vercel AI SDK `tool()` pattern (`inputSchema` names the same
+field it does there). The schema is any Standard Schema that converts to
+JSON Schema; Zod is the documented default.
+
+#### Type Parameters
+
+##### P
+
+`P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
+
+##### R
+
+`R` = `unknown`
+
+#### Parameters
+
+##### def
+
+[`ToolDef`](#tooldef)\<`P`, `R`\>
+
+#### Returns
+
+[`ToolDef`](#tooldef)\<`P`, `R`\>
+
+#### Examples
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const greet = tool({
+  description: "Greet someone by name",
+  inputSchema: z.object({ name: z.string() }),
+  execute: ({ name }) => `Hello, ${name}!`,
+});
+```
+
+**Reading and writing session state**
+
+```ts
+import { sessionSlot, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+
+const add = tool({
+  description: "Add an item to the cart",
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }, ctx) =>
+    cartSlot.update(ctx, (cart) => {
+      cart.items.push(item);
+      return cart.items.length;
+    }),
+});
+```
+
+#### Remarks
+
+It takes no state type parameter, and neither does [ToolContext](#toolcontext). A
+tool reaches session state through a [sessionSlot](#sessionslot-1), which types the
+value in the module that declares it — so a tool in its own file needs
+neither an annotated context nor a cast.
+
+***
+
+### workflow()
+
+```ts
+function workflow<P, R>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
+```
+
+Declare a durable workflow.
+
+An identity function for type inference, exactly like `tool()` — the returned
+object is the input unchanged. Workflows are named by the key they are declared
+under, so this takes no `name`.
+
+#### Type Parameters
+
+##### P
+
+`P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
+
+##### R
+
+`R` = `unknown`
+
+#### Parameters
+
+##### def
+
+[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+
+#### Returns
+
+[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
+
+#### Remarks
+
+**Three primitives here run a defined process; pick by SCOPE.** A
+[dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
+across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
+OF WORK inside a single tool call, never stored. A [workflow](#workflow) runs
+DURABLY, outliving the session.
+
+It deliberately does NOT check that `run` carries the compiler's `workflowId`.
+That check belongs where the id is USED (`ctx.workflows.start`, which throws
+naming the build), because a declaration-time throw makes merely IMPORTING an
+agent module fail wherever the Workflow DevKit transform has not run — which
+includes every unit test of a tool that starts a workflow, since vitest loads
+`agent.ts` as source with no bundler in the path. The first template to declare
+one is what surfaced this: the throw made the module unimportable by its own
+spec.
+
+#### Examples
+
+`agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
+`agent()` takes no `tools`.
+```ts no-check
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+import { digestFlow } from "./workflows/digest.ts";
+
+export const digest = workflow({
+  description: "Research a topic overnight and store the result",
+  input: z.object({ topic: z.string() }),
+  run: digestFlow,
+});
+
+export default agent({
+  name: "Researcher",
+  workflows: { digest },
+});
+```
+
+`tools/research.ts` — the tool that starts a run.
+```ts no-check
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+import { digest } from "../agent.ts";
+
+export default tool({
+  description: "Kick off overnight research on a topic",
+  inputSchema: z.object({ topic: z.string() }),
+  execute: async ({ topic }, ctx) => {
+    // The workflow itself, not its name: typed input, and a typo is a
+    // compile error. `key` is what lets a later turn find this run.
+    const runId = await ctx.workflows.start(digest, { topic }, { key: ctx.sessionId });
+    return `Working on it — run ${runId}.`;
+  },
+});
+```
+
+***
+
+### workflowApp()
+
+```ts
+function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
+```
+
+Define a WORKFLOW APP — an agent whose front door is a form rather than a
+microphone, and whose work happens in `workflows`.
+
+`agent({ …, page: "static" })` with the discriminant already set, so the
+mode is the CALL rather than a field to remember, and the fields a workflow
+app has no use for are absent from the parameter type instead of being
+rejected by it. Returns the same [AgentDef](#agentdef) `agent()` does — there is
+one definition type, one config, one deploy path, and `page` is only ever
+about the front door.
+
+It mirrors the split `@alexkroman1/aai-ui` already makes in the browser:
+`page()` mounts a workflow app's UI and `client()` mounts a voice one,
+because a flag would leave every session-shaped question ("what does this
+mean with no session?") answered by a conditional. Same reasoning, same
+seam, other end of the wire.
+
+#### Parameters
+
+##### def
+
+`Omit`\<[`StaticAgentParams`](#staticagentparams), `"page"`\>
+
+#### Returns
+
+[`AgentDef`](#agentdef)
+
+#### Example
+
+```ts
+import { workflow, workflowApp } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const digest = workflow({
+  description: "Summarize a link",
+  input: z.object({ url: z.url() }),
+  run: async ({ url }) => ({ url }),
+});
+
+export default workflowApp({
+  name: "Link Digest",
+  workflows: { digest },
+});
+```
+
 ## Classes
 
 ### KeyedLockTimeoutError
@@ -47,206 +876,10 @@ Error.constructor
 
 #### Properties
 
-##### cause?
-
-```ts
-optional cause?: unknown;
-```
-
-###### Inherited from
-
-```ts
-Error.cause
-```
-
 ##### key
 
 ```ts
 readonly key: string;
-```
-
-##### message
-
-```ts
-message: string;
-```
-
-###### Inherited from
-
-```ts
-Error.message
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-###### Inherited from
-
-```ts
-Error.name
-```
-
-##### stack?
-
-```ts
-optional stack?: string;
-```
-
-###### Inherited from
-
-```ts
-Error.stack
-```
-
-##### stackTraceLimit
-
-```ts
-static stackTraceLimit: number;
-```
-
-The `Error.stackTraceLimit` property specifies the number of stack frames
-collected by a stack trace (whether generated by `new Error().stack` or
-`Error.captureStackTrace(obj)`).
-
-The default value is `10` but may be set to any valid JavaScript number. Changes
-will affect any stack trace captured _after_ the value has been changed.
-
-If set to a non-number value, or set to a negative number, stack traces will
-not capture any frames.
-
-###### Inherited from
-
-```ts
-Error.stackTraceLimit
-```
-
-#### Methods
-
-##### captureStackTrace()
-
-```ts
-static captureStackTrace(targetObject: object, constructorOpt?: Function): void;
-```
-
-Creates a `.stack` property on `targetObject`, which when accessed returns
-a string representing the location in the code at which
-`Error.captureStackTrace()` was called.
-
-```js
-const myObject = {};
-Error.captureStackTrace(myObject);
-myObject.stack;  // Similar to `new Error().stack`
-```
-
-The first line of the trace will be prefixed with
-`${myObject.name}: ${myObject.message}`.
-
-The optional `constructorOpt` argument accepts a function. If given, all frames
-above `constructorOpt`, including `constructorOpt`, will be omitted from the
-generated stack trace.
-
-The `constructorOpt` argument is useful for hiding implementation
-details of error generation from the user. For instance:
-
-```js
-function a() {
-  b();
-}
-
-function b() {
-  c();
-}
-
-function c() {
-  // Create an error without stack trace to avoid calculating the stack trace twice.
-  const { stackTraceLimit } = Error;
-  Error.stackTraceLimit = 0;
-  const error = new Error();
-  Error.stackTraceLimit = stackTraceLimit;
-
-  // Capture the stack trace above function b
-  Error.captureStackTrace(error, b); // Neither function c, nor b is included in the stack trace
-  throw error;
-}
-
-a();
-```
-
-###### Parameters
-
-###### targetObject
-
-`object`
-
-###### constructorOpt?
-
-`Function`
-
-###### Returns
-
-`void`
-
-###### Inherited from
-
-```ts
-Error.captureStackTrace
-```
-
-##### isError()
-
-```ts
-static isError(error: unknown): error is Error;
-```
-
-Indicates whether the argument provided is a built-in Error instance or not.
-
-###### Parameters
-
-###### error
-
-`unknown`
-
-###### Returns
-
-`error is Error`
-
-###### Inherited from
-
-```ts
-Error.isError
-```
-
-##### prepareStackTrace()
-
-```ts
-static prepareStackTrace(err: Error, stackTraces: CallSite[]): any;
-```
-
-###### Parameters
-
-###### err
-
-`Error`
-
-###### stackTraces
-
-`CallSite`[]
-
-###### Returns
-
-`any`
-
-###### See
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-###### Inherited from
-
-```ts
-Error.prepareStackTrace
 ```
 
 ***
@@ -301,42 +934,6 @@ readonly aborted: boolean;
 
 Whether the run's `signal` is what ended it.
 
-##### cause?
-
-```ts
-optional cause?: unknown;
-```
-
-###### Inherited from
-
-```ts
-Error.cause
-```
-
-##### message
-
-```ts
-message: string;
-```
-
-###### Inherited from
-
-```ts
-Error.message
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-###### Inherited from
-
-```ts
-Error.name
-```
-
 ##### procedure
 
 ```ts
@@ -345,171 +942,17 @@ readonly procedure: string;
 
 The machine's id, so a log names which procedure stopped.
 
-##### stack?
-
-```ts
-optional stack?: string;
-```
-
-###### Inherited from
-
-```ts
-Error.stack
-```
-
-##### stackTraceLimit
-
-```ts
-static stackTraceLimit: number;
-```
-
-The `Error.stackTraceLimit` property specifies the number of stack frames
-collected by a stack trace (whether generated by `new Error().stack` or
-`Error.captureStackTrace(obj)`).
-
-The default value is `10` but may be set to any valid JavaScript number. Changes
-will affect any stack trace captured _after_ the value has been changed.
-
-If set to a non-number value, or set to a negative number, stack traces will
-not capture any frames.
-
-###### Inherited from
-
-```ts
-Error.stackTraceLimit
-```
-
-#### Methods
-
-##### captureStackTrace()
-
-```ts
-static captureStackTrace(targetObject: object, constructorOpt?: Function): void;
-```
-
-Creates a `.stack` property on `targetObject`, which when accessed returns
-a string representing the location in the code at which
-`Error.captureStackTrace()` was called.
-
-```js
-const myObject = {};
-Error.captureStackTrace(myObject);
-myObject.stack;  // Similar to `new Error().stack`
-```
-
-The first line of the trace will be prefixed with
-`${myObject.name}: ${myObject.message}`.
-
-The optional `constructorOpt` argument accepts a function. If given, all frames
-above `constructorOpt`, including `constructorOpt`, will be omitted from the
-generated stack trace.
-
-The `constructorOpt` argument is useful for hiding implementation
-details of error generation from the user. For instance:
-
-```js
-function a() {
-  b();
-}
-
-function b() {
-  c();
-}
-
-function c() {
-  // Create an error without stack trace to avoid calculating the stack trace twice.
-  const { stackTraceLimit } = Error;
-  Error.stackTraceLimit = 0;
-  const error = new Error();
-  Error.stackTraceLimit = stackTraceLimit;
-
-  // Capture the stack trace above function b
-  Error.captureStackTrace(error, b); // Neither function c, nor b is included in the stack trace
-  throw error;
-}
-
-a();
-```
-
-###### Parameters
-
-###### targetObject
-
-`object`
-
-###### constructorOpt?
-
-`Function`
-
-###### Returns
-
-`void`
-
-###### Inherited from
-
-```ts
-Error.captureStackTrace
-```
-
-##### isError()
-
-```ts
-static isError(error: unknown): error is Error;
-```
-
-Indicates whether the argument provided is a built-in Error instance or not.
-
-###### Parameters
-
-###### error
-
-`unknown`
-
-###### Returns
-
-`error is Error`
-
-###### Inherited from
-
-```ts
-Error.isError
-```
-
-##### prepareStackTrace()
-
-```ts
-static prepareStackTrace(err: Error, stackTraces: CallSite[]): any;
-```
-
-###### Parameters
-
-###### err
-
-`Error`
-
-###### stackTraces
-
-`CallSite`[]
-
-###### Returns
-
-`any`
-
-###### See
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-###### Inherited from
-
-```ts
-Error.prepareStackTrace
-```
-
 ## Interfaces
 
 ### AgentDef
 
 Fully resolved agent definition.
+
+**This is what `agent()` RETURNS, not what you write.** You write
+[AgentParams](#agentparams) — the same fields with the defaulted ones optional, plus the
+conveniences `agent()` normalizes away (`system`, `llm` as a model-id string,
+`voice`, `minTurnSilenceMs`/`maxTurnSilenceMs`). This is the reference for what
+a field MEANS; `AgentParams` is the one for which combinations are legal.
 
 Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`)
 are resolved to their final values with defaults applied. Optional fields
@@ -518,8 +961,8 @@ optional — `undefined` means "not configured."
 
 The pipeline-only voice-UX knobs live on [PipelineVoiceTuning](#pipelinevoicetuning), which
 this extends: they share one rule (pipeline transport or nothing), and
-`define.ts`/`config-rules.ts` derive their field lists from that interface so
-a new one cannot skip either gate.
+both `agent()` and the deploy-time config check derive their field lists from
+that interface, so a new one cannot skip either gate.
 
 #### Extends
 
@@ -541,8 +984,7 @@ catalog.
 
 ###### Default Value
 
-`[]` ([DEFAULT\_BUILTIN\_TOOLS](#default_builtin_tools)), applied by
-`host/runtime-tools.ts`.
+`[]` ([DEFAULT\_BUILTIN\_TOOLS](#default_builtin_tools))
 
 ##### deadAirCoverMs?
 
@@ -796,8 +1238,8 @@ tau2-bench retail runs, 28-33% of replies called a tool at all (the
 distribution recorded on [DEFAULT\_MAX\_STEPS](#default_max_steps)), so at most the
 remaining 67-72% can ever be accelerated.
 
-**What it structurally cannot do**, by construction rather than by flag
-(see `pipeline-speculation.ts`): a speculation never reaches TTS, never
+**What it structurally cannot do**, by construction rather than by flag:
+a speculation never reaches TTS, never
 emits a client frame, never writes either history view, and never EXECUTES
 a tool — its tool set is declaration-only, so the model cannot continue past
 a tool call, and a speculation that reaches one is discarded whole. Adoption
@@ -1186,24 +1628,6 @@ A dialog statechart bound to a session, created by [dialog](#dialog-1).
 
 The XState machine this dialog runs.
 
-#### Properties
-
-##### key
-
-```ts
-readonly key: string;
-```
-
-The store key this dialog's snapshot occupies. Two flows must not share one.
-
-##### machine
-
-```ts
-readonly machine: M;
-```
-
-The machine itself, for a caller that wants to inspect or visualize it.
-
 #### Methods
 
 ##### matches()
@@ -1244,7 +1668,7 @@ Where this session's conversation currently is.
 
 ###### Returns
 
-[`DialogPosition`](#dialogposition-1)
+[`DialogPosition`](#dialogposition)
 
 ##### projection()
 
@@ -1257,7 +1681,7 @@ the step the caller is on without the agent hand-rolling a sync channel.
 
 The projector is REQUIRED, exactly as [SessionSlot.projection](#projection-1)'s is,
 and for the same reason: an optional one cannot be typed without asserting
-that the un-projected [DialogPosition](#dialogposition-1) is the caller's `V`. Project the
+that the un-projected [DialogPosition](#dialogposition) is the caller's `V`. Project the
 identity — `dialog.projection((at) => at)` — to push the whole position.
 
 ###### Type Parameters
@@ -1270,7 +1694,7 @@ identity — `dialog.projection((at) => at)` — to push the whole position.
 
 ###### project
 
-(`position`: [`DialogPosition`](#dialogposition-1)) => `V`
+(`position`: [`DialogPosition`](#dialogposition)) => `V`
 
 ###### Returns
 
@@ -1292,7 +1716,7 @@ Discard this session's progress and start the dialog over.
 
 ###### Returns
 
-[`DialogPosition`](#dialogposition-1)
+[`DialogPosition`](#dialogposition)
 
 ##### send()
 
@@ -1320,7 +1744,7 @@ available. The returned position is what actually happened; compare its
 
 ###### Returns
 
-[`DialogPosition`](#dialogposition-1)
+[`DialogPosition`](#dialogposition)
 
 ##### tool()
 
@@ -1349,6 +1773,24 @@ Declare a tool gated on this dialog's state. See [DialogToolDef](#dialogtooldef)
 ###### Returns
 
 [`ToolDef`](#tooldef)\<`P`\>
+
+#### Properties
+
+##### key
+
+```ts
+readonly key: string;
+```
+
+The store key this dialog's snapshot occupies. Two flows must not share one.
+
+##### machine
+
+```ts
+readonly machine: M;
+```
+
+The machine itself, for a caller that wants to inspect or visualize it.
 
 ***
 
@@ -1436,6 +1878,46 @@ What `execute` returns.
 
 The machine's event union.
 
+#### Methods
+
+##### execute()
+
+```ts
+execute(args: InferSchemaOutput<P>, ctx: ToolContext): 
+  | ToolFailure
+  | R
+| Promise<ToolFailure | R>;
+```
+
+The tool body. Runs only in one of `when`'s states.
+
+May be async: the result is AWAITED before the failure check and the
+transition, so `sendFrom` and `result` both see the settled value. Unlike
+[SessionSlot.updateTool](#updatetool) there is no synchronous requirement here —
+this opens no mutation window around the body, only inside `send`.
+
+**`ToolFailure` is in the return type rather than in `R`**, which is what
+lets `sendFrom` be typed over the SUCCESS value alone. A body that can fail
+is the ordinary case — it is how a tool reports something the model should
+recover from — and folding the failure into `R` made every `sendFrom`
+narrow a value it is never handed: the failure check returns before it runs.
+
+###### Parameters
+
+###### args
+
+[`InferSchemaOutput`](#inferschemaoutput)\<`P`\>
+
+###### ctx
+
+[`ToolContext`](#toolcontext)
+
+###### Returns
+
+  \| [`ToolFailure`](utils.md#toolfailure)
+  \| `R`
+  \| `Promise`\<[`ToolFailure`](utils.md#toolfailure) \| `R`\>
+
 #### Properties
 
 ##### description
@@ -1507,46 +1989,6 @@ Every name is checked against the machine's own states when the tool is
 DECLARED, so a typo is a throw at startup rather than a tool that is
 silently unreachable for the life of the agent.
 
-#### Methods
-
-##### execute()
-
-```ts
-execute(args: InferSchemaOutput<P>, ctx: ToolContext): 
-  | ToolFailure
-  | R
-| Promise<ToolFailure | R>;
-```
-
-The tool body. Runs only in one of `when`'s states.
-
-May be async: the result is AWAITED before the failure check and the
-transition, so `sendFrom` and `result` both see the settled value. Unlike
-[SessionSlot.updateTool](#updatetool) there is no synchronous requirement here —
-this opens no mutation window around the body, only inside `send`.
-
-**`ToolFailure` is in the return type rather than in `R`**, which is what
-lets `sendFrom` be typed over the SUCCESS value alone. A body that can fail
-is the ordinary case — it is how a tool reports something the model should
-recover from — and folding the failure into `R` made every `sendFrom`
-narrow a value it is never handed: the failure check returns before it runs.
-
-###### Parameters
-
-###### args
-
-[`InferSchemaOutput`](#inferschemaoutput)\<`P`\>
-
-###### ctx
-
-[`ToolContext`](#toolcontext)
-
-###### Returns
-
-  \| [`ToolFailure`](utils.md#toolfailure)
-  \| `R`
-  \| `Promise`\<[`ToolFailure`](utils.md#toolfailure) \| `R`\>
-
 ***
 
 ### DialogToolResult
@@ -1555,7 +1997,7 @@ What a [Dialog.tool](#tool) answers on success.
 
 #### Extends
 
-- [`DialogPosition`](#dialogposition-1)
+- [`DialogPosition`](#dialogposition)
 
 #### Type Parameters
 
@@ -1577,7 +2019,7 @@ Whether the machine has reached a final state.
 
 ###### Inherited from
 
-[`DialogPosition`](#dialogposition-1).[`done`](#done)
+[`DialogPosition`](#dialogposition).[`done`](#done)
 
 ##### instruction?
 
@@ -1593,7 +2035,7 @@ wins over its parent's rather than being merged with it.
 
 ###### Inherited from
 
-[`DialogPosition`](#dialogposition-1).[`instruction`](#instruction)
+[`DialogPosition`](#dialogposition).[`instruction`](#instruction)
 
 ##### result
 
@@ -1614,7 +2056,7 @@ a nested one. Parallel regions are joined with `","`.
 
 ###### Inherited from
 
-[`DialogPosition`](#dialogposition-1).[`state`](#state)
+[`DialogPosition`](#dialogposition).[`state`](#state)
 
 ***
 
@@ -1728,8 +2170,8 @@ tau2-bench retail runs, 28-33% of replies called a tool at all (the
 distribution recorded on [DEFAULT\_MAX\_STEPS](#default_max_steps)), so at most the
 remaining 67-72% can ever be accelerated.
 
-**What it structurally cannot do**, by construction rather than by flag
-(see `pipeline-speculation.ts`): a speculation never reaches TTS, never
+**What it structurally cannot do**, by construction rather than by flag:
+a speculation never reaches TTS, never
 emits a client frame, never writes either history view, and never EXECUTES
 a tool — its tool set is declaration-only, so the model cannot continue past
 a tool call, and a speculation that reaches one is discarded whole. Adoption
@@ -1791,16 +2233,6 @@ A machine that can be run as a unit of work, created by [procedure](#procedure-2
 
 The XState machine.
 
-#### Properties
-
-##### machine
-
-```ts
-readonly machine: M;
-```
-
-The machine itself, for a caller that wants to inspect or visualize it.
-
 #### Methods
 
 ##### run()
@@ -1831,6 +2263,16 @@ failures inspectable instead of thrown.
 ###### Returns
 
 `Promise`\<`OutputFrom`\<`M`\>\>
+
+#### Properties
+
+##### machine
+
+```ts
+readonly machine: M;
+```
+
+The machine itself, for a caller that wants to inspect or visualize it.
 
 ***
 
@@ -1942,25 +2384,6 @@ The key this slot occupies in the session's state.
 `T`
 
 The value's shape.
-
-#### Properties
-
-##### durable
-
-```ts
-readonly durable: boolean;
-```
-
-Whether this slot's value is stored durably. `true` unless the slot
-declared otherwise — see [SessionSlotOptions.durable](#durable-2).
-
-##### key
-
-```ts
-readonly key: K;
-```
-
-The store key this slot occupies. Two slots must not share one.
 
 #### Methods
 
@@ -2279,6 +2702,25 @@ export default cartSlot.updateTool({
 });
 ```
 
+#### Properties
+
+##### durable
+
+```ts
+readonly durable: boolean;
+```
+
+Whether this slot's value is stored durably. `true` unless the slot
+declared otherwise — see [SessionSlotOptions.durable](#durable-2).
+
+##### key
+
+```ts
+readonly key: K;
+```
+
+The store key this slot occupies. Two slots must not share one.
+
 ***
 
 ### SessionSlotOptions
@@ -2374,24 +2816,6 @@ What `execute` is handed: a deep-frozen
 
 `R`
 
-#### Properties
-
-##### description
-
-```ts
-description: string;
-```
-
-See [ToolDef.description](#description-2) — what the model reads to decide to call it.
-
-##### inputSchema?
-
-```ts
-optional inputSchema?: P;
-```
-
-See [ToolDef.inputSchema](#inputschema-2).
-
 #### Methods
 
 ##### execute()
@@ -2422,6 +2846,24 @@ The tool body, handed this session's slot value alongside the usual args.
 ###### Returns
 
 `R`
+
+#### Properties
+
+##### description
+
+```ts
+description: string;
+```
+
+See [ToolDef.description](#description-2) — what the model reads to decide to call it.
+
+##### inputSchema?
+
+```ts
+optional inputSchema?: P;
+```
+
+See [ToolDef.inputSchema](#inputschema-2).
 
 ***
 
@@ -3053,9 +3495,9 @@ type AddInput = InferToolInput<typeof add>; // { item: string }
 type InferToolOutput<T> = Awaited<ReturnType<T["execute"]>>;
 ```
 
-The result type a tool's `execute` returns (awaited). Pair with
-`useToolResult<InferToolOutput<typeof myTool>>(...)` in a custom client so
-the rendered shape has a single source of truth.
+The result type a tool's `execute` returns (awaited, so a sync and an `async`
+body infer alike). Pair with `useToolResult<InferToolOutput<typeof myTool>>(...)`
+in a custom client so the rendered shape has a single source of truth.
 
 #### Type Parameters
 
@@ -3075,11 +3517,11 @@ type KeyedLock = (key: string, opts?: KeyedLockOptions) => Promise<() => void> &
 
 The utilities written INSIDE a tool body.
 
-`sdk/utils.ts` is also where the slug contract (`VALID_SLUG_RE`,
-`RESERVED_SLUGS`, …), the `aai login` confirmation code, and the framework's
-own wire helpers live, because it is the module the CLI can import without
-paying for zod. None of those is authoring API; they stay on
-`@alexkroman1/aai/utils`, which is where the CLI and the platform read them.
+The module behind them also holds the platform's slug contract, the
+`aai login` confirmation code, and the framework's own wire helpers, because
+it is the one the CLI can import without paying for zod. None of those is
+authoring API; they stay on `@alexkroman1/aai/utils`, which is where the CLI
+and the platform read them.
 
 #### Type Declaration
 
@@ -3103,11 +3545,11 @@ type KeyedLockOptions = {
 
 The utilities written INSIDE a tool body.
 
-`sdk/utils.ts` is also where the slug contract (`VALID_SLUG_RE`,
-`RESERVED_SLUGS`, …), the `aai login` confirmation code, and the framework's
-own wire helpers live, because it is the module the CLI can import without
-paying for zod. None of those is authoring API; they stay on
-`@alexkroman1/aai/utils`, which is where the CLI and the platform read them.
+The module behind them also holds the platform's slug contract, the
+`aai login` confirmation code, and the framework's own wire helpers, because
+it is the one the CLI can import without paying for zod. None of those is
+authoring API; they stay on `@alexkroman1/aai/utils`, which is where the CLI
+and the platform read them.
 
 #### Properties
 
@@ -3222,6 +3664,13 @@ optional s2s?: undefined;
 optional text?: undefined;
 ```
 
+#### Remarks
+
+The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
+not values this arm accepts. Setting one of those fields makes `tsc` print the
+sentence in place of a bare excess-property error, so the diagnostic names the
+rule and what to do about it. Never pass one as a string.
+
 ***
 
 ### S2sAgentParams
@@ -3303,6 +3752,13 @@ optional tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-sid
 ```ts
 optional voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
 ```
+
+#### Remarks
+
+The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
+not values this arm accepts. Setting one of those fields makes `tsc` print the
+sentence in place of a bare excess-property error, so the diagnostic names the
+rule and what to do about it. Never pass one as a string.
 
 ***
 
@@ -3401,7 +3857,7 @@ handler.
 ### SessionEventHandlers
 
 ```ts
-type SessionEventHandlers = { [K in SessionEvent["type"]]?: SessionEventHandler<Extract<SessionEvent, { type: K }>> } & {
+type SessionEventHandlers = { [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, { type: K }>> } & {
   *?: SessionEventHandler;
 };
 ```
@@ -3423,6 +3879,27 @@ optional *?: SessionEventHandler;
 ```
 
 Runs for every event, AFTER the typed handler for that event.
+
+***
+
+### SessionEventType
+
+```ts
+type SessionEventType = SessionEvent["type"];
+```
+
+Every event name a handler map may be keyed by, as a union.
+
+The keys of [SessionEventHandlers](#sessioneventhandlers) are computed from the wire union, so
+without this alias the only way to read the list is the event schema itself —
+which renders as one long type expression. Name it to get an autocompletable
+union, and to write a handler map's key type down in your own code:
+
+```ts
+import type { SessionEventType } from "@alexkroman1/aai";
+
+const AUDITED: readonly SessionEventType[] = ["tool.called", "error.reported"];
+```
 
 ***
 
@@ -3589,6 +4066,13 @@ workflows: NonNullable<AgentDef["workflows"]>;
 See [AgentDef.workflows](#workflows). The whole product: a workflow app is an
 agent whose work happens here.
 
+#### Remarks
+
+The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
+not values this arm accepts. Setting one of those fields makes `tsc` print the
+sentence in place of a bare excess-property error, so the diagnostic names the
+rule and what to do about it. Never pass one as a string.
+
 ***
 
 ### TextAgentParams
@@ -3692,6 +4176,13 @@ optional tts?: "`tts` cannot be combined with `text` — a text agent has no aud
 optional voice?: "`voice` is pipeline-mode only — a text agent never speaks";
 ```
 
+#### Remarks
+
+The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
+not values this arm accepts. Setting one of those fields makes `tsc` print the
+sentence in place of a bare excess-property error, so the diagnostic names the
+rule and what to do about it. Never pass one as a string.
+
 ***
 
 ### ToolChoice
@@ -3761,6 +4252,33 @@ const lookupNote = tool({
   },
 });
 ```
+
+#### Methods
+
+##### send()
+
+```ts
+send(event: string, data: unknown): void;
+```
+
+Push a custom event to the connected browser client. Fire-and-forget:
+events whose name exceeds [MAX\_CLIENT\_EVENT\_NAME\_LENGTH](#max_client_event_name_length) or whose
+serialized payload exceeds [MAX\_CLIENT\_EVENT\_PAYLOAD\_BYTES](#max_client_event_payload_bytes) are
+dropped (with a warning log), not thrown.
+
+###### Parameters
+
+###### event
+
+`string`
+
+###### data
+
+`unknown`
+
+###### Returns
+
+`void`
 
 #### Properties
 
@@ -3865,42 +4383,15 @@ again; see `StartOptions.key` (`@alexkroman1/aai/workflow-api`).
 Every method rejects when the app declares no workflows or has no workflow
 backend configured, naming which.
 
-#### Methods
-
-##### send()
-
-```ts
-send(event: string, data: unknown): void;
-```
-
-Push a custom event to the connected browser client. Fire-and-forget:
-events whose name exceeds [MAX\_CLIENT\_EVENT\_NAME\_LENGTH](#max_client_event_name_length) or whose
-serialized payload exceeds [MAX\_CLIENT\_EVENT\_PAYLOAD\_BYTES](#max_client_event_payload_bytes) are
-dropped (with a warning log), not thrown.
-
-###### Parameters
-
-###### event
-
-`string`
-
-###### data
-
-`unknown`
-
-###### Returns
-
-`void`
-
 ***
 
 ### ToolDef
 
 ```ts
-type ToolDef<P> = {
+type ToolDef<P, R> = {
   description: string;
   inputSchema?: P;
-  execute: unknown;
+  execute: R;
 };
 ```
 
@@ -3940,32 +4431,20 @@ The tool's input schema: any
   ArkType type. Defaults to a permissive record schema so tools without
   inputs don't need an explicit type argument.
 
-#### Properties
+##### R
 
-##### description
+`R` = `unknown`
 
-```ts
-description: string;
-```
-
-Human-readable description shown to the LLM.
-
-##### inputSchema?
-
-```ts
-optional inputSchema?: P;
-```
-
-Schema for the tool's input, shown to the LLM and used to validate each
-call's arguments before `execute` runs. Named after the Vercel AI SDK's
-`tool({ inputSchema })`.
+What `execute` returns, inferred at the [tool](#tool-2) call and
+  read by [InferToolOutput](#infertooloutput). Defaults to `unknown`, so `ToolDef<typeof
+  schema>` still means "any result".
 
 #### Methods
 
 ##### execute()
 
 ```ts
-execute(args: InferSchemaOutput<P>, ctx: ToolContext): unknown;
+execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 ```
 
 Function that executes the tool and returns a result. The result is
@@ -3985,7 +4464,27 @@ trimmed and end with a `[truncated]` marker.
 
 ###### Returns
 
-`unknown`
+`R`
+
+#### Properties
+
+##### description
+
+```ts
+description: string;
+```
+
+Human-readable description shown to the LLM.
+
+##### inputSchema?
+
+```ts
+optional inputSchema?: P;
+```
+
+Schema for the tool's input, shown to the LLM and used to validate each
+call's arguments before `execute` runs. Named after the Vercel AI SDK's
+`tool({ inputSchema })`.
 
 ***
 
@@ -4322,9 +4821,8 @@ waiting for TIME; a hook is a run waiting for an ANSWER, and the answer is
 the payload. A body that raced a hook against a `sleep` — the shape a
 decision-with-a-deadline takes — needs both, and they mean different things.
 
-## The token is the contract, and it has to be derivable on both sides
-
-A hook's token is chosen by the BODY and typed in by the tool, so it must be
+**The token is the contract, and it has to be derivable on both sides.** A
+hook's token is chosen by the BODY and typed in by the tool, so it must be
 something each can compute from what it already has:
 `` `retention:${input.requestedBy}` `` in the body against
 `` `retention:${ctx.sessionId}` `` in the tool. Put that expression in one
@@ -4337,10 +4835,9 @@ anyway: at most one live run per caller. And a token is a capability: it
 addresses a run, so derive it from something session-scoped rather than from
 anything a caller could name.
 
-## `false` is an answer
-
-Nobody is listening is the normal case, not a failure — the run has moved
-past its hook, or finished, or was never started. Same shape as
+**`false` is an answer.** Nobody listening is the normal case, not a
+failure — the run has moved past its hook, or finished, or was never
+started. Same shape as
 [cancel](#cancel) resolving false and [wakeUp](#wakeup) resolving `0`, and a voice
 tool should say so out loud ("that one had already gone ahead") rather than
 treat it as an error.
@@ -4623,31 +5120,6 @@ that happened to carry it. The property itself stays an ordinary
 
 ## Variables
 
-### ASSEMBLYAI\_S2S\_API\_KEY\_ENV
-
-```ts
-const ASSEMBLYAI_S2S_API_KEY_ENV: "ASSEMBLYAI_API_KEY" = "ASSEMBLYAI_API_KEY";
-```
-
-Env var holding this stage's credential.
-
-The same string as the STT/TTS/LLM AssemblyAI constants by design — a
-distinct NAME per stage is what lets `apiKeyEnv` point one stage at another
-account without moving the others (see `descriptorEnvVar` in
-`host/providers/resolve.ts`).
-
-***
-
-### ASSEMBLYAI\_S2S\_KIND
-
-```ts
-const ASSEMBLYAI_S2S_KIND: "assemblyai";
-```
-
-Kind tag recognised by the host-side resolver.
-
-***
-
 ### DEFAULT\_BUILTIN\_TOOLS
 
 ```ts
@@ -4706,10 +5178,14 @@ conversation back. `""` disables it.
 ### DEFAULT\_GREETING
 
 ```ts
-const DEFAULT_GREETING: string;
+const DEFAULT_GREETING: "Hey there! I'm an AI voice assistant. What can I help you with?" = "Hey there! I'm an AI voice assistant. What can I help you with?";
 ```
 
 Default greeting spoken when a session starts.
+
+Deliberately UNANNOTATED, so the reference renders the sentence rather than
+`string`. This is the one thing every caller hears before they say anything,
+and the source is not in the tarball.
 
 ***
 
@@ -4790,8 +5266,8 @@ between them, so what the caller experienced was DEAD AIR (see
 `DEFAULT_DEAD_AIR_COVER_MS`), not a step limit. Tune the silence, not the
 cap; the real constraint on a long chain is caller patience.
 
-S2S enforces the same cap service-side by refusing tool calls past it
-(`host/session-core.ts`), where no forced final step is possible.
+S2S enforces the same cap service-side by refusing tool calls past it, where
+no forced final step is possible.
 
 ***
 
@@ -4860,6 +5336,12 @@ utterances that never read as complete — which is equally the reason trimming
 it buys so little. The measured tail is content-driven and long (p90 endpoint
 latency ~4.0-4.6s at every setting swept), so the ceiling is not what makes a
 slow turn slow.
+
+#### See
+
+ - [DEFAULT\_MIN\_TURN\_SILENCE\_MS](#default_min_turn_silence_ms) — the floor this ceiling pairs with.
+ - `DEFAULT_DEEPGRAM_ENDPOINTING_MS` on `@alexkroman1/aai/stt` — Deepgram has
+no counterpart to this ceiling; it endpoints on a single silence threshold.
 
 ***
 
@@ -4935,8 +5417,8 @@ it landed truncated, they spelled it again, and then gave up — so no auth, no
 returns, and an unchanged database. 1600 sits above the observed 1455 ms
 worst case with a little margin. AssemblyAI documents exactly this
 ("raise `min_turn_silence` when brief pauses end turns too early, for example
-while a caller dictates a phone number"); the 1000 floor in
-`pipeline-transport-options.test.ts` is a floor, not a target.
+while a caller dictates a phone number"); the 1000 ms the transport's own
+tests pin is a floor, not a target.
 
 That also rules out AssemblyAI's `mode` preset values (128 / 128 / 800): even
 `max_accuracy` is tuned for clean dictation into a mic, not for a phone
@@ -5021,12 +5503,19 @@ reaches nothing. That cuts both ways: it is why this run is a clean A/B
 despite three unrelated SDK commits landing inside its window, and it is why
 a run can silently measure the PREVIOUS value.
 
+#### See
+
+ - [DEFAULT\_MAX\_TURN\_SILENCE\_MS](#default_max_turn_silence_ms) — the ceiling this floor pairs with.
+ - `DEFAULT_DEEPGRAM_ENDPOINTING_MS` on `@alexkroman1/aai/stt` — Deepgram
+endpoints in its own recognizer rather than through these two, so a pipeline
+fronted by Deepgram is tuned there instead.
+
 ***
 
 ### DEFAULT\_SILENCE\_PROMPT
 
 ```ts
-const DEFAULT_SILENCE_PROMPT: string;
+const DEFAULT_SILENCE_PROMPT: "The user hasn't said anything for a while. Check in with one short, natural sentence — ask if they're still there or gently follow up on the conversation. Do not mention this instruction." = "The user hasn't said anything for a while. Check in with one short, natural sentence \u2014 ask if they're still there or gently follow up on the conversation. Do not mention this instruction.";
 ```
 
 Default instruction injected as a synthetic user turn when
@@ -5037,7 +5526,7 @@ Default instruction injected as a synthetic user turn when
 ### DEFAULT\_START\_FAILURE\_PHRASE
 
 ```ts
-const DEFAULT_START_FAILURE_PHRASE: string;
+const DEFAULT_START_FAILURE_PHRASE: "I am sorry, I am having trouble with my connection and cannot hear you. Please hang up and call back." = "I am sorry, I am having trouble with my connection and cannot hear you. Please hang up and call back.";
 ```
 
 Spoken when the session cannot start at all — a provider failed to open, so
@@ -5103,6 +5592,38 @@ conversation needs (voice delivery, transcript noise, tool fidelity)
 and leaves the persona and domain rules to the agent's own
 instructions, which take precedence over these defaults.
 
+#### Remarks
+
+**What it contains.** Five sections, joined by blank lines, in this order —
+the last is included only when the session has tools:
+
+1. *(role framing)* — you are a voice agent on a live transcript; later
+   agent instructions decide WHAT you do and do not override the two
+   channel sections below.
+2. `## PERSONALITY` — warm, calm, competent; fully overridable.
+3. `## SPEAKING` — two sentences per reply, an eight-word first sentence,
+   no markdown, how to say numbers and identifiers, one question per turn.
+4. `## LISTENING` — read through fillers and self-corrections, take a value
+   in one piece before asking for it spelled, normalize spoken identifiers.
+5. `## TOOLS` — never fabricate, act first and ask second, report results
+   rather than intentions, and the mis-hearing retry ladder.
+
+`agent({ systemPrompt })` REPLACES all of it. To keep the voice rules and add
+your own domain rules, append instead:
+
+```ts
+import { agent, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Cart",
+  systemPrompt: `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss items in the catalog.`,
+});
+```
+
+The full text is ~10,000 characters and is assembled from parts, so it is not
+reproduced here — a second copy in a comment would drift from the one the
+agent runs. Print `DEFAULT_SYSTEM_PROMPT` to read it exactly as sent.
+
 ***
 
 ### DEFAULT\_TOOL\_CHOICE
@@ -5147,8 +5668,8 @@ const MAX_DB_RESULT_ROWS: 1000 = 1000;
 Max rows one `ctx.db` query may return; queries that could exceed it
 should paginate with LIMIT/OFFSET. Exceeding the cap throws rather than
 silently truncating — a shortened result is indistinguishable from a
-complete one. Enforced identically under `aai dev` and on the platform
-(both route through `createPostgresDb`).
+complete one. Enforced identically under `aai dev` and on the platform —
+both route through the same Postgres driver.
 
 ***
 
@@ -5167,7 +5688,7 @@ and the client; longer results are trimmed and end with
 ### STORAGE\_DISABLED\_MESSAGE
 
 ```ts
-const STORAGE_DISABLED_MESSAGE: string;
+const STORAGE_DISABLED_MESSAGE: "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings → Database in the studio; under `aai dev`, set DATABASE_URL in the project .env." = "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings \u2192 Database in the studio; under `aai dev`, set DATABASE_URL in the project .env.";
 ```
 
 Error thrown when tool code touches `ctx.db` while storage is not
@@ -5194,7 +5715,8 @@ Wall-clock budget (ms) for one tool `execute` call before it is aborted.
 const TOOL_RESULT_TRUNCATION_MARKER: "\n[truncated]" = "\n[truncated]";
 ```
 
-Appended to a tool result trimmed by `capToolResult`, so a model reading
+Appended to a tool result the framework trimmed at
+[MAX\_TOOL\_RESULT\_CHARS](#max_tool_result_chars), so a model reading
 it can tell the record is incomplete rather than answering from a partial list
 as though it were the whole one.
 
@@ -5235,777 +5757,6 @@ Run `fn` while holding a keyed lock, releasing it in every outcome.
 #### Returns
 
 `Promise`\<`T`\>
-
-## Functions
-
-### agent()
-
-```ts
-function agent(def: AgentParams): AgentDef;
-```
-
-Define an agent: its system prompt, its providers, and its configuration.
-
-Applies sensible defaults for omitted fields. Export as the default
-export of your `agent.ts` file.
-
-**Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
-default-exports `tool({ … })` is the tool `echo`, registered by existing, and
-`agent({ tools })` is a compile error naming the file to create
-(`InlineToolsMisuse`).
-
-#### Parameters
-
-##### def
-
-[`AgentParams`](#agentparams)
-
-#### Returns
-
-[`AgentDef`](#agentdef)
-
-#### Examples
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "Echo Agent",
-  greeting: "Say something and I'll say it back.",
-});
-```
-
-**Session state is not declared here either** — a [sessionSlot](#sessionslot-1) owns its
-own default and its own storage, so there is no `state` factory to remember.
-`syncState` takes that slot's projection.
-
-**Default pipeline with a voice and a different LLM**
-
-```ts
-import { agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "My Agent",
-  voice: "michael",
-  llm: "claude-sonnet-4-6",
-});
-```
-
-#### Remarks
-
-Session mode: with no provider fields the agent runs the default
-all-AssemblyAI cascaded pipeline. Set any subset of `stt`, `llm`, `tts`
-to swap individual stages (unset stages keep the AssemblyAI default), and
-`voice` to pick the default pipeline's TTS voice — or set `s2s` (e.g.
-`assemblyAIS2s()`) to opt into the speech-to-speech path instead. See
-[AgentDef](#agentdef) for every field.
-
-***
-
-### assemblyAIPipeline()
-
-```ts
-function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
-  llm: AssemblyAILlmProvider;
-  stt: AssemblyAIProvider;
-  tts: AssemblyAITtsProvider;
-};
-```
-
-All three pipeline stages on AssemblyAI, ready to spread into `agent()`.
-
-Every stage bills to `ASSEMBLYAI_API_KEY` — the one key a published agent is
-guaranteed to have — so this configuration runs the moment it is deployed.
-
-#### Parameters
-
-##### opts?
-
-[`AssemblyAIPipelineOptions`](#assemblyaipipelineoptions)
-
-#### Returns
-
-```ts
-{
-  llm: AssemblyAILlmProvider;
-  stt: AssemblyAIProvider;
-  tts: AssemblyAITtsProvider;
-}
-```
-
-##### llm
-
-```ts
-llm: AssemblyAILlmProvider;
-```
-
-##### stt
-
-```ts
-stt: AssemblyAIProvider;
-```
-
-##### tts
-
-```ts
-tts: AssemblyAITtsProvider;
-```
-
-***
-
-### assemblyAIS2s()
-
-```ts
-function assemblyAIS2s(opts?: AssemblyAIS2sOptions): AssemblyAIS2sProvider;
-```
-
-Select AssemblyAI's speech-to-speech (Voice Agent API) session mode.
-STT, the LLM loop, and TTS all run service-side over one socket.
-
-#### Parameters
-
-##### opts?
-
-[`AssemblyAIS2sOptions`](#assemblyais2soptions)
-
-#### Returns
-
-[`AssemblyAIS2sProvider`](#assemblyais2sprovider)
-
-***
-
-### createKeyedLock()
-
-```ts
-function createKeyedLock(): KeyedLock;
-```
-
-Create a [KeyedLock](#keyedlock).
-
-Prefer [withLock](#withlock) at call sites — it releases in every outcome, which
-a bare `lock()` leaves to the caller's `finally`.
-
-#### Returns
-
-[`KeyedLock`](#keyedlock)
-
-***
-
-### dialog()
-
-```ts
-function dialog<M>(
-   key: string, 
-   machine: M, 
-options?: DialogOptions): Dialog<M>;
-```
-
-Declare a dialog statechart for an agent's conversation.
-
-The machine is an ordinary XState machine, so everything XState knows how to
-do with one applies — `@xstate/procedure` can enumerate its paths to generate
-dialog test cases, and the machine is serializable for a visualizer.
-
-#### Type Parameters
-
-##### M
-
-`M` *extends* `AnyStateMachine`
-
-#### Parameters
-
-##### key
-
-`string`
-
-The store key to occupy, like a [sessionSlot](#sessionslot-1)'s. Two flows
-  must not share one, and a dialog must not share one with a slot.
-
-##### machine
-
-`M`
-
-The machine. Give a state a `meta.instruction` and it becomes
-  [DialogPosition.instruction](#instruction) while that state is active — which is what
-  a refusal quotes and what every dialog tool's result carries.
-
-##### options?
-
-[`DialogOptions`](#dialogoptions)
-
-#### Returns
-
-[`Dialog`](#dialog)\<`M`\>
-
-#### Examples
-
-```ts
-// shared.ts — the one place the dialog is declared.
-import { dialog } from "@alexkroman1/aai";
-import { setup } from "xstate";
-
-const machine = setup({
-  types: {} as { events: { type: "VERIFIED" } | { type: "QUOTED" } },
-}).createMachine({
-  id: "claim",
-  initial: "verifying",
-  states: {
-    verifying: {
-      meta: { instruction: "Get the caller's policy number and verify it." },
-      on: { VERIFIED: "quoting" },
-    },
-    quoting: {
-      meta: { instruction: "Read the excess disclosure, then quote." },
-      on: { QUOTED: "done" },
-    },
-    done: { type: "final" },
-  },
-});
-
-export const claim = dialog("claim", machine);
-```
-
-```ts no-check
-// tools/quote_claim.ts — cannot run before the caller is verified.
-// (`no-check`: the point of the example is the OTHER file's declaration.)
-import { claim } from "../shared.ts";
-import { z } from "zod";
-
-export default claim.tool({
-  description: "Quote the claim once the policy is verified",
-  inputSchema: z.object({ excess: z.number() }),
-  when: "quoting",
-  send: { type: "QUOTED" },
-  execute: ({ excess }) => ({ premium: excess * 2 }),
-});
-```
-
-***
-
-### procedure()
-
-```ts
-function procedure<M>(machine: M): Procedure<M>;
-```
-
-Wrap a machine so a tool body can run it without touching an actor.
-
-#### Type Parameters
-
-##### M
-
-`M` *extends* `AnyStateMachine`
-
-#### Parameters
-
-##### machine
-
-`M`
-
-An ordinary XState machine. Give it an `output` — that is
-  what [Procedure.run](#run) resolves with, and a machine with none resolves
-  `undefined`.
-
-#### Returns
-
-[`Procedure`](#procedure-1)\<`M`\>
-
-#### Example
-
-```ts
-import { procedure, tool } from "@alexkroman1/aai";
-import { setup } from "xstate";
-import { z } from "zod";
-
-const machine = setup({
-  types: {} as { input: { topic: string }; output: { verdict: string } },
-}).createMachine({
-  id: "triage",
-  initial: "deciding",
-  context: ({ input }) => ({ topic: input.topic }),
-  states: { deciding: { type: "final" } },
-  output: ({ context }) => ({ verdict: `looked at ${context.topic}` }),
-});
-
-const triage = procedure(machine);
-
-export default tool({
-  description: "Triage a topic",
-  inputSchema: z.object({ topic: z.string() }),
-  // `ctx.signal` is what makes a barge-in stop the procedure mid-run.
-  execute: async ({ topic }, ctx) => await triage.run({ topic }, { signal: ctx.signal }),
-});
-```
-
-***
-
-### resolveOne()
-
-```ts
-function resolveOne<T>(
-   candidates: readonly T[], 
-   spoken: string, 
-   opts: ResolveOneOptions<T>): ToolFailure | T;
-```
-
-Pick the one candidate an utterance names, or fail saying why.
-
-The order is deliberate and is the part worth reusing:
-
-1. **No candidates** — say so, rather than reporting a failed match against an
-   empty list.
-2. **A position** ("the second one", "the last one") — a caller who counts is
-   unambiguous even when nothing else is, and this is the case a scorer alone
-   cannot see.
-3. **The scorer**, when one is given. A single best candidate wins; a tie
-   fails, listing the tied ones only.
-4. **Exactly one candidate left** — it is what they meant.
-5. **Anything else is ambiguous**, and the failure lists the candidates.
-
-The caller is expected to have narrowed first — by an id, by a status word,
-by whatever its domain says an utterance can mean. This resolves what is
-left.
-
-#### Type Parameters
-
-##### T
-
-`T`
-
-#### Parameters
-
-##### candidates
-
-readonly `T`[]
-
-##### spoken
-
-`string`
-
-##### opts
-
-[`ResolveOneOptions`](#resolveoneoptions)\<`T`\>
-
-#### Returns
-
-[`ToolFailure`](utils.md#toolfailure) \| `T`
-
-#### Example
-
-```ts
-import { resolveOne } from "@alexkroman1/aai";
-
-type Jacket = { id: string; color: string };
-const jackets: Jacket[] = [
-  { id: "1", color: "blue" },
-  { id: "2", color: "red" },
-];
-
-const picked = resolveOne(jackets, "the blue one", {
-  label: "jacket",
-  describe: (jacket) => `${jacket.id} (${jacket.color})`,
-  score: (jacket, text) => (text.includes(jacket.color) ? 1 : 0),
-});
-// → { id: "1", color: "blue" }
-```
-
-***
-
-### safeJsonParse()
-
-```ts
-function safeJsonParse(text: string): unknown;
-```
-
-Parse JSON, returning `undefined` on malformed input. JSON cannot encode
-`undefined`, so the sentinel is unambiguous.
-
-#### Parameters
-
-##### text
-
-`string`
-
-#### Returns
-
-`unknown`
-
-***
-
-### sessionSlot()
-
-```ts
-function sessionSlot<K, T>(
-   key: K, 
-   create: () => T, 
-options?: SessionSlotOptions<T>): SessionSlot<K, T>;
-```
-
-Declare a named slot of per-session state.
-
-An agent whose tools live in separate modules has no other way to type its
-own state: a tool is a FILE, so there is no map to check it against the
-agent's state shape, and there is no bag to annotate. A slot moves that
-narrowing into ONE typed seam every module imports, and the lazy install with
-it — plus, now, the storage. Nothing else stores session state.
-
-[SessionSlot.tool](#tool-1) and [SessionSlot.updateTool](#updatetool) are the other
-half: a tool declared through them is handed the value directly, so a tool
-module needs neither an annotated context nor a `slot.get(ctx)` line.
-
-#### Type Parameters
-
-##### K
-
-`K` *extends* `string`
-
-##### T
-
-`T`
-
-#### Parameters
-
-##### key
-
-`K`
-
-The store key to occupy. Two slots must not share one.
-
-##### create
-
-() => `T`
-
-Factory for a fresh value. Called once per session on first
-  access (and again on `reset`), so a shared module-level default must be
-  cloned here — `() => structuredClone(DEFAULT)` — or every session mutates
-  the same object.
-
-##### options?
-
-[`SessionSlotOptions`](#sessionslotoptions)\<`T`\>
-
-#### Returns
-
-[`SessionSlot`](#sessionslot)\<`K`, `T`\>
-
-#### Examples
-
-```ts
-// shared.ts — the one place the slot is declared.
-import { sessionSlot } from "@alexkroman1/aai";
-
-export type Cart = { items: string[] };
-export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }));
-```
-
-```ts no-check
-// tools/add_item.ts — no cast, no annotation, no lazy-init boilerplate.
-// (`no-check`: the point of the example is the OTHER file, so it cannot be
-// self-contained.)
-import { cartSlot } from "../shared.ts";
-import { z } from "zod";
-
-export default cartSlot.updateTool({
-  description: "Add an item to the cart",
-  inputSchema: z.object({ item: z.string() }),
-  execute: ({ item }, cart) => {
-    cart.items.push(item);
-    return { count: cart.items.length };
-  },
-});
-```
-
-***
-
-### spokenDigits()
-
-```ts
-function spokenDigits(spoken: string): string;
-```
-
-The digits of a spoken number, with everything else dropped.
-
-STT renders a read-aloud id every way a human says one — `"8642 1975"`,
-`"8642-1975"`, `"864 219 75"` — and none of them equals the stored id. All of
-them have the same digits in the same order.
-
-#### Parameters
-
-##### spoken
-
-`string`
-
-#### Returns
-
-`string`
-
-#### Example
-
-```ts
-import { spokenDigits } from "@alexkroman1/aai";
-
-spokenDigits("that's 864-219-75"); // "86421975"
-```
-
-***
-
-### spokenOrdinal()
-
-```ts
-function spokenOrdinal(spoken: string): number | undefined;
-```
-
-The position an utterance names, as an index, or `undefined` if it names none.
-
-`-1` means the LAST candidate, following `Array.prototype.at` — which is also
-how "the last one" has to be read, since it is a position from the other end.
-
-Matched on word boundaries, so "firstly" and "the 21st" do not read as
-positions — a substring test finds `first` in one and `1st` in the other, and
-both would pick a candidate the caller never named.
-
-What a boundary cannot rule out is a position word used as an ordinary noun:
-"the first aid kit" really does contain the word "first". That is the reason
-[resolveOne](#resolveone) takes a position only AFTER the caller has narrowed by
-whatever its domain understands — an id, a status word — rather than before.
-
-#### Parameters
-
-##### spoken
-
-`string`
-
-#### Returns
-
-`number` \| `undefined`
-
-#### Example
-
-```ts
-import { spokenOrdinal } from "@alexkroman1/aai";
-
-spokenOrdinal("cancel the second one"); // 1
-spokenOrdinal("cancel the last one"); // -1
-spokenOrdinal("cancel my order"); // undefined
-```
-
-***
-
-### tool()
-
-```ts
-function tool<P>(def: {
-  description: string;
-  inputSchema?: P;
-  execute: unknown;
-}): ToolDef<P>;
-```
-
-Define a tool with a typed input schema and execute function.
-
-Identity function for type inference — returns the input unchanged.
-Follows the Vercel AI SDK `tool()` pattern (`inputSchema` names the same
-field it does there). The schema is any Standard Schema that converts to
-JSON Schema; Zod is the documented default.
-
-#### Type Parameters
-
-##### P
-
-`P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
-
-#### Parameters
-
-##### def
-
-###### description
-
-`string`
-
-###### inputSchema?
-
-`P`
-
-###### execute
-
-#### Returns
-
-[`ToolDef`](#tooldef)\<`P`\>
-
-#### Examples
-
-```ts
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-const greet = tool({
-  description: "Greet someone by name",
-  inputSchema: z.object({ name: z.string() }),
-  execute: ({ name }) => `Hello, ${name}!`,
-});
-```
-
-**Reading and writing session state**
-
-```ts
-import { sessionSlot, tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
-
-const add = tool({
-  description: "Add an item to the cart",
-  inputSchema: z.object({ item: z.string() }),
-  execute: ({ item }, ctx) =>
-    cartSlot.update(ctx, (cart) => {
-      cart.items.push(item);
-      return cart.items.length;
-    }),
-});
-```
-
-#### Remarks
-
-It takes no state type parameter, and neither does [ToolContext](#toolcontext). A
-tool reaches session state through a [sessionSlot](#sessionslot-1), which types the
-value in the module that declares it — so a tool in its own file needs
-neither an annotated context nor a cast.
-
-***
-
-### workflow()
-
-```ts
-function workflow<P, R>(def: WorkflowDef<P, R>): WorkflowDef<P, R>;
-```
-
-Declare a durable workflow.
-
-An identity function for type inference, exactly like `tool()` — the returned
-object is the input unchanged. Workflows are named by the key they are declared
-under, so this takes no `name`.
-
-#### Type Parameters
-
-##### P
-
-`P` *extends* [`ToolInputSchema`](#toolinputschema) = [`ToolInputSchema`](#toolinputschema)
-
-##### R
-
-`R` = `unknown`
-
-#### Parameters
-
-##### def
-
-[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
-
-#### Returns
-
-[`WorkflowDef`](#workflowdef)\<`P`, `R`\>
-
-#### Remarks
-
-It deliberately does NOT check that `run` carries the compiler's `workflowId`.
-That check belongs where the id is USED (`ctx.workflows.start`, which throws
-naming the build), because a declaration-time throw makes merely IMPORTING an
-agent module fail wherever the Workflow DevKit transform has not run — which
-includes every unit test of a tool that starts a workflow, since vitest loads
-`agent.ts` as source with no bundler in the path. The first template to declare
-one is what surfaced this: the throw made the module unimportable by its own
-spec.
-
-#### Examples
-
-`agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
-`agent()` takes no `tools`.
-```ts no-check
-import { agent, workflow } from "@alexkroman1/aai";
-import { z } from "zod";
-import { digestFlow } from "./workflows/digest.ts";
-
-export const digest = workflow({
-  description: "Research a topic overnight and store the result",
-  input: z.object({ topic: z.string() }),
-  run: digestFlow,
-});
-
-export default agent({
-  name: "Researcher",
-  workflows: { digest },
-});
-```
-
-`tools/research.ts` — the tool that starts a run.
-```ts no-check
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-import { digest } from "../agent.ts";
-
-export default tool({
-  description: "Kick off overnight research on a topic",
-  inputSchema: z.object({ topic: z.string() }),
-  execute: async ({ topic }, ctx) => {
-    // The workflow itself, not its name: typed input, and a typo is a
-    // compile error. `key` is what lets a later turn find this run.
-    const runId = await ctx.workflows.start(digest, { topic }, { key: ctx.sessionId });
-    return `Working on it — run ${runId}.`;
-  },
-});
-```
-
-***
-
-### workflowApp()
-
-```ts
-function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
-```
-
-Define a WORKFLOW APP — an agent whose front door is a form rather than a
-microphone, and whose work happens in `workflows`.
-
-`agent({ …, page: "static" })` with the discriminant already set, so the
-mode is the CALL rather than a field to remember, and the fields a workflow
-app has no use for are absent from the parameter type instead of being
-rejected by it. Returns the same [AgentDef](#agentdef) `agent()` does — there is
-one definition type, one config, one deploy path, and `page` is only ever
-about the front door.
-
-It mirrors the split `@alexkroman1/aai-ui` already makes in the browser:
-`page()` mounts a workflow app's UI and `client()` mounts a voice one,
-because a flag would leave every session-shaped question ("what does this
-mean with no session?") answered by a conditional. Same reasoning, same
-seam, other end of the wire.
-
-#### Parameters
-
-##### def
-
-`Omit`\<[`StaticAgentParams`](#staticagentparams), `"page"`\>
-
-#### Returns
-
-[`AgentDef`](#agentdef)
-
-#### Example
-
-```ts
-import { workflow, workflowApp } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export const digest = workflow({
-  description: "Summarize a link",
-  input: z.object({ url: z.url() }),
-  run: async ({ url }) => ({ url }),
-});
-
-export default workflowApp({
-  name: "Link Digest",
-  workflows: { digest },
-});
-```
 
 ## References
 

@@ -12,6 +12,645 @@ Framework-agnostic on purpose: `send` records into an array rather than
 calling a mock library, so this module carries no test-runner dependency and
 a spy can still be passed in when a test wants call-order assertions.
 
+## Functions
+
+### createProgressStream()
+
+```ts
+function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
+```
+
+The progress channel of a run, from the read side — what
+`ctx.workflows.stream` resolves with.
+
+Closes after the given lines, which is what makes a tool that drains it
+terminate. A run's real stream never closes (no step knows it is the last
+one), and the tool bounds itself with `streamTail` instead — so a spec that
+wants to exercise THAT bound stubs `streamTail`, not this.
+
+#### Parameters
+
+##### lines?
+
+readonly `unknown`[]
+
+#### Returns
+
+`ReadableStream`\<`unknown`\>
+
+#### Example
+
+```ts
+import { createProgressStream, createStubWorkflows } from "@alexkroman1/aai/testing";
+
+const workflows = createStubWorkflows({
+  streamTail: () => Promise.resolve(0),
+  stream: () => Promise.resolve(createProgressStream(["Reading the sources…"])),
+});
+```
+
+***
+
+### createRunSnapshot()
+
+```ts
+function createRunSnapshot<R>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+```
+
+Build a [WorkflowRunSnapshot](workflow-api.md#workflowrunsnapshot) — the right arm of the union, without a
+cast.
+
+Defaults to a `running` run, which is the state a tool that has just started
+one reads back.
+
+#### Type Parameters
+
+##### R
+
+`R` = `unknown`
+
+#### Parameters
+
+##### over?
+
+[`RunSnapshotOverrides`](#runsnapshotoverrides)\<`R`\>
+
+#### Returns
+
+[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)\<`R`\>
+
+#### Example
+
+```ts
+import { createRunSnapshot, createStubWorkflows } from "@alexkroman1/aai/testing";
+
+const workflows = createStubWorkflows({
+  find: () => Promise.resolve([createRunSnapshot({ status: "failed", error: "gateway down" })]),
+});
+```
+
+***
+
+### createStubWorkflows()
+
+```ts
+function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
+```
+
+A `ctx.workflows` for testing a tool that starts or reads durable runs: every
+method rejects by default, and `overrides` replaces the ones the test drives.
+
+**The alternative is a cast, and the cast is what goes wrong.** A complete
+`WorkflowClient` is eight methods, of which a tool's test usually drives one or
+two, so the hand-rolled version is a literal with `as WorkflowClient` — which
+keeps compiling when the client GAINS a method and leaves that method
+`undefined`. Two shipped templates had exactly that, and adding `wakeUp` and
+`stream` to the client is what surfaced it: the casts still compiled.
+
+Rejecting rather than no-op defaults for the same reason [createUnusedDb](#createunuseddb)
+rejects — a tool that reaches for a method the test did not stub should say so,
+not silently receive `undefined`. `listing` is the exception and returns `[]`,
+because it is synchronous and an empty list is a truthful answer.
+
+```ts
+import { createStubWorkflows, createToolContext } from "@alexkroman1/aai/testing";
+
+const workflows = createStubWorkflows({ start: async () => "wrun_1" });
+const ctx = createToolContext({ workflows });
+```
+
+#### Parameters
+
+##### overrides?
+
+`Partial`\<[`WorkflowClient`](index.md#workflowclient)\>
+
+#### Returns
+
+[`WorkflowClient`](index.md#workflowclient)
+
+***
+
+### createToolContext()
+
+```ts
+function createToolContext(overrides?: Partial<ToolContext>): TestToolContext;
+```
+
+Build a [ToolContext](index.md#toolcontext) for testing a tool's `execute` in isolation.
+
+Defaults are chosen so the context is inert: empty `env`, an empty slot store,
+a `db` and `generate` that reject with a message naming themselves, a
+`signal` that never aborts, and a `send` that records. Override any of them.
+
+**Each call is a distinct session.** `sessionId` auto-increments, which is
+what makes the two-context isolation test — the same tool run against two
+contexts must not share state — read the way it does. Pass `sessionId`
+explicitly when a test needs two contexts to be the SAME session (a
+reconnect, a keyed lock).
+
+There is no state type parameter, because there is no `ctx.state` bag to
+type: a slot types its own value in the module that declares it, and reading
+the slot back is how a spec asserts what a tool wrote.
+
+#### Parameters
+
+##### overrides?
+
+`Partial`\<[`ToolContext`](index.md#toolcontext)\>
+
+#### Returns
+
+[`TestToolContext`](#testtoolcontext)
+
+#### Examples
+
+```ts no-check
+// `no-check`: the tool under test is in another file, which is the point.
+import { createToolContext } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { cartSlot } from "./shared.ts";
+import addItem from "./tools/add_item.ts";
+
+test("add_item appends to this session's cart", async () => {
+  const ctx = createToolContext();
+  await addItem.execute({ item: "apple" }, ctx);
+  expect(cartSlot.get(ctx).items).toEqual(["apple"]);
+});
+```
+
+**Asserting on what a tool sent**
+
+```ts no-check
+import { createToolContext } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { recommend } from "./tools/recommend.ts";
+
+test("recommend pushes its picks to the client", async () => {
+  const ctx = createToolContext();
+  await recommend.execute({ mood: "chill" }, ctx);
+  expect(ctx.sent).toEqual([{ event: "recommendations", data: expect.anything() }]);
+});
+```
+
+***
+
+### createUnusedDb()
+
+```ts
+function createUnusedDb(): Db;
+```
+
+A `Db` whose every query rejects, naming the field — the default for a test
+context, so a tool that unexpectedly reaches for storage fails with that
+sentence instead of a `TypeError` on `undefined`.
+
+#### Returns
+
+[`Db`](index.md#db)
+
+***
+
+### runTool()
+
+```ts
+function runTool(
+   agent: ToolBearingAgent, 
+   name: string, 
+   args: InferSchemaOutput<ToolInputSchema>, 
+ctx: ToolContext): Promise<unknown>;
+```
+
+Run a tool by the name the model calls it by.
+
+`args` is unvalidated on purpose: the runtime parses a model's arguments
+against `inputSchema` BEFORE `execute` sees them, so a spec that pre-validated
+would be testing a path the tool never runs on. Pass the arguments the tool
+body expects to receive.
+
+The def to pass is the one a DEPLOYED agent runs — `agent.ts`'s default export
+put through `withDiscoveredTools`, since a tool is a file and the authored def
+carries none. See [toolOf](#toolof), which this is built on.
+
+#### Parameters
+
+##### agent
+
+[`ToolBearingAgent`](#toolbearingagent)
+
+##### name
+
+`string`
+
+##### args
+
+[`InferSchemaOutput`](index.md#inferschemaoutput)\<[`ToolInputSchema`](index.md#toolinputschema)\>
+
+##### ctx
+
+[`ToolContext`](index.md#toolcontext)
+
+#### Returns
+
+`Promise`\<`unknown`\>
+
+#### Example
+
+```ts no-check
+// `no-check`: import.meta.glob needs your project's vite/client types.
+import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import authored from "./agent.ts";
+
+const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+
+expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
+  added: "apple",
+});
+```
+
+***
+
+### stubGateway()
+
+```ts
+function stubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGateway;
+```
+
+Build a fake LLM gateway answering `replies` in order.
+
+The LAST reply repeats once the list runs out, so a spec names only the turns
+it cares about — which is what makes this usable for a step whose model call
+sits in a LOOP: a stub that says the same thing every turn can only ever drive
+such a loop into its budget, and one that runs out mid-loop fails on the stub
+rather than on the code.
+
+#### Parameters
+
+##### replies
+
+`string` \| readonly `string`[]
+
+Completion contents, in order. A bare string is one reply.
+
+##### opts?
+
+[`StubGatewayOptions`](#stubgatewayoptions)
+
+#### Returns
+
+[`StubGateway`](#stubgateway)
+
+#### Example
+
+```ts no-check
+// `no-check`: the step under test is in another file, which is the point.
+import { stubGateway } from "@alexkroman1/aai/testing";
+import { expect, test, vi } from "vitest";
+import { summarize } from "./workflows/digest.ts";
+
+test("summarize sends the article and returns the headline", async () => {
+  const gateway = stubGateway(['{"headline":"Otters use tools"}']);
+  vi.stubGlobal("fetch", gateway.fetch);
+  vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+
+  expect(await summarize("Otters use tools.")).toEqual({ headline: "Otters use tools" });
+  expect(gateway.calls[0]?.prompt).toContain("Otters use tools.");
+});
+```
+
+***
+
+### stubGenerate()
+
+```ts
+function stubGenerate(script: 
+  | StubGenerateRoute
+  | Readonly<Record<string, StubGenerateRoute>>): StubGenerate;
+```
+
+Build a fake `ctx.generate` from a script keyed by system prompt.
+
+A call whose system prompt names no route throws, naming it — an unscripted
+model call is a spec that has drifted from the tool, not a case to paper over.
+Pass a single route (not a record) to answer every call the same way, which is
+what a one-model tool wants.
+
+#### Parameters
+
+##### script
+
+  \| [`StubGenerateRoute`](#stubgenerateroute)
+  \| `Readonly`\<`Record`\<`string`, [`StubGenerateRoute`](#stubgenerateroute)\>\>
+
+#### Returns
+
+[`StubGenerate`](#stubgenerate)
+
+#### Examples
+
+**Two model roles, one queue**
+
+```ts
+import { createToolContext, stubGenerate } from "@alexkroman1/aai/testing";
+
+const verdicts = ["yes", "no"];
+const model = stubGenerate({
+  "You grade documents.": () => ({ object: { score: verdicts.shift() ?? "yes" } }),
+  "You answer questions.": "The documented answer.",
+});
+const ctx = createToolContext({ generate: model.generate });
+// … run the tool, then assert on the roles it played:
+// expect(model.calls.map((call) => call.system)).toEqual([…]);
+```
+
+**One model role**
+
+```ts
+import { stubGenerate } from "@alexkroman1/aai/testing";
+
+const model = stubGenerate({ object: { steps: ["Only step"] } });
+```
+
+***
+
+### stubReporter()
+
+```ts
+function stubReporter(): StubReporter;
+```
+
+Capture what a `"use step"` function narrates and emits.
+
+`report()` and `emit()` both go through a published slot, and with nothing
+published they fall back to the console — which is right for a step under test
+that nobody is asserting on, and useless the moment the narration IS the
+subject. It is for a step whose partial results are part of its contract: a
+fan-out that emits each segment as it lands has a page depending on the shape
+of those chunks, and nothing else in a spec can see them.
+
+The two are separated the way the streams are, so a spec asserting a chunk
+never has to filter the sentences out of it.
+
+```ts no-check
+const reported = stubReporter();
+afterEach(reported.restore);
+
+await transcribeSegment(uploadId, format, segment);
+expect(reported.emitted).toEqual([
+  { namespace: "transcript", chunk: { index: 0, text: "hello there" } },
+]);
+```
+
+Publishing REPLACES, so a spec that forgets to restore leaves this one
+answering the next file's steps — the same rule [stubStepFetch](#stubstepfetch-1) follows,
+and the same remedy.
+
+#### Returns
+
+[`StubReporter`](#stubreporter)
+
+***
+
+### stubSpeech()
+
+```ts
+function stubSpeech(options?: StubSpeechOptions): StubSpeech;
+```
+
+Publish a synthesizer that records what it was asked to say and answers with
+silence.
+
+Silence rather than a tone, because nothing downstream of a step listens: a
+spec asserts on the TEXT that was spoken, the duration, and where the bytes
+went. Generating audible audio would only make the fixtures bigger.
+
+#### Parameters
+
+##### options?
+
+[`StubSpeechOptions`](#stubspeechoptions)
+
+#### Returns
+
+[`StubSpeech`](#stubspeech)
+
+***
+
+### stubStepFetch()
+
+```ts
+function stubStepFetch(answer?: (request: StubStepRequest) => 
+  | Response
+  | {
+  body?: unknown;
+  headers?: Record<string, string>;
+  status?: number;
+}
+  | Promise<
+  | Response
+  | {
+  body?: unknown;
+  headers?: Record<string, string>;
+  status?: number;
+}>): StubStepFetch;
+```
+
+Publish a fake `stepFetch`, so a `"use step"` function's HTTP can be asserted
+without a server and without stubbing a global.
+
+A step's outbound call goes through a process-wide slot rather than
+`globalThis.fetch` (see `stepFetch` on `@alexkroman1/aai/step` for why —
+HTTP/1.1 pinning, and a fan-out that breaks on HTTP/2 stream resets), so this is the honest way to
+intercept it. `vi.stubGlobal("fetch", …)` still works, because an unpublished
+slot falls back to the global; it just tests a path production does not take,
+and it cannot see the request BODY as bytes.
+
+`answer` may return a `Response`, or a `{ status, body, headers }` shorthand,
+or throw — a throw is what a connection failure looks like, and `stepFetch`
+wraps it in a `StepTransportError` exactly as it would in production.
+
+Returns `restore`, and calling it in an `afterEach` is not optional — a fetch
+left published makes the next file's steps answer to this one's handler.
+
+#### Parameters
+
+##### answer?
+
+(`request`: [`StubStepRequest`](#stubsteprequest)) => 
+  \| `Response`
+  \| \{
+  `body?`: `unknown`;
+  `headers?`: `Record`\<`string`, `string`\>;
+  `status?`: `number`;
+\}
+  \| `Promise`\<
+  \| `Response`
+  \| \{
+  `body?`: `unknown`;
+  `headers?`: `Record`\<`string`, `string`\>;
+  `status?`: `number`;
+\}\>
+
+Called per request with the recorded request. Defaults to an
+  empty `200`.
+
+#### Returns
+
+[`StubStepFetch`](#stubstepfetch)
+
+#### Example
+
+```ts no-check
+// `no-check`: the assertion is the point, and a doc example may not import a
+// test runner — the same reason `createToolContext`'s example opts out.
+import { stubStepFetch } from "@alexkroman1/aai/testing";
+
+const sync = stubStepFetch(() => ({ body: { text: "hello there" } }));
+// … call the step …
+expect(sync.calls[0]?.headers.Authorization).toBe("sk-test");
+sync.restore();
+```
+
+***
+
+### stubUploads()
+
+```ts
+function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): () => void;
+```
+
+Publish an in-memory upload store, so a `"use step"` function that calls
+`readUpload` can be tested without a server.
+
+A step reads uploads through a process-wide slot rather than dialling
+anything, which is what makes this possible at all: a spec supplies its own
+bytes and the step under test is unchanged.
+
+Returns the UNPUBLISH function, and calling it in an `afterEach` is not
+optional — a store left published makes the next file's steps read this
+one's bytes, which is the kind of cross-file leak that presents as a passing
+test somewhere else.
+
+#### Parameters
+
+##### files
+
+`Readonly`\<`Record`\<`string`, [`StubUpload`](#stubupload)\>\>
+
+Keyed by upload id — the same string a run input would carry.
+
+##### options?
+
+[`StubUploadsOptions`](#stubuploadsoptions)
+
+#### Returns
+
+() => `void`
+
+#### Example
+
+```ts
+import { stubUploads } from "@alexkroman1/aai/testing";
+
+const restore = stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
+// … call the step …
+restore();
+
+// A streamed upload mid-flight: `readUpload` comes back short and
+// `uploadInfo(...).complete` is false, which is what a polling body sees.
+const firstHalf = new Uint8Array([1, 2]);
+stubUploads({ upl_2: { bytes: firstHalf, complete: false } });
+```
+
+***
+
+### toolOf()
+
+```ts
+function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
+```
+
+The tool `name` is declared under, or a throw naming the ones that are.
+
+A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
+pass it through `withDiscoveredTools` first, exactly as this example does and
+as every shipped template's spec does. Handing this the authored def directly
+is the common mistake, and it fails with "(none)".
+
+#### Parameters
+
+##### agent
+
+[`ToolBearingAgent`](#toolbearingagent)
+
+##### name
+
+`string`
+
+#### Returns
+
+[`ToolDef`](index.md#tooldef)\<[`ToolInputSchema`](index.md#toolinputschema)\>
+
+#### Example
+
+```ts no-check
+// `no-check`: import.meta.glob needs your project's vite/client types.
+import { toolOf, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import authored from "./agent.ts";
+
+const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+
+expect(toolOf(agentDef, "add_item").description).toContain("cart");
+```
+
+***
+
+### withDiscoveredTools()
+
+```ts
+function withDiscoveredTools(def: AgentDef, modules: ToolModules): AgentDef;
+```
+
+The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
+`tools/` directory declares.
+
+Pass `import.meta.glob("./tools/*.ts", { eager: true })` — see the module doc
+for why the glob belongs at the call site. Every rule the build applies applies
+here too, and each is an error naming the file: the name grammar, the
+default-export requirement, no nested files, and a name declared twice.
+
+A project with no `tools/` directory gets an empty glob and the def unchanged.
+
+#### Parameters
+
+##### def
+
+[`AgentDef`](index.md#agentdef)
+
+##### modules
+
+[`ToolModules`](manifest.md#toolmodules)
+
+#### Returns
+
+[`AgentDef`](index.md#agentdef)
+
+#### Example
+
+```ts no-check
+// `no-check`: import.meta.glob needs your project's vite/client types.
+import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import authored from "./agent.ts";
+
+const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+
+test("adds an item", async () => {
+  expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
+    added: "apple",
+  });
+});
+```
+
 ## Interfaces
 
 ### SentEvent
@@ -364,16 +1003,6 @@ type StubSpeech = {
 
 What [stubSpeech](#stubspeech-1) returns: the call log, and how to put the slot back.
 
-#### Properties
-
-##### calls
-
-```ts
-calls: StubSpeechCall[];
-```
-
-Every call, in order.
-
 #### Methods
 
 ##### restore()
@@ -391,6 +1020,16 @@ cross-file leak that presents as a passing test somewhere else.
 ###### Returns
 
 `void`
+
+#### Properties
+
+##### calls
+
+```ts
+calls: StubSpeechCall[];
+```
+
+Every call, in order.
 
 ***
 
@@ -740,628 +1379,3 @@ const STUB_SPEECH_PCM_BYTES: 12000 = 12000;
 ```
 
 PCM bytes [stubSpeech](#stubspeech-1) answers with when no size is named — ~0.25s at 24 kHz.
-
-## Functions
-
-### createProgressStream()
-
-```ts
-function createProgressStream(lines?: readonly unknown[]): ReadableStream<unknown>;
-```
-
-The progress channel of a run, from the read side — what
-`ctx.workflows.stream` resolves with.
-
-Closes after the given lines, which is what makes a tool that drains it
-terminate. A run's real stream never closes (no step knows it is the last
-one), and the tool bounds itself with `streamTail` instead — so a spec that
-wants to exercise THAT bound stubs `streamTail`, not this.
-
-#### Parameters
-
-##### lines?
-
-readonly `unknown`[]
-
-#### Returns
-
-`ReadableStream`\<`unknown`\>
-
-#### Example
-
-```ts
-import { createProgressStream, createStubWorkflows } from "@alexkroman1/aai/testing";
-
-const workflows = createStubWorkflows({
-  streamTail: () => Promise.resolve(0),
-  stream: () => Promise.resolve(createProgressStream(["Reading the sources…"])),
-});
-```
-
-***
-
-### createRunSnapshot()
-
-```ts
-function createRunSnapshot<R>(over?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
-```
-
-Build a [WorkflowRunSnapshot](workflow-api.md#workflowrunsnapshot) — the right arm of the union, without a
-cast.
-
-Defaults to a `running` run, which is the state a tool that has just started
-one reads back.
-
-#### Type Parameters
-
-##### R
-
-`R` = `unknown`
-
-#### Parameters
-
-##### over?
-
-[`RunSnapshotOverrides`](#runsnapshotoverrides)\<`R`\>
-
-#### Returns
-
-[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)\<`R`\>
-
-#### Example
-
-```ts
-import { createRunSnapshot, createStubWorkflows } from "@alexkroman1/aai/testing";
-
-const workflows = createStubWorkflows({
-  find: () => Promise.resolve([createRunSnapshot({ status: "failed", error: "gateway down" })]),
-});
-```
-
-***
-
-### createStubWorkflows()
-
-```ts
-function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
-```
-
-A `ctx.workflows` for testing a tool that starts or reads durable runs: every
-method rejects by default, and `overrides` replaces the ones the test drives.
-
-**The alternative is a cast, and the cast is what goes wrong.** A complete
-`WorkflowClient` is eight methods, of which a tool's test usually drives one or
-two, so the hand-rolled version is a literal with `as WorkflowClient` — which
-keeps compiling when the client GAINS a method and leaves that method
-`undefined`. Two shipped templates had exactly that, and adding `wakeUp` and
-`stream` to the client is what surfaced it: the casts still compiled.
-
-Rejecting rather than no-op defaults for the same reason [createUnusedDb](#createunuseddb)
-rejects — a tool that reaches for a method the test did not stub should say so,
-not silently receive `undefined`. `listing` is the exception and returns `[]`,
-because it is synchronous and an empty list is a truthful answer.
-
-```ts
-import { createStubWorkflows, createToolContext } from "@alexkroman1/aai/testing";
-
-const workflows = createStubWorkflows({ start: async () => "wrun_1" });
-const ctx = createToolContext({ workflows });
-```
-
-#### Parameters
-
-##### overrides?
-
-`Partial`\<[`WorkflowClient`](index.md#workflowclient)\>
-
-#### Returns
-
-[`WorkflowClient`](index.md#workflowclient)
-
-***
-
-### createToolContext()
-
-```ts
-function createToolContext(overrides?: Partial<ToolContext>): TestToolContext;
-```
-
-Build a [ToolContext](index.md#toolcontext) for testing a tool's `execute` in isolation.
-
-Defaults are chosen so the context is inert: empty `env`, an empty slot store,
-a `db` and `generate` that reject with a message naming themselves, a
-`signal` that never aborts, and a `send` that records. Override any of them.
-
-**Each call is a distinct session.** `sessionId` auto-increments, which is
-what makes the two-context isolation test — the same tool run against two
-contexts must not share state — read the way it does. Pass `sessionId`
-explicitly when a test needs two contexts to be the SAME session (a
-reconnect, a keyed lock).
-
-There is no state type parameter, because there is no `ctx.state` bag to
-type: a slot types its own value in the module that declares it, and reading
-the slot back is how a spec asserts what a tool wrote.
-
-#### Parameters
-
-##### overrides?
-
-`Partial`\<[`ToolContext`](index.md#toolcontext)\>
-
-#### Returns
-
-[`TestToolContext`](#testtoolcontext)
-
-#### Examples
-
-```ts no-check
-// `no-check`: the tool under test is in another file, which is the point.
-import { createToolContext } from "@alexkroman1/aai/testing";
-import { expect, test } from "vitest";
-import { cartSlot } from "./shared.ts";
-import addItem from "./tools/add_item.ts";
-
-test("add_item appends to this session's cart", async () => {
-  const ctx = createToolContext();
-  await addItem.execute({ item: "apple" }, ctx);
-  expect(cartSlot.get(ctx).items).toEqual(["apple"]);
-});
-```
-
-**Asserting on what a tool sent**
-
-```ts no-check
-import { createToolContext } from "@alexkroman1/aai/testing";
-import { expect, test } from "vitest";
-import { recommend } from "./tools/recommend.ts";
-
-test("recommend pushes its picks to the client", async () => {
-  const ctx = createToolContext();
-  await recommend.execute({ mood: "chill" }, ctx);
-  expect(ctx.sent).toEqual([{ event: "recommendations", data: expect.anything() }]);
-});
-```
-
-***
-
-### createUnusedDb()
-
-```ts
-function createUnusedDb(): Db;
-```
-
-A `Db` whose every query rejects, naming the field — the default for a test
-context, so a tool that unexpectedly reaches for storage fails with that
-sentence instead of a `TypeError` on `undefined`.
-
-#### Returns
-
-[`Db`](index.md#db)
-
-***
-
-### runTool()
-
-```ts
-function runTool(
-   agent: ToolBearingAgent, 
-   name: string, 
-   args: InferSchemaOutput<ToolInputSchema>, 
-ctx: ToolContext): Promise<unknown>;
-```
-
-Run a tool by the name the model calls it by.
-
-`args` is unvalidated on purpose: the runtime parses a model's arguments
-against `inputSchema` BEFORE `execute` sees them, so a spec that pre-validated
-would be testing a path the tool never runs on. Pass the arguments the tool
-body expects to receive.
-
-#### Parameters
-
-##### agent
-
-[`ToolBearingAgent`](#toolbearingagent)
-
-##### name
-
-`string`
-
-##### args
-
-[`InferSchemaOutput`](index.md#inferschemaoutput)\<[`ToolInputSchema`](index.md#toolinputschema)\>
-
-##### ctx
-
-[`ToolContext`](index.md#toolcontext)
-
-#### Returns
-
-`Promise`\<`unknown`\>
-
-#### Example
-
-```ts no-check
-// `no-check`: the agent under test is in another file, which is the point.
-import { createToolContext, runTool } from "@alexkroman1/aai/testing";
-import agentDef from "./agent.ts";
-
-const ctx = createToolContext();
-expect(await runTool(agentDef, "add_item", { item: "apple" }, ctx)).toEqual({ added: "apple" });
-```
-
-***
-
-### stubGateway()
-
-```ts
-function stubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGateway;
-```
-
-Build a fake LLM gateway answering `replies` in order.
-
-The LAST reply repeats once the list runs out, so a spec names only the turns
-it cares about — which is what makes this usable for a step whose model call
-sits in a LOOP: a stub that says the same thing every turn can only ever drive
-such a loop into its budget, and one that runs out mid-loop fails on the stub
-rather than on the code.
-
-#### Parameters
-
-##### replies
-
-`string` \| readonly `string`[]
-
-Completion contents, in order. A bare string is one reply.
-
-##### opts?
-
-[`StubGatewayOptions`](#stubgatewayoptions)
-
-#### Returns
-
-[`StubGateway`](#stubgateway)
-
-#### Example
-
-```ts no-check
-// `no-check`: the step under test is in another file, which is the point.
-import { stubGateway } from "@alexkroman1/aai/testing";
-import { expect, test, vi } from "vitest";
-import { summarize } from "./workflows/digest.ts";
-
-test("summarize sends the article and returns the headline", async () => {
-  const gateway = stubGateway(['{"headline":"Otters use tools"}']);
-  vi.stubGlobal("fetch", gateway.fetch);
-  vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-
-  expect(await summarize("Otters use tools.")).toEqual({ headline: "Otters use tools" });
-  expect(gateway.calls[0]?.prompt).toContain("Otters use tools.");
-});
-```
-
-***
-
-### stubGenerate()
-
-```ts
-function stubGenerate(script: 
-  | StubGenerateRoute
-  | Readonly<Record<string, StubGenerateRoute>>): StubGenerate;
-```
-
-Build a fake `ctx.generate` from a script keyed by system prompt.
-
-A call whose system prompt names no route throws, naming it — an unscripted
-model call is a spec that has drifted from the tool, not a case to paper over.
-Pass a single route (not a record) to answer every call the same way, which is
-what a one-model tool wants.
-
-#### Parameters
-
-##### script
-
-  \| [`StubGenerateRoute`](#stubgenerateroute)
-  \| `Readonly`\<`Record`\<`string`, [`StubGenerateRoute`](#stubgenerateroute)\>\>
-
-#### Returns
-
-[`StubGenerate`](#stubgenerate)
-
-#### Examples
-
-**Two model roles, one queue**
-
-```ts
-import { createToolContext, stubGenerate } from "@alexkroman1/aai/testing";
-
-const verdicts = ["yes", "no"];
-const model = stubGenerate({
-  "You grade documents.": () => ({ object: { score: verdicts.shift() ?? "yes" } }),
-  "You answer questions.": "The documented answer.",
-});
-const ctx = createToolContext({ generate: model.generate });
-// … run the tool, then assert on the roles it played:
-// expect(model.calls.map((call) => call.system)).toEqual([…]);
-```
-
-**One model role**
-
-```ts
-import { stubGenerate } from "@alexkroman1/aai/testing";
-
-const model = stubGenerate({ object: { steps: ["Only step"] } });
-```
-
-***
-
-### stubReporter()
-
-```ts
-function stubReporter(): StubReporter;
-```
-
-Capture what a `"use step"` function narrates and emits.
-
-`report()` and `emit()` both go through a published slot, and with nothing
-published they fall back to the console — which is right for a step under test
-that nobody is asserting on, and useless the moment the narration IS the
-subject. It is for a step whose partial results are part of its contract: a
-fan-out that emits each segment as it lands has a page depending on the shape
-of those chunks, and nothing else in a spec can see them.
-
-The two are separated the way the streams are, so a spec asserting a chunk
-never has to filter the sentences out of it.
-
-```ts no-check
-const reported = stubReporter();
-afterEach(reported.restore);
-
-await transcribeSegment(uploadId, format, segment);
-expect(reported.emitted).toEqual([
-  { namespace: "transcript", chunk: { index: 0, text: "hello there" } },
-]);
-```
-
-Publishing REPLACES, so a spec that forgets to restore leaves this one
-answering the next file's steps — the same rule [stubStepFetch](#stubstepfetch-1) follows,
-and the same remedy.
-
-#### Returns
-
-[`StubReporter`](#stubreporter)
-
-***
-
-### stubSpeech()
-
-```ts
-function stubSpeech(options?: StubSpeechOptions): StubSpeech;
-```
-
-Publish a synthesizer that records what it was asked to say and answers with
-silence.
-
-Silence rather than a tone, because nothing downstream of a step listens: a
-spec asserts on the TEXT that was spoken, the duration, and where the bytes
-went. Generating audible audio would only make the fixtures bigger.
-
-#### Parameters
-
-##### options?
-
-[`StubSpeechOptions`](#stubspeechoptions)
-
-#### Returns
-
-[`StubSpeech`](#stubspeech)
-
-***
-
-### stubStepFetch()
-
-```ts
-function stubStepFetch(answer?: (request: StubStepRequest) => 
-  | Response
-  | {
-  body?: unknown;
-  headers?: Record<string, string>;
-  status?: number;
-}
-  | Promise<
-  | Response
-  | {
-  body?: unknown;
-  headers?: Record<string, string>;
-  status?: number;
-}>): StubStepFetch;
-```
-
-Publish a fake `stepFetch`, so a `"use step"` function's HTTP can be asserted
-without a server and without stubbing a global.
-
-A step's outbound call goes through a process-wide slot rather than
-`globalThis.fetch` (see `sdk/step-fetch.ts` for why — HTTP/1.1 pinning, and
-a fan-out that breaks on HTTP/2 stream resets), so this is the honest way to
-intercept it. `vi.stubGlobal("fetch", …)` still works, because an unpublished
-slot falls back to the global; it just tests a path production does not take,
-and it cannot see the request BODY as bytes.
-
-`answer` may return a `Response`, or a `{ status, body, headers }` shorthand,
-or throw — a throw is what a connection failure looks like, and `stepFetch`
-wraps it in a `StepTransportError` exactly as it would in production.
-
-Returns `restore`, and calling it in an `afterEach` is not optional — a fetch
-left published makes the next file's steps answer to this one's handler.
-
-#### Parameters
-
-##### answer?
-
-(`request`: [`StubStepRequest`](#stubsteprequest)) => 
-  \| `Response`
-  \| \{
-  `body?`: `unknown`;
-  `headers?`: `Record`\<`string`, `string`\>;
-  `status?`: `number`;
-\}
-  \| `Promise`\<
-  \| `Response`
-  \| \{
-  `body?`: `unknown`;
-  `headers?`: `Record`\<`string`, `string`\>;
-  `status?`: `number`;
-\}\>
-
-Called per request with the recorded request. Defaults to an
-  empty `200`.
-
-#### Returns
-
-[`StubStepFetch`](#stubstepfetch)
-
-#### Example
-
-```ts no-check
-// `no-check`: the assertion is the point, and a doc example may not import a
-// test runner — the same reason `createToolContext`'s example opts out.
-import { stubStepFetch } from "@alexkroman1/aai/testing";
-
-const sync = stubStepFetch(() => ({ body: { text: "hello there" } }));
-// … call the step …
-expect(sync.calls[0]?.headers.Authorization).toBe("sk-test");
-sync.restore();
-```
-
-***
-
-### stubUploads()
-
-```ts
-function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): () => void;
-```
-
-Publish an in-memory upload store, so a `"use step"` function that calls
-`readUpload` can be tested without a server.
-
-A step reads uploads through a process-wide slot rather than dialling
-anything (see `sdk/step-uploads.ts`), which is what makes this possible at
-all: a spec supplies its own bytes and the step under test is unchanged.
-
-Returns the UNPUBLISH function, and calling it in an `afterEach` is not
-optional — a store left published makes the next file's steps read this
-one's bytes, which is the kind of cross-file leak that presents as a passing
-test somewhere else.
-
-#### Parameters
-
-##### files
-
-`Readonly`\<`Record`\<`string`, [`StubUpload`](#stubupload)\>\>
-
-Keyed by upload id — the same string a run input would carry.
-
-##### options?
-
-[`StubUploadsOptions`](#stubuploadsoptions)
-
-#### Returns
-
-() => `void`
-
-#### Example
-
-```ts
-import { stubUploads } from "@alexkroman1/aai/testing";
-
-const restore = stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
-// … call the step …
-restore();
-
-// A streamed upload mid-flight: `readUpload` comes back short and
-// `uploadInfo(...).complete` is false, which is what a polling body sees.
-const firstHalf = new Uint8Array([1, 2]);
-stubUploads({ upl_2: { bytes: firstHalf, complete: false } });
-```
-
-***
-
-### toolOf()
-
-```ts
-function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
-```
-
-The tool `name` is declared under, or a throw naming the ones that are.
-
-#### Parameters
-
-##### agent
-
-[`ToolBearingAgent`](#toolbearingagent)
-
-##### name
-
-`string`
-
-#### Returns
-
-[`ToolDef`](index.md#tooldef)\<[`ToolInputSchema`](index.md#toolinputschema)\>
-
-#### Example
-
-```ts no-check
-// `no-check`: the agent under test is in another file, which is the point.
-import { toolOf } from "@alexkroman1/aai/testing";
-import agentDef from "./agent.ts";
-
-expect(toolOf(agentDef, "add_item").description).toContain("cart");
-```
-
-***
-
-### withDiscoveredTools()
-
-```ts
-function withDiscoveredTools(def: AgentDef, modules: ToolModules): AgentDef;
-```
-
-The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
-`tools/` directory declares.
-
-Pass `import.meta.glob("./tools/*.ts", { eager: true })` — see the module doc
-for why the glob belongs at the call site. Every rule the build applies applies
-here too, and each is an error naming the file: the name grammar, the
-default-export requirement, no nested files, and a name declared twice.
-
-A project with no `tools/` directory gets an empty glob and the def unchanged.
-
-#### Parameters
-
-##### def
-
-[`AgentDef`](index.md#agentdef)
-
-##### modules
-
-[`ToolModules`](manifest.md#toolmodules)
-
-#### Returns
-
-[`AgentDef`](index.md#agentdef)
-
-#### Example
-
-```ts no-check
-// `no-check`: import.meta.glob needs your project's vite/client types.
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
-import authored from "./agent.ts";
-
-const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
-
-test("adds an item", async () => {
-  expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
-    added: "apple",
-  });
-});
-```

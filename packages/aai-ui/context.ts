@@ -128,6 +128,22 @@ export function useSession(): Session {
  * cheap; when it returns a derived object, pass a custom `isEqual` to avoid
  * re-renders on referentially-new-but-equal results.
  *
+ * @example
+ * ```tsx
+ * import { useSessionSelector } from "@alexkroman1/aai-ui";
+ *
+ * // Re-renders when `running` flips, and on nothing else — not on every
+ * // transcript delta the way `useSession()` would.
+ * function MicDot() {
+ *   const running = useSessionSelector((snapshot) => snapshot.running);
+ *   return <span>{running ? "●" : "○"}</span>;
+ * }
+ * ```
+ *
+ * @param selector - Reads the slice out of the snapshot. Must be pure.
+ * @param isEqual - Compares two selected values. Defaults to `Object.is`.
+ * @returns The selected slice.
+ *
  * @public
  */
 export function useSessionSelector<T>(
@@ -199,6 +215,26 @@ function usePageBackground(bg: string): void {
  * Read the resolved theme (every {@link ClientTheme} field filled with its
  * default) from the nearest theme context. Returns the default theme when no
  * provider is present, so components can call it unconditionally.
+ *
+ * This is how a custom component stays on the agent's palette: a
+ * `client({ theme })` override reaches it here, where a hardcoded colour or a
+ * Tailwind class cannot see it.
+ *
+ * @example
+ * ```tsx
+ * import { useTheme } from "@alexkroman1/aai-ui";
+ *
+ * function Total({ amount }: { amount: string }) {
+ *   const theme = useTheme();
+ *   return (
+ *     <strong style={{ color: theme.primary, background: theme.surface }}>
+ *       {amount}
+ *     </strong>
+ *   );
+ * }
+ * ```
+ *
+ * @returns Every {@link ClientTheme} field, filled in.
  *
  * @public
  */

@@ -2,7 +2,14 @@
 
 /** @jsxImportSource react */
 
-import { type CSSProperties, memo, type ReactNode, useMemo } from "react";
+import {
+  type CSSProperties,
+  type FunctionComponent,
+  type MemoExoticComponent,
+  memo,
+  type ReactNode,
+  useMemo,
+} from "react";
 import { useSessionSelector, useTheme } from "../context.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
 import { INK_FAINT_PCT, INK_MUTED_PCT, inkTint, primaryTint } from "./_colors.ts";
@@ -156,6 +163,24 @@ function interleave(
 }
 
 /**
+ * Props of {@link MessageList}.
+ *
+ * @public
+ */
+export type MessageListProps = {
+  /**
+   * Additional CSS class names for the outer scroll container, appended to its
+   * own rather than replacing them.
+   *
+   * The container is an {@link AutoScroll}, so it must end up with a BOUNDED
+   * height (`flex-1 min-h-0`, `h-full`, a fixed height). Unbounded, it grows
+   * with the conversation and never scrolls, so nothing pins to the newest
+   * message.
+   */
+  className?: string;
+};
+
+/**
  * Scrollable list of all chat messages, tool-call blocks, live transcript,
  * streaming agent utterance, and a thinking indicator.
  *
@@ -173,71 +198,73 @@ function interleave(
  * }
  * ```
  *
- * @param className - Additional CSS class names applied to the outer list container.
+ * @param props - Container props.
  *
  * @public
  */
-export const MessageList = memo(function MessageList({ className }: { className?: string }) {
-  // Individual selectors (cached per selector) rather than useSession(): the
-  // list already re-renders on every content change, but a full-snapshot
-  // subscription would also drag it through unrelated updates (custom events,
-  // recording flips, ...).
-  const state = useSessionSelector((s) => s.state);
-  const messages = useSessionSelector((s) => s.messages);
-  const toolCalls = useSessionSelector((s) => s.toolCalls);
-  const userTranscript = useSessionSelector((s) => s.userTranscript);
-  const agentTranscript = useSessionSelector((s) => s.agentTranscript);
-  const theme = useTheme();
+export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps>> = memo(
+  function MessageList({ className }: MessageListProps) {
+    // Individual selectors (cached per selector) rather than useSession(): the
+    // list already re-renders on every content change, but a full-snapshot
+    // subscription would also drag it through unrelated updates (custom events,
+    // recording flips, ...).
+    const state = useSessionSelector((s) => s.state);
+    const messages = useSessionSelector((s) => s.messages);
+    const toolCalls = useSessionSelector((s) => s.toolCalls);
+    const userTranscript = useSessionSelector((s) => s.userTranscript);
+    const agentTranscript = useSessionSelector((s) => s.agentTranscript);
+    const theme = useTheme();
 
-  const showThinking = useMemo(() => {
-    if (state !== "thinking") return false;
-    const last = toolCalls.at(-1);
-    if (last?.status === "pending") return false;
-    const lastMsg = messages.at(-1);
-    return !lastMsg || lastMsg.role === "user" || Boolean(last);
-  }, [state, toolCalls, messages]);
+    const showThinking = useMemo(() => {
+      if (state !== "thinking") return false;
+      const last = toolCalls.at(-1);
+      if (last?.status === "pending") return false;
+      const lastMsg = messages.at(-1);
+      return !lastMsg || lastMsg.role === "user" || Boolean(last);
+    }, [state, toolCalls, messages]);
 
-  // Stable object for the streaming bubble: an inline literal would defeat
-  // MessageBubble's memo, re-rendering the streaming row on every unrelated
-  // list update (state flips, STT partials, tool-call updates).
-  const streamingMessage = useMemo(
-    () => (agentTranscript ? { role: "assistant" as const, content: agentTranscript } : null),
-    [agentTranscript],
-  );
+    // Stable object for the streaming bubble: an inline literal would defeat
+    // MessageBubble's memo, re-rendering the streaming row on every unrelated
+    // list update (state flips, STT partials, tool-call updates).
+    const streamingMessage = useMemo(
+      () => (agentTranscript ? { role: "assistant" as const, content: agentTranscript } : null),
+      [agentTranscript],
+    );
 
-  // Memoized rows: `MessageBubble` and `ToolCallBlock` are memo()-wrapped and
-  // their inputs are referentially stable across snapshots, so appending one
-  // message re-renders one row, not the whole capped list.
-  const items = useMemo(
-    () =>
-      interleave(
-        messages,
-        toolCalls,
-        (msg) => <MessageBubble key={msg.id} message={msg} theme={theme} />,
-        (tc) => <ToolCallBlock key={tc.callId} toolCall={tc} />,
-      ),
-    [messages, toolCalls, theme],
-  );
+    // Memoized rows: `MessageBubble` and `ToolCallBlock` are memo()-wrapped and
+    // their inputs are referentially stable across snapshots, so appending one
+    // message re-renders one row, not the whole capped list.
+    const items = useMemo(
+      () =>
+        interleave(
+          messages,
+          toolCalls,
+          (msg) => <MessageBubble key={msg.id} message={msg} theme={theme} />,
+          (tc) => <ToolCallBlock key={tc.callId} toolCall={tc} />,
+        ),
+      [messages, toolCalls, theme],
+    );
 
-  // `AutoScroll` follows streamed output (its ResizeObserver tracks content
-  // height, so a ToolCallBlock expanding or markdown reflowing keeps the pin)
-  // but releases when the user scrolls up to read, re-engaging once they
-  // return to the bottom. Shared with custom-chrome clients, which is why it
-  // is a component rather than the wiring inlined here.
-  return (
-    <AutoScroll
-      className={className}
-      style={{ background: theme.surface }}
-      contentClassName="flex flex-col gap-4 p-7"
-    >
-      {items}
-      {streamingMessage && <MessageBubble message={streamingMessage} theme={theme} />}
-      {userTranscript !== null && (
-        <UserBubble theme={theme} color={inkTint(theme.text, theme.surface, INK_FAINT_PCT)}>
-          {userTranscript ? userTranscript : <ThinkingDots />}
-        </UserBubble>
-      )}
-      {showThinking && <ThinkingDots />}
-    </AutoScroll>
-  );
-});
+    // `AutoScroll` follows streamed output (its ResizeObserver tracks content
+    // height, so a ToolCallBlock expanding or markdown reflowing keeps the pin)
+    // but releases when the user scrolls up to read, re-engaging once they
+    // return to the bottom. Shared with custom-chrome clients, which is why it
+    // is a component rather than the wiring inlined here.
+    return (
+      <AutoScroll
+        className={className}
+        style={{ background: theme.surface }}
+        contentClassName="flex flex-col gap-4 p-7"
+      >
+        {items}
+        {streamingMessage && <MessageBubble message={streamingMessage} theme={theme} />}
+        {userTranscript !== null && (
+          <UserBubble theme={theme} color={inkTint(theme.text, theme.surface, INK_FAINT_PCT)}>
+            {userTranscript ? userTranscript : <ThinkingDots />}
+          </UserBubble>
+        )}
+        {showThinking && <ThinkingDots />}
+      </AutoScroll>
+    );
+  },
+);

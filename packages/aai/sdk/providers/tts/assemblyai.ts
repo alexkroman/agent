@@ -2,10 +2,10 @@
 /**
  * AssemblyAI streaming TTS factory — returns a pure descriptor.
  *
- * See `sdk/providers/stt/assemblyai.ts` for the descriptor/opener split; the
- * host-side resolver in `host/providers/resolve.ts` turns this into an
- * openable `TtsOpener` during `createRuntime` using the `ASSEMBLYAI_API_KEY`
- * from the agent's env — the same key AssemblyAI STT and the LLM Gateway use,
+ * See {@link assemblyAIStt} for the descriptor/opener split; the host-side
+ * resolver turns this into an openable `TtsOpener` during `createRuntime` using
+ * the `ASSEMBLYAI_API_KEY` from the agent's env — the same key AssemblyAI STT
+ * and the LLM Gateway use,
  * so a full AssemblyAI pipeline needs exactly one secret.
  *
  * The three AssemblyAI stage factories have distinct names
@@ -265,6 +265,23 @@ export type AssemblyAITtsProvider = TtsProvider & {
  * Named `assemblyAITts` (not `assemblyAI`) so the STT
  * (`assemblyAIStt`), LLM (`assemblyAILlm`), and TTS factories can be
  * imported side by side without aliasing.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { assemblyAITts } from "@alexkroman1/aai/tts";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   tts: assemblyAITts({ voice: "michael" }),
+ * });
+ * ```
+ *
+ * On the default pipeline `agent({ voice: "michael" })` is the shorthand
+ * for exactly this. Voice ids come from {@link ASSEMBLYAI_TTS_VOICES} and
+ * nowhere else — an unrecognised one leaves an agent that connects,
+ * reports ready and never speaks.
  */
 export function assemblyAITts(opts: AssemblyAITtsOptions = {}): AssemblyAITtsProvider {
   return {

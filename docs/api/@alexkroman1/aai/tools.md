@@ -66,28 +66,6 @@ defaults to `DefaultToolResult`, which is `any`, and `any | ToolFailure` is
 `any` — so the loose call sites the permissive-return-type note above exists
 for are unaffected, and the ones precise enough to have a shape get checked.
 
-## Type Aliases
-
-### CallOptions
-
-```ts
-type CallOptions = {
-  fetch?: typeof globalThis.fetch;
-};
-```
-
-`fetch` is for TESTS, and callers must leave it unset — same rule as
-`safeFetch`'s. Naming an implementation is how you accidentally opt out of
-the screening this whole module exists to keep.
-
-#### Properties
-
-##### fetch?
-
-```ts
-optional fetch?: typeof globalThis.fetch;
-```
-
 ## Functions
 
 ### fetchJson()
@@ -224,3 +202,25 @@ a different claim and the one this repo shipped twice.
 #### Returns
 
 `Promise`\<[`ToolFailure`](utils.md#toolfailure) \| `T`\>
+
+## Type Aliases
+
+### CallOptions
+
+```ts
+type CallOptions = {
+  fetch?: typeof globalThis.fetch;
+};
+```
+
+`fetch` is for TESTS, and callers must leave it unset — same rule as
+`safeFetch`'s. Naming an implementation is how you accidentally opt out of
+the screening this whole module exists to keep.
+
+#### Properties
+
+##### fetch?
+
+```ts
+optional fetch?: typeof globalThis.fetch;
+```

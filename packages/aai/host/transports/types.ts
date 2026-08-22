@@ -60,7 +60,7 @@ type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody,
  * projection. A transport reporting any of them would be describing a decision
  * it did not make.
  *
- * @internal
+ * @public
  */
 export type TransportEventBody = EventsNamed<
   | "speech.started"

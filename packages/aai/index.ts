@@ -7,24 +7,28 @@
  * `assemblyAIPipeline()` preset, the `assemblyAIS2s()` opt-in, and the
  * `DEFAULT_*` constants that document an `agent()` field's default.
  *
- * Provider factories live on subpaths: `@alexkroman1/aai/stt`,
- * `@alexkroman1/aai/llm`, and `@alexkroman1/aai/tts` (pipeline mode). See
- * also `@alexkroman1/aai/utils` for zod-free helpers usable in tool code, and
- * `@alexkroman1/aai/testing` for `createToolContext()`.
+ * A symbol is on this barrel when an `agent.ts`, a tool module, or a
+ * `workflow()` would NAME it. Everything else the package publishes is on a
+ * subpath, chosen by WHO READS IT:
  *
- * **The modules below are re-exported by NAME, not by `export *`, and that is
- * the point of this file.** Two of them — `sdk/constants.ts` and
- * `sdk/utils.ts` — are the repo's shared modules, so a wildcard put every
- * framework budget and platform contract in an agent author's autocomplete:
- * 175 exports, of which the fourteen templates and the scaffold between them
- * used eleven. Everything subtracted here is still exported somewhere it
- * belongs — `@alexkroman1/aai/internal` for cross-package infrastructure,
- * `@alexkroman1/aai/utils` for the zod-free helpers and the slug/CLI contracts
- * the platform and the CLI both derive.
+ * | Subpath | Reach for it when |
+ * | --- | --- |
+ * | `@alexkroman1/aai/testing`, `/testing/vitest` | testing your own tools — `createToolContext`, `withDiscoveredTools`, `runTool` |
+ * | `@alexkroman1/aai/stt`, `/llm`, `/tts`, `/s2s` | picking a provider for a pipeline stage |
+ * | `@alexkroman1/aai/step`, `/step-errors` | writing a `"use step"` body inside a workflow |
+ * | `@alexkroman1/aai/workflow-api` | calling a deployed agent from a page, a script or a cron job |
+ * | `@alexkroman1/aai/tools` | calling `fetchJson`/`webSearch`/`visitWebpage` from your own tool code |
+ * | `@alexkroman1/aai/utils` | small helpers written inside a tool body |
+ * | `@alexkroman1/aai/ffmpeg` | running ffmpeg from a step |
+ * | `@alexkroman1/aai/runtime` | self-hosting the Node runtime |
+ * | `@alexkroman1/aai/protocol`, `/manifest`, `/internal` | framework internals; not covered by semver |
  *
- * The rule for adding to this file: a symbol earns a place here if an
- * `agent.ts`, a tool module, or a `workflow()` would name it. A budget the
- * framework enforces on its own does not qualify, however public it is.
+ * Three primitives here run a defined process, and they are not
+ * interchangeable. A `dialog()` gates a CONVERSATION — what the agent may say
+ * or do next, across turns. A `procedure()` runs ONE UNIT OF WORK inside a
+ * single tool call. A `workflow()` runs DURABLY, outliving the session.
+ *
+ * @module
  */
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
@@ -81,9 +85,21 @@ export * from "./sdk/procedure.ts";
 // subpath: it IS the recommended configuration, and requiring three more
 // imports to reach it is what made the wrong mode the easy one.
 export * from "./sdk/providers/assemblyai-pipeline.ts";
-// S2S is opt-in now that the pipeline is the default mode, so the opt-in
-// descriptor lives next to `agent()` too.
-export * from "./sdk/providers/s2s/assemblyai.ts";
+/**
+ * S2S is opt-in now that the pipeline is the default mode, so the opt-in
+ * descriptor lives next to `agent()` too.
+ *
+ * By NAME rather than `export *`: that module also exports
+ * `ASSEMBLYAI_S2S_KIND` and `ASSEMBLYAI_S2S_API_KEY_ENV`, which an `agent.ts`
+ * never writes — the descriptor sets the kind, and credentials resolve
+ * server-side. They live on `@alexkroman1/aai/s2s` beside the eleven
+ * `*_KIND`/`*_API_KEY_ENV` pairs of the other provider modules.
+ */
+export {
+  type AssemblyAIS2sOptions,
+  type AssemblyAIS2sProvider,
+  assemblyAIS2s,
+} from "./sdk/providers/s2s/assemblyai.ts";
 /**
  * Standard Schema acceptance — the two an author names.
  *
@@ -106,6 +122,7 @@ export type {
   SessionEventContext,
   SessionEventHandler,
   SessionEventHandlers,
+  SessionEventType,
 } from "./sdk/session-events.ts";
 // Session state's typed seam — next to `agent()`/`tool()` because it is how a
 // multi-file agent reads and writes its own state, not an optional utility.
@@ -127,11 +144,11 @@ export * from "./sdk/types.ts";
 /**
  * The utilities written INSIDE a tool body.
  *
- * `sdk/utils.ts` is also where the slug contract (`VALID_SLUG_RE`,
- * `RESERVED_SLUGS`, …), the `aai login` confirmation code, and the framework's
- * own wire helpers live, because it is the module the CLI can import without
- * paying for zod. None of those is authoring API; they stay on
- * `@alexkroman1/aai/utils`, which is where the CLI and the platform read them.
+ * The module behind them also holds the platform's slug contract, the
+ * `aai login` confirmation code, and the framework's own wire helpers, because
+ * it is the one the CLI can import without paying for zod. None of those is
+ * authoring API; they stay on `@alexkroman1/aai/utils`, which is where the CLI
+ * and the platform read them.
  */
 export {
   createKeyedLock,

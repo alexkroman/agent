@@ -34,10 +34,5 @@ export {
   type RimeOptions,
   type RimeProvider,
   rime,
-  type TtsError,
-  type TtsEvents,
-  type TtsOpenOptions,
   type TtsProvider,
-  type TtsSession,
-  type TtsWordTiming,
 } from "../../sdk/providers/tts-barrel.ts";

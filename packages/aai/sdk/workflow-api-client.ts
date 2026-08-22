@@ -107,9 +107,10 @@ export type {
  * Create a workflow API client.
  *
  * Hoist it out of anything that re-runs. In React it belongs at module scope —
- * `useWorkflowRun` holds the client in a ref precisely so a fresh object per
- * render does not restart its watch, but a client built in render is still a new
- * `fetch` closure every time and reads as though it were free.
+ * `useWorkflowRun` in `@alexkroman1/aai-ui` holds the client in a ref
+ * precisely so a fresh object
+ * per render does not restart its watch, but a client built in render is still a
+ * new `fetch` closure every time and reads as though it were free.
  *
  * @public
  */

@@ -174,7 +174,7 @@ type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx
 
 // @public
 type SessionEventHandlers = {
-    [K in SessionEvent["type"]]?: SessionEventHandler<Extract<SessionEvent, {
+    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
         type: K;
     }>>;
 } & {
@@ -338,6 +338,9 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         afterMessageIndex: z.ZodNumber;
     }, z.core.$strip>>;
 }, z.core.$strip>], "type">;
+
+// @public
+type SessionEventType = SessionEvent["type"];
 
 // @public
 type SlotStore = {
@@ -564,10 +567,10 @@ type ToolContext = {
 };
 
 // @public
-type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 };
 
 // @public

@@ -115,10 +115,10 @@ function variantColors(variant: ButtonVariant, theme: Required<ClientTheme>): Va
  * }
  * ```
  *
- * @param variant - Visual style (`"default"` | `"secondary"` | `"ghost"`). Defaults to `"default"`.
- * @param size - Size preset (`"default"` | `"lg"`). Defaults to `"default"`.
- * @param className - Additional CSS class names.
- * @param children - Button label / content.
+ * @param props - Button props: `variant` (visual style — see
+ * {@link ButtonVariant}, defaults to `"default"`), `size` (see
+ * {@link ButtonSize}, defaults to `"default"`), `className` (appended to the
+ * button's own classes), `children` (the label), and any `<button>` attribute.
  *
  * @public
  */
@@ -130,9 +130,13 @@ export function Button({
   style,
   ...rest
 }: {
+  /** Visual style. Defaults to `"default"`. */
   variant?: ButtonVariant;
+  /** Size preset. Defaults to `"default"`. */
   size?: ButtonSize;
+  /** Additional CSS class names, appended to the button's own. */
   className?: string;
+  /** Button label / content. */
   children?: ReactNode;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">) {
   const theme = useTheme();

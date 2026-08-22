@@ -15,7 +15,7 @@ import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./provi
 import { sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
 import { withTools } from "./tool-registry.ts";
-import type { AgentDef, ToolContext, ToolDef } from "./types.ts";
+import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
 
 /**
  * Every `AgentDef` field must be declarable through `agent()`.
@@ -74,7 +74,53 @@ test("a tool reaches session state through a slot, with no annotation", () => {
       });
     },
   });
-  expectTypeOf(add).toMatchObjectType<ToolDef<z.ZodObject<{ item: z.ZodString }>>>();
+  // The second type argument is the RESULT, captured from the body — this line
+  // used to pin the erased `Promise<unknown> | unknown` that made
+  // `InferToolOutput` useless.
+  expectTypeOf(add).toMatchObjectType<ToolDef<z.ZodObject<{ item: z.ZodString }>, number>>();
+});
+
+/**
+ * Both inference helpers, pinned in both directions.
+ *
+ * `InferToolOutput` resolved to `unknown` for EVERY tool until `ToolDef` grew
+ * its `R` parameter: `tool()` re-declared its argument inline and typed
+ * `execute` as `Promise<unknown> | unknown`, so the body's real return type was
+ * erased at the call. Nothing exercised the helper — no call site, no type test
+ * — which is exactly why it could ship broken. These assertions are the lock.
+ */
+test("InferToolInput and InferToolOutput both resolve the real types", () => {
+  const sync = tool({
+    description: "count the characters of an item",
+    inputSchema: z.object({ item: z.string() }),
+    execute: ({ item }) => ({ count: item.length }),
+  });
+  expectTypeOf<InferToolInput<typeof sync>>().toEqualTypeOf<{ item: string }>();
+  expectTypeOf<InferToolOutput<typeof sync>>().toEqualTypeOf<{ count: number }>();
+
+  // An `async` body infers the same thing — the helper awaits.
+  const asyncTool = tool({
+    description: "look the item up",
+    inputSchema: z.object({ item: z.string() }),
+    execute: async ({ item }) => ({ found: item !== "" }),
+  });
+  expectTypeOf<InferToolOutput<typeof asyncTool>>().toEqualTypeOf<{ found: boolean }>();
+
+  // A tool with no `inputSchema` still infers its result, and its input stays
+  // the permissive default rather than collapsing to `never`.
+  const noSchema = tool({ description: "the time", execute: () => Date.now() });
+  expectTypeOf<InferToolOutput<typeof noSchema>>().toEqualTypeOf<number>();
+
+  // `R` defaults to `unknown`, so the one-argument spelling keeps its meaning
+  // and an annotation written before this parameter existed still holds.
+  expectTypeOf<
+    ToolDef<z.ZodObject<{ item: z.ZodString }>> extends ToolDef<
+      z.ZodObject<{ item: z.ZodString }>,
+      unknown
+    >
+      ? true
+      : false
+  >().toEqualTypeOf<true>();
 });
 
 test("what a slot READ returns is readonly ALL THE WAY DOWN", () => {

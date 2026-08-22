@@ -136,6 +136,13 @@ export class ProcedureNotFinishedError extends Error {
  * });
  * ```
  *
+ * @remarks
+ * **Three primitives here run a defined process; pick by SCOPE.** A
+ * {@link dialog} gates a CONVERSATION — what the agent may say or do next,
+ * across turns, persisted in a session slot. A {@link procedure} runs ONE UNIT
+ * OF WORK inside a single tool call, never stored. A {@link workflow} runs
+ * DURABLY, outliving the session.
+ *
  * @public
  */
 export function procedure<M extends AnyStateMachine>(machine: M): Procedure<M> {

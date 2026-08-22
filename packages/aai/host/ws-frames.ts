@@ -9,11 +9,11 @@ import { errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /**
- * Minimal WebSocket interface accepted by {@link wireSessionSocket}.
+ * Minimal WebSocket interface accepted by {@link AgentRuntime.startSession}.
  *
  * Satisfied by the standard `WebSocket` and the `ws` npm package's WebSocket.
  *
- * @internal
+ * @public
  */
 export type SessionWebSocket = {
   readonly readyState: number;

@@ -3,10 +3,23 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import { memo } from "react";
+import { type FunctionComponent, type MemoExoticComponent, memo } from "react";
 import { useSessionCore, useSessionSelector } from "../context.ts";
 import { Button } from "./button.tsx";
 import { SessionUrlChips } from "./url-chips.tsx";
+
+/**
+ * Props of {@link Controls}.
+ *
+ * @public
+ */
+export type ControlsProps = {
+  /**
+   * Additional CSS class names, appended to the container's own layout
+   * classes rather than replacing them.
+   */
+  className?: string;
+};
 
 /**
  * Session control buttons: **Stop / Resume** and **New Conversation**.
@@ -23,38 +36,40 @@ import { SessionUrlChips } from "./url-chips.tsx";
  * }
  * ```
  *
- * @param className - Additional CSS class names applied to the container.
+ * @param props - Container props.
  *
  * @public
  */
 // memo(): the only prop is a string, so ChatView re-rendering (state flips,
 // errors) never cascades here; the narrow `running` subscription below stays
 // the sole re-render trigger.
-export const Controls = memo(function Controls({ className }: { className?: string }) {
-  // Narrow subscription: only re-render when `running` flips, not on every
-  // snapshot change (messages, transcripts, audio state, ...).
-  const running = useSessionSelector((s) => s.running);
-  const { toggle, reset } = useSessionCore();
+export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>> = memo(
+  function Controls({ className }: ControlsProps) {
+    // Narrow subscription: only re-render when `running` flips, not on every
+    // snapshot change (messages, transcripts, audio state, ...).
+    const running = useSessionSelector((s) => s.running);
+    const { toggle, reset } = useSessionCore();
 
-  return (
-    // `flex-wrap`, because the row could not shrink: two nowrap buttons plus
-    // the chips measured 360px against a 320px viewport, so the whole page
-    // picked up a horizontal scrollbar on a small phone.
-    <div className={clsx("flex flex-wrap items-center gap-3 shrink-0", className)}>
-      <Button variant="secondary" onClick={toggle}>
-        {running ? "Stop" : "Resume"}
-      </Button>
-      <Button variant="ghost" onClick={reset}>
-        New Conversation
-      </Button>
-      {/*
-       * Below `sm` the chips take a line of their own rather than sharing one
-       * with the buttons. Squeezed onto the same row they truncated down to
-       * their bare labels ("UI http…", "API wss…"), dropping the URL that is
-       * the entire point of the chip — and the `title` tooltip that still
-       * carried it is not something a touch device can open.
-       */}
-      <SessionUrlChips className="basis-full sm:basis-auto sm:ml-auto sm:max-w-[60%]" />
-    </div>
-  );
-});
+    return (
+      // `flex-wrap`, because the row could not shrink: two nowrap buttons plus
+      // the chips measured 360px against a 320px viewport, so the whole page
+      // picked up a horizontal scrollbar on a small phone.
+      <div className={clsx("flex flex-wrap items-center gap-3 shrink-0", className)}>
+        <Button variant="secondary" onClick={toggle}>
+          {running ? "Stop" : "Resume"}
+        </Button>
+        <Button variant="ghost" onClick={reset}>
+          New Conversation
+        </Button>
+        {/*
+         * Below `sm` the chips take a line of their own rather than sharing one
+         * with the buttons. Squeezed onto the same row they truncated down to
+         * their bare labels ("UI http…", "API wss…"), dropping the URL that is
+         * the entire point of the chip — and the `title` tooltip that still
+         * carried it is not something a touch device can open.
+         */}
+        <SessionUrlChips className="basis-full sm:basis-auto sm:ml-auto sm:max-w-[60%]" />
+      </div>
+    );
+  },
+);

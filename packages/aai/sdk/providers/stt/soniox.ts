@@ -3,10 +3,9 @@
  * Soniox real-time STT factory — returns a pure descriptor.
  *
  * The descriptor flows through the bundle → server → runtime pipeline
- * without importing any Soniox client. The host-side resolver in
- * `host/providers/resolve.ts` turns it into an openable `SttOpener`
- * during `createRuntime`. The host opener talks to Soniox's real-time
- * WebSocket directly (no Node-targeted SDK is published).
+ * without importing any Soniox client. The host-side resolver turns it into an
+ * openable `SttOpener` during `createRuntime`. The host opener talks to
+ * Soniox's real-time WebSocket directly (no Node-targeted SDK is published).
  */
 
 import type { SttProvider } from "../../providers.ts";
@@ -25,9 +24,14 @@ export interface SonioxOptions {
    */
   model?: string;
   /**
-   * Language hints (ISO 639-1 codes) that bias decoding toward the
-   * expected languages. Optional; auto-detection is used when omitted.
-   * Example: `["en", "es"]`.
+   * Language hints (ISO 639-1 codes) that bias decoding toward the expected
+   * languages. Example: `["en", "es"]`.
+   *
+   * **Unset means AUTO-DETECT, not English.** The field is omitted from the
+   * request entirely, so Soniox decides — which is the same default
+   * `assemblyAIStt` and `elevenlabs` have, and the opposite of `deepgram`,
+   * whose unset `language` is `"en"`. Pass the codes for a line you know is
+   * monolingual, or the handful you expect on one that is not.
    */
   languageHints?: readonly string[];
 }
@@ -44,6 +48,21 @@ export type SonioxProvider = SttProvider & {
  * The API key is resolved host-side from the agent's env
  * (`SONIOX_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { soniox } from "@alexkroman1/aai/stt";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   stt: soniox({ model: "stt-rt-v3", languageHints: ["en", "es"] }),
+ * });
+ * ```
+ *
+ * Unset, `languageHints` is omitted from the request and Soniox
+ * auto-detects — which is not the same as English.
  */
 export function soniox(opts: SonioxOptions = {}): SonioxProvider {
   return { kind: SONIOX_KIND, options: { ...opts } };

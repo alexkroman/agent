@@ -293,6 +293,37 @@ export const PROMPT_TOOLS: string = `\
  * conversation needs (voice delivery, transcript noise, tool fidelity)
  * and leaves the persona and domain rules to the agent's own
  * instructions, which take precedence over these defaults.
+ *
+ * @remarks
+ * **What it contains.** Five sections, joined by blank lines, in this order —
+ * the last is included only when the session has tools:
+ *
+ * 1. *(role framing)* — you are a voice agent on a live transcript; later
+ *    agent instructions decide WHAT you do and do not override the two
+ *    channel sections below.
+ * 2. `## PERSONALITY` — warm, calm, competent; fully overridable.
+ * 3. `## SPEAKING` — two sentences per reply, an eight-word first sentence,
+ *    no markdown, how to say numbers and identifiers, one question per turn.
+ * 4. `## LISTENING` — read through fillers and self-corrections, take a value
+ *    in one piece before asking for it spelled, normalize spoken identifiers.
+ * 5. `## TOOLS` — never fabricate, act first and ask second, report results
+ *    rather than intentions, and the mis-hearing retry ladder.
+ *
+ * `agent({ systemPrompt })` REPLACES all of it. To keep the voice rules and add
+ * your own domain rules, append instead:
+ *
+ * ```ts
+ * import { agent, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
+ *
+ * export default agent({
+ *   name: "Cart",
+ *   systemPrompt: `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss items in the catalog.`,
+ * });
+ * ```
+ *
+ * The full text is ~10,000 characters and is assembled from parts, so it is not
+ * reproduced here — a second copy in a comment would drift from the one the
+ * agent runs. Print `DEFAULT_SYSTEM_PROMPT` to read it exactly as sent.
  */
 export const DEFAULT_SYSTEM_PROMPT: string = [
   PROMPT_ROLE,

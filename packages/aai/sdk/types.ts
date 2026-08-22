@@ -5,12 +5,12 @@
 
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
-import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { ToolInputSchema } from "./schema.ts";
 import type { SessionEventHandlers } from "./session-events.ts";
 import type { StateProjection } from "./session-state.ts";
-// Imported as well as re-exported below: a re-export does not bring the name into
-// this module's scope, and `ToolDef.execute` needs it.
-import type { ToolContext } from "./tool-context.ts";
+// Imported as well as re-exported below: a re-export does not bring the name
+// into this module's scope, and `AgentDef.tools` needs `ToolDef`.
+import type { ToolDef } from "./tool-def.ts";
 import type { WorkflowDef } from "./workflow.ts";
 
 /**
@@ -76,13 +76,15 @@ export type Message = {
   content: string;
 };
 
+export { DEFAULT_GREETING } from "./agent-defaults.ts";
+export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+export { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 /**
- * What a tool's `execute` is handed — see `tool-context.ts`, which owns it. Kept
- * as a re-export because `types.ts` is the import path everything already uses,
- * and because a tool author reads `ToolContext` and `ToolDef` together.
+ * What a tool's `execute` is handed. Kept as a re-export because this module is
+ * the import path everything already uses, and because a tool author reads
+ * `ToolContext` and `ToolDef` together.
  */
 export type { ToolContext } from "./tool-context.ts";
-
 /**
  * Default type of a tool result observed on the client (`useToolResult`) —
  * `any`, so untyped reads compile. Pass the shape —
@@ -100,92 +102,20 @@ export type { ToolContext } from "./tool-context.ts";
 export type DefaultToolResult = any;
 
 /**
- * Definition of a custom tool that the agent can invoke.
- *
- * Tools are the primary way to extend agent capabilities. Each tool has a
- * description (shown to the LLM), an optional input schema, and an
- * `execute` function that runs inside the sandboxed worker.
- *
- * @typeParam P - The tool's input schema: any
- *   [Standard Schema](https://standardschema.dev) that can convert to JSON
- *   Schema — a Zod object schema (the documented default) or e.g. an
- *   ArkType type. Defaults to a permissive record schema so tools without
- *   inputs don't need an explicit type argument.
- *
- * @example
- * ```ts
- * import { tool } from "@alexkroman1/aai";
- * import { z } from "zod";
- *
- * const weatherTool = tool({
- *   description: "Get current weather for a city",
- *   inputSchema: z.object({
- *     city: z.string().describe("City name"),
- *   }),
- *   execute: async ({ city }) => {
- *     const res = await fetch(`https://wttr.in/${city}?format=j1`);
- *     return await res.json();
- *   },
- * });
- * ```
- *
- * @public
+ * The tool-authoring types, re-exported from `./tool-def.ts` — this module is
+ * the import path everything already uses, and a tool author reads
+ * `ToolContext`, `ToolDef` and the two inference helpers together.
  */
-export type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
-  /** Human-readable description shown to the LLM. */
-  description: string;
-  /**
-   * Schema for the tool's input, shown to the LLM and used to validate each
-   * call's arguments before `execute` runs. Named after the Vercel AI SDK's
-   * `tool({ inputSchema })`.
-   */
-  inputSchema?: P;
-  /**
-   * Function that executes the tool and returns a result. The result is
-   * JSON-serialized for the LLM and the client, and capped at
-   * {@link MAX_TOOL_RESULT_CHARS} (4000) characters — longer results are
-   * trimmed and end with a `[truncated]` marker.
-   */
-  execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
-};
-
-/**
- * The validated input type a tool's `execute` receives — inferred from the
- * tool's `inputSchema`. The Vercel AI SDK's `InferToolInput` pattern, so a
- * client (or another tool) can share the exact argument shape without
- * re-declaring it.
- *
- * ```ts
- * import { type InferToolInput, tool } from "@alexkroman1/aai";
- * import { z } from "zod";
- *
- * const add = tool({
- *   description: "Add an item",
- *   inputSchema: z.object({ item: z.string() }),
- *   execute: ({ item }) => item,
- * });
- * type AddInput = InferToolInput<typeof add>; // { item: string }
- * ```
- *
- * @public
- */
-export type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["execute"]>[0];
-
-/**
- * The result type a tool's `execute` returns (awaited). Pair with
- * `useToolResult<InferToolOutput<typeof myTool>>(...)` in a custom client so
- * the rendered shape has a single source of truth.
- *
- * @public
- */
-export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<ReturnType<T["execute"]>>;
-
-export { DEFAULT_GREETING } from "./agent-defaults.ts";
-export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
-export { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
+export type { InferToolInput, InferToolOutput, ToolDef } from "./tool-def.ts";
 
 /**
  * Fully resolved agent definition.
+ *
+ * **This is what `agent()` RETURNS, not what you write.** You write
+ * {@link AgentParams} — the same fields with the defaulted ones optional, plus the
+ * conveniences `agent()` normalizes away (`system`, `llm` as a model-id string,
+ * `voice`, `minTurnSilenceMs`/`maxTurnSilenceMs`). This is the reference for what
+ * a field MEANS; `AgentParams` is the one for which combinations are legal.
  *
  * Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`)
  * are resolved to their final values with defaults applied. Optional fields
@@ -194,8 +124,8 @@ export { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
  *
  * The pipeline-only voice-UX knobs live on {@link PipelineVoiceTuning}, which
  * this extends: they share one rule (pipeline transport or nothing), and
- * `define.ts`/`config-rules.ts` derive their field lists from that interface so
- * a new one cannot skip either gate.
+ * both `agent()` and the deploy-time config check derive their field lists from
+ * that interface, so a new one cannot skip either gate.
  *
  * @public
  */
@@ -254,8 +184,7 @@ export interface AgentDef extends PipelineVoiceTuning {
    * asks for rather than something it has to notice and switch off, so `[]` and
    * omitting the field mean the same thing. See {@link BuiltinTool} for the
    * catalog.
-   * @defaultValue `[]` ({@link DEFAULT_BUILTIN_TOOLS}), applied by
-   * `host/runtime-tools.ts`.
+   * @defaultValue `[]` ({@link DEFAULT_BUILTIN_TOOLS})
    */
   builtinTools?: readonly BuiltinTool[];
   /**

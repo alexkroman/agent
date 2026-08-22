@@ -3,7 +3,7 @@
  * Cartesia TTS factory — returns a pure descriptor.
  *
  * See `sdk/providers/stt/assemblyai.ts` for the descriptor/opener split;
- * the host-side resolver in `host/providers/resolve.ts` turns this into an
+ * the host-side resolver turns this into an
  * openable `TtsOpener` during `createRuntime` using the
  * `CARTESIA_API_KEY` from the agent's env.
  */
@@ -42,6 +42,18 @@ export type CartesiaProvider = TtsProvider & {
 /**
  * Build a Cartesia TTS descriptor for pipeline mode. The API key is resolved
  * host-side from the agent's env (`CARTESIA_API_KEY`).
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { CARTESIA_DEFAULT_VOICE, cartesia } from "@alexkroman1/aai/tts";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   tts: cartesia({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
+ * });
+ * ```
  */
 export function cartesia(opts: CartesiaOptions = {}): CartesiaProvider {
   return {

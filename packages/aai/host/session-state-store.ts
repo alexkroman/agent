@@ -71,7 +71,7 @@ import type { Logger } from "./runtime-config.ts";
 export type StoredSessionEvent = {
   /** Position in this session's log, from 0. The stream's only cursor. */
   index: number;
-  /** The serialized {@link SessionEvent}, envelope included. */
+  /** The serialized `SessionEvent` (`@alexkroman1/aai/protocol`), envelope included. */
   json: string;
 };
 
@@ -94,11 +94,10 @@ export type StoredSessionEvent = {
  * always both.** The memory backend drops slots and events together; the
  * Postgres one drops slots only, because on the platform the event table is
  * append-only to the role the guest holds (a log tool code can delete is not a
- * log — see `grantSessionTables` in `aai-server/app-db-session-tables.ts`) and
- * its rows are reclaimed by the admin-run retention sweep instead. So a
+ * log) and its rows are reclaimed by the admin-run retention sweep instead. So a
  * discarded session's events can outlive its slots by up to that window.
  *
- * @internal
+ * @public
  */
 export type SessionStateBackend = {
   /** For the "Session mode resolved" log line — an operator's only clue which tier an agent is in. */

@@ -52,7 +52,7 @@ export type OpenaiRealtimeProvider = S2sProvider & {
 export type OpenaiRealtimeVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse";
 
 // @public
-interface ProviderDescriptor<Kind extends string, Options> {
+export interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)

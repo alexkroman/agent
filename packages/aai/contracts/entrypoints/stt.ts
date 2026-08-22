@@ -32,12 +32,6 @@ export {
   SONIOX_KIND,
   type SonioxOptions,
   type SonioxProvider,
-  type SttError,
-  type SttEvents,
-  type SttOpenOptions,
   type SttProvider,
-  type SttSession,
-  type SttTurnMeta,
   soniox,
-  type Unsubscribe,
 } from "../../sdk/providers/stt-barrel.ts";

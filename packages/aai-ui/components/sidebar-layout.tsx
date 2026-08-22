@@ -27,6 +27,8 @@ import { useTheme } from "../context.ts";
  * }
  * ```
  *
+ * @param props - Layout props.
+ *
  * @public
  */
 export function SidebarLayout({
@@ -36,10 +38,19 @@ export function SidebarLayout({
   sidebarPosition = "left",
   className,
 }: {
+  /** The sidebar pane — a cart, a dashboard, a run history. */
   sidebar: ReactNode;
+  /** The main pane, normally a `<ChatView />`. */
   children: ReactNode;
+  /**
+   * Width of the sidebar as a CSS length. Defaults to `"18rem"`, and applies
+   * from the `md` breakpoint up: below it the two panes stack, because a fixed
+   * width that never shrinks leaves a phone-width main pane unreadable.
+   */
   sidebarWidth?: string | undefined;
+  /** Which side the sidebar sits on. Defaults to `"left"`. */
   sidebarPosition?: "left" | "right" | undefined;
+  /** Additional CSS class names for the root element, appended to its own. */
   className?: string;
 }) {
   const theme = useTheme();

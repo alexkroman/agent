@@ -13,7 +13,6 @@ import type {
   ChatMessage,
   SessionError,
   ToolCallInfo,
-  VoiceSessionOptions,
   WebSocketConstructor,
 } from "./types.ts";
 
@@ -39,11 +38,30 @@ export type AgentCustomEvent = {
  * Consumers (e.g. React hooks via `useSyncExternalStore`) read this to render.
  * A new object reference is created on every state change.
  *
+ * @remarks
+ * **Four fields describe liveness and they answer different questions.** They
+ * are routinely collapsed into one truthy check, which is how a chrome ends up
+ * showing a live indicator over a call that has ended:
+ *
+ * | Field | The question it answers |
+ * | --- | --- |
+ * | `started` | Has the caller pressed Start? `end()` puts it back to `false`; `disconnect()` does not. |
+ * | `running` | Is the socket MEANT to be up? `toggle()` is what flips it. |
+ * | `recording` | Is the microphone actually live right now? |
+ * | `state` | What is the agent doing — see {@link AgentState}. |
+ *
  * @public
  */
 export type SessionSnapshot = {
+  /** What the agent is doing. See {@link AgentState} for the seven members. */
   readonly state: AgentState;
-  /** True while the microphone is live and streaming to the server. */
+  /**
+   * True while the microphone is live and streaming to the server.
+   *
+   * This is the mic, not the session: a session can be `running` with the mic
+   * still opening, and a failure to acquire it leaves this `false` with the
+   * socket up.
+   */
   readonly recording: boolean;
   /**
    * The WebSocket URL a program can connect to directly — the long-living
@@ -62,8 +80,24 @@ export type SessionSnapshot = {
    * never collides when the capped arrays slide.
    */
   readonly contentVersion: number;
+  /**
+   * The conversation so far, oldest first — user and assistant turns only.
+   * Tool activity is NOT in here; it is in `toolCalls`. Capped, so the oldest
+   * entries slide off a long call.
+   */
   readonly messages: ChatMessage[];
+  /**
+   * Every tool call the agent has made this session, in order, each carrying
+   * its own pending/settled state. Capped like `messages`. `useToolResult` and
+   * `useToolCallStart` are the narrow readers; this is the whole log.
+   */
   readonly toolCalls: ToolCallInfo[];
+  /**
+   * Custom events the agent pushed with `ctx.send(event, data)`, in order.
+   * A LOG rather than a value — `useEvent(name, cb)` is the reader that
+   * delivers each one exactly once; reading this array directly means owning
+   * the cursor yourself.
+   */
   readonly customEvents: AgentCustomEvent[];
   /**
    * Latest state the agent projected via `syncState`, or `null` before the
@@ -71,10 +105,50 @@ export type SessionSnapshot = {
    * reads current state rather than replaying events it missed.
    */
   readonly agentState: unknown;
+  /**
+   * The caller's in-progress turn, as STT reports it.
+   *
+   * **`null` and `""` are different turns, and collapsing them is the mistake
+   * this field invites.** `null` is silence; `""` is speech DETECTED with no
+   * words back yet — where a live session sits for a few hundred milliseconds
+   * at the start of every turn. Read as one falsy check, the live-transcript
+   * row appears a beat late, on the first word rather than on the first sound,
+   * which is the moment it exists for.
+   *
+   * Prefer {@link useUserTranscript}, which returns the distinction as two
+   * named things (`speaking` to render on, `text` with a placeholder) rather
+   * than leaving each chrome to re-derive the ternary.
+   *
+   * Cleared when the turn is committed to `messages`.
+   */
   readonly userTranscript: string | null;
+  /**
+   * The agent's reply as it streams, or `null` when it is not speaking.
+   * Cleared when the reply is committed to `messages`, so a chrome renders
+   * this row and the finished message, never both.
+   */
   readonly agentTranscript: string | null;
+  /**
+   * The session's current failure, or `null`. Carries a `code`
+   * ({@link SessionErrorCode}), a message, and whether it was FATAL.
+   *
+   * A fatal error LATCHES: nothing clears it but the next completed handshake,
+   * because the frame announcing a session's death is also the frame that used
+   * to wipe the message explaining it. A non-fatal one is retired by later
+   * activity, which is what the recovery was written for.
+   */
   readonly error: SessionError | null;
+  /**
+   * Whether the caller has pressed Start. `false` until the first `start()`,
+   * and back to `false` after `end()` — which is what makes a start-screen
+   * chrome show its Start control again. `disconnect()` leaves it `true`.
+   */
   readonly started: boolean;
+  /**
+   * Whether the session is MEANT to be connected — the pause/resume state
+   * `toggle()` flips, not a report of the socket. A reconnecting session is
+   * still `running`.
+   */
   readonly running: boolean;
 };
 
@@ -134,15 +208,6 @@ export type SessionCore = {
   /** Alias for `disconnect` for use with `using`. */
   [Symbol.dispose](): void;
 };
-
-/**
- * Options accepted by `createSessionCore` — an alias of
- * {@link VoiceSessionOptions}, which documents every field. Two names, one
- * type: `client()` and `createSessionCore` share the same session options.
- *
- * @public
- */
-export type SessionCoreOptions = VoiceSessionOptions;
 
 /**
  * Shared mutable connection state for audio initialization.

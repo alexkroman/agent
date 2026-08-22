@@ -91,7 +91,7 @@ export type SessionCoreOptions = {
  * (S2S, pipeline, or OpenAI Realtime) and the connected client. Distinct from
  * aai-ui's browser-side `SessionCore`.
  *
- * @internal
+ * @public
  */
 export type SessionCore = {
   readonly id: string;

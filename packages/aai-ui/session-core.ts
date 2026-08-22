@@ -25,14 +25,9 @@ import {
 } from "./session-core-messages.ts";
 import { reconnectPending } from "./session-core-reconnect.ts";
 import { createSessionStateMachine } from "./session-core-state.ts";
-import type {
-  ConnState,
-  SessionCore,
-  SessionCoreOptions,
-  SessionSnapshot,
-} from "./session-core-types.ts";
+import type { ConnState, SessionCore, SessionSnapshot } from "./session-core-types.ts";
 import { buildWsUrl } from "./session-core-url.ts";
-import { MIC_SEND_MAX_BUFFERED_BYTES } from "./types.ts";
+import { MIC_SEND_MAX_BUFFERED_BYTES, type VoiceSessionOptions } from "./types.ts";
 
 // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -63,7 +58,7 @@ import { MIC_SEND_MAX_BUFFERED_BYTES } from "./types.ts";
  *
  * @public
  */
-export function createSessionCore(options: SessionCoreOptions): SessionCore {
+export function createSessionCore(options: VoiceSessionOptions): SessionCore {
   // ─── Internal state ─────────────────────────────────────────────────────
 
   let currentSnapshot: SessionSnapshot = {

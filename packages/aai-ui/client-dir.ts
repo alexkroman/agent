@@ -11,6 +11,8 @@
  * serving the default UI has to write them — `aai-cli`'s dev server had its own
  * copy, as did every self-hosted example. Three places that would all silently
  * serve nothing if the build output moved.
+ *
+ * @module client-dir
  */
 
 import { createRequire } from "node:module";

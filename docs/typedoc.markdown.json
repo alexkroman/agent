@@ -45,6 +45,15 @@
   // comments are the entire reason this artifact is worth generating. List
   // also diffs a single property as three lines instead of rewriting a
   // 400-character row.
+  // One heading per top-level declaration, not one per nested field. The
+  // plugin's default is `verbose`, which calls `getFlattenedDeclarations` and
+  // emits a heading for every leaf of a nested object type — so
+  // `ASSEMBLYAI_TTS_VOICES` rendered `###### estelle.accent`,
+  // `###### estelle.gender`, … for 433 lines, a THIRD of `tts.md`, and the
+  // gateway model catalog did the same. `compact` force-collapses the type and
+  // still pushes `declaration.comment`, so no prose is lost: measured
+  // −1,150 lines tree-wide, of which exactly TWO were non-prose content.
+  "typeDeclarationVisibility": "compact",
   "parametersFormat": "list",
   "typeDeclarationFormat": "list",
   "interfacePropertiesFormat": "list",

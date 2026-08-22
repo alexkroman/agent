@@ -3,9 +3,8 @@
  * ElevenLabs Scribe streaming STT factory — returns a pure descriptor.
  *
  * The descriptor flows through the bundle → server → runtime pipeline
- * without importing the `@elevenlabs/elevenlabs-js` package. The
- * host-side resolver in `host/providers/resolve.ts` turns it into an
- * openable `SttOpener` during `createRuntime`.
+ * without importing the `@elevenlabs/elevenlabs-js` package. The host-side
+ * resolver turns it into an openable `SttOpener` during `createRuntime`.
  */
 
 import type { SttProvider } from "../../providers.ts";
@@ -25,8 +24,14 @@ export interface ElevenLabsOptions {
    */
   model?: string;
   /**
-   * BCP-47 language code hint. ElevenLabs auto-detects when omitted;
-   * passing a hint reduces ambiguity for short utterances.
+   * BCP-47 language code hint. Passing one reduces ambiguity for short
+   * utterances.
+   *
+   * **Unset means AUTO-DETECT, not English.** The field is omitted from the
+   * request entirely, so ElevenLabs decides — which is the same default
+   * `assemblyAIStt` and `soniox` have, and the opposite of `deepgram`, whose
+   * unset `language` is `"en"`. Pass a code for a line you know is
+   * monolingual.
    */
   languageCode?: string;
 }
@@ -43,6 +48,21 @@ export type ElevenLabsProvider = SttProvider & {
  * The API key is resolved host-side from the agent's env
  * (`ELEVENLABS_API_KEY`); there is no factory-time key parameter, so
  * the descriptor stays free of secrets and safe to serialize.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { elevenlabs } from "@alexkroman1/aai/stt";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   stt: elevenlabs({ model: "scribe_v2_realtime", languageCode: "en" }),
+ * });
+ * ```
+ *
+ * Unset, `languageCode` is omitted from the request and Scribe
+ * auto-detects — which is not the same as English.
  */
 export function elevenlabs(opts: ElevenLabsOptions = {}): ElevenLabsProvider {
   return { kind: ELEVENLABS_KIND, options: { ...opts } };

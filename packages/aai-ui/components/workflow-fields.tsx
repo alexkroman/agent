@@ -72,9 +72,21 @@ type JsonObjectSchema = {
  * }
  * ```
  *
+ * @param props - Field-set props.
+ *
  * @public
  */
-export function WorkflowFields({ workflow }: { workflow?: WorkflowSummary | string | undefined }) {
+export function WorkflowFields({
+  workflow,
+}: {
+  /**
+   * The workflow whose input schema to render. A NAME is looked up here (one
+   * `GET workflows`); a {@link WorkflowSummary} the page already holds fetches
+   * nothing. `undefined` renders nothing, so a page may pass a selection
+   * straight through before one is made.
+   */
+  workflow?: WorkflowSummary | string | undefined;
+}) {
   // Unconditional, because a hook cannot be: the listing is only REQUESTED when
   // a name was passed, which is what keeps a page that already holds its
   // summaries from fetching them twice.

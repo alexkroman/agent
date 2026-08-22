@@ -1,4 +1,15 @@
 {
   "$schema": "https://typedoc.org/schema.json",
-  "entryPoints": ["dist/index.d.ts"]
+  // Every published subpath with a `types` target, or `docs-markdown.mjs`'s
+  // subpath-coverage check fails naming the one that is missing. `client-dir`
+  // was that one: published, contracted as its own capability, reported in
+  // `etc/client-dir.api.md`, and absent from the reference — the one export of
+  // this package a SERVER calls, with a worked `createAgentServer` example
+  // already written in its doc comment.
+  //
+  // Note a second entry point RENAMES this package's output: with
+  // `outputFileStrategy: "modules"` one module renders as `aai-ui.md`, two
+  // render as `aai-ui/index.md` + `aai-ui/client-dir.md` (plus the package
+  // README), which is the shape `aai/` has always had.
+  "entryPoints": ["dist/index.d.ts", "dist/client-dir.d.ts"]
 }

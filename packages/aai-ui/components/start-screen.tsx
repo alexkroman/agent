@@ -28,6 +28,8 @@ import { Eyebrow } from "./eyebrow.tsx";
  * }
  * ```
  *
+ * @param props - Start-screen props.
+ *
  * @public
  */
 export function StartScreen({
@@ -38,11 +40,17 @@ export function StartScreen({
   buttonText = "Start Conversation",
   className,
 }: {
+  /** The app, rendered once the session has started. */
   children: ReactNode;
+  /** Element rendered in place of the logo on the card. */
   icon?: ReactNode | undefined;
+  /** The card's serif title. Defaults to the agent's declared name. */
   title?: string | undefined;
+  /** A line under the title. */
   subtitle?: string | undefined;
+  /** Label of the start CTA. Defaults to `"Start Conversation"`. */
   buttonText?: string | undefined;
+  /** Additional CSS class names for the root element, appended to its own. */
   className?: string | undefined;
 }): ReactNode {
   // Narrow subscription: only re-render when `started` flips, not on every

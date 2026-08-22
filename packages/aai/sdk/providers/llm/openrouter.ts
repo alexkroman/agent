@@ -9,7 +9,7 @@
  * `"meta-llama/llama-3.3-70b-instruct"`), behind one
  * `OPENROUTER_API_KEY`.
  *
- * The host-side resolver in `host/providers/resolve.ts` builds a real
+ * The host-side resolver builds a real
  * Vercel AI SDK `LanguageModel` from this descriptor during
  * `createRuntime`, pointing `@ai-sdk/openai`'s chat-completions client at
  * the OpenRouter base URL — no extra SDK install needed.
@@ -48,6 +48,21 @@ export type OpenRouterProvider = LlmProvider & {
  * The API key is resolved host-side from the agent's env
  * (`OPENROUTER_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { openrouter } from "@alexkroman1/aai/llm";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   llm: openrouter({ model: "meta-llama/llama-3.3-70b-instruct" }),
+ * });
+ * ```
+ *
+ * One key, hundreds of models, addressed `"creator/model"`. See
+ * https://openrouter.ai/models for the list.
  */
 export function openrouter(opts: OpenRouterOptions): OpenRouterProvider {
   return { kind: OPENROUTER_KIND, options: { ...opts } };

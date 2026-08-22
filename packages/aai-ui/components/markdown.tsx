@@ -3,7 +3,13 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import { memo, type ReactNode, useMemo } from "react";
+import {
+  type FunctionComponent,
+  type MemoExoticComponent,
+  memo,
+  type ReactNode,
+  useMemo,
+} from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTheme } from "../context.ts";
@@ -72,6 +78,24 @@ const SCALE_CLASSES: Record<
 };
 
 /**
+ * Props of {@link Markdown}.
+ *
+ * @public
+ */
+export type MarkdownProps = {
+  /**
+   * The Markdown source. Required — this is the prose to render, normally one
+   * agent message or the streaming tail of one.
+   */
+  text: string;
+  /**
+   * Type scale. Defaults to `"default"`, the deployed agent UI's scale; pass
+   * `"compact"` for a denser surface. Colors are unaffected either way.
+   */
+  variant?: MarkdownVariant;
+};
+
+/**
  * Agent prose, rendered as Markdown.
  *
  * Pipeline and S2S models write emphasis, lists, `code`, and links; before
@@ -87,110 +111,118 @@ const SCALE_CLASSES: Record<
  * Memoized alongside `MessageBubble`: message content is referentially
  * stable across snapshots, so only the streaming row re-parses.
  *
+ * @example
+ * ```tsx
+ * import { Markdown, useSessionSelector } from "@alexkroman1/aai-ui";
+ *
+ * // The agent's reply as it streams, rendered rather than shown as literal
+ * // asterisks and backticks.
+ * function LiveReply() {
+ *   const text = useSessionSelector((snapshot) => snapshot.agentTranscript);
+ *   return text === null ? null : <Markdown text={text} variant="compact" />;
+ * }
+ * ```
+ *
  * @public
  */
-export const Markdown = memo(function Markdown({
-  text,
-  variant = "default",
-}: {
-  text: string;
-  variant?: MarkdownVariant;
-}): ReactNode {
-  const theme = useTheme();
-  const scale = SCALE_CLASSES[variant];
-  // The renderer map is ~20 closures — rebuild it only when the theme or
-  // variant changes (both identity-stable), not on every streamed delta of
-  // the live assistant bubble.
-  const components = useMemo<Components>(
-    () => ({
-      p: (props) => <p className="my-1.5 first:mt-0 last:mb-0" {...props} />,
-      ul: (props) => <ul className="my-1.5 list-disc pl-5" {...props} />,
-      ol: (props) => <ol className="my-1.5 list-decimal pl-5" {...props} />,
-      li: (props) => <li className="my-0.5" {...props} />,
-      h1: (props) => <h1 className={scale.h1} {...props} />,
-      h2: (props) => <h2 className={scale.h2} {...props} />,
-      h3: (props) => <h3 className={scale.h3} {...props} />,
-      a: ({ style, ...props }) => (
-        <a
-          className="underline underline-offset-2"
-          style={{ color: theme.primary, ...style }}
-          target="_blank"
-          rel="noreferrer noopener"
-          {...props}
-        />
-      ),
-      code: ({ className, style, children, ...rest }) => {
-        // react-markdown marks fenced blocks with a language- class and
-        // wraps them in <pre>; anything else is an inline span.
-        const fenced = /language-/.test(className ?? "");
-        return fenced ? (
-          <code className={clsx("font-aai-mono", scale.code)} {...rest}>
-            {children}
-          </code>
-        ) : (
-          <code
-            className={clsx("rounded-sm border px-1 py-0.5 font-aai-mono", scale.code)}
+export const Markdown: MemoExoticComponent<FunctionComponent<MarkdownProps>> = memo(
+  function Markdown({ text, variant = "default" }: MarkdownProps): ReactNode {
+    const theme = useTheme();
+    const scale = SCALE_CLASSES[variant];
+    // The renderer map is ~20 closures — rebuild it only when the theme or
+    // variant changes (both identity-stable), not on every streamed delta of
+    // the live assistant bubble.
+    const components = useMemo<Components>(
+      () => ({
+        p: (props) => <p className="my-1.5 first:mt-0 last:mb-0" {...props} />,
+        ul: (props) => <ul className="my-1.5 list-disc pl-5" {...props} />,
+        ol: (props) => <ol className="my-1.5 list-decimal pl-5" {...props} />,
+        li: (props) => <li className="my-0.5" {...props} />,
+        h1: (props) => <h1 className={scale.h1} {...props} />,
+        h2: (props) => <h2 className={scale.h2} {...props} />,
+        h3: (props) => <h3 className={scale.h3} {...props} />,
+        a: ({ style, ...props }) => (
+          <a
+            className="underline underline-offset-2"
+            style={{ color: theme.primary, ...style }}
+            target="_blank"
+            rel="noreferrer noopener"
+            {...props}
+          />
+        ),
+        code: ({ className, style, children, ...rest }) => {
+          // react-markdown marks fenced blocks with a language- class and
+          // wraps them in <pre>; anything else is an inline span.
+          const fenced = /language-/.test(className ?? "");
+          return fenced ? (
+            <code className={clsx("font-aai-mono", scale.code)} {...rest}>
+              {children}
+            </code>
+          ) : (
+            <code
+              className={clsx("rounded-sm border px-1 py-0.5 font-aai-mono", scale.code)}
+              style={{
+                borderColor: theme.border,
+                background: inkTint(theme.text, theme.surface, INK_SURFACE_PCT),
+                ...style,
+              }}
+              {...rest}
+            >
+              {children}
+            </code>
+          );
+        },
+        pre: ({ style, ...props }) => (
+          <pre
+            className="my-1.5 overflow-x-auto rounded-md border p-2.5 whitespace-pre-wrap wrap-break-word"
             style={{
               borderColor: theme.border,
               background: inkTint(theme.text, theme.surface, INK_SURFACE_PCT),
               ...style,
             }}
-            {...rest}
-          >
-            {children}
-          </code>
-        );
-      },
-      pre: ({ style, ...props }) => (
-        <pre
-          className="my-1.5 overflow-x-auto rounded-md border p-2.5 whitespace-pre-wrap wrap-break-word"
-          style={{
-            borderColor: theme.border,
-            background: inkTint(theme.text, theme.surface, INK_SURFACE_PCT),
-            ...style,
-          }}
-          {...props}
-        />
-      ),
-      blockquote: ({ style, ...props }) => (
-        <blockquote
-          className="my-1.5 border-l-2 pl-3"
-          style={{
-            borderColor: theme.border,
-            color: inkTint(theme.text, theme.surface, INK_MUTED_PCT),
-            ...style,
-          }}
-          {...props}
-        />
-      ),
-      table: (props) => <table className={scale.table} {...props} />,
-      th: ({ style, ...props }) => (
-        <th
-          className="border px-2 py-1 text-left font-medium"
-          style={{ borderColor: theme.border, ...style }}
-          {...props}
-        />
-      ),
-      td: ({ style, ...props }) => (
-        <td
-          className="border px-2 py-1"
-          style={{ borderColor: theme.border, ...style }}
-          {...props}
-        />
-      ),
-      hr: ({ style, ...props }) => (
-        <hr
-          className="my-2.5 border-t"
-          style={{ borderColor: theme.border, ...style }}
-          {...props}
-        />
-      ),
-    }),
-    [theme, scale],
-  );
-  return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-      {escapeBareListMarkers(text)}
-    </ReactMarkdown>
-  );
-});
+            {...props}
+          />
+        ),
+        blockquote: ({ style, ...props }) => (
+          <blockquote
+            className="my-1.5 border-l-2 pl-3"
+            style={{
+              borderColor: theme.border,
+              color: inkTint(theme.text, theme.surface, INK_MUTED_PCT),
+              ...style,
+            }}
+            {...props}
+          />
+        ),
+        table: (props) => <table className={scale.table} {...props} />,
+        th: ({ style, ...props }) => (
+          <th
+            className="border px-2 py-1 text-left font-medium"
+            style={{ borderColor: theme.border, ...style }}
+            {...props}
+          />
+        ),
+        td: ({ style, ...props }) => (
+          <td
+            className="border px-2 py-1"
+            style={{ borderColor: theme.border, ...style }}
+            {...props}
+          />
+        ),
+        hr: ({ style, ...props }) => (
+          <hr
+            className="my-2.5 border-t"
+            style={{ borderColor: theme.border, ...style }}
+            {...props}
+          />
+        ),
+      }),
+      [theme, scale],
+    );
+    return (
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {escapeBareListMarkers(text)}
+      </ReactMarkdown>
+    );
+  },
+);

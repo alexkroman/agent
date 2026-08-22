@@ -20,7 +20,6 @@ export {
   createSessionCore,
   type Session,
   type SessionCore,
-  type SessionCoreOptions,
   type SessionError,
   type SessionErrorCode,
   type SessionSnapshot,

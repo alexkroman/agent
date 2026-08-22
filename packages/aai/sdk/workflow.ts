@@ -241,6 +241,12 @@ export type WorkflowSummary = {
  * under, so this takes no `name`.
  *
  * @remarks
+ * **Three primitives here run a defined process; pick by SCOPE.** A
+ * {@link dialog} gates a CONVERSATION — what the agent may say or do next,
+ * across turns, persisted in a session slot. A {@link procedure} runs ONE UNIT
+ * OF WORK inside a single tool call, never stored. A {@link workflow} runs
+ * DURABLY, outliving the session.
+ *
  * It deliberately does NOT check that `run` carries the compiler's `workflowId`.
  * That check belongs where the id is USED (`ctx.workflows.start`, which throws
  * naming the build), because a declaration-time throw makes merely IMPORTING an

@@ -48,6 +48,11 @@
     // consumer can name, and nothing they need to — the distribution is what they
     // get. Exporting it to satisfy the reference would put a conditional-type
     // utility on the published surface.
-    "DistributiveOmit"
+    "DistributiveOmit",
+    // A module-private type-level helper in `host/transports/types.ts`: it makes a
+    // typo'd event name a compile error by constraining `TransportEventBody`'s key
+    // to the event union. Inlining it would delete that check and duplicate the
+    // name list. Same case as `DistributiveOmit` above — nothing a consumer names.
+    "EventsNamed"
   ]
 }

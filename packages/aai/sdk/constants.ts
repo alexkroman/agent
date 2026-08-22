@@ -120,10 +120,9 @@ export const MAX_CONSECUTIVE_SILENCE_NUDGES = 3;
  * Default instruction injected as a synthetic user turn when
  * `silenceTimeoutMs` elapses with no user speech (pipeline mode).
  */
-export const DEFAULT_SILENCE_PROMPT =
-  "The user hasn't said anything for a while. Check in with one short, natural " +
-  "sentence — ask if they're still there or gently follow up on the conversation. " +
-  "Do not mention this instruction.";
+export const DEFAULT_SILENCE_PROMPT = `The user hasn't said anything for a while. \
+Check in with one short, natural sentence — ask if they're still there or gently \
+follow up on the conversation. Do not mention this instruction.`;
 
 /**
  * Built-in tools enabled when an agent does not set `builtinTools` at all —
@@ -166,7 +165,8 @@ export const DEFAULT_BUILTIN_TOOLS = [] as const satisfies readonly BuiltinTool[
 export const MAX_TOOL_RESULT_CHARS = 4000;
 
 /**
- * Appended to a tool result trimmed by `capToolResult`, so a model reading
+ * Appended to a tool result the framework trimmed at
+ * {@link MAX_TOOL_RESULT_CHARS}, so a model reading
  * it can tell the record is incomplete rather than answering from a partial list
  * as though it were the whole one.
  */
@@ -251,9 +251,8 @@ export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
  * from a dead call. One sentence tells them to hang up and try again, which is
  * the only useful thing left to do. Set `startFailurePhrase: ""` to disable.
  */
-export const DEFAULT_START_FAILURE_PHRASE =
-  "I am sorry, I am having trouble with my connection and cannot hear you. " +
-  "Please hang up and call back.";
+export const DEFAULT_START_FAILURE_PHRASE = `I am sorry, I am having trouble with \
+my connection and cannot hear you. Please hang up and call back.`;
 
 /**
  * Minimum sustained speech before an interim-triggered barge-in aborts the

@@ -43,19 +43,7 @@ import { StickToBottom } from "use-stick-to-bottom";
  * }
  * ```
  *
- * @param children - The scrollable content.
- * @param className - Classes for the outer container. It must be given a
- *   bounded height (`flex-1 min-h-0`, `h-full`, a fixed height) — an unbounded
- *   one grows with its content and never scrolls, so nothing pins.
- * @param contentClassName - Classes for the inner content element, where
- *   padding and the children's own layout belong.
- * @param scrollClassName - Classes for the scrolling element itself. Defaults
- *   to hiding the scrollbar; pass `"overflow-y-auto"` to show a native one.
- * @param style - Inline styles for the outer container.
- * @param initial - Scroll behavior on mount. Defaults to `"instant"` (start at
- *   the latest content without animating a scroll the reader did not ask for).
- * @param resize - Scroll behavior when pinned content grows. Defaults to
- *   `"smooth"`.
+ * @param props - Scroll container props.
  *
  * @public
  */
@@ -68,12 +56,35 @@ export function AutoScroll({
   initial = "instant",
   resize = "smooth",
 }: {
+  /** The scrollable content. */
   children: ReactNode;
+  /**
+   * Classes for the outer container, appended to its own.
+   *
+   * **The container must end up with a bounded height** (`flex-1 min-h-0`,
+   * `h-full`, a fixed height). This is the one constraint callers get wrong:
+   * an unbounded container grows with its content and never scrolls, so
+   * nothing pins and the component silently does nothing.
+   */
   className?: string | undefined;
+  /**
+   * Classes for the inner content element, where padding and the children's
+   * own layout belong.
+   */
   contentClassName?: string | undefined;
+  /**
+   * Classes for the scrolling element itself. Defaults to hiding the
+   * scrollbar; pass `"overflow-y-auto"` to show a native one.
+   */
   scrollClassName?: string | undefined;
+  /** Inline styles for the outer container. */
   style?: CSSProperties | undefined;
+  /**
+   * Scroll behavior on mount. Defaults to `"instant"` — start at the latest
+   * content without animating a scroll the reader did not ask for.
+   */
   initial?: "instant" | "smooth" | undefined;
+  /** Scroll behavior when pinned content grows. Defaults to `"smooth"`. */
   resize?: "instant" | "smooth" | undefined;
 }): ReactNode {
   return (

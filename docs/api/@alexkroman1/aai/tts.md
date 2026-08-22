@@ -1,15 +1,166 @@
 # tts
 
-`@alexkroman1/aai/tts` subpath barrel.
+`@alexkroman1/aai/tts` subpath barrel — the text-to-speech stage of a
+pipeline agent.
 
-Re-exports the descriptor factories (`assemblyAITts`, `cartesia`, `rime`)
-and the shared TTS contract types. Does not pull in any provider SDK — the
-host resolver handles that at session start.
+Three vendors, one shape: each factory returns a serializable DESCRIPTOR
+(`{ kind, options }`), and you hand it to `agent({ tts })`. Nothing here
+opens a socket or reads a credential — the host resolves the descriptor at
+session start, so importing this barrel pulls in no vendor SDK.
 
-Named re-exports rather than `export *`: the wildcard form needs a
-`noReExportAll` suppression per line, and the escape-hatch ratchet only
-moves down. Listing them also makes the public surface of this subpath
-readable in one place — add new symbols here when a provider gains one.
+## Example
+
+**Swap the TTS stage of an otherwise default agent**
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { CARTESIA_DEFAULT_VOICE, cartesia } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  // `stt` and `llm` keep their AssemblyAI defaults.
+  tts: cartesia({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
+});
+```
+
+**Picking a voice is the one setting a TTS stage cannot infer**, and an
+unrecognised id has no authoring-time symptom: the agent connects, reports
+ready and is permanently silent. For AssemblyAI the ids are enumerated in
+[ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) (with each accent alongside) and the retired
+ones in [ASSEMBLYAI\_TTS\_DEPRECATED\_VOICES](#assemblyai_tts_deprecated_voices) — read them there rather
+than trusting a name from anywhere else. On the default pipeline you do not
+need this barrel at all: `agent({ voice: "michael" })` desugars to
+[assemblyAITts](#assemblyaitts).
+
+**Credentials are never passed here.** Each factory's vendor names the env
+var its key is read from — `ASSEMBLYAI_API_KEY`, `CARTESIA_API_KEY`,
+`RIME_API_KEY`, each also exported as a `*_API_KEY_ENV` constant — and the
+host reads it out of the agent's own environment when the session starts.
+That is what keeps a descriptor safe to serialize across the CLI → server →
+guest boundary.
+
+## The host-side opener contract is on `/runtime`
+
+Implementing a TTS vendor of your own — `TtsOpenOptions`, `TtsSession`,
+`TtsEvents`, `TtsError`, `TtsWordTiming`, `Unsubscribe` — is a HOST job, and
+those types live on `@alexkroman1/aai/runtime` beside `registerTtsKind`,
+which is what you hand the opener to. Only [TtsProvider](#ttsprovider), the
+descriptor a factory here returns, stays on this page.
+
+## Functions
+
+### assemblyAITts()
+
+```ts
+function assemblyAITts(opts?: AssemblyAITtsOptions): AssemblyAITtsProvider;
+```
+
+Build an AssemblyAI streaming-TTS descriptor.
+
+The API key is resolved host-side from the agent's env
+(`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
+descriptor stays free of secrets and safe to serialize.
+
+Named `assemblyAITts` (not `assemblyAI`) so the STT
+(`assemblyAIStt`), LLM (`assemblyAILlm`), and TTS factories can be
+imported side by side without aliasing.
+
+#### Parameters
+
+##### opts?
+
+[`AssemblyAITtsOptions`](#assemblyaittsoptions)
+
+#### Returns
+
+[`AssemblyAITtsProvider`](#assemblyaittsprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  tts: assemblyAITts({ voice: "michael" }),
+});
+```
+
+On the default pipeline `agent({ voice: "michael" })` is the shorthand
+for exactly this. Voice ids come from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) and
+nowhere else — an unrecognised one leaves an agent that connects,
+reports ready and never speaks.
+
+***
+
+### cartesia()
+
+```ts
+function cartesia(opts?: CartesiaOptions): CartesiaProvider;
+```
+
+Build a Cartesia TTS descriptor for pipeline mode. The API key is resolved
+host-side from the agent's env (`CARTESIA_API_KEY`).
+
+#### Parameters
+
+##### opts?
+
+[`CartesiaOptions`](#cartesiaoptions)
+
+#### Returns
+
+[`CartesiaProvider`](#cartesiaprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { CARTESIA_DEFAULT_VOICE, cartesia } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  tts: cartesia({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
+});
+```
+
+***
+
+### rime()
+
+```ts
+function rime(opts?: RimeOptions): RimeProvider;
+```
+
+Build a Rime TTS descriptor for pipeline mode. The API key is resolved
+host-side from the agent's env (`RIME_API_KEY`).
+
+#### Parameters
+
+##### opts?
+
+[`RimeOptions`](#rimeoptions)
+
+#### Returns
+
+[`RimeProvider`](#rimeprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { RIME_DEFAULT_VOICE, rime } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  tts: rime({ voice: RIME_DEFAULT_VOICE, model: "mistv2" }),
+});
+```
 
 ## Interfaces
 
@@ -140,231 +291,6 @@ optional voice?: string;
 ```
 
 Rime speaker ID. Defaults to [RIME\_DEFAULT\_VOICE](#rime_default_voice).
-
-***
-
-### TtsError
-
-Error raised by a TTS provider stream, with a typed `code` naming the
-failure phase: connecting, authenticating, or mid-stream.
-
-#### Extends
-
-- `Error`
-
-#### Properties
-
-##### cause?
-
-```ts
-optional cause?: unknown;
-```
-
-###### Inherited from
-
-```ts
-Error.cause
-```
-
-##### code
-
-```ts
-readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
-```
-
-##### message
-
-```ts
-message: string;
-```
-
-###### Inherited from
-
-```ts
-Error.message
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-###### Inherited from
-
-```ts
-Error.name
-```
-
-##### stack?
-
-```ts
-optional stack?: string;
-```
-
-###### Inherited from
-
-```ts
-Error.stack
-```
-
-***
-
-### TtsOpenOptions
-
-Options the host passes when opening a TTS stream.
-
-#### Properties
-
-##### apiKey
-
-```ts
-apiKey: string;
-```
-
-Provider API key, resolved from the agent's env.
-
-##### sampleRate
-
-```ts
-sampleRate: number;
-```
-
-Playback sample rate of the synthesized PCM, in Hz.
-
-##### signal
-
-```ts
-signal: AbortSignal;
-```
-
-Aborts the open (and the session) when the voice session ends.
-
-***
-
-### TtsSession
-
-Host-side handle to one open TTS provider stream (pipeline mode). Produced
-by the host's provider resolver at session start; user code never
-constructs one.
-
-#### Methods
-
-##### cancel()
-
-```ts
-cancel(): void;
-```
-
-Interrupt immediately (barge-in). Emits `done` synchronously.
-
-###### Returns
-
-`void`
-
-##### close()
-
-```ts
-close(): Promise<void>;
-```
-
-###### Returns
-
-`Promise`\<`void`\>
-
-##### flush()
-
-```ts
-flush(): void;
-```
-
-Signal "no more text this turn". Emits `done` when fully synthesized.
-
-###### Returns
-
-`void`
-
-##### on()
-
-```ts
-on<E>(event: E, fn: TtsEvents[E]): Unsubscribe;
-```
-
-###### Type Parameters
-
-###### E
-
-`E` *extends* keyof [`TtsEvents`](#ttsevents)
-
-###### Parameters
-
-###### event
-
-`E`
-
-###### fn
-
-[`TtsEvents`](#ttsevents)\[`E`\]
-
-###### Returns
-
-[`Unsubscribe`](stt.md#unsubscribe)
-
-##### sendText()
-
-```ts
-sendText(text: string): void;
-```
-
-Push text deltas from the LLM. Provider may synthesize as chunks arrive.
-
-###### Parameters
-
-###### text
-
-`string`
-
-###### Returns
-
-`void`
-
-***
-
-### TtsWordTiming
-
-One synthesized word and where its audio sits in the current turn.
-
-Offsets are milliseconds into THIS TURN's synthesized audio (the first
-sample the provider produced for the turn is 0), not into the session, so
-they line up with the transport's per-reply audio accounting. Providers that
-report per-socket or per-flush clocks are rebased by their own adapter before
-the event is emitted.
-
-#### Properties
-
-##### endMs
-
-```ts
-readonly endMs: number;
-```
-
-End offset of the word's audio, ms into the turn.
-
-##### startMs
-
-```ts
-readonly startMs: number;
-```
-
-Start offset of the word's audio, ms into the turn.
-
-##### text
-
-```ts
-readonly text: string;
-```
-
-The word as the provider synthesized it (may be normalized: "$5.00" → "five dollars").
 
 ## Type Aliases
 
@@ -510,105 +436,6 @@ readonly options: RimeOptions & {
 ```ts
 voice: string;
 ```
-
-***
-
-### TtsEvents
-
-```ts
-type TtsEvents = {
-  audio: (pcm: Int16Array) => void;
-  done: () => void;
-  error: (err: TtsError) => void;
-  words: (words: readonly TtsWordTiming[]) => void;
-};
-```
-
-Events emitted by an open [TtsSession](#ttssession).
-
-#### Properties
-
-##### audio
-
-```ts
-audio: (pcm: Int16Array) => void;
-```
-
-One PCM16 audio chunk. Orchestrator forwards to the client.
-
-###### Parameters
-
-###### pcm
-
-`Int16Array`
-
-###### Returns
-
-`void`
-
-##### done
-
-```ts
-done: () => void;
-```
-
-Synthesis drained after flush() or cancel(). Emitted exactly once per
-turn, and never after `cancel()` for the cancelled turn: `cancel()` must
-clear any pending done timers/frames so a stale `done` cannot leak into
-the next turn's flush-wait (the event carries no turn id, so the
-pipeline transport cannot filter it — see pipeline-transport.ts).
-
-###### Returns
-
-`void`
-
-##### error
-
-```ts
-error: (err: TtsError) => void;
-```
-
-Terminal error. The session is expected to end after this fires.
-
-###### Parameters
-
-###### err
-
-[`TtsError`](#ttserror)
-
-###### Returns
-
-`void`
-
-##### words
-
-```ts
-words: (words: readonly TtsWordTiming[]) => void;
-```
-
-Word timings for audio this turn has produced, when the provider reports
-them. Required in the type but OPTIONAL in practice: every adapter builds
-a `createNanoEvents<TtsEvents>()` emitter, so a provider with no timings
-simply never emits it, and a consumer must treat their absence as the
-ordinary case (the pipeline transport falls back to a proportional
-estimate). Whether a given reply has timings is a RUNTIME fact — a
-provider may report them for some segments and not others — so there is no
-capability flag to check.
-
-**Carries no turn id**, exactly like [TtsEvents.done](#done): the transport
-cannot filter a stale one itself and gates the event on its own turn state
-(the audio gate in `pipeline-transport.ts`). An adapter must not emit
-timings for a cancelled turn.
-
-###### Parameters
-
-###### words
-
-readonly [`TtsWordTiming`](#ttswordtiming)[]
-
-###### Returns
-
-`void`
 
 ***
 
@@ -850,337 +677,145 @@ someone guessing, which is the failure being prevented.
 ##### alba
 
 ```ts
-readonly alba: {
+{
   accent: "US";
   language: "en";
-};
-```
-
-###### alba.accent
-
-```ts
-readonly accent: "US";
-```
-
-###### alba.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### anna
 
 ```ts
-readonly anna: {
+{
   accent: "US";
   language: "en";
-};
-```
-
-###### anna.accent
-
-```ts
-readonly accent: "US";
-```
-
-###### anna.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### charles
 
 ```ts
-readonly charles: {
+{
   accent: "US";
   language: "en";
-};
-```
-
-###### charles.accent
-
-```ts
-readonly accent: "US";
-```
-
-###### charles.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### estelle
 
 ```ts
-readonly estelle: {
+{
   accent: "FR";
   language: "fr";
-};
-```
-
-###### estelle.accent
-
-```ts
-readonly accent: "FR";
-```
-
-###### estelle.language
-
-```ts
-readonly language: "fr";
+}
 ```
 
 ##### eve
 
 ```ts
-readonly eve: {
+{
   accent: "US";
   language: "en";
-};
-```
-
-###### eve.accent
-
-```ts
-readonly accent: "US";
-```
-
-###### eve.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### george
 
 ```ts
-readonly george: {
+{
   accent: "US";
   language: "en";
-};
-```
-
-###### george.accent
-
-```ts
-readonly accent: "US";
-```
-
-###### george.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### giovanni
 
 ```ts
-readonly giovanni: {
+{
   accent: "IT";
   language: "it";
-};
-```
-
-###### giovanni.accent
-
-```ts
-readonly accent: "IT";
-```
-
-###### giovanni.language
-
-```ts
-readonly language: "it";
+}
 ```
 
 ##### jane
 
 ```ts
-readonly jane: {
+{
   accent: "US";
   language: "en";
-};
-```
-
-###### jane.accent
-
-```ts
-readonly accent: "US";
-```
-
-###### jane.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### jean
 
 ```ts
-readonly jean: {
+{
   accent: "US";
   language: "en";
-};
-```
-
-###### jean.accent
-
-```ts
-readonly accent: "US";
-```
-
-###### jean.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### juergen
 
 ```ts
-readonly juergen: {
+{
   accent: "DE";
   language: "de";
-};
-```
-
-###### juergen.accent
-
-```ts
-readonly accent: "DE";
-```
-
-###### juergen.language
-
-```ts
-readonly language: "de";
+}
 ```
 
 ##### lola
 
 ```ts
-readonly lola: {
+{
   accent: "ES";
   language: "es";
-};
-```
-
-###### lola.accent
-
-```ts
-readonly accent: "ES";
-```
-
-###### lola.language
-
-```ts
-readonly language: "es";
+}
 ```
 
 ##### mary
 
 ```ts
-readonly mary: {
+{
   accent: "US";
   language: "en";
-};
-```
-
-###### mary.accent
-
-```ts
-readonly accent: "US";
-```
-
-###### mary.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### michael
 
 ```ts
-readonly michael: {
+{
   accent: "US";
   language: "en";
-};
-```
-
-###### michael.accent
-
-```ts
-readonly accent: "US";
-```
-
-###### michael.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### paul
 
 ```ts
-readonly paul: {
+{
   accent: "UK";
   language: "en";
-};
-```
-
-###### paul.accent
-
-```ts
-readonly accent: "UK";
-```
-
-###### paul.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ##### rafael
 
 ```ts
-readonly rafael: {
+{
   accent: "PT";
   language: "pt";
-};
-```
-
-###### rafael.accent
-
-```ts
-readonly accent: "PT";
-```
-
-###### rafael.language
-
-```ts
-readonly language: "pt";
+}
 ```
 
 ##### vera
 
 ```ts
-readonly vera: {
+{
   accent: "UK";
   language: "en";
-};
-```
-
-###### vera.accent
-
-```ts
-readonly accent: "UK";
-```
-
-###### vera.language
-
-```ts
-readonly language: "en";
+}
 ```
 
 ***
@@ -1247,78 +882,8 @@ const RIME_KIND: "rime";
 
 Kind tag recognised by the host-side resolver.
 
-## Functions
-
-### assemblyAITts()
-
-```ts
-function assemblyAITts(opts?: AssemblyAITtsOptions): AssemblyAITtsProvider;
-```
-
-Build an AssemblyAI streaming-TTS descriptor.
-
-The API key is resolved host-side from the agent's env
-(`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
-descriptor stays free of secrets and safe to serialize.
-
-Named `assemblyAITts` (not `assemblyAI`) so the STT
-(`assemblyAIStt`), LLM (`assemblyAILlm`), and TTS factories can be
-imported side by side without aliasing.
-
-#### Parameters
-
-##### opts?
-
-[`AssemblyAITtsOptions`](#assemblyaittsoptions)
-
-#### Returns
-
-[`AssemblyAITtsProvider`](#assemblyaittsprovider)
-
-***
-
-### cartesia()
-
-```ts
-function cartesia(opts?: CartesiaOptions): CartesiaProvider;
-```
-
-Build a Cartesia TTS descriptor for pipeline mode. The API key is resolved
-host-side from the agent's env (`CARTESIA_API_KEY`).
-
-#### Parameters
-
-##### opts?
-
-[`CartesiaOptions`](#cartesiaoptions)
-
-#### Returns
-
-[`CartesiaProvider`](#cartesiaprovider)
-
-***
-
-### rime()
-
-```ts
-function rime(opts?: RimeOptions): RimeProvider;
-```
-
-Build a Rime TTS descriptor for pipeline mode. The API key is resolved
-host-side from the agent's env (`RIME_API_KEY`).
-
-#### Parameters
-
-##### opts?
-
-[`RimeOptions`](#rimeoptions)
-
-#### Returns
-
-[`RimeProvider`](#rimeprovider)
-
 ## References
 
-### Unsubscribe
+### ProviderDescriptor
 
-Re-exports [Unsubscribe](stt.md#unsubscribe)
+Re-exports [ProviderDescriptor](stt.md#providerdescriptor)

@@ -69,8 +69,8 @@ export type StubUploadsOptions = {
  * `readUpload` can be tested without a server.
  *
  * A step reads uploads through a process-wide slot rather than dialling
- * anything (see `sdk/step-uploads.ts`), which is what makes this possible at
- * all: a spec supplies its own bytes and the step under test is unchanged.
+ * anything, which is what makes this possible at all: a spec supplies its own
+ * bytes and the step under test is unchanged.
  *
  * Returns the UNPUBLISH function, and calling it in an `afterEach` is not
  * optional — a store left published makes the next file's steps read this

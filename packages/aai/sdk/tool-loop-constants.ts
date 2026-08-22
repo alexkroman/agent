@@ -38,8 +38,8 @@
  * `DEFAULT_DEAD_AIR_COVER_MS`), not a step limit. Tune the silence, not the
  * cap; the real constraint on a long chain is caller patience.
  *
- * S2S enforces the same cap service-side by refusing tool calls past it
- * (`host/session-core.ts`), where no forced final step is possible.
+ * S2S enforces the same cap service-side by refusing tool calls past it, where
+ * no forced final step is possible.
  */
 export const DEFAULT_MAX_STEPS = 10;
 

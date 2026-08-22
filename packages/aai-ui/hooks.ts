@@ -122,14 +122,34 @@ function useToolCallEffect(
 }
 
 /**
- * Fire a callback when a tool call settles, with the tool's JSON result.
+ * Fire a callback when ONE named tool settles, with its parsed JSON result.
  *
  * For new code prefer explicit events — `ctx.send(event, data)` in the tool
  * paired with {@link useEvent} here — over listening to tool results.
  *
+ * A component that mounts late still receives the results of calls that
+ * already completed, because a result is a value the UI is driven from rather
+ * than a moment. Each call fires exactly once per hook instance.
+ *
+ * @example
+ * ```tsx
+ * import { useState } from "react";
+ * import { useToolResult } from "@alexkroman1/aai-ui";
+ *
+ * type Quote = { symbol: string; price: number };
+ *
+ * function QuoteCard() {
+ *   const [quote, setQuote] = useState<Quote>();
+ *   useToolResult<Quote>("get_quote", (result) => setQuote(result));
+ *   return quote ? <p>{quote.symbol}: {quote.price}</p> : null;
+ * }
+ * ```
+ *
  * @typeParam R - The result shape. Defaults to {@link DefaultToolResult}
  *   (`any`) so the ordinary untyped spelling compiles; pass the shape —
  *   `useToolResult<Quote>(…)` — for real checking.
+ * @param toolName - Only calls of this tool fire the callback.
+ * @param callback - Called with the parsed result and the call itself.
  *
  * @public
  */
@@ -137,6 +157,33 @@ export function useToolResult<R = DefaultToolResult>(
   toolName: string,
   callback: (result: R, toolCall: ToolCallInfo) => void,
 ): void;
+/**
+ * Fire a callback when ANY tool call settles — the tool's name is the
+ * callback's first argument.
+ *
+ * The unfiltered form, for a chrome rendering a log of everything the agent
+ * did rather than reacting to one tool.
+ *
+ * @example
+ * ```tsx
+ * import { useState } from "react";
+ * import { useToolResult } from "@alexkroman1/aai-ui";
+ *
+ * function ToolLog() {
+ *   const [lines, setLines] = useState<string[]>([]);
+ *   useToolResult((name, result) => {
+ *     setLines((prev) => [...prev, `${name}: ${JSON.stringify(result)}`]);
+ *   });
+ *   return <pre>{lines.join("\n")}</pre>;
+ * }
+ * ```
+ *
+ * @typeParam R - The result shape. Defaults to {@link DefaultToolResult}.
+ * @param callback - Called with the tool's name, the parsed result, and the
+ * call itself.
+ *
+ * @public
+ */
 export function useToolResult<R = DefaultToolResult>(
   callback: (name: string, result: R, toolCall: ToolCallInfo) => void,
 ): void;
@@ -313,8 +360,26 @@ export function useEvent<T = unknown>(event: string, callback: (data: T) => void
 }
 
 /**
- * Fire a callback when a tool call starts (before its result arrives).
- * Optionally filter by tool name.
+ * Fire a callback when ONE named tool starts, before its result arrives.
+ *
+ * A start is a MOMENT rather than a value, so unlike {@link useToolResult}
+ * this never replays: a component that mounts mid-session learns nothing about
+ * calls that started before it.
+ *
+ * @example
+ * ```tsx
+ * import { useState } from "react";
+ * import { useToolCallStart } from "@alexkroman1/aai-ui";
+ *
+ * function Searching() {
+ *   const [busy, setBusy] = useState(false);
+ *   useToolCallStart("search_catalog", () => setBusy(true));
+ *   return busy ? <p>Searching the catalog…</p> : null;
+ * }
+ * ```
+ *
+ * @param toolName - Only calls of this tool fire the callback.
+ * @param callback - Called with the pending call.
  *
  * @public
  */
@@ -322,6 +387,26 @@ export function useToolCallStart(
   toolName: string,
   callback: (toolCall: ToolCallInfo) => void,
 ): void;
+/**
+ * Fire a callback when ANY tool call starts — read the tool's name off the
+ * call itself (`toolCall.name`).
+ *
+ * @example
+ * ```tsx
+ * import { useState } from "react";
+ * import { useToolCallStart } from "@alexkroman1/aai-ui";
+ *
+ * function Activity() {
+ *   const [now, setNow] = useState<string>();
+ *   useToolCallStart((toolCall) => setNow(toolCall.name));
+ *   return now ? <p>Running {now}…</p> : null;
+ * }
+ * ```
+ *
+ * @param callback - Called with the pending call.
+ *
+ * @public
+ */
 export function useToolCallStart(callback: (toolCall: ToolCallInfo) => void): void;
 export function useToolCallStart(...args: unknown[]): void {
   useToolCallEffect("pending", args, (callback, tc) => {

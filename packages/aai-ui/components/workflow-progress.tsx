@@ -43,15 +43,7 @@ import type { WorkflowApi } from "../workflow-client.ts";
  * }
  * ```
  *
- * @param runId - The run to read. `undefined` renders nothing, so a page may
- *   pass its state straight through before a run exists.
- * @param api - The workflow API client, when the page holds its own. Defaults
- *   to the one `page()` installs.
- * @param className - Replaces the default classes rather than extending them,
- *   so a custom chrome is not fighting a default it did not ask for.
- * @param placeholder - Rendered instead of nothing while the run has said
- *   nothing yet — for a page that would otherwise reflow when the first line
- *   lands.
+ * @param props - Progress-log props.
  *
  * @public
  */
@@ -61,9 +53,25 @@ export function WorkflowProgress({
   className,
   placeholder,
 }: {
+  /**
+   * The run to read. `undefined` renders nothing, so a page may pass its state
+   * straight through before a run exists.
+   */
   runId?: string | undefined;
+  /**
+   * The workflow API client, when the page holds its own. Defaults to the
+   * lazily-built one every workflow hook shares.
+   */
   api?: WorkflowApi | undefined;
+  /**
+   * **Replaces** the default classes rather than extending them, so a custom
+   * chrome is not fighting a default it did not ask for.
+   */
   className?: string | undefined;
+  /**
+   * Rendered instead of nothing while the run has said nothing yet — for a
+   * page that would otherwise reflow when the first line lands.
+   */
   placeholder?: ReactNode | undefined;
 }): ReactNode {
   const { progress, streaming, supported } = useWorkflowProgress(runId, omitUndefined({ api }));

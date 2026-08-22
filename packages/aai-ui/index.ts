@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-// Pre-connection client-config lookup (name + greeting) — internal plumbing
-// used by the default client; see each symbol's own doc.
+// Pre-connection client-config lookup (name + greeting). `fetchClientConfig`
+// is the PUBLIC half — a workflow app's replacement for the lookup `client()`
+// makes for itself, since `page()` makes none. The other two are the default
+// client's and the session's own plumbing; see each symbol's doc.
 export {
   buildAgentUrl,
   type ClientConfigResponse,
@@ -12,7 +14,7 @@ export {
 export { AutoScroll } from "./components/auto-scroll.tsx";
 export { Button, type ButtonSize, type ButtonVariant } from "./components/button.tsx";
 export { ChatView } from "./components/chat-view.tsx";
-export { Controls } from "./components/controls.tsx";
+export { Controls, type ControlsProps } from "./components/controls.tsx";
 // Forms — what a workflow app's front door is made of. See `components/form.tsx`
 // for why the values come off the DOM rather than out of React state.
 export {
@@ -31,8 +33,8 @@ export {
   TextAreaField,
   TextField,
 } from "./components/form.tsx";
-export { Markdown, type MarkdownVariant } from "./components/markdown.tsx";
-export { MessageList } from "./components/message-list.tsx";
+export { Markdown, type MarkdownProps, type MarkdownVariant } from "./components/markdown.tsx";
+export { MessageList, type MessageListProps } from "./components/message-list.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
 // The design system's console row for one tool invocation — the shared
@@ -84,7 +86,6 @@ export { createSessionCore } from "./session-core.ts";
 export type {
   AgentCustomEvent,
   SessionCore,
-  SessionCoreOptions,
   SessionSnapshot,
 } from "./session-core-types.ts";
 // Types

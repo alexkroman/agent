@@ -268,8 +268,8 @@ export type StubStepFetch = {
  * without a server and without stubbing a global.
  *
  * A step's outbound call goes through a process-wide slot rather than
- * `globalThis.fetch` (see `sdk/step-fetch.ts` for why — HTTP/1.1 pinning, and
- * a fan-out that breaks on HTTP/2 stream resets), so this is the honest way to
+ * `globalThis.fetch` (see `stepFetch` on `@alexkroman1/aai/step` for why —
+ * HTTP/1.1 pinning, and a fan-out that breaks on HTTP/2 stream resets), so this is the honest way to
  * intercept it. `vi.stubGlobal("fetch", …)` still works, because an unpublished
  * slot falls back to the global; it just tests a path production does not take,
  * and it cannot see the request BODY as bytes.

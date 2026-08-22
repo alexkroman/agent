@@ -8,9 +8,15 @@
  *
  * The `events` handler types are here for the same reason `AgentDef` is: they are
  * the SHAPE of an `agent({ events })` declaration, so a change to them is a change
- * to what declaring an agent looks like. `SessionEvent` itself is deliberately not
- * — it is the wire union, contracted nowhere here because `/protocol` is a
- * non-authoring subpath.
+ * to what declaring an agent looks like. `SessionEvent` itself is still not — it
+ * is the wire union, contracted nowhere here because `/protocol` is a
+ * non-authoring subpath — but `SessionEventType`, its KEY SET, is, and that is a
+ * deliberate narrowing of the same rule. `agent({ events: { "tool.called": … } })`
+ * is authoring code and the string literal IS the API, so with only the handler
+ * types contracted this capability covered the brackets and not the keys:
+ * `SessionEvent` is an opaque `z.infer` alias in the rollup, so removing an event
+ * name left the hash byte-identical and shipped as a `patch` that broke a build.
+ * Contracting the union of names makes that a classification instead.
  *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
@@ -36,6 +42,7 @@ export {
   type SessionEventContext,
   type SessionEventHandler,
   type SessionEventHandlers,
+  type SessionEventType,
   type SharedAgentParams,
   type StaticAgentParams,
   type TextAgentParams,

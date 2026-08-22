@@ -7,7 +7,7 @@
  * GPT, Gemini, and more) behind a single endpoint and a single
  * `ASSEMBLYAI_API_KEY` — the same key used for AssemblyAI STT.
  *
- * The host-side resolver in `host/providers/resolve.ts` builds a real
+ * The host-side resolver builds a real
  * Vercel AI SDK `LanguageModel` from this descriptor during
  * `createRuntime`, pointing `@ai-sdk/openai`'s chat-completions client at
  * the gateway base URL.
@@ -197,6 +197,22 @@ export type AssemblyAILlmProvider = LlmProvider & {
  * Named `assemblyAILlm` (not `assemblyAI`) so the STT
  * (`assemblyAIStt`), LLM, and TTS (`assemblyAITts`) factories can be
  * imported side by side without aliasing.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { assemblyAILlm } from "@alexkroman1/aai/llm";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   llm: assemblyAILlm({ model: "qwen3-next-80b-a3b", reasoningEffort: "none" }),
+ * });
+ * ```
+ *
+ * Every option is optional: `assemblyAILlm()` runs
+ * {@link ASSEMBLYAI_LLM_DEFAULT_MODEL}. `region: "eu"` selects the EU
+ * gateway; {@link ASSEMBLYAI_GATEWAY_MODELS} is the catalog.
  */
 export function assemblyAILlm(opts: AssemblyAILlmOptions = {}): AssemblyAILlmProvider {
   const model = opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL;

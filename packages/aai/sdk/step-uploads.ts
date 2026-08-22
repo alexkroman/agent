@@ -217,7 +217,7 @@ export type ReadUploadOptions = {
  * Declared here rather than in `host/` because this module is the reader and
  * `sdk/` may not import `host/`. `createUploadStore` implements it.
  *
- * @internal
+ * @public
  */
 export type UploadReader = {
   /** One upload's metadata, or `undefined` when there is no such upload. */
@@ -318,8 +318,13 @@ export function requireUploadAccess(): UploadAccess {
  * Read one upload's metadata: its name, what has ARRIVED, and whether that is all
  * of it.
  *
- * The poll a body waiting on a streamed upload runs — see the module doc, including
- * why `complete` is the only field an exit may be decided on.
+ * The poll a body waiting on a streamed upload runs.
+ *
+ * **`complete` is the field to branch on, never `size`.** A size that stopped
+ * growing means "nothing arrived recently", which is what a slow link and a dead
+ * client both look like; only `complete` says the file is all there. A body that
+ * treated a stalled size as the end would return a transcript of most of a
+ * recording and report success.
  *
  * @throws when the id names no upload — a step that reaches for one and finds
  *   nothing has been handed a stale or invented id, which no retry fixes. Note a
@@ -346,6 +351,25 @@ export async function uploadInfo(id: string): Promise<UploadInfo> {
  * readable: the clamp is to what has ARRIVED, so a window that runs past the
  * bytes stored so far comes back short rather than failing, and `end` is how a
  * caller learns which it got.
+ *
+ * @example
+ * Write in one step, read a window back in another — an id crosses the journal,
+ * bytes never do.
+ * ```ts
+ * import { readUpload, writeUpload } from "@alexkroman1/aai/step";
+ *
+ * export async function store(bytes: Uint8Array): Promise<string> {
+ *   "use step";
+ *   const { id } = await writeUpload(bytes, { name: "summary.wav" });
+ *   return id;
+ * }
+ *
+ * export async function firstSecond(uploadId: string): Promise<Uint8Array> {
+ *   "use step";
+ *   const { bytes } = await readUpload(uploadId, { start: 44, end: 44 + 32_000 });
+ *   return bytes;
+ * }
+ * ```
  *
  * @public
  */

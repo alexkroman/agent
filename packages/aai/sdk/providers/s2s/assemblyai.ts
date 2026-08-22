@@ -27,7 +27,7 @@ export const ASSEMBLYAI_S2S_KIND = "assemblyai" as const;
  * The same string as the STT/TTS/LLM AssemblyAI constants by design — a
  * distinct NAME per stage is what lets `apiKeyEnv` point one stage at another
  * account without moving the others (see `descriptorEnvVar` in
- * `host/providers/resolve.ts`).
+ * the host-side resolver).
  */
 export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
@@ -88,6 +88,21 @@ export type AssemblyAIS2sProvider = S2sProvider & {
 /**
  * Select AssemblyAI's speech-to-speech (Voice Agent API) session mode.
  * STT, the LLM loop, and TTS all run service-side over one socket.
+ *
+ * @example
+ * ```ts
+ * import { agent, assemblyAIS2s } from "@alexkroman1/aai";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   s2s: assemblyAIS2s({ voice: "jane", languages: ["en"] }),
+ * });
+ * ```
+ *
+ * Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline, and the
+ * top-level `voice` convenience is a compile error alongside it — an S2S
+ * voice rides on the descriptor, because the service synthesizes.
  *
  * @public
  */

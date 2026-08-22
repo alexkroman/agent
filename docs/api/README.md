@@ -3,4 +3,4 @@
 ## Packages
 
 - [@alexkroman1/aai](@alexkroman1/aai/README.md)
-- [@alexkroman1/aai-ui](@alexkroman1/aai-ui.md)
+- [@alexkroman1/aai-ui](@alexkroman1/aai-ui/README.md)

@@ -8,7 +8,7 @@
  * `"anthropic/claude-sonnet-4-5"`), behind one `AI_GATEWAY_API_KEY`.
  * Use it to reach models that have no dedicated factory here.
  *
- * The host-side resolver in `host/providers/resolve.ts` builds a real
+ * The host-side resolver builds a real
  * Vercel AI SDK `LanguageModel` from this descriptor during
  * `createRuntime` via `createGateway` from the `ai` package.
  */
@@ -42,6 +42,21 @@ export type GatewayProvider = LlmProvider & {
  * The API key is resolved host-side from the agent's env
  * (`AI_GATEWAY_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { gateway } from "@alexkroman1/aai/llm";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   llm: gateway({ model: "zai/glm-4.6" }),
+ * });
+ * ```
+ *
+ * One key, hundreds of models, addressed `"creator/model"`. See
+ * https://vercel.com/ai-gateway/models for the list.
  */
 export function gateway(opts: GatewayOptions): GatewayProvider {
   return { kind: GATEWAY_KIND, options: { ...opts } };

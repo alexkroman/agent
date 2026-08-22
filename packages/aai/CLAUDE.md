@@ -38,7 +38,7 @@ is the security boundary.
 
 ## Package exports
 
-Fifteen subpaths, mapped file-by-file in the table below. What decides which
+Nineteen subpaths, mapped below. What decides which
 one a symbol lives on:
 
 ### The root barrel is CURATED, and `export *` is what broke it
@@ -49,18 +49,17 @@ magic number; the zod-free helpers the CLI loads on every invocation), so a
 wildcard put a jitter-buffer depth, a WebSocket close code and the platform's
 slug regex in an agent author's autocomplete beside `greeting`. Measured before
 the split: **175 exports, 71 of them `@internal`, and 160 unused by any of the
-fourteen templates** — eleven symbols covered every one. It is 92 now and
-**none is `@internal`**, which is the property to preserve.
+fourteen templates** — eleven symbols covered every one. It is 93 now (count
+it in `API-EXPORTS.json`) and **none is `@internal`**, the property to preserve.
 
 The membership test for anything added later: **a symbol belongs here if an
 `agent.ts`, a tool module, or a `workflow()` would NAME it.** A budget the
 framework enforces on its own does not qualify however public it is —
 `DEFAULT_MIN_BARGE_IN_WORDS` stayed because it documents `minBargeInWords`,
 `PLAYBACK_FILL_MS` did not because no field sets it. Nothing was deleted:
-budgets went to `./internal`, the slug/CLI contracts and wire helpers stay on
-`./utils`, and `StandardSchemaV1` and its result/issue types stay in
-`sdk/schema.ts` — the ecosystem SPEC `tool()` accepts, not something an agent
-declares.
+budgets went to `./internal`, the slug/CLI contracts and wire helpers to
+`./utils`, and the Standard Schema spec types stay in `sdk/schema.ts` —
+`index.ts`'s own comment says why.
 
 ## Subpath export → file mapping
 
@@ -69,7 +68,7 @@ of subpath exports in `aai/package.json`:
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
-| `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. Eight modules by `export *`, plus NAMED subsets of `sdk/constants.ts` and `sdk/utils.ts` — see "The root barrel is CURATED" above |
+| `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. See "The root barrel is CURATED" above |
 | `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published and why the module carries no test-runner dependency. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createUnusedDb()` / `createStubWorkflows()` are the rejecting `db`/`ctx.workflows` it defaults to. Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`withDiscoveredTools(def, modules)`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs — it takes the glob's RESULT rather than a directory (`import.meta.glob` is expanded against the file containing it and cannot take a variable), and a `readdir` + `import()` is refused because it resolves the tools through Node instead of the test runner and hands them a second copy of this SDK. Each helper's own doc carries the rest; see the `_test-utils.ts` section of the root guide |
 | `@alexkroman1/aai/testing/vitest` | `sdk/testing-vitest.ts` (direct) | `installStubGateway(replies, opts?)` — the fake above, installed as the global `fetch`, returning its call log. The one place a test-runner dependency is allowed, so the rule the subpath above states stays true: `vitest` is an OPTIONAL peer, and importing THIS is what pulls it. A helper belongs here only when its remaining content is the installation — the fake itself stays framework-agnostic next door |
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zero-dependency helpers a TOOL body reaches for, and nothing else: `errorMessage`/`errorDetail`, `responseErrorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, and `createKeyedLock`/`withLock`. Fifteen exports, one reader. **It was 79, and the reason is worth keeping**: this subpath's membership rule was a BUILD property — zod-free, so the CLI can import it on every invocation without a startup cost — which is true, still enforced, and not something anybody imports BY. Nobody reaches for a module because of its dependency graph, so three unrelated audiences accumulated on one import line. The `"use step"` vocabulary is `/step` now; the platform contracts and wire helpers are on `/internal`. `createKeyedLock`'s `p-timeout` (2.4 KB) is the one measured exception to the zero-dependency rule — the module doc owns it |
@@ -83,7 +82,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAIStt`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`) |
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAITts`) |
-| `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; `assemblyAIS2s` is on the root export) |
+| `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; the root re-exports `assemblyAIS2s` and its two types, never the two `ASSEMBLYAI_S2S_*` constants — an `agent.ts` names neither) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch`. All three ANSWER `T \| ToolFailure` — a builtin's failure is its result, not a throw — so a caller that names a shape narrows with `isToolFailure`. Typed as a bare `T`, all three callers in this repo turned a live DuckDuckGo 403 into "the web has nothing" |
 | `@alexkroman1/aai/ffmpeg` | `host/ffmpeg.ts` (direct) | ffmpeg from a step — `runFfmpeg`/`probeMedia`/`transcodeToWav`; why, in `aai-guest/CLAUDE.md` |
 | `@alexkroman1/aai/internal` | `internal.ts` | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `createCoalescingRunner`, `parseWsUpgradeParams`, `formatSchemaIssues`, `sleep`) plus the framework BUDGETS the browser client needs (the client-audio constants, `AGENT_CSP`, `WS_OPEN`), the two platform contracts BOTH ends must derive identically (the slug shape — `VALID_SLUG_RE`, `RESERVED_SLUGS`, `MAX_SLUG_LENGTH`, `PREVIEW_SLUG_SUFFIX` — and the `aai login` confirmation code), and the framework's own wire helpers (`capToolResult`, `toArgsRecord`, `isTextAssetPath`, `normalizeSpeechText`; `sdk/_wire-helpers.ts`). Not public API, not semver-covered, excluded from the docs. **It is ZOD-FREE, and that is now a rule** — it used to reach `formatSchemaIssues` through `sdk/schema.ts`, which imports zod, so importing anything here pulled zod's graph. That is exactly the startup cost `/utils` exists to keep off the CLI's path, and it is what kept the slug contract and the wire helpers on a PUBLISHED subpath they had no business being on; the function itself lives in the zod-free `sdk/standard-schema.ts`, so importing it from there is the whole fix. The env brands live on `./runtime` instead — they appear in its public signatures (`RuntimeOptions`, `withHostCredentialFallback`) |

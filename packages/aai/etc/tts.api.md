@@ -147,7 +147,7 @@ export type CartesiaProvider = TtsProvider & {
 };
 
 // @public
-interface ProviderDescriptor<Kind extends string, Options> {
+export interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -182,51 +182,9 @@ export type RimeProvider = TtsProvider & {
 };
 
 // @public
-export interface TtsError extends Error {
-    // (undocumented)
-    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
-}
-
-// @public
-export type TtsEvents = {
-    audio: (pcm: Int16Array) => void;
-    words: (words: readonly TtsWordTiming[]) => void;
-    done: () => void;
-    error: (err: TtsError) => void;
-};
-
-// @public
-export interface TtsOpenOptions {
-    apiKey: string;
-    sampleRate: number;
-    signal: AbortSignal;
-}
-
-// @public
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
-
-// @public
-export interface TtsSession {
-    cancel(): void;
-    // (undocumented)
-    close(): Promise<void>;
-    flush(): void;
-    // (undocumented)
-    on<E extends keyof TtsEvents>(event: E, fn: TtsEvents[E]): Unsubscribe;
-    sendText(text: string): void;
-}
-
-// @public
-export interface TtsWordTiming {
-    readonly endMs: number;
-    readonly startMs: number;
-    readonly text: string;
-}
-
-// @public
-export type Unsubscribe = () => void;
 
 // (No @packageDocumentation comment for this package)
 

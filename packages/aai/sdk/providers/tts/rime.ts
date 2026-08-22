@@ -3,7 +3,7 @@
  * Rime TTS factory — returns a pure descriptor.
  *
  * See `sdk/providers/stt/assemblyai.ts` for the descriptor/opener split;
- * the host-side resolver in `host/providers/resolve.ts` turns this into an
+ * the host-side resolver turns this into an
  * openable `TtsOpener` during `createRuntime` using the
  * `RIME_API_KEY` from the agent's env.
  *
@@ -53,6 +53,18 @@ export type RimeProvider = TtsProvider & {
 /**
  * Build a Rime TTS descriptor for pipeline mode. The API key is resolved
  * host-side from the agent's env (`RIME_API_KEY`).
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { RIME_DEFAULT_VOICE, rime } from "@alexkroman1/aai/tts";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   tts: rime({ voice: RIME_DEFAULT_VOICE, model: "mistv2" }),
+ * });
+ * ```
  */
 export function rime(opts: RimeOptions = {}): RimeProvider {
   return {

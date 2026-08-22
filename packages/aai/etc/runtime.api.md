@@ -1020,7 +1020,7 @@ const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     error: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>], "type">;
 
-// @internal
+// @public
 export type SessionCore = {
     readonly id: string;
     configure(config: ReadyConfig): void;
@@ -1076,7 +1076,7 @@ type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx
 
 // @public
 type SessionEventHandlers = {
-    [K in SessionEvent["type"]]?: SessionEventHandler<Extract<SessionEvent, {
+    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
         type: K;
     }>>;
 } & {
@@ -1260,6 +1260,9 @@ export type SessionEventStream = {
 };
 
 // @public
+type SessionEventType = SessionEvent["type"];
+
+// @public
 export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents">;
 
 // @public
@@ -1274,7 +1277,7 @@ export type SessionStartOptions = {
     audioLeadMs?: number;
 };
 
-// @internal
+// @public
 export type SessionStateBackend = {
     readonly name: "memory" | "postgres";
     readonly durable: boolean;
@@ -1301,7 +1304,7 @@ export type SessionStateStore = {
     readonly backend: Pick<SessionStateBackend, "name" | "durable">;
 };
 
-// @internal
+// @public
 export type SessionWebSocket = {
     readonly readyState: number;
     readonly bufferedAmount?: number | undefined;
@@ -1451,7 +1454,7 @@ export type StepReporter = (chunk: unknown, options?: {
 }) => void | Promise<void>;
 
 // @public
-type StoredSessionEvent = {
+export type StoredSessionEvent = {
     index: number;
     json: string;
 };
@@ -1463,13 +1466,13 @@ type StreamOptions = {
 };
 
 // @public
-interface SttError extends Error {
+export interface SttError extends Error {
     // (undocumented)
     readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
 }
 
 // @public (undocumented)
-type SttEvents = {
+export type SttEvents = {
     partial: (text: string, meta?: SttTurnMeta) => void;
     final: (text: string, meta?: SttTurnMeta) => void;
     error: (err: SttError) => void;
@@ -1484,7 +1487,7 @@ export interface SttOpener {
 }
 
 // @public
-interface SttOpenOptions {
+export interface SttOpenOptions {
     agentContext?: string | undefined;
     apiKey: string;
     sampleRate: number;
@@ -1500,7 +1503,7 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-interface SttSession {
+export interface SttSession {
     // (undocumented)
     close(): Promise<void>;
     // (undocumented)
@@ -1510,7 +1513,7 @@ interface SttSession {
 }
 
 // @public
-type SttTurnMeta = {
+export type SttTurnMeta = {
     endOfTurnConfidence?: number;
 };
 
@@ -1607,10 +1610,10 @@ type ToolContext = {
 };
 
 // @public
-type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 };
 
 // @public
@@ -1648,7 +1651,7 @@ export type TransportCallbacks = {
     onSessionReady?(providerSessionId: string): void;
 };
 
-// @internal
+// @public
 export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
 
 // @public
@@ -1662,13 +1665,13 @@ export type TransportSessionConfig = {
 };
 
 // @public
-interface TtsError extends Error {
+export interface TtsError extends Error {
     // (undocumented)
     readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
 }
 
 // @public
-type TtsEvents = {
+export type TtsEvents = {
     audio: (pcm: Int16Array) => void;
     words: (words: readonly TtsWordTiming[]) => void;
     done: () => void;
@@ -1684,7 +1687,7 @@ export interface TtsOpener {
 }
 
 // @public
-interface TtsOpenOptions {
+export interface TtsOpenOptions {
     apiKey: string;
     sampleRate: number;
     signal: AbortSignal;
@@ -1696,7 +1699,7 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-interface TtsSession {
+export interface TtsSession {
     cancel(): void;
     // (undocumented)
     close(): Promise<void>;
@@ -1707,7 +1710,7 @@ interface TtsSession {
 }
 
 // @public
-interface TtsWordTiming {
+export interface TtsWordTiming {
     readonly endMs: number;
     readonly startMs: number;
     readonly text: string;
@@ -1717,7 +1720,7 @@ interface TtsWordTiming {
 export const twilioCodec: CarrierCodec;
 
 // @public
-type Unsubscribe = () => void;
+export type Unsubscribe = () => void;
 
 // @public
 export const UPLOAD_CHUNK_BYTES: number;
@@ -1784,7 +1787,7 @@ type UploadRange = {
     end: number;
 };
 
-// @internal
+// @public
 export type UploadReader = {
     info(id: string): Promise<UploadInfo | undefined>;
     read(id: string, start: number, end: number): Promise<Uint8Array>;
@@ -1914,7 +1917,7 @@ export const WORKFLOW_WEBHOOK_PREFIX = "/.well-known/workflow/v1/webhook/";
 // @internal
 export type WorkflowApiEngine = WorkflowClient;
 
-// @public (undocumented)
+// @internal
 export type WorkflowApiOptions = {
     engine: () => WorkflowApiEngine | undefined;
     token?: string | undefined;

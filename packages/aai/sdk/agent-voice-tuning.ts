@@ -111,8 +111,8 @@ export interface PipelineVoiceTuning {
    * distribution recorded on {@link DEFAULT_MAX_STEPS}), so at most the
    * remaining 67-72% can ever be accelerated.
    *
-   * **What it structurally cannot do**, by construction rather than by flag
-   * (see `pipeline-speculation.ts`): a speculation never reaches TTS, never
+   * **What it structurally cannot do**, by construction rather than by flag:
+   * a speculation never reaches TTS, never
    * emits a client frame, never writes either history view, and never EXECUTES
    * a tool — its tool set is declaration-only, so the model cannot continue past
    * a tool call, and a speculation that reaches one is discarded whole. Adoption

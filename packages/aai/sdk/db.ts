@@ -23,8 +23,8 @@ export type Db = {
  * Max rows one `ctx.db` query may return; queries that could exceed it
  * should paginate with LIMIT/OFFSET. Exceeding the cap throws rather than
  * silently truncating — a shortened result is indistinguishable from a
- * complete one. Enforced identically under `aai dev` and on the platform
- * (both route through `createPostgresDb`).
+ * complete one. Enforced identically under `aai dev` and on the platform —
+ * both route through the same Postgres driver.
  */
 export const MAX_DB_RESULT_ROWS = 1000;
 
@@ -35,7 +35,6 @@ export const MAX_DB_RESULT_ROWS = 1000;
  * harness keeps an import-free duplicate of this string, pinned by an
  * equality test — dev and prod must read identically.
  */
-export const STORAGE_DISABLED_MESSAGE =
-  "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
-  "Settings → Database in the studio; under `aai dev`, set DATABASE_URL in the " +
-  "project .env.";
+export const STORAGE_DISABLED_MESSAGE = `Storage is not enabled for this app. \
+Enable it with \`aai storage enable\` (CLI) or Settings → Database in the studio; \
+under \`aai dev\`, set DATABASE_URL in the project .env.`;

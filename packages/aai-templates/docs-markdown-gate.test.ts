@@ -61,6 +61,24 @@ const siteConfig = import.meta.glob<string>("../*/typedoc.json", {
   eager: true,
 });
 
+/**
+ * The manifests behind those configs, for the subpath-coverage assertion.
+ *
+ * Globbed rather than named, so a third package opting into the reference is
+ * covered by the same assertion without an edit here.
+ */
+const packageManifests = import.meta.glob<string>("../*/package.json", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+
+const docsMarkdownScript = import.meta.glob<string>("../../scripts/docs-markdown.mjs", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+})["../../scripts/docs-markdown.mjs"];
+
 const markdownlintConfig = import.meta.glob<string>("../../.markdownlint-cli2.jsonc", {
   query: "?raw",
   import: "default",
@@ -69,6 +87,22 @@ const markdownlintConfig = import.meta.glob<string>("../../.markdownlint-cli2.js
 
 /** Repo-relative paths of every committed markdown reference file. */
 const committedPaths = Object.keys(committed).map(repoPathOf).sort();
+
+/** Every `exports` key of a package's manifest whose target declares `types`. */
+function typedSubpathsOf(pkg: string): { subpath: string; types: string }[] {
+  const raw = packageManifests[`../${pkg}/package.json`];
+  if (raw === undefined) throw new Error(`no manifest for package ${pkg}`);
+  const manifest = JSON.parse(raw) as {
+    exports?: Record<string, unknown>;
+  };
+  return Object.entries(manifest.exports ?? {}).flatMap(([subpath, target]) => {
+    // A string target ships an asset (`"./styles.css"`), not types. `?.` covers
+    // the `typeof null === "object"` case without a second comparison.
+    const types =
+      typeof target === "object" ? (target as { types?: string } | null)?.types : undefined;
+    return types ? [{ subpath, types }] : [];
+  });
+}
 
 describe("the committed markdown API reference", () => {
   test("exists and is substantial", () => {
@@ -135,6 +169,41 @@ describe("the markdown config", () => {
         `${pkg} has a typedoc.json but no committed markdown under docs/api/`,
       ).toBe(true);
     }
+  });
+
+  test("documents every subpath those packages publish, or excuses it in writing", () => {
+    // The rule `docs/CLAUDE.md` states and nothing enforced until
+    // `docs-markdown.mjs` grew a check for it. This is the guard on the other
+    // side, deriving the same fact INDEPENDENTLY — the script reads the
+    // manifests and compares against the typedoc configs, so a manifest read
+    // that stopped finding `exports` would compare nothing against nothing and
+    // print its checkmark. Here the comparison is against the config TEXT.
+    //
+    // It also re-states the size of the deny-list rather than its contents: an
+    // entry is a decision with a paragraph attached, and the failure worth
+    // catching is somebody adding a fourth to make a red gate green.
+    const denied = ["./internal", "./slugify", "./workspace-files"];
+    const inspected = Object.entries(siteConfig).flatMap(([globKey, config]) => {
+      const pkg = repoPathOf(globKey).split("/")[1];
+      if (pkg === undefined) throw new Error(`unparsable glob key ${globKey}`);
+      return typedSubpathsOf(pkg).map(({ subpath, types }) => {
+        if (config.includes(`"${types.replace(/^\.\//, "")}"`)) return subpath;
+        expect(
+          denied,
+          `${pkg} publishes ${subpath} and documents it nowhere. Add the entry point, or ` +
+            "deny-list it in scripts/docs-markdown.mjs with the reason.",
+        ).toContain(subpath);
+        expect(
+          docsMarkdownScript,
+          `scripts/docs-markdown.mjs does not name ${subpath} in UNDOCUMENTED_SUBPATHS`,
+        ).toContain(`"${subpath}":`);
+        return subpath;
+      });
+    }).length;
+    // Floor, for the reason every count-only assertion here carries one: a
+    // manifest glob that stopped resolving iterates zero subpaths and passes.
+    // Measured actual: 21.
+    expect(inspected).toBeGreaterThanOrEqual(15);
   });
 });
 

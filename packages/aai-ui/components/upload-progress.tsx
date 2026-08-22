@@ -89,13 +89,7 @@ function formatBytes(bytes: number): string {
  * }
  * ```
  *
- * @param upload - What `useWorkflowSubmit` reports. `undefined` renders nothing,
- *   so a page may pass its state straight through.
- * @param onPause - The hook's `pauseUpload`. Pass it together with `onResume` to
- *   get the control; pass neither for a bar that only reports.
- * @param onResume - The hook's `resumeUpload`.
- * @param className - Replaces the default classes rather than extending them,
- *   so a custom chrome is not fighting a default it did not ask for.
+ * @param props - Progress-bar props.
  *
  * @public
  */
@@ -105,9 +99,25 @@ export function UploadProgressBar({
   onResume,
   className,
 }: {
+  /**
+   * What `useWorkflowSubmit` / `useWorkflowStream` report as `upload`.
+   * `undefined` renders nothing, so a page may pass its state straight through
+   * and never guard the element.
+   */
   upload?: UploadStatus | undefined;
+  /**
+   * The hook's `pauseUpload`. **Pass it together with `onResume`** to get the
+   * pause control; pass neither for a bar that only reports. One without the
+   * other is a one-way door drawn as a toggle, so the control is hidden unless
+   * both are present.
+   */
   onPause?: (() => void) | undefined;
+  /** The hook's `resumeUpload`. See `onPause` — the two travel together. */
   onResume?: (() => void) | undefined;
+  /**
+   * **Replaces** the default classes rather than extending them, so a custom
+   * chrome is not fighting a default it did not ask for.
+   */
   className?: string | undefined;
 }): ReactNode {
   const theme = useTheme();

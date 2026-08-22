@@ -33,11 +33,18 @@ export type ToolBearingAgent = {
 /**
  * The tool `name` is declared under, or a throw naming the ones that are.
  *
+ * A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
+ * pass it through `withDiscoveredTools` first, exactly as this example does and
+ * as every shipped template's spec does. Handing this the authored def directly
+ * is the common mistake, and it fails with "(none)".
+ *
  * @example
  * ```ts no-check
- * // `no-check`: the agent under test is in another file, which is the point.
- * import { toolOf } from "@alexkroman1/aai/testing";
- * import agentDef from "./agent.ts";
+ * // `no-check`: import.meta.glob needs your project's vite/client types.
+ * import { toolOf, withDiscoveredTools } from "@alexkroman1/aai/testing";
+ * import authored from "./agent.ts";
+ *
+ * const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
  *
  * expect(toolOf(agentDef, "add_item").description).toContain("cart");
  * ```
@@ -49,9 +56,11 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
   if (!def) {
     const declared = Object.keys(agent.tools);
     throw new Error(
-      `The agent declares no tool named ${name}. It declares: ${
-        declared.length > 0 ? declared.join(", ") : "(none)"
-      }.`,
+      declared.length > 0
+        ? `The agent declares no tool named ${name}. It declares: ${declared.join(", ")}.`
+        : `The agent declares no tool named ${name}. It declares: (none). ` +
+            "A tool is a FILE, so an agent.ts default export carries none of them — " +
+            `wrap it with withDiscoveredTools(def, import.meta.glob("./tools/*.ts", { eager: true })) first.`,
     );
   }
   return def;
@@ -65,14 +74,21 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
  * would be testing a path the tool never runs on. Pass the arguments the tool
  * body expects to receive.
  *
+ * The def to pass is the one a DEPLOYED agent runs — `agent.ts`'s default export
+ * put through `withDiscoveredTools`, since a tool is a file and the authored def
+ * carries none. See {@link toolOf}, which this is built on.
+ *
  * @example
  * ```ts no-check
- * // `no-check`: the agent under test is in another file, which is the point.
- * import { createToolContext, runTool } from "@alexkroman1/aai/testing";
- * import agentDef from "./agent.ts";
+ * // `no-check`: import.meta.glob needs your project's vite/client types.
+ * import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+ * import authored from "./agent.ts";
  *
- * const ctx = createToolContext();
- * expect(await runTool(agentDef, "add_item", { item: "apple" }, ctx)).toEqual({ added: "apple" });
+ * const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+ *
+ * expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
+ *   added: "apple",
+ * });
  * ```
  *
  * @public

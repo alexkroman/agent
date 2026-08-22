@@ -1,9 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `stt` epoch 1.
+ * Frozen authoring example: `stt` epoch 2.
  *
  * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
+ *
+ * Epoch 2 is epoch 1 minus the host-side opener contract, which moved to
+ * `@alexkroman1/aai/runtime` beside `registerSttKind`. What is left is the
+ * agent author's half: four factories, their options, and the descriptor they
+ * return.
  */
 
 import {
@@ -18,19 +23,14 @@ import {
   ELEVENLABS_API_KEY_ENV,
   ELEVENLABS_KIND,
   elevenlabs,
+  type ProviderDescriptor,
   SONIOX_API_KEY_ENV,
   SONIOX_KIND,
-  type SttError,
-  type SttEvents,
-  type SttOpenOptions,
   type SttProvider,
-  type SttSession,
-  type SttTurnMeta,
   soniox,
-  type Unsubscribe,
 } from "../../../sdk/providers/stt-barrel.ts";
 
-/** Every tuning knob the AssemblyAI descriptor accepted at epoch 1. */
+/** Every tuning knob the AssemblyAI descriptor accepted at epoch 2. */
 export const assemblyai = assemblyAIStt({
   model: "universal-3-5-pro",
   languages: ["en"],
@@ -68,9 +68,6 @@ export const keyEnvVars: string[] = [
   SONIOX_API_KEY_ENV,
 ];
 
-/** The host-side session contract a custom opener implements against. */
-export type FixtureOpener = (options: SttOpenOptions) => Promise<SttSession>;
-export type FixtureEvents = SttEvents;
-export type FixtureTurnMeta = SttTurnMeta;
-export type FixtureUnsubscribe = Unsubscribe;
-export type FixtureError = SttError;
+/** The base every stage descriptor narrows, readable on this subpath. */
+export type FixtureBase = ProviderDescriptor<string, Record<string, unknown>>;
+export const base: FixtureBase = assemblyai;

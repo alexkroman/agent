@@ -11,6 +11,7 @@ import { Context } from 'react';
 import type { CSSProperties } from 'react';
 import type { DefaultToolResult } from '@alexkroman1/aai';
 import type { FormHTMLAttributes } from 'react';
+import { FunctionComponent } from 'react';
 import { FunctionComponentElement } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { isTerminal } from '@alexkroman1/aai/workflow-api';
@@ -139,12 +140,15 @@ export type ConfigTier = BaseOptions & {
 };
 
 // @public
-export const Controls: MemoExoticComponent<(input: {
-className?: string;
-}) => JSX.Element>;
+export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>>;
 
 // @public
-export function createSessionCore(options: SessionCoreOptions): SessionCore;
+export type ControlsProps = {
+    className?: string;
+};
+
+// @public
+export function createSessionCore(options: VoiceSessionOptions): SessionCore;
 
 // @public
 export function createWorkflowApi(opts?: WorkflowApiOptions): WorkflowApi;
@@ -155,7 +159,7 @@ export const DEFAULT_PROGRESS_POLL_MS = 1000;
 // @public
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
-// @internal
+// @public
 export function fetchClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
 
 // @public
@@ -213,10 +217,13 @@ export { isTerminal }
 export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
 
 // @public
-export const Markdown: MemoExoticComponent<(input: {
-text: string;
-variant?: MarkdownVariant;
-}) => ReactNode>;
+export const Markdown: MemoExoticComponent<FunctionComponent<MarkdownProps>>;
+
+// @public
+export type MarkdownProps = {
+    text: string;
+    variant?: MarkdownVariant;
+};
 
 // @public
 export type MarkdownVariant = "default" | "compact";
@@ -225,9 +232,12 @@ export type MarkdownVariant = "default" | "compact";
 export const MAX_MISSING_READS = 3;
 
 // @public
-export const MessageList: MemoExoticComponent<(input: {
-className?: string;
-}) => JSX.Element>;
+export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps>>;
+
+// @public
+export type MessageListProps = {
+    className?: string;
+};
 
 // @public
 export function NumberField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
@@ -276,9 +286,6 @@ export type SessionCore = {
     end(): void;
     [Symbol.dispose](): void;
 };
-
-// @public
-export type SessionCoreOptions = VoiceSessionOptions;
 
 // @public
 export type SessionError = {
@@ -341,8 +348,9 @@ export function SubmitButton(input: {
     pending?: boolean;
     pendingLabel?: string;
     size?: ButtonSize | undefined;
+    variant?: ButtonVariant | undefined;
     className?: string | undefined;
-}): JSX.Element;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element;
 
 // @public
 export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
@@ -441,13 +449,13 @@ export function useTheme(): Required<ClientTheme>;
 // @public
 export function useToolCallStart(toolName: string, callback: (toolCall: ToolCallInfo) => void): void;
 
-// @public (undocumented)
+// @public
 export function useToolCallStart(callback: (toolCall: ToolCallInfo) => void): void;
 
 // @public
 export function useToolResult<R = DefaultToolResult>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
 
-// @public (undocumented)
+// @public
 export function useToolResult<R = DefaultToolResult>(callback: (name: string, result: R, toolCall: ToolCallInfo) => void): void;
 
 // @public

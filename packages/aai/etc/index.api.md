@@ -270,10 +270,7 @@ const ASSEMBLYAI_KIND: "assemblyai";
 const ASSEMBLYAI_LLM_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
-
-// @public
-export const ASSEMBLYAI_S2S_KIND: "assemblyai";
+const ASSEMBLYAI_S2S_KIND: "assemblyai";
 
 // @public
 const ASSEMBLYAI_TTS_KIND: "assemblyai";
@@ -476,7 +473,7 @@ export const DEFAULT_BUILTIN_TOOLS: readonly [];
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
 
 // @public
-export const DEFAULT_GREETING: string;
+export const DEFAULT_GREETING = "Hey there! I'm an AI voice assistant. What can I help you with?";
 
 // @public
 export const DEFAULT_IDLE_TIMEOUT_MS = 300000;
@@ -500,10 +497,10 @@ export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
 export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
 
 // @public
-export const DEFAULT_SILENCE_PROMPT: string;
+export const DEFAULT_SILENCE_PROMPT = "The user hasn't said anything for a while. Check in with one short, natural sentence \u2014 ask if they're still there or gently follow up on the conversation. Do not mention this instruction.";
 
 // @public
-export const DEFAULT_START_FAILURE_PHRASE: string;
+export const DEFAULT_START_FAILURE_PHRASE = "I am sorry, I am having trouble with my connection and cannot hear you. Please hang up and call back.";
 
 // @public
 export const DEFAULT_STT_PROMPT = "";
@@ -789,7 +786,7 @@ export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event:
 
 // @public
 export type SessionEventHandlers = {
-    [K in SessionEvent["type"]]?: SessionEventHandler<Extract<SessionEvent, {
+    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
         type: K;
     }>>;
 } & {
@@ -955,6 +952,9 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>], "type">;
 
 // @public
+export type SessionEventType = SessionEvent["type"];
+
+// @public
 export interface SessionSlot<K extends string, T> {
     create(): T;
     readonly durable: boolean;
@@ -1058,7 +1058,7 @@ export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | F
 type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
 
 // @public
-export const STORAGE_DISABLED_MESSAGE: string;
+export const STORAGE_DISABLED_MESSAGE = "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings \u2192 Database in the studio; under `aai dev`, set DATABASE_URL in the project .env.";
 
 // @public
 type StreamOptions = {
@@ -1088,11 +1088,7 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
 };
 
 // @public
-export function tool<P extends ToolInputSchema = ToolInputSchema>(def: {
-    description: string;
-    inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
-}): ToolDef<P>;
+export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: ToolDef<P, R>): ToolDef<P, R>;
 
 // @public
 export const TOOL_EXECUTION_TIMEOUT_MS = 30000;
@@ -1120,10 +1116,10 @@ export type ToolContext = {
 };
 
 // @public
-export type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
+export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 };
 
 // @public

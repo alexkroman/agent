@@ -96,8 +96,8 @@
  * returns, and an unchanged database. 1600 sits above the observed 1455 ms
  * worst case with a little margin. AssemblyAI documents exactly this
  * ("raise `min_turn_silence` when brief pauses end turns too early, for example
- * while a caller dictates a phone number"); the 1000 floor in
- * `pipeline-transport-options.test.ts` is a floor, not a target.
+ * while a caller dictates a phone number"); the 1000 ms the transport's own
+ * tests pin is a floor, not a target.
  *
  * That also rules out AssemblyAI's `mode` preset values (128 / 128 / 800): even
  * `max_accuracy` is tuned for clean dictation into a mic, not for a phone
@@ -181,6 +181,11 @@
  * reaches nothing. That cuts both ways: it is why this run is a clean A/B
  * despite three unrelated SDK commits landing inside its window, and it is why
  * a run can silently measure the PREVIOUS value.
+ *
+ * @see {@link DEFAULT_MAX_TURN_SILENCE_MS} — the ceiling this floor pairs with.
+ * @see `DEFAULT_DEEPGRAM_ENDPOINTING_MS` on `@alexkroman1/aai/stt` — Deepgram
+ * endpoints in its own recognizer rather than through these two, so a pipeline
+ * fronted by Deepgram is tuned there instead.
  */
 export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
 
@@ -241,6 +246,10 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * it buys so little. The measured tail is content-driven and long (p90 endpoint
  * latency ~4.0-4.6s at every setting swept), so the ceiling is not what makes a
  * slow turn slow.
+ *
+ * @see {@link DEFAULT_MIN_TURN_SILENCE_MS} — the floor this ceiling pairs with.
+ * @see `DEFAULT_DEEPGRAM_ENDPOINTING_MS` on `@alexkroman1/aai/stt` — Deepgram has
+ * no counterpart to this ceiling; it endpoints on a single silence threshold.
  */
 export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
 

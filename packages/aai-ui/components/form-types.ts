@@ -68,5 +68,11 @@ export type FieldShell = {
   label?: string | undefined;
   /** One line of guidance under the control. */
   hint?: string | undefined;
+  /**
+   * Additional CSS class names for the field's WRAPPER (label + control +
+   * hint), appended to its own layout classes. The control itself takes the
+   * shared field styling; pass `style` or a `data-` hook through the native
+   * attributes to reach it.
+   */
   className?: string | undefined;
 };

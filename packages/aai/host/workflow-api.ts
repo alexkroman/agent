@@ -138,6 +138,7 @@ export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
 // is typed with it), and it is declared beside the handlers that consume it.
 export type { RouteContext, WorkflowApiEngine } from "./workflow-api-runs.ts";
 
+/** The SERVER's options, not aai-ui's same-named client ones. @internal */
 export type WorkflowApiOptions = {
   /**
    * Resolve the client, or undefined — in which case every route answers 404

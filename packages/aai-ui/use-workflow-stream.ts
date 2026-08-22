@@ -117,7 +117,16 @@ export type UseWorkflowStreamOptions = {
   parallel?: UploadParallel;
 };
 
-/** What {@link useWorkflowStream} returns. */
+/**
+ * What {@link useWorkflowStream} returns.
+ *
+ * @see {@link WorkflowSubmission} — the same eight fields, returned by
+ * `useWorkflowSubmit`, of which this is a drop-in sibling (same `<Form>`, same
+ * `<UploadProgressBar>`, same `<WorkflowProgress>`). Exactly two differ, and
+ * both follow from WHEN the run is created: there the run is started after the
+ * whole file is stored, so `submit()` resolves once the run is accepted and
+ * `run` appears with it.
+ */
 export type WorkflowStreamSubmission<R = unknown> = {
   /**
    * Start a run and stream this input's file into it.

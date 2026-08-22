@@ -145,7 +145,7 @@
     },
     {
       "name": "llm-providers",
-      "description": "Every LLM provider module exports the same four-symbol shape. assemblyai.ts is excluded: it is the one vendor with a module per kind, so its symbols carry a kind infix (ASSEMBLYAI_LLM_KIND) the shared template cannot express.",
+      "description": "Every LLM provider module exports the same four-symbol shape. assemblyai.ts is excluded from all four provider conventions: it is the one vendor with a module per stage, so its symbols carry a stage marker the shared {providerId} template cannot express \u2014 and the marking is not uniform. The three later stages infix it (ASSEMBLYAI_TTS_KIND, AssemblyAILlmOptions, AssemblyAIS2sProvider); STT, which came first, kept the bare names (ASSEMBLYAI_KIND, ASSEMBLYAI_API_KEY_ENV, AssemblyAIOptions, AssemblyAIProvider) and marks the stage on the factory alone (assemblyAIStt). Do not read the exclusion as an infix RULE \u2014 nothing checks these files, and stt/assemblyai.ts does not follow one.",
       "paths": [
         "packages/aai/sdk/providers/llm/{providerId}.ts",
         "!packages/aai/sdk/providers/llm/assemblyai.ts",
@@ -171,7 +171,7 @@
     },
     {
       "name": "stt-providers",
-      "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults.",
+      "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults. assemblyai.ts is excluded from all four provider conventions: it is the one vendor with a module per stage, so its symbols carry a stage marker the shared {providerId} template cannot express \u2014 and the marking is not uniform. The three later stages infix it (ASSEMBLYAI_TTS_KIND, AssemblyAILlmOptions, AssemblyAIS2sProvider); STT, which came first, kept the bare names (ASSEMBLYAI_KIND, ASSEMBLYAI_API_KEY_ENV, AssemblyAIOptions, AssemblyAIProvider) and marks the stage on the factory alone (assemblyAIStt). Do not read the exclusion as an infix RULE \u2014 nothing checks these files, and stt/assemblyai.ts does not follow one.",
       "paths": [
         "packages/aai/sdk/providers/stt/{providerId}.ts",
         "!packages/aai/sdk/providers/stt/assemblyai.ts",
@@ -197,7 +197,7 @@
     },
     {
       "name": "tts-providers",
-      "description": "Every TTS provider module exports the STT shape plus a default voice \u2014 the one setting a TTS provider cannot infer.",
+      "description": "Every TTS provider module exports the STT shape plus a default voice \u2014 the one setting a TTS provider cannot infer. assemblyai.ts is excluded from all four provider conventions: it is the one vendor with a module per stage, so its symbols carry a stage marker the shared {providerId} template cannot express \u2014 and the marking is not uniform. The three later stages infix it (ASSEMBLYAI_TTS_KIND, AssemblyAILlmOptions, AssemblyAIS2sProvider); STT, which came first, kept the bare names (ASSEMBLYAI_KIND, ASSEMBLYAI_API_KEY_ENV, AssemblyAIOptions, AssemblyAIProvider) and marks the stage on the factory alone (assemblyAIStt). Do not read the exclusion as an infix RULE \u2014 nothing checks these files, and stt/assemblyai.ts does not follow one.",
       "paths": [
         "packages/aai/sdk/providers/tts/{providerId}.ts",
         "!packages/aai/sdk/providers/tts/assemblyai.ts",
@@ -224,7 +224,7 @@
     },
     {
       "name": "s2s-providers",
-      "description": "S2S providers take the same kind/env-var pair as the pipeline providers. Options is a type rather than an interface here, because an S2S provider's options mirror the vendor's own session shape.",
+      "description": "S2S providers take the same kind/env-var pair as the pipeline providers. Options is a type rather than an interface here, because an S2S provider's options mirror the vendor's own session shape. assemblyai.ts is excluded from all four provider conventions: it is the one vendor with a module per stage, so its symbols carry a stage marker the shared {providerId} template cannot express \u2014 and the marking is not uniform. The three later stages infix it (ASSEMBLYAI_TTS_KIND, AssemblyAILlmOptions, AssemblyAIS2sProvider); STT, which came first, kept the bare names (ASSEMBLYAI_KIND, ASSEMBLYAI_API_KEY_ENV, AssemblyAIOptions, AssemblyAIProvider) and marks the stage on the factory alone (assemblyAIStt). Do not read the exclusion as an infix RULE \u2014 nothing checks these files, and stt/assemblyai.ts does not follow one.",
       "paths": [
         "packages/aai/sdk/providers/s2s/{providerId}.ts",
         "!packages/aai/sdk/providers/s2s/assemblyai.ts",

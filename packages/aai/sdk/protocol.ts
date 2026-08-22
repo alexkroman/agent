@@ -12,8 +12,7 @@
 import { z } from "zod";
 
 import { ToolSchemaSchema } from "./_internal-types.ts";
-import { type SessionCommand, SessionCommandSchema } from "./protocol-commands.ts";
-import { type SessionEvent, SessionEventSchema } from "./protocol-events.ts";
+import type { SessionEvent } from "./protocol-events.ts";
 
 // The pre-connection client-config endpoint's wire format is part of the
 // same protocol surface — re-exported so clients import one subpath.
@@ -36,7 +35,18 @@ export {
   // The name every `lenientParse` call site already spells for the same set.
   SESSION_COMMAND_TYPES as CLIENT_MESSAGE_TYPES,
   type SessionCommand,
+  // `ClientMessage`/`ClientMessageSchema` are the DIRECTION-named spelling of
+  // the same two things, kept because a third-party client author searches for
+  // those names first. They are re-export aliases rather than the
+  // `export const ClientMessageSchema = SessionCommandSchema` they used to be:
+  // a plain assignment is an independent declaration to API Extractor and
+  // TypeDoc, so each one re-expanded the whole union under a second name and
+  // `/protocol` documented two things four times. In this form the renderer
+  // collapses them to a "Renames and re-exports" line, exactly as it already
+  // does for `CLIENT_MESSAGE_TYPES` above.
+  type SessionCommand as ClientMessage,
   SessionCommandSchema,
+  SessionCommandSchema as ClientMessageSchema,
 } from "./protocol-commands.ts";
 export {
   EVENT_ID_PREFIX,
@@ -46,10 +56,19 @@ export {
   type SessionErrorCode,
   SessionErrorCodeSchema,
   type SessionEvent,
+  // Same story as `ClientMessage*` above, and the same remedy. `ServerMessage`
+  // is every `SessionEvent` and nothing else: `config` and `audio_done` used to
+  // be declared here, outside the event vocabulary, which is what let the
+  // handshake and a turn boundary be the two frames no event stream could
+  // contain — they are `session.configured` and `audio.completed` in
+  // `protocol-events.ts` now, and the retained stream carries them like
+  // anything else.
+  type SessionEvent as ServerMessage,
   type SessionEventBody,
   type SessionEventMeta,
   SessionEventMetaSchema,
   SessionEventSchema,
+  SessionEventSchema as ServerMessageSchema,
 } from "./protocol-events.ts";
 
 /**
@@ -144,33 +163,9 @@ export const ReadyConfigSchema = z.object({
 /** Protocol-level session config returned to the client on connect. */
 export type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
 
-/**
- * Server→client text messages: every {@link SessionEvent}, and nothing else.
- *
- * It is an ALIAS rather than a second union now. `config` and `audio_done` used
- * to be declared here, outside the event vocabulary, which is what let the
- * handshake and a turn boundary be the two frames no event stream could contain
- * — they are `session.configured` and `audio.completed` in
- * `protocol-events.ts`, and the retained stream carries them like anything else.
- */
-export const ServerMessageSchema = SessionEventSchema;
-
-/** Server→client text messages (binary frames carry raw PCM16 audio). */
-export type ServerMessage = SessionEvent;
-
-/**
- * Client→server text messages.
- *
- * An alias of {@link SessionCommandSchema}; the name is kept because it is what
- * every `lenientParse` call site already spells, and the direction now lives in
- * the type it resolves to.
- */
-export const ClientMessageSchema = SessionCommandSchema;
-
-/**
- * **Client→server** text messages (binary frames carry raw PCM16 audio).
- */
-export type ClientMessage = SessionCommand;
+// The direction-named aliases — `ServerMessage`/`ServerMessageSchema` and
+// `ClientMessage`/`ClientMessageSchema` — are re-exported at the top of this
+// file rather than declared here. See the comments on those clauses.
 
 // ─── Host mode ───────────────────────────────────────────────────────────────
 

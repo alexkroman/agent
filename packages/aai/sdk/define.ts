@@ -5,7 +5,7 @@ import type { AgentParams, DefaultedAgentField, StaticAgentParams } from "./agen
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { ToolInputSchema } from "./schema.ts";
 import {
   type AgentDef,
   DEFAULT_GREETING,
@@ -60,11 +60,9 @@ import {
  *
  * @public
  */
-export function tool<P extends ToolInputSchema = ToolInputSchema>(def: {
-  description: string;
-  inputSchema?: P;
-  execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
-}): ToolDef<P> {
+export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
+  def: ToolDef<P, R>,
+): ToolDef<P, R> {
   return def;
 }
 

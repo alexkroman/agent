@@ -120,12 +120,6 @@ type AnyWorkflowDef<R = unknown> = {
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void;
 
 // @internal
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: undefined): Exclude<SessionMode, "text">;
-
-// @public (undocumented)
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown, text?: unknown): SessionMode;
-
-// @internal
 export function assertSilencePolicy(mode: SessionMode, silenceTimeoutMs: number | undefined, silencePrompt: string | undefined): void;
 
 // @public
@@ -255,7 +249,7 @@ type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx
 
 // @public
 type SessionEventHandlers = {
-    [K in SessionEvent["type"]]?: SessionEventHandler<Extract<SessionEvent, {
+    [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, {
         type: K;
     }>>;
 } & {
@@ -421,6 +415,9 @@ const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>], "type">;
 
 // @public
+type SessionEventType = SessionEvent["type"];
+
+// @public
 export type SessionMode = "s2s" | "pipeline" | "text";
 
 // @public
@@ -507,10 +504,10 @@ type ToolContext = {
 };
 
 // @public
-type ToolDef<P extends ToolInputSchema = ToolInputSchema> = {
+type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
-    execute(args: InferSchemaOutput<P>, ctx: ToolContext): Promise<unknown> | unknown;
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 };
 
 // @public
