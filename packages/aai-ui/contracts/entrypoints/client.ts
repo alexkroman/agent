@@ -2,8 +2,8 @@
 /**
  * Capability contract: `client`.
  *
- * The voice mount: `client()`, the two tiers of config it accepts, and the
- * handle it hands back. This is the first line of every `client.tsx`.
+ * The voice mount: `client()`, the config it accepts, and the handle it hands
+ * back. This is the first line of every `client.tsx`.
  *
  * Re-exported from `@alexkroman1/aai-ui`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -12,12 +12,9 @@
  */
 
 export {
-  type BaseOptions,
   type ClientConfig,
   type ClientConfigResponse,
   type ClientHandle,
-  type ComponentTier,
-  type ConfigTier,
   client,
   type ToolDisplayConfig,
 } from "../../index.ts";

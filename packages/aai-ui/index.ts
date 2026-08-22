@@ -59,13 +59,7 @@ export type { Session } from "./context.ts";
 // Context & hooks. The two PROVIDERS `client()` mounts around the tree
 // (`SessionProvider`, `ThemeProvider`) are on `@alexkroman1/aai-ui/internal`.
 export { useSession, useSessionSelector, useTheme } from "./context.ts";
-export type {
-  BaseOptions,
-  ClientConfig,
-  ClientHandle,
-  ComponentTier,
-  ConfigTier,
-} from "./define-client.tsx";
+export type { ClientConfig, ClientHandle } from "./define-client.tsx";
 // Entry
 export { client } from "./define-client.tsx";
 export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
@@ -91,9 +85,6 @@ export type {
   VoiceSessionOptions,
   WebSocketConstructor,
 } from "./types.ts";
-// Capture constraints, exported so a custom client that opens its own
-// microphone gets the same signal the built-in paths do.
-export { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
 // The caller's in-progress turn, with `null` (silent) and `""` (speech
 // detected, no words yet) kept apart — see the module doc.
 export {

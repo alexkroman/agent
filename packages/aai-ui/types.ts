@@ -46,10 +46,11 @@ export {
  *
  * Cast because `voiceIsolation` is newer than TypeScript's DOM lib.
  *
- * Public so a custom client that opens its own microphone gets the same
- * signal the built-in capture paths do.
- *
- * @public
+ * On `@alexkroman1/aai-ui/internal` rather than the root barrel, for the same
+ * reason as the audio budgets above: it is a framework decision with no
+ * `client()` field to set, and the root is the authoring surface. A custom
+ * chrome that bypasses `client()` and opens its own microphone reaches it there
+ * alongside the providers it also needs.
  */
 export const VOICE_CAPTURE_CONSTRAINTS = {
   echoCancellation: true,

@@ -106,7 +106,7 @@ pnpm dev:aai-server      # Start aai-server in dev mode
 
 ```sh
 pnpm vitest run --project aai                   # Single package via --project
-pnpm vitest run packages/aai/types.test.ts      # Single file
+pnpm vitest run packages/aai/sdk/types.test.ts  # Single file
 pnpm vitest run session                         # All files matching "session"
 pnpm --filter @alexkroman1/aai test             # Single package via pnpm filter
 ```
@@ -253,9 +253,9 @@ below: the floors are what CI's test matrix gates on, so running plain `test`
 locally made a floor failure invisible until CI. It costs almost nothing
 (measured on aai-ui: 17.0s → 17.9s).
 
-`pnpm check:affected` uses turbo's `--affected` flag to only run tasks
-for packages changed since the default branch (also `test:coverage`, same
-reason); `pnpm test:coverage:affected` is the coverage half on its own.
+`pnpm check:affected` uses turbo's `--affected` to run tasks only for packages
+changed since the default branch (also `test:coverage`, same reason);
+`pnpm test:coverage:affected` is the coverage half on its own.
 
 ### Quality ratchets
 
@@ -291,9 +291,9 @@ one commit of history. A file in the tree has no merge base and no such modes.
   file over budget.
 
   **Per-file, not a grand total**, which is what makes the ratchet actually
-  ratchet: the old total-based version passed a branch that removed one hatch
-  and added another somewhere else — verified by A/B, the total stayed at 122
-  and the per-file gate caught it.
+  ratchet: the old total-based version passed a branch that traded one hatch for
+  another elsewhere — verified by A/B, the total stayed at 122 and only the
+  per-file gate caught it.
   **The engine counts OCCURRENCES, not matching lines** — `git grep -o`. Both
   baselines describe themselves as recording occurrences and for a long time
   recorded lines: three casts on one line reported `found 1`, the same three on
@@ -304,17 +304,17 @@ one commit of history. A file in the tree has no merge base and no such modes.
   decides on, `-o` for the count.
 
   **And `assertScanCorpus` diffs `git ls-files` against `git grep -lI`, because
-  ONE control character makes a whole file invisible.** A single raw NUL makes
-  a file BINARY to `git grep`, which silently exempts it from every line rule
-  and every hatch pattern — and the corpus floor cannot catch it BY DESIGN,
-  since the file is still in `git ls-files`. It has cost this repo three times
-  now (`host/workflow-notify.ts`, `host/workflow-keys.ts`, and
-  `konsistent-config.test.ts`, which used raw NULs as regex placeholder
-  sentinels); the first two were fixed one byte at a time with no detector
-  added, which is the argument for the detector. Spell the character as an
-  escape — byte-identical behaviour, and the file is text again. A genuinely
-  binary extension goes in `KNOWN_BINARY` in `scripts/_ratchet.mjs`, which is a
-  DENY-list so a new source extension defaults into being checked.
+  ONE control character makes a whole file invisible.** A single raw NUL makes a
+  file BINARY to `git grep`, silently exempting it from every line rule and
+  every hatch pattern — and the corpus floor cannot catch it BY DESIGN, the file
+  still being in `git ls-files`. It has cost this repo three times
+  (`host/workflow-notify.ts`, `host/workflow-keys.ts`, `konsistent-config.test.ts`,
+  which used raw NULs as regex placeholder sentinels), the first two fixed one
+  byte at a time with no detector added — which is the argument for the
+  detector. Spell the character as an escape: byte-identical, and the file is
+  text again. A genuinely binary extension goes in `KNOWN_BINARY`
+  (`scripts/_ratchet.mjs`), a DENY-list so a new source extension defaults into
+  being checked.
 
   **The three CAST patterns skip COMMENT-ONLY lines; the five suppression
   patterns do not.** A `biome-ignore` genuinely is a comment, and suppressing
@@ -336,11 +336,11 @@ one commit of history. A file in the tree has no merge base and no such modes.
   remove them is the one that halved `as unknown as`: a TYPED SEAM per
   concentration, never a cast per assertion.
 
-  `node scripts/check-escape-hatches.mjs --update` lowers the baseline to match
-  the tree and **refuses to raise anything**, so recording a removal is one
-  command and blessing an addition needs a hand edit that lands in a reviewable
-  diff. A run that is under budget WARNS, naming the entries to give back —
-  unclaimed headroom is a hatch the next branch gets for free.
+  `node scripts/check-escape-hatches.mjs --update` lowers the baseline to the
+  tree and **refuses to raise anything**, so recording a removal is one command
+  and blessing an addition needs a hand edit in a reviewable diff. A run under
+  budget WARNS, naming the entries to give back — unclaimed headroom is a hatch
+  the next branch gets for free.
 
   **Both baseline ratchets now share one engine (`scripts/_ratchet.mjs`), and
   both take a CORPUS FLOOR: the pathspecs must resolve to at least 800 files or
@@ -355,22 +355,22 @@ one commit of history. A file in the tree has no merge base and no such modes.
   **Markdown is not scanned**: the patterns are plain substrings with no notion
   of code versus prose, so any doc that *discusses* a hatch scores as one — and
   `CHANGELOG.md` is generated from changeset summaries, so one naming a pattern
-  once failed the Version Packages PR on a file no human wrote. A changeset
-  summary may name a pattern freely. `escape-hatch-scope.test.ts` guards the
+  failed the Version Packages PR on a file no human wrote. A changeset summary
+  may name a pattern freely. `escape-hatch-scope.test.ts` guards the
   exclusion, and asserts the patterns really do match prose so it cannot pass by
   them quietly becoming narrower.
 
   **`as unknown as` is the one to watch**: it launders a value past the checker
-  without tripping `as any`, and went 210 → 105 once counted. The removals are
-  the pattern to copy — a concentration of identical casts is a missing **typed
-  seam**, one narrowing in one helper every call site goes through
-  (`fakeOf(session)`, `asSessionWs(ws)`), not a cast per assertion. Some need no
-  cast once the tool's own affordance is used: `vi.mocked(fn)`, or typing a
-  recorder with `Parameters<T>` instead of widening and re-narrowing.
+  without tripping `as any`, and went 210 → 105 once counted. Copy the removals
+  — a concentration of identical casts is a missing **typed seam**, one
+  narrowing in one helper every call site goes through (`fakeOf(session)`,
+  `asSessionWs(ws)`), not a cast per assertion. Some need no cast once the
+  tool's own affordance is used: `vi.mocked(fn)`, or typing a recorder with
+  `Parameters<T>` instead of widening and re-narrowing.
 
   The baseline is itself a list of the pattern names, so it needs the same
-  pathspec exclusion the script does — its first per-file run scored its own keys
-  as four fresh hatches. Same trap as markdown, by a new route.
+  pathspec exclusion the script does — its first per-file run scored its own
+  keys as four fresh hatches. Same trap as markdown, by a new route.
 - **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
   source files at 500 lines and test files at 700. Files that already
   exceed the cap are grandfathered in `scripts/file-length-allowlist.json`,
@@ -380,21 +380,18 @@ one commit of history. A file in the tree has no merge base and no such modes.
   `packages/aai-templates/templates/` are exempt.
 
   **Its `scripts/` pathspec measured nothing at the top level for as long as it
-  existed**, which is worth keeping because the trap generalizes to every git
-  pathspec in the repo. A pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so `*`
-  already crosses `/` and `scripts/**/*.mjs` parses as "scripts/" + anything +
-  "/" + anything + ".mjs" — the literal slash makes a subdirectory MANDATORY. It
-  therefore matched the files under `scripts/starter-eval/` and not one of
-  the ~29 at the top level — exactly where an unreviewed harness hides — while
-  printing "all files within caps ✓".
-  Adding `scripts/*.mjs`/`scripts/*.ts` took the measured set from 6 files to 35.
-  **The same trap was live in both ratchets' `:!scripts/**/*.md` exclusions**,
-  which excluded nothing at the `scripts/` top level for the identical reason;
-  `:!scripts/*.md` now sits beside each of them.
-  `packages/**/*.ts` is unaffected and not by luck — every source file there is
-  at least one directory deep — which is why the miss survived review. Verify any
-  pathspec with `git ls-files "<glob>"` rather than reading it;
-  `file-length-gate.test.ts` now pins both shapes.
+  existed**, and the trap generalizes to every git pathspec in the repo. A
+  pathspec is fnmatch WITHOUT `FNM_PATHNAME`, so `*` already crosses `/` and
+  `scripts/**/*.mjs` parses as "scripts/" + anything + "/" + anything + ".mjs" —
+  the literal slash makes a subdirectory MANDATORY. It therefore matched
+  `scripts/starter-eval/` and not one of the ~29 files at the top level —
+  exactly where an unreviewed harness hides — while printing "all files within
+  caps ✓"; adding `scripts/*.mjs`/`scripts/*.ts` took the measured set from 6
+  files to 35. **Both ratchets' `:!scripts/**/*.md` exclusions had it too**, and
+  `:!scripts/*.md` now sits beside each. `packages/**/*.ts` is unaffected only
+  because every source file there is at least one directory deep, which is why
+  the miss survived review. Verify any pathspec with `git ls-files "<glob>"`
+  rather than reading it; `file-length-gate.test.ts` pins both shapes.
 - **`pnpm check:test-assertions`** (`scripts/check-test-assertions.mjs`) —
   fails on any `test()`/`it()` body containing no `expect` / `expectTypeOf` /
   `assert`. A test with no assertion still runs the code, still counts in the
@@ -411,19 +408,17 @@ one commit of history. A file in the tree has no merge base and no such modes.
   bare `throw`.
 
   There is deliberately **no allowlist**: an entry would assert that some test
-  rightly checks nothing, which is never true. It does carry FLOORS (200 files,
-  2,000 tests), for the reason the corpus floor above exists: its whole success
-  output is a count, so a glob or a parser that stopped matching would print
-  "all 0 test(s) assert something ✓" and pass. Two things the gate needs to
-  stay trustworthy, both learned by getting them wrong: it masks comments and
-  string literals before scanning (a JSDoc paragraph *about* `test()` is not a
-  test, and three files here have one), and it excludes
-  `RegExp.prototype.test` via a lookbehind — `/re/.test(x)` produced five of
-  the first run's eight reported offenders. Its own parser is specced in
-  `packages/aai-templates/test-assertion-gate.test.ts`, because a gate whose
-  entire success output is a count fails SILENTLY: a parser that stopped
-  recognising `test(` would print "all 0 test(s) assert something ✓", which is
-  the same shape as the bug it exists to catch.
+  rightly checks nothing, which is never true. It carries FLOORS (200 files,
+  2,000 tests), and its parser is specced in
+  `packages/aai-templates/test-assertion-gate.test.ts` — both for the same
+  reason the corpus floor above exists: its whole success output is a count, so
+  a glob or a parser that stopped recognising `test(` would print "all 0 test(s)
+  assert something ✓" and pass, the same shape as the bug it exists to catch.
+  Two things it needs to stay trustworthy, both learned by getting them wrong:
+  it masks comments and string literals before scanning (a JSDoc paragraph
+  *about* `test()` is not a test, and three files here have one), and it
+  excludes `RegExp.prototype.test` via a lookbehind — `/re/.test(x)` produced
+  five of the first run's eight reported offenders.
 - **`pnpm check:claude-md`** (`scripts/check-claude-md.mjs`) — caps every guide
   (this file, each package's `CLAUDE.md`, the scaffold's included) at
   **120,000 characters**, 20% under
@@ -434,11 +429,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
   owning package's guide and leave a pointer (see "Package guides" and
   "Updating AGENTS.md"), not to delete rationale — except in the scaffold
   guide, which ships to users and has no packages to push sections into.
-  It also PINS the root `CLAUDE.md` to the single line `@AGENTS.md`: an
-  11-character file passing a 120k cap proves nothing, and a shim that grew
-  back into a second copy of the guide is the failure this two-name pattern
-  invites — Claude Code would read it and every other agent tool would read
-  `AGENTS.md`, with no symptom until the two halves disagreed.
+  It also PINS the root `CLAUDE.md` to the single line `@AGENTS.md`: a shim
+  that grew back into a second copy of the guide is the failure this two-name
+  pattern invites — Claude Code would read it and every other agent tool would
+  read `AGENTS.md`, with no symptom until the two halves disagreed.
   **The same cap is also a TEST**
   (`packages/aai-templates/claude-md-limit.test.ts`), so it fails in the
   ordinary test run and not only in `pnpm check` — an agent editing a guide
@@ -492,11 +486,11 @@ one commit of history. A file in the tree has no merge base and no such modes.
   keep `openai()` right.
 
   The version is pinned **exactly** (`1.0.0-beta.4`, the registry's `latest`)
-  rather than caret-ranged, because a `^` range over a prerelease drifts onto
-  `1.0.0-beta.6` — which renames the predicates (`export` → `exportValues`,
+  rather than caret-ranged: a `^` range over a prerelease drifts onto
+  `1.0.0-beta.6`, which renames the predicates (`export` → `exportValues`,
   `import` → `importValues`, `importFrom` → `importValuesFrom`). Read the
-  predicate catalog from `node_modules/konsistent/docs/`, not the GitHub
-  README, until that pin moves; the two disagree.
+  predicate catalog from `node_modules/konsistent/docs/`, not the GitHub README,
+  until that pin moves; the two disagree.
 
   [konsistent]: https://github.com/vercel-labs/konsistent
 
@@ -532,11 +526,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
   | 22 | no truthiness-guarded conditional spread — `...(x && { x })` | a judgement: see the rule's remedy |
   | 23 | no `async` function handed straight to `.on`/`addEventListener` | a sync listener + `void p.catch(report)` |
 
-  Rule IDs are **stable** — the numbers appear in commit messages and in the
-  baseline, so a deleted rule leaves its number retired rather than letting a
-  later rule inherit it (rule 6, retired when `ctx.state` stopped existing;
-  rule 10, retired with the `research/` directory it checked; and 15,
-  reserved). Rules 1, 7, 9, 12, 13, 14, 20 and 21 are at zero and enforced
+  Rule IDs are **stable** — they appear in commit messages and in the baseline,
+  so a deleted rule leaves its number retired rather than letting a later rule
+  inherit it (6, retired with `ctx.state`; 10, with the `research/` directory it
+  checked; 15, reserved). Rules 1, 7, 9, 12, 13, 14, 20 and 21 are at zero and enforced
   absolutely; the rest carry per-file baselines. **Rule 3 left that list when it
   was widened** — a wrapped `Promise.race([` can only be matched by reporting the
   opening line, which cannot see whether a timer is among the elements, so a
@@ -562,20 +555,19 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
   **The rule definitions are five modules behind one barrel.**
   `guard-invariants-rules.mjs` re-exports `LINE_RULES` (sorted by id) and the
-  five scope constants, so nothing downstream changed; under it sit
-  `-ere.mjs` (the regex vocabulary), `-scopes.mjs` (the five corpora), and
-  `-rules-timing.mjs` / `-rules-shape.mjs` / `-rules-state.mjs`. **Every one of
-  them is in the gate's `SELF_REFERENTIAL` set**, because each `label` and `re`
-  is a description of the thing it bans — a split that forgot one file would be
-  the fifth time this repo pays for that trap. A rule may also carry its own
-  `samples: { matches, ignores }`, which is where a widened pattern's proof
-  belongs: rule 3 shipped for months with a single-line positive sample in
-  another package while the rule was blind to the multi-line form.
-  `node scripts/guard-invariants.mjs --rules` prints the whole catalogue,
-  DERIVED from the rule definitions — the prose copy that used to live in the
-  script's header went three rules stale (17, 18 and 19 were absent) while the
-  one computed line, the printed count, stayed right. The per-file baselines
-  carry the same `--update`-only-lowers contract as `check:hatches`.
+  five scope constants; under it sit `-ere.mjs` (the regex vocabulary),
+  `-scopes.mjs` (the five corpora), and `-rules-timing.mjs` / `-rules-shape.mjs`
+  / `-rules-state.mjs`. **Every one is in the gate's `SELF_REFERENTIAL` set**,
+  because each `label` and `re` describes the thing it bans — a split that
+  forgot one file would be the fifth time this repo pays for that trap. A rule
+  may also carry `samples: { matches, ignores }`, where a widened pattern's
+  proof belongs: rule 3 shipped for months with a single-line positive sample
+  while the rule was blind to the multi-line form.
+  `node scripts/guard-invariants.mjs --rules` prints the catalogue DERIVED from
+  the definitions — the prose copy that used to live in the script's header went
+  three rules stale (17, 18, 19) while the one computed line, the printed count,
+  stayed right. The per-file baselines carry the same `--update`-only-lowers
+  contract as `check:hatches`.
 
   **A baselined occurrence needs a reason, and the JSON is NOT where it goes** —
   that file is a bare `{path: count}` map written by `--update`, with
@@ -623,10 +615,10 @@ one commit of history. A file in the tree has no merge base and no such modes.
   the argument, including why it is its own module, is in
   `scripts/guard-invariants-changesets.mjs`.
 
-  Rule 19 found a **sixth** hand-rolled `sleep` that no gate here could see:
-  `host/workflow-notify.ts` held a raw NUL byte, which makes a file BINARY to
-  `git grep` — so it was silently exempt from all nineteen rules and from
-  `check:hatches`. Fixing the byte is what made the rule find the copy.
+  Rule 19 found a **sixth** hand-rolled `sleep` no gate here could see:
+  `host/workflow-notify.ts` held a raw NUL byte, making the file BINARY to
+  `git grep` — silently exempt from all nineteen rules and from
+  `check:hatches`. Fixing the byte is what let the rule find the copy.
 
   **Rule 16 is scoped to an explicit FILE LIST** (role is not derivable from a
   path), so its gate spec asserts every path exists; it also found
@@ -638,17 +630,15 @@ one commit of history. A file in the tree has no merge base and no such modes.
 
 - **`pnpm check:agent-guide`** (`scripts/sync-agent-guide.mjs`) — asserts
   `packages/aai/AGENT_GUIDE.md` is the current copy of
-  `packages/aai-templates/scaffold/CLAUDE.md`. See "The authoring guide ships
-  inside the SDK" below for why the copy exists. Same silent-staleness shape as
-  `check:guest-toolchain`, hence the same treatment.
+  `packages/aai-templates/scaffold/CLAUDE.md`; see "The authoring guide ships
+  inside the SDK" below. Same silent-staleness shape as `check:guest-toolchain`.
 - **`pnpm check:scaffold`** (`scripts/sync-scaffold-versions.mjs --check`) —
   asserts `packages/aai-templates/scaffold/package.json` still matches the
   workspace. Third file in this committed-copy shape and the only one that
-  SHIPS, so it is where a catalogued bump is applied twice.
-
-  It was enforced by nothing until it broke, and `check:publish-protocols`
-  structurally cannot cover it — see "`check:scaffold` exists because the sync
-  ran only during a release" in `packages/aai-templates/CLAUDE.md`.
+  SHIPS, so it is where a catalogued bump is applied twice. It was enforced by
+  nothing until it broke, and `check:publish-protocols` structurally cannot
+  cover it — see "`check:scaffold` exists because the sync ran only during a
+  release" in `packages/aai-templates/CLAUDE.md`.
 
 **Every gate whose success output is a COUNT now carries a floor**, set from
 the measured actual and recorded beside it, because a scan that stops matching
@@ -663,12 +653,11 @@ than half the corpus could vanish silently (its `extractFences` also dropped
 every block after an unclosed fence, which now throws); and `guard-invariants`
 rules 11, 12 and 13 had no corpus floor.
 
-These are pure fs checks (no build needed), so they run up front and
-fail fast. To tighten quality over time, lower the entries in the
-file-length allowlist and in the two per-file baselines
-(`escape-hatch-baseline.json`, `guard-invariants-baseline.json`) — all three
-are designed to only move one direction, and `--update` on the latter two
-enforces that rather than trusting it.
+These are pure fs checks (no build needed), so they run up front and fail fast.
+To tighten quality over time, lower the entries in the file-length allowlist and
+in the two per-file baselines (`escape-hatch-baseline.json`,
+`guard-invariants-baseline.json`) — all three only move one direction, and
+`--update` on the latter two enforces that rather than trusting it.
 
 A sixth ratchet lives in the vitest configs: **coverage thresholds**.
 Every package has floors — `aai-templates` was for a while the one that did
@@ -892,29 +881,45 @@ resolve directly to `.ts` source — no build step needed.
 
 ### Disambiguating cross-package names
 
-**Ten names are published by two packages at once, and they are two different
-things.** Narrow by package first. Six are on `aai` and `aai-ui`, and every one
-is a re-export of the single `aai` declaration — one concept with two reference
-pages, not a collision: `ClientConfigResponse` and `SessionErrorCode`
-(`sdk/client-config.ts` / `sdk/protocol-events.ts`, `/protocol`; the latter's
-union is eight wire codes), plus `WorkflowApi`, `WorkflowSummary`,
+**Seven names are published by two packages at once.** Settle any claim here
+against `API-EXPORTS.json` — it records the SUBPATH each name comes from, which
+is the whole question. Six are on `aai` and `aai-ui`, each a re-export of the
+single `aai` declaration — one concept with two reference pages, not a
+collision: `ClientConfigResponse` and `SessionErrorCode` (`/protocol`; the
+latter's union is eight wire codes), plus `WorkflowApi`, `WorkflowSummary`,
 `WorkflowOutputOf` and `isTerminal` (`/workflow-api`).
 
-The other four are real COLLISIONS — one word for the two sides of one wire,
-neither reference page naming the other — and since the runtime split they no
-longer involve `aai` at all:
+**Exactly one real COLLISION is left** — one word for the two sides of one
+wire, neither reference page naming the other:
 
-| Name | `aai-runtime` | `aai-ui` |
+| Name | `aai-runtime` (root) | `aai-ui` (root) |
 | --- | --- | --- |
 | `SessionCore` | `session-core-types.ts` — the SERVER session, bridging a `Transport` to the client protocol | `session-core-types.ts` — the BROWSER session (socket + audio + state) |
-| `createSessionCore` | `session-core.ts` — builds the server one | `session-core.ts` — builds the browser one |
-| `WorkflowApiOptions` | `workflow-api.ts` — the SERVER handler's (`engine`, `token`); `@internal` | `workflow-client.ts` — the client's (`baseUrl`, `token`) |
-| `createWorkflowApi` | `workflow-api.ts` — the Node route handler; `@internal` | `workflow-client.ts` — the client |
 
-Do NOT rename either half: both are contracted now, so a rename costs an epoch
-and a frozen example on each side. No counterpart: `SessionCoreOptions`,
-`SttSession`/`TtsSession` (`aai-runtime`, and on `aai/host-internal`),
-`SessionSnapshot`, `SessionError` (`aai-ui`).
+This table carried four rows, and nobody recorded what the `/internal` split
+resolved. `createSessionCore`, `createWorkflowApi` and `WorkflowApiOptions` went
+to `aai-runtime/internal` — a public name against an `/internal` one is not a
+collision, it is what `/internal` is for — and then off the published surface
+entirely, under that subpath's "a name is here because something IMPORTS it"
+rule. They are relative-import internals now, so `API-EXPORTS.json` shows all
+three on `aai-ui` alone.
+
+**Which INVERTS the old "do not rename either half" advice for those three.**
+It held while both sides were contracted; an unpublished name has no epoch, no
+frozen example and no semver promise, so renaming the runtime halves costs a
+sweep rather than an epoch a side — and is worth doing, since they still occur
+in ten-odd `aai-runtime` files each and every reader disambiguates by package
+before reading. Recommended, not done: it belongs to `aai-runtime`.
+
+The near-miss an AUTHOR meets is three factories, none of them a collision:
+`createAgentClient` (`@alexkroman1/aai/workflow-api`, the one to reach for),
+`createWorkflowApiClient` (the narrow SDK one it wraps) and `createWorkflowApi`
+(`aai-ui`'s wrapper over the narrow one). The SDK's names carry the `Client`
+suffix; the bare ones are `aai-ui`'s.
+
+No counterpart: `SessionCoreOptions`, `SttSession`/`TtsSession`
+(`aai-runtime`, and on `aai/host-internal`), `SessionSnapshot`, `SessionError`
+(`aai-ui`).
 
 ### Concurrency primitives (use these, don't hand-roll)
 
@@ -1075,35 +1080,36 @@ label that does not exist is an API error.
 ### Published type signatures are a committed report
 
 `pnpm api-report` writes `packages/*/etc/<subpath>.api.md` — the rolled-up
-public `.d.ts` for each of the 26 published entry points — plus **`API.md` at
-the repo root, the same 26 reports concatenated**, and **`API-EXPORTS.json`, the
-same 26 entry points' export NAMES**; `pnpm check:api-report` fails when any of
-them is stale.
+public `.d.ts` for ONE REPORT PER PUBLISHED ENTRY POINT (28 today, across the
+four publishable packages; `ls packages/*/etc/*.api.md` is the current count,
+and this paragraph carried a stale `26` across two subpath additions) — plus
+**`API.md` at the repo root, those same reports concatenated**, and
+**`API-EXPORTS.json`, the same entry points' export NAMES**;
+`pnpm check:api-report` fails when any of them is stale.
 
 **`API-EXPORTS.json` is a second artifact over the same reports, and the split
 between them is the point.** A report answers "what is the shape of this API"
 and churns whenever a parameter widens, a doc comment moves or an overload is
-added — which is what a reviewer wants, and which also means a name quietly
-appearing or disappearing is one line inside a hundred-line diff. The export
-list answers only "what is IN the surface", so adding an export is a one-line
-addition against an otherwise stable file. `sdk/exports.test.ts` pins some of
+added — what a reviewer wants, and also why a name quietly appearing or
+disappearing is one line inside a hundred-line diff. The export list answers
+only "what is IN the surface", so adding an export is a one-line addition
+against an otherwise stable file. `sdk/exports.test.ts` pins some of
 the same names and stays: a test fails at the moment the surface moves and names
 the symbol, which is a different job from being a reviewable fact in the diff —
-and it covers the entries somebody remembered to add, where this covers all
-twenty. Sorting is **code-unit, never `localeCompare`**: with no explicit locale
+and it covers the entries somebody remembered to add, where this covers every
+entry point. Sorting is **code-unit, never `localeCompare`**: with no explicit locale
 that answers to the runtime's, so the same tree would produce a different file
 under a different ICU default and the gate would report a surface change that is
 really a locale change.
 
 **`includeForgottenExports` is ON**, so a type a public signature mentions but
-does not export appears in the report as a bare `declare` with no `export`
-keyword. Those are part of the surface a consumer has to satisfy — they just
-have no name to import it by — and changing one can break a build while being
-invisible in review. TypeDoc's `treatWarningsAsErrors` catches a subset and only
-for `aai` and `aai-ui`, never the three aai-cli build-hook subpaths, and it
-fails the run rather than showing what moved. Turning it on added ~1,300 lines
-across the reports; `/testing`'s grew from 28 lines to 185, which is the finding
-— that entry point exports four symbols and drags `Db`, `GenerateFn` and
+does not export appears as a bare `declare` with no `export` keyword. Those are
+part of the surface a consumer has to satisfy — they just have no name to import
+it by — and changing one can break a build while being invisible in review.
+TypeDoc's `treatWarningsAsErrors` catches a subset, only for the documented
+packages, and fails the run rather than showing what moved. Turning it on added
+~1,300 lines; `/testing`'s report grew from 28 lines to 185, which is the
+finding — that entry point exports four symbols and drags `Db`, `GenerateFn` and
 `WorkflowClient` in behind them. The export lists deliberately do NOT include
 them: they are collected from the `export` modifier, so a forgotten type is
 reviewable in the report and absent from the list of what a consumer can import
@@ -1114,55 +1120,53 @@ The gap it closes: **nothing else looked at a type SIGNATURE.**
 `publint` and `attw` ask packaging questions; the `.test-d.ts` files cover
 `aai`'s root entry and `aai-ui`'s four hooks, and "Known limitations" below
 states outright that the subpath exports are not covered. So widening a
-parameter, making a field optional, or changing a return type on any of the
-nineteen other entry points was invisible in review — which matters most for the
+parameter, making a field optional, or changing a return type on any OTHER
+entry point was invisible in review — which matters most for the
 decision it feeds, since the changeset bump type is currently a judgement made
 from memory and a `patch` that was really a `major` is discovered by the
 consumer whose build breaks.
 
 **Entry points are DERIVED from `package.json#exports`, never listed.** API
 Extractor's own convention is one config file per entry point, which here would
-be twenty files whose only real content is a path — and a hand-kept list of the
-public surface is precisely what goes stale in this repo (turbo `inputs` globs
-that stopped matching, five vitest projects duplicated at the root and drifted,
+be one file per subpath whose only real content is a path — and a hand-kept
+list of the public surface is precisely what goes stale in this repo (turbo
+`inputs` globs that stopped matching, five vitest projects duplicated and drifted,
 a `typedoc.json` list a new subpath must remember to join). A new subpath export
 therefore gets a report on its first run, and `--check` fails until it is
 committed, which is correct: a new subpath IS a public API change.
 
-**`API.md` is for READERS; the per-entry-point reports are for reviewers.** 26 files
-is the right shape for a diff — a signature change lands in the one report that
-owns it — and the wrong shape for answering "what does this SDK expose?", which
-is twenty reads plus knowing which twenty. API Extractor cannot produce the
-combined file itself: `mainEntryPointFilePath` is a single string and multi-entry
-support is a long-standing unimplemented upstream request. Pointing it at a
-synthetic barrel (`export * as stt from "./dist/…"`) does work and yields one
-DEDUPLICATED rollup, but only per package — the repo would still have three — and
-every symbol trades its `export` keyword for a `declare namespace` block.
-Deduplication also buys almost nothing here: 573 top-level declarations across
-the reports are 539 distinct names, so 34 lines, 6%. So `API.md` is a
-plain concatenation, generated in the same pass and gated by the same `--check`,
-which makes it derived rather than a second source of truth.
+**`API.md` is for READERS; the per-entry-point reports are for reviewers.** One
+file per entry point is the right shape for a diff — a signature change lands in
+the one report that owns it — and the wrong shape for "what does this SDK
+expose?", which is 28 reads plus knowing which 28. API Extractor cannot produce
+the combined file: `mainEntryPointFilePath` is a single string and multi-entry
+support is a long-standing unimplemented upstream request. A synthetic barrel
+(`export * as stt from "./dist/…"`) does yield one DEDUPLICATED rollup, but only
+per package — the repo would still have four — and every symbol trades its
+`export` keyword for a `declare namespace` block, while deduplication saves ~6%
+of lines. So `API.md` is a plain concatenation, generated in the same pass and
+gated by the same `--check`: derived, not a second source of truth.
 
-`packages/aai-templates/api-surface-file.test.ts` is the guard under that gate.
-`--check` compares the committed file against a freshly assembled one, so it
-catches staleness — and would print its checkmark for an empty file agreeing
-with an empty file, which is what an assembly loop that stopped finding entry
-points, or a fence parser that stopped matching, would produce. The test parses
-the reports and `API.md` independently of the script and asserts the second
-contains the first.
+`packages/aai-templates/api-surface-file.test.ts` is the guard under that gate:
+`--check` would print its checkmark for an empty file agreeing with an empty
+file, which is what an assembly loop that stopped finding entry points, or a
+fence parser that stopped matching, would produce. The test parses the reports
+and `API.md` independently of the script and asserts the second contains the
+first.
 
 Two mechanical notes. API Extractor brings **its own TypeScript** (the JS
 compiler API, which TS 7 does not expose) resolved from its own dependency tree,
 so no second pin is needed the way `docs/` needs one for TypeDoc. And
-`reportTempFolder` is not optional: left unset, `--check` wrote twenty
-byte-identical `<slug>.api.md` files into the package roots, caught only because
-markdownlint then failed on them.
+`reportTempFolder` is not optional: left unset, `--check` wrote one
+byte-identical `<slug>.api.md` per entry point into the package roots, caught
+only because markdownlint then failed on them.
 
 `packages/aai/.npmignore` keeps `etc/` out of the tarball — the reports are for
-reviewing signature changes, not for consumers. (`aai-ui` and `aai-cli` declare
-`files`, so they need no equivalent line.) Both they and `API.md` are ignored by
-markdownlint, on the standing rule for generated markdown: a prose finding in
-one can only be fixed by editing a file the next run overwrites.
+reviewing signature changes, not for consumers. (`aai-ui`, `aai-cli` and
+`aai-runtime` declare `files`, so they need no equivalent line.) Both they and
+`API.md` are ignored by markdownlint, on the standing rule for generated
+markdown: a prose finding in one can only be fixed by editing a file the next
+run overwrites.
 
 ### The authoring surface is versioned in epochs
 
@@ -1200,8 +1204,8 @@ a human types is `aai-ui:workflow` (a bare name still resolves when it is
 unambiguous, and ambiguity is REFUSED rather than resolved by precedence — a
 classification recorded against the wrong surface is the one failure this gate
 exists to prevent). Epoch files stay unqualified; their path already names the
-package. **Opting a third package in is creating `contracts/entrypoints/` inside
-it** — the package set is discovered from the tree, for the reason the entry
+package. **Opting a further package in is creating `contracts/entrypoints/`
+inside it** — the package set is discovered from the tree, for the reason the entry
 points and the capabilities are, and its authoring subpaths are then everything
 it publishes with types MINUS a deny-list of the non-authoring ones
 (`NON_AUTHORING_SUBPATHS` in `scripts/_api-contracts-tree.mjs`, which exempts
@@ -1216,34 +1220,43 @@ Four properties are load-bearing:
 
 - **A retained epoch obliges a frozen, compiling artifact.**
   `contracts/compatibility/<capability>/v<N>.ts` is written the way that epoch
-  was authored, and it sits under the package's own
-  `tsconfig.json` — so **`pnpm typecheck` is the backward-compatibility gate**.
-  On `aai` and `aai-ui` it is a SNIPPET an author reads; on `aai-runtime` it is
-  a starter a host COPIES, because that is what its consumers do with it (see
-  "The published surface is versioned in epochs" in
-  `packages/aai-runtime/CLAUDE.md`). Either way the obligation is the same one.
-  That is a test of
-  compatibility rather than a claim about it, which is what the `.test-d.ts`
-  files cannot be: they pin the CURRENT shape and move with the API. All
-  every one exists from the first commit, so the value does not wait for a bump.
-  The extension is `.tsx` wherever the owning package's tsconfig sets `jsx`
-  (DERIVED, not declared) — a component library's authoring example is JSX, and
-  one spelled in `createElement` calls would compile while demonstrating an API
-  nobody writes. Editing one
-  to make a compile error go away defeats the whole mechanism — the error IS the
-  finding. A **dropped** epoch's example is DELETED by `--bump --drop`, because
-  "dropped" means it no longer compiles and a leftover file would turn a recorded
-  decision into a red typecheck.
+  was authored, under the package's own `tsconfig.json` — so **`pnpm typecheck`
+  is the backward-compatibility gate**, a TEST of compatibility
+  rather than a claim about it, which is what the `.test-d.ts` files cannot be:
+  they pin the CURRENT shape and move with the API. On `aai` and `aai-ui` it is
+  a SNIPPET an author reads; on `aai-runtime` a starter a host COPIES, because
+  that is what its consumers do with it (see "The published surface is versioned
+  in epochs" in `packages/aai-runtime/CLAUDE.md`). Every epoch has one from its
+  first commit, so the value does not wait for a bump. The extension is `.tsx`
+  wherever the owning package's tsconfig sets `jsx` (DERIVED, not declared) — a
+  component library's authoring example is JSX, and one spelled in
+  `createElement` calls would compile while demonstrating an API nobody writes.
+  Editing one to make a compile error go away defeats the mechanism — the error
+  IS the finding. A **dropped** epoch's example is DELETED by `--bump --drop`:
+  "dropped" means it no longer compiles, and a leftover file would turn a
+  recorded decision into a red typecheck.
 - **The hash covers the rollup BODY, not the report file.** API Extractor's
   preamble is identical in every report and is the tool's, not ours; hashing it
   would make an api-extractor upgrade that reworded one line bump every epoch at
   once, each demanding a classification for a change to nothing.
 - **Old epoch metadata is immutable and retained** (`v1..current`, enforced), so
-  "when did this break and what did we say about it" is answerable from the tree.
+  "when did this break and what did we say" is answerable from the tree.
 - **The export-list delta suggests the bump.** A removed name prints `major`, an
   added one `minor`, and an unchanged list says so explicitly — this is a
   SIGNATURE change, read the report diff. That is the cheap 80% of the question,
-  and it beats the status quo of nothing.
+  and it beats nothing.
+
+**A `--bump` is the moment to ask what should come OUT.** The mechanism does
+work in that direction — roughly one epoch transition in eight removes names
+(`utils` v12 dropped 35 at once, `workflow` v9 dropped 16), and about a quarter
+of all epochs were `--drop`ped and had their example deleted; count them from
+`contracts/epochs/` and `contracts/compatibility/` rather than trusting a
+figure here. What a bump never asks about is the names that did NOT move: **70
+`aai` root exports and 67 `aai-ui` ones are exercised by no template**
+(`packages/aai-templates/template-api-allowlist.json`, whose gate says such an
+export "is either missing its example or shouldn't be public"). The delta gets
+classified and the rest accretes — so read the allowlist at a bump, not only
+the diff.
 
 **Capabilities, not entry points, and the reason WAS the `@internal` problem.**
 `@alexkroman1/aai` used to export 174 symbols from its root, **71 of them tagged
@@ -1269,7 +1282,8 @@ both `.` and a narrower subpath belongs to the narrower one.
 gate.** The internal-tagged names are the explicit exemption, committed to
 `contracts/internal-surface.json` as a **ratchet that may shrink and may never
 grow** (`--update-internal` lowers it, and unclaimed headroom WARNS). It opened
-at 74 and stands at **0** — paid off in full; `aai-ui`'s own file stands at 8.
+at 74 and stands at **0**, as do `aai-ui`'s and `aai-runtime`'s — paid off in
+full on all three.
 The 71 root ones went to `@alexkroman1/aai/internal` in the change
 that cut the root barrel to the authoring API (see "The root barrel is CURATED"
 in `packages/aai/CLAUDE.md`); the ratchet is what made a number out of a
@@ -1331,10 +1345,10 @@ the shipped SKILL carries no API guidance of its own.
 
 ### Fixed release coupling
 
-`aai`, `aai-ui`, and `aai-cli` are in a **fixed release group** (configured
-in `.changeset/config.json`). A changeset for any one of them bumps all
-three to the same version. Keep this in mind when creating changesets —
-you only need to list one package.
+The four publishable packages — `aai`, `aai-ui`, `aai-cli` and `aai-runtime` —
+are one **fixed release group** (configured in `.changeset/config.json`). A
+changeset for any one of them bumps all four to the same version. Keep this in
+mind when creating changesets — you only need to list one package.
 
 ### Testing
 
@@ -1474,8 +1488,9 @@ you only need to list one package.
   `aai-ui/hooks.test-d.ts`, on a pattern `packages/aai` had carried all along.
 - **Package validation**: `publint` runs post-build to verify package.json
   exports resolve to real files. `attw` validates export types. Both run in
-  the check pipeline AND in CI, and **all three publishable packages
-  (`aai`, `aai-ui`, `aai-cli`) must define both scripts** — for a long time
+  the check pipeline AND in CI, and **every publishable package — the four
+  without a `private` key: `aai`, `aai-ui`, `aai-cli`, `aai-runtime` — must
+  define both scripts** — for a long time
   only `aai-ui` did, leaving `aai`'s ten subpath exports ungated. That is
   the gap the deleted npm/yarn e2e legs were retired *in favour of* (see
   "The e2e suite is pnpm-only in CI"), so it has to actually hold.
@@ -1653,17 +1668,13 @@ What that buys, and the rules that come with it:
   not a range.
 
   The five `aai-ui` suites are the worked example — `fuzz-voiceio`'s
-  `judgedDones` at `> 45` against a measured 158-203, `fuzz-hooks`'s
-  `lateSettles` at `4` against 24-51 — each with its range in a trailing comment.
-  Two corollaries: a state whose whole range is small gets `> 0`, the floor being
-  there to catch a state NEVER reached rather than to pin how often; and a state
-  measured but deliberately left UNFLOORED says so in place —
-  `studio-concurrency-fuzz`'s unreachable archive path,
-  `fuzz-session-core`'s settled tool call (0-5 of 200 runs, owned by
-  `fuzz-hooks`), and `audio-stress`'s `concealments` (1-5 of 25 runs; longer
-  sources, `jitterMs`/`refillMs` tuning and stall bursts were each measured and
-  each left it unchanged — `playback-processor.test.ts` covers concealment
-  deterministically).
+  `judgedDones` at `> 45` against a measured 158-203 — each with its range in a
+  trailing comment. Two corollaries: a state whose whole range is small gets
+  `> 0`, the floor being there to catch a state NEVER reached rather than to
+  pin how often; and a state measured but deliberately left UNFLOORED says so
+  in place, with the reason (`studio-concurrency-fuzz`'s unreachable archive
+  path, `fuzz-session-core`'s settled tool call, `audio-stress`'s
+  `concealments`, which `playback-processor.test.ts` covers deterministically).
 - **A generator must not break its own contract.** The failure looks like a
   finding and is not. An all-false pacing script in `audio-stress` never
   delivered a chunk, so the delivery loop rendered forever and died on
@@ -1714,7 +1725,8 @@ Short summary of the change for the changelog.
 Valid bump types: `patch` (bug fixes), `minor` (new features), `major`
 (breaking changes).
 
-**Fixed packages:** `@alexkroman1/aai`, `@alexkroman1/aai-ui`, and
+**Fixed packages:** `@alexkroman1/aai`, `@alexkroman1/aai-ui`,
+`@alexkroman1/aai-runtime`, and
 `@alexkroman1/aai-cli` release together (configured in
 `.changeset/config.json`). You only need to list one; the others are
 bumped automatically.
@@ -1724,31 +1736,48 @@ bumped automatically.
 ### API reference docs
 
 Two renderings of the published type surface, both from TypeDoc over the built
-`dist/*.d.ts` of `aai` and `aai-ui`:
+`dist/*.d.ts` of `aai` and `aai-ui` (only those two — see the three-sets note
+below):
 
 - **`pnpm docs:api`** → `docs/dist/**`, HTML, published to GitHub Pages by
   `.github/workflows/docs.yml`. Runs as the turbo `docs` task, a merge gate in
   `pnpm check` and CI, with `treatWarningsAsErrors` — a broken `{@link}` fails
   the build.
 - **`pnpm docs:md`** → `docs/api/**`, markdown, **committed**, one file per
-  published entry point, so an agent can `cat` the API reference instead of
-  fetching a rendered site. `pnpm check:docs-md` fails when it is stale.
+  documented entry point, so an agent can `cat` the API reference instead of a
+  rendered site. `pnpm check:docs-md` fails when it is stale.
 
 Entry points live in each package's `typedoc.json`; a new subpath export needs
 an entry there, and an `@module` tag naming it, or it renders under its
 emitted-file path.
 
+**"Published", "promised (epoch)" and "documented" are three different sets,
+decided by three different files** — `package.json#exports`,
+`contracts/entrypoints/` and a `typedoc.json`, each with a written deny-list so
+a new subpath defaults IN. They currently disagree both ways.
+`@alexkroman1/aai/protocol` opens its reference page with "the published wire
+contract … for building custom clients or servers" while
+`NON_AUTHORING_SUBPATHS` deny-lists it from the contract system, so no epoch
+covers its 32 names; `/manifest` is the same and reaches further — three
+template `agent.test.ts` files import `toAgentConfig` from it, a subpath
+`scaffold/CLAUDE.md` never mentions. Inversely `@alexkroman1/aai-runtime` is
+fully contracted — its whole root barrel, twelve capabilities, frozen starters
+a self-hoster copies — and reaches no reference page at all. Each of those is a
+decision owed out loud, not a bug to patch quietly; `docs/CLAUDE.md` carries
+the runtime one and what it would take to change.
+
 Neither is the same artifact as the API reports — those are signatures with
 every doc comment stripped (see "Published type signatures are a committed
-report"), and the comments are what these carry.
+report"); the comments are what these carry.
 
-**The rest is in [`docs/CLAUDE.md`](docs/CLAUDE.md)**: the four load-bearing
+**The rest is in [`docs/CLAUDE.md`](docs/CLAUDE.md)**: the five load-bearing
 options in `typedoc.markdown.json`, why the markdown rendering is committed and
-floored, the `@module` rule and the latent broken link it surfaced, why `docs/`
-pins its own `typescript@6`, and why knip has to be told about the second
-config. `pnpm check:doc-examples` — every ```` ```ts ```` fence in
-published-package doc comments, READMEs, the scaffold guide and the studio
-prompts compiles under the scaffold tsconfig — is documented there too.
+floored, the `@module` rule and the latent broken link it surfaced, why
+`aai-cli` and `aai-runtime` are deliberately absent, why `docs/` pins its own
+`typescript@6`, and why knip has to be told about the second config.
+`pnpm check:doc-examples` — every ```` ```ts ```` fence in published-package doc
+comments, READMEs, the scaffold guide and the studio prompts compiles under the
+scaffold tsconfig — is documented there too.
 
 ### Git hooks (lefthook)
 
@@ -1789,20 +1818,12 @@ or gotchas, update the guide that OWNS the surface — the package's own
 file only for repo-wide rules. Adding to the root instead of the package guide
 is how this file grew to 233k characters and had to be split.
 
-**The root guide is `AGENTS.md`, and `CLAUDE.md` is one line: `@AGENTS.md`.**
-`AGENTS.md` is the filename every other agent tool looks for, so one canonical
-file beats a per-tool set that drifts; Claude Code follows the `@` import, so
-nothing is lost. Package guides keep the `CLAUDE.md` name because Claude Code
-auto-loads a package's guide when you work in that directory — that behaviour
-is the entire point of those files — and `konsistent.json` requires one per
-package. Never paste content into the root `CLAUDE.md`; `check:claude-md` and
-`claude-md-limit.test.ts` both fail if you do.
-
-**Every guide must stay under 120,000 characters** (20% under the 150k
-limit). `pnpm check:claude-md` enforces it and runs in `scripts/check.sh` and
-the CI check job. `packages/aai-templates/scaffold/CLAUDE.md` is exempt from
-the "repo docs" rule — it is a product artifact shipped to users — but not from
-the size cap.
+**The root guide is `AGENTS.md`, and `CLAUDE.md` is one line: `@AGENTS.md`** —
+the two-name split and why it exists are in this file's opening paragraph.
+Every guide must stay under 120,000 characters (`check:claude-md`, and
+`claude-md-limit.test.ts`; see "Quality ratchets"), the scaffold's included —
+that one is exempt from the "repo docs" rule, being a product artifact shipped
+to users, but not from the cap.
 
 **And a rule that belongs in a GUARD does not belong here.** Most of what
 follows in this file is a rule with a story attached, and a story is only
@@ -1902,28 +1923,22 @@ back to the host's `process.env`.
   cannot close it — `typescript@7` ships no compiler API. `guard-invariants`
   rule 23 covers the listener half; the measurements are in
   `packages/aai-templates/CLAUDE.md`.
-- **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
-  plus the provider descriptors) and `aai-ui` (`.` — the four generic hooks a
-  custom client is written against). Subpath exports (e.g. `./protocol`) are
-  not covered by type tests. (Their RUNTIME export lists are pinned — see
-  `sdk/exports.test.ts` — which is a different guarantee.)
-
-  This entry claimed the `aai-ui` half for a long time before it was true:
-  every `.test-d.ts` in the repo lived in `packages/aai`, and the
-  `aai-types` project is rooted there, so it could not have run an `aai-ui`
-  type test if one had been written. What was unpinned is exactly what a type
-  test is for — `useToolResult<R>`'s two overloads, `useAgentState<S>`'s
-  nullable return, and the deliberate `any` on both (`DefaultToolResult`, and
-  `ToolCallInfo.args`), which are documented decisions with a rationale and no
-  check. `hooks.test-d.ts` pins them now, including the `any`s, because
-  tightening one to `unknown` is a breaking change for every untyped client
-  and should fail here rather than in a user's build.
+- **Type-level tests**: three files, covering the root entry points of `aai`
+  (`sdk/define.test-d.ts`, `sdk/env-types.test-d.ts`) and `aai-ui`
+  (`hooks.test-d.ts` — the four generic hooks a custom client is written
+  against). No subpath export is covered. (Their RUNTIME export lists are
+  pinned — see `sdk/exports.test.ts` — which is a different guarantee.) This
+  entry claimed the `aai-ui` half years before it was true, while every
+  `.test-d.ts` lived in `packages/aai`. `hooks.test-d.ts` pins the deliberate
+  `any`s (`DefaultToolResult`, `ToolCallInfo.args`) as well as the shapes,
+  because tightening one to `unknown` is a breaking change for every untyped
+  client and should fail here rather than in a user's build.
 
 ### Open testability work
 
-The `aai-server` logger seam that used to be named here is DONE — every line in
-that package goes through `logger.ts` and a spec silences it with
-`captureLogs()` rather than `spyOn(console, …)` (see "Every line goes through
-`logger.ts`" in `packages/aai-server/CLAUDE.md`). What that leaves is the same
-job in the other packages: `aai-studio-server` and `aai-cli` still write to
-`console.*` in places, and the SDK publishes a `Logger` either could take.
+The `aai-server` logger seam once named here is DONE — every line in that
+package goes through `logger.ts`, silenced in specs by `captureLogs()` rather
+than `spyOn(console, …)` (see "Every line goes through `logger.ts`" in
+`packages/aai-server/CLAUDE.md`). What remains is the same job elsewhere:
+`aai-studio-server` and `aai-cli` still write to `console.*` in places, and the
+SDK publishes a `Logger` either could take.

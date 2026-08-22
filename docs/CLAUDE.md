@@ -18,8 +18,32 @@ need exactly when you are editing something in here.
 | `pnpm docs:md` | `docs/api/**` (markdown, **committed**) | agents and anything reading the repo as files |
 
 Both cover the published surface of `aai` and `aai-ui` from the built
-`dist/*.d.ts`. The aai-cli subpaths are internal build hooks and deliberately
-not documented.
+`dist/*.d.ts`. **Two of the four publishable packages reach no reference page**,
+for different reasons: the `aai-cli` subpaths are internal build hooks, and
+`@alexkroman1/aai-runtime` is aimed at somebody EMBEDDING an agent rather than
+writing one, so rendering it beside the SDK would rebuild the
+two-thirds-of-a-combined-reference the runtime split undid. Both reasons are
+written out in `UNDOCUMENTED_SUBPATHS` (`scripts/docs-markdown.mjs`), and
+`aai-runtime`'s names what would change the answer: "Revisit if embedders ask
+for a rendered page — then it gets its own, not a share of the SDK's."
+
+**Documenting `aai-runtime` is a THREE-file change, and two of them are already
+in the tree.** `packages/aai-runtime/typedoc.json` exists and names
+`dist/runtime-barrel.d.ts`; the package has its `@module` tags. What is missing
+is the pair that has to move together: `../packages/aai-runtime` in
+`docs/typedoc.json`'s `entryPoints`, and the DELETION of
+`UNDOCUMENTED_SUBPATHS["aai-runtime"]["."]`. Do one without the other and
+`check:docs-md` fails — verified: adding only the entry point prints
+`packages/aai-runtime documents . AND lists it in UNDOCUMENTED_SUBPATHS`, since
+the coverage check reads the deny-list for every package `docs/typedoc.json`
+names. That coupling is the deny-list working as designed: a written reason has
+to be retracted in the same change that stops honouring it, so the argument
+against gets read once more before it is dropped. Until both land, the package
+typedoc.json is inert — the package list is derived from `docs/typedoc.json`,
+so nothing reads it. Expect the render to surface `{@link}` warnings in
+`aai-runtime` doc comments on its first pass; `treatWarningsAsErrors` makes
+those failures, and they are the tag finding latent broken links, not causing
+them.
 
 **Entry points live in each package's `typedoc.json`, and a new subpath export
 needs an entry there too — `scripts/docs-markdown.mjs` fails the render if it
@@ -44,8 +68,8 @@ turbo `docs` task, wired into `pnpm check` and the CI check job as a merge
 gate; `.github/workflows/docs.yml` publishes the site
 (`https://alexkroman.github.io/agent/`) on every push to `main`.
 
-**A module is named by its `@module` tag, not by the file TypeDoc read.**
-Fifteen entry points, and thirteen carried one; the two that did not rendered
+**A module is named by its `@module` tag, not by the file TypeDoc read.** Of
+`aai`'s fifteen entry points thirteen carried one; the two that did not rendered
 as `sdk/workflow-api-barrel` and `host/ffmpeg` — an emitted-file path, not the
 specifier anybody imports. Adding the tag fixes the name in BOTH renderings,
 and it is the only way to make the markdown filename match the subpath a
@@ -98,7 +122,7 @@ checker needs to be worth having, both learned by getting them wrong:
   of the shared generation path, so `--check` compares against the repaired
   render and neither mode sees something the other would not.
 
-Four decisions in `docs/typedoc.markdown.json` are load-bearing, and each is
+Five decisions in `docs/typedoc.markdown.json` are load-bearing, and each is
 commented in place:
 
 - **`extends: "./typedoc.json"`.** Entry points, `excludeInternal` and

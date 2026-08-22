@@ -1,0 +1,24 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "session",
+  "epoch": 4,
+  "sha256": "923366e364534780886566af7414998859291170bcd0097c53c4b1dd9cf18bcc",
+  "exports": [
+    "AgentCustomEvent",
+    "AgentState",
+    "ChatMessage",
+    "Session",
+    "SessionCore",
+    "SessionError",
+    "SessionErrorCode",
+    "SessionSnapshot",
+    "TRANSCRIBING_PLACEHOLDER",
+    "UseUserTranscriptResult",
+    "VoiceSessionOptions",
+    "WebSocketConstructor",
+    "createSessionCore",
+    "useSession",
+    "useSessionSelector",
+    "useUserTranscript"
+  ]
+}

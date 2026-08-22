@@ -49,13 +49,6 @@ export function AutoScroll(input: {
 }): ReactNode;
 
 // @public
-export type BaseOptions = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
-    target?: string | HTMLElement;
-    platformUrl?: string;
-    theme?: ClientTheme;
-};
-
-// @public
 export function Button(input: {
     variant?: ButtonVariant;
     size?: ButtonSize;
@@ -90,7 +83,16 @@ export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLI
 export function client(config: ClientConfig): ClientHandle;
 
 // @public
-export type ClientConfig = ConfigTier | ComponentTier;
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
+    target?: string | HTMLElement;
+    platformUrl?: string;
+    theme?: ClientTheme;
+    component?: ComponentType;
+    name?: string;
+    sidebar?: ComponentType;
+    sidebarWidth?: string;
+    tools?: ToolDisplayConfig;
+};
 
 export { ClientConfigResponse }
 
@@ -108,24 +110,6 @@ export type ClientTheme = {
     text?: string;
     surface?: string;
     border?: string;
-};
-
-// @public
-export type ComponentTier = BaseOptions & {
-    component: ComponentType;
-    name?: string;
-    sidebar?: never;
-    sidebarWidth?: never;
-    tools?: ToolDisplayConfig;
-};
-
-// @public
-export type ConfigTier = BaseOptions & {
-    component?: never;
-    name?: string;
-    sidebar?: ComponentType;
-    sidebarWidth?: string;
-    tools?: ToolDisplayConfig;
 };
 
 // @public
@@ -497,12 +481,7 @@ export type UseWorkflowsResult = {
 export function useWorkflowStream<R = unknown>(workflow: string, opts?: UseWorkflowStreamOptions): WorkflowStreamSubmission<R>;
 
 // @public
-export type UseWorkflowStreamOptions = {
-    api?: WorkflowApi;
-    key?: string;
-    intervalMs?: number;
-    parallel?: UploadParallel;
-};
+export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
 
 // @public
 export function useWorkflowSubmit<R = unknown>(workflow: string, opts?: UseWorkflowSubmitOptions): WorkflowSubmission<R>;
@@ -515,9 +494,6 @@ export type UseWorkflowSubmitOptions = {
     intervalMs?: number;
     parallel?: UploadParallel;
 };
-
-// @public
-export const VOICE_CAPTURE_CONSTRAINTS: MediaTrackConstraints;
 
 // @public
 export type VoiceSessionOptions = {
@@ -560,16 +536,7 @@ export function WorkflowProgress(input: {
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
 
 // @public
-export type WorkflowStreamSubmission<R = unknown> = {
-    submit: (input: unknown) => Promise<void>;
-    reset: () => void;
-    run: WorkflowRun<R> | undefined;
-    pending: boolean;
-    upload: UploadStatus | undefined;
-    pauseUpload: () => void;
-    resumeUpload: () => void;
-    error: string | undefined;
-};
+export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
 
 // @public
 export type WorkflowSubmission<R = unknown> = {

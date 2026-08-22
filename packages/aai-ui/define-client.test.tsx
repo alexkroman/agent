@@ -67,7 +67,7 @@ describe("client", () => {
     ).toThrow("Element not found: #nonexistent");
   });
 
-  it("renders with config-only (tier 1)", () => {
+  it("renders the default shell when no component is given", () => {
     const handle = client({
       name: "Test Agent",
       target: "#app",
@@ -79,7 +79,7 @@ describe("client", () => {
     handle.dispose();
   });
 
-  it("renders with custom component (tier 2)", () => {
+  it("renders a custom component in place of the default shell", () => {
     function MyApp() {
       return createElement("div", { "data-testid": "custom" }, "Custom");
     }
@@ -240,7 +240,7 @@ describe("client", () => {
    * `ChatView`. This asserts the value actually arrives, rather than only
    * that the type now permits it.
    */
-  it("passes tool display config to a custom component (tier 2)", () => {
+  it("passes tool display config to a custom component", () => {
     let seen: ToolDisplayConfig | undefined;
     function Probe() {
       seen = useToolConfig();
@@ -263,6 +263,26 @@ describe("client", () => {
     }
     const handle = client({ component: Probe, target: container });
     expect(seen).toEqual({});
+    handle.dispose();
+  });
+
+  /**
+   * `sidebar` alongside `component` was the last of the mutually-exclusive
+   * `never`s, and the one still inviting the message the other two were
+   * relaxed to avoid. Both panes are rendered, in the same `SidebarLayout` the
+   * default shell uses — so the combination does the obvious thing rather than
+   * being refused by the type or dropped by the mount.
+   */
+  it("renders a sidebar alongside a custom component", () => {
+    function MyApp() {
+      return createElement("div", { "data-testid": "main" }, "Main");
+    }
+    function Aside() {
+      return createElement("div", { "data-testid": "aside" }, "Aside");
+    }
+    const handle = client({ component: MyApp, sidebar: Aside, target: container });
+    expect(container.querySelector("[data-testid='main']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='aside']")).not.toBeNull();
     handle.dispose();
   });
 });

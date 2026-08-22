@@ -29,9 +29,9 @@ new one fails `pnpm check:api-contracts` until it joins one:
 
 | Capability | What it promises |
 | --- | --- |
-| `client` | the voice mount — `client()`, its two config tiers, the handle |
+| `client` | the voice mount — `client()`, the one flat `ClientConfig` it takes, the handle |
 | `page` | the workflow-app mount — `page()`, with no session under it, plus `fetchClientConfig()`: the lookup `client()` does for itself and a page must ask for |
-| `session` | the live call: `SessionCore`, the snapshot, `useSession`, `useUserTranscript`, the errors, `VOICE_CAPTURE_CONSTRAINTS` |
+| `session` | the live call: `SessionCore`, the snapshot, `useSession`, `useUserTranscript`, the errors |
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
 | `components` | the design system a custom chrome is assembled from. The three memoized components (`Markdown`, `Controls`, `MessageList`) each name an exported props type, which is what makes their props render at all — see below |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
@@ -374,8 +374,9 @@ a different rate or plays PCM at the wrong speed — a loud failure beats
 either.
 
 **Capture is raw voice, echo cancellation aside.** Both `getUserMedia`
-call sites (the WebSocket mic and `createPttRecorder`) share one exported
-`VOICE_CAPTURE_CONSTRAINTS`, because copies of the object drifted apart
+call sites (the WebSocket mic and `createPttRecorder`) share one
+`VOICE_CAPTURE_CONSTRAINTS` (declared in `types.ts`, re-exported on
+`/internal`), because copies of the object drifted apart
 trivially. `autoGainControl`, `noiseSuppression`, and `voiceIsolation` are all
 **off**: each rewrites the signal before STT sees
 it — AGC continuously retargets level, so it rides the noise floor up through

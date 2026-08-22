@@ -182,13 +182,13 @@ export type UploadStatus = UploadProgress & {
 /**
  * What {@link useWorkflowSubmit} returns.
  *
- * @see {@link WorkflowStreamSubmission} — the same eight fields, returned by
- * `useWorkflowStream`, which is a drop-in sibling. Exactly two of them differ,
- * and both differences follow from WHEN the run is created: there, `submit()`
- * resolves when the UPLOAD finishes rather than when the run is accepted, and
- * `run` is non-`undefined` from before the bytes are in, so a page can render
- * `<WorkflowProgress>` beside the upload bar instead of after it. Here the run
- * does not exist until the last byte lands.
+ * @see {@link WorkflowStreamSubmission} — an ALIAS of this type, returned by
+ * `useWorkflowStream`, which is a drop-in sibling. Exactly two fields MEAN
+ * something different there, and both differences follow from WHEN the run is
+ * created: there, `submit()` resolves when the UPLOAD finishes rather than when
+ * the run is accepted, and `run` is non-`undefined` from before the bytes are
+ * in, so a page can render `<WorkflowProgress>` beside the upload bar instead
+ * of after it. Here the run does not exist until the last byte lands.
  */
 export type WorkflowSubmission<R = unknown> = {
   /**
