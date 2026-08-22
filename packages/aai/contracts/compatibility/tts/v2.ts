@@ -1,9 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `tts` epoch 1.
+ * Frozen authoring example: `tts` epoch 2.
  *
  * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
+ *
+ * Epoch 2 is epoch 1 minus the host-side opener contract, which moved to
+ * `@alexkroman1/aai/runtime` beside `registerTtsKind`. What is left is the
+ * agent author's half: three factories, the voice catalog, and the descriptor
+ * they return.
  */
 
 import {
@@ -20,16 +25,12 @@ import {
   CARTESIA_DEFAULT_VOICE,
   CARTESIA_KIND,
   cartesia,
+  type ProviderDescriptor,
   RIME_API_KEY_ENV,
   RIME_DEFAULT_VOICE,
   RIME_KIND,
   rime,
-  type TtsError,
-  type TtsEvents,
-  type TtsOpenOptions,
   type TtsProvider,
-  type TtsSession,
-  type TtsWordTiming,
 } from "../../../sdk/providers/tts-barrel.ts";
 
 /** A voice is picked from the published catalog, never invented. */
@@ -60,8 +61,6 @@ export const keyEnvVars: string[] = [
   RIME_API_KEY_ENV,
 ];
 
-/** The host-side session contract a custom opener implements against. */
-export type FixtureOpener = (options: TtsOpenOptions) => Promise<TtsSession>;
-export type FixtureEvents = TtsEvents;
-export type FixtureWordTiming = TtsWordTiming;
-export type FixtureError = TtsError;
+/** The base every stage descriptor narrows, readable on this subpath. */
+export type FixtureBase = ProviderDescriptor<string, Record<string, unknown>>;
+export const base: FixtureBase = assemblyai;

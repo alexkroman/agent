@@ -123,7 +123,7 @@ function joinChunks(chunks: readonly Uint8Array[]): Uint8Array {
  *
  * @param samples - The PCM bytes, little-endian and channel-interleaved. A
  *   LIST is joined in order, which is what a synthesizer's or a capture's
- *   frames arrive as — see the module doc.
+ *   frames arrive as.
  * @param format - How to read them. See {@link PcmFormat} for the two defaults.
  * @returns A complete `.wav` file: {@link WAV_HEADER_BYTES} of header followed
  *   by `samples` unchanged.

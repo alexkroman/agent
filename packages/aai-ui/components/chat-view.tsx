@@ -33,9 +33,7 @@ const PULSING_STATES: ReadonlySet<AgentState> = new Set(["listening", "speaking"
  * }
  * ```
  *
- * @param icon - Optional element rendered in place of the logo in the header.
- * @param title - Optional title string for the header.
- * @param className - Additional CSS class names applied to the root element.
+ * @param props - Chat surface props.
  *
  * @public
  */
@@ -44,8 +42,11 @@ export function ChatView({
   title,
   className,
 }: {
+  /** Element rendered in place of the logo in the header. */
   icon?: ReactNode | undefined;
+  /** Title string for the header. Defaults to the agent's declared name. */
   title?: string | undefined;
+  /** Additional CSS class names for the root element, appended to its own. */
   className?: string | undefined;
 }): ReactNode {
   // Narrow subscriptions: the shell only reads these two fields, so it must

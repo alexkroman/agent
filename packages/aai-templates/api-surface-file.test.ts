@@ -113,3 +113,88 @@ describe("API.md", () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * One symbol, one release tag.
+ *
+ * API Extractor writes the tag per DECLARATION, so a symbol with overloads gets
+ * one comment per signature — and an `@internal` on the first overload alone
+ * leaves the rest defaulting to `@public`. The result is a name the two
+ * committed artifacts disagree about: `API-EXPORTS.json` lists it as published
+ * while TypeDoc drops the whole symbol (one internal declaration wins) and
+ * `docs/api` denies it exists. That is not a rendering preference — it is a
+ * published export the reference says is not there, and it is invisible in a
+ * diff because each half of the pair reads correctly on its own.
+ *
+ * `assertProviderTriple` on `/manifest` was the one occurrence and is gone; the
+ * gate is absolute, with no allowlist, because there is no symbol that is
+ * rightly both.
+ */
+describe("release tags", () => {
+  /** A `// @public` / `// @internal` line, with the tag captured. */
+  const tagLine = /^\/\/ (@(?:public|internal|beta|alpha))\b/;
+
+  /**
+   * The name the declaration a tag comment introduces declares.
+   *
+   * `includeForgottenExports` is on, so a declaration may carry no `export`
+   * keyword; overloads and `declare` forms are the other shapes here.
+   */
+  const declaredName =
+    /^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(?:class|const|enum|function|interface|type|let|var|namespace)\s+([A-Za-z_$][\w$]*)/;
+
+  /** Every tagged declaration in one report, as `{ name, tag }`. */
+  const taggedDeclarations = (report: string): { name: string; tag: string }[] => {
+    const lines = report.replaceAll("\r\n", "\n").split("\n");
+    const found: { name: string; tag: string }[] = [];
+    for (const [index, line] of lines.entries()) {
+      const tag = tagLine.exec(line)?.[1];
+      if (tag === undefined) continue;
+      // The comment sits directly above its declaration, blank lines aside.
+      let next = index + 1;
+      while (next < lines.length && (lines[next] ?? "").trim() === "") next += 1;
+      const name = declaredName.exec(lines[next] ?? "")?.[1];
+      // A tag whose declaration this cannot read is reported by its own case
+      // below rather than skipped: an unparsed line is a symbol this gate stops
+      // covering, which is the failure the whole file exists to catch.
+      found.push({ name: name ?? "", tag });
+    }
+    return found;
+  };
+
+  const tagged = Object.entries(reports).map(([key, text]) => ({
+    path: repoPathOf(key),
+    declarations: taggedDeclarations(text),
+  }));
+
+  const all = tagged.flatMap((entry) => entry.declarations);
+
+  test("the tag comments are being read", () => {
+    // Both floors are under the measured actuals (1078 tagged declarations,
+    // none unparsed) for the reason every count-only gate here carries one: a
+    // pattern that stopped matching prints the same green as a clean tree.
+    expect(all.length).toBeGreaterThanOrEqual(900);
+    const unparsed = tagged.flatMap((entry) =>
+      entry.declarations.filter((decl) => decl.name === "").map(() => entry.path),
+    );
+    expect(unparsed, `${unparsed.length} tag comment(s) sit above an unreadable line`).toEqual([]);
+  });
+
+  test.each(tagged)("$path gives each symbol one release tag", ({ path, declarations }) => {
+    const tagsByName = new Map<string, Set<string>>();
+    for (const { name, tag } of declarations) {
+      const tags = tagsByName.get(name) ?? new Set<string>();
+      tags.add(tag);
+      tagsByName.set(name, tags);
+    }
+    const split = [...tagsByName]
+      .filter(([, tags]) => tags.size > 1)
+      .map(([name, tags]) => `${name} (${[...tags].sort().join(" + ")})`);
+    expect(
+      split,
+      `${path} tags ${split.length} symbol(s) two ways: ${split.join(", ")}. ` +
+        "Every overload of one symbol needs the same release tag — put the tag " +
+        "on the implementation signature, or on all of them.",
+    ).toEqual([]);
+  });
+});

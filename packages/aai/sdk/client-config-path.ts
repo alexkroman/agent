@@ -18,14 +18,14 @@
 export const CLIENT_CONFIG_PATH = "client-config";
 
 /**
- * The only method the endpoint answers — read by `host/server.ts`'s dispatch, so
+ * The only method the endpoint answers — read by the host's route dispatch, so
  * this is the value and not a description of it.
  *
  * Beside the path for the same reason the path is exported at all: the platform
  * proxies this route, and `aai-server`'s `GUEST_ROUTE_EXPOSURE` has to name the
  * verbs the guest answers. A hardcoded `"GET"` on that side would be a second
  * source of truth for a one-word fact, which is the shape that rots — see
- * `WORKFLOW_API_METHODS` in `host/workflow-api.ts` for the same rule on the
- * route where it has already cost two incidents.
+ * `WORKFLOW_API_METHODS` on `@alexkroman1/aai/runtime` for the same rule on the
+ * workflow route, where it has already cost two incidents.
  */
 export const CLIENT_CONFIG_METHODS: readonly string[] = ["GET"];

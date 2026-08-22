@@ -48,9 +48,21 @@ const SOURCE_GLOBS = ["packages/aai", "packages/aai-ui", "packages/aai-cli"];
  * in no build of ours. The root README hit the identical mistake and this gate
  * named it there in seconds, which is the argument — the corpus, not the care
  * taken, is what makes the difference.
+ *
+ * **`docs/home.md` is the published site's landing page** — the first code a
+ * visitor to https://alexkroman.github.io/agent/ reads — and it sat outside
+ * this list for as long as the list existed. It carried
+ * `agent({ …, tools: { get_weather: getWeather } })`, which is not merely
+ * wrong: `AgentParams` declares `tools?: InlineToolsMisuse`, a string literal
+ * whose text tells the author that a tool is declared by its FILE. So the
+ * most-read example in the project taught the exact misuse the type system
+ * exists to reject, and contradicted `packages/aai/README.md` on the same
+ * screen. Nothing downstream regenerates when it changes — the markdown
+ * rendering sets `readme: "none"`, so it reaches `docs/dist` only.
  */
 const MARKDOWN_FILES = [
   "README.md",
+  "docs/home.md",
   "packages/aai/README.md",
   "packages/aai-ui/README.md",
   "packages/aai-cli/README.md",
@@ -219,9 +231,10 @@ for (const src of PROMPT_SOURCES) {
  * it replaced. The count is deterministic (same tree, same number), so the
  * margin here is only for fences legitimately deleted, not for run-to-run
  * spread. Re-measure and re-raise when the number moves; the run's own closing
- * line prints it.
+ * line prints it. Measured 158 after the provider/aai-ui example sweep (was 100
+ * against a then-actual of ~118).
  */
-const MIN_EXAMPLES = 100;
+const MIN_EXAMPLES = 150;
 if (examples.length < MIN_EXAMPLES) {
   console.error(
     `check-doc-examples: extracted only ${examples.length} examples, expected at least ` +

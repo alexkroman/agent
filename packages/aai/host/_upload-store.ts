@@ -319,11 +319,10 @@ export type UploadStore = UploadReader & {
    * a hole, and a step reading there gets silence rather than an error — a gap in a
    * transcript with nothing anywhere reporting one.
    *
-   * ## Several offsets, because the CLAIM is what an upload spends its time on
-   *
-   * This takes a list rather than one offset, and that is the whole shape of it: a
-   * claim carries no bytes and cost 1604-1969 ms against a deployed agent, per
-   * PART, which was about half of an upload's wall clock
+   * **Several offsets, because the CLAIM is what an upload spends its time
+   * on.** This takes a list rather than one offset, and that is the whole shape
+   * of it: a claim carries no bytes and cost 1604-1969 ms against a deployed
+   * agent, per PART, which was about half of an upload's wall clock
    * (`UPLOAD_CLAIM_BATCH` carries the measurement). Batching collapses the
    * network toll for the client and three per-part costs here — the declared-total
    * read, the record lock, and the whole-array write of `parts` — into one of each,

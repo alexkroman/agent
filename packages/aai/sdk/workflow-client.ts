@@ -140,9 +140,8 @@ export type WorkflowClient = {
    * the payload. A body that raced a hook against a `sleep` — the shape a
    * decision-with-a-deadline takes — needs both, and they mean different things.
    *
-   * ## The token is the contract, and it has to be derivable on both sides
-   *
-   * A hook's token is chosen by the BODY and typed in by the tool, so it must be
+   * **The token is the contract, and it has to be derivable on both sides.** A
+   * hook's token is chosen by the BODY and typed in by the tool, so it must be
    * something each can compute from what it already has:
    * `` `retention:${input.requestedBy}` `` in the body against
    * `` `retention:${ctx.sessionId}` `` in the tool. Put that expression in one
@@ -155,10 +154,9 @@ export type WorkflowClient = {
    * addresses a run, so derive it from something session-scoped rather than from
    * anything a caller could name.
    *
-   * ## `false` is an answer
-   *
-   * Nobody is listening is the normal case, not a failure — the run has moved
-   * past its hook, or finished, or was never started. Same shape as
+   * **`false` is an answer.** Nobody listening is the normal case, not a
+   * failure — the run has moved past its hook, or finished, or was never
+   * started. Same shape as
    * {@link cancel} resolving false and {@link wakeUp} resolving `0`, and a voice
    * tool should say so out loud ("that one had already gone ahead") rather than
    * treat it as an error.

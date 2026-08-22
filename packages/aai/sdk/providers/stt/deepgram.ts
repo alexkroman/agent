@@ -3,9 +3,8 @@
  * Deepgram Nova streaming STT factory — returns a pure descriptor.
  *
  * The descriptor flows through the bundle → server → runtime pipeline
- * without importing the `@deepgram/sdk` package. The host-side resolver in
- * `host/providers/resolve.ts` turns it into an openable `SttOpener`
- * during `createRuntime`.
+ * without importing the `@deepgram/sdk` package. The host-side resolver turns
+ * it into an openable `SttOpener` during `createRuntime`.
  */
 
 import type { SttProvider } from "../../providers.ts";
@@ -24,8 +23,20 @@ export interface DeepgramOptions {
    */
   model?: "nova-3" | "nova-2" | string;
   /**
-   * BCP-47 language code for transcription. Defaults to `"en"`.
-   * Examples: `"en"`, `"es"`, `"fr"`, `"de"`.
+   * BCP-47 language code for transcription. Examples: `"en"`, `"es"`, `"fr"`,
+   * `"de"`.
+   *
+   * **Unset means ENGLISH, not auto-detect.** Deepgram is the one STT provider
+   * here that behaves that way: `DEEPGRAM_DEFAULT_LANGUAGE` (`"en"`) is
+   * filled in and sent on every connection, where `assemblyAIStt` detects per
+   * turn and `elevenlabs`/`soniox` omit the field entirely so the vendor
+   * auto-detects. So an agent moved from any of those three to `deepgram()`
+   * silently loses non-English transcription — and the symptom is a caller
+   * whose speech comes back as plausible English words, which reads as a
+   * mis-hearing rather than as a language setting.
+   *
+   * Name the code you mean. There is no value for "detect": Deepgram's
+   * multilingual support is selected by naming a multilingual `model`.
    */
   language?: string;
   /**
@@ -39,11 +50,26 @@ export interface DeepgramOptions {
 }
 
 /**
- * Default Deepgram `endpointing` (ms). Matches the AssemblyAI opener's
- * `min_turn_silence` default (`DEFAULT_MIN_TURN_SILENCE_MS`): the transport
+ * Default Deepgram `endpointing` (ms) — **the same knob as
+ * `DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport
  * commits a turn on every STT final, so end-of-turn detection is owned
  * entirely by the provider and a short window would commit a turn at every
  * mid-utterance pause.
+ *
+ * @see `DEFAULT_MIN_TURN_SILENCE_MS` on `@alexkroman1/aai` — the AssemblyAI
+ * opener's `min_turn_silence`, 1600 ms, the value this 1500 ms window is
+ * matched to. Its doc carries the sweep that puts the knee there, and is the
+ * one to read before moving either number.
+ * @see `DEFAULT_MAX_TURN_SILENCE_MS` on `@alexkroman1/aai` — the AssemblyAI
+ * opener's pause-tolerance ceiling. Deepgram exposes no counterpart: its
+ * `endpointing` is a silence window with no completeness check, so there is
+ * nothing here for a maximum to bound.
+ *
+ * Named `DEFAULT_DEEPGRAM_…` rather than `DEEPGRAM_DEFAULT_…` like every other
+ * provider constant, which is a wart and not worth a `major` on its own —
+ * recorded here so the next reviewer does not re-derive it. `konsistent.json`
+ * does not check it: the shared template only covers the `*_DEFAULT_MODEL`
+ * shape.
  */
 export const DEFAULT_DEEPGRAM_ENDPOINTING_MS = 1500;
 
@@ -59,6 +85,21 @@ export type DeepgramProvider = SttProvider & {
  * The API key is resolved host-side from the agent's env
  * (`DEEPGRAM_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { deepgram } from "@alexkroman1/aai/stt";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   stt: deepgram({ model: "nova-3", language: "en" }),
+ * });
+ * ```
+ *
+ * Deepgram is the one STT vendor here whose unset `language` is not
+ * auto-detect: `"en"` is sent for you. Name the code you mean.
  */
 export function deepgram(opts: DeepgramOptions = {}): DeepgramProvider {
   return { kind: DEEPGRAM_KIND, options: { ...opts } };

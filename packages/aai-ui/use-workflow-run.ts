@@ -128,10 +128,45 @@ function pollUntilTerminal<R>(
  * STOPS on a terminal status, so a finished run costs nothing; passing
  * `undefined` (nothing started yet) also costs nothing.
  *
+ * @example
+ * ```tsx
+ * import type { ToolInputSchema, WorkflowDef } from "@alexkroman1/aai";
+ * import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+ * import { useWorkflowRun } from "@alexkroman1/aai-ui";
+ *
+ * // A real page writes `import type { digest } from "./agent.ts"`. Stood in
+ * // for here so the example compiles on its own.
+ * declare const digest: WorkflowDef<ToolInputSchema, Promise<{ points: string[] }>>;
+ *
+ * type Digest = WorkflowOutputOf<typeof digest>;
+ *
+ * function RunPanel({ runId }: { runId: string | undefined }) {
+ *   // The type argument is what makes `run.output` a `Digest` below.
+ *   const { run, error, polling } = useWorkflowRun<Digest>(runId);
+ *   if (error !== undefined) return <p role="alert">{error}</p>;
+ *   if (run?.status === "completed") {
+ *     return (
+ *       <ul>
+ *         {run.output.points.map((point) => (
+ *           <li key={point}>{point}</li>
+ *         ))}
+ *       </ul>
+ *     );
+ *   }
+ *   return <p>{polling ? "Working…" : "Nothing running."}</p>;
+ * }
+ * ```
+ *
  * @typeParam R - The workflow's output type. Supplying it is what makes
  *   `run.status === "completed"` narrow to a typed `run.output` instead of
  *   `unknown`. Derive it with `WorkflowOutputOf<typeof myWorkflow>` — a
  *   type-only import of `agent.ts` is erased, so it costs the bundle nothing.
+ * @param runId - The run to watch. `undefined` costs nothing, so a page may
+ *   pass its state straight through before a run exists.
+ * @param opts - `api` when the page holds its own client; `intervalMs` to
+ *   change the poll interval the stream falls back to.
+ * @returns The latest snapshot, the last read's error, and whether the watch
+ *   is still going — see {@link UseWorkflowRunResult}.
  *
  * @public
  */

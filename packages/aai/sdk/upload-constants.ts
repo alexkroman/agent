@@ -80,10 +80,9 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * mostly its bytes — which it was not, and which batching now makes it much closer to
  * being. Both directions are open again on evidence rather than on this paragraph.
  *
- * ## 16 MiB is SLOWER, measured after the claims were batched
- *
- * 128 MiB file, width 8, three runs per cell, alternating order so a drifting link
- * cannot favour one, pinned HTTP/1.1 on a fresh connection with 30s between runs:
+ * **16 MiB is SLOWER, measured after the claims were batched.** 128 MiB file, width
+ * 8, three runs per cell, alternating order so a drifting link cannot favour one,
+ * pinned HTTP/1.1 on a fresh connection with 30s between runs:
  *
  * | part | wall p50 | range | MB/s | windows per claim | part re-sent |
  * | --- | --- | --- | --- | --- | --- |

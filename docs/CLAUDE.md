@@ -22,7 +22,20 @@ Both cover the published surface of `aai` and `aai-ui` from the built
 not documented.
 
 **Entry points live in each package's `typedoc.json`, and a new subpath export
-needs an entry there too.** `docs/typedoc.json` sets `excludeInternal` — tag a
+needs an entry there too — `scripts/docs-markdown.mjs` fails the render if it
+does not.** That rule was stated here and enforced by nothing for as long as it
+existed, and four published subpaths had drifted out of the reference by the
+time anything looked: `aai`'s `/slugify` and `/workspace-files`, plus
+`aai-ui`'s `/client-dir`, which is contracted as its own capability and has an
+API report. A missing FILE is invisible to the render floor (set well under the
+actual) and invisible to the staleness diff (which compares only what the
+render produced). The check reads each documented package's `exports`, and
+every key with a `types` target must be an entry point or carry a written
+reason in `UNDOCUMENTED_SUBPATHS` — a **deny-list**, so a new subpath defaults
+into being documented and fails until somebody decides otherwise. `/internal`
+is the one exclusion that predates the check.
+
+`docs/typedoc.json` sets `excludeInternal` — tag a
 symbol `@internal` to keep it exported but out of the docs — and
 `treatWarningsAsErrors`, so a broken `{@link}`, or a type referenced by a
 public signature but not exported, **fails the build**. Keep it at zero
@@ -62,6 +75,29 @@ comments and is a network fetch of a rendered page wrapped in navigation. So
 the markdown rendering is the prose, on disk, one file per published entry
 point: `cat docs/api/@alexkroman1/aai/tts.md` is the whole interaction.
 
+**Every internal link is resolved against the heading it points at, and a dead
+one fails the render.** `treatWarningsAsErrors` proves a `{@link}` resolved in
+TypeDoc's MODEL; it says nothing about the anchor the markdown emitter wrote,
+because the plugin allocates anchors while walking the reflection tree
+(`Dialog.position` → `dialogposition`) and a reader's renderer allocates them
+while walking the emitted document (`##### position()` → `position`). The two
+disagreed on nine links in `index.md`: `DialogPosition` was registered as
+`dialogposition-1` because the `Dialog.position` member had already taken
+`dialogposition`, and no heading ever reaches that index. Two things the
+checker needs to be worth having, both learned by getting them wrong:
+
+- **It must mirror the `-1`/`-2` de-duplication renderers apply to a repeated
+  heading.** Without it the pass reports 83 false positives — `sessionSlot()`
+  the function and `SessionSlot` the interface legitimately share a base slug,
+  and every link to the second one looks broken.
+- **It REPAIRS an over-allocated suffix and fails on everything else.** A
+  `#base-N` no heading produces is walked down to the first index one does; the
+  repair is printed, lands in the committed diff, and can only ever point at a
+  heading that exists. A missing file, or a fragment with no suffix to walk, is
+  a failure — those are the shapes a real regression takes. The repair is part
+  of the shared generation path, so `--check` compares against the repaired
+  render and neither mode sees something the other would not.
+
 Four decisions in `docs/typedoc.markdown.json` are load-bearing, and each is
 commented in place:
 
@@ -83,6 +119,32 @@ commented in place:
   multi-paragraph doc comment into one run-on cell — destroying exactly the
   content this artifact exists to carry. Measured on the same tree: 752 KB of
   tables against 728 KB of lists, so it does not even cost bytes.
+- **`typeDeclarationVisibility: "compact"`.** The plugin's default is
+  `verbose`, which flattens a nested object type and emits a heading per LEAF —
+  `###### estelle.accent`, `###### estelle.language`, sixteen voices deep, a
+  third of `tts.md`, and the same again for the gateway model catalog.
+  `compact` emits one heading per top-level declaration and still pushes the
+  declaration's comment, so this costs no prose: measured −1,150 lines
+  tree-wide, of which two were content.
+
+**Reading order is set in `docs/typedoc.json`'s `packageOptions`, not at the
+top level.** With `entryPointStrategy: "packages"` typedoc converts each
+package as its own project and a top-level option never reaches it — verified
+by moving both of these up a level and getting a byte-identical tree to not
+setting them at all. Two live there:
+
+- **`groupOrder`, callables first.** TypeDoc groups by reflection kind and puts
+  Functions LAST, which is the worst possible order for an artifact whose whole
+  premise is one `cat` per subpath: `### agent()` sat at line 5,241 of 6,044 in
+  `index.md`, behind 24 constants and 33 type aliases, with `tool()` at 5,794.
+  It is line 5 now. Keep the trailing `"*"` — it is where every unnamed group
+  lands.
+- **`excludeExternals: true`.** `lib.es5.d.ts` and `@types/node` inheritance is
+  not this SDK's API, and the root page opened on 503 lines of it. −1,668
+  lines, with the set of `##`/`###` headings unchanged in every file, so not
+  one SDK-owned symbol was lost. Review a change to either of these by heading
+  set, never line by line: the diff is the whole tree and the assertion worth
+  making is that nothing but order and inherited noise moved.
 
 **The script renders into a temp directory in BOTH modes**, and only then
 decides whether to sync the result into `docs/api/` or diff against it.
@@ -135,9 +197,18 @@ declared nowhere near it.
 
 `pnpm check:doc-examples` (`scripts/check-doc-examples.mjs`, in `pnpm check`
 and the CI check job) extracts every ```` ```ts ````/```` ```tsx ```` fence
-from published-package doc comments, the scaffold CLAUDE.md, READMEs, and the
-studio prompt modules, and compiles each as a self-contained module under the
-scaffold tsconfig. A deliberate fragment opts out with `no-check` in the fence
-info string (```` ```ts no-check ````). It reads an explicit file list, so the
-generated `docs/api/` is not in its corpus — the fences there are copies of
-comments it already checks at the source.
+from published-package doc comments, the scaffold CLAUDE.md, READMEs,
+`docs/home.md`, and the studio prompt modules, and compiles each as a
+self-contained module under the scaffold tsconfig. A deliberate fragment opts
+out with `no-check` in the fence info string (```` ```ts no-check ````). It
+reads an explicit file list, so the generated `docs/api/` is not in its corpus
+— the fences there are copies of comments it already checks at the source.
+
+`home.md` is in that list because it is the site's landing page and was the one
+user-facing markdown outside it. It carried
+`agent({ …, tools: { get_weather: getWeather } })` — not merely wrong but the
+exact misuse `AgentParams` declares a string-literal type to reject, so the
+most-read example in the project taught the thing the type system exists to
+prevent, and contradicted `packages/aai/README.md` two screens away. Nothing
+downstream regenerates when it changes: the markdown rendering sets
+`readme: "none"`, so `home.md` reaches `docs/dist` only.

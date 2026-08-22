@@ -5,26 +5,40 @@ The failure a `"use step"` body should throw (the
 
 The Workflow DevKit retries a step that throws, gives up on a `FatalError`,
 and honours the delay on a `RetryableError` — so every step body that calls
-an HTTP API owns the same three-way decision, and `sdk/step-retry.ts` already
-carries the two halves it can answer without the DevKit
-(`isTransientStatus` and `retryAfter`, both on `/utils`). What it could
-not do is
+an HTTP API owns the same three-way decision, and `@alexkroman1/aai/step`
+already carries the two halves it can answer without the DevKit
+(`isTransientStatus` and `retryAfter`). What it could not do is
 CONSTRUCT the error, because `FatalError` and `RetryableError` belong to
-`workflow` and `sdk/utils.ts` is the subpath the CLI loads on every
-invocation. So the mapping was left as a snippet in that module's own doc —
-and both templates that needed it copied the snippet out of the doc, verbatim
-and character-identical. That is what this module is: the last function of an
+`workflow`. So the mapping was left as a snippet in a module doc — and both
+templates that needed it copied the snippet out, verbatim and
+character-identical. That is what this module is: the last function of an
 extraction that stopped one function short.
 
-## Why this is its own subpath
+## Why this is not simply part of `@alexkroman1/aai/step`
 
-`workflow` is a real dependency of this package already, so nothing new is
-installed. What a subpath buys is that the dependency is only in the import
-graph of a caller that asked for it: `@alexkroman1/aai/utils` may not reach
-`workflow` (the CLI's zero-dependency startup path), and a step artifact
-externalizes it anyway — the Workflow DevKit's builder leaves `workflow` and
-`@workflow/*` out of the bundle it produces — so importing it from a step
-costs a step nothing.
+`@alexkroman1/aai/step` is the sibling, and the question a reader arriving
+here actually has is why [throwStepError](#throwsteperror) is not next to
+`stepFetch`.
+
+The answer is that these four functions are the ONE authoring module allowed
+to import the DevKit's `workflow` package, and `/step` is not written only
+for a step. Its vocabulary is reached from a tool body and from a spec as
+well — `mapConcurrent` bounds a rate-limited API call anywhere,
+`stepFetch` is an ordinary HTTP client, and an exported step is driven
+directly by every workflow template's tests. Putting `workflow` in that
+subpath's graph would put it in all of theirs.
+
+A STEP, meanwhile, pays nothing for the extra import line: the DevKit's
+builder externalizes `workflow` and `@workflow/*` from the artifact it
+produces, so the dependency is only ever in the import graph of a caller
+that asked for it. `workflow` is already a real dependency of this package,
+so nothing new is installed either way.
+
+(An earlier version of this section argued the same split against
+`@alexkroman1/aai/utils`, which was the sibling at the time. It no longer is
+— the step vocabulary moved to `/step` — and the zero-dependency budget it
+named is now a property of BOTH subpaths rather than the reason one of them
+exists. The boundary is unchanged; only what it is drawn against is.)
 
 It is in `sdk/` rather than `host/` despite `workflow` being a Node package,
 and that is the rule rather than an exception to it: the split is about
@@ -227,9 +241,9 @@ The DevKit error one failure deserves.
 ways a step learns it failed:
 
 - A **`Response`** — a non-2xx from an API the step called. Transient by
-  `isTransientStatus` (`/utils`), with the delay from its `Retry-After` when it
-  named one.
-- A **`StepGenerateError`** or a **`TranscribeError`** (both `/utils`) — the
+  `isTransientStatus` (`/step`), with the delay from its `Retry-After`
+  when it named one.
+- A **`StepGenerateError`** or a **`TranscribeError`** (both `/step`) — the
   LLM gateway and the transcription endpoints, each of which has already made
   the same judgement and recorded it on `retryable`/`retryAfter`. A
   transcription refusal the PROVIDER decided — a failed job, a recording with

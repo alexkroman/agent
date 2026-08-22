@@ -3,20 +3,15 @@
  * `@alexkroman1/aai/workflow-api` — the client side of a deployed agent's HTTP
  * API, from one import path.
  *
- * Four modules sit behind it, and the split is a dependency one rather than a
- * taste one: `agent-client.ts` is a SUPERSET of `workflow-api-client.ts` (it
- * calls the narrower factory), so the subpath cannot be either file — pointing
- * it at the client and re-exporting the agent client from there is an import
- * cycle, which is what this barrel exists to break. `event-stream.ts` is the
- * parser both of them read a stream with, and `workflow-api-types.ts` holds the
- * call set.
- *
- * Start with `createAgentClient` — one object for everything one agent answers.
- * `createWorkflowApiClient` is the narrower one, for a caller that genuinely
- * only has workflows (a page already knows what it is).
+ * Start with {@link createAgentClient} — one object for everything one agent
+ * answers. {@link createWorkflowApiClient} is the narrower one, for a caller
+ * that genuinely only has workflows (a page already knows what it is): the
+ * agent client CALLS it, so the two are a superset and its narrower factory
+ * rather than two implementations, and the barrel exists because pointing the
+ * subpath at either one directly would be an import cycle.
  *
  * It also owns the RUN vocabulary — the option bags, the snapshot union, its
- * guard, and `WorkflowOutputOf` — which used to sit on the root barrel beside
+ * guard, and {@link WorkflowOutputOf} — which used to sit on the root barrel beside
  * `agent()` and `tool()`. See the re-export below for the line that puts it
  * here.
  *
@@ -45,9 +40,10 @@ export { type EventStreamFrame, readEventStream } from "./event-stream.ts";
  * without importing anything. Declaring a workflow is still `workflow()` on the
  * root; this is everything about the run it starts.
  *
- * `WorkflowOutputOf` is the type a page's `useWorkflowRun<…>` is parameterized
- * by, which is the clearest case of all — it is imported by a `client.tsx`,
- * beside `createWorkflowApi`, from this subpath.
+ * {@link WorkflowOutputOf} is the type a page's `useWorkflowRun<…>` is
+ * parameterized by, which is the clearest case of all — it is imported by a
+ * `client.tsx`, beside `createWorkflowApi` from `@alexkroman1/aai-ui`, from
+ * this subpath.
  */
 export type {
   AnyWorkflowDef,

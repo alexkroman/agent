@@ -54,8 +54,8 @@ export type TranscribeRequestOptions = {
 /**
  * A failure from either endpoint, carrying what the caller needs to classify it.
  *
- * The SDK does not decide fatal-vs-retryable, for the reason `step-speak.ts`
- * states: a helper that guessed would be guessing for every caller. What it can
+ * The SDK does not decide fatal-vs-retryable, for the same reason {@link stepSpeak}
+ * does not: a helper that guessed would be guessing for every caller. What it can
  * do is carry the evidence, which is what `retryable` and `retryAfter` are —
  * read by `toStepError` on `@alexkroman1/aai/step-errors`, exactly as
  * `StepGenerateError`'s are. So a step body says `.catch(throwStepError)` and

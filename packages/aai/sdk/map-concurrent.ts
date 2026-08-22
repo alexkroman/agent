@@ -76,7 +76,28 @@
  *   the map silently does NOTHING, which reads as an empty input.
  * @param run - Called once per item, with the item and its index in `items`.
  *   Inside a workflow body this is where a `"use step"` call goes, and it must
- *   be the only one — see the module doc.
+ *   be the only one — see the remarks below.
+ *
+ * @remarks
+ * **`run` must issue the same sequence of step calls for every item**, which in
+ * practice means one, issued synchronously. The Workflow Development Kit
+ * correlates a journal entry to a step call by the ORDER the call was issued in
+ * and by nothing else, so a callback that awaits something before its step call,
+ * or issues two steps in a row, interleaves with its siblings by completion
+ * order — and a resume then hands the Nth journal entry to a different call. A
+ * body that needs two steps per item runs them as two fan-outs.
+ *
+ * What that requires of the window itself is narrower than it looks, and is why
+ * there is no barrier in it: the SEQUENCE OF ITEMS whose calls are issued has to
+ * be a pure function of the list, not of the settle order. The cursor only ever
+ * hands out the next index, so the Nth call issued is item N-1 however the calls
+ * settle; what completion order decides is which slot runs which item, and no
+ * step id depends on that. A slot that finishes early therefore takes the next
+ * item immediately rather than idling until its slowest sibling lands.
+ *
+ * Nothing here imports the Workflow Development Kit, so this is a plain bounded
+ * map: a tool body can use it for a rate-limited API and a spec can call it
+ * directly.
  *
  * @example
  * ```ts no-check

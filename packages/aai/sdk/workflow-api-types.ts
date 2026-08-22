@@ -72,9 +72,9 @@ export type WorkflowApiClientOptions = {
  * The calls the API offers — one method per route, and nothing beyond them.
  *
  * The width is the constraint: a route needing more than a tool can do is the
- * signal to add a `WorkflowClient` method server-side, never to grow this into
- * an engine with reads of its own. See the "no engine here" section of
- * `host/workflow-api.ts`.
+ * signal to add a `WorkflowClient` method server-side, never to grow this
+ * into an engine with reads of its own: this surface dispatches, it does not
+ * query.
  *
  * @public
  */

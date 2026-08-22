@@ -16,8 +16,8 @@
  *
  * That zod-free property is why `omitUndefined` lives here rather than on
  * `/internal` alongside the other cross-package infrastructure: `/internal`
- * re-exports `formatSchemaIssues` from `sdk/schema.ts`, so importing anything
- * from it pulls zod — and the CLI's own `_utils.ts` is on the startup path.
+ * re-exports a schema helper that pulls zod, so importing anything from it pulls
+ * zod's whole module graph — and the CLI loads this module on every invocation.
  *
  * `createKeyedLock` is the one export with a runtime dependency (`p-timeout`,
  * for its optional acquire deadline). Deliberate, and measured against the
@@ -89,9 +89,9 @@ export type ToolFailure = { error: string };
  * The pair to {@link isToolFailure}, and named to say so. The object literal
  * `{ error: message }` means exactly the same thing and stays perfectly good
  * TypeScript; this exists so that a tool reaching for "how do I report a
- * failure?" finds the constructor next to the guard instead of finding
- * `serializeToolFailure` — the `@internal` wire form, whose result the guard
- * does not narrow.
+ * failure?" finds the constructor next to the guard rather than the framework's
+ * own internal wire form, which is a pre-serialized string this guard does not
+ * narrow.
  *
  * @example
  * ```ts

@@ -20,9 +20,14 @@ export {
   ToolSchemaSchema,
   toAgentConfig,
 } from "./agent-config.ts";
+// `assertProviderTriple` is deliberately NOT here. Its first overload carries
+// `@internal` and the second carries no tag, so API Extractor reported one
+// symbol as both `@internal` and `@public` — `API-EXPORTS.json` listed the name
+// while `docs/api` denied it existed. Every caller is inside this package
+// (`sdk/agent-config.ts`, `host/runtime-providers.ts`), so the barrel entry was
+// buying nothing; import it from `./config-rules.ts` directly.
 export {
   assertPipelineTuning,
-  assertProviderTriple,
   assertSilencePolicy,
   type PipelineTuning,
   type SessionMode,

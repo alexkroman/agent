@@ -12,6 +12,15 @@
  * nothing about which layer you were in and the reference page for the step
  * vocabulary was a list you had to filter by hand.
  *
+ * **That reader is a `workflows/*.ts` module in an agent project.** The
+ * Workflow Development Kit's builder scans exactly that directory and rewrites
+ * the `"use step"` and `"use workflow"` bodies it finds there — a body written
+ * anywhere else is transformed by nothing and runs inline, with no journal and
+ * no retry. So the loop is: `workflow` on the root DECLARES the run and
+ * types its input, a `workflows/*.ts` module holds the body, this subpath is
+ * what that body is written against, and
+ * `useWorkflowRun` in `@alexkroman1/aai-ui` renders it.
+ *
  * What is here is one reader's whole vocabulary, in the order a pipeline needs
  * it:
  *
@@ -44,11 +53,11 @@
  * undici dispatcher.
  *
  * Two neighbours that are deliberately elsewhere. The failure a body THROWS
- * (`toStepError` / `throwStepError` / `throwFatalStepError`) is on
- * `@alexkroman1/aai/step-errors`, which is the one authoring module allowed to
- * import the DevKit's `workflow` package. And the DevKit's own directives and
- * its durable `sleep` are imported from `workflow` directly — this SDK owns
- * what is INSIDE a step and never the steps.
+ * (`toStepError` / `throwStepError` / `throwFatalStepError`)
+ * is on `@alexkroman1/aai/step-errors`, which is the one authoring module
+ * allowed to import the DevKit's `workflow` package. And the DevKit's own
+ * directives and its durable `sleep` are imported from `workflow` directly —
+ * this SDK owns what is INSIDE a step and never the steps.
  *
  * @module step
  */

@@ -231,6 +231,40 @@ export async function stepTranscribeUpload(
  *
  * @throws {TranscribeError} on a refusal, or when the API creates no id.
  *
+ * @remarks
+ * **This trio is for a recording of arbitrary length; {@link stepTranscribeSync}
+ * is for one that fits in a single request.** That endpoint answers with the
+ * words in the response and pays for it with a hard 120-second, 40 MB ceiling.
+ * Under the ceiling it is one round trip against these three steps plus a
+ * polling loop; over it, the job API is the only thing that works. Choosing
+ * between them is the one decision this subpath forces, and it is decided by
+ * what the audio IS rather than by anything either function can see.
+ *
+ * @example
+ * The whole job, as three steps and a durable wait. The submit is journaled, so
+ * a resumed run polls the same job rather than paying for a second one.
+ * ```ts
+ * import {
+ *   stepTranscribePoll,
+ *   stepTranscribeSubmit,
+ *   stepTranscribeUpload,
+ * } from "@alexkroman1/aai/step";
+ *
+ * export async function startJob(uploadId: string): Promise<string> {
+ *   "use step";
+ *   const { audioUrl } = await stepTranscribeUpload(uploadId);
+ *   const { id } = await stepTranscribeSubmit(audioUrl);
+ *   return id;
+ * }
+ *
+ * export async function checkJob(id: string): Promise<string | undefined> {
+ *   "use step";
+ *   const progress = await stepTranscribePoll(id);
+ *   // Branch on `done`, never on a provider status string.
+ *   return progress.done ? progress.transcript.text : undefined;
+ * }
+ * ```
+ *
  * @public
  */
 export async function stepTranscribeSubmit(
@@ -259,7 +293,16 @@ export async function stepTranscribeSubmit(
 /**
  * Ask once whether a job has finished, and read it when it has.
  *
- * One request answers both questions — see "Polling READS" in the module doc.
+ * @remarks
+ * **Polling READS, so there is no separate read.** Both templates this replaced
+ * polled `GET /v2/transcript/:id` for a status and then fetched the identical
+ * URL again for the text — the completed poll had the transcript in its hand and
+ * threw it away. This answers with it, so a finished job costs one round trip
+ * rather than two and the value journaled by the last poll IS the transcript.
+ *
+ * The provider's vocabulary stays inside: branch on `done`, never on a status
+ * string, so a new status the service invents cannot read as "not finished yet"
+ * forever.
  *
  * @throws {TranscribeError}, NOT retryable, when the provider failed the job or
  *   transcribed no words at all. A recording of silence succeeds and answers

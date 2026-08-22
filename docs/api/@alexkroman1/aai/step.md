@@ -12,6 +12,15 @@ body, a tool body, and the framework's own plumbing), so the import line said
 nothing about which layer you were in and the reference page for the step
 vocabulary was a list you had to filter by hand.
 
+**That reader is a `workflows/*.ts` module in an agent project.** The
+Workflow Development Kit's builder scans exactly that directory and rewrites
+the `"use step"` and `"use workflow"` bodies it finds there — a body written
+anywhere else is transformed by nothing and runs inline, with no journal and
+no retry. So the loop is: `workflow` on the root DECLARES the run and
+types its input, a `workflows/*.ts` module holds the body, this subpath is
+what that body is written against, and
+`useWorkflowRun` in `@alexkroman1/aai-ui` renders it.
+
 What is here is one reader's whole vocabulary, in the order a pipeline needs
 it:
 
@@ -44,11 +53,1132 @@ rather than a synthesizer, the same split [stepFetch](#stepfetch) makes with its
 undici dispatcher.
 
 Two neighbours that are deliberately elsewhere. The failure a body THROWS
-(`toStepError` / `throwStepError` / `throwFatalStepError`) is on
-`@alexkroman1/aai/step-errors`, which is the one authoring module allowed to
-import the DevKit's `workflow` package. And the DevKit's own directives and
-its durable `sleep` are imported from `workflow` directly — this SDK owns
-what is INSIDE a step and never the steps.
+(`toStepError` / `throwStepError` / `throwFatalStepError`)
+is on `@alexkroman1/aai/step-errors`, which is the one authoring module
+allowed to import the DevKit's `workflow` package. And the DevKit's own
+directives and its durable `sleep` are imported from `workflow` directly —
+this SDK owns what is INSIDE a step and never the steps.
+
+## Functions
+
+### emit()
+
+```ts
+function emit<T>(namespace: string, chunk: T): Promise<void>;
+```
+
+Write one structured chunk into a NAMED stream of this run.
+
+The other half of [report](#report), and the split is what each is FOR: `report`
+writes a sentence for a person, into the run's default stream and the server
+log. This writes a VALUE for a program — a partial result, as the step produces
+it — into a stream a reader asks for by name.
+
+That is what makes a long run's output streamable rather than only its
+narration. A run's snapshot carries a status and, once terminal, an output, so
+a fan-out that has transcribed forty of sixty segments has forty results and no
+way to hand any of them over. Emitting each one as it lands means a page renders
+the answer growing instead of a spinner:
+
+```ts no-check
+import { emit } from "@alexkroman1/aai/step";
+
+export async function transcribeSegment(index: number) {
+  "use step";
+  const text = await transcribe(index);
+  await emit("transcript", { index, text });
+  return { index, text };
+}
+```
+
+```tsx no-check
+// The reader, which the SDK already had: one stream per namespace.
+const { progress } = useWorkflowProgress<{ index: number; text: string }>(runId, {
+  namespace: "transcript",
+});
+```
+
+**The namespace is REQUIRED, and that is the point of the argument.** The
+default stream is `report()`'s, carrying lines a page renders verbatim — an
+object written into it comes back as `[object Object]` in the middle of the
+progress log, which is a trap rather than a decision. A named stream is also
+how a reader gets ONE kind of chunk per subscription, so
+`useWorkflowProgress<T>` can be typed at all.
+
+**Call it from a STEP, never from the workflow body**, for the reason `report`
+says: a body replays from the top on every resume, so a chunk written there is
+re-emitted on each one.
+
+Chunks are RETAINED with the run, so a reader that arrives late or reloads gets
+the whole stream from the beginning rather than only what arrives next.
+
+Failures are swallowed, exactly as `report`'s are: a run must not fail because
+a reader could not be told about a result the run itself has.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### namespace
+
+`string`
+
+Which of the run's streams this belongs in. A short,
+  stable name — a reader subscribes by it.
+
+##### chunk
+
+`T`
+
+The value, which must survive the run's own serialization.
+
+#### Returns
+
+`Promise`\<`void`\>
+
+***
+
+### encodeWav()
+
+```ts
+function encodeWav(samples: 
+  | Uint8Array<ArrayBufferLike>
+| readonly Uint8Array<ArrayBufferLike>[], format: PcmFormat): Uint8Array<ArrayBuffer>;
+```
+
+Wrap raw linear-PCM samples in a WAV container.
+
+#### Parameters
+
+##### samples
+
+  \| `Uint8Array`\<`ArrayBufferLike`\>
+  \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
+
+The PCM bytes, little-endian and channel-interleaved. A
+  LIST is joined in order, which is what a synthesizer's or a capture's
+  frames arrive as.
+
+##### format
+
+[`PcmFormat`](#pcmformat)
+
+How to read them. See [PcmFormat](#pcmformat) for the two defaults.
+
+#### Returns
+
+`Uint8Array`\<`ArrayBuffer`\>
+
+A complete `.wav` file: [WAV\_HEADER\_BYTES](#wav_header_bytes) of header followed
+  by `samples` unchanged.
+
+#### Throws
+
+for a format no header can describe — a non-integer or
+  non-positive rate or channel count, or a bit depth that is not a positive
+  multiple of 8.
+
+***
+
+### isTransientStatus()
+
+```ts
+function isTransientStatus(status: number): boolean;
+```
+
+Will another attempt plausibly answer differently?
+
+`408` counts because it is the far side saying "too slow", not "no"; `429` and
+every `5xx` are the ordinary transient pair. Everything else — a 400, a 401, a
+404 — answers the same way on the fourth attempt, and retrying it spends the
+step's whole budget to arrive at the same failure several seconds later.
+
+#### Parameters
+
+##### status
+
+`number`
+
+#### Returns
+
+`boolean`
+
+***
+
+### mapConcurrent()
+
+```ts
+function mapConcurrent<T, R>(
+   items: readonly T[], 
+   size: number, 
+run: (item: T, index: number) => R | Promise<R>): Promise<R[]>;
+```
+
+Map `items` through `run`, at most `size` at a time, in a replay-safe order.
+
+Results come back in ITEM order however the individual calls settle, so it
+substitutes directly for `Promise.all(items.map(run))` where a bound is
+needed.
+
+A rejection propagates and stops the window taking new items, which is what a
+workflow body wants: the finished siblings are already journaled, so a resume
+replays them for free and re-issues only what is missing. Catching per item to
+salvage a partial result is a decision only the caller can make — do it inside
+`run`.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+##### R
+
+`R`
+
+#### Parameters
+
+##### items
+
+readonly `T`[]
+
+What to map. An empty list runs nothing and resolves `[]`.
+
+##### size
+
+`number`
+
+Most calls in flight at once. Rounded down, and floored at 1.
+  A size of zero would otherwise start no slot at all — a hang, not an error,
+  and a hang inside a workflow body is a run that never completes. A
+  non-finite size is worse and needs the same floor for a different reason:
+  `Math.min(NaN, n)` is `NaN`, so `Array.from({ length: NaN })` is empty and
+  the map silently does NOTHING, which reads as an empty input.
+
+##### run
+
+(`item`: `T`, `index`: `number`) => `R` \| `Promise`\<`R`\>
+
+Called once per item, with the item and its index in `items`.
+  Inside a workflow body this is where a `"use step"` call goes, and it must
+  be the only one — see the remarks below.
+
+#### Returns
+
+`Promise`\<`R`[]\>
+
+#### Remarks
+
+**`run` must issue the same sequence of step calls for every item**, which in
+practice means one, issued synchronously. The Workflow Development Kit
+correlates a journal entry to a step call by the ORDER the call was issued in
+and by nothing else, so a callback that awaits something before its step call,
+or issues two steps in a row, interleaves with its siblings by completion
+order — and a resume then hands the Nth journal entry to a different call. A
+body that needs two steps per item runs them as two fan-outs.
+
+What that requires of the window itself is narrower than it looks, and is why
+there is no barrier in it: the SEQUENCE OF ITEMS whose calls are issued has to
+be a pure function of the list, not of the settle order. The cursor only ever
+hands out the next index, so the Nth call issued is item N-1 however the calls
+settle; what completion order decides is which slot runs which item, and no
+step id depends on that. A slot that finishes early therefore takes the next
+item immediately rather than idling until its slowest sibling lands.
+
+Nothing here imports the Workflow Development Kit, so this is a plain bounded
+map: a tool body can use it for a rate-limited API and a spec can call it
+directly.
+
+#### Example
+
+```ts no-check
+// In a "use workflow" body: one step per segment, four in flight.
+const cleaned = await mapConcurrent(segments, 4, (text) => postProcess(text));
+```
+
+***
+
+### multipartBody()
+
+```ts
+function multipartBody(...parts: readonly MultipartPart[]): MultipartBody;
+```
+
+Encode `multipart/form-data` as BYTES.
+
+The reason this exists rather than `new FormData()`: a `FormData` is a branded
+object, and handing one to a `fetch` from a different undici than your realm's
+global silently sends the string `[object FormData]` — see
+[StepFetchInit](#stepfetchinit). Bytes cannot be got wrong that way, and a step's
+multipart body is always one or two known parts rather than a form somebody
+filled in.
+
+The boundary is generated per call and is not derived from the content, so a
+body containing the boundary token is astronomically unlikely rather than
+impossible; endpoints behave the same way.
+
+#### Parameters
+
+##### parts
+
+...readonly [`MultipartPart`](#multipartpart)[]
+
+#### Returns
+
+[`MultipartBody`](#multipartbody)
+
+***
+
+### pcmDurationMs()
+
+```ts
+function pcmDurationMs(byteLength: number, format: PcmFormat): number;
+```
+
+How long a run of PCM samples lasts, in milliseconds.
+
+Beside the encoder because it divides by the same derived `blockAlign` the
+header states, and a duration computed from a different one is how a
+progress bar and a file disagree. Rounded, since a caller reporting
+milliseconds has no use for the fraction.
+
+#### Parameters
+
+##### byteLength
+
+`number`
+
+##### format
+
+[`PcmFormat`](#pcmformat)
+
+#### Returns
+
+`number`
+
+#### Throws
+
+for a format no header can describe — the same check
+  [encodeWav](#encodewav) makes, so the two cannot disagree about what is legal.
+
+***
+
+### readUpload()
+
+```ts
+function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+```
+
+Read a window of an uploaded file.
+
+Omitting both bounds reads the whole file, which is the right call only when
+the file is small: everything else names the window it needs, so a fan-out
+over a large file moves each byte once.
+
+Bounds are CLAMPED rather than rejected — a plan computed from a file's own
+header can legitimately end one byte past it, and the returned `start`/`end`
+say what was actually read. That is also exactly what makes a STREAMED upload
+readable: the clamp is to what has ARRIVED, so a window that runs past the
+bytes stored so far comes back short rather than failing, and `end` is how a
+caller learns which it got.
+
+#### Parameters
+
+##### id
+
+`string`
+
+##### opts?
+
+[`ReadUploadOptions`](#readuploadoptions)
+
+#### Returns
+
+`Promise`\<[`UploadSlice`](#uploadslice)\>
+
+#### Example
+
+Write in one step, read a window back in another — an id crosses the journal,
+bytes never do.
+```ts
+import { readUpload, writeUpload } from "@alexkroman1/aai/step";
+
+export async function store(bytes: Uint8Array): Promise<string> {
+  "use step";
+  const { id } = await writeUpload(bytes, { name: "summary.wav" });
+  return id;
+}
+
+export async function firstSecond(uploadId: string): Promise<Uint8Array> {
+  "use step";
+  const { bytes } = await readUpload(uploadId, { start: 44, end: 44 + 32_000 });
+  return bytes;
+}
+```
+
+***
+
+### report()
+
+```ts
+function report(line: string): Promise<void>;
+```
+
+Write one progress line for the run this step belongs to.
+
+The line reaches two readers: the run's own output stream, which
+`GET /workflows/runs/:id/stream` serves and `useWorkflowProgress` in
+`@alexkroman1/aai-ui` renders,
+and the server log, so an operator watching a deploy can see which step is
+running without a page open.
+
+**Call it from a STEP, never from the workflow body.** A body replays from the
+top on every resume, so a line written there is re-emitted on each one — the
+same rule `ctx.db` follows.
+
+Failures are swallowed: narration must never fail a run. It resolves either
+way, so awaiting it is safe and is what keeps the ordering of a step's own
+lines.
+
+#### Parameters
+
+##### line
+
+`string`
+
+One line of progress, as a reader should see it. Prefer a
+  sentence naming what is happening and to what (`"Transcribing 0:00–0:58."`)
+  over a machine token — the page renders these verbatim.
+
+#### Returns
+
+`Promise`\<`void`\>
+
+***
+
+### requireStepEnv()
+
+```ts
+function requireStepEnv(name: string): string;
+```
+
+[stepEnv](#stepenv), failing by name when the key is not set.
+
+The failure a step wants for a credential: an absent key is not transient, so
+it should say which key and how to set it rather than surface three layers
+down as an HTTP 401 the DevKit then retries.
+
+It throws a plain `Error` rather than the DevKit's `FatalError` on purpose —
+this module is dependency-free and must stay importable from a tool body and a
+spec, neither of which has a workflow around it. A step that wants the retries
+skipped wraps the call:
+
+```ts no-check
+try {
+  key = requireStepEnv("ASSEMBLYAI_API_KEY");
+} catch (err) {
+  throw new FatalError(errorMessage(err));
+}
+```
+
+#### Parameters
+
+##### name
+
+`string`
+
+#### Returns
+
+`string`
+
+***
+
+### retryAfter()
+
+```ts
+function retryAfter(from: 
+  | {
+  headers: Headers;
+}
+  | Headers): Date | undefined;
+```
+
+When the far side asked to be called back, as a `Date`.
+
+Reads `Retry-After` in both spellings RFC 9110 allows — delta-seconds
+(`Retry-After: 30`) and an HTTP date (`Retry-After: Wed, 21 Oct 2026 07:28:00
+GMT`) — and answers `undefined` for a header that is absent, unparsable, or in
+the past. `undefined` is what a caller wants there: it means "you decide",
+which is the DevKit's own backoff, rather than a date that would retry
+instantly or never.
+
+#### Parameters
+
+##### from
+
+  \| \{
+  `headers`: `Headers`;
+\}
+  \| `Headers`
+
+A `Response`, or its headers. Both spellings are accepted
+  because a caller holding only the headers should not have to fake a
+  response to ask.
+
+#### Returns
+
+`Date` \| `undefined`
+
+***
+
+### stepEnv()
+
+```ts
+function stepEnv(name: string): string | undefined;
+```
+
+Read one key of the agent's env from inside a `"use step"` function.
+
+#### Parameters
+
+##### name
+
+`string`
+
+The env key, as declared in `.env` or set with
+  `aai secret put`. Listing it in `agent({ requiredEnv })` is what makes a
+  deploy check it is there.
+
+#### Returns
+
+`string` \| `undefined`
+
+The value, or `undefined` when the agent env does not declare it.
+
+#### Example
+
+```ts
+import { stepEnv } from "@alexkroman1/aai/step";
+
+export async function fetchReport(id: string): Promise<string> {
+  "use step";
+  const base = stepEnv("REPORT_BASE_URL") ?? "https://reports.example.com";
+  return await (await fetch(`${base}/${id}`)).text();
+}
+```
+
+***
+
+### stepFetch()
+
+```ts
+function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
+```
+
+Make one HTTP request from inside a step.
+
+Prefer this to `fetch` in any `"use step"` function, and especially in a
+fan-out: it pins HTTP/1.1 (so a concurrent batch gets a socket each rather
+than N streams on one connection), reuses connections across a fan-out's
+calls, and reports a connection failure with its whole `cause` chain instead
+of a bare `TypeError: fetch failed`.
+
+#### Parameters
+
+##### url
+
+`string`
+
+##### init?
+
+[`StepFetchInit`](#stepfetchinit)
+
+#### Returns
+
+`Promise`\<`Response`\>
+
+#### Remarks
+
+**`globalThis.fetch` speaks HTTP/2 now, and a fan-out is the worst case for
+that.** undici 8 — the copy backing it from Node 26 — defaults `allowH2` to
+true, so every concurrent request from one process is multiplexed onto ONE TCP
+connection sharing one flow-control window. Measured against AssemblyAI's sync
+transcription endpoint, 8 concurrent 17.66 MB uploads, same bytes and key, one
+minute apart:
+
+| transport | landed | p50 | throughput |
+| --- | --- | --- | --- |
+| `globalThis.fetch` (h2) | 14/16 | 8094ms | 20.8 MB/s |
+| HTTP/1.1 | 16/16 | 3719ms | 29.9 MB/s |
+| HTTP/1.1, keep-alive pool | 16/16 | 3037ms | 38.6 MB/s |
+
+**The two lost requests matter more than the 2.7x.** On HTTP/2 a capacity
+limit arrives as a stream reset, and a stream error carries no HTTP status —
+so neither [isTransientStatus](#istransientstatus) nor [retryAfter](#retryafter-2) can see it, every
+sibling in a bounded fan-out retries in lockstep into the same reset, and the
+run dies on `TypeError: fetch failed` with its real cause two `cause` hops
+down. Over HTTP/1.1 the identical limit arrives as a `503` or `429` carrying
+`retry-after`, which those helpers already read. Verified end to end: the same
+65-segment run that failed on `fetch` completes on HTTP/1.1 at every
+concurrency up to 48, and at 64 pays 20 retried `503`s instead of dying.
+
+#### Throws
+
+when the request never got an answer — a reset
+  connection, a DNS failure, a timeout. Distinct from a response with a bad
+  status, which is returned like any other: only the caller knows whether a
+  `404` is fatal.
+
+***
+
+### stepGenerate()
+
+```ts
+function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+```
+
+Ask the AssemblyAI LLM Gateway one question and return its reply.
+
+#### Parameters
+
+##### prompt
+
+`string`
+
+The user message.
+
+##### opts?
+
+[`StepGenerateOptions`](#stepgenerateoptions)
+
+#### Returns
+
+`Promise`\<`string`\>
+
+The reply, trimmed. Never empty — a 200 carrying no content is a
+  [StepGenerateError](#stepgenerateerror) with `retryable: true`, because it is a real and
+  transient thing a gateway does and a step returning `""` would file a blank
+  report and report success.
+
+#### Example
+
+```ts
+import { stepGenerate, StepGenerateError } from "@alexkroman1/aai/step";
+import { FatalError } from "workflow";
+
+export async function summarize(text: string): Promise<string> {
+  "use step";
+  try {
+    return await stepGenerate(text, { system: "Summarize in two sentences." });
+  } catch (err) {
+    if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
+    throw err;
+  }
+}
+```
+
+#### Throws
+
+On EVERY failure of this call, which is the point
+  of the class: a non-2xx, an empty completion, a reply that is not JSON, a
+  request that never got an answer (a reset, a DNS failure, this call's own
+  deadline), and a missing API key. Only the last is `retryable: false` —
+  three more attempts find the same gap.
+
+***
+
+### stepGenerateJson()
+
+```ts
+function stepGenerateJson<S>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+```
+
+Ask the model for JSON and return it validated.
+
+The reply is unfenced, parsed, and checked against `schema`; the validated
+value is what comes back, typed as the schema's output.
+
+#### Type Parameters
+
+##### S
+
+`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
+
+#### Parameters
+
+##### prompt
+
+`string`
+
+The user message. The SHAPE belongs in `system` — this says
+  nothing about JSON on the caller's behalf, because the wording that gets a
+  model to comply is part of the prompt a template is demonstrating.
+
+##### opts
+
+[`StepGenerateJsonOptions`](#stepgeneratejsonoptions)\<`S`\>
+
+#### Returns
+
+`Promise`\<[`InferSchemaOutput`](index.md#inferschemaoutput)\<`S`\>\>
+
+The validated reply.
+
+#### Throws
+
+A plain error — retryable by the DevKit's default, which is
+  the point — when the reply is not JSON, is not an object, or does not
+  satisfy `schema`. All three are things a model may get right next time.
+
+#### Throws
+
+On any gateway
+  failure, exactly as [stepGenerate](#stepgenerate) does. Classify it with
+  `toStepError` from `@alexkroman1/aai/step-errors`.
+
+#### Example
+
+```ts
+import { stepGenerateJson } from "@alexkroman1/aai/step";
+import { z } from "zod";
+
+const Digest = z.object({ headline: z.string(), points: z.array(z.string()) });
+
+export async function summarize(article: string): Promise<{ headline: string }> {
+  "use step";
+  return await stepGenerateJson(article, {
+    schema: Digest,
+    system: 'Reply with JSON only: {"headline": string, "points": string[]}.',
+  });
+}
+```
+
+***
+
+### stepSpeak()
+
+```ts
+function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
+```
+
+Speak `text`, and answer with the whole utterance as a WAV.
+
+#### Parameters
+
+##### text
+
+`string`
+
+What to say. Refused when it is blank: a synthesizer answers
+  an empty request with an empty file, which is a zero-length audio element
+  on somebody's page rather than an error, and no retry finds the missing
+  words.
+
+##### opts?
+
+[`SpeakOptions`](#speakoptions)
+
+#### Returns
+
+`Promise`\<[`SpokenAudio`](#spokenaudio)\>
+
+#### Throws
+
+when no synthesizer is published — the message names both
+  causes (a process serving no agent, and a spec calling the step directly).
+
+#### Throws
+
+when the credential named by `apiKeyEnv` is not in the
+  agent's env, which `requireStepEnv` reports by name.
+
+#### Example
+
+Speak and STORE in one step, and return the id. A step is journaled by what
+it returns, so an id is replayed on a resume and bytes are not — splitting
+this in two would carry the audio across the queue on every resume.
+```ts
+import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
+
+export async function narrate(summary: string): Promise<string> {
+  "use step";
+  const spoken = await stepSpeak(summary, { voice: "jane" });
+  const stored = await writeUpload(spoken.audio, {
+    name: "summary.wav",
+    type: "audio/wav",
+  });
+  return stored.id;
+}
+```
+
+***
+
+### stepTranscribePoll()
+
+```ts
+function stepTranscribePoll(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+```
+
+Ask once whether a job has finished, and read it when it has.
+
+#### Parameters
+
+##### id
+
+`string`
+
+##### opts?
+
+[`TranscribeRequestOptions`](#transcriberequestoptions)
+
+#### Returns
+
+`Promise`\<[`TranscribeProgress`](#transcribeprogress)\>
+
+#### Remarks
+
+**Polling READS, so there is no separate read.** Both templates this replaced
+polled `GET /v2/transcript/:id` for a status and then fetched the identical
+URL again for the text — the completed poll had the transcript in its hand and
+threw it away. This answers with it, so a finished job costs one round trip
+rather than two and the value journaled by the last poll IS the transcript.
+
+The provider's vocabulary stays inside: branch on `done`, never on a status
+string, so a new status the service invents cannot read as "not finished yet"
+forever.
+
+#### Throws
+
+, NOT retryable, when the provider failed the job or
+  transcribed no words at all. A recording of silence succeeds and answers
+  with an empty string, which is the failure this flow is most likely to meet
+  and the one that reads least like a failure: everything downstream would
+  otherwise be handed no words and asked to work anyway.
+
+***
+
+### stepTranscribeSubmit()
+
+```ts
+function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+  id: string;
+}>;
+```
+
+Create the transcription job, and answer with the id that outlives this run.
+
+#### Parameters
+
+##### audioUrl
+
+`string`
+
+What to transcribe. [stepTranscribeUpload](#steptranscribeupload)'s answer,
+  or any URL the service can reach — a recording already sitting in a bucket
+  never needs to pass through this process at all.
+
+##### opts?
+
+[`TranscribeSubmitOptions`](#transcribesubmitoptions)
+
+#### Returns
+
+`Promise`\<\{
+  `id`: `string`;
+\}\>
+
+#### Throws
+
+on a refusal, or when the API creates no id.
+
+#### Remarks
+
+**This trio is for a recording of arbitrary length; [stepTranscribeSync](#steptranscribesync)
+is for one that fits in a single request.** That endpoint answers with the
+words in the response and pays for it with a hard 120-second, 40 MB ceiling.
+Under the ceiling it is one round trip against these three steps plus a
+polling loop; over it, the job API is the only thing that works. Choosing
+between them is the one decision this subpath forces, and it is decided by
+what the audio IS rather than by anything either function can see.
+
+#### Example
+
+The whole job, as three steps and a durable wait. The submit is journaled, so
+a resumed run polls the same job rather than paying for a second one.
+```ts
+import {
+  stepTranscribePoll,
+  stepTranscribeSubmit,
+  stepTranscribeUpload,
+} from "@alexkroman1/aai/step";
+
+export async function startJob(uploadId: string): Promise<string> {
+  "use step";
+  const { audioUrl } = await stepTranscribeUpload(uploadId);
+  const { id } = await stepTranscribeSubmit(audioUrl);
+  return id;
+}
+
+export async function checkJob(id: string): Promise<string | undefined> {
+  "use step";
+  const progress = await stepTranscribePoll(id);
+  // Branch on `done`, never on a provider status string.
+  return progress.done ? progress.transcript.text : undefined;
+}
+```
+
+***
+
+### stepTranscribeSync()
+
+```ts
+function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
+  text: string;
+}>;
+```
+
+Transcribe one complete audio file.
+
+#### Parameters
+
+##### bytes
+
+`Uint8Array`
+
+A whole file, header included. The endpoint decodes each
+  request independently, so a headerless tail is bytes it will refuse.
+
+##### opts?
+
+[`TranscribeSyncOptions`](#transcribesyncoptions)
+
+#### Returns
+
+`Promise`\<\{
+  `text`: `string`;
+\}\>
+
+The text, trimmed. An EMPTY string is a legitimate answer here and
+  is not refused, unlike the async API's: a caller fanning out over segments
+  routinely gets silent ones, and a throw would fail the whole recording over
+  a pause in it. A caller transcribing exactly one clip should check for it.
+
+#### Throws
+
+on a refusal, carrying the verdict `toStepError`
+  reads — which matters most here, because a fan-out hits a rate limit all at
+  once and `retryAfter` is what makes the batch drain instead of colliding a
+  second later.
+
+#### Remarks
+
+**The ceiling is the whole decision: 120 seconds and 40 MB per request**, both
+enforced by the service. Under it, this is one round trip against
+[stepTranscribeUpload](#steptranscribeupload)/[stepTranscribeSubmit](#steptranscribesubmit)/[stepTranscribePoll](#steptranscribepoll)'s three steps and a polling loop — no job id, nothing to
+journal between phases, no wait to make durable. Over it, the audio has to be
+CUT into segments and fanned out, which is a subject of its own: where to cut
+so a word is not split, how to re-attach a header to each piece, how wide to
+run the fan-out, and how to stitch the results back together. So reach for
+this when one request is enough and for the async trio when it is not; the cut
+is not a decision this function can make, because it depends on what the audio
+IS.
+
+**Whole files only.** A caller cutting a WAV re-attaches a header to every
+window — [encodeWav](#encodewav) is the 44 bytes — and a caller handed complete
+files (parts of a multi-file upload, [stepSpeak](#stepspeak)'s output) passes them
+through untouched.
+
+#### Example
+
+One clip, one request. Compare [stepTranscribeSubmit](#steptranscribesubmit) for a recording
+that cannot fit in one.
+```ts
+import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
+
+export async function transcribeClip(uploadId: string): Promise<string> {
+  "use step";
+  const clip = await readUpload(uploadId);
+  const { text } = await stepTranscribeSync(clip.bytes);
+  return text;
+}
+```
+
+***
+
+### stepTranscribeUpload()
+
+```ts
+function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+  audioUrl: string;
+}>;
+```
+
+Send a stored upload to the provider, and answer with the URL it gave.
+
+The recording STREAMS out of the app's own store: `readUpload` hands back
+bytes and a two-hour recording is not a value this process can hold, so the
+body is an async iterable of windows — which `stepFetch` accepts precisely
+for this. Nothing is buffered beyond one window, and one window of READ-AHEAD
+keeps the store and the socket busy at the same time.
+
+#### Parameters
+
+##### uploadId
+
+`string`
+
+An upload in the agent's own store, as `writeUpload` or a
+  page's `api.upload(file)` produced.
+
+##### opts?
+
+[`TranscribeRequestOptions`](#transcriberequestoptions)
+
+#### Returns
+
+`Promise`\<\{
+  `audioUrl`: `string`;
+\}\>
+
+#### Throws
+
+on a refusal, carrying the verdict `toStepError`
+  reads. Give this step extra retries: it is the one call here worth another
+  attempt, and the only one whose cost is the file.
+
+***
+
+### stripJsonFence()
+
+```ts
+function stripJsonFence(reply: string): string;
+```
+
+Unwrap a ```` ```json ```` fence, which models add however firmly they are
+told not to.
+
+Refusing one would cost a whole retry for a reply that was otherwise correct.
+Text that carries no fence is returned trimmed and otherwise untouched.
+
+#### Parameters
+
+##### reply
+
+`string`
+
+#### Returns
+
+`string`
+
+***
+
+### uploadInfo()
+
+```ts
+function uploadInfo(id: string): Promise<UploadInfo>;
+```
+
+Read one upload's metadata: its name, what has ARRIVED, and whether that is all
+of it.
+
+The poll a body waiting on a streamed upload runs.
+
+**`complete` is the field to branch on, never `size`.** A size that stopped
+growing means "nothing arrived recently", which is what a slow link and a dead
+client both look like; only `complete` says the file is all there. A body that
+treated a stalled size as the end would return a transcript of most of a
+recording and report success.
+
+#### Parameters
+
+##### id
+
+`string`
+
+#### Returns
+
+`Promise`\<[`UploadInfo`](#uploadinfo)\>
+
+#### Throws
+
+when the id names no upload — a step that reaches for one and finds
+  nothing has been handed a stale or invented id, which no retry fixes. Note a
+  streamed upload EXISTS from its first byte, so this answers for one that is
+  still arriving.
+
+***
+
+### writeUpload()
+
+```ts
+function writeUpload(bytes: 
+  | Uint8Array<ArrayBufferLike>
+  | AsyncIterable<Uint8Array<ArrayBufferLike>, any, any>
+| readonly Uint8Array<ArrayBufferLike>[], opts?: WriteUploadOptions): Promise<UploadInfo>;
+```
+
+Store a file a step PRODUCED, and answer with the record naming it.
+
+The other direction of [readUpload](#readupload), and the half a workflow app needs
+the moment its output is not text. A run's output is journaled and read back
+as JSON, so audio, an image or a PDF cannot travel in one — the same rule
+that keeps a recording's bytes out of a run's INPUT, arriving at the other
+end of the run. So the bytes go to the store and the output carries the id,
+which a page turns back into a file with `api.download(id)`.
+
+```ts no-check
+import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
+
+export async function narrate(summary: string) {
+  "use step";
+  const spoken = await stepSpeak(summary);
+  const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
+  return { audio: stored.id, durationMs: spoken.durationMs };
+}
+```
+
+**Write it in the step that MAKES it, and return the id.** A step is
+journaled by what it returns, so an id is replayed and bytes are not: a
+resumed run re-reads the same file rather than re-synthesizing it. The
+corollary is that a RETRIED step writes a second upload and abandons the
+first, which is the cost of the store having no way to know two calls meant
+one file — worth knowing, and cheap next to the alternative of a step that
+cannot retry at all.
+
+#### Parameters
+
+##### bytes
+
+  \| `Uint8Array`\<`ArrayBufferLike`\>
+  \| `AsyncIterable`\<`Uint8Array`\<`ArrayBufferLike`\>, `any`, `any`\>
+  \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
+
+The file. A LIST is stored in order and an async iterable is
+  streamed, so a step producing something large — a long recording, a
+  concatenation of many utterances — never has to hold it whole.
+
+##### opts?
+
+[`WriteUploadOptions`](#writeuploadoptions)
+
+What to declare about it. Both fields are stored verbatim and
+  neither is inferred; see [WriteUploadOptions](#writeuploadoptions).
+
+#### Returns
+
+`Promise`\<[`UploadInfo`](#uploadinfo)\>
+
+#### Throws
+
+when the process published no store, or published a READ-ONLY one —
+  two different sentences, because the remedies differ and the call site
+  cannot tell them apart. Also when the deployment has nowhere durable to put
+  bytes at all, which the store reports by naming the variable that is
+  missing.
 
 ## Classes
 
@@ -128,42 +1258,6 @@ Error.constructor
 
 #### Properties
 
-##### cause?
-
-```ts
-optional cause?: unknown;
-```
-
-###### Inherited from
-
-```ts
-Error.cause
-```
-
-##### message
-
-```ts
-message: string;
-```
-
-###### Inherited from
-
-```ts
-Error.message
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-###### Inherited from
-
-```ts
-Error.name
-```
-
 ##### retryable
 
 ```ts
@@ -184,18 +1278,6 @@ Present on a rate limit that named a delay, and what a caller should hand
 to `RetryableError` — the DevKit's default backoff is a guess, and this is
 the number the far side chose.
 
-##### stack?
-
-```ts
-optional stack?: string;
-```
-
-###### Inherited from
-
-```ts
-Error.stack
-```
-
 ##### status
 
 ```ts
@@ -203,154 +1285,6 @@ readonly status: number | undefined;
 ```
 
 The gateway's status, when there was a response at all.
-
-##### stackTraceLimit
-
-```ts
-static stackTraceLimit: number;
-```
-
-The `Error.stackTraceLimit` property specifies the number of stack frames
-collected by a stack trace (whether generated by `new Error().stack` or
-`Error.captureStackTrace(obj)`).
-
-The default value is `10` but may be set to any valid JavaScript number. Changes
-will affect any stack trace captured _after_ the value has been changed.
-
-If set to a non-number value, or set to a negative number, stack traces will
-not capture any frames.
-
-###### Inherited from
-
-```ts
-Error.stackTraceLimit
-```
-
-#### Methods
-
-##### captureStackTrace()
-
-```ts
-static captureStackTrace(targetObject: object, constructorOpt?: Function): void;
-```
-
-Creates a `.stack` property on `targetObject`, which when accessed returns
-a string representing the location in the code at which
-`Error.captureStackTrace()` was called.
-
-```js
-const myObject = {};
-Error.captureStackTrace(myObject);
-myObject.stack;  // Similar to `new Error().stack`
-```
-
-The first line of the trace will be prefixed with
-`${myObject.name}: ${myObject.message}`.
-
-The optional `constructorOpt` argument accepts a function. If given, all frames
-above `constructorOpt`, including `constructorOpt`, will be omitted from the
-generated stack trace.
-
-The `constructorOpt` argument is useful for hiding implementation
-details of error generation from the user. For instance:
-
-```js
-function a() {
-  b();
-}
-
-function b() {
-  c();
-}
-
-function c() {
-  // Create an error without stack trace to avoid calculating the stack trace twice.
-  const { stackTraceLimit } = Error;
-  Error.stackTraceLimit = 0;
-  const error = new Error();
-  Error.stackTraceLimit = stackTraceLimit;
-
-  // Capture the stack trace above function b
-  Error.captureStackTrace(error, b); // Neither function c, nor b is included in the stack trace
-  throw error;
-}
-
-a();
-```
-
-###### Parameters
-
-###### targetObject
-
-`object`
-
-###### constructorOpt?
-
-`Function`
-
-###### Returns
-
-`void`
-
-###### Inherited from
-
-```ts
-Error.captureStackTrace
-```
-
-##### isError()
-
-```ts
-static isError(error: unknown): error is Error;
-```
-
-Indicates whether the argument provided is a built-in Error instance or not.
-
-###### Parameters
-
-###### error
-
-`unknown`
-
-###### Returns
-
-`error is Error`
-
-###### Inherited from
-
-```ts
-Error.isError
-```
-
-##### prepareStackTrace()
-
-```ts
-static prepareStackTrace(err: Error, stackTraces: CallSite[]): any;
-```
-
-###### Parameters
-
-###### err
-
-`Error`
-
-###### stackTraces
-
-`CallSite`[]
-
-###### Returns
-
-`any`
-
-###### See
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-###### Inherited from
-
-```ts
-Error.prepareStackTrace
-```
 
 ***
 
@@ -408,18 +1342,6 @@ Error.constructor
 
 #### Properties
 
-##### cause?
-
-```ts
-optional cause?: unknown;
-```
-
-###### Inherited from
-
-```ts
-Error.cause
-```
-
 ##### codes
 
 ```ts
@@ -428,198 +1350,14 @@ readonly codes: readonly string[];
 
 Every `code` in the chain, outermost first — what a caller would branch on.
 
-##### message
-
-```ts
-message: string;
-```
-
-###### Inherited from
-
-```ts
-Error.message
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-###### Inherited from
-
-```ts
-Error.name
-```
-
-##### stack?
-
-```ts
-optional stack?: string;
-```
-
-###### Inherited from
-
-```ts
-Error.stack
-```
-
-##### stackTraceLimit
-
-```ts
-static stackTraceLimit: number;
-```
-
-The `Error.stackTraceLimit` property specifies the number of stack frames
-collected by a stack trace (whether generated by `new Error().stack` or
-`Error.captureStackTrace(obj)`).
-
-The default value is `10` but may be set to any valid JavaScript number. Changes
-will affect any stack trace captured _after_ the value has been changed.
-
-If set to a non-number value, or set to a negative number, stack traces will
-not capture any frames.
-
-###### Inherited from
-
-```ts
-Error.stackTraceLimit
-```
-
-#### Methods
-
-##### captureStackTrace()
-
-```ts
-static captureStackTrace(targetObject: object, constructorOpt?: Function): void;
-```
-
-Creates a `.stack` property on `targetObject`, which when accessed returns
-a string representing the location in the code at which
-`Error.captureStackTrace()` was called.
-
-```js
-const myObject = {};
-Error.captureStackTrace(myObject);
-myObject.stack;  // Similar to `new Error().stack`
-```
-
-The first line of the trace will be prefixed with
-`${myObject.name}: ${myObject.message}`.
-
-The optional `constructorOpt` argument accepts a function. If given, all frames
-above `constructorOpt`, including `constructorOpt`, will be omitted from the
-generated stack trace.
-
-The `constructorOpt` argument is useful for hiding implementation
-details of error generation from the user. For instance:
-
-```js
-function a() {
-  b();
-}
-
-function b() {
-  c();
-}
-
-function c() {
-  // Create an error without stack trace to avoid calculating the stack trace twice.
-  const { stackTraceLimit } = Error;
-  Error.stackTraceLimit = 0;
-  const error = new Error();
-  Error.stackTraceLimit = stackTraceLimit;
-
-  // Capture the stack trace above function b
-  Error.captureStackTrace(error, b); // Neither function c, nor b is included in the stack trace
-  throw error;
-}
-
-a();
-```
-
-###### Parameters
-
-###### targetObject
-
-`object`
-
-###### constructorOpt?
-
-`Function`
-
-###### Returns
-
-`void`
-
-###### Inherited from
-
-```ts
-Error.captureStackTrace
-```
-
-##### isError()
-
-```ts
-static isError(error: unknown): error is Error;
-```
-
-Indicates whether the argument provided is a built-in Error instance or not.
-
-###### Parameters
-
-###### error
-
-`unknown`
-
-###### Returns
-
-`error is Error`
-
-###### Inherited from
-
-```ts
-Error.isError
-```
-
-##### prepareStackTrace()
-
-```ts
-static prepareStackTrace(err: Error, stackTraces: CallSite[]): any;
-```
-
-###### Parameters
-
-###### err
-
-`Error`
-
-###### stackTraces
-
-`CallSite`[]
-
-###### Returns
-
-`any`
-
-###### See
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-###### Inherited from
-
-```ts
-Error.prepareStackTrace
-```
-
 ***
 
 ### TranscribeError
 
 A failure from either endpoint, carrying what the caller needs to classify it.
 
-The SDK does not decide fatal-vs-retryable, for the reason `step-speak.ts`
-states: a helper that guessed would be guessing for every caller. What it can
+The SDK does not decide fatal-vs-retryable, for the same reason [stepSpeak](#stepspeak)
+does not: a helper that guessed would be guessing for every caller. What it can
 do is carry the evidence, which is what `retryable` and `retryAfter` are —
 read by `toStepError` on `@alexkroman1/aai/step-errors`, exactly as
 `StepGenerateError`'s are. So a step body says `.catch(throwStepError)` and
@@ -673,42 +1411,6 @@ Error.constructor
 
 #### Properties
 
-##### cause?
-
-```ts
-optional cause?: unknown;
-```
-
-###### Inherited from
-
-```ts
-Error.cause
-```
-
-##### message
-
-```ts
-message: string;
-```
-
-###### Inherited from
-
-```ts
-Error.message
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-###### Inherited from
-
-```ts
-Error.name
-```
-
 ##### retryable
 
 ```ts
@@ -725,18 +1427,6 @@ readonly retryAfter: Date | undefined;
 
 How long the service asked us to wait, when it said.
 
-##### stack?
-
-```ts
-optional stack?: string;
-```
-
-###### Inherited from
-
-```ts
-Error.stack
-```
-
 ##### status
 
 ```ts
@@ -744,154 +1434,6 @@ readonly status: number | undefined;
 ```
 
 HTTP status the endpoint answered, when it answered one.
-
-##### stackTraceLimit
-
-```ts
-static stackTraceLimit: number;
-```
-
-The `Error.stackTraceLimit` property specifies the number of stack frames
-collected by a stack trace (whether generated by `new Error().stack` or
-`Error.captureStackTrace(obj)`).
-
-The default value is `10` but may be set to any valid JavaScript number. Changes
-will affect any stack trace captured _after_ the value has been changed.
-
-If set to a non-number value, or set to a negative number, stack traces will
-not capture any frames.
-
-###### Inherited from
-
-```ts
-Error.stackTraceLimit
-```
-
-#### Methods
-
-##### captureStackTrace()
-
-```ts
-static captureStackTrace(targetObject: object, constructorOpt?: Function): void;
-```
-
-Creates a `.stack` property on `targetObject`, which when accessed returns
-a string representing the location in the code at which
-`Error.captureStackTrace()` was called.
-
-```js
-const myObject = {};
-Error.captureStackTrace(myObject);
-myObject.stack;  // Similar to `new Error().stack`
-```
-
-The first line of the trace will be prefixed with
-`${myObject.name}: ${myObject.message}`.
-
-The optional `constructorOpt` argument accepts a function. If given, all frames
-above `constructorOpt`, including `constructorOpt`, will be omitted from the
-generated stack trace.
-
-The `constructorOpt` argument is useful for hiding implementation
-details of error generation from the user. For instance:
-
-```js
-function a() {
-  b();
-}
-
-function b() {
-  c();
-}
-
-function c() {
-  // Create an error without stack trace to avoid calculating the stack trace twice.
-  const { stackTraceLimit } = Error;
-  Error.stackTraceLimit = 0;
-  const error = new Error();
-  Error.stackTraceLimit = stackTraceLimit;
-
-  // Capture the stack trace above function b
-  Error.captureStackTrace(error, b); // Neither function c, nor b is included in the stack trace
-  throw error;
-}
-
-a();
-```
-
-###### Parameters
-
-###### targetObject
-
-`object`
-
-###### constructorOpt?
-
-`Function`
-
-###### Returns
-
-`void`
-
-###### Inherited from
-
-```ts
-Error.captureStackTrace
-```
-
-##### isError()
-
-```ts
-static isError(error: unknown): error is Error;
-```
-
-Indicates whether the argument provided is a built-in Error instance or not.
-
-###### Parameters
-
-###### error
-
-`unknown`
-
-###### Returns
-
-`error is Error`
-
-###### Inherited from
-
-```ts
-Error.isError
-```
-
-##### prepareStackTrace()
-
-```ts
-static prepareStackTrace(err: Error, stackTraces: CallSite[]): any;
-```
-
-###### Parameters
-
-###### err
-
-`Error`
-
-###### stackTraces
-
-`CallSite`[]
-
-###### Returns
-
-`any`
-
-###### See
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-###### Inherited from
-
-```ts
-Error.prepareStackTrace
-```
 
 ## Type Aliases
 
@@ -1798,7 +2340,7 @@ optional name?: string;
 Filename to store, e.g. `"summary.wav"`.
 
 Worth passing even though nothing reads it: it is what
-[UploadInfo.name](#name-4) answers, so it is the name a page puts on a
+[UploadInfo.name](#name-1) answers, so it is the name a page puts on a
 download link and the string a person sees instead of an opaque id.
 
 ##### type?
@@ -1970,953 +2512,3 @@ const WAV_HEADER_BYTES: 44 = 44;
 ```
 
 Bytes of WAV header [encodeWav](#encodewav) writes — `RIFF`, `fmt `, and `data`.
-
-## Functions
-
-### emit()
-
-```ts
-function emit<T>(namespace: string, chunk: T): Promise<void>;
-```
-
-Write one structured chunk into a NAMED stream of this run.
-
-The other half of [report](#report), and the split is what each is FOR: `report`
-writes a sentence for a person, into the run's default stream and the server
-log. This writes a VALUE for a program — a partial result, as the step produces
-it — into a stream a reader asks for by name.
-
-That is what makes a long run's output streamable rather than only its
-narration. A run's snapshot carries a status and, once terminal, an output, so
-a fan-out that has transcribed forty of sixty segments has forty results and no
-way to hand any of them over. Emitting each one as it lands means a page renders
-the answer growing instead of a spinner:
-
-```ts no-check
-import { emit } from "@alexkroman1/aai/step";
-
-export async function transcribeSegment(index: number) {
-  "use step";
-  const text = await transcribe(index);
-  await emit("transcript", { index, text });
-  return { index, text };
-}
-```
-
-```tsx no-check
-// The reader, which the SDK already had: one stream per namespace.
-const { progress } = useWorkflowProgress<{ index: number; text: string }>(runId, {
-  namespace: "transcript",
-});
-```
-
-**The namespace is REQUIRED, and that is the point of the argument.** The
-default stream is `report()`'s, carrying lines a page renders verbatim — an
-object written into it comes back as `[object Object]` in the middle of the
-progress log, which is a trap rather than a decision. A named stream is also
-how a reader gets ONE kind of chunk per subscription, so `useWorkflowProgress<T>`
-can be typed at all.
-
-**Call it from a STEP, never from the workflow body**, for the reason `report`
-says: a body replays from the top on every resume, so a chunk written there is
-re-emitted on each one.
-
-Chunks are RETAINED with the run, so a reader that arrives late or reloads gets
-the whole stream from the beginning rather than only what arrives next.
-
-Failures are swallowed, exactly as `report`'s are: a run must not fail because
-a reader could not be told about a result the run itself has.
-
-#### Type Parameters
-
-##### T
-
-`T`
-
-#### Parameters
-
-##### namespace
-
-`string`
-
-Which of the run's streams this belongs in. A short,
-  stable name — a reader subscribes by it.
-
-##### chunk
-
-`T`
-
-The value, which must survive the run's own serialization.
-
-#### Returns
-
-`Promise`\<`void`\>
-
-***
-
-### encodeWav()
-
-```ts
-function encodeWav(samples: 
-  | Uint8Array<ArrayBufferLike>
-| readonly Uint8Array<ArrayBufferLike>[], format: PcmFormat): Uint8Array<ArrayBuffer>;
-```
-
-Wrap raw linear-PCM samples in a WAV container.
-
-#### Parameters
-
-##### samples
-
-  \| `Uint8Array`\<`ArrayBufferLike`\>
-  \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
-
-The PCM bytes, little-endian and channel-interleaved. A
-  LIST is joined in order, which is what a synthesizer's or a capture's
-  frames arrive as — see the module doc.
-
-##### format
-
-[`PcmFormat`](#pcmformat)
-
-How to read them. See [PcmFormat](#pcmformat) for the two defaults.
-
-#### Returns
-
-`Uint8Array`\<`ArrayBuffer`\>
-
-A complete `.wav` file: [WAV\_HEADER\_BYTES](#wav_header_bytes) of header followed
-  by `samples` unchanged.
-
-#### Throws
-
-for a format no header can describe — a non-integer or
-  non-positive rate or channel count, or a bit depth that is not a positive
-  multiple of 8.
-
-***
-
-### isTransientStatus()
-
-```ts
-function isTransientStatus(status: number): boolean;
-```
-
-Will another attempt plausibly answer differently?
-
-`408` counts because it is the far side saying "too slow", not "no"; `429` and
-every `5xx` are the ordinary transient pair. Everything else — a 400, a 401, a
-404 — answers the same way on the fourth attempt, and retrying it spends the
-step's whole budget to arrive at the same failure several seconds later.
-
-#### Parameters
-
-##### status
-
-`number`
-
-#### Returns
-
-`boolean`
-
-***
-
-### mapConcurrent()
-
-```ts
-function mapConcurrent<T, R>(
-   items: readonly T[], 
-   size: number, 
-run: (item: T, index: number) => R | Promise<R>): Promise<R[]>;
-```
-
-Map `items` through `run`, at most `size` at a time, in a replay-safe order.
-
-Results come back in ITEM order however the individual calls settle, so it
-substitutes directly for `Promise.all(items.map(run))` where a bound is
-needed.
-
-A rejection propagates and stops the window taking new items, which is what a
-workflow body wants: the finished siblings are already journaled, so a resume
-replays them for free and re-issues only what is missing. Catching per item to
-salvage a partial result is a decision only the caller can make — do it inside
-`run`.
-
-#### Type Parameters
-
-##### T
-
-`T`
-
-##### R
-
-`R`
-
-#### Parameters
-
-##### items
-
-readonly `T`[]
-
-What to map. An empty list runs nothing and resolves `[]`.
-
-##### size
-
-`number`
-
-Most calls in flight at once. Rounded down, and floored at 1.
-  A size of zero would otherwise start no slot at all — a hang, not an error,
-  and a hang inside a workflow body is a run that never completes. A
-  non-finite size is worse and needs the same floor for a different reason:
-  `Math.min(NaN, n)` is `NaN`, so `Array.from({ length: NaN })` is empty and
-  the map silently does NOTHING, which reads as an empty input.
-
-##### run
-
-(`item`: `T`, `index`: `number`) => `R` \| `Promise`\<`R`\>
-
-Called once per item, with the item and its index in `items`.
-  Inside a workflow body this is where a `"use step"` call goes, and it must
-  be the only one — see the module doc.
-
-#### Returns
-
-`Promise`\<`R`[]\>
-
-#### Example
-
-```ts no-check
-// In a "use workflow" body: one step per segment, four in flight.
-const cleaned = await mapConcurrent(segments, 4, (text) => postProcess(text));
-```
-
-***
-
-### multipartBody()
-
-```ts
-function multipartBody(...parts: readonly MultipartPart[]): MultipartBody;
-```
-
-Encode `multipart/form-data` as BYTES.
-
-The reason this exists rather than `new FormData()`: a `FormData` is a branded
-object, and handing one to a `fetch` from a different undici than your realm's
-global silently sends the string `[object FormData]` — see
-[StepFetchInit](#stepfetchinit). Bytes cannot be got wrong that way, and a step's
-multipart body is always one or two known parts rather than a form somebody
-filled in.
-
-The boundary is generated per call and is not derived from the content, so a
-body containing the boundary token is astronomically unlikely rather than
-impossible; endpoints behave the same way.
-
-#### Parameters
-
-##### parts
-
-...readonly [`MultipartPart`](#multipartpart)[]
-
-#### Returns
-
-[`MultipartBody`](#multipartbody)
-
-***
-
-### pcmDurationMs()
-
-```ts
-function pcmDurationMs(byteLength: number, format: PcmFormat): number;
-```
-
-How long a run of PCM samples lasts, in milliseconds.
-
-Beside the encoder because it divides by the same derived `blockAlign` the
-header states, and a duration computed from a different one is how a
-progress bar and a file disagree. Rounded, since a caller reporting
-milliseconds has no use for the fraction.
-
-#### Parameters
-
-##### byteLength
-
-`number`
-
-##### format
-
-[`PcmFormat`](#pcmformat)
-
-#### Returns
-
-`number`
-
-#### Throws
-
-for a format no header can describe — the same check
-  [encodeWav](#encodewav) makes, so the two cannot disagree about what is legal.
-
-***
-
-### readUpload()
-
-```ts
-function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
-```
-
-Read a window of an uploaded file.
-
-Omitting both bounds reads the whole file, which is the right call only when
-the file is small: everything else names the window it needs, so a fan-out
-over a large file moves each byte once.
-
-Bounds are CLAMPED rather than rejected — a plan computed from a file's own
-header can legitimately end one byte past it, and the returned `start`/`end`
-say what was actually read. That is also exactly what makes a STREAMED upload
-readable: the clamp is to what has ARRIVED, so a window that runs past the
-bytes stored so far comes back short rather than failing, and `end` is how a
-caller learns which it got.
-
-#### Parameters
-
-##### id
-
-`string`
-
-##### opts?
-
-[`ReadUploadOptions`](#readuploadoptions)
-
-#### Returns
-
-`Promise`\<[`UploadSlice`](#uploadslice)\>
-
-***
-
-### report()
-
-```ts
-function report(line: string): Promise<void>;
-```
-
-Write one progress line for the run this step belongs to.
-
-The line reaches two readers: the run's own output stream, which
-`GET /workflows/runs/:id/stream` serves and `useWorkflowProgress` renders,
-and the server log, so an operator watching a deploy can see which step is
-running without a page open.
-
-**Call it from a STEP, never from the workflow body.** A body replays from the
-top on every resume, so a line written there is re-emitted on each one — the
-same rule `ctx.db` follows.
-
-Failures are swallowed: narration must never fail a run. It resolves either
-way, so awaiting it is safe and is what keeps the ordering of a step's own
-lines.
-
-#### Parameters
-
-##### line
-
-`string`
-
-One line of progress, as a reader should see it. Prefer a
-  sentence naming what is happening and to what (`"Transcribing 0:00–0:58."`)
-  over a machine token — the page renders these verbatim.
-
-#### Returns
-
-`Promise`\<`void`\>
-
-***
-
-### requireStepEnv()
-
-```ts
-function requireStepEnv(name: string): string;
-```
-
-[stepEnv](#stepenv), failing by name when the key is not set.
-
-The failure a step wants for a credential: an absent key is not transient, so
-it should say which key and how to set it rather than surface three layers
-down as an HTTP 401 the DevKit then retries.
-
-It throws a plain `Error` rather than the DevKit's `FatalError` on purpose —
-this module is dependency-free and must stay importable from a tool body and a
-spec, neither of which has a workflow around it. A step that wants the retries
-skipped wraps the call:
-
-```ts no-check
-try {
-  key = requireStepEnv("ASSEMBLYAI_API_KEY");
-} catch (err) {
-  throw new FatalError(errorMessage(err));
-}
-```
-
-#### Parameters
-
-##### name
-
-`string`
-
-#### Returns
-
-`string`
-
-***
-
-### retryAfter()
-
-```ts
-function retryAfter(from: 
-  | {
-  headers: Headers;
-}
-  | Headers): Date | undefined;
-```
-
-When the far side asked to be called back, as a `Date`.
-
-Reads `Retry-After` in both spellings RFC 9110 allows — delta-seconds
-(`Retry-After: 30`) and an HTTP date (`Retry-After: Wed, 21 Oct 2026 07:28:00
-GMT`) — and answers `undefined` for a header that is absent, unparsable, or in
-the past. `undefined` is what a caller wants there: it means "you decide",
-which is the DevKit's own backoff, rather than a date that would retry
-instantly or never.
-
-#### Parameters
-
-##### from
-
-  \| \{
-  `headers`: `Headers`;
-\}
-  \| `Headers`
-
-A `Response`, or its headers. Both spellings are accepted
-  because a caller holding only the headers should not have to fake a
-  response to ask.
-
-#### Returns
-
-`Date` \| `undefined`
-
-***
-
-### stepEnv()
-
-```ts
-function stepEnv(name: string): string | undefined;
-```
-
-Read one key of the agent's env from inside a `"use step"` function.
-
-#### Parameters
-
-##### name
-
-`string`
-
-The env key, as declared in `.env` or set with
-  `aai secret put`. Listing it in `agent({ requiredEnv })` is what makes a
-  deploy check it is there.
-
-#### Returns
-
-`string` \| `undefined`
-
-The value, or `undefined` when the agent env does not declare it.
-
-#### Example
-
-```ts
-import { stepEnv } from "@alexkroman1/aai/step";
-
-export async function fetchReport(id: string): Promise<string> {
-  "use step";
-  const base = stepEnv("REPORT_BASE_URL") ?? "https://reports.example.com";
-  return await (await fetch(`${base}/${id}`)).text();
-}
-```
-
-***
-
-### stepFetch()
-
-```ts
-function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
-```
-
-Make one HTTP request from inside a step.
-
-Prefer this to `fetch` in any `"use step"` function, and especially in a
-fan-out: it pins HTTP/1.1 (so a concurrent batch gets a socket each rather
-than N streams on one connection), reuses connections across a fan-out's
-calls, and reports a connection failure with its whole `cause` chain instead
-of a bare `TypeError: fetch failed`. The module doc carries the measurements.
-
-#### Parameters
-
-##### url
-
-`string`
-
-##### init?
-
-[`StepFetchInit`](#stepfetchinit)
-
-#### Returns
-
-`Promise`\<`Response`\>
-
-#### Throws
-
-when the request never got an answer — a reset
-  connection, a DNS failure, a timeout. Distinct from a response with a bad
-  status, which is returned like any other: only the caller knows whether a
-  `404` is fatal.
-
-***
-
-### stepGenerate()
-
-```ts
-function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
-```
-
-Ask the AssemblyAI LLM Gateway one question and return its reply.
-
-#### Parameters
-
-##### prompt
-
-`string`
-
-The user message.
-
-##### opts?
-
-[`StepGenerateOptions`](#stepgenerateoptions)
-
-#### Returns
-
-`Promise`\<`string`\>
-
-The reply, trimmed. Never empty — a 200 carrying no content is a
-  [StepGenerateError](#stepgenerateerror) with `retryable: true`, because it is a real and
-  transient thing a gateway does and a step returning `""` would file a blank
-  report and report success.
-
-#### Example
-
-```ts
-import { stepGenerate, StepGenerateError } from "@alexkroman1/aai/step";
-import { FatalError } from "workflow";
-
-export async function summarize(text: string): Promise<string> {
-  "use step";
-  try {
-    return await stepGenerate(text, { system: "Summarize in two sentences." });
-  } catch (err) {
-    if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
-    throw err;
-  }
-}
-```
-
-#### Throws
-
-On EVERY failure of this call, which is the point
-  of the class: a non-2xx, an empty completion, a reply that is not JSON, a
-  request that never got an answer (a reset, a DNS failure, this call's own
-  deadline), and a missing API key. Only the last is `retryable: false` —
-  three more attempts find the same gap.
-
-***
-
-### stepGenerateJson()
-
-```ts
-function stepGenerateJson<S>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
-```
-
-Ask the model for JSON and return it validated.
-
-The reply is unfenced, parsed, and checked against `schema`; the validated
-value is what comes back, typed as the schema's output.
-
-#### Type Parameters
-
-##### S
-
-`S` *extends* `StandardSchemaV1`\<`unknown`, `unknown`\>
-
-#### Parameters
-
-##### prompt
-
-`string`
-
-The user message. The SHAPE belongs in `system` — this says
-  nothing about JSON on the caller's behalf, because the wording that gets a
-  model to comply is part of the prompt a template is demonstrating.
-
-##### opts
-
-[`StepGenerateJsonOptions`](#stepgeneratejsonoptions)\<`S`\>
-
-#### Returns
-
-`Promise`\<[`InferSchemaOutput`](index.md#inferschemaoutput)\<`S`\>\>
-
-The validated reply.
-
-#### Throws
-
-A plain error — retryable by the DevKit's default, which is
-  the point — when the reply is not JSON, is not an object, or does not
-  satisfy `schema`. All three are things a model may get right next time.
-
-#### Throws
-
-On any gateway
-  failure, exactly as [stepGenerate](#stepgenerate) does. Classify it with
-  `toStepError` from `@alexkroman1/aai/step-errors`.
-
-#### Example
-
-```ts
-import { stepGenerateJson } from "@alexkroman1/aai/step";
-import { z } from "zod";
-
-const Digest = z.object({ headline: z.string(), points: z.array(z.string()) });
-
-export async function summarize(article: string): Promise<{ headline: string }> {
-  "use step";
-  return await stepGenerateJson(article, {
-    schema: Digest,
-    system: 'Reply with JSON only: {"headline": string, "points": string[]}.',
-  });
-}
-```
-
-***
-
-### stepSpeak()
-
-```ts
-function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
-```
-
-Speak `text`, and answer with the whole utterance as a WAV.
-
-#### Parameters
-
-##### text
-
-`string`
-
-What to say. Refused when it is blank: a synthesizer answers
-  an empty request with an empty file, which is a zero-length audio element
-  on somebody's page rather than an error, and no retry finds the missing
-  words.
-
-##### opts?
-
-[`SpeakOptions`](#speakoptions)
-
-#### Returns
-
-`Promise`\<[`SpokenAudio`](#spokenaudio)\>
-
-#### Throws
-
-when no synthesizer is published — the message names both
-  causes (a process serving no agent, and a spec calling the step directly).
-
-#### Throws
-
-when the credential named by `apiKeyEnv` is not in the
-  agent's env, which `requireStepEnv` reports by name.
-
-***
-
-### stepTranscribePoll()
-
-```ts
-function stepTranscribePoll(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
-```
-
-Ask once whether a job has finished, and read it when it has.
-
-One request answers both questions — see "Polling READS" in the module doc.
-
-#### Parameters
-
-##### id
-
-`string`
-
-##### opts?
-
-[`TranscribeRequestOptions`](#transcriberequestoptions)
-
-#### Returns
-
-`Promise`\<[`TranscribeProgress`](#transcribeprogress)\>
-
-#### Throws
-
-, NOT retryable, when the provider failed the job or
-  transcribed no words at all. A recording of silence succeeds and answers
-  with an empty string, which is the failure this flow is most likely to meet
-  and the one that reads least like a failure: everything downstream would
-  otherwise be handed no words and asked to work anyway.
-
-***
-
-### stepTranscribeSubmit()
-
-```ts
-function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
-  id: string;
-}>;
-```
-
-Create the transcription job, and answer with the id that outlives this run.
-
-#### Parameters
-
-##### audioUrl
-
-`string`
-
-What to transcribe. [stepTranscribeUpload](#steptranscribeupload)'s answer,
-  or any URL the service can reach — a recording already sitting in a bucket
-  never needs to pass through this process at all.
-
-##### opts?
-
-[`TranscribeSubmitOptions`](#transcribesubmitoptions)
-
-#### Returns
-
-`Promise`\<\{
-  `id`: `string`;
-\}\>
-
-#### Throws
-
-on a refusal, or when the API creates no id.
-
-***
-
-### stepTranscribeSync()
-
-```ts
-function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
-  text: string;
-}>;
-```
-
-Transcribe one complete audio file.
-
-#### Parameters
-
-##### bytes
-
-`Uint8Array`
-
-A whole file, header included. See the module doc — a
-  headerless tail is bytes the endpoint will refuse.
-
-##### opts?
-
-[`TranscribeSyncOptions`](#transcribesyncoptions)
-
-#### Returns
-
-`Promise`\<\{
-  `text`: `string`;
-\}\>
-
-The text, trimmed. An EMPTY string is a legitimate answer here and
-  is not refused, unlike the async API's: a caller fanning out over segments
-  routinely gets silent ones, and a throw would fail the whole recording over
-  a pause in it. A caller transcribing exactly one clip should check for it.
-
-#### Throws
-
-on a refusal, carrying the verdict `toStepError`
-  reads — which matters most here, because a fan-out hits a rate limit all at
-  once and `retryAfter` is what makes the batch drain instead of colliding a
-  second later.
-
-***
-
-### stepTranscribeUpload()
-
-```ts
-function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
-  audioUrl: string;
-}>;
-```
-
-Send a stored upload to the provider, and answer with the URL it gave.
-
-The recording STREAMS out of the app's own store: `readUpload` hands back
-bytes and a two-hour recording is not a value this process can hold, so the
-body is an async iterable of windows — which `stepFetch` accepts precisely
-for this. Nothing is buffered beyond one window, and one window of READ-AHEAD
-keeps the store and the socket busy at the same time.
-
-#### Parameters
-
-##### uploadId
-
-`string`
-
-An upload in the agent's own store, as `writeUpload` or a
-  page's `api.upload(file)` produced.
-
-##### opts?
-
-[`TranscribeRequestOptions`](#transcriberequestoptions)
-
-#### Returns
-
-`Promise`\<\{
-  `audioUrl`: `string`;
-\}\>
-
-#### Throws
-
-on a refusal, carrying the verdict `toStepError`
-  reads. Give this step extra retries: it is the one call here worth another
-  attempt, and the only one whose cost is the file.
-
-***
-
-### stripJsonFence()
-
-```ts
-function stripJsonFence(reply: string): string;
-```
-
-Unwrap a ```` ```json ```` fence, which models add however firmly they are
-told not to.
-
-Refusing one would cost a whole retry for a reply that was otherwise correct.
-Text that carries no fence is returned trimmed and otherwise untouched.
-
-#### Parameters
-
-##### reply
-
-`string`
-
-#### Returns
-
-`string`
-
-***
-
-### uploadInfo()
-
-```ts
-function uploadInfo(id: string): Promise<UploadInfo>;
-```
-
-Read one upload's metadata: its name, what has ARRIVED, and whether that is all
-of it.
-
-The poll a body waiting on a streamed upload runs — see the module doc, including
-why `complete` is the only field an exit may be decided on.
-
-#### Parameters
-
-##### id
-
-`string`
-
-#### Returns
-
-`Promise`\<[`UploadInfo`](#uploadinfo)\>
-
-#### Throws
-
-when the id names no upload — a step that reaches for one and finds
-  nothing has been handed a stale or invented id, which no retry fixes. Note a
-  streamed upload EXISTS from its first byte, so this answers for one that is
-  still arriving.
-
-***
-
-### writeUpload()
-
-```ts
-function writeUpload(bytes: 
-  | Uint8Array<ArrayBufferLike>
-  | AsyncIterable<Uint8Array<ArrayBufferLike>, any, any>
-| readonly Uint8Array<ArrayBufferLike>[], opts?: WriteUploadOptions): Promise<UploadInfo>;
-```
-
-Store a file a step PRODUCED, and answer with the record naming it.
-
-The other direction of [readUpload](#readupload), and the half a workflow app needs
-the moment its output is not text. A run's output is journaled and read back
-as JSON, so audio, an image or a PDF cannot travel in one — the same rule
-that keeps a recording's bytes out of a run's INPUT, arriving at the other
-end of the run. So the bytes go to the store and the output carries the id,
-which a page turns back into a file with `api.download(id)`.
-
-```ts no-check
-import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
-
-export async function narrate(summary: string) {
-  "use step";
-  const spoken = await stepSpeak(summary);
-  const stored = await writeUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
-  return { audio: stored.id, durationMs: spoken.durationMs };
-}
-```
-
-**Write it in the step that MAKES it, and return the id.** A step is
-journaled by what it returns, so an id is replayed and bytes are not: a
-resumed run re-reads the same file rather than re-synthesizing it. The
-corollary is that a RETRIED step writes a second upload and abandons the
-first, which is the cost of the store having no way to know two calls meant
-one file — worth knowing, and cheap next to the alternative of a step that
-cannot retry at all.
-
-#### Parameters
-
-##### bytes
-
-  \| `Uint8Array`\<`ArrayBufferLike`\>
-  \| `AsyncIterable`\<`Uint8Array`\<`ArrayBufferLike`\>, `any`, `any`\>
-  \| readonly `Uint8Array`\<`ArrayBufferLike`\>[]
-
-The file. A LIST is stored in order and an async iterable is
-  streamed, so a step producing something large — a long recording, a
-  concatenation of many utterances — never has to hold it whole.
-
-##### opts?
-
-[`WriteUploadOptions`](#writeuploadoptions)
-
-What to declare about it. Both fields are stored verbatim and
-  neither is inferred; see [WriteUploadOptions](#writeuploadoptions).
-
-#### Returns
-
-`Promise`\<[`UploadInfo`](#uploadinfo)\>
-
-#### Throws
-
-when the process published no store, or published a READ-ONLY one —
-  two different sentences, because the remedies differ and the call site
-  cannot tell them apart. Also when the deployment has nowhere durable to put
-  bytes at all, which the store reports by naming the variable that is
-  missing.

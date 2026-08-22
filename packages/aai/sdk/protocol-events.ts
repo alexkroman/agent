@@ -117,6 +117,31 @@ export const SessionErrorCodeSchema = z.enum([
 /**
  * Error codes for categorizing session errors on the wire.
  *
+ * @remarks
+ * The field a client renders its error banner from (`error.reported.code`, and
+ * `SessionError.code` in `@alexkroman1/aai-ui`). Eight values, by where the
+ * failure came from:
+ *
+ * - `stt` — speech-to-text: the provider refused the connection, or its stream
+ *   failed mid-utterance.
+ * - `llm` — the model call for a reply failed. In pipeline mode the caller also
+ *   hears `errorPhrase`, so the turn is handed back rather than going silent.
+ * - `tts` — synthesis failed, which is the one the caller cannot hear.
+ * - `tool` — a tool threw and the failure could not be given to the model.
+ * - `protocol` — a frame that does not parse, or one sent in a state that has
+ *   no answer for it.
+ * - `connection` — the session's own link, or a provider's, went away.
+ * - `audio` — the audio path: a rate the transport cannot honour, a decode.
+ * - `internal` — anything the runtime could not classify.
+ *
+ * **Severity is `fatal`, not the code**, and the two are independent: any of
+ * these can arrive on a session that continues. `fatal: false` means surface
+ * the message and keep the session interactive; ABSENT means fatal, which is
+ * the historical shape (an error always followed a teardown). A fatal frame is
+ * not a banner — `aai-ui` answers one by releasing the microphone and ending
+ * the call, so a turn-level failure reported without the flag takes the whole
+ * session down.
+ *
  * @public
  */
 export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;

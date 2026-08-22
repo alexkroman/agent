@@ -203,6 +203,24 @@ export const SPEECH_UNAVAILABLE_MESSAGE =
  * @throws {Error} when the credential named by `apiKeyEnv` is not in the
  *   agent's env, which `requireStepEnv` reports by name.
  *
+ * @example
+ * Speak and STORE in one step, and return the id. A step is journaled by what
+ * it returns, so an id is replayed on a resume and bytes are not — splitting
+ * this in two would carry the audio across the queue on every resume.
+ * ```ts
+ * import { stepSpeak, writeUpload } from "@alexkroman1/aai/step";
+ *
+ * export async function narrate(summary: string): Promise<string> {
+ *   "use step";
+ *   const spoken = await stepSpeak(summary, { voice: "jane" });
+ *   const stored = await writeUpload(spoken.audio, {
+ *     name: "summary.wav",
+ *     type: "audio/wav",
+ *   });
+ *   return stored.id;
+ * }
+ * ```
+ *
  * @public
  */
 export async function stepSpeak(text: string, opts: SpeakOptions = {}): Promise<SpokenAudio> {

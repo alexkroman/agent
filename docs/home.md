@@ -9,24 +9,32 @@ cd my-agent
 npx aai dev
 ```
 
+`agent.ts` — the definition:
+
 ```ts
-import { agent, tool } from "@alexkroman1/aai";
+import { agent } from "@alexkroman1/aai";
+
+export default agent({
+  name: "Weather Assistant",
+  systemPrompt: "You help callers plan around the weather. Keep replies short.",
+  voice: "michael",
+});
+```
+
+`tools/get_weather.ts` — **a tool is a FILE**, named by its own filename and
+registered by nothing. `agent()` takes no `tools` field:
+
+```ts
+import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-const getWeather = tool({
+export default tool({
   description: "Get current weather for a city",
   inputSchema: z.object({ city: z.string().describe("City name") }),
   execute: async ({ city }) => {
     const res = await fetch(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
     return await res.json();
   },
-});
-
-export default agent({
-  name: "Weather Assistant",
-  systemPrompt: "You help callers plan around the weather. Keep replies short.",
-  tools: { get_weather: getWeather },
-  voice: "michael",
 });
 ```
 

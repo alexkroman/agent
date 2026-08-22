@@ -140,7 +140,31 @@ export function publishStepFetch(fetchFn: StepFetch | undefined): void {
  * fan-out: it pins HTTP/1.1 (so a concurrent batch gets a socket each rather
  * than N streams on one connection), reuses connections across a fan-out's
  * calls, and reports a connection failure with its whole `cause` chain instead
- * of a bare `TypeError: fetch failed`. The module doc carries the measurements.
+ * of a bare `TypeError: fetch failed`.
+ *
+ * @remarks
+ * **`globalThis.fetch` speaks HTTP/2 now, and a fan-out is the worst case for
+ * that.** undici 8 — the copy backing it from Node 26 — defaults `allowH2` to
+ * true, so every concurrent request from one process is multiplexed onto ONE TCP
+ * connection sharing one flow-control window. Measured against AssemblyAI's sync
+ * transcription endpoint, 8 concurrent 17.66 MB uploads, same bytes and key, one
+ * minute apart:
+ *
+ * | transport | landed | p50 | throughput |
+ * | --- | --- | --- | --- |
+ * | `globalThis.fetch` (h2) | 14/16 | 8094ms | 20.8 MB/s |
+ * | HTTP/1.1 | 16/16 | 3719ms | 29.9 MB/s |
+ * | HTTP/1.1, keep-alive pool | 16/16 | 3037ms | 38.6 MB/s |
+ *
+ * **The two lost requests matter more than the 2.7x.** On HTTP/2 a capacity
+ * limit arrives as a stream reset, and a stream error carries no HTTP status —
+ * so neither {@link isTransientStatus} nor {@link retryAfter} can see it, every
+ * sibling in a bounded fan-out retries in lockstep into the same reset, and the
+ * run dies on `TypeError: fetch failed` with its real cause two `cause` hops
+ * down. Over HTTP/1.1 the identical limit arrives as a `503` or `429` carrying
+ * `retry-after`, which those helpers already read. Verified end to end: the same
+ * 65-segment run that failed on `fetch` completes on HTTP/1.1 at every
+ * concurrency up to 48, and at 64 pays 20 retried `503`s instead of dying.
  *
  * @throws {StepTransportError} when the request never got an answer — a reset
  *   connection, a DNS failure, a timeout. Distinct from a response with a bad

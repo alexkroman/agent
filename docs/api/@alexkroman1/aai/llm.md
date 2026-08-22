@@ -1,15 +1,461 @@
 # llm
 
-`@alexkroman1/aai/llm` subpath barrel.
+`@alexkroman1/aai/llm` subpath barrel — the model that drives the reply.
 
-Re-exports LLM provider factories. Users import from here instead of
-`@ai-sdk/anthropic` directly so the agent bundle stays free of eager
-env reads and other SDK side-effects.
+Nine vendors, one shape: each factory returns a serializable DESCRIPTOR
+(`{ kind, options }`), and you hand it to `agent({ llm })`. Import from here
+rather than from `@ai-sdk/anthropic` directly — the vendor SDK is loaded
+host-side when the session starts, so the agent bundle stays free of its
+eager env reads and other load-time side effects.
 
-Named re-exports rather than `export *`: the wildcard form needs a
-`noReExportAll` suppression per line, and the escape-hatch ratchet only
-moves down. Listing them also makes the public surface of this subpath
-readable in one place — add new symbols here when a provider gains one.
+## Example
+
+**Swap the LLM of an otherwise default agent**
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { anthropic } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  // `stt` and `tts` keep their AssemblyAI defaults.
+  llm: anthropic({ model: "claude-sonnet-5" }),
+});
+```
+
+`agent({ llm })` also takes a bare gateway model id — `llm: "zai/glm-4.6"` —
+which is the shorthand for [gateway](#gateway). Every other stage needs a
+factory.
+
+**Credentials are never passed here.** Each factory's vendor names the env
+var its key is read from — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+`ASSEMBLYAI_API_KEY`, … each also exported as a `*_API_KEY_ENV` constant —
+and the host reads it out of the agent's own environment when the session
+starts. That is what keeps a descriptor safe to serialize across the CLI →
+server → guest boundary.
+
+Two vendors here are AGGREGATORS rather than model owners, addressed as
+`"creator/model"`: [openrouter](#openrouter) and [gateway](#gateway). A third,
+[assemblyAILlm](#assemblyaillm), fronts AssemblyAI's own gateway — its catalog is
+[ASSEMBLYAI\_GATEWAY\_MODELS](#assemblyai_gateway_models) and its ids are listable with
+[gatewayModelIds](#gatewaymodelids).
+
+## Functions
+
+### anthropic()
+
+```ts
+function anthropic(opts: AnthropicOptions): AnthropicProvider;
+```
+
+Build an Anthropic (Claude) LLM descriptor for pipeline mode. The API key
+is resolved host-side from the agent's env (`ANTHROPIC_API_KEY`).
+
+#### Parameters
+
+##### opts
+
+[`AnthropicOptions`](#anthropicoptions)
+
+#### Returns
+
+[`AnthropicProvider`](#anthropicprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { anthropic } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: anthropic({ model: "claude-sonnet-5" }),
+});
+```
+
+***
+
+### assemblyAILlm()
+
+```ts
+function assemblyAILlm(opts?: AssemblyAILlmOptions): AssemblyAILlmProvider;
+```
+
+Build an AssemblyAI LLM Gateway descriptor.
+
+The API key is resolved host-side from the agent's env
+(`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
+descriptor stays free of secrets and safe to serialize.
+
+Named `assemblyAILlm` (not `assemblyAI`) so the STT
+(`assemblyAIStt`), LLM, and TTS (`assemblyAITts`) factories can be
+imported side by side without aliasing.
+
+#### Parameters
+
+##### opts?
+
+[`AssemblyAILlmOptions`](#assemblyaillmoptions)
+
+#### Returns
+
+[`AssemblyAILlmProvider`](#assemblyaillmprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAILlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b", reasoningEffort: "none" }),
+});
+```
+
+Every option is optional: `assemblyAILlm()` runs
+[ASSEMBLYAI\_LLM\_DEFAULT\_MODEL](#assemblyai_llm_default_model). `region: "eu"` selects the EU
+gateway; [ASSEMBLYAI\_GATEWAY\_MODELS](#assemblyai_gateway_models) is the catalog.
+
+***
+
+### gateway()
+
+```ts
+function gateway(opts: GatewayOptions): GatewayProvider;
+```
+
+Build a Vercel AI Gateway descriptor.
+
+The API key is resolved host-side from the agent's env
+(`AI_GATEWAY_API_KEY`); there is no factory-time key parameter, so the
+descriptor stays free of secrets and safe to serialize.
+
+#### Parameters
+
+##### opts
+
+[`GatewayOptions`](#gatewayoptions)
+
+#### Returns
+
+[`GatewayProvider`](#gatewayprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { gateway } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: gateway({ model: "zai/glm-4.6" }),
+});
+```
+
+One key, hundreds of models, addressed `"creator/model"`. See
+https://vercel.com/ai-gateway/models for the list.
+
+***
+
+### gatewayModelIds()
+
+```ts
+function gatewayModelIds(opts?: {
+  eu?: boolean;
+}): (
+  | "qwen3-next-80b-a3b"
+  | "claude-haiku-4-5-20251001"
+  | "claude-opus-4-5-20251101"
+  | "claude-opus-4-6"
+  | "claude-opus-4-7"
+  | "claude-opus-4-8"
+  | "claude-sonnet-4-5-20250929"
+  | "claude-sonnet-4-6"
+  | "claude-sonnet-5"
+  | "gemini-2.5-flash"
+  | "gemini-2.5-flash-lite"
+  | "gemini-2.5-pro"
+  | "gemini-3.1-flash-lite"
+  | "gemini-3.5-flash"
+  | "gemini-3.5-flash-lite"
+  | "gemini-3.6-flash"
+  | "gpt-4.1"
+  | "gpt-5"
+  | "gpt-5-mini"
+  | "gpt-5-nano"
+  | "gpt-5.1"
+  | "gpt-5.2"
+  | "gpt-5.5"
+  | "gpt-5.6-luna"
+  | "gpt-5.6-terra"
+  | "gpt-oss-120b"
+  | "gpt-oss-20b"
+  | "kimi-k2.5"
+  | "qwen3-32B"
+  | "qwen3.5-4b-32k-experimental")[];
+```
+
+Ids usable for a streaming, tool-calling agent — the only shape this SDK
+runs — and that actually answer. Deriving it beats another hand-kept list:
+a model that is deprecated or loses `stream` upstream drops out on the
+next regeneration instead of waiting to be noticed.
+
+#### Parameters
+
+##### opts?
+
+###### eu?
+
+`boolean`
+
+#### Returns
+
+(
+  \| `"qwen3-next-80b-a3b"`
+  \| `"claude-haiku-4-5-20251001"`
+  \| `"claude-opus-4-5-20251101"`
+  \| `"claude-opus-4-6"`
+  \| `"claude-opus-4-7"`
+  \| `"claude-opus-4-8"`
+  \| `"claude-sonnet-4-5-20250929"`
+  \| `"claude-sonnet-4-6"`
+  \| `"claude-sonnet-5"`
+  \| `"gemini-2.5-flash"`
+  \| `"gemini-2.5-flash-lite"`
+  \| `"gemini-2.5-pro"`
+  \| `"gemini-3.1-flash-lite"`
+  \| `"gemini-3.5-flash"`
+  \| `"gemini-3.5-flash-lite"`
+  \| `"gemini-3.6-flash"`
+  \| `"gpt-4.1"`
+  \| `"gpt-5"`
+  \| `"gpt-5-mini"`
+  \| `"gpt-5-nano"`
+  \| `"gpt-5.1"`
+  \| `"gpt-5.2"`
+  \| `"gpt-5.5"`
+  \| `"gpt-5.6-luna"`
+  \| `"gpt-5.6-terra"`
+  \| `"gpt-oss-120b"`
+  \| `"gpt-oss-20b"`
+  \| `"kimi-k2.5"`
+  \| `"qwen3-32B"`
+  \| `"qwen3.5-4b-32k-experimental"`)[]
+
+***
+
+### google()
+
+```ts
+function google(opts: GoogleOptions): GoogleProvider;
+```
+
+Build a Google (Gemini) LLM descriptor for pipeline mode. The API key is
+resolved host-side from the agent's env (`GOOGLE_GENERATIVE_AI_API_KEY`).
+
+#### Parameters
+
+##### opts
+
+[`GoogleOptions`](#googleoptions)
+
+#### Returns
+
+[`GoogleProvider`](#googleprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { google } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: google({ model: "gemini-2.5-flash" }),
+});
+```
+
+***
+
+### groq()
+
+```ts
+function groq(opts: GroqOptions): GroqProvider;
+```
+
+Build a Groq LLM descriptor for pipeline mode. The API key is resolved
+host-side from the agent's env (`GROQ_API_KEY`).
+
+#### Parameters
+
+##### opts
+
+[`GroqOptions`](#groqoptions)
+
+#### Returns
+
+[`GroqProvider`](#groqprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { groq } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: groq({ model: "llama-3.3-70b-versatile" }),
+});
+```
+
+***
+
+### mistral()
+
+```ts
+function mistral(opts: MistralOptions): MistralProvider;
+```
+
+Build a Mistral LLM descriptor for pipeline mode. The API key is resolved
+host-side from the agent's env (`MISTRAL_API_KEY`).
+
+#### Parameters
+
+##### opts
+
+[`MistralOptions`](#mistraloptions)
+
+#### Returns
+
+[`MistralProvider`](#mistralprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { mistral } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: mistral({ model: "mistral-large-latest" }),
+});
+```
+
+***
+
+### openai()
+
+```ts
+function openai(opts: OpenAIOptions): OpenAIProvider;
+```
+
+Build an OpenAI LLM descriptor for pipeline mode. The API key is resolved
+host-side from the agent's env (`OPENAI_API_KEY`).
+
+#### Parameters
+
+##### opts
+
+[`OpenAIOptions`](#openaioptions)
+
+#### Returns
+
+[`OpenAIProvider`](#openaiprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { openai } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: openai({ model: "gpt-5.5" }),
+});
+```
+
+***
+
+### openrouter()
+
+```ts
+function openrouter(opts: OpenRouterOptions): OpenRouterProvider;
+```
+
+Build an OpenRouter descriptor.
+
+The API key is resolved host-side from the agent's env
+(`OPENROUTER_API_KEY`); there is no factory-time key parameter, so the
+descriptor stays free of secrets and safe to serialize.
+
+#### Parameters
+
+##### opts
+
+[`OpenRouterOptions`](#openrouteroptions)
+
+#### Returns
+
+[`OpenRouterProvider`](#openrouterprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { openrouter } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: openrouter({ model: "meta-llama/llama-3.3-70b-instruct" }),
+});
+```
+
+One key, hundreds of models, addressed `"creator/model"`. See
+https://openrouter.ai/models for the list.
+
+***
+
+### xai()
+
+```ts
+function xai(opts: XaiOptions): XaiProvider;
+```
+
+Build an xAI (Grok) LLM descriptor for pipeline mode. The API key is
+resolved host-side from the agent's env (`XAI_API_KEY`).
+
+#### Parameters
+
+##### opts
+
+[`XaiOptions`](#xaioptions)
+
+#### Returns
+
+[`XaiProvider`](#xaiprovider)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { xai } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "Support",
+  systemPrompt: "You are a support agent. Be brief.",
+  llm: xai({ model: "grok-4" }),
+});
+```
 
 ## Interfaces
 
@@ -258,38 +704,6 @@ OpenRouter model id in `"creator/model"` form, e.g.
 `"anthropic/claude-sonnet-4.5"`, `"openai/gpt-4.1"`,
 `"meta-llama/llama-3.3-70b-instruct"`. See
 https://openrouter.ai/models for the full list.
-
-***
-
-### ProviderDescriptor
-
-Base shape for a provider descriptor. A `kind` tag + opaque `options`
-payload lets the host registry pick the right resolver and pass the
-caller's options through verbatim.
-
-#### Type Parameters
-
-##### Kind
-
-`Kind` *extends* `string`
-
-##### Options
-
-`Options`
-
-#### Properties
-
-##### kind
-
-```ts
-readonly kind: Kind;
-```
-
-##### options
-
-```ts
-readonly options: Options;
-```
 
 ***
 
@@ -928,1261 +1342,361 @@ const ASSEMBLYAI_GATEWAY_MODELS: {
 ##### claude-haiku-4-5-20251001
 
 ```ts
-readonly claude-haiku-4-5-20251001: {
+{
   context: 200000;
   eu: true;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### claude-haiku-4-5-20251001.context
-
-```ts
-readonly context: 200000;
-```
-
-###### claude-haiku-4-5-20251001.eu
-
-```ts
-readonly eu: true;
-```
-
-###### claude-haiku-4-5-20251001.live
-
-```ts
-readonly live: true;
-```
-
-###### claude-haiku-4-5-20251001.stream
-
-```ts
-readonly stream: true;
-```
-
-###### claude-haiku-4-5-20251001.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### claude-opus-4-5-20251101
 
 ```ts
-readonly claude-opus-4-5-20251101: {
+{
   context: 200000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### claude-opus-4-5-20251101.context
-
-```ts
-readonly context: 200000;
-```
-
-###### claude-opus-4-5-20251101.eu
-
-```ts
-readonly eu: false;
-```
-
-###### claude-opus-4-5-20251101.live
-
-```ts
-readonly live: true;
-```
-
-###### claude-opus-4-5-20251101.stream
-
-```ts
-readonly stream: true;
-```
-
-###### claude-opus-4-5-20251101.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### claude-opus-4-6
 
 ```ts
-readonly claude-opus-4-6: {
+{
   context: 200000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### claude-opus-4-6.context
-
-```ts
-readonly context: 200000;
-```
-
-###### claude-opus-4-6.eu
-
-```ts
-readonly eu: false;
-```
-
-###### claude-opus-4-6.live
-
-```ts
-readonly live: true;
-```
-
-###### claude-opus-4-6.stream
-
-```ts
-readonly stream: true;
-```
-
-###### claude-opus-4-6.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### claude-opus-4-7
 
 ```ts
-readonly claude-opus-4-7: {
+{
   context: 1000000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### claude-opus-4-7.context
-
-```ts
-readonly context: 1000000;
-```
-
-###### claude-opus-4-7.eu
-
-```ts
-readonly eu: false;
-```
-
-###### claude-opus-4-7.live
-
-```ts
-readonly live: true;
-```
-
-###### claude-opus-4-7.stream
-
-```ts
-readonly stream: true;
-```
-
-###### claude-opus-4-7.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### claude-opus-4-8
 
 ```ts
-readonly claude-opus-4-8: {
+{
   context: 1000000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### claude-opus-4-8.context
-
-```ts
-readonly context: 1000000;
-```
-
-###### claude-opus-4-8.eu
-
-```ts
-readonly eu: false;
-```
-
-###### claude-opus-4-8.live
-
-```ts
-readonly live: true;
-```
-
-###### claude-opus-4-8.stream
-
-```ts
-readonly stream: true;
-```
-
-###### claude-opus-4-8.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### claude-sonnet-4-5-20250929
 
 ```ts
-readonly claude-sonnet-4-5-20250929: {
+{
   context: 200000;
   eu: true;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### claude-sonnet-4-5-20250929.context
-
-```ts
-readonly context: 200000;
-```
-
-###### claude-sonnet-4-5-20250929.eu
-
-```ts
-readonly eu: true;
-```
-
-###### claude-sonnet-4-5-20250929.live
-
-```ts
-readonly live: true;
-```
-
-###### claude-sonnet-4-5-20250929.stream
-
-```ts
-readonly stream: true;
-```
-
-###### claude-sonnet-4-5-20250929.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### claude-sonnet-4-6
 
 ```ts
-readonly claude-sonnet-4-6: {
+{
   context: 200000;
   eu: true;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### claude-sonnet-4-6.context
-
-```ts
-readonly context: 200000;
-```
-
-###### claude-sonnet-4-6.eu
-
-```ts
-readonly eu: true;
-```
-
-###### claude-sonnet-4-6.live
-
-```ts
-readonly live: true;
-```
-
-###### claude-sonnet-4-6.stream
-
-```ts
-readonly stream: true;
-```
-
-###### claude-sonnet-4-6.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### claude-sonnet-5
 
 ```ts
-readonly claude-sonnet-5: {
+{
   context: 200000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### claude-sonnet-5.context
+##### gemini-2.5-flash
 
 ```ts
-readonly context: 200000;
-```
-
-###### claude-sonnet-5.eu
-
-```ts
-readonly eu: false;
-```
-
-###### claude-sonnet-5.live
-
-```ts
-readonly live: true;
-```
-
-###### claude-sonnet-5.stream
-
-```ts
-readonly stream: true;
-```
-
-###### claude-sonnet-5.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gemini-2.5-flash
-
-```ts
-readonly gemini-2.5-flash: {
+{
   context: 1048576;
   eu: true;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gemini-2.5-flash.context
+##### gemini-2.5-flash-lite
 
 ```ts
-readonly context: 1048576;
-```
-
-###### gemini-2.5-flash.eu
-
-```ts
-readonly eu: true;
-```
-
-###### gemini-2.5-flash.live
-
-```ts
-readonly live: true;
-```
-
-###### gemini-2.5-flash.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gemini-2.5-flash.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gemini-2.5-flash-lite
-
-```ts
-readonly gemini-2.5-flash-lite: {
+{
   context: 1048576;
   eu: true;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gemini-2.5-flash-lite.context
+##### gemini-2.5-pro
 
 ```ts
-readonly context: 1048576;
-```
-
-###### gemini-2.5-flash-lite.eu
-
-```ts
-readonly eu: true;
-```
-
-###### gemini-2.5-flash-lite.live
-
-```ts
-readonly live: true;
-```
-
-###### gemini-2.5-flash-lite.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gemini-2.5-flash-lite.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gemini-2.5-pro
-
-```ts
-readonly gemini-2.5-pro: {
+{
   context: 200000;
   eu: true;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gemini-2.5-pro.context
+##### gemini-3.1-flash-lite
 
 ```ts
-readonly context: 200000;
-```
-
-###### gemini-2.5-pro.eu
-
-```ts
-readonly eu: true;
-```
-
-###### gemini-2.5-pro.live
-
-```ts
-readonly live: true;
-```
-
-###### gemini-2.5-pro.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gemini-2.5-pro.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gemini-3.1-flash-lite
-
-```ts
-readonly gemini-3.1-flash-lite: {
+{
   context: 1048575;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gemini-3.1-flash-lite.context
+##### gemini-3.5-flash
 
 ```ts
-readonly context: 1048575;
-```
-
-###### gemini-3.1-flash-lite.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gemini-3.1-flash-lite.live
-
-```ts
-readonly live: true;
-```
-
-###### gemini-3.1-flash-lite.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gemini-3.1-flash-lite.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gemini-3.5-flash
-
-```ts
-readonly gemini-3.5-flash: {
+{
   context: 1048575;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gemini-3.5-flash.context
+##### gemini-3.5-flash-lite
 
 ```ts
-readonly context: 1048575;
-```
-
-###### gemini-3.5-flash.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gemini-3.5-flash.live
-
-```ts
-readonly live: true;
-```
-
-###### gemini-3.5-flash.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gemini-3.5-flash.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gemini-3.5-flash-lite
-
-```ts
-readonly gemini-3.5-flash-lite: {
+{
   context: 1048575;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gemini-3.5-flash-lite.context
+##### gemini-3.6-flash
 
 ```ts
-readonly context: 1048575;
-```
-
-###### gemini-3.5-flash-lite.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gemini-3.5-flash-lite.live
-
-```ts
-readonly live: true;
-```
-
-###### gemini-3.5-flash-lite.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gemini-3.5-flash-lite.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gemini-3.6-flash
-
-```ts
-readonly gemini-3.6-flash: {
+{
   context: 1048575;
   eu: false;
   live: false;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gemini-3.6-flash.context
+##### gpt-4.1
 
 ```ts
-readonly context: 1048575;
-```
-
-###### gemini-3.6-flash.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gemini-3.6-flash.live
-
-```ts
-readonly live: false;
-```
-
-###### gemini-3.6-flash.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gemini-3.6-flash.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gpt-4.1
-
-```ts
-readonly gpt-4.1: {
+{
   context: 1047576;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### gpt-4.1.context
-
-```ts
-readonly context: 1047576;
-```
-
-###### gpt-4.1.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-4.1.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-4.1.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gpt-4.1.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### gpt-5
 
 ```ts
-readonly gpt-5: {
+{
   context: 400000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### gpt-5.context
-
-```ts
-readonly context: 400000;
-```
-
-###### gpt-5.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-5.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-5.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gpt-5.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### gpt-5-mini
 
 ```ts
-readonly gpt-5-mini: {
+{
   context: 400000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### gpt-5-mini.context
-
-```ts
-readonly context: 400000;
-```
-
-###### gpt-5-mini.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-5-mini.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-5-mini.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gpt-5-mini.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### gpt-5-nano
 
 ```ts
-readonly gpt-5-nano: {
+{
   context: 400000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gpt-5-nano.context
+##### gpt-5.1
 
 ```ts
-readonly context: 400000;
-```
-
-###### gpt-5-nano.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-5-nano.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-5-nano.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gpt-5-nano.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gpt-5.1
-
-```ts
-readonly gpt-5.1: {
+{
   context: 400000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gpt-5.1.context
+##### gpt-5.2
 
 ```ts
-readonly context: 400000;
-```
-
-###### gpt-5.1.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-5.1.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-5.1.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gpt-5.1.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gpt-5.2
-
-```ts
-readonly gpt-5.2: {
+{
   context: 400000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gpt-5.2.context
+##### gpt-5.5
 
 ```ts
-readonly context: 400000;
-```
-
-###### gpt-5.2.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-5.2.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-5.2.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gpt-5.2.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gpt-5.5
-
-```ts
-readonly gpt-5.5: {
+{
   context: 272000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gpt-5.5.context
+##### gpt-5.6-luna
 
 ```ts
-readonly context: 272000;
-```
-
-###### gpt-5.5.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-5.5.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-5.5.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gpt-5.5.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gpt-5.6-luna
-
-```ts
-readonly gpt-5.6-luna: {
+{
   context: 270000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### gpt-5.6-luna.context
+##### gpt-5.6-terra
 
 ```ts
-readonly context: 270000;
-```
-
-###### gpt-5.6-luna.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-5.6-luna.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-5.6-luna.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gpt-5.6-luna.tools
-
-```ts
-readonly tools: true;
-```
-
-###### gpt-5.6-terra
-
-```ts
-readonly gpt-5.6-terra: {
+{
   context: 270000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### gpt-5.6-terra.context
-
-```ts
-readonly context: 270000;
-```
-
-###### gpt-5.6-terra.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-5.6-terra.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-5.6-terra.stream
-
-```ts
-readonly stream: true;
-```
-
-###### gpt-5.6-terra.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### gpt-oss-120b
 
 ```ts
-readonly gpt-oss-120b: {
+{
   context: 131072;
   eu: false;
   live: true;
   stream: false;
   tools: true;
-};
-```
-
-###### gpt-oss-120b.context
-
-```ts
-readonly context: 131072;
-```
-
-###### gpt-oss-120b.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-oss-120b.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-oss-120b.stream
-
-```ts
-readonly stream: false;
-```
-
-###### gpt-oss-120b.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### gpt-oss-20b
 
 ```ts
-readonly gpt-oss-20b: {
+{
   context: 131072;
   eu: false;
   live: true;
   stream: false;
   tools: true;
-};
+}
 ```
 
-###### gpt-oss-20b.context
+##### kimi-k2.5
 
 ```ts
-readonly context: 131072;
-```
-
-###### gpt-oss-20b.eu
-
-```ts
-readonly eu: false;
-```
-
-###### gpt-oss-20b.live
-
-```ts
-readonly live: true;
-```
-
-###### gpt-oss-20b.stream
-
-```ts
-readonly stream: false;
-```
-
-###### gpt-oss-20b.tools
-
-```ts
-readonly tools: true;
-```
-
-###### kimi-k2.5
-
-```ts
-readonly kimi-k2.5: {
+{
   context: 200000;
   eu: false;
   live: false;
   stream: true;
   tools: true;
-};
-```
-
-###### kimi-k2.5.context
-
-```ts
-readonly context: 200000;
-```
-
-###### kimi-k2.5.eu
-
-```ts
-readonly eu: false;
-```
-
-###### kimi-k2.5.live
-
-```ts
-readonly live: false;
-```
-
-###### kimi-k2.5.stream
-
-```ts
-readonly stream: true;
-```
-
-###### kimi-k2.5.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### qwen3-32B
 
 ```ts
-readonly qwen3-32B: {
+{
   context: 200000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
-```
-
-###### qwen3-32B.context
-
-```ts
-readonly context: 200000;
-```
-
-###### qwen3-32B.eu
-
-```ts
-readonly eu: false;
-```
-
-###### qwen3-32B.live
-
-```ts
-readonly live: true;
-```
-
-###### qwen3-32B.stream
-
-```ts
-readonly stream: true;
-```
-
-###### qwen3-32B.tools
-
-```ts
-readonly tools: true;
+}
 ```
 
 ##### qwen3-next-80b-a3b
 
 ```ts
-readonly qwen3-next-80b-a3b: {
+{
   context: 200000;
   eu: false;
   live: true;
   stream: true;
   tools: true;
-};
+}
 ```
 
-###### qwen3-next-80b-a3b.context
+##### qwen3.5-4b-32k-experimental
 
 ```ts
-readonly context: 200000;
-```
-
-###### qwen3-next-80b-a3b.eu
-
-```ts
-readonly eu: false;
-```
-
-###### qwen3-next-80b-a3b.live
-
-```ts
-readonly live: true;
-```
-
-###### qwen3-next-80b-a3b.stream
-
-```ts
-readonly stream: true;
-```
-
-###### qwen3-next-80b-a3b.tools
-
-```ts
-readonly tools: true;
-```
-
-###### qwen3.5-4b-32k-experimental
-
-```ts
-readonly qwen3.5-4b-32k-experimental: {
+{
   context: 32768;
   eu: false;
   live: true;
   stream: true;
   tools: false;
-};
-```
-
-###### qwen3.5-4b-32k-experimental.context
-
-```ts
-readonly context: 32768;
-```
-
-###### qwen3.5-4b-32k-experimental.eu
-
-```ts
-readonly eu: false;
-```
-
-###### qwen3.5-4b-32k-experimental.live
-
-```ts
-readonly live: true;
-```
-
-###### qwen3.5-4b-32k-experimental.stream
-
-```ts
-readonly stream: true;
-```
-
-###### qwen3.5-4b-32k-experimental.tools
-
-```ts
-readonly tools: false;
+}
 ```
 
 ***
@@ -2391,291 +1905,8 @@ Agent-env variable holding the xAI API key.
 const XAI_KIND: "xai";
 ```
 
-## Functions
+## References
 
-### anthropic()
+### ProviderDescriptor
 
-```ts
-function anthropic(opts: AnthropicOptions): AnthropicProvider;
-```
-
-Build an Anthropic (Claude) LLM descriptor for pipeline mode. The API key
-is resolved host-side from the agent's env (`ANTHROPIC_API_KEY`).
-
-#### Parameters
-
-##### opts
-
-[`AnthropicOptions`](#anthropicoptions)
-
-#### Returns
-
-[`AnthropicProvider`](#anthropicprovider)
-
-***
-
-### assemblyAILlm()
-
-```ts
-function assemblyAILlm(opts?: AssemblyAILlmOptions): AssemblyAILlmProvider;
-```
-
-Build an AssemblyAI LLM Gateway descriptor.
-
-The API key is resolved host-side from the agent's env
-(`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
-descriptor stays free of secrets and safe to serialize.
-
-Named `assemblyAILlm` (not `assemblyAI`) so the STT
-(`assemblyAIStt`), LLM, and TTS (`assemblyAITts`) factories can be
-imported side by side without aliasing.
-
-#### Parameters
-
-##### opts?
-
-[`AssemblyAILlmOptions`](#assemblyaillmoptions)
-
-#### Returns
-
-[`AssemblyAILlmProvider`](#assemblyaillmprovider)
-
-***
-
-### gateway()
-
-```ts
-function gateway(opts: GatewayOptions): GatewayProvider;
-```
-
-Build a Vercel AI Gateway descriptor.
-
-The API key is resolved host-side from the agent's env
-(`AI_GATEWAY_API_KEY`); there is no factory-time key parameter, so the
-descriptor stays free of secrets and safe to serialize.
-
-#### Parameters
-
-##### opts
-
-[`GatewayOptions`](#gatewayoptions)
-
-#### Returns
-
-[`GatewayProvider`](#gatewayprovider)
-
-***
-
-### gatewayModelIds()
-
-```ts
-function gatewayModelIds(opts?: {
-  eu?: boolean;
-}): (
-  | "qwen3-next-80b-a3b"
-  | "claude-haiku-4-5-20251001"
-  | "claude-opus-4-5-20251101"
-  | "claude-opus-4-6"
-  | "claude-opus-4-7"
-  | "claude-opus-4-8"
-  | "claude-sonnet-4-5-20250929"
-  | "claude-sonnet-4-6"
-  | "claude-sonnet-5"
-  | "gemini-2.5-flash"
-  | "gemini-2.5-flash-lite"
-  | "gemini-2.5-pro"
-  | "gemini-3.1-flash-lite"
-  | "gemini-3.5-flash"
-  | "gemini-3.5-flash-lite"
-  | "gemini-3.6-flash"
-  | "gpt-4.1"
-  | "gpt-5"
-  | "gpt-5-mini"
-  | "gpt-5-nano"
-  | "gpt-5.1"
-  | "gpt-5.2"
-  | "gpt-5.5"
-  | "gpt-5.6-luna"
-  | "gpt-5.6-terra"
-  | "gpt-oss-120b"
-  | "gpt-oss-20b"
-  | "kimi-k2.5"
-  | "qwen3-32B"
-  | "qwen3.5-4b-32k-experimental")[];
-```
-
-Ids usable for a streaming, tool-calling agent — the only shape this SDK
-runs — and that actually answer. Deriving it beats another hand-kept list:
-a model that is deprecated or loses `stream` upstream drops out on the
-next regeneration instead of waiting to be noticed.
-
-#### Parameters
-
-##### opts?
-
-###### eu?
-
-`boolean`
-
-#### Returns
-
-(
-  \| `"qwen3-next-80b-a3b"`
-  \| `"claude-haiku-4-5-20251001"`
-  \| `"claude-opus-4-5-20251101"`
-  \| `"claude-opus-4-6"`
-  \| `"claude-opus-4-7"`
-  \| `"claude-opus-4-8"`
-  \| `"claude-sonnet-4-5-20250929"`
-  \| `"claude-sonnet-4-6"`
-  \| `"claude-sonnet-5"`
-  \| `"gemini-2.5-flash"`
-  \| `"gemini-2.5-flash-lite"`
-  \| `"gemini-2.5-pro"`
-  \| `"gemini-3.1-flash-lite"`
-  \| `"gemini-3.5-flash"`
-  \| `"gemini-3.5-flash-lite"`
-  \| `"gemini-3.6-flash"`
-  \| `"gpt-4.1"`
-  \| `"gpt-5"`
-  \| `"gpt-5-mini"`
-  \| `"gpt-5-nano"`
-  \| `"gpt-5.1"`
-  \| `"gpt-5.2"`
-  \| `"gpt-5.5"`
-  \| `"gpt-5.6-luna"`
-  \| `"gpt-5.6-terra"`
-  \| `"gpt-oss-120b"`
-  \| `"gpt-oss-20b"`
-  \| `"kimi-k2.5"`
-  \| `"qwen3-32B"`
-  \| `"qwen3.5-4b-32k-experimental"`)[]
-
-***
-
-### google()
-
-```ts
-function google(opts: GoogleOptions): GoogleProvider;
-```
-
-Build a Google (Gemini) LLM descriptor for pipeline mode. The API key is
-resolved host-side from the agent's env (`GOOGLE_GENERATIVE_AI_API_KEY`).
-
-#### Parameters
-
-##### opts
-
-[`GoogleOptions`](#googleoptions)
-
-#### Returns
-
-[`GoogleProvider`](#googleprovider)
-
-***
-
-### groq()
-
-```ts
-function groq(opts: GroqOptions): GroqProvider;
-```
-
-Build a Groq LLM descriptor for pipeline mode. The API key is resolved
-host-side from the agent's env (`GROQ_API_KEY`).
-
-#### Parameters
-
-##### opts
-
-[`GroqOptions`](#groqoptions)
-
-#### Returns
-
-[`GroqProvider`](#groqprovider)
-
-***
-
-### mistral()
-
-```ts
-function mistral(opts: MistralOptions): MistralProvider;
-```
-
-Build a Mistral LLM descriptor for pipeline mode. The API key is resolved
-host-side from the agent's env (`MISTRAL_API_KEY`).
-
-#### Parameters
-
-##### opts
-
-[`MistralOptions`](#mistraloptions)
-
-#### Returns
-
-[`MistralProvider`](#mistralprovider)
-
-***
-
-### openai()
-
-```ts
-function openai(opts: OpenAIOptions): OpenAIProvider;
-```
-
-Build an OpenAI LLM descriptor for pipeline mode. The API key is resolved
-host-side from the agent's env (`OPENAI_API_KEY`).
-
-#### Parameters
-
-##### opts
-
-[`OpenAIOptions`](#openaioptions)
-
-#### Returns
-
-[`OpenAIProvider`](#openaiprovider)
-
-***
-
-### openrouter()
-
-```ts
-function openrouter(opts: OpenRouterOptions): OpenRouterProvider;
-```
-
-Build an OpenRouter descriptor.
-
-The API key is resolved host-side from the agent's env
-(`OPENROUTER_API_KEY`); there is no factory-time key parameter, so the
-descriptor stays free of secrets and safe to serialize.
-
-#### Parameters
-
-##### opts
-
-[`OpenRouterOptions`](#openrouteroptions)
-
-#### Returns
-
-[`OpenRouterProvider`](#openrouterprovider)
-
-***
-
-### xai()
-
-```ts
-function xai(opts: XaiOptions): XaiProvider;
-```
-
-Build an xAI (Grok) LLM descriptor for pipeline mode. The API key is
-resolved host-side from the agent's env (`XAI_API_KEY`).
-
-#### Parameters
-
-##### opts
-
-[`XaiOptions`](#xaioptions)
-
-#### Returns
-
-[`XaiProvider`](#xaiprovider)
+Re-exports [ProviderDescriptor](stt.md#providerdescriptor)

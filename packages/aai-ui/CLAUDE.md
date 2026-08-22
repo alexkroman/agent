@@ -30,12 +30,12 @@ new one fails `pnpm check:api-contracts` until it joins one:
 | Capability | What it promises |
 | --- | --- |
 | `client` | the voice mount — `client()`, its two config tiers, the handle |
-| `page` | the workflow-app mount — `page()`, with no session under it |
+| `page` | the workflow-app mount — `page()`, with no session under it, plus `fetchClientConfig()`: the lookup `client()` does for itself and a page must ask for |
 | `session` | the live call: `SessionCore`, the snapshot, `useSession`, `useUserTranscript`, the errors, `VOICE_CAPTURE_CONSTRAINTS` |
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
-| `components` | the design system a custom chrome is assembled from |
+| `components` | the design system a custom chrome is assembled from. The three memoized components (`Markdown`, `Controls`, `MessageList`) each name an exported props type, which is what makes their props render at all — see below |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
-| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`. At **epoch 5** since the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type. That re-export is also what carries `follow`/`followOutput` here for free — this package's own readers do NOT use them, because a hook needs the raw `Response` to see a 404 and fall through to its poll |
+| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`. At **epoch 12**; epoch 5 is where the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type. That re-export is also what carries `follow`/`followOutput` here for free — this package's own readers do NOT use them, because a hook needs the raw `Response` to see a 404 and fall through to its poll |
 | `theme` | `ClientTheme` + `useTheme` — its own contract because a token is a name in somebody's CSS |
 | `client-dir` | `defaultClientDir()`, the one export a SERVER calls |
 
@@ -56,15 +56,77 @@ cannot take an explicit `undefined` under `exactOptionalPropertyTypes`, and
 `api.get` is deliberately untyped (`useWorkflowRun<R>` is where a page names the
 shape).
 
-**The `@internal` ratchet here stands at nine**, all on the root barrel and
+**The `@internal` ratchet here stands at eight**, all on the root barrel and
 all recorded in `contracts/internal-surface.json`: `SessionProvider`,
 `ThemeProvider`, `ToolConfigContext`, the three URL chips (`ApiUrlChip`,
-`UiUrlChip`, `SessionUrlChips`), and the client-config trio (`buildAgentUrl`,
-`fetchClientConfig`, `loadClientConfig`). Every one is importable and in an
+`UiUrlChip`, `SessionUrlChips`), and two thirds of the client-config trio
+(`buildAgentUrl`, `loadClientConfig`). Every one is importable and in an
 author's autocomplete while no contract covers it — `client()` and the default
 client install them, which is why they are tagged rather than moved. The list
 may shrink and may never grow; unlike `aai` there is no `/internal` subpath to
 move one to, so paying it down means a private module.
+
+**`fetchClientConfig` is what came off it, and the reason generalizes.** It was
+tagged `@internal` while a `@public` doc comment in the SDK
+(`sdk/agent-params.ts`) told a workflow-app author to call it — "a page that
+wants `name`/`greeting` calls `fetchClientConfig()` itself" — so the published
+reference instructed a reader to use a symbol it excluded, and its return type
+`ClientConfigResponse` was a contracted public type no public signature could
+produce. It is `@public` now and belongs to the `page` capability, `page()`
+being the mount that makes the lookup a caller's job. The other two stay
+internal: `loadClientConfig`'s `null`-vs-`{}` distinction is a session
+implementation detail, and `buildAgentUrl` is a two-line path join.
+
+**`SessionCoreOptions` is gone**, and epoch 1 of `session` went with it. It was
+an exact alias of `VoiceSessionOptions` with one referent —
+`createSessionCore`'s parameter, which names `VoiceSessionOptions` directly now
+— and `client()` never took it, so the "two names, one type" note the alias
+carried was an argument for having one. Note the drop is recorded against
+**epoch 1** rather than the epoch this change bumped: `contracts/compatibility/
+session/v1.tsx` is the example that named the type, so it is the authoring
+style that stopped compiling. `--bump --drop` can only classify the CURRENT
+epoch, so that one was written into `contracts/contracts.json` by hand and the
+bump itself is a `--retain` (v2's example is untouched by the removal).
+
+## A memoized component must NAME its props type
+
+`Markdown`, `Controls` and `MessageList` are `export const X = memo(fn)`, and
+for as long as that type was INFERRED the published reference described all
+three as taking nothing: `const Markdown: MemoExoticComponent;` was the entire
+declaration, so `text` — a REQUIRED prop — was named nowhere a reader could
+find it.
+
+The cause is not `memo` and not the props being an inline object type. It is
+the shape `tsc` emits for an inferred type: `import("react").MemoExoticComponent<…>`,
+and `typedoc-plugin-markdown` drops the type ARGUMENTS of an `import(…)`
+reference. Measured against the plugin directly: the same declaration written
+with a NAMED import renders its arguments in full, in every combination —
+inline function type, `FunctionComponent<Props>`, anything.
+
+So each of the three carries an explicit annotation
+(`MemoExoticComponent<FunctionComponent<MarkdownProps>>`) written from imported
+names, which is what `tsc` then emits verbatim. The props types are exported
+because `treatWarningsAsErrors` refuses a named-but-unexported type on a public
+signature, and they are the `ToolCallRowProps` pattern the package already used
+— a named props type renders every property with its own prose.
+
+Two consequences worth knowing before adding a component here:
+
+- **An INTERSECTION in a parameter position loses per-property prose.** A pure
+  inline object type expands into a documented property list; `A & Omit<B, …>`
+  is flattened to one type expression and every property's doc comment is
+  dropped. Measured, and unchanged by `typeDeclarationVisibility` — it is the
+  plugin, not a config choice. So the field components
+  (`TextField`, `SelectField`, `FileField`, … — all `FieldShell & Omit<…HTMLAttributes>`)
+  document their extras in the component's own prose, and the shared four are
+  documented once on `FieldShell`, which is a NAMED type and therefore renders.
+- **`@param <prop>` on a destructured parameter is silently discarded.** TypeDoc
+  takes the FIRST `@param`'s name as the name of the whole object and drops the
+  rest, so `AutoScroll` rendered as `AutoScroll(children: {…})` with six of its
+  seven prop docs gone, and `Button` as `Button(variant: {…})` — which invites
+  `<Button variant={{ variant: "ghost" }}>`. One `@param props` plus JSDoc on
+  each property inside the object type is the spelling that works; a component
+  with no `@param` at all renders the compiler's `__namedParameters`.
 
 ## Key files
 

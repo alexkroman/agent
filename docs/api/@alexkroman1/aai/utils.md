@@ -16,8 +16,8 @@ with its undici dispatcher, and for the same measured reason.
 
 That zod-free property is why `omitUndefined` lives here rather than on
 `/internal` alongside the other cross-package infrastructure: `/internal`
-re-exports `formatSchemaIssues` from `sdk/schema.ts`, so importing anything
-from it pulls zod — and the CLI's own `_utils.ts` is on the startup path.
+re-exports a schema helper that pulls zod, so importing anything from it pulls
+zod's whole module graph — and the CLI loads this module on every invocation.
 
 `createKeyedLock` is the one export with a runtime dependency (`p-timeout`,
 for its optional acquire deadline). Deliberate, and measured against the
@@ -29,36 +29,6 @@ calls concurrently, so two async mutators of one external resource interleave
 — and `/internal` would be telling users to import internal API. (Per-session
 state is not that case any more: `sessionSlot`'s `update` window is
 synchronous, so it has nothing to serialize.)
-
-## Type Aliases
-
-### ToolFailure
-
-```ts
-type ToolFailure = {
-  error: string;
-};
-```
-
-A tool result that reports a recoverable failure to the LLM.
-
-Return one from `execute` (instead of throwing) when the failure is
-something the model should see and act on — "no order matches that
-description, ask which one" — rather than an internal fault. The runtime
-serializes it like any other result, so it reaches the model as
-`{"error":"…"}` and reaches a test as an inspectable object.
-
-A tool that returns failures declares them in its own result union
-(`Order | ToolFailure`), which is what makes [isToolFailure](#istoolfailure) a
-narrowing guard at every call site that forwards one.
-
-#### Properties
-
-##### error
-
-```ts
-error: string;
-```
 
 ## Functions
 
@@ -374,9 +344,9 @@ model should see it and recover.
 The pair to [isToolFailure](#istoolfailure), and named to say so. The object literal
 `{ error: message }` means exactly the same thing and stays perfectly good
 TypeScript; this exists so that a tool reaching for "how do I report a
-failure?" finds the constructor next to the guard instead of finding
-`serializeToolFailure` — the `@internal` wire form, whose result the guard
-does not narrow.
+failure?" finds the constructor next to the guard rather than the framework's
+own internal wire form, which is a pre-serialized string this guard does not
+narrow.
 
 #### Parameters
 
@@ -405,6 +375,36 @@ export const orderTotal = tool({
     return { total: order.total };
   },
 });
+```
+
+## Type Aliases
+
+### ToolFailure
+
+```ts
+type ToolFailure = {
+  error: string;
+};
+```
+
+A tool result that reports a recoverable failure to the LLM.
+
+Return one from `execute` (instead of throwing) when the failure is
+something the model should see and act on — "no order matches that
+description, ask which one" — rather than an internal fault. The runtime
+serializes it like any other result, so it reaches the model as
+`{"error":"…"}` and reaches a test as an inspectable object.
+
+A tool that returns failures declares them in its own result union
+(`Order | ToolFailure`), which is what makes [isToolFailure](#istoolfailure) a
+narrowing guard at every call site that forwards one.
+
+#### Properties
+
+##### error
+
+```ts
+error: string;
 ```
 
 ## References

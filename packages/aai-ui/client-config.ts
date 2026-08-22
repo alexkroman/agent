@@ -101,9 +101,52 @@ export async function loadClientConfig(
 }
 
 /**
- * Fetch the agent's client config; any failure yields the agent default.
+ * Fetch the agent's declared `name`, `greeting` and front door; any failure
+ * yields the agent default (`{}`).
  *
- * @internal
+ * **This is what a workflow app calls instead of receiving the config.**
+ * `client()` fetches `GET client-config` for itself before it renders the
+ * default chat shell, so a voice client never has to. `page()` mounts no
+ * session and makes no such request — deliberately, since a page has no shell
+ * to put a name in — so a page that wants the agent's own `name` or `greeting`
+ * asks for them here.
+ *
+ * Every failure path degrades to the empty default rather than throwing: a
+ * network error, a 404 from a server older than the endpoint, a malformed
+ * body, and a lookup that hangs past
+ * `CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS` all read as "the agent declared nothing".
+ * So a page may render straight from the result and never needs a `catch` —
+ * treat every field as optional, because an agent that declared none is a
+ * normal agent.
+ *
+ * @param platformUrl - The agent's base URL. On a deployed page that is the
+ * page's own origin and path (`location.origin + location.pathname`); the
+ * endpoint is resolved relative to it.
+ * @param fetchFn - Fetch implementation, for tests and for a caller that
+ * supplies its own credentials. Defaults to the global `fetch`.
+ * @returns The agent's config, or `{}` when the lookup produced no answer.
+ *
+ * @example
+ * ```tsx
+ * import { fetchClientConfig, page } from "@alexkroman1/aai-ui";
+ *
+ * const { name, greeting } = await fetchClientConfig(
+ *   location.origin + location.pathname,
+ * );
+ *
+ * function App() {
+ *   return (
+ *     <main>
+ *       <h1>{name ?? "Workflows"}</h1>
+ *       {greeting ? <p>{greeting}</p> : null}
+ *     </main>
+ *   );
+ * }
+ *
+ * page({ name: name ?? "Workflows", component: App });
+ * ```
+ *
+ * @public
  */
 export async function fetchClientConfig(
   platformUrl: string,

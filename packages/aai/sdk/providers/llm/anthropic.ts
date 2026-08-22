@@ -7,7 +7,7 @@
  * (which has no `--allow-env` permission and would crash on the SDK's
  * eager `ANTHROPIC_BASE_URL` read).
  *
- * The host-side resolver in `host/providers/resolve.ts` builds a real
+ * The host-side resolver builds a real
  * Vercel AI SDK `LanguageModel` from this descriptor during
  * `createRuntime`, using `ANTHROPIC_API_KEY` from the agent's env.
  */
@@ -34,6 +34,18 @@ export type AnthropicProvider = LlmProvider & {
 /**
  * Build an Anthropic (Claude) LLM descriptor for pipeline mode. The API key
  * is resolved host-side from the agent's env (`ANTHROPIC_API_KEY`).
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { anthropic } from "@alexkroman1/aai/llm";
+ *
+ * export default agent({
+ *   name: "Support",
+ *   systemPrompt: "You are a support agent. Be brief.",
+ *   llm: anthropic({ model: "claude-sonnet-5" }),
+ * });
+ * ```
  */
 export function anthropic(opts: AnthropicOptions): AnthropicProvider {
   return { kind: ANTHROPIC_KIND, options: { ...opts } };

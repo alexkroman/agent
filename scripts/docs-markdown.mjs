@@ -43,6 +43,27 @@
  * that stopped resolving, or an entry-point list that emptied would all
  * otherwise report success.
  *
+ * ## The two things the floor cannot see
+ *
+ * **A subpath that is published and never documented.** `docs/CLAUDE.md` states
+ * the rule — "a new subpath export needs an entry in that package's
+ * `typedoc.json` too" — and until this check it was enforced by nothing. Three
+ * `aai` subpaths and one `aai-ui` subpath had drifted out, one of them
+ * (`aai-ui/client-dir`) a contracted capability with its own API report. A
+ * missing FILE is invisible to a floor set well under the actual, and invisible
+ * to the diff, because the diff only compares what the render produced.
+ * `UNDOCUMENTED_SUBPATHS` is a DENY-list, for the reason AGENTS.md gives for
+ * `NON_AUTHORING_SUBPATHS`: a new subpath then defaults INTO being documented
+ * and fails here until somebody decides otherwise in writing.
+ *
+ * **A link whose anchor does not exist.** `treatWarningsAsErrors` guarantees
+ * that a `{@link}` resolved in TypeDoc's MODEL; it says nothing about whether
+ * the emitted markdown anchor exists, because the plugin's anchor registry and
+ * the heading a reader's markdown renderer slugs are computed independently.
+ * Nine dead jumps sat in the middle of the `Dialog` API for exactly that
+ * reason. `assertLinksResolve` resolves every internal link against the heading
+ * slugs of the file it points at.
+ *
  * ## Usage
  *
  *   node scripts/docs-markdown.mjs           # write/refresh docs/api/
@@ -65,8 +86,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-
 import { compareNames, repoRoot } from "./_fs.mjs";
+import { resolveLinks } from "./docs-markdown-links.mjs";
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
 const CHECK = process.argv.includes("--check");
@@ -95,6 +116,180 @@ const RENDER_SCRIPT = ["--filter", "aai-docs", "run", "docs:md"];
  */
 const MIN_FILES = 12;
 const MIN_BYTES = 300_000;
+
+/**
+ * Published subpaths that are deliberately NOT in the reference, each with the
+ * reason it is not.
+ *
+ * Keyed by the package directory under `packages/`. Every other `exports` key
+ * with a `types` target must appear in that package's `typedoc.json`
+ * `entryPoints` — see `assertSubpathCoverage`.
+ *
+ * A deny-list rather than an allow-list, and the direction is the whole point:
+ * an allow-list of documented subpaths is satisfied by not adding to it, which
+ * is exactly how `./workspace-files`, `./slugify` and `aai-ui/./client-dir`
+ * ended up published and undocumented with no gate noticing. A deny-list makes
+ * the DEFAULT "documented" and turns the omission into a failure that names
+ * itself. Same reasoning as `NON_AUTHORING_SUBPATHS` in
+ * `scripts/_api-contracts.mjs`.
+ *
+ * "Non-authoring" is NOT the test here, and must not become one: `/protocol`,
+ * `/runtime` and `/manifest` are all on that list and all get a full page —
+ * `runtime.md` is the second-largest file in the tree. The test is whether a
+ * reader could ever need prose about the subpath, which is a different
+ * question from whether an `agent.ts` imports it.
+ */
+const UNDOCUMENTED_SUBPATHS = {
+  aai: {
+    "./internal":
+      "The escape hatch, not an API. Its 49 exports are `@internal` by " +
+      "intent — the subpath exists so they are reachable without sitting in " +
+      "an agent author's autocomplete, and rendering them would undo that. " +
+      "Named in packages/aai/README.md under 'Other subpaths'.",
+    "./slugify":
+      "One function, `slugify`, over a string. Consumed by the CLI and the " +
+      "platform to derive an agent id from a name; there is no decision for " +
+      "a reader to make and nothing a page would say that the signature does " +
+      "not.",
+    "./workspace-files":
+      "The studio's workspace file-tree helpers. Published because " +
+      "aai-studio-server and the CLI both need them across the package " +
+      "boundary, not because an agent author calls them — the surface is " +
+      "internal plumbing that happens to cross a package line.",
+  },
+  "aai-ui": {},
+};
+
+/**
+ * Minimum number of published subpaths the coverage check must have inspected.
+ *
+ * Its success output is a count, so a manifest read that stopped finding
+ * `exports`, or a package list that emptied, would report "every published
+ * subpath is documented ✓" over nothing. Measured actual: 21 (19 on `aai`,
+ * 2 on `aai-ui`).
+ */
+const MIN_SUBPATHS = 15;
+
+/**
+ * A string literal, a line comment, a block comment, or a trailing comma — in
+ * that order, which is the whole trick.
+ *
+ * The string branch is tried first at every position, so `"https://…"` and a
+ * `","` inside a value are consumed AS strings and the comment and comma
+ * branches never see them. A naive `//`-strip is wrong on the first URL it
+ * meets, which is what a `$schema` line is.
+ */
+const JSONC_TOKEN = /("(?:\\.|[^"\\])*")|\/\/[^\n]*|\/\*[\s\S]*?\*\/|,(?=\s*[}\]])/g;
+
+/**
+ * JSON with comments, which is what a `typedoc.json` in this repo is.
+ *
+ * `readJson` from `_fs.mjs` is `JSON.parse`, and `packages/aai/typedoc.json`
+ * carries block comments explaining its `intentionallyNotExported` list.
+ * Trailing commas go too, since a config a human hand-edits will eventually
+ * have one and `JSON.parse` rejects it with a message that names neither the
+ * file nor the line.
+ */
+function parseJsonc(path) {
+  const text = readFileSync(path, "utf8").replace(JSONC_TOKEN, (_match, string) => string ?? "");
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`failed to parse ${path}: ${err.message}`, { cause: err });
+  }
+}
+
+/** Every `exports` key of `manifest` whose target declares `types`. */
+function typedSubpaths(manifest) {
+  return Object.entries(manifest.exports ?? {}).flatMap(([subpath, target]) =>
+    // A string target (`"./styles.css"`) ships an asset, not types. `?.` covers
+    // the `typeof null === "object"` case without a second comparison.
+    typeof target === "object" && target?.types ? [{ subpath, types: target.types }] : [],
+  );
+}
+
+/** One package's disagreements between what it publishes and what it documents. */
+function subpathProblems(dir, denied) {
+  const manifest = parseJsonc(join(ROOT, dir, "package.json"));
+  const entryPoints = new Set(parseJsonc(join(ROOT, dir, "typedoc.json")).entryPoints ?? []);
+  const published = typedSubpaths(manifest);
+  /** @type {string[]} */
+  const problems = [];
+
+  for (const { subpath, types } of published) {
+    const expected = types.replace(/^\.\//, "");
+    const documented = entryPoints.has(expected);
+    const excused = subpath in denied;
+    if (documented && excused) {
+      problems.push(
+        `${dir} documents ${subpath} AND lists it in UNDOCUMENTED_SUBPATHS. Remove the ` +
+          "deny-list entry; a reason nobody acts on reads as a decision that was made.",
+      );
+    } else if (!(documented || excused)) {
+      problems.push(
+        `${dir} publishes ${subpath} (${types}) and ${dir}/typedoc.json does not document ` +
+          `it. Add "${expected}" to its entryPoints, or add ${subpath} to ` +
+          "UNDOCUMENTED_SUBPATHS in scripts/docs-markdown.mjs with the reason it stays out.",
+      );
+    }
+  }
+
+  const names = new Set(published.map((entry) => entry.subpath));
+  for (const subpath of Object.keys(denied)) {
+    if (names.has(subpath)) continue;
+    problems.push(
+      `${dir} no longer publishes ${subpath}, but UNDOCUMENTED_SUBPATHS still excuses it. ` +
+        "Delete the entry.",
+    );
+  }
+  return { problems, inspected: published.length };
+}
+
+/**
+ * Every published subpath with a `types` target is either a typedoc entry point
+ * or carries a written reason for not being one.
+ *
+ * The package list is DERIVED from `docs/typedoc.json`'s own `entryPoints`, not
+ * repeated here, so opting a third package into the reference does not also
+ * mean remembering to opt it into this check.
+ */
+function assertSubpathCoverage() {
+  const docsConfig = parseJsonc(join(ROOT, "docs/typedoc.json"));
+  const packageDirs = (docsConfig.entryPoints ?? []).map((entry) => entry.replace(/^\.\.\//, ""));
+  /** @type {string[]} */
+  const problems = [];
+  let inspected = 0;
+
+  for (const dir of packageDirs) {
+    const denied = UNDOCUMENTED_SUBPATHS[dir.split("/").pop()];
+    if (!denied) {
+      problems.push(
+        `${dir} is documented by docs/typedoc.json but has no UNDOCUMENTED_SUBPATHS entry. ` +
+          "Add one — `{}` if every subpath of it is documented — so the deny-list stays exhaustive.",
+      );
+      continue;
+    }
+    const result = subpathProblems(dir, denied);
+    problems.push(...result.problems);
+    inspected += result.inspected;
+  }
+
+  if (inspected < MIN_SUBPATHS) {
+    problems.push(
+      `inspected only ${inspected} published subpath(s), under the floor of ${MIN_SUBPATHS}. ` +
+        "The manifests stopped being read, or the package list emptied — either way this " +
+        "check was about to pass over nothing.",
+    );
+  }
+
+  if (problems.length > 0) {
+    console.error("\ndocs-markdown: published subpaths and documented entry points disagree.\n");
+    for (const problem of problems) console.error(`  - ${problem}`);
+    console.error("");
+    process.exit(1);
+  }
+  return inspected;
+}
 
 /** Every `.md` under `dir`, repo-relative to it, sorted by code unit. */
 function markdownFiles(dir) {
@@ -154,10 +349,15 @@ function floor(dir, files) {
   return bytes;
 }
 
+assertSubpathCoverage();
+
 const fresh = render();
 try {
   const freshFiles = markdownFiles(fresh);
   const bytes = floor(fresh, freshFiles);
+  const { checked, repairs } = resolveLinks(fresh, freshFiles);
+  for (const repair of repairs) console.log(`docs-markdown: repaired anchor — ${repair}`);
+  console.log(`docs-markdown: ${checked} internal link(s) resolve ✓`);
   const committedDir = join(ROOT, OUT_DIR);
 
   if (!CHECK) {

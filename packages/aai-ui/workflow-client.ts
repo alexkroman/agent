@@ -99,6 +99,32 @@ export type WorkflowApiOptions = {
  * but a client built in render is still a new `fetch` closure every time and
  * reads as though it were free.
  *
+ * @example
+ * ```tsx
+ * import { createWorkflowApi, useWorkflowRun } from "@alexkroman1/aai-ui";
+ * import { useState } from "react";
+ *
+ * // Module scope, not render scope — see above.
+ * const api = createWorkflowApi();
+ *
+ * function StartDigest() {
+ *   const [runId, setRunId] = useState<string>();
+ *   const { run } = useWorkflowRun(runId, { api });
+ *   return (
+ *     <button
+ *       type="button"
+ *       onClick={() => void api.start("digest", { url: "…" }).then(setRunId)}
+ *     >
+ *       {run ? run.status : "Start"}
+ *     </button>
+ *   );
+ * }
+ * ```
+ *
+ * @param opts - See {@link WorkflowApiOptions}. Both fields are optional; the
+ * default base URL is the page's own origin and path.
+ * @returns The call set — see {@link WorkflowApi}.
+ *
  * @public
  */
 export function createWorkflowApi(opts: WorkflowApiOptions = {}): WorkflowApi {

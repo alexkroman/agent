@@ -59,7 +59,32 @@ export const VOICE_CAPTURE_CONSTRAINTS = {
 } as MediaTrackConstraints;
 
 /**
- * Current state of the voice agent session.
+ * Current state of the voice agent session — the `state` field of
+ * {@link SessionSnapshot}, and what a chrome paints its status indicator from.
+ *
+ * @remarks
+ * The seven members, in the order a call passes through them:
+ *
+ * - `"disconnected"` — no socket. The state before the first `start()` and
+ *   after `disconnect()` / `end()`.
+ * - `"connecting"` — dialling. Covers the broker lookup and every automatic
+ *   reconnect attempt, so a session flickers back through it mid-call.
+ * - `"ready"` — the socket is open and the handshake is done, but no turn has
+ *   happened yet. **The default chrome paints this with the same live
+ *   indicator as `"listening"`**, which is deliberate — to a caller they are
+ *   the same "the agent is there" — but they are not the same thing, and a
+ *   session can wedge here (see `session-core-handshake.ts`).
+ * - `"listening"` — the microphone is open and the agent is waiting for the
+ *   caller. Check {@link SessionSnapshot.recording} for whether the mic is
+ *   actually live.
+ * - `"thinking"` — the caller's turn is committed and the agent is working:
+ *   the LLM step, and any tool calls under it.
+ * - `"speaking"` — the agent's reply is playing. A caller may still barge in;
+ *   the mic stays open throughout.
+ * - `"error"` — the session reported a failure. See
+ *   {@link SessionSnapshot.error} for what it was. A FATAL error latches here
+ *   until the next completed handshake, so a later frame cannot quietly paint
+ *   over the banner explaining a dead call.
  *
  * @public
  */

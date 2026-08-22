@@ -105,7 +105,8 @@ export function publishStepReporter(reporter: StepReporter | undefined): void {
  * Write one progress line for the run this step belongs to.
  *
  * The line reaches two readers: the run's own output stream, which
- * `GET /workflows/runs/:id/stream` serves and `useWorkflowProgress` renders,
+ * `GET /workflows/runs/:id/stream` serves and `useWorkflowProgress` in
+ * `@alexkroman1/aai-ui` renders,
  * and the server log, so an operator watching a deploy can see which step is
  * running without a page open.
  *
@@ -174,8 +175,8 @@ export async function report(line: string): Promise<void> {
  * default stream is `report()`'s, carrying lines a page renders verbatim — an
  * object written into it comes back as `[object Object]` in the middle of the
  * progress log, which is a trap rather than a decision. A named stream is also
- * how a reader gets ONE kind of chunk per subscription, so `useWorkflowProgress<T>`
- * can be typed at all.
+ * how a reader gets ONE kind of chunk per subscription, so
+ * `useWorkflowProgress<T>` can be typed at all.
  *
  * **Call it from a STEP, never from the workflow body**, for the reason `report`
  * says: a body replays from the top on every resume, so a chunk written there is

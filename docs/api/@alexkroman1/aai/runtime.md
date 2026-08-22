@@ -2,16 +2,919 @@
 
 Runtime barrel — the full Node.js runtime engine for running agents.
 
-Used by aai-server (sandbox) and aai-cli (dev server).
+**You are probably in the wrong place.** Writing an agent needs
+`@alexkroman1/aai` and the provider subpaths; nothing on this page. This is
+the surface for EMBEDDING the runtime in a host process of your own — what
+`aai dev`, the guest sandbox and a self-hosted `server.mjs` import.
+
+If you are embedding one, this is the handful to read, and the rest of the
+page is plumbing:
+
+- [createAgentServer](#createagentserver) — an agent served over HTTP + WebSocket in one
+  call. The scaffold's own `server.mjs` imports this and
+  [withHostCredentialFallback](#withhostcredentialfallback), and nothing else from here.
+- [createRuntime](#createruntime) — the engine underneath it ([RuntimeOptions](#runtimeoptions),
+  [Runtime](#runtime), [SessionStartOptions](#sessionstartoptions)), for a process that owns its
+  own transport.
+- [withHostCredentialFallback](#withhostcredentialfallback) — fill an agent's provider credentials
+  from the host's own environment.
+- [requiredProviderEnvVars](#requiredproviderenvvars) — which keys an agent config needs, before
+  starting it.
+- [resolveLlm](#resolvellm) — turn an LLM descriptor into a Vercel AI SDK model.
+- [createPostgresDb](#createpostgresdb) — the `ctx.db` handle over your own database.
+- [resolveAllBuiltins](#resolveallbuiltins) — the built-in tool set an agent config names.
+- [safeFetch](#safefetch) — the SSRF-screened `fetch` the built-ins use.
+- [registerSttKind](#registersttkind) / [registerTtsKind](#registerttskind) and the opener contract
+  below — substituting a speech stage of your own.
+
+Everything else is cross-package infrastructure for aai-server and aai-cli,
+tagged `@internal` at its declaration site.
 
 Exports are enumerated explicitly (no `export *`) so the public surface is
-deliberate: a new symbol in one of these modules does not ship as public
-API until it is added here. The user-facing core is `createRuntime` and its
-option/handle types plus a handful of helpers (`safeFetch`,
-`withHostCredentialFallback`, `createPostgresDb`, `requiredProviderEnvVars`,
-`resolveLlm`, `resolveAllBuiltins`); most of the rest is platform plumbing
-kept importable for aai-server/aai-cli and tagged `@internal` at its
-declaration site.
+deliberate: a new symbol in one of these modules does not ship as public API
+until it is added here.
+
+## Functions
+
+### carrierByName()
+
+```ts
+function carrierByName(name: string | null | undefined): CarrierCodec | null;
+```
+
+The codec for a `?carrier=` value.
+
+Defaults to Twilio for an absent value — the common case, and a default
+keeps the TwiML that a hand-written integration produces free of a query
+string. An UNKNOWN value returns null rather than falling back: silently
+serving Twilio framing to a Telnyx call produces a connected socket that
+exchanges nothing either way, which is a much worse thing to debug than a
+refused upgrade.
+
+#### Parameters
+
+##### name
+
+`string` \| `null` \| `undefined`
+
+#### Returns
+
+[`CarrierCodec`](#carriercodec) \| `null`
+
+***
+
+### createAgentServer()
+
+```ts
+function createAgentServer(options: AgentServerOptions): AgentServer;
+```
+
+Create an HTTP + WebSocket server running one agent — the self-hosting entry
+point, and the same server `aai dev` runs.
+
+Serves `GET /health`, `GET /client-config`, static assets when `clientDir` is
+set, and voice sessions on `WS /websocket`. Tools declared on the agent
+execute IN THIS PROCESS on the credentials in `env` — the opposite
+arrangement from `createHostServer`, where callers bring their own agent and
+run their own tools.
+
+[AgentServer.listen](#listen) binds loopback by default; pass `"0.0.0.0"` to
+expose it deliberately (this server has no request authentication of its
+own). [AgentServer.close](#close-2) shuts the runtime down too.
+
+#### Parameters
+
+##### options
+
+[`AgentServerOptions`](#agentserveroptions)
+
+#### Returns
+
+[`AgentServer`](#agentserver)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { createAgentServer } from "@alexkroman1/aai/runtime";
+
+const server = createAgentServer({
+  agent: agent({ name: "Support" }),
+  env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
+});
+await server.listen(3000);
+```
+
+***
+
+### createHostServer()
+
+```ts
+function createHostServer(options?: HostServerOptions): AgentServer;
+```
+
+Create a multi-tenant host server: an HTTP + WebSocket server whose voice
+sessions run agents supplied by their callers.
+
+Each `WS /websocket?host=1` connection opens with one `config` frame
+carrying a `host` block — `systemPrompt`, optional `greeting`, relayed tool
+schemas, and optionally the `credentials` the session should run on. The
+server builds a single-use runtime for that connection, relays every tool
+call back to the caller to execute, and tears the runtime down when the
+socket closes. No tenant code runs in this process.
+
+[AgentServer.listen](#listen) binds loopback by default. Host mode
+authenticates the caller's provider KEY, not the caller, so it prevents key
+theft and not abuse — put your own authentication in front (a reverse proxy,
+or the [HostServerOptions.upgrade](#upgrade) hook) before exposing it.
+
+#### Parameters
+
+##### options?
+
+[`HostServerOptions`](#hostserveroptions)
+
+#### Returns
+
+[`AgentServer`](#agentserver)
+
+#### Example
+
+```ts
+import { createHostServer } from "@alexkroman1/aai/runtime";
+
+const server = createHostServer();
+await server.listen(3000);
+```
+
+***
+
+### createHttpUploadBlobs()
+
+```ts
+function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs;
+```
+
+[UploadBlobs](#uploadblobs) over Supabase Storage's REST API.
+
+#### Parameters
+
+##### opts
+
+[`HttpUploadBlobsOptions`](#httpuploadblobsoptions)
+
+#### Returns
+
+[`UploadBlobs`](#uploadblobs)
+
+***
+
+### createLogBuffer()
+
+```ts
+function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
+```
+
+#### Parameters
+
+##### opts?
+
+[`LogBufferOptions`](#logbufferoptions)
+
+#### Returns
+
+[`LogBuffer`](#logbuffer)
+
+***
+
+### createMemoryKeyStore()
+
+```ts
+function createMemoryKeyStore(): WorkflowKeyStore;
+```
+
+An index in this process's memory, for `aai dev`.
+
+Newest-first is maintained by UNSHIFTING rather than by sorting on read: the
+ordering contract is "the order they were started", and the only clock
+available here is the wall clock, whose resolution two `start()` calls in the
+same millisecond would collapse.
+
+#### Returns
+
+[`WorkflowKeyStore`](#workflowkeystore)
+
+***
+
+### createMemoryUploadBlobs()
+
+```ts
+function createMemoryUploadBlobs(): UploadBlobs;
+```
+
+An in-memory [UploadBlobs](#uploadblobs), for specs and for a platform with no bucket.
+
+A valid double for the real one because the CONTRACT here is small and entirely
+about bytes: a window read, a length, an idempotent write. What it cannot stand
+in for is durability, which is why nothing ships it as a deployment's answer —
+`aai dev` resolves a real bucket or refuses uploads by name.
+
+#### Returns
+
+[`UploadBlobs`](#uploadblobs)
+
+***
+
+### createPostgresDb()
+
+```ts
+function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
+```
+
+Create a [Db](index.md#db) backed by a Postgres connection pool.
+
+Connections open lazily on first query, so constructing the handle is
+cheap and never touches the network.
+
+#### Parameters
+
+##### opts
+
+[`CreatePostgresDbOptions`](#createpostgresdboptions)
+
+#### Returns
+
+[`CloseableDb`](#closeabledb)
+
+***
+
+### createPostgresKeyStore()
+
+```ts
+function createPostgresKeyStore(db: Db): WorkflowKeyStore;
+```
+
+An index in the workflow database.
+
+`run_id` is the primary key rather than `(workflow, key)`: a key is
+deliberately not unique (see `StartOptions.key`), so keying on the pair
+would make a second `start` with the same key either fail or silently replace
+the first — and "the newest run for this caller" is a read, not a write
+constraint.
+
+Ordering is by `created_at` DESC with `run_id` DESC as the tiebreak: run ids
+are ULIDs, which sort lexicographically by generation time, so two runs
+recorded in the same millisecond come back in the order they were started
+instead of in whatever order the planner happened to emit.
+
+**The tiebreak and the index are load-bearing TOGETHER, and neither can be
+simplified by testing the other.** The lookup index below already carries
+`created_at desc, run_id desc`, so an index-only scan returns the tiebreak
+whether or not the query asks for it — deleting `, run_id desc` from the
+`ORDER BY` leaves the deployed happy path passing, which is exactly what the
+first draft of `aai-server/workflow-keys.scenario.test.ts` discovered. The
+clause earns its place on any plan that has to SORT instead: a table created
+by a version predating the index (it is a separate `create index if not
+exists`), a parallel plan, or a sequential scan. That suite therefore runs the
+lookup a second time with index scans disabled, and it is that arm which fails
+when the tiebreak goes.
+
+#### Parameters
+
+##### db
+
+[`Db`](index.md#db)
+
+#### Returns
+
+[`WorkflowKeyStore`](#workflowkeystore)
+
+***
+
+### createRuntime()
+
+```ts
+function createRuntime(opts: RuntimeOptions): Runtime;
+```
+
+Create an agent runtime — the execution engine for a voice agent.
+
+Merges built-in and custom tool definitions, builds their tool schemas, and
+owns per-session transports: pipeline mode (STT → LLM → TTS, the default)
+or S2S mode when the agent declares an `s2s` descriptor.
+
+#### Parameters
+
+##### opts
+
+[`RuntimeOptions`](#runtimeoptions)
+
+Runtime configuration. See [RuntimeOptions](#runtimeoptions).
+
+#### Returns
+
+[`Runtime`](#runtime)
+
+A [Runtime](#runtime) with tool execution, schemas, and session
+  management.
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { createRuntime, type SessionWebSocket } from "@alexkroman1/aai/runtime";
+
+const runtime = createRuntime({ agent: agent({ name: "My Agent" }), env: {} });
+// wire a connected WebSocket to a session:
+declare const ws: SessionWebSocket;
+runtime.startSession(ws);
+await runtime.shutdown();
+```
+
+***
+
+### createServer()
+
+```ts
+function createServer(options: ServerOptions): AgentServer;
+```
+
+Create an HTTP + WebSocket server for an agent — the self-hosting entry
+point, and the same server `aai dev` runs.
+
+Serves `GET /health`, `GET /client-config` (name/greeting for the browser
+client), static client assets when `clientDir` is set, and voice sessions
+on `WS /websocket`. [AgentServer.listen](#listen) binds loopback by default;
+pass `"0.0.0.0"` to expose it deliberately (the server has no request
+authentication of its own).
+
+#### Parameters
+
+##### options
+
+[`ServerOptions`](#serveroptions)
+
+#### Returns
+
+[`AgentServer`](#agentserver)
+
+#### Example
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { createRuntime, createServer } from "@alexkroman1/aai/runtime";
+
+const myAgent = agent({ name: "Support", systemPrompt: "…" });
+const runtime = createRuntime({
+  agent: myAgent,
+  env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
+});
+const server = createServer({ runtime, name: myAgent.name });
+await server.listen(3000);
+```
+
+***
+
+### createTelephonyBridge()
+
+```ts
+function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
+```
+
+Wrap a carrier's media-stream socket as a `SessionWebSocket`, ready to
+hand straight to `runtime.startSession`.
+
+#### Parameters
+
+##### carrierSocket
+
+[`SessionWebSocket`](#sessionwebsocket)
+
+##### opts
+
+[`TelephonyBridgeOptions`](#telephonybridgeoptions)
+
+#### Returns
+
+[`SessionWebSocket`](#sessionwebsocket)
+
+#### Example
+
+```ts
+import { createTelephonyBridge, twilioCodec } from "@alexkroman1/aai/runtime";
+declare const runtime: import("@alexkroman1/aai/runtime").AgentRuntime;
+declare const carrierSocket: import("@alexkroman1/aai/runtime").SessionWebSocket;
+
+runtime.startSession(createTelephonyBridge(carrierSocket, { carrier: twilioCodec }));
+```
+
+***
+
+### createTextAgent()
+
+```ts
+function createTextAgent(opts: TextAgentOptions): TextAgent;
+```
+
+Create a text agent bound to one conversation.
+
+#### Parameters
+
+##### opts
+
+[`TextAgentOptions`](#textagentoptions)
+
+#### Returns
+
+[`TextAgent`](#textagent)
+
+#### Throws
+
+if the definition does not declare `text: true`. A voice agent run
+  as a text one would silently drop its `greeting` and every voice knob it
+  was tuned with; refusing by name is the mirror of `createRuntime`'s
+  refusal of a text agent.
+
+***
+
+### createToolCallRepair()
+
+```ts
+function createToolCallRepair(
+   model: LanguageModel, 
+   log: Logger, 
+getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
+```
+
+Build a `ToolCallRepairFunction` bound to `model`. `null` return means
+"not repairable" — the SDK then surfaces the original error.
+
+`getAbortSignal` supplies the in-flight turn's abort signal so the tier-2
+`generateText` call is cancelled on barge-in / cancel / disconnect.
+Without it, a repair kicked off mid-turn keeps running (a billed background
+LLM call) after the turn that needed it has already been aborted.
+
+#### Parameters
+
+##### model
+
+`LanguageModel`
+
+##### log
+
+[`Logger`](#logger-3)
+
+##### getAbortSignal?
+
+() => `AbortSignal` \| `undefined`
+
+#### Returns
+
+`ToolCallRepairFunction`\<`ToolSet`\>
+
+***
+
+### decliningRuntime()
+
+```ts
+function decliningRuntime(message: string, logger?: Logger): SessionRuntime;
+```
+
+A [SessionRuntime](#sessionruntime) that turns every session away with a protocol error
+and closes, instead of accepting a socket it cannot answer.
+
+For a server whose `/websocket` has no agent behind it — `createHostServer`,
+which serves only `?host=1` sessions. The guest harness hand-rolls the same
+shape for its drain refusal; this is here so the third one does not get
+written by hand too.
+
+A refusal must SAY something: closing a bare socket leaves the client
+reconnecting against a server that will never answer, with nothing in the
+frame log explaining why.
+
+#### Parameters
+
+##### message
+
+`string`
+
+##### logger?
+
+[`Logger`](#logger-3)
+
+#### Returns
+
+[`SessionRuntime`](#sessionruntime)
+
+***
+
+### partKey()
+
+```ts
+function partKey(
+   prefix: string, 
+   id: string, 
+   at: number): string;
+```
+
+Where one upload's objects live, under a prefix the deployment owns.
+
+#### Parameters
+
+##### prefix
+
+`string`
+
+##### id
+
+`string`
+
+##### at
+
+`number`
+
+#### Returns
+
+`string`
+
+***
+
+### partsOf()
+
+```ts
+function partsOf(value: unknown): UploadPart[];
+```
+
+A stored boundary list, whatever the driver handed back.
+
+**Accepting BOTH a string and an array is load-bearing, and it was learned twice
+against a real database in one afternoon.** Measured on Postgres 16 with
+postgres.js:
+
+```text
+$2::jsonb        → jsonb_typeof = string  ← the column holds JSON inside a JSON string
+$2::text::jsonb  → jsonb_typeof = array
+```
+
+The first is what this store did, and the missing `::text` is not a read problem —
+it is DATA CORRUPTION. `JSON.stringify(parts)` reaches postgres.js as a JSON
+parameter, so `::jsonb` stores the *string* `"[{\"at\":0,…}]"` rather than the
+array. Everything downstream that treats the column as a list — an operator's query,
+a `jsonb_array_elements`, an index — sees a scalar. The write is `::text::jsonb` now,
+which is the same shape `session-state-postgres.ts` uses for its own `jsonb` column.
+
+The read then gets a real array (postgres.js parses `jsonb`), and the first attempt
+at fixing this reached for `parts::text as parts` instead — on the theory that the
+driver hands back a string — which was true only BECAUSE of the corrupt write, and
+which double-encoded the correct one. So the shape a driver returns is exactly the
+thing not to have an opinion about: `partsOf` takes either and the store stops
+caring, which is what makes the next change to the query safe.
+
+It also VALIDATES, which would be reason enough on its own: the row lives in the
+tenant's own database on the tenant's own role, so `parts` is a value they can write
+anything into. An entry that is not two byte counts is DROPPED rather than trusted —
+a `NaN` offset would make `contiguousBytes` answer nonsense and a negative one would
+have a read ask for a window before the file starts.
+
+#### Parameters
+
+##### value
+
+`unknown`
+
+#### Returns
+
+[`UploadPart`](#uploadpart)[]
+
+***
+
+### registerSttKind()
+
+```ts
+function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void;
+```
+
+Register an STT kind, returning an unregister function.
+
+The seam a HOST application substitutes a fake speech stage through — the
+behaviour eval tier's level-1 target (`packages/aai-evals`) is the in-repo
+consumer. Registration rather than a pre-resolved opener for the reason above:
+a fake that goes through the registry resolves exactly like a real provider,
+its env var included, and production code only ever sees descriptors.
+
+#### Parameters
+
+##### kind
+
+`string`
+
+##### entry
+
+[`OpenerRegistryEntry`](#openerregistryentry)\<[`SttOpener`](#sttopener)\>
+
+#### Returns
+
+() => `void`
+
+***
+
+### registerTtsKind()
+
+```ts
+function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void;
+```
+
+Register a TTS kind. Mirror of [registerSttKind](#registersttkind).
+
+#### Parameters
+
+##### kind
+
+`string`
+
+##### entry
+
+[`OpenerRegistryEntry`](#openerregistryentry)\<[`TtsOpener`](#ttsopener)\>
+
+#### Returns
+
+() => `void`
+
+***
+
+### requiredProviderEnvVars()
+
+```ts
+function requiredProviderEnvVars(agent: {
+  llm?:   | object
+     | {
+     kind: string;
+   };
+  page?: "voice" | "static";
+  s2s?:   | object
+     | {
+     kind: string;
+   };
+  stt?:   | object
+     | {
+     kind: string;
+   };
+  tts?:   | object
+     | {
+     kind: string;
+   };
+}): string[];
+```
+
+The provider credentials an agent actually needs, derived from the same
+registries that resolve them.
+
+Callers that want to check credentials up front (the CLI dev server) would
+otherwise hardcode `kind === "assemblyai"`-style checks, which go stale on
+every new provider and are easy to write incompletely — the previous version
+ignored `tts` and `s2s` entirely, so a Deepgram+Anthropic+Rime agent was
+never told which of its three keys was missing and failed at first session.
+
+#### Parameters
+
+##### agent
+
+###### llm?
+
+  \| `object`
+  \| \{
+  `kind`: `string`;
+\}
+
+###### page?
+
+`"voice"` \| `"static"`
+
+The agent's front door (`AgentDef.page`). A `"static"` one needs no
+provider credential at all — see the first branch.
+
+###### s2s?
+
+  \| `object`
+  \| \{
+  `kind`: `string`;
+\}
+
+###### stt?
+
+  \| `object`
+  \| \{
+  `kind`: `string`;
+\}
+
+###### tts?
+
+  \| `object`
+  \| \{
+  `kind`: `string`;
+\}
+
+#### Returns
+
+`string`[]
+
+***
+
+### resolveAllBuiltins()
+
+```ts
+function resolveAllBuiltins(names: readonly string[], opts?: BuiltinToolOptions): ResolvedBuiltins;
+```
+
+Resolve all builtin tools in one pass, returning defs, schemas, and guidance.
+Avoids redundant calls to `resolveBuiltin` and `z.toJSONSchema`.
+
+#### Parameters
+
+##### names
+
+readonly `string`[]
+
+##### opts?
+
+[`BuiltinToolOptions`](#builtintooloptions)
+
+#### Returns
+
+[`ResolvedBuiltins`](#resolvedbuiltins)
+
+***
+
+### resolveKeyStore()
+
+```ts
+function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
+```
+
+Build the key store this runtime should use: the app database, or memory.
+
+#### Parameters
+
+##### db
+
+[`Db`](index.md#db) \| `undefined`
+
+#### Returns
+
+[`WorkflowKeyStore`](#workflowkeystore)
+
+***
+
+### resolveLlm()
+
+```ts
+function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
+```
+
+Resolve an [LlmProvider](llm.md#llmprovider) descriptor into a Vercel AI SDK
+`LanguageModel`.
+
+The API key is pulled from the agent's env (e.g. `OPENAI_API_KEY`).
+Missing keys throw here — the pipeline session would fail on first
+`streamText` call otherwise, and the error is clearer at construction.
+
+#### Parameters
+
+##### descriptor
+
+[`LlmProvider`](llm.md#llmprovider)
+
+##### env
+
+`Record`\<`string`, `string`\>
+
+#### Returns
+
+`LanguageModel`
+
+***
+
+### salvageJson()
+
+```ts
+function salvageJson(input: string): Promise<string | null>;
+```
+
+Best-effort repair of *nearly* valid JSON, without an LLM round trip.
+
+Two passes, cheapest first. The AI SDK's own `parsePartialJson` (the streaming
+partial-object parser) is tried as-is, since the arguments may already be
+parseable or need only the structural repair it does — truncated strings,
+unclosed brackets, trailing commas. Anything it rejects goes through
+`jsonrepair`, which replaces the two hand-rolled pre-passes this module used
+to carry:
+
+- **A raw newline/tab inside a string literal, where `\n` belonged.** The
+  common whole-file-argument break, and most of what tier 2 was being paid to
+  fix. It was a hand-written character scanner tracking `inString`/`escaped`.
+- **A markdown fence around the arguments.** It was an anchored regex, so it
+  only ever matched a fence wrapping the WHOLE payload.
+
+`jsonrepair` covers both (verified against 3.15.0, tagged and bare fences
+alike) plus a good deal this never handled and models do emit: single-quoted
+strings, unquoted keys, Python's `None`/`True`/`False`, comments, and
+concatenated string literals. It is ISC, dependency-free, and the repair is
+only reached once a parse has already failed, so the ordinary path pays
+nothing for it.
+
+Returns null when the result still does not parse, or parses to something that
+is not an object, so a caller never hands a fragment to a tool.
+
+#### Parameters
+
+##### input
+
+`string`
+
+#### Returns
+
+`Promise`\<`string` \| `null`\>
+
+***
+
+### startTelephonySession()
+
+```ts
+function startTelephonySession(
+   carrierSocket: SessionWebSocket, 
+   runtime: SessionRuntime, 
+   opts: {
+  carrier: CarrierCodec;
+  logger?: Logger;
+}): void;
+```
+
+Start a session over a carrier's media-stream socket.
+
+The whole of the telephony integration at the session layer: wrap the
+socket, hand it to the runtime, done. No session option is set — the
+defaults are already the right ones for a phone call, and the one that
+would be tempting to change is `audioLeadMs`, which must stay PACED (see
+the module doc in `telephony-bridge.ts`).
+
+#### Parameters
+
+##### carrierSocket
+
+[`SessionWebSocket`](#sessionwebsocket)
+
+##### runtime
+
+[`SessionRuntime`](#sessionruntime)
+
+##### opts
+
+###### carrier
+
+[`CarrierCodec`](#carriercodec)
+
+###### logger?
+
+[`Logger`](#logger-3)
+
+#### Returns
+
+`void`
+
+***
+
+### withHostCredentialFallback()
+
+```ts
+function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
+```
+
+Return `env` with any missing provider credential filled in from
+`hostEnv` (defaults to `process.env`).
+
+Values already present in `env` always win — an explicit `.env` entry or
+`aai secret put` value is never overridden by the shell. Only names in
+`PROVIDER_CREDENTIAL_ENVS` are copied, so unrelated host variables
+never reach `ctx.env`. `process.env` is not mutated.
+
+The return type is the `HostCredentialEnv` brand — this is the one
+function that mints it. The result satisfies `RuntimeOptions.providerEnv`
+but not `RuntimeOptions.env`, so host credentials cannot silently become
+`ctx.env` (see sdk/env-types.ts).
+
+#### Parameters
+
+##### env
+
+`Record`\<`string`, `string`\>
+
+##### hostEnv?
+
+`Record`\<`string`, `string` \| `undefined`\>
+
+#### Returns
+
+[`HostCredentialEnv`](#hostcredentialenv)
 
 ## Classes
 
@@ -65,204 +968,6 @@ new UploadsUnavailableError(message: string): UploadsUnavailableError;
 Error.constructor
 ```
 
-#### Properties
-
-##### cause?
-
-```ts
-optional cause?: unknown;
-```
-
-###### Inherited from
-
-```ts
-Error.cause
-```
-
-##### message
-
-```ts
-message: string;
-```
-
-###### Inherited from
-
-```ts
-Error.message
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-###### Inherited from
-
-```ts
-Error.name
-```
-
-##### stack?
-
-```ts
-optional stack?: string;
-```
-
-###### Inherited from
-
-```ts
-Error.stack
-```
-
-##### stackTraceLimit
-
-```ts
-static stackTraceLimit: number;
-```
-
-The `Error.stackTraceLimit` property specifies the number of stack frames
-collected by a stack trace (whether generated by `new Error().stack` or
-`Error.captureStackTrace(obj)`).
-
-The default value is `10` but may be set to any valid JavaScript number. Changes
-will affect any stack trace captured _after_ the value has been changed.
-
-If set to a non-number value, or set to a negative number, stack traces will
-not capture any frames.
-
-###### Inherited from
-
-```ts
-Error.stackTraceLimit
-```
-
-#### Methods
-
-##### captureStackTrace()
-
-```ts
-static captureStackTrace(targetObject: object, constructorOpt?: Function): void;
-```
-
-Creates a `.stack` property on `targetObject`, which when accessed returns
-a string representing the location in the code at which
-`Error.captureStackTrace()` was called.
-
-```js
-const myObject = {};
-Error.captureStackTrace(myObject);
-myObject.stack;  // Similar to `new Error().stack`
-```
-
-The first line of the trace will be prefixed with
-`${myObject.name}: ${myObject.message}`.
-
-The optional `constructorOpt` argument accepts a function. If given, all frames
-above `constructorOpt`, including `constructorOpt`, will be omitted from the
-generated stack trace.
-
-The `constructorOpt` argument is useful for hiding implementation
-details of error generation from the user. For instance:
-
-```js
-function a() {
-  b();
-}
-
-function b() {
-  c();
-}
-
-function c() {
-  // Create an error without stack trace to avoid calculating the stack trace twice.
-  const { stackTraceLimit } = Error;
-  Error.stackTraceLimit = 0;
-  const error = new Error();
-  Error.stackTraceLimit = stackTraceLimit;
-
-  // Capture the stack trace above function b
-  Error.captureStackTrace(error, b); // Neither function c, nor b is included in the stack trace
-  throw error;
-}
-
-a();
-```
-
-###### Parameters
-
-###### targetObject
-
-`object`
-
-###### constructorOpt?
-
-`Function`
-
-###### Returns
-
-`void`
-
-###### Inherited from
-
-```ts
-Error.captureStackTrace
-```
-
-##### isError()
-
-```ts
-static isError(error: unknown): error is Error;
-```
-
-Indicates whether the argument provided is a built-in Error instance or not.
-
-###### Parameters
-
-###### error
-
-`unknown`
-
-###### Returns
-
-`error is Error`
-
-###### Inherited from
-
-```ts
-Error.isError
-```
-
-##### prepareStackTrace()
-
-```ts
-static prepareStackTrace(err: Error, stackTraces: CallSite[]): any;
-```
-
-###### Parameters
-
-###### err
-
-`Error`
-
-###### stackTraces
-
-`CallSite`[]
-
-###### Returns
-
-`any`
-
-###### See
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-###### Inherited from
-
-```ts
-Error.prepareStackTrace
-```
-
 ***
 
 ### UploadTooLargeError
@@ -295,204 +1000,6 @@ new UploadTooLargeError(limit: number): UploadTooLargeError;
 
 ```ts
 Error.constructor
-```
-
-#### Properties
-
-##### cause?
-
-```ts
-optional cause?: unknown;
-```
-
-###### Inherited from
-
-```ts
-Error.cause
-```
-
-##### message
-
-```ts
-message: string;
-```
-
-###### Inherited from
-
-```ts
-Error.message
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-###### Inherited from
-
-```ts
-Error.name
-```
-
-##### stack?
-
-```ts
-optional stack?: string;
-```
-
-###### Inherited from
-
-```ts
-Error.stack
-```
-
-##### stackTraceLimit
-
-```ts
-static stackTraceLimit: number;
-```
-
-The `Error.stackTraceLimit` property specifies the number of stack frames
-collected by a stack trace (whether generated by `new Error().stack` or
-`Error.captureStackTrace(obj)`).
-
-The default value is `10` but may be set to any valid JavaScript number. Changes
-will affect any stack trace captured _after_ the value has been changed.
-
-If set to a non-number value, or set to a negative number, stack traces will
-not capture any frames.
-
-###### Inherited from
-
-```ts
-Error.stackTraceLimit
-```
-
-#### Methods
-
-##### captureStackTrace()
-
-```ts
-static captureStackTrace(targetObject: object, constructorOpt?: Function): void;
-```
-
-Creates a `.stack` property on `targetObject`, which when accessed returns
-a string representing the location in the code at which
-`Error.captureStackTrace()` was called.
-
-```js
-const myObject = {};
-Error.captureStackTrace(myObject);
-myObject.stack;  // Similar to `new Error().stack`
-```
-
-The first line of the trace will be prefixed with
-`${myObject.name}: ${myObject.message}`.
-
-The optional `constructorOpt` argument accepts a function. If given, all frames
-above `constructorOpt`, including `constructorOpt`, will be omitted from the
-generated stack trace.
-
-The `constructorOpt` argument is useful for hiding implementation
-details of error generation from the user. For instance:
-
-```js
-function a() {
-  b();
-}
-
-function b() {
-  c();
-}
-
-function c() {
-  // Create an error without stack trace to avoid calculating the stack trace twice.
-  const { stackTraceLimit } = Error;
-  Error.stackTraceLimit = 0;
-  const error = new Error();
-  Error.stackTraceLimit = stackTraceLimit;
-
-  // Capture the stack trace above function b
-  Error.captureStackTrace(error, b); // Neither function c, nor b is included in the stack trace
-  throw error;
-}
-
-a();
-```
-
-###### Parameters
-
-###### targetObject
-
-`object`
-
-###### constructorOpt?
-
-`Function`
-
-###### Returns
-
-`void`
-
-###### Inherited from
-
-```ts
-Error.captureStackTrace
-```
-
-##### isError()
-
-```ts
-static isError(error: unknown): error is Error;
-```
-
-Indicates whether the argument provided is a built-in Error instance or not.
-
-###### Parameters
-
-###### error
-
-`unknown`
-
-###### Returns
-
-`error is Error`
-
-###### Inherited from
-
-```ts
-Error.isError
-```
-
-##### prepareStackTrace()
-
-```ts
-static prepareStackTrace(err: Error, stackTraces: CallSite[]): any;
-```
-
-###### Parameters
-
-###### err
-
-`Error`
-
-###### stackTraces
-
-`CallSite`[]
-
-###### Returns
-
-`any`
-
-###### See
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-###### Inherited from
-
-```ts
-Error.prepareStackTrace
 ```
 
 ## Interfaces
@@ -800,6 +1307,25 @@ PassthroughServerOptions.upgrade
 
 ***
 
+### SttError
+
+Error raised by an STT provider stream, with a typed `code` naming the
+failure phase: connecting, authenticating, or mid-stream.
+
+#### Extends
+
+- `Error`
+
+#### Properties
+
+##### code
+
+```ts
+readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+```
+
+***
+
 ### SttOpener
 
 Host-side openable STT provider — produced by `resolveStt(descriptor)`.
@@ -811,14 +1337,6 @@ fake speech stage (the behaviour eval tier's level-1 target does exactly
 that). It is deliberately absent from `@alexkroman1/aai/stt`, where the rest
 of the opener-layer types live — an agent author picks a descriptor and never
 writes one of these.
-
-#### Properties
-
-##### name
-
-```ts
-readonly name: string;
-```
 
 #### Methods
 
@@ -832,17 +1350,176 @@ open(opts: SttOpenOptions): Promise<SttSession>;
 
 ###### opts
 
-[`SttOpenOptions`](stt.md#sttopenoptions)
+[`SttOpenOptions`](#sttopenoptions)
 
 ###### Returns
 
-`Promise`\<[`SttSession`](stt.md#sttsession)\>
+`Promise`\<[`SttSession`](#sttsession)\>
+
+#### Properties
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+***
+
+### SttOpenOptions
+
+Options the host passes when opening an STT stream.
+
+#### Properties
+
+##### agentContext?
+
+```ts
+optional agentContext?: string;
+```
+
+Initial agent-side context to seed at connect time (e.g. the opening
+greeting), for providers that support it. Providers that don't support
+it, or whose resolved model doesn't qualify, ignore this.
+
+##### apiKey
+
+```ts
+apiKey: string;
+```
+
+Provider API key, resolved from the agent's env.
+
+##### sampleRate
+
+```ts
+sampleRate: number;
+```
+
+Capture sample rate of the inbound PCM, in Hz.
+
+##### signal
+
+```ts
+signal: AbortSignal;
+```
+
+##### sttPrompt?
+
+```ts
+optional sttPrompt?: string;
+```
+
+***
+
+### SttSession
+
+Host-side handle to one open STT provider stream (pipeline mode). Produced
+by the host's provider resolver at session start; user code never
+constructs one.
+
+#### Methods
+
+##### close()
+
+```ts
+close(): Promise<void>;
+```
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### on()
+
+```ts
+on<E>(event: E, fn: SttEvents[E]): Unsubscribe;
+```
+
+###### Type Parameters
+
+###### E
+
+`E` *extends* keyof [`SttEvents`](#sttevents)
+
+###### Parameters
+
+###### event
+
+`E`
+
+###### fn
+
+[`SttEvents`](#sttevents)\[`E`\]
+
+###### Returns
+
+[`Unsubscribe`](#unsubscribe)
+
+##### sendAudio()
+
+```ts
+sendAudio(pcm: Int16Array): void;
+```
+
+Push one PCM16 audio frame from the client into the transcriber.
+
+###### Parameters
+
+###### pcm
+
+`Int16Array`
+
+###### Returns
+
+`void`
+
+##### updateAgentContext()?
+
+```ts
+optional updateAgentContext(text: string): void;
+```
+
+Push the agent's latest reply text mid-stream so the next user turn is
+transcribed with that context (e.g. AssemblyAI's `agent_context`, gated
+to models that support it). Optional: providers that have no equivalent
+simply omit it, and callers must use `?.()` to invoke it.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
 
 ***
 
 ### TextAgent
 
 A text agent bound to one conversation — see [createTextAgent](#createtextagent).
+
+#### Methods
+
+##### stream()
+
+```ts
+stream(turn: TextTurnOptions): StreamTextResult;
+```
+
+Run one turn, streaming.
+
+###### Parameters
+
+###### turn
+
+[`TextTurnOptions`](#textturnoptions)
+
+###### Returns
+
+`StreamTextResult`
 
 #### Properties
 
@@ -876,26 +1553,6 @@ These declarations belong to NO turn: [TextAgent.stream](#stream) builds its
 own set bound to that turn's messages, so `ctx.messages` cannot be handed a
 conversation from a concurrent turn. A tool invoked through this copy reads
 an empty `ctx.messages`.
-
-#### Methods
-
-##### stream()
-
-```ts
-stream(turn: TextTurnOptions): StreamTextResult;
-```
-
-Run one turn, streaming.
-
-###### Parameters
-
-###### turn
-
-[`TextTurnOptions`](#textturnoptions)
-
-###### Returns
-
-`StreamTextResult`
 
 ***
 
@@ -1142,19 +1799,30 @@ Overrides the agent's `toolChoice` for this turn.
 
 ***
 
+### TtsError
+
+Error raised by a TTS provider stream, with a typed `code` naming the
+failure phase: connecting, authenticating, or mid-stream.
+
+#### Extends
+
+- `Error`
+
+#### Properties
+
+##### code
+
+```ts
+readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+```
+
+***
+
 ### TtsOpener
 
 Host-side openable TTS provider — produced by `resolveTts(descriptor)`.
 Part of the host-only opener layer, never constructed by an AGENT. See
 [SttOpener](#sttopener) for why it carries no `@internal` tag.
-
-#### Properties
-
-##### name
-
-```ts
-readonly name: string;
-```
 
 #### Methods
 
@@ -1168,11 +1836,177 @@ open(opts: TtsOpenOptions): Promise<TtsSession>;
 
 ###### opts
 
-[`TtsOpenOptions`](tts.md#ttsopenoptions)
+[`TtsOpenOptions`](#ttsopenoptions)
 
 ###### Returns
 
-`Promise`\<[`TtsSession`](tts.md#ttssession)\>
+`Promise`\<[`TtsSession`](#ttssession)\>
+
+#### Properties
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+***
+
+### TtsOpenOptions
+
+Options the host passes when opening a TTS stream.
+
+#### Properties
+
+##### apiKey
+
+```ts
+apiKey: string;
+```
+
+Provider API key, resolved from the agent's env.
+
+##### sampleRate
+
+```ts
+sampleRate: number;
+```
+
+Playback sample rate of the synthesized PCM, in Hz.
+
+##### signal
+
+```ts
+signal: AbortSignal;
+```
+
+Aborts the open (and the session) when the voice session ends.
+
+***
+
+### TtsSession
+
+Host-side handle to one open TTS provider stream (pipeline mode). Produced
+by the host's provider resolver at session start; user code never
+constructs one.
+
+#### Methods
+
+##### cancel()
+
+```ts
+cancel(): void;
+```
+
+Interrupt immediately (barge-in). Emits `done` synchronously.
+
+###### Returns
+
+`void`
+
+##### close()
+
+```ts
+close(): Promise<void>;
+```
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### flush()
+
+```ts
+flush(): void;
+```
+
+Signal "no more text this turn". Emits `done` when fully synthesized.
+
+###### Returns
+
+`void`
+
+##### on()
+
+```ts
+on<E>(event: E, fn: TtsEvents[E]): Unsubscribe;
+```
+
+###### Type Parameters
+
+###### E
+
+`E` *extends* keyof [`TtsEvents`](#ttsevents)
+
+###### Parameters
+
+###### event
+
+`E`
+
+###### fn
+
+[`TtsEvents`](#ttsevents)\[`E`\]
+
+###### Returns
+
+[`Unsubscribe`](#unsubscribe)
+
+##### sendText()
+
+```ts
+sendText(text: string): void;
+```
+
+Push text deltas from the LLM. Provider may synthesize as chunks arrive.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+***
+
+### TtsWordTiming
+
+One synthesized word and where its audio sits in the current turn.
+
+Offsets are milliseconds into THIS TURN's synthesized audio (the first
+sample the provider produced for the turn is 0), not into the session, so
+they line up with the transport's per-reply audio accounting. Providers that
+report per-socket or per-flush clocks are rebased by their own adapter before
+the event is emitted.
+
+#### Properties
+
+##### endMs
+
+```ts
+readonly endMs: number;
+```
+
+End offset of the word's audio, ms into the turn.
+
+##### startMs
+
+```ts
+readonly startMs: number;
+```
+
+Start offset of the word's audio, ms into the turn.
+
+##### text
+
+```ts
+readonly text: string;
+```
+
+The word as the provider synthesized it (may be normalized: "$5.00" → "five dollars").
 
 ## Type Aliases
 
@@ -1214,6 +2048,38 @@ Common interface for agent runtimes.
 
 Implemented by [createRuntime](#createruntime) and the platform sandbox.
 
+#### Methods
+
+##### shutdown()
+
+```ts
+shutdown(): Promise<void>;
+```
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### startSession()
+
+```ts
+startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
+```
+
+###### Parameters
+
+###### ws
+
+[`SessionWebSocket`](#sessionwebsocket)
+
+###### opts?
+
+[`SessionStartOptions`](#sessionstartoptions)
+
+###### Returns
+
+`void`
+
 #### Properties
 
 ##### readyConfig
@@ -1248,38 +2114,6 @@ what [createServer](#createserver) serves `/workflows/*` from. Undefined for an 
 that declares none, which is what makes that API answer 404 rather than
 pretending to a surface the agent does not have.
 
-#### Methods
-
-##### shutdown()
-
-```ts
-shutdown(): Promise<void>;
-```
-
-###### Returns
-
-`Promise`\<`void`\>
-
-##### startSession()
-
-```ts
-startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
-```
-
-###### Parameters
-
-###### ws
-
-`SessionWebSocket`
-
-###### opts?
-
-[`SessionStartOptions`](#sessionstartoptions)
-
-###### Returns
-
-`void`
-
 ***
 
 ### AgentServer
@@ -1293,14 +2127,6 @@ type AgentServer = {
 ```
 
 Handle returned by [createServer](#createserver).
-
-#### Properties
-
-##### port
-
-```ts
-port: number | undefined;
-```
 
 #### Methods
 
@@ -1336,6 +2162,14 @@ Start listening. `host` defaults to [DEFAULT\_LISTEN\_HOST](#default_listen_host
 ###### Returns
 
 `Promise`\<`void`\>
+
+#### Properties
+
+##### port
+
+```ts
+port: number | undefined;
+```
 
 ***
 
@@ -1374,16 +2208,6 @@ type CarrierCodec = {
 ```
 
 Translates between a carrier's JSON frames and the two things a session needs.
-
-#### Properties
-
-##### name
-
-```ts
-readonly name: string;
-```
-
-Vendor name, for logs and for the `?carrier=` query value.
 
 #### Methods
 
@@ -1451,6 +2275,16 @@ An outbound frame carrying one chunk of base64 μ-law agent speech.
 ###### Returns
 
 `unknown`
+
+#### Properties
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+Vendor name, for logs and for the `?carrier=` query value.
 
 ***
 
@@ -1670,7 +2504,7 @@ through it.
 
 ##### messages?
 
-readonly [`Message`](index.md#message-2)[]
+readonly [`Message`](index.md#message)[]
 
 ##### opts?
 
@@ -2337,7 +3171,7 @@ Create a new voice session for a connected client (lower-level than startSession
 
 ###### Returns
 
-`SessionCore`
+[`SessionCore`](#sessioncore)
 
 ***
 
@@ -2836,6 +3670,346 @@ such an agent on a byte route nothing serves. This is a claim about the DEPLOYME
 
 ***
 
+### SessionCore
+
+```ts
+type SessionCore = {
+  faultCode: string | undefined;
+  id: string;
+  announce: boolean;
+  command: void;
+  configure: void;
+  onAudio: void;
+  onAudioChunk: void;
+  onReplyStarted: void;
+  report: void;
+  restoreHistory: void;
+  start: Promise<void>;
+  stop: Promise<void>;
+};
+```
+
+One live server-side session: the runtime's bridge between a transport
+(S2S, pipeline, or OpenAI Realtime) and the connected client. Distinct from
+aai-ui's browser-side `SessionCore`.
+
+#### Methods
+
+##### announce()
+
+```ts
+announce(instruction: string): boolean;
+```
+
+Make the agent SPEAK about something the caller did not just say.
+
+The instruction reaches the model as a synthetic user message and the reply
+is an ordinary, interruptible turn. What it exists for is the shape a voice
+agent otherwise cannot do: a durable run started minutes ago finishes, the
+caller is still on the line, and the agent has the answer with no way to
+offer it — so the caller has to think to ask.
+
+Reports FALSE rather than throwing when the transport has no such verb
+(S2S has none) or the session is stopped, because the caller is a run
+completing in the background: there is nobody to raise to, and the answer
+"this session cannot be spoken to" is what a notifier needs to stop trying.
+
+###### Parameters
+
+###### instruction
+
+`string`
+
+###### Returns
+
+`boolean`
+
+##### command()
+
+```ts
+command(cmd: 
+  | {
+  type: z.ZodLiteral<"audio_ready">;
+}
+  | {
+  type: z.ZodLiteral<"cancel">;
+}
+  | {
+  type: z.ZodLiteral<"reset">;
+}
+  | {
+  bufferedMs: z.ZodNumber;
+  type: z.ZodLiteral<"playback_progress">;
+}
+  | {
+  error?: z.ZodOptional<z.ZodString>;
+  result: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+  toolCallId: z.ZodString;
+  type: z.ZodLiteral<"tool_result">;
+}): void;
+```
+
+One client COMMAND, in the protocol's own command vocabulary
+(`sdk/protocol-commands.ts`).
+
+`ws-handler.ts` parses the frame and hands the whole thing over, rather than
+switching on `type` to pick one of five methods named after the five
+commands. An unrecognised type is a no-op here for the same
+forward-compatibility reason `lenientParse` tolerates one.
+
+###### Parameters
+
+###### cmd
+
+  \| \{
+  `type`: `z.ZodLiteral`\<`"audio_ready"`\>;
+\}
+  \| \{
+  `type`: `z.ZodLiteral`\<`"cancel"`\>;
+\}
+  \| \{
+  `type`: `z.ZodLiteral`\<`"reset"`\>;
+\}
+  \| \{
+  `bufferedMs`: `z.ZodNumber`;
+  `type`: `z.ZodLiteral`\<`"playback_progress"`\>;
+\}
+  \| \{
+  `error?`: `z.ZodOptional`\<`z.ZodString`\>;
+  `result`: `z.ZodPipe`\<`z.ZodString`, `z.ZodTransform`\<`string`, `string`\>\>;
+  `toolCallId`: `z.ZodString`;
+  `type`: `z.ZodLiteral`\<`"tool_result"`\>;
+\}
+
+###### Returns
+
+`void`
+
+##### configure()
+
+```ts
+configure(config: {
+  audioFormat: z.ZodEnum<{
+     pcm16: "pcm16";
+  }>;
+  sampleRate: z.ZodNumber;
+  ttsSampleRate: z.ZodNumber;
+}): void;
+```
+
+Announce the session to its client: the handshake frame, carrying the audio
+negotiation and this session's own id.
+
+On the session rather than on the socket handler because it is an EVENT now
+— `session.configured` — so it is stamped, recorded in the retained stream
+and seen by hooks like anything else. It used to be a hand-assembled JSON
+literal written straight to the socket, which is precisely what made the
+handshake a frame no event log could contain.
+
+Sent at zero RTT, before [SessionCore.start](#start), and that ordering is
+load-bearing: a socket open for seconds carrying nothing is a wedged peer,
+not a slow one, and aai-ui's handshake guard is armed on exactly this frame.
+
+###### Parameters
+
+###### config
+
+###### audioFormat
+
+`z.ZodEnum`\<\{
+  `pcm16`: `"pcm16"`;
+\}\>
+
+###### sampleRate
+
+`z.ZodNumber`
+
+###### ttsSampleRate
+
+`z.ZodNumber`
+
+###### Returns
+
+`void`
+
+##### onAudio()
+
+```ts
+onAudio(bytes: Uint8Array): void;
+```
+
+Binary user audio from the client. Not a command — see the module doc.
+
+###### Parameters
+
+###### bytes
+
+`Uint8Array`
+
+###### Returns
+
+`void`
+
+##### onAudioChunk()
+
+```ts
+onAudioChunk(bytes: Uint8Array): void;
+```
+
+Binary agent audio from the transport. Not an event — see the module doc.
+
+###### Parameters
+
+###### bytes
+
+`Uint8Array`
+
+###### Returns
+
+`void`
+
+##### onReplyStarted()
+
+```ts
+onReplyStarted(replyId: string): void;
+```
+
+A reply is beginning. Not an event: the wire has no `reply.started`.
+
+###### Parameters
+
+###### replyId
+
+`string`
+
+###### Returns
+
+`void`
+
+##### report()
+
+```ts
+report(event: TransportEventBody): void;
+```
+
+One thing the TRANSPORT observed, in the protocol's own event vocabulary
+(`sdk/protocol-events.ts`, narrowed by `TransportEventBody`).
+
+Most reports are emitted straight through; what the session adds on top is
+its own bookkeeping — re-arming the idle deadline, pushing a committed turn
+into history, swapping the reply object on a cancel, running a tool step.
+Two never reach the client as themselves: `tool.called`, which S2S mode
+EXECUTES (`session-tool-steps.ts` emits it), and `reply.completed`, which is
+the provider's claim rather than the turn's end (`session-reply-done.ts`).
+
+###### Parameters
+
+###### event
+
+[`TransportEventBody`](#transporteventbody)
+
+###### Returns
+
+`void`
+
+##### restoreHistory()
+
+```ts
+restoreHistory(messages: readonly Message[], toolCalls?: readonly {
+  afterMessageIndex: z.ZodNumber;
+  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  callId: z.ZodString;
+  name: z.ZodString;
+  result?: z.ZodOptional<z.ZodString>;
+  status: z.ZodEnum<{
+     done: "done";
+     pending: "pending";
+  }>;
+}[]): void;
+```
+
+Put a resumed session's conversation back — into the model's context, and
+onto the WIRE for the client.
+
+`toolCalls` is the client's half only: the LLM history in the event log is
+transcripts (see `session-event-history.ts`), so nothing here reaches the
+model. Defaulted, because a caller that has only messages is a legitimate
+one — the platform's own `attachSessionStream` passes both.
+
+###### Parameters
+
+###### messages
+
+readonly [`Message`](index.md#message)[]
+
+###### toolCalls?
+
+readonly \{
+  `afterMessageIndex`: `z.ZodNumber`;
+  `args`: `z.ZodRecord`\<`z.ZodString`, `z.ZodUnknown`\>;
+  `callId`: `z.ZodString`;
+  `name`: `z.ZodString`;
+  `result?`: `z.ZodOptional`\<`z.ZodString`\>;
+  `status`: `z.ZodEnum`\<\{
+     `done`: `"done"`;
+     `pending`: `"pending"`;
+  \}\>;
+\}[]
+
+###### Returns
+
+`void`
+
+##### start()
+
+```ts
+start(): Promise<void>;
+```
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### stop()
+
+```ts
+stop(): Promise<void>;
+```
+
+###### Returns
+
+`Promise`\<`void`\>
+
+#### Properties
+
+##### faultCode
+
+```ts
+readonly faultCode: string | undefined;
+```
+
+The code of the first FATAL error this session reported, if it reported one.
+
+Exists so a caller cannot claim a session is fine when it is not.
+`ws-handler.ts` logs `Session ready` once `start()` resolves, and that is a
+different question: a provider which cannot open at all reports a fatal error
+and lets the transport start anyway. Production logged
+`session error (fatal) { code: 'tts', message: 'AssemblyAI TTS: missing API
+key…' }` and `Session ready` 400ms later, in that order — a session that could
+never speak, announced as ready.
+
+Deliberately NOT a reason to stop the session. `fatal` defaults to true, so it
+covers a wide class here (see the `error.reported` case), and the transport
+owns whether a session ends; this is an observation, not a policy.
+
+##### id
+
+```ts
+readonly id: string;
+```
+
+***
+
 ### SessionEventPage
 
 ```ts
@@ -3057,16 +4231,6 @@ type SessionEventStream = {
 ```
 
 The runtime's view of every session's event stream.
-
-#### Properties
-
-##### durable
-
-```ts
-readonly durable: boolean;
-```
-
-Whether a read here can outlive the process — for the resolved-mode log.
 
 #### Methods
 
@@ -3553,6 +4717,16 @@ The log's length: the index the next event will take.
 
 `number`
 
+#### Properties
+
+##### durable
+
+```ts
+readonly durable: boolean;
+```
+
+Whether a read here can outlive the process — for the resolved-mode log.
+
 ***
 
 ### SessionRuntime
@@ -3690,6 +4864,208 @@ optional skipGreeting?: boolean;
 
 ***
 
+### SessionStateBackend
+
+```ts
+type SessionStateBackend = {
+  durable: boolean;
+  name: "memory" | "postgres";
+  appendEvents: Promise<void>;
+  commit: Promise<void>;
+  countEvents: Promise<number>;
+  discard: Promise<void>;
+  load: Promise<Map<string, string>>;
+  readEvents: Promise<readonly StoredSessionEvent[]>;
+};
+```
+
+Where a session's durable things are kept between processes — its slot values
+AND its event log.
+
+Values cross this boundary as SERIALIZED JSON, deliberately: the cache above
+it holds objects, and a backend that took objects could not be told apart
+from the cache when the encoding is what breaks.
+
+**Two consumers, one backend, and that is the design rather than an
+accident.** The event stream needs exactly what slot state needs — Postgres
+when the app has a database, memory otherwise, reclaimed when the session is
+— so it is a second consumer of THIS interface instead of a second store with
+its own selection rule, its own sweep and its own answer to "is this agent
+durable".
+
+**`discard` reclaims what the backend is ALLOWED to reclaim, which is not
+always both.** The memory backend drops slots and events together; the
+Postgres one drops slots only, because on the platform the event table is
+append-only to the role the guest holds (a log tool code can delete is not a
+log) and its rows are reclaimed by the admin-run retention sweep instead. So a
+discarded session's events can outlive its slots by up to that window.
+
+#### Methods
+
+##### appendEvents()
+
+```ts
+appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
+```
+
+Append these events at the indices they already carry.
+
+Indices are assigned by the log ABOVE this, synchronously, so a backend
+never invents one — which is what lets a client be told its position before
+the write lands. Appending an index that is already stored is a no-op
+rather than an error: a retried flush after a partial failure must not be
+the thing that breaks a call.
+
+###### Parameters
+
+###### sessionId
+
+`string`
+
+###### events
+
+readonly [`StoredSessionEvent`](#storedsessionevent)[]
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### commit()
+
+```ts
+commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
+```
+
+Store these slots' values. Called with only the ones that changed.
+
+###### Parameters
+
+###### sessionId
+
+`string`
+
+###### values
+
+`ReadonlyMap`\<`string`, `string`\>
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### countEvents()
+
+```ts
+countEvents(sessionId: string): Promise<number>;
+```
+
+The next free index for `sessionId` — one past the HIGHEST stored index,
+which is not the same thing as how many are stored.
+
+Read on hydrate so a session resuming onto a REPLACEMENT process continues
+its log rather than restarting at 0 and overwriting its own history. A count
+only answers that for a log dense from zero, and this one need not be: an
+event past `MAX_SESSION_EVENTS` advances the position without being stored,
+and a partly-failed flush leaves a hole. Under a count both cases hand a
+resumed session an index it has already used, so its `tail` goes BACKWARDS
+and the re-used appends are silently dropped by `on conflict do nothing`.
+Both backends must answer `max + 1`, or the memory one stops being a valid
+double for the Postgres one.
+
+###### Parameters
+
+###### sessionId
+
+`string`
+
+###### Returns
+
+`Promise`\<`number`\>
+
+##### discard()
+
+```ts
+discard(sessionId: string): Promise<void>;
+```
+
+Reclaim this session's slots, and its events where the backend may.
+
+###### Parameters
+
+###### sessionId
+
+`string`
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### load()
+
+```ts
+load(sessionId: string): Promise<Map<string, string>>;
+```
+
+Every stored slot for `sessionId`, keyed by slot.
+
+###### Parameters
+
+###### sessionId
+
+`string`
+
+###### Returns
+
+`Promise`\<`Map`\<`string`, `string`\>\>
+
+##### readEvents()
+
+```ts
+readEvents(
+   sessionId: string, 
+   startIndex: number, 
+limit: number): Promise<readonly StoredSessionEvent[]>;
+```
+
+Events from `startIndex` (inclusive), in index order, at most `limit`.
+
+###### Parameters
+
+###### sessionId
+
+`string`
+
+###### startIndex
+
+`number`
+
+###### limit
+
+`number`
+
+###### Returns
+
+`Promise`\<readonly [`StoredSessionEvent`](#storedsessionevent)[]\>
+
+#### Properties
+
+##### durable
+
+```ts
+readonly durable: boolean;
+```
+
+Whether a value written here survives this process.
+
+##### name
+
+```ts
+readonly name: "memory" | "postgres";
+```
+
+For the "Session mode resolved" log line — an operator's only clue which tier an agent is in.
+
+***
+
 ### SessionStateStore
 
 ```ts
@@ -3706,16 +5082,6 @@ type SessionStateStore = {
 ```
 
 The runtime's view of the store.
-
-#### Properties
-
-##### backend
-
-```ts
-readonly backend: Pick<SessionStateBackend, "name" | "durable">;
-```
-
-Which backend is in play, for the resolved-providers log.
 
 #### Methods
 
@@ -3845,6 +5211,215 @@ This session's [SlotStore](index.md#slotstore) — what a tool's `ctx.slots` is.
 
 [`SlotStore`](index.md#slotstore)
 
+#### Properties
+
+##### backend
+
+```ts
+readonly backend: Pick<SessionStateBackend, "name" | "durable">;
+```
+
+Which backend is in play, for the resolved-providers log.
+
+***
+
+### SessionWebSocket
+
+```ts
+type SessionWebSocket = {
+  bufferedAmount?: number;
+  readyState: number;
+  addEventListener: void;
+  close?: void;
+  ping?: void;
+  send: void;
+};
+```
+
+Minimal WebSocket interface accepted by [AgentRuntime.startSession](#startsession).
+
+Satisfied by the standard `WebSocket` and the `ws` npm package's WebSocket.
+
+#### Methods
+
+##### addEventListener()
+
+###### Call Signature
+
+```ts
+addEventListener(type: "open", listener: () => void): void;
+```
+
+###### Parameters
+
+###### type
+
+`"open"`
+
+###### listener
+
+() => `void`
+
+###### Returns
+
+`void`
+
+###### Call Signature
+
+```ts
+addEventListener(type: "close", listener: (event: {
+  code?: number;
+  reason?: string;
+}) => void): void;
+```
+
+Split from `"open"` so the close listener can read the frame's `code` and
+`reason` — the only evidence of *why* a session ended. Both are optional:
+an abrupt drop arrives with no close frame at all, and minimal test
+doubles that invoke the listener with no argument stay assignable.
+
+###### Parameters
+
+###### type
+
+`"close"`
+
+###### listener
+
+(`event`: \{
+  `code?`: `number`;
+  `reason?`: `string`;
+\}) => `void`
+
+###### Returns
+
+`void`
+
+###### Call Signature
+
+```ts
+addEventListener(type: "message", listener: (event: {
+  data: unknown;
+}) => void): void;
+```
+
+###### Parameters
+
+###### type
+
+`"message"`
+
+###### listener
+
+(`event`: \{
+  `data`: `unknown`;
+\}) => `void`
+
+###### Returns
+
+`void`
+
+###### Call Signature
+
+```ts
+addEventListener(type: "error", listener: (event: {
+  message?: string;
+}) => void): void;
+```
+
+###### Parameters
+
+###### type
+
+`"error"`
+
+###### listener
+
+(`event`: \{
+  `message?`: `string`;
+\}) => `void`
+
+###### Returns
+
+`void`
+
+##### close()?
+
+```ts
+optional close(code?: number, reason?: string): void;
+```
+
+Close the connection (standard WebSocket / `ws` method).
+
+###### Parameters
+
+###### code?
+
+`number`
+
+###### reason?
+
+`string`
+
+###### Returns
+
+`void`
+
+##### ping()?
+
+```ts
+optional ping(): void;
+```
+
+Send a WebSocket ping frame (`ws`-only; the browser API has no equivalent).
+Optional so test doubles and any non-`ws` socket stay assignable — when
+absent the keepalive is skipped rather than emulated with a protocol
+message, which would reach the client as unexpected session traffic.
+
+###### Returns
+
+`void`
+
+##### send()
+
+```ts
+send(data: string | ArrayBuffer | Uint8Array<ArrayBufferLike>): void;
+```
+
+###### Parameters
+
+###### data
+
+`string` \| `ArrayBuffer` \| `Uint8Array`\<`ArrayBufferLike`\>
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### bufferedAmount?
+
+```ts
+readonly optional bufferedAmount?: number;
+```
+
+Bytes queued by `send()` but not yet transmitted (standard WebSocket /
+`ws` property). Optional so minimal test doubles remain assignable; when
+absent, the audio backpressure guard is skipped.
+
+Explicitly `| undefined` rather than optional alone: under
+`exactOptionalPropertyTypes` a WRAPPER around one of these sockets — the
+telephony bridge is one — has to forward the property through a getter,
+and a getter cannot be conditionally absent. Every reader already
+branches on `undefined`, so this widens nothing in practice.
+
+##### readyState
+
+```ts
+readonly readyState: number;
+```
+
 ***
 
 ### SkipGreeting
@@ -3934,6 +5509,166 @@ Record what was just pushed.
 
 ***
 
+### StoredSessionEvent
+
+```ts
+type StoredSessionEvent = {
+  index: number;
+  json: string;
+};
+```
+
+One retained session event: its index in the session's log, and its JSON.
+
+#### Properties
+
+##### index
+
+```ts
+index: number;
+```
+
+Position in this session's log, from 0. The stream's only cursor.
+
+##### json
+
+```ts
+json: string;
+```
+
+The serialized `SessionEvent` (`@alexkroman1/aai/protocol`), envelope included.
+
+***
+
+### SttEvents
+
+```ts
+type SttEvents = {
+  error: (err: SttError) => void;
+  final: (text: string, meta?: SttTurnMeta) => void;
+  partial: (text: string, meta?: SttTurnMeta) => void;
+};
+```
+
+#### Properties
+
+##### error
+
+```ts
+error: (err: SttError) => void;
+```
+
+Terminal error. The session is expected to end after this fires.
+
+###### Parameters
+
+###### err
+
+[`SttError`](#stterror)
+
+###### Returns
+
+`void`
+
+##### final
+
+```ts
+final: (text: string, meta?: SttTurnMeta) => void;
+```
+
+End-of-turn final transcript; cue to run the LLM.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### meta?
+
+[`SttTurnMeta`](#sttturnmeta)
+
+###### Returns
+
+`void`
+
+##### partial
+
+```ts
+partial: (text: string, meta?: SttTurnMeta) => void;
+```
+
+Interim transcript; drives barge-in detection.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### meta?
+
+[`SttTurnMeta`](#sttturnmeta)
+
+###### Returns
+
+`void`
+
+***
+
+### SttTurnMeta
+
+```ts
+type SttTurnMeta = {
+  endOfTurnConfidence?: number;
+};
+```
+
+Provider-reported detail about the turn a transcript belongs to.
+
+Optional throughout: every field is something a given provider may not
+report, and a consumer must treat `undefined` as "no opinion" rather than
+as a low value. Passed alongside the text rather than folded into it so
+that a provider gaining a signal does not change any existing call site.
+
+#### Properties
+
+##### endOfTurnConfidence?
+
+```ts
+optional endOfTurnConfidence?: number;
+```
+
+The service's confidence that the user's turn has ENDED, 0..1, as of this
+transcript. AssemblyAI reports it per interim turn
+(`end_of_turn_confidence`); providers that do not report it omit it.
+
+It rises as an utterance settles and resets when the caller resumes, so a
+dictated identifier produces a sawtooth rather than a ramp — observed on
+a spoken phone number: `0, 0.25, 0` across revisions of the same prefix,
+then `0 → 0.25 → 0.4 → 0.55 → 0.7 → 0.8 → 0.95 → 1` once the full number
+had landed. That shape is why it is worth having: the silence-window
+knobs (`min_turn_silence`) decide end-of-turn on elapsed time alone and
+cannot tell "paused between digits" from "finished", which is the
+mechanism that truncates a spelled identifier mid-entity.
+
+One policy reads it today: PREEMPTIVE GENERATION
+(`AgentDef.preemptiveGeneration`, OFF by default), which starts a
+speculative LLM stream from an interim whose confidence clears
+`PREEMPTIVE_CONFIDENCE_THRESHOLD`. The sawtooth above is not
+background for that policy — it DICTATED two of its rules, and both are
+only defensible while the trace stays here. (1) A partial whose normalized
+text differs from the live speculation's prompt aborts it immediately, so a
+false peak partway through a dictated identifier dies on the next digit
+instead of being billed in full. (2) An identical text at rising confidence
+never re-fires, which is what the terminal `0.95 → 1` re-emission above
+would otherwise cost on every completed utterance. Endpointing itself is
+still time-based and unchanged; a confidence-aware endpointing or barge-in
+policy remains unbuilt, and this field is still what would let one be
+measured against the current one rather than guessed at.
+
+***
+
 ### SweepSkip
 
 ```ts
@@ -4002,6 +5737,36 @@ Resolved builtin tool definitions, keyed by tool name.
 
 ***
 
+### TransportEventBody
+
+```ts
+type TransportEventBody = EventsNamed<
+  | "speech.started"
+  | "speech.stopped"
+  | "user-transcript.updated"
+  | "user-transcript.committed"
+  | "agent-transcript.updated"
+  | "agent-transcript.committed"
+  | "tool.called"
+  | "tool.completed"
+  | "reply.completed"
+  | "reply.cancelled"
+  | "audio.completed"
+| "error.reported">;
+```
+
+What a transport may report: everything in the session event vocabulary except
+the events only the session itself can be the source of.
+
+The five it excludes are excluded for a reason each, not by omission:
+`session.configured` is the handshake (`SessionCore.configure`),
+`session.reset` and `session.timed-out` come from the client and the idle
+watchdog, `custom.emitted` is `ctx.send`, and `state.updated` is a `syncState`
+projection. A transport reporting any of them would be describing a decision
+it did not make.
+
+***
+
 ### TransportEventType
 
 ```ts
@@ -4009,6 +5774,119 @@ type TransportEventType = TransportEventBody["type"];
 ```
 
 One reportable event's `type`, for a switch or a per-type recorder.
+
+***
+
+### TtsEvents
+
+```ts
+type TtsEvents = {
+  audio: (pcm: Int16Array) => void;
+  done: () => void;
+  error: (err: TtsError) => void;
+  words: (words: readonly TtsWordTiming[]) => void;
+};
+```
+
+Events emitted by an open [TtsSession](#ttssession).
+
+#### Properties
+
+##### audio
+
+```ts
+audio: (pcm: Int16Array) => void;
+```
+
+One PCM16 audio chunk. Orchestrator forwards to the client.
+
+###### Parameters
+
+###### pcm
+
+`Int16Array`
+
+###### Returns
+
+`void`
+
+##### done
+
+```ts
+done: () => void;
+```
+
+Synthesis drained after flush() or cancel(). Emitted exactly once per
+turn, and never after `cancel()` for the cancelled turn: `cancel()` must
+clear any pending done timers/frames so a stale `done` cannot leak into
+the next turn's flush-wait (the event carries no turn id, so the
+pipeline transport cannot filter it — see pipeline-transport.ts).
+
+###### Returns
+
+`void`
+
+##### error
+
+```ts
+error: (err: TtsError) => void;
+```
+
+Terminal error. The session is expected to end after this fires.
+
+###### Parameters
+
+###### err
+
+[`TtsError`](#ttserror)
+
+###### Returns
+
+`void`
+
+##### words
+
+```ts
+words: (words: readonly TtsWordTiming[]) => void;
+```
+
+Word timings for audio this turn has produced, when the provider reports
+them. Required in the type but OPTIONAL in practice: every adapter builds
+a `createNanoEvents<TtsEvents>()` emitter, so a provider with no timings
+simply never emits it, and a consumer must treat their absence as the
+ordinary case (the pipeline transport falls back to a proportional
+estimate). Whether a given reply has timings is a RUNTIME fact — a
+provider may report them for some segments and not others — so there is no
+capability flag to check.
+
+**Carries no turn id**, exactly like [TtsEvents.done](#done): the transport
+cannot filter a stale one itself and gates the event on its own turn state
+(the audio gate in `pipeline-transport.ts`). An adapter must not emit
+timings for a cancelled turn.
+
+###### Parameters
+
+###### words
+
+readonly [`TtsWordTiming`](#ttswordtiming)[]
+
+###### Returns
+
+`void`
+
+***
+
+### Unsubscribe
+
+```ts
+type Unsubscribe = () => void;
+```
+
+Unsubscribe callback returned by `.on()` event subscriptions.
+
+#### Returns
+
+`void`
 
 ***
 
@@ -4204,6 +6082,71 @@ How many bytes the object holds.
 
 ***
 
+### UploadReader
+
+```ts
+type UploadReader = {
+  info: Promise<UploadInfo | undefined>;
+  read: Promise<Uint8Array<ArrayBufferLike>>;
+};
+```
+
+The half of an upload store a step needs: metadata, and a byte range.
+
+Declared here rather than in `host/` because this module is the reader and
+`sdk/` may not import `host/`. `createUploadStore` implements it.
+
+#### Methods
+
+##### info()
+
+```ts
+info(id: string): Promise<UploadInfo | undefined>;
+```
+
+One upload's metadata, or `undefined` when there is no such upload.
+
+###### Parameters
+
+###### id
+
+`string`
+
+###### Returns
+
+`Promise`\<[`UploadInfo`](step.md#uploadinfo) \| `undefined`\>
+
+##### read()
+
+```ts
+read(
+   id: string, 
+   start: number, 
+end: number): Promise<Uint8Array<ArrayBufferLike>>;
+```
+
+Bytes `[start, end)` of one upload. The caller has already clamped them.
+
+###### Parameters
+
+###### id
+
+`string`
+
+###### start
+
+`number`
+
+###### end
+
+`number`
+
+###### Returns
+
+`Promise`\<`Uint8Array`\<`ArrayBufferLike`\>\>
+
+***
+
 ### UploadStore
 
 ```ts
@@ -4326,11 +6269,10 @@ client that named a part it never uploaded would otherwise advance `size` past
 a hole, and a step reading there gets silence rather than an error — a gap in a
 transcript with nothing anywhere reporting one.
 
-## Several offsets, because the CLAIM is what an upload spends its time on
-
-This takes a list rather than one offset, and that is the whole shape of it: a
-claim carries no bytes and cost 1604-1969 ms against a deployed agent, per
-PART, which was about half of an upload's wall clock
+**Several offsets, because the CLAIM is what an upload spends its time
+on.** This takes a list rather than one offset, and that is the whole shape
+of it: a claim carries no bytes and cost 1604-1969 ms against a deployed
+agent, per PART, which was about half of an upload's wall clock
 (`UPLOAD_CLAIM_BATCH` carries the measurement). Batching collapses the
 network toll for the client and three per-part costs here — the declared-total
 read, the record lock, and the whole-array write of `parts` — into one of each,
@@ -4834,107 +6776,6 @@ optional startIndex?: number;
 
 ***
 
-### WorkflowApiOptions
-
-```ts
-type WorkflowApiOptions = {
-  directParts?: boolean;
-  engine: () => WorkflowApiEngine | undefined;
-  logger: Logger;
-  token?: string;
-  uploads?: UploadStore;
-};
-```
-
-#### Properties
-
-##### directParts?
-
-```ts
-optional directParts?: boolean;
-```
-
-Whether a part's bytes should be sent somewhere OTHER than this server.
-
-True when the store reaches its bytes through a platform that also serves them
-a route of its own — a deployed guest, which holds no bucket credential and
-brokers every byte operation. The `/parts` claim then advertises it, and the
-client sends each window to the platform and reports it here with no body, so
-an upload byte never touches this process at all.
-
-A CAPABILITY of the deployment rather than a fact about the file, which is why
-the claim carries it instead of a client guessing: `aai dev` and a self-hosted
-server hold the credential themselves and have no such route, so their clients
-must keep sending bodies here.
-
-##### engine
-
-```ts
-engine: () => WorkflowApiEngine | undefined;
-```
-
-Resolve the client, or undefined — in which case every route answers 404
-rather than 500, since there is no workflow API to speak of.
-
-**Undefined has TWO causes and the answer must not pick one**: an agent that
-declared no workflows, and an agent that declared some with nowhere to keep
-the correlation index. Answering "this app declares no workflows" is a
-confident false statement in the second case — and the second case is the
-common one, because declaring a workflow is the part an author does not
-forget. So the answer is `WORKFLOWS_UNAVAILABLE_MESSAGE`, which names both
-halves and both fixes, and is the same sentence `ctx.workflows` rejects
-with, so the tool path and this one cannot disagree about a condition they
-share.
-
-A FUNCTION because the guest harness builds its runtime lazily, on the first
-thing that needs it — and for a static app the first such thing is a request
-to this API, not a session. Resolved per request, so it must stay cheap: the
-harness's own getter memoizes.
-
-**It MAY THROW, and that is a different answer from `undefined`.** When a
-guest cannot BUILD its runtime, swallowing the error and returning undefined
-says "this app declares no workflows" about an app whose workflows are
-declared and fine, while the real cause ("AssemblyAI LLM: missing API key")
-reaches only the guest log — which the author of a deployed agent does not
-have in front of them. A throw is reported as a 500 naming the cause; the
-request still cannot crash the host, because the router catches it.
-
-###### Returns
-
-`WorkflowApiEngine` \| `undefined`
-
-##### logger
-
-```ts
-logger: Logger;
-```
-
-##### token?
-
-```ts
-optional token?: string;
-```
-
-Bearer required on every route. When undefined the API is OPEN — the
-default, because a static page carries no credential (see the module doc).
-
-Comes from [WORKFLOW\_API\_TOKEN\_ENV](#workflow_api_token_env) in the agent's env, and it is what
-`aai workflow --token` and the studio's runs card present.
-
-##### uploads?
-
-```ts
-optional uploads?: UploadStore;
-```
-
-Where uploaded files are kept, for the two `/uploads` routes.
-
-A VALUE rather than the getter `engine` is, because a store is cheap to
-build and connects lazily — there is no runtime behind it to defer. Absent,
-the pair 404s naming the reason; `createServer` always passes one.
-
-***
-
 ### WorkflowClientOptions
 
 ```ts
@@ -5338,10 +7179,9 @@ makes a reset cheaper (true, and measured: at four wide, 8 MiB bodies reset wher
 mostly its bytes — which it was not, and which batching now makes it much closer to
 being. Both directions are open again on evidence rather than on this paragraph.
 
-## 16 MiB is SLOWER, measured after the claims were batched
-
-128 MiB file, width 8, three runs per cell, alternating order so a drifting link
-cannot favour one, pinned HTTP/1.1 on a fresh connection with 30s between runs:
+**16 MiB is SLOWER, measured after the claims were batched.** 128 MiB file, width
+8, three runs per cell, alternating order so a drifting link cannot favour one,
+pinned HTTP/1.1 on a fresh connection with 30s between runs:
 
 | part | wall p50 | range | MB/s | windows per claim | part re-sent |
 | --- | --- | --- | --- | --- | --- |
@@ -5465,888 +7305,6 @@ const WORKFLOW_API_TOKEN_ENV: "AAI_WORKFLOW_API_TOKEN" = "AAI_WORKFLOW_API_TOKEN
 
 Env var holding the bearer this API requires. Unset leaves it open — see the
 module doc.
-
-## Functions
-
-### carrierByName()
-
-```ts
-function carrierByName(name: string | null | undefined): CarrierCodec | null;
-```
-
-The codec for a `?carrier=` value.
-
-Defaults to Twilio for an absent value — the common case, and a default
-keeps the TwiML that a hand-written integration produces free of a query
-string. An UNKNOWN value returns null rather than falling back: silently
-serving Twilio framing to a Telnyx call produces a connected socket that
-exchanges nothing either way, which is a much worse thing to debug than a
-refused upgrade.
-
-#### Parameters
-
-##### name
-
-`string` \| `null` \| `undefined`
-
-#### Returns
-
-[`CarrierCodec`](#carriercodec) \| `null`
-
-***
-
-### createAgentServer()
-
-```ts
-function createAgentServer(options: AgentServerOptions): AgentServer;
-```
-
-Create an HTTP + WebSocket server running one agent — the self-hosting entry
-point, and the same server `aai dev` runs.
-
-Serves `GET /health`, `GET /client-config`, static assets when `clientDir` is
-set, and voice sessions on `WS /websocket`. Tools declared on the agent
-execute IN THIS PROCESS on the credentials in `env` — the opposite
-arrangement from `createHostServer`, where callers bring their own agent and
-run their own tools.
-
-[AgentServer.listen](#listen) binds loopback by default; pass `"0.0.0.0"` to
-expose it deliberately (this server has no request authentication of its
-own). [AgentServer.close](#close) shuts the runtime down too.
-
-#### Parameters
-
-##### options
-
-[`AgentServerOptions`](#agentserveroptions)
-
-#### Returns
-
-[`AgentServer`](#agentserver)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { createAgentServer } from "@alexkroman1/aai/runtime";
-
-const server = createAgentServer({
-  agent: agent({ name: "Support" }),
-  env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
-});
-await server.listen(3000);
-```
-
-***
-
-### createHostServer()
-
-```ts
-function createHostServer(options?: HostServerOptions): AgentServer;
-```
-
-Create a multi-tenant host server: an HTTP + WebSocket server whose voice
-sessions run agents supplied by their callers.
-
-Each `WS /websocket?host=1` connection opens with one `config` frame
-carrying a `host` block — `systemPrompt`, optional `greeting`, relayed tool
-schemas, and optionally the `credentials` the session should run on. The
-server builds a single-use runtime for that connection, relays every tool
-call back to the caller to execute, and tears the runtime down when the
-socket closes. No tenant code runs in this process.
-
-[AgentServer.listen](#listen) binds loopback by default. Host mode
-authenticates the caller's provider KEY, not the caller, so it prevents key
-theft and not abuse — put your own authentication in front (a reverse proxy,
-or the [HostServerOptions.upgrade](#upgrade) hook) before exposing it.
-
-#### Parameters
-
-##### options?
-
-[`HostServerOptions`](#hostserveroptions)
-
-#### Returns
-
-[`AgentServer`](#agentserver)
-
-#### Example
-
-```ts
-import { createHostServer } from "@alexkroman1/aai/runtime";
-
-const server = createHostServer();
-await server.listen(3000);
-```
-
-***
-
-### createHttpUploadBlobs()
-
-```ts
-function createHttpUploadBlobs(opts: HttpUploadBlobsOptions): UploadBlobs;
-```
-
-[UploadBlobs](#uploadblobs) over Supabase Storage's REST API.
-
-#### Parameters
-
-##### opts
-
-[`HttpUploadBlobsOptions`](#httpuploadblobsoptions)
-
-#### Returns
-
-[`UploadBlobs`](#uploadblobs)
-
-***
-
-### createLogBuffer()
-
-```ts
-function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
-```
-
-#### Parameters
-
-##### opts?
-
-[`LogBufferOptions`](#logbufferoptions)
-
-#### Returns
-
-[`LogBuffer`](#logbuffer)
-
-***
-
-### createMemoryKeyStore()
-
-```ts
-function createMemoryKeyStore(): WorkflowKeyStore;
-```
-
-An index in this process's memory, for `aai dev`.
-
-Newest-first is maintained by UNSHIFTING rather than by sorting on read: the
-ordering contract is "the order they were started", and the only clock
-available here is the wall clock, whose resolution two `start()` calls in the
-same millisecond would collapse.
-
-#### Returns
-
-[`WorkflowKeyStore`](#workflowkeystore)
-
-***
-
-### createMemoryUploadBlobs()
-
-```ts
-function createMemoryUploadBlobs(): UploadBlobs;
-```
-
-An in-memory [UploadBlobs](#uploadblobs), for specs and for a platform with no bucket.
-
-A valid double for the real one because the CONTRACT here is small and entirely
-about bytes: a window read, a length, an idempotent write. What it cannot stand
-in for is durability, which is why nothing ships it as a deployment's answer —
-`aai dev` resolves a real bucket or refuses uploads by name.
-
-#### Returns
-
-[`UploadBlobs`](#uploadblobs)
-
-***
-
-### createPostgresDb()
-
-```ts
-function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
-```
-
-Create a [Db](index.md#db) backed by a Postgres connection pool.
-
-Connections open lazily on first query, so constructing the handle is
-cheap and never touches the network.
-
-#### Parameters
-
-##### opts
-
-[`CreatePostgresDbOptions`](#createpostgresdboptions)
-
-#### Returns
-
-[`CloseableDb`](#closeabledb)
-
-***
-
-### createPostgresKeyStore()
-
-```ts
-function createPostgresKeyStore(db: Db): WorkflowKeyStore;
-```
-
-An index in the workflow database.
-
-`run_id` is the primary key rather than `(workflow, key)`: a key is
-deliberately not unique (see `StartOptions.key`), so keying on the pair
-would make a second `start` with the same key either fail or silently replace
-the first — and "the newest run for this caller" is a read, not a write
-constraint.
-
-Ordering is by `created_at` DESC with `run_id` DESC as the tiebreak: run ids
-are ULIDs, which sort lexicographically by generation time, so two runs
-recorded in the same millisecond come back in the order they were started
-instead of in whatever order the planner happened to emit.
-
-**The tiebreak and the index are load-bearing TOGETHER, and neither can be
-simplified by testing the other.** The lookup index below already carries
-`created_at desc, run_id desc`, so an index-only scan returns the tiebreak
-whether or not the query asks for it — deleting `, run_id desc` from the
-`ORDER BY` leaves the deployed happy path passing, which is exactly what the
-first draft of `aai-server/workflow-keys.scenario.test.ts` discovered. The
-clause earns its place on any plan that has to SORT instead: a table created
-by a version predating the index (it is a separate `create index if not
-exists`), a parallel plan, or a sequential scan. That suite therefore runs the
-lookup a second time with index scans disabled, and it is that arm which fails
-when the tiebreak goes.
-
-#### Parameters
-
-##### db
-
-[`Db`](index.md#db)
-
-#### Returns
-
-[`WorkflowKeyStore`](#workflowkeystore)
-
-***
-
-### createRuntime()
-
-```ts
-function createRuntime(opts: RuntimeOptions): Runtime;
-```
-
-Create an agent runtime — the execution engine for a voice agent.
-
-Merges built-in and custom tool definitions, builds their tool schemas, and
-owns per-session transports: pipeline mode (STT → LLM → TTS, the default)
-or S2S mode when the agent declares an `s2s` descriptor.
-
-#### Parameters
-
-##### opts
-
-[`RuntimeOptions`](#runtimeoptions)
-
-Runtime configuration. See [RuntimeOptions](#runtimeoptions).
-
-#### Returns
-
-[`Runtime`](#runtime)
-
-A [Runtime](#runtime) with tool execution, schemas, and session
-  management.
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { createRuntime, type SessionWebSocket } from "@alexkroman1/aai/runtime";
-
-const runtime = createRuntime({ agent: agent({ name: "My Agent" }), env: {} });
-// wire a connected WebSocket to a session:
-declare const ws: SessionWebSocket;
-runtime.startSession(ws);
-await runtime.shutdown();
-```
-
-***
-
-### createServer()
-
-```ts
-function createServer(options: ServerOptions): AgentServer;
-```
-
-Create an HTTP + WebSocket server for an agent — the self-hosting entry
-point, and the same server `aai dev` runs.
-
-Serves `GET /health`, `GET /client-config` (name/greeting for the browser
-client), static client assets when `clientDir` is set, and voice sessions
-on `WS /websocket`. [AgentServer.listen](#listen) binds loopback by default;
-pass `"0.0.0.0"` to expose it deliberately (the server has no request
-authentication of its own).
-
-#### Parameters
-
-##### options
-
-[`ServerOptions`](#serveroptions)
-
-#### Returns
-
-[`AgentServer`](#agentserver)
-
-#### Example
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { createRuntime, createServer } from "@alexkroman1/aai/runtime";
-
-const myAgent = agent({ name: "Support", systemPrompt: "…" });
-const runtime = createRuntime({
-  agent: myAgent,
-  env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
-});
-const server = createServer({ runtime, name: myAgent.name });
-await server.listen(3000);
-```
-
-***
-
-### createTelephonyBridge()
-
-```ts
-function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
-```
-
-Wrap a carrier's media-stream socket as a `SessionWebSocket`, ready to
-hand straight to `runtime.startSession`.
-
-#### Parameters
-
-##### carrierSocket
-
-`SessionWebSocket`
-
-##### opts
-
-[`TelephonyBridgeOptions`](#telephonybridgeoptions)
-
-#### Returns
-
-`SessionWebSocket`
-
-#### Example
-
-```ts
-import { createTelephonyBridge, twilioCodec } from "@alexkroman1/aai/runtime";
-declare const runtime: import("@alexkroman1/aai/runtime").AgentRuntime;
-declare const carrierSocket: import("@alexkroman1/aai/runtime").SessionWebSocket;
-
-runtime.startSession(createTelephonyBridge(carrierSocket, { carrier: twilioCodec }));
-```
-
-***
-
-### createTextAgent()
-
-```ts
-function createTextAgent(opts: TextAgentOptions): TextAgent;
-```
-
-Create a text agent bound to one conversation.
-
-#### Parameters
-
-##### opts
-
-[`TextAgentOptions`](#textagentoptions)
-
-#### Returns
-
-[`TextAgent`](#textagent)
-
-#### Throws
-
-if the definition does not declare `text: true`. A voice agent run
-  as a text one would silently drop its `greeting` and every voice knob it
-  was tuned with; refusing by name is the mirror of `createRuntime`'s
-  refusal of a text agent.
-
-***
-
-### createToolCallRepair()
-
-```ts
-function createToolCallRepair(
-   model: LanguageModel, 
-   log: Logger, 
-getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
-```
-
-Build a `ToolCallRepairFunction` bound to `model`. `null` return means
-"not repairable" — the SDK then surfaces the original error.
-
-`getAbortSignal` supplies the in-flight turn's abort signal so the tier-2
-`generateText` call is cancelled on barge-in / cancel / disconnect.
-Without it, a repair kicked off mid-turn keeps running (a billed background
-LLM call) after the turn that needed it has already been aborted.
-
-#### Parameters
-
-##### model
-
-`LanguageModel`
-
-##### log
-
-[`Logger`](#logger-3)
-
-##### getAbortSignal?
-
-() => `AbortSignal` \| `undefined`
-
-#### Returns
-
-`ToolCallRepairFunction`\<`ToolSet`\>
-
-***
-
-### decliningRuntime()
-
-```ts
-function decliningRuntime(message: string, logger?: Logger): SessionRuntime;
-```
-
-A [SessionRuntime](#sessionruntime) that turns every session away with a protocol error
-and closes, instead of accepting a socket it cannot answer.
-
-For a server whose `/websocket` has no agent behind it — `createHostServer`,
-which serves only `?host=1` sessions. The guest harness hand-rolls the same
-shape for its drain refusal; this is here so the third one does not get
-written by hand too.
-
-A refusal must SAY something: closing a bare socket leaves the client
-reconnecting against a server that will never answer, with nothing in the
-frame log explaining why.
-
-#### Parameters
-
-##### message
-
-`string`
-
-##### logger?
-
-[`Logger`](#logger-3)
-
-#### Returns
-
-[`SessionRuntime`](#sessionruntime)
-
-***
-
-### partKey()
-
-```ts
-function partKey(
-   prefix: string, 
-   id: string, 
-   at: number): string;
-```
-
-Where one upload's objects live, under a prefix the deployment owns.
-
-#### Parameters
-
-##### prefix
-
-`string`
-
-##### id
-
-`string`
-
-##### at
-
-`number`
-
-#### Returns
-
-`string`
-
-***
-
-### partsOf()
-
-```ts
-function partsOf(value: unknown): UploadPart[];
-```
-
-A stored boundary list, whatever the driver handed back.
-
-**Accepting BOTH a string and an array is load-bearing, and it was learned twice
-against a real database in one afternoon.** Measured on Postgres 16 with
-postgres.js:
-
-```text
-$2::jsonb        → jsonb_typeof = string  ← the column holds JSON inside a JSON string
-$2::text::jsonb  → jsonb_typeof = array
-```
-
-The first is what this store did, and the missing `::text` is not a read problem —
-it is DATA CORRUPTION. `JSON.stringify(parts)` reaches postgres.js as a JSON
-parameter, so `::jsonb` stores the *string* `"[{\"at\":0,…}]"` rather than the
-array. Everything downstream that treats the column as a list — an operator's query,
-a `jsonb_array_elements`, an index — sees a scalar. The write is `::text::jsonb` now,
-which is the same shape `session-state-postgres.ts` uses for its own `jsonb` column.
-
-The read then gets a real array (postgres.js parses `jsonb`), and the first attempt
-at fixing this reached for `parts::text as parts` instead — on the theory that the
-driver hands back a string — which was true only BECAUSE of the corrupt write, and
-which double-encoded the correct one. So the shape a driver returns is exactly the
-thing not to have an opinion about: `partsOf` takes either and the store stops
-caring, which is what makes the next change to the query safe.
-
-It also VALIDATES, which would be reason enough on its own: the row lives in the
-tenant's own database on the tenant's own role, so `parts` is a value they can write
-anything into. An entry that is not two byte counts is DROPPED rather than trusted —
-a `NaN` offset would make `contiguousBytes` answer nonsense and a negative one would
-have a read ask for a window before the file starts.
-
-#### Parameters
-
-##### value
-
-`unknown`
-
-#### Returns
-
-[`UploadPart`](#uploadpart)[]
-
-***
-
-### registerSttKind()
-
-```ts
-function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void;
-```
-
-Register an STT kind, returning an unregister function.
-
-The seam a HOST application substitutes a fake speech stage through — the
-behaviour eval tier's level-1 target (`packages/aai-evals`) is the in-repo
-consumer. Registration rather than a pre-resolved opener for the reason above:
-a fake that goes through the registry resolves exactly like a real provider,
-its env var included, and production code only ever sees descriptors.
-
-#### Parameters
-
-##### kind
-
-`string`
-
-##### entry
-
-[`OpenerRegistryEntry`](#openerregistryentry)\<[`SttOpener`](#sttopener)\>
-
-#### Returns
-
-() => `void`
-
-***
-
-### registerTtsKind()
-
-```ts
-function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void;
-```
-
-Register a TTS kind. Mirror of [registerSttKind](#registersttkind).
-
-#### Parameters
-
-##### kind
-
-`string`
-
-##### entry
-
-[`OpenerRegistryEntry`](#openerregistryentry)\<[`TtsOpener`](#ttsopener)\>
-
-#### Returns
-
-() => `void`
-
-***
-
-### requiredProviderEnvVars()
-
-```ts
-function requiredProviderEnvVars(agent: {
-  llm?:   | object
-     | {
-     kind: string;
-   };
-  page?: "voice" | "static";
-  s2s?:   | object
-     | {
-     kind: string;
-   };
-  stt?:   | object
-     | {
-     kind: string;
-   };
-  tts?:   | object
-     | {
-     kind: string;
-   };
-}): string[];
-```
-
-The provider credentials an agent actually needs, derived from the same
-registries that resolve them.
-
-Callers that want to check credentials up front (the CLI dev server) would
-otherwise hardcode `kind === "assemblyai"`-style checks, which go stale on
-every new provider and are easy to write incompletely — the previous version
-ignored `tts` and `s2s` entirely, so a Deepgram+Anthropic+Rime agent was
-never told which of its three keys was missing and failed at first session.
-
-#### Parameters
-
-##### agent
-
-###### llm?
-
-  \| `object`
-  \| \{
-  `kind`: `string`;
-\}
-
-###### page?
-
-`"voice"` \| `"static"`
-
-The agent's front door (`AgentDef.page`). A `"static"` one needs no
-provider credential at all — see the first branch.
-
-###### s2s?
-
-  \| `object`
-  \| \{
-  `kind`: `string`;
-\}
-
-###### stt?
-
-  \| `object`
-  \| \{
-  `kind`: `string`;
-\}
-
-###### tts?
-
-  \| `object`
-  \| \{
-  `kind`: `string`;
-\}
-
-#### Returns
-
-`string`[]
-
-***
-
-### resolveAllBuiltins()
-
-```ts
-function resolveAllBuiltins(names: readonly string[], opts?: BuiltinToolOptions): ResolvedBuiltins;
-```
-
-Resolve all builtin tools in one pass, returning defs, schemas, and guidance.
-Avoids redundant calls to `resolveBuiltin` and `z.toJSONSchema`.
-
-#### Parameters
-
-##### names
-
-readonly `string`[]
-
-##### opts?
-
-[`BuiltinToolOptions`](#builtintooloptions)
-
-#### Returns
-
-[`ResolvedBuiltins`](#resolvedbuiltins)
-
-***
-
-### resolveKeyStore()
-
-```ts
-function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
-```
-
-Build the key store this runtime should use: the app database, or memory.
-
-#### Parameters
-
-##### db
-
-[`Db`](index.md#db) \| `undefined`
-
-#### Returns
-
-[`WorkflowKeyStore`](#workflowkeystore)
-
-***
-
-### resolveLlm()
-
-```ts
-function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
-```
-
-Resolve an [LlmProvider](llm.md#llmprovider) descriptor into a Vercel AI SDK
-`LanguageModel`.
-
-The API key is pulled from the agent's env (e.g. `OPENAI_API_KEY`).
-Missing keys throw here — the pipeline session would fail on first
-`streamText` call otherwise, and the error is clearer at construction.
-
-#### Parameters
-
-##### descriptor
-
-[`LlmProvider`](llm.md#llmprovider)
-
-##### env
-
-`Record`\<`string`, `string`\>
-
-#### Returns
-
-`LanguageModel`
-
-***
-
-### salvageJson()
-
-```ts
-function salvageJson(input: string): Promise<string | null>;
-```
-
-Best-effort repair of *nearly* valid JSON, without an LLM round trip.
-
-Two passes, cheapest first. The AI SDK's own `parsePartialJson` (the streaming
-partial-object parser) is tried as-is, since the arguments may already be
-parseable or need only the structural repair it does — truncated strings,
-unclosed brackets, trailing commas. Anything it rejects goes through
-`jsonrepair`, which replaces the two hand-rolled pre-passes this module used
-to carry:
-
-- **A raw newline/tab inside a string literal, where `\n` belonged.** The
-  common whole-file-argument break, and most of what tier 2 was being paid to
-  fix. It was a hand-written character scanner tracking `inString`/`escaped`.
-- **A markdown fence around the arguments.** It was an anchored regex, so it
-  only ever matched a fence wrapping the WHOLE payload.
-
-`jsonrepair` covers both (verified against 3.15.0, tagged and bare fences
-alike) plus a good deal this never handled and models do emit: single-quoted
-strings, unquoted keys, Python's `None`/`True`/`False`, comments, and
-concatenated string literals. It is ISC, dependency-free, and the repair is
-only reached once a parse has already failed, so the ordinary path pays
-nothing for it.
-
-Returns null when the result still does not parse, or parses to something that
-is not an object, so a caller never hands a fragment to a tool.
-
-#### Parameters
-
-##### input
-
-`string`
-
-#### Returns
-
-`Promise`\<`string` \| `null`\>
-
-***
-
-### startTelephonySession()
-
-```ts
-function startTelephonySession(
-   carrierSocket: SessionWebSocket, 
-   runtime: SessionRuntime, 
-   opts: {
-  carrier: CarrierCodec;
-  logger?: Logger;
-}): void;
-```
-
-Start a session over a carrier's media-stream socket.
-
-The whole of the telephony integration at the session layer: wrap the
-socket, hand it to the runtime, done. No session option is set — the
-defaults are already the right ones for a phone call, and the one that
-would be tempting to change is `audioLeadMs`, which must stay PACED (see
-the module doc in `telephony-bridge.ts`).
-
-#### Parameters
-
-##### carrierSocket
-
-`SessionWebSocket`
-
-##### runtime
-
-[`SessionRuntime`](#sessionruntime)
-
-##### opts
-
-###### carrier
-
-[`CarrierCodec`](#carriercodec)
-
-###### logger?
-
-[`Logger`](#logger-3)
-
-#### Returns
-
-`void`
-
-***
-
-### withHostCredentialFallback()
-
-```ts
-function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
-```
-
-Return `env` with any missing provider credential filled in from
-`hostEnv` (defaults to `process.env`).
-
-Values already present in `env` always win — an explicit `.env` entry or
-`aai secret put` value is never overridden by the shell. Only names in
-`PROVIDER_CREDENTIAL_ENVS` are copied, so unrelated host variables
-never reach `ctx.env`. `process.env` is not mutated.
-
-The return type is the `HostCredentialEnv` brand — this is the one
-function that mints it. The result satisfies `RuntimeOptions.providerEnv`
-but not `RuntimeOptions.env`, so host credentials cannot silently become
-`ctx.env` (see sdk/env-types.ts).
-
-#### Parameters
-
-##### env
-
-`Record`\<`string`, `string`\>
-
-##### hostEnv?
-
-`Record`\<`string`, `string` \| `undefined`\>
-
-#### Returns
-
-[`HostCredentialEnv`](#hostcredentialenv)
 
 ## References
 

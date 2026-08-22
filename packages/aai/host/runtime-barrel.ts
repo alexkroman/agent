@@ -2,16 +2,37 @@
 /**
  * Runtime barrel — the full Node.js runtime engine for running agents.
  *
- * Used by aai-server (sandbox) and aai-cli (dev server).
+ * **You are probably in the wrong place.** Writing an agent needs
+ * `@alexkroman1/aai` and the provider subpaths; nothing on this page. This is
+ * the surface for EMBEDDING the runtime in a host process of your own — what
+ * `aai dev`, the guest sandbox and a self-hosted `server.mjs` import.
+ *
+ * If you are embedding one, this is the handful to read, and the rest of the
+ * page is plumbing:
+ *
+ * - {@link createAgentServer} — an agent served over HTTP + WebSocket in one
+ *   call. The scaffold's own `server.mjs` imports this and
+ *   {@link withHostCredentialFallback}, and nothing else from here.
+ * - {@link createRuntime} — the engine underneath it ({@link RuntimeOptions},
+ *   {@link Runtime}, {@link SessionStartOptions}), for a process that owns its
+ *   own transport.
+ * - {@link withHostCredentialFallback} — fill an agent's provider credentials
+ *   from the host's own environment.
+ * - {@link requiredProviderEnvVars} — which keys an agent config needs, before
+ *   starting it.
+ * - {@link resolveLlm} — turn an LLM descriptor into a Vercel AI SDK model.
+ * - {@link createPostgresDb} — the `ctx.db` handle over your own database.
+ * - {@link resolveAllBuiltins} — the built-in tool set an agent config names.
+ * - {@link safeFetch} — the SSRF-screened `fetch` the built-ins use.
+ * - {@link registerSttKind} / {@link registerTtsKind} and the opener contract
+ *   below — substituting a speech stage of your own.
+ *
+ * Everything else is cross-package infrastructure for aai-server and aai-cli,
+ * tagged `@internal` at its declaration site.
  *
  * Exports are enumerated explicitly (no `export *`) so the public surface is
- * deliberate: a new symbol in one of these modules does not ship as public
- * API until it is added here. The user-facing core is `createRuntime` and its
- * option/handle types plus a handful of helpers (`safeFetch`,
- * `withHostCredentialFallback`, `createPostgresDb`, `requiredProviderEnvVars`,
- * `resolveLlm`, `resolveAllBuiltins`); most of the rest is platform plumbing
- * kept importable for aai-server/aai-cli and tagged `@internal` at its
- * declaration site.
+ * deliberate: a new symbol in one of these modules does not ship as public API
+ * until it is added here.
  *
  * @module runtime
  */
@@ -23,7 +44,28 @@
 // platform server). It is consumed directly by sibling test files.
 
 export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "../sdk/env-types.ts";
-export type { SttOpener, TtsOpener } from "../sdk/providers.ts";
+// The OPENER CONTRACT — what `registerSttKind`/`registerTtsKind` (below) take
+// and what an opener of your own is written against. It lives here rather than
+// on `@alexkroman1/aai/stt`+`/tts` for the reason those two functions do: a HOST
+// application registers a kind and an agent author never does, so the types and
+// the seam they serve belong on one page. `SttProvider`/`TtsProvider` stay on
+// the authoring subpaths — those are what a FACTORY returns, which is an
+// author's concern.
+export type {
+  SttError,
+  SttEvents,
+  SttOpener,
+  SttOpenOptions,
+  SttSession,
+  SttTurnMeta,
+  TtsError,
+  TtsEvents,
+  TtsOpener,
+  TtsOpenOptions,
+  TtsSession,
+  TtsWordTiming,
+  Unsubscribe,
+} from "../sdk/providers.ts";
 // The publisher half of the step env — the READER (`stepEnv`) is authoring API
 // on `@alexkroman1/aai/utils`, and lives in `sdk/` because the step bundle
 // bundles it. Only a host calls this: the guest at bundle load, `aai dev` on
@@ -201,6 +243,9 @@ export {
   createSessionStateStore,
   type SessionStateBackend,
   type SessionStateStore,
+  // `SessionStateBackend.readEvents` returns these, so a host implementing the
+  // backend has to name the type. It is only reachable from here.
+  type StoredSessionEvent,
 } from "./session-state-store.ts";
 export {
   builtinFetch,

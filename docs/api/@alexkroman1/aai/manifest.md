@@ -5,144 +5,6 @@ Manifest barrel — agent config conversion and tool schema handling.
 Used by aai-cli (bundler) and aai-server (rpc-schemas). Generated bundle
 entries call `toAgentConfig`, which is why this subpath is published.
 
-## Type Aliases
-
-### AgentConfig
-
-```ts
-type AgentConfig = z.infer<typeof AgentConfigSchema>;
-```
-
-JSON-safe subset of the agent definition — the canonical serializable
-config that flows CLI → server → runtime unchanged.
-
-***
-
-### AgentConfigSource
-
-```ts
-type AgentConfigSource = Omit<AgentConfig, "mode"> & { [K in HostOnlyAgentField]?: unknown };
-```
-
-What [toAgentConfig](#toagentconfig) accepts: every serializable [AgentConfig](#agentconfig)
-field (`mode` excepted — it is derived, never supplied) plus the host-only
-fields the deny-list strips. `AgentDef` is assignable to this by
-construction; the explicit `| undefined` on the host-only members keeps
-spread call sites (`{...agent, stt: maybeUndefined}`) legal under
-`exactOptionalPropertyTypes`.
-
-***
-
-### HostOnlyAgentField
-
-```ts
-type HostOnlyAgentField = typeof HOST_ONLY_AGENT_FIELDS[number];
-```
-
-A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `events`, …).
-
-***
-
-### SessionMode
-
-```ts
-type SessionMode = "s2s" | "pipeline" | "text";
-```
-
-Session mode derived from which provider fields are set.
-
-`toAgentConfig`, `createRuntime`, and the server's `IsolateConfigSchema`
-all use `assertProviderTriple` so there's one source of truth for the
-validation.
-
-`"text"` is the one mode with no audio path at all: the agent is an LLM,
-a system prompt and its tools, driven by `createTextAgent`
-(`@alexkroman1/aai/runtime`) over a message list rather than by a
-transport over a socket.
-
-***
-
-### ToolModules
-
-```ts
-type ToolModules = Readonly<Record<string, unknown>>;
-```
-
-`path → module namespace`, which is what both sources produce: Vite's
-`import.meta.glob` (eager) and the static import list the CLI generates.
-
-***
-
-### ToolRegistry
-
-```ts
-type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
-```
-
-A checked set of tools, keyed by the name the model calls.
-
-***
-
-### ToolSchema
-
-```ts
-type ToolSchema = {
-  description: string;
-  name: string;
-  parameters: JSONSchema7;
-  type: "function";
-};
-```
-
-A tool declaration in wire form: name, description, and JSON Schema
-parameters — the serializable counterpart of `ToolDef`.
-
-#### Properties
-
-##### description
-
-```ts
-description: string;
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-##### parameters
-
-```ts
-parameters: JSONSchema7;
-```
-
-##### type
-
-```ts
-type: "function";
-```
-
-## Variables
-
-### HOST\_ONLY\_AGENT\_FIELDS
-
-```ts
-const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "events"];
-```
-
-`AgentDef` fields that must never cross the serialization boundary — the
-single deny-list [toAgentConfig](#toagentconfig) strips. Everything else on the agent
-definition flows into [AgentConfig](#agentconfig) by default, so a new serializable
-field works CLI → server → runtime without touching a mapper. A field added
-to `AgentDef` must appear either in `AgentConfigSchema` or here — the
-type-level guard in the internal-types test enforces that subtraction.
-
-It cannot catch a SUPERFLUOUS entry, which is the other direction and the one
-that went stale: `state` sat here after `AgentDef.state` was deleted with the
-`ctx.state` bag, denying a key nothing produces and telling every reader the
-bag still exists. An entry here is a claim that `AgentDef` has that field.
-
 ## Functions
 
 ### agentToolsToSchemas()
@@ -340,22 +202,10 @@ optional interruptionMinDurationMs?: number;
 ##### llm?
 
 ```ts
-optional llm?: {
+{
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-};
-```
-
-###### llm.kind
-
-```ts
-kind: string;
-```
-
-###### llm.options
-
-```ts
-options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
 ```
 
 ##### maxSteps?
@@ -409,22 +259,10 @@ optional resumeFalseInterruption?: boolean;
 ##### s2s?
 
 ```ts
-optional s2s?: {
+{
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-};
-```
-
-###### s2s.kind
-
-```ts
-kind: string;
-```
-
-###### s2s.options
-
-```ts
-options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
 ```
 
 ##### silencePrompt?
@@ -448,22 +286,10 @@ optional startFailurePhrase?: string;
 ##### stt?
 
 ```ts
-optional stt?: {
+{
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-};
-```
-
-###### stt.kind
-
-```ts
-kind: string;
-```
-
-###### stt.options
-
-```ts
-options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
 ```
 
 ##### sttPrompt?
@@ -500,22 +326,10 @@ optional toolChoice?:
 ##### tts?
 
 ```ts
-optional tts?: {
+{
   kind: string;
   options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-};
-```
-
-###### tts.kind
-
-```ts
-kind: string;
-```
-
-###### tts.options
-
-```ts
-options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+}
 ```
 
 ***
@@ -581,3 +395,141 @@ skipped `agent()`, and a second `withTools` over a def that already has one.
 #### Returns
 
 [`AgentDef`](index.md#agentdef)
+
+## Type Aliases
+
+### AgentConfig
+
+```ts
+type AgentConfig = z.infer<typeof AgentConfigSchema>;
+```
+
+JSON-safe subset of the agent definition — the canonical serializable
+config that flows CLI → server → runtime unchanged.
+
+***
+
+### AgentConfigSource
+
+```ts
+type AgentConfigSource = Omit<AgentConfig, "mode"> & { [K in HostOnlyAgentField]?: unknown };
+```
+
+What [toAgentConfig](#toagentconfig) accepts: every serializable [AgentConfig](#agentconfig)
+field (`mode` excepted — it is derived, never supplied) plus the host-only
+fields the deny-list strips. `AgentDef` is assignable to this by
+construction; the explicit `| undefined` on the host-only members keeps
+spread call sites (`{...agent, stt: maybeUndefined}`) legal under
+`exactOptionalPropertyTypes`.
+
+***
+
+### HostOnlyAgentField
+
+```ts
+type HostOnlyAgentField = typeof HOST_ONLY_AGENT_FIELDS[number];
+```
+
+A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `events`, …).
+
+***
+
+### SessionMode
+
+```ts
+type SessionMode = "s2s" | "pipeline" | "text";
+```
+
+Session mode derived from which provider fields are set.
+
+`toAgentConfig`, `createRuntime`, and the server's `IsolateConfigSchema`
+all use `assertProviderTriple` so there's one source of truth for the
+validation.
+
+`"text"` is the one mode with no audio path at all: the agent is an LLM,
+a system prompt and its tools, driven by `createTextAgent`
+(`@alexkroman1/aai/runtime`) over a message list rather than by a
+transport over a socket.
+
+***
+
+### ToolModules
+
+```ts
+type ToolModules = Readonly<Record<string, unknown>>;
+```
+
+`path → module namespace`, which is what both sources produce: Vite's
+`import.meta.glob` (eager) and the static import list the CLI generates.
+
+***
+
+### ToolRegistry
+
+```ts
+type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+```
+
+A checked set of tools, keyed by the name the model calls.
+
+***
+
+### ToolSchema
+
+```ts
+type ToolSchema = {
+  description: string;
+  name: string;
+  parameters: JSONSchema7;
+  type: "function";
+};
+```
+
+A tool declaration in wire form: name, description, and JSON Schema
+parameters — the serializable counterpart of `ToolDef`.
+
+#### Properties
+
+##### description
+
+```ts
+description: string;
+```
+
+##### name
+
+```ts
+name: string;
+```
+
+##### parameters
+
+```ts
+parameters: JSONSchema7;
+```
+
+##### type
+
+```ts
+type: "function";
+```
+
+## Variables
+
+### HOST\_ONLY\_AGENT\_FIELDS
+
+```ts
+const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows", "events"];
+```
+
+`AgentDef` fields that must never cross the serialization boundary — the
+single deny-list [toAgentConfig](#toagentconfig) strips. Everything else on the agent
+definition flows into [AgentConfig](#agentconfig) by default, so a new serializable
+field works CLI → server → runtime without touching a mapper. A field added
+to `AgentDef` must appear either in `AgentConfigSchema` or here — the
+type-level guard in the internal-types test enforces that subtraction.
+
+It cannot catch a SUPERFLUOUS entry, which is the other direction and the one
+that went stale: `state` sat here after `AgentDef.state` was deleted with the
+`ctx.state` bag, denying a key nothing produces and telling every reader the
+bag still exists. An entry here is a claim that `AgentDef` has that field.

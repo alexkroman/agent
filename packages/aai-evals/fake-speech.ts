@@ -27,11 +27,20 @@
 import {
   registerSttKind,
   registerTtsKind,
+  type SttEvents,
   type SttOpener,
+  type SttOpenOptions,
+  type SttSession,
+  type TtsEvents,
   type TtsOpener,
+  type TtsOpenOptions,
+  type TtsSession,
 } from "@alexkroman1/aai/runtime";
-import type { SttEvents, SttOpenOptions, SttProvider, SttSession } from "@alexkroman1/aai/stt";
-import type { TtsEvents, TtsOpenOptions, TtsProvider, TtsSession } from "@alexkroman1/aai/tts";
+// The two DESCRIPTOR types stay on the authoring subpaths: they are what a
+// factory returns, which is an agent author's concern. Everything else the
+// opener contract needs is on `/runtime`, beside the two register calls above.
+import type { SttProvider } from "@alexkroman1/aai/stt";
+import type { TtsProvider } from "@alexkroman1/aai/tts";
 import { createNanoEvents } from "nanoevents";
 
 /** The env var the fake stages resolve their (unused) credential from. */

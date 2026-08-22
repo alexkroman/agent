@@ -83,6 +83,35 @@ export type UseWorkflowsResult = {
  * empty list — which renders as a form with no fields and reads as "this agent
  * declares no workflows" about an agent that was merely unreachable.
  *
+ * @example
+ * ```tsx
+ * import { useWorkflows } from "@alexkroman1/aai-ui";
+ *
+ * // A page rendering its own chrome from the listing — a picker, say. A form
+ * // for ONE workflow wants `<WorkflowFields workflow="name" />` instead,
+ * // which does this lookup itself.
+ * function WorkflowPicker({ onPick }: { onPick: (name: string) => void }) {
+ *   const { workflows, loading, error } = useWorkflows();
+ *   if (loading) return <p>Loading…</p>;
+ *   if (error !== undefined) return <p role="alert">{error}</p>;
+ *   return (
+ *     <ul>
+ *       {workflows.map((summary) => (
+ *         <li key={summary.name}>
+ *           <button type="button" onClick={() => onPick(summary.name)}>
+ *             {summary.description ?? summary.name}
+ *           </button>
+ *         </li>
+ *       ))}
+ *     </ul>
+ *   );
+ * }
+ * ```
+ *
+ * @param opts - See {@link UseWorkflowsOptions}.
+ * @returns The listing, its loading flag and its failure — see
+ * {@link UseWorkflowsResult}.
+ *
  * @public
  */
 export function useWorkflows(opts: UseWorkflowsOptions = {}): UseWorkflowsResult {
@@ -150,7 +179,17 @@ export type UploadStatus = UploadProgress & {
   paused: boolean;
 };
 
-/** What {@link useWorkflowSubmit} returns. */
+/**
+ * What {@link useWorkflowSubmit} returns.
+ *
+ * @see {@link WorkflowStreamSubmission} — the same eight fields, returned by
+ * `useWorkflowStream`, which is a drop-in sibling. Exactly two of them differ,
+ * and both differences follow from WHEN the run is created: there, `submit()`
+ * resolves when the UPLOAD finishes rather than when the run is accepted, and
+ * `run` is non-`undefined` from before the bytes are in, so a page can render
+ * `<WorkflowProgress>` beside the upload bar instead of after it. Here the run
+ * does not exist until the last byte lands.
+ */
 export type WorkflowSubmission<R = unknown> = {
   /**
    * Start a run with this input. Resolves once the run EXISTS — progress

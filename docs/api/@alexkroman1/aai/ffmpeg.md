@@ -80,6 +80,202 @@ to a temp file and pass the path. Large media should go file → file anyway:
 nothing is buffered then, and `output` in an argv you build yourself is the
 whole difference.
 
+## Functions
+
+### ffmpegVersion()
+
+```ts
+function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
+```
+
+ffmpeg's version string, or `undefined` when there is no ffmpeg to ask.
+
+A preflight check for a step or a diagnostic that would rather report "no
+ffmpeg here" than fail mid-conversion. Only a MISSING binary answers
+`undefined`; a binary that is present and broken throws, because that is a
+real failure and swallowing it would report the same thing as an absence.
+
+#### Parameters
+
+##### opts?
+
+[`FfmpegRunOptions`](#ffmpegrunoptions)
+
+#### Returns
+
+`Promise`\<`string` \| `undefined`\>
+
+***
+
+### isFfmpegError()
+
+```ts
+function isFfmpegError(value: unknown): value is FfmpegError;
+```
+
+Narrow an unknown catch to a failed ffmpeg run.
+
+#### Parameters
+
+##### value
+
+`unknown`
+
+#### Returns
+
+`value is FfmpegError`
+
+***
+
+### probeMedia()
+
+```ts
+function probeMedia(source: MediaSource, opts?: ProbeOptions): Promise<MediaInfo>;
+```
+
+What ffprobe makes of a file: duration, container, and every stream.
+
+```ts no-check
+import { probeMedia } from "@alexkroman1/aai/ffmpeg";
+
+const info = await probeMedia("/tmp/recording.m4a");
+const seconds = info.durationSec ?? 0;
+const needsTranscode = info.audio?.codec !== "pcm_s16le";
+```
+
+A field ffprobe did not report comes back `undefined` rather than zero — see
+`_ffmpeg-json.ts` for why that distinction is load-bearing. Reading a
+duration off a PIPE is the one case worth knowing about: for a format whose
+duration lives in a trailing index, ffprobe cannot seek to it and answers
+`undefined`, where the same file on disk answers exactly.
+
+#### Parameters
+
+##### source
+
+[`MediaSource`](#mediasource)
+
+##### opts?
+
+[`ProbeOptions`](#probeoptions)
+
+#### Returns
+
+`Promise`\<[`MediaInfo`](#mediainfo)\>
+
+***
+
+### runFfmpeg()
+
+```ts
+function runFfmpeg(args: readonly string[], opts?: FfmpegRunOptions): Promise<FfmpegRunResult>;
+```
+
+Run ffmpeg with `args`, exactly as given.
+
+Resolves only on a zero exit; every other outcome is a [FfmpegError](#ffmpegerror)
+naming its [FfmpegFailureKind](#ffmpegfailurekind).
+
+#### Parameters
+
+##### args
+
+readonly `string`[]
+
+##### opts?
+
+[`FfmpegRunOptions`](#ffmpegrunoptions)
+
+#### Returns
+
+`Promise`\<[`FfmpegRunResult`](#ffmpegrunresult)\>
+
+#### Example
+
+```ts no-check
+import { runFfmpeg } from "@alexkroman1/aai/ffmpeg";
+
+// File to file: nothing is buffered, so this is the shape for long media.
+await runFfmpeg([
+  "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+  "-i", "/tmp/in.m4a",
+  "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+  "/tmp/out.wav",
+]);
+```
+
+***
+
+### transcodeToWav()
+
+```ts
+function transcodeToWav(source: MediaSource, opts?: TranscodeToWavOptions): Promise<Uint8Array<ArrayBufferLike>>;
+```
+
+Re-encode anything ffmpeg can read into linear-PCM WAV bytes.
+
+The conversion a transcription pipeline needs, because cutting a recording by
+byte offset is only arithmetic on uncompressed audio. Video is dropped.
+
+The result is held in memory, so it is capped like any other piped output
+(see [DEFAULT\_MAX\_FFMPEG\_OUTPUT\_BYTES](#default_max_ffmpeg_output_bytes)) — about an hour of 16 kHz mono
+at the default. Past that, go file → file with [wavEncodeArgs](#wavencodeargs).
+
+Note WAV written to a PIPE carries a placeholder length in its header:
+ffmpeg cannot seek back to patch it once the size is known. Every decoder
+treats it as "read to EOF", and this repo's own `parseWav` intersects the
+declared length with the real byte count for exactly that reason — but code
+that trusts the header's `data` size will read zero samples.
+
+#### Parameters
+
+##### source
+
+[`MediaSource`](#mediasource)
+
+##### opts?
+
+[`TranscodeToWavOptions`](#transcodetowavoptions)
+
+#### Returns
+
+`Promise`\<`Uint8Array`\<`ArrayBufferLike`\>\>
+
+***
+
+### wavEncodeArgs()
+
+```ts
+function wavEncodeArgs(opts?: WavEncodeOptions): string[];
+```
+
+The encoder half of a linear-PCM WAV argv — no input, no output.
+
+Exported because the in-memory [transcodeToWav](#transcodetowav) is the wrong shape for
+a long recording, and a caller writing file → file should not have to
+re-derive which of ffmpeg's codec names is uncompressed:
+
+```ts no-check
+import { runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
+
+await runFfmpeg([
+  "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+  "-i", inputPath,
+  ...wavEncodeArgs({ sampleRate: 16_000, channels: 1 }),
+  outputPath,
+]);
+```
+
+#### Parameters
+
+##### opts?
+
+[`WavEncodeOptions`](#wavencodeoptions)
+
+#### Returns
+
+`string`[]
+
 ## Classes
 
 ### FfmpegError
@@ -175,18 +371,6 @@ readonly binary: string;
 
 The binary that was spawned, and the arguments it got.
 
-##### cause?
-
-```ts
-optional cause?: unknown;
-```
-
-###### Inherited from
-
-```ts
-Error.cause
-```
-
 ##### exitCode
 
 ```ts
@@ -201,30 +385,6 @@ Exit status, or `null` when the child was killed by a signal.
 readonly kind: FfmpegFailureKind;
 ```
 
-##### message
-
-```ts
-message: string;
-```
-
-###### Inherited from
-
-```ts
-Error.message
-```
-
-##### name
-
-```ts
-name: string;
-```
-
-###### Inherited from
-
-```ts
-Error.name
-```
-
 ##### signal
 
 ```ts
@@ -233,18 +393,6 @@ readonly signal: Signals | null;
 
 The signal that killed it, when one did.
 
-##### stack?
-
-```ts
-optional stack?: string;
-```
-
-###### Inherited from
-
-```ts
-Error.stack
-```
-
 ##### stderr
 
 ```ts
@@ -252,154 +400,6 @@ readonly stderr: string;
 ```
 
 The tail of the child's stderr — ffmpeg's log.
-
-##### stackTraceLimit
-
-```ts
-static stackTraceLimit: number;
-```
-
-The `Error.stackTraceLimit` property specifies the number of stack frames
-collected by a stack trace (whether generated by `new Error().stack` or
-`Error.captureStackTrace(obj)`).
-
-The default value is `10` but may be set to any valid JavaScript number. Changes
-will affect any stack trace captured _after_ the value has been changed.
-
-If set to a non-number value, or set to a negative number, stack traces will
-not capture any frames.
-
-###### Inherited from
-
-```ts
-Error.stackTraceLimit
-```
-
-#### Methods
-
-##### captureStackTrace()
-
-```ts
-static captureStackTrace(targetObject: object, constructorOpt?: Function): void;
-```
-
-Creates a `.stack` property on `targetObject`, which when accessed returns
-a string representing the location in the code at which
-`Error.captureStackTrace()` was called.
-
-```js
-const myObject = {};
-Error.captureStackTrace(myObject);
-myObject.stack;  // Similar to `new Error().stack`
-```
-
-The first line of the trace will be prefixed with
-`${myObject.name}: ${myObject.message}`.
-
-The optional `constructorOpt` argument accepts a function. If given, all frames
-above `constructorOpt`, including `constructorOpt`, will be omitted from the
-generated stack trace.
-
-The `constructorOpt` argument is useful for hiding implementation
-details of error generation from the user. For instance:
-
-```js
-function a() {
-  b();
-}
-
-function b() {
-  c();
-}
-
-function c() {
-  // Create an error without stack trace to avoid calculating the stack trace twice.
-  const { stackTraceLimit } = Error;
-  Error.stackTraceLimit = 0;
-  const error = new Error();
-  Error.stackTraceLimit = stackTraceLimit;
-
-  // Capture the stack trace above function b
-  Error.captureStackTrace(error, b); // Neither function c, nor b is included in the stack trace
-  throw error;
-}
-
-a();
-```
-
-###### Parameters
-
-###### targetObject
-
-`object`
-
-###### constructorOpt?
-
-`Function`
-
-###### Returns
-
-`void`
-
-###### Inherited from
-
-```ts
-Error.captureStackTrace
-```
-
-##### isError()
-
-```ts
-static isError(error: unknown): error is Error;
-```
-
-Indicates whether the argument provided is a built-in Error instance or not.
-
-###### Parameters
-
-###### error
-
-`unknown`
-
-###### Returns
-
-`error is Error`
-
-###### Inherited from
-
-```ts
-Error.isError
-```
-
-##### prepareStackTrace()
-
-```ts
-static prepareStackTrace(err: Error, stackTraces: CallSite[]): any;
-```
-
-###### Parameters
-
-###### err
-
-`Error`
-
-###### stackTraces
-
-`CallSite`[]
-
-###### Returns
-
-`any`
-
-###### See
-
-https://v8.dev/docs/stack-trace-api#customizing-stack-traces
-
-###### Inherited from
-
-```ts
-Error.prepareStackTrace
-```
 
 ## Type Aliases
 
@@ -840,199 +840,3 @@ const FFPROBE_PATH_ENV: "AAI_FFPROBE_PATH" = "AAI_FFPROBE_PATH";
 ```
 
 Overrides the `ffprobe` binary this module spawns.
-
-## Functions
-
-### ffmpegVersion()
-
-```ts
-function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
-```
-
-ffmpeg's version string, or `undefined` when there is no ffmpeg to ask.
-
-A preflight check for a step or a diagnostic that would rather report "no
-ffmpeg here" than fail mid-conversion. Only a MISSING binary answers
-`undefined`; a binary that is present and broken throws, because that is a
-real failure and swallowing it would report the same thing as an absence.
-
-#### Parameters
-
-##### opts?
-
-[`FfmpegRunOptions`](#ffmpegrunoptions)
-
-#### Returns
-
-`Promise`\<`string` \| `undefined`\>
-
-***
-
-### isFfmpegError()
-
-```ts
-function isFfmpegError(value: unknown): value is FfmpegError;
-```
-
-Narrow an unknown catch to a failed ffmpeg run.
-
-#### Parameters
-
-##### value
-
-`unknown`
-
-#### Returns
-
-`value is FfmpegError`
-
-***
-
-### probeMedia()
-
-```ts
-function probeMedia(source: MediaSource, opts?: ProbeOptions): Promise<MediaInfo>;
-```
-
-What ffprobe makes of a file: duration, container, and every stream.
-
-```ts no-check
-import { probeMedia } from "@alexkroman1/aai/ffmpeg";
-
-const info = await probeMedia("/tmp/recording.m4a");
-const seconds = info.durationSec ?? 0;
-const needsTranscode = info.audio?.codec !== "pcm_s16le";
-```
-
-A field ffprobe did not report comes back `undefined` rather than zero — see
-`_ffmpeg-json.ts` for why that distinction is load-bearing. Reading a
-duration off a PIPE is the one case worth knowing about: for a format whose
-duration lives in a trailing index, ffprobe cannot seek to it and answers
-`undefined`, where the same file on disk answers exactly.
-
-#### Parameters
-
-##### source
-
-[`MediaSource`](#mediasource)
-
-##### opts?
-
-[`ProbeOptions`](#probeoptions)
-
-#### Returns
-
-`Promise`\<[`MediaInfo`](#mediainfo)\>
-
-***
-
-### runFfmpeg()
-
-```ts
-function runFfmpeg(args: readonly string[], opts?: FfmpegRunOptions): Promise<FfmpegRunResult>;
-```
-
-Run ffmpeg with `args`, exactly as given.
-
-Resolves only on a zero exit; every other outcome is a [FfmpegError](#ffmpegerror)
-naming its [FfmpegFailureKind](#ffmpegfailurekind).
-
-#### Parameters
-
-##### args
-
-readonly `string`[]
-
-##### opts?
-
-[`FfmpegRunOptions`](#ffmpegrunoptions)
-
-#### Returns
-
-`Promise`\<[`FfmpegRunResult`](#ffmpegrunresult)\>
-
-#### Example
-
-```ts no-check
-import { runFfmpeg } from "@alexkroman1/aai/ffmpeg";
-
-// File to file: nothing is buffered, so this is the shape for long media.
-await runFfmpeg([
-  "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-  "-i", "/tmp/in.m4a",
-  "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
-  "/tmp/out.wav",
-]);
-```
-
-***
-
-### transcodeToWav()
-
-```ts
-function transcodeToWav(source: MediaSource, opts?: TranscodeToWavOptions): Promise<Uint8Array<ArrayBufferLike>>;
-```
-
-Re-encode anything ffmpeg can read into linear-PCM WAV bytes.
-
-The conversion a transcription pipeline needs, because cutting a recording by
-byte offset is only arithmetic on uncompressed audio. Video is dropped.
-
-The result is held in memory, so it is capped like any other piped output
-(see [DEFAULT\_MAX\_FFMPEG\_OUTPUT\_BYTES](#default_max_ffmpeg_output_bytes)) — about an hour of 16 kHz mono
-at the default. Past that, go file → file with [wavEncodeArgs](#wavencodeargs).
-
-Note WAV written to a PIPE carries a placeholder length in its header:
-ffmpeg cannot seek back to patch it once the size is known. Every decoder
-treats it as "read to EOF", and this repo's own `parseWav` intersects the
-declared length with the real byte count for exactly that reason — but code
-that trusts the header's `data` size will read zero samples.
-
-#### Parameters
-
-##### source
-
-[`MediaSource`](#mediasource)
-
-##### opts?
-
-[`TranscodeToWavOptions`](#transcodetowavoptions)
-
-#### Returns
-
-`Promise`\<`Uint8Array`\<`ArrayBufferLike`\>\>
-
-***
-
-### wavEncodeArgs()
-
-```ts
-function wavEncodeArgs(opts?: WavEncodeOptions): string[];
-```
-
-The encoder half of a linear-PCM WAV argv — no input, no output.
-
-Exported because the in-memory [transcodeToWav](#transcodetowav) is the wrong shape for
-a long recording, and a caller writing file → file should not have to
-re-derive which of ffmpeg's codec names is uncompressed:
-
-```ts no-check
-import { runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
-
-await runFfmpeg([
-  "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-  "-i", inputPath,
-  ...wavEncodeArgs({ sampleRate: 16_000, channels: 1 }),
-  outputPath,
-]);
-```
-
-#### Parameters
-
-##### opts?
-
-[`WavEncodeOptions`](#wavencodeoptions)
-
-#### Returns
-
-`string`[]

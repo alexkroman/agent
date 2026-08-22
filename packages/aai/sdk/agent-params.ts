@@ -187,6 +187,12 @@ export type PipelineOnlyMisuse<
  * shorthand picks the default pipeline's TTS voice; an explicit `tts`
  * descriptor owns its voice, so combining the two is a compile error naming
  * the rule.
+ *
+ * @remarks
+ * The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
+ * not values this arm accepts. Setting one of those fields makes `tsc` print the
+ * sentence in place of a bare excess-property error, so the diagnostic names the
+ * rule and what to do about it. Never pass one as a string.
  */
 export type PipelineAgentParams = SharedAgentParams &
   Partial<Pick<AgentDef, PipelineOnlyField>> & {
@@ -260,6 +266,12 @@ export type PipelineAgentParams = SharedAgentParams &
  * S2S-mode params: an `s2s` descriptor, no pipeline providers, and the
  * pipeline-only tuning knobs typed as `PipelineOnlyMisuse` so setting
  * one fails with a message instead of silently doing nothing.
+ *
+ * @remarks
+ * The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
+ * not values this arm accepts. Setting one of those fields makes `tsc` print the
+ * sentence in place of a bare excess-property error, so the diagnostic names the
+ * rule and what to do about it. Never pass one as a string.
  */
 export type S2sAgentParams = SharedAgentParams & {
   /** See {@link AgentDef.s2s} — the explicit opt-in to speech-to-speech mode. */
@@ -290,6 +302,12 @@ export type S2sAgentParams = SharedAgentParams & {
  *
  * The pipeline-only voice knobs are derived from `PipelineOnlyField`,
  * so a knob added to {@link PipelineVoiceTuning} is rejected here for free.
+ *
+ * @remarks
+ * The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
+ * not values this arm accepts. Setting one of those fields makes `tsc` print the
+ * sentence in place of a bare excess-property error, so the diagnostic names the
+ * rule and what to do about it. Never pass one as a string.
  */
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
   /** See {@link AgentDef.text} — the explicit opt-in to text mode. */
@@ -392,6 +410,12 @@ export type WorkflowAppMisuse<K extends string> =
  * `workflows` is REQUIRED here, unlike on {@link AgentDef}: a workflow app whose
  * whole API is `/workflows/*` and which declares none serves a form with nothing
  * behind it, and the page's `api.start(name, …)` would 400 on every submit.
+ *
+ * @remarks
+ * The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
+ * not values this arm accepts. Setting one of those fields makes `tsc` print the
+ * sentence in place of a bare excess-property error, so the diagnostic names the
+ * rule and what to do about it. Never pass one as a string.
  */
 export type StaticAgentParams = Omit<
   SharedAgentParams,

@@ -877,21 +877,27 @@ resolve directly to `.ts` source — no build step needed.
   `biome-ignore` comments. Follow re-export chains to find the original
   source of a type/function.
 
-### Disambiguating "Session" types
+### Disambiguating cross-package names
 
-Multiple types named `Session` or `Session*` exist across packages —
-they are **not interchangeable**:
+**Eleven names are on BOTH `aai` and `aai-ui`; eight are COLLISIONS** — one word
+for the two sides of one wire, neither reference page naming the other. Narrow
+by package first, and do NOT rename either side: both halves are contracted, so
+a rename costs an epoch and a frozen example.
 
-| Type | Package | File | Purpose |
-| --- | --- | --- | --- |
-| `SessionCore` | `aai` | `host/session-core.ts` | Server-side session — bridges a `Transport` (S2S, pipeline, or OpenAI Realtime) to the client protocol |
-| `SessionCoreOptions` | `aai` | `host/session-core.ts` | Config for creating the server-side session core |
-| `SttSession` / `TtsSession` | `aai` | `sdk/providers.ts` | Host-side handle to one open STT/TTS provider stream (pipeline mode) |
-| `SessionCore` | `aai-ui` | `session-core.ts` | Framework-agnostic browser session (WebSocket + audio + state) |
-| `SessionSnapshot` | `aai-ui` | `session-core.ts` | Immutable snapshot of browser session state (for `useSyncExternalStore`) |
-| `SessionError` | `aai-ui` | `types.ts` | Client-side error type with error code |
+| Name | `aai` | `aai-ui` |
+| --- | --- | --- |
+| `SessionCore` | `host/session-core.ts`, `/runtime` — the SERVER session, bridging a `Transport` to the client protocol | `session-core.ts` — the BROWSER session (socket + audio + state) |
+| `createSessionCore` | builds the server one | builds the browser one |
+| `WorkflowApi` | `/workflow-api` — an agent's HTTP API as a CALLER holds it | the same |
+| `WorkflowApiOptions` | `host/workflow-api.ts`, `/runtime` — the SERVER handler's (`engine`, `token`); `@internal` | the client's (`baseUrl`, `token`) |
+| `createWorkflowApi` | `/runtime` — the Node route handler; `@internal` | the client |
+| `ClientConfigResponse` | `sdk/client-config.ts`, `/protocol` + `/workflow-api` | re-exported |
+| `SessionErrorCode` | `sdk/protocol-events.ts`, `/protocol` — the eight wire codes | the same union, on `SessionError.code` |
 
-When searching for "Session", narrow by package to find the right one.
+`isTerminal`, `WorkflowSummary` and `WorkflowOutputOf` (`/workflow-api`) are one
+concept from both sides, separately versioned — not collisions. No
+counterpart: `SessionCoreOptions`, `SttSession`/`TtsSession` (`aai`),
+`SessionSnapshot`, `SessionError` (`aai-ui`).
 
 ### Concurrency primitives (use these, don't hand-roll)
 

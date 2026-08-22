@@ -9,10 +9,44 @@
   "out": "dist",
   "readme": "./home.md",
   "includeVersion": true,
+  // Every option here reaches the SUB-PROJECTS. With
+  // `entryPointStrategy: "packages"` typedoc converts each package as its own
+  // project, and a top-level option is read by the outer run only — so an
+  // option that shapes rendered member output silently does nothing up there.
+  // Verified for both `excludeExternals` and `groupOrder`: moved to the top
+  // level, the rendered tree is byte-identical to not setting them at all.
   "packageOptions": {
     "tsconfig": "../../docs/tsconfig.typedoc.json",
     "excludeInternal": true,
-    "excludePrivate": true
+    "excludePrivate": true,
+    // Inherited members from `lib.es5.d.ts` and `@types/node` are not this
+    // SDK's API. Without this, `index.md` opened on 503 lines of `Error`
+    // surface — `captureStackTrace`, `prepareStackTrace`, `stackTraceLimit`,
+    // each with Node's own multi-paragraph prose, reproduced once per class —
+    // ahead of anything the SDK owns. Measured: −1,668 lines across the tree
+    // with the set of `##`/`###` headings unchanged in EVERY file, i.e. not
+    // one SDK-owned symbol lost. The `#### Extends` line survives, so a
+    // reader still learns the class extends `Error`.
+    "excludeExternals": true,
+    // Callables first. TypeDoc groups by reflection kind and the default order
+    // puts Functions LAST, which for this repo's artifact is the worst
+    // possible one: the whole point of `outputFileStrategy: "modules"` is that
+    // an agent reads one file per subpath, and `### agent()` sat at line 5,241
+    // of 6,044 in `index.md` — behind 24 `DEFAULT_*` constants and 33 type
+    // aliases — with `### tool()` at 5,794. After this: `agent()` at line 5,
+    // `sessionSlot()` at 399, `tool()` at 558, `workflow()` at 640, and the
+    // total line count unchanged (a pure reorder, no content moves in or out).
+    // The trailing "*" is required: it is where every group not named here
+    // lands, and without it those groups' order is unspecified.
+    "groupOrder": [
+      "Functions",
+      "Classes",
+      "Interfaces",
+      "Type Aliases",
+      "Variables",
+      "References",
+      "*"
+    ]
   },
   "treatWarningsAsErrors": true
 }

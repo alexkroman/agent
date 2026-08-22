@@ -8,6 +8,11 @@
  * the standing prompt text in `./system-prompt.ts`.
  */
 
-/** Default greeting spoken when a session starts. */
-export const DEFAULT_GREETING: string =
-  "Hey there! I'm an AI voice assistant. What can I help you with?";
+/**
+ * Default greeting spoken when a session starts.
+ *
+ * Deliberately UNANNOTATED, so the reference renders the sentence rather than
+ * `string`. This is the one thing every caller hears before they say anything,
+ * and the source is not in the tarball.
+ */
+export const DEFAULT_GREETING = "Hey there! I'm an AI voice assistant. What can I help you with?";

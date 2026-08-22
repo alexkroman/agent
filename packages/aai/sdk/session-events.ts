@@ -66,6 +66,24 @@ export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (
 ) => unknown;
 
 /**
+ * Every event name a handler map may be keyed by, as a union.
+ *
+ * The keys of {@link SessionEventHandlers} are computed from the wire union, so
+ * without this alias the only way to read the list is the event schema itself —
+ * which renders as one long type expression. Name it to get an autocompletable
+ * union, and to write a handler map's key type down in your own code:
+ *
+ * ```ts
+ * import type { SessionEventType } from "@alexkroman1/aai";
+ *
+ * const AUDITED: readonly SessionEventType[] = ["tool.called", "error.reported"];
+ * ```
+ *
+ * @public
+ */
+export type SessionEventType = SessionEvent["type"];
+
+/**
  * The `events` map an agent declares — keyed by event type, plus `"*"`.
  *
  * The mapped half is what makes a handler's parameter TYPED: declaring
@@ -77,7 +95,7 @@ export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (
  * @public
  */
 export type SessionEventHandlers = {
-  [K in SessionEvent["type"]]?: SessionEventHandler<Extract<SessionEvent, { type: K }>>;
+  [K in SessionEventType]?: SessionEventHandler<Extract<SessionEvent, { type: K }>>;
 } & {
   /** Runs for every event, AFTER the typed handler for that event. */
   "*"?: SessionEventHandler;

@@ -3,22 +3,175 @@
 `@alexkroman1/aai/workflow-api` — the client side of a deployed agent's HTTP
 API, from one import path.
 
-Four modules sit behind it, and the split is a dependency one rather than a
-taste one: `agent-client.ts` is a SUPERSET of `workflow-api-client.ts` (it
-calls the narrower factory), so the subpath cannot be either file — pointing
-it at the client and re-exporting the agent client from there is an import
-cycle, which is what this barrel exists to break. `event-stream.ts` is the
-parser both of them read a stream with, and `workflow-api-types.ts` holds the
-call set.
-
-Start with `createAgentClient` — one object for everything one agent answers.
-`createWorkflowApiClient` is the narrower one, for a caller that genuinely
-only has workflows (a page already knows what it is).
+Start with [createAgentClient](#createagentclient) — one object for everything one agent
+answers. [createWorkflowApiClient](#createworkflowapiclient) is the narrower one, for a caller
+that genuinely only has workflows (a page already knows what it is): the
+agent client CALLS it, so the two are a superset and its narrower factory
+rather than two implementations, and the barrel exists because pointing the
+subpath at either one directly would be an import cycle.
 
 It also owns the RUN vocabulary — the option bags, the snapshot union, its
-guard, and `WorkflowOutputOf` — which used to sit on the root barrel beside
+guard, and [WorkflowOutputOf](#workflowoutputof) — which used to sit on the root barrel beside
 `agent()` and `tool()`. See the re-export below for the line that puts it
 here.
+
+## Functions
+
+### clampWorkflowWait()
+
+```ts
+function clampWorkflowWait(requested: number | undefined): number;
+```
+
+Clamp a requested wait to what the API will actually hold a socket open for.
+
+Shared by both ends deliberately: the browser client sizes its own `fetch`
+deadline from this same function, so a page can never still be waiting on a
+request the agent already answered — nor give up before it does.
+
+Anything above the cap is CLAMPED rather than rejected, because the caller's
+intent ("wait as long as you can") is unambiguous; anything absent, negative
+or non-finite means "do not wait".
+
+#### Parameters
+
+##### requested
+
+`number` \| `undefined`
+
+#### Returns
+
+`number`
+
+***
+
+### createAgentClient()
+
+```ts
+function createAgentClient(opts: WorkflowApiClientOptions): AgentClient;
+```
+
+Create a client for one agent.
+
+Same options as [createWorkflowApiClient](#createworkflowapiclient) — which agent, on whose
+authority, and for how long — and the same advice: hoist it out of anything
+that re-runs.
+
+#### Parameters
+
+##### opts
+
+[`WorkflowApiClientOptions`](#workflowapiclientoptions)
+
+#### Returns
+
+[`AgentClient`](#agentclient)
+
+***
+
+### createWorkflowApiClient()
+
+```ts
+function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
+```
+
+Create a workflow API client.
+
+Hoist it out of anything that re-runs. In React it belongs at module scope —
+`useWorkflowRun` in `@alexkroman1/aai-ui` holds the client in a ref
+precisely so a fresh object
+per render does not restart its watch, but a client built in render is still a
+new `fetch` closure every time and reads as though it were free.
+
+#### Parameters
+
+##### opts
+
+[`WorkflowApiClientOptions`](#workflowapiclientoptions)
+
+#### Returns
+
+[`WorkflowApi`](#workflowapi)
+
+***
+
+### isTerminal()
+
+```ts
+function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
+```
+
+Is this run finished?
+
+A type guard rather than a `boolean`, so the narrow it performs is usable:
+`if (isTerminal(run))` leaves `run.status` as the three-member union a caller
+can switch over exhaustively. Accepts `undefined` (nothing started yet, or the
+first poll has not landed) because that is what every call site holds.
+
+#### Type Parameters
+
+##### R
+
+`R`
+
+#### Parameters
+
+##### run
+
+[`WorkflowRunSnapshot`](#workflowrunsnapshot)\<`R`\> \| `undefined`
+
+#### Returns
+
+`run is TerminalWorkflowRun<R>`
+
+***
+
+### readEventStream()
+
+```ts
+function readEventStream(body: ReadableStream<Uint8Array<ArrayBufferLike>>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
+```
+
+Parse an SSE byte stream into frames, with `eventsource-parser`.
+
+The parser is a dependency rather than a hand-rolled line splitter, and the
+three edges that decided it are the three a splitter gets wrong:
+
+- Splitting on `"\n\n"` only. The spec permits `\n`, `\r\n` and `\r`, and a
+  CRLF stream is `\r\n\r\n` — no two adjacent `\n`, so **not one frame ever
+  parsed**, and an intermediary re-terminating lines is not our choice to
+  make.
+- `line.startsWith("event: ")` requires the space the spec makes optional.
+- Keeping only the LAST `data:` line rather than joining a multi-line one.
+
+Three properties of the parser this leans on. `feed` invokes `onEvent`
+SYNCHRONOUSLY for every complete event in the chunk, so a batch is collected
+per read and yielded in arrival order. An event with no `data:` line at all is
+not dispatched (also per spec); every frame these routes emit carries one. And
+a chunk ending in a lone `\r` holds that byte back, because it may yet turn
+out to be the first half of a `\r\n` — so a CR-ONLY stream chunked per frame
+dispatches one frame behind, and its last frame not at all. Nothing emits
+CR-only endings, and the outcome if anything did is the safe one for every
+reader here: a stream that ends with no final frame is read as a dropped
+connection.
+
+`signal` is optional because most callers already own the `fetch` that opened
+the body — aborting that ends the read. Pass one when the reader's lifetime is
+shorter than the request's.
+
+#### Parameters
+
+##### body
+
+`ReadableStream`\<`Uint8Array`\<`ArrayBufferLike`\>\>
+
+##### signal?
+
+`AbortSignal`
+
+#### Returns
+
+`AsyncGenerator`\<[`EventStreamFrame`](#eventstreamframe)\>
 
 ## Type Aliases
 
@@ -700,9 +853,9 @@ type WorkflowApi = {
 The calls the API offers — one method per route, and nothing beyond them.
 
 The width is the constraint: a route needing more than a tool can do is the
-signal to add a `WorkflowClient` method server-side, never to grow this into
-an engine with reads of its own. See the "no engine here" section of
-`host/workflow-api.ts`.
+signal to add a `WorkflowClient` method server-side, never to grow this
+into an engine with reads of its own: this surface dispatches, it does not
+query.
 
 #### Methods
 
@@ -1618,163 +1771,6 @@ server does not serve is a 404 that reads as a missing feature, and the dev
 proxy getting it wrong is a workflow app that is dead on arrival under
 `aai dev` while the backend serves the whole API one port over. It could not
 live in `host/` and be shared, because a browser cannot import that half.
-
-## Functions
-
-### clampWorkflowWait()
-
-```ts
-function clampWorkflowWait(requested: number | undefined): number;
-```
-
-Clamp a requested wait to what the API will actually hold a socket open for.
-
-Shared by both ends deliberately: the browser client sizes its own `fetch`
-deadline from this same function, so a page can never still be waiting on a
-request the agent already answered — nor give up before it does.
-
-Anything above the cap is CLAMPED rather than rejected, because the caller's
-intent ("wait as long as you can") is unambiguous; anything absent, negative
-or non-finite means "do not wait".
-
-#### Parameters
-
-##### requested
-
-`number` \| `undefined`
-
-#### Returns
-
-`number`
-
-***
-
-### createAgentClient()
-
-```ts
-function createAgentClient(opts: WorkflowApiClientOptions): AgentClient;
-```
-
-Create a client for one agent.
-
-Same options as [createWorkflowApiClient](#createworkflowapiclient) — which agent, on whose
-authority, and for how long — and the same advice: hoist it out of anything
-that re-runs.
-
-#### Parameters
-
-##### opts
-
-[`WorkflowApiClientOptions`](#workflowapiclientoptions)
-
-#### Returns
-
-[`AgentClient`](#agentclient)
-
-***
-
-### createWorkflowApiClient()
-
-```ts
-function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
-```
-
-Create a workflow API client.
-
-Hoist it out of anything that re-runs. In React it belongs at module scope —
-`useWorkflowRun` holds the client in a ref precisely so a fresh object per
-render does not restart its watch, but a client built in render is still a new
-`fetch` closure every time and reads as though it were free.
-
-#### Parameters
-
-##### opts
-
-[`WorkflowApiClientOptions`](#workflowapiclientoptions)
-
-#### Returns
-
-[`WorkflowApi`](#workflowapi)
-
-***
-
-### isTerminal()
-
-```ts
-function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
-```
-
-Is this run finished?
-
-A type guard rather than a `boolean`, so the narrow it performs is usable:
-`if (isTerminal(run))` leaves `run.status` as the three-member union a caller
-can switch over exhaustively. Accepts `undefined` (nothing started yet, or the
-first poll has not landed) because that is what every call site holds.
-
-#### Type Parameters
-
-##### R
-
-`R`
-
-#### Parameters
-
-##### run
-
-[`WorkflowRunSnapshot`](#workflowrunsnapshot)\<`R`\> \| `undefined`
-
-#### Returns
-
-`run is TerminalWorkflowRun<R>`
-
-***
-
-### readEventStream()
-
-```ts
-function readEventStream(body: ReadableStream<Uint8Array<ArrayBufferLike>>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
-```
-
-Parse an SSE byte stream into frames, with `eventsource-parser`.
-
-The parser is a dependency rather than a hand-rolled line splitter, and the
-three edges that decided it are the three a splitter gets wrong:
-
-- Splitting on `"\n\n"` only. The spec permits `\n`, `\r\n` and `\r`, and a
-  CRLF stream is `\r\n\r\n` — no two adjacent `\n`, so **not one frame ever
-  parsed**, and an intermediary re-terminating lines is not our choice to
-  make.
-- `line.startsWith("event: ")` requires the space the spec makes optional.
-- Keeping only the LAST `data:` line rather than joining a multi-line one.
-
-Three properties of the parser this leans on. `feed` invokes `onEvent`
-SYNCHRONOUSLY for every complete event in the chunk, so a batch is collected
-per read and yielded in arrival order. An event with no `data:` line at all is
-not dispatched (also per spec); every frame these routes emit carries one. And
-a chunk ending in a lone `\r` holds that byte back, because it may yet turn
-out to be the first half of a `\r\n` — so a CR-ONLY stream chunked per frame
-dispatches one frame behind, and its last frame not at all. Nothing emits
-CR-only endings, and the outcome if anything did is the safe one for every
-reader here: a stream that ends with no final frame is read as a dropped
-connection.
-
-`signal` is optional because most callers already own the `fetch` that opened
-the body — aborting that ends the read. Pass one when the reader's lifetime is
-shorter than the request's.
-
-#### Parameters
-
-##### body
-
-`ReadableStream`\<`Uint8Array`\<`ArrayBufferLike`\>\>
-
-##### signal?
-
-`AbortSignal`
-
-#### Returns
-
-`AsyncGenerator`\<[`EventStreamFrame`](#eventstreamframe)\>
 
 ## References
 

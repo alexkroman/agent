@@ -26,6 +26,18 @@ import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
  * (one source of truth for types and docs) rather than re-declared — a
  * re-declared copy is exactly how doc comments drift.
  *
+ * @remarks
+ * **Base of the two `client()` tiers.** The name says nothing on its own, so:
+ * this is the half {@link ConfigTier} and {@link ComponentTier} share — where
+ * to mount, which agent to dial, and the theme — and {@link ClientConfig} is
+ * the union of the two that `client()` actually takes. Nothing takes a
+ * `BaseOptions` directly; it is exported because both tiers name it, and it is
+ * the type to write against when a helper builds options for either.
+ *
+ * It is NOT the session's own options type — that is
+ * {@link VoiceSessionOptions}, which `createSessionCore` takes and which three
+ * of these fields are picked from.
+ *
  * @public
  */
 export type BaseOptions = Pick<

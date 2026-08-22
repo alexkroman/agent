@@ -73,6 +73,30 @@ export interface ToolCallRowProps {
  * Colors come from the nearest theme context (see {@link useTheme}); without
  * a provider the default AssemblyAI theme applies.
  *
+ * @example
+ * ```tsx
+ * import { ToolCallRow, useSession } from "@alexkroman1/aai-ui";
+ *
+ * // A custom chrome's tool log, from the snapshot's own `toolCalls`.
+ * function ToolLog() {
+ *   const { toolCalls } = useSession();
+ *   return (
+ *     <div>
+ *       {toolCalls.map((call) => (
+ *         <ToolCallRow
+ *           key={call.callId}
+ *           title={call.name}
+ *           detail={call.result}
+ *           pending={call.status === "pending"}
+ *         />
+ *       ))}
+ *     </div>
+ *   );
+ * }
+ * ```
+ *
+ * @param props - See {@link ToolCallRowProps}.
+ *
  * @public
  */
 export function ToolCallRow({

@@ -106,8 +106,8 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
 /**
  * Transcribe one complete audio file.
  *
- * @param bytes - A whole file, header included. See the module doc — a
- *   headerless tail is bytes the endpoint will refuse.
+ * @param bytes - A whole file, header included. The endpoint decodes each
+ *   request independently, so a headerless tail is bytes it will refuse.
  *
  * @returns The text, trimmed. An EMPTY string is a legitimate answer here and
  *   is not refused, unlike the async API's: a caller fanning out over segments
@@ -118,6 +118,38 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
  *   reads — which matters most here, because a fan-out hits a rate limit all at
  *   once and `retryAfter` is what makes the batch drain instead of colliding a
  *   second later.
+ *
+ * @remarks
+ * **The ceiling is the whole decision: 120 seconds and 40 MB per request**, both
+ * enforced by the service. Under it, this is one round trip against
+ * {@link stepTranscribeUpload}/{@link stepTranscribeSubmit}/{@link
+ * stepTranscribePoll}'s three steps and a polling loop — no job id, nothing to
+ * journal between phases, no wait to make durable. Over it, the audio has to be
+ * CUT into segments and fanned out, which is a subject of its own: where to cut
+ * so a word is not split, how to re-attach a header to each piece, how wide to
+ * run the fan-out, and how to stitch the results back together. So reach for
+ * this when one request is enough and for the async trio when it is not; the cut
+ * is not a decision this function can make, because it depends on what the audio
+ * IS.
+ *
+ * **Whole files only.** A caller cutting a WAV re-attaches a header to every
+ * window — {@link encodeWav} is the 44 bytes — and a caller handed complete
+ * files (parts of a multi-file upload, {@link stepSpeak}'s output) passes them
+ * through untouched.
+ *
+ * @example
+ * One clip, one request. Compare {@link stepTranscribeSubmit} for a recording
+ * that cannot fit in one.
+ * ```ts
+ * import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
+ *
+ * export async function transcribeClip(uploadId: string): Promise<string> {
+ *   "use step";
+ *   const clip = await readUpload(uploadId);
+ *   const { text } = await stepTranscribeSync(clip.bytes);
+ *   return text;
+ * }
+ * ```
  *
  * @public
  */
