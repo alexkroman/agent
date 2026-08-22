@@ -1,164 +1,208 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai-runtime:server` epoch 1.
+ * Epoch-1 TEMPLATE for the `aai-runtime:server` capability — the self-hosted
+ * bootstrap as it was written at epoch 1. Copy the file into your own host,
+ * edit the lines marked `←`, and leave the rest alone.
  *
- * See `../../../../aai/contracts/compatibility/agent/v3.ts` for what "frozen"
- * obliges and why the imports are relative.
+ * FROZEN. It must keep compiling for as long as epoch 1 is supported, so do not
+ * edit it to follow a change in this package's API: a compile error here is the
+ * finding, not a chore. Changing the API means a NEW epoch with a new template
+ * beside this one — never an edit to this file.
  *
- * **This capability's real authoring example ships to every user.**
- * `packages/aai-templates/scaffold/server.mjs` — the `npm start` entrypoint of
- * every scaffolded project — imports exactly two names from this package,
- * {@link createAgentServer} and {@link withHostCredentialFallback}, and this
- * file is that file with its JavaScript typed and its filesystem work stubbed
- * out. So the order below is the order a deployment does things in: read the
- * env, check the credentials the agent's providers will ask for, build the
- * server, bind loopback, and close it on a signal.
+ * The typed sibling of `packages/aai-templates/scaffold/server.mjs`, which is
+ * the same bootstrap in JavaScript with its filesystem work spelled out. Order
+ * of operations, which is the order a deployment does things in:
  *
- * The two lower doors are here because they are the ones an embedder reaches
- * for when `createAgentServer` is the wrong shape: {@link createServer} for a
- * process that already owns a runtime, and {@link createHostServer} for a
- * server with no agent of its own. Both are wrappers over the same
- * `createServer`, which is why the hook bag they pass through
- * ({@link PassthroughServerOptions}) is one type and not three.
+ * 1. Collect the agent's own env — what its tool code reads as `ctx.env`.
+ * 2. Refuse to start when a provider credential the agent needs is absent.
+ * 3. Build the server, with your own HTTP hooks passed through.
+ * 4. Bind loopback, and close the runtime when the process is signalled.
+ *
+ * Nothing runs on import: call {@link main} from your entrypoint.
  */
 
-import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+import { agent } from "@alexkroman1/aai";
 
 import {
+  type AgentEnv,
   type AgentServer,
   type AgentServerOptions,
   createAgentServer,
-  createHostServer,
-  createServer,
   DEFAULT_LISTEN_HOST,
-  type HostServerOptions,
-  type HostSessionDefaults,
+  type HostCredentialEnv,
   type PassthroughServerOptions,
   requiredProviderEnvVars,
-  type ServerOptions,
   withHostCredentialFallback,
 } from "../../../runtime-barrel.ts";
 
-/** The agent this process serves. One definition, served three ways below. */
-const support = agent({
+/**
+ * ← your agent.
+ *
+ * Declared inline here so the template is one file. In a project scaffolded by
+ * the CLI this is instead the BUILT agent — `await import("./.aai/worker.mjs")`
+ * — because a tool is registered by existing as a file under `tools/`, and the
+ * bundler is the only thing that can turn that directory into imports. Loading
+ * `agent.ts` directly serves an agent with no tools.
+ */
+const served = agent({
   name: "Support",
   systemPrompt: "You are a support agent. Answer in one or two sentences.",
   greeting: "Support here — what can I help with?",
 });
 
 /**
- * What the agent's own tool code will read as `ctx.env`.
+ * ← the names of your agent's OWN secrets: what its tool code reads as
+ * `ctx.env`.
  *
- * A plain record, and that is the whole point of the brand on
- * {@link AgentServerOptions.env}: a tenant-owned record is assignable, and the
- * `HostCredentialEnv` that {@link withHostCredentialFallback} mints is not. In
- * the scaffold this is `.env.example` merged under `.env` with real environment
- * variables winning; here the shape is what matters.
+ * Names, not values — the values come from the process environment, so a
+ * container supplies them with `-e`. Listing them rather than forwarding all of
+ * `process.env` is deliberate: an agent that can read `PATH` or `HOME` comes to
+ * depend on a variable that will not exist wherever you deploy it next.
+ *
+ * Provider credentials do NOT belong here. They arrive through
+ * {@link providerCredentials} below, which keeps them out of `ctx.env`.
  */
-const agentEnv: Record<string, string> = { SUPPORT_QUEUE_URL: "https://queue.example/support" };
+const DECLARED_ENV_KEYS: readonly string[] = ["BOOKINGS_API_TOKEN"];
+
+/** ← the port and interface this process binds, if not `PORT` / `HOST`. */
+const DEFAULT_PORT = 3000;
 
 /**
- * The preflight a caller can do BEFORE listening: which credential names this
- * agent's declared providers will try to resolve, and which of them are absent.
+ * The agent's env, read out of the process environment.
  *
- * Worth doing at startup because the alternative is discovering it inside the
- * first session, where a missing key reaches the caller as an opaque provider
- * auth error several seconds into a phone call.
+ * An empty value is dropped rather than passed through: a provider handed `""`
+ * tries to authenticate with it and reports a puzzling auth failure, where an
+ * absent key is reported as absent.
  */
-export function missingCredentials(env: Record<string, string>): string[] {
-  const hostEnv = withHostCredentialFallback(env);
-  return requiredProviderEnvVars(support).filter((name) => hostEnv[name] === undefined);
+export function agentEnv(source: Record<string, string | undefined> = process.env): AgentEnv {
+  const env: Record<string, string> = {};
+  for (const key of DECLARED_ENV_KEYS) {
+    const value = source[key];
+    if (value !== undefined && value !== "") env[key] = value;
+  }
+  return env;
 }
 
 /**
- * The one call the scaffold makes.
+ * Provider credentials, taken from the host environment WITHOUT becoming
+ * `ctx.env`.
  *
- * `providerEnv` is the interesting field. A container hands a provider key in as
- * an ordinary environment variable, and copying it into `env` would make it
- * `ctx.env` — readable by the agent's own tool code, which could then come to
- * depend on a variable that will not exist wherever this is deployed next.
- * `withHostCredentialFallback` copies ONLY provider-credential names, and its
- * branded result is accepted here and rejected by `env`, so the separation is a
+ * This is the ordinary way a container hands over `ASSEMBLYAI_API_KEY`: copying
+ * it into {@link agentEnv} would work and would also publish it to your own
+ * tool code. Do not "simplify" the two calls into one — the returned brand is
+ * accepted by `providerEnv` and REFUSED by `env`, so the separation is a
  * compile error rather than a review comment.
  */
-export function buildServer(clientDir: string, publicUrl?: string): AgentServer {
+export function providerCredentials(env: AgentEnv): HostCredentialEnv {
+  return withHostCredentialFallback(env);
+}
+
+/**
+ * The startup preflight: which credential names this agent's declared providers
+ * will try to resolve, and which of them are missing.
+ *
+ * Worth doing before `listen`, because the alternative is discovering it inside
+ * the first session — where a missing key reaches the caller as an opaque
+ * provider auth error several seconds into a call.
+ */
+export function missingCredentials(env: AgentEnv): string[] {
+  const credentials = providerCredentials(env);
+  return requiredProviderEnvVars(served).filter((name) => credentials[name] === undefined);
+}
+
+/**
+ * ← your own HTTP and WebSocket hooks, if you have any.
+ *
+ * Each returns `true` when it has answered the request itself and `false` to
+ * let the agent server handle it. `GET /health` is already served; this is for
+ * whatever your own orchestrator dials.
+ */
+export function hostHooks(): PassthroughServerOptions {
+  return {
+    request: (_req, res, url, method) => {
+      if (url !== "/readyz" || method !== "GET") return false;
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("ok");
+      return true;
+    },
+  };
+}
+
+/**
+ * The one call that builds the server.
+ *
+ * `clientDir` is the directory of your built browser UI; pass `defaultClientDir()`
+ * from `@alexkroman1/aai-ui/client-dir` to serve the prebuilt one, or omit it to
+ * serve no static assets at all.
+ *
+ * `publicUrl` is where the outside world reaches THIS server — not the socket it
+ * binds, which behind a proxy is a different thing. Only
+ * `ctx.workflows.publicWebhookUrl()` reads it, and it throws when absent, which
+ * is better than minting a `localhost` URL a third party will dial days later.
+ * So set it only when you know it.
+ */
+export function buildServer(
+  env: AgentEnv,
+  hooks: PassthroughServerOptions,
+  clientDir?: string,
+  publicUrl?: string,
+): AgentServer {
   const options: AgentServerOptions = {
-    agent: support,
-    env: agentEnv,
-    providerEnv: withHostCredentialFallback(agentEnv),
-    clientDir,
-    // Only set when known: `ctx.workflows.publicWebhookUrl()` is the sole reader
-    // and it throws when absent, which beats minting a `localhost` URL a payment
-    // provider will dial days later.
+    agent: served,
+    env,
+    providerEnv: providerCredentials(env),
+    ...(clientDir ? { clientDir } : {}),
     ...(publicUrl ? { publicUrl } : {}),
+    // Forwarded one field at a time, NOT spread. These fields are optional
+    // without `| undefined`, and a spread widens each to `T | undefined`, which
+    // the options type refuses under `exactOptionalPropertyTypes` (TS2379).
+    ...(hooks.logger ? { logger: hooks.logger } : {}),
+    ...(hooks.upgrade ? { upgrade: hooks.upgrade } : {}),
+    ...(hooks.request ? { request: hooks.request } : {}),
   };
   return createAgentServer(options);
 }
 
 /**
- * Binding and shutdown, which is the other half of what `server.mjs` does.
+ * Shut down when the process is signalled.
  *
- * The host defaults to {@link DEFAULT_LISTEN_HOST} rather than every interface:
+ * `close()` shuts the runtime down too — there is no second `shutdown()` to
+ * remember. The listener is SYNCHRONOUS and hands the promise off itself: an
+ * `async` listener's rejection would surface as an unhandled rejection, i.e. a
+ * stack trace on Ctrl-C instead of the non-zero exit a failed shutdown is.
+ */
+export function closeOnSignal(server: AgentServer): void {
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      server.close().then(
+        () => process.exit(0),
+        (error: unknown) => {
+          console.error("shutdown failed", error);
+          process.exit(1);
+        },
+      );
+    });
+  }
+}
+
+/**
+ * The whole bootstrap. Call it from your entrypoint.
+ *
+ * The bind host defaults to {@link DEFAULT_LISTEN_HOST} — loopback — because
  * this server carries no request authentication of its own, so exposing it is a
- * deliberate act by whoever sets `HOST`. `close()` shuts the runtime down too —
- * there is no second `runtime.shutdown()` to remember.
+ * deliberate act by whoever sets `HOST`. An empty `HOST` means unset, not
+ * "every interface"; put your own proxy or auth in front before widening it.
  */
-export async function serve(server: AgentServer, port = 3000, host?: string): Promise<string> {
-  await server.listen(port, host ?? DEFAULT_LISTEN_HOST);
-  const url = `http://${host ?? DEFAULT_LISTEN_HOST}:${server.port}`;
-  process.once("SIGTERM", () => {
-    // A synchronous listener: `process` discards what a listener returns, so an
-    // `async` one would surface a failed close as an unhandled rejection.
-    server.close().then(
-      () => process.exit(0),
-      () => process.exit(1),
-    );
-  });
-  return url;
-}
-
-/**
- * The lower door: a runtime that already exists.
- *
- * `ServerOptions["runtime"]` rather than a `SessionRuntime` import, because the
- * narrowing is the point — `createServer` is deliberately given no way to see
- * the agent, which is why `name` and `greeting` are said again here. That is
- * also the reason `createAgentServer` exists: `greeting` omitted raised nothing
- * and simply served no greeting to the browser.
- */
-export function serveExistingRuntime(
-  runtime: ServerOptions["runtime"],
-  hooks: PassthroughServerOptions,
-): AgentServer {
-  return createServer({
-    runtime,
-    name: support.name,
-    greeting: support.greeting,
-    // The hooks are forwarded one at a time rather than spread: their fields are
-    // declared optional WITHOUT `| undefined`, and a spread widens each to
-    // `T | undefined`, which `ServerOptions` refuses under
-    // `exactOptionalPropertyTypes`. Same reason `publicUrl` is guarded above.
-    ...(hooks.logger ? { logger: hooks.logger } : {}),
-    ...(hooks.upgrade ? { upgrade: hooks.upgrade } : {}),
-    ...(hooks.request ? { request: hooks.request } : {}),
-  });
-}
-
-/**
- * The other lower door: a voice pipeline agents are handed to at connect time.
- *
- * `defaults` is operator policy — everything an `AgentDef` carries EXCEPT the
- * four the handshake owns, which is what {@link HostSessionDefaults} spells.
- * Provider descriptors are plain data, so declaring the pipeline here costs no
- * credential; leaving `env` unset is what makes every session run on the key its
- * own caller sent.
- */
-export function serveTenants(): AgentServer {
-  const defaults: HostSessionDefaults = {
-    ...assemblyAIPipeline({ voice: "jane" }),
-    idleTimeoutMs: 120_000,
-    maxSteps: 6,
-  };
-  const options: HostServerOptions = { name: "host", defaults };
-  return createHostServer(options);
+export async function main(): Promise<AgentServer> {
+  const env = agentEnv();
+  const missing = missingCredentials(env);
+  if (missing.length > 0) {
+    throw new Error(`Missing provider credentials: ${missing.join(", ")}`);
+  }
+  const server = buildServer(env, hostHooks());
+  const host = process.env.HOST?.trim() || DEFAULT_LISTEN_HOST;
+  await server.listen(Number(process.env.PORT ?? DEFAULT_PORT), host);
+  closeOnSignal(server);
+  console.log(`${served.name} listening on http://${host}:${server.port}`);
+  return server;
 }

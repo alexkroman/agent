@@ -1,94 +1,73 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai-runtime:keys` epoch 1.
+ * Epoch-1 TEMPLATE for `aai-runtime:keys` — the key-store starter as it was
+ * written at epoch 1. Copy this file into your own host and edit the marked
+ * points; it is meant to be taken, not read.
  *
- * **"Frozen" means this file must keep compiling against current source for as
- * long as epoch 1 is advertised as supported.** A compile error here is the
- * finding, not something to edit away. Imports of this package's own names are
- * RELATIVE (`../../../runtime-barrel.ts`) because the package cannot resolve
+ * **FROZEN.** This copy must keep compiling against current source for as long
+ * as epoch 1 is supported, so a compile error here is the finding — never
+ * something to edit away. Changing the API means a NEW epoch carrying a new
+ * template, never an edit to this one. Imports of this package's own names are
+ * relative (`../../../runtime-barrel.ts`) because the package cannot resolve
  * itself by name; `Db` comes from the SDK by package name, exactly as the source
- * that declares these signatures names it.
+ * declaring these signatures names it.
  *
- * The "keys" here are CORRELATION keys, not credentials: the index is
- * `(workflow, key) -> runId`, and it exists because the Workflow Development Kit
- * has no notion of tagging a run — `runs.list()` filters by workflow name and
- * status and nothing else, so "which run belongs to this phone number" is a
- * question it cannot be asked. That question is specifically a VOICE problem. A
- * durable run outlives the session that started it, and a session's own state is
- * swept shortly after the caller hangs up, so without this index the run is
- * unreachable from the next call — which is the case the whole feature is for.
+ * ## What this is
  *
- * An interface, two implementations, and a resolver that picks between them. The
- * interesting part is that the choice is a property of the DEPLOYMENT and never
- * of the caller: what decides it is whether there is a database, so a host asks
- * {@link resolveKeyStore} the same question `configureWorkflowWorld` already
- * asks, and the index cannot end up more or less durable than the runs it
- * indexes.
+ * The correlation index a host wires up so an inbound caller reaches the run
+ * they already started: one deployment-level decision, then the
+ * record-then-look-up round trip every call performs. These are CORRELATION
+ * keys — `(workflow, key) -> runId`, e.g. a phone number to its live run — not
+ * credentials.
+ *
+ * ## What to change
+ *
+ * - {@link CALLER_WORKFLOW} — your workflow's name.
+ * - The `db` you pass {@link keyStoreFor}: your app `Db` in a deployment.
+ * - The `start` callback you pass {@link resumeOrStartRun} — that is where your
+ *   host actually creates the run.
+ *
+ * ## What not to change
+ *
+ * Record the workflow's NAME, not its `workflowId`: an id embeds the source
+ * file path, so moving a workflow between modules orphans every key already
+ * recorded under the old one.
+ *
+ * Look up with a limit. `lookup` answers newest-first, so `1` IS "the current
+ * run" and you never sort; an unbounded lookup on a busy agent is a scan of
+ * every run it has ever started.
  */
 
 import type { Db } from "@alexkroman1/aai";
-import {
-  createMemoryKeyStore,
-  createPostgresKeyStore,
-  resolveKeyStore,
-  type WorkflowKeyStore,
-} from "../../../runtime-barrel.ts";
+import { resolveKeyStore, type WorkflowKeyStore } from "../../../runtime-barrel.ts";
+
+/** The workflow whose runs are indexed by caller. ← your workflow's name. */
+export const CALLER_WORKFLOW = "inbound-call";
 
 /**
- * The one call a host makes: hand over the app database, or `undefined`.
+ * The one deployment-level decision, made once at boot.
  *
- * This is the whole decision, and writing it as one call rather than as an `if`
- * at each host is what keeps the two arms from drifting. Passing a `Db` yields
- * the Postgres index — a single table in the app's own schema, so it needs no
- * second credential and is reaped along with the app. Passing `undefined` yields
- * the in-memory one, which is `aai dev` against the Local World: that world
- * already keeps its queue in this process's memory, so an index that forgot
- * itself on restart is no less durable than the runs it points at. Anything MORE
- * durable there would be dishonest about what dev mode is.
+ * ← pass your app `Db` in a deployment: that yields the Postgres index, a
+ * single table in the app's own schema, so it needs no second credential and is
+ * reaped with the app. Passing `undefined` yields the in-memory index, which
+ * forgets everything on restart — correct only where the runs it points at are
+ * also in this process's memory (`aai dev` against the Local World), and wrong
+ * anywhere else.
+ *
+ * The decision belongs to the DEPLOYMENT and never to a caller, which is why
+ * this is one call at boot rather than an `if` at each call site: the index must
+ * not end up more or less durable than the runs it indexes.
  */
 export function keyStoreFor(db: Db | undefined): WorkflowKeyStore {
   return resolveKeyStore(db);
 }
 
 /**
- * The same choice spelled out, for a process that already knows its world.
+ * The run to resume for this caller, or `undefined` on their first call.
  *
- * Worth having both: a host wiring itself from an environment wants the resolver
- * above, while a spec — or a harness deliberately exercising the Postgres arm
- * against a real database — names the implementation it means. Reaching for
- * {@link createMemoryKeyStore} in a DEPLOYMENT is the mistake this pair makes
- * visible rather than convenient.
- */
-export function postgresOrMemory(db: Db | undefined): WorkflowKeyStore {
-  return db === undefined ? createMemoryKeyStore() : createPostgresKeyStore(db);
-}
-
-/**
- * Note the run a caller's key just started.
- *
- * Called after the run is created, and the workflow's NAME is what is recorded
- * rather than its `workflowId`: an id embeds the source file path, so moving a
- * workflow between modules would orphan every key already recorded under the old
- * one. A key is deliberately not unique — a second `start` for the same caller
- * records a second run, and "the newest run for this key" is a READ rather than a
- * write constraint.
- */
-export async function rememberRun(
-  store: WorkflowKeyStore,
-  workflow: string,
-  key: string,
-  runId: string,
-): Promise<void> {
-  await store.record(workflow, key, runId);
-}
-
-/**
- * The run to resume for this caller, or `undefined` on the first call.
- *
- * `lookup` answers newest-first, so a limit of 1 IS "the current one" and the
- * caller never sorts. The limit is required rather than optional because a
- * lookup with no ceiling on a busy agent is a scan of every run it has ever
- * started.
+ * A key is deliberately not unique — a second start for the same caller records
+ * a second run — so "the current run" is this READ, newest-first with a limit
+ * of 1, rather than a write constraint.
  */
 export async function currentRunFor(
   store: WorkflowKeyStore,
@@ -99,28 +78,50 @@ export async function currentRunFor(
   return runs[0];
 }
 
+/** What one inbound call resolved to. */
+export type CallerRun = {
+  /** The run this call is attached to. */
+  runId: string;
+  /** `true` when it was already running before this call arrived. */
+  resumed: boolean;
+};
+
 /**
- * Wrap a store to see what it is asked, without changing what it answers.
+ * The round trip every inbound call performs: look up, else start and record.
  *
- * The surface is two methods, which is what makes this cheap — a host that wants
- * per-workflow metrics, or a spec that wants to assert a key was recorded
- * exactly once across a retry, implements the interface rather than reaching
- * inside either backend. Note it delegates and returns; a decorator that
- * swallowed the rejection would turn a failed `record` into a run nothing can
- * find again.
+ * ← `start` is your host creating the run. Record AFTER it exists and with the
+ * id it returned; a `record` that runs first can index a run that never
+ * started, and a run started without one is unreachable from the next call —
+ * which is the case this index exists for, since a durable run outlives the
+ * session that began it.
+ *
+ * Let a failing `record` reject. Swallowing it leaves a live run nothing can
+ * find again, which is worse than the call failing now.
  */
-export function withObservedLookups(
-  inner: WorkflowKeyStore,
-  observe: (event: "record" | "lookup", workflow: string, key: string) => void,
-): WorkflowKeyStore {
-  return {
-    async record(workflow, key, runId) {
-      observe("record", workflow, key);
-      await inner.record(workflow, key, runId);
-    },
-    async lookup(workflow, key, limit) {
-      observe("lookup", workflow, key);
-      return await inner.lookup(workflow, key, limit);
-    },
-  };
+export async function resumeOrStartRun(
+  store: WorkflowKeyStore,
+  workflow: string,
+  key: string,
+  start: () => Promise<string>,
+): Promise<CallerRun> {
+  const existing = await currentRunFor(store, workflow, key);
+  if (existing !== undefined) return { runId: existing, resumed: true };
+  const runId = await start();
+  await store.record(workflow, key, runId);
+  return { runId, resumed: false };
+}
+
+/**
+ * The whole wiring, as a host holds it.
+ *
+ * ← your key: whatever identifies the caller across calls (a phone number, a
+ * customer id). It is stored as given, so normalize it here — once — rather
+ * than at each call site, or the same caller indexes under two keys.
+ */
+export function callerRuns(
+  db: Db | undefined,
+  startRun: (key: string) => Promise<string>,
+): (key: string) => Promise<CallerRun> {
+  const store = keyStoreFor(db);
+  return (key) => resumeOrStartRun(store, CALLER_WORKFLOW, key.trim(), () => startRun(key.trim()));
 }

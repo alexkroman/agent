@@ -1,27 +1,29 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai-runtime:runtime` epoch 1.
+ * Epoch-1 TEMPLATE for the `aai-runtime:runtime` capability — a host that owns
+ * its own HTTP stack, as it was written at epoch 1. Copy the file into that
+ * host, edit the lines marked `←`, and leave the rest alone.
  *
- * See `../../../../aai/contracts/compatibility/agent/v3.ts` for what "frozen"
- * obliges and why the imports are relative.
+ * FROZEN. It must keep compiling for as long as epoch 1 is supported, so do not
+ * edit it to follow a change in this package's API: a compile error here is the
+ * finding, not a chore. Changing the API means a NEW epoch with a new template
+ * beside this one — never an edit to this file.
  *
- * The runtime is the layer a server is built AROUND, so this file is written
- * from the position of a host that does not want `createAgentServer`: it owns
- * its own HTTP stack, or its own transport, and reaches for the engine directly.
- * Three shapes, in the order a host meets them:
+ * Start from `createAgentServer` (the `server` capability) unless you need this
+ * one. This is the layer underneath: you already have a Node server, an upgrade
+ * handler and a socket, and you want the engine rather than a second listener.
+ * What the template gives you:
  *
- * - **Build one** ({@link createRuntime} over {@link RuntimeOptions}) — one
- *   agent, its env, and the deployment facts nothing in the process can derive.
- * - **Start a session on it** ({@link AgentRuntime.startSession} over
- *   {@link SessionStartOptions}), which is all a server needs, and all
- *   {@link SessionRuntime} exposes.
- * - **Drive it with no socket at all** — {@link Runtime}'s three extras
- *   (`createSession`, `executeTool`, `toolSchemas`), which is how the eval tier
- *   runs a real pipeline above the audio boundary.
+ * 1. One engine, built at boot from the agent, its env and the deployment facts
+ *    this process cannot derive for itself.
+ * 2. Which optional surfaces the engine offers, so you mount only real routes.
+ * 3. A session per accepted socket, tracked in a registry your other routes can
+ *    read.
+ * 4. A drain mode that turns sessions away with a reason, and a shutdown that
+ *    waits for the live ones.
  *
- * `AgentRuntime` is the narrow half deliberately: the platform's sandbox facade
- * implements it without being a `createRuntime` result at all, which is why the
- * two workflow-adjacent members on it are OPTIONAL rather than always present.
+ * Nothing runs on import: call {@link boot} from your entrypoint, then
+ * {@link attachSocket} from your upgrade handler.
  */
 
 import { agent } from "@alexkroman1/aai";
@@ -31,158 +33,165 @@ import {
   type AgentRuntime,
   createRuntime,
   decliningRuntime,
+  type RunCodeExecutor,
   type Runtime,
   type RuntimeOptions,
   type SessionRuntime,
   type SessionStartOptions,
   type SessionWebSocket,
-  type SkipGreeting,
 } from "../../../runtime-barrel.ts";
 
-const concierge = agent({
+/** ← your agent. In a CLI-scaffolded project, the built `.aai/worker.mjs`. */
+const hosted = agent({
   name: "Concierge",
   systemPrompt: "You are a hotel concierge. Keep answers to one sentence.",
   greeting: "Front desk — how can I help?",
 });
 
+/** ← the label your log pipeline files these sessions under. */
+const DEPLOYMENT = "self-hosted";
+
+/** ← what a caller hears when this process is draining rather than serving. */
+const DRAINING = "This deployment is restarting — please reconnect in a moment.";
+
+/** How long a session may take to open, and how long `shutdown()` waits. */
+const SESSION_START_TIMEOUT_MS = 10_000;
+const SHUTDOWN_TIMEOUT_MS = 30_000;
+
 /**
- * The engine. `env` is the agent's own — what its tool code reads as `ctx.env`
- * — and the two deployment facts beside it are the ones no code in this process
- * can work out for itself:
+ * The sink of every live session, keyed by session id.
  *
- * - `publicUrl` is where the outside world reaches this agent, which behind a
- *   proxy or inside a sandbox is nothing like the socket it binds. Only
- *   `ctx.workflows.publicWebhookUrl()` reads it, and it throws when absent
- *   rather than minting a `localhost` URL a third party will dial later.
- * - `shutdownTimeoutMs` bounds how long `shutdown()` waits for live sessions.
+ * Held by the host rather than by the runtime because it is the host's other
+ * routes that need it — "is this session still up", "how many are on this
+ * box". The sink is also the identity token {@link releaseSession} compares.
  */
-export function buildRuntime(env: Record<string, string>): Runtime {
+export type LiveSessions = Map<string, ClientSink>;
+
+/**
+ * Hooks this process supplies because the runtime cannot: `runCode` is the
+ * executor behind the `run_code` builtin, and there is no default — omit it and
+ * the builtin is simply not offered.
+ *
+ * ← your sandbox. Do not reach for `eval` or a bare subprocess: the code is
+ * model-authored, so whatever you pass here is the isolation boundary.
+ */
+export type HostHooks = {
+  runCode?: RunCodeExecutor;
+};
+
+/**
+ * Build the engine. Once per process, at boot — not per session.
+ *
+ * `env` is the agent's own: what its tool code reads as `ctx.env`. Nothing falls
+ * back to this process's `process.env`, which is deliberate — assemble it
+ * yourself so a credential cannot arrive by accident.
+ *
+ * `publicUrl` is where the outside world reaches this deployment, which behind a
+ * proxy is nothing like the socket you bind. `ctx.workflows.publicWebhookUrl()`
+ * is its only reader and throws when it is unset, which beats handing a third
+ * party a `localhost` URL it will dial days later. Leave it out if this agent
+ * has no webhooks.
+ */
+export function boot(env: Record<string, string>, hooks: HostHooks = {}): Runtime {
+  const publicUrl = process.env.PUBLIC_URL?.trim();
   const options: RuntimeOptions = {
-    agent: concierge,
+    agent: hosted,
     env,
-    publicUrl: "https://concierge.example.com",
-    sessionStartTimeoutMs: 10_000,
-    shutdownTimeoutMs: 30_000,
+    sessionStartTimeoutMs: SESSION_START_TIMEOUT_MS,
+    shutdownTimeoutMs: SHUTDOWN_TIMEOUT_MS,
+    ...(publicUrl ? { publicUrl } : {}),
+    ...(hooks.runCode ? { runCode: hooks.runCode } : {}),
   };
   return createRuntime(options);
 }
 
 /**
- * One connected socket, handed to the runtime.
- *
- * `startSession` is deliberately not `async` and returns nothing: the session's
- * whole life happens on the socket, and the callbacks are how a host observes
- * it. `resumeFrom` is the one option that changes what the session IS — it
- * reattaches to a prior session's id, so the runtime restores that
- * conversation from its own retained event stream rather than from anything the
- * client claims to remember.
+ * What the model will be offered — your own tools plus the builtins the agent
+ * enabled. Log it at boot: a tool file that failed to make it into the bundle is
+ * visible here, rather than as a model that never calls it.
  */
-export function attachSocket(
-  runtime: AgentRuntime,
-  ws: SessionWebSocket,
-  resumeFrom?: string,
-): void {
-  const opts: SessionStartOptions = {
-    ...(resumeFrom ? { resumeFrom } : {}),
-    logContext: { deployment: "self-hosted" },
-    onOpen: () => console.log("session open"),
-    onClose: () => console.log("socket closed"),
-    onSinkCreated: (id) => console.log(`session ${id} live`),
-    onSessionEnd: (id) => console.log(`session ${id} finished`),
-    // A programmatic client that buffers the reply and meters playback itself
-    // wants no pacing lead; the default suits a browser playing in real time.
-    audioLeadMs: 0,
-  };
-  runtime.startSession(ws, opts);
-}
-
-/**
- * Why `onSessionEnd` is handed the ending connection's own sink, and not just
- * the session id.
- *
- * A resume can register a NEW session under the SAME id while the old one is
- * still draining, so a teardown keyed on the id alone releases the live
- * session's state. The sink is the identity token: a host holding per-session
- * state compares before releasing.
- */
-export function isSupersededTeardown(
-  live: ReadonlyMap<string, ClientSink>,
-  id: string,
-  ending: ClientSink | undefined,
-): boolean {
-  return ending !== undefined && live.get(id) !== ending;
-}
-
-/**
- * Whether a greeting is spoken, in the form a transport takes it.
- *
- * The thunk arm is not decoration: a resumed session only knows whether to
- * greet AFTER the restore has run and reported what it recovered, which is
- * later than the moment the option is passed. A plain boolean cannot express
- * "decide when you get there".
- */
-export function willGreet(skip: SkipGreeting): boolean {
-  return !(typeof skip === "function" ? skip() : skip);
-}
-
-/**
- * The socket-free shape: one session over a caller-supplied sink.
- *
- * This is what `createSession` is for, and the reason the handshake is a
- * separate call — `configure(runtime.readyConfig)` is the frame that tells the
- * client the audio format and this session's id, and a caller assembling its
- * own transport has to send it. `executeTool` beside it runs a tool by name
- * with no model in the loop, which is how a tool's real behaviour gets tested
- * against the runtime that will run it in production.
- */
-export async function runOneTool(
-  runtime: Runtime,
-  client: ClientSink,
-  tool: string,
-): Promise<string> {
-  const session = runtime.createSession({
-    id: "harness-1",
-    agent: concierge.name,
-    client,
-    skipGreeting: true,
-  });
-  session.configure(runtime.readyConfig);
-  await session.start();
-  try {
-    return await runtime.executeTool(tool, { room: "412" }, session.id);
-  } finally {
-    await session.stop();
-  }
-}
-
-/** What the model will be offered this session — custom tools and built-ins. */
-export function toolNames(runtime: Runtime): string[] {
+export function toolInventory(runtime: Runtime): string[] {
   return runtime.toolSchemas.map((schema) => schema.name);
 }
 
 /**
- * The two optional members, read as the questions they answer.
+ * Which optional surfaces this engine actually has, so your router mounts only
+ * the routes something is behind.
  *
- * Both are absent on a facade that keeps neither — the platform's sandbox
- * runtime forwards sessions to a guest that owns the real stream — and that is
- * why they are optional rather than always-present: a server without them
- * answers 404 and 503 instead of pretending to a surface it does not have.
+ * Both are absent on a runtime that keeps neither — mount their routes anyway
+ * and a caller gets a hang or a 500 where a 404 was the honest answer.
  */
-export function surfaces(runtime: AgentRuntime): { workflows: boolean; events: boolean } {
+export function surfaces(runtime: AgentRuntime): { workflowApi: boolean; sessionEvents: boolean } {
   return {
-    workflows: runtime.workflows !== undefined,
-    events: runtime.sessionEvents !== undefined,
+    workflowApi: runtime.workflows !== undefined,
+    sessionEvents: runtime.sessionEvents !== undefined,
   };
 }
 
 /**
- * A runtime for a server that has no agent behind `/websocket`.
+ * What to start sessions on right now: the engine, or a runtime that declines.
  *
- * It satisfies {@link SessionRuntime} — the narrowed slice a server needs — and
- * turns every session away with a stated reason. The alternative a host reaches
- * for is a placeholder agent whose prompt is never read, which accepts the
- * socket and then answers nothing.
+ * Flip `draining` in your `SIGTERM` handler BEFORE calling {@link shutdown}, so
+ * sockets arriving during the drain are turned away with a stated reason. The
+ * alternative hosts reach for — a placeholder agent — accepts the socket and
+ * then answers nothing.
  */
-export function noAgentHere(): SessionRuntime {
-  return decliningRuntime("This deployment serves host-mode sessions only.");
+export function sessionsFor(engine: Runtime, draining: boolean): SessionRuntime {
+  return draining ? decliningRuntime(DRAINING) : engine;
+}
+
+/**
+ * One accepted socket. Call this from your upgrade handler, once per connection.
+ *
+ * It does not return a promise and there is nothing to await: the session's
+ * whole life happens on the socket, and these callbacks are how you observe it.
+ *
+ * `resumeFrom` is the one option that changes what the session IS — it
+ * reattaches to a previous session's id and the runtime restores that
+ * conversation from its own retained events, not from anything the client claims
+ * to remember. Take the id from your own reconnect parameter.
+ */
+export function attachSocket(
+  sessions: SessionRuntime,
+  ws: SessionWebSocket,
+  live: LiveSessions,
+  resumeFrom?: string,
+): void {
+  const options: SessionStartOptions = {
+    ...(resumeFrom ? { resumeFrom } : {}),
+    logContext: { deployment: DEPLOYMENT },
+    onSinkCreated: (id, sink) => {
+      live.set(id, sink);
+    },
+    onSessionEnd: (id, sink) => releaseSession(live, id, sink),
+    onClose: () => console.log("socket closed"),
+  };
+  sessions.startSession(ws, options);
+}
+
+/**
+ * Drop a finished session from the registry — comparing the SINK, not just the
+ * id.
+ *
+ * A resume can register a new session under the same id while the old one is
+ * still draining, so a teardown keyed on the id alone deletes the live entry and
+ * your routes then report the caller as gone while they are still talking. When
+ * no sink is given there is nothing to compare and the entry goes.
+ */
+export function releaseSession(live: LiveSessions, id: string, ending?: ClientSink): void {
+  if (ending !== undefined && live.get(id) !== ending) return;
+  live.delete(id);
+}
+
+/**
+ * Stop serving. Once, at the end of the process's life.
+ *
+ * `shutdown()` waits for live sessions up to `shutdownTimeoutMs` — a voice
+ * session in the middle of a sentence is worth a few seconds. Stop accepting
+ * sockets first (see {@link sessionsFor}), or you are draining into a queue that
+ * keeps refilling.
+ */
+export async function shutdown(engine: Runtime, live: LiveSessions): Promise<void> {
+  await engine.shutdown();
+  live.clear();
 }

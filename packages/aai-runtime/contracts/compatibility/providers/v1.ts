@@ -1,253 +1,360 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai-runtime:providers` epoch 1.
+ * Epoch-1 TEMPLATE: `aai-runtime:providers` — a custom speech provider.
  *
- * **"Frozen" means this file must keep compiling against current source for as
- * long as epoch 1 is advertised as supported.** A compile error here is the
- * finding, not something to edit away — `pnpm typecheck` is the
- * backward-compatibility gate for this capability. Imports are RELATIVE
- * (`../../../runtime-barrel.ts`) because the package cannot resolve itself by
- * name.
+ * This is the starter as it was written at epoch 1: a matched STT + TTS stage
+ * pair for a vendor the SDK does not ship, registered as KINDS so the runtime
+ * resolves them exactly like a shipped provider (env var included) and the rest
+ * of your host only ever sees descriptors. Copy the file into your host, edit
+ * the points marked `// ←`, and call {@link installCustomSpeech} where you
+ * build the agent's config.
  *
- * This is the seam a HOST embedding the runtime writes against; an agent author
- * never touches it. Two halves, and the file is both:
+ * **FROZEN.** This file must keep compiling against current source for as long
+ * as epoch 1 is supported — a compile error here is the finding, not something
+ * to edit away. The way to change this API is a NEW epoch carrying a new
+ * template, never an edit to this one. (Imports are relative because the
+ * package cannot resolve itself by name; in your copy they are
+ * `@alexkroman1/aai-runtime`.)
  *
- * - **Substituting a speech stage** (`registerSttKind` / `registerTtsKind`).
- *   The example is a text front door over an ordinary voice agent: the STT
- *   stage is driven by typed input instead of audio, and the TTS stage collects
- *   the reply text instead of synthesizing it. Everything above the audio
- *   boundary — the real pipeline transport, the real LLM loop, the real tool
- *   executor — runs unchanged, which is exactly what `aai-evals`' level-1
- *   target does with this seam. Registering a KIND rather than handing in a
- *   pre-resolved opener is the point: a registered stage resolves exactly like
- *   a shipped provider, its env var included, so production code only ever sees
- *   descriptors.
- * - **Reaching the LLM the agent named** (`resolveLlm`), and the tool-call
- *   repair that goes with a `streamText` loop a host drives itself
- *   (`createToolCallRepair`, `salvageJson`).
+ * **What to change:** the two kinds, the env var, the endpoints, every field
+ * name inside `decodeSttFrame` / `decodeTtsFrame`, and {@link VendorConnect} —
+ * which is the only part that touches your vendor.
  *
- * `S2SConfig` rounds it out: the endpoint an embedded runtime's S2S sessions
- * connect to.
+ * **What not to change:** the emit discipline. A decode path never throws, a
+ * cancelled turn never emits a second `done`, and audio is forwarded as
+ * PCM16 at the sample rate you were handed in `open`.
  */
 
-// The DESCRIPTOR types stay on the authoring subpaths: a descriptor is what a
-// factory returns and what an agent config carries, which is an author's
-// concern. The opener contract below is the host's half of the same seam.
-import type { LlmProvider } from "@alexkroman1/aai/llm";
+// Descriptor types stay on the authoring subpaths: a descriptor is what an
+// agent config carries. The opener contract below is the host's half.
 import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
-// The repair's own type comes from the AI SDK, which is what a host assembling
-// its own `streamText` call is holding anyway.
-import type { ToolCallRepairFunction, ToolSet } from "ai";
 import { createNanoEvents } from "nanoevents";
-
-// The OPENER CONTRACT — the `Stt*`/`Tts*` shapes a stage of one's own is written
-// against — sits beside the two register functions rather than on the authoring
-// `/stt` and `/tts` subpaths, for the same reason they do: a HOST registers a
-// kind and an agent author never does.
 import {
-  createToolCallRepair,
-  type Logger,
   type OpenerRegistryEntry,
   registerSttKind,
   registerTtsKind,
-  resolveLlm,
-  type S2SConfig,
+  type SttError,
   type SttEvents,
   type SttOpener,
+  type SttOpenOptions,
   type SttSession,
-  salvageJson,
+  type SttTurnMeta,
+  type TtsError,
   type TtsEvents,
   type TtsOpener,
+  type TtsOpenOptions,
   type TtsSession,
+  type TtsWordTiming,
 } from "../../../runtime-barrel.ts";
 
-/** The kinds a descriptor names to select these stages. */
-export const TEXT_STT_KIND = "text-console-stt";
-export const TEXT_TTS_KIND = "text-console-tts";
+// ---------------------------------------------------------------------------
+// Edit points
+// ---------------------------------------------------------------------------
+
+/** The kind an STT descriptor names to select this stage. */
+export const CUSTOM_STT_KIND = "custom-stt"; // ← name it after your vendor
+/** The kind a TTS descriptor names to select this stage. */
+export const CUSTOM_TTS_KIND = "custom-tts"; // ←
 
 /**
- * The credential the runtime resolves before opening either stage.
+ * The credential the runtime resolves BEFORE opening either stage, and hands to
+ * `open` as `opts.apiKey`.
  *
- * A registered kind is resolved like any other, so it needs an env var even
- * when the stage itself has nothing to authenticate against — the preflights
- * that check an agent's credentials before it starts read exactly this.
+ * A registered kind needs one even if the stage authenticates some other way:
+ * the preflight that checks an agent's credentials before it starts reads
+ * exactly this name, and an agent whose env lacks it fails to start.
  */
-export const TEXT_STAGE_API_KEY_ENV = "TEXT_CONSOLE_KEY";
+export const CUSTOM_SPEECH_API_KEY_ENV = "CUSTOM_SPEECH_API_KEY"; // ←
 
-/** One open text-driven STT stream: the host pushes turns in instead of audio. */
-export type TextSttSession = SttSession & {
-  /** Show a partial, as a caller typing would. */
-  typing(text: string): void;
-  /** Submit the turn — the cue the pipeline runs the LLM on. */
-  submit(text: string): void;
+/** Where each stage connects. */
+export const CUSTOM_STT_URL = "wss://stt.your-vendor.example/v1/stream"; // ←
+export const CUSTOM_TTS_URL = "wss://tts.your-vendor.example/v1/stream"; // ←
+
+/** The voice used when the agent's descriptor names none. */
+export const CUSTOM_DEFAULT_VOICE = "default"; // ←
+
+// ---------------------------------------------------------------------------
+// The one seam that touches your vendor
+// ---------------------------------------------------------------------------
+
+/** One open duplex connection to your vendor. */
+export type VendorStream = {
+  /** Send one frame upstream — JSON text, or raw audio bytes. */
+  send(frame: string | Uint8Array): void;
+  /** Register the downstream reader. Called once, right after connecting. */
+  onFrame(fn: (raw: string) => void): void;
+  close(): Promise<void>;
 };
 
-/** One open text-collecting TTS stream, plus what the agent said into it. */
-export type TextTtsSession = TtsSession & {
-  readonly said: readonly string[];
-};
+/**
+ * Open one. ← Implement this over `ws` (or your vendor's own SDK) and hand it
+ * to {@link installCustomSpeech}.
+ *
+ * Two obligations, both of which the shipped adapters under `providers/stt/`
+ * keep: abort the connect on `signal`, and never let the socket's `message`
+ * handler throw — an exception out of it is an uncaughtException that takes
+ * down every session in the process, not just this one.
+ */
+export type VendorConnect = (opts: {
+  url: string;
+  apiKey: string;
+  /** Hz. STT: what the client captures at. TTS: what you must synthesize at. */
+  sampleRate: number;
+  /** Optional biasing text the agent declared; ignore it if your vendor has none. */
+  prompt: string | undefined;
+  signal: AbortSignal;
+}) => Promise<VendorStream>;
 
-/** The STT stage: a stream whose transcripts come from the host, not a network. */
-export function createTextSttOpener(name: string): SttOpener & {
-  last(): TextSttSession | undefined;
-} {
-  let last: TextSttSession | undefined;
+// ---------------------------------------------------------------------------
+// Wire decoding — every field name below is your vendor's
+// ---------------------------------------------------------------------------
+
+type SttFrame =
+  | { kind: "transcript"; text: string; final: boolean; confidence: number | null }
+  | { kind: "error"; message: string };
+
+/** One inbound STT frame, or null for anything not to act on. */
+function decodeSttFrame(raw: string): SttFrame | null {
+  // No schema library, deliberately: this runs for every frame of every live
+  // call. Probe field by field and return a value on every path — an
+  // unrecognized frame is null, never a throw.
+  const frame = safeJsonParse(raw);
+  if (!isRecord(frame)) return null;
+  const failure = frame.error; // ← your vendor's error field
+  if (typeof failure === "string") return { kind: "error", message: failure };
+  const text = frame.text; // ← your vendor's transcript field
+  if (typeof text !== "string" || text === "") return null;
+  // ← your vendor's end-of-turn confidence, if it reports one. Omit the field
+  // rather than substituting a number: consumers read `undefined` as "no
+  // opinion" and a fabricated 0 reads as "the turn is definitely not over".
+  const confidence = frame.end_of_turn_confidence;
   return {
-    name,
-    last: () => last,
-    // `open` is handed the session's sample rate, the resolved key and an abort
-    // signal; this stage needs none of them, and taking them as `_opts` is what
-    // says so.
-    open: async (_opts) => {
+    kind: "transcript",
+    text,
+    final: frame.is_final === true, // ← your vendor's final flag
+    confidence: typeof confidence === "number" ? confidence : null,
+  };
+}
+
+type TtsFrame =
+  | { kind: "audio"; pcm: Int16Array }
+  | { kind: "words"; words: TtsWordTiming[] }
+  | { kind: "done" }
+  | { kind: "error"; message: string };
+
+/** ← your vendor's per-word timings. Delete this if it reports none. */
+function decodeWords(value: unknown): TtsWordTiming[] | null {
+  if (!Array.isArray(value)) return null;
+  const words: TtsWordTiming[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const { word, start_ms: startMs, end_ms: endMs } = entry;
+    if (typeof word !== "string" || typeof startMs !== "number" || typeof endMs !== "number") {
+      continue;
+    }
+    // Offsets are ms into THIS TURN's audio — rebase here if your vendor
+    // reports a per-socket clock, or the transport's audio accounting drifts.
+    words.push({ text: word, startMs, endMs });
+  }
+  return words.length === 0 ? null : words;
+}
+
+/** One inbound TTS frame, or null for anything not to act on. */
+function decodeTtsFrame(raw: string): TtsFrame | null {
+  const frame = safeJsonParse(raw);
+  if (!isRecord(frame)) return null;
+  const failure = frame.error; // ←
+  if (typeof failure === "string") return { kind: "error", message: failure };
+  if (frame.done === true) return { kind: "done" }; // ← "synthesis drained"
+  const words = decodeWords(frame.words); // ←
+  if (words !== null) return { kind: "words", words };
+  const audio = frame.audio; // ← base64 PCM16, little-endian
+  if (typeof audio !== "string") return null;
+  return { kind: "audio", pcm: pcm16FromBase64(audio) };
+}
+
+/** Base64 PCM16LE to samples. Copied, not viewed: a base64 payload's decoded
+ * offset need not be 2-byte aligned, and an `Int16Array` view over an odd one
+ * throws. */
+function pcm16FromBase64(base64: string): Int16Array {
+  const bytes = Buffer.from(base64, "base64");
+  const samples = new Int16Array(bytes.byteLength >> 1);
+  for (let i = 0; i < samples.length; i += 1) samples[i] = bytes.readInt16LE(i * 2);
+  return samples;
+}
+
+/** Samples to PCM16LE bytes — a zero-copy view, so do not retain it upstream. */
+function pcm16ToBytes(pcm: Int16Array): Uint8Array {
+  return new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+}
+
+function sttError(code: SttError["code"], message: string): SttError {
+  return Object.assign(new Error(message), { code });
+}
+
+function ttsError(code: TtsError["code"], message: string): TtsError {
+  return Object.assign(new Error(message), { code });
+}
+
+// ---------------------------------------------------------------------------
+// The two stages
+// ---------------------------------------------------------------------------
+
+/** The STT stage: caller audio in, transcripts out. */
+export function createCustomSttOpener(connect: VendorConnect): SttOpener {
+  return {
+    name: CUSTOM_STT_KIND,
+    open: async (opts: SttOpenOptions): Promise<SttSession> => {
       const events = createNanoEvents<SttEvents>();
-      const session: TextSttSession = {
-        sendAudio() {
-          // A text front door forwards no audio. A real client's PCM16 frames
-          // would arrive here.
+      const stream = await connect({
+        url: CUSTOM_STT_URL,
+        apiKey: opts.apiKey,
+        sampleRate: opts.sampleRate,
+        prompt: opts.sttPrompt,
+        signal: opts.signal,
+      });
+      stream.onFrame((raw) => {
+        const frame = decodeSttFrame(raw);
+        if (frame === null) return;
+        if (frame.kind === "error") {
+          // Terminal: the session ends after this. Emit it rather than
+          // throwing, and do not emit transcripts afterwards.
+          events.emit("error", sttError("stt_stream_error", frame.message));
+          return;
+        }
+        const meta: SttTurnMeta | undefined =
+          frame.confidence === null ? undefined : { endOfTurnConfidence: frame.confidence };
+        // `final` is the cue the pipeline runs the LLM on, `partial` drives
+        // barge-in detection. Emitting a partial as a final commits a turn the
+        // caller has not finished speaking.
+        if (frame.final) events.emit("final", frame.text, meta);
+        else events.emit("partial", frame.text, meta);
+      });
+      return {
+        sendAudio: (pcm) => stream.send(pcm16ToBytes(pcm)),
+        // ← delete this method if your vendor cannot be told what the agent
+        // just said. Callers invoke it with `?.()`, so absence is legal.
+        updateAgentContext: (text) => stream.send(JSON.stringify({ agent_context: text })),
+        on: (event, fn) => events.on(event, fn),
+        close: () => stream.close(),
+      };
+    },
+  };
+}
+
+/** The TTS stage: reply text in, PCM16 out. */
+export function createCustomTtsOpener(connect: VendorConnect, voice: string): TtsOpener {
+  return {
+    name: CUSTOM_TTS_KIND,
+    open: async (opts: TtsOpenOptions): Promise<TtsSession> => {
+      const events = createNanoEvents<TtsEvents>();
+      const stream = await connect({
+        url: CUSTOM_TTS_URL,
+        apiKey: opts.apiKey,
+        sampleRate: opts.sampleRate,
+        prompt: undefined,
+        signal: opts.signal,
+      });
+      // A `done` belonging to a cancelled turn must not reach the transport:
+      // the event carries no turn id, so it would end the NEXT turn's
+      // flush-wait early. Cleared by the first text of the next turn.
+      let cancelled = false;
+      stream.onFrame((raw) => {
+        const frame = decodeTtsFrame(raw);
+        if (frame === null) return;
+        if (frame.kind === "audio") events.emit("audio", frame.pcm);
+        else if (frame.kind === "words") events.emit("words", frame.words);
+        else if (frame.kind === "error") events.emit("error", ttsError("tts_stream_error", raw));
+        else if (!cancelled) events.emit("done");
+      });
+      return {
+        sendText: (text) => {
+          cancelled = false;
+          stream.send(JSON.stringify({ text, voice })); // ←
+        },
+        // "No more text this turn". `done` follows from the vendor once
+        // synthesis has drained — do not emit it here.
+        //
+        // If you are adapting this into a stage that produces NO audio at all
+        // (a text front door, a fake for tests), forward nothing rather than
+        // silence: the transport estimates playback open-loop from the audio
+        // you forward, so silent frames model the agent as still holding the
+        // floor and the next user turn arrives as a barge-in.
+        flush: () => stream.send(JSON.stringify({ flush: true })), // ←
+        cancel: () => {
+          cancelled = true;
+          stream.send(JSON.stringify({ cancel: true })); // ←
+          // Synchronously, and exactly once: barge-in is what this is for.
+          events.emit("done");
         },
         on: (event, fn) => events.on(event, fn),
-        close: async () => undefined,
-        typing: (text) => events.emit("partial", text),
-        submit: (text) => events.emit("final", text),
+        close: () => stream.close(),
       };
-      last = session;
-      return session;
     },
   };
 }
 
-/** The TTS stage: the reply is collected as text, and no audio is produced. */
-export function createTextTtsOpener(name: string): TtsOpener & {
-  last(): TextTtsSession | undefined;
-} {
-  let last: TextTtsSession | undefined;
-  return {
-    name,
-    last: () => last,
-    open: async (_opts) => {
-      const events = createNanoEvents<TtsEvents>();
-      const said: string[] = [];
-      const session: TextTtsSession = {
-        said,
-        sendText: (text) => said.push(text),
-        // `done` ends the turn, and forwarding NO audio is deliberate: the
-        // pipeline estimates playback open-loop from the audio it forwarded, so
-        // a stage that emitted silence would have the agent modelled as still
-        // holding the floor and the next submitted turn would read as a
-        // barge-in.
-        flush: () => events.emit("done"),
-        cancel: () => events.emit("done"),
-        on: (event, fn) => events.on(event, fn),
-        close: async () => undefined,
-      };
-      last = session;
-      return session;
-    },
-  };
-}
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
 
 /**
- * The two registry entries.
- *
  * `open` is handed the DESCRIPTOR, whose `options` are a serializable record —
- * an agent config crossed a wire to get here, so a host reads its own options
- * back out with a narrowing rather than a type it wishes it had.
+ * the agent config crossed a wire to get here — so read your own options back
+ * out with a narrowing.
  */
-export function textSttEntry(): OpenerRegistryEntry<SttOpener> {
+function voiceOf(options: Record<string, unknown>): string {
+  const voice = options.voice;
+  return typeof voice === "string" && voice !== "" ? voice : CUSTOM_DEFAULT_VOICE;
+}
+
+export function customSttEntry(connect: VendorConnect): OpenerRegistryEntry<SttOpener> {
+  return { envVar: CUSTOM_SPEECH_API_KEY_ENV, open: () => createCustomSttOpener(connect) };
+}
+
+export function customTtsEntry(connect: VendorConnect): OpenerRegistryEntry<TtsOpener> {
   return {
-    envVar: TEXT_STAGE_API_KEY_ENV,
-    open: (descriptor) => createTextSttOpener(labelOf(descriptor.options, TEXT_STT_KIND)),
+    envVar: CUSTOM_SPEECH_API_KEY_ENV,
+    open: (descriptor) => createCustomTtsOpener(connect, voiceOf(descriptor.options)),
   };
 }
 
-export function textTtsEntry(): OpenerRegistryEntry<TtsOpener> {
-  return {
-    envVar: TEXT_STAGE_API_KEY_ENV,
-    open: (descriptor) => createTextTtsOpener(labelOf(descriptor.options, TEXT_TTS_KIND)),
-  };
-}
-
-function labelOf(options: Record<string, unknown>, fallback: string): string {
-  const label = options.label;
-  return typeof label === "string" ? label : fallback;
-}
+/** Both stages, the descriptors that select them, and the env they resolve. */
+export type CustomSpeechStages = {
+  readonly stt: SttProvider;
+  readonly tts: TtsProvider;
+  /** Merge into the runtime's env. */
+  readonly env: Record<string, string>;
+  /** Unregister both kinds. */
+  release(): void;
+};
 
 /**
- * Install both stages, and the descriptors + env that select them.
+ * Install both stages and hand back what an agent config names.
  *
- * Both register calls hand back an unregister, and calling them is not
- * optional: the registry is process-global and a session can outlive whatever
- * installed it, so a host that runs more than one of these at a time gives each
- * its own kind.
+ * `suffix` keeps the two kinds unique per install: the registry is
+ * process-global and a session can outlive whatever installed it, so two
+ * concurrent installs sharing a kind serve each other's audio. Call `release()`
+ * when the last session using them is gone — an unregister is not optional.
  */
-export function installTextStages(suffix: string): {
-  stt: SttProvider;
-  tts: TtsProvider;
-  env: Record<string, string>;
-  release(): void;
-} {
-  const sttKind = `${TEXT_STT_KIND}-${suffix}`;
-  const ttsKind = `${TEXT_TTS_KIND}-${suffix}`;
-  const undoStt = registerSttKind(sttKind, textSttEntry());
-  const undoTts = registerTtsKind(ttsKind, textTtsEntry());
+export function installCustomSpeech(
+  connect: VendorConnect,
+  suffix: string,
+  apiKey: string,
+): CustomSpeechStages {
+  const sttKind = `${CUSTOM_STT_KIND}-${suffix}`;
+  const ttsKind = `${CUSTOM_TTS_KIND}-${suffix}`;
+  const undoStt = registerSttKind(sttKind, customSttEntry(connect));
+  const undoTts = registerTtsKind(ttsKind, customTtsEntry(connect));
   return {
-    stt: { kind: sttKind, options: { label: sttKind } },
-    tts: { kind: ttsKind, options: { label: ttsKind } },
-    env: { [TEXT_STAGE_API_KEY_ENV]: "text-console" },
+    stt: { kind: sttKind, options: {} },
+    tts: { kind: ttsKind, options: { voice: CUSTOM_DEFAULT_VOICE } },
+    env: { [CUSTOM_SPEECH_API_KEY_ENV]: apiKey },
     release: () => {
       undoStt();
       undoTts();
     },
   };
 }
-
-/**
- * The repair to hand a `streamText` loop the host drives itself, bound to the
- * same model the agent's own descriptor names.
- *
- * `getAbortSignal` is what keeps a tier-2 repair from outliving its turn: the
- * second tier re-asks the model for the arguments, so without the in-flight
- * turn's signal a barge-in leaves a billed LLM call running for a turn that no
- * longer exists.
- */
-export function repairForAgentModel(
-  descriptor: LlmProvider,
-  env: Record<string, string>,
-  log: Logger,
-  currentTurn: () => AbortSignal | undefined,
-): ToolCallRepairFunction<ToolSet> {
-  return createToolCallRepair(resolveLlm(descriptor, env), log, currentTurn);
-}
-
-/**
- * Tier 1 on its own, for a host that only wants the half that costs no tokens:
- * arguments that are nearly JSON — a fence around them, a raw newline inside a
- * string literal, an unclosed bracket — repaired without a round trip.
- *
- * `null` from `salvageJson` means "not repairable", and the caller's answer to
- * that is its own; here it is an empty argument record rather than a throw.
- */
-export async function salvagedArgs(raw: string): Promise<Record<string, unknown>> {
-  const repaired = await salvageJson(raw);
-  if (repaired === null) return {};
-  const parsed = safeJsonParse(repaired);
-  return isRecord(parsed) ? parsed : {};
-}
-
-/**
- * Where this host's S2S sessions connect — handed to the runtime as its
- * `s2sConfig`.
- *
- * The rates are what a client is told to capture and play at. They are not a
- * free choice per transport: AssemblyAI's Voice Agent API accepts one rate in
- * both directions and honours no declaration, so the runtime pins that
- * transport itself. What a host really chooses here is the ENDPOINT — an
- * in-house relay, a regional deployment.
- */
-export const relayS2sConfig: S2SConfig = {
-  wssUrl: "wss://s2s-relay.internal.example/v1/ws",
-  inputSampleRate: 24_000,
-  outputSampleRate: 24_000,
-};

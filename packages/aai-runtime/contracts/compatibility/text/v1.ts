@@ -1,38 +1,35 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai-runtime:text` epoch 1.
+ * Epoch-1 template: `aai-runtime:text`. A text-mode agent and the loop a host
+ * drives it with, as a starter written at epoch 1 — copy this file into your
+ * host, swap the marked edit points, and keep the loop.
  *
- * What "frozen" obliges is one thing only: this file must keep COMPILING
- * against current source for as long as epoch 1 is advertised as retained, so
- * `pnpm typecheck` — not a claim in a changelog — is the backward-compatibility
- * gate. An error here IS the finding; editing the example to make it go away
- * defeats the whole mechanism. The imports are relative source paths because
- * nothing ships this file and the package's own npm name does not resolve from
- * inside it.
+ * FROZEN. It must keep compiling for as long as epoch 1 is supported, so
+ * `pnpm typecheck` is the backward-compatibility gate and an error here IS the
+ * finding. Do not edit it to make an error go away: an API that has to change
+ * gets a NEW epoch carrying a new template, never a change to this one. The
+ * imports are relative source paths because nothing ships this file.
  *
- * The TEXT session mode: the same `agent()` definition a voice agent is, driven
- * over a message list. `createTextAgent` is the counterpart of `createRuntime`
- * for the mode that has NO SESSION — no STT, no TTS, no barge-in, no turn
- * taking, no audio clock, and so nothing to hold state for between turns. The
- * caller owns the message list; the agent owns the request built from it. The
- * studio's own coding agent is the real user of this, and the shape below is
- * that shape: a definition, an options bag, and one turn at a time.
+ * Front to back: an agent definition, one chat opened per conversation, and a
+ * turn — append the user's message, stream, drain, append the reply. There is
+ * no session in this mode (no STT, no TTS, no barge-in, no turn taking), so
+ * there is nothing to hold between turns: the CALLER owns the message list,
+ * which is what makes compaction, retries and editing an earlier message its
+ * business rather than a hidden one.
  *
- * Three things the surface is deliberate about, and each is visible here:
+ * What to change:
  *
- * - **`text: true` is EXPLICIT.** A mode reachable by omission is one a config
- *   lands in when it loses a field, and the symptom there would be a deployed
- *   voice agent that silently answers nothing.
- * - **One turn returns the AI SDK's own `StreamTextResult`** ({@link
- *   TextTurnResult}), not a wrapper. Every chat surface already consumes that
- *   object — `textStream`, `steps`, `toUIMessageStream` — so wrapping it would
- *   mean re-exporting that surface piece by piece and falling behind it. What
- *   this mode owns is everything on the REQUEST side, which is where an agent
- *   definition actually lives.
- * - **A tool is a FILE, so `agent()` takes none.** `withTools` is the seam a
- *   registry attaches through, which is what a spec, a studio session or any
- *   host with a non-file registry uses; a real project's `agent.ts` gets the
- *   same record from the bundler enumerating `tools/`.
+ * - {@link summarize} and {@link assistant} — your tools and your agent. In a
+ *   real project a tool is a FILE and the bundler enumerates `tools/`;
+ *   `withTools` is the seam a host with its own registry attaches through.
+ * - {@link MODEL} — your model. Omit the field entirely to take whatever the
+ *   agent's own `llm` resolves to.
+ * - {@link TOOL_TIMEOUT_MS} — read its note before lowering it.
+ *
+ * What not to change: `text: true` is explicit on purpose (a mode reachable by
+ * omission is one a config lands in when it loses a field, and the symptom
+ * would be a deployed voice agent that silently answers nothing), and
+ * {@link drainReply} is what makes a turn happen at all.
  */
 
 import { agent, tool } from "@alexkroman1/aai";
@@ -47,20 +44,34 @@ import {
 } from "../../../runtime-barrel.ts";
 
 /**
- * How long one turn may run, whatever the step budget says.
+ * How long one tool call may run. ← raise or lower to fit YOUR tools
  *
- * A wall clock and a step cap answer different questions, so a host that needs
- * both passes the first as a `stopWhen` and leaves the second on the agent.
+ * Deliberately not the SDK's default, which is a 30s VOICE budget: a caller
+ * waiting on speech has left by then, and nobody is waiting on speech here.
+ * These tools read pages, so the budget is a chat's patience instead. Lowering
+ * it below what your slowest tool needs turns that tool into a timeout the
+ * model then has to recover from.
  */
-const TURN_BUDGET_MS = 120_000;
+export const TOOL_TIMEOUT_MS = 120_000;
 
 /**
- * A tool, written exactly as a voice agent's is.
+ * How long one whole turn may run, whatever the step budget says.
  *
- * It runs through the same executor here — Standard Schema validation, argument
+ * A wall clock and a step cap answer different questions, so pass the first as
+ * a `stopWhen` and leave the second on the agent.
+ */
+export const TURN_BUDGET_MS = 180_000;
+
+/** The model this host runs chats on. ← change this */
+export const MODEL = "claude-haiku-4-5-20251001";
+
+/**
+ * A tool, written exactly as a voice agent's is. ← your tools
+ *
+ * It runs through the same executor here — schema validation, argument
  * coercion, the `ctx` a voice tool gets, the per-call deadline, and a throw
- * shaped into a result the model can read — which is the whole reason this mode
- * takes an `AgentDef` rather than a bag of AI SDK tools.
+ * shaped into a result the model can read — which is why this mode takes an
+ * agent definition rather than a bag of raw model tools.
  */
 const summarize = tool({
   description: "Summarize a passage the assistant has already read.",
@@ -69,12 +80,13 @@ const summarize = tool({
 });
 
 /**
- * The definition. Identical in kind to a voice agent's, minus the speech
- * stages — `systemPrompt`, `maxSteps`, `builtinTools` and `requiredEnv` all
- * mean what they mean everywhere else.
+ * The definition. ← your agent
  *
- * `builtinTools` is a list of NAMES, not adapters: the keyless web builtins are
- * resolved by the runtime, so a host writes no fetch wrapper of its own.
+ * Identical in kind to a voice agent's, minus the speech stages:
+ * `systemPrompt`, `maxSteps`, `builtinTools` and `requiredEnv` all mean what
+ * they mean everywhere else, and `builtinTools` is a list of NAMES rather than
+ * adapters — the keyless web builtins are resolved by the runtime, so a host
+ * writes no fetch wrapper of its own.
  */
 export const assistant = withTools(
   agent({
@@ -90,82 +102,101 @@ export const assistant = withTools(
 /**
  * The options bag, assembled by the host.
  *
- * `env` is the agent's OWN env and becomes `ctx.env` — a plain record, which is
- * what makes it assignable here while a host-credential env (the only thing
- * `withHostCredentialFallback` mints) is not. `toolTimeoutMs` is raised because
- * the SDK's 30s default is a VOICE budget; these tools read pages.
+ * `env` is the AGENT's own env and becomes `ctx.env` — a plain record, which is
+ * what makes it assignable here while a host-credential env is not. `sessionId`
+ * is what a tool's session slots hang off, so it identifies the conversation
+ * even though nothing in this mode holds session state.
  */
 export function chatOptions(env: Record<string, string>, sessionId: string): TextAgentOptions {
   return {
     agent: assistant,
     env,
     sessionId,
-    toolTimeoutMs: TURN_BUDGET_MS,
+    model: MODEL,
+    toolTimeoutMs: TOOL_TIMEOUT_MS,
   };
 }
 
 /**
- * One chat. Cheap to hold and cheap to make — a process serving many
- * conversations makes one of these per conversation, since the `sessionId` is
- * what a tool's session slots hang off.
+ * One chat. Cheap to hold and cheap to make: a process serving many
+ * conversations makes one of these per conversation and keeps no list of them.
  */
 export function openChat(env: Record<string, string>, sessionId: string): TextAgent {
   return createTextAgent(chatOptions(env, sessionId));
 }
 
-/** What a host wants to know about a chat it just opened, in one line. */
-export function describeChat(chat: TextAgent): string {
-  const model = typeof chat.model === "string" ? chat.model : chat.model.modelId;
-  return `${chat.sessionId}: ${Object.keys(chat.tools).length} tools on ${model}`;
-}
+/** The conversation, as the caller holds it. Nothing here holds a copy. */
+export type ChatHistory = TextTurnOptions["messages"];
 
 /**
- * One turn.
- *
- * `messages` is the whole conversation as the caller holds it — this mode keeps
- * none of it, which is what makes compaction, retries and editing an earlier
- * message the caller's business rather than a hidden one.
+ * Start one turn.
  *
  * `stopWhen` composes with the agent's own step cap rather than replacing it,
  * and the runtime spends the LAST step with `toolChoice: "none"` so a capped
  * turn ANSWERS instead of stopping straight after a tool result — a turn that
  * ends there completes successfully with nothing said, which reads to a user as
- * the agent simply giving up.
+ * the agent giving up.
+ *
+ * The result is the model stream itself, not a wrapper: pass it to whatever
+ * your chat surface already consumes (`textStream`, `steps`,
+ * `toUIMessageStream`).
  */
-export function askTurn(
+export function streamTurn(
   chat: TextAgent,
-  messages: TextTurnOptions["messages"],
-  signal: AbortSignal,
-  onSteps: (toolCalls: number) => void,
+  messages: ChatHistory,
+  signal?: AbortSignal,
 ): TextTurnResult {
   const deadline = Date.now() + TURN_BUDGET_MS;
   const turn: TextTurnOptions = {
     messages,
-    signal,
     toolChoice: "auto",
     stopWhen: [() => Date.now() > deadline],
-    onStepFinish: (step) => onSteps(step.toolCalls.length),
   };
-  return chat.stream(turn);
-}
-
-/** A turn's system prompt may be overridden per turn; the agent's is the default. */
-export function askWithPreamble(
-  chat: TextAgent,
-  messages: TextTurnOptions["messages"],
-  system: string,
-): TextTurnResult {
-  return chat.stream({ messages, system });
+  return chat.stream(signal === undefined ? turn : { ...turn, signal });
 }
 
 /**
- * What a chat surface does with the result.
+ * Read a turn to the end.
  *
- * Draining `textStream` is also what forces the tool loop to run: nothing is
- * requested from the model until something reads.
+ * Draining the stream is also what FORCES the tool loop: nothing is requested
+ * from the model until something reads, so a host that ignores the result gets
+ * a turn that never ran. A surface that streams to a client instead of
+ * accumulating still has to consume every chunk.
  */
-export async function replyText(result: TextTurnResult): Promise<string> {
+export async function drainReply(result: TextTurnResult): Promise<string> {
   let reply = "";
   for await (const delta of result.textStream) reply += delta;
   return reply;
+}
+
+/**
+ * The loop: append the user's message, run the turn, append the reply.
+ *
+ * Appending only after the drain is deliberate — an aborted or failed turn
+ * leaves the history with the user's message and no half-written answer, which
+ * is the state a retry wants.
+ */
+export async function chatTurn(
+  chat: TextAgent,
+  history: ChatHistory,
+  userText: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  history.push({ role: "user", content: userText });
+  const reply = await drainReply(streamTurn(chat, history, signal));
+  history.push({ role: "assistant", content: reply });
+  return reply;
+}
+
+/**
+ * A turn with a system prompt of its own — a one-off instruction (summarize
+ * this thread, answer as a title) that must not become the chat's default. The
+ * agent's `system` is what every other turn uses.
+ */
+export function streamWithPreamble(
+  chat: TextAgent,
+  messages: ChatHistory,
+  system: string,
+): TextTurnResult {
+  return chat.stream({ messages, system });
 }

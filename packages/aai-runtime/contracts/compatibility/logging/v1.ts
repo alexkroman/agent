@@ -1,37 +1,37 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai-runtime:logging` epoch 1.
+ * Epoch-1 template: `aai-runtime:logging`. The logger a host hands the runtime
+ * and the ring buffer it reads back out, as a starter written at epoch 1 — copy
+ * this file into your host and repoint the marked edit points.
  *
- * What "frozen" obliges is one thing only: this file must keep COMPILING
- * against current source for as long as epoch 1 is advertised as retained, so
- * `pnpm typecheck` — not a claim in a changelog — is the backward-compatibility
- * gate. An error here IS the finding; editing the example to make it go away
- * defeats the whole mechanism. The imports are relative source paths because
- * nothing ships this file and the package's own npm name does not resolve from
- * inside it.
+ * FROZEN. It must keep compiling for as long as epoch 1 is supported, so
+ * `pnpm typecheck` is the backward-compatibility gate and an error here IS the
+ * finding. Do not edit it to make an error go away: an API that has to change
+ * gets a NEW epoch carrying a new template, never a change to this one. The
+ * imports are relative source paths because nothing ships this file.
  *
- * Logging has two halves and an embedder touches both, so both are here:
+ * Front to back: one ring buffer, the two sinks a child process's streams are
+ * piped into, the {@link Logger} every runtime entry point takes, and the
+ * cursor-paged reader that drains it. Both halves write into the SAME ring,
+ * which is what puts the runtime's own lines and the agent's `console.log` in
+ * one ordered stream.
  *
- * - **{@link Logger} is implemented, not obtained.** Every runtime entry point
- *   (`createRuntime`, `createAgentServer`, `createWorkflowClient`, …) takes one,
- *   and it is a plain `Record<LogLevel, LogFn>` — four functions, no class, no
- *   base to extend — precisely so a host can hand over whatever it already
- *   writes lines with. The one below writes into the ring buffer beside it,
- *   which is what puts the runtime's own lines and the agent's `console.log` in
- *   ONE ordered stream; a host that already has a log shipper points these four
- *   functions at that instead.
- * - **{@link LogBuffer} is PAGED, by cursor.** A deployment reads a sandbox's
- *   output back out of it — the guest holds the ring, because a guest's stdout
- *   is the one thing only the guest is guaranteed to have — and the reader is
- *   always a poller: it passes back the `cursor` it was handed rather than a
- *   line count, because a count cannot survive eviction. Two reads either side
- *   of a wrap agree on "500 lines seen" while describing different lines.
+ * What to change:
  *
- * The property that shapes the reader below is that **eviction is reported**:
- * {@link LogPage.dropped} is how many lines fell out between the caller's
- * cursor and the oldest line still held, and a tail that silently skips is
- * indistinguishable from an agent that went quiet. So a reader surfaces it
- * rather than treating a page as just its lines.
+ * - {@link BUFFER_OPTIONS} — the whole capacity contract: how many lines
+ *   survive, how wide a line may be before it is clipped, and how many one read
+ *   may return.
+ * - {@link LEVEL_FLOOR} — your deployment's floor. The runtime logs a non-fatal
+ *   session error at DEBUG, so dropping debug lines is choosing not to see
+ *   those.
+ * - The `append` call inside {@link hostLogger} — point it at your own shipper,
+ *   or call both it and the ring.
+ *
+ * What not to change, because both are load-bearing and neither shows up in a
+ * type: {@link renderContext} must not throw (a context is arbitrary
+ * structured data, and a logger that dies on an unserializable field takes the
+ * process with it), and a one-shot read terminates by comparing its cursor
+ * against `tail()` — see {@link drainLogs}.
  */
 
 import {
@@ -51,12 +51,22 @@ import {
   type LogStream,
 } from "../../../runtime-barrel.ts";
 
+/** The capacity contract. ← change these */
+export const BUFFER_OPTIONS: LogBufferOptions = {
+  maxLines: DEFAULT_LOG_BUFFER_LINES,
+  maxLineBytes: DEFAULT_LOG_LINE_BYTES,
+  maxPageLines: DEFAULT_LOG_PAGE_LINES,
+};
+
+/** The least severe level this deployment keeps. ← change this */
+export const LEVEL_FLOOR: LogLevel = "info";
+
 /**
  * Which of the process's two streams each level is written to.
  *
- * A `Record` over {@link LogLevel} rather than a switch: the level union is
- * closed, so a level added to it fails this declaration instead of falling
- * through to a default nobody chose.
+ * A `Record` over {@link LogLevel} rather than a switch: the union is closed,
+ * so a level added to it fails this declaration instead of falling through to a
+ * default nobody chose.
  */
 const STREAM_OF: Record<LogLevel, LogStream> = {
   debug: "stdout",
@@ -68,24 +78,14 @@ const STREAM_OF: Record<LogLevel, LogStream> = {
 /** Least-to-most severe, so a floor can be compared by index. */
 const SEVERITY: readonly LogLevel[] = ["debug", "info", "warn", "error"];
 
-/**
- * The ring a harness holds for one sandbox.
- *
- * Spelled out with the shipped defaults rather than passing `{}`, because these
- * three numbers are the whole capacity contract — how many lines survive, how
- * wide a line may be before it is clipped, and how many one read may return —
- * and a deployment that wants a bigger window is editing exactly this.
- */
-export const BUFFER_OPTIONS: LogBufferOptions = {
-  maxLines: DEFAULT_LOG_BUFFER_LINES,
-  maxLineBytes: DEFAULT_LOG_LINE_BYTES,
-  maxPageLines: DEFAULT_LOG_PAGE_LINES,
-};
-
-/** The buffer the rest of this example writes into and reads out of. */
+/** The ring this host holds for one agent process. */
 export const buffer: LogBuffer = createLogBuffer(BUFFER_OPTIONS);
 
-/** A context is arbitrary structured data, so rendering it must not throw. */
+/**
+ * A context is arbitrary structured data, so rendering it MUST NOT throw — a
+ * cycle or a BigInt in one field is not a reason to lose the line, let alone
+ * the process. Keep the catch.
+ */
 function renderContext(ctx: LogContext | undefined): string {
   if (ctx === undefined) return "";
   try {
@@ -96,40 +96,54 @@ function renderContext(ctx: LogContext | undefined): string {
 }
 
 /**
- * A {@link Logger} that appends into a {@link LogBuffer}.
+ * The logger to hand `createRuntime`, `createAgentServer` and anything else
+ * here that takes one.
  *
- * `levelFloor` is the host's, not the runtime's: the runtime logs a non-fatal
- * session error at DEBUG, so a deployment that drops debug lines is choosing
- * not to see those. The four functions are built by one factory rather than
- * written out, which is what keeps the level→stream mapping and the formatting
- * from drifting between them.
+ * A {@link Logger} is a plain `Record<LogLevel, LogFn>` — four functions, no
+ * class, no base to extend — so this is the whole implementation. The four are
+ * built by one factory rather than written out, which keeps the level→stream
+ * mapping and the formatting from drifting between them.
  */
-export function bufferLogger(target: LogBuffer, levelFloor: LogLevel = "info"): Logger {
+export function hostLogger(target: LogBuffer, levelFloor: LogLevel = LEVEL_FLOOR): Logger {
   const floor = SEVERITY.indexOf(levelFloor);
   const at = (level: LogLevel): LogFn => {
     const stream = STREAM_OF[level];
     const enabled = SEVERITY.indexOf(level) >= floor;
     return (msg: string, ctx?: LogContext): void => {
       if (!enabled) return;
+      // ← your sink: write to your shipper here instead of, or as well as, the ring.
       target.append(stream, `${level.toUpperCase()} ${msg}${renderContext(ctx)}\n`);
     };
   };
   return { debug: at("debug"), info: at("info"), warn: at("warn"), error: at("error") };
 }
 
+/**
+ * The two sinks a child process's streams are piped into.
+ *
+ * Plain functions, because the buffer splits on newlines itself: a stream
+ * delivers whatever the OS gave it, which both splits mid-line and coalesces
+ * several lines into one write, and the ring is what makes every reader see the
+ * same lines regardless of how the writes landed. Do not pre-split.
+ */
+export function captureSinks(target: LogBuffer): Record<LogStream, (chunk: string) => void> {
+  return {
+    stdout: (chunk: string) => target.append("stdout", chunk),
+    stderr: (chunk: string) => target.append("stderr", chunk),
+  };
+}
+
 /** What one line looks like once a pane, an SSE frame or a CLI has it. */
 export function renderLine(line: LogLine): string {
-  // A clipped line ends in this exact marker — the buffer's per-line cap is in
-  // BYTES, so this is the only reliable way to know a line is incomplete.
-  const clipped = line.text.endsWith(LOG_LINE_TRUNCATED)
-    ? " [see the full line in the source]"
-    : "";
+  // A clipped line ends in this exact marker — the per-line cap is in BYTES, so
+  // this is the only reliable way to know a line is incomplete.
+  const clipped = line.text.endsWith(LOG_LINE_TRUNCATED) ? " [clipped]" : "";
   return `${new Date(line.at).toISOString()} ${line.stream}: ${line.text}${clipped}`;
 }
 
-/** One poll's worth of output, plus where the next poll resumes from. */
+/** One read's worth of output, plus where the next read resumes from. */
 export type LogTail = {
-  /** Pass as the next read's `after`. Never re-derived from `lines.length`. */
+  /** Pass as the next read's `after`. Never re-derive this from `lines.length`. */
   cursor: number;
   rendered: readonly string[];
   /** Non-zero means this reader fell behind the writer and lost lines. */
@@ -137,44 +151,53 @@ export type LogTail = {
 };
 
 /**
- * One poll.
+ * One read. `after` is the previous call's `cursor`; a first call passes `-1`
+ * to start from the oldest line still held.
  *
- * `after` is the previous call's `cursor`, and a first call passes `-1` to read
- * from the oldest line still held. A page that returned nothing hands back the
- * caller's own cursor, so an idle tail holds its position rather than rewinding
- * to the start of the ring.
+ * Pass the cursor back rather than a line count: a count cannot survive
+ * eviction, so two reads either side of a wrap agree on "500 lines seen" while
+ * describing different lines. A page that returned nothing hands back the
+ * caller's own cursor, so an idle poller holds its position instead of
+ * rewinding to the start of the ring.
+ *
+ * `missed` is reported rather than swallowed. Eviction is the one failure a
+ * reader cannot infer: a tail that silently skips is indistinguishable from an
+ * agent that went quiet.
  */
-export function pollLogs(target: LogBuffer, after: number): LogTail {
+export function readLogs(target: LogBuffer, after: number): LogTail {
   const page: LogPage = target.read(after, DEFAULT_LOG_PAGE_LINES);
-  return {
-    cursor: page.cursor,
-    rendered: page.lines.map(renderLine),
-    missed: page.dropped,
-  };
+  return { cursor: page.cursor, rendered: page.lines.map(renderLine), missed: page.dropped };
 }
 
 /**
- * Whether a reader has caught up with the writer.
+ * Everything the ring holds from `after` on, in one call — a crash report, or
+ * a `logs` command with no `--follow`.
  *
- * `tail()` is the highest seq assigned so far (`-1` for a buffer nothing has
- * written to), which is what lets a one-shot read — `aai logs` without
- * `--follow`, a crash report — know it is done rather than polling forever.
+ * `tail()` is the highest seq assigned so far (`-1` for a ring nothing has
+ * written to), and comparing the cursor against it is WHAT MAKES THIS
+ * TERMINATE. A loop that instead stops on an empty page never finishes against
+ * a live writer, and one that stops on a full page truncates. The
+ * non-advancing-page break is the other half: without it a reader that somehow
+ * cannot make progress spins here forever.
+ */
+export function drainLogs(target: LogBuffer, after = -1): LogTail {
+  let cursor = after;
+  const rendered: string[] = [];
+  let missed = 0;
+  while (cursor < target.tail()) {
+    const page = readLogs(target, cursor);
+    if (page.cursor === cursor) break;
+    cursor = page.cursor;
+    rendered.push(...page.rendered);
+    missed += page.missed;
+  }
+  return { cursor, rendered, missed };
+}
+
+/**
+ * Whether a live tail has caught up with the writer — the condition a poller
+ * checks before deciding whether to sleep or read again.
  */
 export function caughtUp(target: LogBuffer, cursor: number): boolean {
   return cursor >= target.tail();
-}
-
-/**
- * The two sinks a child process's streams are piped into.
- *
- * Handed out as plain functions, because the buffer splits on newlines itself:
- * a stream delivers whatever the OS gave it, which both splits mid-line and
- * coalesces several lines into one write, and the ring is what makes every
- * reader see the same lines regardless of how the writes landed.
- */
-export function captureSinks(target: LogBuffer): Record<LogStream, (chunk: string) => void> {
-  return {
-    stdout: (chunk: string) => target.append("stdout", chunk),
-    stderr: (chunk: string) => target.append("stderr", chunk),
-  };
 }

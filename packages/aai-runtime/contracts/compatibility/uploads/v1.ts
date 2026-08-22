@@ -1,186 +1,170 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai-runtime:uploads` epoch 1.
+ * Epoch-1 TEMPLATE for `aai-runtime:uploads` — the upload starter as it was
+ * written at epoch 1. Copy this file into your own host and edit the marked
+ * points; it is meant to be taken, not read.
  *
- * **"Frozen" means this file must keep compiling against current source for as
- * long as epoch 1 is advertised as supported.** A compile error here is the
- * finding, not something to edit away. Imports are RELATIVE
+ * **FROZEN.** This copy must keep compiling against current source for as long
+ * as epoch 1 is supported, so a compile error here is the finding — never
+ * something to edit away. Changing the API means a NEW epoch carrying a new
+ * template, never an edit to this one. Imports are relative
  * (`../../../runtime-barrel.ts`) because the package cannot resolve itself by
- * name, and `contracts/` is excluded from the declaration emit and from the
- * tarball.
+ * name.
  *
- * The shape a HOST embedding this runtime writes it in: say where an upload's
- * bytes live, hand the store a body as it arrives, read a window back out, and
- * — the part this capability exists to make possible — **tell the two refusals
- * apart**. `UploadTooLargeError` is the CALLER's, and its remedy is a smaller
- * file. `UploadsUnavailableError` is the OPERATOR's, and its whole content is
- * the configuration that is missing. Collapsing them is how a deployment with
- * no bucket answers `Internal server error` on every upload route while the
- * remedy sits in a string nobody ever sees, so an embedder that catches one and
- * not the other has caught the wrong half.
+ * ## What this is
  *
- * What is NOT here, deliberately: the store's own factory. `createUploadStore`
- * and `resolveUploadBlobs` are `@internal`, so an embedder supplies the BLOBS
- * half and RECEIVES an `UploadStore` from whichever server assembled one — which
- * is why every function below takes the store as a parameter rather than
- * building it.
+ * The two upload routes a host serves, front to back: pick the byte backend
+ * from the environment, hand a request body to the store as it arrives, read a
+ * window back out, and map the store's two refusals to the statuses a client
+ * can act on.
+ *
+ * ## What to change
+ *
+ * - {@link MAX_UPLOAD_BYTES} — your per-file cap.
+ * - {@link uploadBlobsFor} — point it at your own bucket.
+ * - The route results — reshape the bodies to whatever your framework sends.
+ *
+ * ## What not to change
+ *
+ * The status mapping in {@link uploadRefusal}. 413 is the CALLER's fault and its
+ * remedy is a smaller file; 501 is the OPERATOR's and its whole content is the
+ * configuration that is missing. Collapsing either into 500/502/503/504 makes
+ * both retryable, so a client spends its full retry budget before the message
+ * that matters arrives last — and an unconfigured deployment then looks like a
+ * flaky link instead of a missing bucket.
+ *
+ * The store arrives as a PARAMETER. An embedder is handed one by the server it
+ * embeds; do not try to build one here.
  */
 
 import {
   createHttpUploadBlobs,
   createMemoryUploadBlobs,
-  type HttpUploadBlobsOptions,
-  partKey,
-  partsOf,
-  UPLOAD_KEY_PREFIX,
   UPLOAD_STORAGE_BUCKET_ENV,
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
-  UPLOADS_TABLE,
   type UploadBlobs,
   type UploadMeta,
-  type UploadPart,
   type UploadStore,
   UploadsUnavailableError,
   UploadTooLargeError,
 } from "../../../runtime-barrel.ts";
 
+/** Per-file cap this host accepts. ← your limit. */
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
 /**
- * Where a self-hosted deployment's bytes go, read off its own environment.
+ * Where this deployment's bytes go, read off its own environment.
  *
- * All three variables or none: two of three is a half-configured store, and
- * letting that resolve turns a typo into a 500 on the first upload instead of a
- * refusal that names the key. `undefined` is the honest answer for a deployment
- * that never configured one — the server it is handed to is what decides
- * whether that means "no uploads" or "keep them locally".
+ * ← your bucket: the three `AAI_UPLOAD_STORAGE_*` variables are all-or-nothing
+ * on purpose, so a typo in one is a refusal that names the missing key rather
+ * than a 500 on the first upload.
+ *
+ * The result is what you hand to whatever assembles your `UploadStore`.
+ * `undefined` means this deployment stores no uploads, and the store then
+ * refuses every write with `UploadsUnavailableError` — which is the 501 below.
  */
-export function bucketBlobs(env: Record<string, string | undefined>): UploadBlobs | undefined {
+export function uploadBlobsFor(env: Record<string, string | undefined>): UploadBlobs | undefined {
   const url = env[UPLOAD_STORAGE_URL_ENV]?.trim();
   const serviceKey = env[UPLOAD_STORAGE_KEY_ENV]?.trim();
   const bucket = env[UPLOAD_STORAGE_BUCKET_ENV]?.trim();
-  if (!(url && serviceKey && bucket)) return undefined;
-  const opts: HttpUploadBlobsOptions = { url, serviceKey, bucket };
-  return createHttpUploadBlobs(opts);
+  if (url && serviceKey && bucket) return createHttpUploadBlobs({ url, serviceKey, bucket });
+  // Local development only. These bytes live in this process and go away with
+  // it, so never let this arm answer for a deployment that serves real runs.
+  if (env.NODE_ENV !== "production") return createMemoryUploadBlobs();
+  return undefined;
+}
+
+/** What one upload route answers. Reshape the bodies; keep the statuses. */
+export type UploadRouteResult =
+  | { status: 201; json: { id: string; size: number } }
+  | { status: 200; type: string; bytes: Uint8Array }
+  | { status: 404 | 413 | 501; json: { error: string } };
+
+/**
+ * Turn a store refusal into a status, or `undefined` for anything else.
+ *
+ * Anything this declines is a real fault: re-throw it and let your error
+ * handler answer 500. Do not widen this to catch everything.
+ */
+export function uploadRefusal(err: unknown): UploadRouteResult | undefined {
+  // The caller's fault: they sent more than MAX_UPLOAD_BYTES.
+  if (err instanceof UploadTooLargeError) return { status: 413, json: { error: err.message } };
+  // The operator's fault: no byte backend is configured. The message names the
+  // missing configuration, so pass it through rather than replacing it.
+  if (err instanceof UploadsUnavailableError) return { status: 501, json: { error: err.message } };
+  return undefined;
 }
 
 /**
- * The double a spec stands the same store up on.
+ * The receive route: store one file, streaming it in.
  *
- * A valid substitute because the contract here is entirely about bytes — a
- * window read, a length, an idempotent write. What it cannot stand in for is
- * durability, which is why it is never a deployment's answer: an upload has to
- * be at least as durable as the runs that read it.
+ * The cap is enforced as the stream RUNS, so an oversized body is never held
+ * whole — and the refusal can therefore arrive after part of the file has
+ * already been written. Send the response, do not try to unwind.
  */
-export function specBlobs(): UploadBlobs {
-  return createMemoryUploadBlobs();
-}
-
-/**
- * What one upload route answers.
- *
- * Three arms rather than "ok or 500", because the status IS the classification:
- * 413 tells a client to send less, and 501 tells it to stop asking. 500, 502,
- * 503 and 504 are all retryable, so answering an unconfigured deployment with
- * one of those spends the client's whole retry budget per part before the
- * message that matters arrives last, looking like a flaky link.
- */
-export type UploadOutcome =
-  | { status: 201; id: string; size: number }
-  | { status: 413; message: string }
-  | { status: 501; message: string };
-
-/** Store one file, streaming it in, and classify the two ways that is refused. */
-export async function receive(
+export async function receiveUpload(
   store: UploadStore,
   meta: UploadMeta,
   body: AsyncIterable<Uint8Array>,
-  limit: number,
-): Promise<UploadOutcome> {
+): Promise<UploadRouteResult> {
   try {
-    // The cap is enforced as the stream RUNS, so an oversized body is never
-    // held whole — which is also why the failure can arrive after some of the
-    // file has already been written.
-    const info = await store.create(meta, body, { limit });
-    return { status: 201, id: info.id, size: info.size };
+    const info = await store.create(meta, body, { limit: MAX_UPLOAD_BYTES });
+    return { status: 201, json: { id: info.id, size: info.size } };
   } catch (err: unknown) {
-    if (err instanceof UploadTooLargeError) return { status: 413, message: err.message };
-    if (err instanceof UploadsUnavailableError) return { status: 501, message: err.message };
+    const refusal = uploadRefusal(err);
+    if (refusal) return refusal;
     throw err;
   }
 }
 
 /**
- * The parts arm, where this process never sees the bytes at all.
+ * The serve route: read a window back out, clamped to what is actually stored.
  *
- * `beginParts` claims the id and declares the total, so the record exists at
- * `size: 0` before anything is sent; the client then puts each window straight
- * at the bucket and `recordParts` is the bodyless receipt naming the offsets
- * that landed. The store asks the bucket how big each one really is rather than
- * taking the caller's word, which is what stops a claimed part becoming a
- * readable hole.
- *
- * `complete` is the only field to exit on: `size` is the CONTIGUOUS prefix, so
- * parts landing out of order leave it behind what has arrived, and a `size`
- * that stopped growing is what a slow link and a dead client both look like.
+ * Clamp against `info.size` and nothing else — it is the contiguous prefix, so
+ * it is exactly how far the bytes can be read. `undefined` from `info` is a 404,
+ * which for a whole-file write also covers "not finished yet": an upload does
+ * not exist until its last byte is stored.
  */
-export async function recordDirectParts(
-  store: UploadStore,
-  id: string,
-  meta: UploadMeta,
-  total: number,
-  landed: readonly number[],
-): Promise<boolean> {
-  await store.beginParts(id, meta, total);
-  const info = await store.recordParts(id, landed);
-  return info.complete;
-}
-
-/**
- * Read a window back out, clamped to what is actually stored.
- *
- * A reader may act on `size` and on nothing else — it is the contiguous prefix,
- * so it is exactly how far the bytes can be read, and a range past it is a hole
- * whatever the record's `ranges` say. `undefined` means there is no such
- * upload, which for a whole-file write is the same answer as "not finished
- * yet": it does not exist until its last byte is stored.
- */
-export async function serveRange(
+export async function serveUpload(
   store: UploadStore,
   id: string,
   start: number,
   end: number,
-): Promise<Uint8Array | undefined> {
-  const info = await store.info(id);
-  if (!info) return undefined;
-  const stop = Math.min(end, info.size);
-  if (stop <= start) return new Uint8Array(0);
-  return await store.read(id, start, stop);
+): Promise<UploadRouteResult> {
+  try {
+    const info = await store.info(id);
+    if (!info) return { status: 404, json: { error: `no such upload: ${id}` } };
+    const stop = Math.min(end, info.size);
+    const from = Math.max(0, Math.min(start, stop));
+    const bytes = stop > from ? await store.read(id, from, stop) : new Uint8Array(0);
+    return { status: 200, type: info.type, bytes };
+  } catch (err: unknown) {
+    const refusal = uploadRefusal(err);
+    if (refusal) return refusal;
+    throw err;
+  }
 }
 
 /**
- * The one query shape an operator needs against the record table.
+ * Wire the pair into your router.
  *
- * `UPLOADS_TABLE` is spelled once, here, for the reason every other shared
- * table name in this package is: a second copy is a rename away from a
- * diagnostic that reads a table nothing writes.
+ * ← your framework. The point of the shape is that both routes go through
+ * {@link uploadRefusal}, including the read: `store.info` is exactly the call a
+ * person reaches for to ask why the writes are failing, so leaving it outside
+ * the `try` is how an unconfigured deployment answers 500 to the one request
+ * that would have explained itself.
+ *
+ * Uploads that go straight to the bucket are a separate arm of the store
+ * (`beginParts` / `writePart` / `recordParts`); add those routes here if your
+ * clients need them, on the same refusal mapping.
  */
-export const AUDIT_ROW_SQL = `select id, parts from ${UPLOADS_TABLE} where id = $1`;
-
-/**
- * Name the objects one upload's windows live in.
- *
- * `parts` is a `jsonb` column in the TENANT's own database on the tenant's own
- * role, so it is a value they can write anything into — hence `partsOf` taking
- * `unknown` and DROPPING an entry that is not two byte counts rather than
- * trusting it. It also means this code has no opinion about whether the driver
- * handed back a string or an array, which is the thing not to have an opinion
- * about.
- *
- * The offset IS the object's name, which is why a part may only start on an
- * `UPLOAD_CHUNK_BYTES` boundary: a grid nothing can scatter is what lets a
- * reader derive a key instead of looking one up.
- */
-export function objectKeysOf(row: { id: string; parts: unknown }): string[] {
-  const parts: UploadPart[] = partsOf(row.parts);
-  return parts.map((part) => partKey(UPLOAD_KEY_PREFIX, row.id, part.at));
+export function uploadRoutes(store: UploadStore): {
+  receive: (meta: UploadMeta, body: AsyncIterable<Uint8Array>) => Promise<UploadRouteResult>;
+  serve: (id: string, start: number, end: number) => Promise<UploadRouteResult>;
+} {
+  return {
+    receive: (meta, body) => receiveUpload(store, meta, body),
+    serve: (id, start, end) => serveUpload(store, id, start, end),
+  };
 }
