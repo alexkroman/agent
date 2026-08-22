@@ -101,6 +101,21 @@ which is where a reader can find it without opening twelve files). Each is the
 starter as it was written AT THAT EPOCH; the way to change an API is a new epoch
 carrying a new template, never an edit to a frozen one.
 
+**A template exercises 95 of the 122 names, and that is not a hole in the
+gate.** The epoch hash covers the capability's REPORT, which carries every name
+the entrypoint selects — so a signature change on `SweepSkip` moves `db`'s hash
+and demands a classification whether or not any template mentions it.
+Classification coverage is 122 of 122; what the other 27 lack is a compile-time
+exercise. The gap is deliberate and per name: `createServer`/`createHostServer`
+are a different artifact from the bootstrap (embedding into an existing runtime,
+and a multi-tenant host-mode server); `SweepSkip` has no public producer, so a
+host can never be handed one; `partKey`/`partsOf` would need a `delete` that
+`UploadBlobs` does not have; `telnyxCodec`/`twilioCodec` are the shipped
+carriers a third-carrier template exists to be an alternative to. Contorting a
+starter to touch all 122 is how these files became catalogues the first time.
+Where a name's absence is a finding rather than a choice, it is in the list
+below.
+
 ### The root barrel had 50 names it does not own
 
 Opting in is what surfaced it. `authoringSurface` reported **153** public names
