@@ -313,7 +313,11 @@ export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpen
 /** One registry entry per LLM provider kind — see `_llm-registry.ts`. */
 export type { LlmRegistryEntry } from "./_llm-registry.ts";
 
-/** Register an LLM kind. See {@link registerKind}. */
+/**
+ * Register an LLM kind. Mirror of {@link registerSttKind}, one stage along: the
+ * entry builds a Vercel AI SDK `LanguageModel` rather than opening a socket, so
+ * it takes a {@link LlmRegistryEntry} instead of an `OpenerRegistryEntry`.
+ */
 export function registerLlmKind(kind: string, entry: LlmRegistryEntry): () => void {
   return registerKind(LLM_REGISTRY, kind, entry);
 }

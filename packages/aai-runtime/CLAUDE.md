@@ -78,7 +78,7 @@ writes against: `server`, `runtime`, `session`, `session-state`, `providers`,
 `telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`, `text`. The
 mechanism is the repo's — see "The authoring surface is versioned in epochs" in
 the root `AGENTS.md` — and what it means here is that a signature change on any
-of the 122 public names is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
+of the 124 public names is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
 rather than discovered by whoever's build breaks.
 
 The split shipped this package with no `contracts/` tree, so for its first days
@@ -101,18 +101,18 @@ which is where a reader can find it without opening twelve files). Each is the
 starter as it was written AT THAT EPOCH; the way to change an API is a new epoch
 carrying a new template, never an edit to a frozen one.
 
-**A template exercises 95 of the 122 names, and that is not a hole in the
+**A template exercises 97 of the 124 names, and that is not a hole in the
 gate.** The epoch hash covers the capability's REPORT, which carries every name
 the entrypoint selects — so a signature change on `SweepSkip` moves `db`'s hash
 and demands a classification whether or not any template mentions it.
-Classification coverage is 122 of 122; what the other 27 lack is a compile-time
+Classification coverage is 124 of 124; what the other 27 lack is a compile-time
 exercise. The gap is deliberate and per name: `createServer`/`createHostServer`
 are a different artifact from the bootstrap (embedding into an existing runtime,
 and a multi-tenant host-mode server); `SweepSkip` has no public producer, so a
 host can never be handed one; `partKey`/`partsOf` would need a `delete` that
 `UploadBlobs` does not have; `telnyxCodec`/`twilioCodec` are the shipped
 carriers a third-carrier template exists to be an alternative to. Contorting a
-starter to touch all 122 is how these files became catalogues the first time.
+starter to touch all 124 is how these files became catalogues the first time.
 Where a name's absence is a finding rather than a choice, it is in the list
 below.
 
@@ -132,16 +132,21 @@ silently ignored.** Verified before relying on it — the name stayed `@public` 
 the regenerated report. The mechanism that does work is a subpath, which is what
 `aai` uses twice for the same reason.
 
-So `@alexkroman1/aai-runtime/internal` carries the 31 platform-infrastructure
-names (the builtins resolver, the SSRF-safe fetch pair, the four step-slot
-publishers, the upload byte constants and id grammar), and
-`NON_AUTHORING_SUBPATHS` in `scripts/_api-contracts-tree.mjs` names it so a name
-arriving there joins no capability. `aai-server`, `aai-cli` and `aai-guest`
-import from it — which is honest, since they are the cross-package consumers the
-seam exists for.
+So `@alexkroman1/aai-runtime/internal` carries the platform-infrastructure
+pass-throughs — seven of them now: the builtins resolver, the SSRF-safe fetch,
+the step-env publisher, the containment flag, and the upload byte constants plus
+the id grammar — and `NON_AUTHORING_SUBPATHS` in
+`scripts/_api-contracts-tree.mjs` names it so a name arriving there joins no
+capability. It opened at 31; the other 24 were moved off the barrel wholesale
+and imported by nothing, and the rule that took them back off is below.
+`aai-server`, `aai-cli` and `aai-guest` import from what is left — which is
+honest, since they are the cross-package consumers the seam exists for.
 
 **The 17-name OPENER CONTRACT deliberately stayed on the root barrel.**
-`registerSttKind`/`registerTtsKind` live there, and moving their parameter types
+`registerSttKind`/`registerTtsKind`/`registerLlmKind` live there — all three are
+`registerKind` under three names, which is why the LLM one joined them (it
+reached no published subpath at all while `resolveLlm`, the reader of the
+registry it writes, was contracted). Moving their parameter types
 (`SttOpener`, `SttOpenOptions`, `SttSession`, and the Tts twins) would make a
 custom provider — the documented use, and what `aai-evals/fake-speech.ts` really
 does — import from two subpaths, one of them labelled not-semver-covered. The
@@ -161,17 +166,28 @@ to 0.
 
 **The division is now mechanical, and it is worth stating as a rule.**
 
-- **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`)** is exactly the 122 names
+- **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`)** is exactly the 124 names
   the twelve capabilities select. A name here has an epoch, a report, and a
   frozen compiling template behind its capability. Nothing on it is
   `@internal` — that is what the zero means, and the ratchet is what holds it.
 - **`@alexkroman1/aai-runtime/internal` (`internal.ts`)** is the cross-package
-  infrastructure `aai-server`, `aai-cli` and `aai-guest` need: the host-mode
-  server and its relay, the two transports and the `Transport` contract, the
-  session core's constructor, the session-state backends and their tables, the
-  workflow serving half (handler, surface, world, install), the wake hint, the
-  queue-lock sweep, the step-slot publishers, and the shipped `Logger` values.
-  No capability, no epoch, no semver promise.
+  infrastructure `aai-server`, `aai-cli` and `aai-guest` need: the session-state
+  backends and their tables, the workflow serving half (surface, world, flow
+  path), the wake hint, the queue-lock sweep, the step-env publisher, the upload
+  store, and the shipped `consoleLogger`. No capability, no epoch, no semver
+  promise.
+
+  **A name is on it because something IMPORTS it.** Both tranches were assembled
+  by moving whole `@internal` blocks off the root barrel, which is why the
+  subpath opened at 99 names of which **33** were imported anywhere in the repo.
+  The other 66 were not a smaller version of the ratchet problem: for a name
+  already tagged `@internal` at its DECLARATION, simply not re-exporting it is
+  cheaper than publishing it somewhere quieter — intra-package use is relative
+  imports, so nothing breaks, and a name reachable from no subpath cannot be
+  autocompleted, reported on, or depended upon. They are gone, and adding a
+  clause here in anticipation of a consumer is a surface with no reader. The
+  three exceptions are structural: `WakeHintOptions`, `WakeHintPublisher` and
+  `WorldKind` are unimported and named by the signature of something that is.
 
 Where a capability's TYPE is contracted and its CONSTRUCTOR is not, the two are
 deliberately on different pages and each clause says so: `SessionCore` on the
@@ -212,11 +228,80 @@ each is a decision worth making rather than inheriting.
   moves. An upstream minor can force an epoch classification here with no change
   of ours.
 
-And one real defect the templates caught: **`PassthroughServerOptions` cannot be
-spread into `ServerOptions`.** Its fields are optional WITHOUT `| undefined`, so
-under `exactOptionalPropertyTypes` `{...hooks}` widens each to `T | undefined`
-and `createServer` rejects it (TS2379) — while the three wrapper doors exist
-precisely so one hook bag can reach all of them. The frozen template forwards
-`logger`/`upgrade`/`request` one at a time to compile. Either those fields carry
-`| undefined` or the wrappers take the bag as a nested field; the workaround is
-frozen into `contracts/compatibility/server/v1.ts` until one of those happens.
+And one real defect the templates caught, now FIXED: **`PassthroughServerOptions`
+could not be spread into `ServerOptions`.** Its fields were optional WITHOUT
+`| undefined`, so under `exactOptionalPropertyTypes` `{...hooks}` widens each to
+`T | undefined` and `createServer` rejected it (TS2379) — while the three wrapper
+doors exist precisely so one hook bag can reach all of them. The fix is on the
+TARGET side, which is where an A/B locates it: `ServerOptions`' `logger`,
+`upgrade` and `request` accept `undefined`, and `createAgentServer` spreads the
+bag. Do not narrow them back. The workaround stays frozen into
+`contracts/compatibility/server/v1.ts`, where it is a record of how epoch 1 was
+written and not a shape to copy.
+
+### `createAgentServer` forwards what only it can
+
+A front door has a failure mode the pair underneath does not: an option it does
+not carry is unreachable, because dropping back to `createRuntime` +
+`createServer` to set one means restating by hand every field the wrapper
+derives — the silent drop the wrapper exists to prevent. `telephony` was the
+sharp instance. It defaults to `!isStatic` in `createServer`, `createAgentServer`
+did not forward it, so every server built through the documented door — the
+scaffold's `server.mjs` included — mounted an unauthenticated `WS /phone` with no
+way to switch it off. `page` was worse: the AGENT declares it, and nothing
+carried the declaration through, so a `page: "static"` agent still got the voice
+surfaces and a voice `GET /client-config`. It is read off the agent now, beside
+`name` and `greeting`, with an explicit field still winning.
+
+`uploadBroker` came with them; the remaining gaps are deliberate. The host-mode
+pair (`ServerOptions.env`, `hostBaseAgent`) belongs to `createHostServer` — a
+server whose sessions run agents their callers supply is a different door, not an
+option on this one. `name` and `greeting` are derived, which is the whole point.
+And of `RuntimeOptions`' twenty, the fourteen unreachable ones are the testing
+and sandbox seams (`executeTool`, `toolSchemas`, `createWebSocket`,
+`createOpenaiRealtimeWebSocket`, `runCode`, `fetch`, `onToolResult`,
+`toolGuidance` — `@internal` or platform-harness only), the provider triple
+`stt`/`llm`/`tts` (which the agent declares), and the three tuning numbers
+(`s2sConfig`, `sessionStartTimeoutMs`, `shutdownTimeoutMs`). Forward one of those
+when somebody needs it, not before.
+
+## Rendering this package is a docs decision, and it cannot be half-made
+
+There is no `typedoc.json` here, and its absence is now a measured decision
+rather than an oversight. Two things make it one.
+
+**A package-local config alone turns the suite red.**
+`packages/aai-templates/docs-markdown-gate.test.ts` globs `packages/*/typedoc.json`
+and asserts that every package holding one has committed markdown under
+`docs/api/` — so the file cannot land before the render that produces its page.
+The coupling is deliberate and it is wider than that one test: flipping this on
+means `docs/typedoc.json`'s `entryPoints`, the `include` in
+`docs/tsconfig.typedoc.json`, the `dependsOn` + `inputs` of turbo's `docs` task,
+the retraction of `UNDOCUMENTED_SUBPATHS["aai-runtime"]["."]` in
+`scripts/docs-markdown.mjs` (which errors on a subpath that is both documented
+AND excused), and the regenerated `docs/api/` — one change, or a red gate.
+
+**And the answer today is no.** `docs/CLAUDE.md` argues it: a ~220-export
+surface aimed at somebody EMBEDDING an agent, rendered beside the SDK, rebuilds
+the two-thirds-of-a-combined-reference the runtime split undid. The deny-list
+entry says what would change the answer — "revisit if embedders ask for a
+rendered page, then it gets its own, not a share of the SDK's".
+
+What is worth not rediscovering is that the config is a five-line file plus two
+options, both earned by a warning an actual render produced, and that with them
+this package renders CLEAN — zero warnings under `treatWarningsAsErrors`, one
+~7,100-line `@alexkroman1/aai-runtime.md`, against `aai` and `aai-ui` in the
+same project:
+
+- `entryPoints: ["dist/runtime-barrel.d.ts"]` — the only documentable subpath,
+  since `./internal` is deny-listed for the reason its own module doc gives.
+- `intentionallyNotExported: ["EventsNamed"]` — the `Extract` helper
+  `TransportEventBody` is written as. Same call as `DistributiveOmit` in
+  `packages/aai/typedoc.json`: a reader gets the resolved union in the rendered
+  signature and can never name the helper.
+- `externalSymbolLinkMappings` for `ai`'s `LanguageModel`, which `resolveLlm`
+  returns and `LlmRegistryEntry.create` builds.
+
+Rendered in ISOLATION it reports seven more, all `{@link Db}`-shaped links into
+`@alexkroman1/aai`. Those are an artifact of the SDK not being in the project,
+not a defect in these comments — do not "fix" them by deleting links.

@@ -77,8 +77,11 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     clientDir?: string;
     db?: Db | undefined;
     env: AgentEnv;
+    page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
+    telephony?: boolean | undefined;
+    uploadBroker?: string | undefined;
 }
 
 // @public
@@ -258,6 +261,13 @@ export type HttpUploadBlobsOptions = {
 };
 
 // @public
+export type LlmRegistryEntry = {
+    readonly envVar: string;
+    readonly label: string;
+    readonly create: (apiKey: string, descriptor: LlmProvider) => LanguageModel;
+};
+
+// @public
 export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
 
 // @public (undocumented)
@@ -327,12 +337,15 @@ export function partsOf(value: unknown): UploadPart[];
 
 // @public
 export type PassthroughServerOptions = {
-    logger?: Logger;
+    logger?: Logger | undefined;
     upgrade?: ServerOptions["upgrade"];
     request?: ServerOptions["request"];
 };
 
 export { ProviderEnv }
+
+// @public
+export function registerLlmKind(kind: string, entry: LlmRegistryEntry): () => void;
 
 // @public
 export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void;
@@ -427,13 +440,13 @@ export type ServerOptions = {
     runtime: SessionRuntime;
     name?: string;
     clientDir?: string;
-    logger?: Logger;
+    logger?: Logger | undefined;
     env?: Record<string, string>;
     hostBaseAgent?: AgentDef;
     greeting?: string;
     uploadBroker?: string;
-    upgrade?: (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
-    request?: (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
+    upgrade?: ((req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean) | undefined;
+    request?: ((req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean) | undefined;
     page?: "voice" | "static";
     telephony?: boolean;
 };
