@@ -13,7 +13,7 @@
  * So a step narrates with one call and it lands in both places:
  *
  * ```ts no-check
- * import { report } from "@alexkroman1/aai/utils";
+ * import { report } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {
  *   "use step";
@@ -153,7 +153,7 @@ export async function report(line: string): Promise<void> {
  * the answer growing instead of a spinner:
  *
  * ```ts no-check
- * import { emit } from "@alexkroman1/aai/utils";
+ * import { emit } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {
  *   "use step";

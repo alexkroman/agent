@@ -58,7 +58,7 @@
  * {@link stepEnv} follows for `process.env`.
  *
  * ```ts no-check
- * import { multipartBody, stepFetch } from "@alexkroman1/aai/utils";
+ * import { multipartBody, stepFetch } from "@alexkroman1/aai/step";
  *
  * export async function transcribe(bytes: Uint8Array) {
  *   "use step";

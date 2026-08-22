@@ -27,7 +27,7 @@
  */
 
 import "@alexkroman1/aai-ui/styles.css";
-import type { WorkflowOutputOf } from "@alexkroman1/aai";
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   Form,
   type FormValues,

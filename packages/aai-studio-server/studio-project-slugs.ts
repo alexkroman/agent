@@ -16,7 +16,7 @@
  */
 
 import { hash } from "node:crypto";
-import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
+import { MAX_SLUG_LENGTH, PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
 import { verifySlugOwner } from "aai-server/secrets";
 import type { BundleStore } from "aai-server/store-types";
 import type { StudioWorkspace } from "./studio-workspace.ts";

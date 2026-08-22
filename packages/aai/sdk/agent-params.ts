@@ -36,7 +36,7 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  * for authors, because neither bundler typechecks user code. Field docs live
  * on {@link AgentDef} and carry through the mapped types.
  *
- * Three author-facing conveniences widen the derived shape (all normalized
+ * Four author-facing conveniences widen the derived shape (all normalized
  * away by `agent()`, so `AgentDef` stays canonical):
  *
  * - `system` — alias of `systemPrompt`, matching the Vercel AI SDK's field
@@ -48,13 +48,20 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  *   to `tts: assemblyAITts({ voice })`. Only valid when no explicit `tts`
  *   descriptor is set (the voice rides on the descriptor there) and never
  *   in S2S mode (the S2S descriptor owns its voice).
+ * - `minTurnSilenceMs` / `maxTurnSilenceMs` — the end-of-turn window for the
+ *   default AssemblyAI STT stage, desugared to `stt: assemblyAIStt({ … })`.
+ *   Same rule as `voice`: only valid when no explicit `stt` descriptor is set.
+ *   `maxTurnSilenceMs` is the pause-tolerance knob, and it is here because it
+ *   is the highest-value tuning an agent has and used to be the highest-friction
+ *   to express — one number cost a whole stage descriptor, which then silently
+ *   dropped whatever else the default fill would have supplied.
  *
  * Pipeline stages are individually optional: declare any subset of
  * `stt`/`llm`/`tts` and the unset stages run on the default all-AssemblyAI
  * pipeline. The shape is a union over the three session modes — pipeline,
  * S2S ({@link S2sAgentParams}) and text ({@link TextAgentParams}) — so a
  * field belonging to another mode fails the build with a message naming the
- * rule ({@link PipelineOnlyMisuse}) rather than failing at the first
+ * rule (`PipelineOnlyMisuse`) rather than failing at the first
  * `aai dev`/`aai deploy`. Configs that never went through `agent()` are
  * still caught when `toAgentConfig` runs in the bundle entry.
  *
@@ -85,7 +92,7 @@ export type SharedAgentParams = Omit<
     /** Alias of `systemPrompt` (the Vercel AI SDK's field name). */
     system?: string;
     /**
-     * Not a field. See {@link InlineToolsMisuse} — a tool is declared by its
+     * Not a field. See `InlineToolsMisuse` — a tool is declared by its
      * FILE, so this is typed as the message that names the one to create.
      */
     tools?: InlineToolsMisuse;
@@ -183,8 +190,6 @@ export type PipelineOnlyMisuse<
  */
 export type PipelineAgentParams = SharedAgentParams &
   Partial<Pick<AgentDef, PipelineOnlyField>> & {
-    /** See {@link AgentDef.stt}. Unset → the default AssemblyAI STT. */
-    stt?: SttProvider;
     /**
      * See {@link AgentDef.llm}; a string is gateway model-id shorthand.
      * Unset → the default AssemblyAI LLM Gateway model.
@@ -195,6 +200,45 @@ export type PipelineAgentParams = SharedAgentParams &
     /** See {@link AgentDef.page}. A pipeline agent's front door is a mic. */
     page?: "voice" | StaticFrontDoorMisuse;
   } & (
+    | {
+        /**
+         * See {@link AgentDef.stt}. An explicit descriptor owns its own
+         * end-of-turn window.
+         */
+        stt: SttProvider;
+        minTurnSilenceMs?: EndpointingOnDescriptorMisuse<"minTurnSilenceMs">;
+        maxTurnSilenceMs?: EndpointingOnDescriptorMisuse<"maxTurnSilenceMs">;
+      }
+    | {
+        stt?: undefined;
+        /**
+         * End-of-turn CHECK window for the default AssemblyAI STT stage, in ms
+         * — shorthand for `stt: assemblyAIStt({ minTurnSilenceMs })`, so one
+         * knob costs one field rather than a whole stage descriptor.
+         *
+         * This one taxes EVERY finished utterance, which is why the
+         * pause-tolerance knob is `maxTurnSilenceMs` and not this. Read
+         * `DEFAULT_MIN_TURN_SILENCE_MS` before moving it; 1600 is a measured
+         * knee, and 800 was tried and cost 5.7x on task reward.
+         *
+         * @defaultValue `1600` (`DEFAULT_MIN_TURN_SILENCE_MS`)
+         */
+        minTurnSilenceMs?: number;
+        /**
+         * Pause tolerance for the default AssemblyAI STT stage, in ms —
+         * shorthand for `stt: assemblyAIStt({ maxTurnSilenceMs })`.
+         *
+         * **This is the knob to reach for.** It force-ends a turn regardless of
+         * content, so it bounds only utterances that never read as complete:
+         * raising it is paid for by hesitant speech alone and costs an ordinary
+         * finished sentence nothing. Read `DEFAULT_MAX_TURN_SILENCE_MS`.
+         *
+         * @defaultValue `3500` (`DEFAULT_MAX_TURN_SILENCE_MS`)
+         */
+        maxTurnSilenceMs?: number;
+      }
+  ) &
+  (
     | {
         /** See {@link AgentDef.tts}. The voice rides on the descriptor. */
         tts: TtsProvider;
@@ -214,7 +258,7 @@ export type PipelineAgentParams = SharedAgentParams &
 
 /**
  * S2S-mode params: an `s2s` descriptor, no pipeline providers, and the
- * pipeline-only tuning knobs typed as {@link PipelineOnlyMisuse} so setting
+ * pipeline-only tuning knobs typed as `PipelineOnlyMisuse` so setting
  * one fails with a message instead of silently doing nothing.
  */
 export type S2sAgentParams = SharedAgentParams & {
@@ -224,6 +268,8 @@ export type S2sAgentParams = SharedAgentParams & {
   llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
   tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
   voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
+  minTurnSilenceMs?: "`minTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
+  maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
   text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
   /** See {@link AgentDef.page}. An S2S agent's front door is a mic. */
   page?: "voice" | StaticFrontDoorMisuse;
@@ -242,7 +288,7 @@ export type S2sAgentParams = SharedAgentParams & {
  * told. `sttPrompt` is included even though it is otherwise mode-agnostic —
  * it biases a transcriber, and there is none.
  *
- * The pipeline-only voice knobs are derived from {@link PipelineOnlyField},
+ * The pipeline-only voice knobs are derived from `PipelineOnlyField`,
  * so a knob added to {@link PipelineVoiceTuning} is rejected here for free.
  */
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
@@ -258,6 +304,8 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
   tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
   s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
   voice?: "`voice` is pipeline-mode only — a text agent never speaks";
+  minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
+  maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
   sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
   /**
    * See {@link AgentDef.page}. A text agent has no browser front door of its
@@ -276,6 +324,18 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
  */
 export type StaticFrontDoorMisuse =
   '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
+
+/**
+ * The "type" the two endpointing shorthands have alongside an explicit `stt`
+ * descriptor, which owns its own end-of-turn window.
+ *
+ * Same idiom and same rule as `voice` beside an explicit `tts`: the shorthand
+ * exists so the COMMON case (the default AssemblyAI stage, one number) costs one
+ * field instead of a whole descriptor, and a declaration that already has a
+ * descriptor sets it there. One owner per value.
+ */
+export type EndpointingOnDescriptorMisuse<K extends string> =
+  `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
 
 /**
  * The {@link AgentDef} fields a WORKFLOW APP cannot use, typed as messages on
@@ -302,6 +362,8 @@ export type WorkflowAppOnlyField =
   | "toolChoice"
   | "tools"
   | "builtinTools"
+  | "minTurnSilenceMs"
+  | "maxTurnSilenceMs"
   | "syncState"
   // Session events, for the same reason `syncState` is here: there is no session
   // to observe. A workflow app's own narration is `report()` from a step.

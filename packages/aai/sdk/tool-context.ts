@@ -16,7 +16,7 @@ import type { Db } from "./db.ts";
 import type { GenerateFn } from "./generate.ts";
 import type { SlotStore } from "./session-state.ts";
 import type { Message } from "./types.ts";
-import type { StartOptions, WorkflowClient } from "./workflow.ts";
+import type { WorkflowClient } from "./workflow.ts";
 
 /**
  * Context passed to tool `execute` functions.
@@ -114,7 +114,7 @@ export type ToolContext = {
    * starts a run and answers in the same turn ("I've kicked that off, I'll text
    * you"), and the run continues on the queue after the session ends. Pass
    * `{ key: ctx.sessionId }` so a later turn — or a later CALL — can find it
-   * again; see {@link StartOptions.key}.
+   * again; see `StartOptions.key` (`@alexkroman1/aai/workflow-api`).
    *
    * Every method rejects when the app declares no workflows or has no workflow
    * backend configured, naming which.

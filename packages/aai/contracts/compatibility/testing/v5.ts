@@ -12,8 +12,8 @@
  * relative.
  */
 
+import { readUpload } from "../../../sdk/step-barrel.ts";
 import { type StubUpload, stubUploads } from "../../../sdk/testing.ts";
-import { readUpload } from "../../../sdk/utils.ts";
 
 /** The step under test: it reads a window of a file the run only named. */
 export async function readHeader(uploadId: string): Promise<number> {

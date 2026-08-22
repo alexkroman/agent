@@ -2,75 +2,43 @@
 /**
  * Capability contract: `utils`.
  *
- * The zero-dependency helpers a tool body — or a `"use step"` body, which is
- * what `mapConcurrent`, `stepEnv`/`requireStepEnv`, `stepGenerate`, `report` and
- * the two retry helpers are for — may reach for, plus the two contracts both
- * ends of a platform interaction have to derive identically (the slug shape and
- * the `aai login` confirmation code).
+ * The zero-dependency helpers a TOOL body may reach for: error rendering, the
+ * capped append, the keyed lock, and the two shape helpers. (`toolFailure` and
+ * its guard are the `tool` capability's — a name belongs to exactly one
+ * contract, and the failure a tool RETURNS is part of what writing a tool is.)
  *
- * `stepSpeak` and `encodeWav`/`pcmDurationMs` are part of it too, and they are
- * the reason to read this contract beside `uploads`: a step that SPEAKS is
- * useless without somewhere to put what it made. `stepSpeak` is a slot the way
- * `stepFetch` is — the synthesizer needs a WebSocket client, which this subpath
- * may not carry — and the WAV framing is the zero-dependency half.
+ * It used to be twice this and cover three unrelated readers, because the
+ * subpath's membership rule was a BUILD property ("zod-free, so the CLI can
+ * import it on every invocation") rather than an audience. The `"use step"`
+ * vocabulary is the `step` capability now (`@alexkroman1/aai/step`), and the
+ * framework's own wire helpers and platform contracts are on
+ * `@alexkroman1/aai/internal`, which is not contracted at all — it is explicitly
+ * not semver-covered.
  *
- * `stepFetch`/`multipartBody`/`StepTransportError` are part of it and are the
- * ones an author must not be steered off: a step that reaches for `fetch`
- * instead speaks HTTP/2, and a fan-out over one connection is where a capacity
- * limit stops being a status a retry policy can read. See `sdk/step-fetch.ts`.
+ * `createKeyedLock`/`withLock` are the one pair here with a runtime dependency
+ * (`p-timeout`, 2.4 KB, for the optional acquire deadline) and the one an agent
+ * author most needs: the LLM loop runs a step's tool calls CONCURRENTLY, so two
+ * async mutators of one external resource interleave at every await. A
+ * session-state mutation is not that case — `slot.update`'s window is
+ * synchronous — which is what the `state` capability is for.
  *
- * Re-exported from `@alexkroman1/aai/utils`. This file is not shipped and nothing
- * imports it — it exists so `pnpm check:api-contracts` can extract a report
- * for this capability alone, hash it, and hold it to a committed epoch. See
- * `scripts/api-contracts.mjs`.
+ * Re-exported from `@alexkroman1/aai/utils`. This file is not shipped and
+ * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
+ * report for this capability alone, hash it, and hold it to a committed epoch.
+ * See `scripts/api-contracts.mjs`.
  */
 
 export {
   createKeyedLock,
-  emit,
-  encodeWav,
   errorDetail,
   errorMessage,
   isRecord,
-  isTransientStatus,
   type KeyedLock,
   type KeyedLockOptions,
   KeyedLockTimeoutError,
-  linkConfirmationCode,
-  MAX_SLUG_LENGTH,
-  type MultipartBody,
-  type MultipartPart,
-  mapConcurrent,
-  mapInBatches,
-  multipartBody,
-  normalizeSpeechText,
   omitUndefined,
-  type PcmFormat,
-  PREVIEW_SLUG_SUFFIX,
-  pcmDurationMs,
   pushCapped,
-  RESERVED_SLUGS,
-  report,
-  requireStepEnv,
   responseErrorMessage,
-  retryAfter,
-  type SpeakOptions,
-  type SpokenAudio,
-  STEP_SPEAK_SAMPLE_RATE,
-  STEP_SPEAK_TIMEOUT_MS,
-  type StepFetchInit,
-  StepGenerateError,
-  type StepGenerateJsonOptions,
-  type StepGenerateOptions,
-  StepTransportError,
   safeJsonParse,
-  stepEnv,
-  stepFetch,
-  stepGenerate,
-  stepGenerateJson,
-  stepSpeak,
-  stripJsonFence,
-  VALID_SLUG_RE,
-  WAV_HEADER_BYTES,
   withLock,
 } from "../../sdk/utils.ts";

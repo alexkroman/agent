@@ -54,7 +54,6 @@
  * request rather than two and the value journaled by the last poll IS the result.
  */
 
-import { throwStepError } from "@alexkroman1/aai/step-errors";
 import {
   report,
   stepTranscribePoll,
@@ -62,7 +61,8 @@ import {
   stepTranscribeUpload,
   TRANSCRIBE_API,
   uploadInfo,
-} from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai/step";
+import { throwStepError } from "@alexkroman1/aai/step-errors";
 import { sleep } from "workflow";
 import { countWords, startClock, type Transcript } from "./transcribe.ts";
 

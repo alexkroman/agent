@@ -1,12 +1,13 @@
 // Copyright 2026 the AAI authors. MIT license.
 // OpenAI Realtime API transport — implements Transport.
 
+import { toArgsRecord } from "../../internal.ts";
 import type { ToolSchema } from "../../sdk/_internal-types.ts";
 import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
 import type { ToolChoice } from "../../sdk/types.ts";
-import { errorMessage, isRecord, safeJsonParse, toArgsRecord } from "../../sdk/utils.ts";
+import { errorMessage, isRecord, safeJsonParse } from "../../sdk/utils.ts";
 import { createAudioSendGate } from "../_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import {

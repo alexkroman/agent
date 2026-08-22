@@ -32,7 +32,7 @@ import {
   type TranscribeSubmitOptions,
   type TranscribeSyncOptions,
   type Transcript,
-} from "../../../sdk/utils.ts";
+} from "../../../sdk/step-barrel.ts";
 
 /** Its own step, so a retry of the submit never repeats the file. */
 export async function upload(uploadId: string): Promise<{ audioUrl: string }> {

@@ -25,8 +25,8 @@
 // through a render — a snippet spelling a field differently than the workflow
 // declared it renders perfectly and 400s when somebody pastes it.
 
-import type { WorkflowSummary } from "@alexkroman1/aai";
 import { CLIENT_CONFIG_PATH } from "@alexkroman1/aai/protocol";
+import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import {
   sampleInput,
   startBody,

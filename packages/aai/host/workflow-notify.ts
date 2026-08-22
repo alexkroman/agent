@@ -42,10 +42,12 @@
  * both out of voice and, after a minute of conversation, often out of place.
  */
 
+import { capToolResult } from "../internal.ts";
 import { sleep } from "../sdk/sleep.ts";
-import { capToolResult, errorMessage } from "../sdk/utils.ts";
-import type { WorkflowClient, WorkflowRunSnapshot } from "../sdk/workflow.ts";
-import { isTerminal } from "../sdk/workflow.ts";
+import { errorMessage } from "../sdk/utils.ts";
+import type { WorkflowClient } from "../sdk/workflow.ts";
+import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
+import { isTerminal } from "../sdk/workflow-run.ts";
 import type { Logger } from "./runtime-config.ts";
 
 /**

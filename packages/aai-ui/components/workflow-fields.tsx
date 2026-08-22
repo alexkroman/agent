@@ -22,8 +22,8 @@
  * a generated one inside the same {@link Form}.
  */
 
-import type { WorkflowSummary } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
+import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { useWorkflows } from "../use-workflow-form.ts";
 import { useDeclareFieldsPending } from "./_form-readiness.ts";
 import { CheckboxField, FileField, NumberField, SelectField, TextField } from "./form.tsx";

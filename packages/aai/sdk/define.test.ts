@@ -2,13 +2,13 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./agent-config.ts";
-import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import { DEFAULT_MAX_STEPS, DEFAULT_MIN_TURN_SILENCE_MS } from "./constants.ts";
 import { agent, tool, workflowApp } from "./define.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAILlm } from "./providers/llm/assemblyai.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
-import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
+import { assemblyAIStt, resolveAssemblyAISttSettings } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 import { createToolContext } from "./testing.ts";
@@ -58,6 +58,16 @@ describe("tool()", () => {
 const agentUnchecked = agent as (def: object) => AgentDef;
 
 describe("agent()", () => {
+  // One seam for every "the type rejects this, does the RUNTIME reject it too"
+  // case below, rather than a laundering cast per assertion. Each of those
+  // configs is a compile error an author sees as a misuse type in tsc's own
+  // message; what these tests cover is the throw behind it, which is what a
+  // plain-JS caller — or a config that arrived through a widened type — hits
+  // instead. Narrowing once means adding a case costs no new suppression, and
+  // the seam names why the one it holds is unavoidable: the parameter types are
+  // what make the call illegal, so there is nothing legal to pass.
+  const agentMisuse = (config: Record<string, unknown>) => agent(config as never);
+
   test("`system` is an alias of systemPrompt", () => {
     const def = agent({ name: "t", system: "You are terse." });
     expect(def.systemPrompt).toBe("You are terse.");
@@ -251,14 +261,59 @@ describe("agent()", () => {
 
   test("`voice` combined with an explicit tts descriptor throws", () => {
     expect(() =>
-      agent({ name: "t", voice: "michael", tts: cartesia({ voice: "v" }) } as never),
+      agentMisuse({ name: "t", voice: "michael", tts: cartesia({ voice: "v" }) }),
     ).toThrow(/`voice` picks the default pipeline's TTS voice/);
   });
 
   test("`voice` combined with s2s throws", () => {
-    expect(() => agent({ name: "t", voice: "michael", s2s: assemblyAIS2s() } as never)).toThrow(
+    expect(() => agentMisuse({ name: "t", voice: "michael", s2s: assemblyAIS2s() })).toThrow(
       /`voice` is pipeline-mode only/,
     );
+  });
+
+  test("endpointing shorthand desugars to the default pipeline's STT descriptor", () => {
+    // The point of the shorthand: one number, no descriptor, and the stage is
+    // still the default AssemblyAI one with every other setting intact.
+    const def = agent({ name: "t", maxTurnSilenceMs: 4500 });
+    expect("maxTurnSilenceMs" in def).toBe(false);
+    expect(def.stt).toEqual(assemblyAIStt({ maxTurnSilenceMs: 4500 }));
+    expect(toAgentConfig(def).mode).toBe("pipeline");
+    const settings = resolveAssemblyAISttSettings({ maxTurnSilenceMs: 4500 });
+    expect(settings.maxTurnSilenceMs).toBe(4500);
+    // The knob it is NOT paired with keeps its measured default.
+    expect(settings.minTurnSilenceMs).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
+  });
+
+  test("both endpointing knobs desugar together", () => {
+    const def = agent({ name: "t", minTurnSilenceMs: 1800, maxTurnSilenceMs: 4500 });
+    expect(def.stt).toEqual(assemblyAIStt({ minTurnSilenceMs: 1800, maxTurnSilenceMs: 4500 }));
+  });
+
+  test("endpointing shorthand beside an explicit stt descriptor throws", () => {
+    expect(() =>
+      agentMisuse({ name: "t", maxTurnSilenceMs: 4500, stt: assemblyAIStt({ region: "eu" }) }),
+    ).toThrow(/an explicit `stt` descriptor owns its own end-of-turn window/);
+  });
+
+  test("endpointing shorthand combined with s2s throws", () => {
+    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, s2s: assemblyAIS2s() })).toThrow(
+      /S2S runs STT service-side/,
+    );
+  });
+
+  test("endpointing shorthand combined with text throws", () => {
+    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, text: true })).toThrow(
+      /a text agent has none/,
+    );
+  });
+
+  test("assemblyAIPipeline carries the endpointing options onto its STT stage", () => {
+    // The preset is the escape hatch the shorthand cannot serve: a config that
+    // already spreads it (for `region`) sets the window here instead.
+    const { stt } = assemblyAIPipeline({ region: "eu", maxTurnSilenceMs: 4500 });
+    const settings = resolveAssemblyAISttSettings(stt.options);
+    expect(settings.maxTurnSilenceMs).toBe(4500);
+    expect(settings.region).toBe("eu");
   });
 });
 

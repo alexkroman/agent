@@ -4260,7 +4260,7 @@ and the two rules they come with.
 
 ###### Returns
 
-`Promise`\<[`UploadInfo`](utils.md#uploadinfo)\>
+`Promise`\<[`UploadInfo`](step.md#uploadinfo)\>
 
 ###### Throws
 
@@ -4301,7 +4301,7 @@ Store one file, streaming it in.
 
 ###### Returns
 
-`Promise`\<[`UploadInfo`](utils.md#uploadinfo)\>
+`Promise`\<[`UploadInfo`](step.md#uploadinfo)\>
 
 ###### Throws
 
@@ -4355,7 +4355,7 @@ readonly `number`[]
 
 ###### Returns
 
-`Promise`\<[`UploadInfo`](utils.md#uploadinfo)\>
+`Promise`\<[`UploadInfo`](step.md#uploadinfo)\>
 
 ###### Throws
 
@@ -4410,7 +4410,7 @@ incomplete, deliberately: a reader may already have used the first half.
 
 ###### Returns
 
-`Promise`\<[`UploadInfo`](utils.md#uploadinfo)\>
+`Promise`\<[`UploadInfo`](step.md#uploadinfo)\>
 
 ###### Throws
 
@@ -4436,7 +4436,7 @@ and a `complete` that is true only once that prefix is the whole declared
 total. So the caller writing the last part learns the upload is finished from
 its own response, and every other part's response is the progress a page draws.
 
-[UploadInfo.ranges](utils.md#ranges) rides along, which it deliberately did not before: it
+[UploadInfo.ranges](step.md#ranges) rides along, which it deliberately did not before: it
 used to mean a statement whose result set the CALLER sized — one row per island,
 against `MAX_DB_RESULT_ROWS` — so a finely-cut sparse upload became a record
 nothing could read again, and keeping the list off this path was the fix. The
@@ -4459,7 +4459,7 @@ is nothing left to pay.
 
 ###### Returns
 
-`Promise`\<[`UploadInfo`](utils.md#uploadinfo)\>
+`Promise`\<[`UploadInfo`](step.md#uploadinfo)\>
 
 ###### Throws
 

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { FlowToolResult, GenerateFn, ToolContext } from "@alexkroman1/aai";
+import type { DialogToolResult, GenerateFn, ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   runTool,
@@ -23,7 +23,7 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./graph.ts";
+import { executeStep, MAX_STEP_SEARCHES, normalizeAct, planNode } from "./procedure.ts";
 import { EXECUTOR_SYSTEM, PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM } from "./prompts.ts";
 import type { SearchFn } from "./shared.ts";
 import { MAX_PAST_STEPS, planFlow, planProjection, planSlot, planView } from "./shared.ts";
@@ -37,8 +37,8 @@ import { MAX_PAST_STEPS, planFlow, planProjection, planSlot, planView } from "./
  * `.state`. The wrapper is the SDK's, not this template's, and it is what puts
  * the current instruction in front of the model on every call.
  */
-function outcomeOf<T>(answered: unknown): FlowToolResult<T> {
-  const wrapped = answered as FlowToolResult<T> & { error?: string };
+function outcomeOf<T>(answered: unknown): DialogToolResult<T> {
+  const wrapped = answered as DialogToolResult<T> & { error?: string };
   if (wrapped.error !== undefined) {
     throw new Error(`expected a step outcome, got a refusal: ${wrapped.error}`);
   }

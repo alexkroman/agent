@@ -15,7 +15,7 @@
 import type http from "node:http";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 import { requestQuery } from "../sdk/request-url.ts";
-import { clampWorkflowWait, isTerminal } from "../sdk/workflow.ts";
+import { clampWorkflowWait, isTerminal } from "../sdk/workflow-run.ts";
 import { isWorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
 import { MAX_WORKFLOW_INPUT_BYTES, readBody, sendJson } from "./workflow-api-http.ts";

@@ -16,8 +16,8 @@
  * relative.
  */
 
-import type { WorkflowRunSnapshot } from "../../../index.ts";
 import { createStubWorkflows, createToolContext } from "../../../sdk/testing.ts";
+import type { WorkflowRunSnapshot } from "../../../sdk/workflow-run.ts";
 
 /** A completed run, annotated so the literal narrows to the union's arm. */
 const completedRun: WorkflowRunSnapshot = {

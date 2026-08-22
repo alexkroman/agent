@@ -36,7 +36,7 @@ import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape
 // `workflows/summarize.ts` already declares.
-import type { WorkflowOutputOf } from "@alexkroman1/aai";
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   createWorkflowApi,
   Form,

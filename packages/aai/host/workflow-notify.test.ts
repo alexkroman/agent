@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { WorkflowRunSnapshot } from "../sdk/workflow.ts";
+import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
 import { makeLogger } from "./_test-utils.ts";
 import { createRunNotifier, instructionFor } from "./workflow-notify.ts";
 

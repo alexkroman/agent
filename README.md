@@ -276,7 +276,7 @@ import {
   report,
   requireStepEnv,
   stepFetch,
-} from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai/step";
 
 type Segment = { index: number; start: number; end: number };
 

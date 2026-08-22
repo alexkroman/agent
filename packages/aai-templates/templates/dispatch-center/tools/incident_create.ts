@@ -15,7 +15,7 @@ import {
  * **Not a `callFlow.tool`, deliberately.** A new 911 call is legal in every
  * state, so a `when` listing all of them would be a gate that gates nothing —
  * the same call `plan-and-execute`'s `start_plan` makes. It sends `LOGGED`
- * itself, which is what `flow.send` is public for, and reports the position it
+ * itself, which is what `dialog.send` is public for, and reports the position it
  * landed in so the model reads "confirm the severity and type" as part of this
  * result rather than having to remember it from the prompt.
  *

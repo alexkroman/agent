@@ -42,7 +42,7 @@ export interface AgentDef extends PipelineVoiceTuning {
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
 
 // @public
-export type AnyWorkflowDef<R = unknown> = {
+type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
@@ -400,6 +400,8 @@ export function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
 
 // @public (undocumented)
 export interface AssemblyAIPipelineOptions {
+    maxTurnSilenceMs?: number;
+    minTurnSilenceMs?: number;
     region?: "us" | "eu";
     voice?: AssemblyAITtsVoice;
 }
@@ -453,9 +455,6 @@ type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
-
-// @public
-export function clampWorkflowWait(requested: number | undefined): number;
 
 // @public
 export function createKeyedLock(): KeyedLock;
@@ -516,51 +515,40 @@ export const DEFAULT_SYSTEM_PROMPT: string;
 export const DEFAULT_TOOL_CHOICE: "auto";
 
 // @public
-export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
+type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 
 // @public
 export type DefaultToolResult = any;
 
 // @public
-export function errorDetail(err: unknown): string;
-
-// @public
-export function errorMessage(err: unknown): string;
-
-// @public
-export type FindOptions = {
-    limit?: number;
-};
-
-// @public
-export interface Flow<M extends AnyStateMachine> {
+export interface Dialog<M extends AnyStateMachine> {
     readonly key: string;
     readonly machine: M;
     matches(ctx: ToolContext, state: string): boolean;
-    position(ctx: ToolContext): FlowPosition;
-    projection<V>(project: (position: FlowPosition) => V): StateProjection<V>;
-    reset(ctx: ToolContext): FlowPosition;
-    send(ctx: ToolContext, event: EventFromLogic<M>): FlowPosition;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: FlowToolDef<P, R, EventFromLogic<M>>): ToolDef<P>;
+    position(ctx: ToolContext): DialogPosition;
+    projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
+    reset(ctx: ToolContext): DialogPosition;
+    send(ctx: ToolContext, event: EventFromLogic<M>): DialogPosition;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, EventFromLogic<M>>): ToolDef<P>;
 }
 
 // @public
-export function flow<M extends AnyStateMachine>(key: string, machine: M, options?: FlowOptions): Flow<M>;
+export function dialog<M extends AnyStateMachine>(key: string, machine: M, options?: DialogOptions): Dialog<M>;
 
 // @public
-export interface FlowOptions {
+export interface DialogOptions {
     durable?: boolean;
 }
 
 // @public
-export interface FlowPosition {
+export interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
     readonly state: string;
 }
 
 // @public
-export interface FlowToolDef<P extends ToolInputSchema, R, E> {
+export interface DialogToolDef<P extends ToolInputSchema, R, E> {
     description: string;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
@@ -570,12 +558,26 @@ export interface FlowToolDef<P extends ToolInputSchema, R, E> {
 }
 
 // @public
-export interface FlowToolResult<R> extends FlowPosition {
+export interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
 
 // @public
-export type FrontDoorField = "page";
+type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
+
+// @public
+export function errorDetail(err: unknown): string;
+
+// @public
+export function errorMessage(err: unknown): string;
+
+// @public
+type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type FrontDoorField = "page";
 
 // @public
 export type GenerateFn = {
@@ -608,27 +610,6 @@ export type GenerateResult = {
 };
 
 // @public
-export interface Graph<M extends AnyStateMachine> {
-    readonly machine: M;
-    run(input: InputFrom<M>, options?: GraphRunOptions): Promise<OutputFrom<M>>;
-}
-
-// @public
-export function graph<M extends AnyStateMachine>(machine: M): Graph<M>;
-
-// @public
-export class GraphNotFinishedError extends Error {
-    constructor(graph: string, aborted: boolean);
-    readonly aborted: boolean;
-    readonly graph: string;
-}
-
-// @public
-export interface GraphRunOptions {
-    signal?: AbortSignal;
-}
-
-// @public
 export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
@@ -638,13 +619,10 @@ export type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["e
 export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<ReturnType<T["execute"]>>;
 
 // @public
-export type InlineToolsField = "tools";
+type InlineToolsField = "tools";
 
 // @public
-export type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
-
-// @public
-export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
+type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
 
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
@@ -684,9 +662,6 @@ export const MAX_DB_RESULT_ROWS = 1000;
 export const MAX_TOOL_RESULT_CHARS = 4000;
 
 // @public
-export const MAX_WORKFLOW_WAIT_MS = 60000;
-
-// @public
 export type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
@@ -694,12 +669,19 @@ export type Message = {
 
 // @public
 export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, PipelineOnlyField>> & {
-    stt?: SttProvider;
     llm?: LlmProvider | string;
     s2s?: undefined;
     text?: undefined;
     page?: "voice" | StaticFrontDoorMisuse;
 } & ({
+    stt: SttProvider;
+    minTurnSilenceMs?: EndpointingOnDescriptorMisuse<"minTurnSilenceMs">;
+    maxTurnSilenceMs?: EndpointingOnDescriptorMisuse<"maxTurnSilenceMs">;
+} | {
+    stt?: undefined;
+    minTurnSilenceMs?: number;
+    maxTurnSilenceMs?: number;
+}) & ({
     tts: TtsProvider;
     voice?: "`voice` picks the default pipeline's TTS voice — an explicit `tts` descriptor owns its own voice (e.g. `assemblyAITts({ voice })`); set it there or remove `tts`";
 } | {
@@ -708,10 +690,10 @@ export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Pip
 });
 
 // @public
-export type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" | "silencePrompt";
+type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" | "silencePrompt";
 
 // @public
-export type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = "s2s"> = `\`${K}\` is pipeline-mode only — it has no effect on a ${M} agent; remove it or remove \`${M}\``;
+type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = "s2s"> = `\`${K}\` is pipeline-mode only — it has no effect on a ${M} agent; remove it or remove \`${M}\``;
 
 // @public
 export interface PipelineVoiceTuning {
@@ -725,6 +707,27 @@ export interface PipelineVoiceTuning {
 }
 
 // @public
+export interface Procedure<M extends AnyStateMachine> {
+    readonly machine: M;
+    run(input: InputFrom<M>, options?: ProcedureRunOptions): Promise<OutputFrom<M>>;
+}
+
+// @public
+export function procedure<M extends AnyStateMachine>(machine: M): Procedure<M>;
+
+// @public
+export class ProcedureNotFinishedError extends Error {
+    constructor(procedure: string, aborted: boolean);
+    readonly aborted: boolean;
+    readonly procedure: string;
+}
+
+// @public
+export interface ProcedureRunOptions {
+    signal?: AbortSignal;
+}
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -733,7 +736,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
+type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 
 // @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
@@ -755,6 +758,8 @@ export type S2sAgentParams = SharedAgentParams & {
     llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
     tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
     voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
+    minTurnSilenceMs?: "`minTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
+    maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
     text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
     page?: "voice" | StaticFrontDoorMisuse;
 } & {
@@ -1029,7 +1034,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 }
 
 // @public
-export type StartOptions = {
+type StartOptions = {
     key?: string;
     notify?: boolean | string;
 };
@@ -1050,13 +1055,13 @@ export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | F
 };
 
 // @public
-export type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
+type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
 
 // @public
 export const STORAGE_DISABLED_MESSAGE: string;
 
 // @public
-export type StreamOptions = {
+type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
@@ -1067,14 +1072,6 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
-
-// @public
-export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
-    status: "completed" | "failed" | "cancelled";
-}>;
-
-// @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
     text: true;
     llm?: LlmProvider | string;
@@ -1082,6 +1079,8 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
     tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
     s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
     voice?: "`voice` is pipeline-mode only — a text agent never speaks";
+    minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
+    maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
     sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
     page?: "voice" | StaticFrontDoorMisuse;
 } & {
@@ -1144,7 +1143,7 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-export type WakeUpOptions = {
+type WakeUpOptions = {
     correlationIds?: string[];
 };
 
@@ -1158,13 +1157,13 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknow
 export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 
 // @public
-export type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
+type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-export type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "tools" | "builtinTools" | "syncState" | "events" | "idleTimeoutMs" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "tools" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
 
 // @public
-export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
+type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
     workflowId?: string;
 };
 
@@ -1197,10 +1196,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
-export type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
-
-// @public
-export type WorkflowRunBase = {
+type WorkflowRunBase = {
     runId: string;
     workflow: string;
     createdAt: number;
@@ -1208,7 +1204,7 @@ export type WorkflowRunBase = {
 };
 
 // @public
-export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
     status: "pending" | "running";
 })
 /** `output` is what the workflow function returned. */
@@ -1227,10 +1223,7 @@ export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 });
 
 // @public
-export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
-
-// @public
-export type WorkflowSummary = {
+type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;

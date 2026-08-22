@@ -8,8 +8,8 @@
 // already handled by streamText.
 
 import { setMaxListeners } from "node:events";
+import { normalizeSpeechText } from "../../internal.ts";
 import type { Message } from "../../sdk/types.ts";
-import { normalizeSpeechText } from "../../sdk/utils.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEmitError } from "./pipeline-error.ts";

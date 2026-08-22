@@ -11,8 +11,8 @@
  * DevKit, and that belongs somewhere a spec can reach it.
  */
 
+import { stepTranscribeSync } from "@alexkroman1/aai/step";
 import { throwStepError } from "@alexkroman1/aai/step-errors";
-import { stepTranscribeSync } from "@alexkroman1/aai/utils";
 
 /**
  * Transcribe one complete WAV.

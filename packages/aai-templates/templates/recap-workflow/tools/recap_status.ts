@@ -1,9 +1,9 @@
+import { tool } from "@alexkroman1/aai";
 import {
   isTerminal,
-  tool,
   type WorkflowOutputOf,
   type WorkflowRunSnapshot,
-} from "@alexkroman1/aai";
+} from "@alexkroman1/aai/workflow-api";
 import { recap } from "../shared.ts";
 
 /** How many past runs the status tool will look at. Newest first. */

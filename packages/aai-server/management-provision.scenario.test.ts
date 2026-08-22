@@ -28,12 +28,12 @@
  * ```
  */
 
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
 import {
   createPostgresDb,
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
 } from "@alexkroman1/aai/runtime";
-import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { createPgAgentRows } from "./agent-store.ts";

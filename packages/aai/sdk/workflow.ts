@@ -72,38 +72,17 @@
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 
 /**
- * `ctx.workflows`, re-exported for the same reason: this module is the workflow
- * surface an author imports, and the type lives beside the option and run types
- * it composes rather than in front of them (`workflow-client.ts`).
+ * `ctx.workflows` — the type of the handle, re-exported because `ToolContext`
+ * names it and a tool body annotating one should not need a second import.
+ *
+ * The rest of the RUN vocabulary is on `@alexkroman1/aai/workflow-api`: the
+ * option bags, the snapshot union, its guard and the wait cap. The line is
+ * DECLARATION versus RUN — an `agent.ts` declares a workflow, and everything
+ * about what a run IS is read by a caller (a page, a script, a tool annotating a
+ * result), which is exactly the audience that subpath already exists for. It
+ * was seventeen names on the root barrel whose reader is never `agent.ts`.
  */
 export type { WorkflowClient } from "./workflow-client.ts";
-// The per-call option bags, re-exported so this stays the one module an author
-// imports the workflow surface from.
-export type {
-  FindOptions,
-  StartOptions,
-  StreamOptions,
-  WakeUpOptions,
-} from "./workflow-options.ts";
-
-/**
- * A run's observable state — the status union, the terminal set, the snapshot a
- * caller reads and its guard. Re-exported because `ctx.workflows` returns them
- * and this module is the one an author imports.
- */
-export {
-  clampWorkflowWait,
-  isTerminal,
-  MAX_WORKFLOW_WAIT_MS,
-  TERMINAL_WORKFLOW_STATUSES,
-  type TerminalWorkflowRun,
-  // Re-exported because `WorkflowRunSnapshot` intersects it into every member, so
-  // it is part of a public type's shape — TypeDoc fails the docs build for a type
-  // referenced by a public signature but not reachable from the entry point.
-  type WorkflowRunBase,
-  type WorkflowRunSnapshot,
-  type WorkflowRunStatus,
-} from "./workflow-run.ts";
 
 /**
  * A `"use workflow"` function, as the compiler leaves it.
@@ -135,7 +114,7 @@ export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> |
  *   validated at `start()`. The input is serialized into the run record, so it
  *   must be JSON-serializable.
  * @typeParam R - What the body resolves with, inferred from the function. It
- *   reaches a caller as {@link WorkflowRunSnapshot}'s `output`, so passing the
+ *   reaches a caller as `WorkflowRunSnapshot`'s `output`, so passing the
  *   workflow to `start`/`get`/`find` is what makes a completed run's result
  *   typed instead of `unknown`.
  *
@@ -209,7 +188,7 @@ export type AnyWorkflowDef<R = unknown> = {
  * export const transcribe = workflow({ input: …, run: transcribeFlow });
  *
  * // client.tsx — `import type` is erased, so nothing server-side is bundled.
- * import type { WorkflowOutputOf } from "@alexkroman1/aai";
+ * import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
  * import type { transcribe } from "./agent.ts";
  *
  * const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
@@ -272,8 +251,10 @@ export type WorkflowSummary = {
  * spec.
  *
  * @example
+ * `agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
+ * `agent()` takes no `tools`.
  * ```ts no-check
- * import { agent, tool, workflow } from "@alexkroman1/aai";
+ * import { agent, workflow } from "@alexkroman1/aai";
  * import { z } from "zod";
  * import { digestFlow } from "./workflows/digest.ts";
  *
@@ -286,17 +267,24 @@ export type WorkflowSummary = {
  * export default agent({
  *   name: "Researcher",
  *   workflows: { digest },
- *   tools: {
- *     research: tool({
- *       description: "Kick off overnight research on a topic",
- *       inputSchema: z.object({ topic: z.string() }),
- *       execute: async ({ topic }, ctx) => {
- *         // The workflow itself, not its name: typed input, and a typo is a
- *         // compile error. `key` is what lets a later turn find this run.
- *         const runId = await ctx.workflows.start(digest, { topic }, { key: ctx.sessionId });
- *         return `Working on it — run ${runId}.`;
- *       },
- *     }),
+ * });
+ * ```
+ *
+ * @example
+ * `tools/research.ts` — the tool that starts a run.
+ * ```ts no-check
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ * import { digest } from "../agent.ts";
+ *
+ * export default tool({
+ *   description: "Kick off overnight research on a topic",
+ *   inputSchema: z.object({ topic: z.string() }),
+ *   execute: async ({ topic }, ctx) => {
+ *     // The workflow itself, not its name: typed input, and a typo is a
+ *     // compile error. `key` is what lets a later turn find this run.
+ *     const runId = await ctx.workflows.start(digest, { topic }, { key: ctx.sessionId });
+ *     return `Working on it — run ${runId}.`;
  *   },
  * });
  * ```

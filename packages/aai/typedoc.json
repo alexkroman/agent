@@ -3,6 +3,7 @@
   "entryPoints": [
     "dist/index.d.ts",
     "dist/sdk/utils.d.ts",
+    "dist/sdk/step-barrel.d.ts",
     "dist/sdk/testing.d.ts",
     "dist/sdk/testing-vitest.d.ts",
     "dist/sdk/step-errors.d.ts",
@@ -24,6 +25,23 @@
   },
   "intentionallyNotExported": [
     "StandardSchemaV1",
+    // The ten field-list and message types behind `AgentParams`' four arms, plus
+    // the endpointing one. They are the implementation of a compile error — an
+    // author reads them in the message tsc prints, never by name — so they are
+    // off the root barrel and out of the docs, while still appearing inline in
+    // the arms' rendered signatures. See the re-export comment at the foot of
+    // `sdk/define.ts`.
+    "DefaultedAgentField",
+    "EndpointingOnDescriptorMisuse",
+    "FrontDoorField",
+    "InlineToolsField",
+    "InlineToolsMisuse",
+    "PipelineOnlyField",
+    "PipelineOnlyMisuse",
+    "ProviderField",
+    "StaticFrontDoorMisuse",
+    "WorkflowAppMisuse",
+    "WorkflowAppOnlyField",
     // A type-level helper, not API: `SessionEventBody` is
     // `DistributiveOmit<SessionEvent, "meta">` because a plain `Omit` over a
     // discriminated union collapses it to one non-discriminated object. Nothing a

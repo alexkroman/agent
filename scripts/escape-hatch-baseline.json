@@ -103,6 +103,6 @@
     "packages/aai/host/workflow-wake-hint.test.ts": 2,
     "packages/aai/sdk/_internal-types.test.ts": 2,
     "packages/aai/sdk/config-rules.test.ts": 9,
-    "packages/aai/sdk/define.test.ts": 2
+    "packages/aai/sdk/define.test.ts": 1
   }
 }

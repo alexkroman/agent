@@ -25,7 +25,7 @@
  * @internal
  */
 
-import { isTerminal, type WorkflowRunSnapshot } from "../sdk/workflow.ts";
+import { isTerminal, type WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
 import { SSE_HEADERS, sseFrame } from "./workflow-api-http.ts";
 
 /** How often a live stream re-reads the run it is watching. */

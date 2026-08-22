@@ -49,7 +49,8 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { omitUndefined, PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/utils";
+import { PREVIEW_SLUG_SUFFIX } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { HonoEnv } from "./context.ts";
 import { deleteAgentResources } from "./delete.ts";
 import { createLogger } from "./logger.ts";

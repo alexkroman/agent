@@ -1,7 +1,7 @@
 /**
  * The CRAG nodes' BODIES — one model call each, and nothing about routing.
  *
- * Split from `graph.ts` when that file became an actual graph: the machine
+ * Split from `procedure.ts` when that file became an actual machine: the machine
  * there declares which node runs next, and these are what each node does. The
  * seam is worth having beyond the line count — everything here is a plain async
  * function of its arguments, so a spec can drive one directly, and the machine

@@ -20,8 +20,9 @@
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { FfmpegError } from "@alexkroman1/aai/ffmpeg";
+import { readUpload } from "@alexkroman1/aai/step";
 import { stubReporter, stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
-import { omitUndefined, readUpload } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
@@ -148,8 +149,8 @@ describe("the agent declares its three workflows and nothing else", () => {
     // every flow, and the streaming one differs only in that the CLIENT chose the id
     // and PUT the file to it. A divergence here would mean the form had to ask a
     // person how the bytes should travel.
-    for (const flow of [transcribe, transcribeStream, transcribeBatch]) {
-      expect(flow.uploads).toEqual(["recording"]);
+    for (const wf of [transcribe, transcribeStream, transcribeBatch]) {
+      expect(wf.uploads).toEqual(["recording"]);
     }
   });
 

@@ -32,7 +32,7 @@
  *
  * ```ts no-check
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
- * import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/utils";
+ * import { readUpload, stepTranscribeSync } from "@alexkroman1/aai/step";
  *
  * export async function transcribeClip(uploadId: string) {
  *   "use step";

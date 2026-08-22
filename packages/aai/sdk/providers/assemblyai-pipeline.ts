@@ -87,6 +87,20 @@ export interface AssemblyAIPipelineOptions {
    * preset's descriptor including its region.
    */
   region?: "us" | "eu";
+  /**
+   * End-of-turn window for the STT stage, in ms — the same two settings
+   * `agent({ minTurnSilenceMs, maxTurnSilenceMs })` reaches without the
+   * preset, here for a config that already spreads it (an EU region, say).
+   *
+   * `maxTurnSilenceMs` is the PAUSE-TOLERANCE knob: it bounds only utterances
+   * that never read as complete, so raising it is paid for by hesitant speech
+   * alone. `minTurnSilenceMs` is the end-of-turn CHECK and taxes every
+   * finished utterance. Read `DEFAULT_MAX_TURN_SILENCE_MS` and
+   * `DEFAULT_MIN_TURN_SILENCE_MS` before moving either — both are measured.
+   */
+  minTurnSilenceMs?: number;
+  /** See {@link AssemblyAIPipelineOptions.minTurnSilenceMs}. */
+  maxTurnSilenceMs?: number;
 }
 
 /**
@@ -100,9 +114,9 @@ export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
   llm: AssemblyAILlmProvider;
   tts: AssemblyAITtsProvider;
 } {
-  const { voice, region } = opts;
+  const { voice, region, minTurnSilenceMs, maxTurnSilenceMs } = opts;
   return {
-    stt: assemblyAIStt(region ? { region } : {}),
+    stt: assemblyAIStt(omitUndefined({ region, minTurnSilenceMs, maxTurnSilenceMs })),
     // `reasoningEffort: "none"` because on a voice line time-to-first-token IS
     // the quality, and the default model is a reasoning model. Measured against
     // tau2-bench retail: 12 of 53 turns waited over 5s for the agent's first

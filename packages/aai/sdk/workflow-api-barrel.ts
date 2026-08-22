@@ -15,6 +15,11 @@
  * `createWorkflowApiClient` is the narrower one, for a caller that genuinely
  * only has workflows (a page already knows what it is).
  *
+ * It also owns the RUN vocabulary — the option bags, the snapshot union, its
+ * guard, and `WorkflowOutputOf` — which used to sit on the root barrel beside
+ * `agent()` and `tool()`. See the re-export below for the line that puts it
+ * here.
+ *
  * @module workflow-api
  */
 
@@ -29,6 +34,33 @@ export {
 // took the raw `Response` from `watch` needs it, and because the browser client
 // would otherwise carry a second copy of a stream parser.
 export { type EventStreamFrame, readEventStream } from "./event-stream.ts";
+/**
+ * What a RUN is: the per-call option bags, the status union and its terminal
+ * set, the snapshot a caller reads, and the guard that narrows one.
+ *
+ * Here rather than on the root barrel because the reader is never `agent.ts`.
+ * The root's membership test is "would an `agent.ts`, a tool module, or a
+ * `workflow()` NAME it", and these seventeen names fail it: a page renders a run,
+ * a script polls one, and a tool body that starts one gets a typed value back
+ * without importing anything. Declaring a workflow is still `workflow()` on the
+ * root; this is everything about the run it starts.
+ *
+ * `WorkflowOutputOf` is the type a page's `useWorkflowRun<…>` is parameterized
+ * by, which is the clearest case of all — it is imported by a `client.tsx`,
+ * beside `createWorkflowApi`, from this subpath.
+ */
+export type {
+  AnyWorkflowDef,
+  WorkflowBody,
+  // `WorkflowDef` and `WorkflowClient` belong to the `workflow` capability and
+  // stay on the ROOT — they are what an `agent.ts` declares with. They are
+  // reachable here only because the run types' own docs `{@link}` them, and a
+  // type a public signature's documentation names must be reachable from the
+  // entry point or the docs build fails.
+  WorkflowDef,
+  WorkflowOutputOf,
+  WorkflowSummary,
+} from "./workflow.ts";
 // The narrower factory, the call set, the prefix both ends resolve, and the
 // upload types a caller names. Listed rather than `export *`, which is what
 // every other barrel here does: a wildcard needs a lint suppression, and the
@@ -49,3 +81,23 @@ export {
   type WorkflowApi,
   type WorkflowApiClientOptions,
 } from "./workflow-api-client.ts";
+export type { WorkflowClient } from "./workflow-client.ts";
+export type {
+  FindOptions,
+  StartOptions,
+  StreamOptions,
+  WakeUpOptions,
+} from "./workflow-options.ts";
+export {
+  clampWorkflowWait,
+  isTerminal,
+  MAX_WORKFLOW_WAIT_MS,
+  TERMINAL_WORKFLOW_STATUSES,
+  type TerminalWorkflowRun,
+  // Re-exported because `WorkflowRunSnapshot` intersects it into every member, so
+  // it is part of a public type's shape — TypeDoc fails the docs build for a type
+  // referenced by a public signature but not reachable from the entry point.
+  type WorkflowRunBase,
+  type WorkflowRunSnapshot,
+  type WorkflowRunStatus,
+} from "./workflow-run.ts";

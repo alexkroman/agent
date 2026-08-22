@@ -186,30 +186,27 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
 
 /**
  * Maximum silence (ms) before AssemblyAI force-ends a turn regardless of
- * content (`max_turn_silence`). This is the pause-tolerance knob: it bounds
+ * content (`max_turn_silence`). **This is the pause-tolerance knob**: it bounds
  * only utterances that never read as complete, so raising it is paid for by
  * hesitant speech alone and costs an ordinary finished sentence nothing —
  * unlike {@link DEFAULT_MIN_TURN_SILENCE_MS}, which taxes every turn.
  *
- * 3000 keeps the ~3s of pause tolerance the 3000 `min_turn_silence` was
- * reaching for, and applies it where it actually lands. The service default is
- * 1536, which is what silently governed every turn while the minimum sat above
- * it — so this, not the minimum's nominal 3000, is the number the hesitation
- * failures were actually measured against, and moving 1536 -> 3000 is the whole
- * of the split fix.
+ * Reach it per agent with `agent({ maxTurnSilenceMs })` on the default pipeline,
+ * or on the descriptor directly with `assemblyAIStt({ maxTurnSilenceMs })`.
  *
- * **Back at its measured 3500, because the signature the trim was told to
- * watch for showed up.** The measured configuration has always been
- * 1600/**3500** — reward 0.68, twice, on two independent tau2-bench retail
- * runs. 3000 was a 500 ms trim off that, deliberate but never measured on its
- * own, carrying an explicit revert condition: *splits reappearing on hesitant,
- * non-spelling utterances while spelled identifiers stay intact*, the asymmetry
- * that distinguishes this ceiling from {@link DEFAULT_MIN_TURN_SILENCE_MS}.
+ * @defaultValue `3500` — the value both measured tau2-bench retail runs scored
+ * reward 0.68 at, paired with a 1600 minimum.
  *
- * That is precisely what the retail run at 3000 produced (aligning every
- * committed final against its gold utterance with `scripts/stt_errors.py`, 40
- * of 56 utterances mis-heard). Every split landed on a hesitation, and every
- * one of those hesitations was a non-speech event mid-sentence:
+ * @remarks
+ * **3000 was tried and reverted.** It was a 500 ms trim off the measured pair,
+ * deliberate but never measured on its own, carrying an explicit revert
+ * condition: *splits reappearing on hesitant, non-spelling utterances while
+ * spelled identifiers stay intact*, the asymmetry that distinguishes this
+ * ceiling from {@link DEFAULT_MIN_TURN_SILENCE_MS}. That is precisely what the
+ * retail run at 3000 produced (aligning every committed final against its gold
+ * utterance with `scripts/stt_errors.py`, 40 of 56 utterances mis-heard). Every
+ * split landed on a hesitation, and every one of those hesitations was a
+ * non-speech event mid-sentence:
  *
  * - *"…how many T-shirt options are on your online store right now? And second,
  *   I need to change all my pending [sneeze][sneeze][sneeze] T-shirts to
@@ -223,37 +220,27 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * ("first name Y-U-S-U-F, last name R-O-S-S-I"), which is the other half of the
  * signature and the reason this is the knob that moves rather than the
  * minimum — raising that one would tax every finished utterance for a fault
- * that only hesitant ones have.
+ * that only hesitant ones have. The record is not that 3500 is optimal; it is
+ * that a split does not merely delay a turn, it makes the agent answer half a
+ * request and then treat the other half as a new one.
  *
- * The revert restores the measured pair; it does not claim 3500 is optimal.
- * What is now also recorded is the shape of the cost when it is too low, which
- * the trim was reasoned without: a split does not merely delay a turn, it makes
- * the agent answer half a request and then treat the other half as a new one.
- *
- * The two orderings this has to keep both still hold, but only because the idle
- * deadline moved with it. It stays BELOW
+ * **Two orderings this value has to keep.** It stays BELOW
  * `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (4000, internal) less final-emission
- * latency, so an utterance force-ended by this ceiling still delivers its
- * final before the speaking edge goes idle — and the idle edge is what fires a
+ * latency, so an utterance force-ended by this ceiling still delivers its final
+ * before the speaking edge goes idle — and the idle edge is what fires a
  * false-interruption resume (`host/transports/pipeline-recovery.ts`), so
  * crossing that line does not merely delay a turn, it lets the agent resume a
- * reply the caller really did interrupt. The same fact was recorded the other
- * way round when the resume had a window of its own: at a ceiling of 1600 the
- * force-end landed first and the resume proceeded instead, a behaviour change
- * rather than a tuning change. 500 ms of margin is thin, and it is the reason
- * this revert is TWO constants: raising this to 3500 without moving
- * `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` to 4000 would put a force-ended final at
- * exactly the idle deadline, which is the resume-over-a-real-interruption bug,
- * not a slower turn. And it stays clear of the service's own 1536 default, so the ceiling is ours rather
- * than silently the service's, which is the state this constant was introduced
+ * reply the caller really did interrupt. 500 ms of margin is thin, which is why
+ * raising this to 3500 took `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` to 4000 with it.
+ * And it stays clear of the service's own 1536 default, so the ceiling is ours
+ * rather than silently the service's — the state this constant was introduced
  * to escape.
  *
  * What the ceiling costs is pause tolerance for hesitant speech, paid ONLY by
- * utterances that never read as complete — which is the whole reason this is
- * the knob to trim rather than the minimum, and equally the reason trimming it
- * buys so little. The measured tail is content-driven and long (p90 endpoint
- * latency ~4.0-4.6s at every setting swept), so the ceiling is not what makes
- * a slow turn slow.
+ * utterances that never read as complete — which is equally the reason trimming
+ * it buys so little. The measured tail is content-driven and long (p90 endpoint
+ * latency ~4.0-4.6s at every setting swept), so the ceiling is not what makes a
+ * slow turn slow.
  */
 export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
 

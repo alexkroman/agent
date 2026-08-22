@@ -264,7 +264,7 @@ export function createGatedSpeechEdges(deps: {
 }): GatedSpeechEdges {
   // Long-lived and never persisted: the gate's position is per CONNECTION, and
   // a reconnect builds a new transport. So this is `createActor(...).start()`
-  // once, not the read-snapshot-write-snapshot shape `sdk/flow.ts` needs for a
+  // once, not the read-snapshot-write-snapshot shape `sdk/dialog.ts` needs for a
   // position that has to survive the process.
   const actor = createActor(gatedSpeechEdgesMachine, { input: deps }).start();
   return {

@@ -32,14 +32,14 @@
 
 import { createWorkflowApi, page, useWorkflowProgress, useWorkflowRun } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
-// ERASED at build time, so naming the agent's own type costs the browser bundle
-// nothing — and it is what stops this file restating a shape `workflows/
-// digest.ts` already declares.
-import type { WorkflowOutputOf } from "@alexkroman1/aai";
 // The one runtime import from the SDK a browser bundle wants: `/utils` is the
 // zod-free subpath, so it costs a few hundred bytes rather than the root
 // barrel's module graph.
 import { errorMessage } from "@alexkroman1/aai/utils";
+// ERASED at build time, so naming the agent's own type costs the browser bundle
+// nothing — and it is what stops this file restating a shape `workflows/
+// digest.ts` already declares.
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import { useState } from "react";
 import type { dailyDigest } from "./agent.ts";
 

@@ -6,7 +6,7 @@
  * `popstate` for Back/Forward.
  */
 
-import { VALID_SLUG_RE } from "@alexkroman1/aai/utils";
+import { VALID_SLUG_RE } from "@alexkroman1/aai/internal";
 import { useEffect, useState } from "react";
 
 const PROJECT_PATH_RE = /^\/studio\/chat\/([a-z0-9][a-z0-9_-]*)\/?$/;

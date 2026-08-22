@@ -26,12 +26,13 @@
 // nobody is watching.
 
 import {
+  createWorkflowApiClient,
   isTerminal,
+  type WorkflowApi,
   type WorkflowRunSnapshot,
   type WorkflowRunStatus,
   type WorkflowSummary,
-} from "@alexkroman1/aai";
-import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
+} from "@alexkroman1/aai/workflow-api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { platformOrigin } from "./platform-origin.ts";
 import { queryKeys } from "./query-keys.ts";

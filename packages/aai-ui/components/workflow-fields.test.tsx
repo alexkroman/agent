@@ -13,8 +13,8 @@
  * a guess that submits a value the schema then rejects.
  */
 
-import type { WorkflowSummary } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { ThemeProvider } from "../context.ts";

@@ -34,6 +34,9 @@ export const APP_DB_WORLD_POOL_MAX = 4;
 export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
 
 // @internal
+export function capToolResult(result: string): string;
+
+// @internal
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
 // @internal
@@ -77,8 +80,17 @@ export const HEARD_AUDIO_LAG_MS = 150;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @internal
+export function isTextAssetPath(assetPath: string): boolean;
+
+// @public
+export function linkConfirmationCode(code: string): string;
+
 // @public
 export const MAX_PLAYBACK_BUFFERED_MS = 600000;
+
+// @public
+export const MAX_SLUG_LENGTH = 64;
 
 // @internal
 export const MIC_BUFFER_SECONDS = 0.1;
@@ -91,6 +103,9 @@ export const MIC_SILENCE_PROBE_MS = 1500;
 
 // @internal
 export const MISSING_WORKFLOW_ID_MESSAGE: string;
+
+// @public
+export function normalizeSpeechText(text: string): string;
 
 // @internal (undocumented)
 export interface OwnedMap<K, V> {
@@ -144,6 +159,9 @@ export const PLAYBACK_FILL_MS = 200;
 // @public
 export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
 
+// @public
+export const PREVIEW_SLUG_SUFFIX = "-preview";
+
 // @internal
 export function rejectingWorkflows(message: string): WorkflowClient;
 
@@ -152,6 +170,9 @@ export function requestPath(rawUrl: string | undefined): string;
 
 // @internal
 export function requestQuery(rawUrl: string | undefined): URLSearchParams;
+
+// @public
+export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
 export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
@@ -205,8 +226,14 @@ type StreamOptions = {
     startIndex?: number;
 };
 
+// @internal
+export function toArgsRecord(input: unknown): Record<string, unknown>;
+
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+export const VALID_SLUG_RE: RegExp;
 
 // @public
 type WakeUpOptions = {

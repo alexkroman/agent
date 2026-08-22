@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { VALID_SLUG_RE } from "@alexkroman1/aai/utils";
+import { VALID_SLUG_RE } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { generatedSlug, SLUG_SUFFIX_LENGTH, SLUG_SUFFIX_RE, slugSuffix } from "./slug-generate.ts";
 

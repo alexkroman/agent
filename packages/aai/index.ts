@@ -69,14 +69,14 @@ export * from "./sdk/define.ts";
  * optional utility. Its machine comes from `xstate`, which an author imports
  * directly; nothing here re-exports it.
  */
-export * from "./sdk/flow.ts";
+export * from "./sdk/dialog.ts";
 export * from "./sdk/generate.ts";
 /**
  * The other machine: one unit of WORK inside a tool call, where a flow is where
  * a CONVERSATION is. On the root beside it because an author reaching for one
  * needs to see the other to pick correctly.
  */
-export * from "./sdk/graph.ts";
+export * from "./sdk/procedure.ts";
 // The one preset that belongs next to `agent()` rather than behind a provider
 // subpath: it IS the recommended configuration, and requiring three more
 // imports to reach it is what made the wrong mode the easy one.
@@ -147,10 +147,21 @@ export {
   toolFailure,
   withLock,
 } from "./sdk/utils.ts";
-// `workflow()` and everything a caller of `ctx.workflows` reads. On the ROOT
-// barrel rather than a subpath because declaring a workflow sits beside
-// declaring a tool — an author writes both in `agent.ts`. The engine behind it
-// (the Workflow DevKit) is not re-exported from anywhere here: an author imports
-// `sleep`, `defineHook` and the directives from `workflow` directly, which keeps
-// this SDK from having to track that package's surface.
-export * from "./sdk/workflow.ts";
+/**
+ * DECLARING a workflow — and only that.
+ *
+ * `workflow()` is on the root barrel because declaring one sits beside declaring
+ * a tool: an author writes both in `agent.ts`. Everything about the RUN it
+ * starts — the option bags, the snapshot union, its guard, `WorkflowOutputOf`,
+ * the wait cap — is on `@alexkroman1/aai/workflow-api`, whose reader is a page,
+ * a script, or a tool annotating a result. Seventeen names, none of which an
+ * `agent.ts` ever writes, and the barrel's membership test is exactly that.
+ *
+ * `WorkflowClient` stays because `ToolContext.workflows` names it.
+ *
+ * The engine behind all of it (the Workflow DevKit) is not re-exported from
+ * anywhere here: an author imports `sleep`, `defineHook` and the directives from
+ * `workflow` directly, which keeps this SDK from having to track that package's
+ * surface.
+ */
+export { type WorkflowClient, type WorkflowDef, workflow } from "./sdk/workflow.ts";

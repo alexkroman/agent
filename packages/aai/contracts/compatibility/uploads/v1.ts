@@ -19,7 +19,7 @@ import {
   type UploadInfo,
   type UploadSlice,
   uploadInfo,
-} from "../../../sdk/utils.ts";
+} from "../../../sdk/step-barrel.ts";
 
 /** How much of the file the first step looks at. */
 const HEADER_BYTES = 64 * 1024;

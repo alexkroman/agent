@@ -8,15 +8,15 @@
 // (streamText invocation, TTS coalescing and flush, audio conversion).
 
 import { APICallError, RetryError } from "ai";
+import { capToolResult, toArgsRecord } from "../../internal.ts";
 import {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
   DEAD_AIR_OPENING_PHRASE,
   DEFAULT_DEAD_AIR_COVER_MS,
 } from "../../sdk/constants.ts";
-
 import { omitUndefined } from "../../sdk/omit-undefined.ts";
-import { capToolResult, errorMessage, toArgsRecord } from "../../sdk/utils.ts";
+import { errorMessage } from "../../sdk/utils.ts";
 import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
 import type { EmitError, SendTtsText } from "./types.ts";

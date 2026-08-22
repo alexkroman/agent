@@ -210,7 +210,7 @@ async function deliver(url: string, label: string) {
  * inside an SDK helper.
  */
 const FAN_OUT_TS = `
-import { mapConcurrent } from "@alexkroman1/aai/utils";
+import { mapConcurrent } from "@alexkroman1/aai/step";
 
 export async function fanOutFlow(input: { words: string[] }) {
   "use workflow";
@@ -240,7 +240,7 @@ async function shout(word: string, index: number) {
  * real template calls them from.
  */
 const NARRATE_TS = `
-import { emit, mapConcurrent, report } from "@alexkroman1/aai/utils";
+import { emit, mapConcurrent, report } from "@alexkroman1/aai/step";
 
 export async function narrateFlow(input: { items: string[] }) {
   "use workflow";
@@ -271,7 +271,7 @@ async function handle(item: string, index: number) {
  * — if the global does not cross the bundle boundary this run fails.
  */
 const SECRET_TS = `
-import { requireStepEnv, stepEnv } from "@alexkroman1/aai/utils";
+import { requireStepEnv, stepEnv } from "@alexkroman1/aai/step";
 
 export async function secretFlow() {
   "use workflow";

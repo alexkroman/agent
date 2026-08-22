@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
-import { linkConfirmationCode as sharedLinkConfirmationCode } from "@alexkroman1/aai/utils";
+import { linkConfirmationCode as sharedLinkConfirmationCode } from "@alexkroman1/aai/internal";
 import { afterEach, describe, expect, test } from "vitest";
 import { clearCliLinkCode, consumeCliLinkCode, linkConfirmationCode } from "./cli-link.ts";
 

@@ -17,9 +17,9 @@
  * its return value, and audio in one is megabytes replayed on every resume.
  */
 
+import { readUpload, uploadInfo } from "@alexkroman1/aai/step";
 import { stubReporter, stubSpeech, stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
 import { installStubGateway } from "@alexkroman1/aai/testing/vitest";
-import { readUpload, uploadInfo } from "@alexkroman1/aai/utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
 import agentDef, { spokenSummary } from "./agent.ts";

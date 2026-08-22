@@ -23,7 +23,7 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-import { MAX_ATTEMPTS, runCorrectiveRag } from "./graph.ts";
+import { MAX_ATTEMPTS, runCorrectiveRag } from "./procedure.ts";
 import {
   ANSWER_SYSTEM,
   ANSWERS_SYSTEM,

@@ -18,7 +18,7 @@
  * a header bug.
  *
  * ```ts no-check
- * import { encodeWav, stepSpeak } from "@alexkroman1/aai/utils";
+ * import { encodeWav, stepSpeak } from "@alexkroman1/aai/step";
  *
  * export async function speak(text: string) {
  *   "use step";

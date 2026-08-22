@@ -11,13 +11,14 @@
  */
 
 import { DEFAULT_MAX_HISTORY, safeJsonParse } from "@alexkroman1/aai";
+import { toArgsRecord } from "@alexkroman1/aai/internal";
 import {
   lenientParse,
   type ServerMessage,
   ServerMessageSchema,
   type SessionEvent,
 } from "@alexkroman1/aai/protocol";
-import { omitUndefined, toArgsRecord } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { SessionStateMachine } from "./session-core-state.ts";
 import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
 

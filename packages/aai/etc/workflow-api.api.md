@@ -13,6 +13,17 @@ export type AgentClient = WorkflowApi & {
 };
 
 // @public
+export type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    uploads?: readonly string[];
+    run: WorkflowBody<never, R>;
+};
+
+// @public
+export function clampWorkflowWait(requested: number | undefined): number;
+
+// @public
 export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 
 // @public
@@ -39,7 +50,75 @@ export type EventStreamFrame = {
 };
 
 // @public
+export type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
+
+// @public
+export const MAX_WORKFLOW_WAIT_MS = 60000;
+
+// @public
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
+
+// @public
+interface StandardSchemaIssue {
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public
+export type StartOptions = {
+    key?: string;
+    notify?: boolean | string;
+};
+
+// @public
+export type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
+export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
+
+// @public
+export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
+    status: "completed" | "failed" | "cancelled";
+}>;
+
+// @public
+type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
@@ -97,6 +176,11 @@ export type UploadRef = {
 };
 
 // @public
+export type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
 export const WORKFLOW_API_PREFIX = "/workflows";
 
 // @public
@@ -150,7 +234,43 @@ export type WorkflowApiClientOptions = {
 };
 
 // @public
-type WorkflowRunBase = {
+export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
+    workflowId?: string;
+};
+
+// @public
+export type WorkflowClient = {
+    start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
+    input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
+    start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
+    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+    find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    publicWebhookUrl(token: string): string;
+    listing(): WorkflowSummary[];
+};
+
+// @public
+export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    uploads?: readonly string[];
+    run: WorkflowBody<InferSchemaOutput<P>, R>;
+};
+
+// @public
+export type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
+
+// @public
+export type WorkflowRunBase = {
     runId: string;
     workflow: string;
     createdAt: number;
@@ -158,7 +278,7 @@ type WorkflowRunBase = {
 };
 
 // @public
-type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
     status: "pending" | "running";
 })
 /** `output` is what the workflow function returned. */
@@ -177,7 +297,10 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 });
 
 // @public
-type WorkflowSummary = {
+export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
+export type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;

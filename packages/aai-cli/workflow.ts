@@ -27,8 +27,8 @@
  * client's methods.
  */
 
-import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { getServerInfo } from "./_agent.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";

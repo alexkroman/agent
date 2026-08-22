@@ -2001,7 +2001,9 @@ type WorkflowApi = {
   find: Promise<WorkflowRunSnapshot[]>;
   follow: AsyncIterable<WorkflowRunSnapshot>;
   followOutput: AsyncIterable<unknown>;
-  get: Promise<WorkflowRunSnapshot | undefined>;
+  get: Promise<
+     | WorkflowRunSnapshot
+    | undefined>;
   list: Promise<WorkflowSummary[]>;
   recent: Promise<WorkflowRunSnapshot[]>;
   start: Promise<string>;
@@ -2105,7 +2107,7 @@ Runs of `workflow` started with `key`, newest first.
 
 ###### Returns
 
-`Promise`\<[`WorkflowRunSnapshot`](aai/index.md#workflowrunsnapshot)[]\>
+`Promise`\<[`WorkflowRunSnapshot`](aai/workflow-api.md#workflowrunsnapshot)[]\>
 
 ##### follow()
 
@@ -2150,7 +2152,7 @@ instead is the caller [WorkflowApi.watch](#watch) exists for.
 
 ###### Returns
 
-`AsyncIterable`\<[`WorkflowRunSnapshot`](aai/index.md#workflowrunsnapshot)\>
+`AsyncIterable`\<[`WorkflowRunSnapshot`](aai/workflow-api.md#workflowrunsnapshot)\>
 
 ##### followOutput()
 
@@ -2208,7 +2210,9 @@ no position a re-open could resume from.
 ```ts
 get(runId: string, options?: {
   wait?: number;
-}): Promise<WorkflowRunSnapshot | undefined>;
+}): Promise<
+  | WorkflowRunSnapshot
+| undefined>;
 ```
 
 Read a run's state. Resolves undefined for an unknown id.
@@ -2234,7 +2238,9 @@ script reads `output`.
 
 ###### Returns
 
-`Promise`\<[`WorkflowRunSnapshot`](aai/index.md#workflowrunsnapshot) \| `undefined`\>
+`Promise`\<
+  \| [`WorkflowRunSnapshot`](aai/workflow-api.md#workflowrunsnapshot)
+  \| `undefined`\>
 
 ##### list()
 
@@ -2277,7 +2283,7 @@ meaning "this user's runs" cannot silently widen to every user's.
 
 ###### Returns
 
-`Promise`\<[`WorkflowRunSnapshot`](aai/index.md#workflowrunsnapshot)[]\>
+`Promise`\<[`WorkflowRunSnapshot`](aai/workflow-api.md#workflowrunsnapshot)[]\>
 
 ##### start()
 
@@ -2365,7 +2371,7 @@ answered.
 
 ###### Returns
 
-`Promise`\<[`WorkflowRunSnapshot`](aai/index.md#workflowrunsnapshot)\>
+`Promise`\<[`WorkflowRunSnapshot`](aai/workflow-api.md#workflowrunsnapshot)\>
 
 ##### streamOutput()
 
@@ -2470,7 +2476,7 @@ which a slow link and a dead client both produce.
 
 ###### Returns
 
-`Promise`\<[`UploadInfo`](aai/utils.md#uploadinfo)\>
+`Promise`\<[`UploadInfo`](aai/step.md#uploadinfo)\>
 
 ##### uploadStream()
 
@@ -2632,7 +2638,7 @@ bundle.
 export const transcribe = workflow({ input: …, run: transcribeFlow });
 
 // client.tsx — `import type` is erased, so nothing server-side is bundled.
-import type { WorkflowOutputOf } from "@alexkroman1/aai";
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import type { transcribe } from "./agent.ts";
 
 const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
@@ -3666,7 +3672,7 @@ first poll has not landed) because that is what every call site holds.
 
 ##### run
 
-  \| [`WorkflowRunSnapshot`](aai/index.md#workflowrunsnapshot)\<`R`\>
+  \| [`WorkflowRunSnapshot`](aai/workflow-api.md#workflowrunsnapshot)\<`R`\>
   \| `undefined`
 
 #### Returns

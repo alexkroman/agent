@@ -13,7 +13,7 @@ import type { DefaultToolResult } from '@alexkroman1/aai';
 import type { FormHTMLAttributes } from 'react';
 import { FunctionComponentElement } from 'react';
 import type { InputHTMLAttributes } from 'react';
-import { isTerminal } from '@alexkroman1/aai';
+import { isTerminal } from '@alexkroman1/aai/workflow-api';
 import { JSX } from 'react';
 import { MemoExoticComponent } from 'react';
 import { ProviderProps } from 'react';
@@ -25,9 +25,9 @@ import type { TextareaHTMLAttributes } from 'react';
 import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
-import { WorkflowOutputOf } from '@alexkroman1/aai';
-import type { WorkflowRunSnapshot } from '@alexkroman1/aai';
-import { WorkflowSummary } from '@alexkroman1/aai';
+import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
 export type AgentCustomEvent = {

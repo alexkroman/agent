@@ -3,7 +3,7 @@ import { planProjection } from "./shared.ts";
 
 /**
  * A planning desk you can phone: plan-and-execute, with the caller in the loop.
- * `prompts.ts` carries the attribution, `graph.ts` the three nodes, `shared.ts`
+ * `prompts.ts` carries the attribution, `procedure.ts` the three nodes, `shared.ts`
  * the state (which is their `PlanExecute`, field for field).
  *
  * **The steps do real work.** `work_next_step` runs a bounded search/answer loop

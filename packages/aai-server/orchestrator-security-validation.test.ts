@@ -5,7 +5,7 @@
  * validation. Cross-agent tenant-isolation tests live in
  * orchestrator-security.test.ts.
  */
-import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
+import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { SLUG_WS_RE, wsSlugFromPath } from "./orchestrator-ws.ts";

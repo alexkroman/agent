@@ -20,7 +20,7 @@
  * builds a project and runs one.
  */
 
-import type { ToolContext, WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai";
+import type { ToolContext, WorkflowClient } from "@alexkroman1/aai";
 import {
   createProgressStream,
   createRunSnapshot,
@@ -32,6 +32,7 @@ import {
 } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
 import authoredAgent from "./agent.ts";

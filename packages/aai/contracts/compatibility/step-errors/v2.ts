@@ -11,13 +11,13 @@
  * relative.
  */
 
+import { requireStepEnv, stepGenerate } from "../../../sdk/step-barrel.ts";
 import {
   stepFetchOk,
   throwFatalStepError,
   throwStepError,
   toStepError,
 } from "../../../sdk/step-errors.ts";
-import { requireStepEnv, stepGenerate } from "../../../sdk/utils.ts";
 
 /** An HTTP call whose failure is simply a failure — one call, no `ok` check. */
 export async function fetchOrder(id: string): Promise<unknown> {

@@ -22,10 +22,11 @@
  *   the cap and the forced final answer are one mechanism.
  */
 
+import { capToolResult } from "../internal.ts";
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
 import { serializeToolFailure } from "../sdk/_tool-failure-wire.ts";
 import type { Message } from "../sdk/types.ts";
-import { capToolResult, errorMessage } from "../sdk/utils.ts";
+import { errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 

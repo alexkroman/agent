@@ -15,7 +15,7 @@
  * WRITES against the store, and the only thing this must keep doing is compile.
  */
 
-import { type UploadInfo, type UploadRange, uploadInfo } from "../../../sdk/utils.ts";
+import { type UploadInfo, type UploadRange, uploadInfo } from "../../../sdk/step-barrel.ts";
 
 /** What a caller names the windows by — exported so a signature can mention it. */
 export type Window = UploadRange;

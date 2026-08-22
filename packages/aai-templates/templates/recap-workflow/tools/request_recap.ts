@@ -1,4 +1,5 @@
-import { isTerminal, tool } from "@alexkroman1/aai";
+import { tool } from "@alexkroman1/aai";
+import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
 import { recap, SAMPLE_RECORDING } from "../shared.ts";
 

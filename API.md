@@ -24,6 +24,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai/runtime` — `packages/aai/etc/runtime.api.md`
 - `@alexkroman1/aai/s2s` — `packages/aai/etc/s2s.api.md`
 - `@alexkroman1/aai/slugify` — `packages/aai/etc/slugify.api.md`
+- `@alexkroman1/aai/step` — `packages/aai/etc/step.api.md`
 - `@alexkroman1/aai/step-errors` — `packages/aai/etc/step-errors.api.md`
 - `@alexkroman1/aai/stt` — `packages/aai/etc/stt.api.md`
 - `@alexkroman1/aai/testing` — `packages/aai/etc/testing.api.md`
@@ -215,7 +216,7 @@ export interface AgentDef extends PipelineVoiceTuning {
 export type AgentParams = PipelineAgentParams | S2sAgentParams | TextAgentParams | StaticAgentParams;
 
 // @public
-export type AnyWorkflowDef<R = unknown> = {
+type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
     uploads?: readonly string[];
@@ -573,6 +574,8 @@ export function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
 
 // @public (undocumented)
 export interface AssemblyAIPipelineOptions {
+    maxTurnSilenceMs?: number;
+    minTurnSilenceMs?: number;
     region?: "us" | "eu";
     voice?: AssemblyAITtsVoice;
 }
@@ -626,9 +629,6 @@ type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
-
-// @public
-export function clampWorkflowWait(requested: number | undefined): number;
 
 // @public
 export function createKeyedLock(): KeyedLock;
@@ -689,51 +689,40 @@ export const DEFAULT_SYSTEM_PROMPT: string;
 export const DEFAULT_TOOL_CHOICE: "auto";
 
 // @public
-export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
+type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 
 // @public
 export type DefaultToolResult = any;
 
 // @public
-export function errorDetail(err: unknown): string;
-
-// @public
-export function errorMessage(err: unknown): string;
-
-// @public
-export type FindOptions = {
-    limit?: number;
-};
-
-// @public
-export interface Flow<M extends AnyStateMachine> {
+export interface Dialog<M extends AnyStateMachine> {
     readonly key: string;
     readonly machine: M;
     matches(ctx: ToolContext, state: string): boolean;
-    position(ctx: ToolContext): FlowPosition;
-    projection<V>(project: (position: FlowPosition) => V): StateProjection<V>;
-    reset(ctx: ToolContext): FlowPosition;
-    send(ctx: ToolContext, event: EventFromLogic<M>): FlowPosition;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: FlowToolDef<P, R, EventFromLogic<M>>): ToolDef<P>;
+    position(ctx: ToolContext): DialogPosition;
+    projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
+    reset(ctx: ToolContext): DialogPosition;
+    send(ctx: ToolContext, event: EventFromLogic<M>): DialogPosition;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, EventFromLogic<M>>): ToolDef<P>;
 }
 
 // @public
-export function flow<M extends AnyStateMachine>(key: string, machine: M, options?: FlowOptions): Flow<M>;
+export function dialog<M extends AnyStateMachine>(key: string, machine: M, options?: DialogOptions): Dialog<M>;
 
 // @public
-export interface FlowOptions {
+export interface DialogOptions {
     durable?: boolean;
 }
 
 // @public
-export interface FlowPosition {
+export interface DialogPosition {
     readonly done: boolean;
     readonly instruction?: string;
     readonly state: string;
 }
 
 // @public
-export interface FlowToolDef<P extends ToolInputSchema, R, E> {
+export interface DialogToolDef<P extends ToolInputSchema, R, E> {
     description: string;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
@@ -743,12 +732,26 @@ export interface FlowToolDef<P extends ToolInputSchema, R, E> {
 }
 
 // @public
-export interface FlowToolResult<R> extends FlowPosition {
+export interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
 
 // @public
-export type FrontDoorField = "page";
+type EndpointingOnDescriptorMisuse<K extends string> = `\`${K}\` tunes the DEFAULT AssemblyAI STT stage — an explicit \`stt\` descriptor owns its own end-of-turn window; set it there (e.g. \`assemblyAIStt({ ${K} })\`) or remove \`stt\``;
+
+// @public
+export function errorDetail(err: unknown): string;
+
+// @public
+export function errorMessage(err: unknown): string;
+
+// @public
+type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type FrontDoorField = "page";
 
 // @public
 export type GenerateFn = {
@@ -781,27 +784,6 @@ export type GenerateResult = {
 };
 
 // @public
-export interface Graph<M extends AnyStateMachine> {
-    readonly machine: M;
-    run(input: InputFrom<M>, options?: GraphRunOptions): Promise<OutputFrom<M>>;
-}
-
-// @public
-export function graph<M extends AnyStateMachine>(machine: M): Graph<M>;
-
-// @public
-export class GraphNotFinishedError extends Error {
-    constructor(graph: string, aborted: boolean);
-    readonly aborted: boolean;
-    readonly graph: string;
-}
-
-// @public
-export interface GraphRunOptions {
-    signal?: AbortSignal;
-}
-
-// @public
 export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
 // @public
@@ -811,13 +793,10 @@ export type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["e
 export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<ReturnType<T["execute"]>>;
 
 // @public
-export type InlineToolsField = "tools";
+type InlineToolsField = "tools";
 
 // @public
-export type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
-
-// @public
-export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
+type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
 
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
@@ -857,9 +836,6 @@ export const MAX_DB_RESULT_ROWS = 1000;
 export const MAX_TOOL_RESULT_CHARS = 4000;
 
 // @public
-export const MAX_WORKFLOW_WAIT_MS = 60000;
-
-// @public
 export type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
@@ -867,12 +843,19 @@ export type Message = {
 
 // @public
 export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, PipelineOnlyField>> & {
-    stt?: SttProvider;
     llm?: LlmProvider | string;
     s2s?: undefined;
     text?: undefined;
     page?: "voice" | StaticFrontDoorMisuse;
 } & ({
+    stt: SttProvider;
+    minTurnSilenceMs?: EndpointingOnDescriptorMisuse<"minTurnSilenceMs">;
+    maxTurnSilenceMs?: EndpointingOnDescriptorMisuse<"maxTurnSilenceMs">;
+} | {
+    stt?: undefined;
+    minTurnSilenceMs?: number;
+    maxTurnSilenceMs?: number;
+}) & ({
     tts: TtsProvider;
     voice?: "`voice` picks the default pipeline's TTS voice — an explicit `tts` descriptor owns its own voice (e.g. `assemblyAITts({ voice })`); set it there or remove `tts`";
 } | {
@@ -881,10 +864,10 @@ export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Pip
 });
 
 // @public
-export type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" | "silencePrompt";
+type PipelineOnlyField = keyof PipelineVoiceTuning | "silenceTimeoutMs" | "silencePrompt";
 
 // @public
-export type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = "s2s"> = `\`${K}\` is pipeline-mode only — it has no effect on a ${M} agent; remove it or remove \`${M}\``;
+type PipelineOnlyMisuse<K extends PipelineOnlyField, M extends "s2s" | "text" = "s2s"> = `\`${K}\` is pipeline-mode only — it has no effect on a ${M} agent; remove it or remove \`${M}\``;
 
 // @public
 export interface PipelineVoiceTuning {
@@ -898,6 +881,27 @@ export interface PipelineVoiceTuning {
 }
 
 // @public
+export interface Procedure<M extends AnyStateMachine> {
+    readonly machine: M;
+    run(input: InputFrom<M>, options?: ProcedureRunOptions): Promise<OutputFrom<M>>;
+}
+
+// @public
+export function procedure<M extends AnyStateMachine>(machine: M): Procedure<M>;
+
+// @public
+export class ProcedureNotFinishedError extends Error {
+    constructor(procedure: string, aborted: boolean);
+    readonly aborted: boolean;
+    readonly procedure: string;
+}
+
+// @public
+export interface ProcedureRunOptions {
+    signal?: AbortSignal;
+}
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -906,7 +910,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
+type ProviderField = "stt" | "llm" | "tts" | "s2s" | "text";
 
 // @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
@@ -928,6 +932,8 @@ export type S2sAgentParams = SharedAgentParams & {
     llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
     tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
     voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
+    minTurnSilenceMs?: "`minTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
+    maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes a pipeline STT stage — S2S runs STT service-side; remove it or remove `s2s`";
     text?: "`text` cannot be combined with `s2s` — an agent is text-only or speech-to-speech, not both";
     page?: "voice" | StaticFrontDoorMisuse;
 } & {
@@ -1202,7 +1208,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 }
 
 // @public
-export type StartOptions = {
+type StartOptions = {
     key?: string;
     notify?: boolean | string;
 };
@@ -1223,13 +1229,13 @@ export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | F
 };
 
 // @public
-export type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
+type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
 
 // @public
 export const STORAGE_DISABLED_MESSAGE: string;
 
 // @public
-export type StreamOptions = {
+type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
@@ -1240,14 +1246,6 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
-
-// @public
-export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
-    status: "completed" | "failed" | "cancelled";
-}>;
-
-// @public
 export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
     text: true;
     llm?: LlmProvider | string;
@@ -1255,6 +1253,8 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
     tts?: "`tts` cannot be combined with `text` — a text agent has no audio to synthesize";
     s2s?: "`s2s` cannot be combined with `text` — an agent is text-only or speech-to-speech, not both";
     voice?: "`voice` is pipeline-mode only — a text agent never speaks";
+    minTurnSilenceMs?: "`minTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
+    maxTurnSilenceMs?: "`maxTurnSilenceMs` tunes an STT stage — a text agent has none; remove it or remove `text`";
     sttPrompt?: "`sttPrompt` biases a transcriber — a text agent has none; remove it or remove `text`";
     page?: "voice" | StaticFrontDoorMisuse;
 } & {
@@ -1317,7 +1317,7 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-export type WakeUpOptions = {
+type WakeUpOptions = {
     correlationIds?: string[];
 };
 
@@ -1331,13 +1331,13 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknow
 export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 
 // @public
-export type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
+type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-export type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "tools" | "builtinTools" | "syncState" | "events" | "idleTimeoutMs" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "tools" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
 
 // @public
-export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
+type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
     workflowId?: string;
 };
 
@@ -1370,10 +1370,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
-export type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
-
-// @public
-export type WorkflowRunBase = {
+type WorkflowRunBase = {
     runId: string;
     workflow: string;
     createdAt: number;
@@ -1381,7 +1378,7 @@ export type WorkflowRunBase = {
 };
 
 // @public
-export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
     status: "pending" | "running";
 })
 /** `output` is what the workflow function returned. */
@@ -1400,10 +1397,7 @@ export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 });
 
 // @public
-export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
-
-// @public
-export type WorkflowSummary = {
+type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
@@ -1442,6 +1436,9 @@ export const APP_DB_WORLD_POOL_MAX = 4;
 
 // @public
 export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
+
+// @internal
+export function capToolResult(result: string): string;
 
 // @internal
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
@@ -1487,8 +1484,17 @@ export const HEARD_AUDIO_LAG_MS = 150;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
+// @internal
+export function isTextAssetPath(assetPath: string): boolean;
+
+// @public
+export function linkConfirmationCode(code: string): string;
+
 // @public
 export const MAX_PLAYBACK_BUFFERED_MS = 600000;
+
+// @public
+export const MAX_SLUG_LENGTH = 64;
 
 // @internal
 export const MIC_BUFFER_SECONDS = 0.1;
@@ -1501,6 +1507,9 @@ export const MIC_SILENCE_PROBE_MS = 1500;
 
 // @internal
 export const MISSING_WORKFLOW_ID_MESSAGE: string;
+
+// @public
+export function normalizeSpeechText(text: string): string;
 
 // @internal (undocumented)
 export interface OwnedMap<K, V> {
@@ -1554,6 +1563,9 @@ export const PLAYBACK_FILL_MS = 200;
 // @public
 export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
 
+// @public
+export const PREVIEW_SLUG_SUFFIX = "-preview";
+
 // @internal
 export function rejectingWorkflows(message: string): WorkflowClient;
 
@@ -1562,6 +1574,9 @@ export function requestPath(rawUrl: string | undefined): string;
 
 // @internal
 export function requestQuery(rawUrl: string | undefined): URLSearchParams;
+
+// @public
+export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @internal
 export function sleep(ms: number, opts?: SleepOptions): Promise<void>;
@@ -1615,8 +1630,14 @@ type StreamOptions = {
     startIndex?: number;
 };
 
+// @internal
+export function toArgsRecord(input: unknown): Record<string, unknown>;
+
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public
+export const VALID_SLUG_RE: RegExp;
 
 // @public
 type WakeUpOptions = {
@@ -5413,6 +5434,326 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 export function slugifyName(input: string, maxLen: number): string;
 ```
 
+## `@alexkroman1/aai/step`
+
+```ts
+// @public
+export function emit<T>(namespace: string, chunk: T): Promise<void>;
+
+// @public
+export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
+
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function isTransientStatus(status: number): boolean;
+
+// @public
+export function mapConcurrent<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
+
+// @public @deprecated
+export const mapInBatches: typeof mapConcurrent;
+
+// @public
+export type MultipartBody = {
+    body: Uint8Array;
+    headers: {
+        "Content-Type": string;
+    };
+};
+
+// @public
+export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody;
+
+// @public
+export type MultipartPart = {
+    name: string;
+    bytes: Uint8Array;
+    filename?: string | undefined;
+    type?: string | undefined;
+};
+
+// @public
+export function pcmDurationMs(byteLength: number, format: PcmFormat): number;
+
+// @public
+export type PcmFormat = {
+    sampleRate: number;
+    channels?: number | undefined;
+    bitsPerSample?: number | undefined;
+};
+
+// @public
+export function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
+
+// @public
+export type ReadUploadOptions = {
+    start?: number | undefined;
+    end?: number | undefined;
+};
+
+// @public
+export function report(line: string): Promise<void>;
+
+// @public
+export function requireStepEnv(name: string): string;
+
+// @public
+export function retryAfter(from: {
+    headers: Headers;
+} | Headers): Date | undefined;
+
+// @public
+export type SpeakOptions = {
+    voice?: string | undefined;
+    language?: string | undefined;
+    sampleRate?: number | undefined;
+    apiKeyEnv?: string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type SpokenAudio = {
+    audio: Uint8Array<ArrayBuffer>;
+    pcm: Uint8Array;
+    sampleRate: number;
+    durationMs: number;
+    voice: string;
+};
+
+// @public
+interface StandardSchemaIssue {
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public
+export const STEP_SPEAK_SAMPLE_RATE = 24000;
+
+// @public
+export const STEP_SPEAK_TIMEOUT_MS = 120000;
+
+// @public
+export function stepEnv(name: string): string | undefined;
+
+// @public
+export function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
+
+// @public
+export type StepFetchInit = {
+    method?: string | undefined;
+    headers?: Record<string, string> | undefined;
+    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+
+// @public
+export class StepGenerateError extends Error {
+    constructor(message: string, opts: {
+        status?: number | undefined;
+        retryable: boolean;
+        retryAfter?: Date | undefined;
+        cause?: unknown;
+    });
+    readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
+    readonly status: number | undefined;
+}
+
+// @public
+export function stepGenerateJson<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+
+// @public
+export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
+    schema: S;
+};
+
+// @public
+export type StepGenerateOptions = {
+    system?: string;
+    model?: string;
+    apiKeyEnv?: string;
+    gatewayUrl?: string;
+    timeoutMs?: number;
+    temperature?: number;
+    maxTokens?: number;
+};
+
+// @public
+export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
+
+// @public
+export function stepTranscribePoll(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+
+// @public
+export function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+    id: string;
+}>;
+
+// @public
+export function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
+    text: string;
+}>;
+
+// @public
+export function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+    audioUrl: string;
+}>;
+
+// @public
+export class StepTransportError extends Error {
+    constructor(url: string, options: {
+        cause: unknown;
+    });
+    readonly codes: readonly string[];
+}
+
+// @public
+export function stripJsonFence(reply: string): string;
+
+// @public
+export const TRANSCRIBE_API = "https://api.assemblyai.com";
+
+// @public
+export const TRANSCRIBE_MODELS: readonly string[];
+
+// @public
+export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
+
+// @public
+export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
+
+// @public
+export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
+
+// @public
+export const TRANSCRIBE_TIMEOUT_MS = 60000;
+
+// @public
+export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
+
+// @public
+export const TRANSCRIBE_WINDOW_BYTES: number;
+
+// @public
+export class TranscribeError extends Error {
+    constructor(message: string, init: {
+        status?: number | undefined;
+        retryable: boolean;
+        retryAfter?: Date | undefined;
+    });
+    readonly retryable: boolean;
+    readonly retryAfter: Date | undefined;
+    readonly status: number | undefined;
+}
+
+// @public
+export type TranscribeProgress = {
+    done: false;
+    status: string;
+} | {
+    done: true;
+    status: string;
+    transcript: Transcript;
+};
+
+// @public
+export type TranscribeRequestOptions = {
+    apiKeyEnv?: string | undefined;
+    timeoutMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+export type TranscribeSubmitOptions = TranscribeRequestOptions & {
+    models?: readonly string[] | undefined;
+    params?: Record<string, unknown> | undefined;
+};
+
+// @public
+export type TranscribeSyncOptions = TranscribeRequestOptions & {
+    model?: string | undefined;
+    filename?: string | undefined;
+    type?: string | undefined;
+    label?: string | undefined;
+};
+
+// @public
+export type Transcript = {
+    id: string;
+    text: string;
+    durationMs: number;
+};
+
+// @public
+export type UploadInfo = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+    ranges?: readonly UploadRange[];
+};
+
+// @public
+export function uploadInfo(id: string): Promise<UploadInfo>;
+
+// @public
+export type UploadRange = {
+    start: number;
+    end: number;
+};
+
+// @public
+export type UploadSlice = {
+    info: UploadInfo;
+    bytes: Uint8Array;
+    start: number;
+    end: number;
+};
+
+// @public
+export const WAV_HEADER_BYTES = 44;
+
+// @public
+export function writeUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
+
+// @public
+export type WriteUploadOptions = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
+```
+
 ## `@alexkroman1/aai/step-errors`
 
 ```ts
@@ -6548,17 +6889,8 @@ export type Unsubscribe = () => void;
 ## `@alexkroman1/aai/utils`
 
 ```ts
-// @internal
-export function capToolResult(result: string): string;
-
 // @public
 export function createKeyedLock(): KeyedLock;
-
-// @public
-export function emit<T>(namespace: string, chunk: T): Promise<void>;
-
-// @public
-export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
 
 // @public
 export function errorDetail(err: unknown): string;
@@ -6567,19 +6899,10 @@ export function errorDetail(err: unknown): string;
 export function errorMessage(err: unknown): string;
 
 // @public
-type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
-
-// @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
-
-// @internal
-export function isTextAssetPath(assetPath: string): boolean;
 
 // @public
 export function isToolFailure(value: unknown): value is ToolFailure;
-
-// @public
-export function isTransientStatus(status: number): boolean;
 
 // @public (undocumented)
 export type KeyedLock = ((key: string, opts?: KeyedLockOptions) => Promise<() => void>) & {
@@ -6599,106 +6922,95 @@ export class KeyedLockTimeoutError extends Error {
 }
 
 // @public
-export function linkConfirmationCode(code: string): string;
-
-// @public
-export function mapConcurrent<T, R>(items: readonly T[], size: number, run: (item: T, index: number) => Promise<R> | R): Promise<R[]>;
-
-// @public @deprecated
-export const mapInBatches: typeof mapConcurrent;
-
-// @public
-export const MAX_SLUG_LENGTH = 64;
-
-// @public
-export type MultipartBody = {
-    body: Uint8Array;
-    headers: {
-        "Content-Type": string;
-    };
-};
-
-// @public
-export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody;
-
-// @public
-export type MultipartPart = {
-    name: string;
-    bytes: Uint8Array;
-    filename?: string | undefined;
-    type?: string | undefined;
-};
-
-// @public
-export function normalizeSpeechText(text: string): string;
-
-// @public
 export function omitUndefined<T extends object>(obj: T): {
     [K in keyof T]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined>;
 };
 
 // @public
-export function pcmDurationMs(byteLength: number, format: PcmFormat): number;
-
-// @public
-export type PcmFormat = {
-    sampleRate: number;
-    channels?: number | undefined;
-    bitsPerSample?: number | undefined;
-};
-
-// @public
-export const PREVIEW_SLUG_SUFFIX = "-preview";
-
-// @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
-
-// @public
-export function readUpload(id: string, opts?: ReadUploadOptions): Promise<UploadSlice>;
-
-// @public
-export type ReadUploadOptions = {
-    start?: number | undefined;
-    end?: number | undefined;
-};
-
-// @public
-export function report(line: string): Promise<void>;
-
-// @public
-export function requireStepEnv(name: string): string;
-
-// @public
-export const RESERVED_SLUGS: ReadonlySet<string>;
 
 // @public
 export function responseErrorMessage(res: Response, label?: string): Promise<string>;
 
 // @public
-export function retryAfter(from: {
-    headers: Headers;
-} | Headers): Date | undefined;
-
-// @public
 export function safeJsonParse(text: string): unknown;
 
 // @public
-export type SpeakOptions = {
-    voice?: string | undefined;
-    language?: string | undefined;
-    sampleRate?: number | undefined;
-    apiKeyEnv?: string | undefined;
-    signal?: AbortSignal | undefined;
+export type ToolFailure = {
+    error: string;
 };
 
 // @public
-export type SpokenAudio = {
-    audio: Uint8Array<ArrayBuffer>;
-    pcm: Uint8Array;
-    sampleRate: number;
-    durationMs: number;
-    voice: string;
+export function toolFailure(message: string): ToolFailure;
+
+// @public
+export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
+```
+
+## `@alexkroman1/aai/workflow-api`
+
+```ts
+import { z } from 'zod';
+
+// @public
+export type AgentClient = WorkflowApi & {
+    config(): Promise<ClientConfigResponse>;
+    readonly baseUrl: string;
 };
+
+// @public
+export type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    uploads?: readonly string[];
+    run: WorkflowBody<never, R>;
+};
+
+// @public
+export function clampWorkflowWait(requested: number | undefined): number;
+
+// @public
+export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
+
+// @public
+const ClientConfigResponseSchema: z.ZodObject<{
+    name: z.ZodOptional<z.ZodString>;
+    greeting: z.ZodOptional<z.ZodString>;
+    sessionUrl: z.ZodOptional<z.ZodString>;
+    page: z.ZodOptional<z.ZodEnum<{
+        static: "static";
+        voice: "voice";
+    }>>;
+}, z.core.$strip>;
+
+// @public
+export function createAgentClient(opts: WorkflowApiClientOptions): AgentClient;
+
+// @public
+export function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
+
+// @public
+export type EventStreamFrame = {
+    event: string;
+    data: unknown;
+};
+
+// @public
+export type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
+
+// @public
+export const MAX_WORKFLOW_WAIT_MS = 60000;
+
+// @public
+export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
 
 // @public
 interface StandardSchemaIssue {
@@ -6732,262 +7044,27 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
 }
 
 // @public
-export const STEP_SPEAK_SAMPLE_RATE = 24000;
-
-// @public
-export const STEP_SPEAK_TIMEOUT_MS = 120000;
-
-// @public
-export function stepEnv(name: string): string | undefined;
-
-// @public
-export function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
-
-// @public
-export type StepFetchInit = {
-    method?: string | undefined;
-    headers?: Record<string, string> | undefined;
-    body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
-    signal?: AbortSignal | undefined;
+export type StartOptions = {
+    key?: string;
+    notify?: boolean | string;
 };
 
 // @public
-export function stepGenerate(prompt: string, opts?: StepGenerateOptions): Promise<string>;
-
-// @public
-export class StepGenerateError extends Error {
-    constructor(message: string, opts: {
-        status?: number | undefined;
-        retryable: boolean;
-        retryAfter?: Date | undefined;
-        cause?: unknown;
-    });
-    readonly retryable: boolean;
-    readonly retryAfter: Date | undefined;
-    readonly status: number | undefined;
-}
-
-// @public
-export function stepGenerateJson<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
-
-// @public
-export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
-    schema: S;
+export type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
 };
 
 // @public
-export type StepGenerateOptions = {
-    system?: string;
-    model?: string;
-    apiKeyEnv?: string;
-    gatewayUrl?: string;
-    timeoutMs?: number;
-    temperature?: number;
-    maxTokens?: number;
-};
+export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
 
 // @public
-export function stepSpeak(text: string, opts?: SpeakOptions): Promise<SpokenAudio>;
-
-// @public
-export function stepTranscribePoll(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
-
-// @public
-export function stepTranscribeSubmit(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
-    id: string;
+export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
+    status: "completed" | "failed" | "cancelled";
 }>;
 
 // @public
-export function stepTranscribeSync(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
-    text: string;
-}>;
-
-// @public
-export function stepTranscribeUpload(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
-    audioUrl: string;
-}>;
-
-// @public
-export class StepTransportError extends Error {
-    constructor(url: string, options: {
-        cause: unknown;
-    });
-    readonly codes: readonly string[];
-}
-
-// @public
-export function stripJsonFence(reply: string): string;
-
-// @internal
-export function toArgsRecord(input: unknown): Record<string, unknown>;
-
-// @public
-export type ToolFailure = {
-    error: string;
-};
-
-// @public
-export function toolFailure(message: string): ToolFailure;
-
-// @public
-export const TRANSCRIBE_API = "https://api.assemblyai.com";
-
-// @public
-export const TRANSCRIBE_MODELS: readonly string[];
-
-// @public
-export const TRANSCRIBE_SYNC_ENDPOINT = "https://sync.assemblyai.com/transcribe";
-
-// @public
-export const TRANSCRIBE_SYNC_MODEL = "universal-3-5-pro";
-
-// @public
-export const TRANSCRIBE_SYNC_TIMEOUT_MS = 60000;
-
-// @public
-export const TRANSCRIBE_TIMEOUT_MS = 60000;
-
-// @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
-
-// @public
-export const TRANSCRIBE_WINDOW_BYTES: number;
-
-// @public
-export class TranscribeError extends Error {
-    constructor(message: string, init: {
-        status?: number | undefined;
-        retryable: boolean;
-        retryAfter?: Date | undefined;
-    });
-    readonly retryable: boolean;
-    readonly retryAfter: Date | undefined;
-    readonly status: number | undefined;
-}
-
-// @public
-export type TranscribeProgress = {
-    done: false;
-    status: string;
-} | {
-    done: true;
-    status: string;
-    transcript: Transcript;
-};
-
-// @public
-export type TranscribeRequestOptions = {
-    apiKeyEnv?: string | undefined;
-    timeoutMs?: number | undefined;
-    signal?: AbortSignal | undefined;
-};
-
-// @public
-export type TranscribeSubmitOptions = TranscribeRequestOptions & {
-    models?: readonly string[] | undefined;
-    params?: Record<string, unknown> | undefined;
-};
-
-// @public
-export type TranscribeSyncOptions = TranscribeRequestOptions & {
-    model?: string | undefined;
-    filename?: string | undefined;
-    type?: string | undefined;
-    label?: string | undefined;
-};
-
-// @public
-export type Transcript = {
-    id: string;
-    text: string;
-    durationMs: number;
-};
-
-// @public
-export type UploadInfo = {
-    id: string;
-    name: string;
-    type: string;
-    size: number;
-    complete: boolean;
-    ranges?: readonly UploadRange[];
-};
-
-// @public
-export function uploadInfo(id: string): Promise<UploadInfo>;
-
-// @public
-export type UploadRange = {
-    start: number;
-    end: number;
-};
-
-// @public
-export type UploadSlice = {
-    info: UploadInfo;
-    bytes: Uint8Array;
-    start: number;
-    end: number;
-};
-
-// @public
-export const VALID_SLUG_RE: RegExp;
-
-// @public
-export const WAV_HEADER_BYTES = 44;
-
-// @public
-export const withLock: <T>(lock: (key: string, opts?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, opts?: KeyedLockOptions) => Promise<T>;
-
-// @public
-export function writeUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, opts?: WriteUploadOptions): Promise<UploadInfo>;
-
-// @public
-export type WriteUploadOptions = {
-    name?: string | undefined;
-    type?: string | undefined;
-};
-```
-
-## `@alexkroman1/aai/workflow-api`
-
-```ts
-import { z } from 'zod';
-
-// @public
-export type AgentClient = WorkflowApi & {
-    config(): Promise<ClientConfigResponse>;
-    readonly baseUrl: string;
-};
-
-// @public
-export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
-
-// @public
-const ClientConfigResponseSchema: z.ZodObject<{
-    name: z.ZodOptional<z.ZodString>;
-    greeting: z.ZodOptional<z.ZodString>;
-    sessionUrl: z.ZodOptional<z.ZodString>;
-    page: z.ZodOptional<z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-    }>>;
-}, z.core.$strip>;
-
-// @public
-export function createAgentClient(opts: WorkflowApiClientOptions): AgentClient;
-
-// @public
-export function createWorkflowApiClient(opts: WorkflowApiClientOptions): WorkflowApi;
-
-// @public
-export type EventStreamFrame = {
-    event: string;
-    data: unknown;
-};
-
-// @public
-export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
+type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
@@ -7045,6 +7122,11 @@ export type UploadRef = {
 };
 
 // @public
+export type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public
 export const WORKFLOW_API_PREFIX = "/workflows";
 
 // @public
@@ -7098,7 +7180,43 @@ export type WorkflowApiClientOptions = {
 };
 
 // @public
-type WorkflowRunBase = {
+export type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
+    workflowId?: string;
+};
+
+// @public
+export type WorkflowClient = {
+    start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
+    input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
+    start(workflow: string, input?: unknown, options?: StartOptions): Promise<string>;
+    get<R>(runId: string, of: AnyWorkflowDef<R>): Promise<WorkflowRunSnapshot<R> | undefined>;
+    get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
+    find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    recent<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
+    recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
+    signal(token: string, payload?: unknown): Promise<boolean>;
+    stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
+    streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    publicWebhookUrl(token: string): string;
+    listing(): WorkflowSummary[];
+};
+
+// @public
+export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    uploads?: readonly string[];
+    run: WorkflowBody<InferSchemaOutput<P>, R>;
+};
+
+// @public
+export type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
+
+// @public
+export type WorkflowRunBase = {
     runId: string;
     workflow: string;
     createdAt: number;
@@ -7106,7 +7224,7 @@ type WorkflowRunBase = {
 };
 
 // @public
-type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
     status: "pending" | "running";
 })
 /** `output` is what the workflow function returned. */
@@ -7125,7 +7243,10 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 });
 
 // @public
-type WorkflowSummary = {
+export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
+export type WorkflowSummary = {
     name: string;
     description?: string;
     inputSchema?: unknown;
@@ -7286,7 +7407,7 @@ import type { DefaultToolResult } from '@alexkroman1/aai';
 import type { FormHTMLAttributes } from 'react';
 import { FunctionComponentElement } from 'react';
 import type { InputHTMLAttributes } from 'react';
-import { isTerminal } from '@alexkroman1/aai';
+import { isTerminal } from '@alexkroman1/aai/workflow-api';
 import { JSX } from 'react';
 import { MemoExoticComponent } from 'react';
 import { ProviderProps } from 'react';
@@ -7298,9 +7419,9 @@ import type { TextareaHTMLAttributes } from 'react';
 import type { UploadParallel } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
-import { WorkflowOutputOf } from '@alexkroman1/aai';
-import type { WorkflowRunSnapshot } from '@alexkroman1/aai';
-import { WorkflowSummary } from '@alexkroman1/aai';
+import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
 export type AgentCustomEvent = {

@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { WorkflowRunSnapshot } from "../sdk/workflow.ts";
+import type { WorkflowRunSnapshot } from "../sdk/workflow-run.ts";
 import { type CallerLink, waitForRun } from "./workflow-api-wait.ts";
 
 function snapshot(over: Partial<WorkflowRunSnapshot> = {}): WorkflowRunSnapshot {

@@ -9,7 +9,7 @@
  * This closes it for the voice.
  *
  * ```ts no-check
- * import { requireStepEnv, stepSpeak } from "@alexkroman1/aai/utils";
+ * import { requireStepEnv, stepSpeak } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string) {
  *   "use step";

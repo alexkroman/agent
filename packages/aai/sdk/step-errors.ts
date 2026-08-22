@@ -134,7 +134,7 @@ export function toStepError(cause: unknown, message?: string): Error {
  *
  * @example
  * ```ts
- * import { stepGenerate } from "@alexkroman1/aai/utils";
+ * import { stepGenerate } from "@alexkroman1/aai/step";
  * import { throwStepError } from "@alexkroman1/aai/step-errors";
  *
  * export async function summarize(text: string): Promise<string> {
@@ -224,7 +224,7 @@ export async function stepFetchOk(url: string, init?: StepFetchInit): Promise<Re
  *
  * @example
  * ```ts
- * import { requireStepEnv } from "@alexkroman1/aai/utils";
+ * import { requireStepEnv } from "@alexkroman1/aai/step";
  * import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
  *
  * export function apiKey(): string {

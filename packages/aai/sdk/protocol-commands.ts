@@ -18,9 +18,8 @@
  */
 
 import { z } from "zod";
-
+import { capToolResult } from "../internal.ts";
 import { MAX_PLAYBACK_BUFFERED_MS } from "./constants.ts";
-import { capToolResult } from "./utils.ts";
 
 /** Helper: a command carrying nothing but its own name. */
 const cmd = <T extends string>(t: T) => z.object({ type: z.literal(t) });

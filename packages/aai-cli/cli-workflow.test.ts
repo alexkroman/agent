@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Specs for the `aai workflow` subcommand GROUP — its wiring, not its
- * executors (those are in `workflow.test.ts`).
+ * executors (those are in `workdialog.test.ts`).
  *
  * Two things live at this layer and nowhere else: the four verbs being reachable
  * at all, and `--limit` being parsed here so a non-numeric value fails as a CLI

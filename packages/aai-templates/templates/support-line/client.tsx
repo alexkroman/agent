@@ -69,7 +69,7 @@ function TraceSidebar() {
           </div>
 
           <div className="flex flex-col gap-1">
-            <p className="text-[11px] font-bold uppercase tracking-wide opacity-60">Graph</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide opacity-60">Procedure</p>
             {trace.steps.map((entry, index) => (
               // Steps are append-only within a run, so the index is stable.
               <p key={`${index}-${entry.node}`} className="text-xs">

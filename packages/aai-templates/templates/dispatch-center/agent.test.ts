@@ -1,4 +1,4 @@
-import type { FlowPosition, ToolContext } from "@alexkroman1/aai";
+import type { DialogPosition, ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import { createToolContext } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
@@ -34,7 +34,7 @@ function ok<T>(result: unknown): T {
 }
 
 /** Where the call is, without going through a tool. */
-const at = (ctx: ToolContext): FlowPosition => callFlow.position(ctx);
+const at = (ctx: ToolContext): DialogPosition => callFlow.position(ctx);
 
 async function createIncidentFor(
   ctx: ToolContext,

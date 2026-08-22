@@ -1,4 +1,4 @@
-import { type DeepReadonly, flow, sessionSlot, type ToolContext } from "@alexkroman1/aai";
+import { type DeepReadonly, dialog, sessionSlot, type ToolContext } from "@alexkroman1/aai";
 import { setup } from "xstate";
 import { z } from "zod";
 
@@ -434,7 +434,7 @@ const storyMachine = setup({
  * folded into the campaign is that the campaign is what the browser renders: a
  * flow stores an XState snapshot, which is not a character sheet.
  */
-export const storyFlow = flow("story", storyMachine);
+export const storyFlow = dialog("story", storyMachine);
 
 /**
  * The game as a READ hands it out: deep-frozen, and typed to say so.

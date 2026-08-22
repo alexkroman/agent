@@ -17,8 +17,8 @@
  */
 
 import type { StandardSchemaV1 } from "../../../sdk/standard-schema.ts";
+import { stepGenerateJson } from "../../../sdk/step-barrel.ts";
 import { type StubGateway, type StubGatewayCall, stubGateway } from "../../../sdk/testing.ts";
-import { stepGenerateJson } from "../../../sdk/utils.ts";
 
 /** The step under test: it asks a model for a shape. */
 export async function planAngles<S extends StandardSchemaV1>(

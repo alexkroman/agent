@@ -15,8 +15,8 @@
 
 import {
   type DeepReadonly,
-  type FlowPosition,
-  flow,
+  type DialogPosition,
+  dialog,
   pushCapped,
   sessionSlot,
 } from "@alexkroman1/aai";
@@ -125,18 +125,18 @@ const planMachine = setup({
  * {@link planSlot} stores the plan — the position and the payload are two
  * things, and one tool call moves both.
  */
-export const planFlow = flow("planFlow", planMachine);
+export const planFlow = dialog("planFlow", planMachine);
 
 /**
  * How the stage reads to a caller, from the flow's own position.
  *
- * A helper over a {@link FlowPosition} rather than over {@link PlanState}, which
+ * A helper over a {@link DialogPosition} rather than over {@link PlanState}, which
  * is the point: "where is this call" is the machine's answer, and deriving it a
  * second time from the plan's fields is what the three removed guards were
  * doing. `plan_status` reads this, and so would any prompt that wants to say it
  * aloud.
  */
-export function stageLabel(at: FlowPosition): string {
+export function stageLabel(at: DialogPosition): string {
   if (at.state === "idle") return "no plan yet";
   return at.state === "answered" ? "finished" : "in progress";
 }

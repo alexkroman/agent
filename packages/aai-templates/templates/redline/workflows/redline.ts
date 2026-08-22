@@ -31,8 +31,8 @@
  * three functions read more tidily than one.
  */
 
+import { report, stepGenerate, stepGenerateJson } from "@alexkroman1/aai/step";
 import { throwStepError } from "@alexkroman1/aai/step-errors";
-import { report, stepGenerate, stepGenerateJson } from "@alexkroman1/aai/utils";
 import { FatalError } from "workflow";
 import { z } from "zod";
 import { CRITIC_SYSTEM, REVISER_SYSTEM, WRITER_SYSTEM } from "./prompts.ts";
