@@ -131,6 +131,7 @@ export function workspaceTsconfig(scaffoldTsconfig: string): string {
  */
 export const WORKSPACE_DEPENDENCIES = [
   "@alexkroman1/aai",
+  "@alexkroman1/aai-runtime",
   "@alexkroman1/aai-ui",
   "react",
   "react-dom",

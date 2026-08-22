@@ -19,7 +19,7 @@
 import { createServer } from "node:net";
 import { errorMessage } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
-import type { LogPage } from "@alexkroman1/aai/runtime";
+import type { LogPage } from "@alexkroman1/aai-runtime";
 import { WebSocket } from "ws";
 import { readGuestLogs } from "./agent-logs.ts";
 import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";

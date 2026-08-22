@@ -198,7 +198,7 @@ function wrapperEntrySource(
 
   return `import def from "../agent.ts";
 import { agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
-${runtime ? `import { createRuntime } from "@alexkroman1/aai/runtime";` : ""}
+${runtime ? `import { createRuntime } from "@alexkroman1/aai-runtime";` : ""}
 ${systemPromptFile ? `import __aaiSystemPrompt from "../${SYSTEM_PROMPT_FILE}?raw";` : ""}
 ${toolImports}
 // A tool's name is its file name. The map is built here rather than written in

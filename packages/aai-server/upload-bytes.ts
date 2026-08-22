@@ -40,12 +40,12 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   createHttpUploadBlobs,
   createMemoryUploadBlobs,
   type UploadBlobs,
-} from "@alexkroman1/aai/runtime";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai-runtime";
 import { StorageClient } from "@supabase/storage-js";
 import { type SupabaseBlobStorageOptions, storageEndpoint } from "./blob-storage.ts";
 

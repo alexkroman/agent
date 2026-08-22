@@ -14,7 +14,7 @@
  * It is here rather than in `packages/aai` for a boundary reason: `aai` may
  * import no sibling package, so it cannot reach `describeWithPg` — and this repo
  * has ONE spelling for that gate on purpose (see `_pg-test-utils.ts`). This
- * package already imports `@alexkroman1/aai/runtime`, and it owns the sweep that
+ * package already imports `@alexkroman1/aai-runtime`, and it owns the sweep that
  * reads the same table, so both ends of the contract are testable from here.
  *
  * Self-cleaning: everything is written under session ids this file owns, in a
@@ -27,6 +27,7 @@
  */
 
 import { sessionSlot } from "@alexkroman1/aai";
+import { createToolContext } from "@alexkroman1/aai/testing";
 import {
   createPostgresDb,
   createPostgresStateBackend,
@@ -35,8 +36,7 @@ import {
   SESSION_EVENT_TABLE,
   SESSION_STATE_TABLE,
   sessionStateDdl,
-} from "@alexkroman1/aai/runtime";
-import { createToolContext } from "@alexkroman1/aai/testing";
+} from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { SWEEP_APP_SESSION_STATE } from "./_session-state-sweep.ts";

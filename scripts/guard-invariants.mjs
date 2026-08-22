@@ -125,6 +125,10 @@ const SELF_REFERENTIAL = new Map([
   ["packages/aai/sdk/omit-undefined.ts", ["rule2_spreadTernary"]], // its doc shows the banned spelling
   ["packages/aai/sdk/keyed-lock.ts", ["rule9_handRolledKeyedLock"]], // rule 9 IS this implementation
   ["packages/aai/sdk/owned-map.ts", ["rule8_handRolledOwnedMap"]], // rule 8 IS this implementation
+  // Both copies DEFINE `tick()`, so both are the remedy rather than a violation.
+  // The split duplicated the helper: aai-runtime owns the full set, and
+  // packages/aai keeps the four its remaining host/ modules need.
+  ["packages/aai-runtime/_test-utils.ts", ["rule4_inlineTickPromise"]],
   ["packages/aai/host/_test-utils.ts", ["rule4_inlineTickPromise"]], // its doc quotes the shadowing bug
   ["packages/aai/sdk/is-record.ts", ["rule17_openCodedRecordGuard"]], // rule 17 IS `isRecord`'s body
 ]);

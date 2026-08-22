@@ -24,7 +24,7 @@
  * deploy that would have worked.
  */
 
-import { requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
+import { requiredProviderEnvVars } from "@alexkroman1/aai-runtime";
 
 /**
  * The config shape read out of a bundle's `__aaiConfig` export: the provider

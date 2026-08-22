@@ -89,7 +89,7 @@
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "The STT opener contract (SttOpenOptions, SttSession, SttEvents, SttError, SttTurnMeta, Unsubscribe) moved to @alexkroman1/aai/runtime, beside registerSttKind — a host application registers a kind and an agent author never does. contracts/compatibility/stt/v1.ts imports them from /stt, so the v1 authoring style no longer compiles."
+      "1": "The STT opener contract (SttOpenOptions, SttSession, SttEvents, SttError, SttTurnMeta, Unsubscribe) moved to @alexkroman1/aai-runtime, beside registerSttKind — a host application registers a kind and an agent author never does. contracts/compatibility/stt/v1.ts imports them from /stt, so the v1 authoring style no longer compiles."
     }
   },
   "testing": {
@@ -119,7 +119,7 @@
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "The TTS opener contract (TtsOpenOptions, TtsSession, TtsEvents, TtsError, TtsWordTiming, Unsubscribe) moved to @alexkroman1/aai/runtime, beside registerTtsKind. contracts/compatibility/tts/v1.ts imports them from /tts, so the v1 authoring style no longer compiles."
+      "1": "The TTS opener contract (TtsOpenOptions, TtsSession, TtsEvents, TtsError, TtsWordTiming, Unsubscribe) moved to @alexkroman1/aai-runtime, beside registerTtsKind. contracts/compatibility/tts/v1.ts imports them from /tts, so the v1 authoring style no longer compiles."
     }
   },
   "uploads": {

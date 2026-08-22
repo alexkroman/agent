@@ -2,7 +2,9 @@
   "$schema": "https://unpkg.com/@changesets/config@4.0.0/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [["@alexkroman1/aai", "@alexkroman1/aai-ui", "@alexkroman1/aai-cli"]],
+  "fixed": [
+    ["@alexkroman1/aai", "@alexkroman1/aai-ui", "@alexkroman1/aai-cli", "@alexkroman1/aai-runtime"]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",

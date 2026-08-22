@@ -93,7 +93,7 @@ type StepReporterSlot = { [STEP_REPORTER_SLOT]?: StepReporter };
  * means; pass `undefined` to unpublish, which is what a spec does when it is
  * done with a fake.
  *
- * @internal — a host concern, exported from `@alexkroman1/aai/runtime`. A step
+ * @internal — a host concern, exported from `@alexkroman1/aai-runtime`. A step
  * author calls {@link report}.
  */
 export function publishStepReporter(reporter: StepReporter | undefined): void {

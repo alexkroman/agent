@@ -16,7 +16,7 @@ import {
   type SessionWebSocket,
   stampSessionEvent,
   wireSessionSocket,
-} from "@alexkroman1/aai/runtime";
+} from "@alexkroman1/aai-runtime";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { WebSocketServer } from "ws";
 

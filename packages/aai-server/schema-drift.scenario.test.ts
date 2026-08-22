@@ -41,8 +41,8 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { CloseableDb } from "@alexkroman1/aai/runtime";
-import { createPostgresDb } from "@alexkroman1/aai/runtime";
+import type { CloseableDb } from "@alexkroman1/aai-runtime";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 

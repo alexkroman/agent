@@ -6,7 +6,7 @@
  * relative.
  *
  * Epoch 2 is epoch 1 minus the host-side opener contract, which moved to
- * `@alexkroman1/aai/runtime` beside `registerSttKind`. What is left is the
+ * `@alexkroman1/aai-runtime` beside `registerSttKind`. What is left is the
  * agent author's half: four factories, their options, and the descriptor they
  * return.
  */

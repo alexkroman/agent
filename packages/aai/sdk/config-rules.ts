@@ -22,7 +22,7 @@ import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
  *
  * `"text"` is the one mode with no audio path at all: the agent is an LLM,
  * a system prompt and its tools, driven by `createTextAgent`
- * (`@alexkroman1/aai/runtime`) over a message list rather than by a
+ * (`@alexkroman1/aai-runtime`) over a message list rather than by a
  * transport over a socket.
  */
 export type SessionMode = "s2s" | "pipeline" | "text";
@@ -59,6 +59,15 @@ export function assertProviderTriple(
   s2s?: unknown,
   text?: undefined,
 ): Exclude<SessionMode, "text">;
+/**
+ * The `text`-accepting overload.
+ *
+ * Carries its own `@internal` deliberately: an overload with no doc comment
+ * defaults to `@public` in the API report, so the symbol would be tagged two
+ * ways and `api-surface-file.test.ts` fails on exactly that.
+ *
+ * @internal
+ */
 export function assertProviderTriple(
   stt: unknown,
   llm: unknown,

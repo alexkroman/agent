@@ -182,7 +182,7 @@ describe("the markdown config", () => {
     // It also re-states the size of the deny-list rather than its contents: an
     // entry is a decision with a paragraph attached, and the failure worth
     // catching is somebody adding a fourth to make a red gate green.
-    const denied = ["./internal", "./slugify", "./workspace-files"];
+    const denied = ["./host-internal", "./internal", "./slugify", "./workspace-files"];
     const inspected = Object.entries(siteConfig).flatMap(([globKey, config]) => {
       const pkg = repoPathOf(globKey).split("/")[1];
       if (pkg === undefined) throw new Error(`unparsable glob key ${globKey}`);

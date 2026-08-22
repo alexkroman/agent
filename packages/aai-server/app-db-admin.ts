@@ -37,7 +37,7 @@
  * into the server with this channel: `orphan-previews.ts`.
  */
 
-import { createPostgresDb } from "@alexkroman1/aai/runtime";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { isLocalDev } from "./_boot.ts";
 import { type AppDbTarget, sqlState } from "./app-database.ts";
 import { assertIdentifier } from "./app-db-identifier.ts";

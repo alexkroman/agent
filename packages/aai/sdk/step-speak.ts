@@ -168,7 +168,7 @@ type StepSpeakSlot = { [STEP_SPEAK_SLOT]?: SpeechSynthesizer };
  * identically under `aai dev`, on a self-hosted server and in a deployed
  * guest. Pass `undefined` to unpublish.
  *
- * @internal — a host concern, exported from `@alexkroman1/aai/runtime`. A step
+ * @internal — a host concern, exported from `@alexkroman1/aai-runtime`. A step
  * author calls {@link stepSpeak}.
  */
 export function publishSpeechSynthesizer(synthesizer: SpeechSynthesizer | undefined): void {

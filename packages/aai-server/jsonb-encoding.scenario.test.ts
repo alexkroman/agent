@@ -36,7 +36,7 @@
  * `turbo.json`.)
  */
 
-import { createPostgresDb } from "@alexkroman1/aai/runtime";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import { createPgChatStore } from "./chat-store.ts";

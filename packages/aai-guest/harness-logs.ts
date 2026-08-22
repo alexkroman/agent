@@ -40,7 +40,7 @@
  * @module
  */
 
-import { createLogBuffer, type LogBuffer, type LogStream } from "@alexkroman1/aai/runtime";
+import { createLogBuffer, type LogBuffer, type LogStream } from "@alexkroman1/aai-runtime";
 
 /** What a `write` callback is handed. */
 type WriteCallback = (err?: Error | null) => void;

@@ -96,7 +96,7 @@ function registryFetch(answers: { packument?: () => Response; tarball?: () => Re
 }
 
 describe("the packages it waits for", () => {
-  test("are derived from the tree, and are the three the guest image installs", () => {
+  test("are derived from the tree, and are the four the guest image installs", () => {
     // `fileURLToPath`, never `.pathname` — a URL pathname is percent-encoded, so
     // a checkout under a directory with a space in it would hand the script a
     // path that does not exist (the trap `scripts/_fs.mjs` documents).
@@ -104,6 +104,7 @@ describe("the packages it waits for", () => {
     expect(specs.map((spec) => spec.name).sort()).toEqual([
       "@alexkroman1/aai",
       "@alexkroman1/aai-cli",
+      "@alexkroman1/aai-runtime",
       "@alexkroman1/aai-ui",
     ]);
     // A real version per package: `latest` or a range would make the wait
@@ -117,7 +118,7 @@ describe("the packages it waits for", () => {
     // readable" is TRUE of no versions.
     expect(() => wait?.specsFrom("/repo", [])).toThrow(/only 0 publishable package/);
     expect(() => wait?.specsFrom("/repo", ["packages/aai", "packages/aai-ui"])).toThrow(
-      /expected at least 3/,
+      /expected at least 4/,
     );
   });
 });

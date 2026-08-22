@@ -377,7 +377,7 @@ export interface AgentDef extends PipelineVoiceTuning {
   s2s?: S2sProvider;
   /**
    * Opt into TEXT mode — an agent with no audio path at all, driven over a
-   * message list by `createTextAgent` (`@alexkroman1/aai/runtime`) instead of
+   * message list by `createTextAgent` (`@alexkroman1/aai-runtime`) instead of
    * by a transport over a session socket.
    *
    * A text agent is the same `agent()` definition every voice agent is —

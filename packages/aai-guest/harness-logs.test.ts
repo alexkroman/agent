@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { createLogBuffer } from "@alexkroman1/aai/runtime";
+import { createLogBuffer } from "@alexkroman1/aai-runtime";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   type CapturedStreams,

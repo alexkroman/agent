@@ -40,6 +40,7 @@ const pkgMap = {
   "@alexkroman1/aai": "packages/aai/package.json",
   "@alexkroman1/aai-ui": "packages/aai-ui/package.json",
   "@alexkroman1/aai-cli": "packages/aai-cli/package.json",
+  "@alexkroman1/aai-runtime": "packages/aai-runtime/package.json",
 };
 
 /**
@@ -60,11 +61,15 @@ const sharedDepSources = {
   // The DevKit and the durable world. `@workflow/world-postgres` is what
   // `getWorld()` imports for a project with a `DATABASE_URL`, and it is NOT a
   // dependency of `workflow` — it reaches a project only through
-  // `@alexkroman1/aai`, which npm hoists and pnpm does not. So a scaffolded
-  // project has to declare it or its first run fails with
+  // `@alexkroman1/aai-runtime`, which npm hoists and pnpm does not. So a
+  // scaffolded project has to declare it or its first run fails with
   // `Cannot find module '@workflow/world-postgres'`.
+  //
+  // The two are sourced from DIFFERENT packages since the runtime split:
+  // `workflow` is the DevKit an `agent.ts` authors against and stayed with the
+  // SDK, while the Postgres world is only ever opened by the host.
   workflow: "packages/aai/package.json",
-  "@workflow/world-postgres": "packages/aai/package.json",
+  "@workflow/world-postgres": "packages/aai-runtime/package.json",
   // Same shape as the two above, for the same reason: a template's `agent.ts`
   // imports `setup` from `xstate` DIRECTLY (a machine is authored, not wrapped),
   // and xstate reaches a project only through `@alexkroman1/aai` — which npm

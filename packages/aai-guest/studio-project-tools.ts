@@ -22,8 +22,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
-import { safeFetch } from "@alexkroman1/aai/runtime";
 import { isRecord } from "@alexkroman1/aai/utils";
+import { safeFetch } from "@alexkroman1/aai-runtime";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { WORKSPACE_DEPENDENCIES } from "./studio-project-shape.ts";

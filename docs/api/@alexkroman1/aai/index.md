@@ -20,7 +20,7 @@ subpath, chosen by WHO READS IT:
 | `@alexkroman1/aai/tools` | calling `fetchJson`/`webSearch`/`visitWebpage` from your own tool code |
 | `@alexkroman1/aai/utils` | small helpers written inside a tool body |
 | `@alexkroman1/aai/ffmpeg` | running ffmpeg from a step |
-| `@alexkroman1/aai/runtime` | self-hosting the Node runtime |
+| `@alexkroman1/aai-runtime` | self-hosting the Node runtime |
 | `@alexkroman1/aai/protocol`, `/manifest`, `/internal` | framework internals; not covered by semver |
 
 Three primitives here run a defined process, and they are not
@@ -1458,7 +1458,7 @@ optional text?: true;
 ```
 
 Opt into TEXT mode — an agent with no audio path at all, driven over a
-message list by `createTextAgent` (`@alexkroman1/aai/runtime`) instead of
+message list by `createTextAgent` (`@alexkroman1/aai-runtime`) instead of
 by a transport over a session socket.
 
 A text agent is the same `agent()` definition every voice agent is —

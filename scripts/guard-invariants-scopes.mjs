@@ -29,21 +29,21 @@
  * hand-kept list's one real failure mode is a rename quietly emptying the rule.
  */
 export const SESSION_SURFACE_PATHS = [
-  "packages/aai/host/session-core.ts",
-  "packages/aai/host/session-commands.ts",
-  "packages/aai/host/transports/types.ts",
-  "packages/aai/host/runtime-types.ts",
-  "packages/aai/host/runtime-session-callbacks.ts",
-  "packages/aai/host/runtime.ts",
-  "packages/aai/host/ws-handler.ts",
+  "packages/aai-runtime/session-core.ts",
+  "packages/aai-runtime/session-commands.ts",
+  "packages/aai-runtime/transports/types.ts",
+  "packages/aai-runtime/runtime-types.ts",
+  "packages/aai-runtime/runtime-session-callbacks.ts",
+  "packages/aai-runtime/runtime.ts",
+  "packages/aai-runtime/ws-handler.ts",
   // The doubles. A per-name callback surface has a MULTIPLIER: every harness
   // standing in for the thing that fires a callback has to satisfy its whole
   // shape, and 78 of the original 157 occurrences were exactly that.
   "packages/aai/host/_test-utils.ts",
-  "packages/aai/host/transports/_transport-recorder.ts",
-  "packages/aai/host/transports/_pipeline-transport-harness.ts",
-  "packages/aai/host/integration/_pipeline-fuzz-model.ts",
-  "packages/aai/host/integration/_s2s-fuzz-harness.ts",
+  "packages/aai-runtime/transports/_transport-recorder.ts",
+  "packages/aai-runtime/transports/_pipeline-transport-harness.ts",
+  "packages/aai-runtime/integration/_pipeline-fuzz-model.ts",
+  "packages/aai-runtime/integration/_s2s-fuzz-harness.ts",
 ];
 
 /**
@@ -150,9 +150,9 @@ export const GUEST_SURFACE_PATHSPECS = [
   // `**/*.test.ts` does not match on its own.
   ":!packages/aai-guest/*.test.ts",
   ":!packages/aai-guest/**/*.test.ts",
-  "packages/aai/host/server.ts",
-  "packages/aai/host/telephony/telephony-server.ts",
-  "packages/aai/host/session-events-api.ts",
-  "packages/aai/host/workflow-serve.ts",
+  "packages/aai-runtime/server.ts",
+  "packages/aai-runtime/telephony/telephony-server.ts",
+  "packages/aai-runtime/session-events-api.ts",
+  "packages/aai-runtime/workflow-serve.ts",
   "packages/aai/sdk/workflow-api-client.ts",
 ];

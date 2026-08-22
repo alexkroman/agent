@@ -46,8 +46,8 @@
 import type { AddressInfo } from "node:net";
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
-import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { isRecord } from "@alexkroman1/aai/utils";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { isLocalDev } from "./_boot.ts";

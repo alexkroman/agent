@@ -24,7 +24,7 @@
  */
 
 import { CLIENT_CONFIG_METHODS } from "@alexkroman1/aai/protocol";
-import { WORKFLOW_API_METHODS } from "@alexkroman1/aai/runtime";
+import { WORKFLOW_API_METHODS } from "@alexkroman1/aai-runtime";
 import { describe, expect, test } from "vitest";
 import {
   GUEST_ROUTE_EXPOSURE,

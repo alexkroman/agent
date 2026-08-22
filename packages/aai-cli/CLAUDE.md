@@ -805,3 +805,50 @@ both are fail-closed:
   a MINIMUM tick duration, so it never runs ahead of the wall clock (measured
   mean 315ms per 200ms tick — 0.63x real time). Reach for `null` only for a
   harness that genuinely steps faster than real time.
+
+## Windows is NOT tested, and is currently broken
+
+There is no Windows leg in CI. One was added, run once, and removed — and what
+it found is the reason this section exists rather than a TODO.
+
+**No package declares an `os` field, so all three published packages claim
+Windows support by omission**, and `aai-cli` is the one a Windows user actually
+runs: `login.ts` branches on `win32` and four modules split on `path.sep`, so
+the support was considered and then never exercised. One `windows-latest` run
+over `aai`, `aai-ui` and `aai-cli` unit tests failed two of three legs, on two
+unrelated causes:
+
+- **Hardcoded `/tmp` string literals.** On Windows `/tmp/x` is DRIVE-RELATIVE —
+  it resolves to `D:\tmp\x`, which does not exist — so every write failed with
+  ENOENT. Two shipped modules had it (`host/workflow-serve.ts`,
+  `aai-guest/harness-bundle.ts`), and both run on the DEVELOPER's machine under
+  `aai dev`, not only in the Linux guest. **Fixed**, and
+  `guard-invariants.mjs` rule 11 keeps them out; the only baselined occurrences
+  are `modal-agent-sandbox.ts`'s remote paths, which name a location inside the
+  Linux sandbox where `/tmp` is correct and `tmpdir()` would describe the wrong
+  machine.
+- **The `aai` build emits differently on Windows.** `aai-cli`'s dev-server specs
+  died in rolldown with `UNRESOLVED_IMPORT` on `./_internal-types.ts` inside
+  `../aai/dist/sdk/manifest-barrel.js` — i.e. that emitted file carried `.ts`
+  specifiers. On Linux the same file is a normal tsdown bundle importing a
+  hashed chunk (`../_internal-types-DiEjant0.js`), so the Windows build produced
+  unbundled output where Linux produces a bundle. **UNRESOLVED**, and left that
+  way deliberately: it is a toolchain-level difference (tsdown/rolldown, or the
+  DevKit's builder plugin) that cannot be diagnosed without a Windows machine to
+  iterate on, and blind pushes at ~4 minutes per CI round trip are not
+  debugging.
+
+So the state is: Windows is plausibly close to working, two real bugs are fixed,
+and one build-level unknown stands between here and a green leg. **Do not
+re-add the matrix without a Windows machine to reproduce on**, and do not add it
+as `continue-on-error` — a leg that is green while broken is worse than no leg,
+which is the rule the rest of this file's gates are built on.
+
+Note the middle tiers were never the right thing to duplicate onto Windows
+anyway, which is where this diverged from vercel/eve (they run their integration
+tier on a Windows matrix leg). Ten of this repo's fourteen
+`*.scenario.test.ts` files are aai-server's Postgres, WebSocket and bundler
+tests — Linux by design, not by accident. Running them on Windows would test the
+runner rather than the code. The three remaining `*.integration.test.ts` files
+are pure in-memory property tests, so they would tell you about fast-check, not
+about Windows.

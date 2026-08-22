@@ -69,7 +69,7 @@
 import { pathToFileURL } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import { formatSchemaIssues, requestPath } from "@alexkroman1/aai/internal";
-import { createServer } from "@alexkroman1/aai/runtime";
+import { createServer } from "@alexkroman1/aai-runtime";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
 import { mainAgent } from "./harness-agent-mode.ts";

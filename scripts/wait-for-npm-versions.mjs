@@ -3,7 +3,7 @@
  * Wait until every publishable package's CURRENT version is READABLE from npm,
  * so a deploy cannot ship a server whose guest image build 404s.
  *
- * The guest snapshot image installs the three SDK packages from npm at the exact
+ * The guest snapshot image installs the four SDK packages from npm at the exact
  * versions the checkout declares (`resolveSdkSpecs` in
  * `packages/aai-server/modal-harness-image.ts` — they cannot be lockfile-pinned,
  * because an integrity hash only exists once a version is published). Deploy and
@@ -92,7 +92,7 @@ const DEFAULT_INTERVAL_SECONDS = 15;
  * prevent. Three is what the repo publishes (`@alexkroman1/aai`, `-cli`, `-ui`),
  * and they are also exactly `SDK_PACKAGES` in `modal-harness-image.ts`.
  */
-const MIN_PACKAGES = 3;
+const MIN_PACKAGES = 4;
 
 /**
  * The `name@version` pairs to wait for, DERIVED from the tree.

@@ -250,13 +250,13 @@ describe("rule 14 — a fixture directory nothing reads", () => {
   test("candidate discovery finds the real fixture directories", () => {
     // A discovery step that found nothing would report "0 ✓" — the same output
     // as the rule being upheld, which is the failure shape this whole suite
-    // exists for. Nested candidates are separate: `host/fixtures` and
-    // `host/integration/fixtures` are two directories, not one.
+    // exists for. Nested candidates are separate: `fixtures/` and
+    // `integration/fixtures/` are two directories, not one.
     const dirs = fixtureDirs?.() ?? [];
     expect(dirs).toContain("packages/aai/sdk/compat-fixtures");
     expect(dirs).toContain("packages/aai-ui/fixtures");
-    expect(dirs).toContain("packages/aai/host/fixtures");
-    expect(dirs).toContain("packages/aai/host/integration/fixtures");
+    expect(dirs).toContain("packages/aai-runtime/fixtures");
+    expect(dirs).toContain("packages/aai-runtime/integration/fixtures");
   });
 
   test("the deleted aai-server fixture set is really gone", () => {

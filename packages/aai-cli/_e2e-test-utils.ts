@@ -29,7 +29,7 @@ export const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn"
  * from the real npmjs, i.e. tests the released copy instead of this working
  * tree — silently.
  */
-const PUBLISHED_PACKAGES = ["aai", "aai-ui", "aai-cli"] as const;
+const PUBLISHED_PACKAGES = ["aai", "aai-runtime", "aai-ui", "aai-cli"] as const;
 const PUBLISHED_DEP_NAMES: ReadonlySet<string> = new Set(
   PUBLISHED_PACKAGES.map((name) => `@alexkroman1/${name}`),
 );

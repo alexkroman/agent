@@ -55,8 +55,8 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { CONTAINED_ENV } from "@alexkroman1/aai-runtime";
 import type { App, Image, ModalClient, Sandbox } from "modal";
 import pTimeout from "p-timeout";
 import { keyedMemoAsync } from "./_memo.ts";
@@ -131,7 +131,12 @@ const HARNESS_WARMUP_TIMEOUT_MS = 60_000;
  * `scripts/sync-guest-toolchain.mjs` for the full reasoning and for the
  * third-party half, which IS locked.
  */
-const SDK_PACKAGES = ["@alexkroman1/aai", "@alexkroman1/aai-cli", "@alexkroman1/aai-ui"] as const;
+const SDK_PACKAGES = [
+  "@alexkroman1/aai",
+  "@alexkroman1/aai-cli",
+  "@alexkroman1/aai-runtime",
+  "@alexkroman1/aai-ui",
+] as const;
 
 /** The committed toolchain manifest + lockfile the image installs with `npm ci`. */
 export type ToolchainLock = {

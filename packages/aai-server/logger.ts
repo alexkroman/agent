@@ -10,7 +10,7 @@
  *
  * ## The `Logger` type is the SDK's, deliberately
  *
- * `@alexkroman1/aai/runtime` already publishes `Logger`, `LogLevel` and
+ * `@alexkroman1/aai-runtime` already publishes `Logger`, `LogLevel` and
  * `consoleLogger`, and the runtime inside every guest logs through them. A
  * second interface here would mean the platform and the agents it hosts
  * describe a log line two ways, and any future sink would have to satisfy both.
@@ -40,9 +40,9 @@
  * @module
  */
 
-import { consoleLogger, type LogContext, type Logger } from "@alexkroman1/aai/runtime";
+import { consoleLogger, type LogContext, type Logger } from "@alexkroman1/aai-runtime";
 
-export type { LogContext, LogFn, Logger, LogLevel } from "@alexkroman1/aai/runtime";
+export type { LogContext, LogFn, Logger, LogLevel } from "@alexkroman1/aai-runtime";
 
 /**
  * Where lines go. Mutable module state, which is the point — see the header.

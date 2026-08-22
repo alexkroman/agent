@@ -34,7 +34,7 @@ import {
   createPostgresDb,
   createWakeHintPublisher,
   WORKFLOW_WAKE_TABLE,
-} from "@alexkroman1/aai/runtime";
+} from "@alexkroman1/aai-runtime";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 import {

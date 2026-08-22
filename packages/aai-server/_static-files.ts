@@ -10,10 +10,10 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { isPathInside } from "@alexkroman1/aai/runtime";
+import { isPathInside } from "@alexkroman1/aai-runtime";
 
 // Consumed by transport-websocket.ts and studio/* alongside the reader below.
-export { isPathInside } from "@alexkroman1/aai/runtime";
+export { isPathInside } from "@alexkroman1/aai-runtime";
 
 /**
  * Content-cached reader over one directory.
