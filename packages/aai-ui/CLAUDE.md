@@ -56,15 +56,45 @@ cannot take an explicit `undefined` under `exactOptionalPropertyTypes`, and
 `api.get` is deliberately untyped (`useWorkflowRun<R>` is where a page names the
 shape).
 
-**The `@internal` ratchet here stands at eight**, all on the root barrel and
-all recorded in `contracts/internal-surface.json`: `SessionProvider`,
-`ThemeProvider`, `ToolConfigContext`, the three URL chips (`ApiUrlChip`,
-`UiUrlChip`, `SessionUrlChips`), and two thirds of the client-config trio
-(`buildAgentUrl`, `loadClientConfig`). Every one is importable and in an
-author's autocomplete while no contract covers it — `client()` and the default
-client install them, which is why they are tagged rather than moved. The list
-may shrink and may never grow; unlike `aai` there is no `/internal` subpath to
-move one to, so paying it down means a private module.
+**The `@internal` ratchet here stands at ZERO**, and `internal.ts` is what paid
+it off. It stood at eight — `SessionProvider`, `ThemeProvider`,
+`ToolConfigContext`, the three URL chips (`ApiUrlChip`, `UiUrlChip`,
+`SessionUrlChips`) and two thirds of the client-config trio (`buildAgentUrl`,
+`loadClientConfig`) — every one importable from the root and sitting in a
+client author's autocomplete beside `client()`, `<Form>` and `useWorkflowRun`
+while no capability contract covered it. `client()` and the default client
+install all eight, so deleting them was never the option; the tag was the only
+thing marking them, and a tag is not a boundary.
+
+**The mechanism is a subpath, because a tag on a re-export is not one.** API
+Extractor reads `@internal` at the DECLARATION site, so a tag written on a
+member of an `export { … } from` clause is silently ignored and the name stays
+`@public` in `etc/index.api.md`. The exemption in
+`contracts/internal-surface.json` is per SUBPATH, which is the same fact from
+the other side: a name on the root barrel earns an entry on that ratchet no
+matter how it is tagged. So the eight moved to
+`@alexkroman1/aai-ui/internal` (`internal.ts`), which
+`NON_AUTHORING_SUBPATHS` in `scripts/_api-contracts-tree.mjs` deny-lists — the
+third package to do this, after `aai` (71 → 0) and `aai-runtime`. Nothing
+in-package changed at the import sites: every one of the eight was already
+imported from its own module (`context.ts`, `components/url-chips.tsx`,
+`client-config.ts`), never through the barrel.
+
+**The rule that comes with it, and it runs both ways.** A name that wants to be
+PUBLIC gets its `@internal` tag removed and joins a capability contract; it does
+not stay on the root barrel wearing a tag. A name that is genuinely internal
+goes on `/internal`; it does not stay on the root barrel wearing a tag either.
+The ratchet is at zero, so there is no third option left — a new `@internal`
+export reachable from the root fails `pnpm check:api-contracts` outright rather
+than adding a line to a list.
+
+Two wiring notes for anything added to `internal.ts`. It is a published subpath,
+so it needs its `exports` triple in `package.json` and its entry in
+`tsdown.config.ts`, whose entry list is HARDCODED here (unlike `aai-runtime`,
+which derives one). And it is deliberately NOT a typedoc entry point:
+`UNDOCUMENTED_SUBPATHS` in `scripts/docs-markdown.mjs` carries the reason, and
+that gate fails BOTH ways — documenting a subpath and deny-listing it is an
+error, so the entry there is what makes the absent entry point legal.
 
 **`fetchClientConfig` is what came off it, and the reason generalizes.** It was
 tagged `@internal` while a `@public` doc comment in the SDK
@@ -73,9 +103,11 @@ wants `name`/`greeting` calls `fetchClientConfig()` itself" — so the published
 reference instructed a reader to use a symbol it excluded, and its return type
 `ClientConfigResponse` was a contracted public type no public signature could
 produce. It is `@public` now and belongs to the `page` capability, `page()`
-being the mount that makes the lookup a caller's job. The other two stay
-internal: `loadClientConfig`'s `null`-vs-`{}` distinction is a session
-implementation detail, and `buildAgentUrl` is a two-line path join.
+being the mount that makes the lookup a caller's job — which is the first half
+of the rule above, applied before there was a subpath to apply the second half
+to. The other two stay internal and are on `/internal`:
+`loadClientConfig`'s `null`-vs-`{}` distinction is a session implementation
+detail, and `buildAgentUrl` is a two-line path join.
 
 **`SessionCoreOptions` is gone**, and epoch 1 of `session` went with it. It was
 an exact alias of `VoiceSessionOptions` with one referent —
@@ -131,6 +163,9 @@ Two consequences worth knowing before adding a component here:
 ## Key files
 
 - `index.ts` — main exports, React UI component
+- `internal.ts` — the `/internal` subpath: the eight names `client()` installs
+  for itself, kept off the root barrel so the contracted surface and the
+  importable one are the same list. See "The `@internal` ratchet" above
 - `session-core.ts` — WebSocket session management + reactive snapshot
   (`createSessionCore`); split across `session-core-messages.ts`
   (message/history handling) and `session-core-types.ts`

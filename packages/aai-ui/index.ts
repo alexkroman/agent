@@ -2,13 +2,12 @@
 
 // Pre-connection client-config lookup (name + greeting). `fetchClientConfig`
 // is the PUBLIC half — a workflow app's replacement for the lookup `client()`
-// makes for itself, since `page()` makes none. The other two are the default
-// client's and the session's own plumbing; see each symbol's doc.
+// makes for itself, since `page()` makes none. The default client's and the
+// session's own plumbing (`buildAgentUrl`, `loadClientConfig`) is on
+// `@alexkroman1/aai-ui/internal`.
 export {
-  buildAgentUrl,
   type ClientConfigResponse,
   fetchClientConfig,
-  loadClientConfig,
 } from "./client-config.ts";
 // Components
 export { AutoScroll } from "./components/auto-scroll.tsx";
@@ -45,28 +44,21 @@ export {
   type ToolCallRowProps,
   type ToolCallRowVariant,
 } from "./components/tool-call-row.tsx";
+// The value type a caller names to write `ClientConfig.tools`. The CONTEXT
+// `client()` installs it into is internal — see `internal.ts`.
 export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
-// Tool display config context — installed by `client()` from
-// `ClientConfig.tools`; not something component-tier users pass themselves.
-export { ToolConfigContext } from "./components/tool-config-context.ts";
 // The bar over the one wait a run cannot describe — storing a form's files, which
 // happens BEFORE the run that carries their ids exists.
 export { UploadProgressBar } from "./components/upload-progress.tsx";
-export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";
 // A form generated from a workflow's own declared input schema.
 export { WorkflowFields } from "./components/workflow-fields.tsx";
 // The rendered half of `useWorkflowProgress` — what a run has SAID, as against
 // where it has got to.
 export { WorkflowProgress } from "./components/workflow-progress.tsx";
 export type { Session } from "./context.ts";
-// Context & hooks
-export {
-  SessionProvider,
-  ThemeProvider,
-  useSession,
-  useSessionSelector,
-  useTheme,
-} from "./context.ts";
+// Context & hooks. The two PROVIDERS `client()` mounts around the tree
+// (`SessionProvider`, `ThemeProvider`) are on `@alexkroman1/aai-ui/internal`.
+export { useSession, useSessionSelector, useTheme } from "./context.ts";
 export type {
   BaseOptions,
   ClientConfig,

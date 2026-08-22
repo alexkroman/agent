@@ -17,6 +17,11 @@
       "types": "./dist/client-dir.d.ts",
       "import": "./dist/client-dir.js"
     },
+    "./internal": {
+      "@dev/source": "./internal.ts",
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal.js"
+    },
     "./styles.css": "./styles.css",
     "./package.json": "./package.json"
   },

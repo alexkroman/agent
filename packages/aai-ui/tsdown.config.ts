@@ -4,6 +4,7 @@ export default defineConfig({
   entry: [
     "index.ts",
     "client-dir.ts",
+    "internal.ts",
     "session-core.ts",
     "types.ts",
     "audio.ts",
