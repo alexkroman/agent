@@ -1214,10 +1214,14 @@ uncovered.
 
 Four properties are load-bearing:
 
-- **A retained epoch obliges a frozen, compiling example.**
-  `contracts/compatibility/<capability>/v<N>.ts` is an authoring example written
-  the way that epoch was authored, and it sits under the package's own
+- **A retained epoch obliges a frozen, compiling artifact.**
+  `contracts/compatibility/<capability>/v<N>.ts` is written the way that epoch
+  was authored, and it sits under the package's own
   `tsconfig.json` — so **`pnpm typecheck` is the backward-compatibility gate**.
+  On `aai` and `aai-ui` it is a SNIPPET an author reads; on `aai-runtime` it is
+  a starter a host COPIES, because that is what its consumers do with it (see
+  "The published surface is versioned in epochs" in
+  `packages/aai-runtime/CLAUDE.md`). Either way the obligation is the same one.
   That is a test of
   compatibility rather than a claim about it, which is what the `.test-d.ts`
   files cannot be: they pin the CURRENT shape and move with the API. All

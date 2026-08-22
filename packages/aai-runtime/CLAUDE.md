@@ -86,10 +86,20 @@ The split shipped this package with no `contracts/` tree, so for its first days
 change a parameter without a gate asking which. That asymmetry is the whole
 reason this exists.
 
-**Every capability owes a frozen, compiling example** under
+**Every capability owes a frozen, compiling TEMPLATE** under
 `contracts/compatibility/<capability>/v1.ts`, and `pnpm typecheck` is what
 enforces it. Editing one to make an error go away defeats the mechanism — the
 error IS the finding.
+
+**A template rather than an example, and the distinction is the point.** `aai`
+and `aai-ui` freeze snippets an author READS: an `agent.ts` is a short file and
+the useful artifact is a fragment of one. This package's consumers embed it —
+they stand up a host, a carrier codec, a state backend — so the useful artifact
+is a starter they COPY and edit, composed front to back, with the edit points
+marked and no design commentary in the way (that material is in this guide,
+which is where a reader can find it without opening twelve files). Each is the
+starter as it was written AT THAT EPOCH; the way to change an API is a new epoch
+carrying a new template, never an edit to a frozen one.
 
 ### The root barrel had 50 names it does not own
 
@@ -127,23 +137,23 @@ it. Do not "tidy" them onto `/internal` later.
 tagged `@internal` that are nonetheless reachable from the root barrel. That is
 the same ratchet that took `aai` from 74 to 0.
 
-### What writing the examples found
+### What writing the templates found
 
 Four things the surface cannot currently demonstrate about itself. None is a bug;
 each is a decision worth making rather than inheriting.
 
 - **`uploads` publishes a store TYPE and two blob implementations with no public
   way to join them** — `createUploadStore` and `resolveUploadBlobs` are
-  `@internal`, so every function in the frozen example has to take the store as
+  `@internal`, so the template has to take the store as
   a parameter. Honest for an embedder handed one by `createServer`, and it means
   the capability cannot show its own end-to-end wiring.
 - **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
-  `@public` and `createWorkflowClient` is `@internal`, so an example can assemble
+  `@public` and `createWorkflowClient` is `@internal`, so a template can assemble
   the bag and not hand it to anything. Its `logger` field is required and both
   public `Logger` values (`consoleLogger`, `createConsoleLogger`) are `@internal`
   too.
 - **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
-  the honest example is fifty lines of stub and anything in the wild will either
+  the honest template is fifty lines of skeleton and anything in the wild will either
   be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way
   `aai` publishes `createToolContext` — would remove the incentive to launder it.
 - **`TextTurnResult` is `ReturnType<typeof streamText<ToolSet>>`**, so this
@@ -151,11 +161,11 @@ each is a decision worth making rather than inheriting.
   moves. An upstream minor can force an epoch classification here with no change
   of ours.
 
-And one real defect the examples caught: **`PassthroughServerOptions` cannot be
+And one real defect the templates caught: **`PassthroughServerOptions` cannot be
 spread into `ServerOptions`.** Its fields are optional WITHOUT `| undefined`, so
 under `exactOptionalPropertyTypes` `{...hooks}` widens each to `T | undefined`
 and `createServer` rejects it (TS2379) — while the three wrapper doors exist
-precisely so one hook bag can reach all of them. The frozen example forwards
+precisely so one hook bag can reach all of them. The frozen template forwards
 `logger`/`upgrade`/`request` one at a time to compile. Either those fields carry
 `| undefined` or the wrappers take the bag as a nested field; the workaround is
 frozen into `contracts/compatibility/server/v1.ts` until one of those happens.
