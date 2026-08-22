@@ -1,27 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createRequire } from "node:module";
-import path from "node:path";
 import { AGENT_CSP, isTextAssetPath } from "@alexkroman1/aai/internal";
+import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
 import { createCachedDirReader } from "./_static-files.ts";
 import type { AppContext } from "./context.ts";
 import { SafePathSchema } from "./schemas.ts";
 
-let _defaultClientDir: string | undefined;
-function getDefaultClientDir(): string {
-  if (!_defaultClientDir) {
-    const require = createRequire(import.meta.url);
-    const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
-    _defaultClientDir = path.join(path.dirname(pkgPath), "dist", "default-client");
-  }
-  return _defaultClientDir;
-}
-
 // Cached, containment-checked reads over aai-ui's built default client.
 // Cached Buffers are served as bytes — no per-request UTF-8 round trip.
-const readDefaultClient = createCachedDirReader(getDefaultClientDir);
+//
+// `defaultClientDir` is aai-ui's own export rather than a third copy of the
+// three-line `require.resolve` dance: it resolves through that package's
+// manifest the same way, and turns a missing install into a message naming
+// @alexkroman1/aai-ui instead of a MODULE_NOT_FOUND for a path nobody wrote.
+// The memo the local copy carried is `createCachedDirReader`'s already.
+const readDefaultClient = createCachedDirReader(defaultClientDir);
 
 export async function handleAgentHealth(c: AppContext): Promise<Response> {
   const slug = c.var.slug;

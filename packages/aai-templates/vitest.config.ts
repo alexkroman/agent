@@ -42,11 +42,17 @@ export default defineConfig({
       // This package had NO floors at all — the only one in the repo — while
       // running `test:coverage` in the CI matrix, so its numbers were measured
       // and then discarded. Seeded ~2-3 points below the first measurement
-      // (2026-08: stmts 67.0, branch 53.2, funcs 59.3, lines 69.8); floors
-      // only move up from here. They are lower than every other package's on
-      // purpose: templates are example agents whose value is being READ, and
-      // each one's tests cover its own tools rather than every branch.
-      thresholds: { lines: 78, functions: 73, branches: 64, statements: 75 },
+      // (2026-08: stmts 67.0, branch 53.2, funcs 59.3, lines 69.8) and ratcheted
+      // since; floors only move up from here. They are lower than every other
+      // package's on purpose: templates are example agents whose value is being
+      // READ, and each one's tests cover its own tools rather than every branch.
+      //
+      // Ratcheted 78/73/64/75 -> 84/85/72/82 against measured stmts 84.97-85.04,
+      // branch 74.68-75.0, funcs 88.40, lines 86.76 (two runs; v8 moves a little
+      // with which files a run touches, so the floor sits under the LOW end).
+      // The seed floors had drifted 8-15 points under actual, which is a ratchet
+      // nothing can trip.
+      thresholds: { lines: 84, functions: 85, branches: 72, statements: 82 },
     },
   },
 });

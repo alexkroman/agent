@@ -18,8 +18,7 @@
       "import": "./dist/client-dir.js"
     },
     "./styles.css": "./styles.css",
-    "./package.json": "./package.json",
-    "./default-client/*": "./dist/default-client/*"
+    "./package.json": "./package.json"
   },
   "scripts": {
     "test": "vitest run",
@@ -28,7 +27,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "check:publint": "publint",
-    "check:attw": "attw --pack --profile esm-only --entrypoints ."
+    "check:attw": "attw --pack --profile esm-only --exclude-entrypoints styles.css"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",

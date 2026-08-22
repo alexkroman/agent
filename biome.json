@@ -6,6 +6,7 @@
       "scripts/**",
       "*.ts",
       "examples/**",
+      "docs/**",
       "!**/node_modules",
       "!**/dist",
       "!**/coverage",
@@ -171,6 +172,10 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["docs/typedoc*.json"],
+      "json": { "parser": { "allowComments": true } }
+    },
     {
       "includes": ["packages/*/contracts/compatibility/**"],
       "linter": { "rules": { "suspicious": { "noDeprecatedImports": "off" } } }

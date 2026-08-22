@@ -458,15 +458,17 @@ one commit of history. A file in the tree has no merge base and no such modes.
   — enforces **structural** conventions: the shapes that are wrong only in
   relation to their siblings, which is why no per-file tool can see them.
   Biome lints statements and tsc type-checks a program; neither can say "every
-  module in this directory must look like the others." The thirteen
+  module in this directory must look like the others." The sixteen
   conventions cover the four things this repo restates by hand — the
   per-package file set (`package.json`, `tsconfig.json`, `vitest.config.ts`,
   `CLAUDE.md`, plus README/`tsconfig.build.json`/`tsdown.config.ts` on the
-  three published ones) and each `vitest.config.ts` importing `sharedConfig`;
+  four published ones) and each `vitest.config.ts` importing `sharedConfig`;
   `*-barrel.ts` files being pure re-export surfaces; the **dependency-graph
-  boundaries** under "Dependency flow" (aai imports no sibling, the CLI
-  imports neither server nor guest, the guest imports no server code, aai-ui
-  imports only the core SDK); and the repeated-by-construction shapes — every
+  boundaries** under "Dependency flow" (aai imports no sibling, aai-runtime
+  imports only aai, the CLI imports neither server nor guest, the guest imports
+  no server code, the SERVER imports no guest source, and neither browser bundle
+  — aai-ui, the studio client — imports platform or runtime code); and the
+  repeated-by-construction shapes — every
   STT/TTS/LLM/S2S provider module's `*_KIND` / `*_API_KEY_ENV` / `*Options` /
   `*Provider` / factory / `resolve*Settings` set, and every template's
   `agent.ts` + `client.tsx`. `pnpm check:konsistent-config` (`konsistent
@@ -720,8 +722,10 @@ Ten workspace packages under `packages/`:
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 | `packages/aai-evals/` | `aai-evals` | Behaviour eval tier (private): the runner, its assertion vocabulary over the session event stream, and its targets |
 
-**Dependency flow:** `aai-cli`, `aai-ui`, `aai-guest`, and `aai-server` all
-depend on `@alexkroman1/aai` (via `workspace:*`). `aai-server` depends on
+**Dependency flow:** every other package depends on `@alexkroman1/aai` (via
+`workspace:*`), and `aai-runtime` sits one layer above it — the CLI, the guest,
+the server and the evals all take the host runtime from there, while
+`aai-runtime` imports only `aai`. `aai-server` depends on
 `aai-guest` only to resolve its built artifact (`aai-guest/harness` →
 `dist/harness.mjs`, baked into the guest snapshot image) — it never imports
 guest source, and the guest never imports server code; that hard boundary is
@@ -734,6 +738,13 @@ them with the CLI's own gate rather than carrying a second bundler, plus
 and the writers for those two files belong to the CLI. Do not widen it —
 nothing else may import from the CLI, and the CLI must never import from the
 server or the guest.
+
+Two edges sit outside that spine. `aai-studio-server` → `aai-server` is the
+repo's LARGEST: 158 import sites across all 36 of that package's subpath
+exports, and not one bare `aai-server` specifier — which is why a boundary rule
+naming the bare name matched nothing for as long as it existed (konsistent's
+matcher is exact unless the pattern ends `/*`). And `aai-evals` →
+`aai-studio-client/starters`, its only workspace edge beyond the SDK.
 
 **Publishable packages must use the `@alexkroman1/` scope.** The unscoped
 names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —
@@ -881,24 +892,30 @@ resolve directly to `.ts` source — no build step needed.
 
 ### Disambiguating cross-package names
 
-**Eleven names are on BOTH `aai` and `aai-ui`; eight are COLLISIONS** — one word
-for the two sides of one wire, neither reference page naming the other. Narrow
-by package first, and do NOT rename either side: both halves are contracted, so
-a rename costs an epoch and a frozen example.
+**Ten names are published by two packages at once, and they are two different
+things.** Narrow by package first. Six are on `aai` and `aai-ui`, and every one
+is a re-export of the single `aai` declaration — one concept with two reference
+pages, not a collision: `ClientConfigResponse` and `SessionErrorCode`
+(`sdk/client-config.ts` / `sdk/protocol-events.ts`, `/protocol`; the latter's
+union is eight wire codes), plus `WorkflowApi`, `WorkflowSummary`,
+`WorkflowOutputOf` and `isTerminal` (`/workflow-api`).
 
-| Name | `aai` | `aai-ui` |
+The other four are real COLLISIONS — one word for the two sides of one wire,
+neither reference page naming the other — and since the runtime split they no
+longer involve `aai` at all:
+
+| Name | `aai-runtime` | `aai-ui` |
 | --- | --- | --- |
-| `SessionCore` | `host/session-core.ts`, `/runtime` — the SERVER session, bridging a `Transport` to the client protocol | `session-core.ts` — the BROWSER session (socket + audio + state) |
-| `createSessionCore` | builds the server one | builds the browser one |
-| `WorkflowApi` | `/workflow-api` — an agent's HTTP API as a CALLER holds it | the same |
-| `WorkflowApiOptions` | `host/workflow-api.ts`, `/runtime` — the SERVER handler's (`engine`, `token`); `@internal` | the client's (`baseUrl`, `token`) |
-| `createWorkflowApi` | `/runtime` — the Node route handler; `@internal` | the client |
-| `ClientConfigResponse` | `sdk/client-config.ts`, `/protocol` + `/workflow-api` | re-exported |
-| `SessionErrorCode` | `sdk/protocol-events.ts`, `/protocol` — the eight wire codes | the same union, on `SessionError.code` |
+| `SessionCore` | `session-core-types.ts` — the SERVER session, bridging a `Transport` to the client protocol | `session-core-types.ts` — the BROWSER session (socket + audio + state) |
+| `createSessionCore` | `session-core.ts` — builds the server one | `session-core.ts` — builds the browser one |
+| `WorkflowApiOptions` | `workflow-api.ts` — the SERVER handler's (`engine`, `token`); `@internal` | `workflow-client.ts` — the client's (`baseUrl`, `token`) |
+| `createWorkflowApi` | `workflow-api.ts` — the Node route handler; `@internal` | `workflow-client.ts` — the client |
 
-`isTerminal`, `WorkflowSummary` and `WorkflowOutputOf` (`/workflow-api`) are one
-concept from both sides, separately versioned — not collisions. No
-counterpart: `SessionCoreOptions`, `SttSession`/`TtsSession` (`aai`),
+Do NOT rename the `aai-ui` half: it is contracted, so a rename costs an epoch
+and a frozen example. `aai-runtime` has no `contracts/` tree at all yet, so the
+runtime half of these four is the only one a rename is cheap on — read that as a
+gap in coverage, not a licence. No counterpart: `SessionCoreOptions`,
+`SttSession`/`TtsSession` (`aai-runtime`, and on `aai/host-internal`),
 `SessionSnapshot`, `SessionError` (`aai-ui`).
 
 ### Concurrency primitives (use these, don't hand-roll)
@@ -1060,9 +1077,9 @@ label that does not exist is an API error.
 ### Published type signatures are a committed report
 
 `pnpm api-report` writes `packages/*/etc/<subpath>.api.md` — the rolled-up
-public `.d.ts` for each of the 24 published entry points — plus **`API.md` at
-the repo root, the same 24 reports concatenated**, and **`API-EXPORTS.json`, the
-same 24 entry points' export NAMES**; `pnpm check:api-report` fails when any of
+public `.d.ts` for each of the 26 published entry points — plus **`API.md` at
+the repo root, the same 26 reports concatenated**, and **`API-EXPORTS.json`, the
+same 26 entry points' export NAMES**; `pnpm check:api-report` fails when any of
 them is stale.
 
 **`API-EXPORTS.json` is a second artifact over the same reports, and the split
@@ -1114,7 +1131,7 @@ a `typedoc.json` list a new subpath must remember to join). A new subpath export
 therefore gets a report on its first run, and `--check` fails until it is
 committed, which is correct: a new subpath IS a public API change.
 
-**`API.md` is for READERS; the per-entry-point reports are for reviewers.** 23 files
+**`API.md` is for READERS; the per-entry-point reports are for reviewers.** 26 files
 is the right shape for a diff — a signature change lands in the one report that
 owns it — and the wrong shape for answering "what does this SDK expose?", which
 is twenty reads plus knowing which twenty. API Extractor cannot produce the
@@ -1188,12 +1205,13 @@ package. **Opting a third package in is creating `contracts/entrypoints/` inside
 it** — the package set is discovered from the tree, for the reason the entry
 points and the capabilities are, and its authoring subpaths are then everything
 it publishes with types MINUS a deny-list of the non-authoring ones
-(`NON_AUTHORING_SUBPATHS` in `scripts/_api-contracts.mjs`, which exempts `aai`'s
-`/protocol`, `/runtime`, `/manifest`, `/slugify`, `/workspace-files` and
-`/internal` with a reason each). Deny rather than allow for the reason the config
-schema does it (see "One canonical config schema, deny-list boundaries"): a new
-subpath then defaults INTO the contracted surface and fails until its exports
-join a capability, where an allow-list would silently leave it uncovered.
+(`NON_AUTHORING_SUBPATHS` in `scripts/_api-contracts-tree.mjs`, which exempts
+`aai`'s `/protocol`, `/manifest`, `/slugify`, `/workspace-files`, `/internal` and
+`/host-internal` with a reason each). Deny rather than allow for the reason the
+config schema does it (see "One canonical config schema, deny-list
+boundaries"): a new subpath then defaults INTO the contracted surface and fails
+until its exports join a capability, where an allow-list would silently leave it
+uncovered.
 
 Four properties are load-bearing:
 
@@ -1233,9 +1251,10 @@ reason `/internal` exists. Versioning the subpath as one unit would bump the
 authoring contract every time a playback constant moved. So the capabilities name
 the surface instead — `agent`, `tool`, `state`, `workflow`, `workflow-api`,
 `defaults`, `utils`, `testing`, `builtins`, and one per provider stage — and the
-gate asserts the naming is **exhaustive**: every `@public` export of the nine
-authoring subpaths this leaves `aai` with (`.`, `/utils`, `/testing`,
-`/workflow-api`, `/tools`, `/stt`, `/llm`, `/tts`, `/s2s`) belongs to exactly one
+gate asserts the naming is **exhaustive**: every `@public` export of the thirteen
+authoring subpaths this leaves `aai` with (`.`, `/utils`, `/step`,
+`/step-errors`, `/testing`, `/testing/vitest`, `/workflow-api`, `/tools`,
+`/ffmpeg`, `/stt`, `/llm`, `/tts`, `/s2s`) belongs to exactly one
 capability, so a new public export
 fails until somebody decides which contract it joins — which is the same decision
 as "who is promised this". Ownership is per PACKAGE, deliberately: three names
@@ -1247,8 +1266,8 @@ both `.` and a narrower subpath belongs to the narrower one.
 gate.** The internal-tagged names are the explicit exemption, committed to
 `contracts/internal-surface.json` as a **ratchet that may shrink and may never
 grow** (`--update-internal` lowers it, and unclaimed headroom WARNS). It opened
-at 74 and stands at **3** — `capToolResult`, `isTextAssetPath` and `toArgsRecord`
-on `/utils`. The 71 root ones went to `@alexkroman1/aai/internal` in the change
+at 74 and stands at **0** — paid off in full; `aai-ui`'s own file stands at 8.
+The 71 root ones went to `@alexkroman1/aai/internal` in the change
 that cut the root barrel to the authoring API (see "The root barrel is CURATED"
 in `packages/aai/CLAUDE.md`); the ratchet is what made a number out of a
 long-standing complaint, and then what recorded paying it off. Note the gate

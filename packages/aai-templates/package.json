@@ -16,6 +16,7 @@
     "@types/react": "catalog:",
     "oxc-parser": "^0.144.0",
     "vite": "catalog:",
+    "vitest": "catalog:",
     "workflow": "4.8.2",
     "xstate": "catalog:",
     "zod": "catalog:"
