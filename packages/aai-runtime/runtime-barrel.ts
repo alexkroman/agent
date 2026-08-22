@@ -43,6 +43,9 @@
 // imports in environments without dev deps installed (e.g. the deployed
 // platform server). It is consumed directly by sibling test files.
 
+// `SessionStateStore.syncSession` mentions this type, and a type a public
+// signature MENTIONS but does not export is a docs-build warning here — and
+// warnings are errors (see the `WdkStreamOptions` note below, same rule).
 // The OPENER CONTRACT — what `registerSttKind`/`registerTtsKind` (below) take
 // and what an opener of your own is written against. It lives here rather than
 // on `@alexkroman1/aai/stt`+`/tts` for the reason those two functions do: a HOST
@@ -69,56 +72,6 @@ export type {
   TtsWordTiming,
   Unsubscribe,
 } from "@alexkroman1/aai/host-internal";
-// The publisher half of the step env — the READER (`stepEnv`) is authoring API
-// on `@alexkroman1/aai/utils`, and lives in `sdk/` because the step bundle
-// bundles it. Only a host calls this: the guest at bundle load, `aai dev` on
-// every rebuild.
-// The four step slots' publishers. `installWorkflowSupport` below is what
-// calls all of them for an ordinary server; these are for a process that
-// assembles its own.
-// The two sizes an upload is measured in, plus the id grammar. Exported for the
-// PLATFORM, which owns the byte route a deployed guest brokers through: its window
-// cap and its key derivation have to be stated in the same units the SDK cuts in,
-// and a second copy of either number is a silent disagreement about where an object
-// begins. Not on an authoring subpath — an agent author never picks these.
-export {
-  type BuiltinToolOptions,
-  builtinFetch,
-  CONTAINED_ENV,
-  isPrivateIp,
-  pinnedFetch,
-  publishSpeechSynthesizer,
-  publishStepEnv,
-  publishStepFetch,
-  publishStepReporter,
-  publishUploadReader,
-  type ResolvedBuiltins,
-  resolveAllBuiltins,
-  resolveAndAssertPublic,
-  resolveBuiltin,
-  SANDBOX_ONLY_BUILTINS,
-  SPEECH_UNAVAILABLE_MESSAGE,
-  type SpeechSynthesizer,
-  type StepFetch,
-  type StepReporter,
-  safeFetch,
-  ssrfSafeFetch,
-  type ToolDefRecord,
-  UPLOAD_CHUNK_BYTES,
-  UPLOAD_PART_BYTES,
-  UPLOAD_TOKEN_RE,
-  UPLOAD_WRITES_UNAVAILABLE_MESSAGE,
-  UPLOADS_UNAVAILABLE_MESSAGE,
-  type UploadAccess,
-  type UploadReader, // `UploadAccess` is an intersection of these two, and a type a public
-  // signature MENTIONS but does not export is a docs-build warning — see the
-  // `UploadRange` note in `sdk/utils.ts` for the rule.
-  type UploadWriteMeta,
-  type UploadWriter,
-} from "@alexkroman1/aai/host-internal";
-// `SessionStateStore.syncSession` mentions this type, and a type a public
-// signature MENTIONS but does not export is a docs-build warning here — and
-// warnings are errors (see the `WdkStreamOptions` note below, same rule).
 export type { StateSyncSession } from "./_state-sync.ts";
 export {
   type AgentServerOptions,

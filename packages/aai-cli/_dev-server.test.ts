@@ -31,6 +31,9 @@ vi.mock("get-port", async () => (await import("./_dev-server-test-utils.ts")).ge
 vi.mock("@alexkroman1/aai-runtime", async () =>
   (await import("./_dev-server-test-utils.ts")).aaiRuntimeModule(),
 );
+vi.mock("@alexkroman1/aai-runtime/internal", async () =>
+  (await import("./_dev-server-test-utils.ts")).aaiRuntimeInternalModule(),
+);
 vi.mock("./_config.ts", async () => (await import("./_dev-server-test-utils.ts")).configModule());
 vi.mock("./_server-common.ts", async () =>
   (await import("./_dev-server-test-utils.ts")).serverCommonModule(),

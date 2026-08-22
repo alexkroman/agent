@@ -43,20 +43,28 @@ const combined: string | undefined = import.meta.glob<string>("../../API.md", {
 const api: string = combined ?? "";
 
 /**
- * The declarations inside a report's ```ts fence, one per line.
+ * The exported lines inside a report's ```ts fence, one per line.
  *
  * Deliberately a different parse from the script's: it takes the lines that
- * declare something rather than the fence's whole body, so the two agree only
+ * export something rather than the fence's whole body, so the two agree only
  * when the content really made it across. Comparing bodies verbatim would just
  * re-run the script's own extraction and pass whenever that extraction is
  * consistently wrong.
+ *
+ * The bare `export { X }` form is counted because an entry point can be ALL
+ * re-export — `@alexkroman1/aai-runtime/internal` passes on 31 names from the
+ * SDK and DECLARES nothing — and a declaration-only parser reads such a report
+ * as empty, which is indistinguishable here from a parser that stopped working.
  */
 const declarations = (report: string): string[] =>
   report
     .replaceAll("\r\n", "\n")
     .split("\n")
-    .filter((line) =>
-      /^export (declare )?(abstract class|class|const|enum|function|interface|type)\s/.test(line),
+    .filter(
+      (line) =>
+        /^export (declare )?(abstract class|class|const|enum|function|interface|type)\s/.test(
+          line,
+        ) || /^export (type )?\{ \w+ \}$/.test(line),
     );
 
 const entries = Object.entries(reports)

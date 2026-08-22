@@ -13,6 +13,13 @@
   "exclude": [
     "node_modules",
     "dist",
+    // The capability contracts are typechecked by `tsc --noEmit` (the
+    // `typecheck` task) and never emitted: they are a repo artifact, and
+    // `rootDir: "."` otherwise writes a `.d.ts` per capability root and per
+    // frozen example into `dist/contracts/`. This package declares
+    // `files: ["dist"]`, so unlike `aai` — whose bare `contracts/` ignore rule
+    // catches it at any depth — that output would really have shipped.
+    "contracts",
     "**/*.test.ts",
     "**/*.test-d.ts",
     "**/_test-utils.ts",

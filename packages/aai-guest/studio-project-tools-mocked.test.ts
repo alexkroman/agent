@@ -7,7 +7,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ToolDef } from "@alexkroman1/aai";
-import { safeFetch } from "@alexkroman1/aai-runtime";
+import { safeFetch } from "@alexkroman1/aai-runtime/internal";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { npmResult, runTool, useTempDir } from "./_test-utils.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
@@ -19,8 +19,8 @@ vi.mock("./studio-spawn.ts", async (importOriginal) => {
   return { ...mod, runNpm: vi.fn() };
 });
 
-vi.mock("@alexkroman1/aai-runtime", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@alexkroman1/aai-runtime")>();
+vi.mock("@alexkroman1/aai-runtime/internal", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@alexkroman1/aai-runtime/internal")>();
   return { ...mod, safeFetch: vi.fn() };
 });
 

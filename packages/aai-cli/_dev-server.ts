@@ -23,12 +23,12 @@ import {
   createWorkflowSurface,
   handleWorkflowRequest,
   type Logger,
-  publishStepEnv,
   requiredProviderEnvVars,
   startWorkflowWorldIfDeclared,
   WORKFLOW_API_PREFIX,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
+import { publishStepEnv } from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";

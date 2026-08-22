@@ -70,3 +70,92 @@ Flat, like the package it came out of. The filename prefixes are the grouping:
 lifecycle), `workflow-*` (the durable-workflow half), `ws-*` / `_ws*` (the
 socket layer), `_upload-*` (the upload store), and the three subdirectories
 that did keep a directory — `providers/`, `transports/`, `telephony/`.
+
+## The published surface is versioned in epochs
+
+Twelve capabilities under `contracts/`, each a named slice of what an embedder
+writes against: `server`, `runtime`, `session`, `session-state`, `providers`,
+`telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`, `text`. The
+mechanism is the repo's — see "The authoring surface is versioned in epochs" in
+the root `AGENTS.md` — and what it means here is that a signature change on any
+of the 122 public names is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
+rather than discovered by whoever's build breaks.
+
+The split shipped this package with no `contracts/` tree, so for its first days
+221 exports moved with nothing recording it, while `aai` and `aai-ui` could not
+change a parameter without a gate asking which. That asymmetry is the whole
+reason this exists.
+
+**Every capability owes a frozen, compiling example** under
+`contracts/compatibility/<capability>/v1.ts`, and `pnpm typecheck` is what
+enforces it. Editing one to make an error go away defeats the mechanism — the
+error IS the finding.
+
+### The root barrel had 50 names it does not own
+
+Opting in is what surfaced it. `authoringSurface` reported **153** public names
+where the package declares 103; the other fifty were re-exports of
+`@alexkroman1/aai/host-internal`, which the SDK itself deny-lists from its own
+contracted surface as "not semver-covered". **The exemption is per SUBPATH, so
+re-publishing those names on this package's root barrel defeated it** — they
+were back on the one surface an embedder autocompletes over, one package along,
+and a contract over them would have promised epochs on the SDK's internals.
+
+A release tag cannot fix that from here: **API Extractor reads `@internal` at
+the DECLARATION site, so a `/** @internal */` on a re-export clause member is
+silently ignored.** Verified before relying on it — the name stayed `@public` in
+the regenerated report. The mechanism that does work is a subpath, which is what
+`aai` uses twice for the same reason.
+
+So `@alexkroman1/aai-runtime/internal` carries the 31 platform-infrastructure
+names (the builtins resolver, the SSRF-safe fetch pair, the four step-slot
+publishers, the upload byte constants and id grammar), and
+`NON_AUTHORING_SUBPATHS` in `scripts/_api-contracts-tree.mjs` names it so a name
+arriving there joins no capability. `aai-server`, `aai-cli` and `aai-guest`
+import from it — which is honest, since they are the cross-package consumers the
+seam exists for.
+
+**The 17-name OPENER CONTRACT deliberately stayed on the root barrel.**
+`registerSttKind`/`registerTtsKind` live there, and moving their parameter types
+(`SttOpener`, `SttOpenOptions`, `SttSession`, and the Tts twins) would make a
+custom provider — the documented use, and what `aai-evals/fake-speech.ts` really
+does — import from two subpaths, one of them labelled not-semver-covered. The
+block's own comment already called those names one contract; the split respects
+it. Do not "tidy" them onto `/internal` later.
+
+`contracts/internal-surface.json` opens at **68** and may only shrink: exports
+tagged `@internal` that are nonetheless reachable from the root barrel. That is
+the same ratchet that took `aai` from 74 to 0.
+
+### What writing the examples found
+
+Four things the surface cannot currently demonstrate about itself. None is a bug;
+each is a decision worth making rather than inheriting.
+
+- **`uploads` publishes a store TYPE and two blob implementations with no public
+  way to join them** — `createUploadStore` and `resolveUploadBlobs` are
+  `@internal`, so every function in the frozen example has to take the store as
+  a parameter. Honest for an embedder handed one by `createServer`, and it means
+  the capability cannot show its own end-to-end wiring.
+- **`workflow` is the same shape one level up**: `WorkflowClientOptions` is
+  `@public` and `createWorkflowClient` is `@internal`, so an example can assemble
+  the bag and not hand it to anything. Its `logger` field is required and both
+  public `Logger` values (`consoleLogger`, `createConsoleLogger`) are `@internal`
+  too.
+- **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
+  the honest example is fifty lines of stub and anything in the wild will either
+  be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way
+  `aai` publishes `createToolContext` — would remove the incentive to launder it.
+- **`TextTurnResult` is `ReturnType<typeof streamText<ToolSet>>`**, so this
+  capability's contract hash moves when the `ai` package's `StreamTextResult`
+  moves. An upstream minor can force an epoch classification here with no change
+  of ours.
+
+And one real defect the examples caught: **`PassthroughServerOptions` cannot be
+spread into `ServerOptions`.** Its fields are optional WITHOUT `| undefined`, so
+under `exactOptionalPropertyTypes` `{...hooks}` widens each to `T | undefined`
+and `createServer` rejects it (TS2379) — while the three wrapper doors exist
+precisely so one hook bag can reach all of them. The frozen example forwards
+`logger`/`upgrade`/`request` one at a time to compile. Either those fields carry
+`| undefined` or the wrappers take the bag as a nested field; the workaround is
+frozen into `contracts/compatibility/server/v1.ts` until one of those happens.
