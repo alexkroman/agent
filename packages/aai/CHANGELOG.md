@@ -1,5 +1,157 @@
 # @alexkroman1/aai
 
+## 7.0.0
+
+### Major Changes
+
+- ea0c9c9: Cut the authoring surface to what an agent.ts writes, and fix the docs that contradicted the code.
+  
+  **Docs that were telling authors false things.** `preemptiveGeneration` said `Defaults to true` in its first paragraph and `turned the default OFF` in its sixth (the runtime default is `false`); `DEFAULT_MAX_TURN_SILENCE_MS` rendered as 3500 while its own prose argued for 3000 three times; and `workflow()`'s example showed `agent({ tools })`, which `InlineToolsMisuse` makes a compile error. Every field default is now an `@defaultValue` tag carrying the literal value instead of a link to follow.
+  
+  **Endpointing is reachable without replacing a stage.** `agent({ maxTurnSilenceMs })` — the pause-tolerance knob — desugars to `stt: assemblyAIStt({ … })`, the same way `voice` already did. It used to cost a whole descriptor, which silently opted the stage out of the default fill. `assemblyAIPipeline()` takes the pair too.
+  
+  **`flow()` is `dialog()` and `graph()` is `procedure()`.** `dialog` / `procedure` / `workflow` names the three by their jobs; `flow` sat in one barrel beside `workflow` meaning something else entirely.
+  
+  **Three subpath moves, all by AUDIENCE.** `@alexkroman1/aai/step` is new and holds the `"use step"` vocabulary; `/utils` keeps the fifteen helpers a tool body writes (it was 79 serving three readers); the platform contracts and wire helpers are on `/internal`, which is now zod-free; and the workflow RUN vocabulary is on `/workflow-api`, whose reader is a page or a script. The ten types behind `AgentParams`' arms left the root barrel — they implement a compile error and every message is unchanged. Root exports: 120 → 94.
+- d1e7c56: **BREAKING — the host runtime moved to its own package, `@alexkroman1/aai-runtime`.**
+  
+  `@alexkroman1/aai/runtime` no longer exists. Everything it exported is now the
+  root export of the new package:
+  
+  ```diff
+  -import { createAgentServer, createRuntime } from "@alexkroman1/aai/runtime";
+  +import { createAgentServer, createRuntime } from "@alexkroman1/aai-runtime";
+  ```
+  
+  Add the dependency alongside `@alexkroman1/aai`; it releases in lockstep, so the
+  versions always match. A scaffolded project's `server.mjs` is the one place most
+  users will hit this, and `aai init` now writes it that way.
+  
+  **Nothing about authoring changed.** `agent()`, `tool()`, `sessionSlot()`,
+  `workflow()`, the provider factories and every other subpath are untouched. If
+  your project only contains an `agent.ts` and a `client.tsx`, there is nothing to
+  migrate.
+  
+  Why, in one line each:
+  
+  - **The authoring install sheds 20 dependencies.** `@alexkroman1/aai` went from
+    32 runtime dependencies to 12. Every `@ai-sdk/*` adapter, the Deepgram,
+    ElevenLabs, Cartesia and AssemblyAI vendor SDKs, plus `ai`, `postgres`, `ws`,
+    `ulid` and `@workflow/world-postgres` are the host's, not an agent author's —
+    a provider factory returns a pure descriptor and imports no vendor code, so
+    they were only ever needed by whatever resolved that descriptor.
+  - **The API reference shrank 22.7%** (32,334 → 24,999 lines). The runtime is
+    ~220 exports against the SDK's ~90, and it was the majority of a reference
+    whose readers are people writing agents.
+  
+  One new subpath comes with it: `@alexkroman1/aai/host-internal`, carrying the
+  155 SDK internals the runtime needs across the package boundary. Like
+  `./internal` it is not authoring API and carries no semver promise — it exists
+  so the runtime can reach them without them landing in an agent author's
+  autocomplete.
+- 23e8b3f: **BREAKING — the STT/TTS opener contract moved off `@alexkroman1/aai/stt` and `@alexkroman1/aai/tts` to `@alexkroman1/aai/runtime`.**
+  
+  Eleven types are affected. If your build broke with `has no exported member`, change the import path — nothing about the types themselves changed:
+  
+  | moved from | moved to | names |
+  | --- | --- | --- |
+  | `@alexkroman1/aai/stt` | `@alexkroman1/aai/runtime` | `SttOpenOptions`, `SttSession`, `SttEvents`, `SttError`, `SttTurnMeta`, `Unsubscribe` |
+  | `@alexkroman1/aai/tts` | `@alexkroman1/aai/runtime` | `TtsOpenOptions`, `TtsSession`, `TtsEvents`, `TtsError`, `TtsWordTiming`, `Unsubscribe` |
+  
+  ```diff
+  -import type { SttEvents, SttOpenOptions, SttSession } from "@alexkroman1/aai/stt";
+  +import type { SttEvents, SttOpenOptions, SttSession } from "@alexkroman1/aai/runtime";
+  ```
+  
+  These are the types a HOST application implements a speech provider against, and they now sit beside `registerSttKind`/`registerTtsKind` — the seam you hand the opener to — instead of on the subpath an agent author imports a factory from. Writing an agent needs none of them. `SttProvider` and `TtsProvider`, which are what a factory RETURNS, stay on `/stt` and `/tts`.
+  
+  Also in this release, all non-breaking:
+  
+  - `ProviderDescriptor` — the base of `SttProvider`, `TtsProvider`, `S2sProvider` and `LlmProvider` — is now exported from `/stt`, `/tts` and `/s2s` as well as `/llm`, so a page showing `SttProvider = ProviderDescriptor<…>` defines the type it names.
+  - Every provider page now opens with what it is FOR and a compiling example of putting that stage in front of an agent, instead of an internal note about `noReExportAll` budgets. All 18 factories (`assemblyAIStt`, `deepgram`, `elevenlabs`, `soniox`, `anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`, `assemblyAILlm`, `assemblyAITts`, `cartesia`, `rime`, `assemblyAIS2s`, `openaiRealtime`) gained an `@example`.
+  - The `/stt` page now states what an unset language field means for each of the four vendors, and `DeepgramOptions.language` says out loud that unset means **English** — `deepgram()` is the one STT provider here that pins a language where the other three auto-detect, so moving an agent onto it silently drops non-English transcription with no symptom but a plausible-looking mis-hearing.
+  - `DEFAULT_DEEPGRAM_ENDPOINTING_MS` and the root's `DEFAULT_MIN_TURN_SILENCE_MS`/`DEFAULT_MAX_TURN_SILENCE_MS` now cross-reference each other as the one end-of-turn knob seen from two vendors.
+  - `@alexkroman1/aai/runtime`'s own page now leads with the handful of names a host application actually imports, rather than with the enumerated-exports rationale.
+- 23e8b3f: Make `InferToolOutput` actually infer, curate two constants off the root barrel, and name the session event types.
+  
+  **`ToolDef` and `tool()` take a second, defaulted type parameter `R`.** `execute` was declared `Promise<unknown> | unknown`, so a tool body's real return type was erased at the `tool()` call and `InferToolOutput<typeof myTool>` resolved to `unknown` for every tool in existence — a published inference helper whose own doc promises `useToolResult` a single source of truth and delivered none. `ToolDef<P, R>` captures it, `R` defaults to `unknown` so `ToolDef<typeof schema>` keeps its old meaning, and a sync body and an `async` one now infer alike. Source-compatible: every existing annotation still compiles, and the frozen epoch-9 authoring example compiles unchanged. `tool()`'s parameter is now declared as `ToolDef<P, R>` rather than re-stating the shape inline, so the reference finally shows that `execute` takes `(args, ctx)`.
+  
+  **BREAKING — `ASSEMBLYAI_S2S_KIND` and `ASSEMBLYAI_S2S_API_KEY_ENV` are no longer exported from `@alexkroman1/aai`.** They reached the root only through an `export *` and fail the barrel's own membership test: an `agent.ts` writes `s2s: assemblyAIS2s()` and never names either — the descriptor sets the kind, and credentials resolve server-side. Import them from `@alexkroman1/aai/s2s`, where their eleven `*_KIND`/`*_API_KEY_ENV` peers already live. Nothing else moved.
+  
+  **New: `SessionEventType`**, the union of every name an `agent({ events })` map may be keyed by. The key set was previously readable only inside the wire schema's own type expression.
+  
+  Also in this release, all documentation:
+  
+  - The root entry point now renders as a module page with orientation and a subpath map instead of opening on `KeyedLockTimeoutError`, and `dialog()`, `procedure()` and `workflow()` each state the rule for choosing between the three.
+  - Both `@alexkroman1/aai/testing` examples that called `agent()`'s default export directly — which always throws, because a tool is a file — route through `withDiscoveredTools`, and `toolOf` now says so when the tool record is empty.
+  - `AgentDef` says it is what `agent()` returns rather than what you write, and each `*AgentParams` arm says its long string-literal field types are compile-error messages, not accepted values.
+  - `DEFAULT_GREETING`, `DEFAULT_SILENCE_PROMPT` and `DEFAULT_START_FAILURE_PHRASE` render their actual text instead of `string` (values unchanged), and `DEFAULT_SYSTEM_PROMPT` documents its five sections and how to extend rather than replace it.
+  - The README lists every published subpath by who reads it, gains a "Testing an agent" section, and shows a multi-field `agent()` configuration.
+  - Published doc comments no longer navigate by repo-internal file path or name `@internal` symbols a consumer cannot import.
+
+### Minor Changes
+
+- 43ceb43: Add procedure() — run a state machine to completion as one unit of work inside a tool call, the sibling of dialog(). A flow is where a conversation is (persisted in a slot, moved by the caller's turns); a graph is one piece of work (never stored, driving itself through invoked actors). run(input, { signal }) takes ctx.signal so a long multi-stage loop stops on a barge-in, and rejects with ProcedureNotFinishedError for a run that did not finish — xstate's own toPromise resolves undefined for a stopped actor, which hands a half-built output back typed as a finished one.
+- 8c9ce20: Add `stepFetchOk` to `@alexkroman1/aai/step-errors` — `stepFetch` plus the non-2xx branch three templates had each hand-rolled, carrying the far side's own error text into the message and leaving the retryable/terminal verdict with `toStepError`. Adds a `podcast-digest` template: a scheduled workflow app that transcribes new podcast episodes and posts a Slack digest on a repeating durable sleep.
+- a7309a5: Batch the upload claims: one `PUT …/parts?offset=&offset=…&stored=1` names every window that has landed, instead of one body-less round trip per part.
+  
+  On the direct path a part was two serialized requests — the window to the platform, then a receipt telling the agent it landed. The receipt carries no bytes and measured 1604-1969 ms against a deployed agent, per part, about half of an upload's wall clock. The client now hands landed offsets to a coalescing claimer (one claim in flight, everything landing during it collapses into one trailing claim, so the batch sizes itself) and a fan-out slot goes straight from its bytes to the next window's. The guest's `recordParts` pays one record read, one lock acquisition and one whole-array write per REQUEST rather than per part, and probes the bucket for every named window concurrently — all-or-nothing, so a batch holding one bad offset records none of itself.
+  
+  A client only batches when the agent advertised `claimBatch` on the claim; it is never inferred from `directParts`, because an agent reading a single `?offset=` would record the first window and leave the rest as holes that read as silence.
+  
+  Breaking only for a direct implementor of `UploadStore` from `@alexkroman1/aai/runtime`: `recordPart(id, offset)` is now `recordParts(id, offsets)`.
+- 43ceb43: Add dialog() — a dialog statechart primitive, so what a voice agent may do next is declared rather than asked for in prose. A flow is an xstate machine persisted in a session slot; a flow tool declares the states it may run in and refuses at execution when the conversation is elsewhere, returning a ToolFailure that names where the caller actually is. Every flow tool's result carries the position it landed in, so the active state's instruction reaches the model on every call.
+
+### Patch Changes
+
+- 12ead27: Finish the direct upload path on a RESUME, instead of silently falling back to sending bytes to the agent.
+  
+  A resume re-declares an id the store already holds, which is answered 409 — and a 409 carries no body, so the client had nowhere to read `directParts` from and read nothing. Every resumed upload therefore abandoned the direct path and sent each remaining window's bytes THROUGH the agent: it works, it is the topology the direct path exists to avoid, and it is the one the platform's forward measures to decide whether a guest has stalled. `GET …/uploads/:id/info` now answers the same two capability fields the claim does, which the resume already fetches, so this costs no extra round trip.
+  
+  Also: the sweep script writes its minted upload ids unconditionally rather than only under `--json`. Those uploads are permanent and nothing reclaims them, so the ids are the only handle a cleanup could have.
+- 028044a: Resume a paused upload instead of restarting it: a caller-named upload (`uploadStream`, which every workflow form uses) is now cut into parts even when the file fits in one, so pausing a recording under 8 MiB and resuming it sends the missing windows rather than the whole file — which the store then refused as a taken id.
+- 9b9051a: Model the pipeline turn state, the S2S connection lifecycle, the outward speaking-edge gate, and the browser session's agent state as XState statecharts, replacing the boolean latches whose illegal combinations were reachable.
+- 55d5ec1: Name the workflow-api and ffmpeg entry modules with `@module` tags, so they document under their published subpath rather than their emitted file path, and fix an unresolvable `{@link spawnFfmpeg}` in the ffmpeg module comment.
+- d98169a: Publish `dist` and nothing else. `@alexkroman1/aai` had no `files` field, and
+  `.npmignore` excludes only repo artifacts (`etc/`, `coverage/`, `.turbo/`,
+  `contracts/`) — so every tarball carried the whole `host/` and `sdk/` TypeScript
+  source and 219 test files: 961 entries, 2,049 kB packed, 7,632 kB unpacked,
+  against 209/505/1,476 now. Consumers were downloading the SDK's test suite.
+  
+  `AGENT_GUIDE.md` and `skills/` stay (both ship deliberately); `CHANGELOG.md`
+  does not, matching `aai-ui` and `aai-cli`. Nothing supported breaks — every
+  `exports` target is under `dist`, and the `@dev/source` condition that points at
+  `.ts` source is activated only by this monorepo's own `customConditions`.
+  
+  `published-files-gate.test.ts` is the guard: every publishable package declares
+  a non-empty `files`, and every `exports` target is covered by it. The two things
+  that should have caught this and did not are worth naming — the artifact-size
+  report compares against the PR base, so a package that has ALWAYS shipped its
+  source never trips a delta gate, and `publint` files it as a *suggestion*, which
+  `check:publint` passes over.
+- df8effa: Stop over-subscribing an app database's connection limit. A workflow guest opened four separate Postgres pools on the same app role — `ctx.db`, the workflow upload store, the wake-hint publisher and the lock sweep's presence connection — on top of the DevKit world's pool and its `LISTEN` client, for a ceiling of 13 against a role limited to 10, and postgres.js never gave an idle connection back, so a guest booting beside a draining sibling could not connect at all: `Workflow wake hint not published { error: 'too many connections for role "app_…"' }`. The first three now share one leased pool per process, pooled connections idle out after 30 seconds (a reserved one, like the presence lock, is exempt), step concurrency is one below the world pool so it stops competing with graphile-worker's own `LISTEN` connection, and the whole budget is one table (`guestAppDbConnections()`) the platform's limit is tested against rather than a comment that had gone stale.
+- 23e8b3f: Reference and doc fixes across `/protocol`, `/manifest`, `/runtime`, `/step`,
+  `/step-errors` and `/workflow-api`.
+  
+  - `/protocol`: `ServerMessage`/`ServerMessageSchema` and
+    `ClientMessage`/`ClientMessageSchema` are now re-export aliases of
+    `SessionEvent*`/`SessionCommand*` rather than separate declarations. The names
+    and their runtime values are unchanged; the reference no longer documents the
+    same two unions twice under two names each.
+  - `/manifest`: `assertProviderTriple` is no longer exported. One overload
+    carried `@internal` and the rest did not, so it was listed as a published
+    export while the reference denied it existed; every caller is inside the SDK.
+  - `/runtime`: `SessionWebSocket`, `TransportEventBody`, `UploadReader`,
+    `SessionStateBackend` and `SessionCore` are documented rather than hidden —
+    each is already named by a public runtime signature, so the reference could
+    not be used to satisfy one. `WorkflowApiOptions` is now `@internal`, matching
+    the `createWorkflowApi` it configures.
+  - `/step`: the doc comments that pointed at unpublished module prose now carry
+    it, and `stepSpeak`, `readUpload`, `stepTranscribeSync` and the async
+    transcribe trio gained examples. `/step-errors`' "why its own subpath"
+    rationale is restated against `/step`, the sibling it actually has.
+  - `SessionErrorCode` documents its eight values and how `fatal` relates to them.
+
 ## 6.11.0
 
 ### Minor Changes

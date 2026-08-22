@@ -1,5 +1,74 @@
 # aai-guest
 
+## 0.5.0
+
+### Minor Changes
+
+- ddbb905: Studio coding agent: a `read_logs` tool, so it can read what the agent it is building actually printed.
+  
+  A runtime failure — a tool throwing mid-call, a missing provider key, a response shape the code guessed wrong — only happens with a real caller on the line, and `test_agent` loads the bundle inside the coding agent's own sandbox where none of that is visible. The evidence existed (it is what the studio's Logs pane shows) and the agent's only route to it was asking the user to read it out.
+  
+  `read_logs` takes an ENVIRONMENT (`preview`, the default, or `production`) and never a slug: the guest RPCs the host, which resolves the project's own deployed agents from the workspace of the (scope, project) the sandbox is pinned to and reads the platform's owner-authenticated `GET /:slug/logs` with the account key those agents were deployed with. The host drains the guest's cursor-indexed ring forward and returns the TAIL, because the ring hands back its oldest lines first and "what just broke" is at the other end. Eviction is reported rather than swallowed, and each of the three empty states — never deployed, not running, running and silent — says which one it is, since they call for different next moves.
+
+### Patch Changes
+
+- b8a5529: **BREAKING — 31 names move off `@alexkroman1/aai-runtime`'s root barrel to
+  `@alexkroman1/aai-runtime/internal`.**
+  
+  Every one is a re-export of `@alexkroman1/aai/host-internal`, which the SDK
+  itself deny-lists from its contracted surface as "not semver-covered". That
+  exemption is per SUBPATH, so re-publishing the names on this package's root
+  barrel defeated it — fifty not-semver-covered names sat on the one surface an
+  embedder autocompletes over, one package along, and no contract could cover them
+  without promising epochs on the SDK's internals.
+  
+  A release tag cannot fix it from here: API Extractor reads `@internal` at the
+  DECLARATION site, so a `/** @internal */` on a re-export clause member is
+  silently ignored (verified — the name stayed `@public` in the regenerated
+  report). A subpath is the mechanism, and `NON_AUTHORING_SUBPATHS` now names this
+  one so a name arriving there joins no capability contract.
+  
+  What moved: the builtins resolver, the SSRF-safe fetch pair, the four step-slot
+  publishers, and the upload byte constants and id grammar. `aai-server`,
+  `aai-cli` and `aai-guest` import them from the new subpath — the cross-package
+  consumers the seam exists for.
+  
+  The 17-name OPENER CONTRACT deliberately did NOT move. `registerSttKind`/
+  `registerTtsKind` are on the root barrel, and relocating their parameter types
+  would make a custom speech provider — the documented use — import from two
+  subpaths, one labelled not-semver-covered.
+  
+  Two dead mocks came out with it, both of which had stopped covering anything
+  while every spec kept passing: `aai-guest`'s `vi.mock("@alexkroman1/aai-runtime")`
+  replacing `safeFetch` (the import had moved, so the real function ran), and the
+  CLI dev-server factory's `publishStepEnv`.
+- Updated dependencies [d98169a]
+- Updated dependencies [12ead27]
+- Updated dependencies [028044a]
+- Updated dependencies [43ceb43]
+- Updated dependencies [8c9ce20]
+- Updated dependencies [9b9051a]
+- Updated dependencies [55d5ec1]
+- Updated dependencies [d98169a]
+- Updated dependencies [6fadb69]
+- Updated dependencies [ea0c9c9]
+- Updated dependencies [b8a5529]
+- Updated dependencies [d1e7c56]
+- Updated dependencies [b8a5529]
+- Updated dependencies [a7309a5]
+- Updated dependencies [43ceb43]
+- Updated dependencies [3b3b833]
+- Updated dependencies [df8effa]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+  - @alexkroman1/aai-ui@7.0.0
+  - @alexkroman1/aai-runtime@7.0.0
+  - @alexkroman1/aai@7.0.0
+  - @alexkroman1/aai-cli@7.0.0
+
 ## 0.4.31
 
 ### Patch Changes

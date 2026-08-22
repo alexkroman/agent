@@ -1,5 +1,65 @@
 # @alexkroman1/aai-cli
 
+## 7.0.0
+
+### Patch Changes
+
+- 6fadb69: Templates: dispatch-center, retail and solo-rpg now declare their dialog order with dialog() instead of prose plus hand-rolled guards. retail's requiresAuth boolean becomes a per-tool when, and the transfer to a human is a terminal state so every tool refuses afterwards — which the policy asked for and nothing enforced. solo-rpg drops the redundant phase field, gates the roll tools on a character existing, makes burn_momentum's burn window a state rather than a null check, and makes game over final. dispatch-center gates its six mutating incident and resource tools on something having been logged, and every converted tool's result now carries the position it landed in and what that position expects next.
+- b8a5529: **BREAKING — 31 names move off `@alexkroman1/aai-runtime`'s root barrel to
+  `@alexkroman1/aai-runtime/internal`.**
+  
+  Every one is a re-export of `@alexkroman1/aai/host-internal`, which the SDK
+  itself deny-lists from its contracted surface as "not semver-covered". That
+  exemption is per SUBPATH, so re-publishing the names on this package's root
+  barrel defeated it — fifty not-semver-covered names sat on the one surface an
+  embedder autocompletes over, one package along, and no contract could cover them
+  without promising epochs on the SDK's internals.
+  
+  A release tag cannot fix it from here: API Extractor reads `@internal` at the
+  DECLARATION site, so a `/** @internal */` on a re-export clause member is
+  silently ignored (verified — the name stayed `@public` in the regenerated
+  report). A subpath is the mechanism, and `NON_AUTHORING_SUBPATHS` now names this
+  one so a name arriving there joins no capability contract.
+  
+  What moved: the builtins resolver, the SSRF-safe fetch pair, the four step-slot
+  publishers, and the upload byte constants and id grammar. `aai-server`,
+  `aai-cli` and `aai-guest` import them from the new subpath — the cross-package
+  consumers the seam exists for.
+  
+  The 17-name OPENER CONTRACT deliberately did NOT move. `registerSttKind`/
+  `registerTtsKind` are on the root barrel, and relocating their parameter types
+  would make a custom speech provider — the documented use — import from two
+  subpaths, one labelled not-semver-covered.
+  
+  Two dead mocks came out with it, both of which had stopped covering anything
+  while every spec kept passing: `aai-guest`'s `vi.mock("@alexkroman1/aai-runtime")`
+  replacing `safeFetch` (the import had moved, so the real function ran), and the
+  CLI dev-server factory's `publishStepEnv`.
+- 3b3b833: Fail the workflow build when the flow bundle would require a Node builtin, instead of deploying a workflow that dies at replay with `require is not defined`
+- Updated dependencies [d98169a]
+- Updated dependencies [12ead27]
+- Updated dependencies [028044a]
+- Updated dependencies [43ceb43]
+- Updated dependencies [8c9ce20]
+- Updated dependencies [9b9051a]
+- Updated dependencies [55d5ec1]
+- Updated dependencies [d98169a]
+- Updated dependencies [ea0c9c9]
+- Updated dependencies [b8a5529]
+- Updated dependencies [d1e7c56]
+- Updated dependencies [b8a5529]
+- Updated dependencies [a7309a5]
+- Updated dependencies [43ceb43]
+- Updated dependencies [df8effa]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+  - @alexkroman1/aai-ui@7.0.0
+  - @alexkroman1/aai-runtime@7.0.0
+  - @alexkroman1/aai@7.0.0
+
 ## 6.11.0
 
 ### Minor Changes

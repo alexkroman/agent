@@ -1,5 +1,86 @@
 # @alexkroman1/aai-ui
 
+## 7.0.0
+
+### Major Changes
+
+- d98169a: **Breaking (nominally): `@alexkroman1/aai-ui/default-client/*` is removed.** It
+  had no consumer in any form — not one import specifier in the repo, the
+  templates, the scaffold, or any README — because every real consumer reaches
+  those files by filesystem path through `./package.json` (`client-dir.ts`,
+  `aai-server/transport-websocket.ts`). `files: ["dist"]` still ships them, so
+  nothing that worked stops working. `aai-studio-client`'s `./dist/*` goes for the
+  same reason: both of its consumers `require.resolve` the manifest and join
+  `"dist"` themselves.
+  
+  Also widens `check:attw`. `aai-ui` pinned `--entrypoints .`, which silently
+  excluded `./client-dir` — a typed, contracted subpath — and `aai-runtime`
+  inherited the same pin. `aai-ui` now uses `--exclude-entrypoints styles.css`
+  (a CSS entry point has no type declarations, which is the only reason the pin
+  existed) and `aai-runtime` drops it entirely, so a NEW subpath defaults into
+  being checked instead of out.
+- 23e8b3f: **Breaking: `SessionCoreOptions` is removed.** It was an exact alias of
+  `VoiceSessionOptions` with a single referent — `createSessionCore`'s parameter,
+  which now names `VoiceSessionOptions` directly — and `client()` never took it.
+  Replace `SessionCoreOptions` with `VoiceSessionOptions`; nothing else changes.
+  
+  `fetchClientConfig` is now public and part of the `page` capability. A workflow
+  app mounted with `page()` makes no `GET client-config` request of its own, so
+  this is how a page reads the agent's declared `name` and `greeting` — which two
+  published doc comments already told authors to do while the function was
+  `@internal` and absent from the reference.
+  
+  `SubmitButton` accepts `variant` and every `<button>` attribute except `type`
+  and `disabled` (which it owns, setting both from `pending`). It was the only
+  form control taking neither, so `aria-label` on an icon-only submit was a type
+  error on the one button a workflow-app form has.
+  
+  `Markdown`, `Controls` and `MessageList` now name their props —
+  `MarkdownProps`, `ControlsProps`, `MessageListProps` — so a wrapper can forward
+  them without restating the shape, and so the published reference describes them
+  at all: all three previously rendered as `MemoExoticComponent` with no props,
+  leaving `Markdown`'s required `text` named nowhere.
+  
+  Documentation, throughout: component props are documented on the properties
+  rather than in `@param` tags that TypeDoc discarded (eighteen components,
+  including `AutoScroll`'s bounded-height requirement and `WorkflowProgress`'s
+  `className`-replaces-the-default rule); every `SessionSnapshot` field and every
+  `AgentState` member carries prose, `userTranscript`'s `null`-vs-`""` distinction
+  included; `useWorkflowRun`, `useToolResult`, `useToolCallStart`, `useTheme`,
+  `useSessionSelector`, `useWorkflows`, `createWorkflowApi`, `Field`,
+  `SubmitButton`, `Markdown` and `ToolCallRow` gained examples; the two
+  `useToolResult` / `useToolCallStart` overloads have their own descriptions
+  instead of sharing one that said "optionally filter by tool name" on the
+  overload taking no tool name; `WorkflowSubmission` and `WorkflowStreamSubmission`
+  cross-reference each other and name the two fields that actually differ; and the
+  README no longer tells readers to call `session.connect()`, which `Session` does
+  not have.
+
+### Patch Changes
+
+- 23e8b3f: Document the `@alexkroman1/aai-ui/client-dir` subpath. It is published and has
+  always carried a worked `createAgentServer` example on `defaultClientDir()`, but
+  it was absent from the API reference — the package declared one TypeDoc entry
+  point. It now has its own page, and its module comment carries an `@module` tag
+  so the page is named after the subpath a consumer imports rather than the file
+  TypeDoc read.
+- Updated dependencies [12ead27]
+- Updated dependencies [028044a]
+- Updated dependencies [43ceb43]
+- Updated dependencies [8c9ce20]
+- Updated dependencies [9b9051a]
+- Updated dependencies [55d5ec1]
+- Updated dependencies [d98169a]
+- Updated dependencies [ea0c9c9]
+- Updated dependencies [d1e7c56]
+- Updated dependencies [a7309a5]
+- Updated dependencies [43ceb43]
+- Updated dependencies [df8effa]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+  - @alexkroman1/aai@7.0.0
+
 ## 6.11.0
 
 ### Patch Changes
