@@ -1,5 +1,37 @@
 # aai-evals
 
+## 0.1.17
+
+### Patch Changes
+
+- d98169a: Hash the starter-eval corpus in this package's cached test tasks.
+  `starter-expectations.test.ts` imports `EXPECTATIONS` and `checkCapabilities`
+  from `../../scripts/starter-eval/expectations.mjs` and asserts directly over
+  that data, but `inputs` globs resolve relative to the PACKAGE — so editing an
+  expectation replayed a cached green `aai-evals#test:coverage`, the very task the
+  CI coverage matrix added so these suites are gated at all. Verified the
+  documented way: the task hash was byte-identical across a change to the corpus
+  before this, and moves with it after.
+  
+  Scoped to a package `turbo.json` rather than the root `globalDependencies`,
+  whose five entries are all files every task reads; this corpus is read by one.
+- Updated dependencies [12ead27]
+- Updated dependencies [028044a]
+- Updated dependencies [43ceb43]
+- Updated dependencies [8c9ce20]
+- Updated dependencies [9b9051a]
+- Updated dependencies [55d5ec1]
+- Updated dependencies [d98169a]
+- Updated dependencies [ea0c9c9]
+- Updated dependencies [d1e7c56]
+- Updated dependencies [a7309a5]
+- Updated dependencies [43ceb43]
+- Updated dependencies [df8effa]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+  - @alexkroman1/aai@7.0.0
+
 ## 0.1.16
 
 ### Patch Changes

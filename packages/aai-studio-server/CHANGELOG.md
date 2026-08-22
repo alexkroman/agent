@@ -1,5 +1,46 @@
 # aai-studio-server
 
+## 0.10.0
+
+### Minor Changes
+
+- ddbb905: Studio coding agent: a `read_logs` tool, so it can read what the agent it is building actually printed.
+  
+  A runtime failure — a tool throwing mid-call, a missing provider key, a response shape the code guessed wrong — only happens with a real caller on the line, and `test_agent` loads the bundle inside the coding agent's own sandbox where none of that is visible. The evidence existed (it is what the studio's Logs pane shows) and the agent's only route to it was asking the user to read it out.
+  
+  `read_logs` takes an ENVIRONMENT (`preview`, the default, or `production`) and never a slug: the guest RPCs the host, which resolves the project's own deployed agents from the workspace of the (scope, project) the sandbox is pinned to and reads the platform's owner-authenticated `GET /:slug/logs` with the account key those agents were deployed with. The host drains the guest's cursor-indexed ring forward and returns the TAIL, because the ring hands back its oldest lines first and "what just broke" is at the other end. Eviction is reported rather than swallowed, and each of the three empty states — never deployed, not running, running and silent — says which one it is, since they call for different next moves.
+
+### Patch Changes
+
+- fbb18c3: Studio API page: document how to actually SEND a file. The upload routes were in the route table and every generated run body carried an upload id, but the only worked example of obtaining one was buried in the SDK start snippet. There is now a "Sending a file" card — generated from the agent's own listing, rendered only when a declared workflow takes an upload — leading with the client SDK (agent.upload / agent.uploadStream / agent.uploadInfo) and covering both orders: send the file and get an id back, or mint the id, start the run, and stream the bytes into it. The curl alternates really upload, leaving the id in a shell variable the run body expands.
+- Updated dependencies [d98169a]
+- Updated dependencies [d98169a]
+- Updated dependencies [12ead27]
+- Updated dependencies [028044a]
+- Updated dependencies [43ceb43]
+- Updated dependencies [8c9ce20]
+- Updated dependencies [9b9051a]
+- Updated dependencies [55d5ec1]
+- Updated dependencies [d98169a]
+- Updated dependencies [ea0c9c9]
+- Updated dependencies [b8a5529]
+- Updated dependencies [d1e7c56]
+- Updated dependencies [b8a5529]
+- Updated dependencies [a7309a5]
+- Updated dependencies [43ceb43]
+- Updated dependencies [ddbb905]
+- Updated dependencies [df8effa]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+  - @alexkroman1/aai-ui@7.0.0
+  - @alexkroman1/aai-runtime@7.0.0
+  - aai-studio-client@0.6.5
+  - aai-server@3.6.5
+  - @alexkroman1/aai@7.0.0
+
 ## 0.9.0
 
 ### Minor Changes

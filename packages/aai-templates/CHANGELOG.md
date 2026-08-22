@@ -1,5 +1,49 @@
 # aai-templates
 
+## 0.3.7
+
+### Patch Changes
+
+- d98169a: Publish `dist` and nothing else. `@alexkroman1/aai` had no `files` field, and
+  `.npmignore` excludes only repo artifacts (`etc/`, `coverage/`, `.turbo/`,
+  `contracts/`) — so every tarball carried the whole `host/` and `sdk/` TypeScript
+  source and 219 test files: 961 entries, 2,049 kB packed, 7,632 kB unpacked,
+  against 209/505/1,476 now. Consumers were downloading the SDK's test suite.
+  
+  `AGENT_GUIDE.md` and `skills/` stay (both ship deliberately); `CHANGELOG.md`
+  does not, matching `aai-ui` and `aai-cli`. Nothing supported breaks — every
+  `exports` target is under `dist`, and the `@dev/source` condition that points at
+  `.ts` source is activated only by this monorepo's own `customConditions`.
+  
+  `published-files-gate.test.ts` is the guard: every publishable package declares
+  a non-empty `files`, and every `exports` target is covered by it. The two things
+  that should have caught this and did not are worth naming — the artifact-size
+  report compares against the PR base, so a package that has ALWAYS shipped its
+  source never trips a delta gate, and `publint` files it as a *suggestion*, which
+  `check:publint` passes over.
+- b8a5529: Version `@alexkroman1/aai-runtime`'s published surface in epochs, like `aai` and
+  `aai-ui`. Twelve capabilities — `server`, `runtime`, `session`, `session-state`,
+  `providers`, `telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`,
+  `text` — partition all 122 public names, each with a committed epoch and a
+  frozen, compiling authoring example. `pnpm check:api-contracts` now reports 42
+  contracts across 3 packages.
+  
+  The split shipped a published package with no `contracts/` tree, so 221 exports
+  could move with nothing recording it while its two siblings could not change a
+  parameter without a gate asking which. `contracts/internal-surface.json` opens
+  at 68 and may only shrink — the ratchet that took `aai` from 74 to 0.
+  
+  Two gate-test parsers had never seen shapes this package introduces, and both
+  reported a healthy tree as broken. A capability whose every name is a type
+  collapses to `export type { … } from` under Biome, which
+  `api-contracts-gate.test.ts` read as "declares something of its own" — so
+  `session` and `session-state`, the two most obviously correct roots, failed. And
+  an entry point can be ALL re-export (`/internal` passes on 31 names and declares
+  nothing), which `api-surface-file.test.ts` read as an empty report —
+  indistinguishable there from a parser that stopped working. The gate tests also
+  pin the three-way `:workflow` ambiguity now, plus `:session` and `:uploads`,
+  which is what makes the CLI's refusal to guess load-bearing.
+
 ## 0.3.6
 
 ### Patch Changes

@@ -1,5 +1,0 @@
----
-"@alexkroman1/aai": patch
----
-
-Stop over-subscribing an app database's connection limit. A workflow guest opened four separate Postgres pools on the same app role — `ctx.db`, the workflow upload store, the wake-hint publisher and the lock sweep's presence connection — on top of the DevKit world's pool and its `LISTEN` client, for a ceiling of 13 against a role limited to 10, and postgres.js never gave an idle connection back, so a guest booting beside a draining sibling could not connect at all: `Workflow wake hint not published { error: 'too many connections for role "app_…"' }`. The first three now share one leased pool per process, pooled connections idle out after 30 seconds (a reserved one, like the presence lock, is exempt), step concurrency is one below the world pool so it stops competing with graphile-worker's own `LISTEN` connection, and the whole budget is one table (`guestAppDbConnections()`) the platform's limit is tested against rather than a comment that had gone stale.
