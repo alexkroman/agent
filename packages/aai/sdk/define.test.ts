@@ -58,6 +58,16 @@ describe("tool()", () => {
 const agentUnchecked = agent as (def: object) => AgentDef;
 
 describe("agent()", () => {
+  // One seam for every "the type rejects this, does the RUNTIME reject it too"
+  // case below, rather than a laundering cast per assertion. Each of those
+  // configs is a compile error an author sees as a misuse type in tsc's own
+  // message; what these tests cover is the throw behind it, which is what a
+  // plain-JS caller — or a config that arrived through a widened type — hits
+  // instead. Narrowing once means adding a case costs no new suppression, and
+  // the seam names why the one it holds is unavoidable: the parameter types are
+  // what make the call illegal, so there is nothing legal to pass.
+  const agentMisuse = (config: Record<string, unknown>) => agent(config as never);
+
   test("`system` is an alias of systemPrompt", () => {
     const def = agent({ name: "t", system: "You are terse." });
     expect(def.systemPrompt).toBe("You are terse.");
@@ -251,12 +261,12 @@ describe("agent()", () => {
 
   test("`voice` combined with an explicit tts descriptor throws", () => {
     expect(() =>
-      agent({ name: "t", voice: "michael", tts: cartesia({ voice: "v" }) } as never),
+      agentMisuse({ name: "t", voice: "michael", tts: cartesia({ voice: "v" }) }),
     ).toThrow(/`voice` picks the default pipeline's TTS voice/);
   });
 
   test("`voice` combined with s2s throws", () => {
-    expect(() => agent({ name: "t", voice: "michael", s2s: assemblyAIS2s() } as never)).toThrow(
+    expect(() => agentMisuse({ name: "t", voice: "michael", s2s: assemblyAIS2s() })).toThrow(
       /`voice` is pipeline-mode only/,
     );
   });
@@ -281,18 +291,18 @@ describe("agent()", () => {
 
   test("endpointing shorthand beside an explicit stt descriptor throws", () => {
     expect(() =>
-      agent({ name: "t", maxTurnSilenceMs: 4500, stt: assemblyAIStt({ region: "eu" }) } as never),
+      agentMisuse({ name: "t", maxTurnSilenceMs: 4500, stt: assemblyAIStt({ region: "eu" }) }),
     ).toThrow(/an explicit `stt` descriptor owns its own end-of-turn window/);
   });
 
   test("endpointing shorthand combined with s2s throws", () => {
-    expect(() =>
-      agent({ name: "t", maxTurnSilenceMs: 4500, s2s: assemblyAIS2s() } as never),
-    ).toThrow(/S2S runs STT service-side/);
+    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, s2s: assemblyAIS2s() })).toThrow(
+      /S2S runs STT service-side/,
+    );
   });
 
   test("endpointing shorthand combined with text throws", () => {
-    expect(() => agent({ name: "t", maxTurnSilenceMs: 4500, text: true } as never)).toThrow(
+    expect(() => agentMisuse({ name: "t", maxTurnSilenceMs: 4500, text: true })).toThrow(
       /a text agent has none/,
     );
   });

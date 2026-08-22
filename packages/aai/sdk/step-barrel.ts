@@ -53,8 +53,11 @@
  * @module step
  */
 
-// biome-ignore-all lint/performance/noReExportAll: barrel file by design
-
+// Listed rather than `export *`, the same choice `workflow-api-barrel.ts`
+// makes and for the same reason: a wildcard needs a lint suppression, and this
+// surface is checked by `pnpm check:api-report` and `check:api-contracts`
+// anyway, so an export missing from this list fails a gate rather than
+// silently leaving the subpath.
 export {
   TRANSCRIBE_TIMEOUT_MS,
   TranscribeError,
