@@ -4,7 +4,7 @@ import { access, readFile, writeFile } from "node:fs/promises";
 import type http from "node:http";
 import { join } from "node:path";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import { WORKFLOW_FLOW_PATH } from "@alexkroman1/aai-runtime";
+import { WORKFLOW_FLOW_PATH } from "@alexkroman1/aai-runtime/internal";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { useTempDirs } from "./_test-utils.ts";
 import {

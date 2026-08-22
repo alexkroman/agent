@@ -40,7 +40,8 @@
  * @module
  */
 
-import { consoleLogger, type LogContext, type Logger } from "@alexkroman1/aai-runtime";
+import type { LogContext, Logger } from "@alexkroman1/aai-runtime";
+import { consoleLogger } from "@alexkroman1/aai-runtime/internal";
 
 export type { LogContext, LogFn, Logger, LogLevel } from "@alexkroman1/aai-runtime";
 

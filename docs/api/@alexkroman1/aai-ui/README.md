@@ -133,9 +133,15 @@ halves. `WorkflowRun`, `WorkflowSummary`, `WorkflowOutputOf` and
 
 **Theme** — `useTheme()` and `ClientTheme`.
 
-**Node only** — `@alexkroman1/aai-ui/client-dir` exports
-`defaultClientDir()`, the filesystem path of the prebuilt default client, for
-`createServer({ clientDir })`.
+## Other subpaths
+
+The root export is the whole client API. Two subpaths sit beside it, neither
+of them something a `client.tsx` reaches for:
+
+| Subpath | Reach for it when |
+| --- | --- |
+| `/client-dir` | serving the prebuilt default client from Node — `defaultClientDir()`, the filesystem path `createServer({ clientDir })` wants |
+| `/internal` | never, from application code: the plumbing `client()` installs for itself (the session and theme providers, the default shell's URL chips, the tool-config context, the pre-connection lookup). Not a public API and not covered by semver |
 
 ## Hooks
 

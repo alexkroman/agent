@@ -10,9 +10,15 @@
  * (who may connect, where it binds, whether it restarts), so they are read from
  * the environment on purpose and must never leak into `ctx.env`.
  *
- * Split out of `_dev-server.ts` purely to keep that module under the
- * file-length cap; it is the only consumer.
+ * `createDevLogger` sits here for the second half of that reason rather than
+ * the first: it is not a control variable, it READS one — the same auto-
+ * detected JSON mode — to decide where the runtime's diagnostics go. Both
+ * were split out of `_dev-server.ts` to keep it under the file-length cap,
+ * and `_dev-server.ts` is the only consumer of either.
  */
+
+import type { Logger } from "@alexkroman1/aai-runtime";
+import { consoleLogger } from "@alexkroman1/aai-runtime/internal";
 
 /**
  * The env handed to `createServer` for host-mode connections: provider
@@ -47,4 +53,29 @@ export function devBindHost(): string | undefined {
  */
 export function devWatchEnabled(): boolean {
   return /^(1|true|yes|on)$/i.test(process.env.AAI_DEV_WATCH?.trim() ?? "");
+}
+
+/**
+ * The logger the dev server's runtime writes through.
+ *
+ * The SDK's default logger is console-backed and `console.log` is STDOUT, so
+ * in JSON mode the runtime's own diagnostics — the multi-line "Session mode
+ * resolved" dump at startup, every later warning — landed on stdout ahead of
+ * the single result line `aai dev` promises there. JSON mode is AUTO-DETECTED
+ * on a pipe, so that is the normal case rather than an opt-in one:
+ * `aai dev > dev.log`, a process supervisor, a container. It is the same
+ * hazard `notify` exists for, one layer down: `silenceOutput()` only reaches
+ * this CLI's own `log`, and the runtime is not using it.
+ *
+ * Human mode keeps the console logger exactly as it was — a TTY has nothing
+ * to parse, and stdout is where people are already reading these.
+ */
+export function createDevLogger(silenced: boolean): Logger {
+  if (!silenced) return consoleLogger;
+  const write = (msg: string, ctx?: Record<string, unknown>): void => {
+    // Carries the runtime's structured context too, rather than dropping it
+    // the way a plain `notify` line would.
+    process.stderr.write(`${msg}${ctx === undefined ? "" : ` ${JSON.stringify(ctx)}`}\n`);
+  };
+  return { info: write, warn: write, error: write, debug: () => undefined };
 }

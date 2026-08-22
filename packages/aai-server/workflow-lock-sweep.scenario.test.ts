@@ -75,16 +75,14 @@
  * everywhere else.
  */
 
+import { type CloseableDb, createPostgresDb, type ReservedDb } from "@alexkroman1/aai-runtime";
 import {
-  type CloseableDb,
   claimPoolPresenceAndSweep,
-  createPostgresDb,
   type PoolPresence,
   PRESENCE_LOCK_CLASS,
   PRESENCE_LOCK_OBJECT,
-  type ReservedDb,
   startWorkflowWorldIfDeclared,
-} from "@alexkroman1/aai-runtime";
+} from "@alexkroman1/aai-runtime/internal";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 

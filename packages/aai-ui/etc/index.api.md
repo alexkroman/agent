@@ -7,17 +7,14 @@
 import type { ButtonHTMLAttributes } from 'react';
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
 import { ComponentType } from 'react';
-import { Context } from 'react';
 import type { CSSProperties } from 'react';
 import type { DefaultToolResult } from '@alexkroman1/aai';
 import type { FormHTMLAttributes } from 'react';
 import { FunctionComponent } from 'react';
-import { FunctionComponentElement } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { isTerminal } from '@alexkroman1/aai/workflow-api';
 import { JSX } from 'react';
 import { MemoExoticComponent } from 'react';
-import { ProviderProps } from 'react';
 import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
@@ -40,11 +37,6 @@ export type AgentCustomEvent = {
 // @public
 export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
-// @internal
-export function ApiUrlChip(input: {
-    className?: string | undefined;
-}): JSX.Element;
-
 // @public
 export function AutoScroll(input: {
     children: ReactNode;
@@ -62,9 +54,6 @@ export type BaseOptions = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessi
     platformUrl?: string;
     theme?: ClientTheme;
 };
-
-// @internal
-export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
 
 // @public
 export function Button(input: {
@@ -213,9 +202,6 @@ export type FormValues = Record<string, unknown>;
 
 export { isTerminal }
 
-// @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
-
 // @public
 export const Markdown: MemoExoticComponent<FunctionComponent<MarkdownProps>>;
 
@@ -295,12 +281,6 @@ export type SessionError = {
 
 export { SessionErrorCode }
 
-// @internal
-export function SessionProvider(input: {
-    value: SessionCore;
-    children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<SessionCore | null>>;
-
 // @public
 export type SessionSnapshot = {
     readonly state: AgentState;
@@ -317,11 +297,6 @@ export type SessionSnapshot = {
     readonly started: boolean;
     readonly running: boolean;
 };
-
-// @internal
-export function SessionUrlChips(input: {
-    className?: string | undefined;
-}): JSX.Element;
 
 // @public
 export function SidebarLayout(input: {
@@ -358,12 +333,6 @@ export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HT
 // @public
 export function TextField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
 
-// @internal
-export function ThemeProvider(input: {
-    value?: ClientTheme | undefined;
-    children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<Required<ClientTheme>>>;
-
 // @public
 export type ToolCallInfo = {
     callId: string;
@@ -392,9 +361,6 @@ export interface ToolCallRowProps {
 // @public
 export type ToolCallRowVariant = "default" | "compact";
 
-// @internal
-export const ToolConfigContext: Context<ToolDisplayConfig>;
-
 // @public
 export type ToolDisplayConfig = Record<string, {
     icon?: string;
@@ -403,11 +369,6 @@ export type ToolDisplayConfig = Record<string, {
 
 // @public
 export const TRANSCRIBING_PLACEHOLDER = "\u2026";
-
-// @internal
-export function UiUrlChip(input: {
-    className?: string | undefined;
-}): JSX.Element;
 
 // @public
 export function UploadProgressBar(input: {

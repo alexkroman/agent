@@ -16,19 +16,20 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 // below, so a dynamic import inside startDevServer would defer nothing.
 import {
   type AgentServer,
-  configureWorkflowWorld,
-  consoleLogger,
   createRuntime,
   createServer,
-  createWorkflowSurface,
-  handleWorkflowRequest,
   type Logger,
   requiredProviderEnvVars,
-  startWorkflowWorldIfDeclared,
   WORKFLOW_API_PREFIX,
   withHostCredentialFallback,
 } from "@alexkroman1/aai-runtime";
-import { publishStepEnv } from "@alexkroman1/aai-runtime/internal";
+import {
+  configureWorkflowWorld,
+  createWorkflowSurface,
+  handleWorkflowRequest,
+  publishStepEnv,
+  startWorkflowWorldIfDeclared,
+} from "@alexkroman1/aai-runtime/internal";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
@@ -37,7 +38,7 @@ import type { ViteDevServer } from "vite";
 import { createWorkerEvaluator, type EvaluatedWorker } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
-import { devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
+import { createDevLogger, devBindHost, devWatchEnabled, hostModeEnv } from "./_dev-env.ts";
 import { createRestartSupervisor } from "./_dev-restart.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { notify, outputSilenced } from "./_ui.ts";
@@ -186,31 +187,6 @@ export function isIgnoredPath(dir: string, filePath: string): boolean {
     if (segment === ".env" || segment.startsWith(".env.")) return false;
     return segment.startsWith(".");
   });
-}
-
-/**
- * The logger the dev server's runtime writes through.
- *
- * The SDK's default logger is console-backed and `console.log` is STDOUT, so
- * in JSON mode the runtime's own diagnostics — the multi-line "Session mode
- * resolved" dump at startup, every later warning — landed on stdout ahead of
- * the single result line `aai dev` promises there. JSON mode is AUTO-DETECTED
- * on a pipe, so that is the normal case rather than an opt-in one:
- * `aai dev > dev.log`, a process supervisor, a container. It is the same
- * hazard `notify` exists for, one layer down: `silenceOutput()` only reaches
- * this CLI's own `log`, and the runtime is not using it.
- *
- * Human mode keeps the console logger exactly as it was — a TTY has nothing
- * to parse, and stdout is where people are already reading these.
- */
-export function createDevLogger(silenced: boolean): Logger {
-  if (!silenced) return consoleLogger;
-  const write = (msg: string, ctx?: Record<string, unknown>): void => {
-    // Carries the runtime's structured context too, rather than dropping it
-    // the way a plain `notify` line would.
-    process.stderr.write(`${msg}${ctx === undefined ? "" : ` ${JSON.stringify(ctx)}`}\n`);
-  };
-  return { info: write, warn: write, error: write, debug: () => undefined };
 }
 
 /**

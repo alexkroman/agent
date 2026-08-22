@@ -42,6 +42,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-runtime/internal` — `packages/aai-runtime/etc/internal.api.md`
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
 - `@alexkroman1/aai-ui` — `packages/aai-ui/etc/index.api.md`
+- `@alexkroman1/aai-ui/internal` — `packages/aai-ui/etc/internal.api.md`
 
 ## `@alexkroman1/aai/ffmpeg`
 
@@ -6492,38 +6493,28 @@ type WorkflowBundleOutput = {
 ## `@alexkroman1/aai-runtime`
 
 ```ts
-import type { AgentConfig } from '@alexkroman1/aai/manifest';
 import type { AgentDef } from '@alexkroman1/aai';
 import { AgentEnv } from '@alexkroman1/aai/host-internal';
-import { ClientSink } from '@alexkroman1/aai/protocol';
+import type { ClientSink } from '@alexkroman1/aai/protocol';
 import type { Db } from '@alexkroman1/aai';
 import { Duplex } from 'node:stream';
 import { ExecuteTool } from '@alexkroman1/aai/host-internal';
 import { ExecuteToolOptions } from '@alexkroman1/aai/host-internal';
-import type { GenerateOptions } from '@alexkroman1/aai';
-import type { GenerateResult } from '@alexkroman1/aai';
-import type { HostConfig } from '@alexkroman1/aai/protocol';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
-import type { IncomingMessage } from 'node:http';
 import { LanguageModel } from 'ai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { Message } from '@alexkroman1/aai';
 import { ModelMessage } from 'ai';
-import type { OwnedMap } from '@alexkroman1/aai/host-internal';
 import { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
-import { ReadyConfig } from '@alexkroman1/aai/protocol';
+import type { ReadyConfig } from '@alexkroman1/aai/protocol';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import type { ServerResponse } from 'node:http';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai/protocol';
 import { SessionEventBody } from '@alexkroman1/aai/protocol';
-import { SlotStore } from '@alexkroman1/aai';
-import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
-import type { StepFetch } from '@alexkroman1/aai/host-internal';
-import type { StepReporter } from '@alexkroman1/aai/host-internal';
+import type { SlotStore } from '@alexkroman1/aai';
 import { StepResult } from 'ai';
 import { streamText } from 'ai';
 import { SttError } from '@alexkroman1/aai/host-internal';
@@ -6535,7 +6526,6 @@ import { SttSession } from '@alexkroman1/aai/host-internal';
 import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
-import type { ToolDef } from '@alexkroman1/aai';
 import type { ToolSchema } from '@alexkroman1/aai/manifest';
 import { ToolSet } from 'ai';
 import { TtsError } from '@alexkroman1/aai/host-internal';
@@ -6550,7 +6540,6 @@ import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
-import { WorkflowClient as WorkflowClient_2 } from '@alexkroman1/aai';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
 
 export { AgentEnv }
@@ -6580,9 +6569,6 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
 }
-
-// @internal
-export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef;
 
 // @public
 export const CARRIER_CODECS: {
@@ -6630,40 +6616,14 @@ export type CarrierInbound =
 // @public
 export type CarrierName = keyof typeof CARRIER_CODECS;
 
-// @internal
-export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;
-
 // @public
 export type CloseableDb = Db & {
     reserve(): Promise<ReservedDb>;
     close(): Promise<void>;
 };
 
-// @internal
-export function configureWorkflowWorld(opts: {
-    databaseUrl: string | undefined;
-    port: number;
-    dataDir?: string;
-    env?: NodeJS.ProcessEnv;
-}): WorldKind;
-
-// @internal
-export const consoleLogger: Logger;
-
 // @public
 export function createAgentServer(options: AgentServerOptions): AgentServer;
-
-// @internal
-export function createConsoleLogger(debug?: boolean): Logger;
-
-// @internal
-export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn;
-
-// @internal
-export type CreateGenerateFnOptions = {
-    llm?: LlmProvider | undefined;
-    env: ProviderEnv;
-};
 
 // @public (undocumented)
 type CreateHeaderWebSocket = (url: string, opts: {
@@ -6682,17 +6642,11 @@ export function createLogBuffer(opts?: LogBufferOptions): LogBuffer;
 // @public
 export function createMemoryKeyStore(): WorkflowKeyStore;
 
-// @internal
-export function createMemoryStateBackend(): SessionStateBackend;
-
 // @public
 export function createMemoryUploadBlobs(): UploadBlobs;
 
 // @public (undocumented)
 type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
-
-// @internal
-export function createPipelineTransport(opts: PipelineTransportOptions): Transport;
 
 // @public
 export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb;
@@ -6708,49 +6662,14 @@ export type CreatePostgresDbOptions = {
 // @public
 export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 
-// @internal
-export function createPostgresStateBackend(opts: {
-    db: Db;
-}): SessionStateBackend;
-
-// @internal
-export function createRelayExecuteTool(opts: {
-    send: (event: ToolCallEvent) => void;
-    timeoutMs?: number | undefined;
-}): RelayExecuteTool;
-
 // @public
 export function createRuntime(opts: RuntimeOptions): Runtime;
-
-// @internal
-export function createS2sTransport(opts: S2sTransportOptions): Transport;
 
 // @public (undocumented)
 type CreateS2sWebSocket = CreateHeaderWebSocket;
 
 // @public
 export function createServer(options: ServerOptions): AgentServer;
-
-// @internal
-export function createSessionCore(opts: SessionCoreOptions): SessionCore;
-
-// @internal
-export function createSessionEventStream(opts: {
-    backend: SessionStateBackend;
-    logger?: Logger | undefined;
-}): SessionEventStream;
-
-// @internal
-export function createSessionStateStore(opts: {
-    backend: SessionStateBackend;
-    logger?: Logger | undefined;
-}): SessionStateStore;
-
-// @internal
-export function createStepFetch(): StepFetchHandle;
-
-// @internal
-export function createStepReporter(logger: Logger): StepReporter;
 
 // @public
 export function createTelephonyBridge(carrierSocket: SessionWebSocket, opts: TelephonyBridgeOptions): SessionWebSocket;
@@ -6760,30 +6679,6 @@ export function createTextAgent(opts: TextAgentOptions): TextAgent;
 
 // @public
 export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
-
-// @internal
-export function createUploadStore(opts: {
-    db?: Db | undefined;
-    blobs?: UploadBlobs | undefined;
-    localDir?: string | undefined;
-    prefix?: string | undefined;
-    maxBytes?: number | undefined;
-}): UploadStore;
-
-// @internal
-export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublisher;
-
-// @internal
-export function createWorkflowApi(opts: WorkflowApiOptions): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
-
-// @internal
-export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClient;
-
-// @internal
-export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
-
-// @internal
-export const debugLoggingEnabled: boolean;
 
 // @public
 export function decliningRuntime(message: string, logger?: Logger): SessionRuntime;
@@ -6800,9 +6695,6 @@ export const DEFAULT_LOG_LINE_BYTES = 4096;
 // @public
 export const DEFAULT_LOG_PAGE_LINES = 500;
 
-// @internal
-export const DEFAULT_S2S_CONFIG: S2SConfig;
-
 // @public
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
 
@@ -6813,35 +6705,7 @@ type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody,
 
 export { ExecuteTool }
 
-// @internal
-export function executeToolCall(name: string, args: Readonly<Record<string, unknown>>, options: ExecuteToolCallOptions): Promise<string>;
-
-// @public (undocumented)
-type ExecuteToolCallOptions = {
-    tool: ToolDef;
-    env: Readonly<Record<string, string>>;
-    slots?: SlotStore | undefined;
-    sessionId?: string | undefined;
-    db?: Db | undefined;
-    messages?: readonly Message[] | undefined;
-    generate?: HostGenerateFn | undefined;
-    logger?: Logger | undefined;
-    send?: ((event: string, data: unknown) => void) | undefined;
-    signal?: AbortSignal | undefined;
-    workflows?: WorkflowClient | undefined;
-    timeoutMs?: number | undefined;
-};
-
 export { ExecuteToolOptions }
-
-// @internal
-type FetchHandler = (req: Request) => Promise<Response>;
-
-// @internal
-export const GRAPHILE_JOB_EXPIRY = "4 hours";
-
-// @internal
-export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string): boolean;
 
 // @public
 type HeaderWebSocket = {
@@ -6864,11 +6728,6 @@ type HeaderWebSocket = {
 
 export { HostCredentialEnv }
 
-// @internal
-export type HostGenerateFn = (options: GenerateOptions, callOpts?: {
-    signal?: AbortSignal | undefined;
-}) => Promise<GenerateResult>;
-
 // @public
 export interface HostServerOptions extends PassthroughServerOptions {
     defaults?: HostSessionDefaults;
@@ -6886,22 +6745,6 @@ export type HttpUploadBlobsOptions = {
     bucket: string;
     fetch?: typeof globalThis.fetch | undefined;
 };
-
-// @internal
-export function installWorkflowSupport(opts: {
-    env?: Record<string, string> | undefined;
-    uploadBroker?: string | undefined;
-    logger: Logger;
-}): WorkflowSupport;
-
-// @internal
-export function isDebugEnv(value: string | undefined): boolean;
-
-// @internal
-export function isHostAllowed(env: Record<string, string>): boolean;
-
-// @internal
-export function isPathInside(dir: string, target: string): boolean;
 
 // @public
 export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
@@ -6978,59 +6821,6 @@ export type PassthroughServerOptions = {
     request?: ServerOptions["request"];
 };
 
-// @internal
-export interface PipelineTransportOptions {
-    callbacks: TransportCallbacks;
-    deadAirCoverMs?: number | undefined;
-    errorPhrase?: string | undefined;
-    executeTool: ExecuteTool;
-    heardLagMs?: number | undefined;
-    heardNow?: (() => number) | undefined;
-    interruptionMinDurationMs?: number | undefined;
-    llm: LanguageModel;
-    logger?: Logger | undefined;
-    maxSteps?: number | undefined;
-    minBargeInWords?: number | undefined;
-    preemptiveGeneration?: boolean | undefined;
-    providerKeys: {
-        stt: string;
-        tts: string;
-    };
-    resumeFalseInterruption?: boolean | undefined;
-    sessionConfig: TransportSessionConfig;
-    sid: string;
-    silencePrompt?: string | undefined;
-    silenceTimeoutMs?: number | undefined;
-    skipGreeting?: SkipGreeting | undefined;
-    speechIdleTimeoutMs?: number | undefined;
-    startFailurePhrase?: string | undefined;
-    stt: SttOpener;
-    sttPrompt?: string | undefined;
-    sttSampleRate?: number | undefined;
-    temperature?: number | undefined;
-    toolChoice?: ToolChoice | undefined;
-    toolSchemas?: readonly ToolSchema[];
-    tts: TtsOpener;
-    ttsSampleRate?: number | undefined;
-}
-
-// @internal
-export type PoolPresence = {
-    swept: readonly string[];
-    skipped: SweepSkip | undefined;
-    held: boolean;
-    release: () => Promise<void>;
-};
-
-// @internal
-export const PRESENCE_LOCK_CLASS = 1094797655;
-
-// @internal (undocumented)
-export const PRESENCE_LOCK_OBJECT = 1;
-
-// @internal
-export const PROVIDER_CREDENTIAL_ENVS: readonly string[];
-
 export { ProviderEnv }
 
 // @public
@@ -7038,20 +6828,6 @@ export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpen
 
 // @public
 export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void;
-
-// @internal
-export type RelayExecuteTool = {
-    executeTool: ExecuteTool;
-    onToolResult(msg: RelayToolResult): void;
-    dispose(): void;
-};
-
-// @internal
-export type RelayToolResult = {
-    toolCallId: string;
-    result: string;
-    error?: string | undefined;
-};
 
 // @public
 export function requiredProviderEnvVars(agent: {
@@ -7080,13 +6856,6 @@ export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
 
 // @public
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
-
-// @internal
-export function resolveUploadBlobs(opts: {
-    env?: Record<string, string> | undefined;
-    broker?: string | undefined;
-    fetch?: typeof globalThis.fetch | undefined;
-}): UploadBlobs | undefined;
 
 export { RunCodeExecutor }
 
@@ -7139,32 +6908,6 @@ export type S2SConfig = {
     outputSampleRate: number;
 };
 
-// @public (undocumented)
-type S2sSessionConfig = {
-    systemPrompt: string;
-    tools: ToolSchema[];
-    greeting?: string;
-    sttPrompt?: string;
-    voice?: string;
-    languages?: readonly string[];
-    keyterms?: readonly string[];
-};
-
-// @internal
-export type S2sTransportOptions = {
-    apiKey: string;
-    s2sConfig: S2SConfig;
-    sessionConfig: S2sSessionConfig;
-    callbacks: TransportCallbacks;
-    sid: string;
-    agent: string;
-    createWebSocket?: CreateS2sWebSocket;
-    logger?: Logger;
-};
-
-// @internal
-export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: Logger): void;
-
 // @public
 export function salvageJson(input: string): Promise<string | null>;
 
@@ -7184,15 +6927,6 @@ export type ServerOptions = {
     telephony?: boolean;
 };
 
-// @internal
-export function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerResponse, logger: Logger): Promise<boolean>;
-
-// @internal
-export const SESSION_EVENT_TABLE = "aai_session_events";
-
-// @internal
-export const SESSION_STATE_TABLE = "aai_session_state";
-
 // @public
 export type SessionCore = {
     readonly id: string;
@@ -7207,28 +6941,6 @@ export type SessionCore = {
     report(event: TransportEventBody): void;
     onReplyStarted(replyId: string): void;
     onAudioChunk(bytes: Uint8Array): void;
-};
-
-// @internal
-export type SessionCoreOptions = {
-    id: string;
-    agent: string;
-    client: ClientSink;
-    emitter: SessionEmitter;
-    agentConfig: AgentConfig;
-    executeTool: ExecuteTool;
-    transport: Transport;
-    logger?: Logger;
-    onToolResult?: (msg: {
-        toolCallId: string;
-        result: string;
-        error?: string;
-    }) => void;
-};
-
-// @public
-type SessionEmitter = {
-    emit(body: SessionEventBody): SessionEvent;
 };
 
 // @public
@@ -7276,9 +6988,6 @@ export type SessionStateBackend = {
     countEvents(sessionId: string): Promise<number>;
 };
 
-// @internal
-export function sessionStateDdl(schema?: string): string[];
-
 // @public
 export type SessionStateStore = {
     viewFor(sessionId: string): SlotStore;
@@ -7314,47 +7023,17 @@ export type SessionWebSocket = {
 // @public
 export type SkipGreeting = boolean | (() => boolean);
 
-// @internal
-export const speakOverWebSocket: SpeechSynthesizer;
-
-// @internal
-export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
-
-// @internal
-export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOptions): void;
-
-// @internal
-export type StartHostSessionOptions = {
-    env: Record<string, string> | PromiseLike<Record<string, string>>;
-    startOpts?: SessionStartOptions;
-    logger?: Logger;
-    baseAgent?: AgentDef;
-    handshakeTimeoutMs?: number;
-    relayTimeoutMs?: number;
-    createRuntime?: (opts: RuntimeOptions) => ReturnType<typeof createRuntime>;
-    allowHost?: boolean | undefined;
-};
-
 // @public
 export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, opts: {
     carrier: CarrierCodec;
     logger?: Logger;
 }): void;
 
-// @internal
-export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
-
 // @public
 export type StateSyncSession = {
     read(key: string): unknown;
     lastPush(): string | undefined;
     recordPush(json: string): void;
-};
-
-// @internal
-type StepFetchHandle = {
-    fetch: StepFetch;
-    close(): Promise<void>;
 };
 
 // @public
@@ -7374,12 +7053,6 @@ export { SttOpenOptions }
 export { SttSession }
 
 export { SttTurnMeta }
-
-// @public
-type SweepDeps = {
-    createDb?: (url: string) => CloseableDb;
-    log?: (message: string) => void;
-};
 
 // @public
 export type SweepSkip =
@@ -7444,43 +7117,10 @@ export interface TextTurnOptions {
 export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
 
 // @public
-type ToolCallEvent = Extract<SessionEventBody, {
-    type: "tool.called";
-}>;
-
-// @internal
-export interface Transport {
-    cancelReply(): void;
-    injectTurn?(instruction: string): void;
-    onPlaybackProgress?(bufferedMs: number): void;
-    reset?(): void;
-    seedHistory?(messages: readonly Message[]): void;
-    sendToolResult(callId: string, result: string): void;
-    sendUserAudio(bytes: Uint8Array): void;
-    start(): Promise<void>;
-    stop(): Promise<void>;
-}
-
-// @internal
-export type TransportCallbacks = {
-    report(event: TransportEventBody): void;
-    onAudioChunk(bytes: Uint8Array): void;
-    onReplyStarted(replyId: string): void;
-    onSessionReady?(providerSessionId: string): void;
-};
-
-// @public
 export type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
 
 // @public
 export type TransportEventType = TransportEventBody["type"];
-
-// @internal
-export type TransportSessionConfig = {
-    systemPrompt: string;
-    greeting?: string;
-    history?: Message[];
-};
 
 export { TtsError }
 
@@ -7561,20 +7201,6 @@ export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }
 
-// @internal
-export type WakeHintOptions = {
-    databaseUrl?: string | undefined;
-    db?: Db | undefined;
-    logger?: Logger | undefined;
-    intervalMs?: number | undefined;
-};
-
-// @internal
-export type WakeHintPublisher = {
-    publish(): Promise<void>;
-    close(): Promise<void>;
-};
-
 // @public
 export type WdkAdapter = {
     start(workflowId: string, args: unknown[]): Promise<string>;
@@ -7587,9 +7213,6 @@ export type WdkAdapter = {
     streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
     readOutput(runId: string): Promise<unknown>;
 };
-
-// @internal
-export function wdkAdapter(): WdkAdapter;
 
 // @public
 export type WdkRunRecord = {
@@ -7608,19 +7231,828 @@ export type WdkStreamOptions = {
     startIndex?: number | undefined;
 };
 
-// @internal
-export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void;
-
 // @public
 export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
-
-// @internal
-export const WORKFLOW_API_METHODS: readonly string[];
 
 export { WORKFLOW_API_PREFIX }
 
 // @public
 export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
+
+// @public
+export type WorkflowClientOptions = {
+    workflows: Readonly<Record<string, WorkflowDef>>;
+    keys: WorkflowKeyStore;
+    wdk: WdkAdapter;
+    publicUrl?: string | undefined;
+    logger: Logger;
+};
+
+// @public
+export type WorkflowKeyStore = {
+    record(workflow: string, key: string, runId: string): Promise<void>;
+    lookup(workflow: string, key: string, limit: number): Promise<string[]>;
+};
+```
+
+## `@alexkroman1/aai-runtime/internal`
+
+```ts
+import type { AgentConfig } from '@alexkroman1/aai/manifest';
+import type { AgentDef } from '@alexkroman1/aai';
+import type { AgentEnv } from '@alexkroman1/aai/host-internal';
+import { builtinFetch } from '@alexkroman1/aai/host-internal';
+import { BuiltinToolOptions } from '@alexkroman1/aai/host-internal';
+import { ClientSink } from '@alexkroman1/aai/protocol';
+import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
+import type { Db } from '@alexkroman1/aai';
+import { ExecuteTool } from '@alexkroman1/aai/host-internal';
+import type { GenerateOptions } from '@alexkroman1/aai';
+import type { GenerateResult } from '@alexkroman1/aai';
+import type { HostConfig } from '@alexkroman1/aai/protocol';
+import type http from 'node:http';
+import type { IncomingMessage } from 'node:http';
+import { isPrivateIp } from '@alexkroman1/aai/host-internal';
+import type { LanguageModel } from 'ai';
+import type { LlmProvider } from '@alexkroman1/aai/llm';
+import type { Message } from '@alexkroman1/aai';
+import type { OwnedMap } from '@alexkroman1/aai/host-internal';
+import { pinnedFetch } from '@alexkroman1/aai/host-internal';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { publishSpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import { publishStepEnv } from '@alexkroman1/aai/host-internal';
+import { publishStepFetch } from '@alexkroman1/aai/host-internal';
+import { publishStepReporter } from '@alexkroman1/aai/host-internal';
+import { publishUploadReader } from '@alexkroman1/aai/host-internal';
+import { ReadyConfig } from '@alexkroman1/aai/protocol';
+import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
+import { resolveAndAssertPublic } from '@alexkroman1/aai/host-internal';
+import { resolveBuiltin } from '@alexkroman1/aai/host-internal';
+import { ResolvedBuiltins } from '@alexkroman1/aai/host-internal';
+import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
+import { safeFetch } from '@alexkroman1/aai/host-internal';
+import { SANDBOX_ONLY_BUILTINS } from '@alexkroman1/aai/host-internal';
+import type { ServerResponse } from 'node:http';
+import type { SessionCommand } from '@alexkroman1/aai/protocol';
+import { SessionEvent } from '@alexkroman1/aai/protocol';
+import { SessionEventBody } from '@alexkroman1/aai/protocol';
+import { SlotStore } from '@alexkroman1/aai';
+import { SPEECH_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
+import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import { ssrfSafeFetch } from '@alexkroman1/aai/host-internal';
+import { StepFetch } from '@alexkroman1/aai/host-internal';
+import { StepReporter } from '@alexkroman1/aai/host-internal';
+import type { SttOpener } from '@alexkroman1/aai/host-internal';
+import type { SttProvider } from '@alexkroman1/aai/stt';
+import type { ToolChoice } from '@alexkroman1/aai';
+import type { ToolDef } from '@alexkroman1/aai';
+import { ToolDefRecord } from '@alexkroman1/aai/host-internal';
+import type { ToolSchema } from '@alexkroman1/aai/manifest';
+import type { TtsOpener } from '@alexkroman1/aai/host-internal';
+import type { TtsProvider } from '@alexkroman1/aai/tts';
+import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
+import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';
+import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
+import { UPLOAD_WRITES_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
+import { UploadAccess } from '@alexkroman1/aai/host-internal';
+import type { UploadInfo } from '@alexkroman1/aai/step';
+import { UploadReader } from '@alexkroman1/aai/host-internal';
+import { UPLOADS_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
+import { UploadWriteMeta } from '@alexkroman1/aai/host-internal';
+import { UploadWriter } from '@alexkroman1/aai/host-internal';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+import { WorkflowClient as WorkflowClient_2 } from '@alexkroman1/aai';
+import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
+
+// @public
+type AgentRuntime = {
+    startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
+    shutdown(): Promise<void>;
+    readonly readyConfig: ReadyConfig;
+    readonly workflows?: WorkflowClient | undefined;
+    readonly sessionEvents?: SessionEventStream | undefined;
+};
+
+// @internal
+export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef;
+
+export { builtinFetch }
+
+export { BuiltinToolOptions }
+
+// @internal
+export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;
+
+// @public
+type CloseableDb = Db & {
+    reserve(): Promise<ReservedDb>;
+    close(): Promise<void>;
+};
+
+// @internal
+export function configureWorkflowWorld(opts: {
+    databaseUrl: string | undefined;
+    port: number;
+    dataDir?: string;
+    env?: NodeJS.ProcessEnv;
+}): WorldKind;
+
+// @internal
+export const consoleLogger: Logger;
+
+export { CONTAINED_ENV }
+
+// @internal
+export function createConsoleLogger(debug?: boolean): Logger;
+
+// @internal
+export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn;
+
+// @internal
+export type CreateGenerateFnOptions = {
+    llm?: LlmProvider | undefined;
+    env: ProviderEnv;
+};
+
+// @public (undocumented)
+type CreateHeaderWebSocket = (url: string, opts: {
+    headers: Record<string, string>;
+}) => HeaderWebSocket;
+
+// @internal
+export function createMemoryStateBackend(): SessionStateBackend;
+
+// @public (undocumented)
+type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
+
+// @internal
+export function createPipelineTransport(opts: PipelineTransportOptions): Transport;
+
+// @internal
+export function createPostgresStateBackend(opts: {
+    db: Db;
+}): SessionStateBackend;
+
+// @internal
+export function createRelayExecuteTool(opts: {
+    send: (event: ToolCallEvent) => void;
+    timeoutMs?: number | undefined;
+}): RelayExecuteTool;
+
+// @public
+function createRuntime(opts: RuntimeOptions): Runtime;
+
+// @internal
+export function createS2sTransport(opts: S2sTransportOptions): Transport;
+
+// @public (undocumented)
+type CreateS2sWebSocket = CreateHeaderWebSocket;
+
+// @internal
+export function createSessionCore(opts: SessionCoreOptions): SessionCore;
+
+// @internal
+export function createSessionEventStream(opts: {
+    backend: SessionStateBackend;
+    logger?: Logger | undefined;
+}): SessionEventStream;
+
+// @internal
+export function createSessionStateStore(opts: {
+    backend: SessionStateBackend;
+    logger?: Logger | undefined;
+}): SessionStateStore;
+
+// @internal
+export function createStepFetch(): StepFetchHandle;
+
+// @internal
+export function createStepReporter(logger: Logger): StepReporter;
+
+// @internal
+export function createUploadStore(opts: {
+    db?: Db | undefined;
+    blobs?: UploadBlobs | undefined;
+    localDir?: string | undefined;
+    prefix?: string | undefined;
+    maxBytes?: number | undefined;
+}): UploadStore;
+
+// @internal
+export function createWakeHintPublisher(opts?: WakeHintOptions): WakeHintPublisher;
+
+// @internal
+export function createWorkflowApi(opts: WorkflowApiOptions): (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
+
+// @internal
+export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClient;
+
+// @internal
+export function createWorkflowSurface(workflowCode: string | undefined, stepCode: string | undefined): Promise<WorkflowSurface | undefined>;
+
+// @internal
+export const debugLoggingEnabled: boolean;
+
+// @internal
+export const DEFAULT_S2S_CONFIG: S2SConfig;
+
+// @public
+type EventsNamed<T extends SessionEventBody["type"]> = Extract<SessionEventBody, {
+    type: T;
+}>;
+
+// @internal
+export function executeToolCall(name: string, args: Readonly<Record<string, unknown>>, options: ExecuteToolCallOptions): Promise<string>;
+
+// @public (undocumented)
+type ExecuteToolCallOptions = {
+    tool: ToolDef;
+    env: Readonly<Record<string, string>>;
+    slots?: SlotStore | undefined;
+    sessionId?: string | undefined;
+    db?: Db | undefined;
+    messages?: readonly Message[] | undefined;
+    generate?: HostGenerateFn | undefined;
+    logger?: Logger | undefined;
+    send?: ((event: string, data: unknown) => void) | undefined;
+    signal?: AbortSignal | undefined;
+    workflows?: WorkflowClient | undefined;
+    timeoutMs?: number | undefined;
+};
+
+// @internal
+type FetchHandler = (req: Request) => Promise<Response>;
+
+// @internal
+export const GRAPHILE_JOB_EXPIRY = "4 hours";
+
+// @internal
+export function handleWorkflowRequest(surface: WorkflowSurface | null | undefined, req: IncomingMessage, res: ServerResponse, url: string, method: string): boolean;
+
+// @public
+type HeaderWebSocket = {
+    readonly readyState: number;
+    readonly bufferedAmount?: number | undefined;
+    send(data: string): void;
+    close(code?: number): void;
+    addEventListener(type: "open", listener: () => void): void;
+    addEventListener(type: "message", listener: (event: {
+        data: unknown;
+    }) => void): void;
+    addEventListener(type: "close", listener: (event: {
+        code?: number;
+        reason?: string;
+    }) => void): void;
+    addEventListener(type: "error", listener: (event: {
+        message?: string;
+    }) => void): void;
+};
+
+// @internal
+export type HostGenerateFn = (options: GenerateOptions, callOpts?: {
+    signal?: AbortSignal | undefined;
+}) => Promise<GenerateResult>;
+
+// @internal
+export function installWorkflowSupport(opts: {
+    env?: Record<string, string> | undefined;
+    uploadBroker?: string | undefined;
+    logger: Logger;
+}): WorkflowSupport;
+
+// @internal
+export function isDebugEnv(value: string | undefined): boolean;
+
+// @internal
+export function isHostAllowed(env: Record<string, string>): boolean;
+
+// @internal
+export function isPathInside(dir: string, target: string): boolean;
+
+export { isPrivateIp }
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (msg: string, ctx?: LogContext) => void;
+
+// @public
+type Logger = Record<LogLevel, LogFn>;
+
+// @public
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+export { pinnedFetch }
+
+// @internal
+export interface PipelineTransportOptions {
+    callbacks: TransportCallbacks;
+    deadAirCoverMs?: number | undefined;
+    errorPhrase?: string | undefined;
+    executeTool: ExecuteTool;
+    heardLagMs?: number | undefined;
+    heardNow?: (() => number) | undefined;
+    interruptionMinDurationMs?: number | undefined;
+    llm: LanguageModel;
+    logger?: Logger | undefined;
+    maxSteps?: number | undefined;
+    minBargeInWords?: number | undefined;
+    preemptiveGeneration?: boolean | undefined;
+    providerKeys: {
+        stt: string;
+        tts: string;
+    };
+    resumeFalseInterruption?: boolean | undefined;
+    sessionConfig: TransportSessionConfig;
+    sid: string;
+    silencePrompt?: string | undefined;
+    silenceTimeoutMs?: number | undefined;
+    skipGreeting?: SkipGreeting | undefined;
+    speechIdleTimeoutMs?: number | undefined;
+    startFailurePhrase?: string | undefined;
+    stt: SttOpener;
+    sttPrompt?: string | undefined;
+    sttSampleRate?: number | undefined;
+    temperature?: number | undefined;
+    toolChoice?: ToolChoice | undefined;
+    toolSchemas?: readonly ToolSchema[];
+    tts: TtsOpener;
+    ttsSampleRate?: number | undefined;
+}
+
+// @internal
+export type PoolPresence = {
+    swept: readonly string[];
+    skipped: SweepSkip | undefined;
+    held: boolean;
+    release: () => Promise<void>;
+};
+
+// @internal
+export const PRESENCE_LOCK_CLASS = 1094797655;
+
+// @internal (undocumented)
+export const PRESENCE_LOCK_OBJECT = 1;
+
+// @internal
+export const PROVIDER_CREDENTIAL_ENVS: readonly string[];
+
+export { publishSpeechSynthesizer }
+
+export { publishStepEnv }
+
+export { publishStepFetch }
+
+export { publishStepReporter }
+
+export { publishUploadReader }
+
+// @internal
+export type RelayExecuteTool = {
+    executeTool: ExecuteTool;
+    onToolResult(msg: RelayToolResult): void;
+    dispose(): void;
+};
+
+// @internal
+export type RelayToolResult = {
+    toolCallId: string;
+    result: string;
+    error?: string | undefined;
+};
+
+// @public
+type ReservedDb = Db & {
+    release(): void;
+};
+
+export { resolveAllBuiltins }
+
+export { resolveAndAssertPublic }
+
+export { resolveBuiltin }
+
+export { ResolvedBuiltins }
+
+// @internal
+export function resolveUploadBlobs(opts: {
+    env?: Record<string, string> | undefined;
+    broker?: string | undefined;
+    fetch?: typeof globalThis.fetch | undefined;
+}): UploadBlobs | undefined;
+
+// @public
+type Runtime = AgentRuntime & {
+    executeTool: ExecuteTool;
+    toolSchemas: ToolSchema[];
+    createSession(opts: {
+        id: string;
+        agent: string;
+        client: ClientSink;
+        skipGreeting?: boolean;
+    }): SessionCore;
+};
+
+// @public
+type RuntimeOptions = {
+    agent: AgentDef;
+    env: AgentEnv;
+    providerEnv?: ProviderEnv | undefined;
+    db?: Db | undefined;
+    createWebSocket?: CreateS2sWebSocket | undefined;
+    createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
+    publicUrl?: string | undefined;
+    logger?: Logger | undefined;
+    s2sConfig?: S2SConfig | undefined;
+    sessionStartTimeoutMs?: number | undefined;
+    shutdownTimeoutMs?: number | undefined;
+    executeTool?: ExecuteTool | undefined;
+    toolSchemas?: ToolSchema[] | undefined;
+    onToolResult?: ((msg: {
+        toolCallId: string;
+        result: string;
+        error?: string;
+    }) => void) | undefined;
+    toolGuidance?: string[] | undefined;
+    fetch?: typeof globalThis.fetch | undefined;
+    runCode?: ((code: string) => Promise<string | {
+        error: string;
+    }>) | undefined;
+    stt?: SttProvider | undefined;
+    llm?: LlmProvider | undefined;
+    tts?: TtsProvider | undefined;
+};
+
+// @public
+type S2SConfig = {
+    wssUrl: string;
+    inputSampleRate: number;
+    outputSampleRate: number;
+};
+
+// @public (undocumented)
+type S2sSessionConfig = {
+    systemPrompt: string;
+    tools: ToolSchema[];
+    greeting?: string;
+    sttPrompt?: string;
+    voice?: string;
+    languages?: readonly string[];
+    keyterms?: readonly string[];
+};
+
+// @internal
+export type S2sTransportOptions = {
+    apiKey: string;
+    s2sConfig: S2SConfig;
+    sessionConfig: S2sSessionConfig;
+    callbacks: TransportCallbacks;
+    sid: string;
+    agent: string;
+    createWebSocket?: CreateS2sWebSocket;
+    logger?: Logger;
+};
+
+export { safeFetch }
+
+// @internal
+export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: Logger): void;
+
+export { SANDBOX_ONLY_BUILTINS }
+
+// @internal
+export function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerResponse, logger: Logger): Promise<boolean>;
+
+// @internal
+export const SESSION_EVENT_TABLE = "aai_session_events";
+
+// @internal
+export const SESSION_STATE_TABLE = "aai_session_state";
+
+// @public
+type SessionCore = {
+    readonly id: string;
+    configure(config: ReadyConfig): void;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+    readonly faultCode: string | undefined;
+    command(cmd: SessionCommand): void;
+    onAudio(bytes: Uint8Array): void;
+    announce(instruction: string): boolean;
+    restoreHistory(messages: readonly Message[], toolCalls?: readonly RestoredToolCall[]): void;
+    report(event: TransportEventBody): void;
+    onReplyStarted(replyId: string): void;
+    onAudioChunk(bytes: Uint8Array): void;
+};
+
+// @internal
+export type SessionCoreOptions = {
+    id: string;
+    agent: string;
+    client: ClientSink;
+    emitter: SessionEmitter;
+    agentConfig: AgentConfig;
+    executeTool: ExecuteTool;
+    transport: Transport;
+    logger?: Logger;
+    onToolResult?: (msg: {
+        toolCallId: string;
+        result: string;
+        error?: string;
+    }) => void;
+};
+
+// @public
+type SessionEmitter = {
+    emit(body: SessionEventBody): SessionEvent;
+};
+
+// @public
+type SessionEventPage = {
+    events: readonly SessionEvent[];
+    tail: number;
+};
+
+// @public
+type SessionEventStream = {
+    append(sessionId: string, body: SessionEventBody): SessionEvent;
+    tail(sessionId: string): number;
+    read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
+    flush(sessionId: string): Promise<void>;
+    hydrate(sessionId: string): Promise<void>;
+    discard(sessionId: string): void;
+    clear(): void;
+    readonly durable: boolean;
+};
+
+// @public
+type SessionStartOptions = {
+    skipGreeting?: boolean;
+    resumeFrom?: string;
+    logContext?: Record<string, string>;
+    onOpen?: () => void;
+    onClose?: () => void;
+    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
+    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
+    audioLeadMs?: number;
+};
+
+// @public
+type SessionStateBackend = {
+    readonly name: "memory" | "postgres";
+    readonly durable: boolean;
+    load(sessionId: string): Promise<Map<string, string>>;
+    commit(sessionId: string, values: ReadonlyMap<string, string>): Promise<void>;
+    discard(sessionId: string): Promise<void>;
+    appendEvents(sessionId: string, events: readonly StoredSessionEvent[]): Promise<void>;
+    readEvents(sessionId: string, startIndex: number, limit: number): Promise<readonly StoredSessionEvent[]>;
+    countEvents(sessionId: string): Promise<number>;
+};
+
+// @internal
+export function sessionStateDdl(schema?: string): string[];
+
+// @public
+type SessionStateStore = {
+    viewFor(sessionId: string): SlotStore;
+    hydrate(sessionId: string): Promise<void>;
+    flush(sessionId: string): Promise<void>;
+    has(sessionId: string): boolean;
+    syncSession(sessionId: string): StateSyncSession;
+    discard(sessionId: string): void;
+    clear(): void;
+    readonly backend: Pick<SessionStateBackend, "name" | "durable">;
+};
+
+// @public
+type SessionWebSocket = {
+    readonly readyState: number;
+    readonly bufferedAmount?: number | undefined;
+    send(data: string | ArrayBuffer | Uint8Array): void;
+    close?(code?: number, reason?: string): void;
+    ping?(): void;
+    addEventListener(type: "open", listener: () => void): void;
+    addEventListener(type: "close", listener: (event: {
+        code?: number;
+        reason?: string;
+    }) => void): void;
+    addEventListener(type: "message", listener: (event: {
+        data: unknown;
+    }) => void): void;
+    addEventListener(type: "error", listener: (event: {
+        message?: string;
+    }) => void): void;
+};
+
+// @public
+type SkipGreeting = boolean | (() => boolean);
+
+// @internal
+export const speakOverWebSocket: SpeechSynthesizer;
+
+export { SPEECH_UNAVAILABLE_MESSAGE }
+
+export { SpeechSynthesizer }
+
+export { ssrfSafeFetch }
+
+// @internal
+export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
+
+// @internal
+export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOptions): void;
+
+// @internal
+export type StartHostSessionOptions = {
+    env: Record<string, string> | PromiseLike<Record<string, string>>;
+    startOpts?: SessionStartOptions;
+    logger?: Logger;
+    baseAgent?: AgentDef;
+    handshakeTimeoutMs?: number;
+    relayTimeoutMs?: number;
+    createRuntime?: (opts: RuntimeOptions) => ReturnType<typeof createRuntime>;
+    allowHost?: boolean | undefined;
+};
+
+// @internal
+export function startWorkflowWorldIfDeclared(hasWorkflows: boolean, kind: WorldKind): Promise<void>;
+
+// @public
+type StateSyncSession = {
+    read(key: string): unknown;
+    lastPush(): string | undefined;
+    recordPush(json: string): void;
+};
+
+export { StepFetch }
+
+// @internal
+type StepFetchHandle = {
+    fetch: StepFetch;
+    close(): Promise<void>;
+};
+
+export { StepReporter }
+
+// @public
+type StoredSessionEvent = {
+    index: number;
+    json: string;
+};
+
+// @public
+type SweepDeps = {
+    createDb?: (url: string) => CloseableDb;
+    log?: (message: string) => void;
+};
+
+// @public
+type SweepSkip =
+/** Another pool holds presence, so its locks are live and not ours to clear. */
+"another-pool-is-live"
+/** Presence is ours and there was nothing locked. The healthy case. */
+| "no-orphaned-locks";
+
+// @public
+type ToolCallEvent = Extract<SessionEventBody, {
+    type: "tool.called";
+}>;
+
+export { ToolDefRecord }
+
+// @internal
+export interface Transport {
+    cancelReply(): void;
+    injectTurn?(instruction: string): void;
+    onPlaybackProgress?(bufferedMs: number): void;
+    reset?(): void;
+    seedHistory?(messages: readonly Message[]): void;
+    sendToolResult(callId: string, result: string): void;
+    sendUserAudio(bytes: Uint8Array): void;
+    start(): Promise<void>;
+    stop(): Promise<void>;
+}
+
+// @internal
+export type TransportCallbacks = {
+    report(event: TransportEventBody): void;
+    onAudioChunk(bytes: Uint8Array): void;
+    onReplyStarted(replyId: string): void;
+    onSessionReady?(providerSessionId: string): void;
+};
+
+// @public
+type TransportEventBody = EventsNamed<"speech.started" | "speech.stopped" | "user-transcript.updated" | "user-transcript.committed" | "agent-transcript.updated" | "agent-transcript.committed" | "tool.called" | "tool.completed" | "reply.completed" | "reply.cancelled" | "audio.completed" | "error.reported">;
+
+// @internal
+export type TransportSessionConfig = {
+    systemPrompt: string;
+    greeting?: string;
+    history?: Message[];
+};
+
+export { UPLOAD_CHUNK_BYTES }
+
+export { UPLOAD_PART_BYTES }
+
+export { UPLOAD_TOKEN_RE }
+
+export { UPLOAD_WRITES_UNAVAILABLE_MESSAGE }
+
+export { UploadAccess }
+
+// @public
+type UploadBlobs = {
+    put(key: string, body: AsyncIterable<Uint8Array>, opts?: {
+        type?: string | undefined;
+        limit?: number | undefined;
+    }): Promise<number>;
+    read(key: string, start: number, end: number): Promise<Uint8Array>;
+    size(key: string): Promise<number | undefined>;
+};
+
+// @public
+type UploadMeta = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
+
+export { UploadReader }
+
+export { UPLOADS_UNAVAILABLE_MESSAGE }
+
+// @public
+type UploadStore = UploadReader & {
+    create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, opts?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    beginParts(id: string, meta: UploadMeta, total: number, opts?: {
+        limit?: number;
+    }): Promise<UploadInfo>;
+    writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
+    recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
+};
+
+export { UploadWriteMeta }
+
+export { UploadWriter }
+
+// @internal
+export type WakeHintOptions = {
+    databaseUrl?: string | undefined;
+    db?: Db | undefined;
+    logger?: Logger | undefined;
+    intervalMs?: number | undefined;
+};
+
+// @internal
+export type WakeHintPublisher = {
+    publish(): Promise<void>;
+    close(): Promise<void>;
+};
+
+// @public
+type WdkAdapter = {
+    start(workflowId: string, args: unknown[]): Promise<string>;
+    getRun(runId: string): Promise<WdkRunRecord | undefined>;
+    listRuns(workflowId: string, limit: number): Promise<WdkRunRecord[]>;
+    cancel(runId: string): Promise<boolean>;
+    wakeUp(runId: string, correlationIds: string[] | undefined): Promise<number>;
+    signal(token: string, payload: unknown): Promise<boolean>;
+    readStream(runId: string, options: WdkStreamOptions): ReadableStream<unknown>;
+    streamTail(runId: string, options: WdkStreamOptions): Promise<number>;
+    readOutput(runId: string): Promise<unknown>;
+};
+
+// @internal
+export function wdkAdapter(): WdkAdapter;
+
+// @public
+type WdkRunRecord = {
+    runId: string;
+    workflowName: string;
+    status: "pending" | "running" | "completed" | "failed" | "cancelled";
+    createdAt: Date | number;
+    error?: {
+        message: string;
+    } | undefined;
+};
+
+// @public
+type WdkStreamOptions = {
+    namespace?: string | undefined;
+    startIndex?: number | undefined;
+};
+
+// @internal
+export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void;
+
+// @internal
+export const WORKFLOW_API_METHODS: readonly string[];
 
 // @internal
 export const WORKFLOW_FLOW_PATH = "/.well-known/workflow/v1/flow";
@@ -7647,7 +8079,7 @@ export type WorkflowApiOptions = {
 };
 
 // @public
-export type WorkflowClientOptions = {
+type WorkflowClientOptions = {
     workflows: Readonly<Record<string, WorkflowDef>>;
     keys: WorkflowKeyStore;
     wdk: WdkAdapter;
@@ -7656,7 +8088,7 @@ export type WorkflowClientOptions = {
 };
 
 // @public
-export type WorkflowKeyStore = {
+type WorkflowKeyStore = {
     record(workflow: string, key: string, runId: string): Promise<void>;
     lookup(workflow: string, key: string, limit: number): Promise<string[]>;
 };
@@ -7696,104 +8128,6 @@ type WsSessionOptions = {
 };
 ```
 
-## `@alexkroman1/aai-runtime/internal`
-
-```ts
-import { builtinFetch } from '@alexkroman1/aai/host-internal';
-import { BuiltinToolOptions } from '@alexkroman1/aai/host-internal';
-import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
-import { isPrivateIp } from '@alexkroman1/aai/host-internal';
-import { pinnedFetch } from '@alexkroman1/aai/host-internal';
-import { publishSpeechSynthesizer } from '@alexkroman1/aai/host-internal';
-import { publishStepEnv } from '@alexkroman1/aai/host-internal';
-import { publishStepFetch } from '@alexkroman1/aai/host-internal';
-import { publishStepReporter } from '@alexkroman1/aai/host-internal';
-import { publishUploadReader } from '@alexkroman1/aai/host-internal';
-import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
-import { resolveAndAssertPublic } from '@alexkroman1/aai/host-internal';
-import { resolveBuiltin } from '@alexkroman1/aai/host-internal';
-import { ResolvedBuiltins } from '@alexkroman1/aai/host-internal';
-import { safeFetch } from '@alexkroman1/aai/host-internal';
-import { SANDBOX_ONLY_BUILTINS } from '@alexkroman1/aai/host-internal';
-import { SPEECH_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
-import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
-import { ssrfSafeFetch } from '@alexkroman1/aai/host-internal';
-import { StepFetch } from '@alexkroman1/aai/host-internal';
-import { StepReporter } from '@alexkroman1/aai/host-internal';
-import { ToolDefRecord } from '@alexkroman1/aai/host-internal';
-import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
-import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';
-import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
-import { UPLOAD_WRITES_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
-import { UploadAccess } from '@alexkroman1/aai/host-internal';
-import { UploadReader } from '@alexkroman1/aai/host-internal';
-import { UPLOADS_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
-import { UploadWriteMeta } from '@alexkroman1/aai/host-internal';
-import { UploadWriter } from '@alexkroman1/aai/host-internal';
-
-export { builtinFetch }
-
-export { BuiltinToolOptions }
-
-export { CONTAINED_ENV }
-
-export { isPrivateIp }
-
-export { pinnedFetch }
-
-export { publishSpeechSynthesizer }
-
-export { publishStepEnv }
-
-export { publishStepFetch }
-
-export { publishStepReporter }
-
-export { publishUploadReader }
-
-export { resolveAllBuiltins }
-
-export { resolveAndAssertPublic }
-
-export { resolveBuiltin }
-
-export { ResolvedBuiltins }
-
-export { safeFetch }
-
-export { SANDBOX_ONLY_BUILTINS }
-
-export { SPEECH_UNAVAILABLE_MESSAGE }
-
-export { SpeechSynthesizer }
-
-export { ssrfSafeFetch }
-
-export { StepFetch }
-
-export { StepReporter }
-
-export { ToolDefRecord }
-
-export { UPLOAD_CHUNK_BYTES }
-
-export { UPLOAD_PART_BYTES }
-
-export { UPLOAD_TOKEN_RE }
-
-export { UPLOAD_WRITES_UNAVAILABLE_MESSAGE }
-
-export { UploadAccess }
-
-export { UploadReader }
-
-export { UPLOADS_UNAVAILABLE_MESSAGE }
-
-export { UploadWriteMeta }
-
-export { UploadWriter }
-```
-
 ## `@alexkroman1/aai-ui/client-dir`
 
 ```ts
@@ -7807,17 +8141,14 @@ export function defaultClientDir(): string;
 import type { ButtonHTMLAttributes } from 'react';
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
 import { ComponentType } from 'react';
-import { Context } from 'react';
 import type { CSSProperties } from 'react';
 import type { DefaultToolResult } from '@alexkroman1/aai';
 import type { FormHTMLAttributes } from 'react';
 import { FunctionComponent } from 'react';
-import { FunctionComponentElement } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { isTerminal } from '@alexkroman1/aai/workflow-api';
 import { JSX } from 'react';
 import { MemoExoticComponent } from 'react';
-import { ProviderProps } from 'react';
 import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
 import { SessionErrorCode } from '@alexkroman1/aai/protocol';
@@ -7840,11 +8171,6 @@ export type AgentCustomEvent = {
 // @public
 export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
-// @internal
-export function ApiUrlChip(input: {
-    className?: string | undefined;
-}): JSX.Element;
-
 // @public
 export function AutoScroll(input: {
     children: ReactNode;
@@ -7862,9 +8188,6 @@ export type BaseOptions = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessi
     platformUrl?: string;
     theme?: ClientTheme;
 };
-
-// @internal
-export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
 
 // @public
 export function Button(input: {
@@ -8013,9 +8336,6 @@ export type FormValues = Record<string, unknown>;
 
 export { isTerminal }
 
-// @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
-
 // @public
 export const Markdown: MemoExoticComponent<FunctionComponent<MarkdownProps>>;
 
@@ -8095,12 +8415,6 @@ export type SessionError = {
 
 export { SessionErrorCode }
 
-// @internal
-export function SessionProvider(input: {
-    value: SessionCore;
-    children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<SessionCore | null>>;
-
 // @public
 export type SessionSnapshot = {
     readonly state: AgentState;
@@ -8117,11 +8431,6 @@ export type SessionSnapshot = {
     readonly started: boolean;
     readonly running: boolean;
 };
-
-// @internal
-export function SessionUrlChips(input: {
-    className?: string | undefined;
-}): JSX.Element;
 
 // @public
 export function SidebarLayout(input: {
@@ -8158,12 +8467,6 @@ export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HT
 // @public
 export function TextField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
 
-// @internal
-export function ThemeProvider(input: {
-    value?: ClientTheme | undefined;
-    children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<Required<ClientTheme>>>;
-
 // @public
 export type ToolCallInfo = {
     callId: string;
@@ -8192,9 +8495,6 @@ export interface ToolCallRowProps {
 // @public
 export type ToolCallRowVariant = "default" | "compact";
 
-// @internal
-export const ToolConfigContext: Context<ToolDisplayConfig>;
-
 // @public
 export type ToolDisplayConfig = Record<string, {
     icon?: string;
@@ -8203,11 +8503,6 @@ export type ToolDisplayConfig = Record<string, {
 
 // @public
 export const TRANSCRIBING_PLACEHOLDER = "\u2026";
-
-// @internal
-export function UiUrlChip(input: {
-    className?: string | undefined;
-}): JSX.Element;
 
 // @public
 export function UploadProgressBar(input: {
@@ -8423,4 +8718,136 @@ export type WorkflowSubmission<R = unknown> = {
 };
 
 export { WorkflowSummary }
+```
+
+## `@alexkroman1/aai-ui/internal`
+
+```ts
+import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
+import { Context } from 'react';
+import type { DefaultToolResult } from '@alexkroman1/aai';
+import { FunctionComponentElement } from 'react';
+import { JSX } from 'react';
+import { ProviderProps } from 'react';
+import { ReactNode } from 'react';
+import type { SessionErrorCode } from '@alexkroman1/aai/protocol';
+
+// @public
+type AgentCustomEvent = {
+    readonly id: number;
+    readonly event: string;
+    readonly data: unknown;
+};
+
+// @public
+type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+
+// @internal
+export function ApiUrlChip(input: {
+    className?: string | undefined;
+}): JSX.Element;
+
+// @internal
+export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
+
+// @public
+type ChatMessage = {
+    id: number;
+    role: "user" | "assistant";
+    content: string;
+};
+
+// @public
+type ClientTheme = {
+    bg?: string;
+    primary?: string;
+    text?: string;
+    surface?: string;
+    border?: string;
+};
+
+// @internal
+export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse | null>;
+
+// @public
+type SessionCore = {
+    getSnapshot(): SessionSnapshot;
+    subscribe(callback: () => void): () => void;
+    connect(options?: {
+        signal?: AbortSignal;
+    }): void;
+    cancel(): void;
+    resetState(): void;
+    reset(): void;
+    disconnect(): void;
+    start(): void;
+    toggle(): void;
+    end(): void;
+    [Symbol.dispose](): void;
+};
+
+// @public
+type SessionError = {
+    readonly code: SessionErrorCode;
+    readonly message: string;
+};
+
+// @internal
+export function SessionProvider(input: {
+    value: SessionCore;
+    children?: ReactNode;
+}): FunctionComponentElement<ProviderProps<SessionCore | null>>;
+
+// @public
+type SessionSnapshot = {
+    readonly state: AgentState;
+    readonly recording: boolean;
+    readonly apiUrl: string;
+    readonly contentVersion: number;
+    readonly messages: ChatMessage[];
+    readonly toolCalls: ToolCallInfo[];
+    readonly customEvents: AgentCustomEvent[];
+    readonly agentState: unknown;
+    readonly userTranscript: string | null;
+    readonly agentTranscript: string | null;
+    readonly error: SessionError | null;
+    readonly started: boolean;
+    readonly running: boolean;
+};
+
+// @internal
+export function SessionUrlChips(input: {
+    className?: string | undefined;
+}): JSX.Element;
+
+// @internal
+export function ThemeProvider(input: {
+    value?: ClientTheme | undefined;
+    children?: ReactNode;
+}): FunctionComponentElement<ProviderProps<Required<ClientTheme>>>;
+
+// @public
+type ToolCallInfo = {
+    callId: string;
+    name: string;
+    args: Record<string, DefaultToolResult>;
+    status: "pending" | "done";
+    result?: string | undefined;
+    seq: number;
+    afterMessageId: number;
+};
+
+// @internal
+export const ToolConfigContext: Context<ToolDisplayConfig>;
+
+// @public
+type ToolDisplayConfig = Record<string, {
+    icon?: string;
+    label?: string;
+}>;
+
+// @internal
+export function UiUrlChip(input: {
+    className?: string | undefined;
+}): JSX.Element;
 ```

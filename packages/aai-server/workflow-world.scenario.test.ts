@@ -94,13 +94,12 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { sleep } from "@alexkroman1/aai/internal";
 import { isRecord } from "@alexkroman1/aai/utils";
+import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai-runtime";
 import {
-  type CloseableDb,
   configureWorkflowWorld,
-  createPostgresDb,
   startWorkflowWorldIfDeclared,
   wdkAdapter,
-} from "@alexkroman1/aai-runtime";
+} from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 
