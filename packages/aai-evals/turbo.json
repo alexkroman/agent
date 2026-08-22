@@ -1,0 +1,41 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // `starter-expectations.test.ts` imports `EXPECTATIONS` and
+    // `checkCapabilities` from `../../scripts/starter-eval/expectations.mjs` and
+    // asserts directly over that data — so the corpus is an input to this
+    // package's UNIT tier, and `inputs` globs resolve relative to the PACKAGE.
+    // Without these entries, adding an expectation for a label no starter has
+    // replayed a cached green `aai-evals#test:coverage`: the very task the CI
+    // coverage matrix added so these suites are gated at all.
+    //
+    // Scoped here rather than in the root `globalDependencies` on purpose. The
+    // five entries there are files EVERY task reads (the lockfile, the root
+    // tsconfig, the slow config, a `globalSetup`, a `setupFiles`); this corpus
+    // is read by one package, and a global entry would re-hash every task in
+    // the workspace on every edit to it. `turbo.json`'s `check:eval` comment
+    // already names the same corpus-outside-the-package problem — that task is
+    // `cache: false` and therefore immune, which is why only the cached tier
+    // needed this.
+    //
+    // `$TURBO_DEFAULT$` and the two entries after it repeat the root task's
+    // inputs, which a package-level override replaces rather than extends.
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "../../vitest.shared.ts",
+        "$TURBO_ROOT$/scripts/starter-eval/**"
+      ]
+    },
+    "test:coverage": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "../../vitest.shared.ts",
+        "$TURBO_ROOT$/scripts/starter-eval/**"
+      ]
+    }
+  }
+}

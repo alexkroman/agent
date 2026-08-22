@@ -88,11 +88,16 @@
           "@alexkroman1/aai-ui/*",
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/*",
           "aai-guest",
           "aai-guest/*",
           "aai-server",
+          "aai-server/*",
           "aai-studio-client",
-          "aai-studio-server"
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*"
         ]
       }
     },
@@ -105,8 +110,11 @@
           "aai-guest",
           "aai-guest/*",
           "aai-server",
+          "aai-server/*",
           "aai-studio-client",
-          "aai-studio-server"
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*"
         ]
       }
     },
@@ -117,8 +125,11 @@
       "mustNot": {
         "importFrom": [
           "aai-server",
+          "aai-server/*",
           "aai-studio-client",
-          "aai-studio-server"
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*"
         ]
       }
     },
@@ -136,11 +147,78 @@
         "importFrom": [
           "@alexkroman1/aai-cli",
           "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/*",
           "aai-guest",
           "aai-guest/*",
           "aai-server",
+          "aai-server/*",
           "aai-studio-client",
-          "aai-studio-server"
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*"
+        ]
+      }
+    },
+    {
+      "name": "runtime-package-boundary",
+      "description": "aai-runtime is the published Node host runtime. It sits one level above the core SDK and below everything else: it may import @alexkroman1/aai and nothing else in the workspace. The CLI, the guest and the platform all depend on it, so an import in this direction would close a cycle — and it ships to users, so a private-package import here would be unresolvable in a consumer's install.",
+      "paths": [
+        "packages/aai-runtime/*.ts",
+        "packages/aai-runtime/integration/**/*.ts",
+        "packages/aai-runtime/providers/**/*.ts",
+        "packages/aai-runtime/telephony/**/*.ts",
+        "packages/aai-runtime/transports/**/*.ts"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-ui",
+          "@alexkroman1/aai-ui/*",
+          "aai-guest",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-client",
+          "aai-studio-client/*",
+          "aai-studio-server",
+          "aai-studio-server/*"
+        ]
+      }
+    },
+    {
+      "name": "server-package-boundary",
+      "description": "aai-server resolves aai-guest's BUILT ARTIFACT (aai-guest/harness, via createRequire().resolve) and must never import guest source. That is the other half of guest-package-boundary, and it was the half nothing checked: the guest is its own package precisely so the two cannot share modules, and a source import here would make the sandbox harness a library the server links against rather than an artifact it launches.",
+      "paths": "packages/aai-server/*.ts",
+      "mustNot": {
+        "importFrom": [
+          "aai-guest",
+          "aai-guest/*"
+        ]
+      }
+    },
+    {
+      "name": "studio-browser-boundary",
+      "description": "aai-studio-client is a browser bundle. It may import the core SDK and aai-ui; a platform, CLI or host-runtime import here would pull server code — and server credentials handling — into a bundle served to browsers. Same hazard as browser-package-boundary, for the repo's other front-end.",
+      "paths": [
+        "packages/aai-studio-client/src/*.ts",
+        "packages/aai-studio-client/src/*.tsx",
+        "packages/aai-studio-client/src/**/*.ts",
+        "packages/aai-studio-client/src/**/*.tsx"
+      ],
+      "mustNot": {
+        "importFrom": [
+          "@alexkroman1/aai-cli",
+          "@alexkroman1/aai-cli/*",
+          "@alexkroman1/aai-runtime",
+          "@alexkroman1/aai-runtime/*",
+          "aai-guest",
+          "aai-guest/*",
+          "aai-server",
+          "aai-server/*",
+          "aai-studio-server",
+          "aai-studio-server/*"
         ]
       }
     },

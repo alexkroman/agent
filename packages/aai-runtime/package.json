@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "check:publint": "publint",
-    "check:attw": "attw --pack --profile esm-only --entrypoints .",
+    "check:attw": "attw --pack --profile esm-only",
     "check:integration": "pnpm run test:integration",
     "check:scenario": "pnpm run test:scenario",
     "test:integration": "VITEST_INCLUDE=integration/**/*.integration.test.ts vitest run -c ../../vitest.slow.config.ts",

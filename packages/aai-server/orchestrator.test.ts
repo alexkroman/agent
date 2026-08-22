@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
+import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { expect, test } from "vitest";
 import {
   authHeaders,
@@ -209,11 +209,7 @@ test("client asset falls back to octet-stream for unknown extension", async () =
 
 // ── Favicons ───────────────────────────────────────────────────────────
 
-const defaultClientFavicon = (() => {
-  const require = createRequire(import.meta.url);
-  const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
-  return path.join(path.dirname(pkgPath), "dist", "default-client", "favicon.ico");
-})();
+const defaultClientFavicon = path.join(defaultClientDir(), "favicon.ico");
 
 test("agent favicon serves a custom client's stored favicon", async () => {
   const { fetch } = await createTestOrchestrator();

@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     "./package.json": "./package.json",
-    "./dist/*": "./dist/*",
     "./starters": {
       "@dev/source": "./src/starters.ts"
     }

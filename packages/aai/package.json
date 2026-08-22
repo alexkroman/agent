@@ -2,6 +2,11 @@
   "name": "@alexkroman1/aai",
   "version": "6.11.0",
   "type": "module",
+  "files": [
+    "dist",
+    "AGENT_GUIDE.md",
+    "skills"
+  ],
   "exports": {
     ".": {
       "@dev/source": "./index.ts",
