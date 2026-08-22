@@ -1,241 +1,271 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `aai-runtime:session` epoch 1.
+ * Epoch-1 TEMPLATE for the `aai-runtime:session` capability — the transport
+ * adapter for one socket, as it was written at epoch 1. Copy the file into your
+ * own carrier or gateway, edit the lines marked `←`, and leave the rest alone.
  *
- * See `../../../../aai/contracts/compatibility/agent/v3.ts` for what "frozen"
- * obliges and why the imports are relative.
+ * FROZEN. It must keep compiling for as long as epoch 1 is supported, so do not
+ * edit it to follow a change in this package's API: a compile error here is the
+ * finding, not a chore. Changing the API means a NEW epoch with a new template
+ * beside this one — never an edit to this file.
  *
- * One live session, written from the two positions that actually hold a
- * {@link SessionCore}: the SOCKET below it and the TRANSPORT above it.
+ * The session you are given by `runtime.createSession(…)` is one half of a
+ * conversation; the other half is a socket somebody else owns — a browser, a
+ * carrier's media stream, your own gateway. This is the adapter between them,
+ * front to back:
  *
- * - Below: bytes arrive on a {@link SessionWebSocket} and become
- *   `configure` / `onAudio` / `command` / `stop`. Nothing here parses audio —
- *   the binary frames are deliberately outside the event vocabulary.
- * - Above: a provider's frames become {@link TransportEventBody} values handed
- *   to `report`, which is the ONE way a transport says what it observed. There
- *   is no per-event method to call and no `on*` to register, and that is the
- *   point: an event the session records is an event a reader can replay.
+ * 1. Hand the session its ready config, at zero RTT, before anything else.
+ * 2. Start it, and hang up rather than hold a caller on a session that reported
+ *    a fault while starting.
+ * 3. Route inbound frames: binary is audio, text is a command, nothing else.
+ * 4. Report what only this adapter can see — a fault on ITS socket — into the
+ *    session's own event record.
+ * 5. Prime a resumed session from the retained events, and checkpoint on hangup.
  *
- * Then the two things a host keeps BESIDE the session — the retained
- * {@link SessionEventStream} a resume reads its conversation out of, and the
- * {@link StateSyncSession} record that decides whether a state push is worth
- * bytes.
+ * Outbound audio and events do NOT come back through here: they go to the
+ * `ClientSink` you passed to `createSession`. {@link canSend} is the guard that
+ * sink writes behind.
+ *
+ * Nothing runs on import: call {@link bridgeSocket} once per accepted socket.
  */
 
-import type { ReadyConfig, SessionCommand } from "@alexkroman1/aai/protocol";
+import type { Message } from "@alexkroman1/aai";
+import {
+  lenientParse,
+  type ReadyConfig,
+  SESSION_COMMAND_TYPES,
+  SessionCommandSchema,
+  type SessionEvent,
+} from "@alexkroman1/aai/protocol";
 
 import type {
   SessionCore,
   SessionEventPage,
   SessionEventStream,
   SessionWebSocket,
-  StateSyncSession,
-  StoredSessionEvent,
   TransportEventBody,
   TransportEventType,
 } from "../../../runtime-barrel.ts";
 
 /** `WebSocket.OPEN`, spelled rather than imported — this is the wire's number. */
-const OPEN = 1;
+const WS_OPEN = 1;
+
+/** Close code for "this session cannot serve you", not "you did something wrong". */
+const WS_CLOSE_INTERNAL = 1011;
+
+/** ← how many bytes you let queue on this socket before you stop writing. */
+const OUTBOUND_LIMIT_BYTES = 512 * 1024;
+
+/** How many retained events to read per page while priming a resume. */
+const REPLAY_PAGE = 200;
 
 /**
- * Wire a socket to a session.
+ * The only event type this adapter mints.
  *
- * `configure` goes first, at zero RTT, and the ordering is load-bearing rather
- * than tidy: a socket that has been open for seconds carrying nothing is a
- * wedged peer, not a slow one, and the browser client arms its handshake guard
- * on exactly that frame. Note it is an EVENT — `session.configured` — so it is
- * stamped and recorded like anything else, which is what a hand-written JSON
- * literal on the socket could never be.
+ * Everything else in a session's record is minted by the session itself, and
+ * reporting one of those from out here files a SECOND event for something
+ * already recorded under another id. Add a type to this set only when your
+ * socket is genuinely the thing that observed it — a carrier that does its own
+ * transcription, say.
  */
-export function wireSocket(ws: SessionWebSocket, core: SessionCore, config: ReadyConfig): void {
+const REPORTED_BY_THIS_ADAPTER: ReadonlySet<TransportEventType> = new Set(["error.reported"]);
+
+/** What your gateway keeps per accepted socket. */
+export type SocketBridge = {
+  /** The session's id — the handle a resume, a log line or an admin route uses. */
+  readonly sessionId: string;
+  /** Speak something the caller did not ask for; `false` when they cannot be. */
+  speakNow(text: string): boolean;
+  /** Stop the session. Idempotent from your side; safe after the socket died. */
+  close(): Promise<void>;
+};
+
+/**
+ * Wire one socket to one session.
+ *
+ * `configure` goes FIRST, before any await: a socket that has been open for
+ * seconds carrying nothing reads as a wedged peer, and the browser client arms
+ * its handshake guard on exactly that frame. It is an ordinary event, so it is
+ * stamped and recorded like everything else — which a JSON literal written
+ * straight onto the socket could never be.
+ */
+export function bridgeSocket(
+  core: SessionCore,
+  ws: SessionWebSocket,
+  config: ReadyConfig,
+): SocketBridge {
   core.configure(config);
 
   ws.addEventListener("message", (event) => {
-    const { data } = event;
-    // Text frames are commands and take the other path; everything binary is
-    // user audio, which is not a command and never enters the event vocabulary.
-    if (typeof data === "string") return;
-    if (data instanceof Uint8Array) core.onAudio(data);
-    else if (data instanceof ArrayBuffer) core.onAudio(new Uint8Array(data));
+    dispatchFrame(core, event.data);
   });
 
-  // A SYNCHRONOUS listener that hands the promise off itself: `addEventListener`
-  // discards what a listener returns, so an `async` one would surface a failed
-  // stop as an unhandled rejection instead of a logged shutdown failure.
+  // SYNCHRONOUS listeners that hand their promise off themselves.
+  // `addEventListener` discards what a listener returns, so an `async` one turns
+  // a failed stop into an unhandled rejection — a crash, where you wanted a log
+  // line.
   ws.addEventListener("close", (event) => {
-    void core.stop().catch((err: unknown) => console.error(`stop after ${event.code}`, err));
+    void core.stop().catch((err: unknown) => {
+      console.error(`stop after close ${event.code ?? "none"}`, err);
+    });
   });
+
+  ws.addEventListener("error", (event) => {
+    // Not fatal: a socket error is this adapter's problem, and the session may
+    // still be resumed onto a new one. Report it so it lands in the record the
+    // caller's transcript is read out of, instead of only in your logs.
+    report(core, {
+      type: "error.reported",
+      code: "connection",
+      message: event.message ?? "socket error",
+      fatal: false,
+    });
+  });
+
+  return {
+    sessionId: core.id,
+    speakNow: (text) => core.announce(text),
+    close: () => core.stop(),
+  };
 }
 
 /**
- * One client command, forwarded whole.
+ * Start the session, and decide whether the caller is worth keeping on the line.
  *
- * The socket layer parses the frame and hands the command over rather than
- * switching on `type` to pick one of five methods named after the five
- * commands — and an unrecognised type is a no-op inside, for the same
- * forward-compatibility reason the protocol's parser tolerates one.
+ * `faultCode` answers a different question from "did `start()` resolve": a
+ * provider that could not open at all reports a fatal error and lets the start
+ * finish, which is how a session that can never speak gets announced as ready.
+ * Check it, and hang up out loud instead.
  */
-export function forwardCommand(core: SessionCore, cmd: SessionCommand): void {
-  core.command(cmd);
+export async function startOrHangUp(core: SessionCore, ws: SessionWebSocket): Promise<boolean> {
+  await core.start();
+  if (core.faultCode === undefined) return true;
+  ws.close?.(WS_CLOSE_INTERNAL, core.faultCode);
+  return false;
 }
 
 /**
- * Whether this socket can take another audio chunk.
+ * One inbound frame.
  *
- * `bufferedAmount` is optional on the type so a minimal double stays
- * assignable, so a reader treats absence as "no opinion" and skips the guard
- * rather than assuming zero.
+ * Binary is user audio and text is a command; there is no third kind, and a
+ * zero-length binary frame is not audio — it carries no samples, and passing it
+ * on both confuses the provider and re-arms the idle timer, so a client sending
+ * empty frames on a timer holds a session open for free.
  */
-export function canSendAudio(ws: SessionWebSocket, limitBytes: number): boolean {
-  return ws.readyState === OPEN && (ws.bufferedAmount ?? 0) < limitBytes;
+export function dispatchFrame(core: SessionCore, data: unknown): void {
+  if (typeof data === "string") {
+    dispatchCommand(core, data);
+    return;
+  }
+  if (data instanceof Uint8Array) {
+    if (data.byteLength > 0) core.onAudio(data);
+    return;
+  }
+  if (data instanceof ArrayBuffer && data.byteLength > 0) core.onAudio(new Uint8Array(data));
 }
 
 /**
- * What a transport reports upward, in the protocol's own vocabulary.
+ * One text frame, forwarded WHOLE.
  *
- * `TransportEventBody` is the narrowed slice a transport may emit — twelve of
- * the session's event types, with the envelope left OFF, because `meta` is
- * minted once by the session's emitter. A transport that stamped its own would
- * mint a second id for an event the stream had already recorded under another.
+ * Do not switch on `cmd.type` here to pick one of five session methods named
+ * after the five commands — the session already does that, and a translation
+ * table between a vocabulary and itself is how a new command silently goes
+ * unhandled. An unparseable or unknown frame is dropped: the rate is
+ * client-controlled, so a log line per frame moves the abuse into your log.
  */
-export function reportTranscript(core: SessionCore, text: string, committed: boolean): void {
-  const event: TransportEventBody = committed
-    ? { type: "user-transcript.committed", text }
-    : { type: "user-transcript.updated", text };
+export function dispatchCommand(core: SessionCore, text: string): void {
+  const json = parseJson(text);
+  if (json === undefined) return;
+  const parsed = lenientParse(SessionCommandSchema, json, SESSION_COMMAND_TYPES);
+  if (parsed.ok) core.command(parsed.data);
+}
+
+/**
+ * Report something into the session's record — the one funnel, so the guard
+ * cannot be bypassed by a later caller reaching for `core.report` directly.
+ *
+ * The body carries NO envelope: `meta` is minted once, by the session's own
+ * emitter, which is also what appends the event to the retained stream.
+ */
+export function report(core: SessionCore, event: TransportEventBody): void {
+  if (!REPORTED_BY_THIS_ADAPTER.has(event.type)) return;
   core.report(event);
 }
 
-/** A provider failure the session survives — hence `fatal: false`. */
-export function reportSpeechFailure(core: SessionCore, message: string): void {
-  core.report({ type: "error.reported", code: "tts", message, fatal: false });
+/**
+ * Whether this socket will take another write. Your `ClientSink` calls it before
+ * every audio chunk.
+ *
+ * `bufferedAmount` is optional on the type so a minimal socket double stays
+ * assignable — absence means "no opinion", so skip the ceiling rather than read
+ * it as zero.
+ */
+export function canSend(ws: SessionWebSocket, bytes: number): boolean {
+  if (ws.readyState !== WS_OPEN) return false;
+  const buffered = ws.bufferedAmount;
+  return buffered === undefined || buffered + bytes <= OUTBOUND_LIMIT_BYTES;
 }
 
 /**
- * The two reports the session does NOT simply pass through, named as data.
+ * Prime a resumed session with what was already said.
  *
- * `tool.called` is EXECUTED in S2S mode — the tool step emits its own — and
- * `reply.completed` is the provider's claim rather than the turn's end, which
- * the session decides for itself once the audio is out.
- */
-export const HANDLED_BY_THE_SESSION: ReadonlySet<TransportEventType> = new Set([
-  "tool.called",
-  "reply.completed",
-]);
-
-/**
- * A reply's audio, from the transport's side: announce the reply, push chunks,
- * and then report the boundary.
+ * `hydrate` first, always: a process that never saw this session holds nothing
+ * in memory for it, and reading without hydrating returns an empty stream and
+ * silently resumes a caller into a conversation with no history.
  *
- * `onReplyStarted` is not an event because the wire has no `reply.started`;
- * `audio.completed` is, and it is a turn BOUNDARY the pacer queues behind
- * pending audio — sent early it truncates the reply, because the client's
- * playback worklet reads it as "this is all there is".
+ * Only the COMMITTED transcripts become history. An interim snapshot is a
+ * caption, and the last snapshot of an interrupted reply is not a record of
+ * anything that was said.
  */
-export function speakReply(core: SessionCore, replyId: string, chunks: Uint8Array[]): void {
-  core.onReplyStarted(replyId);
-  for (const chunk of chunks) core.onAudioChunk(chunk);
-  core.report({ type: "audio.completed" });
-}
-
-/**
- * Speak about something the caller did not just ask for — a durable run that
- * finished minutes later, with the caller still on the line.
- *
- * It reports FALSE rather than throwing when the transport has no such verb or
- * the session is already stopped, because the caller is a background run: there
- * is nobody to raise to, and "this session cannot be spoken to" is exactly what
- * a notifier needs in order to stop trying.
- */
-export function offerResult(core: SessionCore, summary: string): boolean {
-  return core.announce(`Tell the caller: ${summary}`);
-}
-
-/**
- * Whether this session is actually able to hold a conversation.
- *
- * `faultCode` exists because "started" and "working" are different questions: a
- * provider that could not open at all reports a fatal error and lets the
- * transport start anyway, which once logged a `tts: missing API key` and
- * `Session ready` 400 ms apart — a session that could never speak, announced as
- * ready.
- */
-export function isHealthy(core: SessionCore): boolean {
-  return core.faultCode === undefined;
-}
-
-/**
- * Read a session's retained events back, from a position.
- *
- * A read is BOUNDED by the tail as it stood when the read arrived rather than
- * holding a socket open, so a reader re-opens from where it left off — which is
- * what `page.tail` is for. The index is the cursor and the only authoritative
- * one; `meta.id` is the ingestion key, stable across re-reads, and the two are
- * not interchangeable.
- */
-export async function readTranscript(
+export async function primeFromRetained(
+  core: SessionCore,
   stream: SessionEventStream,
   sessionId: string,
-  from: number,
-): Promise<{ next: number; turns: string[] }> {
-  const page: SessionEventPage = await stream.read(sessionId, from, 200);
-  const turns: string[] = [];
-  for (const event of page.events) {
-    // Only the COMMITTED pair: an interim snapshot is a caption, and an
-    // interrupted reply's last snapshot is not a record of anything.
-    if (event.type === "user-transcript.committed") turns.push(`caller: ${event.text}`);
-    else if (event.type === "agent-transcript.committed") turns.push(`agent: ${event.text}`);
+): Promise<number> {
+  await stream.hydrate(sessionId);
+  const history: Message[] = [];
+  let from = 0;
+  for (;;) {
+    const page: SessionEventPage = await stream.read(sessionId, from, REPLAY_PAGE);
+    for (const event of page.events) {
+      const message = messageFor(event);
+      if (message !== undefined) history.push(message);
+    }
+    from += page.events.length;
+    if (page.events.length === 0 || from >= page.tail) break;
   }
-  return { next: page.tail, turns };
+  core.restoreHistory(history);
+  return from;
 }
 
 /**
- * Where the tail is now, and whether losing the process would cost anything.
+ * Get this call's record onto disk at hangup.
  *
- * Recording is synchronous and persisting is BATCHED — at turn boundaries and
- * on stop — so a crash loses at most the events since the last flush. That is
- * the trade a voice session makes to keep a Postgres round trip out of a turn
- * with a one-second time-to-first-token budget; a caller that needs the record
- * on disk right now asks for it.
+ * Recording is synchronous and PERSISTING is batched — at turn boundaries and on
+ * stop — so a crash costs at most the events since the last flush. That is the
+ * trade a voice turn makes to keep a database round trip out of a one-second
+ * time-to-first-token budget. A non-durable stream has nowhere to flush to, and
+ * says so.
  */
-export async function checkpoint(
-  stream: SessionEventStream,
-  sessionId: string,
-): Promise<{ tail: number; durable: boolean }> {
-  const tail = stream.tail(sessionId);
+export async function checkpoint(stream: SessionEventStream, sessionId: string): Promise<number> {
   if (stream.durable) await stream.flush(sessionId);
-  return { tail, durable: stream.durable };
+  return stream.tail(sessionId);
 }
 
-/**
- * The backend's own rows, as a state backend hands them back: an index and the
- * event's JSON, verbatim.
- *
- * Verbatim because the store is not a second copy of the protocol — re-parsing
- * and re-serializing an event would let the stored shape drift from the wire
- * shape — so a reader that only needs the position never pays to decode.
- */
-export function highestStoredIndex(rows: readonly StoredSessionEvent[]): number {
-  return rows.reduce((max, row) => (row.index > max ? row.index : max), -1);
+/** One retained event as history, or nothing if it is not something that was said. */
+function messageFor(event: SessionEvent): Message | undefined {
+  if (event.type === "user-transcript.committed") return { role: "user", content: event.text };
+  if (event.type === "agent-transcript.committed") {
+    return { role: "assistant", content: event.text };
+  }
+  return undefined;
 }
 
-/**
- * The per-session record the state-sync decision reads and writes.
- *
- * It lives beside the session's slot values, and holding it here rather than
- * keyed on a state object is what removed the sharp edge that arrangement had:
- * a resumed session inherited the same object and therefore the same record, so
- * a push aimed at the superseded socket counted as delivered to the new client.
- * A fresh client is stale by virtue of being new, which is a property of the
- * client and not of the state — which is why the caller can force a push.
- */
-export function stateSyncSessionOver(values: ReadonlyMap<string, unknown>): StateSyncSession {
-  let lastPushed: string | undefined;
-  return {
-    read: (key) => values.get(key),
-    lastPush: () => lastPushed,
-    recordPush: (json) => {
-      lastPushed = json;
-    },
-  };
+/** A client-supplied text frame is not a trusted JSON document. */
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
