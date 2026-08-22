@@ -298,6 +298,108 @@ DURABLY, outliving the session.
 
 ***
 
+### isRecord()
+
+```ts
+function isRecord(value: unknown): value is Record<string, unknown>;
+```
+
+Whether a value is a non-null, non-array object, narrowed to
+`Record<string, unknown>` so its fields can be read without a second cast.
+
+The narrowing is the point. `typeof value === "object" && value !== null` is
+three tokens anyone can write, which is exactly why it was written twelve
+times here — and it narrows to `object`, on which every field read is an
+error, so each site paid for it again with a cast
+(`(value as { kind?: unknown }).kind`). A cast is not a check: it says
+nothing about the value and stops reporting when the shape moves.
+
+Arrays are excluded because every caller is reading a NAMED field — `.type`,
+`.error`, `.kind`, `.then` — none of which an array has. For "any non-null
+object, arrays included", write the two comparisons inline; that case has one
+site in this repo and does not want a name.
+
+#### Parameters
+
+##### value
+
+`unknown`
+
+#### Returns
+
+`value is Record<string, unknown>`
+
+#### Example
+
+```ts
+import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
+
+function readStatus(body: string): string | undefined {
+  const parsed = safeJsonParse(body);
+  if (!isRecord(parsed)) return undefined;
+  return typeof parsed.status === "string" ? parsed.status : undefined;
+}
+```
+
+***
+
+### omitUndefined()
+
+```ts
+function omitUndefined<T>(obj: T): { [K in string | number | symbol]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined> };
+```
+
+Drop the `undefined`-valued entries of `obj`, typing every surviving key as
+optional-and-defined — exactly what `exactOptionalPropertyTypes` wants on
+the receiving end.
+
+Spread the result into the literal it belongs to; the keys are the object's
+own, so renaming one (`{ leadMs: audioLeadMs }`) works the same as passing
+shorthand.
+
+"Removed" means `undefined` and nothing else, so a `null` survives — a null
+value is a value; only `undefined` is an absence here. The `unknown extends`
+branch in the return type is written inline rather than named, so the one
+new symbol on the published surface is this function; what it says is that
+`Exclude<unknown, undefined>` is still `unknown`, which a field declared
+`body?: unknown` (the CLI's API client has one) then cannot hand to anything
+with a narrower parameter. `NonNullable<unknown> | null` is what "unknown,
+but not undefined" means, and it is what the `!== undefined` narrowing this
+replaces already produced. The check catches `any` too, which lands in the
+same place.
+
+#### Type Parameters
+
+##### T
+
+`T` *extends* `object`
+
+#### Parameters
+
+##### obj
+
+`T`
+
+#### Returns
+
+\{ \[K in string \| number \| symbol\]?: unknown extends T\[K\] ? NonNullable\<unknown\> \| null : Exclude\<T\[K\], undefined\> \}
+
+#### Example
+
+```ts
+import { omitUndefined } from "@alexkroman1/aai/utils";
+
+declare const name: string | undefined;
+declare const greeting: string | undefined;
+
+const config: { slug: string; name?: string; greeting?: string } = {
+  slug: "demo",
+  ...omitUndefined({ name, greeting }),
+};
+```
+
+***
+
 ### procedure()
 
 ```ts
@@ -3515,13 +3617,22 @@ type KeyedLock = (key: string, opts?: KeyedLockOptions) => Promise<() => void> &
 };
 ```
 
-The utilities written INSIDE a tool body.
+The utilities written INSIDE a tool body — all fifteen of them, which is the
+whole of `@alexkroman1/aai/utils`.
 
-The module behind them also holds the platform's slug contract, the
-`aai login` confirmation code, and the framework's own wire helpers, because
-it is the one the CLI can import without paying for zod. None of those is
-authoring API; they stay on `@alexkroman1/aai/utils`, which is where the CLI
-and the platform read them.
+**The rule is that the two lists agree**, because the split they used to
+describe was not one anybody could apply: `safeJsonParse` was here and
+`isRecord` — the guard you call on what it returns — was not, so a tool body
+needing both wrote two import lines for one line of helpers, and templates
+routed around it by taking the root's own names off `/utils` instead. That
+subpath's membership is a BUILD property (zero-zod, so the CLI can import it
+on every invocation), which is a fact about its graph rather than a statement
+about who reads it; nothing on it fails this barrel's own membership test.
+
+The narrower subpath stays, because it is what the CLI and the platform
+import — and because a tool body reaching for one helper should not have to
+name the root. Neither the slug contract nor the framework's wire helpers are
+involved either way: those left `sdk/utils.ts` for `@alexkroman1/aai/internal`.
 
 #### Type Declaration
 
@@ -3543,13 +3654,22 @@ type KeyedLockOptions = {
 };
 ```
 
-The utilities written INSIDE a tool body.
+The utilities written INSIDE a tool body — all fifteen of them, which is the
+whole of `@alexkroman1/aai/utils`.
 
-The module behind them also holds the platform's slug contract, the
-`aai login` confirmation code, and the framework's own wire helpers, because
-it is the one the CLI can import without paying for zod. None of those is
-authoring API; they stay on `@alexkroman1/aai/utils`, which is where the CLI
-and the platform read them.
+**The rule is that the two lists agree**, because the split they used to
+describe was not one anybody could apply: `safeJsonParse` was here and
+`isRecord` — the guard you call on what it returns — was not, so a tool body
+needing both wrote two import lines for one line of helpers, and templates
+routed around it by taking the root's own names off `/utils` instead. That
+subpath's membership is a BUILD property (zero-zod, so the CLI can import it
+on every invocation), which is a fact about its graph rather than a statement
+about who reads it; nothing on it fails this barrel's own membership test.
+
+The narrower subpath stays, because it is what the CLI and the platform
+import — and because a tool body reaching for one helper should not have to
+name the root. Neither the slug contract nor the framework's wire helpers are
+involved either way: those left `sdk/utils.ts` for `@alexkroman1/aai/internal`.
 
 #### Properties
 
@@ -5781,6 +5901,12 @@ Re-exports [isToolFailure](utils.md#istoolfailure)
 ### pushCapped
 
 Re-exports [pushCapped](utils.md#pushcapped)
+
+***
+
+### responseErrorMessage
+
+Re-exports [responseErrorMessage](utils.md#responseerrormessage)
 
 ***
 

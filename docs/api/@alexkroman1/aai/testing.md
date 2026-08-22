@@ -608,7 +608,7 @@ expect(toolOf(agentDef, "add_item").description).toContain("cart");
 ### withDiscoveredTools()
 
 ```ts
-function withDiscoveredTools(def: AgentDef, modules: ToolModules): AgentDef;
+function withDiscoveredTools<D>(def: D, modules: ToolModules): D;
 ```
 
 The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
@@ -621,11 +621,22 @@ default-export requirement, no nested files, and a name declared twice.
 
 A project with no `tools/` directory gets an empty glob and the def unchanged.
 
+Structural rather than `AgentDef`, the same as [toolOf](#toolof) and
+[runTool](#runtool) next door, and it hands back the def it was given — so a spec
+may pass the agent's default export, a bare `{ tools }` literal, or anything
+else carrying one, and keeps the type it passed in.
+
+#### Type Parameters
+
+##### D
+
+`D` *extends* [`ToolBearingAgent`](#toolbearingagent)
+
 #### Parameters
 
 ##### def
 
-[`AgentDef`](index.md#agentdef)
+`D`
 
 ##### modules
 
@@ -633,7 +644,7 @@ A project with no `tools/` directory gets an empty glob and the def unchanged.
 
 #### Returns
 
-[`AgentDef`](index.md#agentdef)
+`D`
 
 #### Example
 
