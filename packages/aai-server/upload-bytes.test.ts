@@ -8,13 +8,9 @@
  * `null` rather than pretending it can sign.
  */
 
+import { UPLOAD_KEY_PREFIX } from "@alexkroman1/aai-runtime";
 import { describe, expect, test } from "vitest";
-import {
-  createMemoryUploadBytes,
-  createSupabaseUploadBytes,
-  UPLOAD_KEY_PREFIX,
-  uploadKey,
-} from "./upload-bytes.ts";
+import { createMemoryUploadBytes, createSupabaseUploadBytes, uploadKey } from "./upload-bytes.ts";
 
 /** A `fetch` that records and answers whatever a spec scripted. */
 function scripted(answer: (url: string, init?: RequestInit) => Response) {
@@ -42,7 +38,8 @@ describe("where an upload's window lives", () => {
     // upload in the bucket on its first run, an upload having no referrer to be
     // found by. Anything else put in this bucket owes the same check.
     expect(uploadKey("digest-desk", "upl_a", 8_388_608)).toBe("uploads/digest-desk/upl_a/8388608");
-    expect(UPLOAD_KEY_PREFIX).toBe("uploads");
+    // The root is the runtime's constant, so the two sides share one literal.
+    expect(uploadKey("a", "b", 0).startsWith(`${UPLOAD_KEY_PREFIX}/`)).toBe(true);
     expect(uploadKey("a", "b", 0).startsWith("blobs/")).toBe(false);
   });
 });

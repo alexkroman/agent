@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Deploy an agent template to your own Node process with @alexkroman1/aai's runtime — no managed platform.",
+  "description": "Deploy an agent template to your own Node process with @alexkroman1/aai-runtime — no managed platform.",
   "engines": {
     "node": ">=24"
   },
@@ -11,7 +11,8 @@
     "start": "node server.mjs"
   },
   "dependencies": {
-    "@alexkroman1/aai": "^5.10.0",
-    "@alexkroman1/aai-ui": "^5.10.0"
+    "@alexkroman1/aai": "^6.11.0",
+    "@alexkroman1/aai-runtime": "^6.11.0",
+    "@alexkroman1/aai-ui": "^6.11.0"
   }
 }

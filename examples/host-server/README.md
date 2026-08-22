@@ -11,14 +11,14 @@ agent, the server supplies the voice pipeline.
 
 The whole server is [`server.mjs`](./server.mjs):
 
-```js
-import { createHostServer } from "@alexkroman1/aai/runtime";
+```ts
+import { createHostServer } from "@alexkroman1/aai-runtime";
 
 const server = createHostServer();
 await server.listen(3000);
 ```
 
-Requires `@alexkroman1/aai` ≥ 5.10.0.
+Requires `@alexkroman1/aai-runtime` ≥ 6.11.0.
 
 ```sh
 npm install
@@ -123,7 +123,7 @@ Four things follow, if you need more on the same hardware:
 caller. `listen()` binds loopback for that reason. Add your own before
 exposing it:
 
-```js
+```ts no-check
 const server = createHostServer({
   upgrade(req, socket) {
     if (req.headers.authorization === `Bearer ${process.env.TOKEN}`) return false; // fall through
@@ -149,7 +149,7 @@ pipeline, which is why one caller-supplied `ASSEMBLYAI_API_KEY` covers STT, the
 LLM gateway and TTS. To choose your own, declare it in `defaults` — descriptors
 are plain data, so this still costs no credential:
 
-```js
+```ts no-check
 import { anthropic } from "@alexkroman1/aai/llm";
 import { deepgram } from "@alexkroman1/aai/stt";
 import { cartesia } from "@alexkroman1/aai/tts";

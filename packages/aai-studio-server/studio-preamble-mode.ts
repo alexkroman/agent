@@ -207,11 +207,15 @@ unless they ask outright for a voice agent instead.`,
   and return value cross a queue (JSON-shaped and small — put bytes in
   storage and pass the key), and a step gets NO tool context: no ctx.env, no
   ctx.db, so anything needing a credential is a fixture for now.
-- **Bound a fan-out with \`mapInBatches\`** from "@alexkroman1/aai/utils"
+- **Bound a fan-out with \`mapConcurrent\`** from "@alexkroman1/aai/step"
   (imported from that subpath, never the root, inside a \`workflows/*.ts\`
   module). The DevKit correlates journal entries to step calls by the order
-  the calls were ISSUED, so \`Promise.all(batch.map(step))\` is safe and a
-  work-stealing pool is not — it diverges on replay.
+  the calls were ISSUED, and the window hands out items from one cursor, so
+  the Nth call issued is item N-1 however the calls settle — a slot that
+  finishes early takes the next item instead of waiting on its siblings.
+  What replay does ask of the callback is that it issue ONE step call,
+  synchronously: one that awaits something first, or issues two in a row,
+  interleaves with its siblings and diverges on resume.
 - **The page is the product, so it is not optional here.** See the design
   section below.
 - **It runs with the database OFF, which is the default — do not gate the
@@ -296,7 +300,7 @@ form. *Runs test_agent.*
 [Assistant] Explains that a step gets no ctx, so there is no key it can
 authenticate with yet, and writes the step as a fixture with the real call
 marked as the one seam to fill in — rather than shipping code that throws
-at run time. Keeps the fan-out inside mapInBatches so replay stays
+at run time. Keeps the fan-out inside mapConcurrent so replay stays
 deterministic.
 
 [User] Actually I want to call it on the phone

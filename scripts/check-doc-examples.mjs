@@ -33,13 +33,26 @@ import { REPO_ROOT as repo, runScaffoldTsc } from "./_scaffold-tsc.mjs";
 // resolve by the normal node_modules walk-up, exactly as templates do.
 const scratch = path.join(repo, `packages/aai-templates/.doc-examples-scratch-${process.pid}`);
 
-/** Doc-comment sources: published packages' source trees. */
-const SOURCE_GLOBS = ["packages/aai", "packages/aai-ui", "packages/aai-cli"];
+/**
+ * Doc-comment sources: published packages' source trees — ALL FOUR of them.
+ *
+ * `aai-runtime` was absent from the day the runtime split created it, so the
+ * package a self-hoster reads first had its seven `@example` blocks compiled
+ * by nothing. A new published package owes an entry here and one in
+ * `MARKDOWN_FILES`, or its doc comments are checked the way `aai/runtime`'s
+ * dead import was: by whoever copies them.
+ */
+const SOURCE_GLOBS = [
+  "packages/aai",
+  "packages/aai-runtime",
+  "packages/aai-ui",
+  "packages/aai-cli",
+];
 
 /**
  * Markdown sources users and coding agents read examples from.
  *
- * **The three PUBLISHED packages' READMEs are the ones npm renders**, so they
+ * **The PUBLISHED packages' READMEs are the ones npm renders**, so they
  * are the first examples a new user copies — and they were the one user-facing
  * markdown this list omitted, while the same packages' doc COMMENTS were
  * checked through `SOURCE_GLOBS`. `aai-ui/README.md` had carried
@@ -59,6 +72,15 @@ const SOURCE_GLOBS = ["packages/aai", "packages/aai-ui", "packages/aai-cli"];
  * exists to reject, and contradicted `packages/aai/README.md` on the same
  * screen. Nothing downstream regenerates when it changes — the markdown
  * rendering sets `readme: "none"`, so it reaches `docs/dist` only.
+ *
+ * **Every runnable example's README belongs here, and only one of the three
+ * did.** `examples/host-server/README.md` opens on the whole server in four
+ * lines and went on importing `@alexkroman1/aai/runtime` for as long as that
+ * subpath had been gone — an `ERR_PACKAGE_PATH_NOT_EXPORTED` for anyone who
+ * copied it, in the one file the example exists to be read from.
+ * `packages/aai-runtime/README.md` is the same specifier from the other side:
+ * a published package README npm renders, carrying the import that replaced
+ * it.
  */
 const MARKDOWN_FILES = [
   "README.md",
@@ -66,7 +88,9 @@ const MARKDOWN_FILES = [
   "packages/aai/README.md",
   "packages/aai-ui/README.md",
   "packages/aai-cli/README.md",
+  "packages/aai-runtime/README.md",
   "packages/aai-templates/scaffold/CLAUDE.md",
+  "examples/host-server/README.md",
   "examples/self-hosted-server/README.md",
 ];
 
@@ -223,18 +247,20 @@ for (const src of PROMPT_SOURCES) {
  * never lower it to make a run pass — a drop means examples stopped being
  * discovered, which is the bug.
  *
- * **MEASURED: 104**, with the three published packages' READMEs in
- * `MARKDOWN_FILES`. The floor once sat at 45 against 98 with the comment still
+ * The floor once sat at 45 against 98 with the comment still
  * claiming "49 at the time of writing", so more than HALF the corpus could
  * stop being discovered while the gate printed `all N doc examples compile ✓`
  * — a floor two doublings behind its actual is not much better than the zero
  * it replaced. The count is deterministic (same tree, same number), so the
  * margin here is only for fences legitimately deleted, not for run-to-run
  * spread. Re-measure and re-raise when the number moves; the run's own closing
- * line prints it. Measured 158 after the provider/aai-ui example sweep (was 100
- * against a then-actual of ~118).
+ * line prints it.
+ *
+ * **MEASURED: 160** — 151 before `aai-runtime` joined `SOURCE_GLOBS` (+7 doc
+ * comments) and `aai-runtime`/`host-server`'s READMEs joined `MARKDOWN_FILES`
+ * (+2 fences).
  */
-const MIN_EXAMPLES = 150;
+const MIN_EXAMPLES = 157;
 if (examples.length < MIN_EXAMPLES) {
   console.error(
     `check-doc-examples: extracted only ${examples.length} examples, expected at least ` +

@@ -16,7 +16,7 @@
 //
 // then open http://127.0.0.1:3000.
 
-import { createAgentServer } from "@alexkroman1/aai/runtime";
+import { createAgentServer } from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 // Node 24 strips the types natively, so the template's `.ts` is imported as-is
 // — no build step, and no second copy of the agent in JavaScript that could
