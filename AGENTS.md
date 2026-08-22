@@ -911,10 +911,8 @@ longer involve `aai` at all:
 | `WorkflowApiOptions` | `workflow-api.ts` — the SERVER handler's (`engine`, `token`); `@internal` | `workflow-client.ts` — the client's (`baseUrl`, `token`) |
 | `createWorkflowApi` | `workflow-api.ts` — the Node route handler; `@internal` | `workflow-client.ts` — the client |
 
-Do NOT rename the `aai-ui` half: it is contracted, so a rename costs an epoch
-and a frozen example. `aai-runtime` has no `contracts/` tree at all yet, so the
-runtime half of these four is the only one a rename is cheap on — read that as a
-gap in coverage, not a licence. No counterpart: `SessionCoreOptions`,
+Do NOT rename either half: both are contracted now, so a rename costs an epoch
+and a frozen example on each side. No counterpart: `SessionCoreOptions`,
 `SttSession`/`TtsSession` (`aai-runtime`, and on `aai/host-internal`),
 `SessionSnapshot`, `SessionError` (`aai-ui`).
 
@@ -1176,7 +1174,7 @@ and the section above admits how it gets made: a judgement from memory, where a
 
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
 `check:api-report` in `scripts/check.sh` and in the CI check job) closes that.
-Thirty **capabilities** — named slices of the authoring API, each
+Forty-two **capabilities** — named slices of the authoring API, each
 declared by a file under `<package>/contracts/entrypoints/` that may contain
 nothing but
 `export { … } from "<a published subpath>"` — get a report of their own, and what
@@ -1189,10 +1187,11 @@ node scripts/api-contracts.mjs --bump aai:tool --retain          # epoch N works
 node scripts/api-contracts.mjs --bump aai:tool --drop "<reason>"  # and why not
 ```
 
-**Two packages carry contracts, `aai` and `aai-ui`, and a capability is
-therefore QUALIFIED.** `@alexkroman1/aai-ui` is authored code in exactly the same
-sense as the SDK — a `client.tsx` names `client()`, `useAgentState`, `<Form>` and
-`useWorkflowRun` the way an `agent.ts` names `agent()` and `tool()`, and a
+**Three packages carry contracts — `aai`, `aai-ui` and `aai-runtime` — and a
+capability is therefore QUALIFIED.** `@alexkroman1/aai-ui` is authored code in
+exactly the same sense as the SDK — a `client.tsx` names `client()`,
+`useAgentState`, `<Form>` and `useWorkflowRun` the way an `agent.ts` names
+`agent()` and `tool()`, and a
 signature change there breaks a user's page — so its nine capabilities are
 versioned the same way (see "The authoring surface is versioned in epochs" in
 `packages/aai-ui/CLAUDE.md`). Capability names are unique only WITHIN a package:
@@ -1215,10 +1214,14 @@ uncovered.
 
 Four properties are load-bearing:
 
-- **A retained epoch obliges a frozen, compiling example.**
-  `contracts/compatibility/<capability>/v<N>.ts` is an authoring example written
-  the way that epoch was authored, and it sits under the package's own
+- **A retained epoch obliges a frozen, compiling artifact.**
+  `contracts/compatibility/<capability>/v<N>.ts` is written the way that epoch
+  was authored, and it sits under the package's own
   `tsconfig.json` — so **`pnpm typecheck` is the backward-compatibility gate**.
+  On `aai` and `aai-ui` it is a SNIPPET an author reads; on `aai-runtime` it is
+  a starter a host COPIES, because that is what its consumers do with it (see
+  "The published surface is versioned in epochs" in
+  `packages/aai-runtime/CLAUDE.md`). Either way the obligation is the same one.
   That is a test of
   compatibility rather than a claim about it, which is what the `.test-d.ts`
   files cannot be: they pin the CURRENT shape and move with the API. All

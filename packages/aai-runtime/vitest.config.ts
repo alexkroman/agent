@@ -21,7 +21,11 @@ export default defineConfig({
       "**/*.scenario.test.ts",
     ],
     coverage: {
-      exclude: [...sharedCoverageExclude, "fixtures/**", "integration/**"],
+      // `contracts/` is neither production source nor test infrastructure: the
+      // capability roots are re-export lists and the frozen examples are never
+      // executed, so both would count at 0% and drag the package under floors
+      // that have nothing to do with what they measure.
+      exclude: [...sharedCoverageExclude, "contracts/**", "fixtures/**", "integration/**"],
       // Ratchet: floors only move up. Seeded from the first measured run after
       // the split; raise to ~2-3 points below actuals when there is headroom.
       thresholds: { lines: 0, functions: 0, branches: 0, statements: 0 },

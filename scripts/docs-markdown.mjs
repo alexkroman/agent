@@ -172,6 +172,12 @@ const UNDOCUMENTED_SUBPATHS = {
       "orientation, and the signatures are in etc/*.api.md like every other " +
       "published package. Revisit if embedders ask for a rendered page — " +
       "then it gets its own, not a share of the SDK's.",
+    "./internal":
+      "Cross-package infrastructure re-exported from @alexkroman1/aai/" +
+      "host-internal, which is undocumented for the same reason on the SDK " +
+      "side: not semver-covered, and nothing an agent author or an embedder " +
+      "writes against. Its whole job is to keep those names OFF the root " +
+      "barrel a reader does autocomplete over.",
   },
 };
 

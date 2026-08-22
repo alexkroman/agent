@@ -1,0 +1,62 @@
+{
+  "db": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "keys": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "logging": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "providers": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "runtime": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "server": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "session": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "session-state": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "telephony": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "text": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "uploads": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "workflow": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  }
+}

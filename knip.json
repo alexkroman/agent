@@ -101,7 +101,10 @@
         "_test-utils.ts",
         "**/*-test-utils.ts",
         "integration/**/*.integration.test.ts",
-        "**/*.test.ts"
+        "**/*.test.ts",
+        // The capability contracts — same reason as `packages/aai` above.
+        "contracts/entrypoints/*.ts",
+        "contracts/compatibility/**/*.ts"
       ]
     },
     "packages/aai-ui": {

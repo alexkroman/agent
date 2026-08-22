@@ -39,6 +39,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai-cli/typecheck` — `packages/aai-cli/etc/typecheck.api.md`
 - `@alexkroman1/aai-cli/worker-bundler` — `packages/aai-cli/etc/worker-bundler.api.md`
 - `@alexkroman1/aai-runtime` — `packages/aai-runtime/etc/index.api.md`
+- `@alexkroman1/aai-runtime/internal` — `packages/aai-runtime/etc/internal.api.md`
 - `@alexkroman1/aai-ui/client-dir` — `packages/aai-ui/etc/client-dir.api.md`
 - `@alexkroman1/aai-ui` — `packages/aai-ui/etc/index.api.md`
 
@@ -6494,10 +6495,7 @@ type WorkflowBundleOutput = {
 import type { AgentConfig } from '@alexkroman1/aai/manifest';
 import type { AgentDef } from '@alexkroman1/aai';
 import { AgentEnv } from '@alexkroman1/aai/host-internal';
-import { builtinFetch } from '@alexkroman1/aai/host-internal';
-import { BuiltinToolOptions } from '@alexkroman1/aai/host-internal';
 import { ClientSink } from '@alexkroman1/aai/protocol';
-import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db } from '@alexkroman1/aai';
 import { Duplex } from 'node:stream';
 import { ExecuteTool } from '@alexkroman1/aai/host-internal';
@@ -6508,39 +6506,24 @@ import type { HostConfig } from '@alexkroman1/aai/protocol';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
 import type { IncomingMessage } from 'node:http';
-import { isPrivateIp } from '@alexkroman1/aai/host-internal';
 import { LanguageModel } from 'ai';
 import type { LlmProvider } from '@alexkroman1/aai/llm';
 import type { Message } from '@alexkroman1/aai';
 import { ModelMessage } from 'ai';
 import type { OwnedMap } from '@alexkroman1/aai/host-internal';
-import { pinnedFetch } from '@alexkroman1/aai/host-internal';
 import { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
-import { publishSpeechSynthesizer } from '@alexkroman1/aai/host-internal';
-import { publishStepEnv } from '@alexkroman1/aai/host-internal';
-import { publishStepFetch } from '@alexkroman1/aai/host-internal';
-import { publishStepReporter } from '@alexkroman1/aai/host-internal';
-import { publishUploadReader } from '@alexkroman1/aai/host-internal';
 import { ReadyConfig } from '@alexkroman1/aai/protocol';
-import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
-import { resolveAndAssertPublic } from '@alexkroman1/aai/host-internal';
-import { resolveBuiltin } from '@alexkroman1/aai/host-internal';
-import { ResolvedBuiltins } from '@alexkroman1/aai/host-internal';
 import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
-import { safeFetch } from '@alexkroman1/aai/host-internal';
-import { SANDBOX_ONLY_BUILTINS } from '@alexkroman1/aai/host-internal';
 import type { ServerResponse } from 'node:http';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai/protocol';
 import { SessionEventBody } from '@alexkroman1/aai/protocol';
 import { SlotStore } from '@alexkroman1/aai';
-import { SPEECH_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
-import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
-import { ssrfSafeFetch } from '@alexkroman1/aai/host-internal';
-import { StepFetch } from '@alexkroman1/aai/host-internal';
-import { StepReporter } from '@alexkroman1/aai/host-internal';
+import type { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import type { StepFetch } from '@alexkroman1/aai/host-internal';
+import type { StepReporter } from '@alexkroman1/aai/host-internal';
 import { StepResult } from 'ai';
 import { streamText } from 'ai';
 import { SttError } from '@alexkroman1/aai/host-internal';
@@ -6553,7 +6536,6 @@ import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
-import { ToolDefRecord } from '@alexkroman1/aai/host-internal';
 import type { ToolSchema } from '@alexkroman1/aai/manifest';
 import { ToolSet } from 'ai';
 import { TtsError } from '@alexkroman1/aai/host-internal';
@@ -6564,16 +6546,8 @@ import type { TtsProvider } from '@alexkroman1/aai/tts';
 import { TtsSession } from '@alexkroman1/aai/host-internal';
 import { TtsWordTiming } from '@alexkroman1/aai/host-internal';
 import { Unsubscribe } from '@alexkroman1/aai/host-internal';
-import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
-import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';
-import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
-import { UPLOAD_WRITES_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
-import { UploadAccess } from '@alexkroman1/aai/host-internal';
 import type { UploadInfo } from '@alexkroman1/aai/step';
-import { UploadReader } from '@alexkroman1/aai/host-internal';
-import { UPLOADS_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
-import { UploadWriteMeta } from '@alexkroman1/aai/host-internal';
-import { UploadWriter } from '@alexkroman1/aai/host-internal';
+import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import { WorkflowClient as WorkflowClient_2 } from '@alexkroman1/aai';
@@ -6609,10 +6583,6 @@ export interface AgentServerOptions extends PassthroughServerOptions {
 
 // @internal
 export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef;
-
-export { builtinFetch }
-
-export { BuiltinToolOptions }
 
 // @public
 export const CARRIER_CODECS: {
@@ -6679,8 +6649,6 @@ export function configureWorkflowWorld(opts: {
 
 // @internal
 export const consoleLogger: Logger;
-
-export { CONTAINED_ENV }
 
 // @public
 export function createAgentServer(options: AgentServerOptions): AgentServer;
@@ -6935,8 +6903,6 @@ export function isHostAllowed(env: Record<string, string>): boolean;
 // @internal
 export function isPathInside(dir: string, target: string): boolean;
 
-export { isPrivateIp }
-
 // @public
 export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
 
@@ -7012,8 +6978,6 @@ export type PassthroughServerOptions = {
     request?: ServerOptions["request"];
 };
 
-export { pinnedFetch }
-
 // @internal
 export interface PipelineTransportOptions {
     callbacks: TransportCallbacks;
@@ -7069,16 +7033,6 @@ export const PROVIDER_CREDENTIAL_ENVS: readonly string[];
 
 export { ProviderEnv }
 
-export { publishSpeechSynthesizer }
-
-export { publishStepEnv }
-
-export { publishStepFetch }
-
-export { publishStepReporter }
-
-export { publishUploadReader }
-
 // @public
 export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void;
 
@@ -7120,14 +7074,6 @@ export function requiredProviderEnvVars(agent: {
 export type ReservedDb = Db & {
     release(): void;
 };
-
-export { resolveAllBuiltins }
-
-export { resolveAndAssertPublic }
-
-export { resolveBuiltin }
-
-export { ResolvedBuiltins }
 
 // @public
 export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
@@ -7216,15 +7162,11 @@ export type S2sTransportOptions = {
     logger?: Logger;
 };
 
-export { safeFetch }
-
 // @internal
 export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: Logger): void;
 
 // @public
 export function salvageJson(input: string): Promise<string | null>;
-
-export { SANDBOX_ONLY_BUILTINS }
 
 // @public (undocumented)
 export type ServerOptions = {
@@ -7375,12 +7317,6 @@ export type SkipGreeting = boolean | (() => boolean);
 // @internal
 export const speakOverWebSocket: SpeechSynthesizer;
 
-export { SPEECH_UNAVAILABLE_MESSAGE }
-
-export { SpeechSynthesizer }
-
-export { ssrfSafeFetch }
-
 // @internal
 export function stampSessionEvent(body: SessionEventBody, now?: number): SessionEvent;
 
@@ -7415,15 +7351,11 @@ export type StateSyncSession = {
     recordPush(json: string): void;
 };
 
-export { StepFetch }
-
 // @internal
 type StepFetchHandle = {
     fetch: StepFetch;
     close(): Promise<void>;
 };
-
-export { StepReporter }
 
 // @public
 export type StoredSessionEvent = {
@@ -7516,8 +7448,6 @@ type ToolCallEvent = Extract<SessionEventBody, {
     type: "tool.called";
 }>;
 
-export { ToolDefRecord }
-
 // @internal
 export interface Transport {
     cancelReply(): void;
@@ -7569,12 +7499,8 @@ export const twilioCodec: CarrierCodec;
 
 export { Unsubscribe }
 
-export { UPLOAD_CHUNK_BYTES }
-
 // @public
 export const UPLOAD_KEY_PREFIX = "uploads";
-
-export { UPLOAD_PART_BYTES }
 
 // @public
 export const UPLOAD_STORAGE_BUCKET_ENV = "AAI_UPLOAD_STORAGE_BUCKET";
@@ -7584,12 +7510,6 @@ export const UPLOAD_STORAGE_KEY_ENV = "AAI_UPLOAD_STORAGE_KEY";
 
 // @public
 export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
-
-export { UPLOAD_TOKEN_RE }
-
-export { UPLOAD_WRITES_UNAVAILABLE_MESSAGE }
-
-export { UploadAccess }
 
 // @public
 export type UploadBlobs = {
@@ -7613,12 +7533,8 @@ export type UploadPart = {
     bytes: number;
 };
 
-export { UploadReader }
-
 // @public
 export const UPLOADS_TABLE = "aai_workflow_uploads";
-
-export { UPLOADS_UNAVAILABLE_MESSAGE }
 
 // @public
 export type UploadStore = UploadReader & {
@@ -7644,10 +7560,6 @@ export class UploadsUnavailableError extends Error {
 export class UploadTooLargeError extends Error {
     constructor(limit: number);
 }
-
-export { UploadWriteMeta }
-
-export { UploadWriter }
 
 // @internal
 export type WakeHintOptions = {
@@ -7782,6 +7694,104 @@ type WsSessionOptions = {
     keepaliveIntervalMs?: number;
     resumeFrom?: string;
 };
+```
+
+## `@alexkroman1/aai-runtime/internal`
+
+```ts
+import { builtinFetch } from '@alexkroman1/aai/host-internal';
+import { BuiltinToolOptions } from '@alexkroman1/aai/host-internal';
+import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
+import { isPrivateIp } from '@alexkroman1/aai/host-internal';
+import { pinnedFetch } from '@alexkroman1/aai/host-internal';
+import { publishSpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import { publishStepEnv } from '@alexkroman1/aai/host-internal';
+import { publishStepFetch } from '@alexkroman1/aai/host-internal';
+import { publishStepReporter } from '@alexkroman1/aai/host-internal';
+import { publishUploadReader } from '@alexkroman1/aai/host-internal';
+import { resolveAllBuiltins } from '@alexkroman1/aai/host-internal';
+import { resolveAndAssertPublic } from '@alexkroman1/aai/host-internal';
+import { resolveBuiltin } from '@alexkroman1/aai/host-internal';
+import { ResolvedBuiltins } from '@alexkroman1/aai/host-internal';
+import { safeFetch } from '@alexkroman1/aai/host-internal';
+import { SANDBOX_ONLY_BUILTINS } from '@alexkroman1/aai/host-internal';
+import { SPEECH_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
+import { SpeechSynthesizer } from '@alexkroman1/aai/host-internal';
+import { ssrfSafeFetch } from '@alexkroman1/aai/host-internal';
+import { StepFetch } from '@alexkroman1/aai/host-internal';
+import { StepReporter } from '@alexkroman1/aai/host-internal';
+import { ToolDefRecord } from '@alexkroman1/aai/host-internal';
+import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
+import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';
+import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
+import { UPLOAD_WRITES_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
+import { UploadAccess } from '@alexkroman1/aai/host-internal';
+import { UploadReader } from '@alexkroman1/aai/host-internal';
+import { UPLOADS_UNAVAILABLE_MESSAGE } from '@alexkroman1/aai/host-internal';
+import { UploadWriteMeta } from '@alexkroman1/aai/host-internal';
+import { UploadWriter } from '@alexkroman1/aai/host-internal';
+
+export { builtinFetch }
+
+export { BuiltinToolOptions }
+
+export { CONTAINED_ENV }
+
+export { isPrivateIp }
+
+export { pinnedFetch }
+
+export { publishSpeechSynthesizer }
+
+export { publishStepEnv }
+
+export { publishStepFetch }
+
+export { publishStepReporter }
+
+export { publishUploadReader }
+
+export { resolveAllBuiltins }
+
+export { resolveAndAssertPublic }
+
+export { resolveBuiltin }
+
+export { ResolvedBuiltins }
+
+export { safeFetch }
+
+export { SANDBOX_ONLY_BUILTINS }
+
+export { SPEECH_UNAVAILABLE_MESSAGE }
+
+export { SpeechSynthesizer }
+
+export { ssrfSafeFetch }
+
+export { StepFetch }
+
+export { StepReporter }
+
+export { ToolDefRecord }
+
+export { UPLOAD_CHUNK_BYTES }
+
+export { UPLOAD_PART_BYTES }
+
+export { UPLOAD_TOKEN_RE }
+
+export { UPLOAD_WRITES_UNAVAILABLE_MESSAGE }
+
+export { UploadAccess }
+
+export { UploadReader }
+
+export { UPLOADS_UNAVAILABLE_MESSAGE }
+
+export { UploadWriteMeta }
+
+export { UploadWriter }
 ```
 
 ## `@alexkroman1/aai-ui/client-dir`

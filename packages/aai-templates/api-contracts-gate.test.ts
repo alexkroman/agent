@@ -169,7 +169,7 @@ describe("capability contracts", () => {
   test("the contract tree is discovered, for every package that has one", () => {
     // A broken glob makes every assertion below vacuously pass, which is the
     // exact failure this file exists to catch one level up.
-    expect(packages.map((entry) => entry.pkg)).toEqual(["aai", "aai-ui"]);
+    expect(packages.map((entry) => entry.pkg)).toEqual(["aai", "aai-runtime", "aai-ui"]);
     expect(contracts.length, "no contracts parsed").toBeGreaterThanOrEqual(21);
     for (const entry of packages) {
       expect(entry.capabilities.length, `${entry.pkg} declares nothing`).toBeGreaterThan(0);
@@ -186,10 +186,23 @@ describe("capability contracts", () => {
     expect(ids).toContain("aai-ui:page");
     expect(ids).toContain("aai-ui:hooks");
     // A capability name is unique only WITHIN a package, which is why the CLI
-    // takes `aai-ui:workflow`. Both of these are real and separate contracts.
+    // takes `aai-ui:workflow`. All three of these are real and separate
+    // contracts — the SDK's authoring surface, the host's serving side, and the
+    // browser client — and `aai-runtime` made two more names ambiguous the same
+    // way (`session` with aai-ui, `uploads` with aai), which is what makes the
+    // CLI's refusal to guess load-bearing rather than pedantic.
     expect(ids.filter((id) => id.endsWith(":workflow"))).toEqual([
       "aai:workflow",
+      "aai-runtime:workflow",
       "aai-ui:workflow",
+    ]);
+    expect(ids.filter((id) => id.endsWith(":session"))).toEqual([
+      "aai-runtime:session",
+      "aai-ui:session",
+    ]);
+    expect(ids.filter((id) => id.endsWith(":uploads"))).toEqual([
+      "aai:uploads",
+      "aai-runtime:uploads",
     ]);
   });
 
@@ -197,8 +210,16 @@ describe("capability contracts", () => {
     expect(names.length, `${id} selects no names`).toBeGreaterThan(0);
     // A root re-exports and does nothing else. Anything that DECLARES would
     // put the contract's shape in this file rather than in the API.
+    //
+    // `export type { … } from` is a RE-EXPORT, not a declaration, and the
+    // lookahead is what tells them apart. A capability whose every name is a
+    // type collapses to that form under Biome, which no root did until
+    // `aai-runtime:session` and `:session-state` — so this parser reported the
+    // two healthiest possible roots as declaring something of their own.
     expect(
-      /^\s*(export\s+(?:const|function|class|interface|type|default)|declare)\s/m.test(source),
+      /^\s*(?:declare\s|export\s+(?:const|function|class|interface|default)\s|export\s+type\s+(?!\{))/m.test(
+        source,
+      ),
       `${id} declares something of its own. ${remedy}`,
     ).toBe(false);
     expect(source, `${id} re-exports from nowhere`).toMatch(/\bfrom\s+"/);

@@ -1,0 +1,22 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "logging",
+  "epoch": 1,
+  "sha256": "bb721e321cc647ff4fbf6a766c93c2a3bb063180bf5c8eaba1aea3ec26424b53",
+  "exports": [
+    "DEFAULT_LOG_BUFFER_LINES",
+    "DEFAULT_LOG_LINE_BYTES",
+    "DEFAULT_LOG_PAGE_LINES",
+    "LOG_LINE_TRUNCATED",
+    "LogBuffer",
+    "LogBufferOptions",
+    "LogContext",
+    "LogFn",
+    "LogLevel",
+    "LogLine",
+    "LogPage",
+    "LogStream",
+    "Logger",
+    "createLogBuffer"
+  ]
+}

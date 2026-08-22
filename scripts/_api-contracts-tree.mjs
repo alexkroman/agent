@@ -64,6 +64,10 @@ const NON_AUTHORING_SUBPATHS = {
     "./host-internal":
       "the SDK internals @alexkroman1/aai-runtime needs across the package boundary; not semver-covered",
   },
+  "aai-runtime": {
+    "./internal":
+      "the same SDK internals passed on for aai-server, aai-cli and aai-guest — the re-export half of aai's own ./host-internal exemption, which is per SUBPATH and so did not survive being re-published on this package's root barrel",
+  },
 };
 
 export const rel = (path) => relative(ROOT, path);

@@ -16,10 +16,10 @@ import { errorMessage } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import {
   createWorkflowSurface,
-  publishStepEnv,
   type SessionRuntime,
   type WorkflowSurface,
 } from "@alexkroman1/aai-runtime";
+import { publishStepEnv } from "@alexkroman1/aai-runtime/internal";
 import type { WebSocket } from "ws";
 import type { AgentDef, CreateGuestRuntime, GuestRuntime } from "./harness-types.ts";
 import type { StudioSession } from "./studio-session.ts";

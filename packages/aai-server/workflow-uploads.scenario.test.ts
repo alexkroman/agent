@@ -44,11 +44,10 @@ import {
   createMemoryUploadBlobs,
   createPostgresDb,
   createUploadStore,
-  UPLOAD_CHUNK_BYTES,
-  UPLOAD_PART_BYTES,
   UPLOADS_TABLE,
   type UploadStore,
 } from "@alexkroman1/aai-runtime";
+import { UPLOAD_CHUNK_BYTES, UPLOAD_PART_BYTES } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
 

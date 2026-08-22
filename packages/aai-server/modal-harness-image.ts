@@ -56,7 +56,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { CONTAINED_ENV } from "@alexkroman1/aai-runtime";
+import { CONTAINED_ENV } from "@alexkroman1/aai-runtime/internal";
 import type { App, Image, ModalClient, Sandbox } from "modal";
 import pTimeout from "p-timeout";
 import { keyedMemoAsync } from "./_memo.ts";

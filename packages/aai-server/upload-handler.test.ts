@@ -9,7 +9,7 @@
  * an upload byte never touches a guest.
  */
 
-import { UPLOAD_PART_BYTES } from "@alexkroman1/aai-runtime";
+import { UPLOAD_PART_BYTES } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";

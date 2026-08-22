@@ -182,12 +182,6 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     createWorkflowSurface: vi.fn(async () => undefined),
     handleWorkflowRequest: vi.fn(() => false),
     startWorkflowWorldIfDeclared: vi.fn(async () => undefined),
-    // What a `"use step"` body reads with `stepEnv()`. Inert for the same
-    // reason as the trio above — these specs serve no workflows — but it must
-    // be PRESENT: a mocked module answers a missing export with a throw, so
-    // omitting it fails every spec that reaches `buildServer` rather than the
-    // one that cares.
-    publishStepEnv: vi.fn(),
     // `viteDevConfig` uses this as a proxy KEY, so it has to be a string here
     // or the config these specs build has a hole in it. Spelled out rather
     // than imported: this module IS the factory for the
@@ -197,6 +191,19 @@ export function aaiRuntimeModule(): Record<string, unknown> {
     // asserted in `_dev-server-serve.test.ts`, which does not mock the barrel.
     WORKFLOW_API_PREFIX: "/workflows",
   };
+}
+
+/**
+ * The `@alexkroman1/aai-runtime/internal` half of the same mock.
+ *
+ * `publishStepEnv` moved to that subpath when the root barrel was curated, and
+ * a factory for the barrel stopped covering it — silently, since the real one
+ * only writes a `Symbol.for` slot and these specs serve no workflows, so every
+ * spec kept passing while the mock covered nothing. Split rather than dropped:
+ * what these specs assert is that `buildServer` publishes no real env.
+ */
+export function aaiRuntimeInternalModule(): Record<string, unknown> {
+  return { publishStepEnv: vi.fn() };
 }
 
 export function configModule(): Record<string, unknown> {

@@ -1,0 +1,21 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "telephony",
+  "epoch": 1,
+  "sha256": "9b246ce4422d4e9f8b63b866b8fb431148afb8e3fb42d3303f035f5a71c0c5b1",
+  "exports": [
+    "CARRIER_CODECS",
+    "CARRIER_PARAM",
+    "CarrierCodec",
+    "CarrierInbound",
+    "CarrierName",
+    "TELEPHONY_PATH",
+    "TELEPHONY_SAMPLE_RATE",
+    "TelephonyBridgeOptions",
+    "carrierByName",
+    "createTelephonyBridge",
+    "startTelephonySession",
+    "telnyxCodec",
+    "twilioCodec"
+  ]
+}

@@ -22,7 +22,7 @@
  */
 
 import { sleep } from "@alexkroman1/aai/internal";
-import { CONTAINED_ENV } from "@alexkroman1/aai-runtime";
+import { CONTAINED_ENV } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, it } from "vitest";
 import {
   type FakeProc,

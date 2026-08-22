@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "session-state",
+  "epoch": 1,
+  "sha256": "4c6046165a7d16abfb5f96e3c7704857b1c63af970c2bd77bec9bd1337b4e9cb",
+  "exports": ["SessionStateBackend", "SessionStateStore"]
+}
