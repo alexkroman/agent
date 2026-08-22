@@ -142,23 +142,35 @@ export type { SlotStore, StateProjection } from "./sdk/session-state.ts";
 export * from "./sdk/spoken.ts";
 export * from "./sdk/types.ts";
 /**
- * The utilities written INSIDE a tool body.
+ * The utilities written INSIDE a tool body — all fifteen of them, which is the
+ * whole of `@alexkroman1/aai/utils`.
  *
- * The module behind them also holds the platform's slug contract, the
- * `aai login` confirmation code, and the framework's own wire helpers, because
- * it is the one the CLI can import without paying for zod. None of those is
- * authoring API; they stay on `@alexkroman1/aai/utils`, which is where the CLI
- * and the platform read them.
+ * **The rule is that the two lists agree**, because the split they used to
+ * describe was not one anybody could apply: `safeJsonParse` was here and
+ * `isRecord` — the guard you call on what it returns — was not, so a tool body
+ * needing both wrote two import lines for one line of helpers, and templates
+ * routed around it by taking the root's own names off `/utils` instead. That
+ * subpath's membership is a BUILD property (zero-zod, so the CLI can import it
+ * on every invocation), which is a fact about its graph rather than a statement
+ * about who reads it; nothing on it fails this barrel's own membership test.
+ *
+ * The narrower subpath stays, because it is what the CLI and the platform
+ * import — and because a tool body reaching for one helper should not have to
+ * name the root. Neither the slug contract nor the framework's wire helpers are
+ * involved either way: those left `sdk/utils.ts` for `@alexkroman1/aai/internal`.
  */
 export {
   createKeyedLock,
   errorDetail,
   errorMessage,
+  isRecord,
   isToolFailure,
   type KeyedLock,
   type KeyedLockOptions,
   KeyedLockTimeoutError,
+  omitUndefined,
   pushCapped,
+  responseErrorMessage,
   safeJsonParse,
   type ToolFailure,
   toolFailure,

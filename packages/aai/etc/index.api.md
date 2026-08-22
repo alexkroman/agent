@@ -622,6 +622,9 @@ type InlineToolsField = "tools";
 type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
 
 // @public
+export function isRecord(value: unknown): value is Record<string, unknown>;
+
+// @public
 export function isToolFailure(value: unknown): value is ToolFailure;
 
 // @public (undocumented)
@@ -662,6 +665,11 @@ export const MAX_TOOL_RESULT_CHARS = 4000;
 export type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+};
+
+// @public
+export function omitUndefined<T extends object>(obj: T): {
+    [K in keyof T]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined>;
 };
 
 // @public
@@ -747,6 +755,9 @@ export interface ResolveOneOptions<T> {
     label?: string;
     score?: (candidate: T, text: string) => number;
 }
+
+// @public
+export function responseErrorMessage(res: Response, label?: string): Promise<string>;
 
 // @public
 export type S2sAgentParams = SharedAgentParams & {

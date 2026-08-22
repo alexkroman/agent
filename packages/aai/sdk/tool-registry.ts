@@ -37,7 +37,7 @@
 
 import { isRecord } from "./is-record.ts";
 import type { ToolInputSchema } from "./schema.ts";
-import type { AgentDef, ToolDef } from "./types.ts";
+import type { ToolDef } from "./types.ts";
 
 /**
  * The name grammar. Snake_case, leading letter, because the name is what the
@@ -159,9 +159,16 @@ export function toolRegistry(modules: ToolModules): ToolRegistry {
  * what this catches is a hand-written `export default { … tools: {…} }` that
  * skipped `agent()`, and a second `withTools` over a def that already has one.
  *
+ * Structural rather than `AgentDef`, and it hands back what it was given: a
+ * caller keeps whatever else its def carries, and nothing this returns is
+ * described by a type the caller did not already name.
+ *
  * @public
  */
-export function withTools(def: AgentDef, registry: ToolRegistry): AgentDef {
+export function withTools<D extends { readonly tools: ToolRegistry }>(
+  def: D,
+  registry: ToolRegistry,
+): D {
   for (const name of Object.keys(registry)) {
     if (def.tools[name] !== undefined) {
       throw new Error(

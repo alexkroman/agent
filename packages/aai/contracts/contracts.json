@@ -93,8 +93,8 @@
     }
   },
   "testing": {
-    "current": 20,
-    "supported": [2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+    "current": 21,
+    "supported": [2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
     "dropped": {
       "1": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
       "10": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",

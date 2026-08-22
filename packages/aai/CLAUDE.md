@@ -49,8 +49,13 @@ magic number; the zod-free helpers the CLI loads on every invocation), so a
 wildcard put a jitter-buffer depth, a WebSocket close code and the platform's
 slug regex in an agent author's autocomplete beside `greeting`. Measured before
 the split: **175 exports, 71 of them `@internal`, and 160 unused by any of the
-fourteen templates** — eleven symbols covered every one. It is 93 now (count
+fourteen templates** — eleven symbols covered every one. It is 96 now (count
 it in `API-EXPORTS.json`) and **none is `@internal`**, the property to preserve.
+
+**`sdk/utils.ts` is now named WHOLE** — all fifteen of its exports are here,
+because the split it described was not one an author could apply:
+`safeJsonParse` was on the root and `isRecord`, the guard on its result, was
+not. `sdk/constants.ts` is still a real subtraction.
 
 The membership test for anything added later: **a symbol belongs here if an
 `agent.ts`, a tool module, or a `workflow()` would NAME it.** A budget the
@@ -69,9 +74,9 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` | The AUTHORING surface, and only that: `agent()`/`tool()`/`sessionSlot()`/`workflow()`, the types they take and return, `assemblyAIPipeline()`/`assemblyAIS2s()`, and the `DEFAULT_*` constants that document an `agent()` field. See "The root barrel is CURATED" above |
-| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published and why the module carries no test-runner dependency. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createUnusedDb()` / `createStubWorkflows()` are the rejecting `db`/`ctx.workflows` it defaults to. Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`withDiscoveredTools(def, modules)`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs — it takes the glob's RESULT rather than a directory (`import.meta.glob` is expanded against the file containing it and cannot take a variable), and a `readdir` + `import()` is refused because it resolves the tools through Node instead of the test runner and hands them a second copy of this SDK. Each helper's own doc carries the rest; see the `_test-utils.ts` section of the root guide |
+| `@alexkroman1/aai/testing` | `sdk/testing.ts` (direct) | Test helpers for an agent author's OWN project, which is why they are published and why the module carries no test-runner dependency. `createToolContext(overrides?)` builds a full `ToolContext` with inert defaults, a recording `send` (`ctx.sent`) and a distinct `sessionId` per call; `createUnusedDb()` / `createStubWorkflows()` are the rejecting `db`/`ctx.workflows` it defaults to. Then the fakes a tool's COLLABORATORS are driven by — `stubGenerate`, `stubGateway`/`stubUploads`, `createRunSnapshot`/`createProgressStream`, and `toolOf`/`runTool` for reaching a tool by the name the model calls it by. **`withDiscoveredTools(def, modules)`** is the one a project whose tools are FILES cannot do without: `agent.ts`'s default export carries only the INLINE tools, so a spec passes `import.meta.glob("./tools/*.ts", { eager: true })` and gets the def a DEPLOYED agent runs — it takes the glob's RESULT rather than a directory (`import.meta.glob` is expanded against the file containing it and cannot take a variable), and a `readdir` + `import()` is refused because it resolves the tools through Node instead of the test runner and hands them a second copy of this SDK. Generic over `ToolBearingAgent`, which keeps `AgentDef` and the sixteen declarations behind it off this subpath's contract. Each helper's own doc carries the rest; see the `_test-utils.ts` section of the root guide |
 | `@alexkroman1/aai/testing/vitest` | `sdk/testing-vitest.ts` (direct) | `installStubGateway(replies, opts?)` — the fake above, installed as the global `fetch`, returning its call log. The one place a test-runner dependency is allowed, so the rule the subpath above states stays true: `vitest` is an OPTIONAL peer, and importing THIS is what pulls it. A helper belongs here only when its remaining content is the installation — the fake itself stays framework-agnostic next door |
-| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zero-dependency helpers a TOOL body reaches for, and nothing else: `errorMessage`/`errorDetail`, `responseErrorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, and `createKeyedLock`/`withLock`. Fifteen exports, one reader. **It was 79, and the reason is worth keeping**: this subpath's membership rule was a BUILD property — zod-free, so the CLI can import it on every invocation without a startup cost — which is true, still enforced, and not something anybody imports BY. Nobody reaches for a module because of its dependency graph, so three unrelated audiences accumulated on one import line. The `"use step"` vocabulary is `/step` now; the platform contracts and wire helpers are on `/internal`. `createKeyedLock`'s `p-timeout` (2.4 KB) is the one measured exception to the zero-dependency rule — the module doc owns it |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | The zero-dependency helpers a TOOL body reaches for, and nothing else: `errorMessage`/`errorDetail`, `responseErrorMessage`, `safeJsonParse`, `toolFailure`/`isToolFailure`, `pushCapped`, `isRecord`, `omitUndefined`, and `createKeyedLock`/`withLock`. Fifteen exports, one reader — and all fifteen are on the ROOT too, so this is the path for a tool body that wants one helper without naming the root, never a name reachable only here. **It was 79**, because the membership rule was a BUILD property — zod-free, so the CLI pays no startup cost — which is a fact about its graph rather than an audience, and three unrelated readers piled onto one import line. The `"use step"` vocabulary is `/step` now, the platform contracts and wire helpers `/internal`. `createKeyedLock`'s `p-timeout` is the one exception to zero-dependency; its module doc owns it |
 | `@alexkroman1/aai/step` | `sdk/step-barrel.ts` | The vocabulary a `"use step"` body is written against, from one import path — the half of `/utils` that has an AUDIENCE rather than a build property. `mapConcurrent` (a WINDOW over a cursor, so a slow item costs only itself), `stepEnv`/`requireStepEnv` (a step body has no `ToolContext`), **`stepFetch`** + `multipartBody` (HTTP/1.1-pinned: `fetch` speaks h2, and a fan-out on one connection turns a rate limit into an unreadable stream reset), `report`/`emit` (what a page's progress stream renders), `stepGenerate` (one `fetch` to the LLM gateway on the agent's own key, since the AI SDK would be megabytes in a ~7 KB artifact) and `stepGenerateJson`/`stripJsonFence`, and the audio round trip both ways — **`writeUpload`**/`readUpload`/`uploadInfo`, **`stepSpeak`** + `encodeWav`, and `stepTranscribe`{`Upload`,`Submit`,`Poll`} for the async job API or `stepTranscribeSync` for the one-request one. Plus `isTransientStatus`/`retryAfter`. The zero-zod budget still applies and now has its own reason: a `workflows/*.ts` module is bundled separately, so the root barrel's graph would ride into the step bundle. **The module doc owns the rest** |
 | `@alexkroman1/aai/step-errors` | `sdk/step-errors.ts` (direct) | `toStepError`/`throwStepError`/`throwFatalStepError` — the failure a `"use step"` body throws, classified into the DevKit's `FatalError`/`RetryableError`. Its own subpath because it is the one authoring module importing `workflow`, which `/utils` may not; the module doc carries the rest |
 | `@alexkroman1/aai/slugify` | `host/slugify.ts` (direct) | `slugifyName` — how a human name BECOMES a slug (transliterating, `decamelize: false`), for the CLI, the platform server, and the studio. Separate from the contract in `sdk/slug.ts` on purpose: that one is dependency-free and rides every agent bundle, this one pulls the transliteration tables. Nothing on the SDK hot path may import it |
@@ -231,7 +236,6 @@ present in the `agent()` config:
   property test, which shrank the last one to two commands: `session.ready`, then
   a transient drop.
 
-The default injection runs at every mode-derivation site
 The default injection runs at every mode-derivation site — `toAgentConfig`
 (so it is baked into deployed configs at build time) and `createRuntime`'s
 provider resolution — before `assertProviderTriple`.
@@ -782,7 +786,7 @@ replaced; what follows is the index plus the rule and the adopters.**
   contended mutation must fail rather than queue. No template demonstrates it
   any more, which is recorded in `template-api-allowlist.json` rather than being
   an oversight.
-- **`mapConcurrent(items, size, run)`** (`sdk/map-concurrent.ts`, `/utils` — the
+- **`mapConcurrent(items, size, run)`** (`sdk/map-concurrent.ts`, `/step` — the
   other PUBLIC one) — bounded fan-out inside a durable workflow body: a WINDOW
   over a cursor, so a slow item costs only itself. It was `mapInBatches`
   (sequential `Promise.all` batches, kept as a deprecated alias) on the belief
@@ -814,11 +818,6 @@ replaced; what follows is the index plus the rule and the adopters.**
   the shared default it replaced made a shutdown grace skip its own drains), and
   why an abort resolves with the listener detached. Not a timeout (`p-timeout`,
   rule 3), not a yield (`flush()`/`tick()`, rule 4).
-
-  **Never write a control character as a source literal.** A raw NUL in
-  `host/workflow-notify.ts` made `git grep` call the file BINARY, so it was
-  silently exempt from every repo gate — all of which are `git grep` — and had
-  grown the sixth `sleep` where nothing could see it. Use `\u0000`.
 - **`ToolFailure` / `isToolFailure()` / `toolFailure(message)`**
   (`sdk/utils.ts`, root and `/utils`) — the `{ error: string }` object a tool
   returns for a failure the MODEL should see and recover from, its guard, and
