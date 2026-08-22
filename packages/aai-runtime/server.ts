@@ -47,6 +47,13 @@ export type {
   SessionRuntime,
 } from "./server-types.ts";
 
+/**
+ * Default bind address. Loopback, not every interface: this server has no
+ * request authentication of its own, so binding `0.0.0.0` by default put a
+ * developer's agent — and the provider credentials backing it — in reach of
+ * anyone on the same network (a shared office or cafe LAN). Exposing it is now
+ * an explicit choice by the caller.
+ */
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
 // A socket this server will not serve is turned away with a REASON — see

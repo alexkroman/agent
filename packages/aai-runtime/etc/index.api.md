@@ -19,7 +19,7 @@ import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { HostConfig } from '@alexkroman1/aai/protocol';
 import { HostCredentialEnv } from '@alexkroman1/aai/host-internal';
-import http from 'node:http';
+import type http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import { isPrivateIp } from '@alexkroman1/aai/host-internal';
 import { LanguageModel } from 'ai';
