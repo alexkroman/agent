@@ -4,9 +4,8 @@ import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import {
   createToolContext,
   parseToolInput,
-  runTool,
-  type TestToolContext,
   toolInputIssues,
+  toolRunner,
   withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
@@ -26,15 +25,11 @@ const agentDef = withDiscoveredTools(
 
 /**
  * `runTool` takes the context in the ARGUMENTS' place when a tool needs none,
- * so this wrapper forwards its third parameter as either — which is why it is
- * one signature rather than an overload pair. An omitted context is a fresh
- * one, i.e. a distinct session with an empty slot.
+ * so `toolRunner`'s second parameter takes either — which is why it is one
+ * signature rather than an overload pair. An omitted context is a fresh one,
+ * i.e. a distinct session with an empty slot.
  */
-const run = (
-  name: string,
-  argsOrCtx?: Record<string, unknown> | TestToolContext,
-  ctx?: TestToolContext,
-) => runTool(agentDef, name, argsOrCtx, ctx);
+const run = toolRunner(agentDef);
 
 describe("night-owl template", () => {
   test("config passes manifest validation", () => {

@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { isToolFailure } from "@alexkroman1/aai";
-import { runTool, toolInputIssues, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { toolInputIssues, toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import authoredAgent from "./agent.ts";
 import { excerptAround, type FdaLabel, toDrugInfo } from "./fda.ts";
@@ -41,7 +41,7 @@ const agentDef = withDiscoveredTools(
  * distinct session — right for a stateless tool, and never what two calls
  * sharing state want.
  */
-const run = (name: string, args: Record<string, unknown>) => runTool(agentDef, name, args);
+const run = toolRunner(agentDef);
 
 const IBUPROFEN: FdaLabel = {
   openfda: { generic_name: ["IBUPROFEN"], brand_name: ["Advil"], manufacturer_name: ["Acme"] },

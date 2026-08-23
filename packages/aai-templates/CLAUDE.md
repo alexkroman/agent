@@ -206,10 +206,11 @@ once, and the templates are now their reference use:
 | `stepFetchOk` (`@alexkroman1/aai/step-errors`) | `link-digest`, `recap-workflow`'s `request()` and `podcast-digest`'s `fetchText` — the THIRD copy is what extracted it, on the rule below. Each had written `stepFetch` + `if (!res.ok) throw toStepError(…)`, and each threw the response BODY away, so a 4xx that said what was wrong arrived as a number. The two places that stay on raw `stepFetch` are the ones where a status is not simply a failure: `recap-workflow`'s DELETE, where a 404 means already-deleted, and `podcast-digest`'s Slack post, whose 4xx body decides which advice to print |
 | `stepGenerateJson` + `stripJsonFence` | `research-workflow` (five stages, each with its own zod shape — including the LENIENT ones that replace its hand-rolled `strings()`/`isSource()` coercion), `link-digest` (one), `redline` (the critic's findings) and `recap-workflow` (the recap, whose `spoken` field is required rather than defaulted because the announced turn has nothing to read without it). `stripJsonFence` is exercised only through `stepGenerateJson`, which is the intended path |
 | `installStubGateway` (`@alexkroman1/aai/testing/vitest`) | the `research-workflow`, `link-digest`, `redline` and `recap-workflow` specs — the bare `stubGateway` under it is exercised by no template and nothing records that, `/testing` being outside the coverage gate's scope (see the STEP row below) — the QUEUE form in the first and last, because their model calls sit in a loop or a chain, and the single-reply form in `link-digest`. The four had written the same five-line `vi.stubGlobal` wrapper, comment included |
-| `toolOf` / `runTool` (`@alexkroman1/aai/testing`) | `pizza-ordering`, `plan-and-execute`, `support-line`, `travel-concierge` — the four that drive tools through the agent's own table. Each keeps a ONE-LINE `run` bound to its own `agentDef`; what moved is the lookup and its message, not the binding. `args` and `ctx` are both optional now (66 `{}` placeholders across seven specs are gone), and **a template's `run` wrapper should be the NARROWEST shape its own specs need**: `(name, argsOrCtx?, ctx?)` where a no-argument tool and a shared session both occur (`night-owl`), `(name, args?)` or `(name, args)` otherwise — a forwarded `ctx?` nothing passes is the same ceremony as the `{}` |
+| `toolOf` / `runTool` / `toolRunner` (`@alexkroman1/aai/testing`) | the TEN specs driving tools through the agent's own table, each opening `const run = toolRunner(agentDef);`. `args` and `ctx` are both optional (66 `{}` placeholders are gone). **The advice that sat here — write the NARROWEST wrapper your specs need — is RETIRED: it is what produced the drift**, measured on `toolRunner` |
 | `withDiscoveredTools` (`@alexkroman1/aai/testing`) | the same four plus `retail` — the five whose tools are FILES, so `def.tools` is empty until something resolves `tools/`. See "A `tools/` file IS the tool" below for why the glob is written per template |
 | `stubGenerate` (`@alexkroman1/aai/testing`) | `support-line` (five nodes over one binary-score schema) and `plan-and-execute` (planner, executor, replanner) — the two whose tools reason with a model. Both had hand-rolled a `GenerateFn` switching on `options.system`, and both carried the same comment about the schema overload's required `object` |
 | `createRunSnapshot` + `createProgressStream` (`@alexkroman1/aai/testing`) | `research-workflow` and `recap-workflow` — the fixtures behind their `stubWorkflows`. The snapshot builder is the one that mattered: both hand-rolled versions ended in `as WorkflowRunSnapshot` |
+| `mockWorkflows` (`@alexkroman1/aai/testing/vitest`) | the same two, and it IS their `stubWorkflows` — fifteen lines apiece, byte-identical apart from the name in `listing`, now one line each. On `/vitest` because `vi.fn` is its CONTENT |
 | `mapConcurrent`, `emit`, `stepEnv` / `requireStepEnv`, `stepGenerate`, `stepFetch` / `multipartBody` | the STEP surface, and every workflow template uses it: `transcription-workflow` fans its segments out with `stepFetch` + `multipartBody` and reads `ASSEMBLYAI_API_KEY` for the sync STT endpoint, `recap-workflow` makes all three of its batch-API calls through `stepFetch` (it POLLS, so one run is many requests); `research-workflow`, `link-digest`, `redline` and `recap-workflow` call the model with `stepGenerate` (or `stepGenerateJson`, for a reply that has to be a shape), and `recap-workflow` reads the same key for the batch transcription endpoint it polls. Imported from `@alexkroman1/aai/step`, NOT the root: a `workflows/*.ts` module is bundled separately by the WDK builder, so the root barrel's graph would ride into the step bundle. That subpath is outside the coverage gate entirely — `SCOPED_MODULES` is the `aai` root plus `stt`/`tts`/`llm`/`s2s` and the `aai-ui` root — so a step export nothing exercised is caught by no gate and has no allowlist entry to sit in |
 | `webSearch` / `visitWebpage` (`@alexkroman1/aai/tools`) | `research-workflow`, from inside a `"use step"` function — the demonstration that a step is not a lesser environment than a tool body; `plan-and-execute`, from an ordinary tool body, which is the case the module was published for |
 | `stepSpeak` + `writeUpload` + `WorkflowApi.download` | `spoken-summary` ONLY, and it is the whole reason that template exists — the audio round trip a workflow could not make before. See "A step that SPEAKS returns an id" below |
@@ -219,6 +220,7 @@ once, and the templates are now their reference use:
 | `throwFfmpegStepError` (`@alexkroman1/aai/step-errors`) | `call-audit` and `transcription-workflow`. **Nothing in a template names `isFfmpegError` or `FfmpegError` any more**, so both sit in `template-api-allowlist.json` deliberately: the SDK recognises the error STRUCTURALLY and makes the `exit`/`missing-binary` → fatal, `timeout`/`aborted` → retry call itself. Its inverted default is pinned in `sdk/step-errors.test.ts`, including `call-audit`'s case: a cause that is not an ffmpeg failure at all is fatal |
 | `withTempDir` / `readUploadToFile` / `writeUploadFromFile` (`@alexkroman1/aai/step-files`) | `call-audit` and `transcription-workflow`, which between them had written the temp dir, the windowed read and the `.slice()`-ing generator FOUR times, with an identical warning that the `.slice()` was load-bearing. `temp-media.ts` (138 lines) is gone |
 | `formatBytes` / `formatDuration` / `countWords` / `plural` (`@alexkroman1/aai/utils`) | seven templates, on BOTH sides of the bundle boundary — a step's `report()` and the page rendering the same run. They existed 4, 5, 4 and 17 times, and the duplication was a live bug: `call-audit` printed one recording as `1:04:09` from `workflows/media.ts` and `64:09` from `client.tsx`, and `transcription-workflow` had three copies of the same disagreement — one inside `workflows/stitch.ts`, the module that exists so the run and the page cannot drift |
+| `decodeHtmlEntities` (`@alexkroman1/aai/utils`) | `link-digest` (as `decodeEntities`) and `podcast-digest` (as `decodeXml`) — one byte-identical body under two names, each arguing for the ORDERING in its own comment, which is the tell that the ordering was the whole function. Tag stripping did NOT move |
 | `WorkflowInputOf` / `WorkflowRunOf` / `lastLine` | `podcast-digest`, `call-audit` and `spoken-summary` for the input type (see below — it obliges an annotation on the def); `research-workflow` and `recap-workflow` for the other two, each dropping an eight-line `streamTail`-then-`stream` dance and the comment warning that reading a stream with nothing in it waits forever |
 | `stubSpeech` + `stubUploads(…, { writable: true })` (`@alexkroman1/aai/testing`) | `spoken-summary`'s spec, the pair's only use: a step that speaks and stores needs both slots filled, and the write half is opt-in so a step that stored a file nobody meant it to still fails. `stubUploads` answers `{ restore, writes, read }`, so a write is assertable without round-tripping through the seam that wrote it |
 
@@ -1611,78 +1613,14 @@ under a comment that describes exactly that failure mode. `include` now globs
 `tsc --noEmit --listFiles`, which prints the program's real file list, or by
 injecting a type error into a file you expect to be covered.
 
-## Self-hosting is the scaffold's default, and it runs the BUILT worker
+## Self-hosting is the scaffold's default
 
 `scaffold/server.mjs` plus the `prestart`/`start` pair ship in every project, so
-**any** project runs on its own with `npm start`: no platform account, nothing
-managed. It is deliberately a FILE rather than a CLI command — a command is
-something you have to know exists, and the whole gap it closes was that
-`createAgentServer` already made self-hosting one call and nothing put that call
-in front of anyone. `aai eject` (see `packages/aai-cli/CLAUDE.md`) copies this
-same file into projects that predate it; that command must never grow its own
-copy of the contents.
-
-**`server.mjs` imports `.aai/worker.mjs`, and `prestart` (`aai build
---skip-tests`) is what produces it.** It used to import `./agent.ts` directly,
-under a "no CLI at run time, no bundler" banner, and that banner is what had to
-go: a tool is registered by EXISTING, and the only place a directory can be
-turned into modules is where the bundle is assembled — a deployed agent is handed
-one ESM string and has no filesystem to scan. So an un-bundled loader serves an
-agent with **none of its tools and no error anywhere**: `/health` and
-`/client-config` answer perfectly and the agent cannot do the thing. That is the
-same silent absence discovery was introduced to kill, one level worse (every tool
-at once instead of one), which is why self-hosting was moved onto a build rather
-than given a second scanner.
-
-Four things follow, and they are what to preserve:
-
-- **There is no runtime `tools/` scan anywhere, and that is a decision.** The
-  plan offered a `readdir` + dynamic `import()` mode for the two loaders with no
-  bundler; neither took it. A spec uses `import.meta.glob` (see
-  `_discovery.ts` above — Node's resolver would hand the tools a second copy
-  of the SDK), and self-hosting now has the bundler in its path after all. The
-  SDK's lazy `loadToolModules` existed for that mode and is deleted: a second way
-  to build a registry is how the rules come to have two behaviours.
-- **The `registerHooks` shim is GONE, because the bundle resolves what it was
-  teaching.** It taught Node `?raw` (a Vite convention — Node looks for a file
-  literally named `system-prompt.md?raw`) and attribute-less `.json`
-  (TypeScript's `resolveJsonModule` allows it, Node wants
-  `with { type: "json" }`). Nine templates imported `./system-prompt.md?raw` at
-  the time and `retail/store.ts` imports `./seed.json` bare, so before the shim
-  `npm start` worked for four templates out of fourteen — and Vite inlines both,
-  so there is nothing left to teach. The `?raw` count is now ONE
-  (`pizza-ordering`, which composes): the generated entry writes that import
-  itself, so the convention no longer costs an author a bundler feature. The
-  argument is unchanged either way — Vite inlines it wherever it is written.
-  The DYNAMIC import survives it: the path is computed at run time, and it is a
-  `pathToFileURL` rather than a relative specifier so the entrypoint is correct
-  on Windows.
-- **A missing artifact exits with the command that fixes it**, rather than
-  booting an agent with no tools or failing on a bare `ERR_MODULE_NOT_FOUND`.
-  That is the path `node server.mjs` takes when run directly, i.e. bypassing
-  `prestart`.
-- **`ctx.env` and provider credentials come from different places, on purpose.**
-  `env` is declared keys only (`.env`, plus `.env.example` as a declaration so a
-  container with no `.env` still works, with real environment variables winning
-  per key) — the same rule `aai dev` follows, so an agent cannot come to depend
-  on a `PATH`-style variable that will not exist after deploy. Provider
-  credentials go through `withHostCredentialFallback`, which is what lets
-  `docker run -e ASSEMBLYAI_API_KEY=…` work without the key becoming `ctx.env`.
-  An empty declared value is DROPPED rather than passed through: a provider
-  would authenticate with `""` instead of reporting the credential absent, and
-  `.env.example` is full of empty values by design.
-
-The cost is that self-hosting needs the CLI as a devDependency, which the
-scaffold already declares — so `npm ci --omit=dev` in a container is not a
-supported shape, and `prestart` skips only the TESTS: `npm test` is where a suite
-belongs, and a failing test must not be what stops a container from starting.
-
-`packages/aai-cli/e2e.test.ts` boots `npm start` against a real installed
-project — **`pizza-ordering`, chosen for its `tools/` directory**, which is what
-this leg is now about (it keeps the old `math-buddy` coverage anyway, whose
-prompt is a discovered `system-prompt.md`). It probes `/health`,
-`/client-config` and `/`, and then
-reads the six tool names out of the artifact the server booted, because nothing
-over HTTP exposes a tool list. That tier is the only one that can prove any of
-it: the project's own `aai build` runs from a real INSTALL, and
-`defaultClientDir()` resolves out of the installed `@alexkroman1/aai-ui`.
+**any** project runs on its own with `npm start` — no platform account, nothing
+managed. Every mechanism in it is the CLI's (`aai build --skip-tests` produces
+the `.aai/worker.mjs` the server imports, `aai eject` back-fills the file into
+older projects, and `aai-cli`'s e2e leg is the only tier that can prove any of
+it), so **the account lives in `packages/aai-cli/CLAUDE.md`, "Self-hosting is
+the scaffold's default, and it runs the BUILT worker"** — including why there is
+no runtime `tools/` scan anywhere, and why `ctx.env` and provider credentials
+come from different places.

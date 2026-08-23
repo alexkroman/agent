@@ -4,8 +4,8 @@ import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   okPosition,
-  runTool,
   stubGenerate,
+  toolRunner,
   withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
@@ -81,11 +81,11 @@ function fakeSearch(hits: Record<string, { title: string; url: string }[]>): {
   return { search, queries };
 }
 
-/** A tool by the name the model calls it by, bound to this agent. The lookup
- *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
- *  what is local is only which agent they run against. */
-const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
-  runTool(agentDef, name, argsOrCtx, ctx);
+/** A tool by the name the model calls it by, bound to this agent. The lookup,
+ *  its "no such tool" message and the args-or-context shape are all
+ *  `toolRunner`'s (`@alexkroman1/aai/testing`); what is local is only which
+ *  agent it runs against. */
+const run = toolRunner(agentDef);
 
 function stateOf(ctx: ToolContext) {
   return planSlot.get(ctx);

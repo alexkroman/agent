@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { ToolContext } from "@alexkroman1/aai";
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { createToolContext, toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
 
@@ -21,8 +20,7 @@ const agentDef = withDiscoveredTools(
 import { DEFAULT_GAME_STATE, gameSlot, MAX_HISTORY, REPORTED_HISTORY } from "./shared.ts";
 
 /** A tool by the name the model calls it by, bound to this agent. */
-const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
-  runTool(agentDef, name, argsOrCtx, ctx);
+const run = toolRunner(agentDef);
 
 /** Each context owns its OWN slot store, which is what makes two playthroughs
  *  independent by construction. */

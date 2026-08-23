@@ -20,18 +20,17 @@
  * builds a project and runs one.
  */
 
-import type { ToolContext, WorkflowClient } from "@alexkroman1/aai";
+import type { WorkflowClient } from "@alexkroman1/aai";
 import {
   createRunSnapshot,
-  createStubWorkflows,
   createToolContext,
   parseSchemaInput,
-  runTool,
   type StubGatewayCall,
   schemaInputIssues,
+  toolRunner,
   withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
-import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
+import { mockWorkflows, installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -81,43 +80,30 @@ const agentDef = withDiscoveredTools(
  * Every tool here is driven through the agent's own table, by the name the model
  * calls.
  *
- * The third parameter is args-or-context, which is `runTool`'s own shape: three
+ * The second parameter is args-or-context, which is `runTool`'s own shape: three
  * of this desk's four tools take no arguments, and the `{}` those calls were
  * obliged to pass sat between the two values a reader cares about.
  */
-const run = (
-  name: string,
-  argsOrCtx?: Record<string, unknown> | ToolContext,
-  ctx?: ToolContext,
-): Promise<unknown> => runTool(agentDef, name, argsOrCtx, ctx);
+const run = toolRunner(agentDef);
 
 /**
  * A `ctx.workflows` that records `start` and answers `find` from a fixture.
  *
  * Returned WITHOUT a cast, which is the property worth keeping: a cast would
  * also stop reporting the day `WorkflowClient` grows a method, and this stub is
- * how the template's tools reach the client at all. `createStubWorkflows` is
- * what keeps that affordable — it fills in the methods this desk does not
- * drive, so the day the client does grow one, only the tests that use it change.
+ * how the template's tools reach the client at all. `mockWorkflows`
+ * (`@alexkroman1/aai/testing/vitest`) is what keeps that affordable — a `vi.fn`
+ * per method over one `runs` list, filling in what this desk does not drive, so
+ * the day the client does grow a method only the tests using it change.
+ * `stream`/`streamTail` are left rejecting on purpose: `research_progress` reads
+ * progress through `lastLine`, and composing those two by hand is the hazard
+ * `lastLine` exists to remove.
  */
 function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
-  return createStubWorkflows({
-    start: vi.fn(async () => "wrun_stub"),
-    get: vi.fn(async () => runs[0]),
-    find: vi.fn(async () => runs),
-    recent: vi.fn(async () => runs),
-    cancel: vi.fn(async () => true),
-    wakeUp: vi.fn(async () => 0),
-    // `lastLine` is the whole progress read now — `streamTail` + `stream` are no
-    // longer composed here, so neither is stubbed. `undefined` is "the run has
-    // written nothing yet", which is the arm `research_progress` branches on;
-    // tests wanting a line override it.
-    lastLine: vi.fn(async () => undefined),
-    // Name only: `WorkflowDef.description` is optional, so passing it through
-    // would mean handing `description: undefined` to a field that does not
-    // accept it. Nothing here reads the description anyway.
-    listing: () => [{ name: "research" }],
-  });
+  // Name only: `WorkflowSummary.description` is optional, so passing this
+  // desk's through would mean handing `description: undefined` to a field that
+  // does not accept it. Nothing here reads the description anyway.
+  return mockWorkflows({ runs, names: ["research"] });
 }
 
 describe("the agent declares its workflow", () => {

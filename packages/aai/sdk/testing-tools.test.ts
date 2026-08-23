@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 import { createToolContext } from "./testing.ts";
-import { runTool, toolOf } from "./testing-tools.ts";
+import { runTool, toolOf, toolRunner } from "./testing-tools.ts";
 import type { ToolDef } from "./types.ts";
 
 const add: ToolDef = {
@@ -86,5 +86,45 @@ describe("runTool", () => {
     const echo = { tools: { echo: { description: "e", execute: (args: unknown) => args } } };
     const lookalike = { sessionId: "not-a-context", slots: {}, send: "nope" };
     expect(await runTool(echo, "echo", lookalike)).toEqual(lookalike);
+  });
+});
+
+describe("toolRunner", () => {
+  test("forwards all three of runTool's shapes with the agent already bound", async () => {
+    const run = toolRunner(agentDef);
+    const ctx = createToolContext({ sessionId: "session-d" });
+
+    expect(await run("add_item", { item: "apple" }, ctx)).toEqual({
+      added: "apple",
+      session: "session-d",
+    });
+    // The shape a narrowed `(name, args)` wrapper gives up: the context in the
+    // arguments' place, for a tool that takes none.
+    expect(await run("add_item", ctx)).toEqual({ added: undefined, session: "session-d" });
+    expect(await run("add_item")).toMatchObject({ added: undefined });
+  });
+
+  test("each call still defaults to a distinct session, so the runner holds no state", async () => {
+    // The runner is bound to the AGENT and nothing else. If it cached a context,
+    // the two-context isolation test every stateful template writes would pass
+    // for the wrong reason.
+    const run = toolRunner(agentDef);
+    const first = (await run("add_item")) as { session: string };
+    const second = (await run("add_item")) as { session: string };
+    expect(first.session).not.toBe(second.session);
+  });
+
+  test("a miss still names the tools that exist, because it is runTool underneath", async () => {
+    await expect(toolRunner(agentDef)("add_itme")).rejects.toThrow(
+      "The agent declares no tool named add_itme. It declares: add_item.",
+    );
+  });
+
+  test("two runners over two agents stay bound to their own", async () => {
+    const other: ToolDef = { description: "Other", execute: () => ({ from: "other" }) };
+    const runOne = toolRunner(agentDef);
+    const runTwo = toolRunner({ tools: { add_item: other } });
+    expect(await runOne("add_item")).toMatchObject({ added: undefined });
+    expect(await runTwo("add_item")).toEqual({ from: "other" });
   });
 });

@@ -43,6 +43,7 @@
 export {
   countWords,
   createKeyedLock,
+  decodeHtmlEntities,
   errorDetail,
   errorMessage,
   formatBytes,

@@ -18,8 +18,9 @@
  *
  * - `_testing-context.ts` — `createToolContext`, and the stub `db`/`workflows`
  *   its defaults are built from.
- * - `testing-tools.ts` — `toolOf` / `runTool`, the tool under the name the model
- *   calls it by; `testing-discovery.ts` — `withDiscoveredTools`, which is what
+ * - `testing-tools.ts` — `toolOf` / `runTool` / `toolRunner`, the tool under the
+ *   name the model calls it by, the last of those being `runTool` with the agent
+ *   bound; `testing-discovery.ts` — `withDiscoveredTools`, which is what
  *   puts the tools on an `agent.ts` default export in the first place.
  * - `_testing-tool-results.ts` — `ok` / `okPosition`, unwrapping what a gated
  *   tool answered; `_testing-schema.ts` — what a tool's or workflow's input
@@ -84,7 +85,13 @@ export {
   type StubSpeechOptions,
   stubSpeech,
 } from "./testing-speech.ts";
-export { runTool, type ToolBearingAgent, toolOf } from "./testing-tools.ts";
+export {
+  runTool,
+  type ToolBearingAgent,
+  type ToolRunner,
+  toolOf,
+  toolRunner,
+} from "./testing-tools.ts";
 export {
   type StubUpload,
   type StubUploads,

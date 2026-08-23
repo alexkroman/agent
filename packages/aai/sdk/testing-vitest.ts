@@ -28,10 +28,18 @@
  * snapshots) gets no wrapper — there is nothing to restore, so a second name
  * for it would only be a second name.
  *
+ * **`mockWorkflows` is here for the other half of the same rule: `vi.fn` IS its
+ * content.** It restores nothing and installs nothing, so it takes no `install`
+ * prefix — but its methods have to be spies, because a spec of a
+ * workflow-driving tool asserts on `start` and re-points `lastLine` per test.
+ * A plain-function version would be a helper neither caller could use, so the
+ * coupling is the feature rather than a leak.
+ *
  * @module testing/vitest
  */
 
 import { onTestFinished, vi } from "vitest";
+import { createStubWorkflows } from "./_testing-context.ts";
 import type { StubStepAnswer, StubStepFetch, StubStepRequest } from "./_testing-step-fetch.ts";
 import { stubStepFetch } from "./_testing-step-fetch.ts";
 import type { StubTranscribe, StubTranscribeOptions } from "./_testing-transcribe.ts";
@@ -44,6 +52,8 @@ import type { StubSpeech, StubSpeechOptions } from "./testing-speech.ts";
 import { stubSpeech } from "./testing-speech.ts";
 import type { StubUpload, StubUploads, StubUploadsOptions } from "./testing-uploads.ts";
 import { stubUploads } from "./testing-uploads.ts";
+import type { WorkflowClient } from "./workflow-client.ts";
+import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /**
  * Install a fake LLM gateway as the global `fetch`, and return its call log.
@@ -199,4 +209,99 @@ export function installStubTranscribe(options: StubTranscribeOptions = {}): Stub
   const provider = stubTranscribe(options);
   restoreAfterThisTest(provider.restore);
   return provider;
+}
+
+/**
+ * What {@link mockWorkflows} answers each read with.
+ *
+ * Every field has a default, so `mockWorkflows()` is a client whose reads all
+ * answer "nothing has run" — which is the arm a `*_status` tool branches on
+ * first and the one most specs of one want.
+ *
+ * @public
+ */
+export type MockWorkflowsOptions = {
+  /**
+   * The runs `get`, `find` and `recent` answer from — `get` with the first,
+   * the other two with the whole list. One list rather than three, because a
+   * spec asserting what a tool REPORTS is describing one world, and three
+   * fixtures that can disagree about it is a way to write a passing test for a
+   * state the platform cannot produce. Build them with `createRunSnapshot`.
+   */
+  runs?: readonly WorkflowRunSnapshot[];
+  /**
+   * Workflow names `listing()` reports, in order — normally the one the agent
+   * under test declares. Defaults to none, i.e. an agent declaring no workflow.
+   */
+  names?: readonly string[];
+  /** What `start` resolves with. Defaults to `"wrun_stub"`. */
+  runId?: string;
+  /**
+   * What `lastLine` resolves with. Defaults to `undefined`, which means "the
+   * run has written nothing yet" — the arm a progress tool branches on, and the
+   * reason this has a default rather than being left to reject.
+   */
+  lastLine?: unknown;
+};
+
+/**
+ * A `ctx.workflows` whose reads answer from one fixture and whose every method
+ * is a `vi.fn`.
+ *
+ * `createStubWorkflows` (`@alexkroman1/aai/testing`) is the framework-agnostic
+ * base: it REJECTS every method, so a tool reaching for one the spec did not
+ * stub says so. That is the right default and it is not the shape a spec of a
+ * workflow-driving agent wants, because such a tool reads two or three methods
+ * per call and asserts on `start`. Both shipped workflow templates therefore
+ * opened with the same fifteen lines — a `vi.fn` per method, answering from one
+ * `runs` array — byte-identical apart from the workflow name in `listing`.
+ *
+ * **It is on this subpath because `vi.fn` is the content.** The methods have to
+ * be spies: a spec asserts `expect(workflows.start).toHaveBeenCalledWith(def,
+ * input)` and re-points one per test with
+ * `vi.mocked(workflows.lastLine).mockResolvedValue("…")`. A plain-function
+ * version would be a different helper that neither template could use.
+ *
+ * **What it does NOT answer is deliberate.** `stream`, `streamTail`, `signal`
+ * and `publicWebhookUrl` fall through to the rejecting base, because a tool
+ * reading a progress channel by hand is the hazard `lastLine` exists to remove
+ * — see `WorkflowClient.lastLine`, where composing `streamTail` + `stream` in
+ * the wrong order waits forever with no error. A spec that really is testing
+ * one of those overrides it, which reads as the deliberate act it is.
+ *
+ * Spread it to replace a method for one test: `{ ...mockWorkflows(), signal }`.
+ *
+ * @example
+ * ```ts
+ * import { createRunSnapshot, createToolContext } from "@alexkroman1/aai/testing";
+ * import { mockWorkflows } from "@alexkroman1/aai/testing/vitest";
+ *
+ * const workflows = mockWorkflows({
+ *   names: ["recap"],
+ *   runs: [createRunSnapshot({ workflow: "recap", status: "running" })],
+ * });
+ * const ctx = createToolContext({ workflows });
+ * ```
+ *
+ * @public
+ */
+export function mockWorkflows(options: MockWorkflowsOptions = {}): WorkflowClient {
+  const runs = options.runs ?? [];
+  const runId = options.runId ?? "wrun_stub";
+  const names = options.names ?? [];
+  const lastLine = options.lastLine;
+  return createStubWorkflows({
+    start: vi.fn(async () => runId),
+    // The first of the same list the lookups answer from, so "the run this
+    // session started" and "this session's runs" cannot disagree.
+    get: vi.fn(async () => runs[0]),
+    find: vi.fn(async () => [...runs]),
+    recent: vi.fn(async () => [...runs]),
+    cancel: vi.fn(async () => true),
+    // `0` woken: a `wakeUp` that reports work done is the interesting case and
+    // the one a spec overrides, so the default is the quiet answer.
+    wakeUp: vi.fn(async () => 0),
+    lastLine: vi.fn(async () => lastLine),
+    listing: vi.fn(() => names.map((name) => ({ name }))),
+  });
 }

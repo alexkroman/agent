@@ -103,8 +103,10 @@ export {
   type TestToolContext,
   type ToolBearingAgent,
   type ToolContextOverrides,
+  type ToolRunner,
   toolInputIssues,
   toolOf,
+  toolRunner,
   withDiscoveredTools,
 } from "../../sdk/testing.ts";
 export {
@@ -114,4 +116,6 @@ export {
   installStubStepFetch,
   installStubTranscribe,
   installStubUploads,
+  type MockWorkflowsOptions,
+  mockWorkflows,
 } from "../../sdk/testing-vitest.ts";

@@ -422,6 +422,12 @@ type ToolModules = Readonly<Record<string, unknown>>;
 export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
 
 // @public
+export type ToolRunner = (name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext) => Promise<unknown>;
+
+// @public
+export function toolRunner(agent: ToolBearingAgent): ToolRunner;
+
+// @public
 type WakeUpOptions = {
     correlationIds?: string[];
 };

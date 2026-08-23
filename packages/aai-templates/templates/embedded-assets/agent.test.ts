@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
 import { faqs, searchable } from "./shared.ts";
@@ -24,7 +24,7 @@ const agentDef = withDiscoveredTools(
  * want. `list_topics` takes no arguments either, and may say so by leaving them
  * out rather than passing a `{}` between the two values a reader cares about.
  */
-const run = (name: string, args?: Record<string, unknown>) => runTool(agentDef, name, args);
+const run = toolRunner(agentDef);
 
 describe("embedded-assets template", () => {
   test("the JSON asset really is bundled, and the index is built from it", () => {

@@ -11,6 +11,9 @@ export function countWords(text: string): number;
 export function createKeyedLock(): KeyedLock;
 
 // @public
+export function decodeHtmlEntities(text: string): string;
+
+// @public
 export function errorDetail(err: unknown): string;
 
 // @public

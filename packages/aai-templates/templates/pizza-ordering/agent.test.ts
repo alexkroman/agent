@@ -4,8 +4,8 @@ import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   parseToolInput,
-  runTool,
   toolInputIssues,
+  toolRunner,
   withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
@@ -40,13 +40,12 @@ import {
  *  its cart in a session slot and must never touch storage. */
 const makeCtx = (): ToolContext => createToolContext();
 
-/** A tool by the name the model calls it by, bound to this agent. The lookup
- *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
- *  what is local is only which agent they run against. The third parameter is
- *  forwarded as-is so a no-argument tool can pass the context in the arguments'
- *  place — `runTool` tells the two apart by shape. */
-const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
-  runTool(agentDef, name, argsOrCtx, ctx);
+/** A tool by the name the model calls it by, bound to this agent. The lookup,
+ *  its "no such tool" message and the args-or-context shape are all
+ *  `toolRunner`'s (`@alexkroman1/aai/testing`); what is local is only which
+ *  agent it runs against. Its second parameter is args-or-context, so a
+ *  no-argument tool passes the context in the arguments' place. */
+const run = toolRunner(agentDef);
 
 const margherita: Omit<Pizza, "id"> = {
   size: "medium",
