@@ -312,11 +312,20 @@ describe("the parts routes", () => {
   test("is matched BEFORE `/uploads/:id`, which is a prefix rule", async () => {
     const base = await serve();
     // The order-is-load-bearing rule: listed the other way round, this `PUT` reads
-    // `"abc/parts"` as an upload id and stores a whole file under it.
+    // `"abc/parts"` as an upload id and stores a whole file under it. The STATUS is
+    // what tells the two apart — a part answers 200 where the whole-file route
+    // answers 201 — and the window really landing on the declared upload is the
+    // other half of the same fact.
     await begin(base, "abc", UPLOAD_CHUNK_BYTES);
     expect((await part(base, "abc", 0, ramp(UPLOAD_CHUNK_BYTES))).status).toBe(200);
+    const info = await fetch(`${base}/workflows/uploads/abc/info`);
+    expect(info.status).toBe(200);
+    expect(await info.json()).toMatchObject({ id: "abc", size: UPLOAD_CHUNK_BYTES });
+    // And the misread id is not merely empty, it is unaskable: every `/uploads/:id`
+    // route rejects the grammar before the store sees it, so a 400 rather than the
+    // 404 this probe used to read. See `uploadIdOr400`.
     const stored = await fetch(`${base}/workflows/uploads/abc%2Fparts/info`);
-    expect(stored.status).toBe(404);
+    expect(stored.status).toBe(400);
   });
 
   test("404s with the fix on a server that stores no uploads", async () => {

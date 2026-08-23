@@ -18,16 +18,19 @@
  * see.
  */
 
-import { agent, workflowApp } from "@alexkroman1/aai";
+import { agent, workflow, workflowApp } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { WebSocket as NodeWebSocket } from "ws";
+import { z } from "zod";
 import { silentLogger, withDeadline } from "./_test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
 
 const ENV = { ASSEMBLYAI_API_KEY: "sk-test" };
 
 async function withServer(
-  options: Omit<Parameters<typeof createAgentServer>[0], "env"> & { env?: typeof ENV },
+  options: Omit<Parameters<typeof createAgentServer>[0], "env"> & {
+    env?: Record<string, string>;
+  },
   run: (baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const server = createAgentServer({ env: ENV, logger: silentLogger, ...options });
@@ -180,5 +183,109 @@ describe("createAgentServer", () => {
     // The port is really released — a second listen on it would fail if the
     // HTTP server were still bound.
     await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
+  });
+});
+
+describe("the env this door forwards to the server", () => {
+  const workflowAgent = () =>
+    workflowApp({
+      name: "Digest",
+      workflows: {
+        // A declared workflow is what makes `/workflows/*` answer at all: with none,
+        // every route 404s naming the reason and an auth test could not tell a closed
+        // surface from an absent one. The body is never run here — nothing starts a
+        // run — so it needs no DevKit build.
+        echo: workflow({
+          description: "Echo the input back.",
+          input: z.object({ text: z.string() }),
+          run: async ({ text }) => {
+            "use workflow";
+            return text;
+          },
+        }),
+      },
+    });
+
+  test("AAI_WORKFLOW_API_TOKEN closes the workflow API, as it is documented to", async () => {
+    await withServer(
+      { agent: workflowAgent(), env: { ...ENV, AAI_WORKFLOW_API_TOKEN: "s3cret" } },
+      async (baseUrl) => {
+        expect((await fetch(`${baseUrl}/workflows`)).status).toBe(401);
+        expect(
+          (await fetch(`${baseUrl}/workflows`, { headers: { authorization: "Bearer wrong" } }))
+            .status,
+        ).toBe(401);
+        const ok = await fetch(`${baseUrl}/workflows`, {
+          headers: { authorization: "Bearer s3cret" },
+        });
+        expect(ok.status).toBe(200);
+        await ok.text();
+      },
+    );
+  });
+
+  test("and closes the upload WRITE routes with it", async () => {
+    // The cost shape the workflow API's own doc argues about: an unauthenticated
+    // POST here does not just read, it stores bytes.
+    await withServer(
+      { agent: workflowAgent(), env: { ...ENV, AAI_WORKFLOW_API_TOKEN: "s3cret" } },
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/workflows/uploads`, {
+          method: "POST",
+          headers: { "content-type": "text/plain" },
+          body: "bytes",
+        });
+        expect(res.status).toBe(401);
+        await res.text();
+      },
+    );
+  });
+
+  test("AAI_SESSION_EVENTS_TOKEN closes the event-stream read surface", async () => {
+    await withServer(
+      { agent: workflowAgent(), env: { ...ENV, AAI_SESSION_EVENTS_TOKEN: "e3vents" } },
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/session-events/any-session`);
+        expect(res.status).toBe(401);
+        await res.text();
+      },
+    );
+  });
+
+  test("an env with no tokens leaves the documented fail-OPEN posture alone", async () => {
+    // Fail-open is the default on purpose — a static page carries no credential —
+    // so forwarding the env must not close a surface nobody asked to close.
+    await withServer({ agent: workflowAgent() }, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/workflows`);
+      expect(res.status).toBe(200);
+      await res.text();
+    });
+  });
+
+  test("AAI_ALLOW_HOST does NOT ride along, so this door grants no host mode", async () => {
+    // The one key that must not arrive with the others: `?host=1` lets a caller
+    // replace the agent definition and run it on this server's credentials. The
+    // session is declined and the socket closed rather than handed a host session.
+    await withServer(
+      {
+        agent: agent({ name: "Support", systemPrompt: "x" }),
+        env: { ...ENV, AAI_ALLOW_HOST: "1" },
+      },
+      async (baseUrl) => {
+        const ws = new NodeWebSocket(`${baseUrl.replace("http", "ws")}/websocket?host=1`);
+        const refusal = await withDeadline(
+          new Promise<string>((resolve, reject) => {
+            ws.once("message", (data: Buffer) => resolve(data.toString()));
+            ws.once("close", () => resolve("closed"));
+            ws.once("error", (err: Error) => reject(err));
+          }),
+          "a ?host=1 connection is answered",
+        );
+        ws.close();
+        // The server's own refusal, which is what `isHostAllowed` answering false
+        // looks like on the wire — not a host session waiting for a config frame.
+        expect(refusal).toContain("host mode is not enabled on this server");
+      },
+    );
   });
 });

@@ -31,6 +31,7 @@ import { requestQuery } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { createServer } from "@alexkroman1/aai-runtime";
 import {
+  agentServerEnv,
   configureWorkflowWorld,
   consoleLogger,
   createWakeHintPublisher,
@@ -352,27 +353,6 @@ export function createIdleController(opts: {
  * guest-owned: idle self-exit replaces the orphan timeout, and a drain
  * refuses new sessions then exits with the last one.
  */
-/**
- * The agent's env as `createServer` may read it: everything except the host-mode gate.
- *
- * A deployed agent has NO host mode — `aai-server`'s guide has the argument, and the
- * platform's own in-process version was deliberately removed. But the gate
- * `createServer` consults is `isHostAllowed(env)`, so handing it the agent's env
- * unfiltered would let a TENANT turn host mode on inside their own guest by setting one
- * secret. That is not theirs to enable: `?host=1` lets a caller supply its own agent
- * definition, the guest's `/websocket` has no authentication of its own, and the sandbox
- * tunnel URL is public — so the caller would be driving that agent's provider
- * credentials with a prompt of their choosing.
- *
- * Omitting the key rather than adding a `hostMode: "off"` option, because the SDK's
- * contract is already "no env, no host mode" and this is the guest saying which env it
- * is willing to have read. A new option would be a second way to express one rule.
- */
-export function agentServerEnv(env: Record<string, string>): Record<string, string> {
-  const { AAI_ALLOW_HOST: _ignored, ...rest } = env;
-  return rest;
-}
-
 export async function mainAgent(port: number, host: string, token: string): Promise<void> {
   const state = emptyHarnessState();
 
@@ -448,7 +428,12 @@ export async function mainAgent(port: number, host: string, token: string): Prom
     // - `AAI_SESSION_EVENTS_TOKEN`, the same shape one route over.
     //
     // The fourth is `AAI_ALLOW_HOST`, and it must NOT ride along — hence
-    // `agentServerEnv`.
+    // `agentServerEnv`, which is the runtime's now rather than a copy of the line
+    // here (`createAgentServer` had this same bug and needs the same filter). A
+    // deployed agent has NO host mode: `?host=1` lets a caller supply its own agent
+    // definition, this server's `/websocket` has no authentication of its own, and
+    // the sandbox tunnel URL is public — so a TENANT setting one secret would be
+    // handing a stranger their own provider credentials.
     env: agentServerEnv(boot.env),
     // The platform's own origin plus this agent's slug, translated from one `AAI_*`
     // key exactly as `ensureRuntime` translates `AAI_PUBLIC_BASE_URL` for

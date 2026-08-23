@@ -58,6 +58,7 @@ import type http from "node:http";
 import { requestQuery, UPLOAD_CLAIM_BATCH, UPLOAD_TOKEN_RE } from "@alexkroman1/aai/host-internal";
 import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
+import { decodePathSegment } from "./_path-decode.ts";
 import { sendUploadFailure } from "./_upload-route-failures.ts";
 import type { Logger } from "./runtime-config.ts";
 import { sendJson } from "./workflow-api-http.ts";
@@ -69,10 +70,55 @@ export const UPLOADS_PATH = `${WORKFLOW_API_PREFIX}/uploads`;
 /** Suffix the two multi-part routes hang off `…/uploads/:id`. */
 export const UPLOAD_PARTS_SUFFIX = "/parts";
 
-/** What a caller-chosen id has to look like, said once for the two routes taking one. */
+/**
+ * What a caller-chosen id has to look like.
+ *
+ * Answered by {@link uploadIdOr400} for every `/uploads/:id` route. The check used
+ * to be per-route and only two routes had it, which left the other three taking a
+ * 500 from the store's own throw for the same mistake.
+ */
 const CHOSEN_ID_MESSAGE =
   "A caller-chosen upload id is 1-64 characters of letters, digits, `-` and `_` — a " +
   "`crypto.randomUUID()` already qualifies.";
+
+/**
+ * The upload id in this path, or `undefined` having ALREADY answered 400.
+ *
+ * The same shape as `runIdOr400` in `workflow-api.ts` and for the same reason: a path
+ * segment is percent-decoded, `decodeURIComponent` throws on a malformed escape, and
+ * no decode site in this package may let that reach the router's catch as a 500.
+ *
+ * **The GRAMMAR is checked here, for every `/uploads/:id` route rather than in three
+ * of the five.** It used to sit inside the two writes that take a caller-chosen id,
+ * so the other three answered a bad id from the store: `assertUploadToken` throws a
+ * plain `Error`, `sendUploadFailure` can only classify the store's five typed
+ * failures, and the router's catch turned a plainly bad request into
+ * `500 Internal server error` with the reason in the log and not in the answer. That
+ * split the same class of mistake across two statuses — `POST …/not..valid/parts`
+ * said 400 and named the grammar, `GET …/not..valid/info` said 500 — which is the
+ * thing `_upload-route-failures.ts` argues a client must never have to guess at.
+ *
+ * Rejecting before the store is also what keeps the id grammar a boundary rule: an
+ * id that would escape the store never reaches one, whichever verb asked.
+ */
+export function uploadIdOr400(
+  res: http.ServerResponse,
+  url: string,
+  suffix = "",
+): string | undefined {
+  const id = decodePathSegment(
+    url.slice(UPLOADS_PATH.length + 1, suffix ? -suffix.length : undefined),
+  );
+  if (id === undefined) {
+    sendJson(res, 400, { error: "Malformed upload id" });
+    return undefined;
+  }
+  if (!UPLOAD_TOKEN_RE.test(id)) {
+    sendJson(res, 400, { error: CHOSEN_ID_MESSAGE });
+    return undefined;
+  }
+  return id;
+}
 
 /** What `POST` and `PUT /workflows/uploads` answer with. */
 export type UploadCreated = UploadInfo & {
@@ -160,10 +206,8 @@ export async function streamUpload(
   id: string,
   logger: Logger,
 ): Promise<void> {
-  if (!UPLOAD_TOKEN_RE.test(id)) {
-    sendJson(res, 400, { error: CHOSEN_ID_MESSAGE });
-    return;
-  }
+  // The id's grammar was checked by `uploadIdOr400`, which is the only caller and
+  // now checks it for every upload route rather than for this one and the claim.
   try {
     const info = await store.stream(id, declaredMeta(req), req);
     logger.info("Workflow upload streamed", { id: info.id, name: info.name, size: info.size });
@@ -192,10 +236,6 @@ export async function beginUploadParts(
   logger: Logger,
   directParts = false,
 ): Promise<void> {
-  if (!UPLOAD_TOKEN_RE.test(id)) {
-    sendJson(res, 400, { error: CHOSEN_ID_MESSAGE });
-    return;
-  }
   const declared = requestQuery(req.url).get("total");
   const total = Number(declared);
   if (declared === null || !Number.isFinite(total)) {

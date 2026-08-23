@@ -240,4 +240,30 @@ describe("GET /workflows/uploads/:id/info", () => {
     const res = await fetch(`${base}/workflows/uploads/upl_gone/info`);
     expect(res.status).toBe(404);
   });
+
+  test("400s for an id that is not one, naming the grammar — never a 500", async () => {
+    // The reads used to hand a bad id straight to the store, whose `assertUploadToken`
+    // throws a plain `Error` that `sendUploadFailure` cannot classify — so the router's
+    // catch answered `500 Internal server error` and put the reason in the log only.
+    // The same mistake on `POST …/parts` answered 400 and explained itself, which is
+    // exactly the "a client must be able to tell its own bad request from a broken
+    // agent" rule split across two statuses.
+    const base = await serve();
+    for (const path of ["/workflows/uploads/not..valid/info", "/workflows/uploads/not..valid"]) {
+      const res = await fetch(`${base}${path}`);
+      expect(res.status).toBe(400);
+      await expect(res.json()).resolves.toMatchObject({
+        error: expect.stringContaining("1-64 characters"),
+      });
+    }
+  });
+
+  test("a well-formed id nothing stored is still a 404, not a 400", async () => {
+    // The grammar check must not swallow the case it sits in front of: a server-minted
+    // id that has simply been reclaimed is a different answer from a malformed one.
+    const base = await serve();
+    const res = await fetch(`${base}/workflows/uploads/upl_deadbeef`);
+    expect(res.status).toBe(404);
+    await res.text();
+  });
 });

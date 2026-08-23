@@ -110,6 +110,7 @@ import {
   streamUpload,
   UPLOAD_PARTS_SUFFIX,
   UPLOADS_PATH,
+  uploadIdOr400,
   writeUploadPart,
 } from "./workflow-api-uploads.ts";
 import { readUploadInfoRoute, readUploadRoute } from "./workflow-api-uploads-read.ts";
@@ -223,21 +224,6 @@ function requireUploads(res: http.ServerResponse, ctx: RouteContext): UploadStor
       "agent and `aai dev` go through.",
   });
   return undefined;
-}
-
-/**
- * The upload id in this path, or `undefined` having ALREADY answered 400.
- *
- * The same shape as `runIdOr400` below and for the same reason: a path segment is
- * percent-decoded, `decodeURIComponent` throws on a malformed escape, and no decode
- * site in this package may let that reach the router's catch as a 500.
- */
-function uploadIdOr400(res: http.ServerResponse, url: string, suffix = ""): string | undefined {
-  const id = decodePathSegment(
-    url.slice(UPLOADS_PATH.length + 1, suffix ? -suffix.length : undefined),
-  );
-  if (id === undefined) sendJson(res, 400, { error: "Malformed upload id" });
-  return id;
 }
 
 /** Prefix every `/runs/:id` route matches under. */

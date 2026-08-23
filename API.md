@@ -6663,6 +6663,9 @@ export type ServerOptions = {
 };
 
 // @public
+export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
+
+// @public
 export type SessionCore = {
     readonly id: string;
     configure(config: ReadyConfig): void;
@@ -7023,6 +7026,9 @@ import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
 import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+
+// @internal
+export function agentServerEnv(env: Record<string, string>): Record<string, string>;
 
 // @internal
 export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;

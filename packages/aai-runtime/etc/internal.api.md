@@ -31,6 +31,9 @@ import type { UploadReader } from '@alexkroman1/aai/host-internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 
 // @internal
+export function agentServerEnv(env: Record<string, string>): Record<string, string>;
+
+// @internal
 export function claimPoolPresenceAndSweep(url: string, deps?: SweepDeps): Promise<PoolPresence>;
 
 // @public

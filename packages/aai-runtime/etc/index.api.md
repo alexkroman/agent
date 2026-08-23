@@ -453,6 +453,9 @@ export type ServerOptions = {
 };
 
 // @public
+export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
+
+// @public
 export type SessionCore = {
     readonly id: string;
     configure(config: ReadyConfig): void;
