@@ -88,6 +88,11 @@
       "types": "./dist/host/ffmpeg.d.ts",
       "import": "./dist/host/ffmpeg.js"
     },
+    "./step-files": {
+      "@dev/source": "./host/step-files.ts",
+      "types": "./dist/host/step-files.d.ts",
+      "import": "./dist/host/step-files.js"
+    },
     "./tools": {
       "@dev/source": "./host/agent-tools.ts",
       "types": "./dist/host/agent-tools.d.ts",
