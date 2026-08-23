@@ -1,10 +1,17 @@
 /// <reference types="vite/client" />
 
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import {
+  createToolContext,
+  parseToolInput,
+  runTool,
+  type TestToolContext,
+  toolInputIssues,
+  withDiscoveredTools,
+} from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
-import { CATEGORIES, MOODS } from "./shared.ts";
+import { CATEGORIES, MOODS, nightProjection, nightSlot } from "./shared.ts";
 
 /**
  * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
@@ -16,6 +23,18 @@ const agentDef = withDiscoveredTools(
   authoredAgent,
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
+
+/**
+ * `runTool` takes the context in the ARGUMENTS' place when a tool needs none,
+ * so this wrapper forwards its third parameter as either — which is why it is
+ * one signature rather than an overload pair. An omitted context is a fresh
+ * one, i.e. a distinct session with an empty slot.
+ */
+const run = (
+  name: string,
+  argsOrCtx?: Record<string, unknown> | TestToolContext,
+  ctx?: TestToolContext,
+) => runTool(agentDef, name, argsOrCtx, ctx);
 
 describe("night-owl template", () => {
   test("config passes manifest validation", () => {
@@ -33,22 +52,53 @@ describe("night-owl template", () => {
   test("recommend is discovered from tools/", () => {
     expect(Object.keys(agentDef.tools ?? {})).toEqual(["recommend"]);
   });
+
+  test("the projection an untouched session pushes is an empty log", () => {
+    // What `useAgentState(nightProjection)` reads before the first tool call —
+    // derived from the slot's own default rather than guessed at in the page.
+    expect(nightProjection()).toEqual({ recs: [] });
+  });
 });
 
 describe("recommend", () => {
   test("answers with picks for the category and mood asked for", async () => {
-    const ctx = createToolContext();
-    const result = await runTool(agentDef, "recommend", { category: "movie", mood: "cozy" }, ctx);
+    const result = await run("recommend", { category: "movie", mood: "cozy" });
     expect(result).toMatchObject({ category: "movie", mood: "cozy" });
     expect((result as { picks: string[] }).picks.length).toBeGreaterThan(0);
   });
 
-  test("pushes the same picks to the client, which is what the page renders", async () => {
-    // `ctx.send` is the only reason this tool takes a context at all: the
-    // client renders the picks rather than waiting to hear them read aloud.
+  test("the picks land in the session's own log, newest first", async () => {
+    // The log is STATE, not an event stream: `syncState` pushes this projection
+    // after every tool call, so a page that reloads mid-session resumes with it
+    // rather than starting empty.
     const ctx = createToolContext();
-    const result = await runTool(agentDef, "recommend", { category: "book", mood: "spooky" }, ctx);
-    expect(ctx.sent).toEqual([{ event: "recommendations", data: result }]);
+    const first = await run("recommend", { category: "book", mood: "spooky" }, ctx);
+    const second = await run("recommend", { category: "music", mood: "chill" }, ctx);
+    expect(nightProjection(nightSlot.get(ctx))).toEqual({ recs: [second, first] });
+  });
+
+  test("two calls with no shared context are two sessions", async () => {
+    // The other half of the same rule, and the one that bites: an omitted
+    // context is a FRESH session, so nothing accumulates across these calls.
+    const ctx = createToolContext();
+    await run("recommend", { category: "book", mood: "cozy" });
+    expect(nightSlot.get(ctx).recs).toHaveLength(0);
+  });
+
+  test("the wind-down nudge is sent once, on the third pick", async () => {
+    // A moment rather than state, which is why it is a `ctx.send` the page
+    // consumes with `useEvent` and not a field on the projection: re-delivering
+    // it on every reconnect would be nagging.
+    const ctx = createToolContext();
+    await run("recommend", { category: "movie", mood: "cozy" }, ctx);
+    await run("recommend", { category: "music", mood: "cozy" }, ctx);
+    expect(ctx.sent).toEqual([]);
+    await run("recommend", { category: "book", mood: "cozy" }, ctx);
+    expect(ctx.sent).toEqual([
+      { event: "wind_down", data: "Three picks in. Want me to work out your bedtime?" },
+    ]);
+    await run("recommend", { category: "movie", mood: "chill" }, ctx);
+    expect(ctx.sent).toHaveLength(1);
   });
 
   test("every category/mood pair the schema admits has picks behind it", async () => {
@@ -58,23 +108,29 @@ describe("recommend", () => {
     // package's guide records three shipped tools having.
     for (const category of CATEGORIES) {
       for (const mood of MOODS) {
-        const result = await runTool(
-          agentDef,
-          "recommend",
-          { category, mood },
-          createToolContext(),
-        );
+        const result = await run("recommend", { category, mood });
         expect((result as { picks: string[] }).picks, `${category}/${mood}`).not.toHaveLength(0);
       }
     }
   });
 
+  test("the schema accepts a category/mood pair from the enums", async () => {
+    const parsed = await parseToolInput<{ category: string; mood: string }>(agentDef, "recommend", {
+      category: "movie",
+      mood: "cozy",
+    });
+    expect(parsed).toEqual({ category: "movie", mood: "cozy" });
+  });
+
   test("a mood outside the enum is refused by the schema", async () => {
     // The wire boundary: an LLM tool call is untyped, so the schema is the only
     // thing between a hallucinated mood and an index into `undefined`.
-    const schema = agentDef.tools?.recommend?.inputSchema;
-    if (!schema) throw new Error("recommend has no input schema");
-    const bad = await schema["~standard"].validate({ category: "movie", mood: "melancholy" });
-    expect(bad.issues).toBeDefined();
+    // `toolInputIssues` is the SDK's own ask — `~standard` is a vendor wire
+    // contract, and the detail a hand-rolled version gets wrong first is that
+    // `.validate` may be sync or async, so a missing `await` leaves `.issues`
+    // undefined and the negative test passes for the wrong reason.
+    expect(
+      await toolInputIssues(agentDef, "recommend", { category: "movie", mood: "melancholy" }),
+    ).toBeDefined();
   });
 });
