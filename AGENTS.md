@@ -69,7 +69,7 @@ selected one each by the scripts, so a new test needs no config edit (see
 **No tier carries a `retry`** — a tier that retries has classified its own
 failures as noise; `vitest.slow.config.ts` carries the argument.
 
-**Seven scenario suites need a real Postgres, and without one they SKIP** — a
+**Fifteen scenario suites need a real Postgres, and without one they SKIP** — a
 silent skip being the worst outcome available, since that tier is the only thing
 in the repo that can see a driver-level bug. `pnpm test:pg` resolves a local
 database and runs the tier against it; a skip ANNOUNCES itself via

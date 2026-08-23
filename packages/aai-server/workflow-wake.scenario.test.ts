@@ -25,14 +25,23 @@
  * hint reads), because installing the DevKit's world would pull its whole
  * migration set for a query that only needs the shape.
  *
- * Runs in the scenario tier (`pnpm test:scenario`) against
- * `AAI_TEST_PG_URL`. Core Postgres only — no extensions.
+ * Runs in the scenario tier (`pnpm test:scenario`), gated on the STACK rather
+ * than on a database — because `seedVault` below writes through the real
+ * Supabase Vault, which only the Supabase image has. Gated on `describeWithPg`
+ * it did not skip on a plain server, it FAILED: `pnpm test:pg` resolves a stock
+ * local Postgres as a legitimate narrow arm (`with-test-pg.mjs`), and there
+ * `beforeAll` died on `relation "vault.secrets" does not exist` before a single
+ * assertion ran. A gate answers "can this arm run", so an arm that cannot has
+ * to be an announced skip and never a red test — the same reason every other
+ * Vault-touching suite here (`pg-cron`, `platform-schema`, `store-conformance`)
+ * is stack-gated. CI still runs this: its platform-stack job runs the whole
+ * scenario tier with the stack up.
  */
 
 import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai-runtime";
 import { createWakeHintPublisher, WORKFLOW_WAKE_TABLE } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
-import { describeWithPg, pgUrl } from "./_pg-test-utils.ts";
+import { describeWithStack, pgUrl } from "./_pg-test-utils.ts";
 import {
   APP_DB_SCHEMA,
   type AppDatabases,
@@ -66,7 +75,7 @@ const OK: BrokeredSession = {
   guestOrigin: "wss://sandbox.test",
 };
 
-describeWithPg("durable-run wake over a real Postgres", () => {
+describeWithStack("durable-run wake over a real Postgres", () => {
   /** The PLATFORM database's connection — what elects the leader. */
   let admin: CloseableDb;
   /** A connection into the APP's OWN database — what the GUEST's connection is. */
@@ -158,7 +167,8 @@ describeWithPg("durable-run wake over a real Postgres", () => {
   /**
    * The REAL Supabase Vault, not a stand-in.
    *
-   * This stack has one (`supabase_vault` is in the local image), and the sweep
+   * The stack has one (`supabase_vault` is in the local image) — which is what
+   * `describeWithStack` above exists to guarantee — and the sweep
    * reads `vault.decrypted_secrets` directly — so a hand-rolled table would test
    * a view of our own shape rather than the one production queries. It is also
    * not creatable here: `create schema vault` fails `permission denied` against
