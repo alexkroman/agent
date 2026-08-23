@@ -1823,7 +1823,7 @@ gzipped body, a raw string — and those cases are why `deployBody` stays.
 
 ### Gating a suite on a real Postgres
 
-**Seven scenario suites need a real Postgres, and without one they SKIP.**
+**Fifteen scenario suites need a real Postgres, and without one they SKIP.**
 That tier is the only thing in the repo that can see a driver-level bug — an
 encoding that round-trips wrong, an advisory lock not held by the session that
 thinks it holds it — because an in-memory fake holds JS values and cannot be
