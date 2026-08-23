@@ -18,8 +18,9 @@
  * `greeting`. They are here rather than deleted because the browser client
  * genuinely needs them — the client-audio budgets are one half of wire paths
  * whose other half the host enforces, which is exactly why they are declared
- * once in the SDK. The root keeps only the constants that document an
- * `agent()` field.
+ * once in the SDK. That subtraction is finished: the root keeps ONE constant
+ * (`DEFAULT_SYSTEM_PROMPT`, which an author composes against) and every other
+ * budget and documented default is here.
  *
  * **This subpath is ZOD-FREE, and that is now a rule rather than an accident.**
  * It used to reach `formatSchemaIssues` through `sdk/schema.ts`, which imports
@@ -42,6 +43,13 @@ export {
   normalizeSpeechText,
   toArgsRecord,
 } from "./sdk/_wire-helpers.ts";
+// The workflow API's route prefix — the SERVER's half, with the wait clamp
+// below. A caller of a deployed agent composes no URL of its own.
+export { WORKFLOW_API_PREFIX } from "./sdk/_workflow-api-envelope.ts";
+// The opening line, for the same reason: a greeting is REPLACED rather than
+// composed, so no `agent.ts` names it — while a client rendering it before a
+// socket exists does.
+export { DEFAULT_GREETING } from "./sdk/agent-defaults.ts";
 // The app-database connection budget: what one workflow guest may hold against
 // its app role. Here because `aai-server` PROVISIONS that role's
 // `connection limit` and has to size it against this sum — two halves of one
@@ -90,10 +98,52 @@ export {
   type CoalescingRunner,
   createCoalescingRunner,
 } from "./sdk/coalescing-runner.ts";
-// The Content-Security-Policy every agent UI is served under, and the
-// WebSocket readyState the client checks — both shared with `aai-server` and
-// `aai-ui`, neither anything an agent declares.
-export { AGENT_CSP, WS_OPEN } from "./sdk/constants.ts";
+/**
+ * The Content-Security-Policy every agent UI is served under, the WebSocket
+ * readyState the client checks, and the DOCUMENTED DEFAULTS.
+ *
+ * The defaults arrived here in the same move that emptied `sdk/constants.ts`
+ * off the root barrel. They were kept there on the argument that each one
+ * documents an `agent()` field — but the field's JSDoc already carries the
+ * value, so the constant added nothing an author reads, and no template, no
+ * scaffold and no line of the shipped authoring guide ever named one. Who does
+ * read them is exactly this subpath's audience, and the `defaults` capability's
+ * own frozen example had said so out loud all along: "a client sizing a buffer,
+ * a harness matching the host's endpointing, a test asserting the shipped
+ * value." All three are framework readers.
+ *
+ * They are still the one declaration of each value, still the constants the
+ * runtime resolves a missing field to, and still assertable by a test. What
+ * changed is that reproducing a default is no longer advertised as authoring
+ * API. `DEFAULT_SYSTEM_PROMPT` is the exception and stayed on the root, because
+ * `agent({ systemPrompt })` replaces it wholesale and composing against it is
+ * the documented recipe — see `index.ts`.
+ */
+export {
+  AGENT_CSP,
+  DEFAULT_BUILTIN_TOOLS,
+  DEFAULT_ERROR_PHRASE,
+  DEFAULT_IDLE_TIMEOUT_MS,
+  DEFAULT_INTERRUPTION_MIN_DURATION_MS,
+  DEFAULT_MAX_HISTORY,
+  DEFAULT_MAX_STEPS,
+  DEFAULT_MAX_TURN_SILENCE_MS,
+  DEFAULT_MIN_BARGE_IN_WORDS,
+  DEFAULT_MIN_TURN_SILENCE_MS,
+  DEFAULT_SILENCE_PROMPT,
+  DEFAULT_START_FAILURE_PHRASE,
+  DEFAULT_STT_PROMPT,
+  DEFAULT_TOOL_CHOICE,
+  MAX_CLIENT_EVENT_NAME_LENGTH,
+  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
+  MAX_TOOL_RESULT_CHARS,
+  TOOL_EXECUTION_TIMEOUT_MS,
+  TOOL_RESULT_TRUNCATION_MARKER,
+  WS_OPEN,
+} from "./sdk/constants.ts";
+// The two budgets around `ctx.db`. A tool body reads the handle; the row cap
+// and the not-enabled message are what the driver and the guest mirror enforce.
+export { MAX_DB_RESULT_ROWS, STORAGE_DISABLED_MESSAGE } from "./sdk/db.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
 // The two halves of one physical delay — how long between the server handing a
@@ -121,6 +171,31 @@ export {
 // zod's graph into every importer of this subpath — the startup cost the
 // `/utils` module doc has always guarded, now guarded here too.
 export { formatSchemaIssues } from "./sdk/standard-schema.ts";
+/**
+ * The SERVER's half of the workflow HTTP API.
+ *
+ * `@alexkroman1/aai/workflow-api` is the CLIENT of what a deployed agent
+ * answers — a page, a script, a cron job. These four were on it and had
+ * `@alexkroman1/aai-runtime` as their only importer: the thing that ANSWERS
+ * those routes, plus the studio's own docs page quoting the prefix.
+ * `clampWorkflowWait` is the clearest — its doc says both ends share it, and the
+ * browser client does, through a relative import inside
+ * `sdk/workflow-api-client.ts`. The public export existed only so the runtime
+ * could reach the same copy; a caller passes `wait` a number and the client
+ * clamps it.
+ *
+ * The four `ctx.workflows` option bags plus `AnyWorkflowDef`/`WorkflowBody` have
+ * the same single importer and did NOT come with them: they are the parameter
+ * and member types of `WorkflowClient` and `WorkflowDef`, which are root-barrel
+ * authoring API, so a type a public signature names has to stay reachable from a
+ * documented entry point. `sdk/workflow-api-barrel.ts` carries what the docs
+ * build said when they were moved.
+ */
+export {
+  clampWorkflowWait,
+  MAX_WORKFLOW_WAIT_MS,
+  TERMINAL_WORKFLOW_STATUSES,
+} from "./sdk/workflow-run.ts";
 // The unavailable-workflows trio. Here rather than on the root barrel because all
 // three are `@internal`: their readers are the tool executor, the two
 // test-context builders, and the guest harness. Keeping them off the root also

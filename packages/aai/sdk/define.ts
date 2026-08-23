@@ -1,18 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
+import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import type { AgentParams, DefaultedAgentField, StaticAgentParams } from "./agent-params.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { ToolInputSchema } from "./schema.ts";
-import {
-  type AgentDef,
-  DEFAULT_GREETING,
-  DEFAULT_SYSTEM_PROMPT,
-  type ToolContext,
-  type ToolDef,
-} from "./types.ts";
+import { type AgentDef, DEFAULT_SYSTEM_PROMPT, type ToolContext, type ToolDef } from "./types.ts";
 
 /**
  * Define a tool with a typed input schema and execute function.

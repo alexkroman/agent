@@ -9,7 +9,7 @@
  */
 
 import type { Db } from "@alexkroman1/aai";
-import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai";
+import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai/internal";
 import postgres from "postgres";
 import { consoleLogger } from "./runtime-config.ts";
 

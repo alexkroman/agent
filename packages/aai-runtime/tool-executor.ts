@@ -12,13 +12,9 @@ import type {
   GenerateOptions,
   GenerateResult,
   Message,
+  SlotStore,
   ToolContext,
   ToolDef,
-} from "@alexkroman1/aai";
-import {
-  type SlotStore,
-  STORAGE_DISABLED_MESSAGE,
-  TOOL_EXECUTION_TIMEOUT_MS,
 } from "@alexkroman1/aai";
 import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
 import {
@@ -29,6 +25,7 @@ import {
   serializeToolFailure,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
 } from "@alexkroman1/aai/host-internal";
+import { STORAGE_DISABLED_MESSAGE, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import pTimeout from "p-timeout";
@@ -68,7 +65,7 @@ type ExecuteToolCallOptions = {
    */
   workflows?: WorkflowClient | undefined;
   /**
-   * Per-call deadline. Defaults to {@link TOOL_EXECUTION_TIMEOUT_MS} (30s),
+   * Per-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS` (30s),
    * which is sized for a VOICE turn — past it the caller is listening to
    * silence, so a slow tool is already a failed turn.
    *

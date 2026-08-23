@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { DEFAULT_STT_PROMPT } from "@alexkroman1/aai";
 import {
   ASSEMBLYAI_STT_API_KEY_ENV,
   makeSttError,
@@ -12,6 +11,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_STT_PROMPT } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_STT_EU_URL, type AssemblyAISttOptions } from "@alexkroman1/aai/stt";
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";

@@ -7,12 +7,12 @@
  * lifecycle hooks, and session management.
  */
 
-import { STORAGE_DISABLED_MESSAGE } from "@alexkroman1/aai";
 import {
   buildSystemPrompt,
   createOwnedMap,
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
+import { STORAGE_DISABLED_MESSAGE } from "@alexkroman1/aai/internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";

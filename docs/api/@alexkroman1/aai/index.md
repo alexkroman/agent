@@ -4,12 +4,35 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 
 What an `agent.ts` imports: `agent()` and `tool()`, `sessionSlot()` and
 `workflow()`, the types they take and return, the recommended
-`assemblyAIPipeline()` preset, the `assemblyAIS2s()` opt-in, and the
-`DEFAULT_*` constants that document an `agent()` field's default.
+`assemblyAIPipeline()` preset, and the `assemblyAIS2s()` opt-in.
 
-A symbol is on this barrel when an `agent.ts`, a tool module, or a
-`workflow()` would NAME it. Everything else the package publishes is on a
-subpath, chosen by WHO READS IT:
+**The membership TEST is that an `agent.ts`, a tool module, or a
+`workflow()` would NAME the symbol.** Two corollaries decide every case this
+barrel has got wrong: a budget the framework enforces on its own does not
+qualify however public it is, and neither does a value whose only use is
+READING BACK what the framework already did — reproducing a default is what
+`@alexkroman1/aai/internal` is for.
+
+That test is why `sdk/constants.ts` is no longer re-exported here at all.
+Eighteen `DEFAULT_*`/`MAX_*` constants were, on the argument that each one
+documents an `agent()` field — but the field's own JSDoc already carries the
+value (`@defaultValue \`10\``), so the constant answered nothing an author
+could not read at the field, and none of the 25 templates, the scaffold, or
+the shipped authoring guide named one. Their readers are a client sizing a
+buffer, a harness matching the host's endpointing and a test asserting the
+shipped value — framework code, which is the `/internal` audience exactly.
+`MAX_DB_RESULT_ROWS` and `STORAGE_DISABLED_MESSAGE` went with them, which is
+why `sdk/db.ts` is named rather than wildcarded below.
+
+`DEFAULT_SYSTEM_PROMPT` is the one that stayed, and it stayed by PASSING the
+test rather than as an exception: `agent({ systemPrompt })` replaces the
+~10,000 characters of measured voice rules wholesale, so naming the constant
+is the only way to keep them and add domain rules on top. That recipe is
+documented on the constant and compiled by `check:doc-examples`; it reaches
+this barrel through `./sdk/types.ts`.
+
+Everything else the package publishes is on a subpath, chosen by WHO READS
+IT:
 
 | Subpath | Reach for it when |
 | --- | --- |
@@ -1079,14 +1102,14 @@ optional builtinTools?: readonly BuiltinTool[];
 ```
 
 Built-in server-side tools enabled for this agent. Unset enables NONE
-([DEFAULT\_BUILTIN\_TOOLS](#default_builtin_tools) is empty) — a built-in is something an agent
+(`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent
 asks for rather than something it has to notice and switch off, so `[]` and
 omitting the field mean the same thing. See [BuiltinTool](#builtintool) for the
 catalog.
 
 ###### Default Value
 
-`[]` ([DEFAULT\_BUILTIN\_TOOLS](#default_builtin_tools))
+`[]` (`DEFAULT_BUILTIN_TOOLS`)
 
 ##### deadAirCoverMs?
 
@@ -1122,7 +1145,7 @@ failed turn produces no text, so nothing would otherwise reach TTS. Set
 ###### Default Value
 
 `"Sorry, I had a problem just then. Could you say that
-again?"` ([DEFAULT\_ERROR\_PHRASE](#default_error_phrase))
+again?"` (`DEFAULT_ERROR_PHRASE`)
 
 ###### Inherited from
 
@@ -1186,7 +1209,7 @@ Sentence spoken when a session starts. Set `""` to start silent.
 ###### Default Value
 
 `"Hey there! I'm an AI voice assistant. What can I help you
-with?"` ([DEFAULT\_GREETING](#default_greeting))
+with?"` (`DEFAULT_GREETING`)
 
 ##### idleTimeoutMs?
 
@@ -1200,7 +1223,7 @@ How long the session may go with no inbound audio before it is closed
 
 ###### Default Value
 
-`300_000` (5 minutes, [DEFAULT\_IDLE\_TIMEOUT\_MS](#default_idle_timeout_ms))
+`300_000` (5 minutes, `DEFAULT_IDLE_TIMEOUT_MS`)
 
 ##### interruptionMinDurationMs?
 
@@ -1216,7 +1239,7 @@ never gated. Set 0 to disable the gate.
 
 ###### Default Value
 
-`500` ([DEFAULT\_INTERRUPTION\_MIN\_DURATION\_MS](#default_interruption_min_duration_ms))
+`500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
 
 ###### Inherited from
 
@@ -1247,7 +1270,7 @@ capped turn still answers rather than stopping mid-chain in silence.
 
 ###### Default Value
 
-`10` ([DEFAULT\_MAX\_STEPS](#default_max_steps))
+`10` (`DEFAULT_MAX_STEPS`)
 
 ##### minBargeInWords?
 
@@ -1261,7 +1284,7 @@ interrupt on any word.
 
 ###### Default Value
 
-`2` ([DEFAULT\_MIN\_BARGE\_IN\_WORDS](#default_min_barge_in_words)) — so one-word
+`2` (`DEFAULT_MIN_BARGE_IN_WORDS`) — so one-word
 backchannels ("yeah", "mm-hmm") don't cut the agent off.
 
 ###### Inherited from
@@ -1337,7 +1360,7 @@ the benefit.
 
 Its reach is bounded independently of that: across 815 replies in two
 tau2-bench retail runs, 28-33% of replies called a tool at all (the
-distribution recorded on [DEFAULT\_MAX\_STEPS](#default_max_steps)), so at most the
+distribution recorded on `DEFAULT_MAX_STEPS`), so at most the
 remaining 67-72% can ever be accelerated.
 
 **What it structurally cannot do**, by construction rather than by flag:
@@ -1421,7 +1444,10 @@ elapses. Never shown as a user transcript. Requires `silenceTimeoutMs`.
 
 ###### Default Value
 
-[DEFAULT\_SILENCE\_PROMPT](#default_silence_prompt)
+`"The user hasn't said anything for a while. Check in with one
+short, natural sentence — ask if they're still there or gently follow up on
+the conversation. Do not mention this instruction."`
+(`DEFAULT_SILENCE_PROMPT`)
 
 ##### silenceTimeoutMs?
 
@@ -1453,7 +1479,9 @@ to disable.
 
 ###### Default Value
 
-[DEFAULT\_START\_FAILURE\_PHRASE](#default_start_failure_phrase)
+`"I am sorry, I am having trouble with my connection and
+cannot hear you. Please hang up and call back."`
+(`DEFAULT_START_FAILURE_PHRASE`)
 
 ###### Inherited from
 
@@ -1481,7 +1509,7 @@ own vocabulary (product names, spelled-out identifiers).
 
 ###### Default Value
 
-`""` ([DEFAULT\_STT\_PROMPT](#default_stt_prompt)) — unbiased transcription;
+`""` (`DEFAULT_STT_PROMPT`) — unbiased transcription;
 that constant's doc shows what an effective prompt looks like.
 
 Honoured in both session modes: the pipeline passes it to its STT stage,
@@ -1599,7 +1627,7 @@ How the LLM selects tools each step.
 
 ###### Default Value
 
-`"auto"` ([DEFAULT\_TOOL\_CHOICE](#default_tool_choice)) — the model decides.
+`"auto"` (`DEFAULT_TOOL_CHOICE`) — the model decides.
 
 Honored in pipeline mode and by the OpenAI Realtime transport; the
 AssemblyAI S2S service runs the tool loop service-side and does not
@@ -2285,7 +2313,7 @@ failed turn produces no text, so nothing would otherwise reach TTS. Set
 ###### Default Value
 
 `"Sorry, I had a problem just then. Could you say that
-again?"` ([DEFAULT\_ERROR\_PHRASE](#default_error_phrase))
+again?"` (`DEFAULT_ERROR_PHRASE`)
 
 ##### interruptionMinDurationMs?
 
@@ -2301,7 +2329,7 @@ never gated. Set 0 to disable the gate.
 
 ###### Default Value
 
-`500` ([DEFAULT\_INTERRUPTION\_MIN\_DURATION\_MS](#default_interruption_min_duration_ms))
+`500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
 
 ##### minBargeInWords?
 
@@ -2315,7 +2343,7 @@ interrupt on any word.
 
 ###### Default Value
 
-`2` ([DEFAULT\_MIN\_BARGE\_IN\_WORDS](#default_min_barge_in_words)) — so one-word
+`2` (`DEFAULT_MIN_BARGE_IN_WORDS`) — so one-word
 backchannels ("yeah", "mm-hmm") don't cut the agent off.
 
 ##### preemptiveGeneration?
@@ -2352,7 +2380,7 @@ the benefit.
 
 Its reach is bounded independently of that: across 815 replies in two
 tau2-bench retail runs, 28-33% of replies called a tool at all (the
-distribution recorded on [DEFAULT\_MAX\_STEPS](#default_max_steps)), so at most the
+distribution recorded on `DEFAULT_MAX_STEPS`), so at most the
 remaining 67-72% can ever be accelerated.
 
 **What it structurally cannot do**, by construction rather than by flag:
@@ -2402,7 +2430,9 @@ to disable.
 
 ###### Default Value
 
-[DEFAULT\_START\_FAILURE\_PHRASE](#default_start_failure_phrase)
+`"I am sorry, I am having trouble with my connection and
+cannot hear you. Please hang up and call back."`
+(`DEFAULT_START_FAILURE_PHRASE`)
 
 ***
 
@@ -3259,7 +3289,7 @@ and provide capabilities like web search, code execution, and API access.
 - `"calculate"` — Safely evaluate an arithmetic expression (no code execution).
 
 When `builtinTools` is not set, NONE are enabled
-([DEFAULT\_BUILTIN\_TOOLS](#default_builtin_tools) is empty) — a built-in is something an agent
+(`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent
 asks for rather than something it has to notice and switch off. Name the
 ones you want; `[]` and omitting the field mean the same thing.
 
@@ -4498,8 +4528,8 @@ send(event: string, data: unknown): void;
 ```
 
 Push a custom event to the connected browser client. Fire-and-forget:
-events whose name exceeds [MAX\_CLIENT\_EVENT\_NAME\_LENGTH](#max_client_event_name_length) or whose
-serialized payload exceeds [MAX\_CLIENT\_EVENT\_PAYLOAD\_BYTES](#max_client_event_payload_bytes) are
+events whose name exceeds `MAX_CLIENT_EVENT_NAME_LENGTH` or whose
+serialized payload exceeds `MAX_CLIENT_EVENT_PAYLOAD_BYTES` are
 dropped (with a warning log), not thrown.
 
 ###### Parameters
@@ -4685,7 +4715,7 @@ execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 
 Function that executes the tool and returns a result. The result is
 JSON-serialized for the LLM and the client, and capped at
-[MAX\_TOOL\_RESULT\_CHARS](#max_tool_result_chars) (4000) characters — longer results are
+`MAX_TOOL_RESULT_CHARS` (4000) characters — longer results are
 trimmed and end with a `[truncated]` marker.
 
 ###### Parameters
@@ -5621,464 +5651,6 @@ someone guessing, which is the failure being prevented.
 
 ***
 
-### DEFAULT\_BUILTIN\_TOOLS
-
-```ts
-const DEFAULT_BUILTIN_TOOLS: readonly [];
-```
-
-Built-in tools enabled when an agent does not set `builtinTools` at all —
-**none**. An agent gets exactly the tools it declares.
-
-These were the four "cognitive" builtins: a private reasoning scratchpad
-(`think`), session notes (`remember`/`recall`), and a safe calculator. They
-are still available; they are simply opt-in now via
-`agent({ builtinTools: ["think", ...] })`.
-
-The evidence that kept them is worth keeping too, because it argues the
-other way and a future change should have to answer it. Trimming to
-`["calculate"]` was tried on a latency theory — each builtin costs an LLM
-round trip before the agent says anything — and that theory did not survive
-measurement: on tau2's voice tasks the model never invoked `think` or
-`calculate` at all, not even when the prompt demanded a calculator for a
-dollar figure it was about to quote. So an unused builtin costs little, and
-the one paired comparison available favoured keeping `think` (4/5 correct
-writes with it against 3/5 without).
-
-What that measurement did NOT weigh is the prompt. Declaring builtins makes
-`hasTools` true, which appends the whole tool preamble, and adds a
-"Built-in Tool Usage" block on top — for an agent with no tools of its own
-that is the difference between a ~7.1k and a ~10.9k character system prompt,
-on a scaffold already carrying three layers that legislate the same
-behaviours. Defaulting to none makes the tool surface something an agent
-asks for rather than something it has to notice and switch off.
-
-***
-
-### DEFAULT\_ERROR\_PHRASE
-
-```ts
-const DEFAULT_ERROR_PHRASE: "Sorry, I had a problem just then. Could you say that again?" = "Sorry, I had a problem just then. Could you say that again?";
-```
-
-Spoken when a pipeline turn's LLM stream fails, so a provider outage is a
-recoverable moment in the conversation instead of a dead line.
-
-Without it the caller hears nothing at all: a failed turn produces no text,
-so nothing reaches TTS, and the only trace is a `llm` session error the
-browser surfaces silently. Observed against the AssemblyAI LLM Gateway
-returning 429 and 500 — three SDK retry attempts, then a turn that simply
-never speaks.
-
-Asks the user to repeat rather than just apologizing: the session is still
-live and the next turn usually succeeds, so the useful thing is to hand the
-conversation back. `""` disables it.
-
-***
-
-### DEFAULT\_GREETING
-
-```ts
-const DEFAULT_GREETING: "Hey there! I'm an AI voice assistant. What can I help you with?" = "Hey there! I'm an AI voice assistant. What can I help you with?";
-```
-
-Default greeting spoken when a session starts.
-
-Deliberately UNANNOTATED, so the reference renders the sentence rather than
-`string`. This is the one thing every caller hears before they say anything,
-and the source is not in the tarball.
-
-***
-
-### DEFAULT\_IDLE\_TIMEOUT\_MS
-
-```ts
-const DEFAULT_IDLE_TIMEOUT_MS: 300000 = 300000;
-```
-
-Default `idleTimeoutMs` (ms of user silence before the session is closed).
-Re-armed on every inbound audio frame; `0` or a non-finite value disables
-the timer entirely.
-
-***
-
-### DEFAULT\_INTERRUPTION\_MIN\_DURATION\_MS
-
-```ts
-const DEFAULT_INTERRUPTION_MIN_DURATION_MS: 500 = 500;
-```
-
-Minimum sustained speech before an interim-triggered barge-in aborts the
-agent's reply (pipeline mode) — measured from the utterance's first partial,
-LiveKit's `min_interruption_duration` analog. A companion to
-[DEFAULT\_MIN\_BARGE\_IN\_WORDS](#default_min_barge_in_words): that one asks "is this enough words to be
-an interruption", this one asks "has it lasted long enough to be speech at
-all". Committed turns (STT finals) are never gated, so nothing the caller
-actually said is lost — a gated barge-in only means the agent finishes its
-sentence first.
-
-Non-zero by default because the alternative is worse than the latency: room
-noise and the tail of the agent's own audio both produce short interim
-transcripts, and every one of them used to abandon a reply mid-word. Callers
-heard the agent give up on its own sentences.
-
-***
-
-### DEFAULT\_MAX\_HISTORY
-
-```ts
-const DEFAULT_MAX_HISTORY: 200 = 200;
-```
-
-Sliding window of conversation messages retained per session.
-
-***
-
-### DEFAULT\_MAX\_STEPS
-
-```ts
-const DEFAULT_MAX_STEPS: 10 = 10;
-```
-
-Max TOOL-CALLING steps per reply — bounds runaway tool loops.
-
-Matches LiveKit's `max_tool_steps`. The cap bounds tool steps only: on
-reaching it the pipeline spends ONE more step with `toolChoice: "none"`, so
-the model must produce speech (`forceFinalAnswer` in
-`host/transports/pipeline-llm-stream.ts`).
-
-**The forced step is what makes ANY cap safe, and the two must move
-together.** Without it, hitting the cap ends the turn wherever it lands, so
-the agent stops holding a half-answer and the caller hears nothing at all.
-With it, a truncated chain still answers ("I found your order but couldn't
-reach the returns system — want me to try again?"). Keep the forced step
-whatever this number becomes.
-
-**10, and the measurement says it costs almost nothing.** Across 815 replies
-in two tau2-bench retail runs, 28-33% of replies called a tool at all, and
-among those the count was p50 **1**, p90 3, p99 5-6 — so the cap is not what
-shapes ordinary turns either way, and exactly one reply of 815 ever reached
-10. A lower cap was tried (3) on the reasoning that it covers p90 outright;
-the tail it truncates is the chain-heavy domain, where a step limit turns a
-completable task into a half-answer, and the forced final step makes that
-degradation quiet rather than absent. What the one 10-step reply shows is
-the real failure mode: it made 7 consecutive tool calls with no speech
-between them, so what the caller experienced was DEAD AIR (see
-`DEFAULT_DEAD_AIR_COVER_MS`), not a step limit. Tune the silence, not the
-cap; the real constraint on a long chain is caller patience.
-
-S2S enforces the same cap service-side by refusing tool calls past it, where
-no forced final step is possible.
-
-***
-
-### DEFAULT\_MAX\_TURN\_SILENCE\_MS
-
-```ts
-const DEFAULT_MAX_TURN_SILENCE_MS: 3500 = 3500;
-```
-
-Maximum silence (ms) before AssemblyAI force-ends a turn regardless of
-content (`max_turn_silence`). **This is the pause-tolerance knob**: it bounds
-only utterances that never read as complete, so raising it is paid for by
-hesitant speech alone and costs an ordinary finished sentence nothing —
-unlike [DEFAULT\_MIN\_TURN\_SILENCE\_MS](#default_min_turn_silence_ms), which taxes every turn.
-
-Reach it per agent with `agent({ maxTurnSilenceMs })` on the default pipeline,
-or on the descriptor directly with `assemblyAIStt({ maxTurnSilenceMs })`.
-
-#### Default Value
-
-`3500` — the value both measured tau2-bench retail runs scored
-reward 0.68 at, paired with a 1600 minimum.
-
-#### Remarks
-
-**3000 was tried and reverted.** It was a 500 ms trim off the measured pair,
-deliberate but never measured on its own, carrying an explicit revert
-condition: *splits reappearing on hesitant, non-spelling utterances while
-spelled identifiers stay intact*, the asymmetry that distinguishes this
-ceiling from [DEFAULT\_MIN\_TURN\_SILENCE\_MS](#default_min_turn_silence_ms). That is precisely what the
-retail run at 3000 produced (aligning every committed final against its gold
-utterance with `scripts/stt_errors.py`, 40 of 56 utterances mis-heard). Every
-split landed on a hesitation, and every one of those hesitations was a
-non-speech event mid-sentence:
-
-- *"…how many T-shirt options are on your online store right now? And second,
-  I need to change all my pending [sneeze][sneeze][sneeze] T-shirts to
-  purple…"* — committed after "right now?", the entire second request
-  dropped, then re-attached to the FRONT of the caller's next, unrelated
-  turn.
-- *"Yes—confirm. [sneeze][sneeze][sneeze] Go ahead."* — two finals, so two
-  independent replies to one act of confirming.
-
-Meanwhile the spelled identifiers the floor protects came through whole
-("first name Y-U-S-U-F, last name R-O-S-S-I"), which is the other half of the
-signature and the reason this is the knob that moves rather than the
-minimum — raising that one would tax every finished utterance for a fault
-that only hesitant ones have. The record is not that 3500 is optimal; it is
-that a split does not merely delay a turn, it makes the agent answer half a
-request and then treat the other half as a new one.
-
-**Two orderings this value has to keep.** It stays BELOW
-`DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (4000, internal) less final-emission
-latency, so an utterance force-ended by this ceiling still delivers its final
-before the speaking edge goes idle — and the idle edge is what fires a
-false-interruption resume (`host/transports/pipeline-recovery.ts`), so
-crossing that line does not merely delay a turn, it lets the agent resume a
-reply the caller really did interrupt. 500 ms of margin is thin, which is why
-raising this to 3500 took `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` to 4000 with it.
-And it stays clear of the service's own 1536 default, so the ceiling is ours
-rather than silently the service's — the state this constant was introduced
-to escape.
-
-What the ceiling costs is pause tolerance for hesitant speech, paid ONLY by
-utterances that never read as complete — which is equally the reason trimming
-it buys so little. The measured tail is content-driven and long (p90 endpoint
-latency ~4.0-4.6s at every setting swept), so the ceiling is not what makes a
-slow turn slow.
-
-#### See
-
- - [DEFAULT\_MIN\_TURN\_SILENCE\_MS](#default_min_turn_silence_ms) — the floor this ceiling pairs with.
- - `DEFAULT_DEEPGRAM_ENDPOINTING_MS` on `@alexkroman1/aai/stt` — Deepgram has
-no counterpart to this ceiling; it endpoints on a single silence threshold.
-
-***
-
-### DEFAULT\_MIN\_BARGE\_IN\_WORDS
-
-```ts
-const DEFAULT_MIN_BARGE_IN_WORDS: 2 = 2;
-```
-
-Minimum number of words in an interim STT transcript before a barge-in
-aborts the agent's in-flight turn (pipeline mode). Default 2 so a single
-word — a backchannel ("mm-hmm", "yeah"), a cough transcribed as one token,
-or the leading fragment of the user's own turn — does NOT cut the agent off
-mid-sentence. Sub-threshold utterances are not lost: they are still
-transcribed and answered once the current reply finishes (see onSttFinal).
-Set to 1 to restore interrupt-on-any-word.
-
-***
-
-### DEFAULT\_MIN\_TURN\_SILENCE\_MS
-
-```ts
-const DEFAULT_MIN_TURN_SILENCE_MS: 1600 = 1600;
-```
-
-Silence (ms) before AssemblyAI streaming STT runs its end-of-turn CHECK
-(`min_turn_silence`). Endpointing lives in the STT provider, not the
-transport: disfluent speech (mid-utterance pauses, self-corrections, false
-starts) would otherwise split one intended utterance across several finals,
-each committing a turn — the agent answering half the request while the rest
-is still being spoken, then that same breath barging in and cancelling the
-reply.
-
-**This is not the pause-tolerance knob — [DEFAULT\_MAX\_TURN\_SILENCE\_MS](#default_max_turn_silence_ms)
-is.** On Universal-3.5 Pro the two are different mechanisms. At
-`min_turn_silence` the model transcribes and asks whether the turn READS as
-complete: if yes the turn ends, if no a partial is emitted and the turn stays
-OPEN. Only `max_turn_silence` force-ends regardless of content. So this value
-is the latency floor on utterances that really did finish — the common case —
-while a hesitant one is held open by the check itself and bounded by the
-ceiling.
-
-Conflating them cost a release. This was raised 1500 -> 2000 -> 3000 chasing
-Full-Duplex-Bench v3's "I'm looking for, um, for a new [pause] let me think
-[pause] a desk", which kept splitting. But `max_turn_silence` defaults to
-1536 and was never set, so from 2000 on the minimum EXCEEDED the maximum: the
-completeness check could not fire before the content-blind force-end had
-already closed the turn. Every ending came from the acoustic fallback, which
-is the mechanism that splits utterances — the 2000 step plausibly made
-splitting worse rather than better, and 3000 changed nothing at all. It also
-taxed every complete utterance ~3s for a protection it was not buying.
-
-**The two knobs guard OPPOSITE splits, and this one must clear a DICTATION
-pause.** A minimum too low splits a multi-sentence utterance — "How many
-options do you have? Also, I want to return three items." — because the first
-sentence genuinely reads complete, so the check ends the turn at the question
-mark and the agent answers half the request. Worse, it splits a caller
-spelling something: "Y, U, S, U, F." carries terminal punctuation from the
-ASR, so a fragment of a spelled name READS complete and the turn ends
-mid-entity. A maximum too low splits a hesitant utterance, which never reads
-complete. So this value must clear the pause a speaker leaves between
-sentences and between dictated characters, while the ceiling clears the pause
-left WITHIN one continuous thought.
-
-**1600 is measured, not chosen.** At 1000 this regressed tau2-bench retail
-hard: DB reward 1.00 -> 0.40 across the same five tasks, while NL assertions
-went UP (0.60 -> 0.80) — the agent talked better and acted worse, because it
-was authenticating against truncated names. Instrumenting the failing run,
-the pauses INSIDE one user utterance were 856, 917, 927, 941, 946, 972, 973,
-991, 993, 1024, 1026, 1050, 1066, 1087, 1172, 1328 and 1455 ms: nine of the
-eighteen clear 1000, and none clear 1536. The caller spelled their name,
-it landed truncated, they spelled it again, and then gave up — so no auth, no
-returns, and an unchanged database. 1600 sits above the observed 1455 ms
-worst case with a little margin. AssemblyAI documents exactly this
-("raise `min_turn_silence` when brief pauses end turns too early, for example
-while a caller dictates a phone number"); the 1000 ms the transport's own
-tests pin is a floor, not a target.
-
-That also rules out AssemblyAI's `mode` preset values (128 / 128 / 800): even
-`max_accuracy` is tuned for clean dictation into a mic, not for a phone
-caller who strings sentences together and spells identifiers mid-thought.
-
-The cost is real and paid by every finished utterance, so do not raise this
-further without a measurement — reach for [DEFAULT\_MAX\_TURN\_SILENCE\_MS](#default_max_turn_silence_ms)
-instead, which only bills the utterances that need it.
-
----
-
-**Re-confirmed at 1600 against AssemblyAI's NEW endpointer.** The service
-shipped an endpointing change, which invalidated the premise of everything
-above (those failures were the semantic completeness check firing
-mid-spelling, so a change to how that check decides can move the knee). It
-was briefly dropped to 800 to retest, then restored on direct evidence.
-
-The two tau2-bench retail runs differ ONLY in the endpointer — `sandbox`
-carries the new one, `default` does not — so aligning every committed STT
-final to its gold utterance (`user_labels.txt`) A/Bs the models at an
-identical 1600, offline, over 549 substantive utterances:
-
-| endpointer | clean | SPLIT | MERGED | balance |
-| --- | --- | --- | --- | --- |
-| old (`retail-stt-default-1031`) | 72% | 12.5% | 8.6% | +10, split-heavy |
-| new (`retail-stt-sandbox-1031`) | 73% |  9.9% | 8.9% | +3, balanced |
-
-So the new model splits 21% less at the same window and the error is now
-SYMMETRIC — which is the signature of sitting at the knee. That is the whole
-argument: the knee moved DOWN (the old model wanted a longer window at 1600;
-this one does not), but it moved modestly, and 1600 is now near-optimal
-rather than too long. Halving it to 800 pushes hard into split-dominated
-error, and splits are the expensive direction — a split truncates a spelled
-identifier so the tool call authenticates against a fragment, while a merge
-keeps every word and costs only latency. Both error classes land on the same
-content (spelled emails and names); moving this knob only chooses which one
-you get.
-
-A turn-taking-only replay harness CANNOT settle this knob — it declares no
-tools and scores no database, so the regression (truncated auth arguments: NL
-assertions rise while DB match collapses) is invisible to it. The instrument
-that produced the table above is gold-utterance alignment over an archived
-run's `task.log`; reach for that, or for reward.
-
----
-
-**800 WAS TRIED AND FAILED — measured, on reward.** It was set deliberately
-against everything above, as a product decision to buy latency at the cost of
-splits, and the validation run it asked for disproved it. tau2-bench retail,
-the same 25 tasks at the same seed, differing only in this pair:
-
-| run | min / max | reward | mis-heard | split / merged | reached a tool call |
-| --- | --- | --- | --- | --- | --- |
-| `retail-stt-default-1248` | 1600 / 3500 | **0.68** | 43% | 23 / 14 (1.6:1) | 15 of 294 (5.1%) |
-| `retail-stt-default-139` | 800 / 1600 | **0.12** | 52% | 27 / 8 (3.4:1) | 26 of 264 (9.8%) |
-
-`retail-stt-default-1031` independently scored 0.68, so that is the stable
-baseline and 0.12 is a 5.7x regression — 3 of 25 tasks passing against 17.
-The prediction recorded here held exactly: splits rose ~30% per utterance
-while merges fell ~37%, moving the error off the knee into the expensive
-direction, and the rate at which a mis-hearing corrupted a tool argument
-nearly doubled. Task 1 is the canonical failure — "Yusuf Rossi, zip code one
-nine one two two" came back as "You'll surprise me. Zip code 19122.", then
-"Already gave it—Yusuf Rossi" as "Yusuf Rafi", and
-`find_user_id_by_name_zip.last_name='rafi'` authenticated against a fragment.
-
-Two notes on how that was established, both reusable:
-
-`scripts/stt_errors.py` in tau2-bench IS the gold-utterance alignment
-instrument this doc asks for — it aligns greedily over 1:1/1:2/2:1 and reports
-the CARDINALITY, so a split is a named finding rather than a low similarity
-score. Do not rewrite it. `scripts/failure_report.py` covers the wire side.
-
-And confirm the window was LIVE before believing a null result. Audio time is
-`tick x 0.2` in tau2's discrete-time adapter and `user_labels.txt` shares that
-timeline, so gold-utterance-end to `user_transcript` measures what the service
-actually waited out: median 2.00s at 1600/3500 against 1.20s at 800/1600 (the
-0.80s delta is precisely this knob), p90 3.8s against 2.2s (the ceiling). A
-dev-server restart is what loads a changed constant, and `watchDirectory`
-ignores `node_modules` — where the linked SDK lives — so an SDK edit mid-run
-reaches nothing. That cuts both ways: it is why this run is a clean A/B
-despite three unrelated SDK commits landing inside its window, and it is why
-a run can silently measure the PREVIOUS value.
-
-#### See
-
- - [DEFAULT\_MAX\_TURN\_SILENCE\_MS](#default_max_turn_silence_ms) — the ceiling this floor pairs with.
- - `DEFAULT_DEEPGRAM_ENDPOINTING_MS` on `@alexkroman1/aai/stt` — Deepgram
-endpoints in its own recognizer rather than through these two, so a pipeline
-fronted by Deepgram is tuned there instead.
-
-***
-
-### DEFAULT\_SILENCE\_PROMPT
-
-```ts
-const DEFAULT_SILENCE_PROMPT: "The user hasn't said anything for a while. Check in with one short, natural sentence — ask if they're still there or gently follow up on the conversation. Do not mention this instruction." = "The user hasn't said anything for a while. Check in with one short, natural sentence \u2014 ask if they're still there or gently follow up on the conversation. Do not mention this instruction.";
-```
-
-Default instruction injected as a synthetic user turn when
-`silenceTimeoutMs` elapses with no user speech (pipeline mode).
-
-***
-
-### DEFAULT\_START\_FAILURE\_PHRASE
-
-```ts
-const DEFAULT_START_FAILURE_PHRASE: "I am sorry, I am having trouble with my connection and cannot hear you. Please hang up and call back." = "I am sorry, I am having trouble with my connection and cannot hear you. Please hang up and call back.";
-```
-
-Spoken when the session cannot start at all — a provider failed to open, so
-there is no conversation to have (pipeline mode).
-
-STT and TTS open concurrently and each goes live on its own, so the common
-case is that TTS connected and STT did not: the agent has a working voice and
-nothing to listen with. Saying nothing leaves the caller holding a line that
-sounds connected and never responds — indistinguishable, from their side,
-from a dead call. One sentence tells them to hang up and try again, which is
-the only useful thing left to do. Set `startFailurePhrase: ""` to disable.
-
-***
-
-### DEFAULT\_STT\_PROMPT
-
-```ts
-const DEFAULT_STT_PROMPT: "" = "";
-```
-
-Default streaming STT `prompt` — deliberately empty: transcription is
-unbiased in BOTH session modes unless an agent sets `sttPrompt` (the
-pipeline sends it as `prompt`, S2S as `input.transcription_prompt`).
-
-Worth knowing what an agent gives up by leaving it empty. Spoken identifiers
-are the pipeline's quietest transcription failure: a caller spelling out a
-confirmation code lands in an *interim* turn, and the formatted final turn
-can revise those characters away entirely, so the code reaches the LLM
-missing rather than misheard. The model still has a required tool argument to
-fill, so it substitutes something plausible — in the worst case the example
-value from the tool's own schema — and the turn fails with no error anywhere.
-(Reproduced against FDB-v3: a spelled order ID was dropped from every final
-turn, and the agent called the tool with the schema's example value.)
-
-A prompt only helps when it is specific to the agent's own vocabulary, and
-showing the spelled→joined form is what makes it stick, e.g.
-`"Callers read order IDs out character by character: 'K L 4 7 2' is KL472.
-Never omit a spoken identifier."` A generic version of the same instruction
-measured no better than none, which is why there is no default here — and
-why an unrelated prompt is worse than empty: it biases the transcript
-toward vocabulary the caller never used.
-
-**A generic spelled-identifier default was shipped and reverted**, which is
-the measurement worth keeping: it took an FDB-v3 5-scenario slice from 40% to
-80% strict pass, and that win does not transfer to a line whose callers never
-spell anything, where the same prose steers the transcript toward
-alphanumeric codes that were never said. Biasing is the agent author's call
-because only they know the vocabulary; a host-side default can only guess.
-
-***
-
 ### DEFAULT\_SYSTEM\_PROMPT
 
 ```ts
@@ -6124,102 +5696,6 @@ export default agent({
 The full text is ~10,000 characters and is assembled from parts, so it is not
 reproduced here — a second copy in a comment would drift from the one the
 agent runs. Print `DEFAULT_SYSTEM_PROMPT` to read it exactly as sent.
-
-***
-
-### DEFAULT\_TOOL\_CHOICE
-
-```ts
-const DEFAULT_TOOL_CHOICE: "auto";
-```
-
-Default `toolChoice`: the LLM decides when to call tools vs respond directly.
-
-***
-
-### MAX\_CLIENT\_EVENT\_NAME\_LENGTH
-
-```ts
-const MAX_CLIENT_EVENT_NAME_LENGTH: 256 = 256;
-```
-
-Wire cap on a `custom_event` event name (`ctx.send` → client).
-
-***
-
-### MAX\_CLIENT\_EVENT\_PAYLOAD\_BYTES
-
-```ts
-const MAX_CLIENT_EVENT_PAYLOAD_BYTES: 65536 = 65536;
-```
-
-Wire cap on a `custom_event`'s serialized payload (64 KB) — prevents
-memory abuse via `ctx.send`. The payload is arbitrary JSON, so any
-enforcement is imperative (serialize + measure) rather than in the zod
-schema.
-
-***
-
-### MAX\_DB\_RESULT\_ROWS
-
-```ts
-const MAX_DB_RESULT_ROWS: 1000 = 1000;
-```
-
-Max rows one `ctx.db` query may return; queries that could exceed it
-should paginate with LIMIT/OFFSET. Exceeding the cap throws rather than
-silently truncating — a shortened result is indistinguishable from a
-complete one. Enforced identically under `aai dev` and on the platform —
-both route through the same Postgres driver.
-
-***
-
-### MAX\_TOOL\_RESULT\_CHARS
-
-```ts
-const MAX_TOOL_RESULT_CHARS: 4000 = 4000;
-```
-
-Cap (characters) on a tool result's JSON serialization as seen by the LLM
-and the client; longer results are trimmed and end with
-[TOOL\_RESULT\_TRUNCATION\_MARKER](#tool_result_truncation_marker).
-
-***
-
-### STORAGE\_DISABLED\_MESSAGE
-
-```ts
-const STORAGE_DISABLED_MESSAGE: "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings → Database in the studio; under `aai dev`, set DATABASE_URL in the project .env." = "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings \u2192 Database in the studio; under `aai dev`, set DATABASE_URL in the project .env.";
-```
-
-Error thrown when tool code touches `ctx.db` while storage is not
-enabled. Enable storage with `aai storage enable` (production) or by
-setting `DATABASE_URL` in the project `.env` (`aai dev`). The guest
-harness keeps an import-free duplicate of this string, pinned by an
-equality test — dev and prod must read identically.
-
-***
-
-### TOOL\_EXECUTION\_TIMEOUT\_MS
-
-```ts
-const TOOL_EXECUTION_TIMEOUT_MS: 30000 = 30000;
-```
-
-Wall-clock budget (ms) for one tool `execute` call before it is aborted.
-
-***
-
-### TOOL\_RESULT\_TRUNCATION\_MARKER
-
-```ts
-const TOOL_RESULT_TRUNCATION_MARKER: "\n[truncated]" = "\n[truncated]";
-```
-
-Appended to a tool result the framework trimmed at
-[MAX\_TOOL\_RESULT\_CHARS](#max_tool_result_chars), so a model reading
-it can tell the record is incomplete rather than answering from a partial list
-as though it were the whole one.
 
 ***
 

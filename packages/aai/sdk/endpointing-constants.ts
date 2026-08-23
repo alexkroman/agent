@@ -54,7 +54,7 @@
  * is still being spoken, then that same breath barging in and cancelling the
  * reply.
  *
- * **This is not the pause-tolerance knob — {@link DEFAULT_MAX_TURN_SILENCE_MS}
+ * **This is not the pause-tolerance knob — `DEFAULT_MAX_TURN_SILENCE_MS`
  * is.** On Universal-3.5 Pro the two are different mechanisms. At
  * `min_turn_silence` the model transcribes and asks whether the turn READS as
  * complete: if yes the turn ends, if no a partial is emitted and the turn stays
@@ -104,7 +104,7 @@
  * caller who strings sentences together and spells identifiers mid-thought.
  *
  * The cost is real and paid by every finished utterance, so do not raise this
- * further without a measurement — reach for {@link DEFAULT_MAX_TURN_SILENCE_MS}
+ * further without a measurement — reach for `DEFAULT_MAX_TURN_SILENCE_MS`
  * instead, which only bills the utterances that need it.
  *
  * ---
@@ -182,7 +182,7 @@
  * despite three unrelated SDK commits landing inside its window, and it is why
  * a run can silently measure the PREVIOUS value.
  *
- * @see {@link DEFAULT_MAX_TURN_SILENCE_MS} — the ceiling this floor pairs with.
+ * @see `DEFAULT_MAX_TURN_SILENCE_MS` — the ceiling this floor pairs with.
  * @see `DEFAULT_DEEPGRAM_ENDPOINTING_MS` on `@alexkroman1/aai/stt` — Deepgram
  * endpoints in its own recognizer rather than through these two, so a pipeline
  * fronted by Deepgram is tuned there instead.
@@ -194,7 +194,7 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * content (`max_turn_silence`). **This is the pause-tolerance knob**: it bounds
  * only utterances that never read as complete, so raising it is paid for by
  * hesitant speech alone and costs an ordinary finished sentence nothing —
- * unlike {@link DEFAULT_MIN_TURN_SILENCE_MS}, which taxes every turn.
+ * unlike `DEFAULT_MIN_TURN_SILENCE_MS`, which taxes every turn.
  *
  * Reach it per agent with `agent({ maxTurnSilenceMs })` on the default pipeline,
  * or on the descriptor directly with `assemblyAIStt({ maxTurnSilenceMs })`.
@@ -207,7 +207,7 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * deliberate but never measured on its own, carrying an explicit revert
  * condition: *splits reappearing on hesitant, non-spelling utterances while
  * spelled identifiers stay intact*, the asymmetry that distinguishes this
- * ceiling from {@link DEFAULT_MIN_TURN_SILENCE_MS}. That is precisely what the
+ * ceiling from `DEFAULT_MIN_TURN_SILENCE_MS`. That is precisely what the
  * retail run at 3000 produced (aligning every committed final against its gold
  * utterance with `scripts/stt_errors.py`, 40 of 56 utterances mis-heard). Every
  * split landed on a hesitation, and every one of those hesitations was a
@@ -247,7 +247,7 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
  * latency ~4.0-4.6s at every setting swept), so the ceiling is not what makes a
  * slow turn slow.
  *
- * @see {@link DEFAULT_MIN_TURN_SILENCE_MS} — the floor this ceiling pairs with.
+ * @see `DEFAULT_MIN_TURN_SILENCE_MS` — the floor this ceiling pairs with.
  * @see `DEFAULT_DEEPGRAM_ENDPOINTING_MS` on `@alexkroman1/aai/stt` — Deepgram has
  * no counterpart to this ceiling; it endpoints on a single silence threshold.
  */

@@ -4,17 +4,17 @@
 // lifecycle/routing specs live in runtime-lifecycle.test.ts.
 
 import type { Db, ToolDef } from "@alexkroman1/aai";
-import {
-  DEFAULT_BUILTIN_TOOLS,
-  DEFAULT_MAX_TURN_SILENCE_MS,
-  DEFAULT_MIN_TURN_SILENCE_MS,
-  sessionSlot,
-} from "@alexkroman1/aai";
+import { sessionSlot } from "@alexkroman1/aai";
 import {
   ASSEMBLYAI_S2S_SAMPLE_RATE,
   DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
 } from "@alexkroman1/aai/host-internal";
+import {
+  DEFAULT_BUILTIN_TOOLS,
+  DEFAULT_MAX_TURN_SILENCE_MS,
+  DEFAULT_MIN_TURN_SILENCE_MS,
+} from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, anthropic } from "@alexkroman1/aai/llm";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { assemblyAIS2s } from "@alexkroman1/aai/s2s";

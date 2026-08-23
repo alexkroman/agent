@@ -17,10 +17,10 @@
 // by construction rather than documentation somebody has to remember to update:
 // a workflow that gains a field gains it here on the next read.
 
+import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import { CLIENT_CONFIG_PATH } from "@alexkroman1/aai/protocol";
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
-import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/workflow-api";
 
 /**
  * The workflow API's root path under an agent, with no leading slash.

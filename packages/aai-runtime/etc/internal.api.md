@@ -21,7 +21,7 @@ import type { ServerResponse } from 'node:http';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import { SessionEvent } from '@alexkroman1/aai/protocol';
 import { SessionEventBody } from '@alexkroman1/aai/protocol';
-import { SlotStore } from '@alexkroman1/aai';
+import type { SlotStore } from '@alexkroman1/aai';
 import type { ToolDef } from '@alexkroman1/aai';
 import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
 import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';

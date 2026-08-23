@@ -8,9 +8,9 @@
  * Realtime, or AssemblyAI S2S based on the agent's declaration.
  */
 
-import { DEFAULT_TOOL_CHOICE } from "@alexkroman1/aai";
 import type { SttOpener, TtsOpener } from "@alexkroman1/aai/host-internal";
 import { ASSEMBLYAI_S2S_KIND, OPENAI_REALTIME_KIND } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_TOOL_CHOICE } from "@alexkroman1/aai/internal";
 import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import type { OpenaiRealtimeOptions } from "@alexkroman1/aai/s2s";

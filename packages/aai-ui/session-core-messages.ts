@@ -10,8 +10,8 @@
  * exclusively through the injected `getSnapshot`/`updateState` deps.
  */
 
-import { DEFAULT_MAX_HISTORY, safeJsonParse } from "@alexkroman1/aai";
-import { toArgsRecord } from "@alexkroman1/aai/internal";
+import { safeJsonParse } from "@alexkroman1/aai";
+import { DEFAULT_MAX_HISTORY, toArgsRecord } from "@alexkroman1/aai/internal";
 import {
   lenientParse,
   type ServerMessage,

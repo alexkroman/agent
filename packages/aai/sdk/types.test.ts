@@ -2,9 +2,10 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { AgentDef, Db, ToolDef } from "../index.ts";
 import { agent, tool } from "../index.ts";
+import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "./constants.ts";
 import { withTools } from "./tool-registry.ts";
-import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 describe("constants", () => {
   test("DEFAULT_SYSTEM_PROMPT is a non-empty string", () => {

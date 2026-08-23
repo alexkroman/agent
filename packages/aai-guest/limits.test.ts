@@ -5,7 +5,7 @@
 // test is the other half — what the file is allowed to depend on at all.
 
 import { readFile } from "node:fs/promises";
-import { STORAGE_DISABLED_MESSAGE, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai";
+import { STORAGE_DISABLED_MESSAGE, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import * as limits from "./limits.ts";
 

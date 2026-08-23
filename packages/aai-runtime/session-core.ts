@@ -21,7 +21,8 @@
  * argument in full.
  */
 
-import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY, type Message } from "@alexkroman1/aai";
+import type { Message } from "@alexkroman1/aai";
+import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { consoleLogger } from "./runtime-config.ts";
 import { createCommandDispatcher } from "./session-commands.ts";

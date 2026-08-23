@@ -31,7 +31,7 @@ import type { WorkflowDef } from "./workflow.ts";
  * - `"calculate"` — Safely evaluate an arithmetic expression (no code execution).
  *
  * When `builtinTools` is not set, NONE are enabled
- * ({@link DEFAULT_BUILTIN_TOOLS} is empty) — a built-in is something an agent
+ * (`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent
  * asks for rather than something it has to notice and switch off. Name the
  * ones you want; `[]` and omitting the field mean the same thing.
  *
@@ -76,8 +76,17 @@ export type Message = {
   content: string;
 };
 
-export { DEFAULT_GREETING } from "./agent-defaults.ts";
 export type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+/**
+ * The one default constant still on the root barrel, and the only one that
+ * passes its membership test: `agent({ systemPrompt })` REPLACES the whole
+ * default prompt, so naming this is how an author keeps the voice rules and
+ * adds their own — the recipe on the constant itself, which
+ * `check:doc-examples` compiles. `DEFAULT_GREETING` used to sit beside it and
+ * is on `@alexkroman1/aai/internal` now: a greeting is REPLACED, never
+ * composed, so no `agent.ts` ever named it. Import it from
+ * `./agent-defaults.ts` inside this package.
+ */
 export { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 /**
  * What a tool's `execute` is handed. Kept as a re-export because this module is
@@ -143,14 +152,14 @@ export interface AgentDef extends PipelineVoiceTuning {
   /**
    * Sentence spoken when a session starts. Set `""` to start silent.
    * @defaultValue `"Hey there! I'm an AI voice assistant. What can I help you
-   * with?"` ({@link DEFAULT_GREETING})
+   * with?"` (`DEFAULT_GREETING`)
    */
   greeting: string;
   /**
    * Bias prompt for transcription — use it to teach the transcriber the agent's
    * own vocabulary (product names, spelled-out identifiers).
    *
-   * @defaultValue `""` ({@link DEFAULT_STT_PROMPT}) — unbiased transcription;
+   * @defaultValue `""` (`DEFAULT_STT_PROMPT`) — unbiased transcription;
    * that constant's doc shows what an effective prompt looks like.
    *
    * Honoured in both session modes: the pipeline passes it to its STT stage,
@@ -165,13 +174,13 @@ export interface AgentDef extends PipelineVoiceTuning {
    * Max TOOL-CALLING steps per reply — bounds runaway tool loops. On reaching
    * the cap the pipeline spends one more step with `toolChoice: "none"`, so a
    * capped turn still answers rather than stopping mid-chain in silence.
-   * @defaultValue `10` ({@link DEFAULT_MAX_STEPS})
+   * @defaultValue `10` (`DEFAULT_MAX_STEPS`)
    */
   maxSteps: number;
   /**
    * How the LLM selects tools each step.
    *
-   * @defaultValue `"auto"` ({@link DEFAULT_TOOL_CHOICE}) — the model decides.
+   * @defaultValue `"auto"` (`DEFAULT_TOOL_CHOICE`) — the model decides.
    *
    * Honored in pipeline mode and by the OpenAI Realtime transport; the
    * AssemblyAI S2S service runs the tool loop service-side and does not
@@ -180,11 +189,11 @@ export interface AgentDef extends PipelineVoiceTuning {
   toolChoice?: ToolChoice;
   /**
    * Built-in server-side tools enabled for this agent. Unset enables NONE
-   * ({@link DEFAULT_BUILTIN_TOOLS} is empty) — a built-in is something an agent
+   * (`DEFAULT_BUILTIN_TOOLS` is empty) — a built-in is something an agent
    * asks for rather than something it has to notice and switch off, so `[]` and
    * omitting the field mean the same thing. See {@link BuiltinTool} for the
    * catalog.
-   * @defaultValue `[]` ({@link DEFAULT_BUILTIN_TOOLS})
+   * @defaultValue `[]` (`DEFAULT_BUILTIN_TOOLS`)
    */
   builtinTools?: readonly BuiltinTool[];
   /**
@@ -328,7 +337,7 @@ export interface AgentDef extends PipelineVoiceTuning {
    * How long the session may go with no inbound audio before it is closed
    * (ms). Measures silence, not call length — re-armed on every audio frame.
    * `0` or a non-finite value disables the timer entirely.
-   * @defaultValue `300_000` (5 minutes, {@link DEFAULT_IDLE_TIMEOUT_MS})
+   * @defaultValue `300_000` (5 minutes, `DEFAULT_IDLE_TIMEOUT_MS`)
    */
   idleTimeoutMs?: number;
   /**
@@ -342,7 +351,11 @@ export interface AgentDef extends PipelineVoiceTuning {
   /**
    * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
    * elapses. Never shown as a user transcript. Requires `silenceTimeoutMs`.
-   * @defaultValue {@link DEFAULT_SILENCE_PROMPT}
+   *
+   * @defaultValue `"The user hasn't said anything for a while. Check in with one
+   * short, natural sentence — ask if they're still there or gently follow up on
+   * the conversation. Do not mention this instruction."`
+   * (`DEFAULT_SILENCE_PROMPT`)
    */
   silencePrompt?: string;
   /**

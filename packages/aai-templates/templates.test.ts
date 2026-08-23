@@ -21,12 +21,9 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
-import {
-  DEFAULT_MAX_STEPS,
-  DEFAULT_SYSTEM_PROMPT,
-  TOOL_EXECUTION_TIMEOUT_MS,
-} from "@alexkroman1/aai";
+import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { ASSEMBLYAI_TTS_DEPRECATED_VOICES } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_MAX_STEPS, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";

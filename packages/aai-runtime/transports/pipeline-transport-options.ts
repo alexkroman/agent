@@ -6,14 +6,6 @@
 // re-applied at the point of use.
 
 import type { ToolChoice } from "@alexkroman1/aai";
-import {
-  DEFAULT_ERROR_PHRASE,
-  DEFAULT_INTERRUPTION_MIN_DURATION_MS,
-  DEFAULT_MAX_STEPS,
-  DEFAULT_MIN_BARGE_IN_WORDS,
-  DEFAULT_START_FAILURE_PHRASE,
-  DEFAULT_TOOL_CHOICE,
-} from "@alexkroman1/aai";
 import type { ExecuteTool, SttOpener, TtsOpener } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_DEAD_AIR_COVER_MS,
@@ -22,6 +14,14 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   HEARD_AUDIO_LAG_MS,
 } from "@alexkroman1/aai/host-internal";
+import {
+  DEFAULT_ERROR_PHRASE,
+  DEFAULT_INTERRUPTION_MIN_DURATION_MS,
+  DEFAULT_MAX_STEPS,
+  DEFAULT_MIN_BARGE_IN_WORDS,
+  DEFAULT_START_FAILURE_PHRASE,
+  DEFAULT_TOOL_CHOICE,
+} from "@alexkroman1/aai/internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { LanguageModel } from "ai";
 import { consoleLogger, type Logger } from "../runtime-config.ts";

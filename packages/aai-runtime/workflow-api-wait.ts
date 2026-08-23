@@ -34,11 +34,8 @@
  */
 
 import { sleep } from "@alexkroman1/aai/host-internal";
-import {
-  clampWorkflowWait,
-  isTerminal,
-  type WorkflowRunSnapshot,
-} from "@alexkroman1/aai/workflow-api";
+import { clampWorkflowWait } from "@alexkroman1/aai/internal";
+import { isTerminal, type WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import type { RunReader } from "./workflow-api-events.ts";
 
 /**

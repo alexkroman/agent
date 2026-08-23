@@ -22,10 +22,12 @@
     }
   },
   "defaults": {
-    "current": 3,
-    "supported": [2, 3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
-      "1": "Three constants left the root barrel for @alexkroman1/aai/internal: MAX_PLAYBACK_BUFFERED_MS and PLAYBACK_PROGRESS_INTERVAL_MS are client-audio budgets and DEFAULT_SESSION_START_TIMEOUT_MS is a runtime deadline, none of which an agent() field sets. This capability is the published answer to 'what happens if I leave this field off', and those three answer no field."
+      "1": "Three constants left the root barrel for @alexkroman1/aai/internal: MAX_PLAYBACK_BUFFERED_MS and PLAYBACK_PROGRESS_INTERVAL_MS are client-audio budgets and DEFAULT_SESSION_START_TIMEOUT_MS is a runtime deadline, none of which an agent() field sets. This capability is the published answer to 'what happens if I leave this field off', and those three answer no field.",
+      "2": "Dropped with epoch 3 and for the same reason: this example imports the same 21 constants from `@alexkroman1/aai`, and they are on `@alexkroman1/aai/internal` now. It was retained past epoch 3 only because that bump narrowed three types rather than moving anything; there is no import path left that makes it compile.",
+      "3": "The 21 constants this epoch published from `@alexkroman1/aai` are on `@alexkroman1/aai/internal`, so no import written against epoch 3 resolves. They answered \"what happens if I leave this field off\" a second time, after the field's own JSDoc had already answered it with the value — and no template, scaffold or line of the shipped authoring guide named one. Epoch 1 was dropped for exactly this reason on three constants; this is the rest of it. Reproducing a default still works, from the new path."
     }
   },
   "dialog": {
@@ -161,8 +163,11 @@
     }
   },
   "workflow-api": {
-    "current": 9,
-    "supported": [1, 2, 3, 4, 5, 6, 7, 8, 9],
-    "dropped": {}
+    "current": 10,
+    "supported": [2, 3, 4, 5, 6, 7, 8, 10],
+    "dropped": {
+      "1": "Dropped with epoch 9: this example reads `WORKFLOW_API_PREFIX` off `@alexkroman1/aai/workflow-api`, and the prefix is on `@alexkroman1/aai/internal` now — a caller of a deployed agent composes no URL of its own. Epochs 2-8 name none of the four and still compile.",
+      "9": "The four names this epoch published from `@alexkroman1/aai/workflow-api` are on `@alexkroman1/aai/internal`: `clampWorkflowWait`, `MAX_WORKFLOW_WAIT_MS`, `TERMINAL_WORKFLOW_STATUSES` and `WORKFLOW_API_PREFIX`. All four are the SERVER's half — `@alexkroman1/aai-runtime` was the only importer of each, and a caller of a deployed agent passes `wait` a number the client clamps for it and composes no URL of its own. `./v9.ts` names `clampWorkflowWait`, so no import written against epoch 9 resolves."
+    }
   }
 }

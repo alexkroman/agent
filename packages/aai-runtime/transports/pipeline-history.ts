@@ -10,12 +10,12 @@
  *   messages (the assistant tool-call message AND its `tool` result), so tool
  *   calls and their results carry into the next turn — not just spoken text.
  *
- * Both views are capped at {@link DEFAULT_MAX_HISTORY} (oldest trimmed).
+ * Both views are capped at `DEFAULT_MAX_HISTORY` (oldest trimmed).
  */
 
 import type { Message } from "@alexkroman1/aai";
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai";
 import { createEpoch, type Epoch } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
 import { toModelMessage } from "./pipeline-stream.ts";
 

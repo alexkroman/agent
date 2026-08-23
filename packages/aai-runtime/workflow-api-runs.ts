@@ -14,8 +14,9 @@
 
 import type http from "node:http";
 import { requestQuery } from "@alexkroman1/aai/host-internal";
+import { clampWorkflowWait } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { clampWorkflowWait, isTerminal } from "@alexkroman1/aai/workflow-api";
+import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import { isWorkflowRequestError } from "./_workflow-request-error.ts";
 import type { Logger } from "./runtime-config.ts";
 import { MAX_WORKFLOW_INPUT_BYTES, readBody, sendJson } from "./workflow-api-http.ts";

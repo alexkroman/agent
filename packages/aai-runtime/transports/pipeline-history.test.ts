@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import type { Message } from "@alexkroman1/aai";
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai";
+import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { ModelMessage } from "ai";
 import fc from "fast-check";
 import { describe, expect, test } from "vitest";

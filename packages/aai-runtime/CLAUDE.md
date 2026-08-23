@@ -230,6 +230,15 @@ each is a decision worth making rather than inheriting.
   assemble the bag and not hand it to anything. Its `logger` field is required
   and both shipped `Logger` values (`consoleLogger`, `createConsoleLogger`) are
   on `/internal` too — only the `Logger` type is contracted.
+
+  It is at **epoch 2** for a reason worth knowing, because it is the SIBLING
+  version of the `TextTurnResult` hazard below: the export list did not move and
+  neither did a signature, only the PROVENANCE line in the rollup —
+  `WORKFLOW_API_PREFIX` reaches this package from `@alexkroman1/aai/internal`
+  now rather than `/workflow-api`, since the prefix is the server's half of that
+  API. Epoch 1 is retained and `contracts/compatibility/workflow/v1.ts` compiles
+  unchanged, which is the evidence a host that takes the constant from
+  `@alexkroman1/aai-runtime` — every host — sees nothing.
 - **`WdkAdapter` is nine methods with no partial-implementation affordance**, so
   the honest template is fifty lines of skeleton and anything in the wild will either
   be that long or reach for a cast. A `createStubWdkAdapter(overrides?)` — the way

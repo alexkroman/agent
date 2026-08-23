@@ -4,12 +4,35 @@
  *
  * What an `agent.ts` imports: `agent()` and `tool()`, `sessionSlot()` and
  * `workflow()`, the types they take and return, the recommended
- * `assemblyAIPipeline()` preset, the `assemblyAIS2s()` opt-in, and the
- * `DEFAULT_*` constants that document an `agent()` field's default.
+ * `assemblyAIPipeline()` preset, and the `assemblyAIS2s()` opt-in.
  *
- * A symbol is on this barrel when an `agent.ts`, a tool module, or a
- * `workflow()` would NAME it. Everything else the package publishes is on a
- * subpath, chosen by WHO READS IT:
+ * **The membership TEST is that an `agent.ts`, a tool module, or a
+ * `workflow()` would NAME the symbol.** Two corollaries decide every case this
+ * barrel has got wrong: a budget the framework enforces on its own does not
+ * qualify however public it is, and neither does a value whose only use is
+ * READING BACK what the framework already did — reproducing a default is what
+ * `@alexkroman1/aai/internal` is for.
+ *
+ * That test is why `sdk/constants.ts` is no longer re-exported here at all.
+ * Eighteen `DEFAULT_*`/`MAX_*` constants were, on the argument that each one
+ * documents an `agent()` field — but the field's own JSDoc already carries the
+ * value (`@defaultValue \`10\``), so the constant answered nothing an author
+ * could not read at the field, and none of the 25 templates, the scaffold, or
+ * the shipped authoring guide named one. Their readers are a client sizing a
+ * buffer, a harness matching the host's endpointing and a test asserting the
+ * shipped value — framework code, which is the `/internal` audience exactly.
+ * `MAX_DB_RESULT_ROWS` and `STORAGE_DISABLED_MESSAGE` went with them, which is
+ * why `sdk/db.ts` is named rather than wildcarded below.
+ *
+ * `DEFAULT_SYSTEM_PROMPT` is the one that stayed, and it stayed by PASSING the
+ * test rather than as an exception: `agent({ systemPrompt })` replaces the
+ * ~10,000 characters of measured voice rules wholesale, so naming the constant
+ * is the only way to keep them and add domain rules on top. That recipe is
+ * documented on the constant and compiled by `check:doc-examples`; it reaches
+ * this barrel through `./sdk/types.ts`.
+ *
+ * Everything else the package publishes is on a subpath, chosen by WHO READS
+ * IT:
  *
  * | Subpath | Reach for it when |
  * | --- | --- |
@@ -33,38 +56,10 @@
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
-/**
- * The constants that document an `agent()` field's default, or a limit a tool
- * author writes against.
- *
- * Everything else in `sdk/constants.ts` is a framework budget — jitter-buffer
- * depths, provider connect deadlines, wire caps, WebSocket close codes — and
- * lives on `@alexkroman1/aai/internal`. The test for membership is whether an
- * author could act on the value: `DEFAULT_MIN_BARGE_IN_WORDS` documents
- * `minBargeInWords`, while `PLAYBACK_FILL_MS` documents a decision the
- * client audio path makes with no field to set.
- */
-export {
-  DEFAULT_BUILTIN_TOOLS,
-  DEFAULT_ERROR_PHRASE,
-  DEFAULT_IDLE_TIMEOUT_MS,
-  DEFAULT_INTERRUPTION_MIN_DURATION_MS,
-  DEFAULT_MAX_HISTORY,
-  DEFAULT_MAX_STEPS,
-  DEFAULT_MAX_TURN_SILENCE_MS,
-  DEFAULT_MIN_BARGE_IN_WORDS,
-  DEFAULT_MIN_TURN_SILENCE_MS,
-  DEFAULT_SILENCE_PROMPT,
-  DEFAULT_START_FAILURE_PHRASE,
-  DEFAULT_STT_PROMPT,
-  DEFAULT_TOOL_CHOICE,
-  MAX_CLIENT_EVENT_NAME_LENGTH,
-  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
-  MAX_TOOL_RESULT_CHARS,
-  TOOL_EXECUTION_TIMEOUT_MS,
-  TOOL_RESULT_TRUNCATION_MARKER,
-} from "./sdk/constants.ts";
-export * from "./sdk/db.ts";
+// By NAME: that module also declares `MAX_DB_RESULT_ROWS` and
+// `STORAGE_DISABLED_MESSAGE`, two framework budgets on `@alexkroman1/aai/internal`
+// — a tool body reads `ctx.db`, never the cap the driver enforces around it.
+export type { Db } from "./sdk/db.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
 /**

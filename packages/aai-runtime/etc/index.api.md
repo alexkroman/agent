@@ -49,7 +49,7 @@ import { TtsWordTiming } from '@alexkroman1/aai/host-internal';
 import { Unsubscribe } from '@alexkroman1/aai/host-internal';
 import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
-import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/workflow-api';
+import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
 

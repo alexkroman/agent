@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai";
+import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { messagesFromEvents } from "./session-event-history.ts";

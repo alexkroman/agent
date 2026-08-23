@@ -48,9 +48,9 @@
  */
 
 import type { AgentDef, Db, Message, ToolChoice } from "@alexkroman1/aai";
-import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas } from "@alexkroman1/aai/manifest";

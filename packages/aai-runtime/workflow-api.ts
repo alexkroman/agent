@@ -88,8 +88,8 @@
 
 import type http from "node:http";
 import { WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/host-internal";
+import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/workflow-api";
 import { decodePathSegment } from "./_path-decode.ts";
 import type { Logger } from "./runtime-config.ts";
 import { streamRunEvents } from "./workflow-api-events.ts";
@@ -125,7 +125,7 @@ import type { UploadStore } from "./workflow-uploads.ts";
  * consumers — `@alexkroman1/aai-runtime`, and the `aai dev` proxy table through
  * it — are unaffected.
  */
-export { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/workflow-api";
+export { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 export { MAX_WORKFLOW_INPUT_BYTES } from "./workflow-api-http.ts";
 
 /**
@@ -414,7 +414,7 @@ const ROUTES: readonly Route[] = [
  * The HTTP methods this API answers, DERIVED from {@link ROUTES} — sorted, so a
  * comparison against it is stable.
  *
- * Exported for the same reason {@link WORKFLOW_API_PREFIX} is: the platform must
+ * Exported for the same reason `WORKFLOW_API_PREFIX` is: the platform must
  * proxy this surface, and a path both ends name is worth nothing if they
  * disagree about the VERBS. `aai-server`'s `GUEST_ROUTE_EXPOSURE` used to list
  * them from memory and this table twice grew one it did not have — see that

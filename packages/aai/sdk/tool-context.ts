@@ -86,8 +86,8 @@ export type ToolContext = {
   sessionId: string;
   /**
    * Push a custom event to the connected browser client. Fire-and-forget:
-   * events whose name exceeds {@link MAX_CLIENT_EVENT_NAME_LENGTH} or whose
-   * serialized payload exceeds {@link MAX_CLIENT_EVENT_PAYLOAD_BYTES} are
+   * events whose name exceeds `MAX_CLIENT_EVENT_NAME_LENGTH` or whose
+   * serialized payload exceeds `MAX_CLIENT_EVENT_PAYLOAD_BYTES` are
    * dropped (with a warning log), not thrown.
    */
   send(event: string, data: unknown): void;

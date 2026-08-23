@@ -28,7 +28,7 @@ import type { UploadBody, UploadOptions, UploadRef } from "./workflow-upload-cli
 export type WorkflowApiClientOptions = {
   /**
    * The AGENT's base URL — `https://agents.example/my-agent`, with or without a
-   * trailing slash. {@link WORKFLOW_API_PREFIX} is resolved under it, so a
+   * trailing slash. `WORKFLOW_API_PREFIX` is resolved under it, so a
    * caller never spells the prefix and the three call sites that used to
    * concatenate it cannot drift.
    *
