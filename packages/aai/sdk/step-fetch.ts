@@ -280,6 +280,15 @@ export type MultipartBody = {
  * body containing the boundary token is astronomically unlikely rather than
  * impossible; endpoints behave the same way.
  *
+ * **A part's `name` and `filename` are ESCAPED, because they are the one thing
+ * here that is routinely not the author's own string.** An upload's `name` is
+ * "the filename the uploader gave" (`uploadInfo`), so it reaches a step from a
+ * browser form and lands in a header this function writes — and a `"`, a CR or
+ * an LF in it closed the quoted string and appended headers of the caller's
+ * choosing to the request. The escaping is the HTML form-encoding algorithm's,
+ * which is what the `FormData` this replaces would have applied: `"` becomes
+ * `%22`, CR `%0D`, LF `%0A`.
+ *
  * @public
  */
 export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody {
@@ -287,14 +296,15 @@ export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody
   const encoder = new TextEncoder();
   const chunks: Uint8Array[] = [];
   for (const part of parts) {
-    const disposition = part.filename === undefined ? "" : `; filename="${part.filename}"`;
+    const disposition =
+      part.filename === undefined ? "" : `; filename="${escapeHeaderQuoted(part.filename)}"`;
     const type =
       part.filename === undefined
         ? ""
         : `Content-Type: ${part.type ?? "application/octet-stream"}\r\n`;
     chunks.push(
       encoder.encode(
-        `--${boundary}\r\nContent-Disposition: form-data; name="${part.name}"${disposition}\r\n${type}\r\n`,
+        `--${boundary}\r\nContent-Disposition: form-data; name="${escapeHeaderQuoted(part.name)}"${disposition}\r\n${type}\r\n`,
       ),
       part.bytes,
       encoder.encode("\r\n"),
@@ -305,6 +315,19 @@ export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody
     body: concatBytes(chunks),
     headers: { "Content-Type": `multipart/form-data; boundary=${boundary}` },
   };
+}
+
+/**
+ * A field or file name as it may appear inside a quoted header value.
+ *
+ * The HTML spec's `multipart/form-data` escape, so a name survives round-tripping
+ * through an endpoint's parser rather than being stripped: the three characters
+ * that can end the quoted string or the header line become percent escapes, and
+ * nothing else is touched (a `%` is deliberately left alone — escaping it too
+ * would rewrite every ordinary name that contains one).
+ */
+function escapeHeaderQuoted(value: string): string {
+  return value.replace(/\r/g, "%0D").replace(/\n/g, "%0A").replace(/"/g, "%22");
 }
 
 /** One buffer from several. */

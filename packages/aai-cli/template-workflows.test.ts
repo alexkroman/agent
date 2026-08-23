@@ -8,6 +8,10 @@
  * is the only thing that can answer the question this file asks: does the
  * workflow-mode bundle this project deploys actually load?
  *
+ * It also holds every template to the REPLAY rule the CLI warns about
+ * (`replayWarnings`), because a starter is copied: a body that reads the clock
+ * in a shipped example becomes one in the agent somebody builds from it.
+ *
  * `call-audit` and `transcription-workflow` both said no. Each held a
  * `classifyFfmpeg` beside its step, and that one module-scope reference to
  * `isFfmpegError` kept `@alexkroman1/aai/ffmpeg` — a module that spawns a child
@@ -32,7 +36,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
-import { buildWorkflows, findVmRequires, WORKFLOWS_DIR } from "./workflow-bundler.ts";
+import { findVmRequires } from "./_workflow-scan.ts";
+import { buildWorkflows, WORKFLOWS_DIR } from "./workflow-bundler.ts";
 
 const TEMPLATES = path.resolve(import.meta.dirname, "../aai-templates/templates");
 
@@ -101,6 +106,13 @@ describe("every template's workflow surface builds", async () => {
       const built = await buildWorkflows(project);
       expect(built?.workflowCode).toBeTruthy();
       expect(findVmRequires(built?.workflowCode ?? "")).toEqual([]);
+      // A template is a STARTER: whatever it does, somebody's first agent does
+      // too. So the warning `aai build` prints for a body that replays
+      // differently is a failure here — a shipped example is the one place the
+      // rule has to be demonstrated rather than merely enforced. Read off the
+      // field the CLI prints rather than by re-scanning, since that is the one
+      // an author sees.
+      expect(built?.warnings ?? []).toEqual([]);
     });
   });
 });

@@ -35,11 +35,12 @@
  * @module utils
  */
 
-// Imported as well as re-exported: the functions below call them, and a
-// re-export does not bring the name into this module's scope.
 import { isRecord } from "./is-record.ts";
 import { statusWithPreview } from "./response-body.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
+// Imported as well as re-exported: the functions below call them, and a
+// re-export does not bring the name into this module's scope.
+import { formatSchemaIssues, type StandardSchemaIssue } from "./standard-schema.ts";
 
 /**
  * The narration formatters — a byte count, a clock reading, a word count, and
@@ -72,9 +73,33 @@ export { safeJsonParse } from "./safe-json-parse.ts";
 
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {
+  const issues = schemaIssuesOf(err);
+  if (issues !== undefined) return formatSchemaIssues(issues);
   if (err instanceof Error) return err.message;
   if (isRecord(err) && typeof err.message === "string") return err.message;
   return String(err);
+}
+
+/**
+ * The validation issues of a schema error, or `undefined` for anything else.
+ *
+ * Structural rather than `instanceof ZodError`, because the error can come from
+ * any validator in the chain (and, on the CLI, from a server that serialized
+ * one) — and because `sdk/utils.ts` is a published subpath that must not drag a
+ * validator in.
+ *
+ * The reason this is worth a branch at all: a `ZodError`'s own `message` is
+ * `JSON.stringify(issues, null, 2)`. Every caller that reports an error by its
+ * message — the CLI's top-level handler, a log line, a tool's failure string —
+ * printed a twelve-line array of `{ "origin", "code", "path" }` objects for one
+ * wrong field, in place of the sentence the issue already carries.
+ */
+function schemaIssuesOf(err: unknown): readonly StandardSchemaIssue[] | undefined {
+  if (!(isRecord(err) && Array.isArray(err.issues)) || err.issues.length === 0) return undefined;
+  const issues = err.issues;
+  return issues.every((issue) => isRecord(issue) && typeof issue.message === "string")
+    ? (issues as readonly StandardSchemaIssue[])
+    : undefined;
 }
 
 /** Extract a detailed error string (message + stack) for diagnostic logging. */

@@ -102,4 +102,28 @@ describe("pcmDurationMs", () => {
   test("refuses the formats the encoder refuses, so the two cannot disagree", () => {
     expect(() => pcmDurationMs(48_000, { sampleRate: 0 })).toThrow(RangeError);
   });
+
+  test("names ITSELF in the message, not the encoder the check is shared with", () => {
+    // An author who never called `encodeWav` was told `encodeWav:` and went
+    // looking for a call they had not made.
+    expect(() => pcmDurationMs(48_000, { sampleRate: 0 })).toThrow(/^pcmDurationMs:/);
+    expect(() => encodeWav(new Uint8Array(2), { sampleRate: 0 })).toThrow(/^encodeWav:/);
+  });
+
+  test("refuses BYTES where a byte count goes, instead of answering NaN", () => {
+    // The misuse this signature invites: every neighbour (`encodeWav`,
+    // `stepSpeak`, `readUpload`) deals in the bytes themselves, and
+    // `bytes / blockAlign` is `NaN` — a duration that is journaled, rendered
+    // and reported with nothing on the way naming the call that made it.
+    //
+    // Spelled as the caller the compiler never saw — a `.mjs` step, or a length
+    // read back out of a run's journal — rather than as a cast at a site a
+    // typed project would have caught.
+    const fromJournal: unknown = new Uint8Array(48_000);
+    expect(() => pcmDurationMs(fromJournal as number, { sampleRate: 24_000 })).toThrow(
+      /byteLength must be a non-negative number of bytes, got a value of type object/,
+    );
+    expect(() => pcmDurationMs(Number.NaN, { sampleRate: 24_000 })).toThrow(/got NaN/);
+    expect(() => pcmDurationMs(-1, { sampleRate: 24_000 })).toThrow(RangeError);
+  });
 });

@@ -56,6 +56,8 @@
 
 import { type AnyStateMachine, createActor, type EventFromLogic } from "xstate";
 import {
+  assertDialogSource,
+  assertInitialState,
   type FlowState,
   machineFromSpec,
   readState,
@@ -296,12 +298,19 @@ export function dialog(
   source: AnyStateMachine | DialogSpec,
   options: DialogOptions = {},
 ): Dialog<AnyStateMachine> {
+  // Before the `in` test, because `dialog(spec)` — the one-argument shape every
+  // other authoring function in this SDK takes — lands here with `source`
+  // undefined and used to die on `Cannot use 'in' operator to search for
+  // 'transition' in undefined`, from a stack naming neither `dialog` nor the
+  // missing key.
+  assertDialogSource(source);
   // `in` on the union rather than a shape test for `states`: BOTH have one, and
   // only the machine has behaviour. Machine-first in the overload list for the
   // same reason — a plain object cannot satisfy `AnyStateMachine`, where a
   // machine could be read as a spec.
   const machine = "transition" in source ? source : machineFromSpec(key, source);
   const valid = statePaths(machine);
+  assertInitialState(key, machine, valid);
 
   /**
    * A started actor for this session's stored snapshot.

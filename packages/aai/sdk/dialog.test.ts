@@ -631,3 +631,31 @@ describe("the plain-spec form", () => {
     expect(asSpec.send(ctx, { type: "QUOTED" })).toMatchObject({ state: "settled", done: true });
   });
 });
+
+describe("dialog declaration guards", () => {
+  test("names the signature when the key is left off", () => {
+    // Every other authoring function here takes one object — `agent({…})`,
+    // `tool({…})`, `workflow({…})` — so `dialog({…})` is the natural slip, and
+    // it used to die on `Cannot use 'in' operator to search for 'transition' in
+    // undefined` from a stack naming neither the function nor the key.
+    // `Reflect.apply` rather than a cast: the caller this guards is one the
+    // compiler never saw, and a cast here would spend a counted escape hatch to
+    // say so.
+    expect(() => Reflect.apply(dialog, undefined, [{ initial: "a", states: { a: {} } }])).toThrow(
+      /dialog\(key, spec\) takes the KEY first/,
+    );
+  });
+
+  test("refuses an initial state the spec does not declare", () => {
+    // XState resolves it to a state that does not exist: every `position()`
+    // reads as that name and no event transitions, so the dialog is stuck
+    // before the first turn with nothing saying why.
+    expect(() => dialog("stuck", { initial: "greet", states: { hello: {} } })).toThrow(
+      /starts in "greet", which is not one of its states \(hello\)/,
+    );
+  });
+
+  test("a declared initial state is fine", () => {
+    expect(dialog("fine", { initial: "hello", states: { hello: {} } }).key).toBe("fine");
+  });
+});

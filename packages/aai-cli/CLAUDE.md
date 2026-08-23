@@ -498,6 +498,20 @@ Three things separate the two, and picking the wrong one measures nothing:
 
 ## Bundling rules
 
+- **A replay-unsafe call in a workflow body is WARNED about, per file.**
+  `findReplayUnsafeCalls` (`workflow-bundler.ts`) reads the built FLOW bundle
+  for `Date.now()`, `new Date()`, `Math.random()`, `crypto.randomUUID()` and
+  `fetch(`, and `aai build` / `aai dev` print what it finds. Two things make
+  that accurate enough to be worth printing: the workflow-mode transform has
+  already removed every `"use step"` body, so a step doing any of this is not a
+  finding (it is what a step is for), and esbuild's per-module `// <path>`
+  headers charge each line to the file it was written in — without which the
+  scan reports zod's own `Date.now()` and blocks a correct project. It is a
+  WARNING rather than a build failure for the case attribution cannot settle: a
+  plain helper in a `workflows/` module that only a step ever calls is legal and
+  looks identical from here. The scaffold guide used to say this rule "fails
+  silently if broken", which was the whole problem — a body that reads the clock
+  answers differently on every resume and nothing anywhere said so.
 - **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
   sets `NODE_ENV=production` when it is unset — a permanent, global side
   effect on the calling process. Both CLI bundlers therefore wrap the

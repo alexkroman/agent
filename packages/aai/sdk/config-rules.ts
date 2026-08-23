@@ -12,6 +12,7 @@
  */
 
 import type { PipelineVoiceTuning } from "./agent-voice-tuning.ts";
+import { assemblyAIVoiceWarning } from "./providers/tts/assemblyai.ts";
 
 /**
  * Session mode derived from which provider fields are set.
@@ -199,4 +200,30 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
       throw new Error(`${key} requires pipeline mode (stt, llm, and tts all set)`);
     }
   }
+}
+
+/**
+ * Everything worth SAYING about a config that is nonetheless legal.
+ *
+ * The other half of the rules above, and it exists because those all had to be
+ * one of two things — an error or nothing — and the voice catalog fits neither.
+ * Refusing an id outside it would refuse a voice AssemblyAI shipped after this
+ * release; saying nothing leaves a TYPO to surface as an agent that connects,
+ * reports ready and never speaks (`assemblyAIVoiceWarning` carries the
+ * argument). A printed line is the third option.
+ *
+ * Returns lines rather than logging, so every caller decides where they go:
+ * `aai build` and `aai dev` print them, and a config layer with nowhere to put
+ * a warning can ignore them without a channel to thread.
+ *
+ * Both AssemblyAI stages that carry a voice are read — the TTS descriptor and
+ * the S2S one, whose `voice` comes from the same catalog and has the same
+ * failure.
+ *
+ * @internal
+ */
+export function agentConfigWarnings(config: { tts?: unknown; s2s?: unknown }): string[] {
+  return [assemblyAIVoiceWarning(config.tts), assemblyAIVoiceWarning(config.s2s)].filter(
+    (warning): warning is string => warning !== undefined,
+  );
 }

@@ -160,6 +160,37 @@ describe("multipartBody", () => {
     expect(text.endsWith(`--${boundary}--\r\n`)).toBe(true);
   });
 
+  test("escapes a filename that would otherwise close the header and add its own", () => {
+    // An upload's `name` is "the filename the uploader gave", so this string
+    // reaches a step from a browser form. Unescaped it ended the quoted value
+    // and appended headers of the sender's choosing to a request carrying the
+    // agent's own API key.
+    const text = decode(
+      multipartBody({
+        name: "audio",
+        filename: 'evil"\r\nX-Injected: yes\r\n\r\nforged',
+        type: "audio/wav",
+        bytes: new Uint8Array([65]),
+      }).body,
+    );
+    // Present as DATA inside the quoted value, never as a header line of its own.
+    expect(text).not.toContain("\r\nX-Injected");
+    expect(text).toContain('filename="evil%22%0D%0AX-Injected: yes%0D%0A%0D%0Aforged"');
+    // One part, one header block: the CRLFs are gone, so the body still has
+    // exactly the two blank-line boundaries it should.
+    expect(text.split("\r\n\r\n")).toHaveLength(2);
+  });
+
+  test("escapes a field NAME the same way", () => {
+    const text = decode(
+      multipartBody({ name: 'a"; filename="x.sh', bytes: new Uint8Array([66]) }).body,
+    );
+    // Without the escape this part arrived at the far side as a FILE named
+    // x.sh, from a call that declared no filename at all.
+    expect(text).toContain('name="a%22; filename=%22x.sh"');
+    expect(text).not.toContain('filename="x.sh"');
+  });
+
   test("a part with no filename is an ordinary field, with no Content-Type of its own", () => {
     const text = decode(
       multipartBody({ name: "model", bytes: new TextEncoder().encode("universal") }).body,

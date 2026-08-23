@@ -89,17 +89,26 @@ function blockAlign(channels: number, bitsPerSample: number): number {
  * provider's own reply or a run's journaled input, and every one of these
  * lands as audio that plays at the wrong speed or as a division by zero in a
  * duration — never as an error naming the field.
+ *
+ * `caller` is passed rather than hardcoded: {@link pcmDurationMs} shares this
+ * check, and a message that says `encodeWav` points at a function the author
+ * never called.
  */
-function assertFormat(sampleRate: number, channels: number, bitsPerSample: number): void {
+function assertFormat(
+  caller: string,
+  sampleRate: number,
+  channels: number,
+  bitsPerSample: number,
+): void {
   if (!Number.isInteger(sampleRate) || sampleRate <= 0) {
-    throw new RangeError(`encodeWav: sampleRate must be a positive integer, got ${sampleRate}`);
+    throw new RangeError(`${caller}: sampleRate must be a positive integer, got ${sampleRate}`);
   }
   if (!Number.isInteger(channels) || channels <= 0) {
-    throw new RangeError(`encodeWav: channels must be a positive integer, got ${channels}`);
+    throw new RangeError(`${caller}: channels must be a positive integer, got ${channels}`);
   }
   if (!Number.isInteger(bitsPerSample) || bitsPerSample <= 0 || bitsPerSample % 8 !== 0) {
     throw new RangeError(
-      `encodeWav: bitsPerSample must be a positive multiple of 8, got ${bitsPerSample}`,
+      `${caller}: bitsPerSample must be a positive multiple of 8, got ${bitsPerSample}`,
     );
   }
 }
@@ -141,7 +150,7 @@ export function encodeWav(
   const { sampleRate } = format;
   const channels = format.channels ?? 1;
   const bitsPerSample = format.bitsPerSample ?? 16;
-  assertFormat(sampleRate, channels, bitsPerSample);
+  assertFormat("encodeWav", sampleRate, channels, bitsPerSample);
 
   const pcm = samples instanceof Uint8Array ? samples : joinChunks(samples);
   const frame = blockAlign(channels, bitsPerSample);
@@ -178,15 +187,34 @@ export function encodeWav(
  * progress bar and a file disagree. Rounded, since a caller reporting
  * milliseconds has no use for the fraction.
  *
+ * It takes a LENGTH where its neighbours take bytes, so a `Uint8Array` handed
+ * to it is refused rather than divided: `bytes / blockAlign` is `NaN`, and a
+ * `NaN` duration is journaled by a step, rendered into a progress bar and
+ * reported to a caller without anything on the way saying which call produced
+ * it. That is the one misuse this signature invites — `encodeWav`, `stepSpeak`
+ * and `readUpload` all deal in the bytes themselves.
+ *
  * @throws {RangeError} for a format no header can describe — the same check
- *   {@link encodeWav} makes, so the two cannot disagree about what is legal.
+ *   {@link encodeWav} makes, so the two cannot disagree about what is legal —
+ *   or for a `byteLength` that is not a length.
  *
  * @public
  */
 export function pcmDurationMs(byteLength: number, format: PcmFormat): number {
   const channels = format.channels ?? 1;
   const bitsPerSample = format.bitsPerSample ?? 16;
-  assertFormat(format.sampleRate, channels, bitsPerSample);
+  if (!Number.isFinite(byteLength) || byteLength < 0) {
+    // `typeof` for anything that is not a number, never the value: the value
+    // handed here is usually the whole buffer, and `String(bytes)` on 48 kB of
+    // audio is a comma-separated error message nobody can read.
+    const shown =
+      typeof byteLength === "number" ? String(byteLength) : `a value of type ${typeof byteLength}`;
+    throw new RangeError(
+      `pcmDurationMs: byteLength must be a non-negative number of bytes, got ${shown}` +
+        " — pass `bytes.byteLength`, not the bytes.",
+    );
+  }
+  assertFormat("pcmDurationMs", format.sampleRate, channels, bitsPerSample);
   return Math.round(
     (byteLength / (blockAlign(channels, bitsPerSample) * format.sampleRate)) * 1000,
   );

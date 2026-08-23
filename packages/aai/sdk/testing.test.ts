@@ -1,5 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
+import { MAX_CLIENT_EVENT_NAME_LENGTH, MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "./constants.ts";
 import { emit, publishStepReporter, report } from "./step-report.ts";
 import { publishUploadReader, readUpload, uploadInfo } from "./step-uploads.ts";
 import { writeUpload } from "./step-uploads-write.ts";
@@ -114,6 +115,39 @@ describe("createToolContext", () => {
     expectTypeOf<ToolContextOverrides["sessionId"]>().toEqualTypeOf<string | undefined>();
     expectTypeOf<{ sessionId: string | undefined }>().toExtend<ToolContextOverrides>();
     expectTypeOf(createToolContext({ sessionId: undefined })).toEqualTypeOf<TestToolContext>();
+  });
+
+  test("does not record an event the runtime would drop", () => {
+    // The recorder used to accept everything, so a spec could assert a
+    // notification that never left the process: `sent` said it was sent and
+    // the browser never saw it. The rule is `decideClientEvent`'s, shared with
+    // the runtime, so the two cannot disagree about what reaches a client.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ctx = createToolContext();
+    ctx.send("fits", { a: 1 });
+    ctx.send("too_big", { blob: "x".repeat(MAX_CLIENT_EVENT_PAYLOAD_BYTES) });
+    ctx.send("x".repeat(MAX_CLIENT_EVENT_NAME_LENGTH + 1), 1);
+    ctx.send("not_json", () => 1);
+    expect(ctx.sent).toEqual([{ event: "fits", data: { a: 1 } }]);
+    // Announced, not silent: an empty `sent` with no reason is the same
+    // debugging problem one layer down.
+    expect(warn.mock.calls.map(([line]) => String(line))).toEqual([
+      expect.stringContaining("too-large"),
+      expect.stringContaining("name-too-long"),
+      expect.stringContaining("no-json-form"),
+    ]);
+  });
+
+  test("a cyclic payload is dropped rather than thrown, as in production", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ctx = createToolContext();
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    // A throw here would fail the whole tool call in a spec while production
+    // carries on — the tool body is the caller.
+    expect(() => ctx.send("cycle", cyclic)).not.toThrow();
+    expect(ctx.sent).toEqual([]);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("unserializable");
   });
 
   test("a spy passed as send replaces the recorder", () => {

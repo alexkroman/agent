@@ -54,6 +54,22 @@ export type ToolBearingAgent = {
  * @public
  */
 export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema> {
+  // Before the lookup, because the value in this position is routinely not an
+  // agent at all: a tool def (the thing under test), or the `undefined` a
+  // mistyped import answers with. Both used to die on `agent.tools[name]` with
+  // a `TypeError` naming neither argument — `Cannot read properties of
+  // undefined (reading 'add_item')` — from inside the SDK, which is a worse
+  // version of the mistake this function's own doc already handles for the
+  // authored-def case.
+  const given: unknown = agent;
+  if (!(isRecord(given) && isRecord(given.tools))) {
+    const looksLikeTool = isRecord(given) && typeof given.execute === "function";
+    throw new Error(
+      looksLikeTool
+        ? `toolOf(def, "${name}") takes the AGENT, not one tool — this is a tool def, which has no name until a file gives it one. Pass the agent from withDiscoveredTools(...) and name the tool there, or call the def's own \`execute\` directly.`
+        : `toolOf(agent, "${name}") was handed ${describe(given)} rather than an agent definition. Pass agent.ts's default export put through withDiscoveredTools(def, import.meta.glob("./tools/*.ts", { eager: true })).`,
+    );
+  }
   const def = agent.tools[name];
   if (!def) {
     const declared = Object.keys(agent.tools);
@@ -66,6 +82,13 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
     );
   }
   return def;
+}
+
+/** What was passed, for a message that can say so without printing it. */
+function describe(value: unknown): string {
+  if (value === undefined) return "undefined";
+  if (value === null) return "null";
+  return `a ${typeof value} with no \`tools\``;
 }
 
 /**

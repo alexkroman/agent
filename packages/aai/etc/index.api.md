@@ -351,7 +351,7 @@ export function omitUndefined<T extends object>(obj: T): {
 };
 
 // @public
-export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, PipelineOnlyField>> & {
+export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
     llm?: LlmProvider | string;
     s2s?: undefined;
     text?: undefined;
@@ -673,6 +673,21 @@ export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnl
 };
 
 // @public
+type SilenceNudgeField = "silenceTimeoutMs" | "silencePrompt";
+
+// @public
+type SilenceNudgeParams = {
+    silenceTimeoutMs: number;
+    silencePrompt?: string;
+} | {
+    silenceTimeoutMs?: undefined;
+    silencePrompt?: SilencePromptWithoutTimeoutMisuse;
+};
+
+// @public
+type SilencePromptWithoutTimeoutMisuse = "`silencePrompt` is the instruction injected when `silenceTimeoutMs` elapses — with no timeout nothing ever injects it; set `silenceTimeoutMs`, or remove `silencePrompt`";
+
+// @public
 export type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
@@ -836,7 +851,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "tools" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

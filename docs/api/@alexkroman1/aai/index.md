@@ -689,7 +689,10 @@ module needs neither an annotated context nor a `slot.get(ctx)` line.
 
 `K`
 
-The store key to occupy. Two slots must not share one.
+The store key to occupy. Two slots must not share one, and
+  `claimKey` enforces it per session: two slots on one key that DISAGREE
+  about the shape they store are refused the moment the second one is
+  touched, since each would be reading and writing the other's value.
 
 ##### create
 
@@ -4058,7 +4061,7 @@ The role of the message sender.
 ### PipelineAgentParams
 
 ```ts
-type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, PipelineOnlyField>> & {
+type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
   llm?: LlmProvider | string;
   page?: "voice" | StaticFrontDoorMisuse;
   s2s?: undefined;

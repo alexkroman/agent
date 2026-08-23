@@ -182,6 +182,53 @@ export type PipelineOnlyMisuse<
 > = `\`${K}\` is pipeline-mode only — it has no effect on a ${M} agent; remove it or remove \`${M}\``;
 
 /**
+ * The silence-nudge pair, subtracted from the pipeline arm's derived fields so
+ * the two can be arbitrated against each other rather than declared
+ * independently optional.
+ */
+export type SilenceNudgeField = "silenceTimeoutMs" | "silencePrompt";
+
+/**
+ * The "type" `silencePrompt` has with no `silenceTimeoutMs` beside it.
+ *
+ * `assertSilencePolicy` has always rejected the pair at config time, so this
+ * was caught — at `aai build`, after the author had moved on. It is the same
+ * shape as `voice` beside an explicit `tts` (one owner per value) with the
+ * arbitration running the other way: the prompt is the timeout's payload, so
+ * without the timeout there is no moment at which anything reads it.
+ *
+ * **This one is a HOVER, not the diagnostic**, unlike every other message in
+ * this file. A missing property beats a mistyped one when tsc picks which union
+ * arm to report, so what it prints is "Property 'silenceTimeoutMs' is missing …
+ * but required in type '{ silenceTimeoutMs: number; silencePrompt?: string }'"
+ * — which names the fix, and is the reason the pair is spelled as two arms
+ * rather than as a `never`. Arm order does not change it; both were tried.
+ */
+export type SilencePromptWithoutTimeoutMisuse =
+  "`silencePrompt` is the instruction injected when `silenceTimeoutMs` elapses — with no timeout nothing ever injects it; set `silenceTimeoutMs`, or remove `silencePrompt`";
+
+/**
+ * The silence nudge: a timeout, and optionally the instruction it injects.
+ *
+ * Two arms rather than two optional fields, because the prompt alone is a
+ * declaration that does nothing.
+ */
+export type SilenceNudgeParams =
+  | {
+      /**
+       * See {@link AgentDef.silenceTimeoutMs} — how much user silence makes the
+       * assistant take a turn.
+       */
+      silenceTimeoutMs: number;
+      /** See {@link AgentDef.silencePrompt} — the instruction that turn injects. */
+      silencePrompt?: string;
+    }
+  | {
+      silenceTimeoutMs?: undefined;
+      silencePrompt?: SilencePromptWithoutTimeoutMisuse;
+    };
+
+/**
  * Pipeline-mode params: any subset of the provider triple (unset stages run
  * on the default all-AssemblyAI pipeline), never `s2s`. The `voice`
  * shorthand picks the default pipeline's TTS voice; an explicit `tts`
@@ -195,7 +242,8 @@ export type PipelineOnlyMisuse<
  * rule and what to do about it. Never pass one as a string.
  */
 export type PipelineAgentParams = SharedAgentParams &
-  Partial<Pick<AgentDef, PipelineOnlyField>> & {
+  Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> &
+  SilenceNudgeParams & {
     /**
      * See {@link AgentDef.llm}; a string is gateway model-id shorthand.
      * Unset → the default AssemblyAI LLM Gateway model.
@@ -378,7 +426,15 @@ export type WorkflowAppOnlyField =
   | "sttPrompt"
   | "maxSteps"
   | "toolChoice"
-  | "tools"
+  // `tools` is deliberately NOT here, though a workflow app has no model to
+  // call one: it would give the field two messages across the union, and tsc
+  // prints the whole union at every call site. It printed the workflow-app
+  // sentence FIRST, so an author who wrote a plain voice agent — the
+  // overwhelmingly common case for this mistake — was told about
+  // `page: "static"`, a thing they had never heard of, before the sentence that
+  // names the file to create. One message for one field: the arm inherits
+  // `tools?: InlineToolsMisuse` from `SharedAgentParams`, which is true of
+  // every arm (a tool is a FILE) and leads with the remedy.
   | "builtinTools"
   | "minTurnSilenceMs"
   | "maxTurnSilenceMs"

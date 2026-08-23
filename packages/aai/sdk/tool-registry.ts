@@ -50,6 +50,27 @@ import type { ToolDef } from "./types.ts";
  */
 const TOOL_NAME_RE = /^[a-z][a-z0-9_]*$/;
 
+/**
+ * Longest name a provider accepts — OpenAI's `^[a-zA-Z0-9_-]{1,64}$`, the
+ * strictest of the ones this SDK routes to, and therefore the one that decides.
+ *
+ * Checked here because the grammar above already is, and half a rule is worse
+ * than none: a 70-character file name passed every gate, built, deployed, and
+ * was refused when the first turn sent the tool list — a failure whose message
+ * comes from a vendor and names neither the file nor the cap.
+ */
+const TOOL_NAME_MAX = 64;
+
+/**
+ * File names that are never a tool, however well-formed.
+ *
+ * `tools/index.ts` is a barrel somebody wrote out of habit, and there is nothing
+ * for it to barrel: the directory IS the registry. Registered rather than
+ * refused, it put a tool called `index` — with whatever the barrel happened to
+ * default-export — in front of the model.
+ */
+const NON_TOOL_NAMES = new Set(["index"]);
+
 /** Extensions a tool module may be authored in. */
 const MODULE_EXT_RE = /\.(?:m?[jt]s|tsx)$/;
 
@@ -117,11 +138,21 @@ export function toolRegistry(modules: ToolModules): ToolRegistry {
         `${path} is not a usable tool name. A tools/ file is named for the tool the model calls: lowercase, starting with a letter, words joined by "_" (e.g. tools/incident_create.ts).`,
       );
     }
+    if (NON_TOOL_NAMES.has(name)) {
+      throw new Error(
+        `${path} is a barrel, and a tools/ file IS a tool — the build enumerates the directory, so there is nothing to re-export and this would put a tool named "${name}" in front of the model. Move shared code out of tools/ (\`../shared.ts\`), or name the file after the tool it declares.`,
+      );
+    }
+    if (name.length > TOOL_NAME_MAX) {
+      throw new Error(
+        `${path} names a tool of ${name.length} characters, and a provider caps a tool name at ${TOOL_NAME_MAX} — the call would be refused when the tool list is sent, not here. Shorten the file name.`,
+      );
+    }
 
     const exported = (module as { default?: unknown } | null)?.default;
     if (exported === undefined) {
       throw new Error(
-        `${path} has no default export. A tools/ file default-exports its tool: \`export default tool({ … })\`.`,
+        `${path} has no default export. A tools/ file default-exports its tool: \`export default tool({ … })\` — and every file in tools/ is one, so a helper this directory shares belongs beside it rather than in it (\`../shared.ts\`).`,
       );
     }
     if (!isToolDef(exported)) {

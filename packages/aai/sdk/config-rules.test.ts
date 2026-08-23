@@ -5,7 +5,7 @@
 // server's IsolateConfigSchema run the same asserts.
 
 import { describe, expect, test } from "vitest";
-import { assertProviderTriple } from "./config-rules.ts";
+import { agentConfigWarnings, assertProviderTriple } from "./config-rules.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
 import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
@@ -139,6 +139,87 @@ describe("toAgentConfig — silence nudge", () => {
   });
 });
 
+describe("agentConfigWarnings", () => {
+  test("names a voice outside the catalog, since a typo is otherwise silent", () => {
+    // Not an error: the catalog is the SERVICE's and a snapshot of it goes
+    // stale, so refusing an unlisted voice would refuse one shipped last week.
+    // Saying nothing leaves the common case — a typo — to surface as an agent
+    // that connects, reports ready and never speaks.
+    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "michal" }) })).toEqual([
+      expect.stringContaining('AssemblyAI voice "michal" is not in this release\'s catalog'),
+    ]);
+  });
+
+  test("says nothing about a voice the catalog lists", () => {
+    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "michael" }) })).toEqual([]);
+  });
+
+  test("tells a DEPRECATED voice apart from an unknown one", () => {
+    // It works today, so "unknown" would be wrong; it is going away, so
+    // silence would be too.
+    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "emma" }) })).toEqual([
+      expect.stringContaining("scheduled for removal"),
+    ]);
+  });
+
+  test("reads the S2S descriptor too, whose voice comes from the same catalog", () => {
+    expect(agentConfigWarnings({ s2s: assemblyAIS2s({ voice: "michal" }) })).toEqual([
+      expect.stringContaining('"michal"'),
+    ]);
+  });
+
+  test("says nothing about another vendor's voice, which it cannot judge", () => {
+    expect(agentConfigWarnings({ tts: cartesia({ voice: "not-a-uuid" }) })).toEqual([]);
+  });
+
+  test("says nothing when no voice is declared", () => {
+    expect(agentConfigWarnings({})).toEqual([]);
+    expect(agentConfigWarnings({ tts: assemblyAITts() })).toEqual([]);
+  });
+});
+
+describe("toAgentConfig — a shape mistake reads as a sentence", () => {
+  test("a bad field is one line naming the field, not a dump of zod issues", () => {
+    // This runs inside the generated bundle entry, so its throw is what an
+    // author sees at `aai build`. A `ZodError`'s own message is the JSON of its
+    // issue objects — twelve lines of `origin`/`code`/`path` for one wrong
+    // number, and the only authoring error in this SDK that was not a sentence.
+    let message = "";
+    try {
+      config({ ...pipelineFields, maxSteps: 0 });
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toContain("This agent's configuration is invalid");
+    expect(message).toContain("maxSteps");
+    expect(message).not.toContain('"code"');
+    expect(message.split("\n")).toHaveLength(1);
+  });
+
+  test("every bad field is named, not just the first", () => {
+    expect(() => config({ ...pipelineFields, maxSteps: 0, minBargeInWords: 0 })).toThrow(
+      /maxSteps[\s\S]*minBargeInWords/,
+    );
+  });
+
+  test("rejects a blank name, which is a slug and a title with nothing in it", () => {
+    expect(() => config({ ...pipelineFields, name: "   " })).toThrow(/name must not be blank/);
+  });
+
+  test("rejects a requiredEnv entry no environment could hold", () => {
+    expect(() => config({ ...pipelineFields, requiredEnv: [""] })).toThrow(
+      /requiredEnv holds VARIABLE NAMES/,
+    );
+    expect(() => config({ ...pipelineFields, requiredEnv: ["MY KEY"] })).toThrow(
+      /requiredEnv holds VARIABLE NAMES/,
+    );
+  });
+
+  test("leaves a duplicate requiredEnv entry alone — redundant, not unsatisfiable", () => {
+    expect(config({ ...pipelineFields, requiredEnv: ["A", "A"] }).requiredEnv).toEqual(["A", "A"]);
+  });
+});
+
 describe("toAgentConfig — pipeline voice tuning", () => {
   test("accepts all tuning fields in pipeline mode", () => {
     const parsed = config({
@@ -248,6 +329,62 @@ describe("toAgentConfig — AssemblyAI TTS language validation", () => {
       expect(parsed.tts?.options.language).toBe(language);
     },
   );
+
+  test("rejects a language the declared voice does not speak", () => {
+    // Every catalog voice speaks exactly one language, and the service refuses
+    // the pair in-band after the socket opens — the same mute session as an
+    // unmapped code, reached from the other side.
+    expect(() =>
+      config({
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "anthropic", options: { model: "m" } },
+        tts: { kind: "assemblyai", options: { voice: "estelle", language: "en" } },
+      }),
+    ).toThrow(/voice "estelle" speaks fr, not the declared language "en"/);
+  });
+
+  test("names the voices that DO speak the declared language", () => {
+    expect(() =>
+      config({
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "anthropic", options: { model: "m" } },
+        tts: { kind: "assemblyai", options: { voice: "jane", language: "it" } },
+      }),
+    ).toThrow(/Voices that speak "it": giovanni/);
+  });
+
+  test("catches the mismatch the FACTORY used to manufacture", () => {
+    // `assemblyAITts({ language })` fills in the default voice, which speaks
+    // English — so asking for French and nothing else shipped a silent agent.
+    expect(() =>
+      config({
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "anthropic", options: { model: "m" } },
+        tts: assemblyAITts({ language: "fr" }),
+      }),
+    ).toThrow(/Voices that speak "fr": estelle/);
+  });
+
+  test("passes through a voice the catalog does not list", () => {
+    // The catalog is the SERVICE's and a snapshot of it goes stale between
+    // releases, so a voice shipped after this one must still run — this check
+    // only ever fires on a voice we know the language of.
+    const parsed = config({
+      stt: { kind: "assemblyai", options: {} },
+      llm: { kind: "anthropic", options: { model: "m" } },
+      tts: { kind: "assemblyai", options: { voice: "voice-shipped-last-week", language: "en" } },
+    });
+    expect(parsed.tts?.options.voice).toBe("voice-shipped-last-week");
+  });
+
+  test("a matching pair is left alone", () => {
+    const parsed = config({
+      stt: { kind: "assemblyai", options: {} },
+      llm: { kind: "anthropic", options: { model: "m" } },
+      tts: assemblyAITts({ voice: "lola", language: "es" }),
+    });
+    expect(parsed.tts?.options).toMatchObject({ voice: "lola", language: "es" });
+  });
 });
 
 describe("author conveniences on raw configs (no agent())", () => {

@@ -83,6 +83,37 @@ describe("toolRegistry", () => {
     ).toThrow(/Two files declare the tool "echo": tools\/echo\.ts and other\/tools\/echo\.mts/);
   });
 
+  test("refuses a barrel, which would register a tool named index", () => {
+    // The directory IS the registry, so there is nothing for an index to
+    // re-export — and registered rather than refused, it put whatever the
+    // barrel default-exported in front of the model under the name `index`.
+    expect(() => toolRegistry({ "./tools/index.ts": { default: echo } })).toThrow(
+      /is a barrel, and a tools\/ file IS a tool/,
+    );
+  });
+
+  test("refuses a name past the provider cap, which fails at the first turn otherwise", () => {
+    const long = `t${"o".repeat(64)}`;
+    expect(() => toolRegistry({ [`./tools/${long}.ts`]: { default: echo } })).toThrow(
+      /65 characters, and a provider caps a tool name at 64/,
+    );
+  });
+
+  test("accepts a name exactly at the cap", () => {
+    const name = `t${"o".repeat(63)}`;
+    expect(Object.keys(toolRegistry({ [`./tools/${name}.ts`]: { default: echo } }))).toEqual([
+      name,
+    ]);
+  });
+
+  test("points a helper module out of tools/ rather than only naming the export", () => {
+    // Every file in tools/ is a tool, so "add a default export" is the wrong
+    // remedy for the file that is not one.
+    expect(() => toolRegistry({ "./tools/helpers.ts": { shared: 1 } })).toThrow(
+      /a helper this directory shares belongs beside it rather than in it/,
+    );
+  });
+
   test("an empty set of modules is an empty registry, not an error", () => {
     // A project with no tools/ directory is legal — a workflow app has none.
     expect(toolRegistry({})).toEqual({});

@@ -11,16 +11,17 @@ import type { AgentDef, Db, StateProjection, ToolDef } from "@alexkroman1/aai";
 import type { AgentEnv, OwnedMap, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
 import {
+  clientEventDropMessage,
   DEFAULT_BUILTIN_TOOLS,
-  MAX_CLIENT_EVENT_NAME_LENGTH,
-  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
+  decideClientEvent,
 } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";
-import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { StartOptions, WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
+import type { Logger } from "./runtime-config.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import type { SessionEmitter } from "./session-emitter.ts";
 import type { SessionStateStore } from "./session-state-store.ts";
@@ -34,20 +35,34 @@ import type { RunNotifier } from "./workflow-notify.ts";
  * and the colliding builtin is dropped from both dispatch and schemas so the
  * host never shadows a tool the caller expects to execute and the LLM never
  * sees a duplicate name. Provided schemas/guidance come first, builtins after.
+ *
+ * **A dropped builtin is LOGGED**, because the author declared it. `tools/
+ * web_search.ts` beside `builtinTools: ["web_search"]` is one of two things — a
+ * deliberate replacement, or a file whose name collided by accident — and
+ * nothing anywhere said which had happened: the entry in `builtinTools` simply
+ * did nothing, and an author debugging "why is my search not the built-in one"
+ * (or the reverse) had no thread to pull. The policy itself is unchanged; the
+ * file still wins.
  */
 export function mergeBuiltinSurface(
   agent: AgentDef,
   builtinOpts: Parameters<typeof resolveAllBuiltins>[1],
   provided: { schemas: ToolSchema[]; guidance?: string[] },
+  logger?: Logger | undefined,
 ): {
   defs: Record<string, ToolDef>;
   schemas: ToolSchema[];
   guidance: string[];
 } {
   const providedNames = new Set(provided.schemas.map((s) => s.name));
-  const names = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
-    (name) => !providedNames.has(name),
-  );
+  const declared = agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS;
+  const names = declared.filter((name) => !providedNames.has(name));
+  const shadowed = declared.filter((name) => providedNames.has(name));
+  if (shadowed.length > 0) {
+    logger?.info?.(
+      `builtinTools ${shadowed.map((name) => `"${name}"`).join(", ")} ${shadowed.length === 1 ? "is" : "are"} inert: a tools/ file of the same name is what the model will call. Rename the file if that was not the intent.`,
+    );
+  }
   const builtins = resolveAllBuiltins(names, builtinOpts);
   return {
     defs: builtins.defs,
@@ -191,10 +206,15 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
   const { agent, opts, env, resolvedDb, workflows, notifier, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
-  const resolved = mergeBuiltinSurface(agent, builtinFetchOpt, {
-    schemas: opts.toolSchemas ?? [],
-    ...omitUndefined({ guidance: opts.toolGuidance }),
-  });
+  const resolved = mergeBuiltinSurface(
+    agent,
+    builtinFetchOpt,
+    {
+      schemas: opts.toolSchemas ?? [],
+      ...omitUndefined({ guidance: opts.toolGuidance }),
+    },
+    logger,
+  );
   const builtinDefs = resolved.defs;
   const toolSchemas = resolved.schemas;
   const frozenEnv = Object.freeze({ ...env });
@@ -242,7 +262,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
     ...omitUndefined({ runCode: opts.runCode }),
   };
   const customSchemas = agentToolsToSchemas(agent.tools ?? {});
-  const builtins = mergeBuiltinSurface(agent, builtinOpts, { schemas: customSchemas });
+  const builtins = mergeBuiltinSurface(agent, builtinOpts, { schemas: customSchemas }, logger);
   const allTools: Record<string, AgentDef["tools"][string]> = {
     ...builtins.defs,
     ...agent.tools,
@@ -257,9 +277,9 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
    * `ctx.send` → client `custom_event`, with the wire caps enforced here —
    * this is the single point where a tool's send becomes a client frame now
    * that the runtime runs in-guest (the old guest→host `client/send` relay,
-   * which held these checks, is gone). Over-cap events are dropped, matching
-   * that relay: the name cap mirrors the protocol schema, and the payload is
-   * measured in UTF-8 bytes (what actually crosses the socket).
+   * which held these checks, is gone). The decision itself is
+   * `decideClientEvent` (`aai/sdk/client-event.ts`), shared with the
+   * `createToolContext` double so a spec cannot assert a send this drops.
    *
    * **An UNSERIALIZABLE payload is dropped the same way, not thrown.**
    * `JSON.stringify` throws on a cycle or a `BigInt` and returns `undefined` for
@@ -269,26 +289,19 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
    * fire-and-forget notification the doc above says is droppable. Both sibling
    * stringify sites (`_state-sync.ts`, the event log) catch for exactly this
    * reason.
+   *
+   * **Every drop is LOGGED, including the two caps.** `ToolContext.send`'s doc
+   * has always promised "dropped (with a warning log)" and the two cap checks
+   * were bare `return`s — so the case an author actually hits, a payload that
+   * grew past 64 KB, was the one with no signal anywhere: nothing on the wire,
+   * nothing in the log, and a `sent` array in their spec that recorded it.
    */
   const sendToClient = (emitter: SessionEmitter, event: string, data: unknown): void => {
-    if (event.length > MAX_CLIENT_EVENT_NAME_LENGTH) return;
-    let json: string | undefined;
-    try {
-      json = JSON.stringify(data ?? null);
-    } catch (err: unknown) {
-      logger?.warn?.(`ctx.send("${event}") payload is not serializable; not sent`, {
-        error: errorMessage(err),
-      });
+    const decision = decideClientEvent(event, data);
+    if ("drop" in decision) {
+      logger?.warn?.(clientEventDropMessage(event, decision.drop));
       return;
     }
-    if (json === undefined) {
-      // `JSON.stringify(() => {})` — no throw, no output. Nothing to put on the
-      // wire, and the emit below would produce an event the protocol schema
-      // rejects further down.
-      logger?.warn?.(`ctx.send("${event}") payload has no JSON form; not sent`);
-      return;
-    }
-    if (Buffer.byteLength(json) > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
     emitter.emit({ type: "custom.emitted", event, data });
   };
 

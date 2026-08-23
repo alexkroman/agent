@@ -34,8 +34,8 @@
     // to hide. It still appears inline in the rendered signature, and the API
     // report carries its declaration under `includeForgottenExports`.
     "StandardSchemaIssue",
-    // The ten field-list and message types behind `AgentParams`' four arms, plus
-    // the endpointing one. They are the implementation of a compile error — an
+    // The field-list and message types behind `AgentParams`' four arms, plus
+    // the endpointing pair and the silence-nudge one. They are the implementation of a compile error — an
     // author reads them in the message tsc prints, never by name — so they are
     // off the root barrel and out of the docs, while still appearing inline in
     // the arms' rendered signatures. See the re-export comment at the foot of
@@ -48,6 +48,8 @@
     "PipelineOnlyField",
     "PipelineOnlyMisuse",
     "ProviderField",
+    "SilenceNudgeField",
+    "SilenceNudgeParams",
     "StaticFrontDoorMisuse",
     "WorkflowAppMisuse",
     "WorkflowAppOnlyField",

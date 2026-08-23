@@ -23,6 +23,24 @@ describe("toolOf", () => {
     );
   });
 
+  test("says a tool def is not an agent, rather than dying on its missing map", () => {
+    // The neighbouring mistake to the authored-def one below, and the natural
+    // one when the tool under test was written inline: `toolOf(myTool, …)` used
+    // to throw `Cannot read properties of undefined (reading 'add_item')` from
+    // inside the SDK.
+    const notAnAgent: unknown = add;
+    expect(() => toolOf(notAnAgent as { tools: Record<string, ToolDef> }, "add_item")).toThrow(
+      /takes the AGENT, not one tool/,
+    );
+  });
+
+  test("names what it was handed when that is nothing at all", () => {
+    const missing: unknown = undefined;
+    expect(() => toolOf(missing as { tools: Record<string, ToolDef> }, "add_item")).toThrow(
+      /was handed undefined rather than an agent definition/,
+    );
+  });
+
   test("says so when the agent declares none at all", () => {
     expect(() => toolOf({ tools: {} }, "anything")).toThrow("It declares: (none).");
   });

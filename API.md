@@ -2020,7 +2020,7 @@ export function omitUndefined<T extends object>(obj: T): {
 };
 
 // @public
-export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, PipelineOnlyField>> & {
+export type PipelineAgentParams = SharedAgentParams & Partial<Pick<AgentDef, Exclude<PipelineOnlyField, SilenceNudgeField>>> & SilenceNudgeParams & {
     llm?: LlmProvider | string;
     s2s?: undefined;
     text?: undefined;
@@ -2342,6 +2342,21 @@ export type SharedAgentParams = Omit<AgentDef, DefaultedAgentField | PipelineOnl
 };
 
 // @public
+type SilenceNudgeField = "silenceTimeoutMs" | "silencePrompt";
+
+// @public
+type SilenceNudgeParams = {
+    silenceTimeoutMs: number;
+    silencePrompt?: string;
+} | {
+    silenceTimeoutMs?: undefined;
+    silencePrompt?: SilencePromptWithoutTimeoutMisuse;
+};
+
+// @public
+type SilencePromptWithoutTimeoutMisuse = "`silencePrompt` is the instruction injected when `silenceTimeoutMs` elapses — with no timeout nothing ever injects it; set `silenceTimeoutMs`, or remove `silencePrompt`";
+
+// @public
 export type SlotStore = {
     read(key: string): unknown;
     write(key: string, value: unknown, durable: boolean): void;
@@ -2505,7 +2520,7 @@ export function workflowApp(def: Omit<StaticAgentParams, "page">): AgentDef;
 type WorkflowAppMisuse<K extends string> = `\`${K}\` has no effect on a workflow app — \`page: "static"\` runs no model and opens no session; remove it, or remove \`page: "static"\` to make this a voice agent`;
 
 // @public
-type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "tools" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
+type WorkflowAppOnlyField = ProviderField | PipelineOnlyField | "system" | "systemPrompt" | "sttPrompt" | "maxSteps" | "toolChoice" | "builtinTools" | "minTurnSilenceMs" | "maxTurnSilenceMs" | "syncState" | "events" | "idleTimeoutMs" | "voice";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {
@@ -2622,6 +2637,39 @@ export function clampWorkflowWait(requested: number | undefined): number;
 export const CLIENT_AUDIO_LEAD_MS = 1500;
 
 // @internal
+export type ClientEventDecision = {
+    json: string;
+} | {
+    drop: ClientEventDrop;
+};
+
+// @internal
+export type ClientEventDrop =
+/** The event NAME is longer than the protocol schema accepts. */
+    {
+    reason: "name-too-long";
+    detail: string;
+}
+/** `JSON.stringify` threw — a cycle, a `BigInt`. */
+| {
+    reason: "unserializable";
+    detail: string;
+}
+/** `JSON.stringify` returned nothing — a function, a bare `undefined` symbol. */
+| {
+    reason: "no-json-form";
+    detail: string;
+}
+/** Serialized larger than the wire cap. */
+| {
+    reason: "too-large";
+    detail: string;
+};
+
+// @internal
+export function clientEventDropMessage(event: string, drop: ClientEventDrop): string;
+
+// @internal
 export interface CoalescingRunner<T> {
     trigger(): Promise<T>;
 }
@@ -2634,6 +2682,9 @@ export function createEpoch(): Epoch;
 
 // @internal
 export function createOwnedMap<K, V>(): OwnedMap<K, V>;
+
+// @internal
+export function decideClientEvent(event: string, data: unknown): ClientEventDecision;
 
 // @public
 export const DEFAULT_BUILTIN_TOOLS: readonly [];
@@ -3121,6 +3172,12 @@ export const AgentConfigSchema: z.ZodObject<{
 export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
     [K in HostOnlyAgentField]?: unknown;
 };
+
+// @internal
+export function agentConfigWarnings(config: {
+    tts?: unknown;
+    s2s?: unknown;
+}): string[];
 
 // @public
 interface AgentDef extends PipelineVoiceTuning {
@@ -6150,6 +6207,7 @@ type WorkflowBundleOutput = {
     stepCode: string;
     manifest: unknown;
     inputFiles: readonly string[];
+    warnings: readonly string[];
 };
 ```
 

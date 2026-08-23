@@ -321,6 +321,15 @@ The boundary is generated per call and is not derived from the content, so a
 body containing the boundary token is astronomically unlikely rather than
 impossible; endpoints behave the same way.
 
+**A part's `name` and `filename` are ESCAPED, because they are the one thing
+here that is routinely not the author's own string.** An upload's `name` is
+"the filename the uploader gave" (`uploadInfo`), so it reaches a step from a
+browser form and lands in a header this function writes — and a `"`, a CR or
+an LF in it closed the quoted string and appended headers of the caller's
+choosing to the request. The escaping is the HTML form-encoding algorithm's,
+which is what the `FormData` this replaces would have applied: `"` becomes
+`%22`, CR `%0D`, LF `%0A`.
+
 #### Parameters
 
 ##### parts
@@ -346,6 +355,13 @@ header states, and a duration computed from a different one is how a
 progress bar and a file disagree. Rounded, since a caller reporting
 milliseconds has no use for the fraction.
 
+It takes a LENGTH where its neighbours take bytes, so a `Uint8Array` handed
+to it is refused rather than divided: `bytes / blockAlign` is `NaN`, and a
+`NaN` duration is journaled by a step, rendered into a progress bar and
+reported to a caller without anything on the way saying which call produced
+it. That is the one misuse this signature invites — `encodeWav`, `stepSpeak`
+and `readUpload` all deal in the bytes themselves.
+
 #### Parameters
 
 ##### byteLength
@@ -363,7 +379,8 @@ milliseconds has no use for the fraction.
 #### Throws
 
 for a format no header can describe — the same check
-  [encodeWav](#encodewav) makes, so the two cannot disagree about what is legal.
+  [encodeWav](#encodewav) makes, so the two cannot disagree about what is legal —
+  or for a `byteLength` that is not a length.
 
 ***
 

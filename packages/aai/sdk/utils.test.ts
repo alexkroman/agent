@@ -47,6 +47,34 @@ describe("errorMessage", () => {
   test("converts undefined to string", () => {
     expect(errorMessage(undefined)).toBe("undefined");
   });
+
+  test("renders a validation error's ISSUES, not its JSON-dump message", () => {
+    // A `ZodError`'s own message is `JSON.stringify(issues, null, 2)`, so every
+    // caller that reports an error by its message printed a dozen lines of
+    // `{ "origin", "code", "path" }` for one wrong field.
+    const zodLike = Object.assign(new Error('[\n  {\n    "code": "too_small"\n  }\n]'), {
+      name: "ZodError",
+      issues: [
+        { message: "Too small: expected number to be >0", path: ["maxSteps"] },
+        { message: "Invalid input: expected string", path: ["name"] },
+      ],
+    });
+    expect(errorMessage(zodLike)).toBe(
+      "maxSteps: Too small: expected number to be >0; name: Invalid input: expected string",
+    );
+  });
+
+  test("leaves an ordinary error carrying an unrelated `issues` field alone", () => {
+    // Structural detection has to be narrow: only a list of things that each
+    // carry a string `message` is a validation result.
+    const err = Object.assign(new Error("upload failed"), { issues: ["nope"] });
+    expect(errorMessage(err)).toBe("upload failed");
+  });
+
+  test("an empty issue list is not a validation failure", () => {
+    const err = Object.assign(new Error("nothing wrong"), { issues: [] });
+    expect(errorMessage(err)).toBe("nothing wrong");
+  });
 });
 
 describe("errorDetail", () => {

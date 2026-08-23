@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
+import { agentConfigWarnings } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 // One static import: the runtime barrel is already loaded for the helpers
 // below, so a dynamic import inside startDevServer would defer nothing.
@@ -132,6 +133,9 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
   // pipe auto-selects) has already silenced `log` and the first session then
   // fails auth with nothing having said why. See this package's CLAUDE.md.
   for (const warning of agentEnvWarnings(agentDef, env)) notify("warn", warning);
+  // The config's own warnings — a TTS/S2S voice outside the catalog, which is
+  // otherwise reported by nothing until the first session is silent.
+  for (const warning of agentConfigWarnings(agentDef)) notify("warn", warning);
   return env;
 }
 
@@ -162,6 +166,11 @@ export async function loadWorker(
   evaluate: (code: string) => Promise<EvaluatedWorker>,
 ): Promise<EvaluatedWorker> {
   const workflows = await buildWorkflows(cwd);
+  // Replay-safety findings, printed on every reload that produces one: `aai dev`
+  // is where a workflow body is written, and the failure they name — a body
+  // that reads the clock, so a resume sees a different value than the first
+  // pass did — does not show up in a dev run at all. See `replayWarnings`.
+  for (const warning of workflows?.warnings ?? []) notify("warn", warning);
   // `runtime: false`: the dev server builds its runtime in-process from the
   // same installed SDK the wrapper would bundle, and inlining the runtime +
   // provider SDKs on every file-watch rebuild would make reloads multi-second.
