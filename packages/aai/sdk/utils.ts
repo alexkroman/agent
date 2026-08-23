@@ -3,7 +3,8 @@
  * Shared utility functions (the `@alexkroman1/aai/utils` subpath).
  *
  * For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
- * `toolFailure`, `isToolFailure`, `pushCapped`, `createKeyedLock`, and the four
+ * `toolFailure`, `isToolFailure`, `pushCapped`, `createKeyedLock`,
+ * `decodeHtmlEntities`, and the four
  * narration formatters (`formatBytes`, `formatDuration`, `countWords`,
  * `plural`). The remaining exports are framework
  * plumbing shared with the sibling packages. The module stays free of zod and
@@ -50,6 +51,14 @@ import { safeJsonParse } from "./safe-json-parse.ts";
  * `workflows/*.ts` both reach for, and these four are used from both.
  */
 export { countWords, formatBytes, formatDuration, plural } from "./format.ts";
+/**
+ * The one entity decoder, for a step reading text off somebody else's markup.
+ *
+ * Its own module for the same reason `format.ts` is: two templates had written
+ * it, and the thing they both had to get right — `&amp;` decoded last — is the
+ * whole content of the function. See `html-entities.ts`.
+ */
+export { decodeHtmlEntities } from "./html-entities.ts";
 export { isRecord } from "./is-record.ts";
 export {
   createKeyedLock,

@@ -107,8 +107,8 @@
     }
   },
   "testing": {
-    "current": 22,
-    "supported": [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 18, 20, 22],
+    "current": 23,
+    "supported": [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 18, 20, 22, 23],
     "dropped": {
       "1": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
       "5": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
@@ -148,8 +148,8 @@
     "dropped": {}
   },
   "utils": {
-    "current": 13,
-    "supported": [2, 3, 8, 12, 13],
+    "current": 14,
+    "supported": [2, 3, 8, 12, 13, 14],
     "dropped": {
       "1": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
       "4": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",

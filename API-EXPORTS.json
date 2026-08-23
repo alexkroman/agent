@@ -590,6 +590,7 @@
     "TestToolContext",
     "ToolBearingAgent",
     "ToolContextOverrides",
+    "ToolRunner",
     "createProgressStream",
     "createRunSnapshot",
     "createStubWorkflows",
@@ -610,15 +611,18 @@
     "stubUploads",
     "toolInputIssues",
     "toolOf",
+    "toolRunner",
     "withDiscoveredTools"
   ],
   "@alexkroman1/aai/testing/vitest": [
+    "MockWorkflowsOptions",
     "installStubGateway",
     "installStubReporter",
     "installStubSpeech",
     "installStubStepFetch",
     "installStubTranscribe",
-    "installStubUploads"
+    "installStubUploads",
+    "mockWorkflows"
   ],
   "@alexkroman1/aai/tools": [
     "CallOptions",
@@ -649,6 +653,7 @@
     "ToolFailure",
     "countWords",
     "createKeyedLock",
+    "decodeHtmlEntities",
     "errorDetail",
     "errorMessage",
     "formatBytes",

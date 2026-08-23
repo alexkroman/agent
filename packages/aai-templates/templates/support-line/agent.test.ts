@@ -1,10 +1,9 @@
 /// <reference types="vite/client" />
 
-import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
-  runTool,
   stubGenerate,
+  toolRunner,
   withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
@@ -95,11 +94,11 @@ function scriptedModel(script: Script = {}) {
   return { generate, calls };
 }
 
-/** A tool by the name the model calls it by, bound to this agent. The lookup
- *  and its "no such tool" message are `runTool`'s (`@alexkroman1/aai/testing`);
- *  what is local is only which agent they run against. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
-  runTool(agentDef, name, args, ctx);
+/** A tool by the name the model calls it by, bound to this agent. The lookup,
+ *  its "no such tool" message and the args-or-context shape are all
+ *  `toolRunner`'s (`@alexkroman1/aai/testing`); what is local is only which
+ *  agent it runs against. */
+const run = toolRunner(agentDef);
 
 /** Node names without the per-call suffix, for sequence assertions. */
 function nodes(calls: string[]): string[] {

@@ -3,7 +3,8 @@
 Shared utility functions (the `@alexkroman1/aai/utils` subpath).
 
 For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
-`toolFailure`, `isToolFailure`, `pushCapped`, `createKeyedLock`, and the four
+`toolFailure`, `isToolFailure`, `pushCapped`, `createKeyedLock`,
+`decodeHtmlEntities`, and the four
 narration formatters (`formatBytes`, `formatDuration`, `countWords`,
 `plural`). The remaining exports are framework
 plumbing shared with the sibling packages. The module stays free of zod and
@@ -70,6 +71,49 @@ import { countWords } from "@alexkroman1/aai/utils";
 
 countWords("  hello   there\nfriend "); // 3
 countWords("   "); // 0
+```
+
+***
+
+### decodeHtmlEntities()
+
+```ts
+function decodeHtmlEntities(text: string): string;
+```
+
+Decode the five XML/HTML entities that matter, plus a numeric apostrophe.
+
+`&lt;` `&gt;` `&quot;` `&nbsp;` and `&amp;`, plus `&#39;` / `&#039;` /
+`&apos;` for the apostrophe — the one that arrives numeric as often as named,
+because `&apos;` is XML and not in HTML 4. A non-breaking space becomes an
+ordinary space rather than U+00A0, since the caller is feeding text to a model
+or a word count, and `countWords` treating the two alike is the same decision.
+
+Anything else is left exactly as it stands, including a malformed or unknown
+entity: `&hellip;` and a bare `&` both come back unchanged. Decoding is a
+single pass, so an entity produced BY the decoding is not decoded again —
+which is the property that makes `&amp;lt;` round-trip to the literal `&lt;`
+the document meant.
+
+#### Parameters
+
+##### text
+
+`string`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { decodeHtmlEntities } from "@alexkroman1/aai/utils";
+
+decodeHtmlEntities("Fish &amp; Chips"); // "Fish & Chips"
+decodeHtmlEntities("it&#39;s here"); // "it's here"
+// One pass, so an entity the decoding produced stays literal.
+decodeHtmlEntities("&amp;lt;b&amp;gt;"); // "&lt;b&gt;"
 ```
 
 ***

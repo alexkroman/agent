@@ -420,6 +420,7 @@ describe("API-EXPORTS.json", () => {
       "TestToolContext",
       "ToolBearingAgent",
       "ToolContextOverrides",
+      "ToolRunner",
       "createProgressStream",
       "createRunSnapshot",
       "createStubWorkflows",
@@ -440,19 +441,29 @@ describe("API-EXPORTS.json", () => {
       "stubUploads",
       "toolInputIssues",
       "toolOf",
+      "toolRunner",
       "withDiscoveredTools",
     ]);
-    // The vitest half is the INSTALLATION of each fake above it — the same
-    // stubs with `onTestFinished(restore)` done. That is the whole reason it is
-    // a subpath rather than part of `/testing`, which stays framework-agnostic:
-    // importing it is what pulls the runner in. See `sdk/testing-vitest.ts`.
+    // The vitest half is mostly the INSTALLATION of each fake above it — the
+    // same stubs with `onTestFinished(restore)` done. That is the whole reason
+    // it is a subpath rather than part of `/testing`, which stays
+    // framework-agnostic: importing it is what pulls the runner in.
+    // `mockWorkflows` is here for the other half of the same rule — it installs
+    // nothing and restores nothing, but its methods are `vi.fn`s, so `vi` IS its
+    // content. See `sdk/testing-vitest.ts`.
     expect(surface["@alexkroman1/aai/testing/vitest"]).toEqual([
+      "MockWorkflowsOptions",
       "installStubGateway",
       "installStubReporter",
       "installStubSpeech",
       "installStubStepFetch",
       "installStubTranscribe",
       "installStubUploads",
+      "mockWorkflows",
     ]);
+    // `WorkflowClient` is `mockWorkflows`'s return type and is FORGOTTEN here
+    // for the same reason it is forgotten on `/testing`: it is exported from the
+    // root, so a consumer names it from there.
+    expect(surface["@alexkroman1/aai/testing/vitest"]).not.toContain("WorkflowClient");
   });
 });

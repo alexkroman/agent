@@ -27,18 +27,18 @@
  *   runs a real one.
  */
 
-import type { ToolContext, WorkflowClient } from "@alexkroman1/aai";
+import type { WorkflowClient } from "@alexkroman1/aai";
 import {
   createRunSnapshot,
-  createStubWorkflows,
   createToolContext,
   parseSchemaInput,
-  runTool,
   schemaInputIssues,
+  toolRunner,
   withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import {
   installStubStepFetch,
+  mockWorkflows,
   installStubGateway as stubGateway,
 } from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
@@ -89,31 +89,23 @@ const agentDef = withDiscoveredTools(
  * Every tool here is driven through the agent's own table, by the name the model
  * calls.
  *
- * The third parameter is args-or-context, which is `runTool`'s own shape: four
+ * The second parameter is args-or-context, which is `runTool`'s own shape: four
  * of this desk's five tools take no arguments, and the `{}` those calls were
  * obliged to pass sat between the two values a reader cares about.
  */
-const run = (
-  name: string,
-  argsOrCtx?: Record<string, unknown> | ToolContext,
-  ctx?: ToolContext,
-): Promise<unknown> => runTool(agentDef, name, argsOrCtx, ctx);
+const run = toolRunner(agentDef);
 
-/** A `ctx.workflows` that records `start` and answers `find` from a fixture. */
+/**
+ * A `ctx.workflows` that records `start` and answers the lookups from a fixture.
+ *
+ * `mockWorkflows` (`@alexkroman1/aai/testing/vitest`) is the whole thing — a
+ * `vi.fn` per method over one `runs` list, with `stream`/`streamTail` left
+ * rejecting because `recap_progress` reads progress through `lastLine` and
+ * composing those two by hand is the hazard `lastLine` exists to remove. What
+ * is local is only which workflow this desk declares.
+ */
 function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
-  return createStubWorkflows({
-    start: vi.fn(async () => "wrun_stub"),
-    get: vi.fn(async () => runs[0]),
-    find: vi.fn(async () => runs),
-    recent: vi.fn(async () => runs),
-    cancel: vi.fn(async () => true),
-    wakeUp: vi.fn(async () => 0),
-    // `lastLine` is the whole progress read now — `streamTail` + `stream` are no
-    // longer composed in `recap_progress`, so neither is stubbed. `undefined` is
-    // "the run has written nothing yet"; tests wanting a line override it.
-    lastLine: vi.fn(async () => undefined),
-    listing: () => [{ name: "recap" }],
-  });
+  return mockWorkflows({ runs, names: ["recap"] });
 }
 
 /** A finished recap, as the workflow's output reaches the tools. */

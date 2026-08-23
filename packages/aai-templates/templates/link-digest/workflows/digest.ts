@@ -26,6 +26,7 @@
 
 import { report } from "@alexkroman1/aai/step";
 import { stepFetchOk, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import { decodeHtmlEntities } from "@alexkroman1/aai/utils";
 import { FatalError, sleep } from "workflow";
 import { z } from "zod";
 
@@ -209,7 +210,7 @@ export async function file(_digest: Digest): Promise<string> {
 /** The document's `<title>`, when it has one. */
 export function extractTitle(html: string): string | undefined {
   const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1];
-  return title ? decodeEntities(title).replace(/\s+/g, " ").trim() || undefined : undefined;
+  return title ? decodeHtmlEntities(title).replace(/\s+/g, " ").trim() || undefined : undefined;
 }
 
 /**
@@ -223,7 +224,7 @@ export function extractTitle(html: string): string | undefined {
  * reader.
  */
 export function extractText(html: string): string {
-  return decodeEntities(
+  return decodeHtmlEntities(
     html
       .replace(/<(script|style|noscript|template)[^>]*>[\s\S]*?<\/\1>/gi, " ")
       .replace(/<!--[\s\S]*?-->/g, " ")
@@ -232,18 +233,4 @@ export function extractText(html: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, MAX_ARTICLE_CHARS);
-}
-
-/** The five entities that survive tag-stripping often enough to matter. */
-function decodeEntities(text: string): string {
-  return (
-    text
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#0?39;|&apos;/g, "'")
-      .replace(/&nbsp;/g, " ")
-      // `&amp;` LAST, or `&amp;lt;` decodes twice into a `<` the page never had.
-      .replace(/&amp;/g, "&")
-  );
 }

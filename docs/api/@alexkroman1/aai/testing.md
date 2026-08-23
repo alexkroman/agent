@@ -18,8 +18,9 @@ order, roughly by what a spec reaches for first:
 
 - `_testing-context.ts` — `createToolContext`, and the stub `db`/`workflows`
   its defaults are built from.
-- `testing-tools.ts` — `toolOf` / `runTool`, the tool under the name the model
-  calls it by; `testing-discovery.ts` — `withDiscoveredTools`, which is what
+- `testing-tools.ts` — `toolOf` / `runTool` / `toolRunner`, the tool under the
+  name the model calls it by, the last of those being `runTool` with the agent
+  bound; `testing-discovery.ts` — `withDiscoveredTools`, which is what
   puts the tools on an `agent.ts` default export in the first place.
 - `_testing-tool-results.ts` — `ok` / `okPosition`, unwrapping what a gated
   tool answered; `_testing-schema.ts` — what a tool's or workflow's input
@@ -489,10 +490,9 @@ context in their place: `runTool(agentDef, "view_order", ctx)`. A no-argument
 tool is common — one shipped template has thirteen — and the `{}` those calls
 were obliged to pass appeared 66 times across seven template specs, always
 between the two values a reader actually cares about. Both spellings are one
-signature rather than an overload pair, so a local
-`run = (name, argsOrCtx, ctx?) => runTool(agentDef, name, argsOrCtx, ctx)`
-wrapper — which is how every template reaches this — forwards either shape
-without restating the union.
+signature rather than an overload pair, so a bound runner forwards either
+shape without restating the union — which is what [toolRunner](#toolrunner-1) is, and
+how every template reaches this.
 
 The two are told apart by SHAPE, and the probe is narrow enough to be safe:
 a `ToolContext` is a record carrying a string `sessionId`, a `slots` store and
@@ -1026,6 +1026,72 @@ import authored from "./agent.ts";
 const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
 
 expect(toolOf(agentDef, "add_item").description).toContain("cart");
+```
+
+***
+
+### toolRunner()
+
+```ts
+function toolRunner(agent: ToolBearingAgent): ToolRunner;
+```
+
+[runTool](#runtool) bound to one agent — the `run(...)` a spec actually calls.
+
+A spec drives one agent, so `agentDef` is the same in every call and the name
+is the thing that varies. Every shipped template therefore opened with the
+same wrapper:
+
+```ts no-check
+const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
+  runTool(agentDef, name, argsOrCtx, ctx);
+```
+
+Ten of them, and [runTool](#runtool)'s own documentation named that wrapper as how
+every template reaches it — which is the point at which the wrapper is part of
+the API and belongs in it. `const run = toolRunner(agentDef);` is the same
+thing in one line.
+
+**The union is what is worth removing, not the line.** A spec that writes the
+signature out has to restate `Record<string, unknown> | ToolContext` to
+forward both of `runTool`'s shapes — arguments, or the context in their place
+for a tool that takes none — and a spec that narrows it to
+`(name: string, args: Record<string, unknown>)` has quietly given up the
+second shape. Four templates had; three of those then passed `{}` by hand
+where the whole point of the shorter form is not having to. Binding the agent
+keeps the union in one place, where it stays right.
+
+The runner is stateless and holds only the agent, so one per spec file at the
+top level is the shape: each call still defaults to a FRESH context, i.e. a
+distinct session with empty slots. Pass a context explicitly wherever the
+second call is meant to see the first call's work — see [runTool](#runtool).
+
+#### Parameters
+
+##### agent
+
+[`ToolBearingAgent`](#toolbearingagent)
+
+#### Returns
+
+[`ToolRunner`](#toolrunner)
+
+#### Example
+
+```ts no-check
+// `no-check`: import.meta.glob needs your project's vite/client types.
+import { createToolContext, toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import authored from "./agent.ts";
+
+const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+const run = toolRunner(agentDef);
+
+expect(await run("add_item", { item: "apple" })).toEqual({ added: "apple" });
+
+// No arguments, one session shared across the two calls.
+const ctx = createToolContext();
+await run("add_item", { item: "apple" }, ctx);
+expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
 ```
 
 ***
@@ -2261,6 +2327,42 @@ signature was teaching the pattern its gates refuse. Adding `| undefined` to
 every field costs nothing (an explicit `undefined` and an absent key
 both fall through to the default, because [createToolContext](#createtoolcontext) takes the
 overrides through `omitUndefined` before spreading them) and strictly widens what compiles.
+
+***
+
+### ToolRunner
+
+```ts
+type ToolRunner = (name: string, argsOrCtx?: 
+  | InferSchemaOutput<ToolInputSchema>
+| ToolContext, ctx?: ToolContext) => Promise<unknown>;
+```
+
+What [toolRunner](#toolrunner-1) hands back: [runTool](#runtool) with the agent already
+supplied.
+
+Named so a caller can annotate a helper that takes one, and so the union in
+the second position is written down once here rather than at every call site
+that binds it.
+
+#### Parameters
+
+##### name
+
+`string`
+
+##### argsOrCtx?
+
+  \| [`InferSchemaOutput`](index.md#inferschemaoutput)\<[`ToolInputSchema`](index.md#toolinputschema)\>
+  \| [`ToolContext`](index.md#toolcontext)
+
+##### ctx?
+
+[`ToolContext`](index.md#toolcontext)
+
+#### Returns
+
+`Promise`\<`unknown`\>
 
 ## Variables
 

@@ -852,3 +852,79 @@ tests — Linux by design, not by accident. Running them on Windows would test t
 runner rather than the code. The three remaining `*.integration.test.ts` files
 are pure in-memory property tests, so they would tell you about fast-check, not
 about Windows.
+
+## Self-hosting is the scaffold's default, and it runs the BUILT worker
+
+`scaffold/server.mjs` plus the `prestart`/`start` pair ship in every project, so
+**any** project runs on its own with `npm start`: no platform account, nothing
+managed. It is deliberately a FILE rather than a CLI command — a command is
+something you have to know exists, and the whole gap it closes was that
+`createAgentServer` already made self-hosting one call and nothing put that call
+in front of anyone. `aai eject` (see `packages/aai-cli/CLAUDE.md`) copies this
+same file into projects that predate it; that command must never grow its own
+copy of the contents.
+
+**`server.mjs` imports `.aai/worker.mjs`, and `prestart` (`aai build
+--skip-tests`) is what produces it.** It used to import `./agent.ts` directly,
+under a "no CLI at run time, no bundler" banner, and that banner is what had to
+go: a tool is registered by EXISTING, and the only place a directory can be
+turned into modules is where the bundle is assembled — a deployed agent is handed
+one ESM string and has no filesystem to scan. So an un-bundled loader serves an
+agent with **none of its tools and no error anywhere**: `/health` and
+`/client-config` answer perfectly and the agent cannot do the thing. That is the
+same silent absence discovery was introduced to kill, one level worse (every tool
+at once instead of one), which is why self-hosting was moved onto a build rather
+than given a second scanner.
+
+Four things follow, and they are what to preserve:
+
+- **There is no runtime `tools/` scan anywhere, and that is a decision.** The
+  plan offered a `readdir` + dynamic `import()` mode for the two loaders with no
+  bundler; neither took it. A spec uses `import.meta.glob` (see
+  `_discovery.ts` above — Node's resolver would hand the tools a second copy
+  of the SDK), and self-hosting now has the bundler in its path after all. The
+  SDK's lazy `loadToolModules` existed for that mode and is deleted: a second way
+  to build a registry is how the rules come to have two behaviours.
+- **The `registerHooks` shim is GONE, because the bundle resolves what it was
+  teaching.** It taught Node `?raw` (a Vite convention — Node looks for a file
+  literally named `system-prompt.md?raw`) and attribute-less `.json`
+  (TypeScript's `resolveJsonModule` allows it, Node wants
+  `with { type: "json" }`). Nine templates imported `./system-prompt.md?raw` at
+  the time and `retail/store.ts` imports `./seed.json` bare, so before the shim
+  `npm start` worked for four templates out of fourteen — and Vite inlines both,
+  so there is nothing left to teach. The `?raw` count is now ONE
+  (`pizza-ordering`, which composes): the generated entry writes that import
+  itself, so the convention no longer costs an author a bundler feature. The
+  argument is unchanged either way — Vite inlines it wherever it is written.
+  The DYNAMIC import survives it: the path is computed at run time, and it is a
+  `pathToFileURL` rather than a relative specifier so the entrypoint is correct
+  on Windows.
+- **A missing artifact exits with the command that fixes it**, rather than
+  booting an agent with no tools or failing on a bare `ERR_MODULE_NOT_FOUND`.
+  That is the path `node server.mjs` takes when run directly, i.e. bypassing
+  `prestart`.
+- **`ctx.env` and provider credentials come from different places, on purpose.**
+  `env` is declared keys only (`.env`, plus `.env.example` as a declaration so a
+  container with no `.env` still works, with real environment variables winning
+  per key) — the same rule `aai dev` follows, so an agent cannot come to depend
+  on a `PATH`-style variable that will not exist after deploy. Provider
+  credentials go through `withHostCredentialFallback`, which is what lets
+  `docker run -e ASSEMBLYAI_API_KEY=…` work without the key becoming `ctx.env`.
+  An empty declared value is DROPPED rather than passed through: a provider
+  would authenticate with `""` instead of reporting the credential absent, and
+  `.env.example` is full of empty values by design.
+
+The cost is that self-hosting needs the CLI as a devDependency, which the
+scaffold already declares — so `npm ci --omit=dev` in a container is not a
+supported shape, and `prestart` skips only the TESTS: `npm test` is where a suite
+belongs, and a failing test must not be what stops a container from starting.
+
+`packages/aai-cli/e2e.test.ts` boots `npm start` against a real installed
+project — **`pizza-ordering`, chosen for its `tools/` directory**, which is what
+this leg is now about (it keeps the old `math-buddy` coverage anyway, whose
+prompt is a discovered `system-prompt.md`). It probes `/health`,
+`/client-config` and `/`, and then
+reads the six tool names out of the artifact the server booted, because nothing
+over HTTP exposes a tool list. That tier is the only one that can prove any of
+it: the project's own `aai build` runs from a real INSTALL, and
+`defaultClientDir()` resolves out of the installed `@alexkroman1/aai-ui`.

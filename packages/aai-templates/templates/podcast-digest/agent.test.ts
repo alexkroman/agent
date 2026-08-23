@@ -37,7 +37,6 @@ import {
   timestamp,
 } from "./workflows/digest.ts";
 import {
-  decodeXml,
   discoverEpisodes,
   discoverFeedUrl,
   episodeFromItem,
@@ -251,11 +250,6 @@ describe("reading a feed", () => {
       );
     }
     expect(discoverFeedUrl("<html></html>", "https://example.com/show")).toBeUndefined();
-  });
-
-  test("decodes &amp; last, so an escaped entity survives", () => {
-    // Decoding `&amp;` first would turn `&amp;lt;` into `<` rather than `&lt;`.
-    expect(decodeXml("Q&amp;A &amp;lt; B")).toBe("Q&A &lt; B");
   });
 
   test("extracts an Apple feed URL, and only for the show that was asked for", () => {

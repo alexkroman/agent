@@ -46,7 +46,7 @@
 
 import { report } from "@alexkroman1/aai/step";
 import { stepFetchOk } from "@alexkroman1/aai/step-errors";
-import { isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
+import { decodeHtmlEntities, isRecord, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { FatalError } from "workflow";
 
 /** How long any one of these lookups may take before it is a failure. */
@@ -215,7 +215,7 @@ async function resolveSpotifyPodcastFeed(url: string): Promise<PodcastFeed> {
 /** Every item in the feed that has audio attached, newest first by the caller. */
 async function readPodcastFeed(feed: PodcastFeed): Promise<Episode[]> {
   const xml = feed.xml ?? (await fetchText(feed.feedUrl));
-  const podcastTitle = decodeXml(textBetween(xml, "<title>", "</title>") ?? feed.title);
+  const podcastTitle = decodeHtmlEntities(textBetween(xml, "<title>", "</title>") ?? feed.title);
 
   return [...xml.matchAll(/<item[\s\S]*?<\/item>/g)]
     .map((match, index) => episodeFromItem(match[0], feed.feedUrl, podcastTitle, index))
@@ -237,17 +237,17 @@ export function episodeFromItem(
   const guid = stripCdata(
     textBetween(item, "<guid", "</guid>")?.replace(/^[^>]*>/, "") ?? "",
   ).trim();
-  const link = decodeXml(stripCdata(textBetween(item, "<link>", "</link>") ?? audioUrl));
+  const link = decodeHtmlEntities(stripCdata(textBetween(item, "<link>", "</link>") ?? audioUrl));
   return {
     id: stableEpisodeId(feedUrl, guid || link || audioUrl),
     feedUrl,
     podcastTitle,
-    title: decodeXml(
+    title: decodeHtmlEntities(
       stripCdata(textBetween(item, "<title>", "</title>") ?? `Episode ${index + 1}`),
     ),
     url: link,
-    audioUrl: decodeXml(audioUrl),
-    published: decodeXml(
+    audioUrl: decodeHtmlEntities(audioUrl),
+    published: decodeHtmlEntities(
       stripCdata(
         textBetween(item, "<pubDate>", "</pubDate>") ??
           textBetween(item, "<published>", "</published>") ??
@@ -388,7 +388,7 @@ export function discoverFeedUrl(html: string, pageUrl: string): string | undefin
     /<link\b[^>]*href=["']([^"']+)["'][^>]*type=["']application\/(?:rss|atom)\+xml["'][^>]*>/i.exec(
       html,
     );
-  return match?.[1] ? new URL(decodeXml(match[1]), pageUrl).toString() : undefined;
+  return match?.[1] ? new URL(decodeHtmlEntities(match[1]), pageUrl).toString() : undefined;
 }
 
 /**
@@ -414,7 +414,7 @@ function publishedAt(episode: Episode): number {
 function feedFrom(feedUrl: string, body: string): PodcastFeed {
   return {
     feedUrl,
-    title: decodeXml(textBetween(body, "<title>", "</title>") ?? hostOf(feedUrl)),
+    title: decodeHtmlEntities(textBetween(body, "<title>", "</title>") ?? hostOf(feedUrl)),
     xml: body,
   };
 }
@@ -477,26 +477,11 @@ export function metaContent(html: string, property: string): string | undefined 
     new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${escaped}["']`, "i").exec(
       html,
     );
-  return decodeXml(match?.[1] ?? "").trim() || undefined;
+  return decodeHtmlEntities(match?.[1] ?? "").trim() || undefined;
 }
 
 function stripCdata(text: string): string {
   return text.replace(/^<!\[CDATA\[/, "").replace(/\]\]>$/, "");
-}
-
-/** The five entities a feed actually uses. `&amp;` LAST — see below. */
-export function decodeXml(text: string): string {
-  return (
-    text
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#0?39;|&apos;/g, "'")
-      .replace(/&nbsp;/g, " ")
-      // Last, and it has to be: decoding it first would turn `&amp;lt;` into `<`
-      // rather than the literal `&lt;` the feed asked for.
-      .replace(/&amp;/g, "&")
-  );
 }
 
 // ---- HTTP -------------------------------------------------------------------

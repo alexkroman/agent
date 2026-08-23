@@ -86,10 +86,9 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
  * tool is common — one shipped template has thirteen — and the `{}` those calls
  * were obliged to pass appeared 66 times across seven template specs, always
  * between the two values a reader actually cares about. Both spellings are one
- * signature rather than an overload pair, so a local
- * `run = (name, argsOrCtx, ctx?) => runTool(agentDef, name, argsOrCtx, ctx)`
- * wrapper — which is how every template reaches this — forwards either shape
- * without restating the union.
+ * signature rather than an overload pair, so a bound runner forwards either
+ * shape without restating the union — which is what {@link toolRunner} is, and
+ * how every template reaches this.
  *
  * The two are told apart by SHAPE, and the probe is narrow enough to be safe:
  * a `ToolContext` is a record carrying a string `sessionId`, a `slots` store and
@@ -149,4 +148,74 @@ function isToolContext(value: unknown): value is ToolContext {
     typeof value.send === "function" &&
     isRecord(value.slots)
   );
+}
+
+/**
+ * What {@link toolRunner} hands back: {@link runTool} with the agent already
+ * supplied.
+ *
+ * Named so a caller can annotate a helper that takes one, and so the union in
+ * the second position is written down once here rather than at every call site
+ * that binds it.
+ *
+ * @public
+ */
+export type ToolRunner = (
+  name: string,
+  argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext,
+  ctx?: ToolContext,
+) => Promise<unknown>;
+
+/**
+ * {@link runTool} bound to one agent — the `run(...)` a spec actually calls.
+ *
+ * A spec drives one agent, so `agentDef` is the same in every call and the name
+ * is the thing that varies. Every shipped template therefore opened with the
+ * same wrapper:
+ *
+ * ```ts no-check
+ * const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
+ *   runTool(agentDef, name, argsOrCtx, ctx);
+ * ```
+ *
+ * Ten of them, and {@link runTool}'s own documentation named that wrapper as how
+ * every template reaches it — which is the point at which the wrapper is part of
+ * the API and belongs in it. `const run = toolRunner(agentDef);` is the same
+ * thing in one line.
+ *
+ * **The union is what is worth removing, not the line.** A spec that writes the
+ * signature out has to restate `Record<string, unknown> | ToolContext` to
+ * forward both of `runTool`'s shapes — arguments, or the context in their place
+ * for a tool that takes none — and a spec that narrows it to
+ * `(name: string, args: Record<string, unknown>)` has quietly given up the
+ * second shape. Four templates had; three of those then passed `{}` by hand
+ * where the whole point of the shorter form is not having to. Binding the agent
+ * keeps the union in one place, where it stays right.
+ *
+ * The runner is stateless and holds only the agent, so one per spec file at the
+ * top level is the shape: each call still defaults to a FRESH context, i.e. a
+ * distinct session with empty slots. Pass a context explicitly wherever the
+ * second call is meant to see the first call's work — see {@link runTool}.
+ *
+ * @example
+ * ```ts no-check
+ * // `no-check`: import.meta.glob needs your project's vite/client types.
+ * import { createToolContext, toolRunner, withDiscoveredTools } from "@alexkroman1/aai/testing";
+ * import authored from "./agent.ts";
+ *
+ * const agentDef = withDiscoveredTools(authored, import.meta.glob("./tools/*.ts", { eager: true }));
+ * const run = toolRunner(agentDef);
+ *
+ * expect(await run("add_item", { item: "apple" })).toEqual({ added: "apple" });
+ *
+ * // No arguments, one session shared across the two calls.
+ * const ctx = createToolContext();
+ * await run("add_item", { item: "apple" }, ctx);
+ * expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
+ * ```
+ *
+ * @public
+ */
+export function toolRunner(agent: ToolBearingAgent): ToolRunner {
+  return async (name, argsOrCtx, ctx) => await runTool(agent, name, argsOrCtx, ctx);
 }
