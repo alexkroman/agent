@@ -20,7 +20,7 @@
  * here actually has is why {@link throwStepError} is not next to
  * `stepFetch`.
  *
- * The answer is that these four functions are the ONE authoring module allowed
+ * The answer is that this module is the ONE authoring module allowed
  * to import the DevKit's `workflow` package, and `/step` is not written only
  * for a step. Its vocabulary is reached from a tool body and from a spec as
  * well — `mapConcurrent` bounds a rate-limited API call anywhere,
@@ -61,15 +61,42 @@
  * to the default backoff with the gateway's own number sitting unread on the
  * error. {@link toStepError} reads it.
  *
+ * ## The callers that come pre-classified
+ *
+ * `.catch(throwStepError)` is not an interesting line, and it was on **17 call
+ * sites across eight templates** — every LLM and transcription call any of them
+ * makes. Two had already wrapped it in a local `ask()` whose only content was
+ * that `.catch`, each paying a doc block to say why, and the second one records
+ * that two OTHER templates wrote the same mapping before it was extracted. So it
+ * is hoisted one level further: {@link stepGenerateClassified} and its five
+ * siblings are the `/step` call and {@link throwStepError}, nothing else.
+ *
+ * They live here rather than in `/step` because IMPORTING THEM IS THE OPT-IN.
+ * `/step` may not name the DevKit at all, and whether a terminal failure should
+ * burn a step's remaining attempts is the caller's decision — a `404` meaning
+ * "already deleted" wants the raw call. The `Classified` suffix keeps the `/step`
+ * name intact, so a wrapper reads as the call it wraps.
+ *
  * @module step-errors
  */
 
 import { FatalError, RetryableError } from "workflow";
-import { TranscribeError } from "./_transcribe-shared.ts";
+import { TranscribeError, type TranscribeRequestOptions } from "./_transcribe-shared.ts";
+import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import type { InferSchemaOutput, StandardSchemaV1 } from "./standard-schema.ts";
 import { type StepFetchInit, stepFetch } from "./step-fetch.ts";
-import { StepGenerateError } from "./step-generate.ts";
+import { StepGenerateError, type StepGenerateOptions, stepGenerate } from "./step-generate.ts";
+import { type StepGenerateJsonOptions, stepGenerateJson } from "./step-generate-json.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
+import {
+  stepTranscribePoll,
+  stepTranscribeSubmit,
+  stepTranscribeUpload,
+  type TranscribeProgress,
+  type TranscribeSubmitOptions,
+} from "./step-transcribe.ts";
+import { stepTranscribeSync, type TranscribeSyncOptions } from "./step-transcribe-sync.ts";
 import { errorMessage, responseErrorMessage } from "./utils.ts";
 
 /**
@@ -272,4 +299,199 @@ export function throwFatalStepError(cause: unknown, message?: string): never {
  */
 function retryableError(message: string, at: Date | undefined): RetryableError {
   return new RetryableError(message, omitUndefined({ retryAfter: at }));
+}
+
+/**
+ * The verdict a failed ffmpeg run deserves: retry a `timeout` or an `aborted`,
+ * stop on everything else.
+ *
+ * `FfmpegError.kind` (`@alexkroman1/aai/ffmpeg`) is what makes this decidable. An
+ * `exit` is ffmpeg having READ the file and refused it, so every retry re-reads
+ * the same bytes and reaches the same conclusion while burning the budget a real
+ * transient needs; a `missing-binary` is `aai dev` on a laptop with no ffmpeg,
+ * already carrying its install instructions; an `output-too-large` is a cap only
+ * the caller can raise. A `timeout` or an `aborted` is worth another attempt.
+ *
+ * **Everything it does not recognise is FATAL — the opposite of
+ * {@link toStepError}'s default — and that inversion is why this is its own
+ * export.** `toStepError` refuses to invent a verdict, so an unclassified cause
+ * passes through retryable; here the caller has already decided, this step having
+ * run one subprocess over one file. Folding the two together would silently
+ * disable retries for every unclassified failure in the SDK, so the
+ * fatal/retryable choice stays visible in the name the author types.
+ *
+ * **The retryable arm goes through {@link throwStepError} even though it
+ * classifies nothing.** An `FfmpegError` is neither a `Response` nor an SDK error
+ * carrying `retryable`, so it is rethrown UNCHANGED and the DevKit's default
+ * retries it — where constructing a `RetryableError` would replace ffmpeg's own
+ * message and its `argv` with a sentence, and the argv is what you paste into a
+ * shell.
+ *
+ * **The failure is recognised STRUCTURALLY rather than with `instanceof`, and
+ * that is forced.** `FfmpegError` types its `signal` as `NodeJS.Signals`, and
+ * this module compiles under `sdk/tsconfig.json`, which sets `types: []` — so no
+ * module reachable from here may name a Node type, let alone import
+ * `node:child_process`. That budget is the whole reason this subpath can be named
+ * from a `workflows/` module: that bundle keeps everything a module holds at
+ * MODULE scope, so one surviving reference to `@alexkroman1/aai/ffmpeg` puts a
+ * child-process spawn inside a `node:vm` with no `require`, and every run dies at
+ * replay with `ReferenceError: require is not defined`. Two templates each carried
+ * a whole one-function FILE to keep that reference on the far side of a boundary
+ * only a step body crosses; owning the decision here retires both.
+ *
+ * @param cause - What the ffmpeg call threw. Anything at all — see above.
+ * @param message - The sentence to report. Defaults to the cause's own, which
+ *   for an `FfmpegError` is ffmpeg's log tail.
+ *
+ * @example
+ * ```ts
+ * import { transcodeToWav } from "@alexkroman1/aai/ffmpeg";
+ * import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
+ *
+ * export async function toPcm(bytes: Uint8Array): Promise<Uint8Array> {
+ *   "use step";
+ *   return await transcodeToWav(bytes, { sampleRate: 16_000 }).catch(throwFfmpegStepError);
+ * }
+ * ```
+ *
+ * @public
+ */
+export function throwFfmpegStepError(cause: unknown, message?: string): never {
+  const kind = ffmpegFailureKind(cause);
+  if (kind === "timeout" || kind === "aborted") return throwStepError(cause, message);
+  return throwFatalStepError(cause, message);
+}
+
+/**
+ * `FfmpegError.kind`, read off a value this module may not name a type for.
+ *
+ * Both properties are checked because either alone is a false positive waiting to
+ * happen: `kind` is a common discriminant and a `name` is only a string. An
+ * `FfmpegError` sets `this.name` in its constructor, so it is an own property that
+ * survives the structural round trips a durable run makes.
+ */
+function ffmpegFailureKind(cause: unknown): string | undefined {
+  if (!isRecord(cause) || cause.name !== "FfmpegError") return undefined;
+  return typeof cause.kind === "string" ? cause.kind : undefined;
+}
+
+/**
+ * `stepGenerate`, with its failure classified — the whole of what the wrapper
+ * adds is {@link throwStepError}, and see this module's doc for why that is
+ * worth an export rather than a line at each of the eight templates that wrote
+ * it. `StepGenerateError` carries the gateway's own verdict AND its
+ * `Retry-After`, so a rate-limited call waits the delay the gateway named
+ * instead of the DevKit's one-second default.
+ *
+ * None of the six takes a `message`: a caller with a label worth attaching wants
+ * the explicit `.catch((err) => throwStepError(err, …))`.
+ *
+ * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ *
+ * @example
+ * ```ts
+ * import { stepGenerateClassified } from "@alexkroman1/aai/step-errors";
+ *
+ * export async function summarize(text: string): Promise<string> {
+ *   "use step";
+ *   return await stepGenerateClassified(text, { system: "Summarize in two sentences." });
+ * }
+ * ```
+ *
+ * @public
+ */
+export function stepGenerateClassified(
+  prompt: string,
+  opts?: StepGenerateOptions,
+): Promise<string> {
+  return stepGenerate(prompt, opts).catch(throwStepError);
+}
+
+/**
+ * `stepGenerateJson`, with its failure classified — see
+ * {@link stepGenerateClassified}. The most-copied member of the family (**7 of the
+ * 17 sites**): a workflow that asks a model for a SHAPE is the usual shape.
+ *
+ * Worth knowing what it does NOT flatten: a gateway refusal arrives as a
+ * `StepGenerateError` carrying its own verdict, while a reply that was not JSON
+ * or missed the schema throws a plain `Error`, which {@link toStepError} passes
+ * through retryable — correctly, since a model that answered with prose may obey
+ * next attempt.
+ *
+ * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @public
+ */
+export function stepGenerateJsonClassified<S extends StandardSchemaV1>(
+  prompt: string,
+  opts: StepGenerateJsonOptions<S>,
+): Promise<InferSchemaOutput<S>> {
+  return stepGenerateJson(prompt, opts).catch(throwStepError);
+}
+
+/**
+ * `stepTranscribeSync`, with its failure classified — see
+ * {@link stepGenerateClassified}.
+ *
+ * This is the arm where classifying earns the most. `TranscribeError` carries
+ * `retryable`, and a refusal the PROVIDER decided — a recording with no speech in
+ * it, a container it will not read — arrives with `retryable: false`. Unclassified,
+ * a step re-uploads the same bytes until its attempts run out on a file that was
+ * never going to transcribe.
+ *
+ * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @public
+ */
+export function stepTranscribeSyncClassified(
+  bytes: Uint8Array,
+  opts?: TranscribeSyncOptions,
+): Promise<{ text: string }> {
+  return stepTranscribeSync(bytes, opts).catch(throwStepError);
+}
+
+/**
+ * `stepTranscribeUpload`, with its failure classified — see
+ * {@link stepTranscribeSyncClassified} for what a transcription verdict carries.
+ *
+ * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @public
+ */
+export function stepTranscribeUploadClassified(
+  uploadId: string,
+  opts?: TranscribeRequestOptions,
+): Promise<{ audioUrl: string }> {
+  return stepTranscribeUpload(uploadId, opts).catch(throwStepError);
+}
+
+/**
+ * `stepTranscribeSubmit`, with its failure classified — see
+ * {@link stepTranscribeSyncClassified}. Half of the async job API, whose other
+ * half is {@link stepTranscribePollClassified}; both are wrapped because a submit
+ * and its poll are separate steps with separate attempt budgets — classify one
+ * and not the other and the run gives up in one place and never in the other.
+ *
+ * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @public
+ */
+export function stepTranscribeSubmitClassified(
+  audioUrl: string,
+  opts?: TranscribeSubmitOptions,
+): Promise<{ id: string }> {
+  return stepTranscribeSubmit(audioUrl, opts).catch(throwStepError);
+}
+
+/**
+ * `stepTranscribePoll`, with its failure classified — see
+ * {@link stepTranscribeSubmitClassified}. A poll that answers is not a poll that
+ * SUCCEEDED: an unfinished job comes back as a `TranscribeProgress` and only a
+ * transport or API failure rejects, so this classifies the rejection and says
+ * nothing about the job's own status.
+ *
+ * @throws {Error} A `FatalError` or `RetryableError` — see {@link toStepError}.
+ * @public
+ */
+export function stepTranscribePollClassified(
+  id: string,
+  opts?: TranscribeRequestOptions,
+): Promise<TranscribeProgress> {
+  return stepTranscribePoll(id, opts).catch(throwStepError);
 }
