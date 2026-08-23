@@ -31,22 +31,32 @@ because it is the service that synthesizes.
 **[assemblyAIS2s](index.md#assemblyais2s) is also on the root barrel**, which is the one
 exception to "provider factories live on subpaths". S2S became opt-in when
 the pipeline became the default mode, so the descriptor that opts in sits
-beside `agent()` where an author meets it; the two `*_KIND`/`*_API_KEY_ENV`
-constants an author never writes stay here only. `openaiRealtime` is on this
+beside `agent()` where an author meets it. `openaiRealtime` is on this
 subpath alone, like every other vendor.
 
 **Credentials are never passed here.** Each factory's vendor names the env
-var its key is read from — `ASSEMBLYAI_API_KEY`, `OPENAI_API_KEY`, each also
-exported as a `*_API_KEY_ENV` constant — and the host reads it out of the
-agent's own environment when the session starts. That is what keeps a
-descriptor safe to serialize across the CLI → server → guest boundary.
+var its key is read from — `ASSEMBLYAI_API_KEY`, `OPENAI_API_KEY` — and the
+host reads it out of the agent's own environment when the session starts.
+That is what keeps a descriptor safe to serialize across the CLI → server →
+guest boundary. The variable NAMES are not published: an author never types
+one, and the one case for repointing a stage is `apiKeyEnv` on the
+AssemblyAI descriptor, which this stage carries too.
+
+## The descriptor type is on the ROOT barrel TOO
+
+`S2sProvider` — what a factory here returns — is also exported from
+`@alexkroman1/aai`, beside the other three stage types, so an agent
+annotating two stages writes one import rather than two. It stays here as
+well: this is where the factory that produces one lives.
+`ProviderDescriptor`, the base all four narrow, is on the root ALONE now —
+one interface with four reference pages was three too many.
 
 ## Functions
 
 ### openaiRealtime()
 
 ```ts
-function openaiRealtime(opts?: OpenaiRealtimeOptions): OpenaiRealtimeProvider;
+function openaiRealtime(opts?: OpenaiRealtimeOptions): S2sProvider;
 ```
 
 Build an OpenAI Realtime S2S descriptor — the explicit opt-in to
@@ -61,7 +71,7 @@ host-side from the agent's env (`OPENAI_API_KEY`).
 
 #### Returns
 
-[`OpenaiRealtimeProvider`](#openairealtimeprovider)
+[`S2sProvider`](index.md#s2sprovider)
 
 #### Example
 
@@ -78,17 +88,9 @@ export default agent({
 
 Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline.
 
-## Type Aliases
+## Interfaces
 
 ### OpenaiRealtimeOptions
-
-```ts
-type OpenaiRealtimeOptions = {
-  model?: string;
-  url?: string;
-  voice?: OpenaiRealtimeVoice;
-};
-```
 
 Options for [openaiRealtime](#openairealtime).
 
@@ -118,34 +120,7 @@ optional voice?: OpenaiRealtimeVoice;
 
 TTS voice. Default applied by the host (currently `"alloy"`).
 
-***
-
-### OpenaiRealtimeProvider
-
-```ts
-type OpenaiRealtimeProvider = S2sProvider & {
-  kind: typeof OPENAI_REALTIME_KIND;
-  options: OpenaiRealtimeOptions;
-};
-```
-
-Descriptor returned by [openaiRealtime](#openairealtime).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof OPENAI_REALTIME_KIND;
-```
-
-##### options
-
-```ts
-readonly options: OpenaiRealtimeOptions;
-```
-
-***
+## Type Aliases
 
 ### OpenaiRealtimeVoice
 
@@ -165,76 +140,6 @@ type OpenaiRealtimeVoice =
 
 Voice ids the OpenAI Realtime API accepts for TTS.
 
-***
-
-### S2sProvider
-
-```ts
-type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-  __stage?: "s2s";
-};
-```
-
-Descriptor for an S2S provider. Returned by `assemblyAIS2s(...)` (root
-export) or `openaiRealtime(...)` from `@alexkroman1/aai/s2s`.
-
-#### Type Declaration
-
-##### \_\_stage?
-
-```ts
-readonly optional __stage?: "s2s";
-```
-
-Compile-time stage tag; never present at runtime.
-
-## Variables
-
-### ASSEMBLYAI\_S2S\_API\_KEY\_ENV
-
-```ts
-const ASSEMBLYAI_S2S_API_KEY_ENV: "ASSEMBLYAI_API_KEY" = "ASSEMBLYAI_API_KEY";
-```
-
-Env var holding this stage's credential.
-
-The same string as the STT/TTS/LLM AssemblyAI constants by design — a
-distinct NAME per stage is what lets `apiKeyEnv` point one stage at another
-account without moving the others (see `descriptorEnvVar` in
-the host-side resolver).
-
-***
-
-### ASSEMBLYAI\_S2S\_KIND
-
-```ts
-const ASSEMBLYAI_S2S_KIND: "assemblyai";
-```
-
-Kind tag recognised by the host-side resolver.
-
-***
-
-### OPENAI\_REALTIME\_API\_KEY\_ENV
-
-```ts
-const OPENAI_REALTIME_API_KEY_ENV: "OPENAI_API_KEY" = "OPENAI_API_KEY";
-```
-
-Env var holding this stage's credential — the same string as the OpenAI LLM
-constant, under a name of its own so `apiKeyEnv` can repoint this stage
-alone (the host-side resolver reads it).
-
-***
-
-### OPENAI\_REALTIME\_KIND
-
-```ts
-const OPENAI_REALTIME_KIND: "openai-realtime";
-```
-
-Kind tag recognised by the host-side resolver.
-
 ## References
 
 ### assemblyAIS2s
@@ -249,12 +154,6 @@ Re-exports [AssemblyAIS2sOptions](index.md#assemblyais2soptions)
 
 ***
 
-### AssemblyAIS2sProvider
+### S2sProvider
 
-Re-exports [AssemblyAIS2sProvider](index.md#assemblyais2sprovider)
-
-***
-
-### ProviderDescriptor
-
-Re-exports [ProviderDescriptor](stt.md#providerdescriptor)
+Re-exports [S2sProvider](index.md#s2sprovider)

@@ -37,10 +37,19 @@ export type SessionRuntime = Pick<
  * `createHostServer` are wrappers, not alternative APIs: a hook added here has
  * to reach both, and three identically-documented fields copied into each is
  * how one of them silently stops offering it.
+ *
+ * Spreading a bag of these into {@link ServerOptions} is the point, and for a
+ * while it did not compile. An optional field spreads as `T | undefined`, so
+ * the three matching fields on `ServerOptions` have to ACCEPT `undefined` or
+ * `exactOptionalPropertyTypes` rejects the whole object (TS2379) — which meant
+ * the one bag that exists to reach all three front doors could not be handed to
+ * any of them, and each wrapper forwarded the fields one at a time instead
+ * (`contracts/compatibility/server/v1.ts` has the workaround frozen into it).
+ * They carry `| undefined` now, on both sides; do not narrow either back.
  */
 export type PassthroughServerOptions = {
   /** Structured logger. Defaults to the console logger. */
-  logger?: Logger;
+  logger?: Logger | undefined;
   /** First look at every WebSocket upgrade — see {@link ServerOptions.upgrade}. */
   upgrade?: ServerOptions["upgrade"];
   /** First look at every HTTP request — see {@link ServerOptions.request}. */
@@ -55,7 +64,7 @@ export type ServerOptions = {
   /** Directory of static client assets to serve at `/`. */
   clientDir?: string;
   /** Structured logger. Defaults to the console logger. */
-  logger?: Logger;
+  logger?: Logger | undefined;
   /**
    * Environment for host-mode connections (a `?host=1` WebSocket whose first
    * `config` frame supplies its own agent) and the source of secrets for the
@@ -100,11 +109,9 @@ export type ServerOptions = {
    * platform's guest harness) add its own upgrade surface — its host
    * control channel — without a second HTTP server.
    */
-  upgrade?: (
-    req: http.IncomingMessage,
-    socket: import("node:stream").Duplex,
-    head: Buffer,
-  ) => boolean;
+  upgrade?:
+    | ((req: http.IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) => boolean)
+    | undefined;
   /**
    * First look at every HTTP request (after `/health`). Return true to claim
    * it — the server then leaves the response alone. The `upgrade` hook's
@@ -112,12 +119,14 @@ export type ServerOptions = {
    * HTTP surface — the studio coding agent's chat endpoint — without a
    * second HTTP server.
    */
-  request?: (
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    url: string,
-    method: string,
-  ) => boolean;
+  request?:
+    | ((
+        req: http.IncomingMessage,
+        res: http.ServerResponse,
+        url: string,
+        method: string,
+      ) => boolean)
+    | undefined;
   /**
    * What this server's front door IS — see `AgentDef.page`. Defaults to
    * `"voice"`.

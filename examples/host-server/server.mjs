@@ -17,7 +17,7 @@
 //
 //   npm install && npm start
 
-import { createHostServer } from "@alexkroman1/aai/runtime";
+import { createHostServer } from "@alexkroman1/aai-runtime";
 
 const server = createHostServer();
 

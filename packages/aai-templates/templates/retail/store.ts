@@ -1,6 +1,5 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
-import { dialog, isToolFailure, pushCapped, sessionSlot } from "@alexkroman1/aai";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { dialog, isToolFailure, omitUndefined, pushCapped, sessionSlot } from "@alexkroman1/aai";
 import { setup } from "xstate";
 import type { z } from "zod";
 import seedJson from "./seed.json";

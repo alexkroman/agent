@@ -64,7 +64,7 @@ export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = 
   /**
    * Function that executes the tool and returns a result. The result is
    * JSON-serialized for the LLM and the client, and capped at
-   * {@link MAX_TOOL_RESULT_CHARS} (4000) characters — longer results are
+   * `MAX_TOOL_RESULT_CHARS` (4000) characters — longer results are
    * trimmed and end with a `[truncated]` marker.
    */
   execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;

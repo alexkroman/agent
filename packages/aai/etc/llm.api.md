@@ -5,241 +5,7 @@
 ```ts
 
 // @public
-export function anthropic(opts: AnthropicOptions): AnthropicProvider;
-
-// @public
-export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
-
-// @public (undocumented)
-export const ANTHROPIC_KIND: "anthropic";
-
-// @public
-export interface AnthropicOptions {
-    model: string;
-}
-
-// @public
-export type AnthropicProvider = LlmProvider & {
-    readonly kind: typeof ANTHROPIC_KIND;
-    readonly options: AnthropicOptions;
-};
-
-// @public (undocumented)
-export const ASSEMBLYAI_GATEWAY_MODELS: {
-    readonly "claude-haiku-4-5-20251001": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-5-20251101": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-6": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-7": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1000000;
-    };
-    readonly "claude-opus-4-8": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1000000;
-    };
-    readonly "claude-sonnet-4-5-20250929": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-sonnet-4-6": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-sonnet-5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "gemini-2.5-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 1048576;
-    };
-    readonly "gemini-2.5-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 1048576;
-    };
-    readonly "gemini-2.5-pro": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "gemini-3.1-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.5-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.5-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.6-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
-        readonly context: 1048575;
-    };
-    readonly "gpt-4.1": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1047576;
-    };
-    readonly "gpt-5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5-mini": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5-nano": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.1": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.2": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 272000;
-    };
-    readonly "gpt-5.6-luna": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 270000;
-    };
-    readonly "gpt-5.6-terra": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 270000;
-    };
-    readonly "gpt-oss-120b": {
-        readonly tools: true;
-        readonly stream: false;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 131072;
-    };
-    readonly "gpt-oss-20b": {
-        readonly tools: true;
-        readonly stream: false;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 131072;
-    };
-    readonly "kimi-k2.5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
-        readonly context: 200000;
-    };
-    readonly "qwen3-32B": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "qwen3-next-80b-a3b": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "qwen3.5-4b-32k-experimental": {
-        readonly tools: false;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 32768;
-    };
-};
-
-// @public
-export const ASSEMBLYAI_LLM_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export function anthropic(opts: ModelOptions): LlmProvider;
 
 // @public
 export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
@@ -251,13 +17,10 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
 export const ASSEMBLYAI_LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1";
 
 // @public
-export const ASSEMBLYAI_LLM_KIND: "assemblyai";
+export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
 
 // @public
-export type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
-
-// @public
-export function assemblyAILlm(opts?: AssemblyAILlmOptions): AssemblyAILlmProvider;
+export function assemblyAILlm(opts?: AssemblyAILlmOptions): LlmProvider;
 
 // @public
 export interface AssemblyAILlmOptions {
@@ -269,89 +32,16 @@ export interface AssemblyAILlmOptions {
 }
 
 // @public
-export type AssemblyAILlmProvider = LlmProvider & {
-    readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-    readonly options: AssemblyAILlmOptions & {
-        model: string;
-    };
-};
-
-// @public
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
-export function gateway(opts: GatewayOptions): GatewayProvider;
+export function gateway(opts: ModelOptions): LlmProvider;
 
 // @public
-export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
-
-// @public (undocumented)
-export const GATEWAY_KIND: "gateway";
+export function google(opts: ModelOptions): LlmProvider;
 
 // @public
-export function gatewayModelIds(opts?: {
-    eu?: boolean;
-}): AssemblyAIGatewayModel[];
-
-// @public
-export type GatewayModelInfo = {
-    readonly tools: boolean;
-    readonly stream: boolean;
-    readonly eu: boolean;
-    readonly live: boolean;
-    readonly context: number;
-};
-
-// @public
-export interface GatewayOptions {
-    model: string;
-}
-
-// @public
-export type GatewayProvider = LlmProvider & {
-    readonly kind: typeof GATEWAY_KIND;
-    readonly options: GatewayOptions;
-};
-
-// @public
-export function google(opts: GoogleOptions): GoogleProvider;
-
-// @public
-export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
-
-// @public (undocumented)
-export const GOOGLE_KIND: "google";
-
-// @public
-export interface GoogleOptions {
-    model: string;
-}
-
-// @public
-export type GoogleProvider = LlmProvider & {
-    readonly kind: typeof GOOGLE_KIND;
-    readonly options: GoogleOptions;
-};
-
-// @public
-export function groq(opts: GroqOptions): GroqProvider;
-
-// @public
-export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
-
-// @public (undocumented)
-export const GROQ_KIND: "groq";
-
-// @public
-export interface GroqOptions {
-    model: string;
-}
-
-// @public
-export type GroqProvider = LlmProvider & {
-    readonly kind: typeof GROQ_KIND;
-    readonly options: GroqOptions;
-};
+export function groq(opts: ModelOptions): LlmProvider;
 
 // @public
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -359,70 +49,24 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export function mistral(opts: MistralOptions): MistralProvider;
+export function mistral(opts: ModelOptions): LlmProvider;
 
 // @public
-export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
-
-// @public (undocumented)
-export const MISTRAL_KIND: "mistral";
-
-// @public
-export interface MistralOptions {
+export interface ModelOptions {
     model: string;
 }
 
 // @public
-export type MistralProvider = LlmProvider & {
-    readonly kind: typeof MISTRAL_KIND;
-    readonly options: MistralOptions;
-};
+export function openai(opts: ModelOptions): LlmProvider;
 
 // @public
-export function openai(opts: OpenAIOptions): OpenAIProvider;
-
-// @public
-export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
-
-// @public (undocumented)
-export const OPENAI_KIND: "openai";
-
-// @public
-export interface OpenAIOptions {
-    model: string;
-}
-
-// @public
-export type OpenAIProvider = LlmProvider & {
-    readonly kind: typeof OPENAI_KIND;
-    readonly options: OpenAIOptions;
-};
-
-// @public
-export function openrouter(opts: OpenRouterOptions): OpenRouterProvider;
-
-// @public
-export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
+export function openrouter(opts: ModelOptions): LlmProvider;
 
 // @public
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
-// @public (undocumented)
-export const OPENROUTER_KIND: "openrouter";
-
 // @public
-export interface OpenRouterOptions {
-    model: string;
-}
-
-// @public
-export type OpenRouterProvider = LlmProvider & {
-    readonly kind: typeof OPENROUTER_KIND;
-    readonly options: OpenRouterOptions;
-};
-
-// @public
-export interface ProviderDescriptor<Kind extends string, Options> {
+interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -430,24 +74,7 @@ export interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function xai(opts: XaiOptions): XaiProvider;
-
-// @public
-export const XAI_API_KEY_ENV = "XAI_API_KEY";
-
-// @public (undocumented)
-export const XAI_KIND: "xai";
-
-// @public
-export interface XaiOptions {
-    model: string;
-}
-
-// @public
-export type XaiProvider = LlmProvider & {
-    readonly kind: typeof XAI_KIND;
-    readonly options: XaiOptions;
-};
+export function xai(opts: ModelOptions): LlmProvider;
 
 // (No @packageDocumentation comment for this package)
 

@@ -1,7 +1,7 @@
 {
   "client": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "client-dir": {
@@ -30,8 +30,8 @@
     "dropped": {}
   },
   "session": {
-    "current": 3,
-    "supported": [2, 3],
+    "current": 4,
+    "supported": [2, 3, 4],
     "dropped": {
       "1": "SessionCoreOptions was removed: it was an exact alias of VoiceSessionOptions with exactly one referent (createSessionCore's parameter), and client() never took it. The epoch 1 example annotated a value with it, so the epoch 1 authoring style no longer compiles."
     }
@@ -42,8 +42,8 @@
     "dropped": {}
   },
   "workflow": {
-    "current": 12,
-    "supported": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+    "current": 13,
+    "supported": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
     "dropped": {}
   }
 }

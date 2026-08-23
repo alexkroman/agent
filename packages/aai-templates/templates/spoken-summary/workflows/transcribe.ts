@@ -12,7 +12,7 @@
  *
  * **Every one of them is four lines, because the SDK owns the endpoint.**
  * `stepTranscribeUpload` / `stepTranscribeSubmit` / `stepTranscribePoll` on
- * `@alexkroman1/aai/utils` carry the URL, the raw-key auth, the windowed
+ * `@alexkroman1/aai/step` carry the URL, the raw-key auth, the windowed
  * streaming upload, the PLURAL `speech_models` field and the failure
  * classification — all of which this file used to spell out, and all of which
  * `transcription-workflow` used to spell out again, differently worded and

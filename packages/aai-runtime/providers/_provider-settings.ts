@@ -21,6 +21,13 @@
  */
 
 import {
+  ASSEMBLYAI_LLM_KIND,
+  ASSEMBLYAI_STT_KIND,
+  ASSEMBLYAI_TTS_KIND,
+  CARTESIA_KIND,
+  DEEPGRAM_KIND,
+  ELEVENLABS_KIND,
+  RIME_KIND,
   resolveAssemblyAISttSettings,
   resolveAssemblyAITtsSettings,
   resolveCartesiaSettings,
@@ -28,29 +35,23 @@ import {
   resolveElevenLabsSettings,
   resolveRimeSettings,
   resolveSonioxSettings,
+  SONIOX_KIND,
 } from "@alexkroman1/aai/host-internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
-import { ASSEMBLYAI_LLM_DEFAULT_MODEL, ASSEMBLYAI_LLM_KIND } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import type { S2sProvider } from "@alexkroman1/aai/s2s";
-import type { SttProvider } from "@alexkroman1/aai/stt";
-import {
-  ASSEMBLYAI_KIND,
-  type AssemblyAIOptions,
-  DEEPGRAM_KIND,
-  type DeepgramOptions,
-  ELEVENLABS_KIND,
-  type ElevenLabsOptions,
-  SONIOX_KIND,
-  type SonioxOptions,
+import type {
+  AssemblyAISttOptions,
+  DeepgramOptions,
+  ElevenLabsOptions,
+  SonioxOptions,
+  SttProvider,
 } from "@alexkroman1/aai/stt";
-import type { TtsProvider } from "@alexkroman1/aai/tts";
-import {
-  ASSEMBLYAI_TTS_KIND,
-  type AssemblyAITtsOptions,
-  CARTESIA_KIND,
-  type CartesiaOptions,
-  RIME_KIND,
-  type RimeOptions,
+import type {
+  AssemblyAITtsOptions,
+  CartesiaOptions,
+  RimeOptions,
+  TtsProvider,
 } from "@alexkroman1/aai/tts";
 
 /** A stage's reported settings: plain JSON-safe values, never a credential. */
@@ -61,14 +62,14 @@ type SettingsFor = (options: ProviderSettings) => ProviderSettings;
 
 /**
  * The three stage tables are keyed separately because the kind tag is NOT
- * unique across stages — `ASSEMBLYAI_KIND`, `ASSEMBLYAI_TTS_KIND`,
+ * unique across stages — `ASSEMBLYAI_STT_KIND`, `ASSEMBLYAI_TTS_KIND`,
  * `ASSEMBLYAI_LLM_KIND` and `ASSEMBLYAI_S2S_KIND` are four different
  * constants all equal to `"assemblyai"`, so one flat map would resolve an
  * AssemblyAI TTS stage through the STT resolver and report an endpointing
  * window for a synthesizer.
  */
 const STT_SETTINGS: Record<string, SettingsFor> = {
-  [ASSEMBLYAI_KIND]: (o) => resolveAssemblyAISttSettings(o as AssemblyAIOptions),
+  [ASSEMBLYAI_STT_KIND]: (o) => resolveAssemblyAISttSettings(o as AssemblyAISttOptions),
   [DEEPGRAM_KIND]: (o) => resolveDeepgramSettings(o as DeepgramOptions),
   [ELEVENLABS_KIND]: (o) => resolveElevenLabsSettings(o as ElevenLabsOptions),
   [SONIOX_KIND]: (o) => resolveSonioxSettings(o as SonioxOptions),

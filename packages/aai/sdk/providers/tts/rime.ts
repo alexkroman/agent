@@ -44,12 +44,6 @@ export interface RimeOptions {
   language?: string;
 }
 
-/** Descriptor returned by {@link rime}. */
-export type RimeProvider = TtsProvider & {
-  readonly kind: typeof RIME_KIND;
-  readonly options: RimeOptions & { voice: string };
-};
-
 /**
  * Build a Rime TTS descriptor for pipeline mode. The API key is resolved
  * host-side from the agent's env (`RIME_API_KEY`).
@@ -66,7 +60,7 @@ export type RimeProvider = TtsProvider & {
  * });
  * ```
  */
-export function rime(opts: RimeOptions = {}): RimeProvider {
+export function rime(opts: RimeOptions = {}): TtsProvider {
   return {
     kind: RIME_KIND,
     options: { ...opts, voice: opts.voice ?? RIME_DEFAULT_VOICE },

@@ -14,27 +14,12 @@
  */
 
 import type { LlmProvider } from "../../providers.ts";
+import type { ModelOptions } from "./model-options.ts";
 
 export const GATEWAY_KIND = "gateway" as const;
 
 /** Agent-env variable holding the Vercel AI Gateway API key. */
 export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
-
-/** Options for {@link gateway}. */
-export interface GatewayOptions {
-  /**
-   * Gateway model id in `"creator/model"` form, e.g. `"zai/glm-4.6"`,
-   * `"anthropic/claude-sonnet-4-5"`, `"openai/gpt-4.1"`. See
-   * https://vercel.com/ai-gateway/models for the full list.
-   */
-  model: string;
-}
-
-/** Descriptor returned by {@link gateway}. */
-export type GatewayProvider = LlmProvider & {
-  readonly kind: typeof GATEWAY_KIND;
-  readonly options: GatewayOptions;
-};
 
 /**
  * Build a Vercel AI Gateway descriptor.
@@ -58,6 +43,6 @@ export type GatewayProvider = LlmProvider & {
  * One key, hundreds of models, addressed `"creator/model"`. See
  * https://vercel.com/ai-gateway/models for the list.
  */
-export function gateway(opts: GatewayOptions): GatewayProvider {
+export function gateway(opts: ModelOptions): LlmProvider {
   return { kind: GATEWAY_KIND, options: { ...opts } };
 }

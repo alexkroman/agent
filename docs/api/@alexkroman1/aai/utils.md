@@ -72,51 +72,6 @@ Extract an error message from an unknown thrown value.
 
 ***
 
-### isRecord()
-
-```ts
-function isRecord(value: unknown): value is Record<string, unknown>;
-```
-
-Whether a value is a non-null, non-array object, narrowed to
-`Record<string, unknown>` so its fields can be read without a second cast.
-
-The narrowing is the point. `typeof value === "object" && value !== null` is
-three tokens anyone can write, which is exactly why it was written twelve
-times here — and it narrows to `object`, on which every field read is an
-error, so each site paid for it again with a cast
-(`(value as { kind?: unknown }).kind`). A cast is not a check: it says
-nothing about the value and stops reporting when the shape moves.
-
-Arrays are excluded because every caller is reading a NAMED field — `.type`,
-`.error`, `.kind`, `.then` — none of which an array has. For "any non-null
-object, arrays included", write the two comparisons inline; that case has one
-site in this repo and does not want a name.
-
-#### Parameters
-
-##### value
-
-`unknown`
-
-#### Returns
-
-`value is Record<string, unknown>`
-
-#### Example
-
-```ts
-import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
-
-function readStatus(body: string): string | undefined {
-  const parsed = safeJsonParse(body);
-  if (!isRecord(parsed)) return undefined;
-  return typeof parsed.status === "string" ? parsed.status : undefined;
-}
-```
-
-***
-
 ### isToolFailure()
 
 ```ts
@@ -156,63 +111,6 @@ function orderTotal(id: string): number | ToolFailure {
   if (isToolFailure(order)) return order;
   return order.total;
 }
-```
-
-***
-
-### omitUndefined()
-
-```ts
-function omitUndefined<T>(obj: T): { [K in string | number | symbol]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined> };
-```
-
-Drop the `undefined`-valued entries of `obj`, typing every surviving key as
-optional-and-defined — exactly what `exactOptionalPropertyTypes` wants on
-the receiving end.
-
-Spread the result into the literal it belongs to; the keys are the object's
-own, so renaming one (`{ leadMs: audioLeadMs }`) works the same as passing
-shorthand.
-
-"Removed" means `undefined` and nothing else, so a `null` survives — a null
-value is a value; only `undefined` is an absence here. The `unknown extends`
-branch in the return type is written inline rather than named, so the one
-new symbol on the published surface is this function; what it says is that
-`Exclude<unknown, undefined>` is still `unknown`, which a field declared
-`body?: unknown` (the CLI's API client has one) then cannot hand to anything
-with a narrower parameter. `NonNullable<unknown> | null` is what "unknown,
-but not undefined" means, and it is what the `!== undefined` narrowing this
-replaces already produced. The check catches `any` too, which lands in the
-same place.
-
-#### Type Parameters
-
-##### T
-
-`T` *extends* `object`
-
-#### Parameters
-
-##### obj
-
-`T`
-
-#### Returns
-
-\{ \[K in string \| number \| symbol\]?: unknown extends T\[K\] ? NonNullable\<unknown\> \| null : Exclude\<T\[K\], undefined\> \}
-
-#### Example
-
-```ts
-import { omitUndefined } from "@alexkroman1/aai/utils";
-
-declare const name: string | undefined;
-declare const greeting: string | undefined;
-
-const config: { slug: string; name?: string; greeting?: string } = {
-  slug: "demo",
-  ...omitUndefined({ name, greeting }),
-};
 ```
 
 ***
@@ -415,6 +313,12 @@ Re-exports [createKeyedLock](index.md#createkeyedlock)
 
 ***
 
+### isRecord
+
+Re-exports [isRecord](index.md#isrecord)
+
+***
+
 ### KeyedLock
 
 Re-exports [KeyedLock](index.md#keyedlock)
@@ -430,6 +334,12 @@ Re-exports [KeyedLockOptions](index.md#keyedlockoptions)
 ### KeyedLockTimeoutError
 
 Re-exports [KeyedLockTimeoutError](index.md#keyedlocktimeouterror)
+
+***
+
+### omitUndefined
+
+Re-exports [omitUndefined](index.md#omitundefined)
 
 ***
 

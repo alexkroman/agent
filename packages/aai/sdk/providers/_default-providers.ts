@@ -5,10 +5,8 @@
  * `assemblyAIPipeline()` (the preset) and `assemblyAIS2s()` (the S2S opt-in).
  */
 
+import type { LlmProvider, SttProvider, TtsProvider } from "../providers.ts";
 import { assemblyAIPipeline } from "./assemblyai-pipeline.ts";
-import type { AssemblyAILlmProvider } from "./llm/assemblyai.ts";
-import type { AssemblyAIProvider } from "./stt/assemblyai.ts";
-import type { AssemblyAITtsProvider } from "./tts/assemblyai.ts";
 
 /** The four provider-descriptor fields a config can declare, plus the text opt-in. */
 type ProviderFields = {
@@ -41,17 +39,17 @@ type ProviderFields = {
  * (see "Never let S2S be a fallback" in `packages/aai/CLAUDE.md`).
  */
 export function defaultProviders(config: ProviderFields): {
-  stt?: AssemblyAIProvider;
-  llm?: AssemblyAILlmProvider;
-  tts?: AssemblyAITtsProvider;
+  stt?: SttProvider;
+  llm?: LlmProvider;
+  tts?: TtsProvider;
 } | null {
   if (config.s2s != null || config.text === true) return null;
   if (config.stt != null && config.llm != null && config.tts != null) return null;
   const pipeline = assemblyAIPipeline();
   const fill: {
-    stt?: AssemblyAIProvider;
-    llm?: AssemblyAILlmProvider;
-    tts?: AssemblyAITtsProvider;
+    stt?: SttProvider;
+    llm?: LlmProvider;
+    tts?: TtsProvider;
   } = {};
   if (config.stt == null) fill.stt = pipeline.stt;
   if (config.llm == null) fill.llm = pipeline.llm;

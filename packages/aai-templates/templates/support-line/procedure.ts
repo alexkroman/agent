@@ -52,8 +52,7 @@
  * not charged for the remaining seven.
  */
 
-import { type GenerateFn, procedure } from "@alexkroman1/aai";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { type GenerateFn, omitUndefined, procedure } from "@alexkroman1/aai";
 import { assign, fromPromise, setup } from "xstate";
 import {
   generateAnswer,

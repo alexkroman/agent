@@ -3,12 +3,13 @@
 import {
   makeSttError,
   resolveSonioxSettings,
+  SONIOX_API_KEY_ENV,
   type SttEvents,
   type SttOpener,
   type SttOpenOptions,
   type SttSession,
 } from "@alexkroman1/aai/host-internal";
-import { SONIOX_API_KEY_ENV, type SonioxOptions } from "@alexkroman1/aai/stt";
+import type { SonioxOptions } from "@alexkroman1/aai/stt";
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";

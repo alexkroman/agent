@@ -6,9 +6,13 @@
   "description": "A multi-tenant voice agent server: each caller brings its own prompt, tools and AssemblyAI key.",
   "scripts": {
     "start": "node server.mjs",
-    "client": "node client.mjs"
+    "bench": "node bench/bench.mjs"
   },
   "dependencies": {
-    "@alexkroman1/aai": "^5.10.0"
+    "@alexkroman1/aai": "^6.11.0",
+    "@alexkroman1/aai-runtime": "^6.11.0"
+  },
+  "devDependencies": {
+    "ws": "^8.21.3"
   }
 }

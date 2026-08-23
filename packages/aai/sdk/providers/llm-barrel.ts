@@ -27,16 +27,33 @@
  *
  * **Credentials are never passed here.** Each factory's vendor names the env
  * var its key is read from — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
- * `ASSEMBLYAI_API_KEY`, … each also exported as a `*_API_KEY_ENV` constant —
- * and the host reads it out of the agent's own environment when the session
- * starts. That is what keeps a descriptor safe to serialize across the CLI →
- * server → guest boundary.
+ * `ASSEMBLYAI_API_KEY`, … — and the host reads it out of the agent's own
+ * environment when the session starts. That is what keeps a descriptor safe to
+ * serialize across the CLI → server → guest boundary. The variable NAMES are
+ * not published: an author never types one, and the one case for repointing a
+ * stage is `apiKeyEnv` on the AssemblyAI descriptor.
+ *
+ * Eight of the nine take {@link ModelOptions} — one model id and nothing else,
+ * REQUIRED, because a third-party vendor's catalog is not this SDK's to
+ * default from. Only {@link assemblyAILlm} has a default
+ * ({@link ASSEMBLYAI_LLM_DEFAULT_MODEL}) and so a bare call.
  *
  * Two vendors here are AGGREGATORS rather than model owners, addressed as
  * `"creator/model"`: {@link openrouter} and {@link gateway}. A third,
- * {@link assemblyAILlm}, fronts AssemblyAI's own gateway — its catalog is
- * {@link ASSEMBLYAI_GATEWAY_MODELS} and its ids are listable with
- * {@link gatewayModelIds}.
+ * {@link assemblyAILlm}, fronts AssemblyAI's own gateway — its ids are
+ * {@link AssemblyAIGatewayModel}, and the CATALOG behind that union (which
+ * model streams, calls tools, serves the EU) is on
+ * `@alexkroman1/aai/host-internal`, since its readers are the studio's model
+ * selection and this repo's own gate rather than an `agent.ts`.
+ *
+ * ## The descriptor type is on the ROOT barrel TOO
+ *
+ * `LlmProvider` — what a factory here returns — is also exported from
+ * `@alexkroman1/aai`, beside the other three stage types, so an agent
+ * annotating two stages writes one import rather than two. It stays here as
+ * well: this is where the factory that produces one lives.
+ * `ProviderDescriptor`, the base all four narrow, is on the root ALONE now —
+ * one interface with four reference pages was three too many.
  *
  * @module llm
  */
@@ -45,76 +62,22 @@
 // `noReExportAll` suppression per line, and the escape-hatch ratchet only moves
 // down. Listing them also makes the public surface of this subpath readable in
 // one place — add new symbols here when a provider gains one.
-export type { LlmProvider, ProviderDescriptor } from "../providers.ts";
+export type { LlmProvider } from "../providers.ts";
+export { anthropic } from "./llm/anthropic.ts";
 export {
-  ANTHROPIC_API_KEY_ENV,
-  ANTHROPIC_KIND,
-  type AnthropicOptions,
-  type AnthropicProvider,
-  anthropic,
-} from "./llm/anthropic.ts";
-export {
-  ASSEMBLYAI_GATEWAY_MODELS,
-  ASSEMBLYAI_LLM_API_KEY_ENV,
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
-  ASSEMBLYAI_LLM_KIND,
-  type AssemblyAIGatewayModel,
   type AssemblyAILlmOptions,
-  type AssemblyAILlmProvider,
   type AssemblyAIReasoningEffort,
   assemblyAILlm,
-  gatewayModelIds,
 } from "./llm/assemblyai.ts";
-export {
-  GATEWAY_API_KEY_ENV,
-  GATEWAY_KIND,
-  type GatewayOptions,
-  type GatewayProvider,
-  gateway,
-} from "./llm/gateway.ts";
-export type { GatewayModelInfo } from "./llm/gateway-models.ts";
-export {
-  GOOGLE_API_KEY_ENV,
-  GOOGLE_KIND,
-  type GoogleOptions,
-  type GoogleProvider,
-  google,
-} from "./llm/google.ts";
-export {
-  GROQ_API_KEY_ENV,
-  GROQ_KIND,
-  type GroqOptions,
-  type GroqProvider,
-  groq,
-} from "./llm/groq.ts";
-export {
-  MISTRAL_API_KEY_ENV,
-  MISTRAL_KIND,
-  type MistralOptions,
-  type MistralProvider,
-  mistral,
-} from "./llm/mistral.ts";
-export {
-  OPENAI_API_KEY_ENV,
-  OPENAI_KIND,
-  type OpenAIOptions,
-  type OpenAIProvider,
-  openai,
-} from "./llm/openai.ts";
-export {
-  OPENROUTER_API_KEY_ENV,
-  OPENROUTER_BASE_URL,
-  OPENROUTER_KIND,
-  type OpenRouterOptions,
-  type OpenRouterProvider,
-  openrouter,
-} from "./llm/openrouter.ts";
-export {
-  XAI_API_KEY_ENV,
-  XAI_KIND,
-  type XaiOptions,
-  type XaiProvider,
-  xai,
-} from "./llm/xai.ts";
+export { gateway } from "./llm/gateway.ts";
+export type { AssemblyAIGatewayModel } from "./llm/gateway-models.ts";
+export { google } from "./llm/google.ts";
+export { groq } from "./llm/groq.ts";
+export { mistral } from "./llm/mistral.ts";
+export type { ModelOptions } from "./llm/model-options.ts";
+export { openai } from "./llm/openai.ts";
+export { OPENROUTER_BASE_URL, openrouter } from "./llm/openrouter.ts";
+export { xai } from "./llm/xai.ts";

@@ -207,7 +207,7 @@ export async function auditFlow(input: {
  * **`encodeWav` is what makes a byte range decodable.** The stored audio is
  * headerless PCM, and the endpoint decodes each request independently, so a slice
  * of it is meaningless bytes until a header says what they are. That header is the
- * SDK's (`@alexkroman1/aai/utils`) rather than this template's: the equivalent
+ * SDK's (`@alexkroman1/aai/step`) rather than this template's: the equivalent
  * function in `transcription-workflow` is 25 lines of `DataView` writes with a
  * comment about which of the two declared lengths a decoder trusts, and there is
  * no reason for a second copy of it to exist.

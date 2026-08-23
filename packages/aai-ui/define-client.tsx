@@ -19,28 +19,31 @@ import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
 // ─── Config types ─────────────────────────────────────────────────────────────
 
 /**
- * Options shared by both {@link client} tiers (config-only and custom
- * component).
+ * Configuration passed to {@link client}.
  *
  * The session-forwarded fields are picked from {@link VoiceSessionOptions}
  * (one source of truth for types and docs) rather than re-declared — a
- * re-declared copy is exactly how doc comments drift.
+ * re-declared copy is exactly how doc comments drift. It is NOT the session's
+ * own options type: that is {@link VoiceSessionOptions}, which
+ * `createSessionCore` takes and which three of these fields come from.
  *
  * @remarks
- * **Base of the two `client()` tiers.** The name says nothing on its own, so:
- * this is the half {@link ConfigTier} and {@link ComponentTier} share — where
- * to mount, which agent to dial, and the theme — and {@link ClientConfig} is
- * the union of the two that `client()` actually takes. Nothing takes a
- * `BaseOptions` directly; it is exported because both tiers name it, and it is
- * the type to write against when a helper builds options for either.
- *
- * It is NOT the session's own options type — that is
- * {@link VoiceSessionOptions}, which `createSessionCore` takes and which three
- * of these fields are picked from.
+ * **One flat type, not a union of tiers.** `component` is what decides which
+ * shell renders — absent, the default one (StartScreen + ChatView, optional
+ * sidebar); present, the caller's own component inside the same providers —
+ * and that decision is made at runtime, where every field can be honoured. It
+ * used to be a union whose two arms banned each other's fields with `?: never`,
+ * and the failure that shape produces is recorded twice in this file's history:
+ * `client({ name, component })` and `client({ component, tools })` were both
+ * the natural thing to write, both were refused with *"Type 'string' is not
+ * assignable to type 'undefined'"*, and both cost a build round each time
+ * before the ban was lifted. What was left banned was `sidebar` beside a
+ * `component`, which invited the identical failure for a combination
+ * {@link client} can simply render.
  *
  * @public
  */
-export type BaseOptions = Pick<
+export type ClientConfig = Pick<
   VoiceSessionOptions,
   "onSessionId" | "resumeSessionId" | "WebSocket"
 > & {
@@ -50,73 +53,38 @@ export type BaseOptions = Pick<
   platformUrl?: string;
   /** Theme color overrides. */
   theme?: ClientTheme;
-};
-
-/**
- * Tier 1: config-only options — no `component`. Renders the default shell
- * (StartScreen + ChatView).
- *
- * @public
- */
-export type ConfigTier = BaseOptions & {
-  component?: never;
-  /** Agent name shown in the header and start screen. */
+  /**
+   * Full custom component to render instead of the default shell.
+   *
+   * It is rendered inside the same providers the default shell gets, so every
+   * session hook, `useTheme` and the tool display config work in it unchanged.
+   */
+  component?: ComponentType;
+  /**
+   * Agent name shown in the header and start screen — and, with a `component`,
+   * the page title, there being no shell header to put it in. Left out, the
+   * default shell asks the agent for its own declared name.
+   */
   name?: string;
-  /** Optional sidebar component rendered alongside the chat view. */
+  /**
+   * Optional sidebar component rendered alongside the main pane.
+   *
+   * Beside a `component` it is the custom component that becomes the main pane,
+   * in the same {@link SidebarLayout} the default shell uses.
+   */
   sidebar?: ComponentType;
   /** CSS width of the sidebar. Defaults to `"18rem"`. */
   sidebarWidth?: string;
-  /** Tool display config: icon and label overrides keyed by tool name. */
-  tools?: ToolDisplayConfig;
-};
-
-/**
- * Tier 2: custom component — renders the provided `component` inside the
- * providers instead of the default shell.
- *
- * @public
- */
-export type ComponentTier = BaseOptions & {
-  /** Full custom component to render instead of the default shell. */
-  component: ComponentType;
-  /**
-   * Agent name. With a custom component there is no shell header to put it
-   * in, so it becomes the page title.
-   *
-   * Allowed here rather than `never` because `client({ name, component })` is
-   * the natural thing to write and two different models wrote it. As `never`
-   * it failed with *"Type 'string' is not assignable to type 'undefined'"*,
-   * which explains nothing, and cost a build round each time. There is a real
-   * use for the value — a custom-UI page otherwise inherits whatever title
-   * the HTML shell shipped with — so it is honoured instead of banned.
-   */
-  name?: string;
-  sidebar?: never;
-  sidebarWidth?: never;
   /**
    * Tool display config: icon and label overrides keyed by tool name.
    *
-   * Allowed here for the same reason as `name` above, and it was found the
-   * same way: four starters across an eval run wrote
-   * `client({ component, tools })` and lost a build round each time to
-   * *"Type '{ … }' is not assignable to type 'undefined'"*.
-   *
-   * Unlike `sidebar`/`sidebarWidth`, this is not a property of the default
-   * shell. `client()` below wraps BOTH tiers in `ToolConfigContext.Provider`
-   * from `config.tools ?? {}`, and the consumer is `ToolCallBlock` — which a
-   * custom component renders as soon as it uses `MessageList` or `ChatView`,
-   * the usual way to build one. So the value was always honoured at runtime;
-   * only the type refused it.
+   * Honoured with a custom `component` too: {@link client} installs it into
+   * `ToolConfigContext`, and the consumer is `ToolCallBlock` — which a custom
+   * component renders as soon as it uses `MessageList` or `ChatView`, the usual
+   * way to build one.
    */
   tools?: ToolDisplayConfig;
 };
-
-/**
- * Configuration passed to {@link client}.
- *
- * @public
- */
-export type ClientConfig = ConfigTier | ComponentTier;
 
 /**
  * Handle returned by {@link client} for cleanup.
@@ -281,23 +249,54 @@ function DefaultRoot({
   );
 }
 
+/**
+ * The tree under the providers: the caller's component, or the default shell.
+ *
+ * A custom component owns the whole page, so there is no header to hang a
+ * `sidebar` off — but the layout the default shell uses is right here, and
+ * `client({ component, sidebar })` names one pane and one aside, which is
+ * exactly what it renders. Honouring the combination rather than ignoring it is
+ * the same call this file already made for `name` and `tools`.
+ */
+function rootFor(config: ClientConfig, platformUrl: string) {
+  const Custom = config.component;
+  if (!Custom) {
+    return (
+      <DefaultRoot
+        platformUrl={platformUrl}
+        name={config.name}
+        Sidebar={config.sidebar}
+        sidebarWidth={config.sidebarWidth}
+      />
+    );
+  }
+  const Sidebar = config.sidebar;
+  if (!Sidebar) return <Custom />;
+  return (
+    <SidebarLayout sidebar={<Sidebar />} sidebarWidth={config.sidebarWidth}>
+      <Custom />
+    </SidebarLayout>
+  );
+}
+
 // ─── client ──────────────────────────────────────────────────────────────────
 
 /**
  * Define and mount a client UI for a voice agent.
  *
- * **Tier 1 (config-only):** Pass options without `component` to get the
- * default shell (StartScreen + ChatView, optional sidebar).
+ * **Config only:** leave `component` out and the default shell renders
+ * (StartScreen + ChatView, optional sidebar).
  *
- * **Tier 2 (custom component):** Pass `component` to render a fully custom
- * root component inside the providers. In this tier a provided `name` also
- * sets `document.title` (there is no shell header to show it in).
+ * **A custom component:** pass `component` and it is rendered inside the same
+ * providers instead of the default shell — beside a `sidebar` if one is given,
+ * in the same {@link SidebarLayout}. A provided `name` then also sets
+ * `document.title`, there being no shell header to show it in.
  *
  * Mounts into `target` — a CSS selector or DOM element, defaulting to
  * `"#app"` — and throws `Element not found: <target>` when the selector
  * matches nothing.
  *
- * @example Tier 1
+ * @example The default shell
  * ```tsx
  * import { client } from "@alexkroman1/aai-ui";
  *
@@ -313,7 +312,7 @@ function DefaultRoot({
  * });
  * ```
  *
- * @example Tier 2
+ * @example A custom component
  * ```tsx
  * import { client, useSession } from "@alexkroman1/aai-ui";
  *
@@ -346,14 +345,7 @@ export function client(config: ClientConfig): ClientHandle {
   // header, so the page title is where it goes.
   setPageTitle(config.name);
 
-  const rootNode = config.component
-    ? createElement(config.component)
-    : createElement(DefaultRoot, {
-        platformUrl,
-        name: config.name,
-        Sidebar: config.sidebar,
-        sidebarWidth: config.sidebarWidth,
-      });
+  const rootNode = rootFor(config, platformUrl);
 
   const toolConfig: ToolDisplayConfig = config.tools ?? {};
 

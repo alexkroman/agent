@@ -44,20 +44,14 @@ export type OpenaiRealtimeVoice =
   | "verse";
 
 /** Options for {@link openaiRealtime}. */
-export type OpenaiRealtimeOptions = {
+export interface OpenaiRealtimeOptions {
   /** Realtime model identifier. Default applied by the host (currently `"gpt-realtime-2"`). */
   model?: string;
   /** TTS voice. Default applied by the host (currently `"alloy"`). */
   voice?: OpenaiRealtimeVoice;
   /** Override the WebSocket base URL (testing/proxy). */
   url?: string;
-};
-
-/** Descriptor returned by {@link openaiRealtime}. */
-export type OpenaiRealtimeProvider = S2sProvider & {
-  readonly kind: typeof OPENAI_REALTIME_KIND;
-  readonly options: OpenaiRealtimeOptions;
-};
+}
 
 /**
  * Build an OpenAI Realtime S2S descriptor — the explicit opt-in to
@@ -78,6 +72,6 @@ export type OpenaiRealtimeProvider = S2sProvider & {
  *
  * Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline.
  */
-export function openaiRealtime(opts: OpenaiRealtimeOptions = {}): OpenaiRealtimeProvider {
+export function openaiRealtime(opts: OpenaiRealtimeOptions = {}): S2sProvider {
   return { kind: OPENAI_REALTIME_KIND, options: { ...opts } };
 }

@@ -31,19 +31,19 @@ import {
 import type { SttProvider } from "../../providers.ts";
 
 /** Kind tag recognised by the host-side resolver. */
-export const ASSEMBLYAI_KIND = "assemblyai" as const;
+export const ASSEMBLYAI_STT_KIND = "assemblyai" as const;
 
 /** Streaming model used when the descriptor names none. */
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 
 /** Agent-env variable holding the AssemblyAI API key. */
-export const ASSEMBLYAI_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
 /** EU data-residency streaming endpoint. */
-export const ASSEMBLYAI_STREAMING_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
+export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
 
 /** Options for {@link assemblyAIStt}. */
-export interface AssemblyAIOptions {
+export interface AssemblyAISttOptions {
   /**
    * Streaming speech model. Defaults to `"universal-3-5-pro"` (Universal-3.5
    * Pro Real-Time). Arbitrary strings are forwarded to the SDK unchanged.
@@ -63,7 +63,7 @@ export interface AssemblyAIOptions {
    * supplies that path for its own default host, so a bare origin connects to
    * the wrong route.
    *
-   * Takes precedence over {@link AssemblyAIOptions.region}: an explicit
+   * Takes precedence over {@link AssemblyAISttOptions.region}: an explicit
    * endpoint is a deliberate choice and must not be silently overwritten by
    * the residency shorthand. Intended for pre-release/staging clusters and
    * A/B measurement against the default host; leave unset in production.
@@ -179,12 +179,6 @@ export interface AssemblyAIOptions {
   apiKeyEnv?: string;
 }
 
-/** Descriptor returned by {@link assemblyAIStt}. */
-export type AssemblyAIProvider = SttProvider & {
-  readonly kind: typeof ASSEMBLYAI_KIND;
-  readonly options: AssemblyAIOptions;
-};
-
 /**
  * Build an AssemblyAI STT descriptor.
  *
@@ -210,10 +204,10 @@ export type AssemblyAIProvider = SttProvider & {
  *
  * Pinning `languages` to one code turns code-switching OFF. Unset means
  * "detect per turn", which is not "English" — see
- * {@link AssemblyAIOptions.languages}.
+ * {@link AssemblyAISttOptions.languages}.
  */
-export function assemblyAIStt(opts: AssemblyAIOptions = {}): AssemblyAIProvider {
-  return { kind: ASSEMBLYAI_KIND, options: { ...opts } };
+export function assemblyAIStt(opts: AssemblyAISttOptions = {}): SttProvider {
+  return { kind: ASSEMBLYAI_STT_KIND, options: { ...opts } };
 }
 
 /**
@@ -227,7 +221,7 @@ export function assemblyAIStt(opts: AssemblyAIOptions = {}): AssemblyAIProvider 
  * measured value behind it (see the constants' docs) — "which endpointing
  * window is this session on" has to be answerable without re-deriving it.
  */
-export function resolveAssemblyAISttSettings(opts: AssemblyAIOptions): {
+export function resolveAssemblyAISttSettings(opts: AssemblyAISttOptions): {
   model: string;
   minTurnSilenceMs: number;
   maxTurnSilenceMs: number;

@@ -48,7 +48,7 @@ export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
  * entity-aware — it waits out a spelled-out value — and setting
  * `min_silence`/`max_silence` disables both for the rest of the session.
  */
-export type AssemblyAIS2sOptions = {
+export interface AssemblyAIS2sOptions {
   /**
    * Voice for the agent's synthesized speech (`output.voice`). Unset uses the
    * service default.
@@ -77,13 +77,24 @@ export type AssemblyAIS2sOptions = {
    * mis-hear. Complements `sttPrompt`, which is prose rather than a term list.
    */
   keyterms?: readonly string[];
-};
-
-/** Descriptor returned by {@link assemblyAIS2s}. */
-export type AssemblyAIS2sProvider = S2sProvider & {
-  readonly kind: typeof ASSEMBLYAI_S2S_KIND;
-  readonly options: AssemblyAIS2sOptions;
-};
+  /**
+   * Env var holding this stage's credential, replacing the provider default
+   * (`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
+   * stays secret-free and safe to serialize.
+   *
+   * For running this session against a different account or cluster than the
+   * agent's other credentials — AssemblyAI keys are environment-scoped, so a
+   * staging cluster rejects a production key and vice versa. The variable must
+   * be present in the agent's env (`.env` or `aai secret put`), like any other
+   * credential.
+   *
+   * The three pipeline AssemblyAI stages carry the same field, and the host
+   * has always read it off any descriptor generically (`resolveS2sEnvVar`) —
+   * so S2S honoured an `apiKeyEnv` that its own options type had no way to
+   * spell.
+   */
+  apiKeyEnv?: string;
+}
 
 /**
  * Select AssemblyAI's speech-to-speech (Voice Agent API) session mode.
@@ -106,6 +117,6 @@ export type AssemblyAIS2sProvider = S2sProvider & {
  *
  * @public
  */
-export function assemblyAIS2s(opts: AssemblyAIS2sOptions = {}): AssemblyAIS2sProvider {
+export function assemblyAIS2s(opts: AssemblyAIS2sOptions = {}): S2sProvider {
   return { kind: ASSEMBLYAI_S2S_KIND, options: { ...opts } };
 }

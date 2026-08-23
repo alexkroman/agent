@@ -41,7 +41,7 @@ export interface DeepgramOptions {
   language?: string;
   /**
    * Deepgram endpointing window (ms of trailing silence before a `final` is
-   * emitted). Defaults to {@link DEFAULT_DEEPGRAM_ENDPOINTING_MS}. Endpointing
+   * emitted). Defaults to {@link DEEPGRAM_DEFAULT_ENDPOINTING_MS}. Endpointing
    * is the provider's job — the pipeline transport commits a turn on every
    * final — so this window is what keeps a mid-utterance pause from splitting
    * one request across turns.
@@ -65,19 +65,10 @@ export interface DeepgramOptions {
  * `endpointing` is a silence window with no completeness check, so there is
  * nothing here for a maximum to bound.
  *
- * Named `DEFAULT_DEEPGRAM_…` rather than `DEEPGRAM_DEFAULT_…` like every other
- * provider constant, which is a wart and not worth a `major` on its own —
- * recorded here so the next reviewer does not re-derive it. `konsistent.json`
- * does not check it: the shared template only covers the `*_DEFAULT_MODEL`
- * shape.
+ * `konsistent.json` does not check the name: the shared template only covers
+ * the `*_DEFAULT_MODEL` and `*_DEFAULT_VOICE` shapes.
  */
-export const DEFAULT_DEEPGRAM_ENDPOINTING_MS = 1500;
-
-/** Descriptor returned by {@link deepgram}. */
-export type DeepgramProvider = SttProvider & {
-  readonly kind: typeof DEEPGRAM_KIND;
-  readonly options: DeepgramOptions;
-};
+export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
 
 /**
  * Build a Deepgram STT descriptor.
@@ -101,7 +92,7 @@ export type DeepgramProvider = SttProvider & {
  * Deepgram is the one STT vendor here whose unset `language` is not
  * auto-detect: `"en"` is sent for you. Name the code you mean.
  */
-export function deepgram(opts: DeepgramOptions = {}): DeepgramProvider {
+export function deepgram(opts: DeepgramOptions = {}): SttProvider {
   return { kind: DEEPGRAM_KIND, options: { ...opts } };
 }
 
@@ -125,6 +116,6 @@ export function resolveDeepgramSettings(opts: DeepgramOptions): {
   return {
     model: opts.model ?? DEEPGRAM_DEFAULT_MODEL,
     language: opts.language ?? DEEPGRAM_DEFAULT_LANGUAGE,
-    endpointingMs: opts.endpointing ?? DEFAULT_DEEPGRAM_ENDPOINTING_MS,
+    endpointingMs: opts.endpointing ?? DEEPGRAM_DEFAULT_ENDPOINTING_MS,
   };
 }

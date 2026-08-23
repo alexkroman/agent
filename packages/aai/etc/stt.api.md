@@ -5,16 +5,13 @@
 ```ts
 
 // @public
-export const ASSEMBLYAI_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
 
 // @public
-export const ASSEMBLYAI_KIND: "assemblyai";
+export function assemblyAIStt(opts?: AssemblyAISttOptions): SttProvider;
 
 // @public
-export const ASSEMBLYAI_STREAMING_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
-
-// @public
-export interface AssemblyAIOptions {
+export interface AssemblyAISttOptions {
     apiKeyEnv?: string;
     connectTimeoutMs?: number;
     languages?: string[];
@@ -29,22 +26,10 @@ export interface AssemblyAIOptions {
 }
 
 // @public
-export type AssemblyAIProvider = SttProvider & {
-    readonly kind: typeof ASSEMBLYAI_KIND;
-    readonly options: AssemblyAIOptions;
-};
+export function deepgram(opts?: DeepgramOptions): SttProvider;
 
 // @public
-export function assemblyAIStt(opts?: AssemblyAIOptions): AssemblyAIProvider;
-
-// @public
-export function deepgram(opts?: DeepgramOptions): DeepgramProvider;
-
-// @public
-export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
-
-// @public
-export const DEEPGRAM_KIND: "deepgram";
+export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
 
 // @public
 export interface DeepgramOptions {
@@ -54,37 +39,16 @@ export interface DeepgramOptions {
 }
 
 // @public
-export type DeepgramProvider = SttProvider & {
-    readonly kind: typeof DEEPGRAM_KIND;
-    readonly options: DeepgramOptions;
-};
-
-// @public
-export const DEFAULT_DEEPGRAM_ENDPOINTING_MS = 1500;
-
-// @public
-export function elevenlabs(opts?: ElevenLabsOptions): ElevenLabsProvider;
-
-// @public
-export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
-
-// @public
-export const ELEVENLABS_KIND: "elevenlabs";
-
-// @public
 export interface ElevenLabsOptions {
-    languageCode?: string;
+    language?: string;
     model?: string;
 }
 
 // @public
-export type ElevenLabsProvider = SttProvider & {
-    readonly kind: typeof ELEVENLABS_KIND;
-    readonly options: ElevenLabsOptions;
-};
+export function elevenLabsStt(opts?: ElevenLabsOptions): SttProvider;
 
 // @public
-export interface ProviderDescriptor<Kind extends string, Options> {
+interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -92,25 +56,13 @@ export interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function soniox(opts?: SonioxOptions): SonioxProvider;
-
-// @public
-export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
-
-// @public
-export const SONIOX_KIND: "soniox";
+export function soniox(opts?: SonioxOptions): SttProvider;
 
 // @public
 export interface SonioxOptions {
-    languageHints?: readonly string[];
+    languages?: readonly string[];
     model?: string;
 }
-
-// @public
-export type SonioxProvider = SttProvider & {
-    readonly kind: typeof SONIOX_KIND;
-    readonly options: SonioxOptions;
-};
 
 // @public
 export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {

@@ -8,9 +8,9 @@
 // audio pacer.
 
 import { assemblyAILlm } from "@alexkroman1/aai/llm";
-import { createHostServer } from "@alexkroman1/aai/runtime";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
+import { createHostServer } from "@alexkroman1/aai-runtime";
 
 const { BENCH_STT_URL, BENCH_TTS_HOST, BENCH_PORT } = process.env;
 

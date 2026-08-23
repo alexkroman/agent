@@ -58,13 +58,10 @@
  */
 
 import { omitUndefined } from "../omit-undefined.ts";
-import { type AssemblyAILlmProvider, assemblyAILlm } from "./llm/assemblyai.ts";
-import { type AssemblyAIProvider, assemblyAIStt } from "./stt/assemblyai.ts";
-import {
-  type AssemblyAITtsProvider,
-  type AssemblyAITtsVoice,
-  assemblyAITts,
-} from "./tts/assemblyai.ts";
+import type { LlmProvider, SttProvider, TtsProvider } from "../providers.ts";
+import { assemblyAILlm } from "./llm/assemblyai.ts";
+import { assemblyAIStt } from "./stt/assemblyai.ts";
+import { type AssemblyAITtsVoice, assemblyAITts } from "./tts/assemblyai.ts";
 
 export interface AssemblyAIPipelineOptions {
   /**
@@ -110,9 +107,9 @@ export interface AssemblyAIPipelineOptions {
  * guaranteed to have — so this configuration runs the moment it is deployed.
  */
 export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
-  stt: AssemblyAIProvider;
-  llm: AssemblyAILlmProvider;
-  tts: AssemblyAITtsProvider;
+  stt: SttProvider;
+  llm: LlmProvider;
+  tts: TtsProvider;
 } {
   const { voice, region, minTurnSilenceMs, maxTurnSilenceMs } = opts;
   return {

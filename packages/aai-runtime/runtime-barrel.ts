@@ -13,6 +13,8 @@
  * - {@link createAgentServer} — an agent served over HTTP + WebSocket in one
  *   call. The scaffold's own `server.mjs` imports this and
  *   {@link withHostCredentialFallback}, and nothing else from here.
+ * - {@link withToolsDir} — the agent's `tools/` directory, discovered by a
+ *   process that has no bundler to do it at build time.
  * - {@link createRuntime} — the engine underneath it ({@link RuntimeOptions},
  *   {@link Runtime}, {@link SessionStartOptions}), for a process that owns its
  *   own transport.
@@ -23,10 +25,11 @@
  * - {@link resolveLlm} — turn an LLM descriptor into a Vercel AI SDK model.
  * - {@link createPostgresDb} — the `ctx.db` handle over your own database.
  * - {@link registerSttKind} / {@link registerTtsKind} and the opener contract
- *   below — substituting a speech stage of your own.
+ *   below — substituting a speech stage of your own; {@link registerLlmKind}
+ *   for the model stage.
  *
  * Everything on this page is CONTRACTED: each name belongs to exactly one of
- * the twelve capabilities under `contracts/`, so a signature change here is
+ * the thirteen capabilities under `contracts/`, so a signature change here is
  * classified against an epoch rather than discovered by whoever's build breaks.
  *
  * The cross-package infrastructure that `aai-server`, `aai-cli` and `aai-guest`
@@ -121,14 +124,23 @@ export { withHostCredentialFallback } from "./providers/host-env.ts";
 // applications (e.g. the platform server's browser studio) turn an LLM
 // descriptor into a Vercel AI SDK model without duplicating provider wiring.
 //
-// `registerSttKind`/`registerTtsKind` are the SPEECH-STAGE substitution seam,
-// and they are on this subpath rather than on `/stt`+`/tts` because a HOST
-// application registers a kind and an agent author never does. `aai-evals`'
-// level-1 target is the in-repo consumer: it drives a real pipeline session
-// with a real LLM and real tools, with the two speech stages faked, which is
-// what "text-driven, above the audio boundary" means in practice.
+// `registerSttKind`/`registerTtsKind`/`registerLlmKind` are the PROVIDER
+// substitution seam, and they are on this subpath rather than on
+// `/stt`+`/tts`+`/llm` because a HOST application registers a kind and an agent
+// author never does. `aai-evals`' level-1 target is the in-repo consumer: it
+// drives a real pipeline session with a real LLM and real tools, with the two
+// speech stages faked, which is what "text-driven, above the audio boundary"
+// means in practice.
+//
+// All three are ONE mechanism — the same `registerKind` under three names, and
+// three doc comments here and in `providers/` describe them as one — so the LLM
+// third belongs on the page the other two are on. It was reachable from no
+// subpath at all while `resolveLlm`, which READS the registry it writes, was
+// published and contracted.
 export {
+  type LlmRegistryEntry,
   type OpenerRegistryEntry,
+  registerLlmKind,
   registerSttKind,
   registerTtsKind,
   requiredProviderEnvVars,
@@ -204,6 +216,12 @@ export {
 // half that costs no tokens).
 export { createToolCallRepair, salvageJson } from "./tool-call-repair.ts";
 export type { ExecuteTool, ExecuteToolOptions } from "./tool-executor.ts";
+// Directory tool discovery — the Node half of `toolRegistry`, and the only
+// source of one that reads a filesystem. A host with a bundler in its path (the
+// CLI's generated worker entry, a spec's `import.meta.glob`) already has its
+// modules; a plain `server.mjs` has neither, and without this the only way to
+// give a self-hosted agent a tool was the hand-written map `agent()` refuses.
+export { withToolsDir } from "./tools-dir.ts";
 export type {
   // `PipelineTransportOptions.skipGreeting` names this. That options type is on
   // `@alexkroman1/aai-runtime/internal`, but the rule is unchanged: a caller

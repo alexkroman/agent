@@ -35,7 +35,7 @@
  *
  * ## Every stage REPORTS, and the report goes two places
  *
- * `report()` (`@alexkroman1/aai/utils`) writes to the run's own stream — which
+ * `report()` (`@alexkroman1/aai/step`) writes to the run's own stream — which
  * `research_progress` reads back down the phone and a page renders — and to the
  * server log, with the attempt number appended past the first. A pass that is
  * retrying and one that is working print the same sentences otherwise.
@@ -49,7 +49,7 @@
  * researcher CONCLUDED, which is exactly what the step returns.
  */
 
-import { mapInBatches, report, stepGenerate, stepGenerateJson } from "@alexkroman1/aai/step";
+import { mapConcurrent, report, stepGenerate, stepGenerateJson } from "@alexkroman1/aai/step";
 import { throwStepError } from "@alexkroman1/aai/step-errors";
 import { visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 import { errorMessage, isToolFailure } from "@alexkroman1/aai/utils";
@@ -215,12 +215,14 @@ export async function researchFlow(input: { topic: string; requestedBy: string }
   // failed angle fails the RUN: its finished siblings are already journaled, so
   // the resume replays them for free and re-issues only what is missing, where
   // catching here would file a report with a silent hole in it.
-  const first = await mapInBatches(angles, ANGLE_CONCURRENCY, (angle) => investigate(brief, angle));
+  const first = await mapConcurrent(angles, ANGLE_CONCURRENCY, (angle) =>
+    investigate(brief, angle),
+  );
 
   // The supervisor's second look. Usually empty — a second wave costs the caller
   // minutes, and the prompt says so.
   const gaps = await findGaps(brief, first);
-  const second = await mapInBatches(gaps, ANGLE_CONCURRENCY, (angle) => investigate(brief, angle));
+  const second = await mapConcurrent(gaps, ANGLE_CONCURRENCY, (angle) => investigate(brief, angle));
 
   const notes = [...first, ...second];
   const written = await writeReport(input.topic, brief, notes);

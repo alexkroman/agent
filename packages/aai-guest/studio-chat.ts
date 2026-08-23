@@ -28,7 +28,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { errorMessage } from "@alexkroman1/aai";
-import { ASSEMBLYAI_LLM_API_KEY_ENV } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_API_KEY_ENV } from "@alexkroman1/aai/host-internal";
 import { createTextAgent } from "@alexkroman1/aai-runtime";
 import { convertToModelMessages, type LanguageModel, type UIMessage } from "ai";
 import { verifyBearer } from "./harness-auth.ts";

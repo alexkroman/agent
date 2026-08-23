@@ -16,7 +16,7 @@
  * - **`ASSEMBLYAI_API_KEY` in the agent env** — `.env` under `aai dev`,
  *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. `requiredEnv` below is
  *   what makes a deploy check for it rather than letting the first run find out.
- *   A step reads it with `requireStepEnv`; see `@alexkroman1/aai/utils`.
+ *   A step reads it with `requireStepEnv`; see `@alexkroman1/aai/step`.
  * - **Storage** (`aai storage enable`, Settings → Database in the studio, or
  *   `DATABASE_URL` under `aai dev`). REQUIRED here, unlike most workflow apps:
  *   a run survives without it, but an UPLOAD's record is a row, so the form

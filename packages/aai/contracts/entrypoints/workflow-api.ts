@@ -2,8 +2,8 @@
 /**
  * Capability contract: `workflow-api`.
  *
- * The workflow HTTP API's client half: the factory, the call set it returns, the
- * options it takes, and the path prefix both ends resolve.
+ * The workflow HTTP API's client half: the factory, the call set it returns, and
+ * the options it takes.
  *
  * Its own capability rather than part of `workflow`, because the two answer to
  * different audiences and would otherwise bump each other. `workflow` is what an
@@ -13,10 +13,23 @@
  * added to the API moves this contract and says nothing about how a workflow is
  * declared.
  *
- * The run VOCABULARY joined it from the root barrel: the option bags, the status
- * union and its terminal set, the snapshot and its guard, `WorkflowOutputOf`,
- * and the wait cap both ends clamp with. Seventeen names whose reader is never
+ * The run VOCABULARY joined it from the root barrel: the status union, the
+ * snapshot and its guard, and `WorkflowOutputOf` — names whose reader is never
  * `agent.ts`, which is the root's membership test.
+ *
+ * Four names then LEFT for `@alexkroman1/aai/internal`, all of them the SERVER's
+ * half rather than the client's: `clampWorkflowWait`, `MAX_WORKFLOW_WAIT_MS`,
+ * `TERMINAL_WORKFLOW_STATUSES` and `WORKFLOW_API_PREFIX`. Each had
+ * `@alexkroman1/aai-runtime` as its only importer, and this subpath is what
+ * CALLS a deployed agent — a caller passes `wait` a number and never clamps, and
+ * composes no URL of its own.
+ *
+ * Six others with the same single importer stayed, and the reason is the one
+ * `sdk/workflow-api-barrel.ts` records at length: the option bags,
+ * `AnyWorkflowDef` and `WorkflowBody` are the parameter and member types of
+ * `WorkflowClient` and `WorkflowDef`, so moving them fails the docs build. Same
+ * rule keeps `TerminalWorkflowRun`, `WorkflowRunBase`, `EventStreamFrame` and
+ * `UploadPartsSettings` here.
  *
  * Re-exported from `@alexkroman1/aai/workflow-api`, which is now a barrel over
  * four modules — the agent client (a superset of the workflow one), the workflow
@@ -30,17 +43,14 @@ export {
   type AgentClient,
   type AnyWorkflowDef,
   type ClientConfigResponse,
-  clampWorkflowWait,
   createAgentClient,
   createWorkflowApiClient,
   type EventStreamFrame,
   type FindOptions,
   isTerminal,
-  MAX_WORKFLOW_WAIT_MS,
   readEventStream,
   type StartOptions,
   type StreamOptions,
-  TERMINAL_WORKFLOW_STATUSES,
   type TerminalWorkflowRun,
   type UploadBody,
   type UploadOptions,
@@ -49,7 +59,6 @@ export {
   type UploadProgress,
   type UploadRef,
   type WakeUpOptions,
-  WORKFLOW_API_PREFIX,
   type WorkflowApi,
   type WorkflowApiClientOptions,
   type WorkflowBody,

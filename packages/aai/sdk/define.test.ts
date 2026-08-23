@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./agent-config.ts";
+import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { DEFAULT_MAX_STEPS, DEFAULT_MIN_TURN_SILENCE_MS } from "./constants.ts";
 import { agent, tool, workflowApp } from "./define.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
@@ -12,7 +13,7 @@ import { assemblyAIStt, resolveAssemblyAISttSettings } from "./providers/stt/ass
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 import { createToolContext } from "./testing.ts";
-import { type AgentDef, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
+import { type AgentDef, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 import { workflow } from "./workflow.ts";
 
 describe("tool()", () => {

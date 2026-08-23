@@ -4,12 +4,35 @@
  *
  * What an `agent.ts` imports: `agent()` and `tool()`, `sessionSlot()` and
  * `workflow()`, the types they take and return, the recommended
- * `assemblyAIPipeline()` preset, the `assemblyAIS2s()` opt-in, and the
- * `DEFAULT_*` constants that document an `agent()` field's default.
+ * `assemblyAIPipeline()` preset, and the `assemblyAIS2s()` opt-in.
  *
- * A symbol is on this barrel when an `agent.ts`, a tool module, or a
- * `workflow()` would NAME it. Everything else the package publishes is on a
- * subpath, chosen by WHO READS IT:
+ * **The membership TEST is that an `agent.ts`, a tool module, or a
+ * `workflow()` would NAME the symbol.** Two corollaries decide every case this
+ * barrel has got wrong: a budget the framework enforces on its own does not
+ * qualify however public it is, and neither does a value whose only use is
+ * READING BACK what the framework already did — reproducing a default is what
+ * `@alexkroman1/aai/internal` is for.
+ *
+ * That test is why `sdk/constants.ts` is no longer re-exported here at all.
+ * Eighteen `DEFAULT_*`/`MAX_*` constants were, on the argument that each one
+ * documents an `agent()` field — but the field's own JSDoc already carries the
+ * value (`@defaultValue \`10\``), so the constant answered nothing an author
+ * could not read at the field, and none of the 25 templates, the scaffold, or
+ * the shipped authoring guide named one. Their readers are a client sizing a
+ * buffer, a harness matching the host's endpointing and a test asserting the
+ * shipped value — framework code, which is the `/internal` audience exactly.
+ * `MAX_DB_RESULT_ROWS` and `STORAGE_DISABLED_MESSAGE` went with them, which is
+ * why `sdk/db.ts` is named rather than wildcarded below.
+ *
+ * `DEFAULT_SYSTEM_PROMPT` is the one that stayed, and it stayed by PASSING the
+ * test rather than as an exception: `agent({ systemPrompt })` replaces the
+ * ~10,000 characters of measured voice rules wholesale, so naming the constant
+ * is the only way to keep them and add domain rules on top. That recipe is
+ * documented on the constant and compiled by `check:doc-examples`; it reaches
+ * this barrel through `./sdk/types.ts`.
+ *
+ * Everything else the package publishes is on a subpath, chosen by WHO READS
+ * IT:
  *
  * | Subpath | Reach for it when |
  * | --- | --- |
@@ -33,38 +56,10 @@
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
-/**
- * The constants that document an `agent()` field's default, or a limit a tool
- * author writes against.
- *
- * Everything else in `sdk/constants.ts` is a framework budget — jitter-buffer
- * depths, provider connect deadlines, wire caps, WebSocket close codes — and
- * lives on `@alexkroman1/aai/internal`. The test for membership is whether an
- * author could act on the value: `DEFAULT_MIN_BARGE_IN_WORDS` documents
- * `minBargeInWords`, while `PLAYBACK_FILL_MS` documents a decision the
- * client audio path makes with no field to set.
- */
-export {
-  DEFAULT_BUILTIN_TOOLS,
-  DEFAULT_ERROR_PHRASE,
-  DEFAULT_IDLE_TIMEOUT_MS,
-  DEFAULT_INTERRUPTION_MIN_DURATION_MS,
-  DEFAULT_MAX_HISTORY,
-  DEFAULT_MAX_STEPS,
-  DEFAULT_MAX_TURN_SILENCE_MS,
-  DEFAULT_MIN_BARGE_IN_WORDS,
-  DEFAULT_MIN_TURN_SILENCE_MS,
-  DEFAULT_SILENCE_PROMPT,
-  DEFAULT_START_FAILURE_PHRASE,
-  DEFAULT_STT_PROMPT,
-  DEFAULT_TOOL_CHOICE,
-  MAX_CLIENT_EVENT_NAME_LENGTH,
-  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
-  MAX_TOOL_RESULT_CHARS,
-  TOOL_EXECUTION_TIMEOUT_MS,
-  TOOL_RESULT_TRUNCATION_MARKER,
-} from "./sdk/constants.ts";
-export * from "./sdk/db.ts";
+// By NAME: that module also declares `MAX_DB_RESULT_ROWS` and
+// `STORAGE_DISABLED_MESSAGE`, two framework budgets on `@alexkroman1/aai/internal`
+// — a tool body reads `ctx.db`, never the cap the driver enforces around it.
+export type { Db } from "./sdk/db.ts";
 // `agent()` / `tool()` and the three-arm `AgentParams` union behind them.
 export * from "./sdk/define.ts";
 /**
@@ -92,14 +87,50 @@ export * from "./sdk/providers/assemblyai-pipeline.ts";
  * By NAME rather than `export *`: that module also exports
  * `ASSEMBLYAI_S2S_KIND` and `ASSEMBLYAI_S2S_API_KEY_ENV`, which an `agent.ts`
  * never writes — the descriptor sets the kind, and credentials resolve
- * server-side. They live on `@alexkroman1/aai/s2s` beside the eleven
- * `*_KIND`/`*_API_KEY_ENV` pairs of the other provider modules.
+ * server-side. Those two, and the seventeen `*_KIND`/`*_API_KEY_ENV` constants
+ * of the other provider modules, are on `@alexkroman1/aai/host-internal` with
+ * the `resolve*Settings` helpers that read them.
+ */
+export { type AssemblyAIS2sOptions, assemblyAIS2s } from "./sdk/providers/s2s/assemblyai.ts";
+/**
+ * The voice catalog and the type `agent({ voice })` is written against.
+ *
+ * Both were FORGOTTEN exports here — `AgentParams.voice` is typed
+ * `AssemblyAITtsVoice`, and the catalog is the only place the ids are
+ * checkable — so an author reaching for the field this barrel documents had to
+ * import from `@alexkroman1/aai/tts` to name either. The TTS subpath keeps
+ * them too: it is where an explicit `assemblyAITts({ voice })` stage is
+ * written.
  */
 export {
-  type AssemblyAIS2sOptions,
-  type AssemblyAIS2sProvider,
-  assemblyAIS2s,
-} from "./sdk/providers/s2s/assemblyai.ts";
+  ASSEMBLYAI_TTS_VOICES,
+  type AssemblyAITtsVoice,
+} from "./sdk/providers/tts/assemblyai.ts";
+/**
+ * The four stage descriptor types and the base they narrow.
+ *
+ * `AgentDef` names all four in its own signature, so an author annotating a
+ * stage — a helper that builds one, a config assembled across files — had to
+ * import them from up to four provider subpaths to write down a type this
+ * barrel already publishes the consumer of. They were FORGOTTEN exports here:
+ * declared in the rollup because `AgentDef` references them, exported by
+ * nothing, so the shipped authoring guide's own `agent()` signature block
+ * named types no import path on this page could supply.
+ *
+ * The four stage types stay on their own subpaths too — that is where the
+ * factory producing one lives — so each still BELONGS to its stage capability
+ * under the rule that a name published on both `.` and a narrower subpath is
+ * the narrower one's. `ProviderDescriptor` is the exception and left them: one
+ * interface had four reference pages, and the base all four narrow spans every
+ * stage, so the root is the narrowest thing that can own it.
+ */
+export type {
+  LlmProvider,
+  ProviderDescriptor,
+  S2sProvider,
+  SttProvider,
+  TtsProvider,
+} from "./sdk/providers.ts";
 /**
  * Standard Schema acceptance — the two an author names.
  *
@@ -142,23 +173,35 @@ export type { SlotStore, StateProjection } from "./sdk/session-state.ts";
 export * from "./sdk/spoken.ts";
 export * from "./sdk/types.ts";
 /**
- * The utilities written INSIDE a tool body.
+ * The utilities written INSIDE a tool body — all fifteen of them, which is the
+ * whole of `@alexkroman1/aai/utils`.
  *
- * The module behind them also holds the platform's slug contract, the
- * `aai login` confirmation code, and the framework's own wire helpers, because
- * it is the one the CLI can import without paying for zod. None of those is
- * authoring API; they stay on `@alexkroman1/aai/utils`, which is where the CLI
- * and the platform read them.
+ * **The rule is that the two lists agree**, because the split they used to
+ * describe was not one anybody could apply: `safeJsonParse` was here and
+ * `isRecord` — the guard you call on what it returns — was not, so a tool body
+ * needing both wrote two import lines for one line of helpers, and templates
+ * routed around it by taking the root's own names off `/utils` instead. That
+ * subpath's membership is a BUILD property (zero-zod, so the CLI can import it
+ * on every invocation), which is a fact about its graph rather than a statement
+ * about who reads it; nothing on it fails this barrel's own membership test.
+ *
+ * The narrower subpath stays, because it is what the CLI and the platform
+ * import — and because a tool body reaching for one helper should not have to
+ * name the root. Neither the slug contract nor the framework's wire helpers are
+ * involved either way: those left `sdk/utils.ts` for `@alexkroman1/aai/internal`.
  */
 export {
   createKeyedLock,
   errorDetail,
   errorMessage,
+  isRecord,
   isToolFailure,
   type KeyedLock,
   type KeyedLockOptions,
   KeyedLockTimeoutError,
+  omitUndefined,
   pushCapped,
+  responseErrorMessage,
   safeJsonParse,
   type ToolFailure,
   toolFailure,

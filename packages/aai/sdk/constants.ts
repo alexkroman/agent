@@ -160,13 +160,13 @@ export const DEFAULT_BUILTIN_TOOLS = [] as const satisfies readonly BuiltinTool[
 /**
  * Cap (characters) on a tool result's JSON serialization as seen by the LLM
  * and the client; longer results are trimmed and end with
- * {@link TOOL_RESULT_TRUNCATION_MARKER}.
+ * `TOOL_RESULT_TRUNCATION_MARKER`.
  */
 export const MAX_TOOL_RESULT_CHARS = 4000;
 
 /**
  * Appended to a tool result the framework trimmed at
- * {@link MAX_TOOL_RESULT_CHARS}, so a model reading
+ * `MAX_TOOL_RESULT_CHARS`, so a model reading
  * it can tell the record is incomplete rather than answering from a partial list
  * as though it were the whole one.
  */
@@ -258,7 +258,7 @@ my connection and cannot hear you. Please hang up and call back.`;
  * Minimum sustained speech before an interim-triggered barge-in aborts the
  * agent's reply (pipeline mode) — measured from the utterance's first partial,
  * LiveKit's `min_interruption_duration` analog. A companion to
- * {@link DEFAULT_MIN_BARGE_IN_WORDS}: that one asks "is this enough words to be
+ * `DEFAULT_MIN_BARGE_IN_WORDS`: that one asks "is this enough words to be
  * an interruption", this one asks "has it lasted long enough to be speech at
  * all". Committed turns (STT finals) are never gated, so nothing the caller
  * actually said is lost — a gated barge-in only means the agent finishes its

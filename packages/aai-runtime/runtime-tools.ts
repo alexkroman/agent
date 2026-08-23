@@ -8,13 +8,13 @@
  */
 
 import type { AgentDef, Db, StateProjection, ToolDef } from "@alexkroman1/aai";
+import type { AgentEnv, OwnedMap, ProviderEnv } from "@alexkroman1/aai/host-internal";
+import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_BUILTIN_TOOLS,
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
-} from "@alexkroman1/aai";
-import type { AgentEnv, OwnedMap, ProviderEnv } from "@alexkroman1/aai/host-internal";
-import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
+} from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";

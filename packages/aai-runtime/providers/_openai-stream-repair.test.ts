@@ -9,7 +9,7 @@
  * doc comment in `_openai-stream-repair.ts`.
  */
 
-import { ASSEMBLYAI_LLM_KIND } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_KIND } from "@alexkroman1/aai/host-internal";
 import { streamText } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { repairOpenAiStream } from "./_openai-stream-repair.ts";

@@ -552,7 +552,9 @@ type WakeUpOptions = {
 export function withSystemPrompt(def: AgentDef, prompt: string): AgentDef;
 
 // @public
-export function withTools(def: AgentDef, registry: ToolRegistry): AgentDef;
+export function withTools<D extends {
+    readonly tools: ToolRegistry;
+}>(def: D, registry: ToolRegistry): D;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

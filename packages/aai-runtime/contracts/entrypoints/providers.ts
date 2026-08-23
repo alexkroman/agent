@@ -2,8 +2,9 @@
 /**
  * Capability contract: `providers`.
  *
- * Registering a speech stage the SDK does not ship, and resolving the LLM
- * a config names. What a custom provider is written against.
+ * Registering a provider the SDK does not ship — a speech stage or a model —
+ * and resolving the LLM a config names. What a custom provider is written
+ * against.
  *
  * Re-exported from `@alexkroman1/aai-runtime`. This file is not shipped and
  * nothing imports it — it exists so `pnpm check:api-contracts` can extract a
@@ -13,7 +14,9 @@
 
 export {
   createToolCallRepair,
+  type LlmRegistryEntry,
   type OpenerRegistryEntry,
+  registerLlmKind,
   registerSttKind,
   registerTtsKind,
   resolveLlm,

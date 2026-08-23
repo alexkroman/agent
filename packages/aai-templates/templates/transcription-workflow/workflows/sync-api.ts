@@ -4,7 +4,7 @@
  *
  * This module used to BE the endpoint: the URL, the model header, the raw-key auth,
  * the deadline, the multipart shape and the three-way failure classification. All of
- * that is `stepTranscribeSync` on `@alexkroman1/aai/utils` — the same request, with
+ * that is `stepTranscribeSync` on `@alexkroman1/aai/step` — the same request, with
  * `transcription-workflow`'s own hard-won details (the unprefixed key, the
  * `X-AAI-Model` header, `stepFetch` rather than `fetch` so a fan-out's rate limit
  * arrives as a status rather than as a stream reset) carried into it.

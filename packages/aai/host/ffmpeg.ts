@@ -41,9 +41,9 @@
  * are the whole content of `spawnFfmpeg`, this module's internal runner:
  *
  * 1. **Bounded output.** stderr is kept as a TAIL
- *    ({@link FFMPEG_STDERR_TAIL_CHARS}) because ffmpeg's log is progress lines
+ *    (4000 chars) because ffmpeg's log is progress lines
  *    and the diagnosis is the last one; stdout is capped
- *    ({@link DEFAULT_MAX_FFMPEG_OUTPUT_BYTES}) and exceeding it kills the child
+ *    (64 MiB) and exceeding it kills the child
  *    rather than the container — a guest is sized in hundreds of MiB, and an
  *    hour of 16 kHz mono PCM is ~115 MB, so "buffer whatever comes" is a
  *    decision to fall over on a long recording.
@@ -71,7 +71,7 @@
  *
  * ## Bytes or a path
  *
- * Both take a {@link MediaSource}: a path string, or bytes piped in on `pipe:0`.
+ * Both take a {@link FfmpegSource}: a path string, or bytes piped in on `pipe:0`.
  * Bytes are what a step HAS (`readUpload` answers with them), so they are the
  * default shape here — but piping is not free of caveats, and they are the
  * caller's to know: a format whose index lives at the END of the file (a
@@ -90,18 +90,12 @@ import {
   FFPROBE_PATH_ENV,
   type FfmpegRunOptions,
   type FfmpegRunResult,
-  isFfmpegError,
   resolveBinary,
   spawnFfmpeg,
 } from "./_ffmpeg-spawn.ts";
 
-export type { MediaInfo, MediaStream } from "./_ffmpeg-json.ts";
+export type { MediaInfo, MediaStreamInfo } from "./_ffmpeg-json.ts";
 export {
-  DEFAULT_FFMPEG_TIMEOUT_MS,
-  DEFAULT_MAX_FFMPEG_OUTPUT_BYTES,
-  FFMPEG_PATH_ENV,
-  FFMPEG_STDERR_TAIL_CHARS,
-  FFPROBE_PATH_ENV,
   FfmpegError,
   type FfmpegFailureKind,
   type FfmpegRunOptions,
@@ -110,7 +104,7 @@ export {
 } from "./_ffmpeg-spawn.ts";
 
 /** A media input: a filesystem path, or the bytes themselves. */
-export type MediaSource = string | Uint8Array;
+export type FfmpegSource = string | Uint8Array;
 
 /**
  * Run ffmpeg with `args`, exactly as given.
@@ -164,7 +158,10 @@ export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
  * duration lives in a trailing index, ffprobe cannot seek to it and answers
  * `undefined`, where the same file on disk answers exactly.
  */
-export async function probeMedia(source: MediaSource, opts: ProbeOptions = {}): Promise<MediaInfo> {
+export async function probeMedia(
+  source: FfmpegSource,
+  opts: ProbeOptions = {},
+): Promise<MediaInfo> {
   const { input, stdin } = sourceArgs(source);
   const { stdout } = await spawnFfmpeg(
     resolveBinary(FFPROBE_PATH_ENV, "FFPROBE_PATH", "ffprobe", opts.binary),
@@ -240,7 +237,7 @@ export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "s
  * byte offset is only arithmetic on uncompressed audio. Video is dropped.
  *
  * The result is held in memory, so it is capped like any other piped output
- * (see {@link DEFAULT_MAX_FFMPEG_OUTPUT_BYTES}) — about an hour of 16 kHz mono
+ * (64 MiB) — about an hour of 16 kHz mono
  * at the default. Past that, go file → file with {@link wavEncodeArgs}.
  *
  * Note WAV written to a PIPE carries a placeholder length in its header:
@@ -250,7 +247,7 @@ export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "s
  * that trusts the header's `data` size will read zero samples.
  */
 export async function transcodeToWav(
-  source: MediaSource,
+  source: FfmpegSource,
   opts: TranscodeToWavOptions = {},
 ): Promise<Uint8Array> {
   const { input, stdin } = sourceArgs(source);
@@ -270,29 +267,7 @@ export async function transcodeToWav(
   return stdout;
 }
 
-/**
- * ffmpeg's version string, or `undefined` when there is no ffmpeg to ask.
- *
- * A preflight check for a step or a diagnostic that would rather report "no
- * ffmpeg here" than fail mid-conversion. Only a MISSING binary answers
- * `undefined`; a binary that is present and broken throws, because that is a
- * real failure and swallowing it would report the same thing as an absence.
- */
-export async function ffmpegVersion(opts: FfmpegRunOptions = {}): Promise<string | undefined> {
-  try {
-    const { stdout } = await runFfmpeg(["-hide_banner", "-version"], opts);
-    // A real ffmpeg's first line is `ffmpeg version N.N …`; the fallback is
-    // there so a present-but-silent binary never reads as an ABSENT one, which
-    // is the only distinction this function promises.
-    const first = Buffer.from(stdout).toString("utf-8").split("\n")[0]?.trim();
-    return first === undefined || first === "" ? "ffmpeg (version unreported)" : first;
-  } catch (err) {
-    if (isFfmpegError(err) && err.kind === "missing-binary") return undefined;
-    throw err;
-  }
-}
-
-/** A {@link MediaSource} as the argv token that reads it, plus any stdin bytes. */
-function sourceArgs(source: MediaSource): { input: string; stdin?: Uint8Array } {
+/** A {@link FfmpegSource} as the argv token that reads it, plus any stdin bytes. */
+function sourceArgs(source: FfmpegSource): { input: string; stdin?: Uint8Array } {
   return typeof source === "string" ? { input: source } : { input: "pipe:0", stdin: source };
 }

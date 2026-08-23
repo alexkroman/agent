@@ -85,6 +85,12 @@ export type AgentEnv = Record<string, string> & {
 };
 
 // @public
+export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
+
+// @public (undocumented)
+export const ANTHROPIC_KIND: "anthropic";
+
+// @public
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
@@ -108,7 +114,7 @@ export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
 export function asDispatcher(agent: Agent): FetchDispatcher;
 
 // @public (undocumented)
-const ASSEMBLYAI_GATEWAY_MODELS: {
+export const ASSEMBLYAI_GATEWAY_MODELS: {
     readonly "claude-haiku-4-5-20251001": {
         readonly tools: true;
         readonly stream: true;
@@ -322,22 +328,40 @@ const ASSEMBLYAI_GATEWAY_MODELS: {
 };
 
 // @public
-const ASSEMBLYAI_KIND: "assemblyai";
+export const ASSEMBLYAI_LLM_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
 // @public
-const ASSEMBLYAI_LLM_KIND: "assemblyai";
+export const ASSEMBLYAI_LLM_KIND: "assemblyai";
+
+// @public
+export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
+// @public
+export const ASSEMBLYAI_S2S_KIND: "assemblyai";
 
 // @internal
 export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24000;
 
 // @public
+export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
+// @public
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
+
+// @public
+export const ASSEMBLYAI_STT_KIND: "assemblyai";
+
+// @public
+export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
+// @public
+export const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
 
 // @public
 export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
 
 // @public
-const ASSEMBLYAI_TTS_KIND: "assemblyai";
+export const ASSEMBLYAI_TTS_KIND: "assemblyai";
 
 // @public
 const ASSEMBLYAI_TTS_LANGUAGES: {
@@ -418,27 +442,10 @@ const ASSEMBLYAI_TTS_VOICES: {
 };
 
 // @public
-type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
 
 // @public
-interface AssemblyAILlmOptions {
-    apiKeyEnv?: string;
-    gatewayUrl?: string;
-    model?: AssemblyAIGatewayModel | (string & Record<never, never>);
-    reasoningEffort?: AssemblyAIReasoningEffort;
-    region?: "us" | "eu";
-}
-
-// @public
-type AssemblyAILlmProvider = LlmProvider & {
-    readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-    readonly options: AssemblyAILlmOptions & {
-        model: string;
-    };
-};
-
-// @public
-interface AssemblyAIOptions {
+interface AssemblyAISttOptions {
     apiKeyEnv?: string;
     connectTimeoutMs?: number;
     languages?: string[];
@@ -453,15 +460,6 @@ interface AssemblyAIOptions {
 }
 
 // @public
-type AssemblyAIProvider = SttProvider & {
-    readonly kind: typeof ASSEMBLYAI_KIND;
-    readonly options: AssemblyAIOptions;
-};
-
-// @public
-type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
-
-// @public
 type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 // @public
@@ -474,14 +472,6 @@ interface AssemblyAITtsOptions {
     language?: AssemblyAITtsLanguage;
     voice?: AssemblyAITtsVoice;
 }
-
-// @public
-type AssemblyAITtsProvider = TtsProvider & {
-    readonly kind: typeof ASSEMBLYAI_TTS_KIND;
-    readonly options: AssemblyAITtsOptions & {
-        voice: string;
-    };
-};
 
 // @public
 type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
@@ -510,6 +500,12 @@ export type BuiltinToolOptions = {
     fetch?: typeof globalThis.fetch;
     runCode?: RunCodeExecutor;
 };
+
+// @public
+export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+
+// @public
+export const CARTESIA_KIND: "cartesia";
 
 // @public
 interface CartesiaOptions {
@@ -556,6 +552,12 @@ export const DEAD_AIR_COVER_PHRASES: readonly string[];
 export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 
 // @public
+export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
+
+// @public
+export const DEEPGRAM_KIND: "deepgram";
+
+// @public
 interface DeepgramOptions {
     endpointing?: number;
     language?: string;
@@ -568,8 +570,14 @@ export const DEFAULT_DEAD_AIR_COVER_MS = 5000;
 // @internal
 export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;
 
+// @public
+export const DEFAULT_FFMPEG_TIMEOUT_MS: number;
+
 // @internal
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15000;
+
+// @public
+export const DEFAULT_MAX_FFMPEG_OUTPUT_BYTES: number;
 
 // @internal
 export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120000;
@@ -597,9 +605,9 @@ export const DEFAULT_VOICE_FOCUS_THRESHOLD = 0.9;
 
 // @public
 export function defaultProviders(config: ProviderFields): {
-    stt?: AssemblyAIProvider;
-    llm?: AssemblyAILlmProvider;
-    tts?: AssemblyAITtsProvider;
+    stt?: SttProvider;
+    llm?: LlmProvider;
+    tts?: TtsProvider;
 } | null;
 
 // @internal
@@ -608,11 +616,17 @@ type DnsLookup = (hostname: string) => Promise<{
 }>;
 
 // @public
+export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
+
+// @public
 export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
 
 // @public
+export const ELEVENLABS_KIND: "elevenlabs";
+
+// @public
 interface ElevenLabsOptions {
-    languageCode?: string;
+    language?: string;
     model?: string;
 }
 
@@ -643,6 +657,28 @@ type FetchDispatcher = RequestInit extends {
 } ? NonNullable<D> : never;
 
 // @public
+export const FFMPEG_PATH_ENV = "AAI_FFMPEG_PATH";
+
+// @public
+export const FFMPEG_STDERR_TAIL_CHARS = 4000;
+
+// @public (undocumented)
+type FfmpegRunOptions = {
+    binary?: string;
+    cwd?: string;
+    stdin?: Uint8Array;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+};
+
+// @public
+export function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
+
+// @public
+export const FFPROBE_PATH_ENV = "AAI_FFPROBE_PATH";
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -652,6 +688,26 @@ export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): stri
 
 // @internal
 export function freezeStorable<T>(value: T, path: string): T;
+
+// @public
+export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
+
+// @public (undocumented)
+export const GATEWAY_KIND: "gateway";
+
+// @public
+export function gatewayModelIds(opts?: {
+    eu?: boolean;
+}): AssemblyAIGatewayModel[];
+
+// @public
+export type GatewayModelInfo = {
+    readonly tools: boolean;
+    readonly stream: boolean;
+    readonly eu: boolean;
+    readonly live: boolean;
+    readonly context: number;
+};
 
 // @public
 type GenerateFn = {
@@ -682,6 +738,18 @@ type GenerateResult = {
     text: string;
     object?: unknown;
 };
+
+// @public
+export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
+
+// @public (undocumented)
+export const GOOGLE_KIND: "google";
+
+// @public
+export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
+
+// @public (undocumented)
+export const GROQ_KIND: "groq";
 
 // @internal
 export const HEARD_AUDIO_LAG_MS = 150;
@@ -763,7 +831,31 @@ type Message = {
 export const MISSING_WORKFLOW_ID_MESSAGE: string;
 
 // @public
+export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
+
+// @public (undocumented)
+export const MISTRAL_KIND: "mistral";
+
+// @public
 export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined;
+
+// @public
+export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
+
+// @public (undocumented)
+export const OPENAI_KIND: "openai";
+
+// @public
+export const OPENAI_REALTIME_API_KEY_ENV = "OPENAI_API_KEY";
+
+// @public
+export const OPENAI_REALTIME_KIND: "openai-realtime";
+
+// @public
+export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
+
+// @public (undocumented)
+export const OPENROUTER_KIND: "openrouter";
 
 // @internal (undocumented)
 export interface OwnedMap<K, V> {
@@ -869,7 +961,7 @@ export function resolveAllBuiltins(names: readonly string[], opts?: BuiltinToolO
 export function resolveAndAssertPublic(url: string, lookupFn?: DnsLookup): Promise<string | null>;
 
 // @public
-export function resolveAssemblyAISttSettings(opts: AssemblyAIOptions): {
+export function resolveAssemblyAISttSettings(opts: AssemblyAISttOptions): {
     model: string;
     minTurnSilenceMs: number;
     maxTurnSilenceMs: number;
@@ -940,10 +1032,16 @@ export function resolveSonioxSettings(opts: SonioxOptions): {
 export const RETRYABLE_STATUS: Set<number>;
 
 // @public
+export const RIME_API_KEY_ENV = "RIME_API_KEY";
+
+// @public
 export const RIME_DEFAULT_LANGUAGE = "eng";
 
 // @public
 export const RIME_DEFAULT_MODEL = "mistv2";
+
+// @public
+export const RIME_KIND: "rime";
 
 // @public
 interface RimeOptions {
@@ -1000,8 +1098,14 @@ type SlotStore = {
 };
 
 // @public
+export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
+
+// @public
+export const SONIOX_KIND: "soniox";
+
+// @public
 interface SonioxOptions {
-    languageHints?: readonly string[];
+    languages?: readonly string[];
     model?: string;
 }
 
@@ -1399,6 +1503,12 @@ export const WS_NORMAL_CLOSURE = 1000;
 
 // @internal (undocumented)
 export const WS_OPEN = 1;
+
+// @public
+export const XAI_API_KEY_ENV = "XAI_API_KEY";
+
+// @public (undocumented)
+export const XAI_KIND: "xai";
 
 // (No @packageDocumentation comment for this package)
 

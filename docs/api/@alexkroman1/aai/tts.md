@@ -27,33 +27,42 @@ export default agent({
 **Picking a voice is the one setting a TTS stage cannot infer**, and an
 unrecognised id has no authoring-time symptom: the agent connects, reports
 ready and is permanently silent. For AssemblyAI the ids are enumerated in
-[ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) (with each accent alongside) and the retired
-ones in [ASSEMBLYAI\_TTS\_DEPRECATED\_VOICES](#assemblyai_tts_deprecated_voices) — read them there rather
-than trusting a name from anywhere else. On the default pipeline you do not
-need this barrel at all: `agent({ voice: "michael" })` desugars to
-[assemblyAITts](#assemblyaitts).
+[ASSEMBLYAI\_TTS\_VOICES](index.md#assemblyai_tts_voices), with each accent alongside — read them there
+rather than trusting a name from anywhere else, and note the TYPE cannot
+enforce it ([AssemblyAITtsVoice](index.md#assemblyaittsvoice) says why). On the default pipeline
+you do not need this barrel at all: `agent({ voice: "michael" })` desugars
+to [assemblyAITts](#assemblyaitts).
 
 **Credentials are never passed here.** Each factory's vendor names the env
 var its key is read from — `ASSEMBLYAI_API_KEY`, `CARTESIA_API_KEY`,
-`RIME_API_KEY`, each also exported as a `*_API_KEY_ENV` constant — and the
-host reads it out of the agent's own environment when the session starts.
-That is what keeps a descriptor safe to serialize across the CLI → server →
-guest boundary.
+`RIME_API_KEY` — and the host reads it out of the agent's own environment
+when the session starts. That is what keeps a descriptor safe to serialize
+across the CLI → server → guest boundary. The variable NAMES are not
+published: an author never types one, and the one case for repointing a
+stage is `apiKeyEnv` on the AssemblyAI descriptor.
+
+## The descriptor type is on the ROOT barrel TOO
+
+`TtsProvider` — what a factory here returns — is also exported from
+`@alexkroman1/aai`, beside the other three stage types, so an agent
+annotating two stages writes one import rather than two. It stays here as
+well: this is where the factory that produces one lives.
+`ProviderDescriptor`, the base all four narrow, is on the root ALONE now —
+one interface with four reference pages was three too many.
 
 ## The host-side opener contract is on `/runtime`
 
 Implementing a TTS vendor of your own — `TtsOpenOptions`, `TtsSession`,
 `TtsEvents`, `TtsError`, `TtsWordTiming`, `Unsubscribe` — is a HOST job, and
 those types live on `@alexkroman1/aai-runtime` beside `registerTtsKind`,
-which is what you hand the opener to. Only [TtsProvider](#ttsprovider), the
-descriptor a factory here returns, stays on this page.
+which is what you hand the opener to.
 
 ## Functions
 
 ### assemblyAITts()
 
 ```ts
-function assemblyAITts(opts?: AssemblyAITtsOptions): AssemblyAITtsProvider;
+function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
 ```
 
 Build an AssemblyAI streaming-TTS descriptor.
@@ -74,7 +83,7 @@ imported side by side without aliasing.
 
 #### Returns
 
-[`AssemblyAITtsProvider`](#assemblyaittsprovider)
+[`TtsProvider`](index.md#ttsprovider)
 
 #### Example
 
@@ -90,7 +99,7 @@ export default agent({
 ```
 
 On the default pipeline `agent({ voice: "michael" })` is the shorthand
-for exactly this. Voice ids come from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) and
+for exactly this. Voice ids come from [ASSEMBLYAI\_TTS\_VOICES](index.md#assemblyai_tts_voices) and
 nowhere else — an unrecognised one leaves an agent that connects,
 reports ready and never speaks.
 
@@ -99,7 +108,7 @@ reports ready and never speaks.
 ### cartesia()
 
 ```ts
-function cartesia(opts?: CartesiaOptions): CartesiaProvider;
+function cartesia(opts?: CartesiaOptions): TtsProvider;
 ```
 
 Build a Cartesia TTS descriptor for pipeline mode. The API key is resolved
@@ -113,7 +122,7 @@ host-side from the agent's env (`CARTESIA_API_KEY`).
 
 #### Returns
 
-[`CartesiaProvider`](#cartesiaprovider)
+[`TtsProvider`](index.md#ttsprovider)
 
 #### Example
 
@@ -133,7 +142,7 @@ export default agent({
 ### rime()
 
 ```ts
-function rime(opts?: RimeOptions): RimeProvider;
+function rime(opts?: RimeOptions): TtsProvider;
 ```
 
 Build a Rime TTS descriptor for pipeline mode. The API key is resolved
@@ -147,7 +156,7 @@ host-side from the agent's env (`RIME_API_KEY`).
 
 #### Returns
 
-[`RimeProvider`](#rimeprovider)
+[`TtsProvider`](index.md#ttsprovider)
 
 #### Example
 
@@ -222,7 +231,7 @@ optional voice?: AssemblyAITtsVoice;
 
 Voice id, e.g. `"jane"`, `"michael"`, `"vera"`. Defaults to
 [ASSEMBLYAI\_TTS\_DEFAULT\_VOICE](#assemblyai_tts_default_voice). Each voice speaks exactly one
-language — see [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) for the catalog.
+language — see [ASSEMBLYAI\_TTS\_VOICES](index.md#assemblyai_tts_voices) for the catalog.
 
 ***
 
@@ -302,175 +311,7 @@ type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 ISO 639-1 code for a language the AssemblyAI voice catalog speaks.
 
-***
-
-### AssemblyAITtsProvider
-
-```ts
-type AssemblyAITtsProvider = TtsProvider & {
-  kind: typeof ASSEMBLYAI_TTS_KIND;
-  options: AssemblyAITtsOptions & {
-     voice: string;
-  };
-};
-```
-
-Descriptor returned by [assemblyAITts](#assemblyaitts).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof ASSEMBLYAI_TTS_KIND;
-```
-
-##### options
-
-```ts
-readonly options: AssemblyAITtsOptions & {
-  voice: string;
-};
-```
-
-###### Type Declaration
-
-###### voice
-
-```ts
-voice: string;
-```
-
-***
-
-### AssemblyAITtsVoice
-
-```ts
-type AssemblyAITtsVoice = 
-  | keyof typeof ASSEMBLYAI_TTS_VOICES
-| string & Record<never, never>;
-```
-
-A voice id from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices).
-
-The `(string & {})` arm is deliberate: the catalog is the service's, not
-ours, so a voice added after this release must still compile, and so must
-a deprecated one an existing agent already names. It keeps the current
-names visible at the call site without turning a stale SDK into a build
-failure.
-
-***
-
-### CartesiaProvider
-
-```ts
-type CartesiaProvider = TtsProvider & {
-  kind: typeof CARTESIA_KIND;
-  options: CartesiaOptions & {
-     voice: string;
-  };
-};
-```
-
-Descriptor returned by [cartesia](#cartesia).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof CARTESIA_KIND;
-```
-
-##### options
-
-```ts
-readonly options: CartesiaOptions & {
-  voice: string;
-};
-```
-
-###### Type Declaration
-
-###### voice
-
-```ts
-voice: string;
-```
-
-***
-
-### RimeProvider
-
-```ts
-type RimeProvider = TtsProvider & {
-  kind: typeof RIME_KIND;
-  options: RimeOptions & {
-     voice: string;
-  };
-};
-```
-
-Descriptor returned by [rime](#rime).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof RIME_KIND;
-```
-
-##### options
-
-```ts
-readonly options: RimeOptions & {
-  voice: string;
-};
-```
-
-###### Type Declaration
-
-###### voice
-
-```ts
-voice: string;
-```
-
-***
-
-### TtsProvider
-
-```ts
-type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-  __stage?: "tts";
-};
-```
-
-Descriptor for a TTS provider. Returned by factories like
-`cartesia(...)` from `@alexkroman1/aai/tts`.
-
-#### Type Declaration
-
-##### \_\_stage?
-
-```ts
-readonly optional __stage?: "tts";
-```
-
-Compile-time stage tag; never present at runtime.
-
 ## Variables
-
-### ASSEMBLYAI\_TTS\_API\_KEY\_ENV
-
-```ts
-const ASSEMBLYAI_TTS_API_KEY_ENV: "ASSEMBLYAI_API_KEY" = "ASSEMBLYAI_API_KEY";
-```
-
-Agent-env variable holding the AssemblyAI API key (same key as STT/LLM).
-
-***
 
 ### ASSEMBLYAI\_TTS\_DEFAULT\_VOICE
 
@@ -481,34 +322,9 @@ const ASSEMBLYAI_TTS_DEFAULT_VOICE: "jane" = "jane";
 Default voice when `assemblyAITts()` is called with no `voice` — a
 US-accented English voice, since most agents face US callers (it was
 `"vera"` for a while, which put a UK accent on every agent that never
-chose). Pick from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) to change it; every voice
+chose). Pick from [ASSEMBLYAI\_TTS\_VOICES](index.md#assemblyai_tts_voices) to change it; every voice
 in the catalog speaks exactly one language, so changing `language`
 generally means changing `voice` too.
-
-***
-
-### ASSEMBLYAI\_TTS\_DEPRECATED\_VOICES
-
-```ts
-const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
-```
-
-Voices the service still accepts but has scheduled for removal.
-
-Listed so that "is this name real?" and "should I use it?" stay separate
-questions — an existing agent naming one of these is working today and
-should not be told it is broken, while a new agent should not be pointed
-at a voice that is going away.
-
-***
-
-### ASSEMBLYAI\_TTS\_KIND
-
-```ts
-const ASSEMBLYAI_TTS_KIND: "assemblyai";
-```
-
-Kind tag recognised by the host-side resolver.
 
 ***
 
@@ -578,258 +394,6 @@ readonly pt: "portuguese";
 
 ***
 
-### ASSEMBLYAI\_TTS\_VOICES
-
-```ts
-const ASSEMBLYAI_TTS_VOICES: {
-  alba: {
-     accent: "US";
-     language: "en";
-  };
-  anna: {
-     accent: "US";
-     language: "en";
-  };
-  charles: {
-     accent: "US";
-     language: "en";
-  };
-  estelle: {
-     accent: "FR";
-     language: "fr";
-  };
-  eve: {
-     accent: "US";
-     language: "en";
-  };
-  george: {
-     accent: "US";
-     language: "en";
-  };
-  giovanni: {
-     accent: "IT";
-     language: "it";
-  };
-  jane: {
-     accent: "US";
-     language: "en";
-  };
-  jean: {
-     accent: "US";
-     language: "en";
-  };
-  juergen: {
-     accent: "DE";
-     language: "de";
-  };
-  lola: {
-     accent: "ES";
-     language: "es";
-  };
-  mary: {
-     accent: "US";
-     language: "en";
-  };
-  michael: {
-     accent: "US";
-     language: "en";
-  };
-  paul: {
-     accent: "UK";
-     language: "en";
-  };
-  rafael: {
-     accent: "PT";
-     language: "pt";
-  };
-  vera: {
-     accent: "UK";
-     language: "en";
-  };
-};
-```
-
-The voice catalog — voice id → the language it speaks and its accent.
-The accent is descriptive metadata for choosing a voice, not a settable
-option: [AssemblyAITtsOptions](#assemblyaittsoptions) has no `accent` field.
-
-A constant rather than a sentence in a doc comment, because a wrong voice
-id is a *silent* failure: it is a free-form string the service rejects
-in-band after the socket opens, so the agent connects, reports ready, and
-never speaks — the same shape as the unmapped-`language` bug below, and
-nothing upstream of a live session catches it.
-
-It is a constant for a second reason, learned the hard way. The list this
-replaced lived in a doc comment and was simply wrong — it carried ten names
-(`azelma`, `cosette`, `fantine`, `javert`, `marius`, `peter_yearsley` …)
-that are in no published catalog, while omitting most of the real ones. A
-list nobody can check drifts into fiction, and here the fiction is
-indistinguishable, at authoring time, from a working agent.
-
-Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
-
-Anything that shows an author their choices — the scaffold guide, a picker
-— should read this rather than restate it. A partial list is what sends
-someone guessing, which is the failure being prevented.
-
-#### Type Declaration
-
-##### alba
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### anna
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### charles
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### estelle
-
-```ts
-{
-  accent: "FR";
-  language: "fr";
-}
-```
-
-##### eve
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### george
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### giovanni
-
-```ts
-{
-  accent: "IT";
-  language: "it";
-}
-```
-
-##### jane
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### jean
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### juergen
-
-```ts
-{
-  accent: "DE";
-  language: "de";
-}
-```
-
-##### lola
-
-```ts
-{
-  accent: "ES";
-  language: "es";
-}
-```
-
-##### mary
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### michael
-
-```ts
-{
-  accent: "US";
-  language: "en";
-}
-```
-
-##### paul
-
-```ts
-{
-  accent: "UK";
-  language: "en";
-}
-```
-
-##### rafael
-
-```ts
-{
-  accent: "PT";
-  language: "pt";
-}
-```
-
-##### vera
-
-```ts
-{
-  accent: "UK";
-  language: "en";
-}
-```
-
-***
-
-### CARTESIA\_API\_KEY\_ENV
-
-```ts
-const CARTESIA_API_KEY_ENV: "CARTESIA_API_KEY" = "CARTESIA_API_KEY";
-```
-
-Agent-env variable holding the Cartesia API key.
-
-***
-
 ### CARTESIA\_DEFAULT\_VOICE
 
 ```ts
@@ -839,26 +403,6 @@ const CARTESIA_DEFAULT_VOICE: "f786b574-daa5-4673-aa0c-cbe3e8534c02" = "f786b574
 Default voice used when callers invoke `cartesia()` with no `voice`. This
 is the same voice the example templates ship with, so a bare `cartesia()`
 works out of the box for new agents.
-
-***
-
-### CARTESIA\_KIND
-
-```ts
-const CARTESIA_KIND: "cartesia";
-```
-
-Kind tag recognised by the host-side resolver.
-
-***
-
-### RIME\_API\_KEY\_ENV
-
-```ts
-const RIME_API_KEY_ENV: "RIME_API_KEY" = "RIME_API_KEY";
-```
-
-Agent-env variable holding the Rime API key.
 
 ***
 
@@ -872,18 +416,20 @@ Default Rime speaker used when callers invoke `rime()` with no `voice`.
 `cove` is a `mistv2` speaker, matching the default model below — so a
 bare `rime()` works out of the box for new agents.
 
-***
-
-### RIME\_KIND
-
-```ts
-const RIME_KIND: "rime";
-```
-
-Kind tag recognised by the host-side resolver.
-
 ## References
 
-### ProviderDescriptor
+### ASSEMBLYAI\_TTS\_VOICES
 
-Re-exports [ProviderDescriptor](stt.md#providerdescriptor)
+Re-exports [ASSEMBLYAI_TTS_VOICES](index.md#assemblyai_tts_voices)
+
+***
+
+### AssemblyAITtsVoice
+
+Re-exports [AssemblyAITtsVoice](index.md#assemblyaittsvoice)
+
+***
+
+### TtsProvider
+
+Re-exports [TtsProvider](index.md#ttsprovider)

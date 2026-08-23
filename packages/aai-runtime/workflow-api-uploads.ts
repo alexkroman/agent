@@ -56,8 +56,8 @@
 
 import type http from "node:http";
 import { requestQuery, UPLOAD_CLAIM_BATCH, UPLOAD_TOKEN_RE } from "@alexkroman1/aai/host-internal";
+import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import type { UploadInfo } from "@alexkroman1/aai/step";
-import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/workflow-api";
 import { sendUploadFailure } from "./_upload-route-failures.ts";
 import type { Logger } from "./runtime-config.ts";
 import { sendJson } from "./workflow-api-http.ts";

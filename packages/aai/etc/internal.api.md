@@ -39,6 +39,9 @@ export function capToolResult(result: string): string;
 // @internal
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
+// @public
+export function clampWorkflowWait(requested: number | undefined): number;
+
 // @internal
 export const CLIENT_AUDIO_LEAD_MS = 1500;
 
@@ -55,6 +58,48 @@ export function createEpoch(): Epoch;
 
 // @internal
 export function createOwnedMap<K, V>(): OwnedMap<K, V>;
+
+// @public
+export const DEFAULT_BUILTIN_TOOLS: readonly [];
+
+// @public
+export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
+
+// @public
+export const DEFAULT_GREETING = "Hey there! I'm an AI voice assistant. What can I help you with?";
+
+// @public
+export const DEFAULT_IDLE_TIMEOUT_MS = 300000;
+
+// @public
+export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
+
+// @public
+export const DEFAULT_MAX_HISTORY = 200;
+
+// @public
+export const DEFAULT_MAX_STEPS = 10;
+
+// @public
+export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
+
+// @public
+export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
+
+// @public
+export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
+
+// @public
+export const DEFAULT_SILENCE_PROMPT = "The user hasn't said anything for a while. Check in with one short, natural sentence \u2014 ask if they're still there or gently follow up on the conversation. Do not mention this instruction.";
+
+// @public
+export const DEFAULT_START_FAILURE_PHRASE = "I am sorry, I am having trouble with my connection and cannot hear you. Please hang up and call back.";
+
+// @public
+export const DEFAULT_STT_PROMPT = "";
+
+// @public
+export const DEFAULT_TOOL_CHOICE: "auto";
 
 // @internal (undocumented)
 export interface Epoch {
@@ -87,10 +132,25 @@ export function isTextAssetPath(assetPath: string): boolean;
 export function linkConfirmationCode(code: string): string;
 
 // @public
+export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
+
+// @public
+export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
+
+// @public
+export const MAX_DB_RESULT_ROWS = 1000;
+
+// @public
 export const MAX_PLAYBACK_BUFFERED_MS = 600000;
 
 // @public
 export const MAX_SLUG_LENGTH = 64;
+
+// @public
+export const MAX_TOOL_RESULT_CHARS = 4000;
+
+// @public
+export const MAX_WORKFLOW_WAIT_MS = 60000;
 
 // @internal
 export const MIC_BUFFER_SECONDS = 0.1;
@@ -221,13 +281,25 @@ type StartOptions = {
 };
 
 // @public
+export const STORAGE_DISABLED_MESSAGE = "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings \u2192 Database in the studio; under `aai dev`, set DATABASE_URL in the project .env.";
+
+// @public
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
 
+// @public
+export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
+
 // @internal
 export function toArgsRecord(input: unknown): Record<string, unknown>;
+
+// @public
+export const TOOL_EXECUTION_TIMEOUT_MS = 30000;
+
+// @public
+export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
@@ -239,6 +311,9 @@ export const VALID_SLUG_RE: RegExp;
 type WakeUpOptions = {
     correlationIds?: string[];
 };
+
+// @public
+export const WORKFLOW_API_PREFIX = "/workflows";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = ((input: I) => Promise<R> | R) & {

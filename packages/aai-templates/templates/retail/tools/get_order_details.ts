@@ -1,5 +1,4 @@
-import { isToolFailure } from "@alexkroman1/aai";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { isToolFailure, omitUndefined } from "@alexkroman1/aai";
 import { z } from "zod";
 import { OrderIdField, resolveOrder } from "../resolve.ts";
 import { retailTool, setFocus } from "../store.ts";

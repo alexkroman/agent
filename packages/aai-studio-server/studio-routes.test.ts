@@ -19,7 +19,7 @@ import {
 } from "./_studio-routes-test-utils.ts";
 import { createTestCombined } from "./_test-combined.ts";
 import { requestPublicOrigin } from "./studio-context.ts";
-import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
+import { STUDIO_LLM_MODELS } from "./studio-llm.ts";
 import { studioScope } from "./studio-workspace.ts";
 
 // The orchestrator constructs its studio routes internally; intercept the
@@ -174,7 +174,7 @@ describe("studio page + routing", () => {
     const { fetch } = await createTestCombined();
     const body = (await (await fetch("/studio/status")).json()) as { model: string };
     expect(body.model).not.toBe("");
-    expect(body.model).toBe(ASSEMBLYAI_GATEWAY_MODELS[0]);
+    expect(body.model).toBe(STUDIO_LLM_MODELS[0]);
   });
 
   test("studio slugs are reserved: agent routes 404 and deploys reject them", async () => {

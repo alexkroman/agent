@@ -16,6 +16,7 @@
  */
 
 import type { LlmProvider } from "../../providers.ts";
+import type { ModelOptions } from "./model-options.ts";
 
 export const OPENROUTER_KIND = "openrouter" as const;
 
@@ -24,23 +25,6 @@ export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
 
 /** OpenRouter's OpenAI-compatible API endpoint. */
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-
-/** Options for {@link openrouter}. */
-export interface OpenRouterOptions {
-  /**
-   * OpenRouter model id in `"creator/model"` form, e.g.
-   * `"anthropic/claude-sonnet-4.5"`, `"openai/gpt-4.1"`,
-   * `"meta-llama/llama-3.3-70b-instruct"`. See
-   * https://openrouter.ai/models for the full list.
-   */
-  model: string;
-}
-
-/** Descriptor returned by {@link openrouter}. */
-export type OpenRouterProvider = LlmProvider & {
-  readonly kind: typeof OPENROUTER_KIND;
-  readonly options: OpenRouterOptions;
-};
 
 /**
  * Build an OpenRouter descriptor.
@@ -64,6 +48,6 @@ export type OpenRouterProvider = LlmProvider & {
  * One key, hundreds of models, addressed `"creator/model"`. See
  * https://openrouter.ai/models for the list.
  */
-export function openrouter(opts: OpenRouterOptions): OpenRouterProvider {
+export function openrouter(opts: ModelOptions): LlmProvider {
   return { kind: OPENROUTER_KIND, options: { ...opts } };
 }

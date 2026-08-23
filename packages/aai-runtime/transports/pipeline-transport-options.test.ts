@@ -9,12 +9,12 @@
  * and checks each default against the constant it comes from.
  */
 
+import { DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_MIN_TURN_SILENCE_MS,
-} from "@alexkroman1/aai";
-import { DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
+} from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import {
   createFakeLanguageModel,

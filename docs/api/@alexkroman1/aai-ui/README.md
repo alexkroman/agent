@@ -95,18 +95,16 @@ import of `agent.ts` is erased, so it pulls no server code into the bundle.
 The reference below groups by TypeScript kind. This is the same surface
 grouped by what it is for.
 
-**Mounts** — `client()`, `page()`, and the handles they return
-(`ClientConfig`, `ComponentTier`, `ConfigTier`, `BaseOptions`,
-`ClientHandle`, `PageConfig`, `PageHandle`). `fetchClientConfig()` reads the
-agent's declared `name`/`greeting` on a page, which `client()` does for
-itself.
+**Mounts** — `client()`, `page()`, the config each takes and the handle each
+returns (`ClientConfig`, `ClientHandle`, `PageConfig`, `PageHandle`).
+`fetchClientConfig()` reads the agent's declared `name`/`greeting` on a page,
+which `client()` does for itself.
 
 **The live call** — `useSession()` for the whole snapshot,
 `useSessionSelector()` for one slice, `useUserTranscript()` for the caller's
 in-progress turn. `createSessionCore()` is the same session as a plain store,
 for a non-React client. `SessionSnapshot`, `AgentState`, `ChatMessage`,
-`ToolCallInfo`, `SessionError`, `SessionErrorCode` and
-`VOICE_CAPTURE_CONSTRAINTS` come with it.
+`ToolCallInfo`, `SessionError` and `SessionErrorCode` come with it.
 
 **What the agent pushes** — `useAgentState()` (the `syncState` projection),
 `useToolResult()` / `useToolCallStart()` (tool calls as they run), and

@@ -101,7 +101,7 @@ vi.mock("ws", () => ({ default: FakeWS, WebSocket: FakeWS }));
 
 interface OpenSessionOpts {
   apiKey?: string;
-  languageHints?: string[];
+  languages?: string[];
   model?: string;
 }
 
@@ -115,9 +115,9 @@ async function openSession(opts: OpenSessionOpts = {}): Promise<{
   controller: AbortController;
 }> {
   latest.ws = undefined;
-  const openerOpts: { model?: string; languageHints?: string[] } = {};
+  const openerOpts: { model?: string; languages?: string[] } = {};
   if (opts.model) openerOpts.model = opts.model;
-  if (opts.languageHints) openerOpts.languageHints = opts.languageHints;
+  if (opts.languages) openerOpts.languages = opts.languages;
   const opener = openSoniox(openerOpts);
   const controller = new AbortController();
   const session = await opener.open({
@@ -213,8 +213,8 @@ describe("Soniox real-time STT adapter", () => {
     await session.close();
   });
 
-  test("language hints are forwarded into the config frame", async () => {
-    const { ws, session } = await openSession({ languageHints: ["en", "es"] });
+  test("the descriptor's languages are forwarded as the config frame's hints", async () => {
+    const { ws, session } = await openSession({ languages: ["en", "es"] });
     const config = JSON.parse(ws.sent[0] as string);
     expect(config.language_hints).toEqual(["en", "es"]);
     await session.close();

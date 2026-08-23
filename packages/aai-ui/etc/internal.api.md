@@ -132,6 +132,9 @@ export function UiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
 
+// @public
+export const VOICE_CAPTURE_CONSTRAINTS: MediaTrackConstraints;
+
 // (No @packageDocumentation comment for this package)
 
 ```

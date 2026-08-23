@@ -361,7 +361,7 @@ would put top-level `await` in a bundle the guest loads.
 ### withTools()
 
 ```ts
-function withTools(def: AgentDef, registry: ToolRegistry): AgentDef;
+function withTools<D>(def: D, registry: ToolRegistry): D;
 ```
 
 Attach a registry to an agent definition, returning the def the runtime runs.
@@ -370,23 +370,37 @@ A NEW object rather than a mutation: the def a module default-exports is
 shared (a spec imports the same one the entry does), and a loader quietly
 rewriting it makes the order of two imports decide what an agent can do.
 
-**It is also the seam a NON-file registry goes on through**, which is the one
-legitimate case left: the studio's own coding agent builds four tool families
-per turn, every one of them closed over a single session's workspace directory
-(`aai-guest/studio-agent.ts`). Those cannot be files, and this is what makes
-that honest rather than an exception — a registry resolved from a session
-instead of from a directory, attached the same way.
+**It is also the seam every registry NOT assembled by a bundler goes on
+through.** Two do. `withToolsDir` (`@alexkroman1/aai-runtime`) scans a real
+directory for a self-hosted process and comes back here. And the studio's own
+coding agent builds four tool families per turn, every one of them closed
+over a single session's workspace directory (`aai-guest/studio-agent.ts`) —
+those cannot be files at all, and this is what makes that honest rather than
+an exception: a registry resolved from a session instead of from a directory,
+attached the same way.
 
 A name the def ALREADY holds is an error. Through `agent()` that is now
 unreachable — it returns an empty table and refuses a `tools` argument — so
 what this catches is a hand-written `export default { … tools: {…} }` that
 skipped `agent()`, and a second `withTools` over a def that already has one.
 
+Structural rather than `AgentDef`, and it hands back what it was given: a
+caller keeps whatever else its def carries, and nothing this returns is
+described by a type the caller did not already name.
+
+#### Type Parameters
+
+##### D
+
+`D` *extends* \{
+  `tools`: [`ToolRegistry`](#toolregistry);
+\}
+
 #### Parameters
 
 ##### def
 
-[`AgentDef`](index.md#agentdef)
+`D`
 
 ##### registry
 
@@ -394,7 +408,7 @@ skipped `agent()`, and a second `withTools` over a def that already has one.
 
 #### Returns
 
-[`AgentDef`](index.md#agentdef)
+`D`
 
 ## Type Aliases
 

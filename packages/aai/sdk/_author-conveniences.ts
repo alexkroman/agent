@@ -17,7 +17,7 @@
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { normalizeLlm } from "./providers/llm/from-string.ts";
-import { type AssemblyAIOptions, assemblyAIStt } from "./providers/stt/assemblyai.ts";
+import { type AssemblyAISttOptions, assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 
 /**
@@ -106,7 +106,7 @@ function normalizeEndpointing(rest: Record<string, unknown>): void {
  * The indirection is Biome's: `noSecrets` reads either name as a high-entropy
  * literal — the false positive a long camelCase string always trips — and a
  * suppression would raise the escape-hatch baseline, which only moves down.
- * Deriving them from `AssemblyAIOptions` also means a rename over there is a
+ * Deriving them from `AssemblyAISttOptions` also means a rename over there is a
  * compile error here rather than a shorthand that silently stops desugaring.
  */
 const ENDPOINTING_KEYS = Object.keys({
@@ -114,7 +114,7 @@ const ENDPOINTING_KEYS = Object.keys({
   maxTurnSilenceMs: 0,
 }) as [EndpointingKey, EndpointingKey];
 
-type EndpointingKey = Extract<keyof AssemblyAIOptions, `${"min" | "max"}TurnSilenceMs`>;
+type EndpointingKey = Extract<keyof AssemblyAISttOptions, `${"min" | "max"}TurnSilenceMs`>;
 
 /** Read a numeric convenience off the params bag and REMOVE it, so `AgentDef` stays canonical. */
 function takeNumber(rest: Record<string, unknown>, key: string): number | undefined {

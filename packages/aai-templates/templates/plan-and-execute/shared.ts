@@ -17,11 +17,11 @@ import {
   type DeepReadonly,
   type DialogPosition,
   dialog,
+  isToolFailure,
   pushCapped,
   sessionSlot,
 } from "@alexkroman1/aai";
 import { webSearch } from "@alexkroman1/aai/tools";
-import { isToolFailure } from "@alexkroman1/aai/utils";
 import { setup } from "xstate";
 
 /** One completed step — their `past_steps`, as a pair rather than a tuple. */

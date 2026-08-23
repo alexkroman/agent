@@ -28,7 +28,7 @@ import { isRecord } from "../sdk/is-record.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 
 /** One elementary stream inside a container. */
-export type MediaStream = {
+export type MediaStreamInfo = {
   /** ffprobe's own stream index — what `-map 0:<index>` names. */
   index: number;
   /** `"audio"`, `"video"`, `"subtitle"`, `"data"`, … */
@@ -59,11 +59,11 @@ export type MediaInfo = {
   /** File size in bytes, as ffprobe measured it. */
   sizeBytes?: number;
   /** Every stream, in ffprobe's order. */
-  streams: MediaStream[];
+  streams: MediaStreamInfo[];
   /** The first audio stream — the one an audio pipeline almost always means. */
-  audio?: MediaStream;
+  audio?: MediaStreamInfo;
   /** The first video stream. */
-  video?: MediaStream;
+  video?: MediaStreamInfo;
   /** ffprobe's parsed JSON, verbatim, for a field this type does not name. */
   raw: unknown;
 };
@@ -88,7 +88,7 @@ function str(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" && value !== "N/A" ? value : undefined;
 }
 
-function parseStream(value: unknown, fallbackIndex: number): MediaStream {
+function parseStream(value: unknown, fallbackIndex: number): MediaStreamInfo {
   const record = isRecord(value) ? value : {};
   return {
     index: num(record.index) ?? fallbackIndex,

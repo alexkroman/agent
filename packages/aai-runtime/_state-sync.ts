@@ -20,7 +20,7 @@
  */
 
 import type { StateProjection } from "@alexkroman1/aai";
-import { MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "@alexkroman1/aai";
+import { MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "@alexkroman1/aai/internal";
 import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
 
 /** Why nothing was pushed, when nothing was. */

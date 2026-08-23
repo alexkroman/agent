@@ -21,6 +21,21 @@
  * - **Shutdown ordering.** `AgentServer.close()` already shuts the runtime down,
  *   so callers who also called `runtime.shutdown()` were doing it twice.
  *
+ * **A field this bag does not carry is a field nobody can reach**, which is the
+ * failure mode a front door has and a two-call pair does not: dropping back to
+ * `createRuntime` + `createServer` to set one option means restating by hand
+ * every field this function derives, i.e. re-opening the silent drop above.
+ * `telephony` was the sharp instance — off by default only for a static agent,
+ * and unreachable from here, so every server built through this door mounted an
+ * unauthenticated `WS /phone`. Its neighbour `page` was worse: the agent
+ * DECLARES it and nothing carried the declaration through. Both are here now.
+ *
+ * What deliberately stays out is `createServer`'s host-mode pair (`env`,
+ * `hostBaseAgent`) — a server whose sessions run agents their callers supply is
+ * `createHostServer`, not this — and `createRuntime`'s testing and sandbox seams
+ * (`executeTool`, `toolSchemas`, `createWebSocket`, `runCode`, `fetch`), which
+ * are `@internal` and belong to the platform's own harness.
+ *
  * Import via `@alexkroman1/aai-runtime`. See `examples/self-hosted-server`.
  */
 
@@ -73,6 +88,35 @@ export interface AgentServerOptions extends PassthroughServerOptions {
    * field that quietly does nothing.
    */
   publicUrl?: string | undefined;
+  /**
+   * What this server's front door IS — see `ServerOptions.page`. Defaults to
+   * the agent's own `page`, so declaring `page: "static"` on the agent is
+   * enough.
+   *
+   * Read off the agent for the same reason `name` and `greeting` are, and it is
+   * the same silent drop: a `page: "static"` agent served through this door
+   * still mounted `/websocket` and `/phone`, and answered `GET /client-config`
+   * as a voice agent, because nothing carried the declaration through. Set it
+   * here only to override what the agent says.
+   */
+  page?: "voice" | "static" | undefined;
+  /**
+   * Serve carrier media streams on `WS /phone` — see `ServerOptions.telephony`.
+   * Defaults to true for a voice agent and false for a static one.
+   *
+   * Forwarded rather than left to the pair underneath because it is the one
+   * option here that ADDS an unauthenticated surface: reaching `false` used to
+   * mean abandoning this function for `createRuntime` + `createServer` and
+   * restating every field it derives, which is the silent-drop bug this wrapper
+   * exists to prevent.
+   */
+  telephony?: boolean | undefined;
+  /**
+   * Base URL of a PLATFORM that serves this agent's upload bytes for it — see
+   * `ServerOptions.uploadBroker`. Absent, this process talks to a bucket
+   * itself.
+   */
+  uploadBroker?: string | undefined;
 }
 
 /**
@@ -104,16 +148,40 @@ export interface AgentServerOptions extends PassthroughServerOptions {
  * @public
  */
 export function createAgentServer(options: AgentServerOptions): AgentServer {
-  const { agent, env, providerEnv, clientDir, db, publicUrl, logger, upgrade, request } = options;
+  const {
+    agent,
+    env,
+    providerEnv,
+    clientDir,
+    db,
+    publicUrl,
+    page,
+    telephony,
+    uploadBroker,
+    ...hooks
+  } = options;
   const runtime = createRuntime({
     agent,
     env,
-    ...omitUndefined({ providerEnv, db, publicUrl, logger }),
+    ...omitUndefined({ providerEnv, db, publicUrl, logger: hooks.logger }),
   });
   return createServer({
     runtime,
     // Read off the agent rather than asked for again — see the module doc.
+    // `page` joins them, and an explicit one still wins: the field is the more
+    // specific statement, the same rule `telephony` follows in `createServer`.
     name: agent.name,
-    ...omitUndefined({ greeting: agent.greeting, clientDir, logger, upgrade, request }),
+    ...omitUndefined({
+      greeting: agent.greeting,
+      page: page ?? agent.page,
+      clientDir,
+      telephony,
+      uploadBroker,
+    }),
+    // The hook bag, SPREAD — legal only because every field on
+    // `PassthroughServerOptions` accepts `undefined`. Naming the three by hand
+    // instead is how a fourth one added to that bag reaches the other front
+    // door and silently not this one.
+    ...hooks,
   });
 }

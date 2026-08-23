@@ -30,7 +30,7 @@
  */
 
 import type { Message } from "@alexkroman1/aai";
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai";
+import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai/internal";
 import type { RestoredToolCall, SessionEvent } from "@alexkroman1/aai/protocol";
 
 /**

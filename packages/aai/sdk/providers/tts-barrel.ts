@@ -24,26 +24,35 @@
  * **Picking a voice is the one setting a TTS stage cannot infer**, and an
  * unrecognised id has no authoring-time symptom: the agent connects, reports
  * ready and is permanently silent. For AssemblyAI the ids are enumerated in
- * {@link ASSEMBLYAI_TTS_VOICES} (with each accent alongside) and the retired
- * ones in {@link ASSEMBLYAI_TTS_DEPRECATED_VOICES} — read them there rather
- * than trusting a name from anywhere else. On the default pipeline you do not
- * need this barrel at all: `agent({ voice: "michael" })` desugars to
- * {@link assemblyAITts}.
+ * {@link ASSEMBLYAI_TTS_VOICES}, with each accent alongside — read them there
+ * rather than trusting a name from anywhere else, and note the TYPE cannot
+ * enforce it ({@link AssemblyAITtsVoice} says why). On the default pipeline
+ * you do not need this barrel at all: `agent({ voice: "michael" })` desugars
+ * to {@link assemblyAITts}.
  *
  * **Credentials are never passed here.** Each factory's vendor names the env
  * var its key is read from — `ASSEMBLYAI_API_KEY`, `CARTESIA_API_KEY`,
- * `RIME_API_KEY`, each also exported as a `*_API_KEY_ENV` constant — and the
- * host reads it out of the agent's own environment when the session starts.
- * That is what keeps a descriptor safe to serialize across the CLI → server →
- * guest boundary.
+ * `RIME_API_KEY` — and the host reads it out of the agent's own environment
+ * when the session starts. That is what keeps a descriptor safe to serialize
+ * across the CLI → server → guest boundary. The variable NAMES are not
+ * published: an author never types one, and the one case for repointing a
+ * stage is `apiKeyEnv` on the AssemblyAI descriptor.
+ *
+ * ## The descriptor type is on the ROOT barrel TOO
+ *
+ * `TtsProvider` — what a factory here returns — is also exported from
+ * `@alexkroman1/aai`, beside the other three stage types, so an agent
+ * annotating two stages writes one import rather than two. It stays here as
+ * well: this is where the factory that produces one lives.
+ * `ProviderDescriptor`, the base all four narrow, is on the root ALONE now —
+ * one interface with four reference pages was three too many.
  *
  * ## The host-side opener contract is on `/runtime`
  *
  * Implementing a TTS vendor of your own — `TtsOpenOptions`, `TtsSession`,
  * `TtsEvents`, `TtsError`, `TtsWordTiming`, `Unsubscribe` — is a HOST job, and
  * those types live on `@alexkroman1/aai-runtime` beside `registerTtsKind`,
- * which is what you hand the opener to. Only {@link TtsProvider}, the
- * descriptor a factory here returns, stays on this page.
+ * which is what you hand the opener to.
  *
  * @module tts
  */
@@ -52,33 +61,15 @@
 // `noReExportAll` suppression per line, and the escape-hatch ratchet only moves
 // down. Listing them also makes the public surface of this subpath readable in
 // one place — add new symbols here when a provider gains one.
-export type { ProviderDescriptor, TtsProvider } from "../providers.ts";
+export type { TtsProvider } from "../providers.ts";
 export {
-  ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
-  ASSEMBLYAI_TTS_DEPRECATED_VOICES,
-  ASSEMBLYAI_TTS_KIND,
   ASSEMBLYAI_TTS_LANGUAGES,
   ASSEMBLYAI_TTS_VOICES,
   type AssemblyAITtsLanguage,
   type AssemblyAITtsOptions,
-  type AssemblyAITtsProvider,
   type AssemblyAITtsVoice,
   assemblyAITts,
 } from "./tts/assemblyai.ts";
-export {
-  CARTESIA_API_KEY_ENV,
-  CARTESIA_DEFAULT_VOICE,
-  CARTESIA_KIND,
-  type CartesiaOptions,
-  type CartesiaProvider,
-  cartesia,
-} from "./tts/cartesia.ts";
-export {
-  RIME_API_KEY_ENV,
-  RIME_DEFAULT_VOICE,
-  RIME_KIND,
-  type RimeOptions,
-  type RimeProvider,
-  rime,
-} from "./tts/rime.ts";
+export { CARTESIA_DEFAULT_VOICE, type CartesiaOptions, cartesia } from "./tts/cartesia.ts";
+export { RIME_DEFAULT_VOICE, type RimeOptions, rime } from "./tts/rime.ts";

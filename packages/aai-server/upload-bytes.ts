@@ -44,13 +44,11 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   createHttpUploadBlobs,
   createMemoryUploadBlobs,
+  UPLOAD_KEY_PREFIX,
   type UploadBlobs,
 } from "@alexkroman1/aai-runtime";
 import { StorageClient } from "@supabase/storage-js";
 import { type SupabaseBlobStorageOptions, storageEndpoint } from "./blob-storage.ts";
-
-/** Prefix every upload object's key starts with. See the module doc. */
-export const UPLOAD_KEY_PREFIX = "uploads";
 
 /**
  * How long a signed read URL is good for.
@@ -70,7 +68,14 @@ export type UploadBytes = UploadBlobs & {
   readUrl(key: string, ttlSeconds: number): Promise<string | null>;
 };
 
-/** Where one agent's upload object lives, composed HERE from the slug. */
+/**
+ * Where one agent's upload object lives, composed HERE from the slug.
+ *
+ * The root is the runtime's own `UPLOAD_KEY_PREFIX`, so the two sides of this
+ * bucket cannot drift apart on where uploads begin. The SHAPE below it is the
+ * platform's and deliberately not the runtime's `partKey`: this route writes
+ * into a bucket shared by every tenant, so the slug is interposed.
+ */
 export function uploadKey(slug: string, id: string, offset: number): string {
   return `${UPLOAD_KEY_PREFIX}/${slug}/${id}/${offset}`;
 }

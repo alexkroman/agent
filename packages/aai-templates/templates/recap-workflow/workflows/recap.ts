@@ -255,7 +255,7 @@ export async function recapFlow(input: { url: string; requestedBy: string }) {
  * to completion in a worker, where the body is what may suspend. Splitting it
  * out keeps `recapFlow` readable and costs nothing, since the WDK transform
  * rewrites a step's DECLARATION rather than its call sites, so a step called
- * from a helper is still a real step (`mapInBatches` rests on the same
+ * from a helper is still a real step (`mapConcurrent` rests on the same
  * property).
  *
  * The loop is deterministic despite looking like it is not: every branch turns

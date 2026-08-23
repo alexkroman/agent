@@ -17,7 +17,7 @@
  * @module _transcribe-shared
  */
 
-import { ASSEMBLYAI_API_KEY_ENV } from "./providers/stt/assemblyai.ts";
+import { ASSEMBLYAI_STT_API_KEY_ENV } from "./providers/stt/assemblyai.ts";
 import { requireStepEnv } from "./step-env.ts";
 import { isTransientStatus, retryAfter } from "./step-retry.ts";
 
@@ -92,7 +92,7 @@ export class TranscribeError extends Error {
  * NAME instead of as a 401 from the far side.
  */
 export function transcribeKey(opts: TranscribeRequestOptions): string {
-  return requireStepEnv(opts.apiKeyEnv ?? ASSEMBLYAI_API_KEY_ENV);
+  return requireStepEnv(opts.apiKeyEnv ?? ASSEMBLYAI_STT_API_KEY_ENV);
 }
 
 /**

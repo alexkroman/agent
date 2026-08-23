@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai";
+import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai/internal";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createPostgresDb } from "./postgres-db.ts";
 

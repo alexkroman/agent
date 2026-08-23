@@ -11,18 +11,15 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { tick } from "./_test-utils.ts";
 import {
   DEFAULT_MAX_FFMPEG_OUTPUT_BYTES,
   FFMPEG_STDERR_TAIL_CHARS,
   type FfmpegError,
-  ffmpegVersion,
   isFfmpegError,
-  probeMedia,
-  runFfmpeg,
-  transcodeToWav,
-  wavEncodeArgs,
-} from "./ffmpeg.ts";
+} from "./_ffmpeg-spawn.ts";
+import { ffmpegVersion } from "./_ffmpeg-version.ts";
+import { tick } from "./_test-utils.ts";
+import { probeMedia, runFfmpeg, transcodeToWav, wavEncodeArgs } from "./ffmpeg.ts";
 
 const spawnMock = vi.fn();
 vi.mock("node:child_process", () => ({ spawn: (...args: unknown[]) => spawnMock(...args) }));

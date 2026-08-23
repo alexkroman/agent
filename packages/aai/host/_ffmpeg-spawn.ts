@@ -140,9 +140,9 @@ export type FfmpegRunOptions = {
   stdin?: Uint8Array;
   /** Kill the run when this aborts. Combined with `timeoutMs`, not replaced by it. */
   signal?: AbortSignal;
-  /** Wall-clock budget. Defaults to {@link DEFAULT_FFMPEG_TIMEOUT_MS}. */
+  /** Wall-clock budget. Defaults to 10 minutes (`DEFAULT_FFMPEG_TIMEOUT_MS`). */
   timeoutMs?: number;
-  /** Cap on captured stdout. Defaults to {@link DEFAULT_MAX_FFMPEG_OUTPUT_BYTES}. */
+  /** Cap on captured stdout. Defaults to 64 MiB (`DEFAULT_MAX_FFMPEG_OUTPUT_BYTES`). */
   maxOutputBytes?: number;
 };
 

@@ -37,6 +37,7 @@ import { SttSession } from '@alexkroman1/aai/host-internal';
 import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
+import { ToolRegistry } from '@alexkroman1/aai/manifest';
 import type { ToolSchema } from '@alexkroman1/aai/manifest';
 import { ToolSet } from 'ai';
 import { TtsError } from '@alexkroman1/aai/host-internal';
@@ -49,7 +50,7 @@ import { TtsWordTiming } from '@alexkroman1/aai/host-internal';
 import { Unsubscribe } from '@alexkroman1/aai/host-internal';
 import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
-import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/workflow-api';
+import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowDef } from '@alexkroman1/aai/workflow-api';
 
@@ -77,8 +78,11 @@ export interface AgentServerOptions extends PassthroughServerOptions {
     clientDir?: string;
     db?: Db | undefined;
     env: AgentEnv;
+    page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
+    telephony?: boolean | undefined;
+    uploadBroker?: string | undefined;
 }
 
 // @public
@@ -258,6 +262,13 @@ export type HttpUploadBlobsOptions = {
 };
 
 // @public
+export type LlmRegistryEntry = {
+    readonly envVar: string;
+    readonly label: string;
+    readonly create: (apiKey: string, descriptor: LlmProvider) => LanguageModel;
+};
+
+// @public
 export const LOG_LINE_TRUNCATED = "\u2026 [truncated]";
 
 // @public (undocumented)
@@ -327,12 +338,15 @@ export function partsOf(value: unknown): UploadPart[];
 
 // @public
 export type PassthroughServerOptions = {
-    logger?: Logger;
+    logger?: Logger | undefined;
     upgrade?: ServerOptions["upgrade"];
     request?: ServerOptions["request"];
 };
 
 export { ProviderEnv }
+
+// @public
+export function registerLlmKind(kind: string, entry: LlmRegistryEntry): () => void;
 
 // @public
 export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void;
@@ -427,13 +441,13 @@ export type ServerOptions = {
     runtime: SessionRuntime;
     name?: string;
     clientDir?: string;
-    logger?: Logger;
+    logger?: Logger | undefined;
     env?: Record<string, string>;
     hostBaseAgent?: AgentDef;
     greeting?: string;
     uploadBroker?: string;
-    upgrade?: (req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean;
-    request?: (req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean;
+    upgrade?: ((req: http.IncomingMessage, socket: Duplex, head: Buffer) => boolean) | undefined;
+    request?: ((req: http.IncomingMessage, res: http.ServerResponse, url: string, method: string) => boolean) | undefined;
     page?: "voice" | "static";
     telephony?: boolean;
 };
@@ -744,6 +758,11 @@ export type WdkStreamOptions = {
 
 // @public
 export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
+
+// @public
+export function withToolsDir<D extends {
+    readonly tools: ToolRegistry;
+}>(def: D, dir: string | URL): Promise<D>;
 
 export { WORKFLOW_API_PREFIX }
 

@@ -26,44 +26,56 @@ export default agent({
 
 **Credentials are never passed here.** Each factory's vendor names the env
 var its key is read from — `ASSEMBLYAI_API_KEY`, `DEEPGRAM_API_KEY`,
-`ELEVENLABS_API_KEY`, `SONIOX_API_KEY`, each also exported as a
-`*_API_KEY_ENV` constant — and the host reads it out of the agent's own
-environment when the session starts. That is what keeps a descriptor safe to
-serialize across the CLI → server → guest boundary.
+`ELEVENLABS_API_KEY`, `SONIOX_API_KEY` — and the host reads it out of the
+agent's own environment when the session starts. That is what keeps a
+descriptor safe to serialize across the CLI → server → guest boundary. The
+variable NAMES are not published: an author never types one, and the one
+case for repointing a stage is `apiKeyEnv` on the AssemblyAI descriptor.
 
 ## What an unset language means, per vendor
 
-The field is spelled the way each vendor spells it on the wire, so the four
-do not line up — and neither do their defaults. This is the one
-cross-provider fact you cannot assemble from the per-symbol docs, and the
-row that surprises people is Deepgram's:
+The field is spelled `language` for a single code and `languages` for a
+list, which is the only difference between the four — but their DEFAULTS do
+not line up, and that is the one cross-provider fact you cannot assemble
+from the per-symbol docs. The row that surprises people is Deepgram's:
 
 | factory | field | unset means |
 | --- | --- | --- |
 | [assemblyAIStt](#assemblyaistt) | `languages` | detect per turn (code-switches across 18) |
 | [deepgram](#deepgram) | `language` | **English** — `"en"` is sent for you |
-| [elevenlabs](#elevenlabs) | `languageCode` | auto-detect (the field is omitted) |
-| [soniox](#soniox) | `languageHints` | auto-detect (the field is omitted) |
+| [elevenLabsStt](#elevenlabsstt) | `language` | auto-detect (the field is omitted) |
+| [soniox](#soniox) | `languages` | auto-detect (the field is omitted) |
 
 So moving an agent from [assemblyAIStt](#assemblyaistt) to [deepgram](#deepgram) silently
 drops multilingual transcription, and moving the other way silently gains
-code-switching — read [AssemblyAIOptions.languages](#languages) before you do,
+code-switching — read [AssemblyAISttOptions.languages](#languages) before you do,
 because that default has a measured failure mode with no obvious symptom.
+
+Each vendor's own wire spelling (`language_codes`, `languageCode`,
+`language_hints`) is applied by the host opener, not written here.
+
+## The descriptor type is on the ROOT barrel TOO
+
+`SttProvider` — what a factory here returns — is also exported from
+`@alexkroman1/aai`, beside the other three stage types, so an agent
+annotating two stages writes one import rather than two. It stays here as
+well: this is where the factory that produces one lives.
+`ProviderDescriptor`, the base all four narrow, is on the root ALONE now —
+one interface with four reference pages was three too many.
 
 ## The host-side opener contract is on `/runtime`
 
 Implementing an STT vendor of your own — `SttOpenOptions`, `SttSession`,
 `SttEvents`, `SttError`, `SttTurnMeta`, `Unsubscribe` — is a HOST job, and
 those types live on `@alexkroman1/aai-runtime` beside `registerSttKind`,
-which is what you hand the opener to. Only [SttProvider](#sttprovider), the
-descriptor a factory here returns, stays on this page.
+which is what you hand the opener to.
 
 ## Functions
 
 ### assemblyAIStt()
 
 ```ts
-function assemblyAIStt(opts?: AssemblyAIOptions): AssemblyAIProvider;
+function assemblyAIStt(opts?: AssemblyAISttOptions): SttProvider;
 ```
 
 Build an AssemblyAI STT descriptor.
@@ -80,11 +92,11 @@ side by side without aliasing.
 
 ##### opts?
 
-[`AssemblyAIOptions`](#assemblyaioptions)
+[`AssemblyAISttOptions`](#assemblyaisttoptions)
 
 #### Returns
 
-[`AssemblyAIProvider`](#assemblyaiprovider)
+[`SttProvider`](index.md#sttprovider)
 
 #### Example
 
@@ -101,14 +113,14 @@ export default agent({
 
 Pinning `languages` to one code turns code-switching OFF. Unset means
 "detect per turn", which is not "English" — see
-[AssemblyAIOptions.languages](#languages).
+[AssemblyAISttOptions.languages](#languages).
 
 ***
 
 ### deepgram()
 
 ```ts
-function deepgram(opts?: DeepgramOptions): DeepgramProvider;
+function deepgram(opts?: DeepgramOptions): SttProvider;
 ```
 
 Build a Deepgram STT descriptor.
@@ -125,7 +137,7 @@ descriptor stays free of secrets and safe to serialize.
 
 #### Returns
 
-[`DeepgramProvider`](#deepgramprovider)
+[`SttProvider`](index.md#sttprovider)
 
 #### Example
 
@@ -145,10 +157,10 @@ auto-detect: `"en"` is sent for you. Name the code you mean.
 
 ***
 
-### elevenlabs()
+### elevenLabsStt()
 
 ```ts
-function elevenlabs(opts?: ElevenLabsOptions): ElevenLabsProvider;
+function elevenLabsStt(opts?: ElevenLabsOptions): SttProvider;
 ```
 
 Build an ElevenLabs Scribe STT descriptor.
@@ -165,22 +177,22 @@ the descriptor stays free of secrets and safe to serialize.
 
 #### Returns
 
-[`ElevenLabsProvider`](#elevenlabsprovider)
+[`SttProvider`](index.md#sttprovider)
 
 #### Example
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { elevenlabs } from "@alexkroman1/aai/stt";
+import { elevenLabsStt } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  stt: elevenlabs({ model: "scribe_v2_realtime", languageCode: "en" }),
+  stt: elevenLabsStt({ model: "scribe_v2_realtime", language: "en" }),
 });
 ```
 
-Unset, `languageCode` is omitted from the request and Scribe
+Unset, `language` is omitted from the request and Scribe
 auto-detects — which is not the same as English.
 
 ***
@@ -188,7 +200,7 @@ auto-detects — which is not the same as English.
 ### soniox()
 
 ```ts
-function soniox(opts?: SonioxOptions): SonioxProvider;
+function soniox(opts?: SonioxOptions): SttProvider;
 ```
 
 Build a Soniox STT descriptor.
@@ -205,7 +217,7 @@ descriptor stays free of secrets and safe to serialize.
 
 #### Returns
 
-[`SonioxProvider`](#sonioxprovider)
+[`SttProvider`](index.md#sttprovider)
 
 #### Example
 
@@ -216,16 +228,16 @@ import { soniox } from "@alexkroman1/aai/stt";
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  stt: soniox({ model: "stt-rt-v3", languageHints: ["en", "es"] }),
+  stt: soniox({ model: "stt-rt-v3", languages: ["en", "es"] }),
 });
 ```
 
-Unset, `languageHints` is omitted from the request and Soniox
+Unset, `languages` is omitted from the request and Soniox
 auto-detects — which is not the same as English.
 
 ## Interfaces
 
-### AssemblyAIOptions
+### AssemblyAISttOptions
 
 Options for [assemblyAIStt](#assemblyaistt).
 
@@ -373,7 +385,7 @@ Streaming WebSocket endpoint override, sent as the SDK's
 supplies that path for its own default host, so a bare origin connects to
 the wrong route.
 
-Takes precedence over [AssemblyAIOptions.region](#region): an explicit
+Takes precedence over [AssemblyAISttOptions.region](#region): an explicit
 endpoint is a deliberate choice and must not be silently overwritten by
 the residency shorthand. Intended for pre-release/staging clusters and
 A/B measurement against the default host; leave unset in production.
@@ -423,7 +435,7 @@ optional endpointing?: number;
 ```
 
 Deepgram endpointing window (ms of trailing silence before a `final` is
-emitted). Defaults to [DEFAULT\_DEEPGRAM\_ENDPOINTING\_MS](#default_deepgram_endpointing_ms). Endpointing
+emitted). Defaults to [DEEPGRAM\_DEFAULT\_ENDPOINTING\_MS](#deepgram_default_endpointing_ms). Endpointing
 is the provider's job — the pipeline transport commits a turn on every
 final — so this window is what keeps a mid-utterance pause from splitting
 one request across turns.
@@ -462,14 +474,14 @@ to the SDK unchanged, which allows opt-in to future models.
 
 ### ElevenLabsOptions
 
-Options for [elevenlabs](#elevenlabs).
+Options for [elevenLabsStt](#elevenlabsstt).
 
 #### Properties
 
-##### languageCode?
+##### language?
 
 ```ts
-optional languageCode?: string;
+optional language?: string;
 ```
 
 BCP-47 language code hint. Passing one reduces ambiguity for short
@@ -493,52 +505,20 @@ future models without an SDK release.
 
 ***
 
-### ProviderDescriptor
-
-Base shape for a provider descriptor. A `kind` tag + opaque `options`
-payload lets the host registry pick the right resolver and pass the
-caller's options through verbatim.
-
-#### Type Parameters
-
-##### Kind
-
-`Kind` *extends* `string`
-
-##### Options
-
-`Options`
-
-#### Properties
-
-##### kind
-
-```ts
-readonly kind: Kind;
-```
-
-##### options
-
-```ts
-readonly options: Options;
-```
-
-***
-
 ### SonioxOptions
 
 Options for [soniox](#soniox).
 
 #### Properties
 
-##### languageHints?
+##### languages?
 
 ```ts
-optional languageHints?: readonly string[];
+optional languages?: readonly string[];
 ```
 
-Language hints (ISO 639-1 codes) that bias decoding toward the expected
-languages. Example: `["en", "es"]`.
+Language codes (ISO 639-1) that bias decoding toward the expected
+languages, sent as Soniox's `language_hints`. Example: `["en", "es"]`.
 
 **Unset means AUTO-DETECT, not English.** The field is omitted from the
 request entirely, so Soniox decides — which is the same default
@@ -555,193 +535,22 @@ optional model?: string;
 Streaming model. Defaults to `"stt-rt-v3"`. Any string is forwarded
 verbatim so users can opt in to future models.
 
-## Type Aliases
-
-### AssemblyAIProvider
-
-```ts
-type AssemblyAIProvider = SttProvider & {
-  kind: typeof ASSEMBLYAI_KIND;
-  options: AssemblyAIOptions;
-};
-```
-
-Descriptor returned by [assemblyAIStt](#assemblyaistt).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof ASSEMBLYAI_KIND;
-```
-
-##### options
-
-```ts
-readonly options: AssemblyAIOptions;
-```
-
-***
-
-### DeepgramProvider
-
-```ts
-type DeepgramProvider = SttProvider & {
-  kind: typeof DEEPGRAM_KIND;
-  options: DeepgramOptions;
-};
-```
-
-Descriptor returned by [deepgram](#deepgram).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof DEEPGRAM_KIND;
-```
-
-##### options
-
-```ts
-readonly options: DeepgramOptions;
-```
-
-***
-
-### ElevenLabsProvider
-
-```ts
-type ElevenLabsProvider = SttProvider & {
-  kind: typeof ELEVENLABS_KIND;
-  options: ElevenLabsOptions;
-};
-```
-
-Descriptor returned by [elevenlabs](#elevenlabs).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof ELEVENLABS_KIND;
-```
-
-##### options
-
-```ts
-readonly options: ElevenLabsOptions;
-```
-
-***
-
-### SonioxProvider
-
-```ts
-type SonioxProvider = SttProvider & {
-  kind: typeof SONIOX_KIND;
-  options: SonioxOptions;
-};
-```
-
-Descriptor returned by [soniox](#soniox).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof SONIOX_KIND;
-```
-
-##### options
-
-```ts
-readonly options: SonioxOptions;
-```
-
-***
-
-### SttProvider
-
-```ts
-type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-  __stage?: "stt";
-};
-```
-
-Descriptor for an STT provider. Returned by factories like
-`assemblyAIStt(...)` from `@alexkroman1/aai/stt`.
-
-#### Type Declaration
-
-##### \_\_stage?
-
-```ts
-readonly optional __stage?: "stt";
-```
-
-Compile-time stage tag; never present at runtime.
-
 ## Variables
 
-### ASSEMBLYAI\_API\_KEY\_ENV
+### ASSEMBLYAI\_STT\_EU\_URL
 
 ```ts
-const ASSEMBLYAI_API_KEY_ENV: "ASSEMBLYAI_API_KEY" = "ASSEMBLYAI_API_KEY";
-```
-
-Agent-env variable holding the AssemblyAI API key.
-
-***
-
-### ASSEMBLYAI\_KIND
-
-```ts
-const ASSEMBLYAI_KIND: "assemblyai";
-```
-
-Kind tag recognised by the host-side resolver.
-
-***
-
-### ASSEMBLYAI\_STREAMING\_EU\_URL
-
-```ts
-const ASSEMBLYAI_STREAMING_EU_URL: "wss://streaming.eu.assemblyai.com/v3/ws" = "wss://streaming.eu.assemblyai.com/v3/ws";
+const ASSEMBLYAI_STT_EU_URL: "wss://streaming.eu.assemblyai.com/v3/ws" = "wss://streaming.eu.assemblyai.com/v3/ws";
 ```
 
 EU data-residency streaming endpoint.
 
 ***
 
-### DEEPGRAM\_API\_KEY\_ENV
+### DEEPGRAM\_DEFAULT\_ENDPOINTING\_MS
 
 ```ts
-const DEEPGRAM_API_KEY_ENV: "DEEPGRAM_API_KEY" = "DEEPGRAM_API_KEY";
-```
-
-Agent-env variable holding the Deepgram API key.
-
-***
-
-### DEEPGRAM\_KIND
-
-```ts
-const DEEPGRAM_KIND: "deepgram";
-```
-
-Kind tag recognised by the host-side resolver.
-
-***
-
-### DEFAULT\_DEEPGRAM\_ENDPOINTING\_MS
-
-```ts
-const DEFAULT_DEEPGRAM_ENDPOINTING_MS: 1500 = 1500;
+const DEEPGRAM_DEFAULT_ENDPOINTING_MS: 1500 = 1500;
 ```
 
 Default Deepgram `endpointing` (ms) — **the same knob as
@@ -761,48 +570,11 @@ opener's pause-tolerance ceiling. Deepgram exposes no counterpart: its
 `endpointing` is a silence window with no completeness check, so there is
 nothing here for a maximum to bound.
 
-Named `DEFAULT_DEEPGRAM_…` rather than `DEEPGRAM_DEFAULT_…` like every other
-provider constant, which is a wart and not worth a `major` on its own —
-recorded here so the next reviewer does not re-derive it. `konsistent.json`
-does not check it: the shared template only covers the `*_DEFAULT_MODEL`
-shape.
+`konsistent.json` does not check the name: the shared template only covers
+the `*_DEFAULT_MODEL` and `*_DEFAULT_VOICE` shapes.
 
-***
+## References
 
-### ELEVENLABS\_API\_KEY\_ENV
+### SttProvider
 
-```ts
-const ELEVENLABS_API_KEY_ENV: "ELEVENLABS_API_KEY" = "ELEVENLABS_API_KEY";
-```
-
-Agent-env variable holding the ElevenLabs API key.
-
-***
-
-### ELEVENLABS\_KIND
-
-```ts
-const ELEVENLABS_KIND: "elevenlabs";
-```
-
-Kind tag recognised by the host-side resolver.
-
-***
-
-### SONIOX\_API\_KEY\_ENV
-
-```ts
-const SONIOX_API_KEY_ENV: "SONIOX_API_KEY" = "SONIOX_API_KEY";
-```
-
-Agent-env variable holding the Soniox API key.
-
-***
-
-### SONIOX\_KIND
-
-```ts
-const SONIOX_KIND: "soniox";
-```
-
-Kind tag recognised by the host-side resolver.
+Re-exports [SttProvider](index.md#sttprovider)

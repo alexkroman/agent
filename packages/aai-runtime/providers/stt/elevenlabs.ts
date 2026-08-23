@@ -13,6 +13,7 @@
  */
 
 import {
+  ELEVENLABS_API_KEY_ENV,
   makeSttError,
   resolveElevenLabsSettings,
   type SttEvents,
@@ -20,7 +21,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "@alexkroman1/aai/host-internal";
-import { ELEVENLABS_API_KEY_ENV, type ElevenLabsOptions } from "@alexkroman1/aai/stt";
+import type { ElevenLabsOptions } from "@alexkroman1/aai/stt";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import {
   AudioFormat,

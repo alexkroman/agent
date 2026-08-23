@@ -5,18 +5,6 @@
 ```ts
 
 // @public
-export const DEFAULT_FFMPEG_TIMEOUT_MS: number;
-
-// @public
-export const DEFAULT_MAX_FFMPEG_OUTPUT_BYTES: number;
-
-// @public
-export const FFMPEG_PATH_ENV = "AAI_FFMPEG_PATH";
-
-// @public
-export const FFMPEG_STDERR_TAIL_CHARS = 4000;
-
-// @public
 export class FfmpegError extends Error {
     constructor(opts: {
         kind: FfmpegFailureKind;
@@ -69,10 +57,7 @@ export type FfmpegRunResult = {
 };
 
 // @public
-export function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
-
-// @public
-export const FFPROBE_PATH_ENV = "AAI_FFPROBE_PATH";
+export type FfmpegSource = string | Uint8Array;
 
 // @public
 export function isFfmpegError(value: unknown): value is FfmpegError;
@@ -83,18 +68,14 @@ export type MediaInfo = {
     format?: string;
     bitRate?: number;
     sizeBytes?: number;
-    streams: MediaStream_2[];
-    audio?: MediaStream_2;
-    video?: MediaStream_2;
+    streams: MediaStreamInfo[];
+    audio?: MediaStreamInfo;
+    video?: MediaStreamInfo;
     raw: unknown;
 };
 
 // @public
-type MediaSource_2 = string | Uint8Array;
-export { MediaSource_2 as MediaSource }
-
-// @public
-type MediaStream_2 = {
+export type MediaStreamInfo = {
     index: number;
     kind: string;
     codec?: string;
@@ -105,10 +86,9 @@ type MediaStream_2 = {
     height?: number;
     durationSec?: number;
 };
-export { MediaStream_2 as MediaStream }
 
 // @public
-export function probeMedia(source: MediaSource_2, opts?: ProbeOptions): Promise<MediaInfo>;
+export function probeMedia(source: FfmpegSource, opts?: ProbeOptions): Promise<MediaInfo>;
 
 // @public (undocumented)
 export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
@@ -119,7 +99,7 @@ export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
 export function runFfmpeg(args: readonly string[], opts?: FfmpegRunOptions): Promise<FfmpegRunResult>;
 
 // @public
-export function transcodeToWav(source: MediaSource_2, opts?: TranscodeToWavOptions): Promise<Uint8Array>;
+export function transcodeToWav(source: FfmpegSource, opts?: TranscodeToWavOptions): Promise<Uint8Array>;
 
 // @public (undocumented)
 export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "stdin">;

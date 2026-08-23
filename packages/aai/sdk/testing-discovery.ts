@@ -38,8 +38,8 @@
  * different hat. `import.meta.glob` keeps every module in one graph.
  */
 
+import type { ToolBearingAgent } from "./testing-tools.ts";
 import { type ToolModules, toolRegistry, withTools } from "./tool-registry.ts";
-import type { AgentDef } from "./types.ts";
 
 /**
  * The def a DEPLOYED agent runs: the one `agent.ts` exports, plus the tools its
@@ -51,6 +51,11 @@ import type { AgentDef } from "./types.ts";
  * default-export requirement, no nested files, and a name declared twice.
  *
  * A project with no `tools/` directory gets an empty glob and the def unchanged.
+ *
+ * Structural rather than `AgentDef`, the same as {@link toolOf} and
+ * {@link runTool} next door, and it hands back the def it was given — so a spec
+ * may pass the agent's default export, a bare `{ tools }` literal, or anything
+ * else carrying one, and keeps the type it passed in.
  *
  * @example
  * ```ts no-check
@@ -69,6 +74,6 @@ import type { AgentDef } from "./types.ts";
  *
  * @public
  */
-export function withDiscoveredTools(def: AgentDef, modules: ToolModules): AgentDef {
+export function withDiscoveredTools<D extends ToolBearingAgent>(def: D, modules: ToolModules): D {
   return withTools(def, toolRegistry(modules));
 }

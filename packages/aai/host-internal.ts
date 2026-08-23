@@ -17,6 +17,23 @@
  * epoch, and no TypeDoc page.
  */
 
+/**
+ * The ffmpeg knobs an OPERATOR sets and a step body never reads.
+ *
+ * `AAI_FFMPEG_PATH`/`AAI_FFPROBE_PATH` are deployment configuration — where
+ * the binaries are on this machine — and the three budgets are what the runner
+ * spends when a caller names nothing. A `.d.ts` an agent author imports is the
+ * wrong place to publish either; `@alexkroman1/aai/ffmpeg` keeps the four
+ * things a `"use step"` body actually calls.
+ */
+export {
+  DEFAULT_FFMPEG_TIMEOUT_MS,
+  DEFAULT_MAX_FFMPEG_OUTPUT_BYTES,
+  FFMPEG_PATH_ENV,
+  FFMPEG_STDERR_TAIL_CHARS,
+  FFPROBE_PATH_ENV,
+} from "./host/_ffmpeg-spawn.ts";
+export { ffmpegVersion } from "./host/_ffmpeg-version.ts";
 export {
   asDispatcher,
   type PinnedRequestInit,
@@ -122,27 +139,96 @@ export {
   PIPELINE_PLAYBACK_GRACE_MS,
 } from "./sdk/playback-timing-constants.ts";
 export { defaultProviders } from "./sdk/providers/_default-providers.ts";
-export { normalizeLlm } from "./sdk/providers/llm/from-string.ts";
+/**
+ * The eighteen `*_KIND` / `*_API_KEY_ENV` pairs, one per provider module.
+ *
+ * They used to sit on the four stage subpaths, and no author ever typed one: a
+ * factory returns the `kind`, and the host resolves the credential out of the
+ * agent's env by name. Four of the eighteen key names are the same string
+ * (`"ASSEMBLYAI_API_KEY"`) under four names, and four of the kinds are
+ * (`"assemblyai"`) — the distinct NAMES exist so `apiKeyEnv` can repoint one
+ * stage without moving the others, which is a host concern end to end.
+ *
+ * Here beside the `resolve*Settings` helpers that read them, which is the
+ * whole of their readership: the runtime's opener registries, its
+ * "Session mode resolved" log, and the platform's credential preflight.
+ */
+export { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "./sdk/providers/llm/anthropic.ts";
 export {
+  ASSEMBLYAI_LLM_API_KEY_ENV,
+  ASSEMBLYAI_LLM_KIND,
+} from "./sdk/providers/llm/assemblyai.ts";
+export { normalizeLlm } from "./sdk/providers/llm/from-string.ts";
+export { GATEWAY_API_KEY_ENV, GATEWAY_KIND } from "./sdk/providers/llm/gateway.ts";
+/**
+ * The generated gateway catalog and its row type.
+ *
+ * The id UNION (`AssemblyAIGatewayModel`) stays on `@alexkroman1/aai/llm`,
+ * because `AssemblyAILlmOptions.model` narrows to it. The catalog itself is a
+ * 30-row capability table read by the studio's model selection and by this
+ * repo's own gate, and inlining it into the published `.d.ts` made a routine
+ * regeneration a `major`-classification decision.
+ */
+export {
+  ASSEMBLYAI_GATEWAY_MODELS,
+  type GatewayModelInfo,
+  gatewayModelIds,
+} from "./sdk/providers/llm/gateway-models.ts";
+export { GOOGLE_API_KEY_ENV, GOOGLE_KIND } from "./sdk/providers/llm/google.ts";
+export { GROQ_API_KEY_ENV, GROQ_KIND } from "./sdk/providers/llm/groq.ts";
+export { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "./sdk/providers/llm/mistral.ts";
+export { OPENAI_API_KEY_ENV, OPENAI_KIND } from "./sdk/providers/llm/openai.ts";
+export { OPENROUTER_API_KEY_ENV, OPENROUTER_KIND } from "./sdk/providers/llm/openrouter.ts";
+export { XAI_API_KEY_ENV, XAI_KIND } from "./sdk/providers/llm/xai.ts";
+export {
+  ASSEMBLYAI_S2S_API_KEY_ENV,
+  ASSEMBLYAI_S2S_KIND,
+} from "./sdk/providers/s2s/assemblyai.ts";
+export {
+  OPENAI_REALTIME_API_KEY_ENV,
+  OPENAI_REALTIME_KIND,
+} from "./sdk/providers/s2s/openai-realtime.ts";
+export {
+  ASSEMBLYAI_STT_API_KEY_ENV,
   ASSEMBLYAI_STT_DEFAULT_MODEL,
+  ASSEMBLYAI_STT_KIND,
   resolveAssemblyAISttSettings,
 } from "./sdk/providers/stt/assemblyai.ts";
-export { resolveDeepgramSettings } from "./sdk/providers/stt/deepgram.ts";
 export {
+  DEEPGRAM_API_KEY_ENV,
+  DEEPGRAM_KIND,
+  resolveDeepgramSettings,
+} from "./sdk/providers/stt/deepgram.ts";
+export {
+  ELEVENLABS_API_KEY_ENV,
   ELEVENLABS_DEFAULT_MODEL,
+  ELEVENLABS_KIND,
   resolveElevenLabsSettings,
 } from "./sdk/providers/stt/elevenlabs.ts";
-export { resolveSonioxSettings } from "./sdk/providers/stt/soniox.ts";
 export {
+  resolveSonioxSettings,
+  SONIOX_API_KEY_ENV,
+  SONIOX_KIND,
+} from "./sdk/providers/stt/soniox.ts";
+export {
+  ASSEMBLYAI_TTS_API_KEY_ENV,
+  ASSEMBLYAI_TTS_DEPRECATED_VOICES,
   ASSEMBLYAI_TTS_HOST,
+  ASSEMBLYAI_TTS_KIND,
   assemblyAITtsLanguageCodes,
   resolveAssemblyAITtsLanguage,
   resolveAssemblyAITtsSettings,
 } from "./sdk/providers/tts/assemblyai.ts";
-export { resolveCartesiaSettings } from "./sdk/providers/tts/cartesia.ts";
 export {
+  CARTESIA_API_KEY_ENV,
+  CARTESIA_KIND,
+  resolveCartesiaSettings,
+} from "./sdk/providers/tts/cartesia.ts";
+export {
+  RIME_API_KEY_ENV,
   RIME_DEFAULT_LANGUAGE,
   RIME_DEFAULT_MODEL,
+  RIME_KIND,
   resolveRimeSettings,
 } from "./sdk/providers/tts/rime.ts";
 export {

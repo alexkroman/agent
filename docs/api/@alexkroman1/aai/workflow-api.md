@@ -10,40 +10,40 @@ agent client CALLS it, so the two are a superset and its narrower factory
 rather than two implementations, and the barrel exists because pointing the
 subpath at either one directly would be an import cycle.
 
-It also owns the RUN vocabulary — the option bags, the snapshot union, its
-guard, and [WorkflowOutputOf](#workflowoutputof) — which used to sit on the root barrel beside
+It also owns the RUN vocabulary — the snapshot union, its guard, and
+[WorkflowOutputOf](#workflowoutputof) — which used to sit on the root barrel beside
 `agent()` and `tool()`. See the re-export below for the line that puts it
 here.
 
+**What this subpath is NOT is the SERVER's half.** Four names were here that
+only the thing ANSWERING these routes ever needed — the wait clamp
+(`clampWorkflowWait`) and its ceiling (`MAX_WORKFLOW_WAIT_MS`), the
+terminal-status list (`TERMINAL_WORKFLOW_STATUSES`), and the route prefix
+(`WORKFLOW_API_PREFIX`) — and they are on `@alexkroman1/aai/internal` now.
+`clampWorkflowWait` is the clearest: its own doc says both ends share it, and
+the browser client does share it, through a RELATIVE import inside
+`workflow-api-client.ts`. The public export existed so `aai-runtime` could
+reach the same copy, which is a fact about our packaging rather than an
+affordance a caller used — a caller passes `wait` a number and the client
+clamps it.
+
+**Six more were tried and PUT BACK, and the docs build is what said no.** The
+four `ctx.workflows` option bags (`StartOptions`, `FindOptions`,
+`StreamOptions`, `WakeUpOptions`) plus `AnyWorkflowDef` and `WorkflowBody`
+also have `aai-runtime` as their only in-repo importer, which is the evidence
+that reads like a case for moving them — and it is the wrong evidence. They
+are the PARAMETER and MEMBER types of `WorkflowClient` and `WorkflowDef`,
+both of which are on the ROOT barrel because `ToolContext.workflows` and
+`workflow()` name them; in-repo tool code passes object literals, so nobody
+imports the bag while every author reads it. Moved, TypeDoc reports six
+"referenced by … but not included in the documentation" warnings and
+`treatWarningsAsErrors` fails the build — the same rule `WorkflowDef` and
+`WorkflowRunBase` are already re-exported here under. Suppressing it via
+`intentionallyNotExported` would leave `options?: StartOptions` on the
+`ctx.workflows` reference page with nowhere to click, which is a worse
+outcome than a wide subpath.
+
 ## Functions
-
-### clampWorkflowWait()
-
-```ts
-function clampWorkflowWait(requested: number | undefined): number;
-```
-
-Clamp a requested wait to what the API will actually hold a socket open for.
-
-Shared by both ends deliberately: the browser client sizes its own `fetch`
-deadline from this same function, so a page can never still be waiting on a
-request the agent already answered — nor give up before it does.
-
-Anything above the cap is CLAMPED rather than rejected, because the caller's
-intent ("wait as long as you can") is unambiguous; anything absent, negative
-or non-finite means "do not wait".
-
-#### Parameters
-
-##### requested
-
-`number` \| `undefined`
-
-#### Returns
-
-`number`
-
-***
 
 ### createAgentClient()
 
@@ -1423,7 +1423,7 @@ baseUrl: string;
 ```
 
 The AGENT's base URL — `https://agents.example/my-agent`, with or without a
-trailing slash. [WORKFLOW\_API\_PREFIX](#workflow_api_prefix) is resolved under it, so a
+trailing slash. `WORKFLOW_API_PREFIX` is resolved under it, so a
 caller never spells the prefix and the three call sites that used to
 concatenate it cannot drift.
 
@@ -1722,55 +1722,6 @@ Input properties that carry an upload id — see `WorkflowDef.uploads`.
 Served alongside the schema because a form is rendered from BOTH: the schema
 says the property is a string, and this says the string is a file the page
 has to upload first.
-
-## Variables
-
-### MAX\_WORKFLOW\_WAIT\_MS
-
-```ts
-const MAX_WORKFLOW_WAIT_MS: 60000 = 60000;
-```
-
-Longest a request may hold open waiting for a run to settle — the ceiling on
-the API's SYNCHRONOUS mode.
-
-60s, under every default idle timeout a proxy in the path is likely to carry
-(nginx and most CDNs sit there), because a request cut by an intermediary
-answers the caller with a network error rather than the "still running" the
-API answers a timeout with — and that is the one outcome which loses the run
-id.
-
-The cap is the honest statement of what waiting IS: an optimization over
-reading the run back, never the mechanism. A run can take a week; a request
-cannot.
-
-***
-
-### TERMINAL\_WORKFLOW\_STATUSES
-
-```ts
-const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
-```
-
-Statuses nothing will change again.
-
-***
-
-### WORKFLOW\_API\_PREFIX
-
-```ts
-const WORKFLOW_API_PREFIX: "/workflows" = "/workflows";
-```
-
-Path prefix every route lives under, relative to the agent's own base URL.
-
-Defined on this side and re-exported by `host/workflow-api.ts` (and so by
-`@alexkroman1/aai-runtime`, which is where the server and the `aai dev` proxy
-table read it from). One literal for both ends: a client asking for a path the
-server does not serve is a 404 that reads as a missing feature, and the dev
-proxy getting it wrong is a workflow app that is dead on arrival under
-`aai dev` while the backend serves the whole API one port over. It could not
-live in `host/` and be shared, because a browser cannot import that half.
 
 ## References
 

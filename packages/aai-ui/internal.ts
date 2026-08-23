@@ -54,3 +54,10 @@ export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.t
 // them when it bypasses `client()` and mounts React itself — which is the case
 // this subpath exists to keep possible without advertising it.
 export { SessionProvider, ThemeProvider } from "./context.ts";
+// The `getUserMedia` constraints every capture path in this package shares.
+// The same category as the audio budgets `types.ts` re-exports from the SDK's
+// own `/internal`: a framework decision with no `client()` field to set. It was
+// on the root barrel and no `client.tsx` in the tree ever named it — a custom
+// chrome opening its own microphone is the case it was published for, and one
+// that bypasses `client()` reaches it here along with the providers.
+export { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";

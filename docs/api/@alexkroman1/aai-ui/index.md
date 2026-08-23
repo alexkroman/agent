@@ -264,12 +264,13 @@ function client(config: ClientConfig): ClientHandle;
 
 Define and mount a client UI for a voice agent.
 
-**Tier 1 (config-only):** Pass options without `component` to get the
-default shell (StartScreen + ChatView, optional sidebar).
+**Config only:** leave `component` out and the default shell renders
+(StartScreen + ChatView, optional sidebar).
 
-**Tier 2 (custom component):** Pass `component` to render a fully custom
-root component inside the providers. In this tier a provided `name` also
-sets `document.title` (there is no shell header to show it in).
+**A custom component:** pass `component` and it is rendered inside the same
+providers instead of the default shell — beside a `sidebar` if one is given,
+in the same [SidebarLayout](#sidebarlayout). A provided `name` then also sets
+`document.title`, there being no shell header to show it in.
 
 Mounts into `target` — a CSS selector or DOM element, defaulting to
 `"#app"` — and throws `Element not found: <target>` when the selector
@@ -289,7 +290,7 @@ A [ClientHandle](#clienthandle) for cleanup.
 
 #### Examples
 
-**Tier 1**
+**The default shell**
 
 ```tsx
 import { client } from "@alexkroman1/aai-ui";
@@ -306,7 +307,7 @@ client({
 });
 ```
 
-**Tier 2**
+**A custom component**
 
 ```tsx
 import { client, useSession } from "@alexkroman1/aai-ui";
@@ -2504,64 +2505,6 @@ The seven members, in the order a call passes through them:
 
 ***
 
-### BaseOptions
-
-```ts
-type BaseOptions = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
-  platformUrl?: string;
-  target?: string | HTMLElement;
-  theme?: ClientTheme;
-};
-```
-
-Options shared by both [client](#client) tiers (config-only and custom
-component).
-
-The session-forwarded fields are picked from [VoiceSessionOptions](#voicesessionoptions)
-(one source of truth for types and docs) rather than re-declared — a
-re-declared copy is exactly how doc comments drift.
-
-#### Type Declaration
-
-##### platformUrl?
-
-```ts
-optional platformUrl?: string;
-```
-
-Base URL of the AAI platform server. Derived from `location.href` by default.
-
-##### target?
-
-```ts
-optional target?: string | HTMLElement;
-```
-
-CSS selector or DOM element to render into. Defaults to `"#app"`.
-
-##### theme?
-
-```ts
-optional theme?: ClientTheme;
-```
-
-Theme color overrides.
-
-#### Remarks
-
-**Base of the two `client()` tiers.** The name says nothing on its own, so:
-this is the half [ConfigTier](#configtier) and [ComponentTier](#componenttier) share — where
-to mount, which agent to dial, and the theme — and [ClientConfig](#clientconfig) is
-the union of the two that `client()` actually takes. Nothing takes a
-`BaseOptions` directly; it is exported because both tiers name it, and it is
-the type to write against when a helper builds options for either.
-
-It is NOT the session's own options type — that is
-[VoiceSessionOptions](#voicesessionoptions), which `createSessionCore` takes and which three
-of these fields are picked from.
-
-***
-
 ### ButtonSize
 
 ```ts
@@ -2640,10 +2583,119 @@ The sender of the message.
 ### ClientConfig
 
 ```ts
-type ClientConfig = ConfigTier | ComponentTier;
+type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
+  component?: ComponentType;
+  name?: string;
+  platformUrl?: string;
+  sidebar?: ComponentType;
+  sidebarWidth?: string;
+  target?: string | HTMLElement;
+  theme?: ClientTheme;
+  tools?: ToolDisplayConfig;
+};
 ```
 
 Configuration passed to [client](#client).
+
+The session-forwarded fields are picked from [VoiceSessionOptions](#voicesessionoptions)
+(one source of truth for types and docs) rather than re-declared — a
+re-declared copy is exactly how doc comments drift. It is NOT the session's
+own options type: that is [VoiceSessionOptions](#voicesessionoptions), which
+`createSessionCore` takes and which three of these fields come from.
+
+#### Type Declaration
+
+##### component?
+
+```ts
+optional component?: ComponentType;
+```
+
+Full custom component to render instead of the default shell.
+
+It is rendered inside the same providers the default shell gets, so every
+session hook, `useTheme` and the tool display config work in it unchanged.
+
+##### name?
+
+```ts
+optional name?: string;
+```
+
+Agent name shown in the header and start screen — and, with a `component`,
+the page title, there being no shell header to put it in. Left out, the
+default shell asks the agent for its own declared name.
+
+##### platformUrl?
+
+```ts
+optional platformUrl?: string;
+```
+
+Base URL of the AAI platform server. Derived from `location.href` by default.
+
+##### sidebar?
+
+```ts
+optional sidebar?: ComponentType;
+```
+
+Optional sidebar component rendered alongside the main pane.
+
+Beside a `component` it is the custom component that becomes the main pane,
+in the same [SidebarLayout](#sidebarlayout) the default shell uses.
+
+##### sidebarWidth?
+
+```ts
+optional sidebarWidth?: string;
+```
+
+CSS width of the sidebar. Defaults to `"18rem"`.
+
+##### target?
+
+```ts
+optional target?: string | HTMLElement;
+```
+
+CSS selector or DOM element to render into. Defaults to `"#app"`.
+
+##### theme?
+
+```ts
+optional theme?: ClientTheme;
+```
+
+Theme color overrides.
+
+##### tools?
+
+```ts
+optional tools?: ToolDisplayConfig;
+```
+
+Tool display config: icon and label overrides keyed by tool name.
+
+Honoured with a custom `component` too: [client](#client) installs it into
+`ToolConfigContext`, and the consumer is `ToolCallBlock` — which a custom
+component renders as soon as it uses `MessageList` or `ChatView`, the usual
+way to build one.
+
+#### Remarks
+
+**One flat type, not a union of tiers.** `component` is what decides which
+shell renders — absent, the default one (StartScreen + ChatView, optional
+sidebar); present, the caller's own component inside the same providers —
+and that decision is made at runtime, where every field can be honoured. It
+used to be a union whose two arms banned each other's fields with `?: never`,
+and the failure that shape produces is recorded twice in this file's history:
+`client({ name, component })` and `client({ component, tools })` were both
+the natural thing to write, both were refused with *"Type 'string' is not
+assignable to type 'undefined'"*, and both cost a build round each time
+before the ban was lifted. What was left banned was `sidebar` beside a
+`component`, which invited the identical failure for a combination
+[client](#client) can simply render.
 
 ***
 
@@ -2764,138 +2816,6 @@ optional text?: string;
 ```
 
 Main text color. Default: `#1B1A18`.
-
-***
-
-### ComponentTier
-
-```ts
-type ComponentTier = BaseOptions & {
-  component: ComponentType;
-  name?: string;
-  sidebar?: never;
-  sidebarWidth?: never;
-  tools?: ToolDisplayConfig;
-};
-```
-
-Tier 2: custom component — renders the provided `component` inside the
-providers instead of the default shell.
-
-#### Type Declaration
-
-##### component
-
-```ts
-component: ComponentType;
-```
-
-Full custom component to render instead of the default shell.
-
-##### name?
-
-```ts
-optional name?: string;
-```
-
-Agent name. With a custom component there is no shell header to put it
-in, so it becomes the page title.
-
-Allowed here rather than `never` because `client({ name, component })` is
-the natural thing to write and two different models wrote it. As `never`
-it failed with *"Type 'string' is not assignable to type 'undefined'"*,
-which explains nothing, and cost a build round each time. There is a real
-use for the value — a custom-UI page otherwise inherits whatever title
-the HTML shell shipped with — so it is honoured instead of banned.
-
-##### sidebar?
-
-```ts
-optional sidebar?: never;
-```
-
-##### sidebarWidth?
-
-```ts
-optional sidebarWidth?: never;
-```
-
-##### tools?
-
-```ts
-optional tools?: ToolDisplayConfig;
-```
-
-Tool display config: icon and label overrides keyed by tool name.
-
-Allowed here for the same reason as `name` above, and it was found the
-same way: four starters across an eval run wrote
-`client({ component, tools })` and lost a build round each time to
-*"Type '{ … }' is not assignable to type 'undefined'"*.
-
-Unlike `sidebar`/`sidebarWidth`, this is not a property of the default
-shell. `client()` below wraps BOTH tiers in `ToolConfigContext.Provider`
-from `config.tools ?? {}`, and the consumer is `ToolCallBlock` — which a
-custom component renders as soon as it uses `MessageList` or `ChatView`,
-the usual way to build one. So the value was always honoured at runtime;
-only the type refused it.
-
-***
-
-### ConfigTier
-
-```ts
-type ConfigTier = BaseOptions & {
-  component?: never;
-  name?: string;
-  sidebar?: ComponentType;
-  sidebarWidth?: string;
-  tools?: ToolDisplayConfig;
-};
-```
-
-Tier 1: config-only options — no `component`. Renders the default shell
-(StartScreen + ChatView).
-
-#### Type Declaration
-
-##### component?
-
-```ts
-optional component?: never;
-```
-
-##### name?
-
-```ts
-optional name?: string;
-```
-
-Agent name shown in the header and start screen.
-
-##### sidebar?
-
-```ts
-optional sidebar?: ComponentType;
-```
-
-Optional sidebar component rendered alongside the chat view.
-
-##### sidebarWidth?
-
-```ts
-optional sidebarWidth?: string;
-```
-
-CSS width of the sidebar. Defaults to `"18rem"`.
-
-##### tools?
-
-```ts
-optional tools?: ToolDisplayConfig;
-```
-
-Tool display config: icon and label overrides keyed by tool name.
 
 ***
 
@@ -3871,7 +3791,7 @@ type UploadStatus = UploadProgress & {
 };
 ```
 
-What [WorkflowSubmission.upload](#upload-2) reports while the bytes are going.
+What [WorkflowSubmission.upload](#upload-1) reports while the bytes are going.
 
 The SDK's per-request [UploadProgress](../aai/workflow-api.md#uploadprogress) plus WHICH file it describes,
 because a form is allowed more than one and a bar over "the upload" would
@@ -4212,58 +4132,20 @@ The agent's declared workflows, each with the JSON Schema of its input.
 ### UseWorkflowStreamOptions
 
 ```ts
-type UseWorkflowStreamOptions = {
-  api?: WorkflowApi;
-  intervalMs?: number;
-  key?: string;
-  parallel?: UploadParallel;
-};
+type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
 ```
 
 Options for [useWorkflowStream](#useworkflowstream).
 
-#### Properties
+[UseWorkflowSubmitOptions](#useworkflowsubmitoptions) without `wait`, which is the synchronous
+mode: it holds the `POST` open until the run settles, and here the run is
+started before its bytes are, so there is nothing left to hold it for.
 
-##### api?
-
-```ts
-optional api?: WorkflowApi;
-```
-
-The client to start runs with. Defaults to one for the page's own agent.
-
-##### intervalMs?
-
-```ts
-optional intervalMs?: number;
-```
-
-How often the fallback poll re-reads a live run.
-
-##### key?
-
-```ts
-optional key?: string;
-```
-
-Correlation key recorded with the run, for finding it again without the id.
-
-##### parallel?
-
-```ts
-optional parallel?: UploadParallel;
-```
-
-Send the file as concurrent parts instead of in one streaming request.
-
-It COMPOSES with what this hook is for rather than competing with it: the run
-still starts before the bytes, and the store still publishes how far the file
-is readable — that number is the CONTIGUOUS prefix, so a run reading ahead of
-the uplink sees the same growing file whether one connection or four are
-filling it. What changes is only how fast it grows.
-
-**On by default.** `false` opts out, `{ partBytes, concurrency }` tunes it.
-See `UploadOptions.parallel`.
+`parallel` COMPOSES with what this hook is for rather than competing with it.
+The run still starts before the bytes, and the store still publishes how far
+the file is readable — that number is the CONTIGUOUS prefix, so a run reading
+ahead of the uplink sees the same growing file whether one connection or four
+are filling it. What changes is only how fast it grows.
 
 ***
 
@@ -5140,134 +5022,33 @@ server graph into the bundle.
 ### WorkflowStreamSubmission
 
 ```ts
-type WorkflowStreamSubmission<R> = {
-  error: string | undefined;
-  pauseUpload: () => void;
-  pending: boolean;
-  reset: () => void;
-  resumeUpload: () => void;
-  run: WorkflowRun<R> | undefined;
-  submit: (input: unknown) => Promise<void>;
-  upload: UploadStatus | undefined;
-};
+type WorkflowStreamSubmission<R> = WorkflowSubmission<R>;
 ```
 
-What [useWorkflowStream](#useworkflowstream) returns.
+What [useWorkflowStream](#useworkflowstream) returns: a [WorkflowSubmission](#workflowsubmission), exactly.
 
-#### See
+The same eight fields `useWorkflowSubmit` returns, of which this hook is a
+drop-in sibling — same `<Form>`, same `<UploadProgressBar>`, same
+`<WorkflowProgress>`. An ALIAS rather than a second declaration of the eight:
+the two have to agree field for field to be drop-in, and two copies of a type
+that have to agree are two copies that can stop agreeing.
 
-[WorkflowSubmission](#workflowsubmission) — the same eight fields, returned by
-`useWorkflowSubmit`, of which this is a drop-in sibling (same `<Form>`, same
-`<UploadProgressBar>`, same `<WorkflowProgress>`). Exactly two differ, and
-both follow from WHEN the run is created: there the run is started after the
-whole file is stored, so `submit()` resolves once the run is accepted and
-`run` appears with it.
+Exactly two of the fields mean something different here, and both differences
+follow from WHEN the run is created — it exists before its bytes do:
+
+- `submit()` resolves when the UPLOAD finishes, not when the run is accepted;
+  the run's own progress arrives through `run`. It still resolves rather than
+  rejecting on a failed upload — the failure is reported through `error`, the
+  way a form expects.
+- `run` is set from the moment the run EXISTS, which here is before the bytes
+  are in. That is what lets a page render `<WorkflowProgress>` beside the
+  upload bar rather than after it.
 
 #### Type Parameters
 
 ##### R
 
 `R` = `unknown`
-
-#### Properties
-
-##### error
-
-```ts
-error: string | undefined;
-```
-
-The submit's own failure (a rejected input, or an upload that would not store).
-
-##### pauseUpload
-
-```ts
-pauseUpload: () => void;
-```
-
-Park the upload where it is, stopping the bytes in flight.
-
-The RUN keeps going — it is watching an upload id, and a paused upload is one
-whose `size` has stopped growing, which is exactly what a slow uplink looks
-like. So a pause costs nothing until the workflow's own idle bound decides the
-uploader is gone (five minutes in `transcription-workflow`).
-
-###### Returns
-
-`void`
-
-##### pending
-
-```ts
-pending: boolean;
-```
-
-True from `submit()` until the run reaches a terminal status.
-
-##### reset
-
-```ts
-reset: () => void;
-```
-
-Clear the run and any error, putting the form back to its initial state.
-
-###### Returns
-
-`void`
-
-##### resumeUpload
-
-```ts
-resumeUpload: () => void;
-```
-
-Continue a paused upload, sending only the windows the store does not have.
-
-###### Returns
-
-`void`
-
-##### run
-
-```ts
-run: WorkflowRun<R> | undefined;
-```
-
-The run, from the moment it EXISTS — which here is before its bytes are in.
-
-That is the whole difference from `useWorkflowSubmit`, and what lets a page
-render `<WorkflowProgress>` beside the upload bar rather than after it.
-
-##### submit
-
-```ts
-submit: (input: unknown) => Promise<void>;
-```
-
-Start a run and stream this input's file into it.
-
-Resolves when the upload finishes, NOT when the run does — the run's own
-progress arrives through `run`. It resolves rather than rejecting on a failed
-upload; the failure is reported through `error`, the way a form expects.
-
-###### Parameters
-
-###### input
-
-`unknown`
-
-###### Returns
-
-`Promise`\<`void`\>
-
-##### upload
-
-```ts
-upload: UploadStatus | undefined;
-```
-
-How far the upload has got, while it is still going.
 
 ***
 
@@ -5290,13 +5071,13 @@ What [useWorkflowSubmit](#useworkflowsubmit) returns.
 
 #### See
 
-[WorkflowStreamSubmission](#workflowstreamsubmission) — the same eight fields, returned by
-`useWorkflowStream`, which is a drop-in sibling. Exactly two of them differ,
-and both differences follow from WHEN the run is created: there, `submit()`
-resolves when the UPLOAD finishes rather than when the run is accepted, and
-`run` is non-`undefined` from before the bytes are in, so a page can render
-`<WorkflowProgress>` beside the upload bar instead of after it. Here the run
-does not exist until the last byte lands.
+[WorkflowStreamSubmission](#workflowstreamsubmission) — an ALIAS of this type, returned by
+`useWorkflowStream`, which is a drop-in sibling. Exactly two fields MEAN
+something different there, and both differences follow from WHEN the run is
+created: there, `submit()` resolves when the UPLOAD finishes rather than when
+the run is accepted, and `run` is non-`undefined` from before the bytes are
+in, so a page can render `<WorkflowProgress>` beside the upload bar instead
+of after it. Here the run does not exist until the last byte lands.
 
 #### Type Parameters
 
@@ -5621,33 +5402,3 @@ Placeholder for "listening, no words yet" — the `""` case above.
 A one-character ellipsis rather than three dots, because it is read by a
 screen reader as an ellipsis and it does not reflow the row when the first
 real word replaces it.
-
-***
-
-### VOICE\_CAPTURE\_CONSTRAINTS
-
-```ts
-const VOICE_CAPTURE_CONSTRAINTS: MediaTrackConstraints;
-```
-
-`getUserMedia` audio constraints for every capture path in this package.
-
-Defined once because four copies of this object drifted apart trivially, and
-the flags are not cosmetic — each one rewrites the signal before STT (and
-before the sync path's energy VAD) ever sees it:
-
-- **`autoGainControl: false`** — AGC continuously retargets level, which
-  means riding the noise floor up through silence. An energy VAD calibrated
-  against a moving floor is calibrated against nothing.
-- **`noiseSuppression: false`** / **`voiceIsolation: false`** — both discard
-  signal to make speech sound cleaner to a human, and both can gate a quiet
-  room to *exact* zeros, which is also what a dead microphone looks like
-  (see `MIC_SILENCE_PROBE_MS`).
-- **`echoCancellation: true`** — this one stays on. The mic is open while
-  the agent speaks (barge-in needs it), so without AEC the agent hears
-  itself and interrupts its own reply.
-
-Cast because `voiceIsolation` is newer than TypeScript's DOM lib.
-
-Public so a custom client that opens its own microphone gets the same
-signal the built-in capture paths do.

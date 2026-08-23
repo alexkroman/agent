@@ -33,12 +33,6 @@ export interface CartesiaOptions {
   language?: string;
 }
 
-/** Descriptor returned by {@link cartesia}. */
-export type CartesiaProvider = TtsProvider & {
-  readonly kind: typeof CARTESIA_KIND;
-  readonly options: CartesiaOptions & { voice: string };
-};
-
 /**
  * Build a Cartesia TTS descriptor for pipeline mode. The API key is resolved
  * host-side from the agent's env (`CARTESIA_API_KEY`).
@@ -55,7 +49,7 @@ export type CartesiaProvider = TtsProvider & {
  * });
  * ```
  */
-export function cartesia(opts: CartesiaOptions = {}): CartesiaProvider {
+export function cartesia(opts: CartesiaOptions = {}): TtsProvider {
   return {
     kind: CARTESIA_KIND,
     options: { ...opts, voice: opts.voice ?? CARTESIA_DEFAULT_VOICE },

@@ -41,7 +41,7 @@
  * ## Three properties this leans on
  *
  * - **A step can read the agent's env now.** `stepEnv`/`requireStepEnv`
- *   (`@alexkroman1/aai/utils`) is what makes any of this real: a step is
+ *   (`@alexkroman1/aai/step`) is what makes any of this real: a step is
  *   dispatched separately from the agent bundle and is handed no `ToolContext`,
  *   so before that seam existed no step anywhere could authenticate an outbound
  *   call, and every workflow template's I/O was a fixture saying so.

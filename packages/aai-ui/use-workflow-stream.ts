@@ -90,79 +90,50 @@ import {
 } from "./_upload-session.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { fileFields, filesOf } from "./_workflow-files.ts";
-import type { UploadStatus } from "./use-workflow-form.ts";
+import type {
+  UploadStatus,
+  UseWorkflowSubmitOptions,
+  WorkflowSubmission,
+} from "./use-workflow-form.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
-import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
-
-/** Options for {@link useWorkflowStream}. */
-export type UseWorkflowStreamOptions = {
-  /** The client to start runs with. Defaults to one for the page's own agent. */
-  api?: WorkflowApi;
-  /** Correlation key recorded with the run, for finding it again without the id. */
-  key?: string;
-  /** How often the fallback poll re-reads a live run. */
-  intervalMs?: number;
-  /**
-   * Send the file as concurrent parts instead of in one streaming request.
-   *
-   * It COMPOSES with what this hook is for rather than competing with it: the run
-   * still starts before the bytes, and the store still publishes how far the file
-   * is readable — that number is the CONTIGUOUS prefix, so a run reading ahead of
-   * the uplink sees the same growing file whether one connection or four are
-   * filling it. What changes is only how fast it grows.
-   *
-   * **On by default.** `false` opts out, `{ partBytes, concurrency }` tunes it.
-   * See `UploadOptions.parallel`.
-   */
-  parallel?: UploadParallel;
-};
+import type { WorkflowApi } from "./workflow-client.ts";
 
 /**
- * What {@link useWorkflowStream} returns.
+ * Options for {@link useWorkflowStream}.
  *
- * @see {@link WorkflowSubmission} — the same eight fields, returned by
- * `useWorkflowSubmit`, of which this is a drop-in sibling (same `<Form>`, same
- * `<UploadProgressBar>`, same `<WorkflowProgress>`). Exactly two differ, and
- * both follow from WHEN the run is created: there the run is started after the
- * whole file is stored, so `submit()` resolves once the run is accepted and
- * `run` appears with it.
+ * {@link UseWorkflowSubmitOptions} without `wait`, which is the synchronous
+ * mode: it holds the `POST` open until the run settles, and here the run is
+ * started before its bytes are, so there is nothing left to hold it for.
+ *
+ * `parallel` COMPOSES with what this hook is for rather than competing with it.
+ * The run still starts before the bytes, and the store still publishes how far
+ * the file is readable — that number is the CONTIGUOUS prefix, so a run reading
+ * ahead of the uplink sees the same growing file whether one connection or four
+ * are filling it. What changes is only how fast it grows.
  */
-export type WorkflowStreamSubmission<R = unknown> = {
-  /**
-   * Start a run and stream this input's file into it.
-   *
-   * Resolves when the upload finishes, NOT when the run does — the run's own
-   * progress arrives through `run`. It resolves rather than rejecting on a failed
-   * upload; the failure is reported through `error`, the way a form expects.
-   */
-  submit: (input: unknown) => Promise<void>;
-  /** Clear the run and any error, putting the form back to its initial state. */
-  reset: () => void;
-  /**
-   * The run, from the moment it EXISTS — which here is before its bytes are in.
-   *
-   * That is the whole difference from `useWorkflowSubmit`, and what lets a page
-   * render `<WorkflowProgress>` beside the upload bar rather than after it.
-   */
-  run: WorkflowRun<R> | undefined;
-  /** True from `submit()` until the run reaches a terminal status. */
-  pending: boolean;
-  /** How far the upload has got, while it is still going. */
-  upload: UploadStatus | undefined;
-  /**
-   * Park the upload where it is, stopping the bytes in flight.
-   *
-   * The RUN keeps going — it is watching an upload id, and a paused upload is one
-   * whose `size` has stopped growing, which is exactly what a slow uplink looks
-   * like. So a pause costs nothing until the workflow's own idle bound decides the
-   * uploader is gone (five minutes in `transcription-workflow`).
-   */
-  pauseUpload: () => void;
-  /** Continue a paused upload, sending only the windows the store does not have. */
-  resumeUpload: () => void;
-  /** The submit's own failure (a rejected input, or an upload that would not store). */
-  error: string | undefined;
-};
+export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait">;
+
+/**
+ * What {@link useWorkflowStream} returns: a {@link WorkflowSubmission}, exactly.
+ *
+ * The same eight fields `useWorkflowSubmit` returns, of which this hook is a
+ * drop-in sibling — same `<Form>`, same `<UploadProgressBar>`, same
+ * `<WorkflowProgress>`. An ALIAS rather than a second declaration of the eight:
+ * the two have to agree field for field to be drop-in, and two copies of a type
+ * that have to agree are two copies that can stop agreeing.
+ *
+ * Exactly two of the fields mean something different here, and both differences
+ * follow from WHEN the run is created — it exists before its bytes do:
+ *
+ * - `submit()` resolves when the UPLOAD finishes, not when the run is accepted;
+ *   the run's own progress arrives through `run`. It still resolves rather than
+ *   rejecting on a failed upload — the failure is reported through `error`, the
+ *   way a form expects.
+ * - `run` is set from the moment the run EXISTS, which here is before the bytes
+ *   are in. That is what lets a page render `<WorkflowProgress>` beside the
+ *   upload bar rather than after it.
+ */
+export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
 
 /**
  * Start a workflow run and stream a file into it while it works.

@@ -6,12 +6,12 @@
 // resume prompts live in pipeline-recovery.ts). The speaking edges those
 // handlers emit through live in pipeline-speech-edges.ts.
 
-import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai";
 import type { SttTurnMeta } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debugPartialsEnabled, type Logger } from "../runtime-config.ts";
 import {

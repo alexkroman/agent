@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { MAX_CLIENT_EVENT_PAYLOAD_BYTES, sessionSlot } from "@alexkroman1/aai";
+import { sessionSlot } from "@alexkroman1/aai";
+import { MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { createStateSync, type StateSyncSession } from "./_state-sync.ts";
 

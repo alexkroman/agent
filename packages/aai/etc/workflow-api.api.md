@@ -21,9 +21,6 @@ export type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-export function clampWorkflowWait(requested: number | undefined): number;
-
-// @public
 export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 
 // @public
@@ -59,9 +56,6 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 
 // @public
 export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
-
-// @public
-export const MAX_WORKFLOW_WAIT_MS = 60000;
 
 // @public
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
@@ -108,9 +102,6 @@ export type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
-
-// @public
-export const TERMINAL_WORKFLOW_STATUSES: readonly ["completed", "failed", "cancelled"];
 
 // @public
 export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
@@ -179,9 +170,6 @@ export type UploadRef = {
 export type WakeUpOptions = {
     correlationIds?: string[];
 };
-
-// @public
-export const WORKFLOW_API_PREFIX = "/workflows";
 
 // @public
 export type WorkflowApi = {

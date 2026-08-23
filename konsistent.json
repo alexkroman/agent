@@ -224,24 +224,19 @@
     },
     {
       "name": "llm-providers",
-      "description": "Every LLM provider module exports the same four-symbol shape. assemblyai.ts is excluded from all four provider conventions: it is the one vendor with a module per stage, so its symbols carry a stage marker the shared {providerId} template cannot express — and the marking is not uniform. The three later stages infix it (ASSEMBLYAI_TTS_KIND, AssemblyAILlmOptions, AssemblyAIS2sProvider); STT, which came first, kept the bare names (ASSEMBLYAI_KIND, ASSEMBLYAI_API_KEY_ENV, AssemblyAIOptions, AssemblyAIProvider) and marks the stage on the factory alone (assemblyAIStt). Do not read the exclusion as an infix RULE — nothing checks these files, and stt/assemblyai.ts does not follow one.",
+      "description": "Every LLM provider module exports the same three-symbol shape: a kind tag, the env var its key is read from, and the factory. The narrowed *Provider alias each used to export is gone — a factory returns the stage type, and nothing narrowed on the kind. A vendor that occupies more than ONE stage suffixes the stage on its symbols, and the shared {providerId} template cannot express that — so those modules are excluded and checked by nothing here. AssemblyAI spans all four stages (ASSEMBLYAI_STT_KIND, AssemblyAILlmOptions, ASSEMBLYAI_TTS_KIND, assemblyAIS2s) and ElevenLabs spans STT today with the obvious TTS name still free, which is why its factory is elevenLabsStt. Every other vendor here occupies one stage and takes the bare name. The eight single-setting vendors share one ModelOptions interface (llm/model-options.ts), so no per-vendor Options name is checked here.",
       "paths": [
         "packages/aai/sdk/providers/llm/{providerId}.ts",
         "!packages/aai/sdk/providers/llm/assemblyai.ts",
         "!packages/aai/sdk/providers/llm/from-string.ts",
         "!packages/aai/sdk/providers/llm/gateway-models.ts",
-        "!packages/aai/sdk/providers/llm/*.test.ts"
+        "!packages/aai/sdk/providers/llm/*.test.ts",
+        "!packages/aai/sdk/providers/llm/model-options.ts"
       ],
       "must": {
         "exportConstants": [
           "${providerId.toConstantCase()}_KIND",
           "${providerId.toConstantCase()}_API_KEY_ENV"
-        ],
-        "exportInterfaces": [
-          "${providerId.toPascalCase()}Options"
-        ],
-        "exportTypes": [
-          "${providerId.toPascalCase()}Provider"
         ],
         "exportFunctions": [
           "${providerId.toCamelCase()}"
@@ -250,10 +245,11 @@
     },
     {
       "name": "stt-providers",
-      "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults. assemblyai.ts is excluded from all four provider conventions: it is the one vendor with a module per stage, so its symbols carry a stage marker the shared {providerId} template cannot express — and the marking is not uniform. The three later stages infix it (ASSEMBLYAI_TTS_KIND, AssemblyAILlmOptions, AssemblyAIS2sProvider); STT, which came first, kept the bare names (ASSEMBLYAI_KIND, ASSEMBLYAI_API_KEY_ENV, AssemblyAIOptions, AssemblyAIProvider) and marks the stage on the factory alone (assemblyAIStt). Do not read the exclusion as an infix RULE — nothing checks these files, and stt/assemblyai.ts does not follow one.",
+      "description": "Every STT provider module exports the provider shape plus the resolve*Settings helper the pipeline transport calls to fold a provider's options into its session defaults. The narrowed *Provider alias each used to export is gone — a factory returns the stage type, and nothing narrowed on the kind. A vendor that occupies more than ONE stage suffixes the stage on its symbols, and the shared {providerId} template cannot express that — so those modules are excluded and checked by nothing here. AssemblyAI spans all four stages (ASSEMBLYAI_STT_KIND, AssemblyAILlmOptions, ASSEMBLYAI_TTS_KIND, assemblyAIS2s) and ElevenLabs spans STT today with the obvious TTS name still free, which is why its factory is elevenLabsStt. Every other vendor here occupies one stage and takes the bare name.",
       "paths": [
         "packages/aai/sdk/providers/stt/{providerId}.ts",
         "!packages/aai/sdk/providers/stt/assemblyai.ts",
+        "!packages/aai/sdk/providers/stt/elevenlabs.ts",
         "!packages/aai/sdk/providers/stt/*.test.ts"
       ],
       "must": {
@@ -265,9 +261,6 @@
         "exportInterfaces": [
           "${providerId.toPascalCase()}Options"
         ],
-        "exportTypes": [
-          "${providerId.toPascalCase()}Provider"
-        ],
         "exportFunctions": [
           "${providerId.toCamelCase()}",
           "resolve${providerId.toPascalCase()}Settings"
@@ -276,7 +269,7 @@
     },
     {
       "name": "tts-providers",
-      "description": "Every TTS provider module exports the STT shape plus a default voice — the one setting a TTS provider cannot infer. assemblyai.ts is excluded from all four provider conventions: it is the one vendor with a module per stage, so its symbols carry a stage marker the shared {providerId} template cannot express — and the marking is not uniform. The three later stages infix it (ASSEMBLYAI_TTS_KIND, AssemblyAILlmOptions, AssemblyAIS2sProvider); STT, which came first, kept the bare names (ASSEMBLYAI_KIND, ASSEMBLYAI_API_KEY_ENV, AssemblyAIOptions, AssemblyAIProvider) and marks the stage on the factory alone (assemblyAIStt). Do not read the exclusion as an infix RULE — nothing checks these files, and stt/assemblyai.ts does not follow one.",
+      "description": "Every TTS provider module exports the STT shape plus a default voice — the one setting a TTS provider cannot infer. The narrowed *Provider alias each used to export is gone — a factory returns the stage type, and nothing narrowed on the kind. A vendor that occupies more than ONE stage suffixes the stage on its symbols, and the shared {providerId} template cannot express that — so those modules are excluded and checked by nothing here. AssemblyAI spans all four stages (ASSEMBLYAI_STT_KIND, AssemblyAILlmOptions, ASSEMBLYAI_TTS_KIND, assemblyAIS2s) and ElevenLabs spans STT today with the obvious TTS name still free, which is why its factory is elevenLabsStt. Every other vendor here occupies one stage and takes the bare name.",
       "paths": [
         "packages/aai/sdk/providers/tts/{providerId}.ts",
         "!packages/aai/sdk/providers/tts/assemblyai.ts",
@@ -292,9 +285,6 @@
         "exportInterfaces": [
           "${providerId.toPascalCase()}Options"
         ],
-        "exportTypes": [
-          "${providerId.toPascalCase()}Provider"
-        ],
         "exportFunctions": [
           "${providerId.toCamelCase()}",
           "resolve${providerId.toPascalCase()}Settings"
@@ -303,7 +293,7 @@
     },
     {
       "name": "s2s-providers",
-      "description": "S2S providers take the same kind/env-var pair as the pipeline providers. Options is a type rather than an interface here, because an S2S provider's options mirror the vendor's own session shape. assemblyai.ts is excluded from all four provider conventions: it is the one vendor with a module per stage, so its symbols carry a stage marker the shared {providerId} template cannot express — and the marking is not uniform. The three later stages infix it (ASSEMBLYAI_TTS_KIND, AssemblyAILlmOptions, AssemblyAIS2sProvider); STT, which came first, kept the bare names (ASSEMBLYAI_KIND, ASSEMBLYAI_API_KEY_ENV, AssemblyAIOptions, AssemblyAIProvider) and marks the stage on the factory alone (assemblyAIStt). Do not read the exclusion as an infix RULE — nothing checks these files, and stt/assemblyai.ts does not follow one.",
+      "description": "S2S providers take the same kind/env-var pair as the pipeline providers, and declare Options as an interface like the other three stages. A vendor that occupies more than ONE stage suffixes the stage on its symbols, and the shared {providerId} template cannot express that — so those modules are excluded and checked by nothing here. AssemblyAI spans all four stages (ASSEMBLYAI_STT_KIND, AssemblyAILlmOptions, ASSEMBLYAI_TTS_KIND, assemblyAIS2s) and ElevenLabs spans STT today with the obvious TTS name still free, which is why its factory is elevenLabsStt. Every other vendor here occupies one stage and takes the bare name.",
       "paths": [
         "packages/aai/sdk/providers/s2s/{providerId}.ts",
         "!packages/aai/sdk/providers/s2s/assemblyai.ts",
@@ -314,12 +304,11 @@
           "${providerId.toConstantCase()}_KIND",
           "${providerId.toConstantCase()}_API_KEY_ENV"
         ],
-        "exportTypes": [
-          "${providerId.toPascalCase()}Options",
-          "${providerId.toPascalCase()}Provider"
-        ],
         "exportFunctions": [
           "${providerId.toCamelCase()}"
+        ],
+        "exportInterfaces": [
+          "${providerId.toPascalCase()}Options"
         ]
       }
     },

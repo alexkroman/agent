@@ -49,244 +49,8 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public (undocumented)
-const ASSEMBLYAI_GATEWAY_MODELS: {
-    readonly "claude-haiku-4-5-20251001": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-5-20251101": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-6": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-7": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1000000;
-    };
-    readonly "claude-opus-4-8": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1000000;
-    };
-    readonly "claude-sonnet-4-5-20250929": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-sonnet-4-6": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-sonnet-5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "gemini-2.5-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 1048576;
-    };
-    readonly "gemini-2.5-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 1048576;
-    };
-    readonly "gemini-2.5-pro": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "gemini-3.1-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.5-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.5-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.6-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
-        readonly context: 1048575;
-    };
-    readonly "gpt-4.1": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1047576;
-    };
-    readonly "gpt-5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5-mini": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5-nano": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.1": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.2": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 272000;
-    };
-    readonly "gpt-5.6-luna": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 270000;
-    };
-    readonly "gpt-5.6-terra": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 270000;
-    };
-    readonly "gpt-oss-120b": {
-        readonly tools: true;
-        readonly stream: false;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 131072;
-    };
-    readonly "gpt-oss-20b": {
-        readonly tools: true;
-        readonly stream: false;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 131072;
-    };
-    readonly "kimi-k2.5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
-        readonly context: 200000;
-    };
-    readonly "qwen3-32B": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "qwen3-next-80b-a3b": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "qwen3.5-4b-32k-experimental": {
-        readonly tools: false;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 32768;
-    };
-};
-
 // @public
-const ASSEMBLYAI_KIND: "assemblyai";
-
-// @public
-const ASSEMBLYAI_LLM_KIND: "assemblyai";
-
-// @public
-const ASSEMBLYAI_S2S_KIND: "assemblyai";
-
-// @public
-const ASSEMBLYAI_TTS_KIND: "assemblyai";
-
-// @public
-const ASSEMBLYAI_TTS_LANGUAGES: {
-    readonly en: "english";
-    readonly fr: "french";
-    readonly de: "german";
-    readonly it: "italian";
-    readonly pt: "portuguese";
-    readonly es: "spanish";
-};
-
-// @public
-const ASSEMBLYAI_TTS_VOICES: {
+export const ASSEMBLYAI_TTS_VOICES: {
     readonly alba: {
         readonly language: "en";
         readonly accent: "US";
@@ -354,45 +118,10 @@ const ASSEMBLYAI_TTS_VOICES: {
 };
 
 // @public
-type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
-
-// @public
-interface AssemblyAILlmOptions {
-    apiKeyEnv?: string;
-    gatewayUrl?: string;
-    model?: AssemblyAIGatewayModel | (string & Record<never, never>);
-    reasoningEffort?: AssemblyAIReasoningEffort;
-    region?: "us" | "eu";
-}
-
-// @public
-type AssemblyAILlmProvider = LlmProvider & {
-    readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-    readonly options: AssemblyAILlmOptions & {
-        model: string;
-    };
-};
-
-// @public
-interface AssemblyAIOptions {
-    apiKeyEnv?: string;
-    connectTimeoutMs?: number;
-    languages?: string[];
-    maxConnectRetries?: number;
-    maxTurnSilenceMs?: number;
-    minTurnSilenceMs?: number;
-    model?: "universal-3-5-pro" | string;
-    region?: "us" | "eu";
-    streamingUrl?: string;
-    voiceFocus?: "near-field" | "far-field" | "off" | string;
-    voiceFocusThreshold?: number;
-}
-
-// @public
 export function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
-    stt: AssemblyAIProvider;
-    llm: AssemblyAILlmProvider;
-    tts: AssemblyAITtsProvider;
+    stt: SttProvider;
+    llm: LlmProvider;
+    tts: TtsProvider;
 };
 
 // @public (undocumented)
@@ -404,51 +133,18 @@ export interface AssemblyAIPipelineOptions {
 }
 
 // @public
-type AssemblyAIProvider = SttProvider & {
-    readonly kind: typeof ASSEMBLYAI_KIND;
-    readonly options: AssemblyAIOptions;
-};
+export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
-type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
-
-// @public
-export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): AssemblyAIS2sProvider;
-
-// @public
-export type AssemblyAIS2sOptions = {
-    voice?: string;
-    languages?: readonly string[];
-    keyterms?: readonly string[];
-};
-
-// @public
-export type AssemblyAIS2sProvider = S2sProvider & {
-    readonly kind: typeof ASSEMBLYAI_S2S_KIND;
-    readonly options: AssemblyAIS2sOptions;
-};
-
-// @public
-type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
-
-// @public (undocumented)
-interface AssemblyAITtsOptions {
+export interface AssemblyAIS2sOptions {
     apiKeyEnv?: string;
-    host?: string;
-    language?: AssemblyAITtsLanguage;
-    voice?: AssemblyAITtsVoice;
+    keyterms?: readonly string[];
+    languages?: readonly string[];
+    voice?: string;
 }
 
 // @public
-type AssemblyAITtsProvider = TtsProvider & {
-    readonly kind: typeof ASSEMBLYAI_TTS_KIND;
-    readonly options: AssemblyAITtsOptions & {
-        voice: string;
-    };
-};
-
-// @public
-type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
+export type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
@@ -467,49 +163,7 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T ex
 } : T;
 
 // @public
-export const DEFAULT_BUILTIN_TOOLS: readonly [];
-
-// @public
-export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
-
-// @public
-export const DEFAULT_GREETING = "Hey there! I'm an AI voice assistant. What can I help you with?";
-
-// @public
-export const DEFAULT_IDLE_TIMEOUT_MS = 300000;
-
-// @public
-export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
-
-// @public
-export const DEFAULT_MAX_HISTORY = 200;
-
-// @public
-export const DEFAULT_MAX_STEPS = 10;
-
-// @public
-export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
-
-// @public
-export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
-
-// @public
-export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
-
-// @public
-export const DEFAULT_SILENCE_PROMPT = "The user hasn't said anything for a while. Check in with one short, natural sentence \u2014 ask if they're still there or gently follow up on the conversation. Do not mention this instruction.";
-
-// @public
-export const DEFAULT_START_FAILURE_PHRASE = "I am sorry, I am having trouble with my connection and cannot hear you. Please hang up and call back.";
-
-// @public
-export const DEFAULT_STT_PROMPT = "";
-
-// @public
 export const DEFAULT_SYSTEM_PROMPT: string;
-
-// @public
-export const DEFAULT_TOOL_CHOICE: "auto";
 
 // @public
 type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
@@ -622,6 +276,9 @@ type InlineToolsField = "tools";
 type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
 
 // @public
+export function isRecord(value: unknown): value is Record<string, unknown>;
+
+// @public
 export function isToolFailure(value: unknown): value is ToolFailure;
 
 // @public (undocumented)
@@ -642,26 +299,19 @@ export class KeyedLockTimeoutError extends Error {
 }
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
-
-// @public
-export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
-
-// @public
-export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
-
-// @public
-export const MAX_DB_RESULT_ROWS = 1000;
-
-// @public
-export const MAX_TOOL_RESULT_CHARS = 4000;
 
 // @public
 export type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
+};
+
+// @public
+export function omitUndefined<T extends object>(obj: T): {
+    [K in keyof T]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined>;
 };
 
 // @public
@@ -725,7 +375,7 @@ export interface ProcedureRunOptions {
 }
 
 // @public
-interface ProviderDescriptor<Kind extends string, Options> {
+export interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -749,6 +399,9 @@ export interface ResolveOneOptions<T> {
 }
 
 // @public
+export function responseErrorMessage(res: Response, label?: string): Promise<string>;
+
+// @public
 export type S2sAgentParams = SharedAgentParams & {
     s2s: S2sProvider;
     stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
@@ -764,7 +417,7 @@ export type S2sAgentParams = SharedAgentParams & {
 };
 
 // @public
-type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "s2s";
 };
 
@@ -1058,16 +711,13 @@ export type StaticAgentParams = Omit<SharedAgentParams, WorkflowAppOnlyField | F
 type StaticFrontDoorMisuse = '`page: "static"` declares a WORKFLOW APP, which runs no model and opens no socket — remove this agent\'s voice/LLM fields, or declare it with `workflowApp()` and keep them off by construction';
 
 // @public
-export const STORAGE_DISABLED_MESSAGE = "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or Settings \u2192 Database in the studio; under `aai dev`, set DATABASE_URL in the project .env.";
-
-// @public
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
 
 // @public
-type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
 
@@ -1089,12 +739,6 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt"> & {
 
 // @public
 export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: ToolDef<P, R>): ToolDef<P, R>;
-
-// @public
-export const TOOL_EXECUTION_TIMEOUT_MS = 30000;
-
-// @public
-export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 
 // @public
 export type ToolChoice = "auto" | "required" | "none" | {
@@ -1134,7 +778,7 @@ export function toolFailure(message: string): ToolFailure;
 export type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
-type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
 

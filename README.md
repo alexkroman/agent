@@ -166,7 +166,7 @@ the AssemblyAI default. `llm` also takes a bare model id, so
 
 | Subpath | Factories |
 | --- | --- |
-| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgram`, `elevenlabs`, `soniox` |
+| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgram`, `elevenLabsStt`, `soniox` |
 | `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway` |
 | `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesia`, `rime` |
 
@@ -270,7 +270,7 @@ too long for one provider request, so it becomes a segment per step:
 
 ```ts
 import {
-  mapInBatches,
+  mapConcurrent,
   multipartBody,
   readUpload,
   report,
@@ -286,7 +286,7 @@ export async function transcribeFlow(input: { recording: string }) {
   const segments = await planSegments(input.recording);
   // Four at a time, each its own step: a rate limit or a dropped connection
   // costs one segment, and a resumed run re-does only what never finished.
-  const parts = await mapInBatches(segments, 4, (segment) =>
+  const parts = await mapConcurrent(segments, 4, (segment) =>
     transcribeSegment(input.recording, segment),
   );
   // Pure and deterministic, so it is safe in a body that replays.
@@ -409,13 +409,14 @@ runs — so a test reaches a tool by the name the model calls it by.
 
 | Package | What it is |
 | --- | --- |
-| [`@alexkroman1/aai`](./packages/aai/README.md) | The SDK: `agent()`, `tool()`, `sessionSlot()`, provider factories, the self-hostable runtime |
+| [`@alexkroman1/aai`](./packages/aai/README.md) | The SDK: `agent()`, `tool()`, `sessionSlot()`, provider factories |
 | [`@alexkroman1/aai-ui`](./packages/aai-ui/README.md) | Browser client: React components, hooks, and the framework-agnostic session core |
+| [`@alexkroman1/aai-runtime`](./packages/aai-runtime/README.md) | The host runtime: `createRuntime()`, `createAgentServer()`, the thing that runs an `agent.ts` |
 | [`@alexkroman1/aai-cli`](./packages/aai-cli/README.md) | The `aai` CLI: init, dev, test, build, publish, secret, storage |
 
 ## Self-hosting
 
-Agents don't require the managed platform: `@alexkroman1/aai/runtime`
+Agents don't require the managed platform: `@alexkroman1/aai-runtime`
 exposes the same engine `aai dev` runs. Define an agent with `agent()`,
 build a runtime with `createRuntime()`, and serve voice sessions from your
 own Node process with `createServer()` — or wire `runtime.startSession(ws)`

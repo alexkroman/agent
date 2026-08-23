@@ -11,23 +11,12 @@
  */
 
 import type { LlmProvider } from "../../providers.ts";
+import type { ModelOptions } from "./model-options.ts";
 
 export const OPENAI_KIND = "openai" as const;
 
 /** Agent-env variable holding the OpenAI API key (shared with the OpenAI Realtime S2S provider). */
 export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
-
-/** Options for {@link openai}. */
-export interface OpenAIOptions {
-  /** OpenAI model id, e.g. `"gpt-4o"`, `"gpt-4o-mini"`. */
-  model: string;
-}
-
-/** Descriptor returned by {@link openai}. */
-export type OpenAIProvider = LlmProvider & {
-  readonly kind: typeof OPENAI_KIND;
-  readonly options: OpenAIOptions;
-};
 
 /**
  * Build an OpenAI LLM descriptor for pipeline mode. The API key is resolved
@@ -45,6 +34,6 @@ export type OpenAIProvider = LlmProvider & {
  * });
  * ```
  */
-export function openai(opts: OpenAIOptions): OpenAIProvider {
+export function openai(opts: ModelOptions): LlmProvider {
   return { kind: OPENAI_KIND, options: { ...opts } };
 }

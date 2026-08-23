@@ -14,20 +14,21 @@ import type {
   TtsSession,
   Unsubscribe,
 } from "@alexkroman1/aai/host-internal";
-import type { LlmProvider } from "@alexkroman1/aai/llm";
 import {
   ANTHROPIC_KIND,
-  ASSEMBLYAI_LLM_DEFAULT_MODEL,
   ASSEMBLYAI_LLM_KIND,
+  ASSEMBLYAI_S2S_KIND,
   GATEWAY_KIND,
   GOOGLE_KIND,
   GROQ_KIND,
   MISTRAL_KIND,
   OPENAI_KIND,
+  OPENAI_REALTIME_KIND,
   OPENROUTER_KIND,
   XAI_KIND,
-} from "@alexkroman1/aai/llm";
-import { ASSEMBLYAI_S2S_KIND, OPENAI_REALTIME_KIND } from "@alexkroman1/aai/s2s";
+} from "@alexkroman1/aai/host-internal";
+import type { LlmProvider } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, it, vi } from "vitest";
 import { PROVIDER_CREDENTIAL_ENVS } from "./host-env.ts";

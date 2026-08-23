@@ -25,7 +25,7 @@ export interface PipelineVoiceTuning {
    * speech barges in on (aborts) the agent's in-flight reply. Set 1 to
    * interrupt on any word.
    *
-   * @defaultValue `2` ({@link DEFAULT_MIN_BARGE_IN_WORDS}) — so one-word
+   * @defaultValue `2` (`DEFAULT_MIN_BARGE_IN_WORDS`) — so one-word
    * backchannels ("yeah", "mm-hmm") don't cut the agent off.
    */
   minBargeInWords?: number;
@@ -36,7 +36,7 @@ export interface PipelineVoiceTuning {
    * LiveKit's `min_interruption_duration`. Committed turns (STT finals) are
    * never gated. Set 0 to disable the gate.
    *
-   * @defaultValue `500` ({@link DEFAULT_INTERRUPTION_MIN_DURATION_MS})
+   * @defaultValue `500` (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`)
    */
   interruptionMinDurationMs?: number;
   /**
@@ -56,7 +56,7 @@ export interface PipelineVoiceTuning {
    * `""` to disable.
    *
    * @defaultValue `"Sorry, I had a problem just then. Could you say that
-   * again?"` ({@link DEFAULT_ERROR_PHRASE})
+   * again?"` (`DEFAULT_ERROR_PHRASE`)
    */
   errorPhrase?: string;
   /**
@@ -65,7 +65,9 @@ export interface PipelineVoiceTuning {
    * came up — the usual case, since STT and TTS open independently. Set `""`
    * to disable.
    *
-   * @defaultValue {@link DEFAULT_START_FAILURE_PHRASE}
+   * @defaultValue `"I am sorry, I am having trouble with my connection and
+   * cannot hear you. Please hang up and call back."`
+   * (`DEFAULT_START_FAILURE_PHRASE`)
    */
   startFailurePhrase?: string;
   /**
@@ -108,7 +110,7 @@ export interface PipelineVoiceTuning {
    *
    * Its reach is bounded independently of that: across 815 replies in two
    * tau2-bench retail runs, 28-33% of replies called a tool at all (the
-   * distribution recorded on {@link DEFAULT_MAX_STEPS}), so at most the
+   * distribution recorded on `DEFAULT_MAX_STEPS`), so at most the
    * remaining 67-72% can ever be accelerated.
    *
    * **What it structurally cannot do**, by construction rather than by flag:

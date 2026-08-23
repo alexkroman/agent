@@ -8,10 +8,19 @@
  * failed SILENTLY — the endpoint served none and the browser rendered none.
  * Reading them off the agent is the whole point, so it is asserted over the
  * wire rather than on the options object.
+ *
+ * The forwarding tests below are the same class of bug one layer out: an
+ * option this door does not carry is one nobody can reach, because the escape
+ * hatch — dropping to `createRuntime` + `createServer` — means restating every
+ * field this function derives. `telephony` and `page` were both unreachable,
+ * and both are asserted over the wire for the same reason `greeting` is: what
+ * failed was a value not arriving, which an options-object assertion cannot
+ * see.
  */
 
-import { agent } from "@alexkroman1/aai";
+import { agent, workflowApp } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
+import { WebSocket as NodeWebSocket } from "ws";
 import { silentLogger, withDeadline } from "./_test-utils.ts";
 import { createAgentServer } from "./agent-server.ts";
 
@@ -100,6 +109,64 @@ describe("createAgentServer", () => {
         expect(sawUpgrade).toBe(true);
       },
     );
+  });
+
+  /** The status line a refused `/phone` upgrade ends the socket with. */
+  function phoneRefusal(baseUrl: string): Promise<Error> {
+    return new Promise<Error>((resolve) =>
+      new NodeWebSocket(`${baseUrl.replace("http", "ws")}/phone`).once("error", resolve),
+    );
+  }
+
+  test("telephony: false removes /phone, which nothing here could reach before", async () => {
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer({ agent: myAgent, telephony: false }, async (baseUrl) => {
+      expect((await phoneRefusal(baseUrl)).message).toContain("404");
+    });
+  });
+
+  test("a voice agent still mounts /phone by default", async () => {
+    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+
+    await withServer({ agent: myAgent }, async (baseUrl) => {
+      const socket = new NodeWebSocket(`${baseUrl.replace("http", "ws")}/phone`);
+      await withDeadline(
+        new Promise<void>((resolve) => socket.once("open", () => resolve())),
+        "the default /phone route did not accept a carrier socket",
+      );
+      expect(socket.readyState).toBe(NodeWebSocket.OPEN);
+      socket.close();
+    });
+  });
+
+  test("page comes off the agent, and takes telephony with it", async () => {
+    const app = workflowApp({ name: "Digest", workflows: {} });
+
+    await withServer({ agent: app }, async (baseUrl) => {
+      // Declared once, on the agent — the browser has to learn it before it
+      // decides whether to open a mic.
+      expect(await (await fetch(`${baseUrl}/client-config`)).json()).toMatchObject({
+        name: "Digest",
+        page: "static",
+      });
+      // And a static agent has no pipeline to put on a call, so the carrier
+      // route follows the declaration rather than being switched off by hand.
+      expect((await phoneRefusal(baseUrl)).message).toContain("404");
+    });
+  });
+
+  test("an explicit page overrides the agent's own", async () => {
+    const app = workflowApp({ name: "Digest", workflows: {} });
+
+    await withServer({ agent: app, page: "voice" }, async (baseUrl) => {
+      const config = (await (await fetch(`${baseUrl}/client-config`)).json()) as {
+        page?: string;
+      };
+      // Absent, not `"voice"`: a server that never heard of the field answers
+      // the same way, which is what makes absence readable as voice.
+      expect(config.page).toBeUndefined();
+    });
   });
 
   test("close() shuts the runtime down, so callers need no second call", async () => {

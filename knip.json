@@ -104,7 +104,11 @@
         "**/*.test.ts",
         // The capability contracts — same reason as `packages/aai` above.
         "contracts/entrypoints/*.ts",
-        "contracts/compatibility/**/*.ts"
+        "contracts/compatibility/**/*.ts",
+        // The tool fixtures `tools-dir.test.ts` scans. Nothing imports them by
+        // name and nothing is meant to — a tool is reached by being IN the
+        // directory, which is the property under test.
+        "fixtures/tool-dirs/**/*.ts"
       ]
     },
     "packages/aai-ui": {
