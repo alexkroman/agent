@@ -19,6 +19,7 @@ import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
+import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";
 import type { Message } from "./types.ts";
@@ -66,13 +67,38 @@ export const ProviderDescriptorSchema = z.object({
 });
 
 /**
+ * A name a person and a URL can both carry.
+ *
+ * `.min(1)` alone accepted `"   "`, which reaches the browser as the agent's
+ * displayed name and the platform as a slug with nothing in it — a value that
+ * is wrong everywhere it lands and is a mistake nowhere else.
+ */
+const AgentName = z
+  .string()
+  .min(1)
+  .refine((name) => name.trim() !== "", { error: "name must not be blank" });
+
+/**
+ * The NAME of a variable, which is all `requiredEnv` ever holds.
+ *
+ * An entry that is blank, or that carries a space or an `=`, is not a variable
+ * name any environment can hold — so a deploy's preflight would check for
+ * something that cannot be set, and report the agent as missing it forever.
+ * (A duplicate entry is left alone: it asks for the same check twice, which is
+ * redundant rather than unsatisfiable.)
+ */
+const EnvVarName = z.string().refine((name) => name.trim() !== "" && !/[\s=]/.test(name), {
+  error: "requiredEnv holds VARIABLE NAMES — this one has no name a variable could have",
+});
+
+/**
  * Zod schema for {@link AgentConfig} — the JSON-safe subset of the agent
  * definition, transmitted between worker and host via structured clone.
  *
  * @internal
  */
 export const AgentConfigSchema = z.object({
-  name: z.string().min(1),
+  name: AgentName,
   // Defaulted rather than required: `agent()` fills these in, but a raw
   // `export default {...}` agent.ts (no `agent()` wrapper) reaches
   // `toAgentConfig` without them — the old mapper shipped a config with
@@ -103,7 +129,7 @@ export const AgentConfigSchema = z.object({
   // thing, one of which a stale config can carry.
   text: z.literal(true).optional(),
   mode: z.enum(["s2s", "pipeline", "text"]).optional(),
-  requiredEnv: z.array(z.string()).readonly().optional(),
+  requiredEnv: z.array(EnvVarName).readonly().optional(),
   // Serializable rather than host-only: it is a DECLARATION about the agent's
   // surface, exactly like `name` and `greeting`, and every consumer of a
   // serialized config wants it — the browser (does this page open a mic?), the
@@ -199,10 +225,23 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // so the symptom was a confusing deploy failure rather than a wrong session —
   // but the schema is second-guessing a value this function is the authority on.
   wire.mode = mode;
-  // parse() re-validates field shapes, copies arrays (the config must not
-  // alias caller-owned arrays), and strips any key the schema doesn't know —
-  // a second net under the deny-list for non-serializable strays.
-  return AgentConfigSchema.parse(wire);
+  // safeParse, then a SENTENCE. The schema re-validates field shapes, copies
+  // arrays (the config must not alias caller-owned arrays), and strips any key
+  // it does not know — a second net under the deny-list for non-serializable
+  // strays. What changed is the failure: a `ZodError`'s own `message` is the
+  // JSON dump of its issues, and this function runs inside the generated bundle
+  // entry, so `agent({ maxSteps: 0 })` reached an author as a twelve-line
+  // `[{ "origin": "number", "code": "too_small", … }]` at `aai build`. Every
+  // other authoring mistake in this SDK answers with a sentence naming the
+  // field; a config-SHAPE mistake, which is the most common class there is, was
+  // the one that did not.
+  const parsed = AgentConfigSchema.safeParse(wire);
+  if (!parsed.success) {
+    throw new Error(
+      `This agent's configuration is invalid — ${formatSchemaIssues(parsed.error.issues)}`,
+    );
+  }
+  return parsed.data;
 }
 
 // ─── ToolSchema ─────────────────────────────────────────────────────────────

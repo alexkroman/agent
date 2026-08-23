@@ -139,6 +139,48 @@ describe("toAgentConfig — silence nudge", () => {
   });
 });
 
+describe("toAgentConfig — a shape mistake reads as a sentence", () => {
+  test("a bad field is one line naming the field, not a dump of zod issues", () => {
+    // This runs inside the generated bundle entry, so its throw is what an
+    // author sees at `aai build`. A `ZodError`'s own message is the JSON of its
+    // issue objects — twelve lines of `origin`/`code`/`path` for one wrong
+    // number, and the only authoring error in this SDK that was not a sentence.
+    let message = "";
+    try {
+      config({ ...pipelineFields, maxSteps: 0 });
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    expect(message).toContain("This agent's configuration is invalid");
+    expect(message).toContain("maxSteps");
+    expect(message).not.toContain('"code"');
+    expect(message.split("\n")).toHaveLength(1);
+  });
+
+  test("every bad field is named, not just the first", () => {
+    expect(() => config({ ...pipelineFields, maxSteps: 0, minBargeInWords: 0 })).toThrow(
+      /maxSteps[\s\S]*minBargeInWords/,
+    );
+  });
+
+  test("rejects a blank name, which is a slug and a title with nothing in it", () => {
+    expect(() => config({ ...pipelineFields, name: "   " })).toThrow(/name must not be blank/);
+  });
+
+  test("rejects a requiredEnv entry no environment could hold", () => {
+    expect(() => config({ ...pipelineFields, requiredEnv: [""] })).toThrow(
+      /requiredEnv holds VARIABLE NAMES/,
+    );
+    expect(() => config({ ...pipelineFields, requiredEnv: ["MY KEY"] })).toThrow(
+      /requiredEnv holds VARIABLE NAMES/,
+    );
+  });
+
+  test("leaves a duplicate requiredEnv entry alone — redundant, not unsatisfiable", () => {
+    expect(config({ ...pipelineFields, requiredEnv: ["A", "A"] }).requiredEnv).toEqual(["A", "A"]);
+  });
+});
+
 describe("toAgentConfig — pipeline voice tuning", () => {
   test("accepts all tuning fields in pipeline mode", () => {
     const parsed = config({

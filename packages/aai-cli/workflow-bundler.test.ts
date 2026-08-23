@@ -17,8 +17,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
+import { findReplayUnsafeCalls, findVmRequires } from "./_workflow-scan.ts";
 import { buildWorker } from "./worker-bundler.ts";
-import { buildWorkflows, findVmRequires } from "./workflow-bundler.ts";
+import { buildWorkflows } from "./workflow-bundler.ts";
 
 /**
  * A minimal project with one workflow body and two steps.
@@ -389,5 +390,99 @@ describe("the worker bundle carries the workflow artifacts", () => {
       // has a workflow surface", and mounting routes for nothing is a bug.
       expect(worker).not.toContain("__aaiWorkflowCode");
     });
+  });
+});
+
+describe("replay safety", () => {
+  test("warns about a body that reads the clock, and not about the step beside it", async () => {
+    await withTempDir(async (dir) => {
+      await linkSdkNodeModules(dir);
+      await fs.mkdir(path.join(dir, "workflows"), { recursive: true });
+      await fs.writeFile(
+        path.join(dir, "workflows", "digest.ts"),
+        `export async function digestFlow() {
+  "use workflow";
+  const startedAt = Date.now();
+  const roll = Math.random();
+  return { startedAt, roll, filed: await file() };
+}
+
+async function file() {
+  "use step";
+  // Legal, and the whole point of a step: its result is journaled, so the
+  // replay gets the value the first pass computed.
+  return { at: Date.now(), id: crypto.randomUUID() };
+}
+`,
+        "utf-8",
+      );
+      const built = await buildWorkflows(dir);
+      const warnings = built?.warnings ?? [];
+
+      expect(warnings.join("\n")).toMatch(
+        /workflows\/digest\.ts: `Date\.now\(…` reads a different clock/,
+      );
+      expect(warnings.join("\n")).toMatch(/Math\.random\(…` draws a different number/);
+      // The step's own `Date.now()` and `randomUUID()` are not findings: the
+      // workflow-mode transform removes a step body, so what the scan reads is
+      // only what actually replays.
+      expect(warnings).toHaveLength(2);
+    });
+  }, 60_000);
+
+  test("a body with nothing unsafe in it warns about nothing", async () => {
+    await withTempDir(async (dir) => {
+      await linkSdkNodeModules(dir);
+      await fs.mkdir(path.join(dir, "workflows"), { recursive: true });
+      await fs.writeFile(
+        path.join(dir, "workflows", "clean.ts"),
+        `export async function cleanFlow(input: { url: string }) {
+  "use workflow";
+  return await visit(input.url);
+}
+
+async function visit(url: string) {
+  "use step";
+  return { url };
+}
+`,
+        "utf-8",
+      );
+      expect((await buildWorkflows(dir))?.warnings).toEqual([]);
+    });
+  }, 60_000);
+});
+
+describe("findReplayUnsafeCalls", () => {
+  test("charges a call to the module esbuild attributed it to", () => {
+    const bundle = [
+      "// workflows/digest.ts",
+      "  const at = Date.now();",
+      "// node_modules/zod/index.js",
+      "  const cached = Date.now();",
+    ].join("\n");
+    expect(findReplayUnsafeCalls(bundle)).toEqual([
+      {
+        call: "Date.now(",
+        fix: expect.stringContaining("journaled"),
+        module: "workflows/digest.ts",
+      },
+    ]);
+  });
+
+  test("ignores a dependency that merely lives in a directory called workflows", () => {
+    const bundle = ["// node_modules/some-pkg/workflows/util.js", "  Math.random();"].join("\n");
+    expect(findReplayUnsafeCalls(bundle)).toEqual([]);
+  });
+
+  test("does not read a method of the same name on someone else's object", () => {
+    // `this.fetch(` and `clock.Date.now(` are not the globals being banned.
+    const bundle = ["// workflows/x.ts", "  this.fetch(url); api.Math.random();"].join("\n");
+    expect(findReplayUnsafeCalls(bundle)).toEqual([]);
+  });
+
+  test("reports each distinct call once per module", () => {
+    const bundle = ["// workflows/x.ts", "Date.now(); Date.now();", "Date.now();"].join("\n");
+    expect(findReplayUnsafeCalls(bundle)).toHaveLength(1);
   });
 });

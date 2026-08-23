@@ -570,3 +570,53 @@ describe("sessionSlot", () => {
     expect(other.get(ctx)).toEqual({ seen: true });
   });
 });
+
+describe("one key, one slot", () => {
+  test("refuses a second slot that reaches the same key in one session", () => {
+    // `key`'s doc has always said two slots must not share one. Unchecked, a
+    // slot typed `{ s: string }` was handed the `{ n: number }` another slot
+    // wrote — the exact failure a typed seam exists to prevent, reached by a
+    // name collision instead of a cast.
+    const counts = sessionSlot("shared-key", () => ({ n: 0 }));
+    const notes = sessionSlot("shared-key", () => ({ s: "" }));
+    const ctx = createToolContext();
+    counts.update(ctx, (value) => {
+      value.n += 1;
+    });
+    expect(() => notes.get(ctx)).toThrow(
+      /Two slots share the key "shared-key" in one session and disagree about what it holds: one stores \{n\}, the other \{s\}/,
+    );
+  });
+
+  test("the SAME slot is fine however many times it is touched", () => {
+    const slot = sessionSlot("solo", () => ({ n: 0 }));
+    const ctx = createToolContext();
+    slot.get(ctx);
+    slot.update(ctx, (value) => {
+      value.n += 1;
+    });
+    slot.set(ctx, { n: 5 });
+    expect(slot.get(ctx)).toEqual({ n: 5 });
+  });
+
+  test("two declarations of the SAME shape share a key, which is how dialog() works", () => {
+    // `dialog()` builds a slot per key, and one dialog written as a spec and
+    // the same dialog written as a machine are interchangeable by design: they
+    // occupy one key and store one snapshot shape. Only DISAGREEMENT is a bug.
+    const one = sessionSlot("agreed", () => ({ snapshot: 1 }));
+    const two = sessionSlot("agreed", () => ({ snapshot: 2 }));
+    const ctx = createToolContext();
+    one.set(ctx, { snapshot: 7 });
+    expect(two.get(ctx)).toEqual({ snapshot: 7 });
+  });
+
+  test("two slots with the same key in DIFFERENT sessions never collide", () => {
+    // The check is per store, which is what keeps a duplicate declaration in a
+    // spec file, a template and a doc example from being an error — this repo
+    // declares `sessionSlot("cart", …)` dozens of times, all correctly.
+    const a = sessionSlot("same-name", () => ({ n: 0 }));
+    const b = sessionSlot("same-name", () => ({ s: "" }));
+    expect(a.get(createToolContext())).toEqual({ n: 0 });
+    expect(b.get(createToolContext())).toEqual({ s: "" });
+  });
+});

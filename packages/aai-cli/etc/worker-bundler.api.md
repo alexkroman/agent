@@ -24,6 +24,7 @@ type WorkflowBundleOutput = {
     stepCode: string;
     manifest: unknown;
     inputFiles: readonly string[];
+    warnings: readonly string[];
 };
 
 // (No @packageDocumentation comment for this package)

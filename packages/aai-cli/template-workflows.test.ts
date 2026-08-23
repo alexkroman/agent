@@ -32,7 +32,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
-import { buildWorkflows, findVmRequires, WORKFLOWS_DIR } from "./workflow-bundler.ts";
+import { findVmRequires } from "./_workflow-scan.ts";
+import { buildWorkflows, WORKFLOWS_DIR } from "./workflow-bundler.ts";
 
 const TEMPLATES = path.resolve(import.meta.dirname, "../aai-templates/templates");
 

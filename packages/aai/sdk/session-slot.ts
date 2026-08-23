@@ -13,6 +13,7 @@
  * @module session-slot
  */
 
+import { claimKey, type KeyOwner, shapeOf } from "./_slot-owners.ts";
 import type { DeepReadonly } from "./deep-readonly.ts";
 import { isRecord } from "./is-record.ts";
 import type { ToolInputSchema } from "./schema.ts";
@@ -238,7 +239,10 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  * half: a tool declared through them is handed the value directly, so a tool
  * module needs neither an annotated context nor a `slot.get(ctx)` line.
  *
- * @param key - The store key to occupy. Two slots must not share one.
+ * @param key - The store key to occupy. Two slots must not share one, and
+ *   `claimKey` enforces it per session: two slots on one key that DISAGREE
+ *   about the shape they store are refused the moment the second one is
+ *   touched, since each would be reading and writing the other's value.
  * @param create - Factory for a fresh value. Called once per session on first
  *   access (and again on `reset`), so a shared module-level default must be
  *   cloned here — `() => structuredClone(DEFAULT)` — or every session mutates
@@ -279,7 +283,17 @@ export function sessionSlot<const K extends string, T>(
   options: SessionSlotOptions<T> = {},
 ): SessionSlot<K, T> {
   const durable = options.durable ?? true;
-  const slots = (ctx: ToolContext): SlotStore => ctx.slots;
+  /**
+   * This slot's identity, for the ownership check in {@link claimKey}. The slot
+   * object itself is built below and cannot be referenced yet; a token needs no
+   * more than to be unique per declaration.
+   */
+  const identity = {};
+  const claim: KeyOwner = { owner: identity, shape: () => shapeOf(create) };
+  const slots = (ctx: ToolContext): SlotStore => {
+    claimKey(ctx.slots, key, claim);
+    return ctx.slots;
+  };
 
   /**
    * `=== undefined` and NOT `??`: only an absent value defaults. `??` would

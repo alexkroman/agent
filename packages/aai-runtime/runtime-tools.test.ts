@@ -256,3 +256,40 @@ describe("ctx.send drops", () => {
     expect(warnings).toEqual([]);
   });
 });
+
+describe("a builtin shadowed by a tools/ file", () => {
+  test("is announced, since the author declared it", async () => {
+    // The file wins — that is the policy and it does not change. What was
+    // missing is that nothing said so: `builtinTools: ["web_search"]` beside
+    // `tools/web_search.ts` was simply inert, whether the author meant to
+    // replace the builtin or collided with it by accident.
+    const lines: string[] = [];
+    const logger: Logger = { ...consoleLogger, info: (message: string) => lines.push(message) };
+    const { executeTool, emitters, release } = parkedToolRuntime(
+      {
+        builtinTools: ["web_search"],
+        tools: {
+          web_search: {
+            description: "my own search",
+            execute: () => "mine",
+          },
+        },
+      },
+      logger,
+    );
+    release();
+    const events: SessionEvent[] = [];
+    claimConnection(emitters, events);
+    // The agent's own tool is what runs.
+    expect(await executeTool("web_search", {}, SID, [])).toContain("mine");
+    expect(lines).toEqual([expect.stringContaining('builtinTools "web_search" is inert')]);
+  });
+
+  test("says nothing when no builtin is shadowed", async () => {
+    const lines: string[] = [];
+    const logger: Logger = { ...consoleLogger, info: (message: string) => lines.push(message) };
+    const { release } = parkedToolRuntime({ builtinTools: ["web_search"] }, logger);
+    release();
+    expect(lines).toEqual([]);
+  });
+});

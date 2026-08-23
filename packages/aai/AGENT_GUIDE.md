@@ -357,12 +357,15 @@ async function file(digest: { url: string }) {
 }
 ```
 
-Three rules, all of which fail silently if broken:
+Three rules. The second and third fail silently if broken; the first is
+warned about by `aai build` and `aai dev`, naming the file and the call:
 
 - **The body replays from the top on every resume**, so it holds no live handle
   and makes no undurable decision — no `Date.now()`, no `Math.random()`, no
-  `fetch`. Those belong in a step, whose result is journaled and returned
-  unchanged on replay.
+  `crypto.randomUUID()`, no `fetch`. Those belong in a step, whose result is
+  journaled and returned unchanged on replay. (The warning reads the built
+  workflow bundle, where step bodies have already been removed, so a step doing
+  any of this is not flagged — that is what a step is FOR.)
 - **A step's arguments and return value cross a queue**, so they must be
   JSON-shaped and small. Put bytes in storage and pass the key.
 - **A step gets no tool context.** It is bundled and dispatched separately from
