@@ -876,7 +876,11 @@ Set
 `language` only alongside a voice that speaks it, as an ISO 639-1 code —
 `"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"es"` are the six the catalog
 covers, and the SDK translates each to the full name the service wants.
-Anything else fails at session start.
+An unsupported code, and a code the declared voice does not speak, are both
+build errors naming the voices that do speak it — including the one you get by
+setting `language` alone, since the descriptor then fills in the default
+English voice. (A voice this release's catalog does not list is passed through:
+the catalog is the service's, so a voice it ships later still works.)
 
 **Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"`
 not `"en"`).

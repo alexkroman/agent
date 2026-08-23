@@ -12,6 +12,7 @@
  * @module _testing-context
  */
 
+import { clientEventDropMessage, decideClientEvent } from "./client-event.ts";
 import type { Db } from "./db.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
@@ -19,7 +20,10 @@ import type { ToolContext } from "./types.ts";
 import type { WorkflowClient } from "./workflow.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
-/** One `ctx.send(event, data)` call, as recorded by {@link createToolContext}. */
+/**
+ * One `ctx.send(event, data)` call that would REACH the client, as recorded by
+ * {@link createToolContext} — see the `send` default for what is left out.
+ */
 export interface SentEvent {
   event: string;
   data: unknown;
@@ -34,7 +38,11 @@ export interface SentEvent {
  * @public
  */
 export type TestToolContext = ToolContext & {
-  /** Events `ctx.send` received, in call order. */
+  /**
+   * Events `ctx.send` would put on the wire, in call order. An event the
+   * runtime would drop (over the payload cap, an over-long name, no JSON form)
+   * is not here, for the same reason it is not in the browser.
+   */
   readonly sent: SentEvent[];
 };
 
@@ -207,7 +215,23 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
     // Never aborts: a test has no turn to cancel. Present rather than omitted
     // because it is always present at runtime, so a tool may read it.
     signal: new AbortController().signal,
+    /**
+     * Records what the client would RECEIVE, which is not everything a tool
+     * sends: `decideClientEvent` is the runtime's own rule, so an event over
+     * the 64 KB payload cap, one whose name is too long, and one that has no
+     * JSON form are all absent from `sent` here exactly as they are absent
+     * from the wire. A double that recorded them let a spec assert a
+     * notification production silently threw away — the same failure the
+     * `stubStepFetch`-over-`vi.stubGlobal` rule exists to prevent, one layer
+     * up. The drop is announced rather than silent, because a spec author
+     * looking at an empty `sent` deserves the reason.
+     */
     send: (event: string, data: unknown) => {
+      const decision = decideClientEvent(event, data);
+      if ("drop" in decision) {
+        console.warn(`${clientEventDropMessage(event, decision.drop)} (createToolContext)`);
+        return;
+      }
       sent.push({ event, data });
     },
     sent,

@@ -214,12 +214,48 @@ export function assertAssemblyAITtsLanguage(tts: unknown): void {
   const { kind, options } = tts;
   if (kind !== ASSEMBLYAI_TTS_KIND) return;
   if (!isRecord(options)) return;
-  const { language } = options;
+  const { language, voice } = options;
   if (language === undefined) return;
-  if (typeof language === "string" && resolveAssemblyAITtsLanguage(language) !== undefined) return;
+  if (typeof language !== "string" || resolveAssemblyAITtsLanguage(language) === undefined) {
+    throw new Error(
+      `AssemblyAI TTS: unsupported language ${JSON.stringify(language)} ` +
+        `(supported: ${assemblyAITtsLanguageCodes().join(", ")})`,
+    );
+  }
+  assertVoiceSpeaks(language, voice);
+}
+
+/**
+ * Reject a `language` the chosen voice does not speak.
+ *
+ * The same failure as an unmapped code, from the other side: every voice in the
+ * catalog speaks exactly ONE language, so `{ voice: "estelle", language: "en" }`
+ * is refused in-band after the socket opens and the agent is connected, ready
+ * and mute. Checked here for the reason the code is — this is the last layer
+ * that sees it while somebody is still authoring.
+ *
+ * **Two things keep this from becoming the assert the voice catalog
+ * deliberately does NOT have** (see {@link AssemblyAITtsVoice}): a voice the
+ * catalog does not list is passed through untouched, so a voice AssemblyAI ships
+ * after this release still compiles and still runs; and a descriptor with no
+ * `language` is never consulted, which is the overwhelmingly common shape (the
+ * server infers the language from the voice).
+ *
+ * It also catches the pair the SDK itself used to manufacture:
+ * `assemblyAITts({ language: "fr" })` fills in the default voice, which speaks
+ * English — so asking for French, and nothing else, produced a silent agent.
+ */
+function assertVoiceSpeaks(language: string, voice: unknown): void {
+  if (typeof voice !== "string") return;
+  const known = ASSEMBLYAI_TTS_VOICES[voice as keyof typeof ASSEMBLYAI_TTS_VOICES];
+  if (known === undefined || known.language === language) return;
+  const speakers = Object.entries(ASSEMBLYAI_TTS_VOICES)
+    .filter(([, meta]) => meta.language === language)
+    .map(([id]) => id);
   throw new Error(
-    `AssemblyAI TTS: unsupported language ${JSON.stringify(language)} ` +
-      `(supported: ${assemblyAITtsLanguageCodes().join(", ")})`,
+    `AssemblyAI TTS: voice "${voice}" speaks ${known.language}, not the declared language "${language}" — ` +
+      "a mismatch is refused after the socket opens, which leaves the agent ready and silent. " +
+      `Voices that speak "${language}": ${speakers.join(", ")}.`,
   );
 }
 

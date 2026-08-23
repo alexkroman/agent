@@ -712,8 +712,9 @@ in-band after the TTS socket opens, so the agent connects, reports ready and is
 permanently silent.
 
 **`AssemblyAITtsVoice` is AUTOCOMPLETE over that constant, not a guard**, and
-has no runtime assert to pair with it — its own doc carries why the language
-one (`assertAssemblyAITtsLanguage`) does not generalize. It and
+no assert pairs with it — `assertAssemblyAITtsLanguage`, which also refuses a
+listed voice against a `language` it cannot speak, says why that does not
+generalize to the id itself. It and
 `ASSEMBLYAI_TTS_VOICES` are on the ROOT as well as `/tts`, both having been
 FORGOTTEN exports there while `agent({ voice })` is typed against them;
 `ASSEMBLYAI_TTS_DEPRECATED_VOICES` went to `/host-internal`, its 21 literals

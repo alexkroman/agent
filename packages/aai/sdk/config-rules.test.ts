@@ -248,6 +248,62 @@ describe("toAgentConfig — AssemblyAI TTS language validation", () => {
       expect(parsed.tts?.options.language).toBe(language);
     },
   );
+
+  test("rejects a language the declared voice does not speak", () => {
+    // Every catalog voice speaks exactly one language, and the service refuses
+    // the pair in-band after the socket opens — the same mute session as an
+    // unmapped code, reached from the other side.
+    expect(() =>
+      config({
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "anthropic", options: { model: "m" } },
+        tts: { kind: "assemblyai", options: { voice: "estelle", language: "en" } },
+      }),
+    ).toThrow(/voice "estelle" speaks fr, not the declared language "en"/);
+  });
+
+  test("names the voices that DO speak the declared language", () => {
+    expect(() =>
+      config({
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "anthropic", options: { model: "m" } },
+        tts: { kind: "assemblyai", options: { voice: "jane", language: "it" } },
+      }),
+    ).toThrow(/Voices that speak "it": giovanni/);
+  });
+
+  test("catches the mismatch the FACTORY used to manufacture", () => {
+    // `assemblyAITts({ language })` fills in the default voice, which speaks
+    // English — so asking for French and nothing else shipped a silent agent.
+    expect(() =>
+      config({
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "anthropic", options: { model: "m" } },
+        tts: assemblyAITts({ language: "fr" }),
+      }),
+    ).toThrow(/Voices that speak "fr": estelle/);
+  });
+
+  test("passes through a voice the catalog does not list", () => {
+    // The catalog is the SERVICE's and a snapshot of it goes stale between
+    // releases, so a voice shipped after this one must still run — this check
+    // only ever fires on a voice we know the language of.
+    const parsed = config({
+      stt: { kind: "assemblyai", options: {} },
+      llm: { kind: "anthropic", options: { model: "m" } },
+      tts: { kind: "assemblyai", options: { voice: "voice-shipped-last-week", language: "en" } },
+    });
+    expect(parsed.tts?.options.voice).toBe("voice-shipped-last-week");
+  });
+
+  test("a matching pair is left alone", () => {
+    const parsed = config({
+      stt: { kind: "assemblyai", options: {} },
+      llm: { kind: "anthropic", options: { model: "m" } },
+      tts: assemblyAITts({ voice: "lola", language: "es" }),
+    });
+    expect(parsed.tts?.options).toMatchObject({ voice: "lola", language: "es" });
+  });
 });
 
 describe("author conveniences on raw configs (no agent())", () => {

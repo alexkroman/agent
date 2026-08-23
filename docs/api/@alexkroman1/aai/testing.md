@@ -1157,7 +1157,8 @@ test("adds an item", async () => {
 
 ### SentEvent
 
-One `ctx.send(event, data)` call, as recorded by [createToolContext](#createtoolcontext).
+One `ctx.send(event, data)` call that would REACH the client, as recorded by
+[createToolContext](#createtoolcontext) — see the `send` default for what is left out.
 
 #### Properties
 
@@ -2274,7 +2275,9 @@ to `execute`.
 readonly sent: SentEvent[];
 ```
 
-Events `ctx.send` received, in call order.
+Events `ctx.send` would put on the wire, in call order. An event the
+runtime would drop (over the payload cap, an over-long name, no JSON form)
+is not here, for the same reason it is not in the browser.
 
 ***
 

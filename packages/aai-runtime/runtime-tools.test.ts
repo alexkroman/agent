@@ -12,10 +12,11 @@
 import type { AgentDef, ToolContext } from "@alexkroman1/aai";
 import { sessionSlot } from "@alexkroman1/aai";
 import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/host-internal";
+import { MAX_CLIENT_EVENT_PAYLOAD_BYTES } from "@alexkroman1/aai/internal";
 import type { ClientSink, SessionEvent } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
 import { makeAgent } from "./_test-utils.ts";
-import { consoleLogger } from "./runtime-config.ts";
+import { consoleLogger, type Logger } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import { createSessionEmitter, type SessionEmitter } from "./session-emitter.ts";
 import { createSessionEventStream } from "./session-event-stream.ts";
@@ -58,7 +59,7 @@ function claimConnection(emitters: OwnedMap<string, SessionEmitter>, events: Ses
  * A self-hosted tool surface whose single tool parks until released, so a
  * reconnect can land mid-call.
  */
-function parkedToolRuntime(agentOverrides: Partial<AgentDef>) {
+function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = consoleLogger) {
   const { promise: parked, resolve: release } = Promise.withResolvers<void>();
   const emitters = createOwnedMap<string, SessionEmitter>();
   const agent = makeAgent(agentOverrides);
@@ -74,7 +75,7 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>) {
     providerEnv: {},
     resolvedDb: undefined,
     workflows: undefined,
-    logger: consoleLogger,
+    logger,
     emitters,
     stateStore: createSessionStateStore({ backend: createMemoryStateBackend() }),
   });
@@ -183,5 +184,75 @@ describe("self-hosted tool surface: sends follow the live sink", () => {
       { type: "custom.emitted", event: "progress", data: 1 },
       { type: "state.updated", state: { count: 1 } },
     ]);
+  });
+});
+
+describe("ctx.send drops", () => {
+  /** A logger that only remembers what it was warned about. */
+  function capturingLogger(): { logger: Logger; warnings: string[] } {
+    const warnings: string[] = [];
+    return {
+      warnings,
+      logger: {
+        ...consoleLogger,
+        warn: (message: string) => warnings.push(message),
+      },
+    };
+  }
+
+  async function sendOne(event: string, data: unknown) {
+    const events: SessionEvent[] = [];
+    const { logger, warnings } = capturingLogger();
+    const { executeTool, emitters, release } = parkedToolRuntime(
+      {
+        tools: {
+          ping: {
+            description: "emit a custom event",
+            execute: (_args: unknown, ctx: ToolContext) => {
+              // Never throws, whatever the payload: this runs on the tool's own
+              // stack, and a throw would fail the call over a notification.
+              ctx.send(event, data);
+              return "ok";
+            },
+          },
+        },
+      },
+      logger,
+    );
+    release();
+    claimConnection(emitters, events);
+    await executeTool("ping", {}, SID, []);
+    return { emitted: customEvents(events), warnings };
+  }
+
+  test("an over-cap payload is dropped AND logged", async () => {
+    // `ToolContext.send` has always documented "dropped (with a warning log)",
+    // and this was the one drop with no log: nothing on the wire, nothing in
+    // the log, so an author whose payload grew past the cap had no signal at
+    // all — the failure this whole seam exists to make visible.
+    const { emitted, warnings } = await sendOne("progress", {
+      blob: "x".repeat(MAX_CLIENT_EVENT_PAYLOAD_BYTES),
+    });
+    expect(emitted).toEqual([]);
+    expect(warnings).toEqual([expect.stringContaining("too-large")]);
+    expect(warnings[0]).toContain('ctx.send("progress")');
+  });
+
+  test("an over-long event name is dropped AND logged", async () => {
+    const { emitted, warnings } = await sendOne("e".repeat(500), 1);
+    expect(emitted).toEqual([]);
+    expect(warnings).toEqual([expect.stringContaining("name-too-long")]);
+  });
+
+  test("a payload with no JSON form is dropped AND logged", async () => {
+    const { emitted, warnings } = await sendOne("progress", () => 1);
+    expect(emitted).toEqual([]);
+    expect(warnings).toEqual([expect.stringContaining("no-json-form")]);
+  });
+
+  test("a send inside the caps still lands, with no warning", async () => {
+    const { emitted, warnings } = await sendOne("progress", { done: true });
+    expect(emitted).toEqual([{ type: "custom.emitted", event: "progress", data: { done: true } }]);
+    expect(warnings).toEqual([]);
   });
 });

@@ -94,6 +94,15 @@ export {
   PLAYBACK_FILL_MS,
   PLAYBACK_PROGRESS_INTERVAL_MS,
 } from "./sdk/client-audio-constants.ts";
+// The one rule `ctx.send` applies, shared so the runtime that enforces it and
+// the test double that has to agree with it cannot drift — see
+// `sdk/client-event.ts`.
+export {
+  type ClientEventDecision,
+  type ClientEventDrop,
+  clientEventDropMessage,
+  decideClientEvent,
+} from "./sdk/client-event.ts";
 export {
   type CoalescingRunner,
   createCoalescingRunner,

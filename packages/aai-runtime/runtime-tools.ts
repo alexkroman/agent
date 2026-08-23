@@ -11,13 +11,13 @@ import type { AgentDef, Db, StateProjection, ToolDef } from "@alexkroman1/aai";
 import type { AgentEnv, OwnedMap, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "@alexkroman1/aai/host-internal";
 import {
+  clientEventDropMessage,
   DEFAULT_BUILTIN_TOOLS,
-  MAX_CLIENT_EVENT_NAME_LENGTH,
-  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
+  decideClientEvent,
 } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { agentToolsToSchemas, type ToolSchema } from "@alexkroman1/aai/manifest";
-import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { StartOptions, WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "./_state-sync.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
@@ -257,9 +257,9 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
    * `ctx.send` → client `custom_event`, with the wire caps enforced here —
    * this is the single point where a tool's send becomes a client frame now
    * that the runtime runs in-guest (the old guest→host `client/send` relay,
-   * which held these checks, is gone). Over-cap events are dropped, matching
-   * that relay: the name cap mirrors the protocol schema, and the payload is
-   * measured in UTF-8 bytes (what actually crosses the socket).
+   * which held these checks, is gone). The decision itself is
+   * `decideClientEvent` (`aai/sdk/client-event.ts`), shared with the
+   * `createToolContext` double so a spec cannot assert a send this drops.
    *
    * **An UNSERIALIZABLE payload is dropped the same way, not thrown.**
    * `JSON.stringify` throws on a cycle or a `BigInt` and returns `undefined` for
@@ -269,26 +269,19 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
    * fire-and-forget notification the doc above says is droppable. Both sibling
    * stringify sites (`_state-sync.ts`, the event log) catch for exactly this
    * reason.
+   *
+   * **Every drop is LOGGED, including the two caps.** `ToolContext.send`'s doc
+   * has always promised "dropped (with a warning log)" and the two cap checks
+   * were bare `return`s — so the case an author actually hits, a payload that
+   * grew past 64 KB, was the one with no signal anywhere: nothing on the wire,
+   * nothing in the log, and a `sent` array in their spec that recorded it.
    */
   const sendToClient = (emitter: SessionEmitter, event: string, data: unknown): void => {
-    if (event.length > MAX_CLIENT_EVENT_NAME_LENGTH) return;
-    let json: string | undefined;
-    try {
-      json = JSON.stringify(data ?? null);
-    } catch (err: unknown) {
-      logger?.warn?.(`ctx.send("${event}") payload is not serializable; not sent`, {
-        error: errorMessage(err),
-      });
+    const decision = decideClientEvent(event, data);
+    if ("drop" in decision) {
+      logger?.warn?.(clientEventDropMessage(event, decision.drop));
       return;
     }
-    if (json === undefined) {
-      // `JSON.stringify(() => {})` — no throw, no output. Nothing to put on the
-      // wire, and the emit below would produce an event the protocol schema
-      // rejects further down.
-      logger?.warn?.(`ctx.send("${event}") payload has no JSON form; not sent`);
-      return;
-    }
-    if (Buffer.byteLength(json) > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
     emitter.emit({ type: "custom.emitted", event, data });
   };
 

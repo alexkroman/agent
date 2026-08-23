@@ -2622,6 +2622,39 @@ export function clampWorkflowWait(requested: number | undefined): number;
 export const CLIENT_AUDIO_LEAD_MS = 1500;
 
 // @internal
+export type ClientEventDecision = {
+    json: string;
+} | {
+    drop: ClientEventDrop;
+};
+
+// @internal
+export type ClientEventDrop =
+/** The event NAME is longer than the protocol schema accepts. */
+    {
+    reason: "name-too-long";
+    detail: string;
+}
+/** `JSON.stringify` threw — a cycle, a `BigInt`. */
+| {
+    reason: "unserializable";
+    detail: string;
+}
+/** `JSON.stringify` returned nothing — a function, a bare `undefined` symbol. */
+| {
+    reason: "no-json-form";
+    detail: string;
+}
+/** Serialized larger than the wire cap. */
+| {
+    reason: "too-large";
+    detail: string;
+};
+
+// @internal
+export function clientEventDropMessage(event: string, drop: ClientEventDrop): string;
+
+// @internal
 export interface CoalescingRunner<T> {
     trigger(): Promise<T>;
 }
@@ -2634,6 +2667,9 @@ export function createEpoch(): Epoch;
 
 // @internal
 export function createOwnedMap<K, V>(): OwnedMap<K, V>;
+
+// @internal
+export function decideClientEvent(event: string, data: unknown): ClientEventDecision;
 
 // @public
 export const DEFAULT_BUILTIN_TOOLS: readonly [];
