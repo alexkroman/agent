@@ -157,6 +157,23 @@ describe("JSON mode keeps stdout to one result line", () => {
     });
   });
 
+  // The sibling failure path, ten lines below `usageForMode` in cli.ts and
+  // written without it: `assertKnownFlags` refuses a typo'd flag (so
+  // `--serverr=…` cannot silently retarget the server), but it reported that
+  // through clack — a human block on STDOUT and no JSON at all, which is the
+  // exact contract break the tests above cover for citty's own usage block.
+  test("an unknown option emits a JSON result, not a clack block", async () => {
+    await withTempDir(async (dir) => {
+      const { exitCode, stdout } = await runBin(["push", "--serverr=http://evil.test"], dir);
+      expect(exitCode).toBe(1);
+      expect(JSON.parse(stdout.trim())).toMatchObject({
+        ok: false,
+        code: "usage",
+        error: expect.stringContaining("--serverr"),
+      });
+    });
+  });
+
   test("--help is still the human usage block when piped", async () => {
     await withTempDir(async (dir) => {
       const { exitCode, stdout } = await runBin(["secret", "put", "--help"], dir);

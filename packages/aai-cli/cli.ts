@@ -461,8 +461,18 @@ if (process.env.VITEST !== "true") {
   const assertKnownFlags = async (): Promise<void> => {
     const unknown = await unknownFlagsForArgv(mainCommand, process.argv.slice(2));
     if (unknown.length === 0) return;
-    log.error(`Unknown ${unknown.length === 1 ? "option" : "options"}: ${unknown.join(", ")}`);
-    log.info("Run `aai <command> --help` to see the options it accepts.");
+    const label = `Unknown ${unknown.length === 1 ? "option" : "options"}: ${unknown.join(", ")}`;
+    const hint = "Run `aai <command> --help` to see the options it accepts.";
+    // Mode-aware for the same reason `usageForMode` is: JSON mode promises
+    // exactly one result line on stdout, and it is auto-detected on a pipe —
+    // so a clack block here left `aai push --json --serverr=x` emitting a
+    // human error where a script's `jq` expected a result, and no JSON at all.
+    if (getOutputMode({}) === "json") {
+      await writeLine(`${JSON.stringify(fail("usage", label, hint))}\n`);
+    } else {
+      log.error(label);
+      log.info(hint);
+    }
     process.exit(1);
   };
 
