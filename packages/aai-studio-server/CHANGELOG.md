@@ -1,5 +1,144 @@
 # aai-studio-server
 
+## 0.10.0
+
+### Minor Changes
+
+- ddbb905: Studio coding agent: a `read_logs` tool, so it can read what the agent it is building actually printed.
+  
+  A runtime failure — a tool throwing mid-call, a missing provider key, a response shape the code guessed wrong — only happens with a real caller on the line, and `test_agent` loads the bundle inside the coding agent's own sandbox where none of that is visible. The evidence existed (it is what the studio's Logs pane shows) and the agent's only route to it was asking the user to read it out.
+  
+  `read_logs` takes an ENVIRONMENT (`preview`, the default, or `production`) and never a slug: the guest RPCs the host, which resolves the project's own deployed agents from the workspace of the (scope, project) the sandbox is pinned to and reads the platform's owner-authenticated `GET /:slug/logs` with the account key those agents were deployed with. The host drains the guest's cursor-indexed ring forward and returns the TAIL, because the ring hands back its oldest lines first and "what just broke" is at the other end. Eviction is reported rather than swallowed, and each of the three empty states — never deployed, not running, running and silent — says which one it is, since they call for different next moves.
+
+### Patch Changes
+
+- abfc018: Stop teaching two imports that cannot resolve, and gate the docs that carried
+  them.
+  
+  The studio's workflow preamble told its coding agent to bound a fan-out with
+  `mapInBatches` from `@alexkroman1/aai/utils`. That name is on
+  `@alexkroman1/aai/step`, so every workflow the studio generated from the
+  instruction opened with an unresolvable import — and `mapInBatches` is itself
+  the deprecated alias of `mapConcurrent`. The bullet also justified the bound by
+  claiming a work-stealing pool "diverges on replay", which is the opposite of
+  what `sdk/map-concurrent.ts` documents: a window over a shared cursor hands out
+  the next index monotonically, so the Nth call issued is item N-1 however the
+  calls settle, and that is why the batching it replaced could be dropped for a
+  measured 6.7x p50 tail. The bullet now names `mapConcurrent`, the right
+  subpath, and the rule that IS load-bearing — one step call per callback,
+  issued synchronously.
+  
+  `@alexkroman1/aai/runtime` went away with the runtime package split, and four
+  files kept importing it: both example servers, the host-server bench, and the
+  prose in the root README. They name `@alexkroman1/aai-runtime` now, and each
+  example's manifest declares what it actually imports at the version the
+  workspace ships (they were pinned at `^5.10.0` against a 6.11.0 workspace, with
+  no runtime dependency at all and `ws` — which the bench needs — undeclared).
+  
+  `check-doc-examples` could not have caught either. `SOURCE_GLOBS` never
+  included `packages/aai-runtime`, so a published package's seven `@example`
+  blocks were compiled by nothing, and `MARKDOWN_FILES` had one of the three
+  runnable examples' READMEs plus none of that package's. All three are in now
+  (160 examples, floor raised to 157), and `examples/host-server/README.md`'s
+  opening fence — the one that carried the dead import — is checked rather than
+  skipped as `js`.
+  
+  `UPLOAD_KEY_PREFIX` was declared twice with the same value, once in
+  `aai-server/upload-bytes.ts` and once on `@alexkroman1/aai-runtime`'s root.
+  The platform imports the runtime's now. The key SHAPES still differ on purpose
+  — `uploadKey` interposes the slug because this route writes into a bucket
+  shared by every tenant — but where uploads begin is one literal again.
+- 76ca287: **BREAKING — the last 76 `@internal` names come off the two packages' public
+  barrels: 68 to `@alexkroman1/aai-runtime/internal`, 8 to a new
+  `@alexkroman1/aai-ui/internal`.** Both `contracts/internal-surface.json`
+  ratchets are now at zero, which is where `@alexkroman1/aai` already stood.
+  
+  The exemption those files record is the one hole in the capability contracts: a
+  name tagged `@internal` at its declaration site but reachable anyway from a
+  public subpath belongs to no capability, gets no epoch and no frozen compiling
+  template, and is held to nothing but a comment. It is a ratchet that may shrink
+  and may never grow, and counting it is what got it paid off — `aai` went 71 to
+  0, `aai-runtime` 68 to 0, `aai-ui` 8 to 0.
+  
+  A release tag cannot close it from the barrel. API Extractor reads `@internal`
+  at the DECLARATION site, so the tag on a re-export clause member is silently
+  ignored and the name stays `@public` in the report. A deny-listed subpath is the
+  mechanism, and it is the third time this repo has reached for it.
+  
+  **`@alexkroman1/aai-runtime`** — the second tranche off that root barrel, after
+  the 31 host-internal pass-throughs that made the subpath exist. These 68 are the
+  package's OWN host infrastructure: the host-mode server and its tool relay, both
+  transports and the `Transport` contract they satisfy, the session core, the
+  session-state backends and the table names and DDL they own, the workflow
+  serving half (API handler, surface, world, install), the wake hint, the
+  queue-lock sweep, the step-slot publishers, and the two shipped `Logger` values.
+  What stays on the root barrel is exactly what a capability covers.
+  
+  Where a type is contracted and its constructor is not, the two now split: the
+  `SessionCore`, `SessionStateBackend`, `SessionStateStore`, `SessionEventPage`,
+  `SessionEventStream`, `Logger` and `S2SConfig` TYPES — the shapes a host
+  implementing one has to name — stay on the root barrel; `createSessionCore`,
+  `createMemoryStateBackend`, `createSessionStateStore`, `createSessionEventStream`
+  and `consoleLogger` move. The 17-name OPENER CONTRACT deliberately did not move,
+  for the reason it did not move last time: relocating it would make a custom
+  speech provider import from two subpaths, one labelled not-semver-covered.
+  
+  **`@alexkroman1/aai-ui`** gains its first `./internal` subpath, carrying
+  `SessionProvider`, `ThemeProvider`, `ToolConfigContext`, the three URL chips
+  (`ApiUrlChip`, `SessionUrlChips`, `UiUrlChip`), `buildAgentUrl` and
+  `loadClientConfig` — none of which a `client.tsx` names, and all of which sat in
+  a client author's autocomplete beside `client()` and `useAgentState`.
+  
+  `aai-server`, `aai-guest`, `aai-cli`, `aai-evals` and `aai-studio-server` import
+  the moved names from the new subpaths — the cross-package consumers the seam
+  exists for.
+  
+  Both barrels now state the rule in their module docs, so the next name does not
+  re-open the ratchet: a name on `/internal` that wants to become public gets its
+  `@internal` tag REMOVED at the declaration site and joins a capability under
+  `contracts/entrypoints/`, which is what buys it an epoch. It is never
+  re-exported from the public barrel with the tag still on it.
+- fbb18c3: Studio API page: document how to actually SEND a file. The upload routes were in the route table and every generated run body carried an upload id, but the only worked example of obtaining one was buried in the SDK start snippet. There is now a "Sending a file" card — generated from the agent's own listing, rendered only when a declared workflow takes an upload — leading with the client SDK (agent.upload / agent.uploadStream / agent.uploadInfo) and covering both orders: send the file and get an id back, or mint the id, start the run, and stream the bytes into it. The curl alternates really upload, leaving the id in a shell variable the run body expands.
+- Updated dependencies [d98169a]
+- Updated dependencies [abfc018]
+- Updated dependencies [d98169a]
+- Updated dependencies [12ead27]
+- Updated dependencies [abfc018]
+- Updated dependencies [028044a]
+- Updated dependencies [429126e]
+- Updated dependencies [76ca287]
+- Updated dependencies [abfc018]
+- Updated dependencies [43ceb43]
+- Updated dependencies [8c9ce20]
+- Updated dependencies [9b9051a]
+- Updated dependencies [19c1ce4]
+- Updated dependencies [55d5ec1]
+- Updated dependencies [d98169a]
+- Updated dependencies [ea0c9c9]
+- Updated dependencies [b8a5529]
+- Updated dependencies [abfc018]
+- Updated dependencies [d1e7c56]
+- Updated dependencies [b8a5529]
+- Updated dependencies [abfc018]
+- Updated dependencies [a7309a5]
+- Updated dependencies [51d571d]
+- Updated dependencies [43ceb43]
+- Updated dependencies [ddbb905]
+- Updated dependencies [6596e4b]
+- Updated dependencies [abfc018]
+- Updated dependencies [df8effa]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [abfc018]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+  - @alexkroman1/aai-ui@7.0.0
+  - @alexkroman1/aai-runtime@7.0.0
+  - aai-studio-client@0.6.5
+  - aai-server@3.6.5
+  - @alexkroman1/aai@7.0.0
+
 ## 0.9.0
 
 ### Minor Changes

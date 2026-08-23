@@ -1,5 +1,98 @@
 # aai-templates
 
+## 0.3.7
+
+### Patch Changes
+
+- d98169a: Publish `dist` and nothing else. `@alexkroman1/aai` had no `files` field, and
+  `.npmignore` excludes only repo artifacts (`etc/`, `coverage/`, `.turbo/`,
+  `contracts/`) — so every tarball carried the whole `host/` and `sdk/` TypeScript
+  source and 219 test files: 961 entries, 2,049 kB packed, 7,632 kB unpacked,
+  against 209/505/1,476 now. Consumers were downloading the SDK's test suite.
+  
+  `AGENT_GUIDE.md` and `skills/` stay (both ship deliberately); `CHANGELOG.md`
+  does not, matching `aai-ui` and `aai-cli`. Nothing supported breaks — every
+  `exports` target is under `dist`, and the `@dev/source` condition that points at
+  `.ts` source is activated only by this monorepo's own `customConditions`.
+  
+  `published-files-gate.test.ts` is the guard: every publishable package declares
+  a non-empty `files`, and every `exports` target is covered by it. The two things
+  that should have caught this and did not are worth naming — the artifact-size
+  report compares against the PR base, so a package that has ALWAYS shipped its
+  source never trips a delta gate, and `publint` files it as a *suggestion*, which
+  `check:publint` passes over.
+- b8a5529: Version `@alexkroman1/aai-runtime`'s published surface in epochs, like `aai` and
+  `aai-ui`. Twelve capabilities — `server`, `runtime`, `session`, `session-state`,
+  `providers`, `telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`,
+  `text` — partition all 122 public names, each with a committed epoch and a
+  frozen, compiling authoring example. `pnpm check:api-contracts` now reports 42
+  contracts across 3 packages.
+  
+  The split shipped a published package with no `contracts/` tree, so 221 exports
+  could move with nothing recording it while its two siblings could not change a
+  parameter without a gate asking which. `contracts/internal-surface.json` opens
+  at 68 and may only shrink — the ratchet that took `aai` from 74 to 0.
+  
+  Two gate-test parsers had never seen shapes this package introduces, and both
+  reported a healthy tree as broken. A capability whose every name is a type
+  collapses to `export type { … } from` under Biome, which
+  `api-contracts-gate.test.ts` read as "declares something of its own" — so
+  `session` and `session-state`, the two most obviously correct roots, failed. And
+  an entry point can be ALL re-export (`/internal` passes on 31 names and declares
+  nothing), which `api-surface-file.test.ts` read as an empty report —
+  indistinguishable there from a parser that stopped working. The gate tests also
+  pin the three-way `:workflow` ambiguity now, plus `:session` and `:uploads`,
+  which is what makes the CLI's refusal to guess load-bearing.
+- abfc018: Correct the subpath every step primitive is named under. `packages/aai-templates/CLAUDE.md`
+  and `scaffold/CLAUDE.md` said `mapConcurrent`, `emit`, `stepEnv` / `requireStepEnv`,
+  `stepGenerate`, `stepFetch` / `multipartBody`, `stepSpeak`, `writeUpload`, `report`,
+  `encodeWav` / `pcmDurationMs` and the four `stepTranscribe*` were on
+  `@alexkroman1/aai/utils`. That subpath has 15 exports and not one of them is a step
+  primitive — all of the above are on `@alexkroman1/aai/step`, which was split out of
+  `/utils` precisely because "zod-free so the CLI can import it cheaply" is a build
+  property nobody imports BY. Nine prose claims across the two guides, nine template
+  doc comments, and three of the scaffold guide's copy-paste import lines.
+  
+  The scaffold guide is the one that mattered: it ships twice, as the studio coding
+  agent's system prompt and as `AGENT_GUIDE.md` inside the `@alexkroman1/aai` tarball.
+  `packages/aai-studio-server/studio-preamble-mode.ts` had copied the error, and every
+  workflow the studio generated from it carried an import that cannot resolve. Its three
+  fences are `ts no-check` fragments, so `check:doc-examples` compiles them for nobody —
+  which is why a wrong specifier in a shipped guide survived a gate that exists to catch
+  exactly that.
+  
+  Two more names, found by validating every `@alexkroman1/*` import in the two guides
+  against `API-EXPORTS.json`. The scaffold's workflow-app page imported
+  `WorkflowOutputOf` from `@alexkroman1/aai`, where it does not exist; all six template
+  `client.tsx` files take it from `@alexkroman1/aai/workflow-api`. And the HTTP/2
+  fan-out passage still named `mapInBatches`, which `sdk/map-concurrent.ts` declares a
+  `@deprecated` alias — `research-workflow` was the last template still calling it, and
+  is converted (the alias IS `mapConcurrent`, so the two calls are identical), with the
+  `recap-workflow` prose mention that named it as a live primitive. The two
+  `transcription-workflow` mentions stay: both narrate the rename.
+  
+  Also drops two claims about the coverage gate that the wrong subpath had propped up.
+  `template-api-coverage.test.ts`'s `SCOPED_MODULES` is the `aai` root plus
+  `stt`/`tts`/`llm`/`s2s` and the `aai-ui` root — so `/step` and `/testing` are outside
+  it entirely, and neither the step surface nor the bare `stubGateway` has, or could
+  have, the allowlist entry the guide credited them with.
+  
+  And re-baselines `template-api-allowlist.json` against the surface either side of it
+  moved. Down by four — `BaseOptions`, `ComponentTier`, `ConfigTier` and
+  `VOICE_CAPTURE_CONSTRAINTS` are no longer exported by `@alexkroman1/aai-ui`, so the
+  gate reported them stale. Up by two, and only after exhausting the better option:
+  `isRecord`, `omitUndefined` and `responseErrorMessage` joined the `aai` root barrel,
+  where no template exercised them because every template takes them from `/utils`,
+  which the gate does not scan. `omitUndefined` needs no entry — its four agent-side
+  consumers (`retail/store.ts`, `retail/tools/get_order_details.ts`,
+  `support-line/procedure.ts`, and `plan-and-execute/shared.ts` for `isToolFailure`)
+  already import the root barrel one line above, so the second import line is now
+  merged into the first and the name is exercised for real. The other two are consumed
+  ONLY from `workflows/*.ts` modules, where a root import is the exact thing the
+  bundling rule above forbids, so they are recorded instead — beside the seven
+  root-and-`/utils` names (`safeJsonParse`, `errorDetail`, `createKeyedLock`, …) already
+  there for the same reason.
+
 ## 0.3.6
 
 ### Patch Changes

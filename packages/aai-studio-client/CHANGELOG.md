@@ -1,5 +1,53 @@
 # aai-studio-client
 
+## 0.6.5
+
+### Patch Changes
+
+- d98169a: **Breaking (nominally): `@alexkroman1/aai-ui/default-client/*` is removed.** It
+  had no consumer in any form — not one import specifier in the repo, the
+  templates, the scaffold, or any README — because every real consumer reaches
+  those files by filesystem path through `./package.json` (`client-dir.ts`,
+  `aai-server/transport-websocket.ts`). `files: ["dist"]` still ships them, so
+  nothing that worked stops working. `aai-studio-client`'s `./dist/*` goes for the
+  same reason: both of its consumers `require.resolve` the manifest and join
+  `"dist"` themselves.
+  
+  Also widens `check:attw`. `aai-ui` pinned `--entrypoints .`, which silently
+  excluded `./client-dir` — a typed, contracted subpath — and `aai-runtime`
+  inherited the same pin. `aai-ui` now uses `--exclude-entrypoints styles.css`
+  (a CSS entry point has no type declarations, which is the only reason the pin
+  existed) and `aai-runtime` drops it entirely, so a NEW subpath defaults into
+  being checked instead of out.
+- Updated dependencies [d98169a]
+- Updated dependencies [12ead27]
+- Updated dependencies [abfc018]
+- Updated dependencies [028044a]
+- Updated dependencies [429126e]
+- Updated dependencies [76ca287]
+- Updated dependencies [abfc018]
+- Updated dependencies [43ceb43]
+- Updated dependencies [8c9ce20]
+- Updated dependencies [9b9051a]
+- Updated dependencies [55d5ec1]
+- Updated dependencies [d98169a]
+- Updated dependencies [ea0c9c9]
+- Updated dependencies [d1e7c56]
+- Updated dependencies [abfc018]
+- Updated dependencies [a7309a5]
+- Updated dependencies [51d571d]
+- Updated dependencies [43ceb43]
+- Updated dependencies [6596e4b]
+- Updated dependencies [df8effa]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [abfc018]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+- Updated dependencies [23e8b3f]
+  - @alexkroman1/aai-ui@7.0.0
+  - @alexkroman1/aai@7.0.0
+
 ## 0.6.4
 
 ### Patch Changes
