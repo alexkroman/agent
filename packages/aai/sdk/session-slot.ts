@@ -15,7 +15,8 @@
 
 import type { DeepReadonly } from "./deep-readonly.ts";
 import { isRecord } from "./is-record.ts";
-import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { ToolInputSchema } from "./schema.ts";
+import type { SessionSlotOptions, SlotToolDef } from "./session-slot-types.ts";
 import type { SlotStore, StateProjection } from "./session-state.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
@@ -25,32 +26,10 @@ import type { ToolContext, ToolDef } from "./types.ts";
 // slot machinery, which is exactly what adopting it asks every such helper to
 // do (see the type's own doc).
 export type { DeepReadonly } from "./deep-readonly.ts";
-
-/**
- * The authoring shape of a slot-backed tool: {@link ToolDef} with the slot's
- * value handed to `execute` directly.
- *
- * `value` comes SECOND because it is what a slot-backed tool body actually
- * uses; most take `(args, cart)` and never mention `ctx` at all, which is the
- * point. Putting it there rather than third cannot be got wrong silently — a
- * body converted from `tool()` that still names its second parameter `ctx` is a
- * type error the first time it reads `ctx.env`, since `V` is not a
- * {@link ToolContext}.
- *
- * @typeParam V - What `execute` is handed: a deep-frozen
- *   {@link DeepReadonly}`<T>` from {@link SessionSlot.tool}, a mutable draft
- *   from {@link SessionSlot.updateTool}.
- *
- * @public
- */
-export interface SlotToolDef<P extends ToolInputSchema, V, R> {
-  /** See {@link ToolDef.description} — what the model reads to decide to call it. */
-  description: string;
-  /** See {@link ToolDef.inputSchema}. */
-  inputSchema?: P;
-  /** The tool body, handed this session's slot value alongside the usual args. */
-  execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
-}
+// The two types a CALLER writes live in their own module (this file was at the
+// 500-line cap) and are re-exported here, so `@alexkroman1/aai` — and a reader
+// who looks for them where `sessionSlot` is — still finds them in one place.
+export type { SessionSlotOptions, SlotToolDef } from "./session-slot-types.ts";
 
 /**
  * A named slot of per-session state, created by {@link sessionSlot}.
@@ -149,6 +128,11 @@ export interface SessionSlot<K extends string, T> {
    * is {@link DeepReadonly}`<T>`, so choosing wrong is a compile error — at any
    * depth — rather than a write that goes nowhere or throws.
    *
+   * **`R` is threaded out**, as {@link tool}'s is: `R` used to be bound here and
+   * thrown away at the interface, so `InferToolOutput` answered `unknown` for
+   * exactly the tools an agent most often writes. Narrowing a return type is
+   * covariant, so the tool stays assignable to `ToolDef<ToolInputSchema>`.
+   *
    * @example
    * ```ts
    * import { sessionSlot } from "@alexkroman1/aai";
@@ -165,7 +149,7 @@ export interface SessionSlot<K extends string, T> {
    */
   tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
     def: SlotToolDef<P, DeepReadonly<T>, R>,
-  ): ToolDef<P>;
+  ): ToolDef<P, R>;
   /**
    * Define a MUTATING tool over this slot: the body runs inside
    * {@link SessionSlot.update}, so it is handed a draft and whatever it leaves
@@ -207,7 +191,7 @@ export interface SessionSlot<K extends string, T> {
    */
   updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
     def: SlotToolDef<P, T, R>,
-  ): ToolDef<P>;
+  ): ToolDef<P, R>;
   /**
    * A `syncState` projection over this slot: read the value (defaulting when
    * the session has not touched it), then project.
@@ -234,45 +218,6 @@ export interface SessionSlot<K extends string, T> {
    * ```
    */
   projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
-}
-
-/**
- * Options for {@link sessionSlot}.
- *
- * @public
- */
-export interface SessionSlotOptions<T> {
-  /**
-   * Invariant restoration, run on the draft at the end of every successful
-   * {@link SessionSlot.update} — pruning growth, recalculating a derived field.
-   *
-   * It exists so those rules live with the slot rather than being re-listed at
-   * every mutating call site, which is how one gets forgotten. Because it runs
-   * inside the mutation window, it sees the complete value about to be stored
-   * and may mutate it in place.
-   *
-   * **It does NOT run when `mutate` throws.** A mutator that failed part-way
-   * may have left the draft in a shape the hook itself cannot handle, and an
-   * error thrown from the hook would replace the one that actually explains the
-   * failure. Nothing is stored in that case either.
-   */
-  after?: (draft: T) => void;
-  /**
-   * Whether this slot's value is STORED. Defaults to `true`.
-   *
-   * `false` declares a VIRTUAL slot: a per-session box whose contents are
-   * neither checked, frozen, nor committed, and which does not survive the
-   * process. That is the right shape for a value whose lifetime is one call and
-   * which could not be stored anyway — a provider handle, an open socket, a
-   * cached client.
-   *
-   * It is a property of the slot's DECLARATION rather than a per-value opt-out,
-   * which is what makes it a decision the author makes once instead of a check
-   * somebody has to remember to skip. Note `get` on a virtual slot returns the
-   * live value: there is nothing to protect it from, since nothing is going to
-   * store a copy of it.
-   */
-  durable?: boolean;
 }
 
 /** Would `await` on this do anything? */

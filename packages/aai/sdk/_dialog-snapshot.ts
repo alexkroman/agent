@@ -1,21 +1,29 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The pure half of `dialog()` — everything that reads an XState snapshot without
- * touching a session.
+ * The pure half of `dialog()` — everything that reads an XState snapshot, or
+ * builds a machine, without touching a session.
  *
  * Split out of `sdk/dialog.ts` when that file crossed the 500-line cap, and the
- * seam is the one it already had: these are total functions of a snapshot (or of
- * a machine), where `dialog()` itself is the factory that owns a slot, starts
- * actors and stops them. That makes them the half a reader can check by
- * inspection — the dotted-path spelling, the deepest-instruction rule, and the
- * state set a `when` is validated against.
+ * seam is the one it already had: these are total functions of a snapshot, of a
+ * machine, or of a {@link DialogSpec}, where `dialog()` itself is the factory
+ * that owns a slot, starts actors and stops them. That makes them the half a
+ * reader can check by inspection — the dotted-path spelling, the
+ * deepest-instruction rule, the state set a `when` is validated against, and the
+ * machine a plain state map compiles to.
  *
  * Internal (`_`-prefixed, per the repo's file-naming rules): nothing outside
  * this package may import it. `dialog()` is the public surface.
  */
 
-import type { AnyStateMachine, Snapshot } from "xstate";
+import {
+  type AnyStateMachine,
+  type AnyStateNodeConfig,
+  createMachine,
+  type Snapshot,
+} from "xstate";
+import type { DialogSpec, DialogStateSpec } from "./dialog-types.ts";
 import { isRecord } from "./is-record.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 
 /**
  * What a dialog stores per session: the actor's persisted snapshot, in a wrapper.
@@ -104,4 +112,44 @@ export function statePaths(machine: AnyStateMachine): Set<string> {
   };
   walk(machine.states as Parameters<typeof walk>[0], "");
   return paths;
+}
+
+/** One state map as XState state-node configs. Recurses into nested `states`. */
+function toNodes(states: Record<string, DialogStateSpec>): Record<string, AnyStateNodeConfig> {
+  const nodes: Record<string, AnyStateNodeConfig> = {};
+  for (const [name, state] of Object.entries(states)) {
+    // `omitUndefined` rather than four conditional spreads: `exactOptionalPropertyTypes`
+    // is on, and XState reads an explicitly-`undefined` `initial` or `states` as
+    // a declaration of one (guard-invariants rule 2).
+    nodes[name] = omitUndefined({
+      type: state.final === true ? ("final" as const) : undefined,
+      // The whole reason the spec form exists: `meta.instruction` is the field
+      // `_dialog-snapshot.toInstruction` reads back, and XState types `meta` as
+      // `Record<string, any>`, so a misspelling of it is silent in the machine
+      // form and a compile error here. The wrapper is applied ONCE, here.
+      meta: state.instruction === undefined ? undefined : { instruction: state.instruction },
+      on: state.on,
+      initial: state.initial,
+      states: state.states === undefined ? undefined : toNodes(state.states),
+    });
+  }
+  return nodes;
+}
+
+/**
+ * The XState machine a {@link DialogSpec} describes.
+ *
+ * A real machine, not a parallel implementation: everything downstream —
+ * `statePaths`, the actor, `getPersistedSnapshot`, `matches` — sees exactly what
+ * it sees for a hand-written one, so the STORED SNAPSHOT FORMAT is identical and
+ * a `durable: true` dialog resumes across an author's switch from one form to
+ * the other. That is the property to protect if this ever grows a feature: the
+ * spec is sugar over `createMachine`, never a second runtime.
+ *
+ * The machine's `id` is the dialog's key. XState only uses it to prefix
+ * `getMeta()`'s keys and to resolve `#id.state` targets, and the key is the one
+ * name a dialog already has.
+ */
+export function machineFromSpec(key: string, spec: DialogSpec): AnyStateMachine {
+  return createMachine({ id: key, initial: spec.initial, states: toNodes(spec.states) });
 }
