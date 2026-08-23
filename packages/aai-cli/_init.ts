@@ -52,6 +52,7 @@ export type InitOptions = {
 const WORKSPACE_PKG_DIRS: Record<string, string> = {
   "@alexkroman1/aai": "aai",
   "@alexkroman1/aai-cli": "aai-cli",
+  "@alexkroman1/aai-runtime": "aai-runtime",
   "@alexkroman1/aai-ui": "aai-ui",
 };
 

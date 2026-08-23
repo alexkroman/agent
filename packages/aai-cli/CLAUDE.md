@@ -204,6 +204,36 @@ credential", "resolved from your shell, not .env", "missing requiredEnv key")
 were the ones that had not been converted, so under `aai dev > dev.log` the
 first session failed auth with nothing anywhere saying why.
 
+**And the contract binds every failure path, including the ones that run
+BEFORE citty parses.** `usageForMode` (cli.ts) exists because citty writes its
+usage block to stdout from the same `catch` that reports a missing positional —
+but `assertKnownFlags`, ten lines below it, was written without that wrapper and
+reported a typo'd flag through clack: `aai push --json --serverr=http://x`
+emitted a human error block on stdout, nothing on stderr, and no JSON at all.
+That is the same break the wrapper was written for, in the sibling function, on
+the one path whose whole purpose is to stop a typo silently retargeting
+`--server`. Both live in the pre-parse `runDefault().then(assertKnownFlags)`
+chain, so neither can lean on `defineExec`'s mode plumbing; a new guard added
+there owes an explicit `getOutputMode({})` branch. `cli.test.ts` covers it by
+running the real bin with stdout PIPED, which is what puts it in JSON mode —
+calling the command bodies cannot reach the auto-detection.
+
+**A dev-mode `aai init` must link EVERY workspace package the scaffold names,
+and the list is derived, not written down.** `WORKSPACE_PKG_DIRS` in `_init.ts`
+rewrites the scaffold's published ranges to `link:` paths; it named `aai`,
+`aai-ui` and `aai-cli`, and stayed that way when `aai-runtime` was split into
+its own published package. So the one dependency `aai init` did not link came
+from the real npm registry — a hard `ERR_PNPM_FETCH_404` before that package's
+first release (dependencies never installed, `aai build` then failing to
+resolve `@alexkroman1/aai-runtime` from the generated worker entry), and a stale
+published copy after it, in a project whose entire point is running against the
+working tree. The spec agreed with the bug because it hand-listed the same three
+names, so the regression test in `init.test.ts` DERIVES the expected set from
+`scaffold/package.json` — every `@alexkroman1/*` it declares must come back a
+`link:`, with a floor so an empty read cannot pass. Nothing else covered it:
+`e2e.test.ts` publishes all four packages to its mock verdaccio, so the
+registry path it exercises has an `aai-runtime` to find.
+
 **`aai dev`'s restart state machine lives in `_dev-restart.ts`, behind
 injected `build`/`listen`/`close` operations.** It is the subtlest part of the
 watch loop — an edit saved mid-boot must QUEUE rather than race the initial

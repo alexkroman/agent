@@ -446,4 +446,57 @@ describe("patchPackageJsonForWorkspace", () => {
       expect(result.devDependencies.vitest).toBe("^4.1.1");
     });
   });
+
+  /**
+   * The expected set is DERIVED from the scaffold rather than listed, because
+   * the map it checks is hand-kept and the spec above hand-lists the same three
+   * names it did — so the two agreed with each other while `aai-runtime`, split
+   * out into its own published package, was linked by neither. `aai init` then
+   * resolved it from the real npm registry: a 404 before that package's first
+   * release, and a stale published copy after it, in a project whose whole
+   * point is running against the working tree.
+   */
+  test("links every @alexkroman1 dependency the scaffold declares", async () => {
+    const scaffold = JSON.parse(
+      await fs.readFile(
+        path.resolve(import.meta.dirname, "../aai-templates/scaffold/package.json"),
+        "utf-8",
+      ),
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+
+    const declared = ["dependencies", "devDependencies"].flatMap((field) =>
+      Object.keys(scaffold[field as "dependencies" | "devDependencies"] ?? {}).filter((name) =>
+        name.startsWith("@alexkroman1/"),
+      ),
+    );
+    // A floor: an empty list would make every assertion below vacuous, which
+    // is the shape of a spec that passes because it stopped measuring.
+    expect(declared.length).toBeGreaterThanOrEqual(4);
+
+    await withTempDir(async (dir) => {
+      const target = path.join(dir, "my-agent");
+      await fs.mkdir(target, { recursive: true });
+      await fs.writeFile(
+        path.join(target, "package.json"),
+        JSON.stringify({
+          dependencies: scaffold.dependencies,
+          devDependencies: scaffold.devDependencies,
+        }),
+      );
+
+      await patchPackageJsonForWorkspace(target);
+
+      const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8")) as {
+        dependencies: Record<string, string>;
+        devDependencies: Record<string, string>;
+      };
+      for (const name of declared) {
+        const range = result.dependencies[name] ?? result.devDependencies[name];
+        expect(range, `${name} must be linked to the working tree`).toMatch(/^link:/);
+        // The directory under packages/ is the package name without the scope,
+        // so a link pointing at the wrong sibling fails here too.
+        expect(range).toContain(`/${name.slice("@alexkroman1/".length)}`);
+      }
+    });
+  });
 });
