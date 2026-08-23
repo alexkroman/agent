@@ -170,6 +170,27 @@ does — import from two subpaths, one of them labelled not-semver-covered. The
 block's own comment already called those names one contract; the split respects
 it. Do not "tidy" them onto `/internal` later.
 
+### `SessionCore` collides with `aai-ui`, and renaming is this package's call
+
+Root `AGENTS.md`'s "Disambiguating cross-package names" records one live
+collision — `SessionCore`, one word for the two sides of one wire: here the
+SERVER session bridging a `Transport` to the client protocol, in `aai-ui` the
+BROWSER session (socket + audio + state). Neither reference page names the
+other. That table used to carry four rows, and what the `/internal` split
+resolved was never written down: `createSessionCore`, `createWorkflowApi` and
+`WorkflowApiOptions` went to `@alexkroman1/aai-runtime/internal` — a public name
+against an `/internal` one is not a collision, it is what `/internal` is for —
+and then off the published surface entirely, under that subpath's "a name is
+here because something IMPORTS it" rule. They are relative-import internals now,
+so `API-EXPORTS.json` shows all three on `aai-ui` alone.
+
+**Which INVERTS the old "do not rename either half" advice for those three.** It
+held while both sides were contracted; an unpublished name has no epoch, no
+frozen example and no semver promise, so renaming the runtime halves costs a
+sweep rather than an epoch a side — and is worth doing, since they still occur
+in ten-odd files here each and every reader disambiguates by package before
+reading. Recommended, not done.
+
 ### The root barrel is the CONTRACTED surface, and nothing else
 
 `contracts/internal-surface.json` opened at **68** and stands at **0**. Those 68
@@ -364,3 +385,247 @@ same project:
 Rendered in ISOLATION it reports seven more, all `{@link Db}`-shaped links into
 `@alexkroman1/aai`. Those are an artifact of the SDK not being in the project,
 not a defect in these comments — do not "fix" them by deleting links.
+
+## An upload's bytes are OBJECTS, and its record has two homes
+
+One store (`_upload-store-blobs.ts`) over two interfaces — `UploadRecords`
+for the record, `UploadBlobs` for one object per `UPLOAD_PART_BYTES` window — and
+it names neither's home. It used to hold the bytes itself, a `bytea` row per
+megabyte or a file per upload under `aai dev`, and **`_upload-blobs.ts`
+carries the four costs that got them out of Postgres** — storage price, WAL and
+backup amplification, the app's own queries sharing their pool, and the
+platform's forward reading a slow drain as a dead guest.
+
+**The pairing follows the WORLD, off the same `DATABASE_URL`: an upload must
+be at least as durable as the runs that read it.** With a database the record
+goes in it and the bytes need a bucket — no bucket is the ONE refusal left,
+since those runs outlive this container and a directory here cannot serve one
+resuming elsewhere. With none the world is LOCAL, so both go in its data
+directory (`_upload-files.ts`): per-process in a guest, the project's
+`.workflow-data` under `aai dev`, where a restart re-enqueues the runs it finds
+and finds their uploads. Same shape as the deleted file backend, opposite of
+its bug — which was pairing a directory with runs in POSTGRES — and it is what
+gives a databaseless studio agent uploads at all. `installWorkflowSupport`
+ANNOUNCES the local home once: a tradeoff absent from the log reads as a bug.
+
+**Neither direction takes turns with the socket.** A whole-file write puts
+`UPLOAD_WINDOW_CONCURRENCY` windows while the next one is still arriving, and the
+byte route reads `UPLOAD_READ_AHEAD` chunks ahead of what it has written — both
+`mapStream` (below), which is where the ordering, the memory bound, and the
+whole-window buffering that keeps a failed write re-sendable are argued.
+
+## A callback URL comes from `publicWebhookUrl`, never from `hook.url`
+
+`createWebhook()` sets `hook.url`, and it is **guest-local**: the DevKit composes
+it from `getWorkflowMetadata().url`, which is `http://localhost:<port>` off the
+running process (its only other branch is `https://$VERCEL_URL`). Deployed, that
+names the inside of a sandbox which has self-exited by the time a payment
+provider calls back. So the SDK mints its own:
+`ctx.workflows.publicWebhookUrl(token)` — `RuntimeOptions.publicUrl` plus the
+same `WORKFLOW_WEBHOOK_PREFIX` the guest's own router parses, so the URL handed
+out and the path that answers it cannot drift.
+
+Three properties are load-bearing:
+
+- **`publicUrl` is an OPTION, never sniffed.** Each deployment supplies it — the
+  platform bakes `AAI_PUBLIC_BASE_URL` into the guest's exec env and the harness
+  passes it through, `server.mjs` reads `PUBLIC_URL`, `aai dev` passes its own
+  BACKEND origin (Vite proxies the browser surface and not the DevKit's
+  `/.well-known/` routes, so the port a developer opens would 404 a delivery).
+  Reading an `AAI_*` variable here would make the SDK depend on the vocabulary of
+  one of its three deployments.
+- **Unconfigured THROWS**, naming the option. A `localhost` URL would be the
+  same bug with the failure moved days later and onto somebody else's server.
+- **It takes the token, because a hook's token is the caller's.** Derive it in one
+  exported helper the body and the tool both import — the rule {@link signal}
+  already states. `createWebhook()`'s own token is random and body-side only,
+  so a URL that has to be minted from a TOOL wants `createHook({ token })`.
+
+Not yet closed: a `"use workflow"` BODY, and a step it hands `hook.token` to,
+have no `ToolContext` and so no way to reach `publicUrl` — a run that must EMAIL
+its own callback URL still composes it from a value the author supplies.
+`stepEnv`'s `Symbol.for` slot is the shape that would close it.
+
+## The session takes two VOCABULARIES, not nineteen callbacks
+
+`SessionCore` takes a `command(cmd)` — one `SessionCommand`, what the CLIENT asks
+for — and a `report(event)` — one `TransportEventBody`, what the TRANSPORT
+observed. `TransportCallbacks` is the same `report` from the other side. That is
+the whole inbound surface, plus the two audio paths. It used to be one method per
+thing, the same names declared on both sides with a forwarding table between them
+and a stub in every harness: **157 `on*` declarations across eleven files, 78 of
+them test scaffolding**, none of which decided anything.
+
+Three rules, and `guard-invariants` rule 16 checks the first per file:
+
+- **A callback survives exactly when there is NO EVENT for it** — binary audio,
+  `onReplyStarted` (the wire has no `reply.started`, and minting one is a protocol
+  change), `onSessionReady`, and the socket-lifecycle hooks a caller must ACT on.
+- **Report `agent-transcript.committed` or `.updated`, never a boolean.** Those
+  two names carry exactly what `onAgentTranscript(text, interrupted)` plus a
+  separate partial callback used to; only the committed one enters history.
+- **`reply.completed` is the PROVIDER's claim, not the turn's end** — the one
+  report whose name and emitted event can come apart. See `session-reply-done.ts`.
+
+**Audio is not joining the hook surface, and not for cost reasons.** A handler
+runs synchronously off `emit` and an async one is never awaited
+(`session-emitter.ts`), so no subscriber can add latency to a turn. What keeps
+audio out is MEMBERSHIP: `playback_progress` is a client→server command and audio
+frames are binary, so neither is in the event vocabulary and neither can be a hook.
+
+**Read `transports/types.ts`** for the boundary and the full argument;
+`session-core.ts` and `session-commands.ts` own the two dispatchers.
+
+## `speech_started` means "the agent is yielding", on BOTH transports
+
+The two transports derive this event differently and a client cannot tell them
+apart, so pipeline mode holds it back to match S2S rather than emitting what it
+happens to know. In S2S the service fires its speech-started the moment it stops
+generating, so the event coincides with a real interruption. Pipeline mode has
+no VAD and derives the edge from the STT transcript stream, where the FIRST
+non-empty partial opened it — one word of a cough, a backchannel, or a phrase
+the caller addressed to someone else in the room. `minBargeInWords` and
+`interruptionMinDurationMs` correctly declined to abort the reply for those, so
+the agent kept talking; the client had been told it stopped.
+
+**That divergence is not cosmetic, because clients act on it.** tau2-bench's
+harness DISCARDS its entire agent playout buffer on `speech_started` and has no
+`cancelled` handler at all, so the one event that really means "the agent
+stopped" is ignored and the one that did not is treated as authoritative — a
+reply still being spoken was thrown away mid-sentence. (`aai-ui` reads the event
+as informational and stops playback on `cancelled`, which is why this never
+showed up in the browser.) Measured by replaying the benchmark's own recorded
+caller audio against a live pipeline agent, on the run's 10 conversations
+richest in these signals: **184 `speech_started` against 87 `cancelled` — 53% of
+the events the client acted on were not interruptions at all.** The agent
+yielded to non-directed speech on 12 of 12 occasions and then sat silent a
+median 5.9s (real barge-outs, not inter-sentence gaps: only 2.5% of natural gaps
+between agent segments are ≤0.6s).
+
+So while the agent holds the floor the edge is HELD, and released only when a
+barge-in really fires (alongside `cancelled`) or when the agent stops speaking
+on its own; while the agent is silent it passes straight through, because there
+is no floor to yield. Live captions are unaffected either way —
+`user-transcript.updated` is emitted independently of the gate.
+**`transports/pipeline-speech-edges.ts` owns the mechanism**, and its two
+layers are deliberately separate: `createSpeechEdgeTracker` decides WHEN an utterance
+starts and ends (pipeline mode has no VAD, so this is derived from partials and
+finals, with a watchdog for utterances that never commit), and
+`createGatedSpeechEdges` decides WHETHER the client is told. The turn
+orchestration consuming both is `transports/pipeline-user-speech.ts`.
+
+The property to preserve — and what the specs in `transports/pipeline-voice-events.test.ts`
+pin — is that **the score no longer depends on how the client reads the event**.
+Across the panel, the spread between a client that truncates on
+`speech_started` and one that truncates on `cancelled` collapsed from up to
+**66.7 points** (R_Y 89.7% vs 46.7%; S_BC 33.3% vs 100%) to **≤2.7 points**
+(R_Y 44.1% both ways). Note which direction R_Y moved: the benchmark's
+flattering 90% yield rate was an ARTIFACT of the same bug that wrecked
+selectivity — truncating on a signal that arrives ~470ms after the first partial
+makes yields look instant. A correct client's yield rate against the old code
+was already 46.7%. Do not read the drop as a regression, and do not "fix" it by
+reverting the gate.
+
+## History records what was HEARD, not what was generated
+
+An interrupted reply lands in history as the words the caller is estimated to
+have actually heard, marked `[interrupted]` — not everything the model produced.
+A reply cut before anything was audible records **nothing at all** (its
+completed tool steps still do). That is LiveKit's rule, and it exists because
+TTS runs behind the text: a barge-in discards whatever is still in the
+provider's buffer, so the old record told the model it had delivered
+information the caller never got, and the model then never repeated it.
+
+**One cursor, one owner** — `transports/pipeline-heard.ts`
+(`createHeardTracker`). It answers exactly one question: given this reply's TTS
+text and its forwarded audio, which characters did the caller hear? History
+truncation and the false-interruption resume anchor (`buildTailResumePrompt`)
+are two READERS of that one answer, which is what keeps the resume prompt from
+quoting words the record denies. It also owns the playback clock, so the
+barge-in gate reads the same object.
+
+Two tiers of accuracy, decided at RUNTIME rather than by a capability flag: a
+provider that reports word timings (AssemblyAI TTS's `WordBoundaries` frames,
+parsed in `providers/tts/assemblyai-words.ts`) gives a cursor at the last word
+whose audio WHOLLY elapsed; Cartesia and Rime both HAVE a timing frame that is
+not wired up, so they degrade to a proportional estimate snapped to a word —
+exactly what was there before, so nothing regresses, and the zero case needs no
+timings at all. Both roundings err toward UNDER-keeping, deliberately:
+over-keeping is the measured failure, while under-keeping costs a word or two of
+redundancy that the resume prompt's "without repeating what they already heard"
+absorbs.
+
+**The proportional estimate is CLAMPED, because `spoken.length / audioMs` is
+not a speech rate** (`MAX_SPEECH_CHARS_PER_MS` in
+`transports/pipeline-heard.ts`). Text runs ahead of synthesis by however far the
+LLM is ahead of the voice — widest mid-reply, which is exactly when a barge-in
+happens — so the raw ratio reads
+text nobody has spoken yet as heard: an LLM streaming ~200 chars/s against a
+provider synthesizing at 1x hands over a 300-character reply inside 1.5s, so
+five seconds in the ratio claims all 300 characters against the ~75 the caller
+actually heard. No causal bound fixes that, because the gap is PROPORTIONAL
+rather than additive. The rate has to come from the language instead: English
+narration runs 14-18 characters a second, so the ceiling sits at the top of that
+band and the estimate takes the MIN of it and the observed ratio — a voice
+slower than the ceiling is still tracked. The constant's doc carries the
+arithmetic.
+
+**The lag is `HEARD_AUDIO_LAG_MS` (750), and it is DERIVED rather than
+measured** — its row in the defaults table in `packages/aai/CLAUDE.md` carries
+the decomposition and why it is a second constant; do not restate it here.
+
+**The client's committed transcript and the history entry now diverge on
+purpose.** The caption still shows everything that reached TTS, because it was
+published as interims while the audio was being synthesized. It CANNOT be
+corrected after the fact to match the shorter record: emitting an
+`agent_transcript` after `cancelled` is the measured 19-of-73 double-transcript
+bug (`persistInterruptedTurn` in `transports/pipeline-history.ts` — read it there).
+
+Two mechanisms this leans on: the audio gate (a cancelled turn's late audio AND
+its late word timings are both dropped by it, so no second epoch was invented),
+and `emitText`'s `record` flag, which now decides what may be truncated into
+history as well as what reaches `onDelta` — filler is audible, so it moves the
+heard POSITION, and is never recordable. The TTS coalescer flushes when that
+flag flips so no batched send ever mixes the two.
+
+**Not covered: a barge-in during the TTS drain.** `runTurn` has already
+committed the full text by then, so that case keeps `buildTailResumePrompt` as
+its only mitigation (which this change makes word-truthful). Fixing it means
+deferring the history commit until after the drain — a change to `runReply`'s
+body contract, deliberately separate.
+
+## A `reset` starts a conversation, so it GREETS
+
+The client `reset` frame — aai-ui's "New Conversation" button — discards the
+conversation, and a conversation that begins without the agent's declared
+opening line is not the one the agent declares. The pipeline transport greeted
+only from `onAudioReady`, once per CALL, so every conversation after the first
+opened on silence: the caller cleared the transcript and then sat listening to
+a live mic with nothing to prompt them. `reset()` therefore ends by calling
+`lifecycle.greet()` — queued AFTER `gate.invalidateAll()` so the strand that
+kills the pre-reset turns cannot catch it, and on the turn chain so it runs
+after the aborted turn unwinds rather than interleaving with it.
+
+**`skipGreeting` deliberately does not reach `greet()`.** It is a RESUME flag
+scoped to a connection's start ("this caller already heard the opening line"),
+which is the opposite claim from a reset. That is also why aai-ui's `reset()`
+drops the resume identity when the socket is already closed: there the redial
+IS the new conversation, and a `?sessionId=`/`resume=1` reconnect would rejoin
+the old one — server history kept, greeting suppressed.
+
+**Neither S2S transport re-greets, and that is a known gap rather than a
+decision.** AssemblyAI S2S has no `reset()` at all (its greeting is dispatched
+service-side from the session config, with no protocol verb to replay it), and
+OpenAI Realtime has none either — its `sendGreeting()` is a one-shot
+`response.create` that could be re-issued, but the service still holds the
+conversation a reset is supposed to discard, so re-greeting alone would open a
+"new" conversation the model can still see the whole of. Clearing it means
+tracking every `conversation.item` id to delete, which is its own change.
+
+## A run can tell the caller it finished
+
+`start(def, input, { key, notify })` makes the session that started a run take an
+UNPROMPTED, interruptible turn when it lands — the promise `research-workflow` used
+to make ("I'll let you know") and had no way to keep. `Transport.injectTurn` is
+the primitive (pipeline only; S2S has no such verb, so there it is a logged
+no-op). **See `workflow-notify.ts`'s module doc** for the rest.

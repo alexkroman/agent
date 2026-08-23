@@ -80,6 +80,25 @@ adding `@module ffmpeg` immediately failed the build on a
 module-internal. That is the tag finding a latent broken link, not causing
 one — fix the link.
 
+## "Published", "promised" and "documented" are three different sets
+
+Three files decide them, each with a written deny-list so a new subpath
+defaults IN: `package.json#exports` (published), `contracts/entrypoints/`
+(promised — see "The authoring surface is versioned in epochs" in the root
+`AGENTS.md`) and a `typedoc.json` (documented). They currently disagree both
+ways, and each disagreement is a decision owed out loud rather than a bug to
+patch quietly.
+
+`@alexkroman1/aai/protocol` opens its reference page with "the published wire
+contract … for building custom clients or servers" while
+`NON_AUTHORING_SUBPATHS` deny-lists it from the contract system, so no epoch
+covers its 32 names. `/manifest` is the same and reaches further — three
+template `agent.test.ts` files import `toAgentConfig` from it, a subpath
+`scaffold/CLAUDE.md` never mentions. Inversely `@alexkroman1/aai-runtime` is
+fully contracted — its whole root barrel, twelve capabilities, frozen starters
+a self-hoster copies — and reaches no reference page at all; the section above
+carries that one and what would change the answer.
+
 ## The markdown rendering is COMMITTED, and gated
 
 `pnpm docs:md` (`scripts/docs-markdown.mjs`) writes `docs/api/`, and
