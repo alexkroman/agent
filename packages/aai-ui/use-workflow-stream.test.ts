@@ -348,3 +348,21 @@ describe("a file the workflow does not declare as an upload", () => {
     expect(calls).toContain("start");
   });
 });
+
+describe("useWorkflowStream: the shared submission surface", () => {
+  test("carries wake and cancel, bound to the run it started", async () => {
+    // `WorkflowStreamSubmission` is an ALIAS of `WorkflowSubmission`, so a field
+    // present on one and absent on the other is a lie in the shared type rather
+    // than a missing feature — which is the failure this spec is for.
+    const { api } = recordingApi();
+    const result = await submitFile(api);
+    await waitFor(() => expect(result.current.run).toBeDefined());
+
+    await act(async () => {
+      await result.current.wake();
+      await result.current.cancel();
+    });
+    expect(api.wake).toHaveBeenCalledWith("wrun_1");
+    expect(api.cancel).toHaveBeenCalledWith("wrun_1");
+  });
+});

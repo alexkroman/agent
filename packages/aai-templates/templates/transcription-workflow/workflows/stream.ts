@@ -140,9 +140,9 @@
 
 import { mapConcurrent, readUpload, report, uploadInfo } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
+import { formatDuration, plural } from "@alexkroman1/aai/utils";
 import { sleep } from "workflow";
 import {
-  clock,
   fatalOnUnsupported,
   mergeTranscript,
   type SegmentTranscript,
@@ -324,9 +324,8 @@ export async function planStreamed(id: string): Promise<StreamPlan> {
   }
   const segments = fatalOnUnsupported(() => planSegments(format));
   await report(
-    `Planned ${clock(segments.at(-1)?.endMs ?? 0)} of audio as ${segments.length} segment${
-      segments.length === 1 ? "" : "s"
-    } while it uploads.`,
+    `Planned ${formatDuration(segments.at(-1)?.endMs ?? 0)} of audio as ` +
+      `${segments.length} ${plural(segments.length, "segment")} while it uploads.`,
   );
   return { format, segments };
 }

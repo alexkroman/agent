@@ -1,0 +1,27 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "components",
+  "epoch": 3,
+  "sha256": "48e5c511e68bc81ef57425a04ea0e087d64c00535434f1398086d100647b1fef",
+  "exports": [
+    "AutoScroll",
+    "Button",
+    "ButtonSize",
+    "ButtonVariant",
+    "ChatView",
+    "ConsoleShell",
+    "ConsoleShellProps",
+    "Controls",
+    "ControlsProps",
+    "Markdown",
+    "MarkdownProps",
+    "MarkdownVariant",
+    "MessageList",
+    "MessageListProps",
+    "SidebarLayout",
+    "StartScreen",
+    "ToolCallRow",
+    "ToolCallRowProps",
+    "ToolCallRowVariant"
+  ]
+}

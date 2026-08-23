@@ -172,19 +172,25 @@ type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 export type DefaultToolResult = any;
 
 // @public
-export interface Dialog<M extends AnyStateMachine> {
+export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     readonly key: string;
     readonly machine: M;
     matches(ctx: ToolContext, state: string): boolean;
     position(ctx: ToolContext): DialogPosition;
     projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
     reset(ctx: ToolContext): DialogPosition;
-    send(ctx: ToolContext, event: EventFromLogic<M>): DialogPosition;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, EventFromLogic<M>>): ToolDef<P>;
+    send(ctx: ToolContext, event: E): DialogPosition;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
 }
 
 // @public
 export function dialog<M extends AnyStateMachine>(key: string, machine: M, options?: DialogOptions): Dialog<M>;
+
+// @public
+export function dialog<const S extends DialogSpec>(key: string, spec: S, options?: DialogOptions): Dialog<AnyStateMachine, DialogEvent<S>>;
+
+// @public
+export type DialogEvent<S extends DialogSpec> = EventOf<NamesInMap<S["states"]>>;
 
 // @public
 export interface DialogOptions {
@@ -199,12 +205,27 @@ export interface DialogPosition {
 }
 
 // @public
+export interface DialogSpec {
+    initial: string;
+    states: Record<string, DialogStateSpec>;
+}
+
+// @public
+export interface DialogStateSpec {
+    final?: true;
+    initial?: string;
+    instruction?: string;
+    on?: Record<string, string>;
+    states?: Record<string, DialogStateSpec>;
+}
+
+// @public
 export interface DialogToolDef<P extends ToolInputSchema, R, E> {
     description: string;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
     send?: E;
-    sendFrom?: (result: R) => E | undefined;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
     when: string | readonly string[];
 }
 
@@ -221,6 +242,11 @@ export function errorDetail(err: unknown): string;
 
 // @public
 export function errorMessage(err: unknown): string;
+
+// @public
+type EventOf<N> = N extends string ? {
+    type: N;
+} : never;
 
 // @public
 type FindOptions = {
@@ -308,6 +334,16 @@ export type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
 };
+
+// @public
+type NamesIn<S> = (S extends {
+    on: infer O;
+} ? Extract<keyof O, string> : never) | (S extends {
+    states: infer M;
+} ? NamesInMap<M> : never);
+
+// @public
+type NamesInMap<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? NamesIn<C> : never : never : never;
 
 // @public
 export function omitUndefined<T extends object>(obj: T): {
@@ -616,9 +652,9 @@ export interface SessionSlot<K extends string, T> {
     projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
     reset(ctx: ToolContext): DeepReadonly<T>;
     set(ctx: ToolContext, value: T): DeepReadonly<T>;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P>;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
     update<R>(ctx: ToolContext, mutate: (draft: T) => R): R;
-    updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R>): ToolDef<P>;
+    updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R>): ToolDef<P, R>;
 }
 
 // @public
@@ -823,6 +859,7 @@ export type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };

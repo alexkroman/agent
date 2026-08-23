@@ -25,6 +25,7 @@ import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
@@ -91,6 +92,10 @@ export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSess
     name?: string;
     sidebar?: ComponentType;
     sidebarWidth?: string;
+    sidebarPosition?: "left" | "right";
+    icon?: ReactNode;
+    subtitle?: string;
+    buttonText?: string;
     tools?: ToolDisplayConfig;
 };
 
@@ -113,11 +118,35 @@ export type ClientTheme = {
 };
 
 // @public
+export function ConsoleShell(input: ConsoleShellProps): ReactNode;
+
+// @public
+export type ConsoleShellProps = {
+    icon?: ReactNode | undefined;
+    title?: string | undefined;
+    state: AgentState;
+    pulsing: boolean;
+    error?: string | null | undefined;
+    children: ReactNode;
+    footer: ReactNode;
+    className?: string | undefined;
+};
+
+// @public
 export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>>;
 
 // @public
 export type ControlsProps = {
     className?: string;
+};
+
+// @public
+export type ConversationItem = {
+    kind: "message";
+    message: ChatMessage;
+} | {
+    kind: "tool";
+    toolCall: ToolCallInfo;
 };
 
 // @public
@@ -380,6 +409,32 @@ export function useAgentState<V>(projection: StateProjection<V>): V;
 export function useAgentState<S = DefaultToolResult>(fallback: S): S;
 
 // @public
+export function useConversation(): UseConversationResult;
+
+// @public
+export type UseConversationResult = {
+    items: readonly ConversationItem[];
+    streaming: string | null;
+    transcript: UseUserTranscriptResult;
+    thinking: boolean;
+};
+
+// @public
+export function useDownloadUrl(uploadId: string | undefined, opts?: UseDownloadUrlOptions): UseDownloadUrlResult;
+
+// @public
+export type UseDownloadUrlOptions = {
+    api?: WorkflowApi;
+};
+
+// @public
+export type UseDownloadUrlResult = {
+    url?: string;
+    error?: string;
+    pending: boolean;
+};
+
+// @public
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;
 
 // @public
@@ -509,6 +564,9 @@ export type WebSocketConstructor = {
     readonly OPEN: number;
 };
 
+// @public
+export const WORKFLOW_STATUS_LABELS: Readonly<Record<WorkflowRunStatus, string>>;
+
 export { WorkflowApi }
 
 // @public (undocumented)
@@ -530,10 +588,13 @@ export function WorkflowProgress(input: {
     api?: WorkflowApi | undefined;
     className?: string | undefined;
     placeholder?: ReactNode | undefined;
+    lines?: number | undefined;
 }): ReactNode;
 
 // @public
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
+
+export { WorkflowRunStatus }
 
 // @public
 export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
@@ -542,6 +603,8 @@ export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
 export type WorkflowSubmission<R = unknown> = {
     submit: (input: unknown) => Promise<void>;
     reset: () => void;
+    wake: () => Promise<number>;
+    cancel: () => Promise<boolean>;
     run: WorkflowRun<R> | undefined;
     pending: boolean;
     upload: UploadStatus | undefined;

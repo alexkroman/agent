@@ -11,17 +11,14 @@ export default tool({
     // otherwise nothing to say — and this run has real news in between,
     // since every poll narrates.
     //
-    // `streamTail` FIRST, and not as an optimization: a progress channel is
-    // never closed — no step knows it is the last one — so reading a stream
-    // with nothing in it waits forever rather than ending. `-1` is "nothing
-    // written yet", and it is the only safe way to learn that.
-    if ((await ctx.workflows.streamTail(latest.runId)) < 0) {
-      return { note: "Submitted, nothing to report yet." };
-    }
-    // A negative `startIndex` reads from the END, which is what a voice
-    // reply wants — the last line, not a recital of the whole log.
-    const stream = await ctx.workflows.stream(latest.runId, { startIndex: -1 });
-    for await (const line of stream) return { progress: String(line) };
-    return { note: "Submitted, nothing to report yet." };
+    // `lastLine` rather than `streamTail` + `stream` composed here: a progress
+    // channel is never closed — no step knows it is the last one — so a stream
+    // opened on a run that has written nothing waits forever, which down a phone
+    // is a turn that stops with no error and nothing in a log. The bound that
+    // prevents it belongs to the method now, and `undefined` is "nothing yet".
+    const line = await ctx.workflows.lastLine(latest.runId);
+    return line === undefined
+      ? { note: "Submitted, nothing to report yet." }
+      : { progress: String(line) };
   },
 });

@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
-import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { isToolFailure } from "@alexkroman1/aai";
+import { runTool, toolInputIssues, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import authoredAgent from "./agent.ts";
 import { excerptAround, type FdaLabel, toDrugInfo } from "./fda.ts";
@@ -35,8 +35,13 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext = createToolContext()) =>
-  runTool(agentDef, name, args, ctx);
+/**
+ * Every tool here takes arguments and none of them touches session state, so no
+ * call passes a context: `runTool` builds a fresh one per call, which is a
+ * distinct session — right for a stateless tool, and never what two calls
+ * sharing state want.
+ */
+const run = (name: string, args: Record<string, unknown>) => runTool(agentDef, name, args);
 
 const IBUPROFEN: FdaLabel = {
   openfda: { generic_name: ["IBUPROFEN"], brand_name: ["Advil"], manufacturer_name: ["Acme"] },
@@ -149,6 +154,19 @@ describe("check_drug_interaction", () => {
     const result = await run("check_drug_interaction", { drugs: ["ibuprofen", "   "] });
     expect(isToolFailure(result) && result.error).toContain("at least two");
     expect(label).not.toHaveBeenCalled();
+  });
+
+  test("the schema itself accepts those names, which is why the body re-checks", async () => {
+    // The other half of the claim above, asked of the schema directly rather
+    // than through `~standard`: `min(2)` counts ENTRIES and `min(1)` counts
+    // CHARACTERS, so `"   "` is a valid entry and the refusal is the body's.
+    expect(
+      await toolInputIssues(agentDef, "check_drug_interaction", { drugs: ["ibuprofen", "   "] }),
+    ).toBeUndefined();
+    // And the schema is still doing its own half — one drug is not a check.
+    expect(
+      await toolInputIssues(agentDef, "check_drug_interaction", { drugs: ["ibuprofen"] }),
+    ).toBeDefined();
   });
 });
 

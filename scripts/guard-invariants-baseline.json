@@ -9,12 +9,12 @@
     "packages/aai-server/guest-readiness.ts": 1
   },
   "rule4_inlineTickPromise": {
+    "packages/aai-runtime/integration/_s2s-fuzz-harness.ts": 1,
+    "packages/aai-runtime/tool-executor.ts": 1,
     "packages/aai-server/platform-lock.test.ts": 3,
     "packages/aai-server/slug-lock.test.ts": 1,
     "packages/aai-studio-client/src/_test-utils.ts": 1,
-    "packages/aai-studio-server/studio-session-broker.test.ts": 2,
-    "packages/aai-runtime/integration/_s2s-fuzz-harness.ts": 1,
-    "packages/aai-runtime/tool-executor.ts": 1
+    "packages/aai-studio-server/studio-session-broker.test.ts": 2
   },
   "rule5_deleteProcessEnv": {
     "packages/aai-cli/_test-setup.ts": 1
@@ -26,14 +26,13 @@
     "packages/aai-server/modal-agent-sandbox.ts": 2
   },
   "rule16_sessionCallbackName": {
-    "packages/aai-runtime/_test-utils.ts": 3,
     "packages/aai-runtime/integration/_pipeline-fuzz-model.ts": 3,
     "packages/aai-runtime/integration/_s2s-fuzz-harness.ts": 3,
     "packages/aai-runtime/runtime-session-callbacks.ts": 2,
     "packages/aai-runtime/runtime-types.ts": 5,
     "packages/aai-runtime/runtime.ts": 1,
     "packages/aai-runtime/session-commands.ts": 1,
-    "packages/aai-runtime/session-core.ts": 7,
+    "packages/aai-runtime/session-core.ts": 3,
     "packages/aai-runtime/transports/_transport-recorder.ts": 3,
     "packages/aai-runtime/transports/types.ts": 4,
     "packages/aai-runtime/ws-handler.ts": 4
@@ -58,6 +57,12 @@
     "packages/aai-guest/harness-bundle.ts": 1,
     "packages/aai-guest/studio-chat.test.ts": 1,
     "packages/aai-guest/studio-chat.ts": 1,
+    "packages/aai-runtime/_test-utils.ts": 1,
+    "packages/aai-runtime/providers/stt/elevenlabs.ts": 1,
+    "packages/aai-runtime/runtime.ts": 1,
+    "packages/aai-runtime/server.ts": 1,
+    "packages/aai-runtime/transports/pipeline-llm-trace.ts": 1,
+    "packages/aai-runtime/workflow-report.ts": 2,
     "packages/aai-server/guest-forward.ts": 1,
     "packages/aai-server/middleware.ts": 1,
     "packages/aai-server/modal-agent-sandbox.test.ts": 1,
@@ -77,19 +82,10 @@
     "packages/aai-studio-server/studio-sse.test.ts": 1,
     "packages/aai-studio-server/studio-sse.ts": 4,
     "packages/aai-templates/scaffold/server.mjs": 1,
-    "packages/aai-templates/templates/plan-and-execute/agent.test.ts": 1,
     "packages/aai-templates/templates/retail/shared.ts": 1,
     "packages/aai-templates/templates/retail/tools/get_order_details.ts": 1,
-    "packages/aai-templates/templates/solo-rpg/client.tsx": 1,
-    "packages/aai-templates/templates/support-line/agent.test.ts": 1,
-    "packages/aai-runtime/_test-utils.ts": 1,
     "packages/aai/host/builtin-tools.ts": 1,
     "packages/aai/host/page-design.ts": 4,
-    "packages/aai-runtime/providers/stt/elevenlabs.ts": 1,
-    "packages/aai-runtime/runtime.ts": 1,
-    "packages/aai-runtime/server.ts": 1,
-    "packages/aai-runtime/transports/pipeline-llm-trace.ts": 1,
-    "packages/aai-runtime/workflow-report.ts": 2,
     "packages/aai/sdk/providers/stt/assemblyai.ts": 1,
     "packages/aai/sdk/providers/stt/elevenlabs.ts": 1,
     "packages/aai/sdk/step-fetch.ts": 1,

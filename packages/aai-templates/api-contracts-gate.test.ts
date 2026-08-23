@@ -405,30 +405,54 @@ describe("API-EXPORTS.json", () => {
       "StubSpeech",
       "StubSpeechCall",
       "StubSpeechOptions",
+      "StubStepAnswer",
       "StubStepFetch",
       "StubStepRequest",
+      "StubTranscribe",
+      "StubTranscribeCall",
+      "StubTranscribeFailure",
+      "StubTranscribeLeg",
+      "StubTranscribeOptions",
       "StubUpload",
+      "StubUploadWrite",
+      "StubUploads",
       "StubUploadsOptions",
       "TestToolContext",
       "ToolBearingAgent",
+      "ToolContextOverrides",
       "createProgressStream",
       "createRunSnapshot",
       "createStubWorkflows",
       "createToolContext",
       "createUnusedDb",
+      "ok",
+      "okPosition",
+      "parseSchemaInput",
+      "parseToolInput",
       "runTool",
+      "schemaInputIssues",
       "stubGateway",
       "stubGenerate",
       "stubReporter",
       "stubSpeech",
       "stubStepFetch",
+      "stubTranscribe",
       "stubUploads",
+      "toolInputIssues",
       "toolOf",
       "withDiscoveredTools",
     ]);
-    // The vitest half is one name: the installation of the fake above it. That
-    // is the whole reason it is a subpath rather than part of `/testing` — see
-    // `sdk/testing-vitest.ts`.
-    expect(surface["@alexkroman1/aai/testing/vitest"]).toEqual(["installStubGateway"]);
+    // The vitest half is the INSTALLATION of each fake above it — the same
+    // stubs with `onTestFinished(restore)` done. That is the whole reason it is
+    // a subpath rather than part of `/testing`, which stays framework-agnostic:
+    // importing it is what pulls the runner in. See `sdk/testing-vitest.ts`.
+    expect(surface["@alexkroman1/aai/testing/vitest"]).toEqual([
+      "installStubGateway",
+      "installStubReporter",
+      "installStubSpeech",
+      "installStubStepFetch",
+      "installStubTranscribe",
+      "installStubUploads",
+    ]);
   });
 });

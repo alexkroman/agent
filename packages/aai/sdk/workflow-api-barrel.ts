@@ -82,7 +82,12 @@ export type {
   // type a public signature's documentation names must be reachable from the
   // entry point or the docs build fails.
   WorkflowDef,
+  // The three `…Of<typeof def>` helpers travel together: a body names the
+  // input, a page names the output, and a tool reporting on a run names the
+  // snapshot the two compose into.
+  WorkflowInputOf,
   WorkflowOutputOf,
+  WorkflowRunOf,
   WorkflowSummary,
 } from "./workflow.ts";
 // The narrower factory, the call set, and the upload types a caller names.

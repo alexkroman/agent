@@ -57,124 +57,51 @@
 import { type AnyStateMachine, createActor, type EventFromLogic } from "xstate";
 import {
   type FlowState,
+  machineFromSpec,
   readState,
   statePaths,
   toInstruction,
   toStatePath,
 } from "./_dialog-snapshot.ts";
+import type {
+  DialogEvent,
+  DialogPosition,
+  DialogSpec,
+  DialogToolDef,
+  DialogToolResult,
+} from "./dialog-types.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
+import type { ToolInputSchema } from "./schema.ts";
 import { type SessionSlot, sessionSlot } from "./session-slot.ts";
 import type { StateProjection } from "./session-state.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 import { isToolFailure, type ToolFailure, toolFailure } from "./utils.ts";
 
-/**
- * Where a dialog currently is.
- *
- * @public
- */
-export interface DialogPosition {
-  /**
-   * The active state as a dotted path — `"verifying"`, or `"quote.pending"` for
-   * a nested one. Parallel regions are joined with `","`.
-   */
-  readonly state: string;
-  /** Whether the machine has reached a final state. */
-  readonly done: boolean;
-  /**
-   * The active state's `meta.instruction`, when it declares one — what the
-   * agent is supposed to be doing here, in the words the state itself carries.
-   *
-   * Read from the DEEPEST active state node, so a nested state's instruction
-   * wins over its parent's rather than being merged with it.
-   */
-  readonly instruction?: string;
-}
-
-/**
- * What a {@link Dialog.tool} answers on success.
- *
- * @typeParam R - The author's own `execute` return type, under `result`.
- *
- * @public
- */
-export interface DialogToolResult<R> extends DialogPosition {
-  /** Whatever the tool's own `execute` returned. */
-  readonly result: R;
-}
-
-/**
- * The authoring shape of a gated tool — {@link ToolDef} plus the two things
- * that make it part of a dialog: where it may run, and what it advances.
- *
- * @typeParam P - The tool's input schema.
- * @typeParam R - What `execute` returns.
- * @typeParam E - The machine's event union.
- *
- * @public
- */
-export interface DialogToolDef<P extends ToolInputSchema, R, E> {
-  /** See {@link ToolDef.description} — what the model reads to decide to call it. */
-  description: string;
-  /** See {@link ToolDef.inputSchema}. */
-  inputSchema?: P;
-  /**
-   * The state(s) this tool may run in, as {@link DialogPosition.state} spells
-   * them. Anywhere else the body does not run and the call is refused.
-   *
-   * Every name is checked against the machine's own states when the tool is
-   * DECLARED, so a typo is a throw at startup rather than a tool that is
-   * silently unreachable for the life of the agent.
-   */
-  when: string | readonly string[];
-  /**
-   * The event to send once `execute` has succeeded — how the conversation moves
-   * on. Omit both this and `sendFrom` for a tool that reads without advancing.
-   *
-   * **Nothing is sent when `execute` returns a {@link ToolFailure}.** A tool
-   * that failed did not do the thing, so a dialog that advanced anyway would
-   * leave the conversation a step ahead of reality — the single most expensive
-   * bug this primitive can have, since every later gate is then wrong too.
-   */
-  send?: E;
-  /**
-   * The event to send, decided by the RESULT — for a tool whose outcome picks
-   * the transition. Return `undefined` to stay put.
-   *
-   * Separate from `send` rather than a union with it because a union of an
-   * event and a function of one cannot be narrowed by `typeof`: an event type is
-   * generic here, so TypeScript cannot rule out that it is itself callable, and
-   * the check would need a cast to compile. Two fields are also the clearer
-   * authoring surface — the static case stays a literal. Declaring both is an
-   * error.
-   */
-  sendFrom?: (result: R) => E | undefined;
-  /**
-   * The tool body. Runs only in one of `when`'s states.
-   *
-   * May be async: the result is AWAITED before the failure check and the
-   * transition, so `sendFrom` and `result` both see the settled value. Unlike
-   * {@link SessionSlot.updateTool} there is no synchronous requirement here —
-   * this opens no mutation window around the body, only inside `send`.
-   *
-   * **`ToolFailure` is in the return type rather than in `R`**, which is what
-   * lets `sendFrom` be typed over the SUCCESS value alone. A body that can fail
-   * is the ordinary case — it is how a tool reports something the model should
-   * recover from — and folding the failure into `R` made every `sendFrom`
-   * narrow a value it is never handed: the failure check returns before it runs.
-   */
-  execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
-}
+// The authoring vocabulary lives in its own module (this file was at the
+// 500-line cap), and is re-exported here so that `@alexkroman1/aai` — and any
+// reader who goes looking for a dialog type where `dialog()` is — still finds
+// every name in one place. See `sdk/dialog-types.ts`.
+export type {
+  DialogEvent,
+  DialogPosition,
+  DialogSpec,
+  DialogStateSpec,
+  DialogToolDef,
+  DialogToolResult,
+} from "./dialog-types.ts";
 
 /**
  * A dialog statechart bound to a session, created by {@link dialog}.
  *
  * @typeParam M - The XState machine this dialog runs.
+ * @typeParam E - The event union {@link Dialog.send} and a gated tool's
+ *   `send`/`sendFrom` accept. Defaults to the machine's own — a dialog declared
+ *   from a {@link DialogSpec} supplies it directly instead, because the machine
+ *   it builds is an implementation detail and its type carries no events.
  *
  * @public
  */
-export interface Dialog<M extends AnyStateMachine> {
+export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
   /** The store key this dialog's snapshot occupies. Two flows must not share one. */
   readonly key: string;
   /** The machine itself, for a caller that wants to inspect or visualize it. */
@@ -192,13 +119,22 @@ export interface Dialog<M extends AnyStateMachine> {
    * available. The returned position is what actually happened; compare its
    * `state` to know whether anything moved.
    */
-  send(ctx: ToolContext, event: EventFromLogic<M>): DialogPosition;
+  send(ctx: ToolContext, event: E): DialogPosition;
   /** Discard this session's progress and start the dialog over. */
   reset(ctx: ToolContext): DialogPosition;
-  /** Declare a tool gated on this dialog's state. See {@link DialogToolDef}. */
+  /**
+   * Declare a tool gated on this dialog's state. See {@link DialogToolDef}.
+   *
+   * The return type is the WRAPPED one the body actually answers with, not a
+   * bare {@link ToolDef}: `InferToolOutput<typeof myTool>` is then
+   * `DialogToolResult<R> | ToolFailure`, so a custom client renders the same
+   * shape the tool sends instead of `unknown`. Narrowing a return type is
+   * covariant, so a gated tool is still assignable wherever the agent's
+   * registry wants a `ToolDef<ToolInputSchema>`.
+   */
   tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
-    def: DialogToolDef<P, R, EventFromLogic<M>>,
-  ): ToolDef<P>;
+    def: DialogToolDef<P, R, E>,
+  ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
   /**
    * A `syncState` projection of this dialog's position, so a client can render
    * the step the caller is on without the agent hand-rolling a sync channel.
@@ -220,6 +156,25 @@ export interface DialogOptions {
    */
   durable?: boolean;
 }
+
+/**
+ * The success half of a settled tool body, as a type the compiler can SUBTRACT.
+ *
+ * The same test as {@link isToolFailure}, and it exists because NEGATING that
+ * one does not subtract: the false branch of a `value is ToolFailure` test
+ * leaves a generic `R | ToolFailure` exactly as it was, and `R` is not the
+ * `Exclude<R, ToolFailure>` that {@link DialogToolDef.sendFrom} declares — a
+ * conditional type is only assignable FROM a source assignable to BOTH its
+ * branches, and nothing is assignable to `never`. A predicate's POSITIVE branch
+ * can say it, so this is what lets the one call site hand `sendFrom` a narrowed
+ * value with no cast. The body is still just the failure guard.
+ */
+function isSuccess<T>(value: T | ToolFailure): value is Exclude<T, ToolFailure> {
+  return !isToolFailure(value);
+}
+
+/** The event type the implementation works in: every overload narrows it. */
+type DialogEventOf = EventFromLogic<AnyStateMachine>;
 
 /**
  * Declare a dialog statechart for an agent's conversation.
@@ -284,13 +239,68 @@ export interface DialogOptions {
  * OF WORK inside a single tool call, never stored. A {@link workflow} runs
  * DURABLY, outliving the session.
  *
+ * @example
+ * ```ts
+ * // The same dialog as a plain state map — no `setup()`, no events union to
+ * // restate, no `meta` wrapper. `dialog.send` is typed from the `on` keys.
+ * import { dialog } from "@alexkroman1/aai";
+ *
+ * export const claim = dialog("claim", {
+ *   initial: "verifying",
+ *   states: {
+ *     verifying: {
+ *       instruction: "Get the caller's policy number and verify it.",
+ *       on: { VERIFIED: "quoting" },
+ *     },
+ *     quoting: {
+ *       instruction: "Read the excess disclosure, then quote.",
+ *       on: { QUOTED: "done" },
+ *     },
+ *     done: { final: true },
+ *   },
+ * });
+ * ```
+ *
  * @public
  */
 export function dialog<M extends AnyStateMachine>(
   key: string,
   machine: M,
+  options?: DialogOptions,
+): Dialog<M>;
+/**
+ * Declare a dialog from a plain state map — see {@link DialogSpec}.
+ *
+ * The overload exists rather than replacing the machine form because the two
+ * answer different questions. A spec covers what every dialog in the templates
+ * actually used and nothing else, on purpose: a persisted snapshot must survive
+ * `structuredClone`, so guards, context and actions were never available here
+ * anyway, and what an author was paying for full XState was a `setup({ types:
+ * {} as { events: … } })` block restating the event names already written in the
+ * `on` maps. A dialog that needs more than the spec can say passes a machine,
+ * and that path is unchanged.
+ *
+ * It builds the same machine, so the STORED SNAPSHOT is byte-identical to the
+ * hand-written equivalent's and a `durable: true` dialog resumes across the
+ * switch — see `machineFromSpec`.
+ *
+ * @public
+ */
+export function dialog<const S extends DialogSpec>(
+  key: string,
+  spec: S,
+  options?: DialogOptions,
+): Dialog<AnyStateMachine, DialogEvent<S>>;
+export function dialog(
+  key: string,
+  source: AnyStateMachine | DialogSpec,
   options: DialogOptions = {},
-): Dialog<M> {
+): Dialog<AnyStateMachine> {
+  // `in` on the union rather than a shape test for `states`: BOTH have one, and
+  // only the machine has behaviour. Machine-first in the overload list for the
+  // same reason — a plain object cannot satisfy `AnyStateMachine`, where a
+  // machine could be read as a spec.
+  const machine = "transition" in source ? source : machineFromSpec(key, source);
   const valid = statePaths(machine);
 
   /**
@@ -306,13 +316,12 @@ export function dialog<M extends AnyStateMachine>(
    */
   const actorFor = (state: FlowState | undefined) => {
     const restored = state?.snapshot;
-    // WIDENED to `AnyStateMachine` deliberately, and it is an assignment rather
-    // than an assertion. `SnapshotFrom<M>` for a still-generic `M` resolves to
-    // nothing with members on it, so `.value`, `.status`, `.matches()` and
-    // `.getMeta()` are all errors through the narrow type; through
-    // `AnyStateMachine` they resolve concretely. `M` survives where it is worth
-    // having — `Dialog.machine`, and `EventFromLogic<M>` on `send`, which is what
-    // types an author's events.
+    // `AnyStateMachine` throughout the BODY, deliberately. A still-generic `M`
+    // resolves `SnapshotFrom<M>` to nothing with members on it, so `.value`,
+    // `.status`, `.matches()` and `.getMeta()` are all errors through the narrow
+    // type; through `AnyStateMachine` they resolve concretely. `M` survives in
+    // the OVERLOADS, which is where it is worth having — `Dialog.machine`, and
+    // `EventFromLogic<M>` on `send`, which is what types an author's events.
     const logic: AnyStateMachine = machine;
     // Branched rather than passing `undefined`: under
     // `exactOptionalPropertyTypes` an explicit `undefined` is not the same as an
@@ -368,7 +377,7 @@ export function dialog<M extends AnyStateMachine>(
    * calls concurrently, so a read-modify-write that yielded would lose one of
    * the two transitions.
    */
-  const send = (ctx: ToolContext, event: EventFromLogic<M>): DialogPosition =>
+  const send = (ctx: ToolContext, event: DialogEventOf): DialogPosition =>
     slot.update(ctx, (draft) => {
       const actor = actorFor(draft);
       try {
@@ -412,8 +421,8 @@ export function dialog<M extends AnyStateMachine>(
         }
       }),
     tool: <P extends ToolInputSchema = ToolInputSchema, R = unknown>(
-      def: DialogToolDef<P, R, EventFromLogic<M>>,
-    ): ToolDef<P> => {
+      def: DialogToolDef<P, R, DialogEventOf>,
+    ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>> => {
       const allowed = typeof def.when === "string" ? [def.when] : def.when;
       for (const state of allowed) {
         if (valid.has(state)) continue;
@@ -451,11 +460,23 @@ export function dialog<M extends AnyStateMachine>(
               `Not available yet: this conversation is at "${at.state}". ${expectation}`,
             );
           }
-          const result = await execute(args, ctx);
+          // ANNOTATED rather than inferred: `await` on `R | ToolFailure |
+          // Promise<R | ToolFailure>` yields `Awaited<R> | ToolFailure`, and
+          // `Awaited<R>` is not the `Exclude<R, ToolFailure>` that `sendFrom`
+          // now promises its parameter is. The annotation settles that once,
+          // where the alternative is a cast at the one call.
+          const result: R | ToolFailure = await execute(args, ctx);
           // A failed tool did not do the thing, so the dialog must not move past
           // it. See DialogToolDef.send.
           if (isToolFailure(result)) return result;
-          const event = sendFrom === undefined ? fixed : sendFrom(result);
+          // `isSuccess` is that same test stated as a SUBTRACTION, and it is
+          // always true here — the failure returned on the line above. What the
+          // call buys is the narrowing from `R` to `Exclude<R, ToolFailure>`
+          // that `sendFrom`'s parameter now promises, which the NEGATION of a
+          // predicate cannot give a generic. See `isSuccess`. `fixed` is
+          // `undefined` whenever `sendFrom` is not, so the two arms cannot both
+          // contribute an event (declaring both throws at declaration).
+          const event = sendFrom !== undefined && isSuccess(result) ? sendFrom(result) : fixed;
           // Re-READ rather than reusing `at` when nothing is sent: the LLM loop
           // runs a step's tool calls concurrently, so a sibling may have moved
           // the dialog while this body was awaiting, and reporting the position

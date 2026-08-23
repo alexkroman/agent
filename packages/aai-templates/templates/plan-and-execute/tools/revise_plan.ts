@@ -34,8 +34,6 @@ export default planFlow.tool({
       .describe("What the caller now wants changed, in their own words"),
   }),
   when: ["working", "answered"],
-  sendFrom: (outcome: { finished: boolean }) =>
-    outcome.finished ? ({ type: "ANSWERED" } as const) : ({ type: "REOPENED" } as const),
   async execute(args, ctx) {
     try {
       const act = await replanNode(ctx.generate, planSlot.get(ctx), {
@@ -65,4 +63,9 @@ export default planFlow.tool({
       return toolFailure(`The plan could not be revised: ${errorMessage(err)}`);
     }
   },
+  // Below `execute` deliberately — see the note on `work_next_step`'s own
+  // `sendFrom`: this body's return type is itself inferred, so a `sendFrom`
+  // written first has nothing to be contextually typed against.
+  sendFrom: (outcome) =>
+    outcome.finished ? ({ type: "ANSWERED" } as const) : ({ type: "REOPENED" } as const),
 });

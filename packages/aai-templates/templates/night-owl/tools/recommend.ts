@@ -1,6 +1,5 @@
-import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { CATEGORIES, type Category, MOODS, type Mood } from "../shared.ts";
+import { CATEGORIES, type Category, MOODS, type Mood, nightSlot, type Rec } from "../shared.ts";
 
 const PICKS: Record<Category, Record<Mood, string[]>> = {
   movie: {
@@ -46,19 +45,32 @@ const PICKS: Record<Category, Record<Mood, string[]>> = {
   },
 };
 
-export default tool({
+/**
+ * `updateTool` rather than `tool`: the body is handed the night's own draft and
+ * whatever it leaves behind is stored, so the log the client renders and the
+ * value this returns to the model are written in one place. It must be
+ * SYNCHRONOUS — the mutation is committed when it returns.
+ */
+export default nightSlot.updateTool({
   description: "Get recommendations for movies, music, or books based on mood.",
   inputSchema: z.object({
     category: z.enum(CATEGORIES),
     mood: z.enum(MOODS),
   }),
-  async execute(args, ctx) {
-    const result = {
+  execute: (args, night, ctx) => {
+    const result: Rec = {
       category: args.category,
       mood: args.mood,
       picks: PICKS[args.category][args.mood],
     };
-    ctx.send("recommendations", result);
+    night.recs.unshift(result);
+    // A NUDGE, not state: shown once, when the third pick lands. It is a
+    // `ctx.send` rather than a field on the projection precisely because
+    // replaying it on every reconnect would be nagging — the distinction the
+    // client's header comment spells out.
+    if (night.recs.length === 3) {
+      ctx.send("wind_down", "Three picks in. Want me to work out your bedtime?");
+    }
     return result;
   },
 });

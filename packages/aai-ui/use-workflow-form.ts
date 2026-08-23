@@ -42,6 +42,7 @@ import type {
   WorkflowSummary,
 } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRunControls } from "./_run-controls.ts";
 import { createUploadSession, type UploadSession, uploadFiles } from "./_upload-files.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
@@ -199,6 +200,24 @@ export type WorkflowSubmission<R = unknown> = {
   submit: (input: unknown) => Promise<void>;
   /** Clear the run and any error, putting the form back to its initial state. */
   reset: () => void;
+  /**
+   * End the current run's `sleep()` early — "file it now" — resolving how many
+   * pending sleeps were interrupted.
+   *
+   * Bound to the run this submission is following, which is the point: it is
+   * the only reason a page holding one of these hooks needed an `api` of its
+   * own. `0` is an answer rather than a failure (the run had already moved past
+   * its wait, or there is no run yet), so nothing here has to be guarded.
+   */
+  wake: () => Promise<number>;
+  /**
+   * Stop the current run, resolving whether this call is what ended it.
+   *
+   * `false` for a run that had already finished, and for no run at all — the
+   * SDK's contract, because two tabs pressing Stop is ordinary. Distinct from
+   * `reset()`, which puts the FORM back and leaves the run running.
+   */
+  cancel: () => Promise<boolean>;
   /** The run, once started, followed to completion. */
   run: WorkflowRun<R> | undefined;
   /**
@@ -312,6 +331,7 @@ export function useWorkflowSubmit<R = unknown>(
   const getClient = useWorkflowApiRef(api);
 
   const tracked = useWorkflowRun<R>(runId, omitUndefined({ api, intervalMs }));
+  const { wake, cancel } = useRunControls(runId, getClient);
 
   const submit = useCallback(
     async (input: unknown) => {
@@ -390,6 +410,8 @@ export function useWorkflowSubmit<R = unknown>(
   return {
     submit,
     reset,
+    wake,
+    cancel,
     pauseUpload,
     resumeUpload,
     run: tracked.run,

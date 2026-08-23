@@ -46,10 +46,15 @@
  */
 
 import { encodeWav, mapConcurrent, readUpload, report } from "@alexkroman1/aai/step";
+import { countWords, formatDuration } from "@alexkroman1/aai/utils";
+// ERASED at build time, so the body can name the schema's own output type without
+// a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
+// for `WorkflowOutputOf`.
+import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
+import type { audit } from "../agent.ts";
 import { ingestRecording } from "./ingest.ts";
 import {
   ANALYSIS_FORMAT,
-  clock,
   durationSeconds,
   planSegments,
   type Segment,
@@ -136,13 +141,7 @@ export type CallAudit = {
  * The input is what `POST /workflows/runs` carries — see `agent.ts` for the schema
  * it is validated against before a run exists.
  */
-export async function auditFlow(input: {
-  recording: string;
-  // `| undefined` explicitly, not merely optional: `exactOptionalPropertyTypes` is
-  // on repo-wide, and what a zod `.optional()` infers is a property that may be
-  // PRESENT and undefined.
-  voice?: string | undefined;
-}): Promise<CallAudit> {
+export async function auditFlow(input: WorkflowInputOf<typeof audit>): Promise<CallAudit> {
   "use workflow";
 
   // Both at once: neither needs the other, and issued together they are one round
@@ -222,7 +221,7 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
   // ORDER is not guaranteed here and does not need to be — the calls go out
   // together, so their lines interleave by completion, and `segment.index` is what
   // puts the TRANSCRIPT back in order.
-  await report(`Transcribing ${clock(segment.startMs)}–${clock(segment.endMs)}.`);
+  await report(`Transcribing ${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}.`);
 
   // `[start, end)`, the same half-open pair `planSegments` produced — the store
   // owns the conversion to HTTP's inclusive range, so there is no `- 1` here to get
@@ -231,7 +230,7 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
   const text = await transcribeSpan(
     encodeWav(audio.bytes, ANALYSIS_FORMAT),
     `segment-${segment.index}.wav`,
-    `Segment ${segment.index} (${clock(segment.startMs)})`,
+    `Segment ${segment.index} (${formatDuration(segment.startMs)})`,
   );
 
   return { index: segment.index, text };
@@ -296,10 +295,4 @@ export function joinSegments(segments: readonly Segment[], parts: readonly Segme
     joined += previous?.cutInSpeech === true ? ` ${text}` : `\n\n${text}`;
   }
   return joined;
-}
-
-/** Words in a transcript, for the counts a page shows. */
-export function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
 }

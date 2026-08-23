@@ -26,6 +26,5 @@ export default retailTool({
       })),
     };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "product read failed" : `read product ${result.name}`,
+  summary: (_args, result) => `read product ${result.name}`,
 });

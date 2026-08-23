@@ -82,7 +82,5 @@ export default retailTool({
     };
   },
   summary: (_args, result) =>
-    isToolFailure(result)
-      ? "item change failed"
-      : `modified ${result.order_id} (${result.price_difference >= 0 ? "+" : ""}${result.price_difference})`,
+    `modified ${result.order_id} (${result.price_difference >= 0 ? "+" : ""}${result.price_difference})`,
 });

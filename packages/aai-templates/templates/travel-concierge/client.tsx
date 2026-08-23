@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { AutoScroll, client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
+import { AutoScroll, client, useAgentState } from "@alexkroman1/aai-ui";
 import type { TripView } from "./shared.ts";
 import { SPECIALIST_IDS, SPECIALISTS, tripProjection } from "./shared.ts";
 
@@ -15,7 +15,6 @@ function deskLabel(id: (typeof DESKS)[number]): string {
  * the transcript — the whole delegation mechanism is otherwise invisible.
  */
 function DeskStrip({ active }: { active: TripView["assistant"] }) {
-  const theme = useTheme();
   return (
     <div className="flex flex-wrap gap-1.5">
       {DESKS.map((id) => {
@@ -23,12 +22,9 @@ function DeskStrip({ active }: { active: TripView["assistant"] }) {
         return (
           <span
             key={id}
-            className="rounded-full px-2.5 py-1 text-[11px] font-medium capitalize"
-            style={{
-              background: on ? theme.primary : theme.surface,
-              color: on ? theme.bg : theme.text,
-              opacity: on ? 1 : 0.55,
-            }}
+            className={`rounded-full px-2.5 py-1 text-[11px] font-medium capitalize ${
+              on ? "bg-aai-primary text-aai-bg" : "bg-aai-surface text-aai-text opacity-55"
+            }`}
           >
             {deskLabel(id)}
           </span>
@@ -39,11 +35,10 @@ function DeskStrip({ active }: { active: TripView["assistant"] }) {
 }
 
 function ItinerarySidebar() {
-  const theme = useTheme();
   const trip = useAgentState(tripProjection);
 
   return (
-    <div className="flex flex-col gap-4 p-4 h-full min-h-0" style={{ color: theme.text }}>
+    <div className="flex flex-col gap-4 p-4 h-full min-h-0 text-aai-text">
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-bold opacity-60 uppercase tracking-wide">{trip.passenger}</h3>
         <DeskStrip active={trip.assistant} />
@@ -52,10 +47,7 @@ function ItinerarySidebar() {
       {/* The staged action — the browser half of the confirmation gate. What is
           on screen is exactly what the concierge just asked out loud. */}
       {trip.pending && (
-        <div
-          className="rounded-lg p-3 text-sm"
-          style={{ background: theme.surface, border: `1px solid ${theme.primary}` }}
-        >
+        <div className="rounded-lg p-3 text-sm bg-aai-surface border border-aai-primary">
           <p className="text-[11px] font-bold uppercase tracking-wide opacity-60">
             Waiting on your yes
           </p>
@@ -66,7 +58,7 @@ function ItinerarySidebar() {
       <div className="flex flex-col gap-2">
         <p className="text-[11px] font-bold uppercase tracking-wide opacity-60">Ticket</p>
         {trip.ticket ? (
-          <div className="rounded-lg p-3" style={{ background: theme.surface }}>
+          <div className="rounded-lg p-3 bg-aai-surface">
             <p className="text-sm font-medium">
               {trip.ticket.flightId} · {trip.ticket.route}
             </p>
@@ -85,24 +77,20 @@ function ItinerarySidebar() {
           {trip.bookings.map((booking) => (
             <div
               key={booking.reference}
-              className="flex items-center justify-between gap-3 rounded-lg p-3"
-              style={{ background: theme.surface }}
+              className="flex items-center justify-between gap-3 rounded-lg p-3 bg-aai-surface"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm">{booking.summary}</p>
                 <p className="text-xs opacity-60">{booking.reference}</p>
               </div>
-              <span className="text-sm font-bold" style={{ color: theme.primary }}>
+              <span className="text-sm font-bold text-aai-primary">
                 ${booking.price.toLocaleString("en-US")}
               </span>
             </div>
           ))}
-          <div
-            className="flex justify-between border-t pt-2 text-sm font-bold"
-            style={{ borderColor: theme.border }}
-          >
+          <div className="flex justify-between border-t border-aai-border pt-2 text-sm font-bold">
             <span>Total</span>
-            <span style={{ color: theme.primary }}>${trip.total.toLocaleString("en-US")}</span>
+            <span className="text-aai-primary">${trip.total.toLocaleString("en-US")}</span>
           </div>
         </div>
       )}

@@ -63,7 +63,16 @@ export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
  * and a structural restatement would be a second thing to keep in step with the
  * routes for no gain.
  */
-export type { WorkflowApi, WorkflowOutputOf, WorkflowSummary } from "@alexkroman1/aai/workflow-api";
+export type {
+  WorkflowApi,
+  WorkflowOutputOf,
+  // The status union on its own, so a page can type a lookup keyed by it —
+  // which is what `WORKFLOW_STATUS_LABELS` is and what a page extending it
+  // writes. Reachable through `WorkflowRun["status"]` either way; naming it is
+  // what makes `Record<WorkflowRunStatus, string>` readable at the call site.
+  WorkflowRunStatus,
+  WorkflowSummary,
+} from "@alexkroman1/aai/workflow-api";
 /**
  * A run status nothing will change again.
  *

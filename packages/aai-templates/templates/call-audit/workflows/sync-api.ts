@@ -7,12 +7,11 @@
  * `transcription-workflow` has one: `stepTranscribeSync` is the SDK's — the URL,
  * the raw-key auth (no `Bearer`, which is a 401 that reads like a wrong key), the
  * multipart shape, the deadline and the three-way failure verdict all live there —
- * so what is left at the call site is the `.catch` that hands the verdict to the
- * DevKit, and that belongs somewhere a spec can reach it.
+ * so what is left at the call site is the classification that hands the verdict to
+ * the DevKit, and that belongs somewhere a spec can reach it.
  */
 
-import { stepTranscribeSync } from "@alexkroman1/aai/step";
-import { throwStepError } from "@alexkroman1/aai/step-errors";
+import { stepTranscribeSyncClassified } from "@alexkroman1/aai/step-errors";
 
 /**
  * Transcribe one complete WAV.
@@ -22,8 +21,9 @@ import { throwStepError } from "@alexkroman1/aai/step-errors";
  * stores headerless PCM on purpose (see `media.ts`) and puts a header back with
  * `encodeWav` for exactly this call.
  *
- * `.catch(throwStepError)` is the whole of what this adds, and it is where the
- * three-way call is made: a `FatalError` stops the DevKit retrying something that
+ * `stepTranscribeSyncClassified` — the SDK's own `stepTranscribeSync` plus
+ * `throwStepError`, and nothing else — is the whole of what this adds, and it is
+ * where the three-way call is made: a `FatalError` stops the DevKit retrying something that
  * will answer the same way, a bare `RetryableError` retries in ONE SECOND (that
  * class's own default), and a `RetryableError` carrying `retryAfter` waits exactly
  * as long as the far side asked. The last matters here because a whole fan-out
@@ -39,6 +39,6 @@ export async function transcribeSpan(
   filename: string,
   label: string,
 ): Promise<string> {
-  const { text } = await stepTranscribeSync(bytes, { filename, label }).catch(throwStepError);
+  const { text } = await stepTranscribeSyncClassified(bytes, { filename, label });
   return text;
 }

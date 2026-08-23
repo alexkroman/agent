@@ -2,6 +2,8 @@ import {
   applyConsequences,
   canBurnMomentum,
   gameSlot,
+  inCrisis,
+  isGameOver,
   MOMENTUM_RESET,
   RESULT_LABELS,
   revertConsequences,
@@ -81,16 +83,20 @@ export default storyFlow.tool({
         currentHealth: state.health,
         currentSpirit: state.spirit,
         currentSupply: state.supply,
-        crisisMode: state.crisisMode,
-        gameOver: state.gameOver,
+        // As `action_roll`: derived rather than copied, because `after` has not
+        // run yet when this object is built.
+        crisisMode: inCrisis(state),
+        gameOver: isGameOver(state),
       };
     }),
   // A burn CONSUMES the standing roll (`lastRoll` is cleared), so the resting
   // event is `SETTLED` rather than `ROLLED` — where `action_roll` leaves one
   // standing, this one spends it. A burn that emptied the last track is as
   // final as a roll that did.
+  //
+  // `result` is the SUCCESS type — `sendFrom` takes `Exclude<R, ToolFailure>`
+  // now, so the `"gameOver" in result` guard that stood in for the failure arm
+  // leaking into `R` is a plain property read.
   sendFrom: (result) =>
-    "gameOver" in result && result.gameOver
-      ? { type: "DOWNED" as const }
-      : { type: "SETTLED" as const },
+    result.gameOver ? { type: "DOWNED" as const } : { type: "SETTLED" as const },
 });

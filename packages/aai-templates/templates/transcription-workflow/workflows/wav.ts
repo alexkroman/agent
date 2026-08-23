@@ -312,34 +312,3 @@ export function planSegments(format: WavFormat): Segment[] {
   }
   return segments;
 }
-
-/**
- * Put a canonical 44-byte WAV header in front of a slice of samples.
- *
- * A byte range of a WAV is raw PCM with no header, and the sync endpoint reads
- * the rate and channel count out of one. Sending `audio/pcm` with a `config`
- * part instead would work equally well; a header keeps the two parts of the
- * request from being able to disagree.
- */
-export function wavWithHeader(format: WavFormat, samples: Uint8Array): Uint8Array<ArrayBuffer> {
-  const out = new Uint8Array(44 + samples.length);
-  const view = new DataView(out.buffer);
-  const write = (at: number, text: string) => {
-    for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i));
-  };
-
-  write(0, "RIFF");
-  view.setUint32(4, 36 + samples.length, true);
-  write(8, "WAVEfmt ");
-  view.setUint32(16, 16, true); // `fmt ` payload length
-  view.setUint16(20, 1, true); // linear PCM
-  view.setUint16(22, format.channels, true);
-  view.setUint32(24, format.sampleRate, true);
-  view.setUint32(28, bytesPerSecond(format), true);
-  view.setUint16(32, blockAlign(format), true);
-  view.setUint16(34, format.bitsPerSample, true);
-  write(36, "data");
-  view.setUint32(40, samples.length, true);
-  out.set(samples, 44);
-  return out;
-}

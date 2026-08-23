@@ -16,12 +16,34 @@
  * it, importing `@alexkroman1/aai/testing` is not, and a project that never
  * writes a test resolves neither.
  *
+ * **The rule for what belongs here: anything that installs, and anything that
+ * restores.** Every fake on `@alexkroman1/aai/testing` that fills a published
+ * slot hands back a `restore` the caller owns, and owning it means a registry —
+ * `const restores: (() => void)[]` with an `afterEach` that splices it, written
+ * out in template after template, three times in one file. The `install*` half
+ * of this module is that fake plus `onTestFinished(restore)`: same object,
+ * unwound by the runner in reverse order when the test that installed it ends.
+ *
+ * A fake with no lifetime (`stubGenerate`, `createToolContext`, the workflow
+ * snapshots) gets no wrapper — there is nothing to restore, so a second name
+ * for it would only be a second name.
+ *
  * @module testing/vitest
  */
 
-import { vi } from "vitest";
+import { onTestFinished, vi } from "vitest";
+import type { StubStepAnswer, StubStepFetch, StubStepRequest } from "./_testing-step-fetch.ts";
+import { stubStepFetch } from "./_testing-step-fetch.ts";
+import type { StubTranscribe, StubTranscribeOptions } from "./_testing-transcribe.ts";
+import { stubTranscribe } from "./_testing-transcribe.ts";
+import type { StubReporter } from "./testing.ts";
+import { stubReporter } from "./testing.ts";
 import type { StubGatewayCall, StubGatewayOptions } from "./testing-gateway.ts";
 import { stubGateway } from "./testing-gateway.ts";
+import type { StubSpeech, StubSpeechOptions } from "./testing-speech.ts";
+import { stubSpeech } from "./testing-speech.ts";
+import type { StubUpload, StubUploads, StubUploadsOptions } from "./testing-uploads.ts";
+import { stubUploads } from "./testing-uploads.ts";
 
 /**
  * Install a fake LLM gateway as the global `fetch`, and return its call log.
@@ -60,4 +82,121 @@ export function installStubGateway(
   const gateway = stubGateway(replies, opts);
   vi.stubGlobal("fetch", gateway.fetch);
   return gateway.calls;
+}
+
+/**
+ * Register a fake's `restore` with the test that installed it.
+ *
+ * `onTestFinished` rather than `afterEach`, and the difference is what makes the
+ * whole `install*` family possible: `afterEach` may only be called while a suite
+ * is being COLLECTED, so a helper called from inside a test body cannot register
+ * one — which is exactly where every template's stub is created, in a
+ * `stubProvider()` called by the test that needs it. `onTestFinished` registers
+ * against the test currently running, and runs in reverse order, so a spec that
+ * installs three fakes unwinds them in the order it would have written by hand.
+ *
+ * The registry those specs kept instead — `const restores: (() => void)[]` plus
+ * an `afterEach` that splices it — is the thing this replaces; one file had
+ * three of them.
+ *
+ * Called from a hook or a test body. Outside both there is no test to attach to,
+ * and vitest says so; a fake installed at module scope has module lifetime and
+ * belongs in `sdk/testing.ts`'s framework-agnostic form, where the caller owns
+ * the `restore` explicitly.
+ */
+function restoreAfterThisTest(restore: () => void): void {
+  onTestFinished(restore);
+}
+
+/**
+ * Publish an in-memory upload store, restored when this test finishes.
+ *
+ * `stubUploads` with the bookkeeping done — see it for what the store
+ * serves, why writes are opt-in, and why the minted ids count up.
+ *
+ * @example
+ * ```ts no-check
+ * import { installStubUploads } from "@alexkroman1/aai/testing/vitest";
+ *
+ * test("the step reads the recording it was given", async () => {
+ *   const uploads = installStubUploads({ upl_1: new Uint8Array(5000) }, { writable: true });
+ *   await ingest("upl_1");
+ *   expect(uploads.writes).toHaveLength(1);
+ * });
+ * ```
+ *
+ * @public
+ */
+export function installStubUploads(
+  files: Readonly<Record<string, StubUpload>>,
+  options: StubUploadsOptions = {},
+): StubUploads {
+  const uploads = stubUploads(files, options);
+  restoreAfterThisTest(uploads.restore);
+  return uploads;
+}
+
+/**
+ * Publish a fake `stepFetch`, restored when this test finishes.
+ *
+ * `stubStepFetch` with the bookkeeping done — see it for why a step's HTTP
+ * goes through a published slot rather than the global, and what the recorded
+ * request carries.
+ *
+ * @param answer - Called per request. Defaults to an empty `200`.
+ *
+ * @public
+ */
+export function installStubStepFetch(
+  answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>,
+): StubStepFetch {
+  const fetched = answer ? stubStepFetch(answer) : stubStepFetch();
+  restoreAfterThisTest(fetched.restore);
+  return fetched;
+}
+
+/**
+ * Capture what a `"use step"` function narrates and emits, restored when this
+ * test finishes.
+ *
+ * `stubReporter` with the bookkeeping done — see it for why `report()` and
+ * `emit()` are separated the way the streams are.
+ *
+ * @public
+ */
+export function installStubReporter(): StubReporter {
+  const reported = stubReporter();
+  restoreAfterThisTest(reported.restore);
+  return reported;
+}
+
+/**
+ * Publish a synthesizer that records what it was asked to say, restored when
+ * this test finishes.
+ *
+ * `stubSpeech` with the bookkeeping done — see it for the call log's
+ * shape, the silence it answers with, and how to make it fail instead.
+ *
+ * @public
+ */
+export function installStubSpeech(options: StubSpeechOptions = {}): StubSpeech {
+  const speech = stubSpeech(options);
+  restoreAfterThisTest(speech.restore);
+  return speech;
+}
+
+/**
+ * Answer AssemblyAI's transcription endpoints in memory, restored when this test
+ * finishes.
+ *
+ * `stubTranscribe` with the bookkeeping done — see it for the four legs it
+ * routes, why a refusal is staged as an HTTP status rather than as a
+ * `TranscribeError`, and why it takes an `otherwise` handler.
+ *
+ * @public
+ */
+export function installStubTranscribe(options: StubTranscribeOptions = {}): StubTranscribe {
+  const provider = stubTranscribe(options);
+  restoreAfterThisTest(provider.restore);
+  return provider;
 }

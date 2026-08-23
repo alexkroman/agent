@@ -448,6 +448,91 @@ describe("reading a run's written stream", () => {
   });
 });
 
+describe("reading the newest line of a run's stream", () => {
+  /**
+   * A progress channel as a run really has one: chunks, and then NO close.
+   *
+   * This is the whole hazard. `chunkStream` above closes, so a test built on it
+   * cannot tell a correct bounded read from one that would hang in production.
+   */
+  function openStream(chunks: readonly unknown[]): ReadableStream<unknown> {
+    return new ReadableStream<unknown>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(chunk);
+        // Deliberately never closed — no step knows it is the last one.
+      },
+    });
+  }
+
+  test("an empty channel resolves undefined instead of waiting forever", async () => {
+    const readStream = vi.fn(() => openStream([]));
+    const { client } = makeClient({ wdk: { readStream, streamTail: async () => -1 } });
+    await expect(client.lastLine("wrun_1")).resolves.toBeUndefined();
+    // The proof, and the reason the method exists: on an empty channel it never
+    // opens a stream at all. A read here would not fail the test — it would
+    // never return.
+    expect(readStream).not.toHaveBeenCalled();
+  });
+
+  test("resolves the newest chunk of a channel that is never closed", async () => {
+    const written = ["older", "newest"];
+    const { client } = makeClient({
+      wdk: {
+        // Honours `startIndex` the way WDK's own reader does, so what this
+        // asserts is the chunk a real run would hand back — the assertion is
+        // meaningless against a fake that replays the whole log regardless.
+        readStream: (_runId, options) => openStream(written.slice(options?.startIndex ?? 0)),
+        streamTail: async () => written.length - 1,
+      },
+    });
+    await expect(client.lastLine("wrun_1")).resolves.toBe("newest");
+  });
+
+  test("asks the stream for the last chunk alone rather than replaying the log", async () => {
+    const readStream = vi.fn(() => openStream(["newest"]));
+    const { client } = makeClient({ wdk: { readStream, streamTail: async () => 4 } });
+    await client.lastLine("wrun_1", { namespace: "logs" });
+    expect(readStream).toHaveBeenCalledWith("wrun_1", { namespace: "logs", startIndex: -1 });
+  });
+
+  test("the tail is read from the same namespace the chunk is", async () => {
+    const streamTail = vi.fn(async () => 0);
+    const { client } = makeClient({ wdk: { streamTail, readStream: () => openStream(["a"]) } });
+    await client.lastLine("wrun_1", { namespace: "logs" });
+    expect(streamTail).toHaveBeenCalledWith("wrun_1", { namespace: "logs", startIndex: undefined });
+  });
+
+  test("a non-negative startIndex is a floor the run has not reached yet", async () => {
+    const readStream = vi.fn(() => openStream(["a"]));
+    const { client } = makeClient({ wdk: { readStream, streamTail: async () => 2 } });
+    await expect(client.lastLine("wrun_1", { startIndex: 5 })).resolves.toBeUndefined();
+    expect(readStream).not.toHaveBeenCalled();
+  });
+
+  test("a floor the run has reached resolves the newest chunk", async () => {
+    const { client } = makeClient({
+      wdk: { readStream: () => openStream(["newest"]), streamTail: async () => 5 },
+    });
+    await expect(client.lastLine("wrun_1", { startIndex: 5 })).resolves.toBe("newest");
+  });
+
+  test("a negative startIndex already means the end, so it is not a floor", async () => {
+    const { client } = makeClient({
+      wdk: { readStream: () => openStream(["newest"]), streamTail: async () => 0 },
+    });
+    await expect(client.lastLine("wrun_1", { startIndex: -3 })).resolves.toBe("newest");
+  });
+
+  test("a tail that promises a chunk the stream does not hold resolves undefined", async () => {
+    // A race rather than a contradiction: the tail was read, then the run's
+    // stream was trimmed or the namespace answered empty. It must still end.
+    const { client } = makeClient({
+      wdk: { readStream: () => chunkStream([]), streamTail: async () => 3 },
+    });
+    await expect(client.lastLine("wrun_1")).resolves.toBeUndefined();
+  });
+});
+
 describe("listing declared workflows", () => {
   test("names each workflow with its description and a JSON Schema for its input", () => {
     const { client } = makeClient();

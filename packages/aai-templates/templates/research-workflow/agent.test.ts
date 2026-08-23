@@ -22,12 +22,13 @@
 
 import type { ToolContext, WorkflowClient } from "@alexkroman1/aai";
 import {
-  createProgressStream,
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
+  parseSchemaInput,
   runTool,
   type StubGatewayCall,
+  schemaInputIssues,
   withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
@@ -76,9 +77,19 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-/** Every tool here is driven through the agent's own table, by the name the model calls. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<unknown> =>
-  runTool(agentDef, name, args, ctx);
+/**
+ * Every tool here is driven through the agent's own table, by the name the model
+ * calls.
+ *
+ * The third parameter is args-or-context, which is `runTool`'s own shape: three
+ * of this desk's four tools take no arguments, and the `{}` those calls were
+ * obliged to pass sat between the two values a reader cares about.
+ */
+const run = (
+  name: string,
+  argsOrCtx?: Record<string, unknown> | ToolContext,
+  ctx?: ToolContext,
+): Promise<unknown> => runTool(agentDef, name, argsOrCtx, ctx);
 
 /**
  * A `ctx.workflows` that records `start` and answers `find` from a fixture.
@@ -97,11 +108,11 @@ function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
     recent: vi.fn(async () => runs),
     cancel: vi.fn(async () => true),
     wakeUp: vi.fn(async () => 0),
-    // A tail of 0 means "one line written", which is the case the tools read.
-    // The `-1` case is overridden per test, because it is the one that decides
-    // whether the stream is opened at all.
-    streamTail: vi.fn(async () => 0),
-    stream: vi.fn(async () => createProgressStream([])),
+    // `lastLine` is the whole progress read now — `streamTail` + `stream` are no
+    // longer composed here, so neither is stubbed. `undefined` is "the run has
+    // written nothing yet", which is the arm `research_progress` branches on;
+    // tests wanting a line override it.
+    lastLine: vi.fn(async () => undefined),
     // Name only: `WorkflowDef.description` is optional, so passing it through
     // would mean handing `description: undefined` to a field that does not
     // accept it. Nothing here reads the description anyway.
@@ -116,13 +127,16 @@ describe("the agent declares its workflow", () => {
   });
 
   test("with an input schema, so a bad topic fails at the call site", async () => {
-    const result = await research.input?.["~standard"].validate({
-      topic: "otters",
-      requestedBy: "s",
-    });
-    expect(result?.issues).toBeUndefined();
-    const bad = await research.input?.["~standard"].validate({ topic: "no", requestedBy: "s" });
-    expect(bad?.issues).toBeDefined();
+    // `parseSchemaInput` / `schemaInputIssues` rather than a reach through
+    // `["~standard"].validate`: that is the vendor WIRE contract, and whether it
+    // answers synchronously or with a promise is the vendor's business — a
+    // missing `await` there leaves `.issues` undefined and the refusing half
+    // passes for the wrong reason.
+    const parsed = await parseSchemaInput(research.input, { topic: "otters", requestedBy: "s" });
+    expect(parsed).toMatchObject({ topic: "otters" });
+    expect(
+      await schemaInputIssues(research.input, { topic: "no", requestedBy: "s" }),
+    ).toBeDefined();
   });
 });
 
@@ -185,7 +199,7 @@ describe("request_research", () => {
 describe("research_status", () => {
   test("says nothing was started when the key has no runs", async () => {
     const ctx = createToolContext({ workflows: stubWorkflows([]) });
-    const result = await run("research_status", {}, ctx);
+    const result = await run("research_status", ctx);
     expect(result).toMatchObject({ runs: [], note: "Nothing started yet." });
   });
 
@@ -198,7 +212,7 @@ describe("research_status", () => {
       }),
     ];
     const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = (await run("research_status", {}, ctx)) as { runs: string[] };
+    const result = (await run("research_status", ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("Otters use tools.");
     expect(result.runs[0]).toContain("3 sources");
   });
@@ -207,7 +221,7 @@ describe("research_status", () => {
     const ctx = createToolContext({
       workflows: stubWorkflows([createRunSnapshot({ workflow: "research", status: "running" })]),
     });
-    const result = (await run("research_status", {}, ctx)) as { runs: string[] };
+    const result = (await run("research_status", ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("Still working on it.");
   });
 
@@ -216,14 +230,14 @@ describe("research_status", () => {
       createRunSnapshot({ workflow: "research", status: "failed", error: "model unavailable" }),
     ];
     const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = (await run("research_status", {}, ctx)) as { runs: string[] };
+    const result = (await run("research_status", ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("model unavailable");
   });
 
   test("bounds how many past runs it reads aloud", async () => {
     const workflows = stubWorkflows([]);
     const ctx = createToolContext({ workflows });
-    await run("research_status", {}, ctx);
+    await run("research_status", ctx);
     // A voice reply cannot be a list of twenty runs.
     expect(workflows.find).toHaveBeenCalledWith(research, ctx.sessionId, { limit: 3 });
   });
@@ -234,40 +248,40 @@ describe("research_progress", () => {
     const workflows = stubWorkflows([
       createRunSnapshot({ workflow: "research", status: "running" }),
     ]);
-    vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["Found 3 sources."]));
-    const ctx = createToolContext({ workflows });
-    const result = await run("research_progress", {}, ctx);
+    vi.mocked(workflows.lastLine).mockResolvedValue("Found 3 sources.");
+    const result = await run("research_progress", createToolContext({ workflows }));
     expect(result).toMatchObject({ progress: "Found 3 sources." });
   });
 
   test("asks for the LAST line, not the whole log", async () => {
-    // A voice reply cannot recite every line the run has written.
+    // A voice reply cannot recite every line the run has written. `lastLine` is
+    // the whole request — the bound that keeps an empty channel from hanging
+    // belongs to the method, so nothing here composes `streamTail` and `stream`.
     const workflows = stubWorkflows([
       createRunSnapshot({ workflow: "research", status: "running" }),
     ]);
-    vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["a"]));
-    await run("research_progress", {}, createToolContext({ workflows }));
-    expect(workflows.stream).toHaveBeenCalledWith("wrun_1", { startIndex: -1 });
+    vi.mocked(workflows.lastLine).mockResolvedValue("a");
+    await run("research_progress", createToolContext({ workflows }));
+    expect(workflows.lastLine).toHaveBeenCalledWith("wrun_1");
   });
 
-  test("a run that has written nothing yet says so WITHOUT opening the stream", async () => {
-    // Not a shortcut: an empty progress channel is never closed, so reading one
-    // would wait for a line that arrives whenever the next step writes — i.e.
-    // the tool hangs instead of answering. The tail is how that is known.
+  test("a run that has written nothing yet says so", async () => {
+    // `lastLine` resolves `undefined` for an empty channel, and this is the arm
+    // the tool branches on. That an empty channel does not HANG — it is never
+    // closed, so a stream opened on one waits for a line that may never come —
+    // is `lastLine`'s own guarantee now, and `aai`'s to test.
     const workflows = stubWorkflows([
       createRunSnapshot({ workflow: "research", status: "running" }),
     ]);
-    vi.mocked(workflows.streamTail).mockResolvedValue(-1);
-    const result = await run("research_progress", {}, createToolContext({ workflows }));
+    const result = await run("research_progress", createToolContext({ workflows }));
     expect(result).toMatchObject({ note: "Started, nothing to report yet." });
-    expect(workflows.stream).not.toHaveBeenCalled();
   });
 
   test("says nothing was started when the key has no runs", async () => {
     const workflows = stubWorkflows([]);
-    const result = await run("research_progress", {}, createToolContext({ workflows }));
+    const result = await run("research_progress", createToolContext({ workflows }));
     expect(result).toMatchObject({ note: "Nothing started yet." });
-    expect(workflows.stream).not.toHaveBeenCalled();
+    expect(workflows.lastLine).not.toHaveBeenCalled();
   });
 });
 
@@ -277,7 +291,7 @@ describe("file_it_now", () => {
       createRunSnapshot({ workflow: "research", status: "running" }),
     ]);
     vi.mocked(workflows.wakeUp).mockResolvedValue(1);
-    const result = await run("file_it_now", {}, createToolContext({ workflows }));
+    const result = await run("file_it_now", createToolContext({ workflows }));
     expect(workflows.wakeUp).toHaveBeenCalledWith("wrun_1");
     expect(result).toMatchObject({ filed: true });
   });
@@ -289,13 +303,13 @@ describe("file_it_now", () => {
       createRunSnapshot({ workflow: "research", status: "running" }),
     ]);
     vi.mocked(workflows.wakeUp).mockResolvedValue(0);
-    const result = await run("file_it_now", {}, createToolContext({ workflows }));
+    const result = await run("file_it_now", createToolContext({ workflows }));
     expect(result).toMatchObject({ filed: false });
   });
 
   test("says nothing was started when the key has no runs", async () => {
     const workflows = stubWorkflows([]);
-    const result = await run("file_it_now", {}, createToolContext({ workflows }));
+    const result = await run("file_it_now", createToolContext({ workflows }));
     expect(result).toMatchObject({ note: "Nothing started yet." });
     expect(workflows.wakeUp).not.toHaveBeenCalled();
   });

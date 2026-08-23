@@ -342,6 +342,28 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       return wdk.streamTail(runId, streamOptions(options));
     },
 
+    async lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined> {
+      const opts = streamOptions(options);
+      // The tail FIRST, and never conditionally: a progress channel is never
+      // closed, so a stream with nothing in it does not end — it waits. This
+      // is the whole reason the method exists rather than being composed at
+      // each call site. See `WorkflowClient.lastLine`.
+      const tail = await wdk.streamTail(runId, opts);
+      if (tail < 0) return undefined;
+      // A non-negative `startIndex` is a floor the caller has already read
+      // past; a negative one already means "from the end", which is where this
+      // reads from regardless.
+      const floor = opts.startIndex;
+      if (floor !== undefined && floor >= 0 && tail < floor) return undefined;
+      // `-1` is the last chunk alone — the alternative replays the whole log to
+      // throw all but its final entry away.
+      const stream = wdk.readStream(runId, { ...opts, startIndex: -1 });
+      // Returning from inside `for await` cancels the reader, so the one chunk
+      // is read and nothing is left draining.
+      for await (const chunk of stream) return chunk;
+      return undefined;
+    },
+
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>> {
       // Async to match every other method here even though WDK's own read is
       // synchronous — the laziness is what makes that free, and a uniform

@@ -224,6 +224,8 @@ a bare `lock()` leaves to the caller's `finally`.
 
 ### dialog()
 
+#### Call Signature
+
 ```ts
 function dialog<M>(
    key: string, 
@@ -237,22 +239,22 @@ The machine is an ordinary XState machine, so everything XState knows how to
 do with one applies — `@xstate/procedure` can enumerate its paths to generate
 dialog test cases, and the machine is serializable for a visualizer.
 
-#### Type Parameters
+##### Type Parameters
 
-##### M
+###### M
 
 `M` *extends* `AnyStateMachine`
 
-#### Parameters
+##### Parameters
 
-##### key
+###### key
 
 `string`
 
 The store key to occupy, like a [sessionSlot](#sessionslot-1)'s. Two flows
   must not share one, and a dialog must not share one with a slot.
 
-##### machine
+###### machine
 
 `M`
 
@@ -260,15 +262,15 @@ The machine. Give a state a `meta.instruction` and it becomes
   [DialogPosition.instruction](#instruction) while that state is active — which is what
   a refusal quotes and what every dialog tool's result carries.
 
-##### options?
+###### options?
 
 [`DialogOptions`](#dialogoptions)
 
-#### Returns
+##### Returns
 
 [`Dialog`](#dialog)\<`M`\>
 
-#### Examples
+##### Examples
 
 ```ts
 // shared.ts — the one place the dialog is declared.
@@ -311,13 +313,82 @@ export default claim.tool({
 });
 ```
 
-#### Remarks
+```ts
+// The same dialog as a plain state map — no `setup()`, no events union to
+// restate, no `meta` wrapper. `dialog.send` is typed from the `on` keys.
+import { dialog } from "@alexkroman1/aai";
+
+export const claim = dialog("claim", {
+  initial: "verifying",
+  states: {
+    verifying: {
+      instruction: "Get the caller's policy number and verify it.",
+      on: { VERIFIED: "quoting" },
+    },
+    quoting: {
+      instruction: "Read the excess disclosure, then quote.",
+      on: { QUOTED: "done" },
+    },
+    done: { final: true },
+  },
+});
+```
+
+##### Remarks
 
 **Three primitives here run a defined process; pick by SCOPE.** A
 [dialog](#dialog-1) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
 OF WORK inside a single tool call, never stored. A [workflow](#workflow) runs
 DURABLY, outliving the session.
+
+#### Call Signature
+
+```ts
+function dialog<S>(
+   key: string, 
+   spec: S, 
+options?: DialogOptions): Dialog<AnyStateMachine, DialogEvent<S>>;
+```
+
+Declare a dialog from a plain state map — see [DialogSpec](#dialogspec).
+
+The overload exists rather than replacing the machine form because the two
+answer different questions. A spec covers what every dialog in the templates
+actually used and nothing else, on purpose: a persisted snapshot must survive
+`structuredClone`, so guards, context and actions were never available here
+anyway, and what an author was paying for full XState was a `setup({ types:
+{} as { events: … } })` block restating the event names already written in the
+`on` maps. A dialog that needs more than the spec can say passes a machine,
+and that path is unchanged.
+
+It builds the same machine, so the STORED SNAPSHOT is byte-identical to the
+hand-written equivalent's and a `durable: true` dialog resumes across the
+switch — see `machineFromSpec`.
+
+##### Type Parameters
+
+###### S
+
+`S` *extends* [`DialogSpec`](#dialogspec)
+
+##### Parameters
+
+###### key
+
+`string`
+
+###### spec
+
+`S`
+
+###### options?
+
+[`DialogOptions`](#dialogoptions)
+
+##### Returns
+
+[`Dialog`](#dialog)\<`AnyStateMachine`, [`DialogEvent`](#dialogevent)\<`S`\>\>
 
 ***
 
@@ -1841,6 +1912,15 @@ A dialog statechart bound to a session, created by [dialog](#dialog-1).
 
 The XState machine this dialog runs.
 
+##### E
+
+`E` = `EventFromLogic`\<`M`\>
+
+The event union [Dialog.send](#send) and a gated tool's
+  `send`/`sendFrom` accept. Defaults to the machine's own — a dialog declared
+  from a [DialogSpec](#dialogspec) supplies it directly instead, because the machine
+  it builds is an implementation detail and its type carries no events.
+
 #### Methods
 
 ##### matches()
@@ -1934,7 +2014,7 @@ Discard this session's progress and start the dialog over.
 ##### send()
 
 ```ts
-send(ctx: ToolContext, event: EventFromLogic<M>): DialogPosition;
+send(ctx: ToolContext, event: E): DialogPosition;
 ```
 
 Advance the dialog, and store the result.
@@ -1953,7 +2033,7 @@ available. The returned position is what actually happened; compare its
 
 ###### event
 
-`EventFromLogic`\<`M`\>
+`E`
 
 ###### Returns
 
@@ -1962,10 +2042,19 @@ available. The returned position is what actually happened; compare its
 ##### tool()
 
 ```ts
-tool<P, R>(def: DialogToolDef<P, R, EventFromLogic<M>>): ToolDef<P>;
+tool<P, R>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<
+  | ToolFailure
+| DialogToolResult<R>>>;
 ```
 
 Declare a tool gated on this dialog's state. See [DialogToolDef](#dialogtooldef).
+
+The return type is the WRAPPED one the body actually answers with, not a
+bare [ToolDef](#tooldef): `InferToolOutput<typeof myTool>` is then
+`DialogToolResult<R> | ToolFailure`, so a custom client renders the same
+shape the tool sends instead of `unknown`. Narrowing a return type is
+covariant, so a gated tool is still assignable wherever the agent's
+registry wants a `ToolDef<ToolInputSchema>`.
 
 ###### Type Parameters
 
@@ -1981,11 +2070,13 @@ Declare a tool gated on this dialog's state. See [DialogToolDef](#dialogtooldef)
 
 ###### def
 
-[`DialogToolDef`](#dialogtooldef)\<`P`, `R`, `EventFromLogic`\<`M`\>\>
+[`DialogToolDef`](#dialogtooldef)\<`P`, `R`, `E`\>
 
 ###### Returns
 
-[`ToolDef`](#tooldef)\<`P`\>
+[`ToolDef`](#tooldef)\<`P`, `Promise`\<
+  \| [`ToolFailure`](utils.md#toolfailure)
+  \| [`DialogToolResult`](#dialogtoolresult)\<`R`\>\>\>
 
 #### Properties
 
@@ -2063,6 +2154,107 @@ readonly state: string;
 
 The active state as a dotted path — `"verifying"`, or `"quote.pending"` for
 a nested one. Parallel regions are joined with `","`.
+
+***
+
+### DialogSpec
+
+A dialog's shape as a plain state map — the argument to the [dialog](#dialog-1)
+overload that takes no XState machine. See [DialogStateSpec](#dialogstatespec).
+
+#### Properties
+
+##### initial
+
+```ts
+initial: string;
+```
+
+Which state a fresh dialog starts in.
+
+##### states
+
+```ts
+states: Record<string, DialogStateSpec>;
+```
+
+The states, keyed by the name `when` and [DialogPosition.state](#state) use.
+
+***
+
+### DialogStateSpec
+
+One state of a [DialogSpec](#dialogspec) — the plain-object form of a dialog's shape.
+
+These are the six things every dialog in the templates actually used, and
+they are not a subset chosen for convenience: a dialog's snapshot is
+PERSISTED, so it must survive `structuredClone`, which rules out guards,
+actions, context and invoked actors by construction. What was left was an
+XState `setup({ types: {} as { events: … } })` block whose event union
+restated every name already written in the `on` maps, and a
+`meta: { instruction }` wrapper around every line of guidance.
+
+**The reason to type it is a SILENT failure, not the line count.** The
+instruction is read back out of `meta` untyped (`_dialog-snapshot.ts`), and
+XState types `meta` as `Record<string, any>` unless a machine declares
+`types: {} as { meta: … }` — which no template did. So `instructions`
+(plural), or the field one nesting level off, compiled, deployed, and
+produced refusals carrying no recovery text at all: exactly the failure the
+`when` gate exists to prevent, arriving through the field that is supposed to
+explain it. A declared `instruction?: string` makes that a typo the compiler
+catches.
+
+A dialog that needs anything beyond these six passes a machine instead — the
+[dialog](#dialog-1) overload taking one is not going away, and `procedure()` is
+where full XState lives.
+
+#### Properties
+
+##### final?
+
+```ts
+optional final?: true;
+```
+
+Whether reaching this state ENDS the dialog — XState's `type: "final"`.
+
+##### initial?
+
+```ts
+optional initial?: string;
+```
+
+For a state with `states`: which child it starts in.
+
+##### instruction?
+
+```ts
+optional instruction?: string;
+```
+
+What the agent is supposed to be doing here, in this state's own words.
+Becomes [DialogPosition.instruction](#instruction) while the state is active, which
+is what a refusal quotes and what every gated tool's result carries.
+
+##### on?
+
+```ts
+optional on?: Record<string, string>;
+```
+
+The transitions out of this state: event name to target state, exactly as
+an XState `on` map spells it. Every key here joins the event union
+[Dialog.send](#send) and a gated tool's `send`/`sendFrom` accept, so an
+event a spec never declares is a compile error rather than an event
+silently ignored at run time.
+
+##### states?
+
+```ts
+optional states?: Record<string, DialogStateSpec>;
+```
+
+Nested states, addressed as `parent.child` by `when` and by `matches`.
 
 ***
 
@@ -2166,7 +2358,7 @@ bug this primitive can have, since every later gate is then wrong too.
 ##### sendFrom?
 
 ```ts
-optional sendFrom?: (result: R) => E | undefined;
+optional sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
 ```
 
 The event to send, decided by the RESULT — for a tool whose outcome picks
@@ -2179,11 +2371,27 @@ the check would need a cast to compile. Two fields are also the clearer
 authoring surface — the static case stays a literal. Declaring both is an
 error.
 
+**`NoInfer` is what makes the parameter mean anything.** `R` is inferred
+from `execute`, and a bare `(result: R) => …` here puts `R` in a SECOND
+inference position — so which one wins is decided by the object literal's
+source order. A `sendFrom` written ABOVE `execute` inferred `R = unknown`
+from its own parameter, and then compiled: the narrowing an author wrote it
+for silently stopped meaning anything, with no error anywhere and no way to
+tell the two orderings apart by reading either one. `NoInfer<R>` takes this
+position out of the running, so `execute` decides `R` in both orderings and
+a typo'd property is a `TS2551` in both.
+
+**`Exclude<…, ToolFailure>` is the other half, and it was already true at
+run time**: the failure check returns before `sendFrom` is reached, so a
+failure is never handed to it. Saying so in the type is what lets a body
+declared `Order | ToolFailure` be narrowed here without the author
+re-checking a case that cannot arrive.
+
 ###### Parameters
 
 ###### result
 
-`R`
+`Exclude`\<`NoInfer`\<`R`\>, [`ToolFailure`](utils.md#toolfailure)\>
 
 ###### Returns
 
@@ -2770,7 +2978,7 @@ its draft is a copy; this is the same rule applied to the other writer.
 ##### tool()
 
 ```ts
-tool<P, R>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P>;
+tool<P, R>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
 ```
 
 Define a READ-ONLY tool over this slot: `execute` is handed the frozen
@@ -2780,6 +2988,11 @@ value, so the body needs neither a context annotation nor an opening
 A body that mutates wants [SessionSlot.updateTool](#updatetool). This one's value
 is [DeepReadonly](#deepreadonly)`<T>`, so choosing wrong is a compile error — at any
 depth — rather than a write that goes nowhere or throws.
+
+**`R` is threaded out**, as [tool](#tool-1)'s is: `R` used to be bound here and
+thrown away at the interface, so `InferToolOutput` answered `unknown` for
+exactly the tools an agent most often writes. Narrowing a return type is
+covariant, so the tool stays assignable to `ToolDef<ToolInputSchema>`.
 
 ###### Type Parameters
 
@@ -2799,7 +3012,7 @@ depth — rather than a write that goes nowhere or throws.
 
 ###### Returns
 
-[`ToolDef`](#tooldef)\<`P`\>
+[`ToolDef`](#tooldef)\<`P`, `R`\>
 
 ###### Example
 
@@ -2887,7 +3100,7 @@ has nothing to serialize.
 ##### updateTool()
 
 ```ts
-updateTool<P, R>(def: SlotToolDef<P, T, R>): ToolDef<P>;
+updateTool<P, R>(def: SlotToolDef<P, T, R>): ToolDef<P, R>;
 ```
 
 Define a MUTATING tool over this slot: the body runs inside
@@ -2929,7 +3142,7 @@ is the other half, and only the call can catch it.
 
 ###### Returns
 
-[`ToolDef`](#tooldef)\<`P`\>
+[`ToolDef`](#tooldef)\<`P`, `R`\>
 
 ###### Example
 
@@ -3402,6 +3615,30 @@ round-tripped through JSON — the client already knows its shape, and the
 framework cannot. The strict default (`unknown`) made reading one field a
 compile error in a client that runs correctly, which blocked publishing
 once `aai build` type-checked.
+
+***
+
+### DialogEvent
+
+```ts
+type DialogEvent<S> = EventOf<NamesInMap<S["states"]>>;
+```
+
+The event union a [DialogSpec](#dialogspec) declares — synthesized from its `on`
+keys at every depth.
+
+This is what a spec-declared dialog gets INSTEAD of the `setup({ types: {} as
+{ events: … } })` block it replaces: the names are already written in the
+`on` maps, so restating them is a second source of truth that can disagree
+with the first. `dialog.send`, `send` and `sendFrom` are typed against it, so
+a misspelled event is a compile error at the call site rather than an event
+XState quietly ignores.
+
+#### Type Parameters
+
+##### S
+
+`S` *extends* [`DialogSpec`](#dialogspec)
 
 ***
 
@@ -4799,6 +5036,7 @@ type WorkflowClient = {
   get: Promise<
      | WorkflowRunSnapshot<R>
     | undefined>;
+  lastLine: Promise<unknown>;
   listing: WorkflowSummary[];
   publicWebhookUrl: string;
   recent: Promise<WorkflowRunSnapshot<R>[]>;
@@ -4976,6 +5214,60 @@ get(runId: string): Promise<
 `Promise`\<
   \| [`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)
   \| `undefined`\>
+
+##### lastLine()
+
+```ts
+lastLine(runId: string, options?: StreamOptions): Promise<unknown>;
+```
+
+The NEWEST chunk a run has written, or `undefined` when it has written
+nothing.
+
+**Reach for this instead of composing [streamTail](#streamtail) and
+[stream](#stream) — the composition is the one a tool gets wrong, and getting
+it wrong HANGS.** A progress channel is never closed (no step knows it is
+the last one), so `stream` on a run with nothing in it yields nothing and
+waits forever rather than ending: a voice agent's tool call stops mid-turn
+with no error, no timeout of its own, and nothing in a log to read. The
+bound that prevents it is `streamTail() < 0`, which has to come FIRST and
+is not an optimization. Two templates carried the same six-line comment
+saying exactly that, above the same eight lines, which is what a missing
+front door looks like.
+
+This method cannot hang: it asks for the tail before it opens anything, and
+it opens a stream only once the tail says there is a chunk to read. It
+reads ONE chunk and cancels, so nothing is left draining behind it.
+
+The chunk is `unknown` — whatever the body passed to `getWritable()`, which
+this SDK does not constrain. A tool narrating progress wants
+`String(line)`; a body writing structured records should narrow with a
+guard.
+
+[streamTail](#streamtail) and [stream](#stream) stay public and are still the right
+pair for reading a WHOLE log — a page rendering every line, a reader
+resuming from where it got to. This is only the "read me the newest thing"
+case, which is the one with a trap in it.
+
+`options.namespace` selects the stream, as everywhere else. A non-negative
+`options.startIndex` acts as a FLOOR: nothing is resolved until the run has
+written that far, which is what a reader that has already seen up to an
+index wants. A negative one asks for the newest chunk, which is what this
+returns anyway.
+
+###### Parameters
+
+###### runId
+
+`string`
+
+###### options?
+
+[`StreamOptions`](workflow-api.md#streamoptions)
+
+###### Returns
+
+`Promise`\<`unknown`\>
 
 ##### listing()
 
@@ -5681,21 +5973,34 @@ the last is included only when the session has tools:
 5. `## TOOLS` — never fabricate, act first and ask second, report results
    rather than intentions, and the mis-hearing retry ladder.
 
-`agent({ systemPrompt })` REPLACES all of it. To keep the voice rules and add
-your own domain rules, append instead:
+**`agent({ systemPrompt })` does NOT replace any of it — it is APPENDED.**
+`buildSystemPrompt` always emits these sections and then adds your
+prompt last, under a header saying it overrides them where they conflict. So
+write only your own domain rules:
 
 ```ts
-import { agent, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
+import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Cart",
-  systemPrompt: `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss items in the catalog.`,
+  systemPrompt: "Only discuss items in the catalog.",
 });
 ```
 
-The full text is ~10,000 characters and is assembled from parts, so it is not
-reproduced here — a second copy in a comment would drift from the one the
-agent runs. Print `DEFAULT_SYSTEM_PROMPT` to read it exactly as sent.
+**Do not interpolate this constant into that string.** This doc used to show
+exactly that (`` `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss…` ``) on the false
+premise that it was replaced, which sent the ~10,000-character voice core
+twice — the repetition this module's whole section split exists to prevent,
+paid for in tokens on every turn and in a prompt that contradicts itself
+where the two copies land under different precedence headers.
+`buildSystemPrompt` now strips a leading copy rather than emitting it
+again, so an agent that followed the old advice is corrected on upgrade; that
+is a repair, not an invitation to keep composing.
+
+**It is exported to be READ, not composed**: printed while tuning an agent,
+diffed across SDK versions, or asserted on in a test. The full text is
+assembled from parts and is not reproduced here — a second copy in a comment
+would drift from the one the agent runs.
 
 ***
 

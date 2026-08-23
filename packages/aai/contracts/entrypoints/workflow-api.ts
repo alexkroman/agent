@@ -17,6 +17,16 @@
  * snapshot and its guard, and `WorkflowOutputOf` — names whose reader is never
  * `agent.ts`, which is the root's membership test.
  *
+ * `WorkflowInputOf` and `WorkflowRunOf` complete that set, and the three
+ * `…Of<typeof def>` helpers travel together on purpose: a body names the INPUT,
+ * a page names the OUTPUT, and a tool reporting on a run names the SNAPSHOT the
+ * two compose into. Each reads the workflow's own declaration rather than
+ * restating it — `WorkflowInputOf` is the schema's OUTPUT type, so a field with
+ * a `.default()` is required after parsing however optional it was on the way
+ * in, which is the distinction a hand-written parameter type gets wrong first
+ * (and did: several workflow bodies re-implemented their own schema defaults
+ * with `??`).
+ *
  * Four names then LEFT for `@alexkroman1/aai/internal`, all of them the SERVER's
  * half rather than the client's: `clampWorkflowWait`, `MAX_WORKFLOW_WAIT_MS`,
  * `TERMINAL_WORKFLOW_STATUSES` and `WORKFLOW_API_PREFIX`. Each had
@@ -62,8 +72,10 @@ export {
   type WorkflowApi,
   type WorkflowApiClientOptions,
   type WorkflowBody,
+  type WorkflowInputOf,
   type WorkflowOutputOf,
   type WorkflowRunBase,
+  type WorkflowRunOf,
   type WorkflowRunSnapshot,
   type WorkflowRunStatus,
   type WorkflowSummary,

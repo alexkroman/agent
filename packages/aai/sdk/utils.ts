@@ -3,8 +3,9 @@
  * Shared utility functions (the `@alexkroman1/aai/utils` subpath).
  *
  * For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
- * `toolFailure`, `isToolFailure`, `pushCapped`, and `createKeyedLock`. The
- * remaining exports are framework
+ * `toolFailure`, `isToolFailure`, `pushCapped`, `createKeyedLock`, and the four
+ * narration formatters (`formatBytes`, `formatDuration`, `countWords`,
+ * `plural`). The remaining exports are framework
  * plumbing shared with the sibling packages. The module stays free of zod and
  * other heavy runtime dependencies so the CLI can import it on every
  * invocation without a startup cost.
@@ -39,6 +40,16 @@ import { isRecord } from "./is-record.ts";
 import { statusWithPreview } from "./response-body.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
 
+/**
+ * The narration formatters — a byte count, a clock reading, a word count, and
+ * an English plural.
+ *
+ * Their own module because they are a set with one shared argument (see
+ * `format.ts`), and re-exported from here rather than given a subpath of their
+ * own because `/utils` is already the import a template's `client.tsx` and its
+ * `workflows/*.ts` both reach for, and these four are used from both.
+ */
+export { countWords, formatBytes, formatDuration, plural } from "./format.ts";
 export { isRecord } from "./is-record.ts";
 export {
   createKeyedLock,

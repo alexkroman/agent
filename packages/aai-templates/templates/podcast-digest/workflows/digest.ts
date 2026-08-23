@@ -49,19 +49,17 @@
  * @module digest
  */
 
+import { mapConcurrent, report, TRANSCRIBE_API } from "@alexkroman1/aai/step";
 import {
-  mapConcurrent,
-  report,
-  stepGenerateJson,
-  stepTranscribePoll,
-  stepTranscribeSubmit,
-  TRANSCRIBE_API,
-  TranscribeError,
-} from "@alexkroman1/aai/step";
-import { throwStepError } from "@alexkroman1/aai/step-errors";
+  stepGenerateJsonClassified,
+  stepTranscribePollClassified,
+  stepTranscribeSubmitClassified,
+} from "@alexkroman1/aai/step-errors";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { sleep } from "workflow";
+import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
+import { FatalError, sleep } from "workflow";
 import { z } from "zod";
+import type { dailyDigest } from "../agent.ts";
 import { discoverEpisodes, type Episode } from "./feeds.ts";
 import { sendDigestToSlack } from "./slack.ts";
 
@@ -86,15 +84,16 @@ const SUBMIT_CONCURRENCY = 2;
 /** Status checks in flight at once. Cheaper calls, so a wider gate. */
 const POLL_CONCURRENCY = 3;
 
-export type DigestInput = {
-  podcastChannels: string;
-  slackWebhookUrl: string;
-  slackWorkflowTextParam?: string;
-  maxEpisodesPerDigest?: number;
-  intervalEvery?: number;
-  intervalUnit?: IntervalUnit;
-  daysToRun?: number;
-};
+/**
+ * What a run is started with — the schema's OUTPUT, so every `.default()` has
+ * already run and nothing here is optional.
+ *
+ * Derived rather than restated. The hand-written version this replaces declared
+ * six optional fields against a schema where all six carry a default, so the
+ * body re-applied every one of them with `??` and a `.default(5)` beside a
+ * `?? 3` could disagree with nothing reporting it.
+ */
+export type DigestInput = WorkflowInputOf<typeof dailyDigest>;
 
 export type IntervalUnit = "minutes" | "hours" | "days";
 
@@ -138,7 +137,7 @@ export type DailyDigestOutput = {
   } | null;
 };
 
-/** What the model must answer with, and what `stepGenerateJson` enforces. */
+/** What the model must answer with, and what `stepGenerateJsonClassified` enforces. */
 const SummaryReply = z.object({
   summary: z.string().trim().min(1),
   keyPoints: z.array(z.string().trim().min(1)).min(1).max(5),
@@ -157,10 +156,12 @@ const SummaryReply = z.object({
 export async function dailyDigestFlow(input: DigestInput): Promise<DailyDigestOutput> {
   "use workflow";
 
-  const totalDigests = input.daysToRun ?? 7;
-  const maxEpisodes = input.maxEpisodesPerDigest ?? 5;
-  const intervalEvery = input.intervalEvery ?? 1;
-  const intervalUnit = input.intervalUnit ?? "days";
+  // No `??` fallbacks: {@link DigestInput} is the schema's OUTPUT, so every
+  // `.default()` has already run by the time a run reaches this line. The
+  // chain this replaces restated all four of them, which is a second place for
+  // the number to be wrong.
+  const { daysToRun: totalDigests, maxEpisodesPerDigest: maxEpisodes } = input;
+  const { intervalEvery, intervalUnit } = input;
   const intervalMs = scheduleIntervalMs(intervalEvery, intervalUnit);
 
   let lastDigest: DailyDigestOutput["lastDigest"] = null;
@@ -174,7 +175,7 @@ export async function dailyDigestFlow(input: DigestInput): Promise<DailyDigestOu
 
     const slackStatus = await sendDigestToSlack({
       slackWebhookUrl: input.slackWebhookUrl,
-      slackWorkflowTextParam: input.slackWorkflowTextParam ?? "text",
+      slackWorkflowTextParam: input.slackWorkflowTextParam,
       podcastChannels: input.podcastChannels,
       episodes: digests,
       digestNumber,
@@ -249,25 +250,31 @@ async function waitForTranscripts(jobs: TranscriptJob[]): Promise<TranscriptStat
 /**
  * Hand one episode's audio to AssemblyAI.
  *
- * The `catch` is the interesting line. `TranscribeError` has already decided
- * whether a failure is worth retrying, so a retryable one is re-thrown for the
- * DevKit to schedule, and a terminal one — a 404 on the media URL, a file that
- * is not audio — becomes an `unavailable` VALUE rather than a throw. That is
- * the whole partial-failure policy in one place: transport problems retry,
- * this-episode-is-broken problems degrade.
+ * The `catch` is the interesting line, and the whole partial-failure policy is
+ * in it: transport problems retry, this-episode-is-broken problems degrade. A
+ * terminal failure — a 404 on the media URL, a file that is not audio — becomes
+ * an `unavailable` VALUE rather than a throw, because one bad episode must not
+ * sink a digest of five.
+ *
+ * The verdict itself is the SDK's: `stepTranscribeSubmitClassified` reads
+ * `TranscribeError`'s own `retryable` AND its `retryAfter`, and throws a
+ * `FatalError` or a `RetryableError` accordingly. The hand-written
+ * `err instanceof TranscribeError && err.retryable` this replaces read only the
+ * first of those, so a provider that named a delay was retried on the DevKit's
+ * one-second default instead.
  */
 export async function submitTranscript(episode: Episode): Promise<TranscriptJob> {
   "use step";
 
   await report(`Submitting ${episode.title} for transcription.`);
   try {
-    const { id } = await stepTranscribeSubmit(episode.audioUrl, {
+    const { id } = await stepTranscribeSubmitClassified(episode.audioUrl, {
       // A digest quotes nobody, so who spoke costs time for nothing.
       params: { speaker_labels: false },
     });
     return { ...episode, transcriptStatus: "submitted", transcriptId: id };
   } catch (err) {
-    if (err instanceof TranscribeError && err.retryable) throwStepError(err);
+    if (!FatalError.is(err)) throw err;
     return { ...episode, transcriptStatus: "unavailable", reason: errorMessage(err) };
   }
 }
@@ -289,7 +296,7 @@ export async function pollTranscript(job: TranscriptJob): Promise<TranscriptStat
   if (job.transcriptStatus === "unavailable") return job;
 
   try {
-    const progress = await stepTranscribePoll(job.transcriptId);
+    const progress = await stepTranscribePollClassified(job.transcriptId);
     // Branch on `done`, never on a status string: a vocabulary this body does
     // not own would otherwise read as "not finished yet" forever.
     if (!progress.done) return job;
@@ -303,7 +310,9 @@ export async function pollTranscript(job: TranscriptJob): Promise<TranscriptStat
       durationMs: progress.transcript.durationMs,
     };
   } catch (err) {
-    if (err instanceof TranscribeError && err.retryable) throwStepError(err);
+    // Same policy as {@link submitTranscript}: the SDK classified it, a
+    // retryable verdict goes back to the DevKit, a terminal one degrades.
+    if (!FatalError.is(err)) throw err;
     return { ...job, transcriptStatus: "unavailable", reason: errorMessage(err) };
   }
 }
@@ -327,7 +336,7 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
   }
 
   await report(`Summarizing ${state.title}.`);
-  const parsed = await stepGenerateJson(
+  const parsed = await stepGenerateJsonClassified(
     [
       `Podcast: ${state.podcastTitle}`,
       `Episode: ${state.title}`,
@@ -344,7 +353,7 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
         "and give 3 to 5 concrete key points — decisions, numbers, names, claims — never " +
         '"the hosts discussed several topics".',
     },
-  ).catch(throwStepError);
+  );
 
   return {
     ...episodeOf(state),

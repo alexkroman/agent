@@ -1,12 +1,14 @@
-import type { Db, ToolContext, ToolDef } from "@alexkroman1/aai";
+import type { Db, ToolContext, ToolDef, ToolInputSchema } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext } from "@alexkroman1/aai/testing";
+import { createToolContext, ok } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import {
   applyConsequences,
   DEFAULT_STATE,
   type GameState,
   gameSlot,
+  inCrisis,
+  isGameOver,
   MAX_NPCS,
   MIN_MOMENTUM,
   makeNpc,
@@ -114,21 +116,14 @@ function seedPlaying(ctx: ToolContext, state: GameState = playingState()): GameS
  * sites here had each cast their way past it. This is the one narrowing they all
  * wanted: `check_state` and `burn_momentum` really do take no arguments, and a
  * helper says that once where a cast per call site said nothing.
- */
-function callNoArgs(def: ToolDef, ctx: ToolContext): Promise<unknown> {
-  return Promise.resolve((def.execute as (args: unknown, c: ToolContext) => unknown)({}, ctx));
-}
-
-/**
- * The success half of a `storyFlow.tool` result.
  *
- * A flow tool answers the body's own value under `result`, wrapped in the
- * position the call landed in — so the four gated tools here need one unwrap,
- * and a refusal fails HERE naming what the flow refused.
+ * It is generic in `R` because the three tool builders thread their result type
+ * out now, so the ARGUMENT is the only thing here that needs laundering — where
+ * every call site used to follow this one with a second cast of its own to
+ * recover a return type the erasure had thrown away.
  */
-function ok<T>(result: unknown): T {
-  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  return (result as { result: T }).result;
+function callNoArgs<R>(def: ToolDef<ToolInputSchema, R>, ctx: ToolContext): Promise<Awaited<R>> {
+  return Promise.resolve((def.execute as (args: unknown, c: ToolContext) => R)({}, ctx));
 }
 
 // ── setup_character ──────────────────────────────────────────────────────────
@@ -188,9 +183,7 @@ describe("setup_character", () => {
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
     await setupCharacter.execute(SETUP_ARGS, makeCtx());
-    const other = (await callNoArgs(checkState, makeCtx())) as {
-      initialized: boolean;
-    };
+    const other = await callNoArgs(checkState, makeCtx());
     expect(other.initialized).toBe(false);
   });
 });
@@ -241,15 +234,20 @@ describe("applyConsequences MISS matrix", () => {
     expect(state.spirit).toBe(4);
   });
 
-  test("filling the threat clock emits its trigger event and crisis flags fire at 0 health", () => {
+  test("filling the threat clock emits its trigger event, and 0 health is a crisis", () => {
     const state = playingState();
     state.clocks[0]!.filled = 3; // one tick from full
     state.health = 2;
     const { clockEvents } = applyConsequences(state, miss, "risky", "standard", null);
     expect(clockEvents).toEqual([{ clock: "Doom", trigger: "The doom arrives" }]);
     expect(state.health).toBe(0);
-    expect(state.crisisMode).toBe(true);
-    expect(state.gameOver).toBe(false);
+    // The two flags are DERIVED now, not written here: `applyConsequences` used
+    // to end with `updateCrisisFlags(game)`, one of three hand-placed calls
+    // that are `gameSlot`'s `after` hook instead. So this asserts the rule
+    // rather than the write — the flags on a stored game are checked through
+    // the tools below, which is where a stale one would actually bite.
+    expect(inCrisis(state)).toBe(true);
+    expect(isGameOver(state)).toBe(false);
   });
 
   test("strong hit with great effect gains +3 momentum and shifts disposition on compel", () => {
@@ -331,7 +329,7 @@ describe("burn_momentum", () => {
   test("momentum beating only one die upgrades a MISS to WEAK_HIT", async () => {
     const ctx = makeCtx();
     seedRolledState(4, ctx); // beats 3, not 5
-    const result = ok<Record<string, unknown>>(await callNoArgs(burnMomentum, ctx));
+    const result = ok<{ newResultCode: string }>(await callNoArgs(burnMomentum, ctx));
     expect(result.newResultCode).toBe("WEAK_HIT");
   });
 
@@ -343,23 +341,25 @@ describe("burn_momentum", () => {
     // `playing.awaitingRoll` and this tool is not available there. The message
     // names the position and quotes what that state expects.
     seedPlaying(ctx);
-    let result = (await callNoArgs(burnMomentum, ctx)) as Record<string, unknown>;
-    expect(result.error).toMatch(/awaitingRoll/);
-    expect(result.error).toMatch(/action_roll/);
+    // The flow's refusal, so it arrives as a `ToolFailure` rather than under
+    // the position envelope — which the narrowing now says out loud.
+    let result = await callNoArgs(burnMomentum, ctx);
+    expect(isToolFailure(result) && result.error).toMatch(/awaitingRoll/);
+    expect(isToolFailure(result) && result.error).toMatch(/action_roll/);
 
     // Momentum too low to beat either die — a DATA rule, so it stays in the
     // body and the tool still runs.
     seedRolledState(2, ctx);
-    result = (await callNoArgs(burnMomentum, ctx)) as Record<string, unknown>;
-    expect(result.error).toMatch(/not high enough/);
+    result = await callNoArgs(burnMomentum, ctx);
+    expect(isToolFailure(result) && result.error).toMatch(/not high enough/);
 
     // Strong hits cannot be upgraded
     seedRolledState(8, ctx);
     gameSlot.update(ctx, (state) => {
       state.lastRoll!.result = "STRONG_HIT";
     });
-    result = (await callNoArgs(burnMomentum, ctx)) as Record<string, unknown>;
-    expect(result.error).toMatch(/already a Strong Hit/);
+    result = await callNoArgs(burnMomentum, ctx);
+    expect(isToolFailure(result) && result.error).toMatch(/already a Strong Hit/);
   });
 
   test("action_roll persists the roll so burn needs no dice arguments", async () => {
@@ -608,7 +608,7 @@ describe("save_game / load_game", () => {
     played.playerName = "Kael";
     played.sceneCount = 7;
     seedPlaying(sessionA, played);
-    const saved = ok<Record<string, unknown>>(
+    const saved = ok<{ saved: boolean; slot: string }>(
       await saveGame.execute({ slot: "chapter-2" }, sessionA),
     );
     expect(saved.saved).toBe(true);
@@ -617,10 +617,11 @@ describe("save_game / load_game", () => {
 
     // Session B (a fresh game slot, the same app db) resumes it.
     const sessionB = makeCtx(db);
-    const loaded = (await loadGame.execute({ slot: "chapter-2" }, sessionB)) as Record<
-      string,
-      unknown
-    >;
+    // `load_game` is a plain `tool()`, so its result is the union its body
+    // writes rather than a position envelope — the guard is what picks the
+    // arm, where the old `as Record<string, unknown>` picked neither.
+    const loaded = await loadGame.execute({ slot: "chapter-2" }, sessionB);
+    if (isToolFailure(loaded)) throw new Error(`load refused: ${loaded.error}`);
     expect(loaded.loaded).toBe(true);
     expect(loaded.playerName).toBe("Kael");
     expect(loaded.sceneCount).toBe(7);
@@ -629,8 +630,8 @@ describe("save_game / load_game", () => {
 
   test("loading a missing slot reports an error instead of resetting the game", async () => {
     const ctx = makeCtx();
-    const result = (await loadGame.execute({ slot: "nope" }, ctx)) as { error?: string };
-    expect(result.error).toMatch(/No save found/);
+    const result = await loadGame.execute({ slot: "nope" }, ctx);
+    expect(isToolFailure(result) && result.error).toMatch(/No save found/);
   });
 
   test("saving twice to one slot upserts — the newer save wins", async () => {
@@ -679,12 +680,13 @@ describe("the story flow", () => {
 
   test("setup opens play, a roll leaves one standing, and settling closes the window", async () => {
     const ctx = makeCtx();
-    const created = (await setupCharacter.execute(SETUP_ARGS, ctx)) as {
-      at: string;
-      next?: string;
-    };
-    expect(created.at).toBe("playing.awaitingRoll");
-    expect(created.next).toMatch(/action_roll/);
+    // `state`/`instruction`, not `at`/`next`: the ungated tools spread the
+    // `DialogPosition` verbatim now, so they report their position under the
+    // same keys every gated tool's result carries — which is what the system
+    // prompt already claimed.
+    const created = await setupCharacter.execute(SETUP_ARGS, ctx);
+    expect(created.state).toBe("playing.awaitingRoll");
+    expect(created.instruction).toMatch(/action_roll/);
 
     ok(
       await actionRoll.execute(
@@ -702,15 +704,10 @@ describe("the story flow", () => {
 
   test("check_state reports the position and is legal before setup", async () => {
     const ctx = makeCtx();
-    const before = (await callNoArgs(checkState, ctx)) as {
-      at: string;
-      next?: string;
-      storyOver: boolean;
-      initialized: boolean;
-    };
-    expect(before.at).toBe("awaitingSetup");
-    expect(before.next).toMatch(/setup_character/);
-    expect(before.storyOver).toBe(false);
+    const before = await callNoArgs(checkState, ctx);
+    expect(before.state).toBe("awaitingSetup");
+    expect(before.instruction).toMatch(/setup_character/);
+    expect(before.done).toBe(false);
     expect(before.initialized).toBe(false);
   });
 
@@ -721,9 +718,11 @@ describe("the story flow", () => {
     dead.spirit = 0;
     seedPlaying(ctx, dead);
 
-    // `updateCrisisFlags` writes `gameOver`, and the tool's `sendFrom` is what
-    // turns that into a position — the flag used to be read by nobody who could
-    // act on it, so a player could keep rolling after both tracks emptied.
+    // `isGameOver` is what the result reports and the tool's `sendFrom` is what
+    // turns it into a position — the flag used to be read by nobody who could
+    // act on it, so a player could keep rolling after both tracks emptied. The
+    // WRITE is `gameSlot`'s `after` hook; this tool no longer calls it, which
+    // is the point of moving it there.
     ok(await updateState.execute({ health: 0, spirit: 0 }, ctx));
     const at = storyFlow.position(ctx);
     expect(at.state).toBe("gameOver");
@@ -737,8 +736,8 @@ describe("the story flow", () => {
     expect(isToolFailure(refused) && refused.error).toMatch(/gameOver/);
 
     // Starting over is legal from anywhere, the ending included.
-    const restarted = (await setupCharacter.execute(SETUP_ARGS, ctx)) as { at: string };
-    expect(restarted.at).toBe("playing.awaitingRoll");
+    const restarted = await setupCharacter.execute(SETUP_ARGS, ctx);
+    expect(restarted.state).toBe("playing.awaitingRoll");
   });
 
   test("a loaded game resumes in play rather than awaiting setup", async () => {
@@ -749,8 +748,9 @@ describe("the story flow", () => {
 
     const sessionB = makeCtx(db);
     expect(storyFlow.position(sessionB).state).toBe("awaitingSetup");
-    const loaded = (await loadGame.execute({ slot: "resume" }, sessionB)) as { at?: string };
-    expect(loaded.at).toBe("playing.awaitingRoll");
+    const loaded = await loadGame.execute({ slot: "resume" }, sessionB);
+    if (isToolFailure(loaded)) throw new Error(`load refused: ${loaded.error}`);
+    expect(loaded.state).toBe("playing.awaitingRoll");
 
     // And the play tools are available in the resumed session.
     ok(await updateState.execute({ location: "Back at the Docks" }, sessionB));
@@ -768,8 +768,9 @@ describe("the story flow", () => {
     ok(await saveGame.execute({ slot: "ended" }, sessionA));
 
     const sessionB = makeCtx(db);
-    const loaded = (await loadGame.execute({ slot: "ended" }, sessionB)) as { at?: string };
-    expect(loaded.at).toBe("gameOver");
+    const loaded = await loadGame.execute({ slot: "ended" }, sessionB);
+    if (isToolFailure(loaded)) throw new Error(`load refused: ${loaded.error}`);
+    expect(loaded.state).toBe("gameOver");
     expect(storyFlow.position(sessionB).done).toBe(true);
   });
 });

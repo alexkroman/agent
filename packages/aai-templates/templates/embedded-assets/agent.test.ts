@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { ToolContext } from "@alexkroman1/aai";
-import { createToolContext, runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
+import { runTool, withDiscoveredTools } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
 import { faqs, searchable } from "./shared.ts";
@@ -18,8 +17,14 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext) =>
-  runTool(agentDef, name, args, ctx);
+/**
+ * Both tools here are stateless, so no call passes a context: `runTool` builds
+ * a fresh one, which is a distinct session with empty slots — right for a tool
+ * that reads nothing but its arguments, and never what two calls sharing state
+ * want. `list_topics` takes no arguments either, and may say so by leaving them
+ * out rather than passing a `{}` between the two values a reader cares about.
+ */
+const run = (name: string, args?: Record<string, unknown>) => runTool(agentDef, name, args);
 
 describe("embedded-assets template", () => {
   test("the JSON asset really is bundled, and the index is built from it", () => {
@@ -44,7 +49,7 @@ describe("embedded-assets template", () => {
 
 describe("list_topics", () => {
   test("answers with every question in the knowledge base", async () => {
-    const topics = await run("list_topics", {}, createToolContext());
+    const topics = await run("list_topics");
     expect(topics).toEqual(faqs.map((f) => f.question));
   });
 });
@@ -59,25 +64,23 @@ describe("search_knowledge", () => {
       .toLowerCase()
       .split(/\W+/)
       .filter((w) => w.length > 2);
-    const result = await run(
-      "search_knowledge",
-      { query: `hey, could you tell me ${words.join(" ")}?` },
-      createToolContext(),
-    );
+    const result = await run("search_knowledge", {
+      query: `hey, could you tell me ${words.join(" ")}?`,
+    });
     expect(result).toEqual(target);
   });
 
   test("a query with no words longer than two characters is refused early", async () => {
     // The guard before the scan: with no scoreable words every entry ties at
     // zero, and returning the first one would be an answer to nothing.
-    expect(await run("search_knowledge", { query: "is it a" }, createToolContext())).toEqual({
+    expect(await run("search_knowledge", { query: "is it a" })).toEqual({
       result: "No matching FAQ found.",
     });
   });
 
   test("a query that overlaps nothing reports no match rather than guessing", async () => {
-    expect(
-      await run("search_knowledge", { query: "zzzqqq wibbleflange" }, createToolContext()),
-    ).toEqual({ result: "No matching FAQ found." });
+    expect(await run("search_knowledge", { query: "zzzqqq wibbleflange" })).toEqual({
+      result: "No matching FAQ found.",
+    });
   });
 });

@@ -36,6 +36,7 @@ import "@alexkroman1/aai-ui/styles.css";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
 // nothing — and it is what stops this file restating a shape
 // `workflows/summarize.ts` already declares.
+import { formatDuration } from "@alexkroman1/aai/utils";
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   createWorkflowApi,
@@ -43,11 +44,11 @@ import {
   page,
   SubmitButton,
   UploadProgressBar,
+  useDownloadUrl,
   useWorkflowSubmit,
   WorkflowFields,
   WorkflowProgress,
 } from "@alexkroman1/aai-ui";
-import { useEffect, useState } from "react";
 import type { spokenSummary } from "./agent.ts";
 
 /** What a completed run reports, derived from the workflow rather than restated. */
@@ -84,58 +85,16 @@ function captionsUrl(text: string, durationMs: number): string {
   return `data:text/vtt;charset=utf-8,${encodeURIComponent(vtt)}`;
 }
 
-/** Seconds a person can read, from the milliseconds a run reports. */
-function duration(ms: number): string {
-  const total = Math.round(ms / 1000);
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
-}
-
-/**
- * The finished run's audio, as something the browser will play.
- *
- * A hook rather than four lines in the component because the CLEANUP is the
- * part worth keeping in one place: an object URL pins its blob for the life of
- * the document, so it is revoked when the id changes and when the page goes
- * away. The `cancelled` flag covers the other half — a second run settling
- * while the first download is still in flight would otherwise set state from
- * the stale one.
- */
-function useAudioUrl(uploadId: string | undefined): { url?: string; error?: string } {
-  const [state, setState] = useState<{ url?: string; error?: string }>({});
-
-  useEffect(() => {
-    if (uploadId === undefined) {
-      setState({});
-      return;
-    }
-    let cancelled = false;
-    let objectUrl: string | undefined;
-    api
-      .download(uploadId)
-      .then((blob) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setState({ url: objectUrl });
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setState({ error: err instanceof Error ? err.message : String(err) });
-      });
-    return () => {
-      cancelled = true;
-      if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
-    };
-  }, [uploadId]);
-
-  return state;
-}
-
 export function App() {
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`.
   const { submit, run, pending, upload, pauseUpload, resumeUpload, error } =
     useWorkflowSubmit<Summary>(WORKFLOW, { api });
   const output = run?.status === "completed" ? run.output : undefined;
-  const audio = useAudioUrl(output?.audio);
+  // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
+  // bytes have to be FETCHED and handed to the element as an object URL — and the
+  // object URL has to be revoked, which is the half a page written by hand forgets.
+  const audio = useDownloadUrl(output?.audio, { api });
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
@@ -169,7 +128,7 @@ export function App() {
           <div className="flex flex-col gap-1">
             <h2 className="text-xl">{output.headline}</h2>
             <p className="text-sm opacity-70">
-              {output.source} · {duration(output.durationMs)} · {output.words} words
+              {output.source} · {formatDuration(output.durationMs)} · {output.words} words
             </p>
           </div>
 
@@ -181,8 +140,9 @@ export function App() {
 
           <section className="flex flex-col gap-2">
             <h3 className="text-sm font-medium opacity-70">
-              Read aloud · {duration(output.audioDurationMs)}
+              Read aloud · {formatDuration(output.audioDurationMs)}
             </h3>
+            {audio.pending && <p className="text-sm opacity-70">Fetching the audio…</p>}
             {audio.error !== undefined && (
               <p className="text-red-600">Could not load the audio: {audio.error}</p>
             )}

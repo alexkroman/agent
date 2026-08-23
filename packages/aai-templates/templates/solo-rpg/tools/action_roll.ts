@@ -4,6 +4,8 @@ import {
   canBurnMomentum,
   checkChaosInterrupt,
   gameSlot,
+  inCrisis,
+  isGameOver,
   MOVE_LABELS,
   MOVES,
   RESULT_LABELS,
@@ -96,17 +98,16 @@ export default storyFlow.tool({
         currentSupply: state.supply,
         currentMomentum: state.momentum,
         chaosFactor: state.chaosFactor,
-        crisisMode: state.crisisMode,
-        gameOver: state.gameOver,
+        // Derived, not copied: `gameSlot`'s `after` restores the stored flags
+        // only once this body has returned, so `state.gameOver` here would be
+        // the value from before the roll that emptied the track.
+        crisisMode: inCrisis(state),
+        gameOver: isGameOver(state),
         sceneCount: state.sceneCount,
         canBurnMomentum: Boolean(burnTarget),
         burnWouldYield: burnTarget ? RESULT_LABELS[burnTarget] : undefined,
       };
     }),
-  // AFTER `execute`, because TS infers this wrapper's result type from it and
-  // reads an object literal's properties in source order — see
-  // `dispatch-center`'s `resources_dispatch` for the same note.
-  //
   // A roll that emptied both tracks ends the story; anything else leaves a
   // standing roll that `burn_momentum` may still upgrade.
   sendFrom: (result) =>

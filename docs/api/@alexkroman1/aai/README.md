@@ -176,6 +176,7 @@ Full API reference: <https://alexkroman.github.io/agent/>
 - [s2s](s2s.md)
 - [step](step.md)
 - [step-errors](step-errors.md)
+- [step-files](step-files.md)
 - [stt](stt.md)
 - [testing](testing.md)
 - [testing/vitest](testing/vitest.md)

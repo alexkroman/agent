@@ -151,6 +151,7 @@
  */
 
 import "@alexkroman1/aai-ui/styles.css";
+import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   Form,
@@ -162,19 +163,14 @@ import {
   useWorkflowRuns,
   useWorkflowStream,
   useWorkflowSubmit,
+  WORKFLOW_STATUS_LABELS,
   WorkflowFields,
   WorkflowProgress,
   type WorkflowRun,
 } from "@alexkroman1/aai-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { transcribe } from "./agent.ts";
-import {
-  clock,
-  countWords,
-  stitchChunks,
-  TRANSCRIPT_STREAM,
-  type TranscriptChunk,
-} from "./workflows/stitch.ts";
+import { stitchChunks, TRANSCRIPT_STREAM, type TranscriptChunk } from "./workflows/stitch.ts";
 
 /**
  * What a finished run reports.
@@ -343,10 +339,10 @@ function TotalLatency({
         {running ? "Elapsed" : "Total latency"}
       </h2>
       <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-sm tabular-nums">{duration(elapsedMs)}</span>
+        <span className="text-sm tabular-nums">{formatDuration(elapsedMs)}</span>
         {runMs !== undefined && outside !== undefined && (
           <span className="text-xs tabular-nums opacity-60">
-            {duration(outside)} before the run · {duration(runMs)} inside it
+            {formatDuration(outside)} before the run · {formatDuration(runMs)} inside it
           </span>
         )}
       </span>
@@ -647,9 +643,9 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Transcript>; onClear?: ()
       {run.status === "completed" && (
         <>
           <p className="text-xs opacity-60">
-            {run.output.segments} {run.output.segments === 1 ? "segment" : "segments"} ·{" "}
-            {duration(run.output.durationMs)} of audio · took {duration(run.output.elapsedMs)} ·{" "}
-            {run.output.words} words
+            {run.output.segments} {plural(run.output.segments, "segment")} ·{" "}
+            {formatDuration(run.output.durationMs)} of audio · took{" "}
+            {formatDuration(run.output.elapsedMs)} · {run.output.words} words
           </p>
           <pre className="whitespace-pre-wrap text-sm leading-relaxed">{run.output.transcript}</pre>
         </>
@@ -691,7 +687,7 @@ function LiveTranscript({ runId }: { runId: string }) {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs opacity-60">
-        {countWords(transcript)} words so far · through {clock(covered)}
+        {countWords(transcript)} words so far · through {formatDuration(covered)}
       </p>
       <pre className="whitespace-pre-wrap text-sm leading-relaxed opacity-80">{transcript}</pre>
     </div>
@@ -699,39 +695,18 @@ function LiveTranscript({ runId }: { runId: string }) {
 }
 
 /**
- * A duration a person can read.
- *
- * `${Math.round(ms / 1000)}s` was what this printed, and an hour-long recording came
- * out as `3746s` — which a reader asked whether they should parse as 37.46 seconds.
- * A raw second count stops being readable at about ninety of them, and the recordings
- * this desk is FOR are the ones past that.
- *
- * The hours component is omitted when it is zero rather than padded to `0:02:26`, so
- * a two-minute clip reads as `2:26` and only a long one grows a field.
- */
-function duration(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const seconds = String(total % 60).padStart(2, "0");
-  const minutes = Math.floor(total / 60) % 60;
-  const hours = Math.floor(total / 3600);
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
-    : `${minutes}:${seconds}`;
-}
-
-/**
  * One line describing where a run has got to.
  *
- * A `Record` keyed by the status union rather than a switch, so a status added
- * to the SDK is a compile error here instead of falling through a `default:`
- * into whichever line was last.
+ * `WORKFLOW_STATUS_LABELS` is the SDK's neutral map — a `Record` keyed by the
+ * status union rather than a switch, so a status added upstream is a compile
+ * error in one place every page inherits, and spreading a complete record cannot
+ * drop a key. Two of these keys are really this desk's: a page knows what its
+ * workflow does and the SDK does not.
  */
-const STATUS_LINE: Record<WorkflowRun["status"], string> = {
-  pending: "Queued",
+const STATUS_LINE = {
+  ...WORKFLOW_STATUS_LABELS,
   running: "Transcribing…",
   completed: "Transcript ready",
-  failed: "Failed",
-  cancelled: "Cancelled",
 };
 
 page({ name: "Transcription Desk", component: TranscriptionDesk });

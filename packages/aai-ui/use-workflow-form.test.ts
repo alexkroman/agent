@@ -506,3 +506,63 @@ describe("useWorkflowSubmit", () => {
     expect(result.current.pending).toBe(false);
   });
 });
+
+describe("useWorkflowSubmit: wake and cancel", () => {
+  test("wake and cancel target the run this submission is following", async () => {
+    // The whole reason a page holding this hook needed an `api` of its own: the
+    // hook knew the run id and would not hand it back, so `link-digest` and
+    // `podcast-digest` each keep a module-scope client purely to write
+    // `api.wake(runId)`.
+    const api = fakeApi({ get: vi.fn(async () => run({ status: "running" })) });
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({ url: "u" }));
+    await waitFor(() => expect(result.current.run?.status).toBe("running"));
+
+    await act(async () => {
+      await result.current.wake();
+      await result.current.cancel();
+    });
+    expect(api.wake).toHaveBeenCalledWith("wrun_1");
+    expect(api.cancel).toHaveBeenCalledWith("wrun_1");
+  });
+
+  test("both answer rather than fail before a run exists", async () => {
+    // `0` sleeps ended and `false` "this call did not end it" are the SDK's own
+    // answers for a run that had already moved on, so the no-run case is the
+    // same answer rather than a branch every caller has to write.
+    const api = fakeApi();
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api }));
+
+    await expect(result.current.wake()).resolves.toBe(0);
+    await expect(result.current.cancel()).resolves.toBe(false);
+    expect(api.wake).not.toHaveBeenCalled();
+    expect(api.cancel).not.toHaveBeenCalled();
+  });
+
+  test("wake reports how many sleeps it interrupted", async () => {
+    const api = fakeApi({
+      get: vi.fn(async () => run({ status: "running" })),
+      wake: vi.fn(async () => 1),
+    });
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({}));
+    await waitFor(() => expect(result.current.run?.status).toBe("running"));
+    await expect(result.current.wake()).resolves.toBe(1);
+  });
+
+  test("reset() puts the FORM back, so the controls stop targeting the old run", async () => {
+    // Distinct from `cancel()`, which stops the run and leaves the form where it
+    // is. Confusing the two is how "clear this" becomes "throw the work away".
+    const api = fakeApi({ get: vi.fn(async () => run({ status: "running" })) });
+    const { result } = renderHook(() => useWorkflowSubmit("digest", { api, intervalMs: POLL_MS }));
+
+    await act(() => result.current.submit({}));
+    await waitFor(() => expect(result.current.run?.status).toBe("running"));
+
+    act(() => result.current.reset());
+    await expect(result.current.cancel()).resolves.toBe(false);
+    expect(api.cancel).not.toHaveBeenCalled();
+  });
+});

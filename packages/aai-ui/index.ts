@@ -13,6 +13,10 @@ export {
 export { AutoScroll } from "./components/auto-scroll.tsx";
 export { Button, type ButtonSize, type ButtonVariant } from "./components/button.tsx";
 export { ChatView } from "./components/chat-view.tsx";
+// The chrome UNDER `ChatView` — header, announced error banner, card, footer —
+// for a client that owns the conversation but not the frame. Published because
+// every custom chrome that rebuilt it lost the banner's `role="alert"`.
+export { ConsoleShell, type ConsoleShellProps } from "./components/console-shell.tsx";
 export { Controls, type ControlsProps } from "./components/controls.tsx";
 // Forms — what a workflow app's front door is made of. See `components/form.tsx`
 // for why the values come off the DOM rather than out of React state.
@@ -85,6 +89,23 @@ export type {
   VoiceSessionOptions,
   WebSocketConstructor,
 } from "./types.ts";
+// The conversation with nothing rendered — what `MessageList` is now built
+// from, so a custom chrome inherits the interleave, the streaming row, the
+// transcript's null-vs-empty distinction and the thinking rule instead of
+// re-deriving four of them badly.
+export {
+  type ConversationItem,
+  type UseConversationResult,
+  useConversation,
+} from "./use-conversation.ts";
+// An upload id a run PRODUCED, as a URL a DOM element accepts — with the
+// object-URL revoke and the stale-run guard that two templates had each
+// re-derived.
+export {
+  type UseDownloadUrlOptions,
+  type UseDownloadUrlResult,
+  useDownloadUrl,
+} from "./use-download-url.ts";
 // The caller's in-progress turn, with `null` (silent) and `""` (speech
 // detected, no words yet) kept apart — see the module doc.
 export {
@@ -133,5 +154,9 @@ export {
   type WorkflowApiOptions,
   type WorkflowOutputOf,
   type WorkflowRun,
+  type WorkflowRunStatus,
   type WorkflowSummary,
 } from "./workflow-client.ts";
+// The five default status lines, so a page overrides the one word it has a
+// better term for instead of restating the union.
+export { WORKFLOW_STATUS_LABELS } from "./workflow-status-labels.ts";

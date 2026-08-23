@@ -47,4 +47,44 @@ describe("runTool", () => {
       "The agent declares no tool named missing",
     );
   });
+
+  test("a no-argument tool may pass the context in the arguments' place", async () => {
+    // The 66 `, {}, ` call sites this exists to delete: a tool that takes
+    // nothing had to pass an empty object between the two values a reader cares
+    // about.
+    const ctx = createToolContext({ sessionId: "session-b" });
+    expect(await runTool(agentDef, "add_item", ctx)).toEqual({
+      added: undefined,
+      session: "session-b",
+    });
+  });
+
+  test("the context passed in the arguments' place is the SAME session, not a copy", async () => {
+    // The property the shorthand would be worthless without: two calls sharing a
+    // context share slots, which is what a stateful tool's spec is about.
+    const ctx = createToolContext({ sessionId: "session-c" });
+    const first = (await runTool(agentDef, "add_item", { item: "apple" }, ctx)) as {
+      session: string;
+    };
+    const second = (await runTool(agentDef, "add_item", ctx)) as { session: string };
+    expect(second.session).toBe(first.session);
+  });
+
+  test("with neither argument, the tool runs against a fresh distinct session", async () => {
+    // A default context is a DISTINCT session with empty slots — right for a
+    // stateless tool, and never what two calls sharing state want.
+    type Added = { added: unknown; session: string };
+    const first = (await runTool(agentDef, "add_item")) as Added;
+    const second = (await runTool(agentDef, "add_item")) as Added;
+    expect(first.session).not.toBe(second.session);
+    expect(first.added).toBeUndefined();
+  });
+
+  test("an arguments object is never mistaken for a context", async () => {
+    // The probe is three fields and one of them is a FUNCTION, which JSON from a
+    // model cannot carry. A bag that merely LOOKS session-shaped is still args.
+    const echo = { tools: { echo: { description: "e", execute: (args: unknown) => args } } };
+    const lookalike = { sessionId: "not-a-context", slots: {}, send: "nope" };
+    expect(await runTool(echo, "echo", lookalike)).toEqual(lookalike);
+  });
 });

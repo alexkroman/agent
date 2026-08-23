@@ -1,5 +1,4 @@
 import { type DeepReadonly, dialog, sessionSlot, type ToolContext } from "@alexkroman1/aai";
-import { setup } from "xstate";
 import { z } from "zod";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
@@ -334,7 +333,15 @@ export const DEFAULT_STATE: GameState = {
 // `DEFAULT_STATE` is one module-level object shared by every session in the
 // process, so a factory without it would let one player's game show up in
 // another's.
-export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE));
+export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE), {
+  // The derived-field recalculation every mutating tool used to have to
+  // remember. It was written out by hand in `applyConsequences`,
+  // `revertConsequences` and `update_state`, which is the shape `after` exists
+  // to replace: a new tool that empties a track now cannot store a stale
+  // `gameOver`, and `gameOver` is what the story flow's `DOWNED` transition
+  // reads. `dispatch-center`'s board is the same pattern one template over.
+  after: updateCrisisFlags,
+});
 
 /**
  * The IDENTITY projection, used by `syncState` and by `useAgentState`: this
@@ -346,7 +353,16 @@ export const gameProjection = gameSlot.projection((game) => game);
 // ── The story, as a machine ──────────────────────────────────────────────────
 
 /**
- * Where the story is, and what may be done from there.
+ * Where the story is, and what may be done from there, as a plain state map.
+ *
+ * A {@link DialogSpec} rather than an XState machine. This dialog used four
+ * events and one instruction per state, which is all a spec can say — and the
+ * `setup({ types: {} as { events: … } })` block it used to carry restated the
+ * four names already written in the `on` maps. `type: "final"` is `final: true`,
+ * and the instruction is a DECLARED field rather than an untyped `meta` bag, so
+ * misspelling it is a compile error instead of a refusal that arrives with no
+ * recovery text. `as const` keeps the `on` keys literal, so every `send` and
+ * `sendFrom` below is checked against the events this spec declares.
  *
  * Three hand-rolled versions of this question lived in the template, and all
  * three were positional questions answered from data:
@@ -378,21 +394,14 @@ export const gameProjection = gameSlot.projection((game) => game);
  * resets for the same reason. `SETUP` therefore appears once, on the only state
  * that can be transitioned out of.
  */
-const storyMachine = setup({
-  types: {} as {
-    events: { type: "SETUP" } | { type: "ROLLED" } | { type: "SETTLED" } | { type: "DOWNED" };
-  },
-}).createMachine({
-  id: "story",
+const storySpec = {
   initial: "awaitingSetup",
   states: {
     awaitingSetup: {
-      meta: {
-        instruction:
-          "There is no character yet. Take whatever the player gave you — a name, a " +
-          "genre, an idea, or nothing — infer the rest yourself, and call " +
-          "setup_character with every field filled in. Ask no follow-up questions.",
-      },
+      instruction:
+        "There is no character yet. Take whatever the player gave you — a name, a " +
+        "genre, an idea, or nothing — infer the rest yourself, and call " +
+        "setup_character with every field filled in. Ask no follow-up questions.",
       on: { SETUP: "playing" },
     },
     playing: {
@@ -400,41 +409,35 @@ const storyMachine = setup({
       on: { DOWNED: "gameOver" },
       states: {
         awaitingRoll: {
-          meta: {
-            instruction:
-              "Narrate the scene and offer two or three choices. Any risky action goes " +
-              "through action_roll — never narrate a success or a failure yourself.",
-          },
+          instruction:
+            "Narrate the scene and offer two or three choices. Any risky action goes " +
+            "through action_roll — never narrate a success or a failure yourself.",
           on: { ROLLED: "rollResolved" },
         },
         rollResolved: {
-          meta: {
-            instruction:
-              "A roll is standing. burn_momentum can still upgrade it if the player " +
-              "spends momentum; anything that moves the scene on settles it.",
-          },
+          instruction:
+            "A roll is standing. burn_momentum can still upgrade it if the player " +
+            "spends momentum; anything that moves the scene on settles it.",
           // A second roll replaces the standing one, so `ROLLED` re-enters.
           on: { ROLLED: "rollResolved", SETTLED: "awaitingRoll" },
         },
       },
     },
     gameOver: {
-      type: "final",
-      meta: {
-        instruction:
-          "Health and spirit are both gone. Narrate the ending and stop — nothing " +
-          "else may be rolled. setup_character begins a new story.",
-      },
+      final: true,
+      instruction:
+        "Health and spirit are both gone. Narrate the ending and stop — nothing " +
+        "else may be rolled. setup_character begins a new story.",
     },
   },
-});
+} as const;
 
 /**
  * The flow. Its own slot key beside {@link gameSlot}, and the reason it is not
  * folded into the campaign is that the campaign is what the browser renders: a
  * flow stores an XState snapshot, which is not a character sheet.
  */
-export const storyFlow = dialog("story", storyMachine);
+export const storyFlow = dialog("story", storySpec);
 
 /**
  * The game as a READ hands it out: deep-frozen, and typed to say so.
@@ -594,8 +597,11 @@ export function stateSummary(state: FrozenGameState) {
     currentSceneContext: state.currentSceneContext,
     timeOfDay: state.timeOfDay,
     chaosFactor: state.chaosFactor,
-    crisisMode: state.crisisMode,
-    gameOver: state.gameOver,
+    // DERIVED here rather than copied off the state: `after` restores the
+    // stored flags only once the calling body has returned, so a summary built
+    // inside that body would report the tracks it just emptied as survivable.
+    crisisMode: inCrisis(state),
+    gameOver: isGameOver(state),
     // NPCs go to the LLM whole (nothing withheld) — copied so a mutation of
     // the summary can't reach live state.
     npcs: state.npcs.filter((n) => n.status !== "deceased").map((n) => ({ ...n })),
@@ -684,15 +690,38 @@ function changeMomentum(game: GameState, amount: number, deltas: ConsequenceDelt
   deltas.momentum += game.momentum - old;
 }
 
-export function updateCrisisFlags(game: GameState): void {
-  if (game.health <= 0 && game.spirit <= 0) {
-    game.gameOver = true;
-    game.crisisMode = true;
-  } else if (game.health <= 0 || game.spirit <= 0) {
-    game.crisisMode = true;
-  } else {
-    game.crisisMode = false;
-  }
+/**
+ * The one rule that ends a story: both tracks empty.
+ *
+ * A PREDICATE beside the writer, because the same fact is wanted at two
+ * different moments. {@link gameSlot}'s `after` writes
+ * {@link GameState.gameOver} from it, which is what keeps the stored flag right
+ * for every mutating tool — including one that never thinks about it. A tool
+ * that REPORTS the flag in its own result reads the predicate directly, because
+ * `after` runs only once the body has already built that result: a copy taken
+ * from `state.gameOver` would be one mutation behind, and that copy is exactly
+ * what `sendFrom` turns into the `DOWNED` transition.
+ */
+export function isGameOver(game: FrozenGameState): boolean {
+  return game.health <= 0 && game.spirit <= 0;
+}
+
+/** Either track empty — what the client paints red. */
+export function inCrisis(game: FrozenGameState): boolean {
+  return game.health <= 0 || game.spirit <= 0;
+}
+
+/**
+ * Restore the two derived flags from the tracks they are derived FROM.
+ *
+ * Called by nothing but {@link gameSlot}'s `after` — it used to be called by
+ * hand from three places, which is a rule every future mutating tool has to
+ * remember and one of them eventually will not. A stale `gameOver` is not a
+ * cosmetic miss: it is what the `DOWNED` transition reads.
+ */
+function updateCrisisFlags(game: GameState): void {
+  game.gameOver = isGameOver(game);
+  game.crisisMode = inCrisis(game);
 }
 
 export function applyConsequences(
@@ -785,8 +814,6 @@ export function applyConsequences(
     }
   }
 
-  updateCrisisFlags(game);
-
   return { consequences, clockEvents, deltas };
 }
 
@@ -813,7 +840,6 @@ export function revertConsequences(game: GameState, deltas: ConsequenceDeltas): 
     const clock = game.clocks.find((c) => c.id === deltas.clockId);
     if (clock) clock.filled = Math.max(0, clock.filled - deltas.clockTicks);
   }
-  updateCrisisFlags(game);
 }
 
 // ── Momentum Burn ────────────────────────────────────────────────────────────

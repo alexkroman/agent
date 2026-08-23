@@ -17,6 +17,8 @@ export {
   type ButtonSize,
   type ButtonVariant,
   ChatView,
+  ConsoleShell,
+  type ConsoleShellProps,
   Controls,
   type ControlsProps,
   Markdown,

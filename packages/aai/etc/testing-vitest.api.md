@@ -8,6 +8,27 @@
 export function installStubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayCall[];
 
 // @public
+export function installStubReporter(): StubReporter;
+
+// @public
+export function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
+
+// @public
+export function installStubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public
+export function installStubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
+
+// @public
+export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
+
+// @public
+type StubEmitted = {
+    namespace: string;
+    chunk: unknown;
+};
+
+// @public
 interface StubGatewayCall {
     body: Record<string, unknown>;
     headers: Record<string, string>;
@@ -21,6 +42,118 @@ interface StubGatewayOptions {
     headers?: Record<string, string>;
     status?: number;
 }
+
+// @public
+type StubReporter = {
+    lines: string[];
+    emitted: StubEmitted[];
+    restore: () => void;
+};
+
+// @public
+type StubSpeech = {
+    calls: StubSpeechCall[];
+    restore(): void;
+};
+
+// @public
+type StubSpeechCall = {
+    text: string;
+    apiKey: string;
+    voice: string;
+    language: string | undefined;
+    sampleRate: number;
+};
+
+// @public
+type StubSpeechOptions = {
+    pcmBytes?: number | undefined;
+    error?: Error | undefined;
+};
+
+// @public
+type StubStepAnswer = Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+};
+
+// @public
+type StubStepFetch = {
+    calls: StubStepRequest[];
+    restore: () => void;
+};
+
+// @public
+type StubStepRequest = {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: Uint8Array | string | undefined;
+};
+
+// @public
+type StubTranscribe = {
+    calls: StubTranscribeCall[];
+    restore(): void;
+};
+
+// @public
+type StubTranscribeCall = StubStepRequest & {
+    leg: StubTranscribeLeg;
+};
+
+// @public
+type StubTranscribeFailure = {
+    leg?: StubTranscribeLeg | readonly StubTranscribeLeg[] | undefined;
+    status?: number | undefined;
+    message?: string | undefined;
+    retryAfterSeconds?: number | undefined;
+};
+
+// @public
+type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other";
+
+// @public
+type StubTranscribeOptions = {
+    text?: string | readonly string[] | undefined;
+    durationSec?: number | undefined;
+    audioUrl?: string | undefined;
+    jobIdPrefix?: string | undefined;
+    pendingPolls?: number | undefined;
+    jobError?: string | undefined;
+    failure?: StubTranscribeFailure | undefined;
+    otherwise?: ((request: StubStepRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>) | undefined;
+};
+
+// @public
+type StubUpload = Uint8Array | {
+    bytes: Uint8Array;
+    name?: string;
+    type?: string;
+    complete?: boolean;
+};
+
+// @public
+type StubUploads = {
+    restore(): void;
+    writes: StubUploadWrite[];
+    read(id: string): StubUploadWrite | undefined;
+};
+
+// @public
+type StubUploadsOptions = {
+    writable?: boolean | undefined;
+    idPrefix?: string | undefined;
+};
+
+// @public
+type StubUploadWrite = {
+    id: string;
+    name: string;
+    type: string;
+    bytes: Uint8Array;
+};
 
 // (No @packageDocumentation comment for this package)
 

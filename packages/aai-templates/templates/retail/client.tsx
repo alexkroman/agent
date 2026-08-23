@@ -1,11 +1,12 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState, ChatMessage } from "@alexkroman1/aai-ui";
+import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
   client,
   useAgentState,
+  useConversation,
   useSession,
-  useUserTranscript,
+  useSessionSelector,
 } from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
 import type {
@@ -217,13 +218,226 @@ function SwapOptions({ option }: { option: SwapOptionView }) {
   );
 }
 
-function App() {
+/** One line of the call: a bubble, or the tool the agent ran after it. */
+function Row({ item }: { item: ConversationItem }) {
+  if (item.kind === "tool") {
+    const { name, status } = item.toolCall;
+    return (
+      <div
+        className="self-start rounded-md px-2.5 py-1 text-[11px] font-mono flex items-center gap-2"
+        style={{
+          background: "#ffffff",
+          border: "1px solid #e4e4e7",
+          color: status === "pending" ? "#b45309" : "#71717a",
+        }}
+      >
+        <span
+          className="w-1.5 h-1.5 rounded-full inline-block"
+          style={{
+            background: status === "pending" ? "#ca8a04" : "#16a34a",
+            animation: status === "pending" ? "rt-pulse 1s ease-in-out infinite" : "none",
+          }}
+        />
+        {name}
+      </div>
+    );
+  }
+  const { role, content } = item.message;
+  return (
+    <div
+      className="rounded-lg text-[13px] max-w-[80%] px-3.5 py-2.5"
+      style={{
+        lineHeight: 1.55,
+        alignSelf: role === "assistant" ? "flex-start" : "flex-end",
+        background: role === "assistant" ? "#ffffff" : "#2563eb",
+        color: role === "assistant" ? "#18181b" : "#ffffff",
+        border: role === "assistant" ? "1px solid #e4e4e7" : "none",
+        animation: "rt-slide-in 0.2s ease-out",
+      }}
+    >
+      {content}
+    </div>
+  );
+}
+
+/**
+ * The call transcript.
+ *
+ * `useConversation()` rather than `session.messages.map(...)`. The messages
+ * were only part of it: this agent runs FIFTEEN tools and the operator could
+ * see none of them, because tool calls live in a second array this page never
+ * read — and the streaming reply and the thinking indicator were dropped along
+ * with them. The hook owns the interleave (a tool row follows the message it
+ * was anchored to), the `null`-vs-`""` transcript distinction and the
+ * thinking-suppression rule; the markup below is what this template is for.
+ *
+ * It subscribes per FIELD, so the customer file in the sidebar no longer
+ * re-renders on every partial transcript the way the whole-page `useSession()`
+ * this replaced made it.
+ */
+function Conversation() {
+  const { items, streaming, transcript, thinking } = useConversation();
+  return (
+    <>
+      <AutoScroll
+        scrollClassName="rt-scroll overflow-y-auto"
+        contentClassName="p-4 flex flex-col gap-2"
+      >
+        {items.length === 0 && streaming === null && (
+          <div className="text-center p-10 text-[13px]" style={{ color: "#a1a1aa" }}>
+            Press start, then read one of the emails from “Who to be” to the agent.
+          </div>
+        )}
+        {items.map((item) => (
+          <Row
+            key={item.kind === "message" ? `m${item.message.id}` : item.toolCall.callId}
+            item={item}
+          />
+        ))}
+        {streaming !== null && (
+          <div
+            className="rounded-lg text-[13px] max-w-[80%] px-3.5 py-2.5 self-start"
+            style={{
+              lineHeight: 1.55,
+              background: "#ffffff",
+              color: "#18181b",
+              border: "1px solid #e4e4e7",
+            }}
+          >
+            {streaming}
+          </div>
+        )}
+        {thinking && (
+          <div className="self-start text-[11px] px-3.5" style={{ color: "#a1a1aa" }}>
+            <span style={{ animation: "rt-pulse 1.2s ease-in-out infinite" }}>· · ·</span>
+          </div>
+        )}
+      </AutoScroll>
+
+      {transcript.speaking && (
+        <div
+          className="flex items-center px-4 py-2 text-xs italic min-h-8"
+          style={{ background: "#fafafa", borderTop: "1px solid #e4e4e7", color: "#71717a" }}
+        >
+          <span
+            className="w-2 h-2 rounded-full inline-block mr-2"
+            style={{ background: "#16a34a", animation: "rt-pulse 1.5s ease-in-out infinite" }}
+          />
+          {transcript.text}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The live status dot, on its own subscription rather than a field off a
+ *  whole-page read — the header is the only thing here that wants it. */
+function StatusReadout() {
+  const state = useSessionSelector((s) => s.state);
+  return (
+    <>
+      <span
+        className="w-2 h-2 rounded-full inline-block"
+        style={{
+          background: STATE_COLORS[state],
+          animation:
+            state === "listening"
+              ? "rt-pulse 1.5s ease-in-out infinite"
+              : state === "thinking"
+                ? "rt-pulse 0.8s ease-in-out infinite"
+                : "none",
+        }}
+        title={state}
+      />
+      <span className="text-[11px] font-normal" style={{ color: "#a1a1aa" }}>
+        {state}
+      </span>
+    </>
+  );
+}
+
+/**
+ * The fatal-error banner.
+ *
+ * `role="alert"` is the part a hand-rolled banner leaves out and the part that
+ * matters: per the `fatalError` latch in the session core this is the only
+ * remaining signal — the status readout beside it goes back to reading like a
+ * live call — and a screen reader is never told an unannounced one appeared.
+ * `ConsoleShell` carries it, and this template's two-pane page cannot use that
+ * shell as its frame; the attribute is what it is here for.
+ */
+function ErrorBanner() {
+  const error = useSessionSelector((s) => s.error);
+  if (!error) return null;
+  return (
+    <div
+      role="alert"
+      className="px-4 py-2 text-xs"
+      style={{ background: "#fef2f2", color: "#b91c1c", borderTop: "1px solid #fecaca" }}
+    >
+      {error.message} ({error.code})
+    </div>
+  );
+}
+
+/** The call controls: the one place a whole-session read is what is wanted —
+ *  `started`, `running` and three methods, in three buttons. */
+function CallControls({ productCount }: { productCount: number }) {
   const session = useSession();
-  // `speaking` and `text` in place of a `userTranscript !== null` check: `null`
-  // is silence and `""` is speech detected with no words back yet, and reading
-  // them as one falsy value hides the indicator at the start of every turn.
-  const { speaking, text: userTranscript } = useUserTranscript();
-  // The agent's own store, projected by `syncState` after every tool call.
+  return (
+    <div
+      className="flex items-center gap-2 px-4 py-3"
+      style={{ background: "#ffffff", borderTop: "1px solid #e4e4e7" }}
+    >
+      {!session.started ? (
+        <button
+          type="button"
+          className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer text-white"
+          style={{ background: "#2563eb" }}
+          onClick={() => session.start()}
+        >
+          Start call
+        </button>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer"
+            style={{
+              background: session.running ? "#e4e4e7" : "#2563eb",
+              color: session.running ? "#18181b" : "#ffffff",
+            }}
+            onClick={() => session.toggle()}
+          >
+            {session.running ? "Hold" : "Resume"}
+          </button>
+          {/* end() hangs up and flips `started` back, so the UI
+              returns to "Start call" and the next start is a brand-new
+              session (fresh store, greeting included). reset() would
+              keep the call live — the buttons never toggle back. */}
+          <button
+            type="button"
+            className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer text-white"
+            style={{ background: "#dc2626" }}
+            onClick={() => session.end()}
+          >
+            End
+          </button>
+        </>
+      )}
+      <div className="flex-1" />
+      <span className="text-[10px] tabular-nums" style={{ color: "#a1a1aa" }}>
+        {productCount} products
+      </span>
+    </div>
+  );
+}
+
+function App() {
+  // The agent's own store, projected by `syncState` after every tool call —
+  // the only subscription at this level now. The session reads that used to sit
+  // beside it moved into the four components above, so a partial transcript no
+  // longer re-renders the customer file.
   const view = useAgentState<StoreView>(EMPTY_VIEW);
 
   const lastAction = view.activity.at(-1);
@@ -242,22 +456,7 @@ function App() {
           <div className="flex items-center gap-2.5 text-base font-semibold">
             <span style={{ color: "#2563eb" }}>◆</span>
             Retail Support
-            <span
-              className="w-2 h-2 rounded-full inline-block"
-              style={{
-                background: STATE_COLORS[session.state],
-                animation:
-                  session.state === "listening"
-                    ? "rt-pulse 1.5s ease-in-out infinite"
-                    : session.state === "thinking"
-                      ? "rt-pulse 0.8s ease-in-out infinite"
-                      : "none",
-              }}
-              title={session.state}
-            />
-            <span className="text-[11px] font-normal" style={{ color: "#a1a1aa" }}>
-              {session.state}
-            </span>
+            <StatusReadout />
           </div>
           <span
             className="px-2.5 py-1 rounded text-[10px] font-semibold uppercase tracking-wider"
@@ -280,99 +479,9 @@ function App() {
             className="flex flex-col overflow-hidden"
             style={{ borderRight: "1px solid #e4e4e7" }}
           >
-            <AutoScroll
-              scrollClassName="rt-scroll overflow-y-auto"
-              contentClassName="p-4 flex flex-col gap-2"
-            >
-              {session.messages.length === 0 && (
-                <div className="text-center p-10 text-[13px]" style={{ color: "#a1a1aa" }}>
-                  Press start, then read one of the emails from “Who to be” to the agent.
-                </div>
-              )}
-              {session.messages.map((message: ChatMessage, index: number) => (
-                <div
-                  key={index}
-                  className="rounded-lg text-[13px] max-w-[80%] px-3.5 py-2.5"
-                  style={{
-                    lineHeight: 1.55,
-                    alignSelf: message.role === "assistant" ? "flex-start" : "flex-end",
-                    background: message.role === "assistant" ? "#ffffff" : "#2563eb",
-                    color: message.role === "assistant" ? "#18181b" : "#ffffff",
-                    border: message.role === "assistant" ? "1px solid #e4e4e7" : "none",
-                    animation: "rt-slide-in 0.2s ease-out",
-                  }}
-                >
-                  {message.content}
-                </div>
-              ))}
-            </AutoScroll>
-
-            {speaking && (
-              <div
-                className="flex items-center px-4 py-2 text-xs italic min-h-8"
-                style={{ background: "#fafafa", borderTop: "1px solid #e4e4e7", color: "#71717a" }}
-              >
-                <span
-                  className="w-2 h-2 rounded-full inline-block mr-2"
-                  style={{ background: "#16a34a", animation: "rt-pulse 1.5s ease-in-out infinite" }}
-                />
-                {userTranscript}
-              </div>
-            )}
-            {session.error && (
-              <div
-                className="px-4 py-2 text-xs"
-                style={{ background: "#fef2f2", color: "#b91c1c", borderTop: "1px solid #fecaca" }}
-              >
-                {session.error.message} ({session.error.code})
-              </div>
-            )}
-
-            <div
-              className="flex items-center gap-2 px-4 py-3"
-              style={{ background: "#ffffff", borderTop: "1px solid #e4e4e7" }}
-            >
-              {!session.started ? (
-                <button
-                  type="button"
-                  className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer text-white"
-                  style={{ background: "#2563eb" }}
-                  onClick={() => session.start()}
-                >
-                  Start call
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer"
-                    style={{
-                      background: session.running ? "#e4e4e7" : "#2563eb",
-                      color: session.running ? "#18181b" : "#ffffff",
-                    }}
-                    onClick={() => session.toggle()}
-                  >
-                    {session.running ? "Hold" : "Resume"}
-                  </button>
-                  {/* end() hangs up and flips `started` back, so the UI
-                      returns to "Start call" and the next start is a brand-new
-                      session (fresh store, greeting included). reset() would
-                      keep the call live — the buttons never toggle back. */}
-                  <button
-                    type="button"
-                    className="px-4 py-2 border-none rounded-md text-xs font-semibold cursor-pointer text-white"
-                    style={{ background: "#dc2626" }}
-                    onClick={() => session.end()}
-                  >
-                    End
-                  </button>
-                </>
-              )}
-              <div className="flex-1" />
-              <span className="text-[10px] tabular-nums" style={{ color: "#a1a1aa" }}>
-                {view.productCount} products
-              </span>
-            </div>
+            <Conversation />
+            <ErrorBanner />
+            <CallControls productCount={view.productCount} />
           </div>
 
           {/* Sidebar: the customer file */}

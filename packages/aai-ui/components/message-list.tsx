@@ -10,8 +10,9 @@ import {
   type ReactNode,
   useMemo,
 } from "react";
-import { useSessionSelector, useTheme } from "../context.ts";
-import type { ChatMessage, ToolCallInfo } from "../types.ts";
+import { useTheme } from "../context.ts";
+import type { ChatMessage } from "../types.ts";
+import { useConversation } from "../use-conversation.ts";
 import { INK_FAINT_PCT, INK_MUTED_PCT, inkTint, primaryTint } from "./_colors.ts";
 import { AutoScroll } from "./auto-scroll.tsx";
 import { Markdown } from "./markdown.tsx";
@@ -131,38 +132,6 @@ const MessageBubble = memo(function MessageBubble({
 });
 
 /**
- * Interleave messages and tool calls into render items, ordered by insertion
- * time. Each tool call renders immediately after its anchor message
- * (`afterMessageId`); tool calls whose anchor slid out of the retained window
- * (or that were inserted before any message existed) render first.
- */
-function interleave(
-  messages: readonly ChatMessage[],
-  toolCalls: readonly ToolCallInfo[],
-  renderMessage: (msg: ChatMessage) => ReactNode,
-  renderToolCall: (tc: ToolCallInfo) => ReactNode,
-): ReactNode[] {
-  const items: ReactNode[] = [];
-  let tci = 0;
-  const pushToolCallsThrough = (maxAfterId: number): void => {
-    let tc = toolCalls[tci];
-    while (tc && tc.afterMessageId <= maxAfterId) {
-      items.push(renderToolCall(tc));
-      tci++;
-      tc = toolCalls[tci];
-    }
-  };
-  const firstMessage = messages[0];
-  if (firstMessage) pushToolCallsThrough(firstMessage.id - 1);
-  for (const msg of messages) {
-    items.push(renderMessage(msg));
-    pushToolCallsThrough(msg.id);
-  }
-  pushToolCallsThrough(Number.POSITIVE_INFINITY);
-  return items;
-}
-
-/**
  * Props of {@link MessageList}.
  *
  * @public
@@ -204,45 +173,36 @@ export type MessageListProps = {
  */
 export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps>> = memo(
   function MessageList({ className }: MessageListProps) {
-    // Individual selectors (cached per selector) rather than useSession(): the
-    // list already re-renders on every content change, but a full-snapshot
-    // subscription would also drag it through unrelated updates (custom events,
-    // recording flips, ...).
-    const state = useSessionSelector((s) => s.state);
-    const messages = useSessionSelector((s) => s.messages);
-    const toolCalls = useSessionSelector((s) => s.toolCalls);
-    const userTranscript = useSessionSelector((s) => s.userTranscript);
-    const agentTranscript = useSessionSelector((s) => s.agentTranscript);
+    // Every rule this list renders by — the interleave, the streaming row, the
+    // `null`-vs-`""` transcript distinction, the thinking suppression — is
+    // `useConversation`'s, and this component is the proof that the hook is
+    // complete: a custom chrome that reaches for it gets the same conversation
+    // rather than a worse one it re-derived. The hook subscribes per field, so
+    // this list is no more reactive than it was when it did that itself.
+    const { items, streaming, transcript, thinking } = useConversation();
     const theme = useTheme();
-
-    const showThinking = useMemo(() => {
-      if (state !== "thinking") return false;
-      const last = toolCalls.at(-1);
-      if (last?.status === "pending") return false;
-      const lastMsg = messages.at(-1);
-      return !lastMsg || lastMsg.role === "user" || Boolean(last);
-    }, [state, toolCalls, messages]);
 
     // Stable object for the streaming bubble: an inline literal would defeat
     // MessageBubble's memo, re-rendering the streaming row on every unrelated
     // list update (state flips, STT partials, tool-call updates).
     const streamingMessage = useMemo(
-      () => (agentTranscript ? { role: "assistant" as const, content: agentTranscript } : null),
-      [agentTranscript],
+      () => (streaming ? { role: "assistant" as const, content: streaming } : null),
+      [streaming],
     );
 
     // Memoized rows: `MessageBubble` and `ToolCallBlock` are memo()-wrapped and
     // their inputs are referentially stable across snapshots, so appending one
     // message re-renders one row, not the whole capped list.
-    const items = useMemo(
+    const rows = useMemo(
       () =>
-        interleave(
-          messages,
-          toolCalls,
-          (msg) => <MessageBubble key={msg.id} message={msg} theme={theme} />,
-          (tc) => <ToolCallBlock key={tc.callId} toolCall={tc} />,
+        items.map((item) =>
+          item.kind === "message" ? (
+            <MessageBubble key={item.message.id} message={item.message} theme={theme} />
+          ) : (
+            <ToolCallBlock key={item.toolCall.callId} toolCall={item.toolCall} />
+          ),
         ),
-      [messages, toolCalls, theme],
+      [items, theme],
     );
 
     // `AutoScroll` follows streamed output (its ResizeObserver tracks content
@@ -256,14 +216,14 @@ export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps
         style={{ background: theme.surface }}
         contentClassName="flex flex-col gap-4 p-7"
       >
-        {items}
+        {rows}
         {streamingMessage && <MessageBubble message={streamingMessage} theme={theme} />}
-        {userTranscript !== null && (
+        {transcript.speaking && (
           <UserBubble theme={theme} color={inkTint(theme.text, theme.surface, INK_FAINT_PCT)}>
-            {userTranscript ? userTranscript : <ThinkingDots />}
+            {transcript.partial ? transcript.partial : <ThinkingDots />}
           </UserBubble>
         )}
-        {showThinking && <ThinkingDots />}
+        {thinking && <ThinkingDots />}
       </AutoScroll>
     );
   },

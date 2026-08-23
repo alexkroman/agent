@@ -219,8 +219,8 @@ export default tool({
       archetypeLabel: ARCHETYPES[args.archetype as keyof typeof ARCHETYPES] || args.archetype,
       openingSituation: args.openingSituation,
       creativitySeed: creativitySeed(),
-      at: at.state,
-      next: at.instruction,
+      // The position spread verbatim — the same keys every gated tool reports.
+      ...at,
       // The real saved state — never hardcoded values
       ...stateSummary(state),
     };

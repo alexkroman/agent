@@ -31,12 +31,12 @@ new one fails `pnpm check:api-contracts` until it joins one:
 | --- | --- |
 | `client` | the voice mount — `client()`, the one flat `ClientConfig` it takes, the handle |
 | `page` | the workflow-app mount — `page()`, with no session under it, plus `fetchClientConfig()`: the lookup `client()` does for itself and a page must ask for |
-| `session` | the live call: `SessionCore`, the snapshot, `useSession`, `useUserTranscript`, the errors |
+| `session` | the live call: `SessionCore`, the snapshot, `useSession`, `useUserTranscript`, `useConversation` + `ConversationItem`, the errors |
 | `hooks` | what a client reads off the AGENT: `useAgentState`, the two tool hooks, `useEvent` |
-| `components` | the design system a custom chrome is assembled from. The three memoized components (`Markdown`, `Controls`, `MessageList`) each name an exported props type, which is what makes their props render at all — see below |
+| `components` | the design system a custom chrome is assembled from, `ConsoleShell` included. The three memoized components (`Markdown`, `Controls`, `MessageList`) each name an exported props type, which is what makes their props render at all — see below |
 | `forms` | `<Form>`, the field components, `<WorkflowFields>` |
-| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`. At **epoch 12**; epoch 5 is where the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type. That re-export is also what carries `follow`/`followOutput` here for free — this package's own readers do NOT use them, because a hook needs the raw `Response` to see a 404 and fall through to its poll |
-| `theme` | `ClientTheme` + `useTheme` — its own contract because a token is a name in somebody's CSS |
+| `workflow` | `createWorkflowApi`, `useWorkflowRun`, `useWorkflowProgress`, `<WorkflowProgress>`, `useWorkflowSubmit`, `useWorkflows`, `useDownloadUrl`, `WORKFLOW_STATUS_LABELS`, `WorkflowRunStatus`. At **epoch 12**; epoch 5 is where the requests moved to the SDK: `WorkflowApi` is re-exported from `@alexkroman1/aai/workflow-api` rather than declared here, which adds no name and makes a client from either factory the same type. That re-export is also what carries `follow`/`followOutput` here for free — this package's own readers do NOT use them, because a hook needs the raw `Response` to see a 404 and fall through to its poll |
+| `theme` | `ClientTheme` + `useTheme`, and the five `--aai-*` CSS variables `ThemeProvider` writes — its own contract because a token is a name in somebody's CSS |
 | `client-dir` | `defaultClientDir()`, the one export a SERVER calls |
 
 Three things to know before touching them.
@@ -188,6 +188,77 @@ Two consequences worth knowing before adding a component here:
   message-list, auto-scroll, start-screen, sidebar-layout, tool-call-block,
   button, aai-logo, tool-config-context)
 
+## `useConversation` is the conversation; `MessageList` is one renderer of it
+
+`<MessageList>` used to own four decisions behind a single `className` prop, so
+a client that wanted its own bubble markup dropped all four at once:
+
+- the message/tool-call **interleave** (a tool call renders after its
+  `afterMessageId` anchor; an orphan whose anchor slid out of the 200-message
+  window leads),
+- the **streaming** agent bubble,
+- the live **transcript** row, with the `null`-vs-`""` protocol distinction,
+- the **thinking** indicator's suppression rule (off while a tool call is
+  pending, off once a trailing agent message has landed with nothing after it).
+
+Three template chromes did exactly that and shipped a worse conversation each —
+`retail` runs FIFTEEN tools and rendered none of them, because tool calls live
+in a second array nothing in that page read; `dispatch-center` eight;
+`infocom-adventure` its eight `game_state_*` calls and every partial of the
+narrator's reply.
+
+`useConversation()` (`use-conversation.ts`) is that data with nothing rendered:
+`{ items, streaming, transcript, thinking }`, where `items` is a discriminated
+union of `{ kind: "message" }` / `{ kind: "tool" }`. **`<MessageList>` is a thin
+consumer of it now, and that is the acceptance test rather than a tidiness
+argument** — a hook the package's own list cannot be rebuilt from is a hook a
+custom chrome will find a hole in.
+
+It subscribes with per-field `useSessionSelector` calls, never whole-page
+`useSession()`, and that is half the value: the three hand-rolled chromes all
+called `useSession()`, which re-renders on EVERY snapshot change, so a dispatch
+board re-rendered at STT-partial rate. `use-conversation.test.tsx` pins it — an
+`apiUrl` + `recording` update produces no render.
+
+**The ACTIONS are the other half, and they are not reachable narrowly.** A
+custom chrome needs `start`, `toggle`, `end` and `running`, and the only public
+route to them is `useSession()`; `useSessionCore()`, the narrow way `<Controls>`
+reaches them, is not exported. So a converted chrome still ends up with one
+whole-session subscriber, and the remedy available to a template author is to
+push it into a LEAF — `infocom-adventure`'s two-button `Footer`, `retail`'s and
+`dispatch-center`'s `Controls` — so the transcript, the status bar and the board
+above it do not re-render with it. Either export `useSessionCore`, or keep the
+actions in a leaf.
+
+`retail` and `dispatch-center` are the worked examples of the conversion: both
+were a single `App()` mapping `session.messages`, and both split into `Row` /
+`Conversation` / `StatusReadout` / `ErrorBanner` / `Controls`, which is what
+leaves `App` holding only `useAgentState(projection)`.
+
+### `ConsoleShell` is public, `role="alert"` is why — and no template adopted it
+
+`ConsoleShell` already had exactly the right prop shape (`icon, title, state,
+pulsing, error, children, footer`) and was `@internal`, so each custom chrome
+rebuilt the frame too — and every one of them re-derived the error banner
+WITHOUT the `role="alert"` that `console-shell.tsx` argues is load-bearing: per
+the `fatalError` latch in `session-core.ts` the banner is the only remaining
+signal, the state eyebrow beside it having gone back to reading like a live
+session. Reach for `ConsoleShell` when the conversation is yours and the frame
+is not; reach for `ChatView` when both are ours.
+
+**It was published in the same change that converted three custom chromes, and
+all three declined it** — record that as the open question it is. It is a whole
+FRAME: a centred `max-w-190` column with its own header (icon + title + state
+eyebrow) and footer. `retail` and `dispatch-center` are full-bleed
+`1fr / 320px` grids whose headers carry things it cannot express ("Verified ·
+Olivia Ito", "SYSTEM ALERT: RED"); `infocom-adventure` is a CRT. Adopting it
+would replace the design each template exists to demonstrate. What all three
+actually needed was the `role="alert"` banner INSIDE it, which they now carry
+locally. By the coverage gate's own rule `ConsoleShell`/`ConsoleShellProps` are
+either missing their example or should not be public, and on this evidence it is
+the second — worth revisiting before the release rather than leaving as an
+allowlist entry nobody reads.
+
 ## `AutoScroll` is the only scroll-pinning implementation
 
 `components/auto-scroll.tsx` wraps `use-stick-to-bottom` (pin to the bottom as
@@ -289,6 +360,105 @@ reads back as `null` rather than `undefined` — a client spelling
 signatures, since an overload is a type-level contract a runtime suite cannot
 assert; `hooks.test.ts` covers the memoization and the discrimination, which are
 the halves that are runtime behaviour.
+
+## The theme is CSS VARIABLES too, and `useTheme()` still exists
+
+`useTheme()` returns a JavaScript object, and `context.ts` admitted outright
+that "a Tailwind class cannot see it" — so every styled node in a custom client
+carried an inline `style={{ }}`. Measured ratio of `theme.` reads to `style={{`
+in the template clients: `night-owl` 10:10, `travel-concierge` 9:8,
+`plan-and-execute` 8:8, `pizza-ordering` 8:8, `support-line` 5:5.
+
+The package already knew the fix and used it three times internally (`Button`'s
+`--aai-btn-bg` consumed as `bg-(--aai-btn-bg)`, `FileField`'s
+`::file-selector-button`, `SidebarLayout`'s `--aai-sidebar-w`) and published
+none of the five theme tokens. `ThemeProvider` writes `--aai-bg`,
+`--aai-surface`, `--aai-text`, `--aai-border` and `--aai-primary` onto
+`document.documentElement`, and `styles.css`'s `@theme` block maps them into
+Tailwind's `--color-*` namespace, so `className="bg-aai-surface text-aai-text
+border-aai-border"` works. `night-owl` went from 10 reads and 10 style objects
+to zero and zero with its custom dark palette unchanged.
+
+Four things to keep:
+
+- **This is ADDITIVE.** `useTheme()` stays: `inkTint`/`primaryTint` in
+  `components/_colors.ts` do `color-mix` on the RESOLVED values, and a page is
+  entitled to read the object for a `satisfies`-pinned palette.
+- **What survives conversion is a value a CSS property needs and a class cannot
+  express — usually a multi-value SHORTHAND, not arithmetic.** Every read in the
+  five clients measured above was a plain token in a `color`/`background`/
+  `border-color` position, ternaries included (`on ? theme.primary :
+  theme.surface` is two classes, not a computation). The one genuine survivor
+  found across five templates is `scrollbar-color`, which takes TWO values and
+  has no utility: `infocom-adventure`'s transcript reads `theme.primary` and
+  `theme.surface` for it rather than re-pinning the two hex codes its own
+  `client({ theme })` block already declares.
+- **The page background is still painted imperatively on `html` AND `body`.** A
+  variable only paints where some rule consumes it, and those two elements are
+  the ones nothing in this package renders — that is the letterboxing bug
+  `usePageBackground` was added for, and `theme-css-vars.test.tsx` holds it.
+- **The `styles.css` fallbacks ARE `DEFAULT_THEME`**, so the utilities work on a
+  page that mounts no provider. Two copies, so a test compares them directly;
+  nothing else can see that drift. The variables are RESTORED on unmount rather
+  than removed — a host page may have set its own `--aai-*` before mounting.
+
+## Four `ClientConfig` display fields the shell components already took
+
+`DefaultShell` forwarded three of the seven fields the two components under it
+accept: `StartScreen` takes `icon`, `subtitle`, `buttonText`; `SidebarLayout`
+takes `sidebarPosition`; none of the four was on `ClientConfig`. So `solo-rpg`
+wanted all four, could say none in config, and dropped to the `component:` tier
+for a 27-line wrapper whose only job was to re-say what `client()` already knows
+how to say — and which dragged `useAgentState` up a level so its `Sidebar` had
+to take the projection as a PROP. All four are `ClientConfig` fields now, the
+wrapper is deleted and the `Sidebar` subscribes itself.
+
+`sidebarPosition` routes through the same `rootFor` branch that already builds a
+`SidebarLayout` beside a `component`, for the reason `sidebar` itself does: the
+two branches build the same layout, and a field honoured by only one of them is
+the shape this config used to have. `icon` reaches BOTH the start card and the
+shell header — they are one mark, and an agent whose start screen shows a pizza
+and whose header shows our logo reads as two products. The forwarding bag is a
+MAPPED type over `Pick<ClientConfig, …>`, not a bare `Pick`:
+`exactOptionalPropertyTypes` is on and every field arrives from a spread that
+cannot know which keys the caller wrote.
+
+**Session resume: the default is the fix, and the hand-wired version was worse.**
+`solo-rpg` was the one template of fourteen that wired
+`onSessionId`/`resumeSessionId` by hand — the shape `session-resume-store.ts`
+cites as a default in the wrong place — and the copy used **`localStorage`**, so
+it was not duplicating the new default but OVERRIDING it with the wrong store. A
+pointer into a live call that survives a new tab and a visit tomorrow suppresses
+the greeting (`parseWsUpgradeParams` keys that off the id's mere presence) and
+rejoins a conversation whose context is gone. Deleting the four lines is a bug
+fix.
+
+## STATE or a MOMENT: which mechanism a tool's answer belongs in
+
+A tool can hand the page STATE or a MOMENT, and there is a different mechanism
+for each — `useAgentState(projection)` over a `sessionSlot` for the first,
+`useEvent` / `useToolCallStart` for the second. `night-owl` is the template that
+puts them side by side deliberately, because it is the first one a reader meets
+that leaves `agent.ts` for a `.tsx` file and it is where the choice is easiest
+to get wrong.
+
+Its recommendation LOG is state: a slot, projected by `syncState`, read by
+`useAgentState(nightProjection)`. It used to be a `useState` in the sidebar
+rebuilt from a `ctx.send("recommendations", …)` per call, which made the list
+DERIVED — so a page that mounted late or reloaded mid-session started empty
+while the session it reconnected to still remembered every pick. That is the
+same defect `pizza-ordering` records paying ~45 lines for, by a shorter route.
+Its "finding something cozy…" flash and its wind-down nudge are moments:
+`useToolCallStart` never replays by construction (a start is about the instant),
+and the nudge is a `ctx.send` precisely because re-delivering it on every
+reconnect would be nagging.
+
+**The rule: if re-rendering it after a reload would be RIGHT, it is state and
+belongs in a slot. If re-rendering it after a reload would be a LIE (a spinner
+for a finished call) or a nuisance (a nudge shown twice), it is a moment and
+belongs in an event.** Keeping both mechanisms on one screen is better teaching
+than splitting them across two templates, which is why `night-owl` still holds
+the only demonstration of the event hooks.
 
 ## Client audio path (browser ⇄ server)
 
@@ -442,6 +612,15 @@ templates are now three lines and every one of them does something.
 workflow app can still use — but note `page()` does not fetch the endpoint the
 way `client()` does, so a page that wants `name`/`greeting` from the agent calls
 `fetchClientConfig()` itself rather than receiving them.
+
+### Three factories, and the `Client` suffix is what tells them apart
+
+None of them is a name collision and all three are reachable from a page, which
+is why they get read as one: **`createAgentClient`**
+(`@alexkroman1/aai/workflow-api`) is the one to reach for — one object over
+`config()` and every workflow route; **`createWorkflowApiClient`** is the narrow
+SDK factory it wraps; **`createWorkflowApi`** is this package's wrapper over that
+narrow one. The SDK's names carry the `Client` suffix; the bare one is ours.
 
 ### `page()` is a second mount, not a flag on `client()`
 
@@ -772,11 +951,51 @@ one — so a page written as `src={`/workflows/uploads/${id}`}` works against
 `URL.createObjectURL(blob)` is what those two elements take, and it makes
 `download` on the anchor work as a bonus, the bytes already being in the tab.
 
-**Revoke the object URL when the id changes.** It pins its blob for the life of
-the document, so a page that summarized five recordings holds five files it can
-no longer reach. `spoken-summary`'s `useAudioUrl` is the shape to copy — the
-revoke and the "a second run settled while the first download was in flight"
-guard are the whole of what a hook buys over four lines in the component.
+**`useDownloadUrl(api, id)` owns the object-URL lifecycle, and both templates
+that exist because of the audio round trip call it** — `spoken-summary` and
+`call-audit` had written the same 38 lines byte-for-byte, doc paragraph
+included, and this package exported no download helper at all. The two lines
+worth centralizing are the two the four are wrapped in: `URL.revokeObjectURL`
+on cleanup (an object URL pins its blob for the life of the DOCUMENT, so a page
+that summarized five recordings holds five files it can no longer reach) and a
+`cancelled` flag (a second run settling while the first download is in flight
+otherwise renders the first run's audio under the second run's output). Both
+failure modes are tested. Both copies also faked `pending` as "neither `url` nor
+`error`", which cannot tell a download in flight from no id at all; `pending` is
+its own field now, and both pages render it.
+
+### `useWorkflowSubmit` / `useWorkflowStream` hand back `wake` and `cancel`
+
+They held a run id and would not give it back, so a page that wanted "file it
+now" or "stop" kept a module-scope `api` purely to write `api.wake(runId)` — a
+page carrying the transport to make up for a hook withholding its own state.
+Both return `wake()` and `cancel()` bound to the run they are following
+(`_run-controls.ts`, shared, because `WorkflowStreamSubmission` is an ALIAS of
+`WorkflowSubmission` and a field on one and not the other is a lie in the type).
+Both ANSWER rather than fail when there is no run — `0` sleeps ended, `false`
+this call did not end it — which is the SDK's own contract for them.
+`reset()` and `cancel()` stay distinct: `reset()` puts the FORM back and leaves
+the run running.
+
+### `<WorkflowProgress lines={n}>` and `WORKFLOW_STATUS_LABELS`
+
+`undefined` = the whole log, `1` = the newest line, `0` = the placeholder. The
+two raw-primitive pages had each hand-rolled a newest-line version carrying the
+same six-line comment about how dropping the `supported` check leaves the page
+blank forever against an older agent. Narrowing the window is not a reason to
+re-derive that rule, so the window is a prop on the component that already owns
+it; the slice happens BEFORE the emptiness test, so a computed `lines` of zero
+cannot silently invert into "everything".
+
+`WORKFLOW_STATUS_LABELS` is the byte-identical `Record<WorkflowRun["status"],
+string>` two pages carried, differing only in the `running` label — exported
+with a neutral `running: "Working…"`, so a page writes
+`{ ...WORKFLOW_STATUS_LABELS, running: "Writing…" }`. The exhaustiveness
+argument both copies were written for moves to the SDK boundary: it is a
+`Record<WorkflowRunStatus, string>`, so a status added upstream is a compile
+error in one place every page inherits, and spreading a complete record cannot
+drop a key. `WorkflowRunStatus` is re-exported from `workflow-client.ts` for the
+same reason `WorkflowRun` is.
 
 ### Starting a run BEFORE its file has finished uploading
 
@@ -1206,6 +1425,21 @@ That is also why **no template exercises it**, and the allowlist records that:
 `transcription-workflow` used to open on one, and a form field describing a file
 nothing ever read is a worse example than none — it now takes the recording's
 URL, which is what the paragraph above says to do.
+
+**`<WorkflowFields>` is ALL-OR-NOTHING per workflow, and that is what to weigh
+before converting a hand-written form.** It renders one control per scalar, all
+of them, from the JSON Schema — the whole value and the whole constraint. There
+is no `exclude`/`only` prop, and `SchemaField` reads only `type`, `enum`,
+`description` and `default`, so `podcast-digest`'s conversion cost three things:
+its `<textarea rows={3}>` for the comma-separated feed list became a one-line
+`<TextField>`, the `min`/`max` on three number inputs stopped reaching the DOM
+(the schema still refuses at `start()`), and a param that used to render only
+when the webhook URL contained `/triggers/` — so nobody was asked about a Slack
+concept they would never meet — is now always rendered. Harmless there, but the
+deliberate hiding is gone. **A page that needs a field CONDITIONALLY has to
+write that field itself, and `<WorkflowFields>` will render it a second time**:
+the mixed shape `redline` uses works only because its hand-written field is one
+`<WorkflowFields>` SKIPS (an array).
 
 **`<WorkflowFields workflow="transcribe">` renders the schema half.** It takes
 either the workflow's NAME — fetching the listing itself, which is the form a

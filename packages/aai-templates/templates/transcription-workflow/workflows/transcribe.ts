@@ -63,16 +63,18 @@
  *   `output` exists only when the last segment does.
  */
 
-import { emit, mapConcurrent, readUpload, report, uploadInfo } from "@alexkroman1/aai/step";
-import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
-import { normalizeRecording } from "./normalize.ts";
 import {
-  clock,
-  countWords,
-  stitchTranscript,
-  TRANSCRIPT_STREAM,
-  type TranscriptChunk,
-} from "./stitch.ts";
+  emit,
+  encodeWav,
+  mapConcurrent,
+  readUpload,
+  report,
+  uploadInfo,
+} from "@alexkroman1/aai/step";
+import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
+import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
+import { normalizeRecording } from "./normalize.ts";
+import { stitchTranscript, TRANSCRIPT_STREAM, type TranscriptChunk } from "./stitch.ts";
 import { elapsed, timed, transcribeWav } from "./sync-api.ts";
 import {
   bytesPerSecond,
@@ -84,7 +86,6 @@ import {
   type Segment,
   UnsupportedRecordingError,
   type WavFormat,
-  wavWithHeader,
 } from "./wav.ts";
 
 /**
@@ -281,7 +282,7 @@ export async function splitRecording(uploadId: string): Promise<{
   const durationMs = segments.at(-1)?.endMs ?? 0;
 
   await report(
-    `Split ${clock(durationMs)} of audio into ${segments.length} segment${segments.length === 1 ? "" : "s"}.`,
+    `Split ${formatDuration(durationMs)} of audio into ${segments.length} ${plural(segments.length, "segment")}.`,
   );
   return { format, segments, durationMs };
 }
@@ -308,7 +309,7 @@ export async function transcribeSegment(
   // calls together, so their lines interleave by completion — the page renders a
   // log, not a sequence, and `segment.index` is what puts the TRANSCRIPT back in
   // order.
-  await report(`Transcribing ${clock(segment.startMs)}–${clock(segment.endMs)}.`);
+  await report(`Transcribing ${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}.`);
 
   // `[start, end)`, the same half-open pair `planSegments` produced — the store
   // owns the conversion to HTTP's inclusive range, so there is no `- 1` here to
@@ -321,20 +322,25 @@ export async function transcribeSegment(
   // answers better — and getting it wrong is a whole transcript in the wrong
   // language. Add one back only for a desk that really knows.
   //
-  // `wavWithHeader` is what makes a WINDOW decodable: the endpoint decodes each
+  // `encodeWav` is what makes a WINDOW decodable: the endpoint decodes each
   // request independently, so a slice of the middle of a recording is a headerless
   // tail until one is put back on it. The streaming flow needs no equivalent — its
-  // parts were cut with a header each.
+  // parts were cut with a header each. The header is the SDK's rather than this
+  // template's: a `WavFormat` is structurally a `PcmFormat`, and 22 lines of
+  // `DataView` writes with a comment about which of the two declared lengths a
+  // decoder trusts is not a thing worth a second copy of.
   const { value: text, ms } = await timed(() =>
     transcribeWav(
-      wavWithHeader(format, audio.bytes),
+      encodeWav(audio.bytes, format),
       `segment-${segment.index}.wav`,
-      `Segment ${segment.index} (${clock(segment.startMs)})`,
+      `Segment ${segment.index} (${formatDuration(segment.startMs)})`,
     ),
   );
   // The LATENCY, which is what says whether the concurrency bound or the endpoint
   // is the thing limiting the run — see `timed`'s doc.
-  await report(`Transcribed ${clock(segment.startMs)}–${clock(segment.endMs)} in ${elapsed(ms)}.`);
+  await report(
+    `Transcribed ${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)} in ${elapsed(ms)}.`,
+  );
   // And the WORDS, into their own stream, which is what makes this run's answer
   // streamable rather than only its narration: the page stitches whatever has
   // arrived and renders the transcript growing, minutes before `output` exists.
@@ -372,7 +378,7 @@ export async function mergeTranscript(
 ): Promise<Transcript> {
   "use step";
 
-  await report(`Stitching ${parts.length} segment${parts.length === 1 ? "" : "s"} together.`);
+  await report(`Stitching ${parts.length} ${plural(parts.length, "segment")} together.`);
 
   // `mapConcurrent` resolves in ITEM order however the calls settled, so this is
   // already ordered — sorted anyway, because the merge is where an ordering
@@ -417,12 +423,13 @@ export async function startClock(): Promise<number> {
   return Date.now();
 }
 
-// `clock` and `countWords` are re-exported rather than re-declared: `stream.ts`
-// and `batch.ts` already import them from this module, and the split that let the
-// PAGE stitch a partial transcript should not ripple through every flow.
+// Re-exported rather than re-declared: `stream.ts` and `batch.ts` already import
+// these from this module, and the split that let the PAGE stitch a partial
+// transcript should not ripple through every flow. `clock` and `countWords` used
+// to be in this list and are `formatDuration`/`countWords` on
+// `@alexkroman1/aai/utils` now — a run narrates itself and the page renders the
+// same run, so those two were a private copy of a formatter the SDK ships.
 export {
-  clock,
-  countWords,
   stitchChunks,
   stitchTranscript,
   TRANSCRIPT_STREAM,
@@ -434,9 +441,8 @@ export {
 /**
  * Run a `wav.ts` helper, turning its "cannot cut this" into a terminal failure.
  *
- * Exported for the same reason `countWords` is: `stream.ts` plans with the same
- * `wav.ts` helpers and owes the same classification, and it had this byte for
- * byte.
+ * Exported because `stream.ts` plans with the same `wav.ts` helpers and owes the
+ * same classification, and it had this byte for byte.
  */
 export function fatalOnUnsupported<T>(read: () => T): T {
   try {

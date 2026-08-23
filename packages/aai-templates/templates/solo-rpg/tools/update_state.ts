@@ -17,7 +17,6 @@ import {
   stateSummary,
   storyFlow,
   TIME_PHASES,
-  updateCrisisFlags,
 } from "../shared.ts";
 
 /**
@@ -171,9 +170,6 @@ export default storyFlow.tool({
           MAX_SESSION_LOG,
         );
       }
-
-      // Crisis check
-      updateCrisisFlags(state);
 
       return {
         success: true,

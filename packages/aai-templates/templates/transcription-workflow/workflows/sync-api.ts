@@ -18,8 +18,7 @@
  * the same shape). It is called FROM steps, so it inherits their environment.
  */
 
-import { stepTranscribeSync } from "@alexkroman1/aai/step";
-import { throwStepError } from "@alexkroman1/aai/step-errors";
+import { stepTranscribeSyncClassified } from "@alexkroman1/aai/step-errors";
 
 /**
  * Time one transcription, so the progress log carries LATENCY.
@@ -55,8 +54,9 @@ export function elapsed(ms: number): string {
  * callers arrive at that differently: one re-attaches a header to a window it
  * read, the other is handed parts that already carry one.
  *
- * `.catch(throwStepError)` is the whole of what this adds to the SDK call, and it is
- * where the three-way call is made: a `FatalError` stops the DevKit retrying
+ * `stepTranscribeSyncClassified` — the SDK's own `stepTranscribeSync` plus
+ * `throwStepError`, and nothing else — is the whole of what this adds to the SDK
+ * call, and it is where the three-way call is made: a `FatalError` stops the DevKit retrying
  * something that will answer the same way, a bare `RetryableError` retries in ONE
  * SECOND (that class's own default), and a `RetryableError` carrying `retryAfter`
  * waits exactly as long as the far side asked. The last matters here because a whole
@@ -72,6 +72,6 @@ export async function transcribeWav(
   filename: string,
   label: string,
 ): Promise<string> {
-  const { text } = await stepTranscribeSync(bytes, { filename, label }).catch(throwStepError);
+  const { text } = await stepTranscribeSyncClassified(bytes, { filename, label });
   return text;
 }

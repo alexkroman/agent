@@ -31,8 +31,9 @@
  * three functions read more tidily than one.
  */
 
-import { report, stepGenerate, stepGenerateJson } from "@alexkroman1/aai/step";
-import { throwStepError } from "@alexkroman1/aai/step-errors";
+import { report } from "@alexkroman1/aai/step";
+import { stepGenerateClassified, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import { countWords } from "@alexkroman1/aai/utils";
 import { FatalError } from "workflow";
 import { z } from "zod";
 import { CRITIC_SYSTEM, REVISER_SYSTEM, WRITER_SYSTEM } from "./prompts.ts";
@@ -145,7 +146,7 @@ export async function writeDraft(input: RedlineInput): Promise<string> {
   // `stepGenerate` already refuses an empty completion, as a RETRYABLE
   // `StepGenerateError` — which is the right answer, and one a hand-written
   // check would have to re-derive.
-  const draft = await ask(briefBlock(input), { system: WRITER_SYSTEM });
+  const draft = await stepGenerateClassified(briefBlock(input), { system: WRITER_SYSTEM });
   return draft.trim();
 }
 
@@ -168,10 +169,10 @@ export async function critiqueDraft(
   // `stepGenerateJson` owns the fence, the parse, the non-object case and the
   // shape — and throws PLAINLY when any of them misses, unlike the fatal one
   // above: a model that answered with prose may well obey on the next attempt.
-  const parsed = await stepGenerateJson(`${briefBlock(input)}\n\nThe submission:\n${draft}`, {
-    schema: CritiqueReply,
-    system: CRITIC_SYSTEM,
-  }).catch(throwStepError);
+  const parsed = await stepGenerateJsonClassified(
+    `${briefBlock(input)}\n\nThe submission:\n${draft}`,
+    { schema: CritiqueReply, system: CRITIC_SYSTEM },
+  );
 
   const critique: Critique = {
     verdict: parsed.verdict,
@@ -199,7 +200,7 @@ export async function reviseDraft(
   "use step";
 
   await report(`Round ${round}: revising.`);
-  const revised = await ask(
+  const revised = await stepGenerateClassified(
     [
       briefBlock(input),
       `Your current draft:\n${draft}`,
@@ -221,11 +222,6 @@ export function briefBlock(input: RedlineInput): string {
   return [`Brief: ${input.brief}`, `Audience: ${input.audience}`, must].join("\n\n");
 }
 
-export function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
-}
-
 /** Scores arrive from a model, so they arrive out of range often enough. */
 export function clampScore(score: number): number {
   if (!Number.isFinite(score)) return 0;
@@ -233,24 +229,16 @@ export function clampScore(score: number): number {
 }
 
 // ---- The model call ---------------------------------------------------------
-
-/**
- * `stepGenerate`, with this desk's retry POLICY on top.
- *
- * The SDK classifies the gateway's failure (`StepGenerateError.retryable`) and
- * stops there: whether a terminal failure should burn the step's remaining
- * attempts is the caller's call. `throwStepError`
- * (`@alexkroman1/aai/step-errors`) is that call made one way — terminal stays
- * terminal, and a rate limit becomes a `RetryableError` carrying the delay the
- * gateway itself named, which beats `RetryableError`'s own one-second default.
- *
- * This desk used to carry that mapping itself, as did `research-workflow` and
- * `link-digest`; it is one import now, and the delay is no longer the one line
- * only this template remembered.
- */
-async function ask(prompt: string, opts: { system: string }): Promise<string> {
-  return await stepGenerate(prompt, opts).catch(throwStepError);
-}
+//
+// There is no local `ask()` any more, and its absence is the point. The SDK
+// classifies the gateway's failure (`StepGenerateError.retryable`) and stops
+// there — whether a terminal failure should burn the step's remaining attempts
+// is the caller's call — so `stepGenerateClassified` and
+// `stepGenerateJsonClassified` (`@alexkroman1/aai/step-errors`) are that call
+// made one way: terminal stays terminal, and a rate limit becomes a
+// `RetryableError` carrying the delay the gateway itself named, which beats
+// `RetryableError`'s own one-second default. Three templates each wrapped the
+// raw `/step` call to say that; the wrapper is a suffix on the import now.
 
 /** A rate limit — and a model that ignored the format — are both expected. */
 critiqueDraft.maxRetries = 5;

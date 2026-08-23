@@ -35,10 +35,15 @@ vi.mock("./session-core.ts", () => {
   };
 });
 
-import { flushEffects } from "./_react-test-utils.ts";
+import { createMockSessionCore, flushEffects } from "./_react-test-utils.ts";
 import { type ToolDisplayConfig, useToolConfig } from "./components/tool-config-context.ts";
 import { client } from "./define-client.tsx";
 import { createSessionCore } from "./session-core.ts";
+
+/** A core the default shell will render its children under. */
+function startedCore() {
+  return createMockSessionCore({ state: "ready", started: true });
+}
 
 describe("client", () => {
   let container: HTMLElement;
@@ -283,6 +288,71 @@ describe("client", () => {
     const handle = client({ component: MyApp, sidebar: Aside, target: container });
     expect(container.querySelector("[data-testid='main']")).not.toBeNull();
     expect(container.querySelector("[data-testid='aside']")).not.toBeNull();
+    handle.dispose();
+  });
+  /**
+   * The four display fields the two shell components already accepted and
+   * `ClientConfig` did not name. `solo-rpg` wanted all four and could say none
+   * of them in config, so it dropped to the `component:` tier for a 27-line
+   * wrapper whose only job was to re-say what `client()` already knows how to
+   * say — and which dragged `useAgentState` up a level so its `Sidebar` had to
+   * take a prop.
+   */
+  it("forwards icon, subtitle and buttonText to the start screen", () => {
+    const handle = client({
+      name: "Solo RPG",
+      icon: createElement("span", { "data-testid": "mark" }, "*"),
+      subtitle: "A Narrative Solo-RPG Engine",
+      buttonText: "Begin Your Story",
+      target: container,
+    });
+    expect(container.querySelector("[data-testid='mark']")).not.toBeNull();
+    expect(container.textContent).toContain("A Narrative Solo-RPG Engine");
+    expect(container.textContent).toContain("Begin Your Story");
+    // And NOT the stock CTA it replaced.
+    expect(container.textContent).not.toContain("Start Conversation");
+    handle.dispose();
+  });
+
+  it("puts the sidebar on the right when asked, in the default shell", () => {
+    // The default shell keeps its children behind `StartScreen` until the
+    // session starts, so this needs a core that is already started — which is
+    // also the only state in which the sidebar exists to be positioned.
+    function Aside() {
+      return createElement("div", { "data-testid": "aside" }, "Aside");
+    }
+    vi.mocked(createSessionCore).mockReturnValueOnce(startedCore());
+    const handle = client({
+      name: "T",
+      sidebar: Aside,
+      sidebarPosition: "right",
+      target: container,
+    });
+    // `order-last` is `SidebarLayout`'s own marker for the right-hand pane;
+    // asserting it is what distinguishes "routed through" from "silently
+    // dropped", which is what the field did before it was forwarded.
+    const pane = container.querySelector("[data-testid='aside']")?.parentElement;
+    expect(pane?.className).toContain("order-last");
+    handle.dispose();
+  });
+
+  it("routes sidebarPosition through the custom-component branch too", () => {
+    // The two branches build the same `SidebarLayout`; a field honoured by only
+    // one of them is the shape this config used to have.
+    function MyApp() {
+      return createElement("div", { "data-testid": "main" }, "Main");
+    }
+    function Aside() {
+      return createElement("div", { "data-testid": "aside" }, "Aside");
+    }
+    const handle = client({
+      component: MyApp,
+      sidebar: Aside,
+      sidebarPosition: "right",
+      target: container,
+    });
+    const pane = container.querySelector("[data-testid='aside']")?.parentElement;
+    expect(pane?.className).toContain("order-last");
     handle.dispose();
   });
 });

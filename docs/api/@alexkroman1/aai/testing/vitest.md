@@ -16,6 +16,18 @@ So the coupling gets its own subpath instead of leaking into the main one.
 it, importing `@alexkroman1/aai/testing` is not, and a project that never
 writes a test resolves neither.
 
+**The rule for what belongs here: anything that installs, and anything that
+restores.** Every fake on `@alexkroman1/aai/testing` that fills a published
+slot hands back a `restore` the caller owns, and owning it means a registry —
+`const restores: (() => void)[]` with an `afterEach` that splices it, written
+out in template after template, three times in one file. The `install*` half
+of this module is that fake plus `onTestFinished(restore)`: same object,
+unwound by the runner in reverse order when the test that installed it ends.
+
+A fake with no lifetime (`stubGenerate`, `createToolContext`, the workflow
+snapshots) gets no wrapper — there is nothing to restore, so a second name
+for it would only be a second name.
+
 ## Functions
 
 ### installStubGateway()
@@ -63,5 +75,141 @@ test("summarize sends the article", async () => {
   const calls = installStubGateway('{"headline":"Otters use tools"}');
   await summarize("Otters use tools.");
   expect(calls[0]?.prompt).toContain("Otters use tools.");
+});
+```
+
+***
+
+### installStubReporter()
+
+```ts
+function installStubReporter(): StubReporter;
+```
+
+Capture what a `"use step"` function narrates and emits, restored when this
+test finishes.
+
+`stubReporter` with the bookkeeping done — see it for why `report()` and
+`emit()` are separated the way the streams are.
+
+#### Returns
+
+[`StubReporter`](../testing.md#stubreporter)
+
+***
+
+### installStubSpeech()
+
+```ts
+function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
+```
+
+Publish a synthesizer that records what it was asked to say, restored when
+this test finishes.
+
+`stubSpeech` with the bookkeeping done — see it for the call log's
+shape, the silence it answers with, and how to make it fail instead.
+
+#### Parameters
+
+##### options?
+
+[`StubSpeechOptions`](../testing.md#stubspeechoptions)
+
+#### Returns
+
+[`StubSpeech`](../testing.md#stubspeech)
+
+***
+
+### installStubStepFetch()
+
+```ts
+function installStubStepFetch(answer?: (request: StubStepRequest) => 
+  | StubStepAnswer
+  | Promise<StubStepAnswer>): StubStepFetch;
+```
+
+Publish a fake `stepFetch`, restored when this test finishes.
+
+`stubStepFetch` with the bookkeeping done — see it for why a step's HTTP
+goes through a published slot rather than the global, and what the recorded
+request carries.
+
+#### Parameters
+
+##### answer?
+
+(`request`: [`StubStepRequest`](../testing.md#stubsteprequest)) => 
+  \| [`StubStepAnswer`](../testing.md#stubstepanswer)
+  \| `Promise`\<[`StubStepAnswer`](../testing.md#stubstepanswer)\>
+
+Called per request. Defaults to an empty `200`.
+
+#### Returns
+
+[`StubStepFetch`](../testing.md#stubstepfetch)
+
+***
+
+### installStubTranscribe()
+
+```ts
+function installStubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
+```
+
+Answer AssemblyAI's transcription endpoints in memory, restored when this test
+finishes.
+
+`stubTranscribe` with the bookkeeping done — see it for the four legs it
+routes, why a refusal is staged as an HTTP status rather than as a
+`TranscribeError`, and why it takes an `otherwise` handler.
+
+#### Parameters
+
+##### options?
+
+[`StubTranscribeOptions`](../testing.md#stubtranscribeoptions)
+
+#### Returns
+
+[`StubTranscribe`](../testing.md#stubtranscribe)
+
+***
+
+### installStubUploads()
+
+```ts
+function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
+```
+
+Publish an in-memory upload store, restored when this test finishes.
+
+`stubUploads` with the bookkeeping done — see it for what the store
+serves, why writes are opt-in, and why the minted ids count up.
+
+#### Parameters
+
+##### files
+
+`Readonly`\<`Record`\<`string`, [`StubUpload`](../testing.md#stubupload)\>\>
+
+##### options?
+
+[`StubUploadsOptions`](../testing.md#stubuploadsoptions)
+
+#### Returns
+
+[`StubUploads`](../testing.md#stubuploads)
+
+#### Example
+
+```ts no-check
+import { installStubUploads } from "@alexkroman1/aai/testing/vitest";
+
+test("the step reads the recording it was given", async () => {
+  const uploads = installStubUploads({ upl_1: new Uint8Array(5000) }, { writable: true });
+  await ingest("upl_1");
+  expect(uploads.writes).toHaveLength(1);
 });
 ```

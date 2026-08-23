@@ -73,12 +73,13 @@ export default dispatchSlot.updateTool({
     const protocols = getApplicableProtocols(recType, recSeverity);
     const recommended = recommendResources(recType, recSeverity, state);
 
-    const at = callFlow.send(ctx, { type: "LOGGED" });
-
     return {
       incidentId: id,
-      at: at.state,
-      next: at.instruction,
+      // Spread the position rather than renaming its fields: this tool is
+      // ungated, so the `{ state, instruction }` a gated tool's result carries
+      // has to come from here — and under two different key sets the model
+      // reads its own position two different ways within one agent.
+      ...callFlow.send(ctx, { type: "LOGGED" }),
       recommendedSeverity: recSeverity,
       recommendedType: recType,
       triageScore,

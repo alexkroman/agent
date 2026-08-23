@@ -24,8 +24,8 @@
  * fetched text crosses a queue between them, which is what the cap on it is for.
  */
 
-import { report, stepGenerateJson } from "@alexkroman1/aai/step";
-import { stepFetchOk, throwStepError } from "@alexkroman1/aai/step-errors";
+import { report } from "@alexkroman1/aai/step";
+import { stepFetchOk, stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
 import { FatalError, sleep } from "workflow";
 import { z } from "zod";
 
@@ -159,12 +159,13 @@ export async function summarize(article: Article): Promise<Digest> {
 
   await report("Pulling out the claims worth keeping.");
 
-  // `stepGenerateJson` unwraps the fence a model puts around JSON, parses it,
-  // and validates it against `DigestReply` — and throws PLAINLY when any of
-  // those misses, which is the whole retry policy in one distinction: a model
-  // that answered with prose may answer correctly on the next attempt, where a
-  // 401 will not. `throwStepError` is what makes the 401 half terminal.
-  const parsed = await stepGenerateJson(
+  // `stepGenerateJsonClassified` unwraps the fence a model puts around JSON,
+  // parses it, and validates it against `DigestReply` — and throws PLAINLY when
+  // any of those misses, which is the whole retry policy in one distinction: a
+  // model that answered with prose may answer correctly on the next attempt,
+  // where a 401 will not. The `Classified` suffix is what makes the 401 half
+  // terminal: it is `stepGenerateJson` with `throwStepError` already applied.
+  const parsed = await stepGenerateJsonClassified(
     `Title: ${article.title}\nURL: ${article.url}\n\n${article.text}`,
     {
       schema: DigestReply,
@@ -172,7 +173,7 @@ export async function summarize(article: Article): Promise<Digest> {
         `You digest articles. Reply with JSON only: {"headline": string, "points": string[]}. ` +
         `Give exactly ${POINTS} points. No markdown fence, no preamble.`,
     },
-  ).catch(throwStepError);
+  );
 
   return {
     url: article.url,

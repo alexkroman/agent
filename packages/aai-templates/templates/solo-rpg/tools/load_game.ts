@@ -24,8 +24,8 @@ export default tool({
 
     return {
       loaded: true,
-      at: at.state,
-      next: at.instruction,
+      // The position spread verbatim — the same keys every gated tool reports.
+      ...at,
       playerName: saved.playerName,
       characterConcept: saved.characterConcept,
       settingGenre: saved.settingGenre,

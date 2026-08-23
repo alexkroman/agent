@@ -5,6 +5,9 @@
 ```ts
 
 // @public
+export function countWords(text: string): number;
+
+// @public
 export function createKeyedLock(): KeyedLock;
 
 // @public
@@ -12,6 +15,12 @@ export function errorDetail(err: unknown): string;
 
 // @public
 export function errorMessage(err: unknown): string;
+
+// @public
+export function formatBytes(bytes: number): string;
+
+// @public
+export function formatDuration(ms: number): string;
 
 // @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
@@ -40,6 +49,9 @@ export class KeyedLockTimeoutError extends Error {
 export function omitUndefined<T extends object>(obj: T): {
     [K in keyof T]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined>;
 };
+
+// @public
+export function plural(n: number, one: string, many?: string): string;
 
 // @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];

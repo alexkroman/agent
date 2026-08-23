@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 17,
-    "supported": [3, 10, 11, 12, 13, 15, 16, 17],
+    "current": 18,
+    "supported": [3, 10, 11, 12, 13, 15, 16, 17, 18],
     "dropped": {
       "1": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "2": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
@@ -31,10 +31,11 @@
     }
   },
   "dialog": {
-    "current": 3,
-    "supported": [2, 3],
+    "current": 4,
+    "supported": [2, 4],
     "dropped": {
-      "1": "flow() is dialog(): Flow -> Dialog, FlowPosition -> DialogPosition, FlowToolDef -> DialogToolDef, FlowToolResult -> DialogToolResult, FlowOptions -> DialogOptions. A pure rename, and the argument is the import line: 'flow' sat in the same barrel as 'workflow' meaning something entirely different (a dialog statechart bound to a session, versus durable work that outlives it), and next to graph(), whose name said equally little about which of the two you wanted. dialog() / procedure() / workflow() is a legible triple — where the conversation is, one unit of work inside a tool call, and work that survives the session."
+      "1": "flow() is dialog(): Flow -> Dialog, FlowPosition -> DialogPosition, FlowToolDef -> DialogToolDef, FlowToolResult -> DialogToolResult, FlowOptions -> DialogOptions. A pure rename, and the argument is the import line: 'flow' sat in the same barrel as 'workflow' meaning something entirely different (a dialog statechart bound to a session, versus durable work that outlives it), and next to graph(), whose name said equally little about which of the two you wanted. dialog() / procedure() / workflow() is a legible triple — where the conversation is, one unit of work inside a tool call, and work that survives the session.",
+      "3": "`Dialog.tool` answers `ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>` now, so `InferToolOutput` on a dialog tool is the full envelope rather than `unknown`. Epoch 3's example asserted that erasure as a compile-checked fact (`declaredOutput: InferToolOutput<typeof quoteClaim> = \"unknown, deliberately\"`) and argued it was correct, because threading R out would make the answer `{ premium: number }` — \"a shape no client ever receives\". That objection does not apply to what shipped: the type answered is the WRAPPER the runtime hands back, position and all, which is exactly what the client receives. The line is now the error epoch 3 predicted, and no edit that keeps the epoch's claim can compile."
     }
   },
   "ffmpeg": {
@@ -69,8 +70,8 @@
     "dropped": {}
   },
   "state": {
-    "current": 11,
-    "supported": [8, 9, 10, 11],
+    "current": 12,
+    "supported": [8, 9, 10, 12],
     "dropped": {
       "1": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
       "2": "Not a change to this capability's own surface — `sessionSlot` and every method on it are untouched, and epochs 3 through 7 still compile. This example attached its slot-backed tools with `agent({ tools })`, which the `agent` capability dropped at epoch 8: a tool is declared by its FILE now. Recorded as dropped rather than repaired in place, because a frozen example edited to make a compile error go away is the one thing this mechanism cannot allow — and because \"a slot written this way still compiles\" is true of the slot half and false of the file as a whole.",
@@ -78,7 +79,8 @@
       "4": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now — the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
       "5": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now — the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
       "6": "Dropped although it still COMPILES, which is the interesting part. Its `updateTool` body is `async`, and a mutation window is synchronous now — the draft is stored when the body returns, so an await inside one writes to a value that has already been stored. The SDK refuses it at run time naming the rule, and `pnpm typecheck` (this mechanism's whole gate) cannot see that. Recording it as dropped rather than leaving a green example that throws on its first call is the honest reading of what \"supported\" claims.",
-      "7": "The slot API changed shape with the durable store: `update` is synchronous and hands the body a draft, `get` returns a frozen `Readonly<T>`, `read`/`state`/`SlotState`/`SlotStateOf` are gone with `ctx.state`, and `projection` returns a callable carrying the slot's key and default."
+      "7": "The slot API changed shape with the durable store: `update` is synchronous and hands the body a draft, `get` returns a frozen `Readonly<T>`, `read`/`state`/`SlotState`/`SlotStateOf` are gone with `ctx.state`, and `projection` returns a callable carrying the slot's key and default.",
+      "11": "`SessionSlot.tool` and `.updateTool` answer `ToolDef<P, R>` now, so `InferToolOutput` on a slot tool is the body's own value. Epoch 11's example asserted the erasure as a compile-checked fact (`addItemOutput: InferToolOutput<typeof addItem> = \"still unknown at the slot boundary\"`, doc: \"were R threaded through the constructor, this line would be the error that says so\"). Unlike the dialog case there was never a wrapper to justify keeping it — a slot tool returns the mutator's value unchanged, so `unknown` was only the type system dropping it at the boundary. That line is now the predicted error, and an epoch whose stated claim is the erasure cannot be repaired without contradicting itself."
     }
   },
   "step": {
@@ -87,8 +89,13 @@
     "dropped": {}
   },
   "step-errors": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 3,
+    "supported": [1, 2, 3],
+    "dropped": {}
+  },
+  "step-files": {
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "stt": {
@@ -100,17 +107,22 @@
     }
   },
   "testing": {
-    "current": 21,
-    "supported": [2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+    "current": 22,
+    "supported": [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 18, 20, 22],
     "dropped": {
       "1": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
+      "5": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
+      "6": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
       "10": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
-      "11": "`createToolContext` takes no state type parameter and supplies `slots` (a real slot store, applying the same storability check the deployed one does) in place of the `state` bag."
+      "11": "`createToolContext` takes no state type parameter and supplies `slots` (a real slot store, applying the same storability check the deployed one does) in place of the `state` bag.",
+      "17": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
+      "19": "Dropped with epoch 21 and for the same reason: this example assigns `stubUploads(...)` to a `() => void`, and the fake answers `StubUploads` — `{ restore, writes, read }` — now. See epoch 21's entry for the whole argument. These four are the compile errors that made the break visible; every other supported epoch still builds untouched.",
+      "21": "`stubUploads` answers `StubUploads` — `{ restore, writes, read }` — where it answered a bare `() => void`. It was the only fake in this family whose shape a spec had to remember was different, and the only way to assert that a WRITE happened was to read it back through `uploadInfo`/`readUpload`, i.e. through the very seam the step wrote it through; a bare restore function had no room to carry the log. Epoch 21's own example does not happen to call it, but the epoch's CONTRACT published the old signature and code written against it no longer builds, so retaining it would be a promise with nothing behind it. Epochs 5, 6, 17 and 19 are dropped with it and for the same reason — their examples assign `stubUploads(...)` to a `() => void` and are the compile errors that prove it. This is the breaking change in the set; everything else added names."
     }
   },
   "tool": {
-    "current": 10,
-    "supported": [3, 4, 5, 6, 8, 9, 10],
+    "current": 11,
+    "supported": [3, 4, 5, 6, 8, 9, 10, 11],
     "dropped": {
       "1": "The root barrel exported the Standard Schema spec types (StandardSchemaV1 and its result/issue types) and toolError. The spec types are what tool() ACCEPTS rather than anything an agent declares, and stay reachable in sdk/schema.ts for the signatures that reference them. toolError returned the pre-serialized wire string, so isToolFailure(toolError(m)) was false — a trap under a name that read as the constructor for the shape the guard tests, and used by none of the fourteen templates; it is serializeToolFailure on a private module now, and toolFailure() is the constructor that pairs with the guard.",
       "2": "`ToolContext`, `ToolDef` and `createToolContext` all lost their state type parameter, and `ctx.state` is gone: this example annotates one, so it no longer compiles. Session state is a `sessionSlot` now, which types its own value in the module that declares it.",
@@ -136,8 +148,8 @@
     "dropped": {}
   },
   "utils": {
-    "current": 12,
-    "supported": [2, 3, 8, 12],
+    "current": 13,
+    "supported": [2, 3, 8, 12, 13],
     "dropped": {
       "1": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
       "4": "Dropped with epoch 11 and for the same reason: this epoch's authoring example imports the step surface (or a platform contract) from `@alexkroman1/aai/utils`, which now lives on `@alexkroman1/aai/step` and `@alexkroman1/aai/internal`. See epoch 11's entry for the whole argument.",
@@ -150,8 +162,8 @@
     }
   },
   "workflow": {
-    "current": 9,
-    "supported": [7, 9],
+    "current": 10,
+    "supported": [7, 9, 10],
     "dropped": {
       "1": "Dropped with epoch 8 and for the same reason: this epoch's authoring example reads the RUN vocabulary off the root barrel, which now lives on `@alexkroman1/aai/workflow-api`. See epoch 8's entry for the whole argument.",
       "2": "Dropped with epoch 8 and for the same reason: this epoch's authoring example reads the RUN vocabulary off the root barrel, which now lives on `@alexkroman1/aai/workflow-api`. See epoch 8's entry for the whole argument.",
@@ -163,8 +175,8 @@
     }
   },
   "workflow-api": {
-    "current": 10,
-    "supported": [2, 3, 4, 5, 6, 7, 8, 10],
+    "current": 11,
+    "supported": [2, 3, 4, 5, 6, 7, 8, 10, 11],
     "dropped": {
       "1": "Dropped with epoch 9: this example reads `WORKFLOW_API_PREFIX` off `@alexkroman1/aai/workflow-api`, and the prefix is on `@alexkroman1/aai/internal` now — a caller of a deployed agent composes no URL of its own. Epochs 2-8 name none of the four and still compile.",
       "9": "The four names this epoch published from `@alexkroman1/aai/workflow-api` are on `@alexkroman1/aai/internal`: `clampWorkflowWait`, `MAX_WORKFLOW_WAIT_MS`, `TERMINAL_WORKFLOW_STATUSES` and `WORKFLOW_API_PREFIX`. All four are the SERVER's half — `@alexkroman1/aai-runtime` was the only importer of each, and a caller of a deployed agent passes `wait` a number the client clamps for it and composes no URL of its own. `./v9.ts` names `clampWorkflowWait`, so no import written against epoch 9 resolves."

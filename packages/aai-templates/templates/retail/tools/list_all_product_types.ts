@@ -1,4 +1,3 @@
-import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { BEFORE_TRANSFER, retailTool } from "../store.ts";
 
@@ -19,6 +18,5 @@ export default retailTool({
       .sort(([a], [b]) => a.localeCompare(b));
     return { count: entries.length, products: Object.fromEntries(entries) };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "catalog read failed" : `listed ${result.count} product types`,
+  summary: (_args, result) => `listed ${result.count} product types`,
 });

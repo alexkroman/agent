@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { GenerateFn, ToolContext } from "@alexkroman1/aai";
+import type { ToolContext } from "@alexkroman1/aai";
 import {
   createToolContext,
   runTool,
@@ -93,10 +93,6 @@ function scriptedModel(script: Script = {}) {
   });
 
   return { generate, calls };
-}
-
-function makeCtx(generate: GenerateFn, sessionId?: string) {
-  return createToolContext({ generate, ...(sessionId ? { sessionId } : {}) });
 }
 
 /** A tool by the name the model calls it by, bound to this agent. The lookup
@@ -254,7 +250,7 @@ describe("answer_question", () => {
       relevant: (id) => id === "D8",
       answers: ["Area outages are on the status page, and rebooting will not help."],
     });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     const result = (await run("answer_question", { question: "is there an outage" }, ctx)) as {
       answer: string;
       sources: string[];
@@ -276,7 +272,7 @@ describe("answer_question", () => {
 
   test("with nothing grounded it returns no answer and points at the ticket", async () => {
     const { generate } = scriptedModel({ relevant: () => false });
-    const ctx = makeCtx(generate);
+    const ctx = createToolContext({ generate });
     const result = (await run("answer_question", { question: "do you sell phones" }, ctx)) as {
       answer: null;
       guidance: string;
@@ -302,8 +298,8 @@ describe("answer_question", () => {
     // session ids would prove nothing extra, and `sessionSlot` could stop
     // keying by session with this still passing.
     const { generate } = scriptedModel({ relevant: (id) => id === "D2", answers: ["Reboot it."] });
-    const first = makeCtx(generate);
-    const second = makeCtx(generate);
+    const first = createToolContext({ generate });
+    const second = createToolContext({ generate });
 
     await run("answer_question", { question: "how do I reboot" }, first);
     expect(supportSlot.get(second).trace).toBeNull();

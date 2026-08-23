@@ -1,5 +1,5 @@
 import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
-import { createToolContext } from "@alexkroman1/aai/testing";
+import { createToolContext, ok, okPosition } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import {
@@ -160,18 +160,6 @@ describe("ownership and authentication guards", () => {
   });
 });
 
-/**
- * The success half of a `retailTool` result.
- *
- * Every tool here is a `callFlow.tool` now, so a result is the body's own value
- * under `result`, wrapped in the position the call landed in. `agent.test.ts`
- * carries the same unwrap for the same reason.
- */
-function ok<T>(result: unknown): T {
-  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  return (result as { result: T }).result;
-}
-
 describe("retailTool", () => {
   const echo = retailTool({
     name: "echo",
@@ -253,9 +241,12 @@ describe("retailTool", () => {
   test("the result carries the position the call landed in", async () => {
     const ctx = makeCtx();
     serve(ctx);
-    const result = await gated.execute({}, ctx);
-    expect(result).toMatchObject({ state: "serving", done: false });
-    expect((result as { instruction?: string }).instruction).toMatch(/one identified customer/);
+    // `okPosition` rather than a cast to `{ instruction?: string }`: it keeps
+    // the envelope this test is about, and a refusal fails here naming what the
+    // flow said instead of reading `undefined` off a field nobody assigned.
+    const answered = okPosition<{ ok: boolean }>(await gated.execute({}, ctx));
+    expect(answered).toMatchObject({ state: "serving", done: false });
+    expect(answered.instruction).toMatch(/one identified customer/);
   });
 
   test("an error result is logged as an error, not through summary()", async () => {

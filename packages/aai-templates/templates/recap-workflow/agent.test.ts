@@ -29,14 +29,18 @@
 
 import type { ToolContext, WorkflowClient } from "@alexkroman1/aai";
 import {
-  createProgressStream,
   createRunSnapshot,
   createStubWorkflows,
   createToolContext,
+  parseSchemaInput,
   runTool,
+  schemaInputIssues,
   withDiscoveredTools,
 } from "@alexkroman1/aai/testing";
-import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
+import {
+  installStubStepFetch,
+  installStubGateway as stubGateway,
+} from "@alexkroman1/aai/testing/vitest";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createHook, type Hook, sleep } from "workflow";
@@ -81,9 +85,19 @@ const agentDef = withDiscoveredTools(
   import.meta.glob("./tools/*.ts", { eager: true }),
 );
 
-/** Every tool here is driven through the agent's own table, by the name the model calls. */
-const run = (name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<unknown> =>
-  runTool(agentDef, name, args, ctx);
+/**
+ * Every tool here is driven through the agent's own table, by the name the model
+ * calls.
+ *
+ * The third parameter is args-or-context, which is `runTool`'s own shape: four
+ * of this desk's five tools take no arguments, and the `{}` those calls were
+ * obliged to pass sat between the two values a reader cares about.
+ */
+const run = (
+  name: string,
+  argsOrCtx?: Record<string, unknown> | ToolContext,
+  ctx?: ToolContext,
+): Promise<unknown> => runTool(agentDef, name, argsOrCtx, ctx);
 
 /** A `ctx.workflows` that records `start` and answers `find` from a fixture. */
 function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
@@ -94,9 +108,10 @@ function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
     recent: vi.fn(async () => runs),
     cancel: vi.fn(async () => true),
     wakeUp: vi.fn(async () => 0),
-    // A tail of 0 means "one line written", which is the case the tools read.
-    streamTail: vi.fn(async () => 0),
-    stream: vi.fn(async () => createProgressStream([])),
+    // `lastLine` is the whole progress read now — `streamTail` + `stream` are no
+    // longer composed in `recap_progress`, so neither is stubbed. `undefined` is
+    // "the run has written nothing yet"; tests wanting a line override it.
+    lastLine: vi.fn(async () => undefined),
     listing: () => [{ name: "recap" }],
   });
 }
@@ -123,13 +138,19 @@ describe("the agent declares its workflow", () => {
   });
 
   test("with an input schema, so a bad URL fails at the call site", async () => {
-    const ok = await recap.input?.["~standard"].validate({
+    // `parseSchemaInput` / `schemaInputIssues` rather than a reach through
+    // `["~standard"].validate`: that is the vendor WIRE contract, and whether it
+    // answers synchronously or with a promise is the vendor's business — a
+    // missing `await` there leaves `.issues` undefined and the refusing half
+    // passes for the wrong reason.
+    const parsed = await parseSchemaInput(recap.input, {
       url: "https://example.com/a.mp3",
       requestedBy: "s",
     });
-    expect(ok?.issues).toBeUndefined();
-    const bad = await recap.input?.["~standard"].validate({ url: "not a url", requestedBy: "s" });
-    expect(bad?.issues).toBeDefined();
+    expect(parsed).toMatchObject({ url: "https://example.com/a.mp3" });
+    expect(
+      await schemaInputIssues(recap.input, { url: "not a url", requestedBy: "s" }),
+    ).toBeDefined();
   });
 
   test("and names the credential its steps read, so a deploy checks for it", () => {
@@ -157,7 +178,7 @@ describe("request_recap", () => {
   test("starts a run keyed by the session, so a later turn can find it", async () => {
     const workflows = stubWorkflows();
     const ctx = createToolContext({ workflows });
-    const result = await run("request_recap", {}, ctx);
+    const result = await run("request_recap", ctx);
 
     expect(workflows.start).toHaveBeenCalledWith(
       recap,
@@ -171,7 +192,7 @@ describe("request_recap", () => {
 
   test("passes the definition rather than its name", async () => {
     const workflows = stubWorkflows();
-    await run("request_recap", {}, createToolContext({ workflows }));
+    await run("request_recap", createToolContext({ workflows }));
     // The def overload is what types the input and turns a rename into a compile
     // error; a string would still work at runtime and lose both.
     expect(vi.mocked(workflows.start).mock.calls[0]?.[0]).toBe(recap);
@@ -194,7 +215,7 @@ describe("request_recap", () => {
     // failure it prevents is not tidiness: a caller who asks twice would
     // otherwise pay for the same recording being transcribed twice.
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    const result = await run("request_recap", {}, createToolContext({ workflows }));
+    const result = await run("request_recap", createToolContext({ workflows }));
     expect(result).toMatchObject({ started: false, runId: "wrun_1" });
     expect(workflows.start).not.toHaveBeenCalled();
   });
@@ -203,7 +224,7 @@ describe("request_recap", () => {
     const workflows = stubWorkflows([
       createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
     ]);
-    const result = await run("request_recap", {}, createToolContext({ workflows }));
+    const result = await run("request_recap", createToolContext({ workflows }));
     expect(result).toMatchObject({ started: true });
     expect(workflows.start).toHaveBeenCalledTimes(1);
   });
@@ -212,7 +233,7 @@ describe("request_recap", () => {
 describe("recap_status", () => {
   test("says nothing was started when the key has no runs", async () => {
     const ctx = createToolContext({ workflows: stubWorkflows([]) });
-    const result = await run("recap_status", {}, ctx);
+    const result = await run("recap_status", ctx);
     expect(result).toMatchObject({ runs: [], note: "Nothing started yet." });
   });
 
@@ -222,7 +243,7 @@ describe("recap_status", () => {
     const workflows = stubWorkflows([
       createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
     ]);
-    const result = (await run("recap_status", {}, createToolContext({ workflows }))) as {
+    const result = (await run("recap_status", createToolContext({ workflows }))) as {
       runs: string[];
     };
     expect(result.runs[0]).toContain("air quality");
@@ -240,7 +261,6 @@ describe("recap_status", () => {
     ];
     const result = (await run(
       "recap_status",
-      {},
       createToolContext({ workflows: stubWorkflows(runs) }),
     )) as { runs: string[] };
     expect(result.runs[0]).toContain("transcript deleted");
@@ -250,7 +270,7 @@ describe("recap_status", () => {
     const ctx = createToolContext({
       workflows: stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]),
     });
-    const result = (await run("recap_status", {}, ctx)) as { runs: string[] };
+    const result = (await run("recap_status", ctx)) as { runs: string[] };
     expect(result.runs[0]).toContain("Still working");
   });
 
@@ -263,7 +283,6 @@ describe("recap_status", () => {
     ];
     const result = (await run(
       "recap_status",
-      {},
       createToolContext({ workflows: stubWorkflows(runs) }),
     )) as { runs: string[] };
     expect(result.runs[0]).toContain("rolled back");
@@ -273,7 +292,7 @@ describe("recap_status", () => {
   test("bounds how many past runs it reads aloud", async () => {
     const workflows = stubWorkflows([]);
     const ctx = createToolContext({ workflows });
-    await run("recap_status", {}, ctx);
+    await run("recap_status", ctx);
     // A voice reply cannot be a list of twenty runs.
     expect(workflows.find).toHaveBeenCalledWith(recap, ctx.sessionId, { limit: 3 });
   });
@@ -282,28 +301,30 @@ describe("recap_status", () => {
 describe("recap_progress", () => {
   test("reads the run's own progress line rather than its status", async () => {
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["Transcript processing."]));
-    const result = await run("recap_progress", {}, createToolContext({ workflows }));
+    vi.mocked(workflows.lastLine).mockResolvedValue("Transcript processing.");
+    const result = await run("recap_progress", createToolContext({ workflows }));
     expect(result).toMatchObject({ progress: "Transcript processing." });
   });
 
   test("asks for the LAST line, not the whole log", async () => {
     // Every poll narrates, so a twenty-minute run's whole log is eighty lines.
+    // `lastLine` is the whole request — the bound that keeps an empty channel
+    // from hanging belongs to the method, so nothing here composes
+    // `streamTail` and `stream`.
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    vi.mocked(workflows.stream).mockResolvedValue(createProgressStream(["a"]));
-    await run("recap_progress", {}, createToolContext({ workflows }));
-    expect(workflows.stream).toHaveBeenCalledWith("wrun_1", { startIndex: -1 });
+    vi.mocked(workflows.lastLine).mockResolvedValue("a");
+    await run("recap_progress", createToolContext({ workflows }));
+    expect(workflows.lastLine).toHaveBeenCalledWith("wrun_1");
   });
 
-  test("a run that has written nothing yet says so WITHOUT opening the stream", async () => {
-    // Not a shortcut: an empty progress channel is never closed, so reading one
-    // waits for a line that arrives whenever the next step writes — i.e. the
-    // tool hangs instead of answering.
+  test("a run that has written nothing yet says so", async () => {
+    // `lastLine` resolves `undefined` for an empty channel, and this is the arm
+    // the tool branches on. That an empty channel does not HANG — it is never
+    // closed, so a stream opened on one waits for a line that may never come —
+    // is `lastLine`'s own guarantee now, and `aai`'s to test.
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    vi.mocked(workflows.streamTail).mockResolvedValue(-1);
-    const result = await run("recap_progress", {}, createToolContext({ workflows }));
+    const result = await run("recap_progress", createToolContext({ workflows }));
     expect(result).toMatchObject({ note: expect.stringContaining("nothing to report") });
-    expect(workflows.stream).not.toHaveBeenCalled();
   });
 });
 
@@ -344,7 +365,7 @@ describe("keep_transcript — the signal", () => {
 describe("cancel_recap", () => {
   test("cancels the live run", async () => {
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    const result = await run("cancel_recap", {}, createToolContext({ workflows }));
+    const result = await run("cancel_recap", createToolContext({ workflows }));
     expect(workflows.cancel).toHaveBeenCalledWith("wrun_1");
     expect(result).toMatchObject({ cancelled: true });
   });
@@ -355,7 +376,7 @@ describe("cancel_recap", () => {
     // stops replaying the run, so the compensations never fire. A template that
     // implied otherwise would be teaching the wrong thing.
     const workflows = stubWorkflows([createRunSnapshot({ workflow: "recap", status: "running" })]);
-    const result = (await run("cancel_recap", {}, createToolContext({ workflows }))) as {
+    const result = (await run("cancel_recap", createToolContext({ workflows }))) as {
       note: string;
     };
     expect(result.note).toContain("left behind");
@@ -366,13 +387,13 @@ describe("cancel_recap", () => {
       createRunSnapshot({ workflow: "recap", status: "completed", output: finishedOutput() }),
     ]);
     vi.mocked(workflows.cancel).mockResolvedValue(false);
-    const result = await run("cancel_recap", {}, createToolContext({ workflows }));
+    const result = await run("cancel_recap", createToolContext({ workflows }));
     expect(result).toMatchObject({ cancelled: false, note: "That one had already finished." });
   });
 
   test("says nothing was started when the key has no runs", async () => {
     const workflows = stubWorkflows([]);
-    const result = await run("cancel_recap", {}, createToolContext({ workflows }));
+    const result = await run("cancel_recap", createToolContext({ workflows }));
     expect(result).toMatchObject({ cancelled: false, note: "Nothing started yet." });
     expect(workflows.cancel).not.toHaveBeenCalled();
   });
@@ -380,20 +401,22 @@ describe("cancel_recap", () => {
 
 // ---- The steps --------------------------------------------------------------
 
-/** A provider answering `body` with `status`, recording what it was asked. */
+/**
+ * A provider answering `body` with `status`, recording what it was asked.
+ *
+ * Published into `stepFetch`'s OWN slot, not over `globalThis.fetch`. Every
+ * request in this file goes through `stepFetch` — `request()` and
+ * `discardTranscript` reach it directly, `stepTranscribeSubmitClassified`
+ * through the SDK — and `step-fetch.ts` falls back to `globalThis.fetch` only
+ * when nothing is published. A global stub therefore passed while exercising a
+ * path production never takes; every sibling template already stubs the slot,
+ * and `link-digest/agent.test.ts` states the rule this one used to break.
+ *
+ * `installStubStepFetch` unpublishes on `onTestFinished`, so there is no restore
+ * registry here and a stub cannot reach the next file.
+ */
 function stubProvider(body: unknown, status = 200) {
-  const calls: { url: string; init: RequestInit }[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string, init: RequestInit = {}) => {
-      calls.push({ url, init });
-      return new Response(typeof body === "string" ? body : JSON.stringify(body), {
-        status,
-        headers: { "Content-Type": "application/json" },
-      });
-    }),
-  );
-  return calls;
+  return installStubStepFetch(() => ({ status, body })).calls;
 }
 
 describe("submitRecording", () => {
@@ -408,10 +431,10 @@ describe("submitRecording", () => {
     expect(await submitRecording("https://example.com/a.mp3")).toEqual({ id: "t_1" });
 
     const call = calls[0];
-    expect(call?.init.method).toBe("POST");
+    expect(call?.method).toBe("POST");
     // `speaker_labels` is this desk's own request, carried through the SDK's
     // `params` passthrough; the model field is the SDK's and is PLURAL.
-    expect(JSON.parse(String(call?.init.body))).toMatchObject({
+    expect(JSON.parse(String(call?.body))).toMatchObject({
       audio_url: "https://example.com/a.mp3",
       speaker_labels: true,
     });
@@ -419,8 +442,7 @@ describe("submitRecording", () => {
     // OpenAI-compatible LLM gateway `summarize` calls. The SDK spells the
     // header `Authorization`; HTTP header names are case-insensitive, so the
     // lookup is too rather than pinning one casing.
-    const headers = call?.init.headers as Record<string, string> | undefined;
-    const auth = Object.entries(headers ?? {}).find(
+    const auth = Object.entries(call?.headers ?? {}).find(
       ([name]) => name.toLowerCase() === "authorization",
     );
     expect(auth?.[1]).toBe("sk-test");
@@ -489,7 +511,7 @@ describe("discardTranscript — the compensation", () => {
   test("deletes the transcript this run created", async () => {
     const calls = stubProvider({ id: "t_1" });
     await expect(discardTranscript("t_1")).resolves.toBeUndefined();
-    expect(calls[0]?.init.method).toBe("DELETE");
+    expect(calls[0]?.method).toBe("DELETE");
     expect(calls[0]?.url).toContain("/t_1");
   });
 
@@ -581,19 +603,11 @@ describe("awaitTranscript — the polling port", () => {
 
   /** A provider whose status endpoint answers `statuses` in order. */
   function stubStatuses(statuses: readonly Record<string, unknown>[]) {
-    let call = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        const body = statuses[Math.min(call, statuses.length - 1)];
-        call += 1;
-        return new Response(JSON.stringify(body), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }),
-    );
-    return () => call;
+    // Into `stepFetch`'s slot, for the reason `stubProvider` above gives.
+    const stub = installStubStepFetch(() => ({
+      body: statuses[Math.min(stub.calls.length - 1, statuses.length - 1)],
+    }));
+    return () => stub.calls.length;
   }
 
   test("keeps polling while the job is queued or processing", async () => {
@@ -666,15 +680,14 @@ describe("askWhetherToKeep — the expense port", () => {
 
   test("keeps the transcript when the caller says to, and deletes nothing", async () => {
     vi.mocked(createHook).mockReturnValue(hookAnswering({ keep: true }));
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
+    const provider = installStubStepFetch();
 
     const compensations = [{ label: "transcript t_1", undo: async () => undefined }];
     expect(await askWhetherToKeep("s_1", "t_1", compensations)).toEqual({
       kept: true,
       answered: true,
     });
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(provider.calls).toEqual([]);
     // The undo stays on the stack: a later failure still has something to reverse.
     expect(compensations).toHaveLength(1);
   });
@@ -688,7 +701,7 @@ describe("askWhetherToKeep — the expense port", () => {
       kept: false,
       answered: true,
     });
-    expect(calls[0]?.init.method).toBe("DELETE");
+    expect(calls[0]?.method).toBe("DELETE");
     // Leaving it would be harmless — the undo tolerates a 404 — and would still
     // narrate an unwind that reverses something already gone.
     expect(compensations).toHaveLength(0);
@@ -701,7 +714,7 @@ describe("askWhetherToKeep — the expense port", () => {
     const calls = stubProvider({ id: "t_1" });
 
     expect(await askWhetherToKeep("s_1", "t_1", [])).toEqual({ kept: false, answered: false });
-    expect(calls[0]?.init.method).toBe("DELETE");
+    expect(calls[0]?.method).toBe("DELETE");
   });
 
   test("claims the token BEFORE the caller is asked to answer it", async () => {
@@ -712,13 +725,10 @@ describe("askWhetherToKeep — the expense port", () => {
     vi.mocked(createHook).mockReturnValue(
       hookAnswering({ keep: true }, () => order.push("claimed")),
     );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        order.push("asked");
-        return new Response("{}", { status: 200 });
-      }),
-    );
+    installStubStepFetch(() => {
+      order.push("asked");
+      return { body: {} };
+    });
 
     await askWhetherToKeep("s_1", "t_1", []);
     expect(order[0]).toBe("claimed");

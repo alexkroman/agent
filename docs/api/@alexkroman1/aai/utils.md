@@ -3,8 +3,9 @@
 Shared utility functions (the `@alexkroman1/aai/utils` subpath).
 
 For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`,
-`toolFailure`, `isToolFailure`, `pushCapped`, and `createKeyedLock`. The
-remaining exports are framework
+`toolFailure`, `isToolFailure`, `pushCapped`, `createKeyedLock`, and the four
+narration formatters (`formatBytes`, `formatDuration`, `countWords`,
+`plural`). The remaining exports are framework
 plumbing shared with the sibling packages. The module stays free of zod and
 other heavy runtime dependencies so the CLI can import it on every
 invocation without a startup cost.
@@ -31,6 +32,47 @@ state is not that case any more: `sessionSlot`'s `update` window is
 synchronous, so it has nothing to serialize.)
 
 ## Functions
+
+### countWords()
+
+```ts
+function countWords(text: string): number;
+```
+
+How many words a string holds — whitespace-separated runs, after trimming.
+
+Every kind of whitespace separates (spaces, tabs, newlines, the non-breaking
+space a pasted transcript carries), and a run of them counts once, so a
+transcript stitched with `"\n\n"` between segments counts the same as one
+joined with single spaces. An empty or whitespace-only string is `0`, which
+is the case a naive `split(/\s+/).length` gets wrong by returning `1`.
+
+Deliberately naive about what a "word" is: it does not know about
+hyphenation, contractions, CJK text with no spaces in it, or numerals. It
+exists for the one thing every template used it for — "~1,200 words" in a
+progress line beside a transcript — where the count is a SCALE a reader
+calibrates against, not a figure anything is computed from.
+
+#### Parameters
+
+##### text
+
+`string`
+
+#### Returns
+
+`number`
+
+#### Example
+
+```ts
+import { countWords } from "@alexkroman1/aai/utils";
+
+countWords("  hello   there\nfriend "); // 3
+countWords("   "); // 0
+```
+
+***
 
 ### errorDetail()
 
@@ -69,6 +111,97 @@ Extract an error message from an unknown thrown value.
 #### Returns
 
 `string`
+
+***
+
+### formatBytes()
+
+```ts
+function formatBytes(bytes: number): string;
+```
+
+A byte count at the scale a person reads it: `"17.7 MB"`, `"110 KB"`,
+`"512 B"`.
+
+The unit is the largest one the value reaches, stepping by 1024 (`B`, `KB`,
+`MB`, `GB`, `TB`). Bytes and kilobytes are printed as whole numbers, because
+a tenth of a kilobyte is noise in a sentence; megabytes and up carry exactly
+one decimal, including a trailing zero (`"2.0 MB"`), so a column of them
+aligns and a size that grew from 2.04 to 2.4 does not read as unchanged.
+
+Rounding that carries into the next unit is PROMOTED rather than printed:
+1,048,000 bytes is `"1.0 MB"`, never `"1024 KB"`.
+
+A byte count is never negative and never `NaN`, so both are reported as
+`"0 B"` rather than propagating into a sentence a caller shows a person —
+this runs on the narration path, where the alternative is `"-0.0 MB"` in a
+progress line.
+
+#### Parameters
+
+##### bytes
+
+`number`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { formatBytes } from "@alexkroman1/aai/utils";
+
+formatBytes(0); // "0 B"
+formatBytes(112_640); // "110 KB"
+formatBytes(18_559_795); // "17.7 MB"
+```
+
+***
+
+### formatDuration()
+
+```ts
+function formatDuration(ms: number): string;
+```
+
+A duration as a clock reading: `"4:09"` under an hour, `"1:04:09"` over one.
+
+Seconds are always two digits, minutes are two digits only once an hours
+field exists, and the hours field is omitted when it is zero rather than
+padded — so a two-minute clip reads `"2:26"` and only a long recording grows
+a field. Input is milliseconds, rounded to the nearest second.
+
+**The hours field is why this is shared.** A `m:ss` formatter is four lines
+and looks finished, so every copy of it in this repo was written that way
+and every one of them printed a 64-minute run as `"64:09"`. That is not a
+cosmetic difference: `64:09` reads as sixty-four minutes to a person who
+knows the format and as an error to everyone else, and the same run's other
+copy said `1:04:09`.
+
+Negative and non-finite inputs are `"0:00"` — a duration is an elapsed time,
+and a caller subtracting two clock readings across a resume should not print
+`"-1:-30"` into a progress line.
+
+#### Parameters
+
+##### ms
+
+`number`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { formatDuration } from "@alexkroman1/aai/utils";
+
+formatDuration(0); // "0:00"
+formatDuration(249_000); // "4:09"
+formatDuration(3_849_000); // "1:04:09"
+```
 
 ***
 
@@ -111,6 +244,65 @@ function orderTotal(id: string): number | ToolFailure {
   if (isToolFailure(order)) return order;
   return order.total;
 }
+```
+
+***
+
+### plural()
+
+```ts
+function plural(
+   n: number, 
+   one: string, 
+   many?: string): string;
+```
+
+The right form of an English noun for a count: `plural(1, "risk")` is
+`"risk"`, `plural(2, "risk")` is `"risks"`.
+
+`many` defaults to `one + "s"`; pass it for a noun that does not take a bare
+`-s` (`plural(n, "entry", "entries")`, `plural(n, "person", "people")`).
+
+**It returns the WORD, not the count**, because the count almost always
+needs its own formatting on the way into the sentence — a
+[formatDuration](#formatduration), a thousands separator, or a word (`"no risks"`). The
+call site writes `` `${n} ${plural(n, "risk")}` ``, which is the same shape
+as the seventeen inline `` `${n === 1 ? "" : "s"}` `` this replaces, minus
+the chance of pluralizing off a different variable than the one being
+printed — which is exactly the bug that idiom hides, since both halves read
+as noise.
+
+Only exactly `1` takes the singular. Zero is plural (`"0 risks"`), which is
+English, and so is a negative or fractional count. Non-localized by
+construction: a language with more than two forms needs a different function,
+not an option on this one.
+
+#### Parameters
+
+##### n
+
+`number`
+
+##### one
+
+`string`
+
+##### many?
+
+`string`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { plural } from "@alexkroman1/aai/utils";
+
+const risks = 3;
+`Found ${risks} ${plural(risks, "risk")}.`; // "Found 3 risks."
+`Read ${1} ${plural(1, "entry", "entries")}.`; // "Read 1 entry."
 ```
 
 ***

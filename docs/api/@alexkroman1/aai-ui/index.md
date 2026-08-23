@@ -326,6 +326,81 @@ If the target element is not found in the DOM.
 
 ***
 
+### ConsoleShell()
+
+```ts
+function ConsoleShell(props: ConsoleShellProps): ReactNode;
+```
+
+The design-system "console" chrome: a 760px column on the themed page with a
+header (icon + live-status eyebrow), an announced error banner, the main
+content on a raised card, and a footer row beneath it.
+
+[ChatView](#chatview) is this shell with `<MessageList>` inside it and
+`<Controls>` under it, and until now that was the only way to get it — the
+shell itself was internal, so a client wanting its own conversation markup
+had to rebuild the chrome as well. Each one that did re-derived the error
+banner WITHOUT `role="alert"`, which is the one part of this component a
+reviewer cannot see is missing: per the `fatalError` latch in
+`session-core.ts`, the banner is the only remaining signal once the state
+eyebrow goes back to reading like a live session, and a screen reader is
+never told an unannounced one appeared.
+
+Reach for it when the conversation is yours and the frame is not. Reach for
+`<ChatView>` when both are ours.
+
+Must be rendered inside the providers `client()` installs.
+
+#### Parameters
+
+##### props
+
+[`ConsoleShellProps`](#consoleshellprops)
+
+See [ConsoleShellProps](#consoleshellprops).
+
+#### Returns
+
+`ReactNode`
+
+#### Example
+
+**A custom conversation in the stock chrome**
+
+```tsx
+import {
+  ConsoleShell,
+  Controls,
+  useConversation,
+  useSessionSelector,
+} from "@alexkroman1/aai-ui";
+
+function Console() {
+  const state = useSessionSelector((s) => s.state);
+  const error = useSessionSelector((s) => s.error);
+  const { items } = useConversation();
+  return (
+    <ConsoleShell
+      title="Dispatch"
+      state={state}
+      pulsing={state === "listening"}
+      error={error?.message}
+      footer={<Controls />}
+    >
+      <ul>
+        {items.map((item) => (
+          <li key={item.kind === "message" ? item.message.id : item.toolCall.callId}>
+            {item.kind === "message" ? item.message.content : item.toolCall.name}
+          </li>
+        ))}
+      </ul>
+    </ConsoleShell>
+  );
+}
+```
+
+***
+
 ### createSessionCore()
 
 ```ts
@@ -1400,6 +1475,104 @@ Returned while the agent has pushed nothing. Not memoized
 
 ***
 
+### useConversation()
+
+```ts
+function useConversation(): UseConversationResult;
+```
+
+Subscribe to the conversation: the interleaved exchange, the streaming
+utterance, the live transcript and the thinking rule — with no markup.
+
+Must be used inside the provider `client()` installs.
+
+#### Returns
+
+[`UseConversationResult`](#useconversationresult)
+
+See [UseConversationResult](#useconversationresult).
+
+#### Example
+
+**A custom bubble, keeping every rule \`\<MessageList\>\` knows**
+
+```tsx
+import { useConversation } from "@alexkroman1/aai-ui";
+
+function Transcript() {
+  const { items, streaming, transcript, thinking } = useConversation();
+  return (
+    <div>
+      {items.map((item) =>
+        item.kind === "message" ? (
+          <p key={item.message.id} data-role={item.message.role}>
+            {item.message.content}
+          </p>
+        ) : (
+          <code key={item.toolCall.callId}>{item.toolCall.name}</code>
+        ),
+      )}
+      {streaming !== null && <p data-role="assistant">{streaming}</p>}
+      {transcript.speaking && <p data-role="user">{transcript.text}</p>}
+      {thinking && <p>…</p>}
+    </div>
+  );
+}
+```
+
+***
+
+### useDownloadUrl()
+
+```ts
+function useDownloadUrl(uploadId: string | undefined, opts?: UseDownloadUrlOptions): UseDownloadUrlResult;
+```
+
+Read an upload's bytes and hand back a URL a DOM element can use.
+
+#### Parameters
+
+##### uploadId
+
+`string` \| `undefined`
+
+The id a completed run reported, or `undefined` before one
+  exists — which is what a page passes straight through while it waits, and
+  reports as idle rather than pending.
+
+##### opts?
+
+[`UseDownloadUrlOptions`](#usedownloadurloptions)
+
+See [UseDownloadUrlOptions](#usedownloadurloptions).
+
+#### Returns
+
+[`UseDownloadUrlResult`](#usedownloadurlresult)
+
+See [UseDownloadUrlResult](#usedownloadurlresult).
+
+#### Example
+
+```tsx
+import { useDownloadUrl, useWorkflowSubmit } from "@alexkroman1/aai-ui";
+
+function Playback() {
+  const { run } = useWorkflowSubmit<{ audio: string }>("spokenSummary");
+  const output = run?.status === "completed" ? run.output : undefined;
+  const audio = useDownloadUrl(output?.audio);
+  if (audio.pending) return <p>Fetching audio…</p>;
+  if (audio.error !== undefined) return <p role="alert">{audio.error}</p>;
+  return audio.url === undefined ? null : (
+    <a href={audio.url} download="summary.mp3">
+      Download
+    </a>
+  );
+}
+```
+
+***
+
 ### useEvent()
 
 ```ts
@@ -2240,6 +2413,7 @@ function StartRun() {
 function WorkflowProgress(props: {
   api?: WorkflowApi;
   className?: string;
+  lines?: number;
   placeholder?: ReactNode;
   runId?: string;
 }): ReactNode;
@@ -2289,6 +2463,19 @@ lazily-built one every workflow hook shares.
 
 **Replaces** the default classes rather than extending them, so a custom
 chrome is not fighting a default it did not ask for.
+
+###### lines?
+
+`number`
+
+How many of the newest lines to show. Undefined (the default) shows the
+whole log; `1` is the newest line only.
+
+A run's narration is append-only and unbounded, so a page with a fixed slot
+for it — a status strip, a card footer — wants a window rather than a log.
+`0` renders the placeholder, which is the consistent reading of "show none"
+and the one that keeps a computed `lines` from silently rendering
+everything.
 
 ###### placeholder?
 
@@ -2499,7 +2686,7 @@ The seven members, in the order a call passes through them:
 - `"speaking"` — the agent's reply is playing. A caller may still barge in;
   the mic stays open throughout.
 - `"error"` — the session reported a failure. See
-  [SessionSnapshot.error](#error) for what it was. A FATAL error latches here
+  [SessionSnapshot.error](#error-1) for what it was. A FATAL error latches here
   until the next completed handshake, so a later frame cannot quietly paint
   over the banner explaining a dead call.
 
@@ -2584,11 +2771,15 @@ The sender of the message.
 
 ```ts
 type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
+  buttonText?: string;
   component?: ComponentType;
+  icon?: ReactNode;
   name?: string;
   platformUrl?: string;
   sidebar?: ComponentType;
+  sidebarPosition?: "left" | "right";
   sidebarWidth?: string;
+  subtitle?: string;
   target?: string | HTMLElement;
   theme?: ClientTheme;
   tools?: ToolDisplayConfig;
@@ -2605,6 +2796,14 @@ own options type: that is [VoiceSessionOptions](#voicesessionoptions), which
 
 #### Type Declaration
 
+##### buttonText?
+
+```ts
+optional buttonText?: string;
+```
+
+Label of the start CTA. Defaults to `"Start Conversation"`.
+
 ##### component?
 
 ```ts
@@ -2615,6 +2814,18 @@ Full custom component to render instead of the default shell.
 
 It is rendered inside the same providers the default shell gets, so every
 session hook, `useTheme` and the tool display config work in it unchanged.
+
+##### icon?
+
+```ts
+optional icon?: ReactNode;
+```
+
+Element rendered in place of the AAI logo — on the start card, and in the
+shell header once the session begins.
+
+Both, because they are one mark: an agent whose start screen shows a slice
+of pizza and whose header shows our logo reads as two products.
 
 ##### name?
 
@@ -2645,6 +2856,19 @@ Optional sidebar component rendered alongside the main pane.
 Beside a `component` it is the custom component that becomes the main pane,
 in the same [SidebarLayout](#sidebarlayout) the default shell uses.
 
+##### sidebarPosition?
+
+```ts
+optional sidebarPosition?: "left" | "right";
+```
+
+Which side the sidebar sits on. Defaults to `"left"`.
+
+Routed through the same [SidebarLayout](#sidebarlayout) whether the main pane is the
+default shell or a `component`, for the reason `sidebar` itself is: the two
+branches build the same layout and a field honoured by only one of them is
+the shape this config used to have.
+
 ##### sidebarWidth?
 
 ```ts
@@ -2652,6 +2876,14 @@ optional sidebarWidth?: string;
 ```
 
 CSS width of the sidebar. Defaults to `"18rem"`.
+
+##### subtitle?
+
+```ts
+optional subtitle?: string;
+```
+
+A line under the title on the start card.
 
 ##### target?
 
@@ -2819,6 +3051,95 @@ Main text color. Default: `#1B1A18`.
 
 ***
 
+### ConsoleShellProps
+
+```ts
+type ConsoleShellProps = {
+  children: ReactNode;
+  className?: string;
+  error?: string | null;
+  footer: ReactNode;
+  icon?: ReactNode;
+  pulsing: boolean;
+  state: AgentState;
+  title?: string;
+};
+```
+
+Props of [ConsoleShell](#consoleshell).
+
+#### Properties
+
+##### children
+
+```ts
+children: ReactNode;
+```
+
+Card content — normally a [MessageList](#messagelist).
+
+##### className?
+
+```ts
+optional className?: string;
+```
+
+Additional CSS class names for the root element, appended to its own.
+
+##### error?
+
+```ts
+optional error?: string | null;
+```
+
+Error banner text; `null`/`undefined` hides the banner.
+
+Pass `session.error?.message` — the banner is announced, which a
+hand-rolled `<div>` in a custom chrome is not. See the `role="alert"`
+comment below for why that matters more here than it looks.
+
+##### footer
+
+```ts
+footer: ReactNode;
+```
+
+Row rendered beneath the card (controls).
+
+##### icon?
+
+```ts
+optional icon?: ReactNode;
+```
+
+Element rendered in place of the logo in the header.
+
+##### pulsing
+
+```ts
+pulsing: boolean;
+```
+
+Whether the status dot pulses.
+
+##### state
+
+```ts
+state: AgentState;
+```
+
+Live status shown in the header eyebrow.
+
+##### title?
+
+```ts
+optional title?: string;
+```
+
+Title string for the header.
+
+***
+
 ### ControlsProps
 
 ```ts
@@ -2839,6 +3160,28 @@ optional className?: string;
 
 Additional CSS class names, appended to the container's own layout
 classes rather than replacing them.
+
+***
+
+### ConversationItem
+
+```ts
+type ConversationItem = 
+  | {
+  kind: "message";
+  message: ChatMessage;
+}
+  | {
+  kind: "tool";
+  toolCall: ToolCallInfo;
+};
+```
+
+One row of the conversation: a finalized message, or a tool invocation.
+
+A discriminated union rather than two arrays, because the ORDER between them
+is the thing this hook computes — handing back two lists would hand back the
+problem. `kind` is what a `switch` in a custom renderer narrows on.
 
 ***
 
@@ -3836,6 +4179,142 @@ A paused upload is not a stopped one: the windows already stored stay stored,
 the file. So a bar rendering this reads "Paused at 62%", never "62% and
 frozen" — which is what a page could otherwise only guess from a number that
 stopped moving, the same ambiguity `complete` exists to remove on the run side.
+
+***
+
+### UseConversationResult
+
+```ts
+type UseConversationResult = {
+  items: readonly ConversationItem[];
+  streaming: string | null;
+  thinking: boolean;
+  transcript: UseUserTranscriptResult;
+};
+```
+
+What [useConversation](#useconversation) returns.
+
+#### Properties
+
+##### items
+
+```ts
+items: readonly ConversationItem[];
+```
+
+Messages and tool calls in one list, in the order they happened.
+
+Referentially stable while neither array changes, so a consumer may map it
+inside a `useMemo` keyed on it, or hand rows to `memo()`ed components,
+without rebuilding the list on unrelated snapshot updates.
+
+##### streaming
+
+```ts
+streaming: string | null;
+```
+
+The agent's utterance as it arrives, or `null` between turns.
+
+Not yet a member of `items`: it has no id and it is replaced wholesale on
+every delta, so it is rendered as its own trailing row and disappears when
+the finalized message takes its place.
+
+##### thinking
+
+```ts
+thinking: boolean;
+```
+
+Whether to show a thinking indicator.
+
+The suppression rule, and it is why this is a field rather than
+`state === "thinking"`: the agent is `thinking` for a stretch during which
+something ELSE is already saying so. A pending tool call draws its own
+spinner, and a trailing agent message means the reply has begun landing —
+in both cases a second indicator underneath reads as a second thing
+happening. So it is on only while `thinking` with no pending tool call, and
+either no messages yet, a trailing USER message, or a settled tool call
+after it.
+
+##### transcript
+
+```ts
+transcript: UseUserTranscriptResult;
+```
+
+The caller's in-progress turn — [useUserTranscript](#useusertranscript)'s result,
+forwarded rather than re-derived, so the `null`-vs-`""` distinction is made
+in exactly one place.
+
+***
+
+### UseDownloadUrlOptions
+
+```ts
+type UseDownloadUrlOptions = {
+  api?: WorkflowApi;
+};
+```
+
+Options for [useDownloadUrl](#usedownloadurl).
+
+#### Properties
+
+##### api?
+
+```ts
+optional api?: WorkflowApi;
+```
+
+The client to read the bytes with. Defaults to one for the page's own agent.
+
+***
+
+### UseDownloadUrlResult
+
+```ts
+type UseDownloadUrlResult = {
+  error?: string;
+  pending: boolean;
+  url?: string;
+};
+```
+
+What [useDownloadUrl](#usedownloadurl) reports.
+
+#### Properties
+
+##### error?
+
+```ts
+optional error?: string;
+```
+
+The read's failure, as the agent's own sentence where it gave one.
+
+##### pending
+
+```ts
+pending: boolean;
+```
+
+True while the bytes are on their way.
+
+Its own field rather than "neither `url` nor `error`", which cannot tell a
+download in flight from no id to download — the two states a page most
+wants to render differently (a spinner, and nothing at all).
+
+##### url?
+
+```ts
+optional url?: string;
+```
+
+An object URL for the stored bytes, once they are here. Valid until the id
+changes or the component unmounts — do not stash it anywhere that outlives
+the render that read it.
 
 ***
 
@@ -5019,6 +5498,20 @@ server graph into the bundle.
 
 ***
 
+### WorkflowRunStatus
+
+```ts
+type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+```
+
+Lifecycle of one workflow run.
+
+- `pending` — created, not yet picked up by the queue.
+- `running` — executing, or suspended at a `sleep`/hook waiting to resume.
+- `completed` / `failed` / `cancelled` — terminal.
+
+***
+
 ### WorkflowStreamSubmission
 
 ```ts
@@ -5056,6 +5549,7 @@ follow from WHEN the run is created — it exists before its bytes do:
 
 ```ts
 type WorkflowSubmission<R> = {
+  cancel: () => Promise<boolean>;
   error: string | undefined;
   pauseUpload: () => void;
   pending: boolean;
@@ -5064,6 +5558,7 @@ type WorkflowSubmission<R> = {
   run: WorkflowRun<R> | undefined;
   submit: (input: unknown) => Promise<void>;
   upload: UploadStatus | undefined;
+  wake: () => Promise<number>;
 };
 ```
 
@@ -5086,6 +5581,22 @@ of after it. Here the run does not exist until the last byte lands.
 `R` = `unknown`
 
 #### Properties
+
+##### cancel
+
+```ts
+cancel: () => Promise<boolean>;
+```
+
+Stop the current run, resolving whether this call is what ended it.
+
+`false` for a run that had already finished, and for no run at all — the
+SDK's contract, because two tabs pressing Stop is ordinary. Distinct from
+`reset()`, which puts the FORM back and leaves the run running.
+
+###### Returns
+
+`Promise`\<`boolean`\>
 
 ##### error
 
@@ -5196,6 +5707,24 @@ form with no files never sets it at all.
 The wait it covers is the one `run` cannot: a run does not EXIST until its
 input is stored, so `pending` is true and there is nothing to poll — which
 for a 200 MB recording is minutes of a page that looks stuck.
+
+##### wake
+
+```ts
+wake: () => Promise<number>;
+```
+
+End the current run's `sleep()` early — "file it now" — resolving how many
+pending sleeps were interrupted.
+
+Bound to the run this submission is following, which is the point: it is
+the only reason a page holding one of these hooks needed an `api` of its
+own. `0` is an answer rather than a failure (the run had already moved past
+its wait, or there is no run yet), so nothing here has to be guarded.
+
+###### Returns
+
+`Promise`\<`number`\>
 
 ***
 
@@ -5402,3 +5931,25 @@ Placeholder for "listening, no words yet" — the `""` case above.
 A one-character ellipsis rather than three dots, because it is read by a
 screen reader as an ellipsis and it does not reflow the row when the first
 real word replaces it.
+
+***
+
+### WORKFLOW\_STATUS\_LABELS
+
+```ts
+const WORKFLOW_STATUS_LABELS: Readonly<Record<WorkflowRunStatus, string>>;
+```
+
+The default status line per [WorkflowRunStatus](#workflowrunstatus).
+
+Override the ones your page has a better word for and keep the rest:
+
+```ts
+import { WORKFLOW_STATUS_LABELS } from "@alexkroman1/aai-ui";
+
+const STATUS_LINE = { ...WORKFLOW_STATUS_LABELS, running: "Writing…" };
+```
+
+The wording is deliberately about the RUN rather than about the work — a page
+knows what its workflow does and this does not, so `running` is the neutral
+"Working…" and every page that cares replaces exactly that key.

@@ -193,6 +193,42 @@ export type WorkflowClient = {
    */
   streamTail(runId: string, options?: StreamOptions): Promise<number>;
   /**
+   * The NEWEST chunk a run has written, or `undefined` when it has written
+   * nothing.
+   *
+   * **Reach for this instead of composing {@link streamTail} and
+   * {@link stream} — the composition is the one a tool gets wrong, and getting
+   * it wrong HANGS.** A progress channel is never closed (no step knows it is
+   * the last one), so `stream` on a run with nothing in it yields nothing and
+   * waits forever rather than ending: a voice agent's tool call stops mid-turn
+   * with no error, no timeout of its own, and nothing in a log to read. The
+   * bound that prevents it is `streamTail() < 0`, which has to come FIRST and
+   * is not an optimization. Two templates carried the same six-line comment
+   * saying exactly that, above the same eight lines, which is what a missing
+   * front door looks like.
+   *
+   * This method cannot hang: it asks for the tail before it opens anything, and
+   * it opens a stream only once the tail says there is a chunk to read. It
+   * reads ONE chunk and cancels, so nothing is left draining behind it.
+   *
+   * The chunk is `unknown` — whatever the body passed to `getWritable()`, which
+   * this SDK does not constrain. A tool narrating progress wants
+   * `String(line)`; a body writing structured records should narrow with a
+   * guard.
+   *
+   * {@link streamTail} and {@link stream} stay public and are still the right
+   * pair for reading a WHOLE log — a page rendering every line, a reader
+   * resuming from where it got to. This is only the "read me the newest thing"
+   * case, which is the one with a trap in it.
+   *
+   * `options.namespace` selects the stream, as everywhere else. A non-negative
+   * `options.startIndex` acts as a FLOOR: nothing is resolved until the run has
+   * written that far, which is what a reader that has already seen up to an
+   * index wants. A negative one asks for the newest chunk, which is what this
+   * returns anyway.
+   */
+  lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
+  /**
    * The PUBLIC URL a third party delivers a webhook to, for a hook holding
    * `token` — this agent's configured public base URL plus the DevKit's webhook
    * route.

@@ -23,6 +23,5 @@ export default retailTool({
       available: found.variant.available,
     };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "item read failed" : `read item ${result.item_id}`,
+  summary: (_args, result) => `read item ${result.item_id}`,
 });

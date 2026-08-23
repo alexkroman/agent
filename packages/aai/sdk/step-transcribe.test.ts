@@ -47,40 +47,40 @@ function stubApi(replies: readonly { status?: number; body: unknown }[]) {
 describe("stepTranscribeUpload", () => {
   test("streams the stored upload and answers with the URL", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const restore = stubUploads({ rec: new Uint8Array([1, 2, 3, 4]) });
+    const uploads = stubUploads({ rec: new Uint8Array([1, 2, 3, 4]) });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     expect(await stepTranscribeUpload("rec")).toEqual({ audioUrl: "https://cdn.example/abc" });
     expect(api.calls[0]?.url).toBe("https://api.assemblyai.com/v2/upload");
-    restore();
+    uploads.restore();
   });
 
   test("sends the key RAW — a Bearer prefix is a 401 that reads like a bad key", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const restore = stubUploads({ rec: new Uint8Array([1]) });
+    const uploads = stubUploads({ rec: new Uint8Array([1]) });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     await stepTranscribeUpload("rec");
     const headers = api.calls[0]?.init.headers as Record<string, string>;
     expect(headers.Authorization).toBe("sk-test");
-    restore();
+    uploads.restore();
   });
 
   test("honours a custom apiKeyEnv", async () => {
     vi.stubEnv("OTHER_KEY", "sk-other");
-    const restore = stubUploads({ rec: new Uint8Array([1]) });
+    const uploads = stubUploads({ rec: new Uint8Array([1]) });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     await stepTranscribeUpload("rec", { apiKeyEnv: "OTHER_KEY" });
     const headers = api.calls[0]?.init.headers as Record<string, string> | undefined;
     expect(headers?.Authorization).toBe("sk-other");
-    restore();
+    uploads.restore();
   });
 
   test("the body is an async iterable, so the file is never held whole", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     // Two windows plus a byte, so the generator has to run more than once.
-    const restore = stubUploads({ rec: new Uint8Array(TRANSCRIBE_WINDOW_BYTES * 2 + 1) });
+    const uploads = stubUploads({ rec: new Uint8Array(TRANSCRIBE_WINDOW_BYTES * 2 + 1) });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
     await stepTranscribeUpload("rec");
@@ -91,19 +91,19 @@ describe("stepTranscribeUpload", () => {
     const windows: number[] = [];
     for await (const chunk of body) windows.push(chunk.length);
     expect(windows).toEqual([TRANSCRIBE_WINDOW_BYTES, TRANSCRIBE_WINDOW_BYTES, 1]);
-    restore();
+    uploads.restore();
   });
 
   test("a 200 that names no URL is a refusal, and not retryable", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-    const restore = stubUploads({ rec: new Uint8Array([1]) });
+    const uploads = stubUploads({ rec: new Uint8Array([1]) });
     stubApi([{ body: {} }]);
 
     await expect(stepTranscribeUpload("rec")).rejects.toMatchObject({
       name: "TranscribeError",
       retryable: false,
     });
-    restore();
+    uploads.restore();
   });
 });
 

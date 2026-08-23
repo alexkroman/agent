@@ -88,6 +88,5 @@ export default retailTool({
           : `Exchange requested on ${order.order_id}. $${Math.abs(plan.diff).toFixed(2)} will be refunded to ${args.payment_method_id}. An email with return instructions is on its way.`,
     };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "exchange failed" : `exchange requested on ${result.order_id}`,
+  summary: (_args, result) => `exchange requested on ${result.order_id}`,
 });

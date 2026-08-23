@@ -242,6 +242,7 @@ export type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };
@@ -255,6 +256,9 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
+export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+
+// @public
 export type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
 
 // @public
@@ -264,6 +268,9 @@ export type WorkflowRunBase = {
     createdAt: number;
     key?: string;
 };
+
+// @public
+export type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
 
 // @public
 export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {

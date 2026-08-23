@@ -88,6 +88,5 @@ export default retailTool({
       message: `Return requested on ${order.order_id} for ${names}. The customer will get an email with return instructions, and the refund goes to ${args.payment_method_id} once the items arrive.`,
     };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "return failed" : `return requested on ${result.order_id}`,
+  summary: (_args, result) => `return requested on ${result.order_id}`,
 });

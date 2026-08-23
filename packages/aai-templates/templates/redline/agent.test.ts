@@ -17,6 +17,7 @@
  * of that lives.
  */
 
+import { parseSchemaInput, schemaInputIssues } from "@alexkroman1/aai/testing";
 import { installStubGateway as stubGateway } from "@alexkroman1/aai/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError } from "workflow";
@@ -24,7 +25,6 @@ import agentDef, { MAX_ROUNDS, redline } from "./agent.ts";
 import {
   briefBlock,
   clampScore,
-  countWords,
   critiqueDraft,
   MAX_NOTES,
   type RedlineInput,
@@ -70,30 +70,37 @@ describe("the agent declares itself a workflow app", () => {
 });
 
 describe("the input schema", () => {
-  const validate = (value: unknown) => redline.input?.["~standard"].validate(value);
+  // `schemaInputIssues` / `parseSchemaInput` rather than a local reach through
+  // `["~standard"].validate`: that is the vendor WIRE contract, and whether it
+  // answers synchronously or with a promise is the vendor's business — a missing
+  // `await` there leaves `.issues` undefined and every refusing test below
+  // passes for the wrong reason.
+  const issues = (value: unknown) => schemaInputIssues(redline.input, value, "redline");
 
   test("caps the rounds at the CALL SITE rather than on the bill", async () => {
-    const tooMany = await validate({ ...INPUT, rounds: MAX_ROUNDS + 1 });
-    expect(tooMany?.issues).toBeDefined();
+    expect(await issues({ ...INPUT, rounds: MAX_ROUNDS + 1 })).toBeDefined();
   });
 
   test("defaults the rounds and the required points, so the form need not", async () => {
-    const result = await validate({ brief: INPUT.brief, audience: "engineers" });
-    if (!result || result.issues) throw new Error("expected valid input");
-    expect(result.value).toMatchObject({ rounds: 2, mustCover: [] });
+    const parsed = await parseSchemaInput(
+      redline.input,
+      { brief: INPUT.brief, audience: "engineers" },
+      "redline",
+    );
+    expect(parsed).toMatchObject({ rounds: 2, mustCover: [] });
   });
 
   test("rejects an audience outside the enum — which is also what makes it a select", async () => {
     // `<WorkflowFields>` renders a `z.enum` as a `<SelectField>`; the same
     // declaration is what stops an API caller inventing a fifth audience.
-    expect((await validate({ ...INPUT, audience: "cats" }))?.issues).toBeDefined();
+    expect(await issues({ ...INPUT, audience: "cats" })).toBeDefined();
   });
 
   test("declares mustCover as an array, which is what the page renders by hand", async () => {
     // The mixed-form case: `<WorkflowFields>` renders scalars only, so client.tsx
     // writes this field itself and maps a textarea into it.
-    expect((await validate({ ...INPUT, mustCover: "one point" }))?.issues).toBeDefined();
-    expect((await validate({ ...INPUT, mustCover: ["one point"] }))?.issues).toBeUndefined();
+    expect(await issues({ ...INPUT, mustCover: "one point" })).toBeDefined();
+    expect(await issues({ ...INPUT, mustCover: ["one point"] })).toBeUndefined();
   });
 });
 
@@ -109,11 +116,6 @@ describe("pure helpers", () => {
 
   test("briefBlock says so when nothing was required, rather than showing an empty list", () => {
     expect(briefBlock({ ...INPUT, mustCover: [] })).toContain("nothing specific");
-  });
-
-  test("countWords ignores surrounding and repeated whitespace", () => {
-    expect(countWords("  one  two\nthree ")).toBe(3);
-    expect(countWords("   ")).toBe(0);
   });
 
   test("clampScore holds a model's number inside the range it was given", () => {

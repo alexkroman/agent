@@ -183,32 +183,86 @@ export function ThemeProvider({
   // dependency and `MessageBubble` is `memo()`-wrapped on it, so a fresh object
   // per render would rebuild every message row.
   const merged = useMemo(() => (value ? { ...DEFAULT_THEME, ...value } : DEFAULT_THEME), [value]);
-  usePageBackground(merged.bg);
+  useThemeStyles(merged);
   return createElement(ThemeCtx.Provider, { value: merged }, children);
 }
 
 /**
- * Paint `html`/`body` with the theme background.
+ * The custom property each {@link ClientTheme} field is published as.
  *
- * Components paint `theme.bg` on their own containers, but the page behind
- * them keeps whatever the static `<style>` in index.html set. Any viewport
- * wider (or taller) than the app column then shows that color as a border
- * around the UI — which is how a cream theme ended up letterboxed in black.
- * Driving it from the theme means a custom `client({ theme })` covers the
- * page too, instead of trading one hardcoded color for another.
+ * Named after the field, so `theme.surface` and `--aai-surface` are obviously
+ * the same thing, and prefixed for the reason `--aai-btn-bg` and
+ * `--aai-sidebar-w` already are: these land on `:root`, where an app's own
+ * variables live too.
+ *
+ * @internal
  */
-function usePageBackground(bg: string): void {
+const THEME_VARS = {
+  bg: "--aai-bg",
+  surface: "--aai-surface",
+  text: "--aai-text",
+  border: "--aai-border",
+  primary: "--aai-primary",
+} as const satisfies Record<keyof Required<ClientTheme>, `--aai-${string}`>;
+
+/**
+ * Publish the theme to CSS, and paint the page with it.
+ *
+ * Two jobs on one element deliberately — both are about the parts of the page
+ * React does not own.
+ *
+ * **The variables.** {@link useTheme} hands a component a JavaScript object, so
+ * everything it styles carries an inline `style={{ }}`; measured across the
+ * template tree the ratio of `theme.` reads to inline style objects is
+ * essentially one to one. A Tailwind class cannot see a JavaScript object — so
+ * the five values are written to `:root` as custom properties, `styles.css`
+ * maps them into the `@theme` block's `--color-*` namespace, and
+ * `className="bg-aai-surface text-aai-text border-aai-border"` works. This is
+ * ADDITIVE: `useTheme()` stays, because the derived tints in
+ * `components/_colors.ts` `color-mix` on the resolved values and a page is
+ * entitled to read them for a `satisfies`-pinned palette.
+ *
+ * **The background.** Components paint `theme.bg` on their own containers, but
+ * the page behind them keeps whatever the static `<style>` in index.html set.
+ * Any viewport wider (or taller) than the app column then shows that color as a
+ * border around the UI — which is how a cream theme ended up letterboxed in
+ * black. It stays an explicit `background` on `html` AND `body` rather than
+ * riding on the new variable: a variable only paints where some rule consumes
+ * it, and the two elements this is about are the two nothing in this package
+ * renders.
+ */
+function useThemeStyles(theme: Required<ClientTheme>): void {
+  const { bg, surface, text, border, primary } = theme;
   useEffect(() => {
     if (typeof document === "undefined") return;
     const { body, documentElement: html } = document;
-    const previous = { body: body.style.background, html: html.style.background };
+    const values: Required<ClientTheme> = { bg, surface, text, border, primary };
+    const previousVars = Object.entries(THEME_VARS).map(
+      ([field, prop]) =>
+        [
+          prop,
+          html.style.getPropertyValue(prop),
+          values[field as keyof typeof THEME_VARS],
+        ] as const,
+    );
+    for (const [prop, , next] of previousVars) html.style.setProperty(prop, next);
+
+    const previousBg = { body: body.style.background, html: html.style.background };
     body.style.background = bg;
     html.style.background = bg;
+
     return () => {
-      body.style.background = previous.body;
-      html.style.background = previous.html;
+      // Restored rather than removed: a host page may have set its own
+      // `--aai-*` before mounting, and a client disposed mid-page must leave
+      // that page as it found it.
+      for (const [prop, before] of previousVars) {
+        if (before === "") html.style.removeProperty(prop);
+        else html.style.setProperty(prop, before);
+      }
+      body.style.background = previousBg.body;
+      html.style.background = previousBg.html;
     };
-  }, [bg]);
+  }, [bg, surface, text, border, primary]);
 }
 
 /**

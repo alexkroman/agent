@@ -1,4 +1,3 @@
-import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { authenticateAs } from "../authenticate.ts";
 import { BEFORE_TRANSFER, retailTool } from "../store.ts";
@@ -32,6 +31,5 @@ export default retailTool({
     }
     return authenticateAs(state, match);
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "lookup failed" : `identified ${result.user_id}`,
+  summary: (_args, result) => `identified ${result.user_id}`,
 });

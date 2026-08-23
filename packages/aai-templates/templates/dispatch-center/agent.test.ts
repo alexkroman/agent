@@ -1,6 +1,12 @@
-import type { DialogPosition, ToolContext } from "@alexkroman1/aai";
+import type {
+  DialogPosition,
+  InferToolOutput,
+  ToolContext,
+  ToolDef,
+  ToolInputSchema,
+} from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext } from "@alexkroman1/aai/testing";
+import { createToolContext, ok } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import { callFlow, dispatchSlot } from "./shared.ts";
 import incidentAddNote from "./tools/incident_add_note.ts";
@@ -18,20 +24,21 @@ import resourcesUpdateStatus from "./tools/resources_update_status.ts";
 const makeCtx = (): ToolContext => createToolContext();
 
 /**
- * The success half of a `callFlow.tool` result, or a thrown failure carrying the
- * tool's own message.
+ * What a gated tool's own `execute` returned, read off the tool itself.
  *
- * A flow tool answers the author's value under `result`, wrapped in the position
- * the call landed in — so every assertion about a converted tool's own return
- * value needs one unwrap, and every gated tool in this template is one. The
- * helper is the file's only cast, for the reason `retail`'s `ok` is: a refused
- * call fails HERE, naming what the flow refused, rather than surfacing three
- * lines later as `undefined` on a field nobody assigned.
+ * `callFlow.tool` threads its result type out now, so `InferToolOutput` answers
+ * `DialogToolResult<R> | ToolFailure` — this is that minus the envelope and the
+ * refusal arm. It replaces the inline `{ dispatched: { callsign: string }[] }`
+ * shapes the assertions below used to restate, which were a second copy of each
+ * tool's return type that could not go stale loudly.
+ *
+ * The unwrap itself is `ok` from `@alexkroman1/aai/testing`; the hand-rolled
+ * copy that used to sit here was byte-identical to three other templates'.
  */
-function ok<T>(result: unknown): T {
-  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  return (result as { result: T }).result;
-}
+type Result<T extends ToolDef<ToolInputSchema>> = Extract<
+  InferToolOutput<T>,
+  { result: unknown }
+>["result"];
 
 /** Where the call is, without going through a tool. */
 const at = (ctx: ToolContext): DialogPosition => callFlow.position(ctx);
@@ -40,10 +47,7 @@ async function createIncidentFor(
   ctx: ToolContext,
   description = "structure fire with heavy smoke",
 ): Promise<string> {
-  const result = (await incidentCreate.execute(
-    { location: "400 Oak Street", description },
-    ctx,
-  )) as { incidentId: string };
+  const result = await incidentCreate.execute({ location: "400 Oak Street", description }, ctx);
   return result.incidentId;
 }
 
@@ -74,10 +78,9 @@ describe("dispatch-center template", () => {
     const ctx = makeCtx();
     const incidentId = await createIncidentFor(ctx, "cardiac arrest, patient not breathing");
 
-    const result = ok<{
-      dispatched: { callsign: string }[];
-      failed?: { callsign: string; reason: string }[];
-    }>(await resourcesDispatch.execute({ incidentId, callsigns: ["auto"] }, ctx));
+    const result = ok<Result<typeof resourcesDispatch>>(
+      await resourcesDispatch.execute({ incidentId, callsigns: ["auto"] }, ctx),
+    );
 
     expect(result.failed).toBeUndefined();
     expect(result.dispatched.length).toBeGreaterThan(0);
@@ -90,10 +93,10 @@ describe("dispatch-center template", () => {
     // mutex in updateState makes each one run against the previous one's
     // finished state, so neither incident's changes are half-applied when
     // the other's mutator runs.
-    const [a, b] = (await Promise.all([
+    const [a, b] = await Promise.all([
       incidentCreate.execute({ location: "1 First St", description: "gas leak" }, ctx),
       incidentCreate.execute({ location: "2 Second St", description: "vehicle crash" }, ctx),
-    ])) as { incidentId: string }[];
+    ]);
 
     const state = dispatchSlot.get(ctx);
     expect(a?.incidentId).not.toBe(b?.incidentId);
@@ -146,22 +149,21 @@ describe("dispatch-center template", () => {
     const incidentId = await createIncidentFor(ctx);
     await incidentUpdateStatus.execute({ incidentId, status: "resolved" }, ctx);
 
-    const escalated = (await incidentEscalate.execute({ incidentId, reason: "flare-up" }, ctx)) as {
-      error?: string;
-    };
-    expect(escalated.error).toMatch(/resolved/);
+    // Each is a refusal the BODY answered, so it arrives unwrapped as a
+    // `ToolFailure` rather than under the position envelope — which is what the
+    // narrowing says, where the old cast to `{ error?: string }` said nothing
+    // and would have read `undefined` off a success just as quietly.
+    const escalated = await incidentEscalate.execute({ incidentId, reason: "flare-up" }, ctx);
+    expect(isToolFailure(escalated) && escalated.error).toMatch(/resolved/);
 
-    const reResolved = (await incidentUpdateStatus.execute(
-      { incidentId, status: "resolved" },
-      ctx,
-    )) as { error?: string };
-    expect(reResolved.error).toMatch(/resolved/);
+    const reResolved = await incidentUpdateStatus.execute({ incidentId, status: "resolved" }, ctx);
+    expect(isToolFailure(reResolved) && reResolved.error).toMatch(/resolved/);
 
-    const dispatchedTo = (await resourcesDispatch.execute(
+    const dispatchedTo = await resourcesDispatch.execute(
       { incidentId, callsigns: ["Medic-1"] },
       ctx,
-    )) as { error?: string };
-    expect(dispatchedTo.error).toMatch(/resolved/);
+    );
+    expect(isToolFailure(dispatchedTo) && dispatchedTo.error).toMatch(/resolved/);
   });
 });
 
@@ -193,14 +195,17 @@ describe("the call flow", () => {
   test("logging, triaging and dispatching walk the call through its three steps", async () => {
     const ctx = makeCtx();
 
-    const created = (await incidentCreate.execute(
+    const created = await incidentCreate.execute(
       { location: "400 Oak Street", description: "structure fire with heavy smoke" },
       ctx,
-    )) as { incidentId: string; at: string; next?: string };
-    expect(created.at).toBe("working.triaging");
-    expect(created.next).toMatch(/incident_triage/);
+    );
+    // `state`/`instruction`, not `at`/`next`: this ungated tool spreads the
+    // `DialogPosition` verbatim now, so it reports its position under the same
+    // keys every gated tool's result carries.
+    expect(created.state).toBe("working.triaging");
+    expect(created.instruction).toMatch(/incident_triage/);
 
-    const triaged = ok<{ triageScore: number }>(
+    const triaged = ok<Result<typeof incidentTriage>>(
       await incidentTriage.execute({ incidentId: created.incidentId, severity: "critical" }, ctx),
     );
     expect(triaged.triageScore).toBeGreaterThan(0);
@@ -221,7 +226,7 @@ describe("the call flow", () => {
 
     // Every requested callsign is unknown, so no unit moved — and the call has
     // not moved on either.
-    const result = ok<{ dispatched: unknown[] }>(
+    const result = ok<Result<typeof resourcesDispatch>>(
       await resourcesDispatch.execute({ incidentId, callsigns: ["Ghost-1"] }, ctx),
     );
     expect(result.dispatched).toHaveLength(0);
@@ -256,11 +261,8 @@ describe("the call flow", () => {
 
   test("a training scenario logs incidents like a real call does", async () => {
     const ctx = makeCtx();
-    const result = (await opsRunScenario.execute({ scenario: "mass_casualty" }, ctx)) as {
-      incidentsCreated: string[];
-      at: string;
-    };
+    const result = await opsRunScenario.execute({ scenario: "mass_casualty" }, ctx);
     expect(result.incidentsCreated.length).toBeGreaterThan(1);
-    expect(result.at).toBe("working.triaging");
+    expect(result.state).toBe("working.triaging");
   });
 });

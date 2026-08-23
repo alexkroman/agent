@@ -11,8 +11,22 @@
  *   graceful Georgia-class fallbacks).
  * - font-aai-mono: JetBrains Mono stand-in for code/tool rows.
  * - radius-aai: the refresh's squared-off 4px control radius.
+ * - color-aai-*: the five `ClientTheme` fields, so a Tailwind class can see
+ *   them. `ThemeProvider` writes `--aai-bg` … `--aai-primary` onto `:root`
+ *   from `client({ theme })`; these map them into Tailwind's `--color-*`
+ *   namespace, which is what makes `bg-aai-surface`, `text-aai-text`,
+ *   `border-aai-border` and `text-aai-primary` real utilities. The fallbacks
+ *   ARE the default theme, so the classes work on a page that mounts no
+ *   provider at all (a static page, a Storybook frame) instead of collapsing
+ *   to transparent — and they must be kept in step with `DEFAULT_THEME` in
+ *   `context.ts`, which `theme-css-vars.test.ts` asserts.
  */
 @theme {
+  --color-aai-bg: var(--aai-bg, #fbf8f2);
+  --color-aai-surface: var(--aai-surface, #ffffff);
+  --color-aai-text: var(--aai-text, #1b1a18);
+  --color-aai-border: var(--aai-border, #dcd7cc);
+  --color-aai-primary: var(--aai-primary, #3f2bc1);
   --font-aai:
     "Monument Grotesk", "ABC Monument Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-aai-serif:

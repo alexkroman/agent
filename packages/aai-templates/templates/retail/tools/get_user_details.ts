@@ -33,6 +33,5 @@ export default retailTool({
       })),
     };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "profile read failed" : `read profile ${result.user_id}`,
+  summary: (_args, result) => `read profile ${result.user_id}`,
 });

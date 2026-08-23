@@ -27,6 +27,7 @@
  */
 
 import "@alexkroman1/aai-ui/styles.css";
+import { plural } from "@alexkroman1/aai/utils";
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   Form,
@@ -35,6 +36,7 @@ import {
   SubmitButton,
   TextAreaField,
   useWorkflowSubmit,
+  WORKFLOW_STATUS_LABELS,
   WorkflowFields,
   WorkflowProgress,
   type WorkflowRun,
@@ -150,8 +152,8 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Redline>; onClear: () => 
       {run.status === "completed" && (
         <>
           <p className="text-xs opacity-60">
-            {run.output.words} words · {run.output.roundsRun} round
-            {run.output.roundsRun === 1 ? "" : "s"} ·{" "}
+            {run.output.words} words · {run.output.roundsRun}{" "}
+            {plural(run.output.roundsRun, "round")} ·{" "}
             {/* Which of the two stop conditions ended the loop is the one thing
                 a reader cannot infer from the round count alone. */}
             {run.output.shipped ? "the critic stopped it" : "the round budget stopped it"}
@@ -170,15 +172,13 @@ function RunPanel({ run, onClear }: { run: WorkflowRun<Redline>; onClear: () => 
 /**
  * One line describing where a run has got to.
  *
- * A `Record` keyed by the status union rather than a switch, so a status added
- * to the SDK is a compile error here instead of falling through a `default:`.
+ * The SDK's map with the one label this desk wants differently: `running` is
+ * "Writing…" here because that is what the run is doing. Spreading a COMPLETE
+ * `Record<WorkflowRunStatus, string>` cannot drop a key, so the exhaustiveness
+ * the hand-written copy was written for survives — and now lives at the SDK
+ * boundary, where a status added upstream is one compile error rather than one
+ * per page.
  */
-const STATUS_LINE: Record<WorkflowRun["status"], string> = {
-  pending: "Queued",
-  running: "Writing…",
-  completed: "Done",
-  failed: "Failed",
-  cancelled: "Cancelled",
-};
+const STATUS_LINE = { ...WORKFLOW_STATUS_LABELS, running: "Writing…" };
 
 page({ name: "Redline", component: RedlineDesk });

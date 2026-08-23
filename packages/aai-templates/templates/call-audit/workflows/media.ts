@@ -579,17 +579,6 @@ export function speechFraction(silences: readonly Silence[], durationSec: number
   return Math.max(0, Math.min(1, (durationSec - quiet) / durationSec));
 }
 
-/** `1:04:09`, or `4:09` under an hour — the shape a reader scans for. */
-export function clock(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  const seconds = String(total % 60).padStart(2, "0");
-  const minutes = Math.floor(total / 60) % 60;
-  const hours = Math.floor(total / 3600);
-  return hours > 0
-    ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}`
-    : `${minutes}:${seconds}`;
-}
-
 /**
  * A second, as a byte offset on a sample-frame boundary.
  *

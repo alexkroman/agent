@@ -76,6 +76,27 @@ export type ClientConfig = Pick<
   /** CSS width of the sidebar. Defaults to `"18rem"`. */
   sidebarWidth?: string;
   /**
+   * Which side the sidebar sits on. Defaults to `"left"`.
+   *
+   * Routed through the same {@link SidebarLayout} whether the main pane is the
+   * default shell or a `component`, for the reason `sidebar` itself is: the two
+   * branches build the same layout and a field honoured by only one of them is
+   * the shape this config used to have.
+   */
+  sidebarPosition?: "left" | "right";
+  /**
+   * Element rendered in place of the AAI logo — on the start card, and in the
+   * shell header once the session begins.
+   *
+   * Both, because they are one mark: an agent whose start screen shows a slice
+   * of pizza and whose header shows our logo reads as two products.
+   */
+  icon?: ReactNode;
+  /** A line under the title on the start card. */
+  subtitle?: string;
+  /** Label of the start CTA. Defaults to `"Start Conversation"`. */
+  buttonText?: string;
+  /**
    * Tool display config: icon and label overrides keyed by tool name.
    *
    * Honoured with a custom `component` too: {@link client} installs it into
@@ -174,24 +195,45 @@ export function mountRoot(
 }
 
 /**
+ * The presentation fields the default shell forwards, as one bag.
+ *
+ * Named rather than spread as four more parameters because that is exactly how
+ * this drifted: `DefaultShell` forwarded three of the seven fields the two
+ * components underneath it accept, so `solo-rpg` — which wants a right-hand
+ * sidebar, an icon, a subtitle and its own CTA, all of which
+ * `StartScreen`/`SidebarLayout` already take — could not say any of it in
+ * config and dropped to the `component:` tier for a 27-line wrapper whose only
+ * job was to re-say what `client()` already knows how to say.
+ */
+type ShellDisplay = {
+  // Mapped rather than a bare `Pick`, so each field also accepts an EXPLICIT
+  // `undefined`: `exactOptionalPropertyTypes` is on, and every one of these
+  // arrives as `config.icon` — present and possibly undefined — from a spread
+  // that cannot know which keys the caller wrote.
+  [K in keyof Pick<
+    ClientConfig,
+    "name" | "icon" | "subtitle" | "buttonText" | "sidebarWidth" | "sidebarPosition"
+  >]: ClientConfig[K] | undefined;
+} & {
+  /** The sidebar component, already picked off the config. */
+  Sidebar?: ComponentType | undefined;
+};
+
+/**
  * Default shell rendered in config tier.
  * Wraps StartScreen → (SidebarLayout →) ChatView.
  */
-function DefaultShell({
-  name,
-  Sidebar,
-  sidebarWidth,
-}: {
-  name?: string | undefined;
-  Sidebar?: ComponentType | undefined;
-  sidebarWidth?: string | undefined;
-}) {
-  const chat = <ChatView title={name} />;
+function DefaultShell({ name, icon, subtitle, buttonText, Sidebar, ...layout }: ShellDisplay) {
+  const chat = <ChatView title={name} icon={icon} />;
 
   return (
-    <StartScreen title={name}>
+    <StartScreen title={name} icon={icon} subtitle={subtitle} buttonText={buttonText}>
       {Sidebar ? (
-        <SidebarLayout sidebar={<Sidebar />} sidebarWidth={sidebarWidth}>
+        <SidebarLayout
+          sidebar={<Sidebar />}
+          sidebarWidth={layout.sidebarWidth}
+          sidebarPosition={layout.sidebarPosition}
+        >
           {chat}
         </SidebarLayout>
       ) : (
@@ -218,17 +260,8 @@ function DefaultShell({
  * reconnect land on a REPLACEMENT sandbox, so it may not be served from
  * anything this render already has.
  */
-function DefaultRoot({
-  platformUrl,
-  name,
-  Sidebar,
-  sidebarWidth,
-}: {
-  platformUrl: string;
-  name?: string | undefined;
-  Sidebar?: ComponentType | undefined;
-  sidebarWidth?: string | undefined;
-}) {
+function DefaultRoot({ platformUrl, ...display }: { platformUrl: string } & ShellDisplay) {
+  const { name } = display;
   const [resolved, setResolved] = useState<ClientConfigResponse | null>(null);
   const needsLookup = name === undefined;
 
@@ -244,9 +277,7 @@ function DefaultRoot({
   }, [platformUrl, needsLookup]);
 
   // An explicit client({ name }) wins; otherwise use the server-declared name.
-  return (
-    <DefaultShell name={name ?? resolved?.name} Sidebar={Sidebar} sidebarWidth={sidebarWidth} />
-  );
+  return <DefaultShell {...display} name={name ?? resolved?.name} />;
 }
 
 /**
@@ -260,20 +291,28 @@ function DefaultRoot({
  */
 function rootFor(config: ClientConfig, platformUrl: string) {
   const Custom = config.component;
+  const Sidebar = config.sidebar;
   if (!Custom) {
     return (
       <DefaultRoot
         platformUrl={platformUrl}
         name={config.name}
-        Sidebar={config.sidebar}
+        icon={config.icon}
+        subtitle={config.subtitle}
+        buttonText={config.buttonText}
+        Sidebar={Sidebar}
         sidebarWidth={config.sidebarWidth}
+        sidebarPosition={config.sidebarPosition}
       />
     );
   }
-  const Sidebar = config.sidebar;
   if (!Sidebar) return <Custom />;
   return (
-    <SidebarLayout sidebar={<Sidebar />} sidebarWidth={config.sidebarWidth}>
+    <SidebarLayout
+      sidebar={<Sidebar />}
+      sidebarWidth={config.sidebarWidth}
+      sidebarPosition={config.sidebarPosition}
+    >
       <Custom />
     </SidebarLayout>
   );

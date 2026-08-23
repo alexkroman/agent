@@ -37,13 +37,13 @@
 
 import {
   type DeepReadonly,
+  type DialogSpec,
   dialog,
   pushCapped,
   sessionSlot,
   type ToolContext,
   type ToolFailure,
 } from "@alexkroman1/aai";
-import { setup } from "xstate";
 
 // ─── The booking world ───────────────────────────────────────────────────────
 // Their notebook downloads a sqlite database of a real airline's schedule and
@@ -350,7 +350,7 @@ export function note(state: TripState, entry: string): void {
 // ─── The confirmation gate ───────────────────────────────────────────────────
 
 /**
- * The gate as a MACHINE — their `interrupt_before`, which is a graph construct.
+ * The gate as a STATE MAP — their `interrupt_before`, which is a graph construct.
  *
  * This port had to hand-roll it: a voice session had no graph, so "halt before a
  * sensitive tool and resume on approval" became "every sensitive tool STAGES and
@@ -366,28 +366,21 @@ export function note(state: TripState, entry: string): void {
  * only say "you are in awaitingConfirmation", since a state's instruction is
  * static. So the specific refusal stays where it is and the flow follows it.
  */
-const gateMachine = setup({
-  types: {} as { events: { type: "STAGED" } | { type: "SETTLED" } },
-}).createMachine({
-  id: "gate",
+const gateSpec = {
   initial: "browsing",
   states: {
     browsing: {
-      meta: {
-        instruction:
-          "Nothing is waiting for the caller's yes. Stage a change with a booking tool first.",
-      },
+      instruction:
+        "Nothing is waiting for the caller's yes. Stage a change with a booking tool first.",
       on: { STAGED: "awaitingConfirmation" },
     },
     awaitingConfirmation: {
-      meta: {
-        instruction:
-          "Read the staged change back and hear a clear yes or no, then use confirm_action or cancel_action.",
-      },
+      instruction:
+        "Read the staged change back and hear a clear yes or no, then use confirm_action or cancel_action.",
       on: { SETTLED: "browsing" },
     },
   },
-});
+} as const satisfies DialogSpec;
 
 /**
  * Whether a change is waiting on the caller's word.
@@ -399,7 +392,7 @@ const gateMachine = setup({
  * synchronous window it writes `pending` in, and the two settling tools send
  * `SETTLED` only on success.
  */
-export const gateFlow = dialog("gate", gateMachine);
+export const gateFlow = dialog("gate", gateSpec);
 
 /**
  * Describe a staged action in one sentence, in the second person — this is
