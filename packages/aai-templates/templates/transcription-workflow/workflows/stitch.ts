@@ -120,14 +120,3 @@ function seamLength(merged: readonly string[], next: readonly string[]): number 
 export function stitchChunks(chunks: readonly TranscriptChunk[]): string {
   return stitchTranscript([...chunks].sort((a, b) => a.index - b.index).map((chunk) => chunk.text));
 }
-
-/** Words in a string. The run and the page count them the same way. */
-export function countWords(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
-}
-
-/** `m:ss` for the progress log — a byte offset means nothing to a reader. */
-export function clock(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}

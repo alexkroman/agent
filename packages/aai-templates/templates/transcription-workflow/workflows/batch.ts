@@ -54,17 +54,15 @@
  * request rather than two and the value journaled by the last poll IS the result.
  */
 
+import { report, TRANSCRIBE_API, uploadInfo } from "@alexkroman1/aai/step";
 import {
-  report,
-  stepTranscribePoll,
-  stepTranscribeSubmit,
-  stepTranscribeUpload,
-  TRANSCRIBE_API,
-  uploadInfo,
-} from "@alexkroman1/aai/step";
-import { throwStepError } from "@alexkroman1/aai/step-errors";
+  stepTranscribePollClassified,
+  stepTranscribeSubmitClassified,
+  stepTranscribeUploadClassified,
+} from "@alexkroman1/aai/step-errors";
+import { countWords, formatBytes } from "@alexkroman1/aai/utils";
 import { sleep } from "workflow";
-import { countWords, startClock, type Transcript } from "./transcribe.ts";
+import { startClock, type Transcript } from "./transcribe.ts";
 
 /** How long between polls of a submitted job. */
 const POLL_INTERVAL = "10s";
@@ -118,16 +116,20 @@ export async function transcribeBatchFlow(input: { recording: string }): Promise
  * far smaller: if it expires before the next step runs, the run fails and a fresh one
  * re-uploads — which is what would have happened anyway, once, instead of five times.
  *
- * `.catch(throwStepError)` is what turns the SDK's `TranscribeError` into the
- * DevKit's verdict: a missing key and a 400 stop, a 429 waits as long as the service
- * asked. Every step here ends the same way for the same reason.
+ * The `Classified` callers on `@alexkroman1/aai/step-errors` are the SDK's own
+ * `stepTranscribe*` plus `throwStepError` and nothing else, which is what turns the
+ * SDK's `TranscribeError` into the DevKit's verdict: a missing key and a 400 stop, a
+ * 429 waits as long as the service asked. Every step here ends the same way for the
+ * same reason.
  */
 export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: string }> {
   "use step";
 
   const stored = await uploadInfo(uploadId);
-  await report(`Uploading ${stored.name || uploadId} (${mb(stored.size)}) to the async API.`);
-  return await stepTranscribeUpload(uploadId).catch(throwStepError);
+  await report(
+    `Uploading ${stored.name || uploadId} (${formatBytes(stored.size)}) to the async API.`,
+  );
+  return await stepTranscribeUploadClassified(uploadId);
 }
 
 /** Retries beyond the default 3: an upload is the one call here worth another attempt. */
@@ -137,7 +139,7 @@ uploadToProvider.maxRetries = 5;
 export async function createJob(audioUrl: string): Promise<{ id: string }> {
   "use step";
 
-  const job = await stepTranscribeSubmit(audioUrl).catch(throwStepError);
+  const job = await stepTranscribeSubmitClassified(audioUrl);
   await report(`Submitted — job ${job.id}.`);
   return job;
 }
@@ -157,7 +159,7 @@ export async function pollTranscript(
 ): Promise<{ done: false } | { done: true; transcript: Transcript }> {
   "use step";
 
-  const progress = await stepTranscribePoll(id).catch(throwStepError);
+  const progress = await stepTranscribePollClassified(id);
   if (!progress.done) {
     await report(`Transcript ${id} is ${progress.status}.`);
     return { done: false };
@@ -184,9 +186,4 @@ export async function pollTranscript(
       transcript,
     },
   };
-}
-
-/** A size a person can read, because the number that matters is the scale. */
-function mb(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

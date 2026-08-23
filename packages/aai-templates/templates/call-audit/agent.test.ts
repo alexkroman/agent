@@ -23,28 +23,24 @@
  * that would have finished.
  */
 
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { FfmpegError } from "@alexkroman1/aai/ffmpeg";
-import { stubReporter, stubSpeech, stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
-import { installStubGateway } from "@alexkroman1/aai/testing/vitest";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { stubSpeech } from "@alexkroman1/aai/testing";
+import {
+  installStubGateway,
+  installStubReporter,
+  installStubSpeech,
+  installStubTranscribe,
+  installStubUploads,
+} from "@alexkroman1/aai/testing/vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
 import agentDef, { audit } from "./agent.ts";
-import {
-  countWords,
-  joinSegments,
-  now,
-  SEGMENT_CONCURRENCY,
-  transcribeSegment,
-} from "./workflows/audit.ts";
-import { classifyFfmpeg } from "./workflows/ffmpeg-verdict.ts";
+import { joinSegments, now, SEGMENT_CONCURRENCY, transcribeSegment } from "./workflows/audit.ts";
 import { analyse, ingestRecording } from "./workflows/ingest.ts";
 import {
   ANALYSIS_FORMAT,
   BYTES_PER_SECOND,
-  clock,
   durationSeconds,
   type Loudness,
   MAX_SEGMENT_SECONDS,
@@ -60,7 +56,6 @@ import {
   speechFraction,
 } from "./workflows/media.ts";
 import { narrate, summarize } from "./workflows/summarize.ts";
-import { fileChunks, materializeUpload, withTempDir } from "./workflows/temp-media.ts";
 
 /** The id every spec below uploads under. */
 const UPLOAD_ID = "upl_test";
@@ -163,12 +158,6 @@ function sentBytes(body: unknown): Uint8Array {
 function pauses(...starts: number[]): Silence[] {
   return starts.map((startSec) => ({ startSec, endSec: startSec + MIN_SILENCE_SECONDS }));
 }
-
-/** Slots left published reach the next file, so every one is released here. */
-const restores: (() => void)[] = [];
-afterEach(() => {
-  while (restores.length > 0) restores.pop()?.();
-});
 
 beforeEach(() => {
   // The step env, which is where `requireStepEnv`, `stepSpeak` and the gateway
@@ -519,13 +508,6 @@ describe("what the page is told about the recording", () => {
   test("a zero-length recording answers 0 rather than dividing by it", () => {
     expect(speechFraction([], 0)).toBe(0);
   });
-
-  test("the clock grows an hours field only when there is one", () => {
-    expect(clock(0)).toBe("0:00");
-    expect(clock(9000)).toBe("0:09");
-    expect(clock(249_000)).toBe("4:09");
-    expect(clock(3_849_000)).toBe("1:04:09");
-  });
 });
 
 describe("joining the segments", () => {
@@ -578,39 +560,34 @@ describe("joining the segments", () => {
       ]),
     ).toBe("words");
   });
-
-  test("counts words, or none for an empty transcript", () => {
-    expect(countWords("  two  words ")).toBe(2);
-    expect(countWords("   ")).toBe(0);
-  });
 });
 
 describe("transcribing one segment", () => {
   /**
    * One second of stored PCM, and a sync endpoint that answers.
    *
-   * `stubStepFetch`, not `vi.stubGlobal("fetch", …)`: the step calls `stepFetch`,
-   * which reaches a published slot rather than the global. Stubbing the global
-   * still passes, because an unpublished slot falls back to it, and would be
-   * asserting against a path production does not take.
+   * A published `stepFetch`, not `vi.stubGlobal("fetch", …)`: the step calls
+   * `stepFetch`, which reaches a published slot rather than the global. Stubbing
+   * the global still passes, because an unpublished slot falls back to it, and
+   * would be asserting against a path production does not take.
    */
-  function stubProvider(answer: { status?: number; body?: unknown } = {}) {
-    restores.push(
-      stubUploads({
-        [UPLOAD_ID]: {
-          bytes: new Uint8Array(BYTES_PER_SECOND),
-          name: "call.pcm",
-          type: "application/octet-stream",
-        },
-      }),
-      stubReporter().restore,
-    );
-    const stub = stubStepFetch(() => ({
-      status: answer.status ?? 200,
-      body: answer.body ?? { text: "hello there" },
-    }));
-    restores.push(stub.restore);
-    return stub.calls;
+  function stubProvider(failure?: { status: number; message: string }) {
+    installStubUploads({
+      [UPLOAD_ID]: {
+        bytes: new Uint8Array(BYTES_PER_SECOND),
+        name: "call.pcm",
+        type: "application/octet-stream",
+      },
+    });
+    installStubReporter();
+    // `installStubTranscribe` answers AssemblyAI's own endpoints off the SDK's
+    // endpoint constants, so this spec no longer re-types the wire — and a refusal
+    // is staged as a STATUS, which is what makes the classification below a test of
+    // the SDK's reading of it rather than of a `TranscribeError` a fake minted.
+    return installStubTranscribe({
+      text: "hello there",
+      failure: failure === undefined ? undefined : { leg: "sync", ...failure },
+    }).calls;
   }
 
   const SEGMENT = {
@@ -652,13 +629,13 @@ describe("transcribing one segment", () => {
   test("a rate limit is RETRYABLE, so one busy minute does not fail the run", async () => {
     // The expected failure of a 32-wide fan-out, and the reason this step's
     // `maxRetries` is above the default.
-    stubProvider({ status: 429, body: { error: "slow down" } });
+    stubProvider({ status: 429, message: "slow down" });
     await expect(transcribeSegment(UPLOAD_ID, SEGMENT)).rejects.toBeInstanceOf(RetryableError);
     expect(transcribeSegment.maxRetries).toBe(5);
   });
 
   test("a rejected request is FATAL, so it is not asked five more times", async () => {
-    stubProvider({ status: 400, body: { error: "that is not audio" } });
+    stubProvider({ status: 400, message: "that is not audio" });
     await expect(transcribeSegment(UPLOAD_ID, SEGMENT)).rejects.toBeInstanceOf(FatalError);
   });
 
@@ -676,7 +653,7 @@ describe("auditing the transcript", () => {
   test("asks for a script as well as lists, and keeps both", async () => {
     // The two-summaries decision: a voice reading a bullet list says "one. two.
     // three." with no connective tissue, so the schema demands sentences too.
-    restores.push(stubReporter().restore);
+    installStubReporter();
     // The stub answers with TEXT, because that is what a gateway returns — and
     // `stepGenerateJson` parsing it is part of what this exercises.
     installStubGateway(
@@ -697,7 +674,7 @@ describe("auditing the transcript", () => {
   test("an empty risk list is an ANSWER, not a retry", async () => {
     // A schema that demanded a risk would get an invented one, which is worse than
     // silence on a call that really had none.
-    restores.push(stubReporter().restore);
+    installStubReporter();
     installStubGateway(
       JSON.stringify({
         headline: "Weekly standup",
@@ -712,49 +689,22 @@ describe("auditing the transcript", () => {
   test("a reply with no spoken script is a RETRY rather than silence", async () => {
     // `spoken` is required rather than defaulted precisely so this fails: a default
     // would turn a missing field into half a second of audio nobody notices.
-    restores.push(stubReporter().restore);
+    installStubReporter();
     installStubGateway(JSON.stringify({ headline: "A call", risks: [], actions: [] }));
     await expect(summarize("…", "call.m4a", 60_000)).rejects.toThrow();
   });
 });
 
 describe("classifying a failure", () => {
-  /** An `FfmpegError` of one kind, with the argv a reader would want. */
-  function failed(kind: "exit" | "timeout" | "aborted" | "missing-binary") {
-    return new FfmpegError({
-      kind,
-      message: `ffmpeg ${kind}`,
-      binary: "ffmpeg",
-      argv: ["-i", "source"],
-    });
-  }
-
-  test("a file ffmpeg REFUSED is fatal, so it is not attempted five times", () => {
-    // `exit` means ffmpeg read the file and would read it the same way again.
-    expect(() => classifyFfmpeg(failed("exit"))).toThrow(FatalError);
-  });
-
-  test("no ffmpeg at all is fatal — a retry cannot install one", () => {
-    // The `aai dev` case, whose message already carries the install instructions.
-    expect(() => classifyFfmpeg(failed("missing-binary"))).toThrow(FatalError);
-  });
-
-  test("a run that timed out keeps its retries, and its argv", () => {
-    // Rethrown UNCHANGED rather than wrapped, which is what `toStepError` does with
-    // an error carrying no verdict — and the DevKit's default for anything that is
-    // not a `FatalError` is to retry. Asserting the class survives is asserting the
-    // diagnosis does: `argv` is the command you paste into a shell.
-    for (const kind of ["timeout", "aborted"] as const) {
-      const err = failed(kind);
-      expect(() => classifyFfmpeg(err)).toThrow(err);
-      expect(() => classifyFfmpeg(err)).not.toThrow(FatalError);
-    }
-  });
-
-  test("something that is not an ffmpeg failure at all is fatal", () => {
-    expect(() => classifyFfmpeg(new Error("no space left on device"))).toThrow(FatalError);
-  });
-
+  /**
+   * The FFMPEG verdict is no longer tested here, and its absence is the change
+   * rather than a gap: `throwFfmpegStepError` on `@alexkroman1/aai/step-errors` owns
+   * it now, with both arms pinned in `sdk/step-errors.test.ts` — including the case
+   * this template contributed, a cause that is not an ffmpeg failure at all.
+   *
+   * What stays is what is still THIS desk's: `analyse`, which decides that an
+   * analysis `media.ts` cannot read is terminal.
+   */
   test("an analysis this desk cannot read is fatal, because a retry reads it again", () => {
     // ffmpeg SUCCEEDED and printed something unrecognized — a renamed key, a lost
     // `-loglevel info`. Every retry runs the same binary and prints the same thing.
@@ -803,104 +753,6 @@ describe("the mastered narration", () => {
   });
 });
 
-describe("moving bytes between the store and a local file", () => {
-  /**
-   * These DO touch the filesystem, which the unit tier otherwise avoids — and the
-   * exception is deliberate rather than a slip. A temp directory is hermetic, costs
-   * milliseconds, and is the only way to exercise the one bug this module is written
-   * to prevent: `fileChunks` reuses one buffer across reads, so yielding a view of
-   * it rather than a copy hands the consumer memory the next read overwrites. That
-   * failure produces a stored file made of the LAST chunk repeated, and it does not
-   * reproduce whenever the consumer happens to copy before the next iteration — so
-   * a mock consumer would not see it and only real bytes will.
-   *
-   * `aai-cli`'s unit specs take the same exception through their own `withTempDir`.
-   */
-  test("withTempDir gives the work a private directory and removes it after", async () => {
-    let seen: string | undefined;
-    await withTempDir(async (dir) => {
-      seen = dir;
-      await writeFile(join(dir, "probe"), "x");
-      await expect(stat(join(dir, "probe"))).resolves.toBeTruthy();
-    });
-    expect(seen).toBeTruthy();
-    // Gone. A guest's disk is small, and a step that left a copy of every recording
-    // it touched would fill it.
-    await expect(stat(seen ?? "")).rejects.toThrow();
-  });
-
-  test("the directory is removed even when the work THROWS", async () => {
-    let seen: string | undefined;
-    const boom = new Error("the conversion failed");
-    await expect(
-      withTempDir((dir) => {
-        seen = dir;
-        throw boom;
-      }),
-    ).rejects.toThrow(boom);
-    await expect(stat(seen ?? "")).rejects.toThrow();
-  });
-
-  test("materializeUpload writes the stored bytes to a path, in order", async () => {
-    // The upload store is the seam that makes this testable at all: `readUpload`
-    // reads a process-wide slot rather than dialling anything.
-    const bytes = new Uint8Array(4096).map((_, at) => at % 251);
-    restores.push(stubUploads({ [UPLOAD_ID]: { bytes, name: "call.m4a" } }));
-
-    await withTempDir(async (dir) => {
-      const path = join(dir, "source");
-      // A small window, so the loop really runs four times — at the real 8 MiB one
-      // a 4 KB upload would exercise a single pass and prove nothing about it.
-      await materializeUpload(UPLOAD_ID, bytes.byteLength, path, 1024);
-      expect(new Uint8Array(await readFile(path))).toEqual(bytes);
-    });
-  });
-
-  test("an empty upload materializes an empty file rather than failing", async () => {
-    restores.push(stubUploads({ [UPLOAD_ID]: { bytes: new Uint8Array(0) } }));
-    await withTempDir(async (dir) => {
-      const path = join(dir, "source");
-      await materializeUpload(UPLOAD_ID, 0, path);
-      expect((await stat(path)).size).toBe(0);
-    });
-  });
-
-  test("fileChunks yields the file's real bytes, not a reused buffer", async () => {
-    // The aliasing bug, and the reason these specs touch a disk. Verified to CATCH
-    // it: deleting the `.slice()` in `fileChunks` fails this test.
-    await withTempDir(async (dir) => {
-      const path = join(dir, "audio.pcm");
-      const bytes = new Uint8Array(5000).map((_, at) => (at * 7) % 251);
-      await writeFile(path, bytes);
-
-      // A 1 KB window over 5 KB of bytes, so there are five reads through ONE
-      // buffer. That is what makes the aliasing reachable; collecting the chunks and
-      // concatenating afterwards is what makes it visible, since every earlier chunk
-      // would then read as the last one.
-      const collected: Uint8Array[] = [];
-      for await (const chunk of fileChunks(path, 1024)) collected.push(chunk);
-
-      const rejoined = new Uint8Array(collected.reduce((n, c) => n + c.byteLength, 0));
-      let at = 0;
-      for (const chunk of collected) {
-        rejoined.set(chunk, at);
-        at += chunk.byteLength;
-      }
-      expect(rejoined).toEqual(bytes);
-    });
-  });
-
-  test("fileChunks over an empty file yields nothing rather than one empty chunk", async () => {
-    await withTempDir(async (dir) => {
-      const path = join(dir, "empty");
-      await writeFile(path, new Uint8Array(0));
-      const collected: Uint8Array[] = [];
-      for await (const chunk of fileChunks(path)) collected.push(chunk);
-      expect(collected).toEqual([]);
-    });
-  });
-});
-
 describe("the ffmpeg steps, up to the spawn", () => {
   /**
    * These reach the point where ffmpeg would run and stop there, DETERMINISTICALLY
@@ -925,12 +777,10 @@ describe("the ffmpeg steps, up to the spawn", () => {
   });
 
   test("ingestRecording materializes the upload, then fails fatally with no ffprobe", async () => {
-    restores.push(
-      stubUploads({
-        [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
-      }),
-      stubReporter().restore,
-    );
+    installStubUploads({
+      [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+    });
+    installStubReporter();
     // Fatal, not retryable: four more attempts find the same missing binary, and the
     // message already carries the install instructions.
     await expect(ingestRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
@@ -942,8 +792,9 @@ describe("the ffmpeg steps, up to the spawn", () => {
     // `stepSpeak` runs — the synthesis is not what is broken here — so this also
     // pins the ORDER: a step that mastered before speaking would fail without ever
     // calling the voice service.
-    const speech = stubSpeech();
-    restores.push(speech.restore, stubReporter().restore, stubUploads({}, { writable: true }));
+    const speech = installStubSpeech();
+    installStubReporter();
+    installStubUploads({}, { writable: true });
 
     await expect(narrate("Read this back.", "jane")).rejects.toBeInstanceOf(FatalError);
     expect(speech.calls.length).toBe(1);
@@ -954,8 +805,9 @@ describe("the ffmpeg steps, up to the spawn", () => {
     // The `finally` in `withTempDir`, on the path that matters: a guest's disk is
     // small, and a step that leaked a directory per failed run would fill it.
     const before = await readdir(tmpdir());
-    const speech = stubSpeech();
-    restores.push(speech.restore, stubReporter().restore, stubUploads({}, { writable: true }));
+    installStubSpeech();
+    installStubReporter();
+    installStubUploads({}, { writable: true });
 
     await expect(narrate("Read this back.")).rejects.toBeInstanceOf(FatalError);
     const after = await readdir(tmpdir());

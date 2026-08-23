@@ -35,13 +35,12 @@
 import { stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runFfmpeg } from "@alexkroman1/aai/ffmpeg";
-import { report, stepGenerateJson, stepSpeak, writeUpload } from "@alexkroman1/aai/step";
-import { throwStepError } from "@alexkroman1/aai/step-errors";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { report, stepSpeak } from "@alexkroman1/aai/step";
+import { stepGenerateJsonClassified, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
+import { withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
+import { formatBytes, formatDuration, omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { classifyFfmpeg } from "./ffmpeg-verdict.ts";
-import { clock, masterArgs } from "./media.ts";
-import { fileChunks, withTempDir } from "./temp-media.ts";
+import { masterArgs } from "./media.ts";
 
 /** Risks the summary is reduced to. Enough to be useful, few enough to act on. */
 const MAX_RISKS = 4;
@@ -109,8 +108,8 @@ export async function summarize(
   "use step";
 
   await report("Reading the transcript.");
-  const reply = await stepGenerateJson(
-    `Audit this transcript of a recorded call (${source}, ${clock(durationMs)}).\n\n` +
+  const reply = await stepGenerateJsonClassified(
+    `Audit this transcript of a recorded call (${source}, ${formatDuration(durationMs)}).\n\n` +
       "Answer with JSON only, in this shape:\n" +
       `{"headline": "...", "risks": ["..."], "actions": ["..."], "spoken": "..."}\n\n` +
       "- headline: one line naming what the call was about.\n" +
@@ -128,13 +127,14 @@ export async function summarize(
       system: "You audit recorded calls. You answer with JSON and nothing else.",
       schema: AuditReply,
     },
-    // Classified off the gateway's own status: a 429 is worth another attempt and a
-    // 400 is not, and `throwStepError` is what tells the DevKit which.
-  ).catch(throwStepError);
+    // The `Classified` caller is `stepGenerateJson` plus `throwStepError`, which is
+    // what reads the gateway's own status: a 429 is worth another attempt and a 400
+    // is not, and that is what tells the DevKit which.
+  );
 
   await report(
-    `Found ${reply.risks.length} risk${reply.risks.length === 1 ? "" : "s"} and ` +
-      `${reply.actions.length} action${reply.actions.length === 1 ? "" : "s"}.`,
+    `Found ${reply.risks.length} ${plural(reply.risks.length, "risk")} and ` +
+      `${reply.actions.length} ${plural(reply.actions.length, "action")}.`,
   );
   return {
     headline: reply.headline,
@@ -151,7 +151,7 @@ export async function summarize(
  * records: a step is replayed by its RETURN VALUE, so an id is replayed and bytes
  * are not. Split in two, the audio would have to cross the queue between them —
  * megabytes of it, on every resume — and the temp file the mastering pass needs
- * cannot cross a step boundary at all (see `temp-media.ts`). Together, a resumed
+ * cannot cross a step boundary at all (see `@alexkroman1/aai/step-files`). Together, a resumed
  * run replays the id and re-reads a file that is already there.
  *
  * The cost is that a retried step writes a second upload and abandons the first.
@@ -165,37 +165,37 @@ export async function narrate(
 
   const spoken = await stepSpeak(script, omitUndefined({ voice }));
 
-  return await withTempDir(async (dir) => {
-    const wav = join(dir, "spoken.wav");
-    const mp3 = join(dir, "summary.mp3");
+  return await withTempDir(
+    async (dir) => {
+      const wav = join(dir, "spoken.wav");
+      const mp3 = join(dir, "summary.mp3");
 
-    // `writeFile` rather than a stream, and this is the one place in the template
-    // where holding the whole thing in memory is right: `stepSpeak` already
-    // returned it as a single `Uint8Array`, so streaming it to disk would be
-    // copying from the heap to the heap on the way. It is bounded by the script,
-    // which the schema keeps under 150 words.
-    await writeFile(wav, spoken.audio);
+      // `writeFile` rather than a stream, and this is the one place in the template
+      // where holding the whole thing in memory is right: `stepSpeak` already
+      // returned it as a single `Uint8Array`, so streaming it to disk would be
+      // copying from the heap to the heap on the way. It is bounded by the script,
+      // which the schema keeps under 150 words.
+      await writeFile(wav, spoken.audio);
 
-    await runFfmpeg(masterArgs(wav, mp3), { timeoutMs: MASTER_TIMEOUT_MS }).catch(classifyFfmpeg);
-    const bytes = (await stat(mp3)).size;
+      await runFfmpeg(masterArgs(wav, mp3), { timeoutMs: MASTER_TIMEOUT_MS }).catch(
+        throwFfmpegStepError,
+      );
+      const bytes = (await stat(mp3)).size;
 
-    const stored = await writeUpload(fileChunks(mp3), {
-      // Named, because this is what a person sees on the download link rather than
-      // an opaque id — and typed, because the byte route serves the type it was
-      // given and a browser will not play a file it was handed as bytes.
-      name: "audit.mp3",
-      type: "audio/mpeg",
-    });
+      const stored = await writeUploadFromFile(mp3, {
+        // Named, because this is what a person sees on the download link rather than
+        // an opaque id — and typed, because the byte route serves the type it was
+        // given and a browser will not play a file it was handed as bytes.
+        name: "audit.mp3",
+        type: "audio/mpeg",
+      });
 
-    await report(
-      `Recorded a ${Math.round(spoken.durationMs / 1000)}s audit in ${spoken.voice}'s voice — ` +
-        `${kb(bytes)} of MP3, from ${kb(spoken.audio.byteLength)} of WAV.`,
-    );
-    return { audio: stored.id, durationMs: spoken.durationMs, bytes };
-  });
-}
-
-/** A size a person can read, in the unit this file's output actually lands in. */
-function kb(bytes: number): string {
-  return `${Math.round(bytes / 1024)} KB`;
+      await report(
+        `Recorded a ${Math.round(spoken.durationMs / 1000)}s audit in ${spoken.voice}'s voice — ` +
+          `${formatBytes(bytes)} of MP3, from ${formatBytes(spoken.audio.byteLength)} of WAV.`,
+      );
+      return { audio: stored.id, durationMs: spoken.durationMs, bytes };
+    },
+    { prefix: "aai-call-audit-" },
+  );
 }

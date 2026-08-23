@@ -12,7 +12,8 @@
  *
  * **Every one of them is four lines, because the SDK owns the endpoint.**
  * `stepTranscribeUpload` / `stepTranscribeSubmit` / `stepTranscribePoll` on
- * `@alexkroman1/aai/step` carry the URL, the raw-key auth, the windowed
+ * `@alexkroman1/aai/step` — reached here through their `*Classified` callers on
+ * `@alexkroman1/aai/step-errors` — carry the URL, the raw-key auth, the windowed
  * streaming upload, the PLURAL `speech_models` field and the failure
  * classification — all of which this file used to spell out, and all of which
  * `transcription-workflow` used to spell out again, differently worded and
@@ -37,14 +38,13 @@
  * the one leg that should be as boring as possible.
  */
 
+import { report, uploadInfo } from "@alexkroman1/aai/step";
 import {
-  report,
-  stepTranscribePoll,
-  stepTranscribeSubmit,
-  stepTranscribeUpload,
-  uploadInfo,
-} from "@alexkroman1/aai/step";
-import { throwStepError } from "@alexkroman1/aai/step-errors";
+  stepTranscribePollClassified,
+  stepTranscribeSubmitClassified,
+  stepTranscribeUploadClassified,
+} from "@alexkroman1/aai/step-errors";
+import { countWords, formatBytes } from "@alexkroman1/aai/utils";
 
 /** How long between polls of a submitted job. */
 export const POLL_INTERVAL = "10s";
@@ -79,16 +79,20 @@ export type Transcript = {
  * expires before the next step runs; that costs one fresh upload, once, instead
  * of five.
  *
- * `.catch(throwStepError)` is what turns the SDK's `TranscribeError` into the
- * DevKit's verdict — a missing key and a 400 stop, a 429 waits as long as the
- * service asked. Every step here ends the same way for the same reason.
+ * The `Classified` callers on `@alexkroman1/aai/step-errors` are the SDK's own
+ * `stepTranscribe*` plus `throwStepError` and nothing else, which is what turns
+ * the SDK's `TranscribeError` into the DevKit's verdict — a missing key and a
+ * 400 stop, a 429 waits as long as the service asked. Every step here ends the
+ * same way for the same reason.
  */
 export async function uploadToProvider(uploadId: string): Promise<{ audioUrl: string }> {
   "use step";
 
   const stored = await uploadInfo(uploadId);
-  await report(`Uploading ${stored.name || uploadId} (${mb(stored.size)}) for transcription.`);
-  return await stepTranscribeUpload(uploadId).catch(throwStepError);
+  await report(
+    `Uploading ${stored.name || uploadId} (${formatBytes(stored.size)}) for transcription.`,
+  );
+  return await stepTranscribeUploadClassified(uploadId);
 }
 
 /** Retries beyond the default 3: an upload is the one call here worth another attempt. */
@@ -98,7 +102,7 @@ uploadToProvider.maxRetries = 5;
 export async function createJob(audioUrl: string): Promise<{ id: string }> {
   "use step";
 
-  const job = await stepTranscribeSubmit(audioUrl).catch(throwStepError);
+  const job = await stepTranscribeSubmitClassified(audioUrl);
   await report(`Transcribing — job ${job.id}.`);
   return job;
 }
@@ -118,7 +122,7 @@ export async function pollTranscript(
 ): Promise<{ done: false } | { done: true; transcript: Transcript }> {
   "use step";
 
-  const progress = await stepTranscribePoll(id).catch(throwStepError);
+  const progress = await stepTranscribePollClassified(id);
   if (!progress.done) return { done: false };
 
   const stored = await uploadInfo(uploadId);
@@ -131,15 +135,4 @@ export async function pollTranscript(
       text: progress.transcript.text,
     },
   };
-}
-
-/** Words in a transcript, for the counts a page shows. */
-export function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
-}
-
-/** A size a person can read, because the number that matters is the scale. */
-function mb(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

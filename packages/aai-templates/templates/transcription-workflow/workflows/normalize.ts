@@ -39,46 +39,33 @@
  *
  * ## File → file, not bytes → bytes
  *
- * `transcodeToWav(bytes)` is one line and is the wrong call here, twice over:
+ * `transcodeToWav(bytes)` is one line and is the wrong call here, and
+ * `@alexkroman1/aai/step-files` is the three functions that replace it —
+ * `readUploadToFile`, `withTempDir` and `writeUploadFromFile`. Its module doc
+ * carries the whole argument (a pipe cannot seek, so an `.m4a` with a trailing
+ * `moov` index fails; piped output is capped at 64 MiB, half an hour of this
+ * desk's audio) plus the rule that a temp file may not outlive its step. This
+ * step is the case those were written for.
  *
- * - **The output would be buffered.** Piped stdout is capped
- *   (`DEFAULT_MAX_FFMPEG_OUTPUT_BYTES`, 64 MiB), which is about an hour of
- *   16 kHz mono — and this desk exists for the two-hour recording.
- * - **The input could not be READ.** A pipe cannot seek, and an `.m4a` written
- *   by a phone usually carries its `moov` index at the END of the file, so
- *   ffmpeg fails on the flagship input with `moov atom not found`. That is the
- *   one caveat `@alexkroman1/aai/ffmpeg`'s own doc names, and this is the case
- *   it names it for.
+ * ## Everything node-shaped is named from inside the step BODY
  *
- * So the recording is materialized to a temp file in windows, converted file to
- * file, and streamed back into the upload store. Nothing here holds a whole
- * recording in memory at any point, which is the property that makes the step
- * work on the input it was written for.
- *
- * ## A temp file cannot cross a step boundary
- *
- * Everything above happens in ONE step, and that is structural rather than
- * tidy. A step is journaled by its RETURN VALUE and may be dispatched into a
- * different process than its neighbours, so a path in a return value is a path
- * that is replayed after the file behind it is gone. What crosses the boundary
- * is an upload ID; the temp directory is created and removed inside the step
- * that uses it.
- *
- * ## The verdict lives in another file, and has to
- *
- * `classifyFfmpeg` reads as if it belongs beside the step that calls it, and it
- * cannot: a name this module holds at MODULE scope keeps its import, and the
- * workflow bundle — a `node:vm` Script with no `require` — cannot load one that
- * spawns a child process. `ffmpeg-verdict.ts` carries the argument in full.
+ * `@alexkroman1/aai/ffmpeg` and `@alexkroman1/aai/step-files` both reach a
+ * `node:` builtin, and a name this module holds at MODULE scope keeps its import
+ * in the workflow bundle — which is compiled as a `node:vm` Script with no
+ * `require`. Every name they bind is referenced only inside
+ * {@link normalizeRecording}'s body, which the workflow transform removes along
+ * with the imports it is the only user of. A module-scope FUNCTION naming one is
+ * what breaks a run at replay; this template used to carry a whole
+ * `ffmpeg-verdict.ts` because of it, and `throwFfmpegStepError` — which reaches
+ * no `node:` builtin at all — is what dissolved the boundary.
  */
 
-import { mkdtemp, open, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { probeMedia, runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
-import { readUpload, report, uploadInfo, writeUpload } from "@alexkroman1/aai/step";
-import { classifyFfmpeg } from "./ffmpeg-verdict.ts";
-import { clock } from "./stitch.ts";
+import { readUpload, report, uploadInfo } from "@alexkroman1/aai/step";
+import { throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
+import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
+import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
 import { HEADER_PROBE_BYTES, parseWav, UnsupportedRecordingError } from "./wav.ts";
 
 /**
@@ -105,23 +92,13 @@ export const NORMALIZED_SAMPLE_RATE = 16_000;
 export const NORMALIZED_CHANNELS = 1;
 
 /**
- * Bytes moved per `readUpload` while materializing, and per write while storing.
- *
- * 8 MiB is large enough that a two-hour recording is a few hundred round trips
- * rather than tens of thousands, and small enough that the step's resident set
- * is a constant that does not depend on the recording. The number this must NOT
- * be is "the whole file", which is the shape every first draft of this step has.
- */
-const WINDOW_BYTES = 8 * 1024 * 1024;
-
-/**
  * How long a conversion may run before it is killed.
  *
  * Well past what the work takes — ffmpeg decodes and resamples faster than
  * realtime by two orders of magnitude, so a two-hour recording is under a
  * minute — and the reason for a bound at all is a file that makes a decoder
  * pathological rather than one that is merely long. A `timeout` is retryable
- * and an `exit` is not; see `ffmpeg-verdict.ts`.
+ * and an `exit` is not; `throwFfmpegStepError` decides.
  */
 const CONVERT_TIMEOUT_MS = 15 * 60_000;
 
@@ -165,72 +142,78 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
   // stuck. It is also the line that distinguishes "this file needs converting" from
   // the fast path above.
   await report(
-    `Converting ${stored.name || uploadId} (${mb(stored.size)}) — not a WAV we can cut.`,
+    `Converting ${stored.name || uploadId} (${formatBytes(stored.size)}) — not a WAV we can cut.`,
   );
 
-  const dir = await mkdtemp(join(tmpdir(), "aai-normalize-"));
-  try {
-    const source = join(dir, "source");
-    const converted = join(dir, "converted.wav");
+  // The temp directory's lifetime is this lexical scope, and the `finally` inside
+  // `withTempDir` is what makes that true on the failure paths too: a guest's disk
+  // is small and a step that leaves a copy of every recording it touched fills it.
+  return await withTempDir(
+    async (dir) => {
+      const source = join(dir, "source");
+      const converted = join(dir, "converted.wav");
 
-    await materialize(uploadId, stored.size, source);
+      await readUploadToFile(uploadId, source, { size: stored.size });
 
-    // What it WAS, for the progress line. Worth one ffprobe: "converted 41
-    // minutes of aac" is a line that explains the run's shape, where
-    // "converted the recording" leaves a reader wondering what the desk decided.
-    // On a temp file rather than a pipe, so a trailing index is readable.
-    const info = await probeMedia(source, { timeoutMs: CONVERT_TIMEOUT_MS }).catch(classifyFfmpeg);
-    await report(
-      `It is ${describeSource(info.audio?.codec, info.durationSec)} — re-encoding to ` +
-        `${NORMALIZED_SAMPLE_RATE / 1000} kHz mono WAV.`,
-    );
+      // What it WAS, for the progress line. Worth one ffprobe: "converted 41
+      // minutes of aac" is a line that explains the run's shape, where
+      // "converted the recording" leaves a reader wondering what the desk decided.
+      // On a temp file rather than a pipe, so a trailing index is readable.
+      const info = await probeMedia(source, { timeoutMs: CONVERT_TIMEOUT_MS }).catch(
+        throwFfmpegStepError,
+      );
+      await report(
+        `It is ${describeSource(info.audio?.codec, info.durationSec)} — re-encoding to ` +
+          `${NORMALIZED_SAMPLE_RATE / 1000} kHz mono WAV.`,
+      );
 
-    await runFfmpeg(
-      [
-        // The argv is the caller's, verbatim — `runFfmpeg` adds nothing. So the
-        // standing flags are here: quiet, non-interactive, overwrite. `-nostdin`
-        // matters most in a guest, where there is no terminal and an ffmpeg that
-        // decides to read stdin is a process that never exits.
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-nostdin",
-        "-y",
-        "-i",
-        source,
-        ...wavEncodeArgs({
-          sampleRate: NORMALIZED_SAMPLE_RATE,
-          channels: NORMALIZED_CHANNELS,
-        }),
-        converted,
-      ],
-      { timeoutMs: CONVERT_TIMEOUT_MS },
-    ).catch(classifyFfmpeg);
+      await runFfmpeg(
+        [
+          // The argv is the caller's, verbatim — `runFfmpeg` adds nothing. So the
+          // standing flags are here: quiet, non-interactive, overwrite. `-nostdin`
+          // matters most in a guest, where there is no terminal and an ffmpeg that
+          // decides to read stdin is a process that never exits.
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-nostdin",
+          "-y",
+          "-i",
+          source,
+          ...wavEncodeArgs({
+            sampleRate: NORMALIZED_SAMPLE_RATE,
+            channels: NORMALIZED_CHANNELS,
+          }),
+          converted,
+        ],
+        { timeoutMs: CONVERT_TIMEOUT_MS },
+      ).catch(throwFfmpegStepError);
 
-    const written = await writeUpload(chunks(converted), {
-      // Named after the ORIGINAL, so a download reads as the recording it came
-      // from. The extension has to change with the bytes: a file served as
-      // `audio/wav` under a `.m4a` name is one no player will open.
-      name: `${basename(stored.name || uploadId, extname(stored.name || uploadId))}.wav`,
-      type: "audio/wav",
-    });
+      const written = await writeUploadFromFile(converted, {
+        // Named after the ORIGINAL, so a download reads as the recording it came
+        // from. The extension has to change with the bytes: a file served as
+        // `audio/wav` under a `.m4a` name is one no player will open.
+        name: `${basename(stored.name || uploadId, extname(stored.name || uploadId))}.wav`,
+        type: "audio/wav",
+      });
 
-    await report(`Converted to ${mb(written.size)} of WAV (from ${mb(stored.size)}).`);
-    return { recording: written.id, converted: true };
-  } finally {
-    // Always, including on the failure paths above: a guest's disk is small and
-    // a step that leaves a copy of every recording it touched fills it. `force`
-    // so a conversion that never created its output does not fail HERE and
-    // replace the real error with this one.
-    await rm(dir, { recursive: true, force: true });
-  }
+      await report(
+        `Converted to ${formatBytes(written.size)} of WAV (from ${formatBytes(stored.size)}).`,
+      );
+      return { recording: written.id, converted: true };
+    },
+    // Named after the pipeline: the directory is gone by the time anyone looks,
+    // so the prefix's real audience is a person reading `ls /tmp` during a run
+    // that hung, and the spec that asserts nothing was left behind.
+    { prefix: "aai-normalize-" },
+  );
 }
 
 /**
  * Retries beyond the default 3.
  *
  * Not because a conversion is flaky — a corrupt file fails identically forever,
- * and `classifyFfmpeg` is what stops the DevKit retrying that. It is the
+ * and `throwFfmpegStepError` is what stops the DevKit retrying that. It is the
  * two I/O halves that are worth another attempt: this step reads a whole
  * recording out of the store and writes a whole one back, and either can lose a
  * connection on a file this size.
@@ -255,64 +238,10 @@ export function cuttable(head: Uint8Array, totalBytes: number): boolean {
   }
 }
 
-/**
- * Write an upload to a local path, a window at a time.
- *
- * The `readUpload` window is the same primitive `transcribeSegment` cuts with;
- * what differs is only that this one walks the whole file in order. A `for` loop
- * rather than a fan-out deliberately — the bytes land in one file at one offset
- * each, so concurrency buys nothing here and costs the memory the windows are
- * there to bound.
- */
-async function materialize(uploadId: string, size: number, path: string): Promise<void> {
-  const handle = await open(path, "w");
-  try {
-    for (let at = 0; at < size; at += WINDOW_BYTES) {
-      const slice = await readUpload(uploadId, {
-        start: at,
-        end: Math.min(at + WINDOW_BYTES, size),
-      });
-      await handle.write(slice.bytes);
-    }
-  } finally {
-    await handle.close();
-  }
-}
-
-/**
- * A local file as the stream `writeUpload` takes.
- *
- * A generator rather than `readFile`, for the reason the windows exist: the
- * converted WAV is the largest thing this step touches, and handing the store an
- * `AsyncIterable` is what keeps it off the heap.
- *
- * The `.slice()` is load-bearing. One buffer is reused across reads, so yielding
- * a view of it hands the consumer memory the next read overwrites — a bug whose
- * symptom is a stored file made of the LAST chunk repeated, and which does not
- * reproduce whenever the consumer happens to copy before the next iteration.
- */
-async function* chunks(path: string): AsyncIterable<Uint8Array> {
-  const handle = await open(path, "r");
-  try {
-    const buffer = new Uint8Array(WINDOW_BYTES);
-    for (;;) {
-      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
-      if (bytesRead === 0) return;
-      yield buffer.subarray(0, bytesRead).slice();
-    }
-  } finally {
-    await handle.close();
-  }
-}
-
 /** `41:20 of aac`, or as much of that as ffprobe would say. */
 function describeSource(codec: string | undefined, durationSec: number | undefined): string {
-  const length = durationSec === undefined ? undefined : clock(Math.round(durationSec * 1000));
+  const length =
+    durationSec === undefined ? undefined : formatDuration(Math.round(durationSec * 1000));
   if (length !== undefined && codec !== undefined) return `${length} of ${codec}`;
   return length ?? codec ?? "the recording";
-}
-
-/** A size a person can read, because the number that matters is the scale. */
-function mb(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

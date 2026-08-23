@@ -19,20 +19,21 @@
 
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { FfmpegError } from "@alexkroman1/aai/ffmpeg";
 import { readUpload } from "@alexkroman1/aai/step";
-import { stubReporter, stubStepFetch, stubUploads } from "@alexkroman1/aai/testing";
-import { omitUndefined } from "@alexkroman1/aai/utils";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  installStubReporter,
+  installStubStepFetch,
+  installStubTranscribe,
+  installStubUploads,
+} from "@alexkroman1/aai/testing/vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FatalError, RetryableError } from "workflow";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/batch.ts";
-import { classifyFfmpeg } from "./workflows/ffmpeg-verdict.ts";
 import { cuttable, normalizeRecording } from "./workflows/normalize.ts";
 import { expectedSegments, planStreamed, probeUpload } from "./workflows/stream.ts";
 import {
-  clock,
   mergeTranscript,
   splitRecording,
   stitchChunks,
@@ -51,11 +52,7 @@ import {
   SEGMENT_SECONDS,
   UnsupportedRecordingError,
   type WavFormat,
-  wavWithHeader,
 } from "./workflows/wav.ts";
-
-/** Where the sync endpoint lives — the one URL these stubs answer differently. */
-const SYNC_ORIGIN = "https://sync.assemblyai.com";
 
 /** The id every spec below uploads under. */
 const UPLOAD_ID = "upl_test";
@@ -78,15 +75,11 @@ const STARTED_AT = 1_000_000;
  * bytes with no server, no database and no HTTP.
  */
 function publishRecording(bytes: Uint8Array, name = "standup.wav") {
-  restore = stubUploads({ [UPLOAD_ID]: { bytes, name, type: "audio/wav" } });
+  // `installStubUploads` rather than `stubUploads`: the fake registers its own
+  // `onTestFinished`, which is what replaced the three hand-kept restore
+  // registries this file used to carry.
+  installStubUploads({ [UPLOAD_ID]: { bytes, name, type: "audio/wav" } });
 }
-
-/** Unpublished between specs — a slot left behind reaches the next file. */
-let restore: (() => void) | undefined;
-afterEach(() => {
-  restore?.();
-  restore = undefined;
-});
 
 /** 16 kHz mono 16-bit — one second of audio is 32,000 bytes. */
 const MONO_16K = { sampleRate: 16_000, channels: 1, bitsPerSample: 16 } as const;
@@ -377,24 +370,6 @@ describe("planSegments decides the fan-out's width", () => {
   });
 });
 
-describe("wavWithHeader", () => {
-  test("writes a header the endpoint can read the rate back out of", () => {
-    const samples = new Uint8Array(3200).fill(7);
-    const out = wavWithHeader({ ...MONO_16K, dataStart: 44, dataEnd: 3244 }, samples);
-    const view = new DataView(out.buffer);
-
-    expect(String.fromCharCode(...out.subarray(0, 4))).toBe("RIFF");
-    expect(String.fromCharCode(...out.subarray(8, 12))).toBe("WAVE");
-    expect(view.getUint32(24, true)).toBe(MONO_16K.sampleRate);
-    expect(view.getUint16(22, true)).toBe(MONO_16K.channels);
-    // The two lengths, which are what a decoder trusts: RIFF counts everything
-    // after itself, `data` counts only the samples.
-    expect(view.getUint32(4, true)).toBe(36 + samples.length);
-    expect(view.getUint32(40, true)).toBe(samples.length);
-    expect(out.subarray(44)).toEqual(samples);
-  });
-});
-
 describe("stitchTranscript", () => {
   test("removes the words the overlap made duplicates", () => {
     expect(
@@ -474,13 +449,6 @@ describe("stitchChunks — what the PAGE renders while a run is going", () => {
   });
 });
 
-describe("clock", () => {
-  test("renders a position a reader can find in the recording", () => {
-    expect(clock(0)).toBe("0:00");
-    expect(clock(65_000)).toBe("1:05");
-  });
-});
-
 describe("splitRecording", () => {
   test("plans the segments and reports the duration", async () => {
     const seconds = 200;
@@ -530,49 +498,40 @@ describe("transcribeSegment", () => {
   /**
    * Publishes the recording and answers the sync endpoint.
    *
-   * `stubStepFetch`, not `vi.stubGlobal("fetch", …)`: the step calls `stepFetch`,
-   * which reaches a published slot rather than the global — see
-   * `sdk/step-fetch.ts` for why it has to (HTTP/1.1, so a batch of segments gets
-   * a socket each instead of N streams on one connection). Stubbing the global
-   * still passes, because an unpublished slot falls back to it, and would be
-   * asserting against a path production does not take.
+   * `installStubTranscribe` routes AssemblyAI's four legs off the SDK's own
+   * endpoint constants, so this file no longer re-types the wire — and it fills a
+   * published `stepFetch` rather than `vi.stubGlobal("fetch", …)`, because the
+   * step calls `stepFetch`, which reaches a published slot rather than the global
+   * (see `sdk/step-fetch.ts` for why it has to: HTTP/1.1, so a batch of segments
+   * gets a socket each instead of N streams on one connection). Stubbing the
+   * global still passes, because an unpublished slot falls back to it, and would
+   * be asserting against a path production does not take.
+   *
+   * A refusal is staged as a STATUS, which is what makes the classification specs
+   * below a test of the SDK's reading of it rather than of an error a fake minted.
    */
-  function stubProvider(
-    sync: { status?: number; body?: unknown; headers?: Record<string, string> } = {},
-  ) {
+  function stubProvider(failure?: { status: number; message: string; retryAfterSeconds?: number }) {
     publishRecording(new Uint8Array(FORMAT.dataEnd));
-    const stub = stubStepFetch(() => ({
-      status: sync.status ?? 200,
-      body: sync.body ?? { text: "hello there" },
-      ...omitUndefined({ headers: sync.headers }),
-    }));
-    stubs.push(stub.restore);
-    return stub.calls;
+    return installStubTranscribe({
+      text: "hello there",
+      failure: failure === undefined ? undefined : { leg: "sync", ...failure },
+    }).calls;
   }
 
-  /** Unpublished per test — a live one answers the next file's steps. */
-  const stubs: (() => void)[] = [];
-  afterEach(() => {
-    for (const restore of stubs.splice(0)) restore();
-  });
-
-  test("sends the segment as a WAV, with the key and the model header", async () => {
+  test("sends the segment as a WAV named after its index", async () => {
+    // What the SYNC endpoint's request looks like — the URL, the raw-key auth, the
+    // multipart envelope — is the SDK's contract and `sdk/step-transcribe*.test.ts`
+    // owns it. What is left here is this template's: it re-attaches a header to a
+    // window it read, and it names the part after the segment.
     const calls = stubProvider();
     const result = await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT);
 
     expect(result).toEqual({ index: 0, text: "hello there" });
-    const sync = calls.find((call) => call.url.startsWith(SYNC_ORIGIN));
-    // The raw key: this endpoint takes it unprefixed, and `Bearer ` in front of
-    // it is a 401 that reads like a wrong key.
-    expect(sync?.headers.Authorization).toBe("sk-test");
-    expect(sync?.headers["X-AAI-Model"]).toBe("universal-3-5-pro");
-    // BYTES, and multipart — `stepFetch` takes no `FormData`, which is the
-    // point: a branded object handed to a fetch from another undici realm goes
-    // out as the string `[object FormData]`. `multipartBody` builds the envelope.
-    expect(sync?.headers["Content-Type"]).toMatch(/^multipart\/form-data; boundary=/);
-    const body = sync?.body;
-    expect(body).toBeInstanceOf(Uint8Array);
-    const decoded = new TextDecoder().decode(body as Uint8Array);
+    const sent = calls.find((call) => call.leg === "sync")?.body;
+    // Narrowed by a failing assertion rather than a cast: `expect.fail` returns
+    // `never`, and a body that is not bytes is a finding rather than a type error.
+    if (!(sent instanceof Uint8Array)) return expect.fail("the sync leg carries bytes");
+    const decoded = new TextDecoder().decode(sent);
     expect(decoded).toContain('name="audio"; filename="segment-0.wav"');
     // The WAV really rides in the part, header and all.
     expect(decoded).toContain("RIFF");
@@ -583,8 +542,7 @@ describe("transcribeSegment", () => {
     // page stitches whatever has arrived, so the transcript renders growing
     // instead of appearing when the last segment does. The reporter is the SDK's
     // published slot, which is the same seam `report()` goes through.
-    const reported = stubReporter();
-    stubs.push(reported.restore);
+    const reported = installStubReporter();
     stubProvider();
 
     await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT);
@@ -614,7 +572,7 @@ describe("transcribeSegment", () => {
     // `RetryableError` carrying `retryAfter` is the difference between draining
     // the 429s and re-collecting them `SEGMENT_CONCURRENCY` at a time on a
     // backoff the server did not choose.
-    stubProvider({ status: 429, body: { detail: "slow down" }, headers: { "Retry-After": "30" } });
+    stubProvider({ status: 429, message: "slow down", retryAfterSeconds: 30 });
     const failure = await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT).catch(
       (err: unknown) => err,
     );
@@ -626,14 +584,14 @@ describe("transcribeSegment", () => {
   });
 
   test("retries a rate limit that named no delay", async () => {
-    stubProvider({ status: 429, body: { detail: "slow down" } });
+    stubProvider({ status: 429, message: "slow down" });
     await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT)).rejects.toBeInstanceOf(
       RetryableError,
     );
   });
 
   test("fails FATALLY on a rejected request, naming what the endpoint said", async () => {
-    stubProvider({ status: 400, body: { error_code: "audio_too_short", message: "too short" } });
+    stubProvider({ status: 400, message: "too short" });
     await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT)).rejects.toThrow(
       /HTTP 400 — too short/,
     );
@@ -693,7 +651,7 @@ describe("the streaming flow", () => {
   function publishPartial(stored: number, declared: number, complete = false) {
     const bytes = new Uint8Array(44 + stored);
     bytes.set(wavFile(MONO_16K, declared), 0);
-    restore = stubUploads({
+    installStubUploads({
       [UPLOAD_ID]: { bytes, name: "standup.wav", type: "audio/wav", complete },
     });
   }
@@ -727,12 +685,12 @@ describe("the streaming flow", () => {
     // the file has finished — which is exactly what `transcribe` is for.
     const bytes = new Uint8Array(44 + 100);
     bytes.set(wavFile(MONO_16K, 100, { declaredDataSize: 0 }), 0);
-    restore = stubUploads({ [UPLOAD_ID]: { bytes, complete: false } });
+    installStubUploads({ [UPLOAD_ID]: { bytes, complete: false } });
     await expect(planStreamed(UPLOAD_ID)).rejects.toThrow(/declares no data length/);
   });
 
   test("planStreamed refuses a file that is not a WAV, terminally", async () => {
-    restore = stubUploads({ [UPLOAD_ID]: { bytes: new Uint8Array(2000), complete: false } });
+    installStubUploads({ [UPLOAD_ID]: { bytes: new Uint8Array(2000), complete: false } });
     // Fatal, not retryable: three more attempts read the same bytes.
     await expect(planStreamed(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
   });
@@ -763,21 +721,20 @@ describe("the async flow", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
-  const batchStubs: (() => void)[] = [];
-  afterEach(() => {
-    for (const undo of batchStubs.splice(0)) undo();
-  });
-
-  /** Answer the async API, recording what was sent. */
-  function stubBatch(answer: (url: string) => { status?: number; body?: unknown }) {
-    const stub = stubStepFetch((req) => answer(req.url));
-    batchStubs.push(stub.restore);
-    return stub.calls;
+  /**
+   * Answer the async API, recording what was sent.
+   *
+   * `installStubTranscribe` routes the three legs off the SDK's own endpoint
+   * constants — so a spec cannot pass because the fake and the step agree on a
+   * typo — and it restores itself when the test ends.
+   */
+  function stubBatch(options: Parameters<typeof installStubTranscribe>[0] = {}) {
+    return installStubTranscribe({ audioUrl: "https://cdn.example/abc", ...options }).calls;
   }
 
   test("uploadToProvider streams the file and answers with the provider's URL", async () => {
     publishRecording(new Uint8Array(5000), "standup.wav");
-    const calls = stubBatch(() => ({ body: { upload_url: "https://cdn.example/abc" } }));
+    const calls = stubBatch();
     await expect(uploadToProvider(UPLOAD_ID)).resolves.toEqual({
       audioUrl: "https://cdn.example/abc",
     });
@@ -786,9 +743,9 @@ describe("the async flow", () => {
 
   test("the file is STREAMED, so a step never holds a whole recording", async () => {
     publishRecording(new Uint8Array(5000), "standup.wav");
-    const calls = stubBatch(() => ({ body: { upload_url: "https://cdn.example/abc" } }));
+    const calls = stubBatch();
     await uploadToProvider(UPLOAD_ID);
-    // `stubStepFetch` drains a streaming body into bytes, so what this asserts is that
+    // The fake drains a streaming body into bytes, so what this asserts is that
     // every byte went out — the streaming is what keeps a gigabyte off the heap, and
     // the bytes arriving intact is what says the windowing is right.
     const sent = calls[0]?.body;
@@ -801,7 +758,7 @@ describe("the async flow", () => {
     // thing five times and re-uploaded 24 MB on each attempt. The split is what makes
     // a retry of the cheap half cost the cheap half.
     publishRecording(new Uint8Array(5000));
-    const calls = stubBatch(() => ({ status: 400, body: { error: "bad field" } }));
+    const calls = stubBatch({ failure: { leg: "submit", status: 400, message: "bad field" } });
     await expect(createJob("https://cdn.example/abc")).rejects.toBeInstanceOf(FatalError);
     // One call, and it is not the upload.
     expect(calls).toHaveLength(1);
@@ -810,7 +767,7 @@ describe("the async flow", () => {
 
   test("createJob asks for `speech_models`, plural — the singular field is a 400", async () => {
     publishRecording(new Uint8Array(10));
-    const calls = stubBatch(() => ({ body: { id: "tr_1" } }));
+    const calls = stubBatch({ jobIdPrefix: "tr_" });
     await expect(createJob("https://cdn.example/abc")).resolves.toEqual({ id: "tr_1" });
     const sent = JSON.parse(String(calls[0]?.body)) as Record<string, unknown>;
     // The async API deprecated `speech_model` and answers 400 for any current model
@@ -822,7 +779,7 @@ describe("the async flow", () => {
 
   test("a job the provider gave up on is TERMINAL, not polled forever", async () => {
     publishRecording(new Uint8Array(10));
-    stubBatch(() => ({ body: { status: "error", error: "audio too quiet" } }));
+    stubBatch({ jobError: "audio too quiet" });
     // The provider has decided; no number of polls changes it, so this must not come
     // back as "not done yet".
     await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).rejects.toBeInstanceOf(FatalError);
@@ -830,13 +787,15 @@ describe("the async flow", () => {
 
   test("pollTranscript answers `done` on completed and not before", async () => {
     publishRecording(new Uint8Array(10));
-    stubBatch(() => ({ body: { status: "processing" } }));
+    stubBatch({ pendingPolls: 1 });
     await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toEqual({ done: false });
   });
 
   test("an unknown status is NOT done, so a new one cannot end a run early", async () => {
     publishRecording(new Uint8Array(10));
-    stubBatch(() => ({ body: {} }));
+    // Raw rather than `stubTranscribe`: a body with no status at all is not a
+    // shape the fake can stage, and it is the whole point of this spec.
+    installStubStepFetch(() => ({ body: {} }));
     await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toMatchObject({
       done: false,
     });
@@ -846,9 +805,7 @@ describe("the async flow", () => {
     publishRecording(new Uint8Array(10), "standup.wav");
     // It used to poll for a status and then fetch the identical URL again for the
     // text the poll already had in its hand.
-    const calls = stubBatch(() => ({
-      body: { status: "completed", text: "  hello there  ", audio_duration: 12.5 },
-    }));
+    const calls = stubBatch({ text: "  hello there  ", durationSec: 12.5 });
     await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toMatchObject({
       done: true,
       transcript: {
@@ -866,7 +823,7 @@ describe("the async flow", () => {
 
   test("a rate limit is RETRYABLE, so a busy minute does not fail the run", async () => {
     publishRecording(new Uint8Array(10));
-    stubBatch(() => ({ status: 429, body: { error: "slow down" } }));
+    stubBatch({ failure: { leg: "poll", status: 429, message: "slow down" } });
     await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).rejects.toBeInstanceOf(
       RetryableError,
     );
@@ -874,7 +831,7 @@ describe("the async flow", () => {
 
   test("all three flows report the same SHAPE, which is what lets one page render any", async () => {
     publishRecording(new Uint8Array(10), "standup.wav");
-    stubBatch(() => ({ body: { status: "completed", text: "hi", audio_duration: 1 } }));
+    stubBatch({ text: "hi", durationSec: 1 });
     const progress = await pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT);
     if (!progress.done) return expect.fail("the stub reports a completed job");
     const batched = progress.transcript;
@@ -945,71 +902,20 @@ describe("normalizing the recording", () => {
     // the caller stored. A step that copied it would double the storage every run
     // pays for and would still report success.
     publishRecording(wavFile(MONO_16K, 32_000), "standup.wav");
-    const reporter = stubReporter();
-    try {
-      await expect(normalizeRecording(UPLOAD_ID)).resolves.toEqual({
-        recording: UPLOAD_ID,
-        converted: false,
-      });
-      expect(reporter.lines.join(" ")).toContain("already linear-PCM WAV");
-    } finally {
-      reporter.restore();
-    }
-  });
-
-  test("a conversion that ffmpeg REFUSED is fatal, so it is not attempted five times", () => {
-    // `exit` means ffmpeg read the file and would read it the same way again.
-    expect(() =>
-      classifyFfmpeg(
-        new FfmpegError({
-          kind: "exit",
-          message: "Invalid data found when processing input",
-          binary: "ffmpeg",
-          argv: [],
-          exitCode: 1,
-        }),
-      ),
-    ).toThrow(FatalError);
-  });
-
-  test("a conversion that ran out of time keeps its retries, and its argv", () => {
-    // Rethrown UNCHANGED rather than wrapped, which is what `toStepError` does
-    // with an error carrying no verdict — and the DevKit's default for anything
-    // that is not a `FatalError` is to retry. Asserting the class survives is
-    // asserting the diagnosis does: `argv` is the command you paste into a shell,
-    // and a `new RetryableError(message)` here would throw it away.
-    const timedOut = new FfmpegError({
-      kind: "timeout",
-      message: "timed out",
-      binary: "ffmpeg",
-      argv: ["-i", "source"],
+    const reporter = installStubReporter();
+    await expect(normalizeRecording(UPLOAD_ID)).resolves.toEqual({
+      recording: UPLOAD_ID,
+      converted: false,
     });
-    expect(() => classifyFfmpeg(timedOut)).toThrow(timedOut);
-    expect(() => classifyFfmpeg(timedOut)).not.toThrow(FatalError);
+    expect(reporter.lines.join(" ")).toContain("already linear-PCM WAV");
   });
 
-  test("no ffmpeg at all is fatal — a retry cannot install one", () => {
-    // The `aai dev` case. Fatal deliberately: the message already carries the
-    // install instructions, and four more attempts only delay a person reading it.
-    expect(() =>
-      classifyFfmpeg(
-        new FfmpegError({
-          kind: "missing-binary",
-          message: "ffmpeg is not installed",
-          binary: "ffmpeg",
-          argv: [],
-        }),
-      ),
-    ).toThrow(FatalError);
-  });
-
-  test("something that is not an ffmpeg failure at all is fatal", () => {
-    // The store rejecting a write, say. Fatal rather than retryable because this
-    // step's own `maxRetries` exists for the I/O halves that report themselves as
-    // transient; an unrecognized error has said nothing about being worth another
-    // attempt, and guessing yes is how a run burns its budget before failing.
-    expect(() => classifyFfmpeg(new Error("no space left on device"))).toThrow(FatalError);
-  });
+  // The ffmpeg VERDICT is no longer tested here, and its absence is the change
+  // rather than a gap: `throwFfmpegStepError` on `@alexkroman1/aai/step-errors`
+  // owns it now, with every arm pinned in `sdk/step-errors.test.ts` — a refused
+  // file, a missing binary, a timeout rethrown UNCHANGED so its `argv` survives,
+  // and a cause that is not an ffmpeg failure at all. What stays above is what is
+  // still this desk's: WHICH files it decides to convert.
 });
 
 describe("expectedSegments", () => {
@@ -1067,19 +973,15 @@ describe("the conversion, up to the spawn", () => {
       new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]),
       "standup.m4a",
     );
-    const reporter = stubReporter();
-    try {
-      // Fatal, not retryable: four more attempts find the same missing binary, and
-      // the message already carries the install instructions.
-      await expect(normalizeRecording(UPLOAD_ID)).rejects.toThrow(/ffprobe/);
-      await expect(normalizeRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
-      // It got as far as deciding the file needs converting — the failure is the
-      // binary, not the input.
-      expect(reporter.lines.join(" ")).toContain("standup.m4a");
-      expect(normalizeRecording.maxRetries).toBe(5);
-    } finally {
-      reporter.restore();
-    }
+    const reporter = installStubReporter();
+    // Fatal, not retryable: four more attempts find the same missing binary, and
+    // the message already carries the install instructions.
+    await expect(normalizeRecording(UPLOAD_ID)).rejects.toThrow(/ffprobe/);
+    await expect(normalizeRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
+    // It got as far as deciding the file needs converting — the failure is the
+    // binary, not the input.
+    expect(reporter.lines.join(" ")).toContain("standup.m4a");
+    expect(normalizeRecording.maxRetries).toBe(5);
   });
 
   test("leaves no temp directory behind when the conversion fails", async () => {
@@ -1089,12 +991,8 @@ describe("the conversion, up to the spawn", () => {
     const leaked = (names: string[]) => names.filter((n) => n.startsWith("aai-normalize-"));
     const before = leaked(await readdir(tmpdir()));
     publishRecording(new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70]), "standup.m4a");
-    const reporter = stubReporter();
-    try {
-      await expect(normalizeRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
-      expect(leaked(await readdir(tmpdir()))).toEqual(before);
-    } finally {
-      reporter.restore();
-    }
+    installStubReporter();
+    await expect(normalizeRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
+    expect(leaked(await readdir(tmpdir()))).toEqual(before);
   });
 });

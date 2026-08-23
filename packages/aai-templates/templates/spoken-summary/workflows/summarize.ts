@@ -49,19 +49,17 @@
  * expensive one.
  */
 
-import {
-  report,
-  stepGenerateJson,
-  stepSpeak,
-  TRANSCRIBE_API,
-  writeUpload,
-} from "@alexkroman1/aai/step";
-import { throwStepError } from "@alexkroman1/aai/step-errors";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { report, stepSpeak, TRANSCRIBE_API, writeUpload } from "@alexkroman1/aai/step";
+import { stepGenerateJsonClassified } from "@alexkroman1/aai/step-errors";
+import { countWords, omitUndefined } from "@alexkroman1/aai/utils";
+// ERASED at build time, so the body can name the schema's own output type without
+// a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
+// for `WorkflowOutputOf`.
+import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 import { sleep } from "workflow";
 import { z } from "zod";
+import type { spokenSummary } from "../agent.ts";
 import {
-  countWords,
   createJob,
   MAX_POLLS,
   POLL_INTERVAL,
@@ -128,13 +126,9 @@ export type SpokenSummary = {
 };
 
 /** Transcribe a recording, summarize it, and read the summary back. */
-export async function spokenSummaryFlow(input: {
-  recording: string;
-  // `| undefined` explicitly, not merely optional: `exactOptionalPropertyTypes`
-  // is on repo-wide, and what a zod `.optional()` infers is a property that may
-  // be PRESENT and undefined.
-  voice?: string | undefined;
-}): Promise<SpokenSummary> {
+export async function spokenSummaryFlow(
+  input: WorkflowInputOf<typeof spokenSummary>,
+): Promise<SpokenSummary> {
   "use workflow";
 
   const transcript = await transcribe(input.recording);
@@ -188,7 +182,7 @@ export async function summarize(
   "use step";
 
   await report("Summarizing the transcript.");
-  const reply = await stepGenerateJson(
+  const reply = await stepGenerateJsonClassified(
     "Summarize this transcript of a recording.\n\n" +
       "Answer with JSON only, in this shape:\n" +
       `{"headline": "...", "points": ["..."], "spoken": "..."}\n\n` +
@@ -204,9 +198,10 @@ export async function summarize(
       system: "You summarize recordings. You answer with JSON and nothing else.",
       schema: SummaryReply,
     },
-    // Classified off the gateway's own status: a 429 is worth another attempt
-    // and a 400 is not, and `throwStepError` is what tells the DevKit which.
-  ).catch(throwStepError);
+    // The `Classified` caller is `stepGenerateJson` plus `throwStepError`, which
+    // reads the gateway's own status: a 429 is worth another attempt and a 400
+    // is not, and that is what tells the DevKit which.
+  );
 
   return { headline: reply.headline, points: reply.points.slice(0, POINTS), spoken: reply.spoken };
 }

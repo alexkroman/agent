@@ -86,8 +86,9 @@
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
 import { ASSEMBLYAI_TTS_DEFAULT_VOICE, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
+import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
-import { auditFlow } from "./workflows/audit.ts";
+import { auditFlow, type CallAudit } from "./workflows/audit.ts";
 
 /**
  * The voices the form offers.
@@ -113,30 +114,42 @@ const VOICES = Object.entries(ASSEMBLYAI_TTS_VOICES)
 const [FIRST_VOICE = ASSEMBLYAI_TTS_DEFAULT_VOICE, ...OTHER_VOICES] = VOICES;
 
 /**
+ * The run input, as its own const.
+ *
+ * Named rather than inline because {@link audit} carries an explicit type, and
+ * that annotation is what lets `workflows/audit.ts` name
+ * `WorkflowInputOf<typeof audit>` for its body's parameter: the body's own
+ * signature would otherwise be part of what infers this declaration's type, and
+ * TypeScript refuses the cycle (`TS7022`).
+ */
+const auditInput = z.object({
+  // A plain string, because an upload id is what the run really receives. What
+  // makes it a file picker rather than a text box is the `uploads` line below.
+  //
+  // "Anything" is not marketing: the first step hands the file to ffmpeg, so the
+  // accepted set is ffmpeg's rather than this template's — a video's audio track
+  // included, since the conversion drops the video.
+  recording: z.string().describe("Any recording — WAV, MP3, M4A, or a video's audio track"),
+  // An enum, so the form renders a SELECT rather than a text box — which is the
+  // whole reason the list is derived above rather than left free-form. Optional,
+  // so the SDK's own default voice applies when nobody chooses.
+  voice: z
+    .enum([FIRST_VOICE, ...OTHER_VOICES])
+    .optional()
+    .describe("Voice to read the audit in"),
+});
+
+/**
  * The declaration: schema, description, and the directive body.
  *
  * Exported so `WorkflowOutputOf<typeof audit>` names the output type in one place —
  * including from `client.tsx`, where `import type` is erased and so bundles nothing
- * server-side.
+ * server-side — and so `workflows/audit.ts` can name `WorkflowInputOf<typeof audit>`
+ * for the body's parameter.
  */
-export const audit = workflow({
+export const audit: WorkflowDef<typeof auditInput, CallAudit> = workflow({
   description: "Level a call recording, transcribe it at its pauses, and audit what was said",
-  input: z.object({
-    // A plain string, because an upload id is what the run really receives. What
-    // makes it a file picker rather than a text box is the `uploads` line below.
-    //
-    // "Anything" is not marketing: the first step hands the file to ffmpeg, so the
-    // accepted set is ffmpeg's rather than this template's — a video's audio track
-    // included, since the conversion drops the video.
-    recording: z.string().describe("Any recording — WAV, MP3, M4A, or a video's audio track"),
-    // An enum, so the form renders a SELECT rather than a text box — which is the
-    // whole reason the list is derived above rather than left free-form. Optional,
-    // so the SDK's own default voice applies when nobody chooses.
-    voice: z
-      .enum([FIRST_VOICE, ...OTHER_VOICES])
-      .optional()
-      .describe("Voice to read the audit in"),
-  }),
+  input: auditInput,
   // The one line that makes the form take a file: `<WorkflowFields>` renders a
   // picker for this property, `useWorkflowSubmit` stores the chosen file, and the
   // ingest step reads it back with `readUpload`.

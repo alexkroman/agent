@@ -18,7 +18,7 @@
  *
  * Splitting steps buys a cheaper retry: a failure re-runs one stage instead of
  * five. It costs a MATERIALIZATION each, because a temp file cannot cross a step
- * boundary (see `temp-media.ts`) — so a five-step version reads the whole
+ * boundary (see `@alexkroman1/aai/step-files`) — so a five-step version reads the whole
  * recording out of the upload store five times, and on a 700 MB file that is the
  * expensive part by an order of magnitude. The decode passes are cheap: ffmpeg
  * resamples two orders of magnitude faster than realtime, so a two-hour recording
@@ -43,26 +43,32 @@
  * (one event per pause, so their size grows with the recording and a tail would
  * silently drop the earliest ones). Both are read here.
  *
- * ## The verdict lives in another file, and has to
+ * ## Everything ffmpeg-shaped is named from inside the step BODY
  *
- * `classifyFfmpeg` reads as if it belongs beside the step that calls it, and it
- * cannot: a name this module holds at MODULE scope keeps its import, and the
- * workflow bundle — a `node:vm` Script with no `require` — cannot load one that
- * spawns a child process. `ffmpeg-verdict.ts` carries the argument in full. Its
- * sibling `analyse` stays here: everything IT names is pure. The ffmpeg calls
- * below are inside the step body, which the workflow transform removes along
- * with the imports it is the only user of.
+ * `@alexkroman1/aai/ffmpeg` and `@alexkroman1/aai/step-files` both reach a
+ * `node:` builtin, and a name this module holds at MODULE scope keeps its import
+ * in the workflow bundle — which is compiled as a `node:vm` Script with no
+ * `require`. The import statements are at the top, as the SDK's own examples
+ * write them, and every name they bind is referenced only inside
+ * {@link ingestRecording}'s body, which the workflow transform removes along
+ * with the imports it is the only user of. A module-scope FUNCTION naming one is
+ * what breaks a run at replay; this template used to carry a whole
+ * `ffmpeg-verdict.ts` because of it, and `throwFfmpegStepError` — which reaches
+ * no `node:` builtin at all — is what dissolved the boundary.
+ *
+ * `analyse` stays here for the other half of that rule: everything IT names is
+ * pure, so it may survive into the bundle.
  */
 
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
-import { pcmDurationMs, report, uploadInfo, writeUpload } from "@alexkroman1/aai/step";
-import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
-import { classifyFfmpeg } from "./ffmpeg-verdict.ts";
+import { pcmDurationMs, report, uploadInfo } from "@alexkroman1/aai/step";
+import { throwFatalStepError, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
+import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
+import { formatBytes, formatDuration, plural } from "@alexkroman1/aai/utils";
 import {
   ANALYSIS_FORMAT,
-  clock,
   type Loudness,
   MediaAnalysisError,
   measureLoudnessArgs,
@@ -72,14 +78,13 @@ import {
   type Silence,
   speechFraction,
 } from "./media.ts";
-import { fileChunks, materializeUpload, withTempDir } from "./temp-media.ts";
 
 /**
  * How long any one ffmpeg invocation may run before it is killed.
  *
  * Well past what the work takes, because the reason for a bound at all is a file
  * that makes a decoder pathological rather than one that is merely long. A
- * `timeout` is retryable and an `exit` is not; see `ffmpeg-verdict.ts`.
+ * `timeout` is retryable and an `exit` is not; `throwFfmpegStepError` decides.
  */
 const FFMPEG_TIMEOUT_MS = 20 * 60_000;
 
@@ -119,88 +124,93 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
   "use step";
 
   const stored = await uploadInfo(uploadId);
-  await report(`Reading ${stored.name || uploadId} (${mb(stored.size)}).`);
+  await report(`Reading ${stored.name || uploadId} (${formatBytes(stored.size)}).`);
 
-  return await withTempDir(async (dir) => {
-    const source = join(dir, "source");
-    const normalized = join(dir, "audio.pcm");
-    const silenceLog = join(dir, "silence.txt");
+  return await withTempDir(
+    async (dir) => {
+      const source = join(dir, "source");
+      const normalized = join(dir, "audio.pcm");
+      const silenceLog = join(dir, "silence.txt");
 
-    await materializeUpload(uploadId, stored.size, source);
+      await readUploadToFile(uploadId, source, { size: stored.size });
 
-    // What it WAS, for the progress log and the page. Worth one ffprobe: "41
-    // minutes of aac" explains the shape of the run, where "the recording" leaves
-    // a reader guessing what the desk decided. On a temp FILE rather than a pipe,
-    // so a trailing index is readable.
-    const probed = await probeMedia(source, { timeoutMs: FFMPEG_TIMEOUT_MS }).catch(classifyFfmpeg);
-    const codec = probed.audio?.codec ?? "unknown";
-    await report(
-      `Levelling ${describeSource(codec, probed.durationSec)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
-    );
+      // What it WAS, for the progress log and the page. Worth one ffprobe: "41
+      // minutes of aac" explains the shape of the run, where "the recording" leaves
+      // a reader guessing what the desk decided. On a temp FILE rather than a pipe,
+      // so a trailing index is readable.
+      const probed = await probeMedia(source, { timeoutMs: FFMPEG_TIMEOUT_MS }).catch(
+        throwFfmpegStepError,
+      );
+      const codec = probed.audio?.codec ?? "unknown";
+      await report(
+        `Levelling ${describeSource(codec, probed.durationSec)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
+      );
 
-    // Pass one: measure. `-f null -` decodes every frame and writes no audio, so
-    // this costs a decode and produces five numbers.
-    const measured = await runFfmpeg(measureLoudnessArgs(source), {
-      timeoutMs: FFMPEG_TIMEOUT_MS,
-    }).catch(classifyFfmpeg);
-    const loudness = analyse(() => parseLoudness(measured.stderr));
+      // Pass one: measure. `-f null -` decodes every frame and writes no audio, so
+      // this costs a decode and produces five numbers.
+      const measured = await runFfmpeg(measureLoudnessArgs(source), {
+        timeoutMs: FFMPEG_TIMEOUT_MS,
+      }).catch(throwFfmpegStepError);
+      const loudness = analyse(() => parseLoudness(measured.stderr));
 
-    // Pass two: apply the measurement, find the pauses, write the audio.
-    await runFfmpeg(normalizeArgs(source, loudness, normalized, silenceLog), {
-      timeoutMs: FFMPEG_TIMEOUT_MS,
-    }).catch(classifyFfmpeg);
+      // Pass two: apply the measurement, find the pauses, write the audio.
+      await runFfmpeg(normalizeArgs(source, loudness, normalized, silenceLog), {
+        timeoutMs: FFMPEG_TIMEOUT_MS,
+      }).catch(throwFfmpegStepError);
 
-    // The duration comes from the BYTE COUNT, not from the original's header or
-    // from ffprobe. It is the only measurement that agrees with the byte offsets
-    // the fan-out will use — a container's declared duration can disagree with
-    // what was actually decoded (an AAC file's encoder padding puts this one ~16ms
-    // over), and a segment planned against the wrong one runs off the end.
-    const bytes = (await stat(normalized)).size;
-    const durationMs = pcmDurationMs(bytes, ANALYSIS_FORMAT);
+      // The duration comes from the BYTE COUNT, not from the original's header or
+      // from ffprobe. It is the only measurement that agrees with the byte offsets
+      // the fan-out will use — a container's declared duration can disagree with
+      // what was actually decoded (an AAC file's encoder padding puts this one ~16ms
+      // over), and a segment planned against the wrong one runs off the end.
+      const bytes = (await stat(normalized)).size;
+      const durationMs = pcmDurationMs(bytes, ANALYSIS_FORMAT);
 
-    // Verified on ffmpeg 6.1: `ametadata` creates the file at filter-init, so a
-    // recording with no pause in it leaves an EMPTY log rather than no log. A
-    // missing file here is therefore a real failure and not a case to tolerate.
-    const log = await readFile(silenceLog, "utf-8");
-    const silences = analyse(() => parseSilences(log, durationMs / 1000));
+      // Verified on ffmpeg 6.1: `ametadata` creates the file at filter-init, so a
+      // recording with no pause in it leaves an EMPTY log rather than no log. A
+      // missing file here is therefore a real failure and not a case to tolerate.
+      const log = await readFile(silenceLog, "utf-8");
+      const silences = analyse(() => parseSilences(log, durationMs / 1000));
 
-    const written = await writeUpload(fileChunks(normalized), {
-      // Named after the original, so a download reads as the recording it came
-      // from. `.pcm` because that is what it is — raw samples with no header, and
-      // a `.wav` name on a headerless file is one no player will open.
-      name: `${baseName(stored.name || uploadId)}.pcm`,
-      // Not `audio/wav`: the type is served back on the byte route, and claiming a
-      // container this file does not have would be a lie a browser acts on. Not
-      // `audio/L16` either, which looks right and is not — that type is defined as
-      // BIG-endian 16-bit PCM, where this is `s16le`. Nothing plays this file; the
-      // fan-out reads byte ranges out of it and puts a real header back on each one
-      // with `encodeWav`.
-      type: "application/octet-stream",
-    });
+      const written = await writeUploadFromFile(normalized, {
+        // Named after the original, so a download reads as the recording it came
+        // from. `.pcm` because that is what it is — raw samples with no header, and
+        // a `.wav` name on a headerless file is one no player will open.
+        name: `${baseName(stored.name || uploadId)}.pcm`,
+        // Not `audio/wav`: the type is served back on the byte route, and claiming a
+        // container this file does not have would be a lie a browser acts on. Not
+        // `audio/L16` either, which looks right and is not — that type is defined as
+        // BIG-endian 16-bit PCM, where this is `s16le`. Nothing plays this file; the
+        // fan-out reads byte ranges out of it and puts a real header back on each one
+        // with `encodeWav`.
+        type: "application/octet-stream",
+      });
 
-    await report(
-      `Levelled ${clock(durationMs)} from ${loudness.inputLufs} LUFS, ` +
-        `${Math.round(speechFraction(silences, durationMs / 1000) * 100)}% speech across ` +
-        `${silences.length} pause${silences.length === 1 ? "" : "s"}.`,
-    );
+      await report(
+        `Levelled ${formatDuration(durationMs)} from ${loudness.inputLufs} LUFS, ` +
+          `${Math.round(speechFraction(silences, durationMs / 1000) * 100)}% speech across ` +
+          `${silences.length} ${plural(silences.length, "pause")}.`,
+      );
 
-    return {
-      audio: written.id,
-      source: stored.name || uploadId,
-      codec,
-      durationMs,
-      bytes,
-      loudness,
-      silences,
-    };
-  });
+      return {
+        audio: written.id,
+        source: stored.name || uploadId,
+        codec,
+        durationMs,
+        bytes,
+        loudness,
+        silences,
+      };
+    },
+    { prefix: "aai-call-audit-" },
+  );
 }
 
 /**
  * Retries beyond the default 3.
  *
  * Not because a conversion is flaky — a corrupt file fails identically forever,
- * and `classifyFfmpeg` is what stops the DevKit retrying that. It is the
+ * and `throwFfmpegStepError` is what stops the DevKit retrying that. It is the
  * two I/O halves that are worth another attempt: this step reads a whole
  * recording out of the store and writes a whole one back, and either can lose a
  * connection on a file this size.
@@ -229,7 +239,8 @@ export function analyse<T>(read: () => T): T {
 
 /** `41:20 of aac`, or as much of that as ffprobe would say. */
 function describeSource(codec: string, durationSec: number | undefined): string {
-  const length = durationSec === undefined ? undefined : clock(Math.round(durationSec * 1000));
+  const length =
+    durationSec === undefined ? undefined : formatDuration(Math.round(durationSec * 1000));
   return length === undefined ? codec : `${length} of ${codec}`;
 }
 
@@ -237,9 +248,4 @@ function describeSource(codec: string, durationSec: number | undefined): string 
 function baseName(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? name.slice(0, dot) : name;
-}
-
-/** A size a person can read, because the number that matters is the scale. */
-function mb(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

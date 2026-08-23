@@ -76,8 +76,9 @@
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
 import { ASSEMBLYAI_TTS_DEFAULT_VOICE, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
+import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
-import { spokenSummaryFlow } from "./workflows/summarize.ts";
+import { type SpokenSummary, spokenSummaryFlow } from "./workflows/summarize.ts";
 
 /**
  * The voices the form offers.
@@ -103,27 +104,39 @@ const VOICES = Object.entries(ASSEMBLYAI_TTS_VOICES)
 const [FIRST_VOICE = ASSEMBLYAI_TTS_DEFAULT_VOICE, ...OTHER_VOICES] = VOICES;
 
 /**
+ * The run input, as its own const.
+ *
+ * Named rather than inline because {@link spokenSummary} carries an explicit
+ * type, and that annotation is what lets `workflows/summarize.ts` name
+ * `WorkflowInputOf<typeof spokenSummary>` for its body's parameter: the body's
+ * own signature would otherwise be part of what infers this declaration's type,
+ * and TypeScript refuses the cycle (`TS7022`).
+ */
+const spokenSummaryInput = z.object({
+  // A plain string, because an upload id is what the run really receives.
+  // What makes it a file picker rather than a text box is the `uploads` line
+  // below.
+  recording: z.string().describe("A recording to summarize — WAV, MP3 or M4A"),
+  // An enum, so the form renders a SELECT rather than a text box — which is
+  // the whole reason the list is derived above rather than left free-form.
+  // Optional, so the SDK's own default voice applies when nobody chooses.
+  voice: z
+    .enum([FIRST_VOICE, ...OTHER_VOICES])
+    .optional()
+    .describe("Voice to read the summary in"),
+});
+
+/**
  * The declaration: schema, description, and the directive body.
  *
  * Exported so `WorkflowOutputOf<typeof spokenSummary>` names the output type in
  * one place — including from `client.tsx`, where `import type` is erased and so
- * bundles nothing server-side.
+ * bundles nothing server-side — and so `workflows/summarize.ts` can name
+ * `WorkflowInputOf<typeof spokenSummary>` for the body's parameter.
  */
-export const spokenSummary = workflow({
+export const spokenSummary: WorkflowDef<typeof spokenSummaryInput, SpokenSummary> = workflow({
   description: "Transcribe a recording, summarize it, and read the summary back as audio",
-  input: z.object({
-    // A plain string, because an upload id is what the run really receives.
-    // What makes it a file picker rather than a text box is the `uploads` line
-    // below.
-    recording: z.string().describe("A recording to summarize — WAV, MP3 or M4A"),
-    // An enum, so the form renders a SELECT rather than a text box — which is
-    // the whole reason the list is derived above rather than left free-form.
-    // Optional, so the SDK's own default voice applies when nobody chooses.
-    voice: z
-      .enum([FIRST_VOICE, ...OTHER_VOICES])
-      .optional()
-      .describe("Voice to read the summary in"),
-  }),
+  input: spokenSummaryInput,
   // The one line that makes the form take a file: `<WorkflowFields>` renders a
   // picker for this property, `useWorkflowSubmit` stores the chosen file, and
   // the step that transcribes it reads it back with `readUpload`.
