@@ -182,8 +182,16 @@ describe("following the bottom", () => {
     stubScroll(el, { scrollHeight: 1000, clientHeight: 100, top: 900 });
     fireEvent.scroll(el);
 
+    // `waitFor`, not a bare assertion after `findByText`. The follow handler is
+    // a `useEffect`, i.e. a PASSIVE effect React flushes after paint — so the
+    // text being in the DOM does not mean the scroll has happened yet, and the
+    // snapshot form was a race that lost about one run in six under load
+    // (`expected 900 to be 1000`, on a green branch). It still fails if the
+    // follow is removed: `scrollTop` then stays at 900 until the wait expires.
     await screen.findByText("second");
-    expect(el.scrollTop).toBe(1000);
+    await waitFor(() => {
+      expect(el.scrollTop).toBe(1000);
+    });
   });
 
   test("but not while they have scrolled up to read something", async () => {
