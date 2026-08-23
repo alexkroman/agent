@@ -1,7 +1,7 @@
 {
   "agent": {
-    "current": 16,
-    "supported": [3, 10, 11, 12, 13, 15, 16],
+    "current": 17,
+    "supported": [3, 10, 11, 12, 13, 15, 16, 17],
     "dropped": {
       "1": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
       "2": "Dropped with epoch 8 and for the same reason: this example declared its tools with `agent({ tools })`, which no longer type-checks. See epoch 8's entry for the whole argument.",
@@ -36,14 +36,16 @@
     }
   },
   "ffmpeg": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "llm": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Thirty-nine symbols left this subpath: the nine *_KIND/*_API_KEY_ENV pairs (to @alexkroman1/aai/host-internal), the nine narrowed *Provider aliases (to nowhere — zero references outside their own modules), ProviderDescriptor (to the root barrel, where one interface has one reference page instead of four), and the generated gateway catalog ASSEMBLYAI_GATEWAY_MODELS/GatewayModelInfo/gatewayModelIds, whose 30 inlined rows made a routine regeneration move this contract's hash. The eight byte-identical vendor option interfaces collapsed into one ModelOptions. The epoch-1 example named twenty-eight of the removed symbols."
+    }
   },
   "procedure": {
     "current": 2,
@@ -53,9 +55,11 @@
     }
   },
   "s2s": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Six symbols left this subpath: the four *_KIND/*_API_KEY_ENV constants (to @alexkroman1/aai/host-internal) and both narrowed *Provider aliases. The epoch-1 example named all six. AssemblyAIS2sOptions also became an interface, matching the other three stages, and gained apiKeyEnv — a field the host had always read off any descriptor generically, so S2S honoured an override its own options type could not spell."
+    }
   },
   "spoken": {
     "current": 1,
@@ -86,10 +90,11 @@
     "dropped": {}
   },
   "stt": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "The STT opener contract (SttOpenOptions, SttSession, SttEvents, SttError, SttTurnMeta, Unsubscribe) moved to @alexkroman1/aai-runtime, beside registerSttKind — a host application registers a kind and an agent author never does. contracts/compatibility/stt/v1.ts imports them from /stt, so the v1 authoring style no longer compiles."
+      "1": "The STT opener contract (SttOpenOptions, SttSession, SttEvents, SttError, SttTurnMeta, Unsubscribe) moved to @alexkroman1/aai-runtime, beside registerSttKind — a host application registers a kind and an agent author never does. contracts/compatibility/stt/v1.ts imports them from /stt, so the v1 authoring style no longer compiles.",
+      "2": "Sixteen symbols an author never typed left this subpath: the eight *_KIND/*_API_KEY_ENV constants (to @alexkroman1/aai/host-internal, where the resolve*Settings helpers that read them already live) and the four narrowed *Provider aliases, which had zero references outside their own modules and restated a kind tag the factory already sets. Four renames finish it — AssemblyAIOptions to AssemblyAISttOptions, ASSEMBLYAI_STREAMING_EU_URL to ASSEMBLYAI_STT_EU_URL, DEFAULT_DEEPGRAM_ENDPOINTING_MS to DEEPGRAM_DEFAULT_ENDPOINTING_MS, and elevenlabs() to elevenLabsStt() — plus two option-field renames (languageCode to language, languageHints to languages). The epoch-2 example named eleven of the removed symbols and both old field spellings; no import list from it resolves."
     }
   },
   "testing": {
@@ -116,10 +121,11 @@
     "dropped": {}
   },
   "tts": {
-    "current": 2,
-    "supported": [2],
+    "current": 3,
+    "supported": [3],
     "dropped": {
-      "1": "The TTS opener contract (TtsOpenOptions, TtsSession, TtsEvents, TtsError, TtsWordTiming, Unsubscribe) moved to @alexkroman1/aai-runtime, beside registerTtsKind. contracts/compatibility/tts/v1.ts imports them from /tts, so the v1 authoring style no longer compiles."
+      "1": "The TTS opener contract (TtsOpenOptions, TtsSession, TtsEvents, TtsError, TtsWordTiming, Unsubscribe) moved to @alexkroman1/aai-runtime, beside registerTtsKind. contracts/compatibility/tts/v1.ts imports them from /tts, so the v1 authoring style no longer compiles.",
+      "2": "Ten symbols left this subpath: the six *_KIND/*_API_KEY_ENV constants and the 21-element ASSEMBLYAI_TTS_DEPRECATED_VOICES tuple (to @alexkroman1/aai/host-internal — the retired list answers the template gate's question, not an author's, and no template read it), and the three narrowed *Provider aliases. The epoch-2 example named seven of them. The voice catalog an author does read, ASSEMBLYAI_TTS_VOICES, is unchanged and now on the root barrel as well."
     }
   },
   "uploads": {

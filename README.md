@@ -166,7 +166,7 @@ the AssemblyAI default. `llm` also takes a bare model id, so
 
 | Subpath | Factories |
 | --- | --- |
-| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgram`, `elevenlabs`, `soniox` |
+| `@alexkroman1/aai/stt` | `assemblyAIStt`, `deepgram`, `elevenLabsStt`, `soniox` |
 | `@alexkroman1/aai/llm` | `assemblyAILlm`, `anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway` |
 | `@alexkroman1/aai/tts` | `assemblyAITts`, `cartesia`, `rime` |
 

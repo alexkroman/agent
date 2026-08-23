@@ -24,8 +24,8 @@ export interface SonioxOptions {
    */
   model?: string;
   /**
-   * Language hints (ISO 639-1 codes) that bias decoding toward the expected
-   * languages. Example: `["en", "es"]`.
+   * Language codes (ISO 639-1) that bias decoding toward the expected
+   * languages, sent as Soniox's `language_hints`. Example: `["en", "es"]`.
    *
    * **Unset means AUTO-DETECT, not English.** The field is omitted from the
    * request entirely, so Soniox decides — which is the same default
@@ -33,14 +33,8 @@ export interface SonioxOptions {
    * whose unset `language` is `"en"`. Pass the codes for a line you know is
    * monolingual, or the handful you expect on one that is not.
    */
-  languageHints?: readonly string[];
+  languages?: readonly string[];
 }
-
-/** Descriptor returned by {@link soniox}. */
-export type SonioxProvider = SttProvider & {
-  readonly kind: typeof SONIOX_KIND;
-  readonly options: SonioxOptions;
-};
 
 /**
  * Build a Soniox STT descriptor.
@@ -57,14 +51,14 @@ export type SonioxProvider = SttProvider & {
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   stt: soniox({ model: "stt-rt-v3", languageHints: ["en", "es"] }),
+ *   stt: soniox({ model: "stt-rt-v3", languages: ["en", "es"] }),
  * });
  * ```
  *
- * Unset, `languageHints` is omitted from the request and Soniox
+ * Unset, `languages` is omitted from the request and Soniox
  * auto-detects — which is not the same as English.
  */
-export function soniox(opts: SonioxOptions = {}): SonioxProvider {
+export function soniox(opts: SonioxOptions = {}): SttProvider {
   return { kind: SONIOX_KIND, options: { ...opts } };
 }
 
@@ -83,8 +77,6 @@ export function resolveSonioxSettings(opts: SonioxOptions): {
   return {
     model: opts.model ?? SONIOX_DEFAULT_MODEL,
     // Omitted unless set: absent means auto-detect, which is not "English".
-    ...(opts.languageHints && opts.languageHints.length > 0
-      ? { languageHints: opts.languageHints }
-      : {}),
+    ...(opts.languages && opts.languages.length > 0 ? { languageHints: opts.languages } : {}),
   };
 }

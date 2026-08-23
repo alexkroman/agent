@@ -27,9 +27,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { ffmpegVersion } from "./_ffmpeg-version.ts";
 import {
   type FfmpegError,
-  ffmpegVersion,
   isFfmpegError,
   probeMedia,
   runFfmpeg,

@@ -26,8 +26,9 @@ import {
   DEFAULT_SYSTEM_PROMPT,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "@alexkroman1/aai";
+import { ASSEMBLYAI_TTS_DEPRECATED_VOICES } from "@alexkroman1/aai/host-internal";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
-import { ASSEMBLYAI_TTS_DEPRECATED_VOICES, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
+import { ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 import biomeConfig from "../../biome.json?raw";
 import { templatePromptFiles, withTemplatePrompt, withTemplateTools } from "./_discovery.ts";

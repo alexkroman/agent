@@ -61,7 +61,7 @@ const NON_AUTHORING_SUBPATHS = {
     "./workspace-files": "the studio's workspace layout, read by the platform and the CLI",
     "./internal": "cross-package infrastructure, explicitly not semver-covered",
     "./host-internal":
-      "the SDK internals @alexkroman1/aai-runtime needs across the package boundary; not semver-covered",
+      "the SDK internals the FRAMEWORK packages need across the package boundary — aai-runtime principally, plus the guest, the studio server and the template gate; not semver-covered",
   },
   "aai-ui": {
     "./internal":

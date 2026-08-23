@@ -19,7 +19,7 @@
  */
 
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
-import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
+import { STUDIO_LLM_MODELS } from "./studio-llm.ts";
 
 /** Sections: Data Persistence → AI, Models, and Providers. */
 export const STUDIO_SDK_GUIDANCE = `## Data Persistence and Storage
@@ -79,7 +79,7 @@ export const STUDIO_SDK_GUIDANCE = `## Data Persistence and Storage
   and there is no way to reach S2S by omission.
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
-  of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer
+  of exactly these: ${STUDIO_LLM_MODELS.join(", ")}. Prefer
   "${ASSEMBLYAI_LLM_DEFAULT_MODEL}" unless the user asks for a different model.
 - For a one-shot LLM call inside a tool (summarize, classify, extract),
   use ctx.generate — see the reference below. Its \`schema\` option is

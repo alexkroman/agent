@@ -11,23 +11,12 @@
  */
 
 import type { LlmProvider } from "../../providers.ts";
+import type { ModelOptions } from "./model-options.ts";
 
 export const MISTRAL_KIND = "mistral" as const;
 
 /** Agent-env variable holding the Mistral API key. */
 export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
-
-/** Options for {@link mistral}. */
-export interface MistralOptions {
-  /** Mistral model id, e.g. `"mistral-large-latest"`. */
-  model: string;
-}
-
-/** Descriptor returned by {@link mistral}. */
-export type MistralProvider = LlmProvider & {
-  readonly kind: typeof MISTRAL_KIND;
-  readonly options: MistralOptions;
-};
 
 /**
  * Build a Mistral LLM descriptor for pipeline mode. The API key is resolved
@@ -45,6 +34,6 @@ export type MistralProvider = LlmProvider & {
  * });
  * ```
  */
-export function mistral(opts: MistralOptions): MistralProvider {
+export function mistral(opts: ModelOptions): LlmProvider {
   return { kind: MISTRAL_KIND, options: { ...opts } };
 }

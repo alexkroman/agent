@@ -127,6 +127,8 @@ export default agent({
   llm?: LlmProvider | string;                // unset stages default to AssemblyAI
   tts?: TtsProvider;                         // (llm also takes a model-id string)
   s2s?: S2sProvider;                         // explicit opt-in to speech-to-speech mode
+                                             // all four types are on "@alexkroman1/aai",
+                                             // and on their own stage subpath
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
   builtinTools?: BuiltinTool[];              // see built-in tools table
                                              // (there is no `tools` field — a tool is a FILE;
@@ -491,9 +493,11 @@ and the session TTS surface would not help anyway: it is an event stream wired
 into a live pipeline's playback, and a step has no turn to be part of and has to
 return a value. So this is the smaller thing: text in, the whole utterance out
 as a WAV, on the same `ASSEMBLYAI_API_KEY` everything else uses. Voices come
-from `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai/tts`) — read that list rather
-than typing an id, because a wrong one is refused *after* the socket opens and
-produces silence rather than an error.
+from `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai`, or `/tts`) — read that list
+rather than typing an id, because a wrong one is refused *after* the socket
+opens and produces silence rather than an error. The `AssemblyAITtsVoice` type
+gives you autocomplete over it and nothing more: it accepts any string, so that
+a voice the service adds after this release still compiles.
 
 **`writeUpload` is `readUpload`'s other direction, and you need it.** A run's
 output is read back as JSON, so audio cannot travel in one — the same rule that
@@ -747,11 +751,18 @@ for the providers you actually use.
 | --------------- | ---------------------- | -------------------- |
 | `assemblyAIStt` | `"universal-3-5-pro"`  | `ASSEMBLYAI_API_KEY` |
 | `deepgram`      | `"nova-3"`             | `DEEPGRAM_API_KEY`   |
-| `elevenlabs`    | `"scribe_v2_realtime"` | `ELEVENLABS_API_KEY` |
+| `elevenLabsStt` | `"scribe_v2_realtime"` | `ELEVENLABS_API_KEY` |
 | `soniox`        | `"stt-rt-v3"`          | `SONIOX_API_KEY`     |
 
 All STT factories accept `{ model?: string, ... }`. Bare calls
-(`deepgram()`, `soniox()`, etc.) use the default model.
+(`deepgram()`, `soniox()`, etc.) use the default model. Language is spelled
+`language` where the vendor takes one code (`deepgram`, `elevenLabsStt`) and
+`languages` where it takes a list (`assemblyAIStt`, `soniox`) — and only
+`deepgram`'s unset value means English; the other three auto-detect.
+
+`elevenLabsStt` carries the stage in its name because ElevenLabs is
+better known for TTS: when that stage arrives, `elevenLabs` is the name it
+should get.
 
 `assemblyAIStt` accepts an optional `region: "eu"` for EU data residency —
 it routes streaming transcription to AssemblyAI's EU endpoints. EU-region
@@ -772,8 +783,11 @@ API keys require it; the US endpoints reject them. Example:
 | `gateway`       | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
 | `assemblyAILlm` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
 
-LLM factories require `{ model: string }`. Example:
-`anthropic({ model: "claude-haiku-4-5" })`.
+LLM factories require `{ model: string }` — the `ModelOptions` interface,
+shared by all of them except `assemblyAILlm`. Example:
+`anthropic({ model: "claude-haiku-4-5" })`. The argument is required because a
+third-party vendor's catalog is not this SDK's to default from;
+`assemblyAILlm()` is the one bare call, since it has a default model.
 
 `openrouter` routes through [OpenRouter](https://openrouter.ai) — an
 OpenAI-compatible endpoint fronting hundreds of models addressed as

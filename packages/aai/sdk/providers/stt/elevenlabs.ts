@@ -15,7 +15,7 @@ export const ELEVENLABS_KIND = "elevenlabs" as const;
 /** Agent-env variable holding the ElevenLabs API key. */
 export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
 
-/** Options for {@link elevenlabs}. */
+/** Options for {@link elevenLabsStt}. */
 export interface ElevenLabsOptions {
   /**
    * Streaming speech model. Defaults to `"scribe_v2_realtime"`. Any
@@ -33,14 +33,8 @@ export interface ElevenLabsOptions {
    * unset `language` is `"en"`. Pass a code for a line you know is
    * monolingual.
    */
-  languageCode?: string;
+  language?: string;
 }
-
-/** Descriptor returned by {@link elevenlabs}. */
-export type ElevenLabsProvider = SttProvider & {
-  readonly kind: typeof ELEVENLABS_KIND;
-  readonly options: ElevenLabsOptions;
-};
 
 /**
  * Build an ElevenLabs Scribe STT descriptor.
@@ -52,19 +46,19 @@ export type ElevenLabsProvider = SttProvider & {
  * @example
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { elevenlabs } from "@alexkroman1/aai/stt";
+ * import { elevenLabsStt } from "@alexkroman1/aai/stt";
  *
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   stt: elevenlabs({ model: "scribe_v2_realtime", languageCode: "en" }),
+ *   stt: elevenLabsStt({ model: "scribe_v2_realtime", language: "en" }),
  * });
  * ```
  *
- * Unset, `languageCode` is omitted from the request and Scribe
+ * Unset, `language` is omitted from the request and Scribe
  * auto-detects — which is not the same as English.
  */
-export function elevenlabs(opts: ElevenLabsOptions = {}): ElevenLabsProvider {
+export function elevenLabsStt(opts: ElevenLabsOptions = {}): SttProvider {
   return { kind: ELEVENLABS_KIND, options: { ...opts } };
 }
 
@@ -83,6 +77,6 @@ export function resolveElevenLabsSettings(opts: ElevenLabsOptions): {
   return {
     model: opts.model ?? ELEVENLABS_DEFAULT_MODEL,
     // Omitted unless set: absent means auto-detect, which is not "English".
-    ...(opts.languageCode ? { languageCode: opts.languageCode } : {}),
+    ...(opts.language ? { languageCode: opts.language } : {}),
   };
 }

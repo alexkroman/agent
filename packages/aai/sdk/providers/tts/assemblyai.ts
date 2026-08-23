@@ -92,6 +92,12 @@ export const ASSEMBLYAI_TTS_VOICES = {
  * questions — an existing agent naming one of these is working today and
  * should not be told it is broken, while a new agent should not be pointed
  * at a voice that is going away.
+ *
+ * Not published to authors: the answer to "should I use it?" is
+ * {@link ASSEMBLYAI_TTS_VOICES}, which lists only what to pick. This tuple's
+ * one reader is the template gate that checks no shipped template names a
+ * retired voice, so it lives on `@alexkroman1/aai/host-internal` — its 21
+ * literals were otherwise inlined into the published `.d.ts` for nobody.
  */
 export const ASSEMBLYAI_TTS_DEPRECATED_VOICES = [
   "arjun",
@@ -125,6 +131,17 @@ export const ASSEMBLYAI_TTS_DEPRECATED_VOICES = [
  * a deprecated one an existing agent already names. It keeps the current
  * names visible at the call site without turning a stale SDK into a build
  * failure.
+ *
+ * **So this type is AUTOCOMPLETE, not a guard, and there is no runtime assert
+ * to pair with it** the way `assertAssemblyAITtsLanguage` pairs with
+ * {@link AssemblyAITtsLanguage}. The two are not the same job: the language
+ * map is a TRANSLATION this SDK owns (an ISO code the service has never heard
+ * of, rendered as a name it accepts), so a code outside it cannot be sent at
+ * all and rejecting it is a fact about this package. The voice catalog is the
+ * SERVICE's, and a snapshot of it goes stale between releases — an assert
+ * would refuse a voice AssemblyAI shipped last week, which is the same
+ * silent-mute failure from the other side. Read the catalog; do not expect the
+ * compiler to check you did.
  */
 export type AssemblyAITtsVoice =
   | keyof typeof ASSEMBLYAI_TTS_VOICES
@@ -249,12 +266,6 @@ export interface AssemblyAITtsOptions {
   apiKeyEnv?: string;
 }
 
-/** Descriptor returned by {@link assemblyAITts}. */
-export type AssemblyAITtsProvider = TtsProvider & {
-  readonly kind: typeof ASSEMBLYAI_TTS_KIND;
-  readonly options: AssemblyAITtsOptions & { voice: string };
-};
-
 /**
  * Build an AssemblyAI streaming-TTS descriptor.
  *
@@ -283,7 +294,7 @@ export type AssemblyAITtsProvider = TtsProvider & {
  * nowhere else — an unrecognised one leaves an agent that connects,
  * reports ready and never speaks.
  */
-export function assemblyAITts(opts: AssemblyAITtsOptions = {}): AssemblyAITtsProvider {
+export function assemblyAITts(opts: AssemblyAITtsOptions = {}): TtsProvider {
   return {
     kind: ASSEMBLYAI_TTS_KIND,
     options: { ...opts, voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE },

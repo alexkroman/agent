@@ -22,6 +22,7 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  CARTESIA_API_KEY_ENV,
   makeTtsError,
   resolveCartesiaSettings,
   type TtsEvents,
@@ -29,7 +30,7 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "@alexkroman1/aai/host-internal";
-import { CARTESIA_API_KEY_ENV, type CartesiaOptions } from "@alexkroman1/aai/tts";
+import type { CartesiaOptions } from "@alexkroman1/aai/tts";
 import { errorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
 import { Cartesia } from "@cartesia/cartesia-js";
 import type { TTSWSContext } from "@cartesia/cartesia-js/resources/tts/ws";

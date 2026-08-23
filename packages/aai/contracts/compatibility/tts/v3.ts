@@ -1,34 +1,34 @@
-// Copyright 2025 the AAI authors. MIT license.
+// Copyright 2026 the AAI authors. MIT license.
 /**
- * Frozen authoring example: `tts` epoch 2.
+ * Frozen authoring example: `aai:tts` epoch 3.
  *
  * See `../agent/v3.ts` for what "frozen" obliges and why the imports are
  * relative.
  *
- * Epoch 2 is epoch 1 minus the host-side opener contract, which moved to
- * `@alexkroman1/aai-runtime` beside `registerTtsKind`. What is left is the
- * agent author's half: three factories, the voice catalog, and the descriptor
- * they return.
+ * Epoch 3 is epoch 2 minus eleven symbols an author never typed: the six
+ * `*_KIND`/`*_API_KEY_ENV` constants and the 21-element
+ * `ASSEMBLYAI_TTS_DEPRECATED_VOICES` tuple (to
+ * `@alexkroman1/aai/host-internal` — the retired list answers "is this name
+ * real?", which is the template gate's question, not an author's), the three
+ * narrowed `*Provider` aliases, and `ProviderDescriptor` to the ROOT barrel.
+ *
+ * The voice catalog is unchanged and is the point of the subpath: an
+ * unrecognised id has no authoring-time symptom, and
+ * {@link ASSEMBLYAI_TTS_VOICES} is the only checkable list. It is on the root
+ * barrel too now, because `agent({ voice })` is typed against it.
  */
 
 import {
-  ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
-  ASSEMBLYAI_TTS_DEPRECATED_VOICES,
-  ASSEMBLYAI_TTS_KIND,
   ASSEMBLYAI_TTS_LANGUAGES,
   ASSEMBLYAI_TTS_VOICES,
   type AssemblyAITtsLanguage,
+  type AssemblyAITtsOptions,
   type AssemblyAITtsVoice,
   assemblyAITts,
-  CARTESIA_API_KEY_ENV,
   CARTESIA_DEFAULT_VOICE,
-  CARTESIA_KIND,
   cartesia,
-  type ProviderDescriptor,
-  RIME_API_KEY_ENV,
   RIME_DEFAULT_VOICE,
-  RIME_KIND,
   rime,
   type TtsProvider,
 } from "../../../sdk/providers/tts-barrel.ts";
@@ -38,11 +38,12 @@ export const voice: AssemblyAITtsVoice = ASSEMBLYAI_TTS_DEFAULT_VOICE;
 export const language: AssemblyAITtsLanguage = "en";
 export const languageLabel: string = ASSEMBLYAI_TTS_LANGUAGES[language];
 
-export const assemblyai = assemblyAITts({
+export const options: AssemblyAITtsOptions = {
   voice,
   language,
-  apiKeyEnv: ASSEMBLYAI_TTS_API_KEY_ENV,
-});
+  apiKeyEnv: "ASSEMBLYAI_STAGING_KEY",
+};
+export const assemblyai: TtsProvider = assemblyAITts(options);
 
 export const alternatives: TtsProvider[] = [
   cartesia({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3", language: "en" }),
@@ -52,15 +53,5 @@ export const alternatives: TtsProvider[] = [
 /** The catalog is keyed by voice name, with the accent alongside each. */
 export const catalog: string[] = Object.keys(ASSEMBLYAI_TTS_VOICES);
 export const accent: string = ASSEMBLYAI_TTS_VOICES.alba.accent;
-export const deprecated: string[] = Object.keys(ASSEMBLYAI_TTS_DEPRECATED_VOICES);
 
-export const kinds: string[] = [ASSEMBLYAI_TTS_KIND, CARTESIA_KIND, RIME_KIND, assemblyai.kind];
-export const keyEnvVars: string[] = [
-  ASSEMBLYAI_TTS_API_KEY_ENV,
-  CARTESIA_API_KEY_ENV,
-  RIME_API_KEY_ENV,
-];
-
-/** The base every stage descriptor narrows, readable on this subpath. */
-export type FixtureBase = ProviderDescriptor<string, Record<string, unknown>>;
-export const base: FixtureBase = assemblyai;
+export const kinds: string[] = [assemblyai.kind, ...alternatives.map((p) => p.kind)];

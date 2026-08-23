@@ -1,13 +1,13 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { ASSEMBLYAI_GATEWAY_MODELS, studioLlmInfo, studioLlmModelId } from "./studio-llm.ts";
+import { STUDIO_LLM_MODELS, studioLlmInfo, studioLlmModelId } from "./studio-llm.ts";
 
 const env = (vars: Record<string, string>): NodeJS.ProcessEnv => vars as NodeJS.ProcessEnv;
 
 describe("studioLlmModelId", () => {
   test("defaults to the first gateway model", () => {
-    expect(studioLlmModelId(env({}))).toBe(ASSEMBLYAI_GATEWAY_MODELS[0]);
+    expect(studioLlmModelId(env({}))).toBe(STUDIO_LLM_MODELS[0]);
     expect(studioLlmModelId(env({}))).toBe("gpt-5.5");
   });
 

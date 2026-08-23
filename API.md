@@ -48,18 +48,6 @@ symbol exported from two subpaths appears under both.
 
 ```ts
 // @public
-export const DEFAULT_FFMPEG_TIMEOUT_MS: number;
-
-// @public
-export const DEFAULT_MAX_FFMPEG_OUTPUT_BYTES: number;
-
-// @public
-export const FFMPEG_PATH_ENV = "AAI_FFMPEG_PATH";
-
-// @public
-export const FFMPEG_STDERR_TAIL_CHARS = 4000;
-
-// @public
 export class FfmpegError extends Error {
     constructor(opts: {
         kind: FfmpegFailureKind;
@@ -112,10 +100,7 @@ export type FfmpegRunResult = {
 };
 
 // @public
-export function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
-
-// @public
-export const FFPROBE_PATH_ENV = "AAI_FFPROBE_PATH";
+export type FfmpegSource = string | Uint8Array;
 
 // @public
 export function isFfmpegError(value: unknown): value is FfmpegError;
@@ -126,18 +111,14 @@ export type MediaInfo = {
     format?: string;
     bitRate?: number;
     sizeBytes?: number;
-    streams: MediaStream_2[];
-    audio?: MediaStream_2;
-    video?: MediaStream_2;
+    streams: MediaStreamInfo[];
+    audio?: MediaStreamInfo;
+    video?: MediaStreamInfo;
     raw: unknown;
 };
 
 // @public
-type MediaSource_2 = string | Uint8Array;
-export { MediaSource_2 as MediaSource }
-
-// @public
-type MediaStream_2 = {
+export type MediaStreamInfo = {
     index: number;
     kind: string;
     codec?: string;
@@ -148,10 +129,9 @@ type MediaStream_2 = {
     height?: number;
     durationSec?: number;
 };
-export { MediaStream_2 as MediaStream }
 
 // @public
-export function probeMedia(source: MediaSource_2, opts?: ProbeOptions): Promise<MediaInfo>;
+export function probeMedia(source: FfmpegSource, opts?: ProbeOptions): Promise<MediaInfo>;
 
 // @public (undocumented)
 export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
@@ -162,7 +142,7 @@ export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
 export function runFfmpeg(args: readonly string[], opts?: FfmpegRunOptions): Promise<FfmpegRunResult>;
 
 // @public
-export function transcodeToWav(source: MediaSource_2, opts?: TranscodeToWavOptions): Promise<Uint8Array>;
+export function transcodeToWav(source: FfmpegSource, opts?: TranscodeToWavOptions): Promise<Uint8Array>;
 
 // @public (undocumented)
 export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "stdin">;
@@ -262,6 +242,12 @@ export type AgentEnv = Record<string, string> & {
 };
 
 // @public
+export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
+
+// @public (undocumented)
+export const ANTHROPIC_KIND: "anthropic";
+
+// @public
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
@@ -285,7 +271,7 @@ export const APP_DB_WORLD_WORKER_CONCURRENCY: number;
 export function asDispatcher(agent: Agent): FetchDispatcher;
 
 // @public (undocumented)
-const ASSEMBLYAI_GATEWAY_MODELS: {
+export const ASSEMBLYAI_GATEWAY_MODELS: {
     readonly "claude-haiku-4-5-20251001": {
         readonly tools: true;
         readonly stream: true;
@@ -499,22 +485,40 @@ const ASSEMBLYAI_GATEWAY_MODELS: {
 };
 
 // @public
-const ASSEMBLYAI_KIND: "assemblyai";
+export const ASSEMBLYAI_LLM_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
 // @public
-const ASSEMBLYAI_LLM_KIND: "assemblyai";
+export const ASSEMBLYAI_LLM_KIND: "assemblyai";
+
+// @public
+export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
+// @public
+export const ASSEMBLYAI_S2S_KIND: "assemblyai";
 
 // @internal
 export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24000;
 
 // @public
+export const ASSEMBLYAI_STT_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
+// @public
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
+
+// @public
+export const ASSEMBLYAI_STT_KIND: "assemblyai";
+
+// @public
+export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
+// @public
+export const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
 
 // @public
 export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
 
 // @public
-const ASSEMBLYAI_TTS_KIND: "assemblyai";
+export const ASSEMBLYAI_TTS_KIND: "assemblyai";
 
 // @public
 const ASSEMBLYAI_TTS_LANGUAGES: {
@@ -595,27 +599,10 @@ const ASSEMBLYAI_TTS_VOICES: {
 };
 
 // @public
-type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
 
 // @public
-interface AssemblyAILlmOptions {
-    apiKeyEnv?: string;
-    gatewayUrl?: string;
-    model?: AssemblyAIGatewayModel | (string & Record<never, never>);
-    reasoningEffort?: AssemblyAIReasoningEffort;
-    region?: "us" | "eu";
-}
-
-// @public
-type AssemblyAILlmProvider = LlmProvider & {
-    readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-    readonly options: AssemblyAILlmOptions & {
-        model: string;
-    };
-};
-
-// @public
-interface AssemblyAIOptions {
+interface AssemblyAISttOptions {
     apiKeyEnv?: string;
     connectTimeoutMs?: number;
     languages?: string[];
@@ -630,15 +617,6 @@ interface AssemblyAIOptions {
 }
 
 // @public
-type AssemblyAIProvider = SttProvider & {
-    readonly kind: typeof ASSEMBLYAI_KIND;
-    readonly options: AssemblyAIOptions;
-};
-
-// @public
-type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
-
-// @public
 type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 // @public
@@ -651,14 +629,6 @@ interface AssemblyAITtsOptions {
     language?: AssemblyAITtsLanguage;
     voice?: AssemblyAITtsVoice;
 }
-
-// @public
-type AssemblyAITtsProvider = TtsProvider & {
-    readonly kind: typeof ASSEMBLYAI_TTS_KIND;
-    readonly options: AssemblyAITtsOptions & {
-        voice: string;
-    };
-};
 
 // @public
 type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
@@ -687,6 +657,12 @@ export type BuiltinToolOptions = {
     fetch?: typeof globalThis.fetch;
     runCode?: RunCodeExecutor;
 };
+
+// @public
+export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+
+// @public
+export const CARTESIA_KIND: "cartesia";
 
 // @public
 interface CartesiaOptions {
@@ -733,6 +709,12 @@ export const DEAD_AIR_COVER_PHRASES: readonly string[];
 export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 
 // @public
+export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
+
+// @public
+export const DEEPGRAM_KIND: "deepgram";
+
+// @public
 interface DeepgramOptions {
     endpointing?: number;
     language?: string;
@@ -745,8 +727,14 @@ export const DEFAULT_DEAD_AIR_COVER_MS = 5000;
 // @internal
 export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;
 
+// @public
+export const DEFAULT_FFMPEG_TIMEOUT_MS: number;
+
 // @internal
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15000;
+
+// @public
+export const DEFAULT_MAX_FFMPEG_OUTPUT_BYTES: number;
 
 // @internal
 export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120000;
@@ -774,9 +762,9 @@ export const DEFAULT_VOICE_FOCUS_THRESHOLD = 0.9;
 
 // @public
 export function defaultProviders(config: ProviderFields): {
-    stt?: AssemblyAIProvider;
-    llm?: AssemblyAILlmProvider;
-    tts?: AssemblyAITtsProvider;
+    stt?: SttProvider;
+    llm?: LlmProvider;
+    tts?: TtsProvider;
 } | null;
 
 // @internal
@@ -785,11 +773,17 @@ type DnsLookup = (hostname: string) => Promise<{
 }>;
 
 // @public
+export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
+
+// @public
 export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
 
 // @public
+export const ELEVENLABS_KIND: "elevenlabs";
+
+// @public
 interface ElevenLabsOptions {
-    languageCode?: string;
+    language?: string;
     model?: string;
 }
 
@@ -820,6 +814,28 @@ type FetchDispatcher = RequestInit extends {
 } ? NonNullable<D> : never;
 
 // @public
+export const FFMPEG_PATH_ENV = "AAI_FFMPEG_PATH";
+
+// @public
+export const FFMPEG_STDERR_TAIL_CHARS = 4000;
+
+// @public (undocumented)
+type FfmpegRunOptions = {
+    binary?: string;
+    cwd?: string;
+    stdin?: Uint8Array;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+};
+
+// @public
+export function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
+
+// @public
+export const FFPROBE_PATH_ENV = "AAI_FFPROBE_PATH";
+
+// @public
 type FindOptions = {
     limit?: number;
 };
@@ -829,6 +845,26 @@ export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): stri
 
 // @internal
 export function freezeStorable<T>(value: T, path: string): T;
+
+// @public
+export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
+
+// @public (undocumented)
+export const GATEWAY_KIND: "gateway";
+
+// @public
+export function gatewayModelIds(opts?: {
+    eu?: boolean;
+}): AssemblyAIGatewayModel[];
+
+// @public
+export type GatewayModelInfo = {
+    readonly tools: boolean;
+    readonly stream: boolean;
+    readonly eu: boolean;
+    readonly live: boolean;
+    readonly context: number;
+};
 
 // @public
 type GenerateFn = {
@@ -859,6 +895,18 @@ type GenerateResult = {
     text: string;
     object?: unknown;
 };
+
+// @public
+export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
+
+// @public (undocumented)
+export const GOOGLE_KIND: "google";
+
+// @public
+export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
+
+// @public (undocumented)
+export const GROQ_KIND: "groq";
 
 // @internal
 export const HEARD_AUDIO_LAG_MS = 150;
@@ -940,7 +988,31 @@ type Message = {
 export const MISSING_WORKFLOW_ID_MESSAGE: string;
 
 // @public
+export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
+
+// @public (undocumented)
+export const MISTRAL_KIND: "mistral";
+
+// @public
 export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined;
+
+// @public
+export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
+
+// @public (undocumented)
+export const OPENAI_KIND: "openai";
+
+// @public
+export const OPENAI_REALTIME_API_KEY_ENV = "OPENAI_API_KEY";
+
+// @public
+export const OPENAI_REALTIME_KIND: "openai-realtime";
+
+// @public
+export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
+
+// @public (undocumented)
+export const OPENROUTER_KIND: "openrouter";
 
 // @internal (undocumented)
 export interface OwnedMap<K, V> {
@@ -1046,7 +1118,7 @@ export function resolveAllBuiltins(names: readonly string[], opts?: BuiltinToolO
 export function resolveAndAssertPublic(url: string, lookupFn?: DnsLookup): Promise<string | null>;
 
 // @public
-export function resolveAssemblyAISttSettings(opts: AssemblyAIOptions): {
+export function resolveAssemblyAISttSettings(opts: AssemblyAISttOptions): {
     model: string;
     minTurnSilenceMs: number;
     maxTurnSilenceMs: number;
@@ -1117,10 +1189,16 @@ export function resolveSonioxSettings(opts: SonioxOptions): {
 export const RETRYABLE_STATUS: Set<number>;
 
 // @public
+export const RIME_API_KEY_ENV = "RIME_API_KEY";
+
+// @public
 export const RIME_DEFAULT_LANGUAGE = "eng";
 
 // @public
 export const RIME_DEFAULT_MODEL = "mistv2";
+
+// @public
+export const RIME_KIND: "rime";
 
 // @public
 interface RimeOptions {
@@ -1177,8 +1255,14 @@ type SlotStore = {
 };
 
 // @public
+export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
+
+// @public
+export const SONIOX_KIND: "soniox";
+
+// @public
 interface SonioxOptions {
-    languageHints?: readonly string[];
+    languages?: readonly string[];
     model?: string;
 }
 
@@ -1576,6 +1660,12 @@ export const WS_NORMAL_CLOSURE = 1000;
 
 // @internal (undocumented)
 export const WS_OPEN = 1;
+
+// @public
+export const XAI_API_KEY_ENV = "XAI_API_KEY";
+
+// @public (undocumented)
+export const XAI_KIND: "xai";
 ```
 
 ## `@alexkroman1/aai`
@@ -1626,244 +1716,8 @@ type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public (undocumented)
-const ASSEMBLYAI_GATEWAY_MODELS: {
-    readonly "claude-haiku-4-5-20251001": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-5-20251101": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-6": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-7": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1000000;
-    };
-    readonly "claude-opus-4-8": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1000000;
-    };
-    readonly "claude-sonnet-4-5-20250929": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-sonnet-4-6": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-sonnet-5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "gemini-2.5-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 1048576;
-    };
-    readonly "gemini-2.5-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 1048576;
-    };
-    readonly "gemini-2.5-pro": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "gemini-3.1-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.5-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.5-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.6-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
-        readonly context: 1048575;
-    };
-    readonly "gpt-4.1": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1047576;
-    };
-    readonly "gpt-5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5-mini": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5-nano": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.1": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.2": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 272000;
-    };
-    readonly "gpt-5.6-luna": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 270000;
-    };
-    readonly "gpt-5.6-terra": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 270000;
-    };
-    readonly "gpt-oss-120b": {
-        readonly tools: true;
-        readonly stream: false;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 131072;
-    };
-    readonly "gpt-oss-20b": {
-        readonly tools: true;
-        readonly stream: false;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 131072;
-    };
-    readonly "kimi-k2.5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
-        readonly context: 200000;
-    };
-    readonly "qwen3-32B": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "qwen3-next-80b-a3b": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "qwen3.5-4b-32k-experimental": {
-        readonly tools: false;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 32768;
-    };
-};
-
 // @public
-const ASSEMBLYAI_KIND: "assemblyai";
-
-// @public
-const ASSEMBLYAI_LLM_KIND: "assemblyai";
-
-// @public
-const ASSEMBLYAI_S2S_KIND: "assemblyai";
-
-// @public
-const ASSEMBLYAI_TTS_KIND: "assemblyai";
-
-// @public
-const ASSEMBLYAI_TTS_LANGUAGES: {
-    readonly en: "english";
-    readonly fr: "french";
-    readonly de: "german";
-    readonly it: "italian";
-    readonly pt: "portuguese";
-    readonly es: "spanish";
-};
-
-// @public
-const ASSEMBLYAI_TTS_VOICES: {
+export const ASSEMBLYAI_TTS_VOICES: {
     readonly alba: {
         readonly language: "en";
         readonly accent: "US";
@@ -1931,45 +1785,10 @@ const ASSEMBLYAI_TTS_VOICES: {
 };
 
 // @public
-type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
-
-// @public
-interface AssemblyAILlmOptions {
-    apiKeyEnv?: string;
-    gatewayUrl?: string;
-    model?: AssemblyAIGatewayModel | (string & Record<never, never>);
-    reasoningEffort?: AssemblyAIReasoningEffort;
-    region?: "us" | "eu";
-}
-
-// @public
-type AssemblyAILlmProvider = LlmProvider & {
-    readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-    readonly options: AssemblyAILlmOptions & {
-        model: string;
-    };
-};
-
-// @public
-interface AssemblyAIOptions {
-    apiKeyEnv?: string;
-    connectTimeoutMs?: number;
-    languages?: string[];
-    maxConnectRetries?: number;
-    maxTurnSilenceMs?: number;
-    minTurnSilenceMs?: number;
-    model?: "universal-3-5-pro" | string;
-    region?: "us" | "eu";
-    streamingUrl?: string;
-    voiceFocus?: "near-field" | "far-field" | "off" | string;
-    voiceFocusThreshold?: number;
-}
-
-// @public
 export function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
-    stt: AssemblyAIProvider;
-    llm: AssemblyAILlmProvider;
-    tts: AssemblyAITtsProvider;
+    stt: SttProvider;
+    llm: LlmProvider;
+    tts: TtsProvider;
 };
 
 // @public (undocumented)
@@ -1981,51 +1800,18 @@ export interface AssemblyAIPipelineOptions {
 }
 
 // @public
-type AssemblyAIProvider = SttProvider & {
-    readonly kind: typeof ASSEMBLYAI_KIND;
-    readonly options: AssemblyAIOptions;
-};
+export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
-type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
-
-// @public
-export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): AssemblyAIS2sProvider;
-
-// @public
-export type AssemblyAIS2sOptions = {
-    voice?: string;
-    languages?: readonly string[];
-    keyterms?: readonly string[];
-};
-
-// @public
-export type AssemblyAIS2sProvider = S2sProvider & {
-    readonly kind: typeof ASSEMBLYAI_S2S_KIND;
-    readonly options: AssemblyAIS2sOptions;
-};
-
-// @public
-type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
-
-// @public (undocumented)
-interface AssemblyAITtsOptions {
+export interface AssemblyAIS2sOptions {
     apiKeyEnv?: string;
-    host?: string;
-    language?: AssemblyAITtsLanguage;
-    voice?: AssemblyAITtsVoice;
+    keyterms?: readonly string[];
+    languages?: readonly string[];
+    voice?: string;
 }
 
 // @public
-type AssemblyAITtsProvider = TtsProvider & {
-    readonly kind: typeof ASSEMBLYAI_TTS_KIND;
-    readonly options: AssemblyAITtsOptions & {
-        voice: string;
-    };
-};
-
-// @public
-type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
+export type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate";
@@ -2222,7 +2008,7 @@ export class KeyedLockTimeoutError extends Error {
 }
 
 // @public
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "llm";
 };
 
@@ -2310,7 +2096,7 @@ export interface ProcedureRunOptions {
 }
 
 // @public
-interface ProviderDescriptor<Kind extends string, Options> {
+export interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -2352,7 +2138,7 @@ export type S2sAgentParams = SharedAgentParams & {
 };
 
 // @public
-type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "s2s";
 };
 
@@ -2655,7 +2441,7 @@ type StreamOptions = {
 };
 
 // @public
-type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
 
@@ -2722,7 +2508,7 @@ export function toolFailure(message: string): ToolFailure;
 export type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 // @public
-type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
 
@@ -3133,241 +2919,7 @@ export const WS_OPEN = 1;
 
 ```ts
 // @public
-export function anthropic(opts: AnthropicOptions): AnthropicProvider;
-
-// @public
-export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
-
-// @public (undocumented)
-export const ANTHROPIC_KIND: "anthropic";
-
-// @public
-export interface AnthropicOptions {
-    model: string;
-}
-
-// @public
-export type AnthropicProvider = LlmProvider & {
-    readonly kind: typeof ANTHROPIC_KIND;
-    readonly options: AnthropicOptions;
-};
-
-// @public (undocumented)
-export const ASSEMBLYAI_GATEWAY_MODELS: {
-    readonly "claude-haiku-4-5-20251001": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-5-20251101": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-6": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-opus-4-7": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1000000;
-    };
-    readonly "claude-opus-4-8": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1000000;
-    };
-    readonly "claude-sonnet-4-5-20250929": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-sonnet-4-6": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "claude-sonnet-5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "gemini-2.5-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 1048576;
-    };
-    readonly "gemini-2.5-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 1048576;
-    };
-    readonly "gemini-2.5-pro": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: true;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "gemini-3.1-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.5-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.5-flash-lite": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1048575;
-    };
-    readonly "gemini-3.6-flash": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
-        readonly context: 1048575;
-    };
-    readonly "gpt-4.1": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 1047576;
-    };
-    readonly "gpt-5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5-mini": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5-nano": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.1": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.2": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 400000;
-    };
-    readonly "gpt-5.5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 272000;
-    };
-    readonly "gpt-5.6-luna": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 270000;
-    };
-    readonly "gpt-5.6-terra": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 270000;
-    };
-    readonly "gpt-oss-120b": {
-        readonly tools: true;
-        readonly stream: false;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 131072;
-    };
-    readonly "gpt-oss-20b": {
-        readonly tools: true;
-        readonly stream: false;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 131072;
-    };
-    readonly "kimi-k2.5": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: false;
-        readonly context: 200000;
-    };
-    readonly "qwen3-32B": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "qwen3-next-80b-a3b": {
-        readonly tools: true;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 200000;
-    };
-    readonly "qwen3.5-4b-32k-experimental": {
-        readonly tools: false;
-        readonly stream: true;
-        readonly eu: false;
-        readonly live: true;
-        readonly context: 32768;
-    };
-};
-
-// @public
-export const ASSEMBLYAI_LLM_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export function anthropic(opts: ModelOptions): LlmProvider;
 
 // @public
 export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
@@ -3379,13 +2931,10 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
 export const ASSEMBLYAI_LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1";
 
 // @public
-export const ASSEMBLYAI_LLM_KIND: "assemblyai";
+export type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-oss-120b" | "gpt-oss-20b" | "kimi-k2.5" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-experimental";
 
 // @public
-export type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
-
-// @public
-export function assemblyAILlm(opts?: AssemblyAILlmOptions): AssemblyAILlmProvider;
+export function assemblyAILlm(opts?: AssemblyAILlmOptions): LlmProvider;
 
 // @public
 export interface AssemblyAILlmOptions {
@@ -3397,89 +2946,16 @@ export interface AssemblyAILlmOptions {
 }
 
 // @public
-export type AssemblyAILlmProvider = LlmProvider & {
-    readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-    readonly options: AssemblyAILlmOptions & {
-        model: string;
-    };
-};
-
-// @public
 export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // @public
-export function gateway(opts: GatewayOptions): GatewayProvider;
+export function gateway(opts: ModelOptions): LlmProvider;
 
 // @public
-export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
-
-// @public (undocumented)
-export const GATEWAY_KIND: "gateway";
+export function google(opts: ModelOptions): LlmProvider;
 
 // @public
-export function gatewayModelIds(opts?: {
-    eu?: boolean;
-}): AssemblyAIGatewayModel[];
-
-// @public
-export type GatewayModelInfo = {
-    readonly tools: boolean;
-    readonly stream: boolean;
-    readonly eu: boolean;
-    readonly live: boolean;
-    readonly context: number;
-};
-
-// @public
-export interface GatewayOptions {
-    model: string;
-}
-
-// @public
-export type GatewayProvider = LlmProvider & {
-    readonly kind: typeof GATEWAY_KIND;
-    readonly options: GatewayOptions;
-};
-
-// @public
-export function google(opts: GoogleOptions): GoogleProvider;
-
-// @public
-export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
-
-// @public (undocumented)
-export const GOOGLE_KIND: "google";
-
-// @public
-export interface GoogleOptions {
-    model: string;
-}
-
-// @public
-export type GoogleProvider = LlmProvider & {
-    readonly kind: typeof GOOGLE_KIND;
-    readonly options: GoogleOptions;
-};
-
-// @public
-export function groq(opts: GroqOptions): GroqProvider;
-
-// @public
-export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
-
-// @public (undocumented)
-export const GROQ_KIND: "groq";
-
-// @public
-export interface GroqOptions {
-    model: string;
-}
-
-// @public
-export type GroqProvider = LlmProvider & {
-    readonly kind: typeof GROQ_KIND;
-    readonly options: GroqOptions;
-};
+export function groq(opts: ModelOptions): LlmProvider;
 
 // @public
 export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -3487,70 +2963,24 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 };
 
 // @public
-export function mistral(opts: MistralOptions): MistralProvider;
+export function mistral(opts: ModelOptions): LlmProvider;
 
 // @public
-export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
-
-// @public (undocumented)
-export const MISTRAL_KIND: "mistral";
-
-// @public
-export interface MistralOptions {
+export interface ModelOptions {
     model: string;
 }
 
 // @public
-export type MistralProvider = LlmProvider & {
-    readonly kind: typeof MISTRAL_KIND;
-    readonly options: MistralOptions;
-};
+export function openai(opts: ModelOptions): LlmProvider;
 
 // @public
-export function openai(opts: OpenAIOptions): OpenAIProvider;
-
-// @public
-export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
-
-// @public (undocumented)
-export const OPENAI_KIND: "openai";
-
-// @public
-export interface OpenAIOptions {
-    model: string;
-}
-
-// @public
-export type OpenAIProvider = LlmProvider & {
-    readonly kind: typeof OPENAI_KIND;
-    readonly options: OpenAIOptions;
-};
-
-// @public
-export function openrouter(opts: OpenRouterOptions): OpenRouterProvider;
-
-// @public
-export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
+export function openrouter(opts: ModelOptions): LlmProvider;
 
 // @public
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
-// @public (undocumented)
-export const OPENROUTER_KIND: "openrouter";
-
 // @public
-export interface OpenRouterOptions {
-    model: string;
-}
-
-// @public
-export type OpenRouterProvider = LlmProvider & {
-    readonly kind: typeof OPENROUTER_KIND;
-    readonly options: OpenRouterOptions;
-};
-
-// @public
-export interface ProviderDescriptor<Kind extends string, Options> {
+interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -3558,24 +2988,7 @@ export interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function xai(opts: XaiOptions): XaiProvider;
-
-// @public
-export const XAI_API_KEY_ENV = "XAI_API_KEY";
-
-// @public (undocumented)
-export const XAI_KIND: "xai";
-
-// @public
-export interface XaiOptions {
-    model: string;
-}
-
-// @public
-export type XaiProvider = LlmProvider & {
-    readonly kind: typeof XAI_KIND;
-    readonly options: XaiOptions;
-};
+export function xai(opts: ModelOptions): LlmProvider;
 ```
 
 ## `@alexkroman1/aai/manifest`
@@ -4563,54 +3976,31 @@ export { SessionEventSchema }
 
 ```ts
 // @public
-export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
-export const ASSEMBLYAI_S2S_KIND: "assemblyai";
-
-// @public
-export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): AssemblyAIS2sProvider;
-
-// @public
-export type AssemblyAIS2sOptions = {
-    voice?: string;
-    languages?: readonly string[];
+export interface AssemblyAIS2sOptions {
+    apiKeyEnv?: string;
     keyterms?: readonly string[];
-};
+    languages?: readonly string[];
+    voice?: string;
+}
 
 // @public
-export type AssemblyAIS2sProvider = S2sProvider & {
-    readonly kind: typeof ASSEMBLYAI_S2S_KIND;
-    readonly options: AssemblyAIS2sOptions;
-};
+export function openaiRealtime(opts?: OpenaiRealtimeOptions): S2sProvider;
 
 // @public
-export const OPENAI_REALTIME_API_KEY_ENV = "OPENAI_API_KEY";
-
-// @public
-export const OPENAI_REALTIME_KIND: "openai-realtime";
-
-// @public
-export function openaiRealtime(opts?: OpenaiRealtimeOptions): OpenaiRealtimeProvider;
-
-// @public
-export type OpenaiRealtimeOptions = {
+export interface OpenaiRealtimeOptions {
     model?: string;
-    voice?: OpenaiRealtimeVoice;
     url?: string;
-};
-
-// @public
-export type OpenaiRealtimeProvider = S2sProvider & {
-    readonly kind: typeof OPENAI_REALTIME_KIND;
-    readonly options: OpenaiRealtimeOptions;
-};
+    voice?: OpenaiRealtimeVoice;
+}
 
 // @public
 export type OpenaiRealtimeVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse";
 
 // @public
-export interface ProviderDescriptor<Kind extends string, Options> {
+interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -4978,16 +4368,13 @@ export function toStepError(cause: unknown, message?: string): Error;
 
 ```ts
 // @public
-export const ASSEMBLYAI_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export const ASSEMBLYAI_STT_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
 
 // @public
-export const ASSEMBLYAI_KIND: "assemblyai";
+export function assemblyAIStt(opts?: AssemblyAISttOptions): SttProvider;
 
 // @public
-export const ASSEMBLYAI_STREAMING_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
-
-// @public
-export interface AssemblyAIOptions {
+export interface AssemblyAISttOptions {
     apiKeyEnv?: string;
     connectTimeoutMs?: number;
     languages?: string[];
@@ -5002,22 +4389,10 @@ export interface AssemblyAIOptions {
 }
 
 // @public
-export type AssemblyAIProvider = SttProvider & {
-    readonly kind: typeof ASSEMBLYAI_KIND;
-    readonly options: AssemblyAIOptions;
-};
+export function deepgram(opts?: DeepgramOptions): SttProvider;
 
 // @public
-export function assemblyAIStt(opts?: AssemblyAIOptions): AssemblyAIProvider;
-
-// @public
-export function deepgram(opts?: DeepgramOptions): DeepgramProvider;
-
-// @public
-export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
-
-// @public
-export const DEEPGRAM_KIND: "deepgram";
+export const DEEPGRAM_DEFAULT_ENDPOINTING_MS = 1500;
 
 // @public
 export interface DeepgramOptions {
@@ -5027,37 +4402,16 @@ export interface DeepgramOptions {
 }
 
 // @public
-export type DeepgramProvider = SttProvider & {
-    readonly kind: typeof DEEPGRAM_KIND;
-    readonly options: DeepgramOptions;
-};
-
-// @public
-export const DEFAULT_DEEPGRAM_ENDPOINTING_MS = 1500;
-
-// @public
-export function elevenlabs(opts?: ElevenLabsOptions): ElevenLabsProvider;
-
-// @public
-export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
-
-// @public
-export const ELEVENLABS_KIND: "elevenlabs";
-
-// @public
 export interface ElevenLabsOptions {
-    languageCode?: string;
+    language?: string;
     model?: string;
 }
 
 // @public
-export type ElevenLabsProvider = SttProvider & {
-    readonly kind: typeof ELEVENLABS_KIND;
-    readonly options: ElevenLabsOptions;
-};
+export function elevenLabsStt(opts?: ElevenLabsOptions): SttProvider;
 
 // @public
-export interface ProviderDescriptor<Kind extends string, Options> {
+interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -5065,25 +4419,13 @@ export interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function soniox(opts?: SonioxOptions): SonioxProvider;
-
-// @public
-export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
-
-// @public
-export const SONIOX_KIND: "soniox";
+export function soniox(opts?: SonioxOptions): SttProvider;
 
 // @public
 export interface SonioxOptions {
-    languageHints?: readonly string[];
+    languages?: readonly string[];
     model?: string;
 }
-
-// @public
-export type SonioxProvider = SttProvider & {
-    readonly kind: typeof SONIOX_KIND;
-    readonly options: SonioxOptions;
-};
 
 // @public
 export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -5567,16 +4909,7 @@ export function webSearch<T = DefaultToolResult>(query: string | ({
 
 ```ts
 // @public
-export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
-
-// @public
 export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "jane";
-
-// @public
-export const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
-
-// @public
-export const ASSEMBLYAI_TTS_KIND: "assemblyai";
 
 // @public
 export const ASSEMBLYAI_TTS_LANGUAGES: {
@@ -5657,7 +4990,7 @@ export const ASSEMBLYAI_TTS_VOICES: {
 };
 
 // @public
-export function assemblyAITts(opts?: AssemblyAITtsOptions): AssemblyAITtsProvider;
+export function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
 
 // @public
 export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
@@ -5671,27 +5004,13 @@ export interface AssemblyAITtsOptions {
 }
 
 // @public
-export type AssemblyAITtsProvider = TtsProvider & {
-    readonly kind: typeof ASSEMBLYAI_TTS_KIND;
-    readonly options: AssemblyAITtsOptions & {
-        voice: string;
-    };
-};
-
-// @public
 export type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
 
 // @public
-export function cartesia(opts?: CartesiaOptions): CartesiaProvider;
-
-// @public
-export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+export function cartesia(opts?: CartesiaOptions): TtsProvider;
 
 // @public
 export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
-
-// @public
-export const CARTESIA_KIND: "cartesia";
 
 // @public
 export interface CartesiaOptions {
@@ -5701,15 +5020,7 @@ export interface CartesiaOptions {
 }
 
 // @public
-export type CartesiaProvider = TtsProvider & {
-    readonly kind: typeof CARTESIA_KIND;
-    readonly options: CartesiaOptions & {
-        voice: string;
-    };
-};
-
-// @public
-export interface ProviderDescriptor<Kind extends string, Options> {
+interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -5717,16 +5028,10 @@ export interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function rime(opts?: RimeOptions): RimeProvider;
-
-// @public
-export const RIME_API_KEY_ENV = "RIME_API_KEY";
+export function rime(opts?: RimeOptions): TtsProvider;
 
 // @public
 export const RIME_DEFAULT_VOICE = "cove";
-
-// @public
-export const RIME_KIND: "rime";
 
 // @public
 export interface RimeOptions {
@@ -5734,14 +5039,6 @@ export interface RimeOptions {
     model?: string;
     voice?: string;
 }
-
-// @public
-export type RimeProvider = TtsProvider & {
-    readonly kind: typeof RIME_KIND;
-    readonly options: RimeOptions & {
-        voice: string;
-    };
-};
 
 // @public
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {

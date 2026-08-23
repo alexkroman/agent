@@ -17,6 +17,7 @@
 
 import {
   makeTtsError,
+  RIME_API_KEY_ENV,
   resolveRimeSettings,
   type TtsEvents,
   type TtsOpener,
@@ -24,7 +25,7 @@ import {
   type TtsSession,
   WS_OPEN,
 } from "@alexkroman1/aai/host-internal";
-import { RIME_API_KEY_ENV, type RimeOptions } from "@alexkroman1/aai/tts";
+import type { RimeOptions } from "@alexkroman1/aai/tts";
 import { safeJsonParse } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";

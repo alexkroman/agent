@@ -52,6 +52,17 @@ They cross on `@alexkroman1/aai/host-internal`, a subpath that exists for
 exactly this and is on `NON_AUTHORING_SUBPATHS` — no capability, no epoch, no
 TypeDoc page, no semver promise.
 
+**Three other FRAMEWORK packages import it directly, and that is the intended
+route rather than a leak.** The guest's studio chat needs
+`ASSEMBLYAI_LLM_API_KEY_ENV`, the studio server's model selection needs
+`gatewayModelIds`, and the template gate needs
+`ASSEMBLYAI_TTS_DEPRECATED_VOICES` — all SDK internals, none of them authoring
+API. Handing them on through `@alexkroman1/aai-runtime/internal` was tried and
+is worse: an importer's tsconfig then pulls this package's whole module graph
+into its own program, which broke `aai-templates`' typecheck on an unrelated
+`BodyInit` mismatch in `_upload-blobs-*.ts`. What the subpath excludes is an
+AGENT, not a package.
+
 **It is NOT `./internal`, and the reason is a documented invariant.** That
 subpath is deliberately ZOD-FREE, and three of the 79 (`EMPTY_PARAMS`,
 `isConvertibleSchema`, `toToolJsonSchema`) are the schema-conversion helpers,

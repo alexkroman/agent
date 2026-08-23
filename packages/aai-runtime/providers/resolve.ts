@@ -14,40 +14,40 @@
  */
 
 import type { ProviderEnv, SttOpener, TtsOpener } from "@alexkroman1/aai/host-internal";
-import type { LlmProvider } from "@alexkroman1/aai/llm";
-import type { S2sProvider } from "@alexkroman1/aai/s2s";
 import {
   ASSEMBLYAI_S2S_API_KEY_ENV,
   ASSEMBLYAI_S2S_KIND,
-  OPENAI_REALTIME_API_KEY_ENV,
-  OPENAI_REALTIME_KIND,
-} from "@alexkroman1/aai/s2s";
-import type { SttProvider } from "@alexkroman1/aai/stt";
-import {
-  ASSEMBLYAI_API_KEY_ENV,
-  ASSEMBLYAI_KIND,
-  type AssemblyAIOptions,
-  DEEPGRAM_API_KEY_ENV,
-  DEEPGRAM_KIND,
-  type DeepgramOptions,
-  ELEVENLABS_API_KEY_ENV,
-  ELEVENLABS_KIND,
-  type ElevenLabsOptions,
-  SONIOX_API_KEY_ENV,
-  SONIOX_KIND,
-  type SonioxOptions,
-} from "@alexkroman1/aai/stt";
-import type { TtsProvider } from "@alexkroman1/aai/tts";
-import {
+  ASSEMBLYAI_STT_API_KEY_ENV,
+  ASSEMBLYAI_STT_KIND,
   ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_KIND,
-  type AssemblyAITtsOptions,
   CARTESIA_API_KEY_ENV,
   CARTESIA_KIND,
-  type CartesiaOptions,
+  DEEPGRAM_API_KEY_ENV,
+  DEEPGRAM_KIND,
+  ELEVENLABS_API_KEY_ENV,
+  ELEVENLABS_KIND,
+  OPENAI_REALTIME_API_KEY_ENV,
+  OPENAI_REALTIME_KIND,
   RIME_API_KEY_ENV,
   RIME_KIND,
-  type RimeOptions,
+  SONIOX_API_KEY_ENV,
+  SONIOX_KIND,
+} from "@alexkroman1/aai/host-internal";
+import type { LlmProvider } from "@alexkroman1/aai/llm";
+import type { S2sProvider } from "@alexkroman1/aai/s2s";
+import type {
+  AssemblyAISttOptions,
+  DeepgramOptions,
+  ElevenLabsOptions,
+  SonioxOptions,
+  SttProvider,
+} from "@alexkroman1/aai/stt";
+import type {
+  AssemblyAITtsOptions,
+  CartesiaOptions,
+  RimeOptions,
+  TtsProvider,
 } from "@alexkroman1/aai/tts";
 import type { LanguageModel } from "ai";
 import type { LlmRegistryEntry } from "./_llm-registry.ts";
@@ -106,11 +106,11 @@ function lazyOpener<Opts, Session>(
 }
 
 const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
-  [ASSEMBLYAI_KIND]: {
-    envVar: ASSEMBLYAI_API_KEY_ENV,
+  [ASSEMBLYAI_STT_KIND]: {
+    envVar: ASSEMBLYAI_STT_API_KEY_ENV,
     open: (d) =>
-      lazyOpener(ASSEMBLYAI_KIND, async () =>
-        (await import("./stt/assemblyai.ts")).openAssemblyAI(options<AssemblyAIOptions>(d)),
+      lazyOpener(ASSEMBLYAI_STT_KIND, async () =>
+        (await import("./stt/assemblyai.ts")).openAssemblyAI(options<AssemblyAISttOptions>(d)),
       ),
   },
   [DEEPGRAM_KIND]: {
@@ -429,7 +429,7 @@ export function requiredProviderEnvVars(agent: {
     // rejects on, so a wrong entry blocks the deploy AND hides the real key.
     add(
       agent.s2s === undefined
-        ? ASSEMBLYAI_API_KEY_ENV
+        ? ASSEMBLYAI_STT_API_KEY_ENV
         : (descriptorEnvVar(agent.s2s) ?? (isS2sKind(s2sKind) ? S2S_REGISTRY[s2sKind].envVar : "")),
     );
   }
@@ -457,7 +457,7 @@ function refreshProviderEnvVars(): void {
     ...Object.values(S2S_REGISTRY).map((e) => e.envVar),
     // The descriptor-less default: no `s2s` field and no pipeline triple means
     // the injected AssemblyAI pipeline, which no registry entry represents.
-    ASSEMBLYAI_API_KEY_ENV,
+    ASSEMBLYAI_STT_API_KEY_ENV,
   ]);
   allProviderEnvVars.length = 0;
   allProviderEnvVars.push(...derived);

@@ -7,6 +7,7 @@
  */
 
 import {
+  DEEPGRAM_API_KEY_ENV,
   makeSttError,
   resolveDeepgramSettings,
   type SttEvents,
@@ -14,7 +15,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "@alexkroman1/aai/host-internal";
-import { DEEPGRAM_API_KEY_ENV, type DeepgramOptions } from "@alexkroman1/aai/stt";
+import type { DeepgramOptions } from "@alexkroman1/aai/stt";
 import { DeepgramClient, type listen } from "@deepgram/sdk";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { createAudioSendGate } from "../../_audio-gate.ts";

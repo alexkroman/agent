@@ -11,23 +11,12 @@
  */
 
 import type { LlmProvider } from "../../providers.ts";
+import type { ModelOptions } from "./model-options.ts";
 
 export const GROQ_KIND = "groq" as const;
 
 /** Agent-env variable holding the Groq API key. */
 export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
-
-/** Options for {@link groq}. */
-export interface GroqOptions {
-  /** Groq model id, e.g. `"llama-3.3-70b-versatile"`. */
-  model: string;
-}
-
-/** Descriptor returned by {@link groq}. */
-export type GroqProvider = LlmProvider & {
-  readonly kind: typeof GROQ_KIND;
-  readonly options: GroqOptions;
-};
 
 /**
  * Build a Groq LLM descriptor for pipeline mode. The API key is resolved
@@ -45,6 +34,6 @@ export type GroqProvider = LlmProvider & {
  * });
  * ```
  */
-export function groq(opts: GroqOptions): GroqProvider {
+export function groq(opts: ModelOptions): LlmProvider {
   return { kind: GROQ_KIND, options: { ...opts } };
 }

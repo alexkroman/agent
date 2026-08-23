@@ -11,23 +11,12 @@
  */
 
 import type { LlmProvider } from "../../providers.ts";
+import type { ModelOptions } from "./model-options.ts";
 
 export const XAI_KIND = "xai" as const;
 
 /** Agent-env variable holding the xAI API key. */
 export const XAI_API_KEY_ENV = "XAI_API_KEY";
-
-/** Options for {@link xai}. */
-export interface XaiOptions {
-  /** xAI Grok model id, e.g. `"grok-2-1212"`. */
-  model: string;
-}
-
-/** Descriptor returned by {@link xai}. */
-export type XaiProvider = LlmProvider & {
-  readonly kind: typeof XAI_KIND;
-  readonly options: XaiOptions;
-};
 
 /**
  * Build an xAI (Grok) LLM descriptor for pipeline mode. The API key is
@@ -45,6 +34,6 @@ export type XaiProvider = LlmProvider & {
  * });
  * ```
  */
-export function xai(opts: XaiOptions): XaiProvider {
+export function xai(opts: ModelOptions): LlmProvider {
   return { kind: XAI_KIND, options: { ...opts } };
 }

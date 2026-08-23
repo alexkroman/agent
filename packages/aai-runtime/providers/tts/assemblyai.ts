@@ -97,6 +97,7 @@
  */
 
 import {
+  ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_HOST,
   assemblyAITtsLanguageCodes,
   makeTtsError,
@@ -108,7 +109,7 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "@alexkroman1/aai/host-internal";
-import { ASSEMBLYAI_TTS_API_KEY_ENV, type AssemblyAITtsOptions } from "@alexkroman1/aai/tts";
+import type { AssemblyAITtsOptions } from "@alexkroman1/aai/tts";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";

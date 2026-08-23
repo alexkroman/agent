@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "@alexkroman1/aai/llm";
 import { afterEach, describe, expect, test } from "vitest";
-import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
+import { STUDIO_LLM_MODELS } from "./studio-llm.ts";
 import {
   _resetStudioPromptCache,
   composeStudioPrompt,
@@ -76,8 +76,8 @@ describe("studioSystemPrompt", () => {
     // STALE roster still containing it passed just as happily. The floor is
     // what stops an EMPTY roster satisfying the filter vacuously — the
     // assertion beside it at `ASSEMBLYAI_LLM_DEFAULT_MODEL` gets this right.
-    expect(ASSEMBLYAI_GATEWAY_MODELS.length).toBeGreaterThan(1);
-    expect(ASSEMBLYAI_GATEWAY_MODELS.filter((model) => !prompt.includes(model))).toEqual([]);
+    expect(STUDIO_LLM_MODELS.length).toBeGreaterThan(1);
+    expect(STUDIO_LLM_MODELS.filter((model) => !prompt.includes(model))).toEqual([]);
     // The default gateway model for generated pipeline agents, read from the
     // SDK constant rather than spelled out: the preamble interpolates it, so
     // changing the SDK default can no longer leave the prompt naming the old

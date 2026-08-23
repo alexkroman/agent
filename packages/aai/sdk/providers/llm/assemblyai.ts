@@ -99,22 +99,18 @@ export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | 
  */
 const TOOLS_REQUIRE_NO_REASONING: ReadonlySet<string> = new Set(["gpt-5.6-luna", "gpt-5.6-terra"]);
 
-export {
-  ASSEMBLYAI_GATEWAY_MODELS,
-  type AssemblyAIGatewayModel,
-  gatewayModelIds,
-} from "./gateway-models.ts";
-
 /** Options for {@link assemblyAILlm}. */
 export interface AssemblyAILlmOptions {
   /**
-   * Gateway model id — see {@link ASSEMBLYAI_GATEWAY_MODELS} for the catalog,
-   * which is generated from the gateway's own `/v1/models` and records which
-   * models can stream, call tools, and serve the EU region.
+   * Gateway model id — {@link AssemblyAIGatewayModel} is the generated union
+   * of what `/v1/models` advertises. (The catalog BEHIND it, recording which
+   * models stream, call tools and serve the EU region, is
+   * `ASSEMBLYAI_GATEWAY_MODELS` on `@alexkroman1/aai/host-internal`; an
+   * `agent.ts` picks an id, not a capability row.)
    *
-   * Typed against that catalog so a name the gateway does not carry is caught
+   * Typed against that union so a name the gateway does not carry is caught
    * where it is written, rather than as a 400 at the first session. A plain
-   * string is still accepted, because the catalog is a snapshot of a service
+   * string is still accepted, because the union is a snapshot of a service
    * that adds models faster than this package releases.
    *
    * Note two listed models (`gpt-oss-20b`, `gpt-oss-120b`) cannot stream, so
@@ -125,8 +121,8 @@ export interface AssemblyAILlmOptions {
   model?: AssemblyAIGatewayModel | (string & Record<never, never>);
   /**
    * Gateway region. `"eu"` routes through the EU endpoint for data
-   * residency — six models at time of writing, per the `eu` flag in
-   * {@link ASSEMBLYAI_GATEWAY_MODELS}. Defaults to `"us"`.
+   * residency — six models at time of writing, per the `eu` flag in the
+   * generated catalog. Defaults to `"us"`.
    */
   region?: "us" | "eu";
   /**
@@ -181,12 +177,6 @@ export interface AssemblyAILlmOptions {
   apiKeyEnv?: string;
 }
 
-/** Descriptor returned by {@link assemblyAILlm}. */
-export type AssemblyAILlmProvider = LlmProvider & {
-  readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-  readonly options: AssemblyAILlmOptions & { model: string };
-};
-
 /**
  * Build an AssemblyAI LLM Gateway descriptor.
  *
@@ -212,9 +202,9 @@ export type AssemblyAILlmProvider = LlmProvider & {
  *
  * Every option is optional: `assemblyAILlm()` runs
  * {@link ASSEMBLYAI_LLM_DEFAULT_MODEL}. `region: "eu"` selects the EU
- * gateway; {@link ASSEMBLYAI_GATEWAY_MODELS} is the catalog.
+ * gateway; {@link AssemblyAIGatewayModel} is the id set.
  */
-export function assemblyAILlm(opts: AssemblyAILlmOptions = {}): AssemblyAILlmProvider {
+export function assemblyAILlm(opts: AssemblyAILlmOptions = {}): LlmProvider {
   const model = opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL;
   // See TOOLS_REQUIRE_NO_REASONING: for these models, leaving reasoning on
   // the server-side default is a 500 on every tool-calling turn, so the

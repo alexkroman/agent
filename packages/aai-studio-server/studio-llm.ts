@@ -16,14 +16,18 @@
  * is stripped by the body schema, never honored.
  */
 
-import { gatewayModelIds } from "@alexkroman1/aai/llm";
+import { gatewayModelIds } from "@alexkroman1/aai/host-internal";
 
 /**
  * The models offered for studio chat, in preference order.
  *
- * The catalog itself is the SDK's {@link ASSEMBLYAI_GATEWAY_MODELS}, which is
+ * The catalog itself is the SDK's `ASSEMBLYAI_GATEWAY_MODELS`, which is
  * GENERATED from the gateway's own `/v1/models` in both regions — so this
- * module no longer keeps a list, and cannot drift from the service. Every
+ * module no longer keeps a list, and cannot drift from the service.
+ * This is an ORDERED LIST OF IDS derived from it, which is why it does not
+ * share that name: two same-named exports of different types, one a
+ * capability map and one a `string[]`, is a collision a reader resolves by
+ * checking the import line. Every
  * hand-maintained version did: one carried `kimi-k2.5` (deprecated, 410) and
  * `gemini-3.1-flash-lite-preview` (never existed) while missing nine real
  * models, and EU availability was inferred from id prefixes, which named ten
@@ -68,9 +72,9 @@ function ordered(ids: readonly string[]): readonly string[] {
   return [...preferred, ...ids.filter((id) => !preferred.includes(id))];
 }
 
-export const ASSEMBLYAI_GATEWAY_MODELS = ordered(gatewayModelIds());
+export const STUDIO_LLM_MODELS = ordered(gatewayModelIds());
 
-const ASSEMBLYAI_GATEWAY_EU_MODELS = ordered(gatewayModelIds({ eu: true }));
+const STUDIO_LLM_EU_MODELS = ordered(gatewayModelIds({ eu: true }));
 
 function isEuGateway(env: NodeJS.ProcessEnv): boolean {
   return env.STUDIO_LLM_REGION === "eu";
@@ -79,7 +83,7 @@ function isEuGateway(env: NodeJS.ProcessEnv): boolean {
 /** The gateway model studio turns run on — host override, else region default. */
 export function studioLlmModelId(env: NodeJS.ProcessEnv = process.env): string {
   // `||` not `??`: an empty-string env var means "unset".
-  const models = isEuGateway(env) ? ASSEMBLYAI_GATEWAY_EU_MODELS : ASSEMBLYAI_GATEWAY_MODELS;
+  const models = isEuGateway(env) ? STUDIO_LLM_EU_MODELS : STUDIO_LLM_MODELS;
   return env.STUDIO_LLM_MODEL || (models[0] as string);
 }
 

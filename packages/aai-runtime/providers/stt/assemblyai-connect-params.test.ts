@@ -26,7 +26,7 @@ import {
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
-import { ASSEMBLYAI_STREAMING_EU_URL, assemblyAIStt } from "@alexkroman1/aai/stt";
+import { ASSEMBLYAI_STT_EU_URL, assemblyAIStt } from "@alexkroman1/aai/stt";
 import { describe, expect, test, vi } from "vitest";
 import { fakeOf, openSessionWith } from "./_assemblyai-test-utils.ts";
 import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
@@ -226,7 +226,7 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
   test("region: 'eu' points the SDK's streaming socket at the EU endpoint", async () => {
     const session = await openSession({ model: "universal-3-5-pro", region: "eu" });
     const fake = fakeOf(session);
-    expect(fake.params.websocketBaseUrl).toBe(ASSEMBLYAI_STREAMING_EU_URL);
+    expect(fake.params.websocketBaseUrl).toBe(ASSEMBLYAI_STT_EU_URL);
     expect(fake.params.websocketBaseUrl).toBe("wss://streaming.eu.assemblyai.com/v3/ws");
     await session.close();
   });

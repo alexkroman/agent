@@ -5,54 +5,31 @@
 ```ts
 
 // @public
-export const ASSEMBLYAI_S2S_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
 
 // @public
-export const ASSEMBLYAI_S2S_KIND: "assemblyai";
-
-// @public
-export function assemblyAIS2s(opts?: AssemblyAIS2sOptions): AssemblyAIS2sProvider;
-
-// @public
-export type AssemblyAIS2sOptions = {
-    voice?: string;
-    languages?: readonly string[];
+export interface AssemblyAIS2sOptions {
+    apiKeyEnv?: string;
     keyterms?: readonly string[];
-};
+    languages?: readonly string[];
+    voice?: string;
+}
 
 // @public
-export type AssemblyAIS2sProvider = S2sProvider & {
-    readonly kind: typeof ASSEMBLYAI_S2S_KIND;
-    readonly options: AssemblyAIS2sOptions;
-};
+export function openaiRealtime(opts?: OpenaiRealtimeOptions): S2sProvider;
 
 // @public
-export const OPENAI_REALTIME_API_KEY_ENV = "OPENAI_API_KEY";
-
-// @public
-export const OPENAI_REALTIME_KIND: "openai-realtime";
-
-// @public
-export function openaiRealtime(opts?: OpenaiRealtimeOptions): OpenaiRealtimeProvider;
-
-// @public
-export type OpenaiRealtimeOptions = {
+export interface OpenaiRealtimeOptions {
     model?: string;
-    voice?: OpenaiRealtimeVoice;
     url?: string;
-};
-
-// @public
-export type OpenaiRealtimeProvider = S2sProvider & {
-    readonly kind: typeof OPENAI_REALTIME_KIND;
-    readonly options: OpenaiRealtimeOptions;
-};
+    voice?: OpenaiRealtimeVoice;
+}
 
 // @public
 export type OpenaiRealtimeVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse";
 
 // @public
-export interface ProviderDescriptor<Kind extends string, Options> {
+interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)

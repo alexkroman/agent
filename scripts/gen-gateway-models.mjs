@@ -99,6 +99,19 @@ const body = entries
   )
   .join("\n");
 
+/**
+ * The id union, spelled out rather than derived with `keyof typeof`.
+ *
+ * `AssemblyAIGatewayModel` is PUBLISHED (`AssemblyAILlmOptions.model` narrows
+ * to it), and `keyof typeof ASSEMBLYAI_GATEWAY_MODELS` makes the rollup inline
+ * the whole 30-model × 5-field literal type to express it — about 190 of the
+ * 454 lines the `/llm` report used to be. The epoch hash covers that body, so
+ * regenerating this catalog, which is routine ops, forced an `aai:llm`
+ * classification for a change no author can see. Written out, a regeneration
+ * touches roughly two lines of the report.
+ */
+const union = entries.map((e) => `  | ${JSON.stringify(e.id)}`).join("\n");
+
 const file = `// Copyright 2026 the AAI authors. MIT license.
 /**
  * The AssemblyAI LLM Gateway model catalog.
@@ -120,6 +133,12 @@ const file = `// Copyright 2026 the AAI authors. MIT license.
  * A model being listed here means the gateway advertises it, which is a
  * weaker claim than it working: \`kimi-k2.5\` is advertised and answers 410.
  * That is why the check script probes rather than trusting this file.
+ *
+ * Only the id UNION is published, on \`@alexkroman1/aai/llm\`, because
+ * \`AssemblyAILlmOptions.model\` narrows to it for autocomplete. The catalog
+ * itself, its row type and \`gatewayModelIds\` are on
+ * \`@alexkroman1/aai/host-internal\`: their reader is the studio's model
+ * selection and this repo's own gate, never an \`agent.ts\`.
  */
 
 export type GatewayModelInfo = {
@@ -140,12 +159,13 @@ export type GatewayModelInfo = {
   readonly context: number;
 };
 
+/** An id the gateway advertises. */
+export type AssemblyAIGatewayModel =
+${union};
+
 export const ASSEMBLYAI_GATEWAY_MODELS = {
 ${body}
-} as const satisfies Record<string, GatewayModelInfo>;
-
-/** An id the gateway advertises. */
-export type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
+} as const satisfies Record<AssemblyAIGatewayModel, GatewayModelInfo>;
 
 /**
  * Ids usable for a streaming, tool-calling agent — the only shape this SDK

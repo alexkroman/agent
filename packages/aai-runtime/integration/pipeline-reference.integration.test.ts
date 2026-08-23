@@ -44,10 +44,15 @@ import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { OPENAI_API_KEY_ENV, openai } from "@alexkroman1/aai/llm";
+import {
+  ASSEMBLYAI_STT_API_KEY_ENV,
+  CARTESIA_API_KEY_ENV,
+  OPENAI_API_KEY_ENV,
+} from "@alexkroman1/aai/host-internal";
+import { openai } from "@alexkroman1/aai/llm";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
-import { ASSEMBLYAI_API_KEY_ENV, assemblyAIStt } from "@alexkroman1/aai/stt";
-import { CARTESIA_API_KEY_ENV, cartesia } from "@alexkroman1/aai/tts";
+import { assemblyAIStt } from "@alexkroman1/aai/stt";
+import { cartesia } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 import { sleep } from "../_test-utils.ts";
 import { createRuntime } from "../runtime.ts";
@@ -65,7 +70,11 @@ const REQUIRE_ENV = "AAI_REQUIRE_REFERENCE_STACK";
  * defect this file carried: the gate listed three and the agent env carried
  * two, and nothing could see the disagreement.
  */
-const REQUIRED_KEYS = [ASSEMBLYAI_API_KEY_ENV, OPENAI_API_KEY_ENV, CARTESIA_API_KEY_ENV] as const;
+const REQUIRED_KEYS = [
+  ASSEMBLYAI_STT_API_KEY_ENV,
+  OPENAI_API_KEY_ENV,
+  CARTESIA_API_KEY_ENV,
+] as const;
 
 function agentEnvFromShell(): Record<string, string> {
   const env: Record<string, string> = {};

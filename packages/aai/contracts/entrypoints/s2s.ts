@@ -4,6 +4,10 @@
  *
  * Speech-to-speech provider descriptors.
  *
+ * `ProviderDescriptor` is the `agent` capability's — see `stt.ts` for why.
+ * `S2sProvider` stays here, published on the root as well but owned by the narrower
+ * subpath.
+ *
  * Re-exported from `@alexkroman1/aai/s2s`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
  * for this capability alone, hash it, and hold it to a committed epoch. See
@@ -11,15 +15,9 @@
  */
 
 export {
-  ASSEMBLYAI_S2S_API_KEY_ENV,
-  ASSEMBLYAI_S2S_KIND,
   type AssemblyAIS2sOptions,
-  type AssemblyAIS2sProvider,
   assemblyAIS2s,
-  OPENAI_REALTIME_API_KEY_ENV,
-  OPENAI_REALTIME_KIND,
   type OpenaiRealtimeOptions,
-  type OpenaiRealtimeProvider,
   type OpenaiRealtimeVoice,
   openaiRealtime,
   type S2sProvider,

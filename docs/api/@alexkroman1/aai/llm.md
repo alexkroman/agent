@@ -30,23 +30,40 @@ factory.
 
 **Credentials are never passed here.** Each factory's vendor names the env
 var its key is read from — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-`ASSEMBLYAI_API_KEY`, … each also exported as a `*_API_KEY_ENV` constant —
-and the host reads it out of the agent's own environment when the session
-starts. That is what keeps a descriptor safe to serialize across the CLI →
-server → guest boundary.
+`ASSEMBLYAI_API_KEY`, … — and the host reads it out of the agent's own
+environment when the session starts. That is what keeps a descriptor safe to
+serialize across the CLI → server → guest boundary. The variable NAMES are
+not published: an author never types one, and the one case for repointing a
+stage is `apiKeyEnv` on the AssemblyAI descriptor.
+
+Eight of the nine take [ModelOptions](#modeloptions) — one model id and nothing else,
+REQUIRED, because a third-party vendor's catalog is not this SDK's to
+default from. Only [assemblyAILlm](#assemblyaillm) has a default
+([ASSEMBLYAI\_LLM\_DEFAULT\_MODEL](#assemblyai_llm_default_model)) and so a bare call.
 
 Two vendors here are AGGREGATORS rather than model owners, addressed as
 `"creator/model"`: [openrouter](#openrouter) and [gateway](#gateway). A third,
-[assemblyAILlm](#assemblyaillm), fronts AssemblyAI's own gateway — its catalog is
-[ASSEMBLYAI\_GATEWAY\_MODELS](#assemblyai_gateway_models) and its ids are listable with
-[gatewayModelIds](#gatewaymodelids).
+[assemblyAILlm](#assemblyaillm), fronts AssemblyAI's own gateway — its ids are
+[AssemblyAIGatewayModel](#assemblyaigatewaymodel), and the CATALOG behind that union (which
+model streams, calls tools, serves the EU) is on
+`@alexkroman1/aai/host-internal`, since its readers are the studio's model
+selection and this repo's own gate rather than an `agent.ts`.
+
+## The descriptor type is on the ROOT barrel TOO
+
+`LlmProvider` — what a factory here returns — is also exported from
+`@alexkroman1/aai`, beside the other three stage types, so an agent
+annotating two stages writes one import rather than two. It stays here as
+well: this is where the factory that produces one lives.
+`ProviderDescriptor`, the base all four narrow, is on the root ALONE now —
+one interface with four reference pages was three too many.
 
 ## Functions
 
 ### anthropic()
 
 ```ts
-function anthropic(opts: AnthropicOptions): AnthropicProvider;
+function anthropic(opts: ModelOptions): LlmProvider;
 ```
 
 Build an Anthropic (Claude) LLM descriptor for pipeline mode. The API key
@@ -56,11 +73,11 @@ is resolved host-side from the agent's env (`ANTHROPIC_API_KEY`).
 
 ##### opts
 
-[`AnthropicOptions`](#anthropicoptions)
+[`ModelOptions`](#modeloptions)
 
 #### Returns
 
-[`AnthropicProvider`](#anthropicprovider)
+[`LlmProvider`](index.md#llmprovider)
 
 #### Example
 
@@ -80,7 +97,7 @@ export default agent({
 ### assemblyAILlm()
 
 ```ts
-function assemblyAILlm(opts?: AssemblyAILlmOptions): AssemblyAILlmProvider;
+function assemblyAILlm(opts?: AssemblyAILlmOptions): LlmProvider;
 ```
 
 Build an AssemblyAI LLM Gateway descriptor.
@@ -101,7 +118,7 @@ imported side by side without aliasing.
 
 #### Returns
 
-[`AssemblyAILlmProvider`](#assemblyaillmprovider)
+[`LlmProvider`](index.md#llmprovider)
 
 #### Example
 
@@ -118,14 +135,14 @@ export default agent({
 
 Every option is optional: `assemblyAILlm()` runs
 [ASSEMBLYAI\_LLM\_DEFAULT\_MODEL](#assemblyai_llm_default_model). `region: "eu"` selects the EU
-gateway; [ASSEMBLYAI\_GATEWAY\_MODELS](#assemblyai_gateway_models) is the catalog.
+gateway; [AssemblyAIGatewayModel](#assemblyaigatewaymodel) is the id set.
 
 ***
 
 ### gateway()
 
 ```ts
-function gateway(opts: GatewayOptions): GatewayProvider;
+function gateway(opts: ModelOptions): LlmProvider;
 ```
 
 Build a Vercel AI Gateway descriptor.
@@ -138,11 +155,11 @@ descriptor stays free of secrets and safe to serialize.
 
 ##### opts
 
-[`GatewayOptions`](#gatewayoptions)
+[`ModelOptions`](#modeloptions)
 
 #### Returns
 
-[`GatewayProvider`](#gatewayprovider)
+[`LlmProvider`](index.md#llmprovider)
 
 #### Example
 
@@ -162,97 +179,10 @@ https://vercel.com/ai-gateway/models for the list.
 
 ***
 
-### gatewayModelIds()
-
-```ts
-function gatewayModelIds(opts?: {
-  eu?: boolean;
-}): (
-  | "qwen3-next-80b-a3b"
-  | "claude-haiku-4-5-20251001"
-  | "claude-opus-4-5-20251101"
-  | "claude-opus-4-6"
-  | "claude-opus-4-7"
-  | "claude-opus-4-8"
-  | "claude-sonnet-4-5-20250929"
-  | "claude-sonnet-4-6"
-  | "claude-sonnet-5"
-  | "gemini-2.5-flash"
-  | "gemini-2.5-flash-lite"
-  | "gemini-2.5-pro"
-  | "gemini-3.1-flash-lite"
-  | "gemini-3.5-flash"
-  | "gemini-3.5-flash-lite"
-  | "gemini-3.6-flash"
-  | "gpt-4.1"
-  | "gpt-5"
-  | "gpt-5-mini"
-  | "gpt-5-nano"
-  | "gpt-5.1"
-  | "gpt-5.2"
-  | "gpt-5.5"
-  | "gpt-5.6-luna"
-  | "gpt-5.6-terra"
-  | "gpt-oss-120b"
-  | "gpt-oss-20b"
-  | "kimi-k2.5"
-  | "qwen3-32B"
-  | "qwen3.5-4b-32k-experimental")[];
-```
-
-Ids usable for a streaming, tool-calling agent — the only shape this SDK
-runs — and that actually answer. Deriving it beats another hand-kept list:
-a model that is deprecated or loses `stream` upstream drops out on the
-next regeneration instead of waiting to be noticed.
-
-#### Parameters
-
-##### opts?
-
-###### eu?
-
-`boolean`
-
-#### Returns
-
-(
-  \| `"qwen3-next-80b-a3b"`
-  \| `"claude-haiku-4-5-20251001"`
-  \| `"claude-opus-4-5-20251101"`
-  \| `"claude-opus-4-6"`
-  \| `"claude-opus-4-7"`
-  \| `"claude-opus-4-8"`
-  \| `"claude-sonnet-4-5-20250929"`
-  \| `"claude-sonnet-4-6"`
-  \| `"claude-sonnet-5"`
-  \| `"gemini-2.5-flash"`
-  \| `"gemini-2.5-flash-lite"`
-  \| `"gemini-2.5-pro"`
-  \| `"gemini-3.1-flash-lite"`
-  \| `"gemini-3.5-flash"`
-  \| `"gemini-3.5-flash-lite"`
-  \| `"gemini-3.6-flash"`
-  \| `"gpt-4.1"`
-  \| `"gpt-5"`
-  \| `"gpt-5-mini"`
-  \| `"gpt-5-nano"`
-  \| `"gpt-5.1"`
-  \| `"gpt-5.2"`
-  \| `"gpt-5.5"`
-  \| `"gpt-5.6-luna"`
-  \| `"gpt-5.6-terra"`
-  \| `"gpt-oss-120b"`
-  \| `"gpt-oss-20b"`
-  \| `"kimi-k2.5"`
-  \| `"qwen3-32B"`
-  \| `"qwen3.5-4b-32k-experimental"`)[]
-
-***
-
 ### google()
 
 ```ts
-function google(opts: GoogleOptions): GoogleProvider;
+function google(opts: ModelOptions): LlmProvider;
 ```
 
 Build a Google (Gemini) LLM descriptor for pipeline mode. The API key is
@@ -262,11 +192,11 @@ resolved host-side from the agent's env (`GOOGLE_GENERATIVE_AI_API_KEY`).
 
 ##### opts
 
-[`GoogleOptions`](#googleoptions)
+[`ModelOptions`](#modeloptions)
 
 #### Returns
 
-[`GoogleProvider`](#googleprovider)
+[`LlmProvider`](index.md#llmprovider)
 
 #### Example
 
@@ -286,7 +216,7 @@ export default agent({
 ### groq()
 
 ```ts
-function groq(opts: GroqOptions): GroqProvider;
+function groq(opts: ModelOptions): LlmProvider;
 ```
 
 Build a Groq LLM descriptor for pipeline mode. The API key is resolved
@@ -296,11 +226,11 @@ host-side from the agent's env (`GROQ_API_KEY`).
 
 ##### opts
 
-[`GroqOptions`](#groqoptions)
+[`ModelOptions`](#modeloptions)
 
 #### Returns
 
-[`GroqProvider`](#groqprovider)
+[`LlmProvider`](index.md#llmprovider)
 
 #### Example
 
@@ -320,7 +250,7 @@ export default agent({
 ### mistral()
 
 ```ts
-function mistral(opts: MistralOptions): MistralProvider;
+function mistral(opts: ModelOptions): LlmProvider;
 ```
 
 Build a Mistral LLM descriptor for pipeline mode. The API key is resolved
@@ -330,11 +260,11 @@ host-side from the agent's env (`MISTRAL_API_KEY`).
 
 ##### opts
 
-[`MistralOptions`](#mistraloptions)
+[`ModelOptions`](#modeloptions)
 
 #### Returns
 
-[`MistralProvider`](#mistralprovider)
+[`LlmProvider`](index.md#llmprovider)
 
 #### Example
 
@@ -354,7 +284,7 @@ export default agent({
 ### openai()
 
 ```ts
-function openai(opts: OpenAIOptions): OpenAIProvider;
+function openai(opts: ModelOptions): LlmProvider;
 ```
 
 Build an OpenAI LLM descriptor for pipeline mode. The API key is resolved
@@ -364,11 +294,11 @@ host-side from the agent's env (`OPENAI_API_KEY`).
 
 ##### opts
 
-[`OpenAIOptions`](#openaioptions)
+[`ModelOptions`](#modeloptions)
 
 #### Returns
 
-[`OpenAIProvider`](#openaiprovider)
+[`LlmProvider`](index.md#llmprovider)
 
 #### Example
 
@@ -388,7 +318,7 @@ export default agent({
 ### openrouter()
 
 ```ts
-function openrouter(opts: OpenRouterOptions): OpenRouterProvider;
+function openrouter(opts: ModelOptions): LlmProvider;
 ```
 
 Build an OpenRouter descriptor.
@@ -401,11 +331,11 @@ descriptor stays free of secrets and safe to serialize.
 
 ##### opts
 
-[`OpenRouterOptions`](#openrouteroptions)
+[`ModelOptions`](#modeloptions)
 
 #### Returns
 
-[`OpenRouterProvider`](#openrouterprovider)
+[`LlmProvider`](index.md#llmprovider)
 
 #### Example
 
@@ -428,7 +358,7 @@ https://openrouter.ai/models for the list.
 ### xai()
 
 ```ts
-function xai(opts: XaiOptions): XaiProvider;
+function xai(opts: ModelOptions): LlmProvider;
 ```
 
 Build an xAI (Grok) LLM descriptor for pipeline mode. The API key is
@@ -438,11 +368,11 @@ resolved host-side from the agent's env (`XAI_API_KEY`).
 
 ##### opts
 
-[`XaiOptions`](#xaioptions)
+[`ModelOptions`](#modeloptions)
 
 #### Returns
 
-[`XaiProvider`](#xaiprovider)
+[`LlmProvider`](index.md#llmprovider)
 
 #### Example
 
@@ -458,22 +388,6 @@ export default agent({
 ```
 
 ## Interfaces
-
-### AnthropicOptions
-
-Options for [anthropic](#anthropic).
-
-#### Properties
-
-##### model
-
-```ts
-model: string;
-```
-
-Anthropic model id, e.g. `"claude-haiku-4-5"`.
-
-***
 
 ### AssemblyAILlmOptions
 
@@ -519,45 +433,18 @@ left on production reject the key. Leave unset in production.
 ```ts
 optional model?: 
   | string & Record<never, never>
-  | "qwen3-next-80b-a3b"
-  | "claude-haiku-4-5-20251001"
-  | "claude-opus-4-5-20251101"
-  | "claude-opus-4-6"
-  | "claude-opus-4-7"
-  | "claude-opus-4-8"
-  | "claude-sonnet-4-5-20250929"
-  | "claude-sonnet-4-6"
-  | "claude-sonnet-5"
-  | "gemini-2.5-flash"
-  | "gemini-2.5-flash-lite"
-  | "gemini-2.5-pro"
-  | "gemini-3.1-flash-lite"
-  | "gemini-3.5-flash"
-  | "gemini-3.5-flash-lite"
-  | "gemini-3.6-flash"
-  | "gpt-4.1"
-  | "gpt-5"
-  | "gpt-5-mini"
-  | "gpt-5-nano"
-  | "gpt-5.1"
-  | "gpt-5.2"
-  | "gpt-5.5"
-  | "gpt-5.6-luna"
-  | "gpt-5.6-terra"
-  | "gpt-oss-120b"
-  | "gpt-oss-20b"
-  | "kimi-k2.5"
-  | "qwen3-32B"
-  | "qwen3.5-4b-32k-experimental";
+  | AssemblyAIGatewayModel;
 ```
 
-Gateway model id — see [ASSEMBLYAI\_GATEWAY\_MODELS](#assemblyai_gateway_models) for the catalog,
-which is generated from the gateway's own `/v1/models` and records which
-models can stream, call tools, and serve the EU region.
+Gateway model id — [AssemblyAIGatewayModel](#assemblyaigatewaymodel) is the generated union
+of what `/v1/models` advertises. (The catalog BEHIND it, recording which
+models stream, call tools and serve the EU region, is
+`ASSEMBLYAI_GATEWAY_MODELS` on `@alexkroman1/aai/host-internal`; an
+`agent.ts` picks an id, not a capability row.)
 
-Typed against that catalog so a name the gateway does not carry is caught
+Typed against that union so a name the gateway does not carry is caught
 where it is written, rather than as a 400 at the first session. A plain
-string is still accepted, because the catalog is a snapshot of a service
+string is still accepted, because the union is a snapshot of a service
 that adds models faster than this package releases.
 
 Note two listed models (`gpt-oss-20b`, `gpt-oss-120b`) cannot stream, so
@@ -601,14 +488,14 @@ optional region?: "us" | "eu";
 ```
 
 Gateway region. `"eu"` routes through the EU endpoint for data
-residency — six models at time of writing, per the `eu` flag in
-[ASSEMBLYAI\_GATEWAY\_MODELS](#assemblyai_gateway_models). Defaults to `"us"`.
+residency — six models at time of writing, per the `eu` flag in the
+generated catalog. Defaults to `"us"`.
 
 ***
 
-### GatewayOptions
+### ModelOptions
 
-Options for [gateway](#gateway).
+Options for an LLM factory whose only setting is which model to run.
 
 #### Properties
 
@@ -618,184 +505,53 @@ Options for [gateway](#gateway).
 model: string;
 ```
 
-Gateway model id in `"creator/model"` form, e.g. `"zai/glm-4.6"`,
-`"anthropic/claude-sonnet-4-5"`, `"openai/gpt-4.1"`. See
-https://vercel.com/ai-gateway/models for the full list.
+The vendor's own model id, e.g. `"claude-sonnet-5"`, `"gpt-5.5"`,
+`"gemini-2.5-flash"`. The two aggregator factories (`openrouter`,
+`gateway`) address a model as `"creator/model"`; each module's doc names
+the shape it takes.
 
-***
-
-### GoogleOptions
-
-Options for [google](#google).
-
-#### Properties
-
-##### model
-
-```ts
-model: string;
-```
-
-Google Gemini model id, e.g. `"gemini-2.0-flash"`.
-
-***
-
-### GroqOptions
-
-Options for [groq](#groq).
-
-#### Properties
-
-##### model
-
-```ts
-model: string;
-```
-
-Groq model id, e.g. `"llama-3.3-70b-versatile"`.
-
-***
-
-### MistralOptions
-
-Options for [mistral](#mistral).
-
-#### Properties
-
-##### model
-
-```ts
-model: string;
-```
-
-Mistral model id, e.g. `"mistral-large-latest"`.
-
-***
-
-### OpenAIOptions
-
-Options for [openai](#openai).
-
-#### Properties
-
-##### model
-
-```ts
-model: string;
-```
-
-OpenAI model id, e.g. `"gpt-4o"`, `"gpt-4o-mini"`.
-
-***
-
-### OpenRouterOptions
-
-Options for [openrouter](#openrouter).
-
-#### Properties
-
-##### model
-
-```ts
-model: string;
-```
-
-OpenRouter model id in `"creator/model"` form, e.g.
-`"anthropic/claude-sonnet-4.5"`, `"openai/gpt-4.1"`,
-`"meta-llama/llama-3.3-70b-instruct"`. See
-https://openrouter.ai/models for the full list.
-
-***
-
-### XaiOptions
-
-Options for [xai](#xai).
-
-#### Properties
-
-##### model
-
-```ts
-model: string;
-```
-
-xAI Grok model id, e.g. `"grok-2-1212"`.
+Required: a third-party vendor's catalog is not this SDK's to default
+from, and an id invented on its behalf fails at the first session.
 
 ## Type Aliases
-
-### AnthropicProvider
-
-```ts
-type AnthropicProvider = LlmProvider & {
-  kind: typeof ANTHROPIC_KIND;
-  options: AnthropicOptions;
-};
-```
-
-Descriptor returned by [anthropic](#anthropic).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof ANTHROPIC_KIND;
-```
-
-##### options
-
-```ts
-readonly options: AnthropicOptions;
-```
-
-***
 
 ### AssemblyAIGatewayModel
 
 ```ts
-type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
+type AssemblyAIGatewayModel = 
+  | "claude-haiku-4-5-20251001"
+  | "claude-opus-4-5-20251101"
+  | "claude-opus-4-6"
+  | "claude-opus-4-7"
+  | "claude-opus-4-8"
+  | "claude-sonnet-4-5-20250929"
+  | "claude-sonnet-4-6"
+  | "claude-sonnet-5"
+  | "gemini-2.5-flash"
+  | "gemini-2.5-flash-lite"
+  | "gemini-2.5-pro"
+  | "gemini-3.1-flash-lite"
+  | "gemini-3.5-flash"
+  | "gemini-3.5-flash-lite"
+  | "gemini-3.6-flash"
+  | "gpt-4.1"
+  | "gpt-5"
+  | "gpt-5-mini"
+  | "gpt-5-nano"
+  | "gpt-5.1"
+  | "gpt-5.2"
+  | "gpt-5.5"
+  | "gpt-5.6-luna"
+  | "gpt-5.6-terra"
+  | "gpt-oss-120b"
+  | "gpt-oss-20b"
+  | "kimi-k2.5"
+  | "qwen3-32B"
+  | "qwen3-next-80b-a3b"
+  | "qwen3.5-4b-32k-experimental";
 ```
 
 An id the gateway advertises.
-
-***
-
-### AssemblyAILlmProvider
-
-```ts
-type AssemblyAILlmProvider = LlmProvider & {
-  kind: typeof ASSEMBLYAI_LLM_KIND;
-  options: AssemblyAILlmOptions & {
-     model: string;
-  };
-};
-```
-
-Descriptor returned by [assemblyAILlm](#assemblyaillm).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-```
-
-##### options
-
-```ts
-readonly options: AssemblyAILlmOptions & {
-  model: string;
-};
-```
-
-###### Type Declaration
-
-###### model
-
-```ts
-model: string;
-```
 
 ***
 
@@ -809,907 +565,7 @@ Reasoning effort accepted by the gateway's GPT-5-family models, including
 the two off switches: `"none"` (gpt-5.1 and later) and `"minimal"` (the
 original `gpt-5`/`-mini`/`-nano`, whose lowest setting that is).
 
-***
-
-### GatewayModelInfo
-
-```ts
-type GatewayModelInfo = {
-  context: number;
-  eu: boolean;
-  live: boolean;
-  stream: boolean;
-  tools: boolean;
-};
-```
-
-The AssemblyAI LLM Gateway model catalog.
-
-GENERATED — run `node scripts/gen-gateway-models.mjs --write` to refresh,
-and `pnpm check:gateway-models` to verify. Do not hand-edit: every
-hand-maintained version of this list was wrong. One carried a deprecated
-model and one that had never existed while missing nine real ones; another
-inferred EU availability from id prefixes and produced four models the EU
-endpoint does not serve.
-
-Capabilities come from the endpoint's `supported_parameters` and are not
-decoration:
-
-- `stream: false` cannot be used for a voice pipeline or a studio turn at
-  all — both stream. Two listed models are in this category.
-- `tools: false` cannot run an agent that has tools.
-
-A model being listed here means the gateway advertises it, which is a
-weaker claim than it working: `kimi-k2.5` is advertised and answers 410.
-That is why the check script probes rather than trusting this file.
-
-#### Properties
-
-##### context
-
-```ts
-readonly context: number;
-```
-
-Context window in tokens, as the gateway reports it.
-
-##### eu
-
-```ts
-readonly eu: boolean;
-```
-
-Served by the EU endpoint (`llm-gateway.eu.assemblyai.com`).
-
-##### live
-
-```ts
-readonly live: boolean;
-```
-
-Answered a minimal request, as this SDK sends one, when generated.
-`false` means the gateway advertises the model and will not run it for
-us: `kimi-k2.5` answers 410 (deprecated), `gemini-3.6-flash` answers
-400 (needs a `model_region` parameter nothing here sends).
-
-##### stream
-
-```ts
-readonly stream: boolean;
-```
-
-Supports `stream: true` — required for voice pipelines and studio chat.
-
-##### tools
-
-```ts
-readonly tools: boolean;
-```
-
-Accepts a `tools` array — required for any agent with tools.
-
-***
-
-### GatewayProvider
-
-```ts
-type GatewayProvider = LlmProvider & {
-  kind: typeof GATEWAY_KIND;
-  options: GatewayOptions;
-};
-```
-
-Descriptor returned by [gateway](#gateway).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof GATEWAY_KIND;
-```
-
-##### options
-
-```ts
-readonly options: GatewayOptions;
-```
-
-***
-
-### GoogleProvider
-
-```ts
-type GoogleProvider = LlmProvider & {
-  kind: typeof GOOGLE_KIND;
-  options: GoogleOptions;
-};
-```
-
-Descriptor returned by [google](#google).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof GOOGLE_KIND;
-```
-
-##### options
-
-```ts
-readonly options: GoogleOptions;
-```
-
-***
-
-### GroqProvider
-
-```ts
-type GroqProvider = LlmProvider & {
-  kind: typeof GROQ_KIND;
-  options: GroqOptions;
-};
-```
-
-Descriptor returned by [groq](#groq).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof GROQ_KIND;
-```
-
-##### options
-
-```ts
-readonly options: GroqOptions;
-```
-
-***
-
-### LlmProvider
-
-```ts
-type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
-  __stage?: "llm";
-};
-```
-
-Descriptor for an LLM provider. Returned by factories like
-`anthropic(...)` from `@alexkroman1/aai/llm`.
-
-#### Type Declaration
-
-##### \_\_stage?
-
-```ts
-readonly optional __stage?: "llm";
-```
-
-Compile-time stage tag; never present at runtime.
-
-***
-
-### MistralProvider
-
-```ts
-type MistralProvider = LlmProvider & {
-  kind: typeof MISTRAL_KIND;
-  options: MistralOptions;
-};
-```
-
-Descriptor returned by [mistral](#mistral).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof MISTRAL_KIND;
-```
-
-##### options
-
-```ts
-readonly options: MistralOptions;
-```
-
-***
-
-### OpenAIProvider
-
-```ts
-type OpenAIProvider = LlmProvider & {
-  kind: typeof OPENAI_KIND;
-  options: OpenAIOptions;
-};
-```
-
-Descriptor returned by [openai](#openai).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof OPENAI_KIND;
-```
-
-##### options
-
-```ts
-readonly options: OpenAIOptions;
-```
-
-***
-
-### OpenRouterProvider
-
-```ts
-type OpenRouterProvider = LlmProvider & {
-  kind: typeof OPENROUTER_KIND;
-  options: OpenRouterOptions;
-};
-```
-
-Descriptor returned by [openrouter](#openrouter).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof OPENROUTER_KIND;
-```
-
-##### options
-
-```ts
-readonly options: OpenRouterOptions;
-```
-
-***
-
-### XaiProvider
-
-```ts
-type XaiProvider = LlmProvider & {
-  kind: typeof XAI_KIND;
-  options: XaiOptions;
-};
-```
-
-Descriptor returned by [xai](#xai).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof XAI_KIND;
-```
-
-##### options
-
-```ts
-readonly options: XaiOptions;
-```
-
 ## Variables
-
-### ANTHROPIC\_API\_KEY\_ENV
-
-```ts
-const ANTHROPIC_API_KEY_ENV: "ANTHROPIC_API_KEY" = "ANTHROPIC_API_KEY";
-```
-
-Agent-env variable holding the Anthropic API key.
-
-***
-
-### ANTHROPIC\_KIND
-
-```ts
-const ANTHROPIC_KIND: "anthropic";
-```
-
-***
-
-### ASSEMBLYAI\_GATEWAY\_MODELS
-
-```ts
-const ASSEMBLYAI_GATEWAY_MODELS: {
-  claude-haiku-4-5-20251001: {
-     context: 200000;
-     eu: true;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  claude-opus-4-5-20251101: {
-     context: 200000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  claude-opus-4-6: {
-     context: 200000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  claude-opus-4-7: {
-     context: 1000000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  claude-opus-4-8: {
-     context: 1000000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  claude-sonnet-4-5-20250929: {
-     context: 200000;
-     eu: true;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  claude-sonnet-4-6: {
-     context: 200000;
-     eu: true;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  claude-sonnet-5: {
-     context: 200000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gemini-2.5-flash: {
-     context: 1048576;
-     eu: true;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gemini-2.5-flash-lite: {
-     context: 1048576;
-     eu: true;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gemini-2.5-pro: {
-     context: 200000;
-     eu: true;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gemini-3.1-flash-lite: {
-     context: 1048575;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gemini-3.5-flash: {
-     context: 1048575;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gemini-3.5-flash-lite: {
-     context: 1048575;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gemini-3.6-flash: {
-     context: 1048575;
-     eu: false;
-     live: false;
-     stream: true;
-     tools: true;
-  };
-  gpt-4.1: {
-     context: 1047576;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gpt-5: {
-     context: 400000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gpt-5-mini: {
-     context: 400000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gpt-5-nano: {
-     context: 400000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gpt-5.1: {
-     context: 400000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gpt-5.2: {
-     context: 400000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gpt-5.5: {
-     context: 272000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gpt-5.6-luna: {
-     context: 270000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gpt-5.6-terra: {
-     context: 270000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  gpt-oss-120b: {
-     context: 131072;
-     eu: false;
-     live: true;
-     stream: false;
-     tools: true;
-  };
-  gpt-oss-20b: {
-     context: 131072;
-     eu: false;
-     live: true;
-     stream: false;
-     tools: true;
-  };
-  kimi-k2.5: {
-     context: 200000;
-     eu: false;
-     live: false;
-     stream: true;
-     tools: true;
-  };
-  qwen3-32B: {
-     context: 200000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  qwen3-next-80b-a3b: {
-     context: 200000;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: true;
-  };
-  qwen3.5-4b-32k-experimental: {
-     context: 32768;
-     eu: false;
-     live: true;
-     stream: true;
-     tools: false;
-  };
-};
-```
-
-#### Type Declaration
-
-##### claude-haiku-4-5-20251001
-
-```ts
-{
-  context: 200000;
-  eu: true;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### claude-opus-4-5-20251101
-
-```ts
-{
-  context: 200000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### claude-opus-4-6
-
-```ts
-{
-  context: 200000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### claude-opus-4-7
-
-```ts
-{
-  context: 1000000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### claude-opus-4-8
-
-```ts
-{
-  context: 1000000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### claude-sonnet-4-5-20250929
-
-```ts
-{
-  context: 200000;
-  eu: true;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### claude-sonnet-4-6
-
-```ts
-{
-  context: 200000;
-  eu: true;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### claude-sonnet-5
-
-```ts
-{
-  context: 200000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gemini-2.5-flash
-
-```ts
-{
-  context: 1048576;
-  eu: true;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gemini-2.5-flash-lite
-
-```ts
-{
-  context: 1048576;
-  eu: true;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gemini-2.5-pro
-
-```ts
-{
-  context: 200000;
-  eu: true;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gemini-3.1-flash-lite
-
-```ts
-{
-  context: 1048575;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gemini-3.5-flash
-
-```ts
-{
-  context: 1048575;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gemini-3.5-flash-lite
-
-```ts
-{
-  context: 1048575;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gemini-3.6-flash
-
-```ts
-{
-  context: 1048575;
-  eu: false;
-  live: false;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-4.1
-
-```ts
-{
-  context: 1047576;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-5
-
-```ts
-{
-  context: 400000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-5-mini
-
-```ts
-{
-  context: 400000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-5-nano
-
-```ts
-{
-  context: 400000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-5.1
-
-```ts
-{
-  context: 400000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-5.2
-
-```ts
-{
-  context: 400000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-5.5
-
-```ts
-{
-  context: 272000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-5.6-luna
-
-```ts
-{
-  context: 270000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-5.6-terra
-
-```ts
-{
-  context: 270000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### gpt-oss-120b
-
-```ts
-{
-  context: 131072;
-  eu: false;
-  live: true;
-  stream: false;
-  tools: true;
-}
-```
-
-##### gpt-oss-20b
-
-```ts
-{
-  context: 131072;
-  eu: false;
-  live: true;
-  stream: false;
-  tools: true;
-}
-```
-
-##### kimi-k2.5
-
-```ts
-{
-  context: 200000;
-  eu: false;
-  live: false;
-  stream: true;
-  tools: true;
-}
-```
-
-##### qwen3-32B
-
-```ts
-{
-  context: 200000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### qwen3-next-80b-a3b
-
-```ts
-{
-  context: 200000;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: true;
-}
-```
-
-##### qwen3.5-4b-32k-experimental
-
-```ts
-{
-  context: 32768;
-  eu: false;
-  live: true;
-  stream: true;
-  tools: false;
-}
-```
-
-***
-
-### ASSEMBLYAI\_LLM\_API\_KEY\_ENV
-
-```ts
-const ASSEMBLYAI_LLM_API_KEY_ENV: "ASSEMBLYAI_API_KEY" = "ASSEMBLYAI_API_KEY";
-```
-
-Agent-env variable holding the AssemblyAI API key (same key as AssemblyAI STT).
-
-***
 
 ### ASSEMBLYAI\_LLM\_DEFAULT\_MODEL
 
@@ -1761,116 +617,6 @@ US (default) LLM Gateway endpoint.
 
 ***
 
-### ASSEMBLYAI\_LLM\_KIND
-
-```ts
-const ASSEMBLYAI_LLM_KIND: "assemblyai";
-```
-
-Kind tag recognised by the host-side resolver.
-
-***
-
-### GATEWAY\_API\_KEY\_ENV
-
-```ts
-const GATEWAY_API_KEY_ENV: "AI_GATEWAY_API_KEY" = "AI_GATEWAY_API_KEY";
-```
-
-Agent-env variable holding the Vercel AI Gateway API key.
-
-***
-
-### GATEWAY\_KIND
-
-```ts
-const GATEWAY_KIND: "gateway";
-```
-
-***
-
-### GOOGLE\_API\_KEY\_ENV
-
-```ts
-const GOOGLE_API_KEY_ENV: "GOOGLE_GENERATIVE_AI_API_KEY" = "GOOGLE_GENERATIVE_AI_API_KEY";
-```
-
-Agent-env variable holding the Google Generative AI API key.
-
-***
-
-### GOOGLE\_KIND
-
-```ts
-const GOOGLE_KIND: "google";
-```
-
-***
-
-### GROQ\_API\_KEY\_ENV
-
-```ts
-const GROQ_API_KEY_ENV: "GROQ_API_KEY" = "GROQ_API_KEY";
-```
-
-Agent-env variable holding the Groq API key.
-
-***
-
-### GROQ\_KIND
-
-```ts
-const GROQ_KIND: "groq";
-```
-
-***
-
-### MISTRAL\_API\_KEY\_ENV
-
-```ts
-const MISTRAL_API_KEY_ENV: "MISTRAL_API_KEY" = "MISTRAL_API_KEY";
-```
-
-Agent-env variable holding the Mistral API key.
-
-***
-
-### MISTRAL\_KIND
-
-```ts
-const MISTRAL_KIND: "mistral";
-```
-
-***
-
-### OPENAI\_API\_KEY\_ENV
-
-```ts
-const OPENAI_API_KEY_ENV: "OPENAI_API_KEY" = "OPENAI_API_KEY";
-```
-
-Agent-env variable holding the OpenAI API key (shared with the OpenAI Realtime S2S provider).
-
-***
-
-### OPENAI\_KIND
-
-```ts
-const OPENAI_KIND: "openai";
-```
-
-***
-
-### OPENROUTER\_API\_KEY\_ENV
-
-```ts
-const OPENROUTER_API_KEY_ENV: "OPENROUTER_API_KEY" = "OPENROUTER_API_KEY";
-```
-
-Agent-env variable holding the OpenRouter API key.
-
-***
-
 ### OPENROUTER\_BASE\_URL
 
 ```ts
@@ -1879,34 +625,8 @@ const OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1" = "https://openrouter.
 
 OpenRouter's OpenAI-compatible API endpoint.
 
-***
-
-### OPENROUTER\_KIND
-
-```ts
-const OPENROUTER_KIND: "openrouter";
-```
-
-***
-
-### XAI\_API\_KEY\_ENV
-
-```ts
-const XAI_API_KEY_ENV: "XAI_API_KEY" = "XAI_API_KEY";
-```
-
-Agent-env variable holding the xAI API key.
-
-***
-
-### XAI\_KIND
-
-```ts
-const XAI_KIND: "xai";
-```
-
 ## References
 
-### ProviderDescriptor
+### LlmProvider
 
-Re-exports [ProviderDescriptor](stt.md#providerdescriptor)
+Re-exports [LlmProvider](index.md#llmprovider)

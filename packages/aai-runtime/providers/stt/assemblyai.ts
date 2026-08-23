@@ -2,6 +2,7 @@
 
 import { DEFAULT_STT_PROMPT } from "@alexkroman1/aai";
 import {
+  ASSEMBLYAI_STT_API_KEY_ENV,
   makeSttError,
   resolveAssemblyAISttSettings,
   STT_CONNECT_RETRY_DELAY_MS,
@@ -11,11 +12,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "@alexkroman1/aai/host-internal";
-import {
-  ASSEMBLYAI_API_KEY_ENV,
-  ASSEMBLYAI_STREAMING_EU_URL,
-  type AssemblyAIOptions,
-} from "@alexkroman1/aai/stt";
+import { ASSEMBLYAI_STT_EU_URL, type AssemblyAISttOptions } from "@alexkroman1/aai/stt";
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { createAudioSendGate } from "../../_audio-gate.ts";
@@ -138,8 +135,8 @@ function normalizeAgentContext(text: string): string | undefined {
  * the SDK (hence no `default` here), whose own default already carries the
  * versioned path: a stale copy would override an SDK path bump.
  */
-function resolveStreamingUrl(opts: AssemblyAIOptions): string | undefined {
-  return pickEndpoint(opts.streamingUrl, opts.region, { eu: ASSEMBLYAI_STREAMING_EU_URL });
+function resolveStreamingUrl(opts: AssemblyAISttOptions): string | undefined {
+  return pickEndpoint(opts.streamingUrl, opts.region, { eu: ASSEMBLYAI_STT_EU_URL });
 }
 
 /**
@@ -150,7 +147,7 @@ function resolveStreamingUrl(opts: AssemblyAIOptions): string | undefined {
  * types via conditional spreads.
  */
 function buildTranscriberParams(
-  opts: AssemblyAIOptions,
+  opts: AssemblyAISttOptions,
   openOpts: SttOpenOptions,
 ): { params: Record<string, unknown>; agentContextCapable: boolean } {
   // Every default lives in resolveAssemblyAISttSettings, which the runtime's
@@ -207,13 +204,13 @@ function buildTranscriberParams(
   return { params, agentContextCapable };
 }
 
-export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
+export function openAssemblyAI(opts: AssemblyAISttOptions = {}): SttOpener {
   return {
     name: "assemblyai",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
       const apiKey = requireApiKey(
         openOpts.apiKey,
-        ASSEMBLYAI_API_KEY_ENV,
+        ASSEMBLYAI_STT_API_KEY_ENV,
         "AssemblyAI STT",
         (msg) => makeSttError("stt_auth_failed", msg),
       );

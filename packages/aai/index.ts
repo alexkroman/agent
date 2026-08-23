@@ -92,14 +92,50 @@ export * from "./sdk/providers/assemblyai-pipeline.ts";
  * By NAME rather than `export *`: that module also exports
  * `ASSEMBLYAI_S2S_KIND` and `ASSEMBLYAI_S2S_API_KEY_ENV`, which an `agent.ts`
  * never writes — the descriptor sets the kind, and credentials resolve
- * server-side. They live on `@alexkroman1/aai/s2s` beside the eleven
- * `*_KIND`/`*_API_KEY_ENV` pairs of the other provider modules.
+ * server-side. Those two, and the seventeen `*_KIND`/`*_API_KEY_ENV` constants
+ * of the other provider modules, are on `@alexkroman1/aai/host-internal` with
+ * the `resolve*Settings` helpers that read them.
+ */
+export { type AssemblyAIS2sOptions, assemblyAIS2s } from "./sdk/providers/s2s/assemblyai.ts";
+/**
+ * The voice catalog and the type `agent({ voice })` is written against.
+ *
+ * Both were FORGOTTEN exports here — `AgentParams.voice` is typed
+ * `AssemblyAITtsVoice`, and the catalog is the only place the ids are
+ * checkable — so an author reaching for the field this barrel documents had to
+ * import from `@alexkroman1/aai/tts` to name either. The TTS subpath keeps
+ * them too: it is where an explicit `assemblyAITts({ voice })` stage is
+ * written.
  */
 export {
-  type AssemblyAIS2sOptions,
-  type AssemblyAIS2sProvider,
-  assemblyAIS2s,
-} from "./sdk/providers/s2s/assemblyai.ts";
+  ASSEMBLYAI_TTS_VOICES,
+  type AssemblyAITtsVoice,
+} from "./sdk/providers/tts/assemblyai.ts";
+/**
+ * The four stage descriptor types and the base they narrow.
+ *
+ * `AgentDef` names all four in its own signature, so an author annotating a
+ * stage — a helper that builds one, a config assembled across files — had to
+ * import them from up to four provider subpaths to write down a type this
+ * barrel already publishes the consumer of. They were FORGOTTEN exports here:
+ * declared in the rollup because `AgentDef` references them, exported by
+ * nothing, so the shipped authoring guide's own `agent()` signature block
+ * named types no import path on this page could supply.
+ *
+ * The four stage types stay on their own subpaths too — that is where the
+ * factory producing one lives — so each still BELONGS to its stage capability
+ * under the rule that a name published on both `.` and a narrower subpath is
+ * the narrower one's. `ProviderDescriptor` is the exception and left them: one
+ * interface had four reference pages, and the base all four narrow spans every
+ * stage, so the root is the narrowest thing that can own it.
+ */
+export type {
+  LlmProvider,
+  ProviderDescriptor,
+  S2sProvider,
+  SttProvider,
+  TtsProvider,
+} from "./sdk/providers.ts";
 /**
  * Standard Schema acceptance — the two an author names.
  *

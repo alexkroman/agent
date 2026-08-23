@@ -18,6 +18,13 @@
  * name left the hash byte-identical and shipped as a `patch` that broke a build.
  * Contracting the union of names makes that a classification instead.
  *
+ * `ProviderDescriptor` is here because it is the only one of the five
+ * descriptor types with no stage of its own: `AgentDef` names all four stages,
+ * and the base they narrow used to be re-exported from every stage subpath —
+ * one interface with four reference pages, a name four capabilities each
+ * half-owned. The four stage types themselves stay with their stages, which
+ * publish the factories that produce them.
+ *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
  * (returning `AgentDef`, like `agent()`), and what it selects is a front door.
  * The `workflow` capability is the runs themselves — `workflow()`, and what a
@@ -38,6 +45,7 @@ export {
   type BuiltinTool,
   type PipelineAgentParams,
   type PipelineVoiceTuning,
+  type ProviderDescriptor,
   type S2sAgentParams,
   type SessionEventContext,
   type SessionEventHandler,

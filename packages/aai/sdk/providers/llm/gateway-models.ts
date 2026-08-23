@@ -19,6 +19,12 @@
  * A model being listed here means the gateway advertises it, which is a
  * weaker claim than it working: `kimi-k2.5` is advertised and answers 410.
  * That is why the check script probes rather than trusting this file.
+ *
+ * Only the id UNION is published, on `@alexkroman1/aai/llm`, because
+ * `AssemblyAILlmOptions.model` narrows to it for autocomplete. The catalog
+ * itself, its row type and `gatewayModelIds` are on
+ * `@alexkroman1/aai/host-internal`: their reader is the studio's model
+ * selection and this repo's own gate, never an `agent.ts`.
  */
 
 export type GatewayModelInfo = {
@@ -38,6 +44,39 @@ export type GatewayModelInfo = {
   /** Context window in tokens, as the gateway reports it. */
   readonly context: number;
 };
+
+/** An id the gateway advertises. */
+export type AssemblyAIGatewayModel =
+  | "claude-haiku-4-5-20251001"
+  | "claude-opus-4-5-20251101"
+  | "claude-opus-4-6"
+  | "claude-opus-4-7"
+  | "claude-opus-4-8"
+  | "claude-sonnet-4-5-20250929"
+  | "claude-sonnet-4-6"
+  | "claude-sonnet-5"
+  | "gemini-2.5-flash"
+  | "gemini-2.5-flash-lite"
+  | "gemini-2.5-pro"
+  | "gemini-3.1-flash-lite"
+  | "gemini-3.5-flash"
+  | "gemini-3.5-flash-lite"
+  | "gemini-3.6-flash"
+  | "gpt-4.1"
+  | "gpt-5"
+  | "gpt-5-mini"
+  | "gpt-5-nano"
+  | "gpt-5.1"
+  | "gpt-5.2"
+  | "gpt-5.5"
+  | "gpt-5.6-luna"
+  | "gpt-5.6-terra"
+  | "gpt-oss-120b"
+  | "gpt-oss-20b"
+  | "kimi-k2.5"
+  | "qwen3-32B"
+  | "qwen3-next-80b-a3b"
+  | "qwen3.5-4b-32k-experimental";
 
 export const ASSEMBLYAI_GATEWAY_MODELS = {
   "claude-haiku-4-5-20251001": {
@@ -94,10 +133,7 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
     live: true,
     context: 32_768,
   },
-} as const satisfies Record<string, GatewayModelInfo>;
-
-/** An id the gateway advertises. */
-export type AssemblyAIGatewayModel = keyof typeof ASSEMBLYAI_GATEWAY_MODELS;
+} as const satisfies Record<AssemblyAIGatewayModel, GatewayModelInfo>;
 
 /**
  * Ids usable for a streaming, tool-calling agent — the only shape this SDK

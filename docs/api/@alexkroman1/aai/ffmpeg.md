@@ -41,9 +41,9 @@ failure. What a guest step needs instead is exactly four properties, and they
 are the whole content of `spawnFfmpeg`, this module's internal runner:
 
 1. **Bounded output.** stderr is kept as a TAIL
-   ([FFMPEG\_STDERR\_TAIL\_CHARS](#ffmpeg_stderr_tail_chars)) because ffmpeg's log is progress lines
+   (4000 chars) because ffmpeg's log is progress lines
    and the diagnosis is the last one; stdout is capped
-   ([DEFAULT\_MAX\_FFMPEG\_OUTPUT\_BYTES](#default_max_ffmpeg_output_bytes)) and exceeding it kills the child
+   (64 MiB) and exceeding it kills the child
    rather than the container — a guest is sized in hundreds of MiB, and an
    hour of 16 kHz mono PCM is ~115 MB, so "buffer whatever comes" is a
    decision to fall over on a long recording.
@@ -71,7 +71,7 @@ are where a policy belongs.
 
 ## Bytes or a path
 
-Both take a [MediaSource](#mediasource): a path string, or bytes piped in on `pipe:0`.
+Both take a [FfmpegSource](#ffmpegsource): a path string, or bytes piped in on `pipe:0`.
 Bytes are what a step HAS (`readUpload` answers with them), so they are the
 default shape here — but piping is not free of caveats, and they are the
 caller's to know: a format whose index lives at the END of the file (a
@@ -81,31 +81,6 @@ nothing is buffered then, and `output` in an argv you build yourself is the
 whole difference.
 
 ## Functions
-
-### ffmpegVersion()
-
-```ts
-function ffmpegVersion(opts?: FfmpegRunOptions): Promise<string | undefined>;
-```
-
-ffmpeg's version string, or `undefined` when there is no ffmpeg to ask.
-
-A preflight check for a step or a diagnostic that would rather report "no
-ffmpeg here" than fail mid-conversion. Only a MISSING binary answers
-`undefined`; a binary that is present and broken throws, because that is a
-real failure and swallowing it would report the same thing as an absence.
-
-#### Parameters
-
-##### opts?
-
-[`FfmpegRunOptions`](#ffmpegrunoptions)
-
-#### Returns
-
-`Promise`\<`string` \| `undefined`\>
-
-***
 
 ### isFfmpegError()
 
@@ -130,7 +105,7 @@ Narrow an unknown catch to a failed ffmpeg run.
 ### probeMedia()
 
 ```ts
-function probeMedia(source: MediaSource, opts?: ProbeOptions): Promise<MediaInfo>;
+function probeMedia(source: FfmpegSource, opts?: ProbeOptions): Promise<MediaInfo>;
 ```
 
 What ffprobe makes of a file: duration, container, and every stream.
@@ -153,7 +128,7 @@ duration lives in a trailing index, ffprobe cannot seek to it and answers
 
 ##### source
 
-[`MediaSource`](#mediasource)
+[`FfmpegSource`](#ffmpegsource)
 
 ##### opts?
 
@@ -209,7 +184,7 @@ await runFfmpeg([
 ### transcodeToWav()
 
 ```ts
-function transcodeToWav(source: MediaSource, opts?: TranscodeToWavOptions): Promise<Uint8Array<ArrayBufferLike>>;
+function transcodeToWav(source: FfmpegSource, opts?: TranscodeToWavOptions): Promise<Uint8Array<ArrayBufferLike>>;
 ```
 
 Re-encode anything ffmpeg can read into linear-PCM WAV bytes.
@@ -218,7 +193,7 @@ The conversion a transcription pipeline needs, because cutting a recording by
 byte offset is only arithmetic on uncompressed audio. Video is dropped.
 
 The result is held in memory, so it is capped like any other piped output
-(see [DEFAULT\_MAX\_FFMPEG\_OUTPUT\_BYTES](#default_max_ffmpeg_output_bytes)) — about an hour of 16 kHz mono
+(64 MiB) — about an hour of 16 kHz mono
 at the default. Past that, go file → file with [wavEncodeArgs](#wavencodeargs).
 
 Note WAV written to a PIPE carries a placeholder length in its header:
@@ -231,7 +206,7 @@ that trusts the header's `data` size will read zero samples.
 
 ##### source
 
-[`MediaSource`](#mediasource)
+[`FfmpegSource`](#ffmpegsource)
 
 ##### opts?
 
@@ -450,7 +425,7 @@ Working directory for the child, so relative paths in `args` resolve.
 optional maxOutputBytes?: number;
 ```
 
-Cap on captured stdout. Defaults to [DEFAULT\_MAX\_FFMPEG\_OUTPUT\_BYTES](#default_max_ffmpeg_output_bytes).
+Cap on captured stdout. Defaults to 64 MiB (`DEFAULT_MAX_FFMPEG_OUTPUT_BYTES`).
 
 ##### signal?
 
@@ -474,7 +449,7 @@ Bytes to write to the child's stdin — read them in the argv as `pipe:0`.
 optional timeoutMs?: number;
 ```
 
-Wall-clock budget. Defaults to [DEFAULT\_FFMPEG\_TIMEOUT\_MS](#default_ffmpeg_timeout_ms).
+Wall-clock budget. Defaults to 10 minutes (`DEFAULT_FFMPEG_TIMEOUT_MS`).
 
 ***
 
@@ -516,18 +491,28 @@ Whatever the child wrote to stdout — empty for a run that wrote to a file.
 
 ***
 
+### FfmpegSource
+
+```ts
+type FfmpegSource = string | Uint8Array;
+```
+
+A media input: a filesystem path, or the bytes themselves.
+
+***
+
 ### MediaInfo
 
 ```ts
 type MediaInfo = {
-  audio?: MediaStream;
+  audio?: MediaStreamInfo;
   bitRate?: number;
   durationSec?: number;
   format?: string;
   raw: unknown;
   sizeBytes?: number;
-  streams: MediaStream[];
-  video?: MediaStream;
+  streams: MediaStreamInfo[];
+  video?: MediaStreamInfo;
 };
 ```
 
@@ -538,7 +523,7 @@ What `parseProbeJson` makes of one media file — see `@alexkroman1/aai/ffmpeg`.
 ##### audio?
 
 ```ts
-optional audio?: MediaStream;
+optional audio?: MediaStreamInfo;
 ```
 
 The first audio stream — the one an audio pipeline almost always means.
@@ -586,7 +571,7 @@ File size in bytes, as ffprobe measured it.
 ##### streams
 
 ```ts
-streams: MediaStream[];
+streams: MediaStreamInfo[];
 ```
 
 Every stream, in ffprobe's order.
@@ -594,27 +579,17 @@ Every stream, in ffprobe's order.
 ##### video?
 
 ```ts
-optional video?: MediaStream;
+optional video?: MediaStreamInfo;
 ```
 
 The first video stream.
 
 ***
 
-### MediaSource
+### MediaStreamInfo
 
 ```ts
-type MediaSource = string | Uint8Array;
-```
-
-A media input: a filesystem path, or the bytes themselves.
-
-***
-
-### MediaStream
-
-```ts
-type MediaStream = {
+type MediaStreamInfo = {
   channels?: number;
   codec?: string;
   durationSec?: number;
@@ -766,77 +741,3 @@ optional sampleRate?: number;
 ```
 
 Output sample rate. Omit to keep the input's.
-
-## Variables
-
-### DEFAULT\_FFMPEG\_TIMEOUT\_MS
-
-```ts
-const DEFAULT_FFMPEG_TIMEOUT_MS: number;
-```
-
-How long one ffmpeg run may take before it is killed.
-
-Ten minutes, which is long: transcoding an hour of audio is minutes of real
-work, and a step that has already read its input off object storage should
-not lose it to a budget tighter than the job. It is a BACKSTOP against a run
-that will never finish, not a service-level target — a caller with a tighter
-one passes `timeoutMs`, and a workflow step has its own budget above this.
-
-***
-
-### DEFAULT\_MAX\_FFMPEG\_OUTPUT\_BYTES
-
-```ts
-const DEFAULT_MAX_FFMPEG_OUTPUT_BYTES: number;
-```
-
-How many bytes a run may write to stdout before it is killed.
-
-64 MiB. Only piped output counts against it (`pipe:1`), and it exists because
-the alternative is an OOM: a guest reserves ~1 GiB, and captured output is
-held whole in the guest's heap on its way to being returned. Raise it
-deliberately for a big in-memory conversion, or write to a file and capture
-nothing.
-
-***
-
-### FFMPEG\_PATH\_ENV
-
-```ts
-const FFMPEG_PATH_ENV: "AAI_FFMPEG_PATH" = "AAI_FFMPEG_PATH";
-```
-
-Overrides the `ffmpeg` binary this module spawns.
-
-***
-
-### FFMPEG\_STDERR\_TAIL\_CHARS
-
-```ts
-const FFMPEG_STDERR_TAIL_CHARS: 4000 = 4000;
-```
-
-How much of ffmpeg's log is kept, from the END.
-
-ffmpeg writes progress to stderr — one line per statistics interval for the
-whole run — and the reason it failed is the last thing in there. So a tail is
-not a compromise here, it is the informative part; a head would be the
-banner and the input's stream list every time.
-
-CHARACTERS, not bytes, and the name says so because the two differ exactly
-where it matters: a log naming `Café.m4a` is UTF-8, and a byte-sliced tail
-can cut a character in half. The stream is decoded with a `StringDecoder`
-for the same reason — a chunk boundary lands mid-character often enough that
-`chunk.toString()` per chunk produces a replacement character in the one
-message a human reads.
-
-***
-
-### FFPROBE\_PATH\_ENV
-
-```ts
-const FFPROBE_PATH_ENV: "AAI_FFPROBE_PATH" = "AAI_FFPROBE_PATH";
-```
-
-Overrides the `ffprobe` binary this module spawns.

@@ -216,10 +216,10 @@ describe("ElevenLabs Scribe STT adapter", () => {
     await session.close();
   });
 
-  test("forwards the descriptor's model and languageCode when set", async () => {
+  test("forwards the descriptor's model and language when set", async () => {
     const { session, fake } = await openSession(16_000, {
       model: "scribe_v1",
-      languageCode: "es",
+      language: "es",
     });
     expect(fake.connectOpts).toMatchObject({ modelId: "scribe_v1", languageCode: "es" });
     await session.close();

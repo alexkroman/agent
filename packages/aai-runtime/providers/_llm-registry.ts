@@ -20,16 +20,11 @@ import { createGroq } from "@ai-sdk/groq";
 import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
-import type { LlmProvider } from "@alexkroman1/aai/llm";
 import {
   ANTHROPIC_API_KEY_ENV,
   ANTHROPIC_KIND,
   ASSEMBLYAI_LLM_API_KEY_ENV,
-  ASSEMBLYAI_LLM_DEFAULT_MODEL,
-  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
-  ASSEMBLYAI_LLM_GATEWAY_URL,
   ASSEMBLYAI_LLM_KIND,
-  type AssemblyAILlmOptions,
   GATEWAY_API_KEY_ENV,
   GATEWAY_KIND,
   GOOGLE_API_KEY_ENV,
@@ -41,10 +36,17 @@ import {
   OPENAI_API_KEY_ENV,
   OPENAI_KIND,
   OPENROUTER_API_KEY_ENV,
-  OPENROUTER_BASE_URL,
   OPENROUTER_KIND,
   XAI_API_KEY_ENV,
   XAI_KIND,
+} from "@alexkroman1/aai/host-internal";
+import type { LlmProvider } from "@alexkroman1/aai/llm";
+import {
+  ASSEMBLYAI_LLM_DEFAULT_MODEL,
+  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
+  ASSEMBLYAI_LLM_GATEWAY_URL,
+  type AssemblyAILlmOptions,
+  OPENROUTER_BASE_URL,
 } from "@alexkroman1/aai/llm";
 import {
   createGateway,

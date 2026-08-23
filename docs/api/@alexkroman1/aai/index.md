@@ -98,9 +98,9 @@ to swap individual stages (unset stages keep the AssemblyAI default), and
 
 ```ts
 function assemblyAIPipeline(opts?: AssemblyAIPipelineOptions): {
-  llm: AssemblyAILlmProvider;
-  stt: AssemblyAIProvider;
-  tts: AssemblyAITtsProvider;
+  llm: LlmProvider;
+  stt: SttProvider;
+  tts: TtsProvider;
 };
 ```
 
@@ -119,28 +119,28 @@ guaranteed to have — so this configuration runs the moment it is deployed.
 
 ```ts
 {
-  llm: AssemblyAILlmProvider;
-  stt: AssemblyAIProvider;
-  tts: AssemblyAITtsProvider;
+  llm: LlmProvider;
+  stt: SttProvider;
+  tts: TtsProvider;
 }
 ```
 
 ##### llm
 
 ```ts
-llm: AssemblyAILlmProvider;
+llm: LlmProvider;
 ```
 
 ##### stt
 
 ```ts
-stt: AssemblyAIProvider;
+stt: SttProvider;
 ```
 
 ##### tts
 
 ```ts
-tts: AssemblyAITtsProvider;
+tts: TtsProvider;
 ```
 
 ***
@@ -148,7 +148,7 @@ tts: AssemblyAITtsProvider;
 ### assemblyAIS2s()
 
 ```ts
-function assemblyAIS2s(opts?: AssemblyAIS2sOptions): AssemblyAIS2sProvider;
+function assemblyAIS2s(opts?: AssemblyAIS2sOptions): S2sProvider;
 ```
 
 Select AssemblyAI's speech-to-speech (Voice Agent API) session mode.
@@ -162,7 +162,7 @@ STT, the LLM loop, and TTS all run service-side over one socket.
 
 #### Returns
 
-[`AssemblyAIS2sProvider`](#assemblyais2sprovider)
+[`S2sProvider`](#s2sprovider)
 
 #### Example
 
@@ -1718,6 +1718,89 @@ preset.)
 
 ***
 
+### AssemblyAIS2sOptions
+
+Options for [assemblyAIS2s](#assemblyais2s).
+
+The descriptor took NO options until 2026-08-09, which left every
+author-controlled knob on the S2S session unreachable while the pipeline had
+all of them. That asymmetry had a measured cost: on tau2-bench retail,
+pinning `language_codes: ["en"]` alongside voice focus and a transcription
+prompt took the authenticating caller's spelled first name from 1 of 6
+attempts correct to 6 of 6, and word recall from ~0.89 to ~0.93. The other
+two of those three are pinned host-side; the language pin is the one that
+MUST stay author-controlled (see [AssemblyAIS2sOptions.languages](#languages)), so
+without a field here it could not be set at all.
+
+Deliberately absent: `turn_detection`. Its service default is adaptive and
+entity-aware — it waits out a spelled-out value — and setting
+`min_silence`/`max_silence` disables both for the rest of the session.
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding this stage's credential, replacing the provider default
+(`ASSEMBLYAI_API_KEY`). Names a VARIABLE, not a key, so the descriptor
+stays secret-free and safe to serialize.
+
+For running this session against a different account or cluster than the
+agent's other credentials — AssemblyAI keys are environment-scoped, so a
+staging cluster rejects a production key and vice versa. The variable must
+be present in the agent's env (`.env` or `aai secret put`), like any other
+credential.
+
+The three pipeline AssemblyAI stages carry the same field, and the host
+has always read it off any descriptor generically (`resolveS2sEnvVar`) —
+so S2S honoured an `apiKeyEnv` that its own options type had no way to
+spell.
+
+##### keyterms?
+
+```ts
+optional keyterms?: readonly string[];
+```
+
+Domain terms to bias transcription toward (`input.keyterms`) — product
+names, proper nouns, spelled identifiers the model would otherwise
+mis-hear. Complements `sttPrompt`, which is prose rather than a term list.
+
+##### languages?
+
+```ts
+optional languages?: readonly string[];
+```
+
+Language codes to bias transcription toward (`input.language_codes`).
+
+Leave UNSET to detect per turn — that is a real setting, not an absent
+one, and a host-side `["en"]` default would silently disable multilingual
+transcription for every agent (the mirror-image bug of the one this field
+fixes). Pin one code for a monolingual line; a multi-element list biases
+toward a known subset while keeping code-switching.
+
+##### voice?
+
+```ts
+optional voice?: string;
+```
+
+Voice for the agent's synthesized speech (`output.voice`). Unset uses the
+service default.
+
+The accepted set is the service's, and is NOT verified in this repo — the
+failure mode is the one `ASSEMBLYAI_TTS_VOICES` (from
+`@alexkroman1/aai/tts`) exists to prevent, so treat an id from outside that
+catalog as unproven: a voice the service rejects comes back in-band after
+the socket opens, leaving an agent that connects, reports ready, and never
+speaks.
+
+***
+
 ### Dialog
 
 A dialog statechart bound to a session, created by [dialog](#dialog-1).
@@ -2398,6 +2481,38 @@ the second is charged for the remaining seven unless something stops it, and
 `ctx.signal` is already aborted on barge-in, reset and session stop. Aborting
 stops the actor, which cancels nothing already in flight but issues nothing
 further, and `run` then throws rather than returning a half-built output.
+
+***
+
+### ProviderDescriptor
+
+Base shape for a provider descriptor. A `kind` tag + opaque `options`
+payload lets the host registry pick the right resolver and pass the
+caller's options through verbatim.
+
+#### Type Parameters
+
+##### Kind
+
+`Kind` *extends* `string`
+
+##### Options
+
+`Options`
+
+#### Properties
+
+##### kind
+
+```ts
+readonly kind: Kind;
+```
+
+##### options
+
+```ts
+readonly options: Options;
+```
 
 ***
 
@@ -3083,100 +3198,32 @@ discriminant already set.
 
 ***
 
-### AssemblyAIS2sOptions
+### AssemblyAITtsVoice
 
 ```ts
-type AssemblyAIS2sOptions = {
-  keyterms?: readonly string[];
-  languages?: readonly string[];
-  voice?: string;
-};
+type AssemblyAITtsVoice = 
+  | keyof typeof ASSEMBLYAI_TTS_VOICES
+| string & Record<never, never>;
 ```
 
-Options for [assemblyAIS2s](#assemblyais2s).
+A voice id from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices).
 
-The descriptor took NO options until 2026-08-09, which left every
-author-controlled knob on the S2S session unreachable while the pipeline had
-all of them. That asymmetry had a measured cost: on tau2-bench retail,
-pinning `language_codes: ["en"]` alongside voice focus and a transcription
-prompt took the authenticating caller's spelled first name from 1 of 6
-attempts correct to 6 of 6, and word recall from ~0.89 to ~0.93. The other
-two of those three are pinned host-side; the language pin is the one that
-MUST stay author-controlled (see [AssemblyAIS2sOptions.languages](#languages)), so
-without a field here it could not be set at all.
+The `(string & {})` arm is deliberate: the catalog is the service's, not
+ours, so a voice added after this release must still compile, and so must
+a deprecated one an existing agent already names. It keeps the current
+names visible at the call site without turning a stale SDK into a build
+failure.
 
-Deliberately absent: `turn_detection`. Its service default is adaptive and
-entity-aware — it waits out a spelled-out value — and setting
-`min_silence`/`max_silence` disables both for the rest of the session.
-
-#### Properties
-
-##### keyterms?
-
-```ts
-optional keyterms?: readonly string[];
-```
-
-Domain terms to bias transcription toward (`input.keyterms`) — product
-names, proper nouns, spelled identifiers the model would otherwise
-mis-hear. Complements `sttPrompt`, which is prose rather than a term list.
-
-##### languages?
-
-```ts
-optional languages?: readonly string[];
-```
-
-Language codes to bias transcription toward (`input.language_codes`).
-
-Leave UNSET to detect per turn — that is a real setting, not an absent
-one, and a host-side `["en"]` default would silently disable multilingual
-transcription for every agent (the mirror-image bug of the one this field
-fixes). Pin one code for a monolingual line; a multi-element list biases
-toward a known subset while keeping code-switching.
-
-##### voice?
-
-```ts
-optional voice?: string;
-```
-
-Voice for the agent's synthesized speech (`output.voice`). Unset uses the
-service default.
-
-The accepted set is the service's, and is NOT verified in this repo — the
-failure mode is the one `ASSEMBLYAI_TTS_VOICES` (from
-`@alexkroman1/aai/tts`) exists to prevent, so treat an id from outside that
-catalog as unproven: a voice the service rejects comes back in-band after
-the socket opens, leaving an agent that connects, reports ready, and never
-speaks.
-
-***
-
-### AssemblyAIS2sProvider
-
-```ts
-type AssemblyAIS2sProvider = S2sProvider & {
-  kind: typeof ASSEMBLYAI_S2S_KIND;
-  options: AssemblyAIS2sOptions;
-};
-```
-
-Descriptor returned by [assemblyAIS2s](#assemblyais2s).
-
-#### Type Declaration
-
-##### kind
-
-```ts
-readonly kind: typeof ASSEMBLYAI_S2S_KIND;
-```
-
-##### options
-
-```ts
-readonly options: AssemblyAIS2sOptions;
-```
+**So this type is AUTOCOMPLETE, not a guard, and there is no runtime assert
+to pair with it** the way `assertAssemblyAITtsLanguage` pairs with
+[AssemblyAITtsLanguage](tts.md#assemblyaittslanguage). The two are not the same job: the language
+map is a TRANSLATION this SDK owns (an ISO code the service has never heard
+of, rendered as a name it accepts), so a code outside it cannot be sent at
+all and rejecting it is a fact about this package. The voice catalog is the
+SERVICE's, and a snapshot of it goes stale between releases — an assert
+would refuse a voice AssemblyAI shipped last week, which is the same
+silent-mute failure from the other side. Read the catalog; do not expect the
+compiler to check you did.
 
 ***
 
@@ -3684,6 +3731,29 @@ Give up waiting after this long and reject with
 
 ***
 
+### LlmProvider
+
+```ts
+type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+  __stage?: "llm";
+};
+```
+
+Descriptor for an LLM provider. Returned by factories like
+`anthropic(...)` from `@alexkroman1/aai/llm`.
+
+#### Type Declaration
+
+##### \_\_stage?
+
+```ts
+readonly optional __stage?: "llm";
+```
+
+Compile-time stage tag; never present at runtime.
+
+***
+
 ### Message
 
 ```ts
@@ -3879,6 +3949,29 @@ The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
 not values this arm accepts. Setting one of those fields makes `tsc` print the
 sentence in place of a bare excess-property error, so the diagnostic names the
 rule and what to do about it. Never pass one as a string.
+
+***
+
+### S2sProvider
+
+```ts
+type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+  __stage?: "s2s";
+};
+```
+
+Descriptor for an S2S provider. Returned by `assemblyAIS2s(...)` (root
+export) or `openaiRealtime(...)` from `@alexkroman1/aai/s2s`.
+
+#### Type Declaration
+
+##### \_\_stage?
+
+```ts
+readonly optional __stage?: "s2s";
+```
+
+Compile-time stage tag; never present at runtime.
 
 ***
 
@@ -4192,6 +4285,29 @@ The long string-literal types on the fields below are COMPILE-ERROR MESSAGES,
 not values this arm accepts. Setting one of those fields makes `tsc` print the
 sentence in place of a bare excess-property error, so the diagnostic names the
 rule and what to do about it. Never pass one as a string.
+
+***
+
+### SttProvider
+
+```ts
+type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+  __stage?: "stt";
+};
+```
+
+Descriptor for an STT provider. Returned by factories like
+`assemblyAIStt(...)` from `@alexkroman1/aai/stt`.
+
+#### Type Declaration
+
+##### \_\_stage?
+
+```ts
+readonly optional __stage?: "stt";
+```
+
+Compile-time stage tag; never present at runtime.
 
 ***
 
@@ -4618,6 +4734,29 @@ A schema accepted for tool inputs and `ctx.generate` structured output:
 any Standard Schema that can also convert to JSON Schema (Zod natively,
 or a vendor `toJsonSchema()` method). Zod object schemas are the
 documented default.
+
+***
+
+### TtsProvider
+
+```ts
+type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+  __stage?: "tts";
+};
+```
+
+Descriptor for a TTS provider. Returned by factories like
+`cartesia(...)` from `@alexkroman1/aai/tts`.
+
+#### Type Declaration
+
+##### \_\_stage?
+
+```ts
+readonly optional __stage?: "tts";
+```
+
+Compile-time stage tag; never present at runtime.
 
 ***
 
@@ -5239,6 +5378,248 @@ that happened to carry it. The property itself stays an ordinary
 `z.string()` — an upload id is what the run really receives.
 
 ## Variables
+
+### ASSEMBLYAI\_TTS\_VOICES
+
+```ts
+const ASSEMBLYAI_TTS_VOICES: {
+  alba: {
+     accent: "US";
+     language: "en";
+  };
+  anna: {
+     accent: "US";
+     language: "en";
+  };
+  charles: {
+     accent: "US";
+     language: "en";
+  };
+  estelle: {
+     accent: "FR";
+     language: "fr";
+  };
+  eve: {
+     accent: "US";
+     language: "en";
+  };
+  george: {
+     accent: "US";
+     language: "en";
+  };
+  giovanni: {
+     accent: "IT";
+     language: "it";
+  };
+  jane: {
+     accent: "US";
+     language: "en";
+  };
+  jean: {
+     accent: "US";
+     language: "en";
+  };
+  juergen: {
+     accent: "DE";
+     language: "de";
+  };
+  lola: {
+     accent: "ES";
+     language: "es";
+  };
+  mary: {
+     accent: "US";
+     language: "en";
+  };
+  michael: {
+     accent: "US";
+     language: "en";
+  };
+  paul: {
+     accent: "UK";
+     language: "en";
+  };
+  rafael: {
+     accent: "PT";
+     language: "pt";
+  };
+  vera: {
+     accent: "UK";
+     language: "en";
+  };
+};
+```
+
+The voice catalog — voice id → the language it speaks and its accent.
+The accent is descriptive metadata for choosing a voice, not a settable
+option: [AssemblyAITtsOptions](tts.md#assemblyaittsoptions) has no `accent` field.
+
+A constant rather than a sentence in a doc comment, because a wrong voice
+id is a *silent* failure: it is a free-form string the service rejects
+in-band after the socket opens, so the agent connects, reports ready, and
+never speaks — the same shape as the unmapped-`language` bug below, and
+nothing upstream of a live session catches it.
+
+It is a constant for a second reason, learned the hard way. The list this
+replaced lived in a doc comment and was simply wrong — it carried ten names
+(`azelma`, `cosette`, `fantine`, `javert`, `marius`, `peter_yearsley` …)
+that are in no published catalog, while omitting most of the real ones. A
+list nobody can check drifts into fiction, and here the fiction is
+indistinguishable, at authoring time, from a working agent.
+
+Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
+
+Anything that shows an author their choices — the scaffold guide, a picker
+— should read this rather than restate it. A partial list is what sends
+someone guessing, which is the failure being prevented.
+
+#### Type Declaration
+
+##### alba
+
+```ts
+{
+  accent: "US";
+  language: "en";
+}
+```
+
+##### anna
+
+```ts
+{
+  accent: "US";
+  language: "en";
+}
+```
+
+##### charles
+
+```ts
+{
+  accent: "US";
+  language: "en";
+}
+```
+
+##### estelle
+
+```ts
+{
+  accent: "FR";
+  language: "fr";
+}
+```
+
+##### eve
+
+```ts
+{
+  accent: "US";
+  language: "en";
+}
+```
+
+##### george
+
+```ts
+{
+  accent: "US";
+  language: "en";
+}
+```
+
+##### giovanni
+
+```ts
+{
+  accent: "IT";
+  language: "it";
+}
+```
+
+##### jane
+
+```ts
+{
+  accent: "US";
+  language: "en";
+}
+```
+
+##### jean
+
+```ts
+{
+  accent: "US";
+  language: "en";
+}
+```
+
+##### juergen
+
+```ts
+{
+  accent: "DE";
+  language: "de";
+}
+```
+
+##### lola
+
+```ts
+{
+  accent: "ES";
+  language: "es";
+}
+```
+
+##### mary
+
+```ts
+{
+  accent: "US";
+  language: "en";
+}
+```
+
+##### michael
+
+```ts
+{
+  accent: "US";
+  language: "en";
+}
+```
+
+##### paul
+
+```ts
+{
+  accent: "UK";
+  language: "en";
+}
+```
+
+##### rafael
+
+```ts
+{
+  accent: "PT";
+  language: "pt";
+}
+```
+
+##### vera
+
+```ts
+{
+  accent: "UK";
+  language: "en";
+}
+```
+
+***
 
 ### DEFAULT\_BUILTIN\_TOOLS
 

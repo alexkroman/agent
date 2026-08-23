@@ -5,16 +5,7 @@
 ```ts
 
 // @public
-export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
-
-// @public
 export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "jane";
-
-// @public
-export const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
-
-// @public
-export const ASSEMBLYAI_TTS_KIND: "assemblyai";
 
 // @public
 export const ASSEMBLYAI_TTS_LANGUAGES: {
@@ -95,7 +86,7 @@ export const ASSEMBLYAI_TTS_VOICES: {
 };
 
 // @public
-export function assemblyAITts(opts?: AssemblyAITtsOptions): AssemblyAITtsProvider;
+export function assemblyAITts(opts?: AssemblyAITtsOptions): TtsProvider;
 
 // @public
 export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
@@ -109,27 +100,13 @@ export interface AssemblyAITtsOptions {
 }
 
 // @public
-export type AssemblyAITtsProvider = TtsProvider & {
-    readonly kind: typeof ASSEMBLYAI_TTS_KIND;
-    readonly options: AssemblyAITtsOptions & {
-        voice: string;
-    };
-};
-
-// @public
 export type AssemblyAITtsVoice = keyof typeof ASSEMBLYAI_TTS_VOICES | (string & Record<never, never>);
 
 // @public
-export function cartesia(opts?: CartesiaOptions): CartesiaProvider;
-
-// @public
-export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+export function cartesia(opts?: CartesiaOptions): TtsProvider;
 
 // @public
 export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
-
-// @public
-export const CARTESIA_KIND: "cartesia";
 
 // @public
 export interface CartesiaOptions {
@@ -139,15 +116,7 @@ export interface CartesiaOptions {
 }
 
 // @public
-export type CartesiaProvider = TtsProvider & {
-    readonly kind: typeof CARTESIA_KIND;
-    readonly options: CartesiaOptions & {
-        voice: string;
-    };
-};
-
-// @public
-export interface ProviderDescriptor<Kind extends string, Options> {
+interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
     // (undocumented)
@@ -155,16 +124,10 @@ export interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @public
-export function rime(opts?: RimeOptions): RimeProvider;
-
-// @public
-export const RIME_API_KEY_ENV = "RIME_API_KEY";
+export function rime(opts?: RimeOptions): TtsProvider;
 
 // @public
 export const RIME_DEFAULT_VOICE = "cove";
-
-// @public
-export const RIME_KIND: "rime";
 
 // @public
 export interface RimeOptions {
@@ -172,14 +135,6 @@ export interface RimeOptions {
     model?: string;
     voice?: string;
 }
-
-// @public
-export type RimeProvider = TtsProvider & {
-    readonly kind: typeof RIME_KIND;
-    readonly options: RimeOptions & {
-        voice: string;
-    };
-};
 
 // @public
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {

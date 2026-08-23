@@ -12,23 +12,12 @@
  */
 
 import type { LlmProvider } from "../../providers.ts";
+import type { ModelOptions } from "./model-options.ts";
 
 export const GOOGLE_KIND = "google" as const;
 
 /** Agent-env variable holding the Google Generative AI API key. */
 export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
-
-/** Options for {@link google}. */
-export interface GoogleOptions {
-  /** Google Gemini model id, e.g. `"gemini-2.0-flash"`. */
-  model: string;
-}
-
-/** Descriptor returned by {@link google}. */
-export type GoogleProvider = LlmProvider & {
-  readonly kind: typeof GOOGLE_KIND;
-  readonly options: GoogleOptions;
-};
 
 /**
  * Build a Google (Gemini) LLM descriptor for pipeline mode. The API key is
@@ -46,6 +35,6 @@ export type GoogleProvider = LlmProvider & {
  * });
  * ```
  */
-export function google(opts: GoogleOptions): GoogleProvider {
+export function google(opts: ModelOptions): LlmProvider {
   return { kind: GOOGLE_KIND, options: { ...opts } };
 }
