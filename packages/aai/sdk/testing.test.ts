@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, test, vi } from "vitest";
 import { emit, publishStepReporter, report } from "./step-report.ts";
 import { publishUploadReader, readUpload, uploadInfo } from "./step-uploads.ts";
 import { writeUpload } from "./step-uploads-write.ts";
@@ -9,6 +9,8 @@ import {
   createUnusedDb,
   stubReporter,
   stubUploads,
+  type TestToolContext,
+  type ToolContextOverrides,
 } from "./testing.ts";
 
 describe("createToolContext", () => {
@@ -83,6 +85,35 @@ describe("createToolContext", () => {
     expect(ctx.env).toEqual({ API_KEY: "k" });
     expect(ctx.db).toBe(db);
     expect(ctx.messages).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  test("an override may be `undefined`, meaning the caller does not have one", () => {
+    // The whole point of not taking `Partial<ToolContext>`: under
+    // `exactOptionalPropertyTypes` a `string | undefined` cannot be passed to
+    // `sessionId?: string`, and the two shipped templates that met that wrote
+    // the identical `...(sessionId ? { sessionId } : {})` — the conditional
+    // spread this repo's own rule 22 counts as debt.
+    const absent: string | undefined = undefined;
+    const ctx = createToolContext({ sessionId: absent });
+    expect(ctx.sessionId).toMatch(/^test-session-/);
+  });
+
+  test("an `undefined` override leaves the DEFAULT, never an undefined field", async () => {
+    // Spread naively, `{ ...{ db: undefined } }` overwrites the rejecting
+    // default and the tool under test then dies on a TypeError instead of on
+    // the sentence that names the missing stub.
+    const db = undefined;
+    const ctx = createToolContext({ db, sessionId: "s" });
+    await expect(ctx.db.query("select 1")).rejects.toThrow(/ctx\.db was not stubbed/);
+  });
+
+  test("the overrides type accepts `undefined` for every field", () => {
+    // A type-level assertion, checked by `tsc` rather than at runtime: every
+    // field of the overrides must admit `undefined`, or a caller holding an
+    // optional value is back to the conditional spread.
+    expectTypeOf<ToolContextOverrides["sessionId"]>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<{ sessionId: string | undefined }>().toExtend<ToolContextOverrides>();
+    expectTypeOf(createToolContext({ sessionId: undefined })).toEqualTypeOf<TestToolContext>();
   });
 
   test("a spy passed as send replaces the recorder", () => {
@@ -161,6 +192,7 @@ describe("createStubWorkflows", () => {
       "cancel",
       "find",
       "get",
+      "lastLine",
       "listing",
       "publicWebhookUrl",
       "recent",
@@ -264,5 +296,46 @@ describe("stubUploads", () => {
     const second = await writeUpload(new Uint8Array([2]));
 
     expect([first.id, second.id]).toEqual(["wav_1", "wav_2"]);
+  });
+
+  test("records what a step WROTE, so no spec has to read it back through the slot", async () => {
+    // The round trip this replaces: `writeUpload` then `uploadInfo`/`readUpload`
+    // on the id it returned, through the same published seam the step used, to
+    // answer "did it write anything at all".
+    const uploads = stubUploads({}, { writable: true });
+
+    await writeUpload(new Uint8Array([4, 5]), { name: "summary.wav", type: "audio/wav" });
+
+    expect(uploads.writes).toEqual([
+      { id: "upl_stub_1", name: "summary.wav", type: "audio/wav", bytes: new Uint8Array([4, 5]) },
+    ]);
+  });
+
+  test("a read-only store records no writes, because it accepted none", async () => {
+    const uploads = stubUploads({ upl_1: new Uint8Array([1]) });
+
+    await expect(writeUpload(new Uint8Array([9]))).rejects.toThrow("read-only");
+    expect(uploads.writes).toEqual([]);
+  });
+
+  test("`read` answers for a seeded file too, synchronously and outside the slot", () => {
+    const uploads = stubUploads({ upl_1: { bytes: new Uint8Array([7]), name: "a.wav" } });
+
+    expect(uploads.read("upl_1")).toEqual({
+      id: "upl_1",
+      name: "a.wav",
+      type: "",
+      bytes: new Uint8Array([7]),
+    });
+    expect(uploads.read("upl_nope")).toBeUndefined();
+  });
+
+  test("`restore` unpublishes, so the next file's steps do not read these bytes", async () => {
+    const uploads = stubUploads({ upl_1: new Uint8Array([1]) });
+    uploads.restore();
+
+    // Nothing published: the reader reports there is no store rather than
+    // answering with the last file's.
+    await expect(uploadInfo("upl_1")).rejects.toThrow();
   });
 });

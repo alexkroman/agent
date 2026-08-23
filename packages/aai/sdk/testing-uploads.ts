@@ -64,6 +64,58 @@ export type StubUploadsOptions = {
   idPrefix?: string | undefined;
 };
 
+/** One file a step WROTE into a {@link stubUploads} store. */
+export type StubUploadWrite = {
+  /** The minted id the step was handed back — `upl_stub_1`, unless renamed. */
+  id: string;
+  /** The name the step declared, or `""` when it named none. */
+  name: string;
+  /** The content type the step declared, or `""`. */
+  type: string;
+  /** Every byte written, drained from the step's stream. */
+  bytes: Uint8Array;
+};
+
+/**
+ * What {@link stubUploads} returns.
+ *
+ * An OBJECT, like every other fake here (`stubSpeech`, `stubReporter`,
+ * `stubStepFetch`) — this one used to be the bare `restore` function, which made
+ * it the only stub in the family a spec had to remember was different, and left
+ * a spec asserting on a WRITE to round-trip through `uploadInfo`/`readUpload`:
+ * the published slot, read back through the same seam the step wrote it through,
+ * to answer "did it write anything at all".
+ *
+ * @public
+ */
+export type StubUploads = {
+  /**
+   * Unpublish.
+   *
+   * Not optional — a store left published makes the next file's steps read this
+   * one's bytes, which is the kind of cross-file leak that presents as a passing
+   * test somewhere else. `installStubUploads`
+   * (`@alexkroman1/aai/testing/vitest`) is this store with the registration
+   * already done.
+   */
+  restore(): void;
+  /**
+   * Every file a step wrote, in write order.
+   *
+   * Empty unless the store was opened `{ writable: true }`, which is what makes
+   * the pair readable as an assertion: a read-only store cannot accept a write,
+   * so `writes` staying empty is the same fact as the step never having tried.
+   */
+  writes: StubUploadWrite[];
+  /**
+   * What is stored under `id` right now — a seeded file or one a step wrote.
+   *
+   * Synchronous and outside the published slot, so a spec asserting on bytes
+   * does not have to `await readUpload` through the very seam it is testing.
+   */
+  read(id: string): StubUploadWrite | undefined;
+};
+
 /**
  * Publish an in-memory upload store, so a `"use step"` function that calls
  * `readUpload` can be tested without a server.
@@ -72,23 +124,30 @@ export type StubUploadsOptions = {
  * anything, which is what makes this possible at all: a spec supplies its own
  * bytes and the step under test is unchanged.
  *
- * Returns the UNPUBLISH function, and calling it in an `afterEach` is not
- * optional — a store left published makes the next file's steps read this
- * one's bytes, which is the kind of cross-file leak that presents as a passing
- * test somewhere else.
+ * Returns a {@link StubUploads} — `restore`, plus what a step WROTE. Calling
+ * `restore` in an `afterEach` is not optional; a store left published makes the
+ * next file's steps read this one's bytes, which is the kind of cross-file leak
+ * that presents as a passing test somewhere else.
  *
  * @example
  * ```ts
  * import { stubUploads } from "@alexkroman1/aai/testing";
  *
- * const restore = stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
+ * const uploads = stubUploads({ upl_1: new Uint8Array([1, 2, 3]) });
  * // … call the step …
- * restore();
+ * uploads.restore();
  *
  * // A streamed upload mid-flight: `readUpload` comes back short and
  * // `uploadInfo(...).complete` is false, which is what a polling body sees.
  * const firstHalf = new Uint8Array([1, 2]);
- * stubUploads({ upl_2: { bytes: firstHalf, complete: false } });
+ * stubUploads({ upl_2: { bytes: firstHalf, complete: false } }).restore();
+ * ```
+ *
+ * @example What a step wrote, without reading it back through the slot
+ * ```ts no-check
+ * const uploads = stubUploads({}, { writable: true });
+ * // … call the step …
+ * expect(uploads.writes.map((one) => one.name)).toEqual(["summary.wav"]);
  * ```
  *
  * @param files - Keyed by upload id — the same string a run input would carry.
@@ -97,7 +156,8 @@ export type StubUploadsOptions = {
 export function stubUploads(
   files: Readonly<Record<string, StubUpload>>,
   options: StubUploadsOptions = {},
-): () => void {
+): StubUploads {
+  const writes: StubUploadWrite[] = [];
   const stored = new Map<
     string,
     { bytes: Uint8Array; name?: string; type?: string; complete?: boolean }
@@ -130,6 +190,7 @@ export function stubUploads(
     minted += 1;
     const id = `${options.idPrefix ?? "upl_stub_"}${minted}`;
     stored.set(id, { bytes, name: meta.name ?? "", type: meta.type ?? "" });
+    writes.push({ id, name: meta.name ?? "", type: meta.type ?? "", bytes });
     return { id, name: meta.name ?? "", type: meta.type ?? "", size, complete: true };
   };
   publishUploadReader({
@@ -151,5 +212,14 @@ export function stubUploads(
     read: (id, start, end) =>
       Promise.resolve(stored.get(id)?.bytes.subarray(start, end) ?? new Uint8Array(0)),
   });
-  return () => publishUploadReader(undefined);
+  return {
+    restore: () => publishUploadReader(undefined),
+    writes,
+    read: (id) => {
+      const file = stored.get(id);
+      return file
+        ? { id, name: file.name ?? "", type: file.type ?? "", bytes: file.bytes }
+        : undefined;
+    },
+  };
 }

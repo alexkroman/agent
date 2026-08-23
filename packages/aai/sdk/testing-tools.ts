@@ -15,6 +15,8 @@
  * tools that do exist. None of the four hand-rolled versions did.
  */
 
+import { createToolContext } from "./_testing-context.ts";
+import { isRecord } from "./is-record.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
@@ -72,11 +74,35 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
  * `args` is unvalidated on purpose: the runtime parses a model's arguments
  * against `inputSchema` BEFORE `execute` sees them, so a spec that pre-validated
  * would be testing a path the tool never runs on. Pass the arguments the tool
- * body expects to receive.
+ * body expects to receive. (To test the SCHEMA itself, which is a different
+ * question, use `parseToolInput` / `toolInputIssues`.)
  *
  * The def to pass is the one a DEPLOYED agent runs — `agent.ts`'s default export
  * put through `withDiscoveredTools`, since a tool is a file and the authored def
  * carries none. See {@link toolOf}, which this is built on.
+ *
+ * **A tool that takes no arguments may say so by leaving them out**, passing the
+ * context in their place: `runTool(agentDef, "view_order", ctx)`. A no-argument
+ * tool is common — one shipped template has thirteen — and the `{}` those calls
+ * were obliged to pass appeared 66 times across seven template specs, always
+ * between the two values a reader actually cares about. Both spellings are one
+ * signature rather than an overload pair, so a local
+ * `run = (name, argsOrCtx, ctx?) => runTool(agentDef, name, argsOrCtx, ctx)`
+ * wrapper — which is how every template reaches this — forwards either shape
+ * without restating the union.
+ *
+ * The two are told apart by SHAPE, and the probe is narrow enough to be safe:
+ * a `ToolContext` is a record carrying a string `sessionId`, a `slots` store and
+ * a `send` function, and tool arguments arrive as JSON from a model, which
+ * cannot contain a function. A context is never a plausible argument object.
+ *
+ * @param args - The tool's arguments, or the {@link ToolContext} when it takes
+ *   none. Defaults to `{}`.
+ * @param ctx - The context. Defaults to a fresh {@link createToolContext} — so
+ *   an omitted context is a DISTINCT SESSION with empty slots, which is what a
+ *   stateless tool wants and never what two calls sharing state want. Pass one
+ *   explicitly wherever the second call is supposed to see the first call's
+ *   work.
  *
  * @example
  * ```ts no-check
@@ -89,6 +115,11 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
  * expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
  *   added: "apple",
  * });
+ *
+ * // No arguments, one session shared across the two calls.
+ * const ctx = createToolContext();
+ * await runTool(agentDef, "add_item", { item: "apple" }, ctx);
+ * expect(await runTool(agentDef, "view_order", ctx)).toEqual({ items: ["apple"] });
  * ```
  *
  * @public
@@ -96,8 +127,26 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
 export async function runTool(
   agent: ToolBearingAgent,
   name: string,
-  args: InferSchemaOutput<ToolInputSchema>,
-  ctx: ToolContext,
+  argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext,
+  ctx?: ToolContext,
 ): Promise<unknown> {
-  return await toolOf(agent, name).execute(args, ctx);
+  const passedContext = ctx ?? (isToolContext(argsOrCtx) ? argsOrCtx : undefined);
+  const args = argsOrCtx === undefined || argsOrCtx === passedContext ? {} : argsOrCtx;
+  return await toolOf(agent, name).execute(args, passedContext ?? createToolContext());
+}
+
+/**
+ * Is this a {@link ToolContext} rather than a bag of tool arguments?
+ *
+ * Three fields, all of them present on every context this SDK builds and none of
+ * them expressible in the JSON a model sends: `send` is a FUNCTION, which is the
+ * one that cannot be faked by an argument object arriving over the wire.
+ */
+function isToolContext(value: unknown): value is ToolContext {
+  return (
+    isRecord(value) &&
+    typeof value.sessionId === "string" &&
+    typeof value.send === "function" &&
+    isRecord(value.slots)
+  );
 }
