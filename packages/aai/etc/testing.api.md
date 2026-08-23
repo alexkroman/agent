@@ -22,7 +22,7 @@ export function createRunSnapshot<R = unknown>(over?: RunSnapshotOverrides<R>): 
 export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
 
 // @public
-export function createToolContext(overrides?: Partial<ToolContext>): TestToolContext;
+export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 
 // @public
 export function createUnusedDb(): Db;
@@ -31,6 +31,18 @@ export function createUnusedDb(): Db;
 type Db = {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
+
+// @public
+interface DialogPosition {
+    readonly done: boolean;
+    readonly instruction?: string;
+    readonly state: string;
+}
+
+// @public
+interface DialogToolResult<R> extends DialogPosition {
+    readonly result: R;
+}
 
 // @public
 type FindOptions = {
@@ -82,6 +94,18 @@ type Message = {
 };
 
 // @public
+export function ok<T>(result: unknown): T;
+
+// @public
+export function okPosition<T>(result: unknown): DialogToolResult<T>;
+
+// @public
+export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
+
+// @public
+export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -103,7 +127,10 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 });
 
 // @public
-export function runTool(agent: ToolBearingAgent, name: string, args: InferSchemaOutput<ToolInputSchema>, ctx: ToolContext): Promise<unknown>;
+export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
+
+// @public
+export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
 export interface SentEvent {
@@ -255,21 +282,20 @@ export type StubSpeechOptions = {
 };
 
 // @public
+export type StubStepAnswer = Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+};
+
+// @public
 export type StubStepFetch = {
     calls: StubStepRequest[];
     restore: () => void;
 };
 
 // @public
-export function stubStepFetch(answer?: (request: StubStepRequest) => Response | {
-    status?: number;
-    body?: unknown;
-    headers?: Record<string, string>;
-} | Promise<Response | {
-    status?: number;
-    body?: unknown;
-    headers?: Record<string, string>;
-}>): StubStepFetch;
+export function stubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
 
 // @public
 export type StubStepRequest = {
@@ -277,6 +303,43 @@ export type StubStepRequest = {
     method: string;
     headers: Record<string, string>;
     body: Uint8Array | string | undefined;
+};
+
+// @public
+export type StubTranscribe = {
+    calls: StubTranscribeCall[];
+    restore(): void;
+};
+
+// @public
+export function stubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
+
+// @public
+export type StubTranscribeCall = StubStepRequest & {
+    leg: StubTranscribeLeg;
+};
+
+// @public
+export type StubTranscribeFailure = {
+    leg?: StubTranscribeLeg | readonly StubTranscribeLeg[] | undefined;
+    status?: number | undefined;
+    message?: string | undefined;
+    retryAfterSeconds?: number | undefined;
+};
+
+// @public
+export type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other";
+
+// @public
+export type StubTranscribeOptions = {
+    text?: string | readonly string[] | undefined;
+    durationSec?: number | undefined;
+    audioUrl?: string | undefined;
+    jobIdPrefix?: string | undefined;
+    pendingPolls?: number | undefined;
+    jobError?: string | undefined;
+    failure?: StubTranscribeFailure | undefined;
+    otherwise?: ((request: StubStepRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>) | undefined;
 };
 
 // @public
@@ -288,12 +351,27 @@ export type StubUpload = Uint8Array | {
 };
 
 // @public
-export function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): () => void;
+export type StubUploads = {
+    restore(): void;
+    writes: StubUploadWrite[];
+    read(id: string): StubUploadWrite | undefined;
+};
+
+// @public
+export function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
 // @public
 export type StubUploadsOptions = {
     writable?: boolean | undefined;
     idPrefix?: string | undefined;
+};
+
+// @public
+export type StubUploadWrite = {
+    id: string;
+    name: string;
+    type: string;
+    bytes: Uint8Array;
 };
 
 // @public
@@ -320,11 +398,19 @@ type ToolContext = {
 };
 
 // @public
+export type ToolContextOverrides = {
+    [K in keyof ToolContext]?: ToolContext[K] | undefined;
+};
+
+// @public
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 };
+
+// @public
+export function toolInputIssues(agent: ToolBearingAgent, name: string, value: unknown): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
@@ -364,6 +450,7 @@ type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };

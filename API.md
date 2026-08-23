@@ -26,6 +26,7 @@ symbol exported from two subpaths appears under both.
 - `@alexkroman1/aai/slugify` — `packages/aai/etc/slugify.api.md`
 - `@alexkroman1/aai/step` — `packages/aai/etc/step.api.md`
 - `@alexkroman1/aai/step-errors` — `packages/aai/etc/step-errors.api.md`
+- `@alexkroman1/aai/step-files` — `packages/aai/etc/step-files.api.md`
 - `@alexkroman1/aai/stt` — `packages/aai/etc/stt.api.md`
 - `@alexkroman1/aai/testing` — `packages/aai/etc/testing.api.md`
 - `@alexkroman1/aai/testing/vitest` — `packages/aai/etc/testing-vitest.api.md`
@@ -1605,6 +1606,7 @@ type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };
@@ -1839,19 +1841,25 @@ type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 export type DefaultToolResult = any;
 
 // @public
-export interface Dialog<M extends AnyStateMachine> {
+export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     readonly key: string;
     readonly machine: M;
     matches(ctx: ToolContext, state: string): boolean;
     position(ctx: ToolContext): DialogPosition;
     projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
     reset(ctx: ToolContext): DialogPosition;
-    send(ctx: ToolContext, event: EventFromLogic<M>): DialogPosition;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, EventFromLogic<M>>): ToolDef<P>;
+    send(ctx: ToolContext, event: E): DialogPosition;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
 }
 
 // @public
 export function dialog<M extends AnyStateMachine>(key: string, machine: M, options?: DialogOptions): Dialog<M>;
+
+// @public
+export function dialog<const S extends DialogSpec>(key: string, spec: S, options?: DialogOptions): Dialog<AnyStateMachine, DialogEvent<S>>;
+
+// @public
+export type DialogEvent<S extends DialogSpec> = EventOf<NamesInMap<S["states"]>>;
 
 // @public
 export interface DialogOptions {
@@ -1866,12 +1874,27 @@ export interface DialogPosition {
 }
 
 // @public
+export interface DialogSpec {
+    initial: string;
+    states: Record<string, DialogStateSpec>;
+}
+
+// @public
+export interface DialogStateSpec {
+    final?: true;
+    initial?: string;
+    instruction?: string;
+    on?: Record<string, string>;
+    states?: Record<string, DialogStateSpec>;
+}
+
+// @public
 export interface DialogToolDef<P extends ToolInputSchema, R, E> {
     description: string;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
     inputSchema?: P;
     send?: E;
-    sendFrom?: (result: R) => E | undefined;
+    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
     when: string | readonly string[];
 }
 
@@ -1888,6 +1911,11 @@ export function errorDetail(err: unknown): string;
 
 // @public
 export function errorMessage(err: unknown): string;
+
+// @public
+type EventOf<N> = N extends string ? {
+    type: N;
+} : never;
 
 // @public
 type FindOptions = {
@@ -1975,6 +2003,16 @@ export type Message = {
     role: "user" | "assistant" | "tool";
     content: string;
 };
+
+// @public
+type NamesIn<S> = (S extends {
+    on: infer O;
+} ? Extract<keyof O, string> : never) | (S extends {
+    states: infer M;
+} ? NamesInMap<M> : never);
+
+// @public
+type NamesInMap<M> = M extends Record<string, unknown> ? M[keyof M] extends infer C ? C extends unknown ? NamesIn<C> : never : never : never;
 
 // @public
 export function omitUndefined<T extends object>(obj: T): {
@@ -2283,9 +2321,9 @@ export interface SessionSlot<K extends string, T> {
     projection<V>(project: (value: DeepReadonly<T>) => V): StateProjection<V>;
     reset(ctx: ToolContext): DeepReadonly<T>;
     set(ctx: ToolContext, value: T): DeepReadonly<T>;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P>;
+    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
     update<R>(ctx: ToolContext, mutate: (draft: T) => R): R;
-    updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R>): ToolDef<P>;
+    updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: SlotToolDef<P, T, R>): ToolDef<P, R>;
 }
 
 // @public
@@ -2490,6 +2528,7 @@ export type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };
@@ -2873,6 +2912,7 @@ type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };
@@ -3579,6 +3619,7 @@ type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };
@@ -4356,6 +4397,40 @@ export type WriteUploadOptions = {
 
 ```ts
 // @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+
+// @public
+interface StandardSchemaIssue {
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public
 type StepFetchInit = {
     method?: string | undefined;
     headers?: Record<string, string> | undefined;
@@ -4367,13 +4442,148 @@ type StepFetchInit = {
 export function stepFetchOk(url: string, init?: StepFetchInit): Promise<Response>;
 
 // @public
+export function stepGenerateClassified(prompt: string, opts?: StepGenerateOptions): Promise<string>;
+
+// @public
+export function stepGenerateJsonClassified<S extends StandardSchemaV1>(prompt: string, opts: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
+
+// @public
+type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
+    schema: S;
+};
+
+// @public
+type StepGenerateOptions = {
+    system?: string;
+    model?: string;
+    apiKeyEnv?: string;
+    gatewayUrl?: string;
+    timeoutMs?: number;
+    temperature?: number;
+    maxTokens?: number;
+};
+
+// @public
+export function stepTranscribePollClassified(id: string, opts?: TranscribeRequestOptions): Promise<TranscribeProgress>;
+
+// @public
+export function stepTranscribeSubmitClassified(audioUrl: string, opts?: TranscribeSubmitOptions): Promise<{
+    id: string;
+}>;
+
+// @public
+export function stepTranscribeSyncClassified(bytes: Uint8Array, opts?: TranscribeSyncOptions): Promise<{
+    text: string;
+}>;
+
+// @public
+export function stepTranscribeUploadClassified(uploadId: string, opts?: TranscribeRequestOptions): Promise<{
+    audioUrl: string;
+}>;
+
+// @public
 export function throwFatalStepError(cause: unknown, message?: string): never;
+
+// @public
+export function throwFfmpegStepError(cause: unknown, message?: string): never;
 
 // @public
 export function throwStepError(cause: unknown, message?: string): never;
 
 // @public
 export function toStepError(cause: unknown, message?: string): Error;
+
+// @public
+type TranscribeProgress = {
+    done: false;
+    status: string;
+} | {
+    done: true;
+    status: string;
+    transcript: Transcript;
+};
+
+// @public
+type TranscribeRequestOptions = {
+    apiKeyEnv?: string | undefined;
+    timeoutMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public
+type TranscribeSubmitOptions = TranscribeRequestOptions & {
+    models?: readonly string[] | undefined;
+    params?: Record<string, unknown> | undefined;
+};
+
+// @public
+type TranscribeSyncOptions = TranscribeRequestOptions & {
+    model?: string | undefined;
+    filename?: string | undefined;
+    type?: string | undefined;
+    label?: string | undefined;
+};
+
+// @public
+type Transcript = {
+    id: string;
+    text: string;
+    durationMs: number;
+};
+```
+
+## `@alexkroman1/aai/step-files`
+
+```ts
+// @public
+export function readUploadToFile(uploadId: string, path: string, opts?: ReadUploadToFileOptions): Promise<number>;
+
+// @public
+export type ReadUploadToFileOptions = {
+    size?: number | undefined;
+    windowBytes?: number | undefined;
+};
+
+// @public
+export const STEP_FILE_WINDOW_BYTES: number;
+
+// @public
+type UploadInfo = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+    ranges?: readonly UploadRange[];
+};
+
+// @public
+type UploadRange = {
+    start: number;
+    end: number;
+};
+
+// @public
+export function withTempDir<T>(work: (dir: string) => Promise<T>, opts?: WithTempDirOptions): Promise<T>;
+
+// @public
+export type WithTempDirOptions = {
+    prefix?: string | undefined;
+};
+
+// @public
+export function writeUploadFromFile(path: string, opts?: WriteUploadFromFileOptions): Promise<UploadInfo>;
+
+// @public
+export type WriteUploadFromFileOptions = WriteUploadOptions & {
+    windowBytes?: number | undefined;
+};
+
+// @public
+type WriteUploadOptions = {
+    name?: string | undefined;
+    type?: string | undefined;
+};
 ```
 
 ## `@alexkroman1/aai/stt`
@@ -4466,7 +4676,7 @@ export function createRunSnapshot<R = unknown>(over?: RunSnapshotOverrides<R>): 
 export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
 
 // @public
-export function createToolContext(overrides?: Partial<ToolContext>): TestToolContext;
+export function createToolContext(overrides?: ToolContextOverrides): TestToolContext;
 
 // @public
 export function createUnusedDb(): Db;
@@ -4475,6 +4685,18 @@ export function createUnusedDb(): Db;
 type Db = {
     query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
+
+// @public
+interface DialogPosition {
+    readonly done: boolean;
+    readonly instruction?: string;
+    readonly state: string;
+}
+
+// @public
+interface DialogToolResult<R> extends DialogPosition {
+    readonly result: R;
+}
 
 // @public
 type FindOptions = {
@@ -4526,6 +4748,18 @@ type Message = {
 };
 
 // @public
+export function ok<T>(result: unknown): T;
+
+// @public
+export function okPosition<T>(result: unknown): DialogToolResult<T>;
+
+// @public
+export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
+
+// @public
+export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
+
+// @public
 interface ProviderDescriptor<Kind extends string, Options> {
     // (undocumented)
     readonly kind: Kind;
@@ -4547,7 +4781,10 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 });
 
 // @public
-export function runTool(agent: ToolBearingAgent, name: string, args: InferSchemaOutput<ToolInputSchema>, ctx: ToolContext): Promise<unknown>;
+export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
+
+// @public
+export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
 export interface SentEvent {
@@ -4699,21 +4936,20 @@ export type StubSpeechOptions = {
 };
 
 // @public
+export type StubStepAnswer = Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+};
+
+// @public
 export type StubStepFetch = {
     calls: StubStepRequest[];
     restore: () => void;
 };
 
 // @public
-export function stubStepFetch(answer?: (request: StubStepRequest) => Response | {
-    status?: number;
-    body?: unknown;
-    headers?: Record<string, string>;
-} | Promise<Response | {
-    status?: number;
-    body?: unknown;
-    headers?: Record<string, string>;
-}>): StubStepFetch;
+export function stubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
 
 // @public
 export type StubStepRequest = {
@@ -4721,6 +4957,43 @@ export type StubStepRequest = {
     method: string;
     headers: Record<string, string>;
     body: Uint8Array | string | undefined;
+};
+
+// @public
+export type StubTranscribe = {
+    calls: StubTranscribeCall[];
+    restore(): void;
+};
+
+// @public
+export function stubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
+
+// @public
+export type StubTranscribeCall = StubStepRequest & {
+    leg: StubTranscribeLeg;
+};
+
+// @public
+export type StubTranscribeFailure = {
+    leg?: StubTranscribeLeg | readonly StubTranscribeLeg[] | undefined;
+    status?: number | undefined;
+    message?: string | undefined;
+    retryAfterSeconds?: number | undefined;
+};
+
+// @public
+export type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other";
+
+// @public
+export type StubTranscribeOptions = {
+    text?: string | readonly string[] | undefined;
+    durationSec?: number | undefined;
+    audioUrl?: string | undefined;
+    jobIdPrefix?: string | undefined;
+    pendingPolls?: number | undefined;
+    jobError?: string | undefined;
+    failure?: StubTranscribeFailure | undefined;
+    otherwise?: ((request: StubStepRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>) | undefined;
 };
 
 // @public
@@ -4732,12 +5005,27 @@ export type StubUpload = Uint8Array | {
 };
 
 // @public
-export function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): () => void;
+export type StubUploads = {
+    restore(): void;
+    writes: StubUploadWrite[];
+    read(id: string): StubUploadWrite | undefined;
+};
+
+// @public
+export function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
 // @public
 export type StubUploadsOptions = {
     writable?: boolean | undefined;
     idPrefix?: string | undefined;
+};
+
+// @public
+export type StubUploadWrite = {
+    id: string;
+    name: string;
+    type: string;
+    bytes: Uint8Array;
 };
 
 // @public
@@ -4764,11 +5052,19 @@ type ToolContext = {
 };
 
 // @public
+export type ToolContextOverrides = {
+    [K in keyof ToolContext]?: ToolContext[K] | undefined;
+};
+
+// @public
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
 };
+
+// @public
+export function toolInputIssues(agent: ToolBearingAgent, name: string, value: unknown): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
@@ -4808,6 +5104,7 @@ type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };
@@ -4863,6 +5160,27 @@ type WorkflowSummary = {
 export function installStubGateway(replies: string | readonly string[], opts?: StubGatewayOptions): StubGatewayCall[];
 
 // @public
+export function installStubReporter(): StubReporter;
+
+// @public
+export function installStubSpeech(options?: StubSpeechOptions): StubSpeech;
+
+// @public
+export function installStubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public
+export function installStubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
+
+// @public
+export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
+
+// @public
+type StubEmitted = {
+    namespace: string;
+    chunk: unknown;
+};
+
+// @public
 interface StubGatewayCall {
     body: Record<string, unknown>;
     headers: Record<string, string>;
@@ -4876,6 +5194,118 @@ interface StubGatewayOptions {
     headers?: Record<string, string>;
     status?: number;
 }
+
+// @public
+type StubReporter = {
+    lines: string[];
+    emitted: StubEmitted[];
+    restore: () => void;
+};
+
+// @public
+type StubSpeech = {
+    calls: StubSpeechCall[];
+    restore(): void;
+};
+
+// @public
+type StubSpeechCall = {
+    text: string;
+    apiKey: string;
+    voice: string;
+    language: string | undefined;
+    sampleRate: number;
+};
+
+// @public
+type StubSpeechOptions = {
+    pcmBytes?: number | undefined;
+    error?: Error | undefined;
+};
+
+// @public
+type StubStepAnswer = Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+};
+
+// @public
+type StubStepFetch = {
+    calls: StubStepRequest[];
+    restore: () => void;
+};
+
+// @public
+type StubStepRequest = {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: Uint8Array | string | undefined;
+};
+
+// @public
+type StubTranscribe = {
+    calls: StubTranscribeCall[];
+    restore(): void;
+};
+
+// @public
+type StubTranscribeCall = StubStepRequest & {
+    leg: StubTranscribeLeg;
+};
+
+// @public
+type StubTranscribeFailure = {
+    leg?: StubTranscribeLeg | readonly StubTranscribeLeg[] | undefined;
+    status?: number | undefined;
+    message?: string | undefined;
+    retryAfterSeconds?: number | undefined;
+};
+
+// @public
+type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other";
+
+// @public
+type StubTranscribeOptions = {
+    text?: string | readonly string[] | undefined;
+    durationSec?: number | undefined;
+    audioUrl?: string | undefined;
+    jobIdPrefix?: string | undefined;
+    pendingPolls?: number | undefined;
+    jobError?: string | undefined;
+    failure?: StubTranscribeFailure | undefined;
+    otherwise?: ((request: StubStepRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>) | undefined;
+};
+
+// @public
+type StubUpload = Uint8Array | {
+    bytes: Uint8Array;
+    name?: string;
+    type?: string;
+    complete?: boolean;
+};
+
+// @public
+type StubUploads = {
+    restore(): void;
+    writes: StubUploadWrite[];
+    read(id: string): StubUploadWrite | undefined;
+};
+
+// @public
+type StubUploadsOptions = {
+    writable?: boolean | undefined;
+    idPrefix?: string | undefined;
+};
+
+// @public
+type StubUploadWrite = {
+    id: string;
+    name: string;
+    type: string;
+    bytes: Uint8Array;
+};
 ```
 
 ## `@alexkroman1/aai/tools`
@@ -5062,6 +5492,9 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 ```ts
 // @public
+export function countWords(text: string): number;
+
+// @public
 export function createKeyedLock(): KeyedLock;
 
 // @public
@@ -5069,6 +5502,12 @@ export function errorDetail(err: unknown): string;
 
 // @public
 export function errorMessage(err: unknown): string;
+
+// @public
+export function formatBytes(bytes: number): string;
+
+// @public
+export function formatDuration(ms: number): string;
 
 // @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
@@ -5097,6 +5536,9 @@ export class KeyedLockTimeoutError extends Error {
 export function omitUndefined<T extends object>(obj: T): {
     [K in keyof T]?: unknown extends T[K] ? NonNullable<unknown> | null : Exclude<T[K], undefined>;
 };
+
+// @public
+export function plural(n: number, one: string, many?: string): string;
 
 // @public
 export function pushCapped<T>(list: T[], item: T, max: number): T[];
@@ -5360,6 +5802,7 @@ export type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };
@@ -5373,6 +5816,9 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
 };
 
 // @public
+export type WorkflowInputOf<D> = D extends WorkflowDef<infer P, unknown> ? InferSchemaOutput<P> : never;
+
+// @public
 export type WorkflowOutputOf<D> = D extends WorkflowDef<ToolInputSchema, infer R> ? Awaited<R> : never;
 
 // @public
@@ -5382,6 +5828,9 @@ export type WorkflowRunBase = {
     createdAt: number;
     key?: string;
 };
+
+// @public
+export type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
 
 // @public
 export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
@@ -6767,6 +7216,7 @@ import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
@@ -6833,6 +7283,10 @@ export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSess
     name?: string;
     sidebar?: ComponentType;
     sidebarWidth?: string;
+    sidebarPosition?: "left" | "right";
+    icon?: ReactNode;
+    subtitle?: string;
+    buttonText?: string;
     tools?: ToolDisplayConfig;
 };
 
@@ -6855,11 +7309,35 @@ export type ClientTheme = {
 };
 
 // @public
+export function ConsoleShell(input: ConsoleShellProps): ReactNode;
+
+// @public
+export type ConsoleShellProps = {
+    icon?: ReactNode | undefined;
+    title?: string | undefined;
+    state: AgentState;
+    pulsing: boolean;
+    error?: string | null | undefined;
+    children: ReactNode;
+    footer: ReactNode;
+    className?: string | undefined;
+};
+
+// @public
 export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>>;
 
 // @public
 export type ControlsProps = {
     className?: string;
+};
+
+// @public
+export type ConversationItem = {
+    kind: "message";
+    message: ChatMessage;
+} | {
+    kind: "tool";
+    toolCall: ToolCallInfo;
 };
 
 // @public
@@ -7122,6 +7600,32 @@ export function useAgentState<V>(projection: StateProjection<V>): V;
 export function useAgentState<S = DefaultToolResult>(fallback: S): S;
 
 // @public
+export function useConversation(): UseConversationResult;
+
+// @public
+export type UseConversationResult = {
+    items: readonly ConversationItem[];
+    streaming: string | null;
+    transcript: UseUserTranscriptResult;
+    thinking: boolean;
+};
+
+// @public
+export function useDownloadUrl(uploadId: string | undefined, opts?: UseDownloadUrlOptions): UseDownloadUrlResult;
+
+// @public
+export type UseDownloadUrlOptions = {
+    api?: WorkflowApi;
+};
+
+// @public
+export type UseDownloadUrlResult = {
+    url?: string;
+    error?: string;
+    pending: boolean;
+};
+
+// @public
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void;
 
 // @public
@@ -7251,6 +7755,9 @@ export type WebSocketConstructor = {
     readonly OPEN: number;
 };
 
+// @public
+export const WORKFLOW_STATUS_LABELS: Readonly<Record<WorkflowRunStatus, string>>;
+
 export { WorkflowApi }
 
 // @public (undocumented)
@@ -7272,10 +7779,13 @@ export function WorkflowProgress(input: {
     api?: WorkflowApi | undefined;
     className?: string | undefined;
     placeholder?: ReactNode | undefined;
+    lines?: number | undefined;
 }): ReactNode;
 
 // @public
 export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
+
+export { WorkflowRunStatus }
 
 // @public
 export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
@@ -7284,6 +7794,8 @@ export type WorkflowStreamSubmission<R = unknown> = WorkflowSubmission<R>;
 export type WorkflowSubmission<R = unknown> = {
     submit: (input: unknown) => Promise<void>;
     reset: () => void;
+    wake: () => Promise<number>;
+    cancel: () => Promise<boolean>;
     run: WorkflowRun<R> | undefined;
     pending: boolean;
     upload: UploadStatus | undefined;

@@ -15,6 +15,18 @@
  * `@alexkroman1/aai/internal`, which is not contracted at all — it is explicitly
  * not semver-covered.
  *
+ * The four NARRATION formatters joined it, and the reader is what puts them here
+ * rather than on a subpath of their own: `formatBytes`, `formatDuration`,
+ * `countWords` and `plural` are written from a `workflows/*.ts` step reporting
+ * its own progress AND from the `client.tsx` rendering the same run, and
+ * `/utils` is already the import both halves reach for. They are on this
+ * contract because their OUTPUT is the promise — each returns one fixed ASCII
+ * shape documented to the character, deliberately un-localized, so a spec may
+ * assert the exact string and a page and a step cannot disagree about the same
+ * run. (They did: one template printed a 64-minute recording as `1:04:09` from
+ * its workflow and `64:09` from its page.) A change to what one PRINTS is a
+ * change to this contract, which is the reason to version it here.
+ *
  * `createKeyedLock`/`withLock` are the one pair here with a runtime dependency
  * (`p-timeout`, 2.4 KB, for the optional acquire deadline) and the one an agent
  * author most needs: the LLM loop runs a step's tool calls CONCURRENTLY, so two
@@ -29,14 +41,18 @@
  */
 
 export {
+  countWords,
   createKeyedLock,
   errorDetail,
   errorMessage,
+  formatBytes,
+  formatDuration,
   isRecord,
   type KeyedLock,
   type KeyedLockOptions,
   KeyedLockTimeoutError,
   omitUndefined,
+  plural,
   pushCapped,
   responseErrorMessage,
   safeJsonParse,

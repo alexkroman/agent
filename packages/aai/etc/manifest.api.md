@@ -577,6 +577,7 @@ type WorkflowClient = {
     signal(token: string, payload?: unknown): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
+    lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
     publicWebhookUrl(token: string): string;
     listing(): WorkflowSummary[];
 };

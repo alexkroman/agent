@@ -15,7 +15,8 @@
     "dist/sdk/providers/llm-barrel.d.ts",
     "dist/sdk/providers/s2s-barrel.d.ts",
     "dist/host/agent-tools.d.ts",
-    "dist/host/ffmpeg.d.ts"
+    "dist/host/ffmpeg.d.ts",
+    "dist/host/step-files.d.ts"
   ],
   "externalSymbolLinkMappings": {
     "ai": {
@@ -24,6 +25,15 @@
   },
   "intentionallyNotExported": [
     "StandardSchemaV1",
+    // The issue type from the same vendor interface, reached the same way:
+    // `schemaInputIssues` (`@alexkroman1/aai/testing`) answers
+    // `readonly StandardSchemaIssue[] | undefined`. Its whole job is to be
+    // handed to a reporter or asserted non-empty, and `~standard` is a wire
+    // contract between a schema library and this SDK rather than an authoring
+    // surface — a spec naming the type is naming the seam these helpers exist
+    // to hide. It still appears inline in the rendered signature, and the API
+    // report carries its declaration under `includeForgottenExports`.
+    "StandardSchemaIssue",
     // The ten field-list and message types behind `AgentParams`' four arms, plus
     // the endpointing one. They are the implementation of a compile error — an
     // author reads them in the message tsc prints, never by name — so they are
@@ -47,6 +57,15 @@
     // consumer can name, and nothing they need to — the distribution is what they
     // get. Exporting it to satisfy the reference would put a conditional-type
     // utility on the published surface.
-    "DistributiveOmit"
+    "DistributiveOmit",
+    // The two conditional-type helpers behind `DialogEvent<S>`. They walk a
+    // `DialogSpec`'s nested `states` collecting `on` keys, and the union they
+    // produce is the whole of what an author sees — `dialog.send` takes it and
+    // a misspelled event name is the error. Naming either one is meaningless
+    // outside that recursion, and exporting them to satisfy the reference would
+    // put two type-level utilities on the published surface. Same argument as
+    // `DistributiveOmit` above.
+    "EventOf",
+    "NamesInMap"
   ]
 }
