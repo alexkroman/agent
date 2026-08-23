@@ -13,6 +13,7 @@
   "dependencies": {
     "@alexkroman1/aai": "^6.11.0",
     "@alexkroman1/aai-runtime": "^6.11.0",
-    "@alexkroman1/aai-ui": "^6.11.0"
+    "@alexkroman1/aai-ui": "^6.11.0",
+    "zod": "^4.4.3"
   }
 }

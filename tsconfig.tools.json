@@ -25,9 +25,16 @@
     // source is the same thing `packages/aai-templates/tsconfig.json` does, and
     // it checks the question worth asking: does the example still compile
     // against the SDK as it stands today.
+    //
+    // `zod` is mapped for the same reason and resolved differently: it is not
+    // ours, so there is no source to point at — the entry is where the
+    // workspace already installed it. An example tool declares its arguments
+    // the way every template does, so leaving it unresolvable would mean
+    // either an example that is not checked or an example nobody would copy.
     "paths": {
       "@alexkroman1/aai": ["./packages/aai/index.ts"],
-      "@alexkroman1/aai-ui": ["./packages/aai-ui/index.ts"]
+      "@alexkroman1/aai-ui": ["./packages/aai-ui/index.ts"],
+      "zod": ["./packages/aai/node_modules/zod"]
     }
   },
   // Generic on purpose: tsc's `include` only sets ROOT files, so anything not

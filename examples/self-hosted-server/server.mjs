@@ -4,9 +4,10 @@
 // `agent.ts` next to this file is the `simple` template verbatim, untouched.
 // This file is the deployment.
 //
-// Tools declared on the agent run IN THIS PROCESS, on your credentials — the
-// opposite arrangement from `examples/host-server`, where callers bring their
-// own agent and execute their own tools.
+// The agent's tools are the files in `tools/` next to this one, and they run
+// IN THIS PROCESS on your credentials — the opposite arrangement from
+// `examples/host-server`, where callers bring their own agent and execute
+// their own tools.
 //
 // Run it:
 //
@@ -16,7 +17,7 @@
 //
 // then open http://127.0.0.1:3000.
 
-import { createAgentServer } from "@alexkroman1/aai-runtime";
+import { createAgentServer, withToolsDir } from "@alexkroman1/aai-runtime";
 import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 // Node 24 strips the types natively, so the template's `.ts` is imported as-is
 // — no build step, and no second copy of the agent in JavaScript that could
@@ -29,12 +30,19 @@ if (!apiKey) {
   process.exit(1);
 }
 
+// Every file in `tools/` is a tool, named by its own file name — `roll_die.ts`
+// is `roll_die` — and this line is the whole registration. Adding a tool is
+// adding a file; nothing here or in `agent.ts` learns its name. On the managed
+// platform the CLI's bundler does this enumeration at build time, which is why
+// `agent.ts` takes no `tools` field on any path.
+const served = await withToolsDir(agent, new URL("./tools/", import.meta.url));
+
 // `env` is what tool code sees as `ctx.env`, and where provider credentials are
 // resolved from. On the platform this comes from `aai secret put`; here it is
 // yours to assemble — from a vault, a mounted file, whatever you already use.
 // Nothing falls back to the host's process.env on its own.
 const server = createAgentServer({
-  agent,
+  agent: served,
   env: { ASSEMBLYAI_API_KEY: apiKey },
   // The prebuilt browser UI that `aai dev` serves, shipped inside aai-ui.
   clientDir: defaultClientDir(),

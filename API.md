@@ -5584,6 +5584,7 @@ import { SttSession } from '@alexkroman1/aai/host-internal';
 import { SttTurnMeta } from '@alexkroman1/aai/host-internal';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
+import { ToolRegistry } from '@alexkroman1/aai/manifest';
 import type { ToolSchema } from '@alexkroman1/aai/manifest';
 import { ToolSet } from 'ai';
 import { TtsError } from '@alexkroman1/aai/host-internal';
@@ -6304,6 +6305,11 @@ export type WdkStreamOptions = {
 
 // @public
 export function withHostCredentialFallback(env: Record<string, string>, hostEnv?: Record<string, string | undefined>): HostCredentialEnv;
+
+// @public
+export function withToolsDir<D extends {
+    readonly tools: ToolRegistry;
+}>(def: D, dir: string | URL): Promise<D>;
 
 export { WORKFLOW_API_PREFIX }
 

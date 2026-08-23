@@ -49,6 +49,11 @@
     "supported": [1],
     "dropped": {}
   },
+  "tools": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "uploads": {
     "current": 1,
     "supported": [1],

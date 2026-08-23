@@ -808,7 +808,8 @@
     "startTelephonySession",
     "telnyxCodec",
     "twilioCodec",
-    "withHostCredentialFallback"
+    "withHostCredentialFallback",
+    "withToolsDir"
   ],
   "@alexkroman1/aai-runtime/internal": [
     "CONTAINED_ENV",

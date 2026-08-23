@@ -84,13 +84,19 @@ that did keep a directory — `providers/`, `transports/`, `telephony/`.
 
 ## The published surface is versioned in epochs
 
-Twelve capabilities under `contracts/`, each a named slice of what an embedder
-writes against: `server`, `runtime`, `session`, `session-state`, `providers`,
-`telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`, `text`. The
+Thirteen capabilities under `contracts/`, each a named slice of what an
+embedder writes against: `server`, `runtime`, `session`, `session-state`,
+`providers`, `telephony`, `uploads`, `db`, `keys`, `workflow`, `logging`,
+`text`, `tools`. The
 mechanism is the repo's — see "The authoring surface is versioned in epochs" in
 the root `AGENTS.md` — and what it means here is that a signature change on any
-of the 124 public names is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
+of the 125 public names is CLASSIFIED (`--bump … --retain` or `--drop "<reason>"`)
 rather than discovered by whoever's build breaks.
+
+`tools` is the newest and the smallest — one name, `withToolsDir` — and it is
+its own capability rather than part of `runtime` because it assembles the
+DEFINITION a runtime is handed rather than any part of the engine. See "Tool
+discovery off the platform" below.
 
 The split shipped this package with no `contracts/` tree, so for its first days
 221 exports moved with nothing recording it, while `aai` and `aai-ui` could not
@@ -112,18 +118,18 @@ which is where a reader can find it without opening twelve files). Each is the
 starter as it was written AT THAT EPOCH; the way to change an API is a new epoch
 carrying a new template, never an edit to a frozen one.
 
-**A template exercises 97 of the 124 names, and that is not a hole in the
+**A template exercises 98 of the 125 names, and that is not a hole in the
 gate.** The epoch hash covers the capability's REPORT, which carries every name
 the entrypoint selects — so a signature change on `SweepSkip` moves `db`'s hash
 and demands a classification whether or not any template mentions it.
-Classification coverage is 124 of 124; what the other 27 lack is a compile-time
+Classification coverage is 125 of 125; what the other 27 lack is a compile-time
 exercise. The gap is deliberate and per name: `createServer`/`createHostServer`
 are a different artifact from the bootstrap (embedding into an existing runtime,
 and a multi-tenant host-mode server); `SweepSkip` has no public producer, so a
 host can never be handed one; `partKey`/`partsOf` would need a `delete` that
 `UploadBlobs` does not have; `telnyxCodec`/`twilioCodec` are the shipped
 carriers a third-carrier template exists to be an alternative to. Contorting a
-starter to touch all 124 is how these files became catalogues the first time.
+starter to touch all 125 is how these files became catalogues the first time.
 Where a name's absence is a finding rather than a choice, it is in the list
 below.
 
@@ -177,8 +183,8 @@ to 0.
 
 **The division is now mechanical, and it is worth stating as a rule.**
 
-- **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`)** is exactly the 124 names
-  the twelve capabilities select. A name here has an epoch, a report, and a
+- **`@alexkroman1/aai-runtime` (`runtime-barrel.ts`)** is exactly the 125 names
+  the thirteen capabilities select. A name here has an epoch, a report, and a
   frozen compiling template behind its capability. Nothing on it is
   `@internal` — that is what the zero means, and the ratchet is what holds it.
 - **`@alexkroman1/aai-runtime/internal` (`internal.ts`)** is the cross-package
@@ -284,6 +290,39 @@ and sandbox seams (`executeTool`, `toolSchemas`, `createWebSocket`,
 `stt`/`llm`/`tts` (which the agent declares), and the three tuning numbers
 (`s2sConfig`, `sessionStartTimeoutMs`, `shutdownTimeoutMs`). Forward one of those
 when somebody needs it, not before.
+
+## Tool discovery off the platform
+
+`withToolsDir(def, dir)` (`tools-dir.ts`) is the only thing in the repo that
+turns a DIRECTORY into a tool registry, and it is here rather than beside
+`toolRegistry` in the SDK for the ordinary reason: `node:fs/promises` plus a
+dynamic `import()`, and `@alexkroman1/aai` has to stay loadable in a browser.
+
+The gap it closes was real and specific. A tool is registered by EXISTING —
+`agent()` refuses a `tools` argument with a type whose text names the file to
+create — so somebody has to read the directory, and on the two paths that ship
+an agent that somebody is a bundler (the CLI's generated worker entry; a spec's
+`import.meta.glob`). A plain Node process serving `agent.ts` has neither, which
+made the SDK's central idiom UNREACHABLE on exactly the path with the fewest
+moving parts: `examples/self-hosted-server` shipped a README promising "adding a
+tool is adding a FILE" beside code that could not do it, and the only way to
+give that agent a tool was the hand-written `name → import` map the type error
+exists to prevent.
+
+**It adds a source, never a second set of rules.** The name grammar, the
+co-located-spec skip, the nested-file error, the default-export checks and the
+collision message stay in `toolRegistry`, and the attach stays in `withTools`;
+this reads a directory and calls them. `sdk/tool-registry.ts`'s module doc is
+the statement of that invariant — every source arrives as `path → module`, which
+is what stops a second builder from growing a second behaviour.
+
+Two mechanics worth not rediscovering. The module keys are relative to the
+directory scanned, because `toolRegistry` derives a name from the segment after
+the last `tools/` and an absolute key under a directory NOT literally named
+`tools` reads as a nested file — the right diagnostic for the wrong reason. And
+the scan is recursive so a file one directory deep reaches that nested-file
+error instead of being silently absent, which is the failure the whole mechanism
+replaces. A MISSING directory throws for the same reason.
 
 ## Rendering this package is a docs decision, and it cannot be half-made
 

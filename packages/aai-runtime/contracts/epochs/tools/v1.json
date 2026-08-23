@@ -1,0 +1,7 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "tools",
+  "epoch": 1,
+  "sha256": "77e73737cc0b8801cee029ae175f8c73ec65b1b66649117efd2c930ef28583fd",
+  "exports": ["withToolsDir"]
+}

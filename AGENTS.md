@@ -787,8 +787,8 @@ few lines.
   Filename conventions are Biome's job too (`useFilenamingConvention`,
   kebab-case), which replaced a never-invoked `ls-lint` whose config existed
   but which no pipeline ran and which blocked for 30+ minutes at repo root.
-  Template tool files are exempted by an override: their names mirror
-  snake_case LLM tool names.
+  A `tools/` file is exempted by an override: its name mirrors the
+  snake_case LLM tool name.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
   publishing.
@@ -1178,7 +1178,7 @@ and the section above admits how it gets made: a judgement from memory, where a
 
 `pnpm check:api-contracts` (`scripts/api-contracts.mjs`, run straight after
 `check:api-report` in `scripts/check.sh` and in the CI check job) closes that.
-Forty-two **capabilities** — named slices of the authoring API, each
+Forty-three **capabilities** — named slices of the authoring API, each
 declared by a file under `<package>/contracts/entrypoints/` that may contain
 nothing but
 `export { … } from "<a published subpath>"` — get a report of their own, and what

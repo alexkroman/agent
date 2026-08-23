@@ -13,6 +13,8 @@
  * - {@link createAgentServer} — an agent served over HTTP + WebSocket in one
  *   call. The scaffold's own `server.mjs` imports this and
  *   {@link withHostCredentialFallback}, and nothing else from here.
+ * - {@link withToolsDir} — the agent's `tools/` directory, discovered by a
+ *   process that has no bundler to do it at build time.
  * - {@link createRuntime} — the engine underneath it ({@link RuntimeOptions},
  *   {@link Runtime}, {@link SessionStartOptions}), for a process that owns its
  *   own transport.
@@ -27,7 +29,7 @@
  *   for the model stage.
  *
  * Everything on this page is CONTRACTED: each name belongs to exactly one of
- * the twelve capabilities under `contracts/`, so a signature change here is
+ * the thirteen capabilities under `contracts/`, so a signature change here is
  * classified against an epoch rather than discovered by whoever's build breaks.
  *
  * The cross-package infrastructure that `aai-server`, `aai-cli` and `aai-guest`
@@ -214,6 +216,12 @@ export {
 // half that costs no tokens).
 export { createToolCallRepair, salvageJson } from "./tool-call-repair.ts";
 export type { ExecuteTool, ExecuteToolOptions } from "./tool-executor.ts";
+// Directory tool discovery — the Node half of `toolRegistry`, and the only
+// source of one that reads a filesystem. A host with a bundler in its path (the
+// CLI's generated worker entry, a spec's `import.meta.glob`) already has its
+// modules; a plain `server.mjs` has neither, and without this the only way to
+// give a self-hosted agent a tool was the hand-written map `agent()` refuses.
+export { withToolsDir } from "./tools-dir.ts";
 export type {
   // `PipelineTransportOptions.skipGreeting` names this. That options type is on
   // `@alexkroman1/aai-runtime/internal`, but the rule is unchanged: a caller

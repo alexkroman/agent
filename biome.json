@@ -337,7 +337,7 @@
       }
     },
     {
-      "includes": ["packages/aai-templates/templates/*/tools/**"],
+      "includes": ["**/tools/**"],
       "linter": {
         "rules": {
           "style": {

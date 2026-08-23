@@ -18,17 +18,20 @@
  * result here, so the RULES (what a name may be, what a file must export, what
  * a collision means) have one implementation no matter who did the scanning.
  *
- * **There is exactly ONE source shape — already-loaded modules — and no
- * runtime scan anywhere.** A `readdir` + dynamic `import()` mode was designed
- * for the two loaders that have no bundler, and neither took it: a spec uses
- * `import.meta.glob` so its tools stay inside VITEST's module graph (through
- * Node's resolver they would get a second copy of the SDK, and a slot's module
- * state would differ between the tool under test and the agent holding it), and
- * self-hosting loads the BUILT worker (`scaffold/server.mjs`), so the bundler is
- * in its path after all. A lazy `loadToolModules(loaders)` existed for that
- * mode, published and called by nothing; it is deleted rather than kept as an
- * affordance, because a second way to build a registry is how the rules below
- * come to have two behaviours.
+ * **There is exactly ONE source shape — already-loaded modules — and the one
+ * runtime scan is a PRODUCER of it, not a second registry builder.** A spec
+ * must use `import.meta.glob` so its tools stay inside VITEST's module graph
+ * (through Node's resolver they would get a second copy of the SDK, and a
+ * slot's module state would differ between the tool under test and the agent
+ * holding it), and the scaffold's `server.mjs` loads the BUILT worker, so the
+ * bundler is in its path after all. What is left is a plain Node process
+ * serving `agent.ts` directly, which has no bundler and a real directory: that
+ * one reads it — `withToolsDir` on `@alexkroman1/aai-runtime`, Node-only and
+ * therefore not here — and hands the result straight to `toolRegistry`. A lazy
+ * `loadToolModules(loaders)` that took the OTHER shape, a map of thunks, was
+ * published and called by nothing and is deleted: a second way to build a
+ * registry is how the rules below come to have two behaviours, and every
+ * source having to arrive as `path → module` is what prevents it.
  *
  * Every diagnostic names the file, because the failure this replaces was
  * silent: a tool that was never registered simply never reached the model, and
@@ -147,12 +150,14 @@ export function toolRegistry(modules: ToolModules): ToolRegistry {
  * shared (a spec imports the same one the entry does), and a loader quietly
  * rewriting it makes the order of two imports decide what an agent can do.
  *
- * **It is also the seam a NON-file registry goes on through**, which is the one
- * legitimate case left: the studio's own coding agent builds four tool families
- * per turn, every one of them closed over a single session's workspace directory
- * (`aai-guest/studio-agent.ts`). Those cannot be files, and this is what makes
- * that honest rather than an exception — a registry resolved from a session
- * instead of from a directory, attached the same way.
+ * **It is also the seam every registry NOT assembled by a bundler goes on
+ * through.** Two do. `withToolsDir` (`@alexkroman1/aai-runtime`) scans a real
+ * directory for a self-hosted process and comes back here. And the studio's own
+ * coding agent builds four tool families per turn, every one of them closed
+ * over a single session's workspace directory (`aai-guest/studio-agent.ts`) —
+ * those cannot be files at all, and this is what makes that honest rather than
+ * an exception: a registry resolved from a session instead of from a directory,
+ * attached the same way.
  *
  * A name the def ALREADY holds is an error. Through `agent()` that is now
  * unreachable — it returns an empty table and refuses a `tools` argument — so
