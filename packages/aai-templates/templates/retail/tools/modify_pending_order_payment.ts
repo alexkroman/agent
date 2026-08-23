@@ -90,6 +90,5 @@ export default retailTool({
       message: `Order ${order.order_id} is now charged to ${args.payment_method_id}, and $${amount.toFixed(2)} is going back to ${original.payment_method_id}.`,
     };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "payment change failed" : `re-paid ${result.order_id}`,
+  summary: (_args, result) => `re-paid ${result.order_id}`,
 });

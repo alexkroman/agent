@@ -1,11 +1,10 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { DeepReadonly } from "@alexkroman1/aai";
-import { ChatView, client, SidebarLayout, StartScreen, useAgentState } from "@alexkroman1/aai-ui";
+import { client, useAgentState } from "@alexkroman1/aai-ui";
 import type { ReactNode } from "react";
 import {
   type Clock,
   type Disposition,
-  type GameState,
   GENRES,
   gameProjection,
   MAX_RESOURCE,
@@ -444,7 +443,22 @@ function StoryArc({ story }: { story: DeepReadonly<StoryBlueprint> }) {
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
-function Sidebar({ game }: { game: DeepReadonly<GameState> }) {
+/**
+ * The character sheet.
+ *
+ * It reads the projection ITSELF rather than taking it as a prop. That prop
+ * existed only because a 27-line `component:` wrapper above it was already
+ * calling `useAgentState` — and the wrapper existed only to say four things
+ * `ClientConfig` could not: `icon`, `subtitle`, `buttonText` and
+ * `sidebarPosition`. All four are config fields now, so the wrapper is gone and
+ * the subscription lives where the data is used.
+ *
+ * `gameProjection` carries both halves: the campaign's readonly type — which is
+ * what the four components below take — and the frame a session that has run no
+ * tool renders.
+ */
+function Sidebar() {
+  const game = useAgentState(gameProjection);
   return (
     <div
       style={{
@@ -768,39 +782,19 @@ function Sidebar({ game }: { game: DeepReadonly<GameState> }) {
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
-function SoloRPGApp() {
-  // The agent's own session state, projected by `syncState` and pushed after
-  // every tool call — no per-tool `ctx.send`, and nothing to keep in step
-  // when a new tool starts mutating the game.
-  // `gameProjection` carries both halves: the campaign's readonly type — which
-  // is what the four components below take — and the frame a session that has
-  // run no tool renders.
-  const game = useAgentState(gameProjection);
-
-  return (
-    <StartScreen
-      icon={
-        <span style={{ fontSize: "28px", color: C.accent }}>
-          {/* biome-ignore lint/style/useConsistentCurlyBraces: unicode escape */}
-          {"\u2726"}
-        </span>
-      }
-      title="Solo RPG"
-      subtitle="A Narrative Solo-RPG Engine"
-      buttonText="Begin Your Story"
-    >
-      <SidebarLayout sidebar={<Sidebar game={game} />} sidebarWidth="260px" sidebarPosition="right">
-        <ChatView />
-      </SidebarLayout>
-    </StartScreen>
-  );
-}
-
-const SESSION_KEY = "solo-rpg:sessionId";
-const savedSessionId = localStorage.getItem(SESSION_KEY);
-
 client({
-  component: SoloRPGApp,
+  name: "Solo RPG",
+  icon: (
+    <span style={{ fontSize: "28px", color: C.accent }}>
+      {/* biome-ignore lint/style/useConsistentCurlyBraces: unicode escape */}
+      {"\u2726"}
+    </span>
+  ),
+  subtitle: "A Narrative Solo-RPG Engine",
+  buttonText: "Begin Your Story",
+  sidebar: Sidebar,
+  sidebarWidth: "260px",
+  sidebarPosition: "right",
   theme: {
     bg: C.bg,
     primary: C.accent,
@@ -808,6 +802,13 @@ client({
     surface: C.surface,
     border: C.border,
   },
-  onSessionId: (id: string) => localStorage.setItem(SESSION_KEY, id),
-  ...(savedSessionId ? { resumeSessionId: savedSessionId } : {}),
 });
+
+// No `onSessionId`/`resumeSessionId` here any more, and their removal is a FIX
+// rather than a simplification. `createSessionCore` remembers the id in
+// `sessionStorage` by default now — see `session-resume-store.ts`, whose doc
+// names this template as the one client of fourteen that had wired it by hand.
+// What it had wired was `localStorage`, which is the wrong store for a pointer
+// into a live call: it survives a new tab and a visit tomorrow, and presenting
+// a day-old id suppresses the greeting and rejoins a conversation whose context
+// is gone. This client was OVERRIDING the correct default with the wrong one.

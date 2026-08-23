@@ -1,6 +1,6 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
-import { createToolContext } from "@alexkroman1/aai/testing";
+import { createToolContext, ok } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import type { AuthResult } from "./authenticate.ts";
 import type { Address } from "./shared.ts";
@@ -25,32 +25,6 @@ import transferToHumanAgents from "./tools/transfer_to_human_agents.ts";
  *  which is what the isolation tests below rest on. */
 function makeCtx(): ToolContext {
   return createToolContext();
-}
-
-/**
- * The success half of a tool result, or a thrown failure carrying the tool's
- * own message.
- *
- * `ToolDef["execute"]`'s public signature always returns `unknown` — the wire
- * type is fixed so any tool is assignable to `ToolDef`, whatever its body
- * really returns — so every test that reads a field back off a result needed a
- * cast. There were EIGHTEEN of them here, each the same three lines, which is
- * the shape the repo's guides call a missing typed seam: a concentration of
- * identical casts is one narrowing that belongs in one helper, not a cast per
- * assertion. This is that helper, and it is the file's only cast.
- *
- * It also removes the second half of the boilerplate: a `ToolFailure` fails the
- * test HERE, naming what the tool refused, rather than surfacing three lines
- * later as `undefined` on a field nobody assigned.
- */
-function ok<T>(result: unknown): T {
-  if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
-  // The UNWRAP is the second half of the seam, and it arrived with the call
-  // flow: every tool here is a `callFlow.tool` now, so a success is the body's
-  // own value under `result`, wrapped in the position the call landed in. One
-  // helper is why that conversion cost this file two lines instead of
-  // twenty-four — which is the argument for having had the seam.
-  return (result as { result: T }).result;
 }
 
 /** A context already authenticated as `userId`, via the real tool. */

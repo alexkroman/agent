@@ -139,14 +139,13 @@ export default dispatchSlot.updateTool({
       created.push(fullInc.id);
     }
 
-    const at = callFlow.send(ctx, { type: "LOGGED" });
-
     return {
       scenario: args.scenario,
       narrative: s.narrative,
       incidentsCreated: created,
-      at: at.state,
-      next: at.instruction,
+      // As `incident_create`: the position spread verbatim, so an ungated tool
+      // reports it under the same keys a gated one does.
+      ...callFlow.send(ctx, { type: "LOGGED" }),
       message: `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
     };
   },

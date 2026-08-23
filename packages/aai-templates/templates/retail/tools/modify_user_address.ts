@@ -25,6 +25,5 @@ export default retailTool({
       message: `Default address updated to ${formatAddress(user.address)}. Existing orders keep their own shipping addresses.`,
     };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "profile address change failed" : `re-addressed ${result.user_id}`,
+  summary: (_args, result) => `re-addressed ${result.user_id}`,
 });

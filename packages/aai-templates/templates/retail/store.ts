@@ -1,6 +1,5 @@
 import type { ToolContext, ToolFailure } from "@alexkroman1/aai";
 import { dialog, isToolFailure, omitUndefined, pushCapped, sessionSlot } from "@alexkroman1/aai";
-import { setup } from "xstate";
 import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
@@ -75,7 +74,16 @@ export const retailSlot = sessionSlot("retail", createDefaultState);
 // ─── The call, as a machine ──────────────────────────────────────────────────
 
 /**
- * Where this call is, and what may be done from here.
+ * Where this call is, and what may be done from here, as a plain state map.
+ *
+ * A {@link DialogSpec} rather than an XState machine: this dialog said three
+ * states, two events and an instruction each, which is exactly what a spec can
+ * say — and the `setup({ types: {} as { events: … } })` block it used to carry
+ * restated the two event names already written in the `on` maps. The
+ * instruction is a declared field now instead of an untyped `meta` bag, so
+ * misspelling it is a compile error rather than a refusal that arrives with no
+ * recovery text. `as const` is what keeps the `on` keys literal, so `send`
+ * below is checked against the events this spec actually declares.
  *
  * The policy's first two sections — "Authenticate first" and "Handing off to a
  * human" — used to be prose plus a boolean. `requiresAuth` was that boolean:
@@ -105,50 +113,41 @@ export const retailSlot = sessionSlot("retail", createDefaultState);
  * WHO it is identified as are two facts: this holds the first,
  * `authenticatedUserId` holds the second.
  */
-const callMachine = setup({
-  types: {} as { events: { type: "IDENTIFIED" } | { type: "TRANSFERRED" } },
-}).createMachine({
-  id: "call",
+const callSpec = {
   initial: "identifying",
   states: {
     identifying: {
-      meta: {
-        // The instruction NAMES the two tools, because this sentence is what a
-        // refusal quotes and a refusal is the model's recovery path — the same
-        // job the removed `NOT_AUTHENTICATED` constant did, now attached to the
-        // state that means it.
-        instruction:
-          "You do not know who this is yet. Identify the caller with " +
-          "find_user_id_by_email, or find_user_id_by_name_zip if they cannot " +
-          "remember the email. Do this even if they volunteer a user id.",
-      },
+      // The instruction NAMES the two tools, because this sentence is what a
+      // refusal quotes and a refusal is the model's recovery path — the same
+      // job the removed `NOT_AUTHENTICATED` constant did, now attached to the
+      // state that means it.
+      instruction:
+        "You do not know who this is yet. Identify the caller with " +
+        "find_user_id_by_email, or find_user_id_by_name_zip if they cannot " +
+        "remember the email. Do this even if they volunteer a user id.",
       on: { IDENTIFIED: "serving", TRANSFERRED: "transferred" },
     },
     serving: {
-      meta: {
-        instruction:
-          "You are helping one identified customer, and only that one. Say what you " +
-          "are about to change — the order, the items, the amounts, where the money " +
-          "goes — and wait for an explicit yes before you call anything that changes it.",
-      },
+      instruction:
+        "You are helping one identified customer, and only that one. Say what you " +
+        "are about to change — the order, the items, the amounts, where the money " +
+        "goes — and wait for an explicit yes before you call anything that changes it.",
       on: { IDENTIFIED: "serving", TRANSFERRED: "transferred" },
     },
     transferred: {
-      type: "final",
-      meta: {
-        instruction:
-          "The call belongs to a human agent now. Say nothing beyond the transfer " +
-          "sentence, and do nothing else.",
-      },
+      final: true,
+      instruction:
+        "The call belongs to a human agent now. Say nothing beyond the transfer " +
+        "sentence, and do nothing else.",
     },
   },
-});
+} as const;
 
 /**
  * The flow. Its own slot key beside {@link retailSlot}: the flow holds the
  * POSITION and the store holds the customer, the orders and the activity feed.
  */
-export const callFlow = dialog("call", callMachine);
+export const callFlow = dialog("call", callSpec);
 
 /** Every state a tool may run in before the call is handed to a human — i.e.
  *  everything but `transferred`. What the five formerly `requiresAuth: false`
@@ -299,21 +298,28 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
    *  call. Three do: the two finders send `IDENTIFIED`, the transfer sends
    *  `TRANSFERRED`. Nothing is sent when the body answers a `ToolFailure`. */
   send?: { type: "IDENTIFIED" } | { type: "TRANSFERRED" };
-  summary: (args: z.output<S>, result: R) => string;
+  /**
+   * One line for the activity feed, from the call that SUCCEEDED.
+   *
+   * `R` is the SUCCESS type — `execute` below is declared `R | ToolFailure`, so
+   * the failure arm is matched against `ToolFailure` during inference and never
+   * lands in `R`. That is what lets the fifteen tool files stop writing
+   * `isToolFailure(result) ? "… failed" : …` for a case that cannot arrive: the
+   * wrapper never calls `summary` on a failure and now says so in the type.
+   *
+   * `NoInfer` takes this parameter out of the inference race `R` used to be
+   * decided by. It does NOT make the source order irrelevant — `execute` is an
+   * inline arrow whose parameters are contextually typed, so its return type is
+   * inferred in a LATER pass than this signature is checked, and a `summary`
+   * written above it still lands on `unknown`. What changed is that the failure
+   * is now LOUD: with no `isToolFailure` ternary left to swallow it, the wrong
+   * order is a `TS18046` on the first property read rather than a narrowing
+   * that quietly stops meaning anything. So the twelve-line warning this used
+   * to carry is the compiler's job now.
+   */
+  summary: (args: z.output<S>, result: NoInfer<R>) => string;
   /**
    * Handed the store as its second argument, and SYNCHRONOUS.
-   *
-   * **Declare it BEFORE `summary` in the object literal.** TS infers this
-   * wrapper's generic `R` from `execute`'s return type and processes an object
-   * literal's properties in SOURCE ORDER, so with `summary` written first its
-   * `result` parameter has nothing to infer from and silently falls back to
-   * `unknown` — every `isToolFailure(result) ? … : result.order_id` in the
-   * fifteen tool files then stops compiling, or worse, stops meaning anything.
-   * It lives here rather than in each tool file because it is a property of
-   * this type: the same four lines were pasted into eight of the fifteen and
-   * pointed at from five more, which is a rule maintained in fourteen places.
-   *
-   * ---
    *
    * **The draft is passed in rather than re-read**, which is the one change the
    * durable store forced on this template. The body used to open with
@@ -327,7 +333,7 @@ interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
    * so none of them wants to; a tool that DID would await outside the wrapper and
    * call `retailSlot.update` itself, the way `plan-and-execute`'s do.
    */
-  execute: (args: z.output<S>, state: RetailState, ctx: ToolContext) => R;
+  execute: (args: z.output<S>, state: RetailState, ctx: ToolContext) => R | ToolFailure;
 }
 
 function record(state: RetailState, name: string, summary: string): void {

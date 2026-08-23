@@ -2,7 +2,6 @@
 
 import type { DeepReadonly, ToolFailure } from "@alexkroman1/aai";
 import { dialog, pushCapped, sessionSlot } from "@alexkroman1/aai";
-import { setup } from "xstate";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -222,7 +221,15 @@ export const dashboardProjection = dispatchSlot.projection(dashboardView);
 // ─── The call in hand ────────────────────────────────────────────────────────
 
 /**
- * Where the dispatcher is on the call in hand, as a declared machine.
+ * Where the dispatcher is on the call in hand, as a plain state map.
+ *
+ * Declared as a {@link DialogSpec} — `{ initial, states }`, each state carrying
+ * its own `instruction` and `on` map — rather than an XState machine. This
+ * dialog used exactly the four things a spec can say, and the `setup({ types:
+ * {} as { events: … } })` block it used to carry restated the four event names
+ * already written in the `on` maps below. The instruction is a TYPED field now
+ * instead of an untyped `meta` bag, which matters because a misspelling there
+ * produced a refusal with no recovery text and no error anywhere.
  *
  * The system prompt used to carry this as prose — "incident_triage: After
  * creating, assess severity", "Critical incidents get immediate dispatch",
@@ -255,26 +262,18 @@ export const dashboardProjection = dispatchSlot.projection(dashboardView);
  *
  * `LOGGED` is accepted from every state because a new 911 call is always legal —
  * the one transition that is not a progression.
+ *
+ * `as const` is what keeps the `on` keys literal, so `DialogEvent` synthesizes
+ * the event union from them and a misspelled `send` is a compile error.
  */
-const callMachine = setup({
-  types: {} as {
-    events:
-      | { type: "LOGGED" }
-      | { type: "TRIAGED" }
-      | { type: "DISPATCHED" }
-      | { type: "ESCALATED" };
-  },
-}).createMachine({
-  id: "call",
+const callSpec = {
   initial: "standby",
   states: {
     standby: {
-      meta: {
-        instruction:
-          "Nothing is logged on this shift. Take the call — location first, then the " +
-          "nature of the emergency, then the caller's name and callback — and log it " +
-          "with incident_create.",
-      },
+      instruction:
+        "Nothing is logged on this shift. Take the call — location first, then the " +
+        "nature of the emergency, then the caller's name and callback — and log it " +
+        "with incident_create.",
       on: { LOGGED: "working" },
     },
     working: {
@@ -285,34 +284,28 @@ const callMachine = setup({
       on: { LOGGED: ".triaging" },
       states: {
         triaging: {
-          meta: {
-            instruction:
-              "Logged, not yet triaged. Confirm or override the severity and type with " +
-              "incident_triage. For a critical call, dispatch first and triage alongside it.",
-          },
+          instruction:
+            "Logged, not yet triaged. Confirm or override the severity and type with " +
+            "incident_triage. For a critical call, dispatch first and triage alongside it.",
           on: { TRIAGED: "dispatching", DISPATCHED: "monitoring", ESCALATED: "dispatching" },
         },
         dispatching: {
-          meta: {
-            instruction:
-              "Triaged, nothing rolling. Assign units with resources_dispatch — never " +
-              "leave a critical incident without at least one.",
-          },
+          instruction:
+            "Triaged, nothing rolling. Assign units with resources_dispatch — never " +
+            "leave a critical incident without at least one.",
           on: { DISPATCHED: "monitoring", TRIAGED: "dispatching", ESCALATED: "dispatching" },
         },
         monitoring: {
-          meta: {
-            instruction:
-              "Units are assigned. Work it — status updates as they radio in, notes as " +
-              "the picture changes, escalate if it outgrows the response, and close it " +
-              "with incident_update_status.",
-          },
+          instruction:
+            "Units are assigned. Work it — status updates as they radio in, notes as " +
+            "the picture changes, escalate if it outgrows the response, and close it " +
+            "with incident_update_status.",
           on: { TRIAGED: "dispatching", DISPATCHED: "monitoring", ESCALATED: "dispatching" },
         },
       },
     },
   },
-});
+} as const;
 
 /**
  * The flow. Its own slot key beside {@link dispatchSlot}: the flow holds the
@@ -321,7 +314,7 @@ const callMachine = setup({
  * call moves both — every converted tool opens `dispatchSlot.update` inside its
  * `execute` and lets the flow's own `send` follow it.
  */
-export const callFlow = dialog("call", callMachine);
+export const callFlow = dialog("call", callSpec);
 
 /**
  * The board as a READ hands it out: deep-frozen, and typed to say so.

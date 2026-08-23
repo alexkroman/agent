@@ -71,6 +71,5 @@ export default retailTool({
       }`,
     };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "cancel failed" : `cancelled ${result.order_id}`,
+  summary: (_args, result) => `cancelled ${result.order_id}`,
 });

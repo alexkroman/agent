@@ -35,6 +35,5 @@ export default retailTool({
       message: `Order ${order.order_id} now ships to ${formatAddress(order.address)}.`,
     };
   },
-  summary: (_args, result) =>
-    isToolFailure(result) ? "address change failed" : `re-addressed ${result.order_id}`,
+  summary: (_args, result) => `re-addressed ${result.order_id}`,
 });

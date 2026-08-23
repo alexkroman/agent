@@ -100,17 +100,13 @@ export default callFlow.tool({
             : undefined,
       };
     }),
-  // **Declared AFTER `execute`, and it has to be.** TS infers `R` from
-  // `execute`'s return type and reads an object literal's properties in SOURCE
-  // ORDER, so a `sendFrom` written above it has nothing to infer from and its
-  // `result` falls back to `unknown` — the same trap `retail`'s tool wrapper
-  // documents for its own `summary`.
-  //
   // Only when units actually rolled: a dispatch whose every requested callsign
   // was busy answers `dispatched: []`, which is not a refusal but is not
   // progress either, so the call stays where it is.
+  //
+  // `result` is the SUCCESS type — `sendFrom` takes `Exclude<R, ToolFailure>`,
+  // so the `"dispatched" in result` guard that used to stand in for the failure
+  // arm leaking into `R` is a plain property read.
   sendFrom: (result) =>
-    "dispatched" in result && result.dispatched.length > 0
-      ? { type: "DISPATCHED" as const }
-      : undefined,
+    result.dispatched.length > 0 ? { type: "DISPATCHED" as const } : undefined,
 });

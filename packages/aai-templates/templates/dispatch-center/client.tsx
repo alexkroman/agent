@@ -1,11 +1,12 @@
 import "@alexkroman1/aai-ui/styles.css";
-import type { AgentState, ChatMessage } from "@alexkroman1/aai-ui";
+import type { AgentState, ConversationItem } from "@alexkroman1/aai-ui";
 import {
   AutoScroll,
   client,
   useAgentState,
+  useConversation,
   useSession,
-  useUserTranscript,
+  useSessionSelector,
 } from "@alexkroman1/aai-ui";
 import type { DispatchState, IncidentSummary, Severity, Status } from "./shared.ts";
 import { dashboardProjection } from "./shared.ts";
@@ -139,15 +140,242 @@ function IncidentCard({ inc }: { inc: IncidentSummary }) {
   );
 }
 
-function App() {
+/** One radio line: a message bubble, or the tool call that came after it. */
+function Row({ item }: { item: ConversationItem }) {
+  if (item.kind === "tool") {
+    const { name, status } = item.toolCall;
+    return (
+      <div
+        className="self-start rounded-md px-2.5 py-1.5 text-[11px] font-mono flex items-center gap-2"
+        style={{
+          background: "#111827",
+          border: "1px solid #1e293b",
+          color: status === "pending" ? "#eab308" : "#64748b",
+        }}
+      >
+        <span
+          className="w-1.5 h-1.5 rounded-full inline-block"
+          style={{
+            background: status === "pending" ? "#eab308" : "#22c55e",
+            animation: status === "pending" ? "dc-pulse 1s ease-in-out infinite" : "none",
+          }}
+        />
+        {name}
+      </div>
+    );
+  }
+  const { role, content } = item.message;
+  return (
+    <div
+      className="rounded-lg text-[13px] max-w-[85%] px-3.5 py-2.5"
+      style={{
+        lineHeight: 1.6,
+        alignSelf: role === "assistant" ? "flex-start" : "flex-end",
+        background: role === "assistant" ? "#1e293b" : "#172554",
+        animation: "dc-slide-in 0.2s ease-out",
+        borderLeft: role === "assistant" ? "3px solid #3b82f6" : "none",
+        borderRight: role !== "assistant" ? "3px solid #22d3ee" : "none",
+      }}
+    >
+      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#64748b" }}>
+        {role === "assistant" ? "DISPATCH" : "OPERATOR"}
+      </div>
+      {content}
+    </div>
+  );
+}
+
+/**
+ * The radio log.
+ *
+ * `useConversation()` rather than a `session.messages.map(...)`: the messages
+ * were only half of it. This board runs eight tools and rendered NONE of them,
+ * because tool calls live in a second array this page never read — and it also
+ * dropped the streaming reply and the thinking indicator. The hook owns the
+ * interleave (a tool row follows its anchor message), the `null`-vs-`""`
+ * transcript distinction and the thinking-suppression rule; what stays here is
+ * the markup, which is the part this template exists to show.
+ *
+ * It also subscribes per FIELD, so the conversation re-renders at the
+ * conversation's rate. The whole-page `useSession()` this replaced re-rendered
+ * the incident board on every STT partial.
+ */
+function Conversation() {
+  const { items, streaming, transcript, thinking } = useConversation();
+  return (
+    <>
+      <AutoScroll
+        scrollClassName="dc-messages overflow-y-auto"
+        contentClassName="p-4 flex flex-col gap-2"
+      >
+        {items.length === 0 && !streaming && (
+          <div className="text-center p-10 text-[13px]" style={{ color: "#475569" }}>
+            Dispatch Command Center standing by. Click START to begin operations.
+          </div>
+        )}
+        {items.map((item) => (
+          <Row
+            key={item.kind === "message" ? `m${item.message.id}` : item.toolCall.callId}
+            item={item}
+          />
+        ))}
+        {streaming !== null && (
+          <div
+            className="rounded-lg text-[13px] max-w-[85%] px-3.5 py-2.5 self-start"
+            style={{ lineHeight: 1.6, background: "#1e293b", borderLeft: "3px solid #3b82f6" }}
+          >
+            <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#64748b" }}>
+              DISPATCH
+            </div>
+            {streaming}
+          </div>
+        )}
+        {thinking && (
+          <div className="self-start text-[11px] px-3.5" style={{ color: "#64748b" }}>
+            <span style={{ animation: "dc-pulse 1.2s ease-in-out infinite" }}>· · ·</span>
+          </div>
+        )}
+      </AutoScroll>
+
+      {transcript.speaking && (
+        <div
+          className="flex items-center px-4 py-2 text-xs italic min-h-8"
+          style={{ background: "#111827", borderTop: "1px solid #1e293b", color: "#64748b" }}
+        >
+          <span
+            className="w-2.5 h-2.5 rounded-full inline-block mr-2"
+            style={{ background: "#22c55e", animation: "dc-pulse 1.5s ease-in-out infinite" }}
+          />
+          {transcript.text}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * The live status readout, on its own subscription.
+ *
+ * `useSessionSelector` rather than a field off a whole-page `useSession()`: the
+ * header is the only thing here that cares about the session state, and reading
+ * it one level up dragged the incident board through every snapshot change.
+ */
+function StatusReadout() {
+  const state = useSessionSelector((s) => s.state);
+  return (
+    <>
+      <span
+        className="w-2.5 h-2.5 rounded-full inline-block"
+        style={{
+          background: STATE_COLORS[state],
+          animation:
+            state === "listening"
+              ? "dc-pulse 1.5s ease-in-out infinite"
+              : state === "thinking"
+                ? "dc-pulse 0.8s ease-in-out infinite"
+                : "none",
+        }}
+        title={state}
+      />
+      <span className="text-[11px] font-normal normal-case" style={{ color: "#64748b" }}>
+        {state === "listening"
+          ? "LISTENING"
+          : state === "thinking"
+            ? "PROCESSING"
+            : state === "speaking"
+              ? "TRANSMITTING"
+              : state.toUpperCase()}
+      </span>
+    </>
+  );
+}
+
+/**
+ * The fatal-error banner.
+ *
+ * `role="alert"` is the part that is easy to leave out and is load-bearing: per
+ * the `fatalError` latch in the session core this banner is the only remaining
+ * signal — the status eyebrow beside it goes back to reading like a live
+ * session — and a screen reader is never told an unannounced one appeared. It
+ * is what `ConsoleShell` carries, which this template's full-bleed two-pane
+ * board cannot use as its frame.
+ */
+function ErrorBanner() {
+  const error = useSessionSelector((s) => s.error);
+  if (!error) return null;
+  return (
+    <div
+      role="alert"
+      className="px-4 py-2 text-xs"
+      style={{ background: "#450a0a", color: "#fca5a5", borderTop: "1px solid #991b1b" }}
+    >
+      ERROR: {error.message} ({error.code})
+    </div>
+  );
+}
+
+/** The shift controls. The one place a whole-session read is what is wanted:
+ *  it needs `started`, `running` and three methods, and it is three buttons. */
+function ShiftControls({ logged }: { logged: number }) {
   const session = useSession();
-  // `speaking` and `text` in place of a `userTranscript !== null` check: `null`
-  // is silence and `""` is speech detected with no words back yet, and reading
-  // them as one falsy value hides the indicator at the start of every turn.
-  const { speaking, text: userTranscript } = useUserTranscript();
+  return (
+    <div
+      className="flex items-center gap-2.5 px-4 py-3"
+      style={{ background: "#111827", borderTop: "1px solid #1e293b" }}
+    >
+      {!session.started ? (
+        <button
+          type="button"
+          className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
+          style={{ background: "#2563eb" }}
+          onClick={() => session.start()}
+        >
+          Start Dispatch
+        </button>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
+            style={{
+              background: session.running ? "#334155" : "#2563eb",
+              color: session.running ? "#e2e8f0" : "white",
+            }}
+            onClick={() => session.toggle()}
+          >
+            {session.running ? "Pause" : "Resume"}
+          </button>
+          {/* end() hangs up and flips `started` back, so the UI
+              returns to "Start Dispatch" and the next start is a
+              brand-new shift (fresh incident board, greeting
+              included). reset() would keep the call live — the
+              buttons never toggle back. */}
+          <button
+            type="button"
+            className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
+            style={{ background: "#dc2626" }}
+            onClick={() => session.end()}
+          >
+            End Shift
+          </button>
+        </>
+      )}
+      <div className="flex-1" />
+      <span className="text-[10px]" style={{ color: "#475569" }}>
+        {logged} incident{logged !== 1 ? "s" : ""} logged
+      </span>
+    </div>
+  );
+}
+
+function App() {
   // The agent's own board, projected by `syncState`. This replaced a
   // useState mirror that merged incident deltas out of tool events — the
   // projection is already the complete list, so there is nothing to merge.
+  //
+  // It is the ONLY subscription at this level: the session reads that used to
+  // sit beside it moved into the four components above, so a partial transcript
+  // no longer re-renders the incident cards.
   const dash = useAgentState(dashboardProjection);
 
   const incidentList = [...dash.incidents].reverse();
@@ -179,28 +407,7 @@ function App() {
           >
             <span style={{ color: "#3b82f6" }}>&#9670;</span>
             Dispatch Command Center
-            <span
-              className="w-2.5 h-2.5 rounded-full inline-block"
-              style={{
-                background: STATE_COLORS[session.state],
-                animation:
-                  session.state === "listening"
-                    ? "dc-pulse 1.5s ease-in-out infinite"
-                    : session.state === "thinking"
-                      ? "dc-pulse 0.8s ease-in-out infinite"
-                      : "none",
-              }}
-              title={session.state}
-            />
-            <span className="text-[11px] font-normal normal-case" style={{ color: "#64748b" }}>
-              {session.state === "listening"
-                ? "LISTENING"
-                : session.state === "thinking"
-                  ? "PROCESSING"
-                  : session.state === "speaking"
-                    ? "TRANSMITTING"
-                    : session.state.toUpperCase()}
-            </span>
+            <StatusReadout />
           </div>
           <div className="flex gap-2 items-center">
             <span className="text-[10px] tracking-wider" style={{ color: "#64748b" }}>
@@ -229,106 +436,9 @@ function App() {
             className="flex flex-col overflow-hidden"
             style={{ borderRight: "1px solid #1e293b" }}
           >
-            <AutoScroll
-              scrollClassName="dc-messages overflow-y-auto"
-              contentClassName="p-4 flex flex-col gap-2"
-            >
-              {session.messages.length === 0 && (
-                <div className="text-center p-10 text-[13px]" style={{ color: "#475569" }}>
-                  Dispatch Command Center standing by. Click START to begin operations.
-                </div>
-              )}
-              {session.messages.map((m: ChatMessage, i: number) => (
-                <div
-                  key={i}
-                  className="rounded-lg text-[13px] max-w-[85%] px-3.5 py-2.5"
-                  style={{
-                    lineHeight: 1.6,
-                    alignSelf: m.role === "assistant" ? "flex-start" : "flex-end",
-                    background: m.role === "assistant" ? "#1e293b" : "#172554",
-                    animation: "dc-slide-in 0.2s ease-out",
-                    borderLeft: m.role === "assistant" ? "3px solid #3b82f6" : "none",
-                    borderRight: m.role !== "assistant" ? "3px solid #22d3ee" : "none",
-                  }}
-                >
-                  <div
-                    className="text-[10px] uppercase tracking-wider mb-1"
-                    style={{ color: "#64748b" }}
-                  >
-                    {m.role === "assistant" ? "DISPATCH" : "OPERATOR"}
-                  </div>
-                  {m.content}
-                </div>
-              ))}
-            </AutoScroll>
-
-            {speaking && (
-              <div
-                className="flex items-center px-4 py-2 text-xs italic min-h-8"
-                style={{ background: "#111827", borderTop: "1px solid #1e293b", color: "#64748b" }}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full inline-block mr-2"
-                  style={{ background: "#22c55e", animation: "dc-pulse 1.5s ease-in-out infinite" }}
-                />
-                {userTranscript}
-              </div>
-            )}
-            {session.error && (
-              <div
-                className="px-4 py-2 text-xs"
-                style={{ background: "#450a0a", color: "#fca5a5", borderTop: "1px solid #991b1b" }}
-              >
-                ERROR: {session.error.message} ({session.error.code})
-              </div>
-            )}
-
-            <div
-              className="flex items-center gap-2.5 px-4 py-3"
-              style={{ background: "#111827", borderTop: "1px solid #1e293b" }}
-            >
-              {!session.started ? (
-                <button
-                  type="button"
-                  className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
-                  style={{ background: "#2563eb" }}
-                  onClick={() => session.start()}
-                >
-                  Start Dispatch
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
-                    style={{
-                      background: session.running ? "#334155" : "#2563eb",
-                      color: session.running ? "#e2e8f0" : "white",
-                    }}
-                    onClick={() => session.toggle()}
-                  >
-                    {session.running ? "Pause" : "Resume"}
-                  </button>
-                  {/* end() hangs up and flips `started` back, so the UI
-                      returns to "Start Dispatch" and the next start is a
-                      brand-new shift (fresh incident board, greeting
-                      included). reset() would keep the call live — the
-                      buttons never toggle back. */}
-                  <button
-                    type="button"
-                    className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
-                    style={{ background: "#dc2626" }}
-                    onClick={() => session.end()}
-                  >
-                    End Shift
-                  </button>
-                </>
-              )}
-              <div className="flex-1" />
-              <span className="text-[10px]" style={{ color: "#475569" }}>
-                {incidentList.length} incident{incidentList.length !== 1 ? "s" : ""} logged
-              </span>
-            </div>
+            <Conversation />
+            <ErrorBanner />
+            <ShiftControls logged={incidentList.length} />
           </div>
 
           {/* Right: sidebar dashboard */}
